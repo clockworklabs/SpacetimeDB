@@ -36,9 +36,9 @@ const foodRow = t.row({
 });
 export type Food = Infer<typeof foodRow>;
 
-const entityTable = table({ name: 'entity' }, entityRow);
-const circleTable = table({ name: 'circle' }, circleRow);
-const foodTable = table({ name: 'food' }, foodRow);
+const entity = table({ name: 'entity' }, entityRow);
+const circle = table({ name: 'circle' }, circleRow);
+const food = table({ name: 'food' }, foodRow);
 
 // synthetic:
 // -----------------------------------------------------------------------------
@@ -79,43 +79,41 @@ export const btree_each_column_u32_u64_u64_tRow = t.row({
   y: t.u64().index('btree'),
 });
 
-const unique_0_u32_u64_strTable = table(
-  { name: 'unique_0_u32_u64_str' },
+const unique_0_u32_u64_str = table({},
   unique_0_u32_u64_str_tRow
 );
-const no_index_u32_u64_strTable = table(
-  { name: 'no_index_u32_u64_str' },
+const no_index_u32_u64_str = table({},
   no_index_u32_u64_str_tRow
 );
-const btree_each_column_u32_u64_strTable = table(
-  { name: 'btree_each_column_u32_u64_str' },
+const btree_each_column_u32_u64_str = table(
+  {},
   btree_each_column_u32_u64_str_tRow
 );
-const unique_0_u32_u64_u64Table = table(
-  { name: 'unique_0_u32_u64_u64' },
+const unique_0_u32_u64_u64 = table(
+  {},
   unique_0_u32_u64_u64_tRow
 );
-const no_index_u32_u64_u64Table = table(
-  { name: 'no_index_u32_u64_u64' },
+const no_index_u32_u64_u64 = table(
+  { },
   no_index_u32_u64_u64_tRow
 );
-const btree_each_column_u32_u64_u64Table = table(
-  { name: 'btree_each_column_u32_u64_u64' },
+const btree_each_column_u32_u64_u64 = table(
+  {},
   btree_each_column_u32_u64_u64_tRow
 );
 
 // ia_loop:
 // -----------------------------------------------------------------------------
 
-const velocity = t.row({
+const velocityRow = t.row({
   entity_id: t.u32().primaryKey(),
   x: t.f32(),
   y: t.f32(),
   z: t.f32(),
 });
-export type Velocity = Infer<typeof velocity>;
+export type Velocity = Infer<typeof velocityRow>;
 
-const position = t.row({
+const positionRow = t.row({
   entity_id: t.u32().primaryKey(),
   x: t.f32(),
   y: t.f32(),
@@ -124,7 +122,7 @@ const position = t.row({
   vy: t.f32(),
   vz: t.f32(),
 });
-export type Position = Infer<typeof position>;
+export type Position = Infer<typeof positionRow>;
 
 const agentAction = t.enum('AgentAction', {
   Inactive: t.unit(),
@@ -136,25 +134,25 @@ const agentAction = t.enum('AgentAction', {
 });
 export type AgentAction = Infer<typeof agentAction>;
 
-const gameEnemyAiAgentState = t.row({
+const gameEnemyAiAgentStateRow = t.row({
   entity_id: t.u64().primaryKey(),
   last_move_timestamps: t.array(t.u64()),
   next_action_timestamp: t.u64(),
   action: agentAction,
 });
-export type GameEnemyAiAgentState = Infer<typeof gameEnemyAiAgentState>;
+export type GameEnemyAiAgentState = Infer<typeof gameEnemyAiAgentStateRow>;
 
-const gameTargetableState = t.row({
+const gameTargetableStateRow = t.row({
   entity_id: t.u64().primaryKey(),
   quad: t.i64(),
 });
-export type GameTargetableState = Infer<typeof gameTargetableState>;
+export type GameTargetableState = Infer<typeof gameTargetableStateRow>;
 
-const gameLiveTargetableState = t.row({
+const gameLiveTargetableStateRow = t.row({
   entity_id: t.u64().unique(),
   quad: t.i64().index('btree'),
 });
-export type GameLiveTargetableState = Infer<typeof gameLiveTargetableState>;
+export type GameLiveTargetableState = Infer<typeof gameLiveTargetableStateRow>;
 
 const gameMobileEntityState = t.row({
   entity_id: t.u64().primaryKey(),
@@ -164,11 +162,11 @@ const gameMobileEntityState = t.row({
 });
 export type GameMobileEntityState = Infer<typeof gameMobileEntityState>;
 
-const gameEnemyState = t.row({
+const gameEnemyStateRow = t.row({
   entity_id: t.u64().primaryKey(),
   herd_id: t.i32(),
 });
-export type GameEnemyState = Infer<typeof gameEnemyState>;
+export type GameEnemyState = Infer<typeof gameEnemyStateRow>;
 
 const smallHexTile = t.object('SmallHexTile', {
   x: t.i32(),
@@ -177,7 +175,7 @@ const smallHexTile = t.object('SmallHexTile', {
 });
 export type SmallHexTile = Infer<typeof smallHexTile>;
 
-const gameHerdCache = t.row({
+const gameHerdCacheRow = t.row({
   id: t.i32().primaryKey(),
   dimension_id: t.u32(),
   current_population: t.i32(),
@@ -186,59 +184,62 @@ const gameHerdCache = t.row({
   spawn_eagerness: t.f32(),
   roaming_distance: t.i32(),
 });
-export type GameHerdCache = Infer<typeof gameHerdCache>;
+export type GameHerdCache = Infer<typeof gameHerdCacheRow>;
 
-const velocityTable = table({ name: 'velocity' }, velocity);
-const positionTable = table({ name: 'position' }, position);
-const gameEnemyAiAgentStateTable = table(
+const velocity = table({ name: 'velocity' }, velocityRow);
+const position = table({ name: 'position' }, positionRow);
+const gameEnemyAiAgentState = table(
   {
     name: 'game_enemy_ai_agent_state',
   },
-  gameEnemyAiAgentState
+  gameEnemyAiAgentStateRow
 );
-const gameTargetableStateTable = table(
+const gameTargetableState = table(
   {
     name: 'game_targetable_state',
   },
-  gameTargetableState
+  gameTargetableStateRow
 );
-const gameLiveTargetableStateTable = table(
+const gameLiveTargetableState = table(
   {
     name: 'game_live_targetable_state',
   },
-  gameLiveTargetableState
+  gameLiveTargetableStateRow
 );
-const gameEnemyStateTable = table(
+const gameEnemyState = table(
   {
     name: 'game_enemy_state',
   },
-  gameEnemyState
+  gameEnemyStateRow
 );
-const gameHerdCacheTable = table(
+const gameHerdCache = table(
   {
     name: 'game_herd_cache',
   },
-  gameHerdCache
+  gameHerdCacheRow
 );
 
-export const spacetimedb = schema(
-  circleTable,
-  entityTable,
-  foodTable,
-  unique_0_u32_u64_strTable,
-  no_index_u32_u64_strTable,
-  btree_each_column_u32_u64_strTable,
-  unique_0_u32_u64_u64Table,
-  no_index_u32_u64_u64Table,
-  btree_each_column_u32_u64_u64Table,
-  velocityTable,
-  positionTable,
-  gameEnemyAiAgentStateTable,
-  gameTargetableStateTable,
-  gameLiveTargetableStateTable,
-  gameEnemyStateTable,
-  gameHerdCacheTable,
-  table({ name: 'game_mobile_entity_state' }, gameMobileEntityState)
-);
+export const spacetimedb = schema({
+  circle,
+  entity,
+  food,
+  unique_0_u32_u64_str,
+  no_index_u32_u64_str,
+  btree_each_column_u32_u64_str,
+  unique_0_u32_u64_u64,
+  no_index_u32_u64_u64,
+  btree_each_column_u32_u64_u64,
+  velocity,
+  position,
+  gameEnemyAiAgentState,
+  gameTargetableState,
+  gameLiveTargetableState,
+  gameEnemyState,
+  gameHerdCache,
+  gameMobileEntityState: table(
+    { name: 'game_mobile_entity_state' },
+    gameMobileEntityState
+  ),
+});
 
 export type S = InferSchema<typeof spacetimedb>;

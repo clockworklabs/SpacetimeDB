@@ -4,6 +4,7 @@ mod config;
 pub(crate) mod detect;
 mod edit_distance;
 mod errors;
+pub mod spacetime_config;
 mod subcommands;
 mod tasks;
 pub mod util;
@@ -72,4 +73,15 @@ pub async fn exec_subcommand(
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {unknown}")),
     }
     .map(|()| ExitCode::SUCCESS)
+}
+
+/// An error type indicating that the process should exit silently with the
+/// given `ExitCode`.
+#[derive(thiserror::Error, Debug)]
+#[error("exit with {0:?}")]
+pub struct ExitWithCode(pub ExitCode);
+
+impl ExitWithCode {
+    /// Basic unsuccessful termination.
+    pub const FAILURE: Self = ExitWithCode(ExitCode::FAILURE);
 }

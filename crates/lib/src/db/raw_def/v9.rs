@@ -23,7 +23,6 @@ use spacetimedb_sats::Typespace;
 use crate::db::auth::StAccess;
 use crate::db::auth::StTableType;
 use crate::db::raw_def::v10::RawConstraintDefV10;
-use crate::db::raw_def::v10::RawIndexDefV10;
 use crate::db::raw_def::v10::RawScopedTypeNameV10;
 use crate::db::raw_def::v10::RawSequenceDefV10;
 use crate::db::raw_def::v10::RawTypeDefV10;
@@ -1067,16 +1066,6 @@ impl From<RawScopedTypeNameV10> for RawScopedTypeNameV9 {
         RawScopedTypeNameV9 {
             scope: raw.scope,
             name: raw.source_name,
-        }
-    }
-}
-
-impl From<RawIndexDefV10> for RawIndexDefV9 {
-    fn from(raw: RawIndexDefV10) -> Self {
-        RawIndexDefV9 {
-            name: raw.source_name,
-            accessor_name: raw.accessor_name,
-            algorithm: raw.algorithm,
         }
     }
 }

@@ -4,7 +4,7 @@ namespace Benchmarks;
 
 public static partial class ia_loop
 {
-    [SpacetimeDB.Table(Name = "velocity")]
+    [SpacetimeDB.Table(Accessor = "velocity")]
     public partial struct Velocity(uint entity_id, float x, float y, float z)
     {
         [PrimaryKey]
@@ -14,7 +14,7 @@ public static partial class ia_loop
         public float z = z;
     }
 
-    [SpacetimeDB.Table(Name = "position")]
+    [SpacetimeDB.Table(Accessor = "position")]
     public partial struct Position(uint entity_id, float x, float y, float z)
     {
         [PrimaryKey]
@@ -44,7 +44,7 @@ public static partial class ia_loop
         Fighting,
     }
 
-    [SpacetimeDB.Table(Name = "game_enemy_ai_agent_state")]
+    [SpacetimeDB.Table(Accessor = "game_enemy_ai_agent_state")]
     public partial struct GameEnemyAiAgentState(
         ulong entity_id,
         List<ulong> last_move_timestamps,
@@ -59,7 +59,7 @@ public static partial class ia_loop
         public AgentAction action = action;
     }
 
-    [SpacetimeDB.Table(Name = "game_targetable_state")]
+    [SpacetimeDB.Table(Accessor = "game_targetable_state")]
     public partial struct GameTargetableState(ulong entity_id, long quad)
     {
         [PrimaryKey]
@@ -68,7 +68,7 @@ public static partial class ia_loop
         public long quad = quad;
     }
 
-    [SpacetimeDB.Table(Name = "game_live_targetable_state")]
+    [SpacetimeDB.Table(Accessor = "game_live_targetable_state")]
     public partial struct GameLiveTargetableState(ulong entity_id, long quad)
     {
         [Unique]
@@ -78,7 +78,7 @@ public static partial class ia_loop
         public long quad = quad;
     }
 
-    [SpacetimeDB.Table(Name = "game_mobile_entity_state")]
+    [SpacetimeDB.Table(Accessor = "game_mobile_entity_state")]
     public partial struct GameMobileEntityState(
         ulong entity_id,
         int location_x,
@@ -95,7 +95,7 @@ public static partial class ia_loop
         public ulong timestamp = timestamp;
     }
 
-    [SpacetimeDB.Table(Name = "game_enemy_state")]
+    [SpacetimeDB.Table(Accessor = "game_enemy_state")]
     public partial struct GameEnemyState(ulong entity_id, int herd_id)
     {
         [PrimaryKey]
@@ -111,7 +111,7 @@ public static partial class ia_loop
         public uint dimension = dimension;
     }
 
-    [SpacetimeDB.Table(Name = "game_herd_cache")]
+    [SpacetimeDB.Table(Accessor = "game_herd_cache")]
     public partial struct GameHerdCache(
         int id,
         uint dimension_id,
@@ -281,9 +281,9 @@ public static partial class ia_loop
         targetable.quad = new_hash;
         ctx.Db.game_targetable_state.entity_id.Update(targetable);
 
-        if (ctx.Db.game_live_targetable_state.entity_id.Find(entity_id) is not null)
+        if (ctx.Db.game_live_targetable_state.entity_id.Delete(entity_id))
         {
-            ctx.Db.game_live_targetable_state.entity_id.Update(new(entity_id, new_hash));
+            ctx.Db.game_live_targetable_state.Insert(new(entity_id, new_hash));
         }
 
         GameMobileEntityState mobile_entity =

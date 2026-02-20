@@ -63,18 +63,36 @@ main() {
     check_for_help_flag "$@"
 
     # Define the latest SpacetimeDB download url
-    local _url="$SPACETIME_DOWNLOAD_ROOT/spacetimedb-update-$_host$_ext"
+    local _asset_name="spacetimedb-update-$_host$_ext"
+    local _url="$SPACETIME_DOWNLOAD_ROOT/$_asset_name"
+    local _mirror_base="https://spacetimedb-client-binaries.nyc3.digitaloceanspaces.com"
     echo "Downloading installer..."
+    local _ok=false
     if [ "$_downloader" = curl ]; then
-        local _httpstatus
-        if ! _httpstatus="$(curl -sSfL -w '%{http_code}' --progress-bar "$_url" -o "$_download_file")"; then
-            if [ "$_httpstatus" = 404 ]; then
-                err "It seems like we may not have prebuilt binaries for your platform."
-            fi
-            exit 1
+        if curl -sSfL --progress-bar "$_url" -o "$_download_file"; then
+            _ok=true
         fi
     elif [ "$_downloader" = wget ]; then
-        wget "$_url" -O "$_download_file" || exit 1
+        if wget "$_url" -O "$_download_file"; then
+            _ok=true
+        fi
+    fi
+
+    if [ "$_ok" = false ]; then
+        echo "Download failed, trying mirror..."
+        local _tag
+        if [ "$_downloader" = curl ]; then
+            _tag="$(curl -sSfL "$_mirror_base/latest-version")" || err "Mirror also unavailable"
+        elif [ "$_downloader" = wget ]; then
+            _tag="$(wget -qO- "$_mirror_base/latest-version")" || err "Mirror also unavailable"
+        fi
+        _tag="$(echo "$_tag" | tr -d '[:space:]')"
+        local _mirror_url="$_mirror_base/refs/tags/$_tag/$_asset_name"
+        if [ "$_downloader" = curl ]; then
+            curl -sSfL --progress-bar "$_mirror_url" -o "$_download_file" || err "Mirror download also failed"
+        elif [ "$_downloader" = wget ]; then
+            wget "$_mirror_url" -O "$_download_file" || err "Mirror download also failed"
+        fi
     fi
 
     ensure chmod u+x "$_download_file"

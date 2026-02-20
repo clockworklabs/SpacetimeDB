@@ -53,5 +53,5 @@ After completing a quickstart guide, explore these core concepts to deepen your 
 - **[Databases](/databases)** - Understand database lifecycle, publishing, and management
 - **[Tables](/tables)** - Define your data structure with tables, columns, and indexes
 - **[Functions](/functions)** - Write reducers, procedures, and views to implement your server logic
-- **[Subscriptions](/subscriptions)** - Enable real-time data synchronization with clients
-- **[Client SDKs](/sdks)** - Connect your client applications to SpacetimeDB
+- **[Subscriptions](/clients/subscriptions)** - Enable real-time data synchronization with clients
+- **[Client SDKs](/clients)** - Connect your client applications to SpacetimeDB

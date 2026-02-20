@@ -57,7 +57,7 @@ namespace SpacetimeDB.Types
         [DataContract]
         public sealed partial class InsertWithTxCommitArgs : Procedure, IProcedureArgs
         {
-            string IProcedureArgs.ProcedureName => "InsertWithTxCommit";
+            string IProcedureArgs.ProcedureName => "insert_with_tx_commit";
         }
 
     }

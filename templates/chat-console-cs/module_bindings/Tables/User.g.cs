@@ -15,20 +15,20 @@ namespace SpacetimeDB.Types
     {
         public sealed class UserHandle : RemoteTableHandle<EventContext, User>
         {
-            protected override string RemoteTableName => "user";
+            protected override string RemoteTableName => "User";
 
-            public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
+            public sealed class UserIdentityIdxBtreeUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
             {
                 protected override SpacetimeDB.Identity GetKey(User row) => row.Identity;
 
-                public IdentityUniqueIndex(UserHandle table) : base(table) { }
+                public UserIdentityIdxBtreeUniqueIndex(UserHandle table) : base(table) { }
             }
 
-            public readonly IdentityUniqueIndex Identity;
+            public readonly UserIdentityIdxBtreeUniqueIndex UserIdentityIdxBtree;
 
             internal UserHandle(DbConnection conn) : base(conn)
             {
-                Identity = new(this);
+                UserIdentityIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(User row) => row.Identity;
@@ -40,13 +40,13 @@ namespace SpacetimeDB.Types
     public sealed class UserCols
     {
         public global::SpacetimeDB.Col<User, SpacetimeDB.Identity> Identity { get; }
-        public global::SpacetimeDB.Col<User, string> Name { get; }
+        public global::SpacetimeDB.NullableCol<User, string> Name { get; }
         public global::SpacetimeDB.Col<User, bool> Online { get; }
 
         public UserCols(string tableName)
         {
             Identity = new global::SpacetimeDB.Col<User, SpacetimeDB.Identity>(tableName, "Identity");
-            Name = new global::SpacetimeDB.Col<User, string>(tableName, "Name");
+            Name = new global::SpacetimeDB.NullableCol<User, string>(tableName, "Name");
             Online = new global::SpacetimeDB.Col<User, bool>(tableName, "Online");
         }
     }

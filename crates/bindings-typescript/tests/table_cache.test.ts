@@ -1,11 +1,9 @@
-import { type Operation, TableCacheImpl } from '../src/sdk/table_cache';
 import { describe, expect, test } from 'vitest';
-import Player from '../test-app/src/module_bindings/player_type.ts';
 import { AlgebraicType, Identity, type Infer } from '../src';
-import {
-  tables,
-  UnindexedPlayer,
-} from '../test-app/src/module_bindings/index.ts';
+import { type Operation, TableCacheImpl } from '../src/sdk/table_cache';
+import { tables } from '../test-app/src/module_bindings/index.ts';
+import { Player } from '../test-app/src/module_bindings/types';
+import UnindexedPlayer from '../test-app/src/module_bindings/unindexed_player_table.ts';
 
 interface ApplyOperations {
   ops: Operation[];
@@ -103,13 +101,13 @@ function runTest(
 
 describe('TableCache', () => {
   describe('Unindexed player table', () => {
-    const newTable = () => new TableCacheImpl(tables.unindexedPlayer);
+    const newTable = () => new TableCacheImpl(tables.unindexed_player.tableDef);
     const mkOperation = (
       type: 'insert' | 'delete',
       row: Infer<typeof UnindexedPlayer>
     ) => {
       const rowId = AlgebraicType.intoMapKey(
-        { tag: 'Product', value: tables.unindexedPlayer.rowType },
+        { tag: 'Product', value: tables.unindexed_player.rowType },
         row
       );
       return {
@@ -406,7 +404,7 @@ describe('TableCache', () => {
     });
   });
   describe('Indexed player table', () => {
-    const newTable = () => new TableCacheImpl(tables.player);
+    const newTable = () => new TableCacheImpl(tables.player.tableDef);
     const mkOperation = (
       type: 'insert' | 'delete',
       row: Infer<typeof Player>
@@ -758,7 +756,7 @@ describe('TableCache', () => {
   });
 
   test('should be empty on creation', () => {
-    const tableCache = new TableCacheImpl(tables.player);
+    const tableCache = new TableCacheImpl(tables.player.tableDef);
     expect(tableCache.count()).toEqual(0n);
   });
 });

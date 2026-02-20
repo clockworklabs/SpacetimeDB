@@ -46,7 +46,7 @@ fn check_global_json_policy() -> Result<()> {
     ensure_repo_root()?;
 
     let root_json = Path::new("global.json");
-    let root_real = fs::canonicalize(root_json)?;
+    let root_contents = fs::read_to_string(root_json)?;
 
     fn find_all_global_json(dir: &Path) -> Result<Vec<PathBuf>> {
         let mut out = Vec::new();
@@ -67,25 +67,24 @@ fn check_global_json_policy() -> Result<()> {
 
     let mut ok = true;
     for p in globals {
-        let resolved = fs::canonicalize(&p)?;
-
-        // The root global.json itself is allowed.
-        if resolved == root_real {
-            println!("OK: {}", p.display());
-            continue;
-        }
-
         let meta = fs::symlink_metadata(&p)?;
-        if !meta.file_type().is_symlink() {
-            eprintln!("Error: {} is not a symlink to root global.json", p.display());
+        let is_symlink = meta.file_type().is_symlink();
+        let is_template_global_json = p.strip_prefix(".").unwrap_or(&p).starts_with(Path::new("templates"));
+        if is_template_global_json && is_symlink {
+            eprintln!(
+                "Error: {} is a symlink. Template files must not be symlinks; they are copied literally and this will break if the CLI is built under Windows where symlinks are not supported.",
+                p.display()
+            );
             ok = false;
-            continue;
         }
 
-        eprintln!("Error: {} does not resolve to root global.json", p.display());
-        eprintln!("  resolved: {}", resolved.display());
-        eprintln!("  expected: {}", root_real.display());
-        ok = false;
+        let contents = fs::read_to_string(&p)?;
+        if contents != root_contents {
+            eprintln!("Error: {} does not match the root global.json contents", p.display());
+            ok = false;
+        } else if !is_template_global_json || !is_symlink {
+            println!("OK: {}", p.display());
+        }
     }
 
     if !ok {
@@ -311,6 +310,22 @@ fn main() -> Result<()> {
                 "--all",
                 "--exclude",
                 "spacetimedb-smoketests",
+                "--exclude",
+                "spacetimedb-sdk",
+                "--",
+                "--test-threads=2",
+                "--skip",
+                "unreal"
+            )
+            .run()?;
+            // SDK procedure tests intentionally make localhost HTTP requests.
+            cmd!(
+                "cargo",
+                "test",
+                "-p",
+                "spacetimedb-sdk",
+                "--features",
+                "allow_loopback_http_for_tests",
                 "--",
                 "--test-threads=2",
                 "--skip",
@@ -380,6 +395,8 @@ fn main() -> Result<()> {
 
         Some(CiCmd::WasmBindings) => {
             cmd!("cargo", "test", "-p", "spacetimedb-codegen").run()?;
+            // Pre-build the CLI so that it _doesn't_ get `cargo update`d, since that may break the build.
+            cmd!("cargo", "build", "-p", "spacetimedb-cli").run()?;
             // Make sure the `Cargo.lock` file reflects the latest available versions.
             // This is what users would end up with on a fresh module, so we want to
             // catch any compile errors arising from a different transitive closure
@@ -387,17 +404,13 @@ fn main() -> Result<()> {
             //
             // For context see also: https://github.com/clockworklabs/SpacetimeDB/pull/2714
             cmd!("cargo", "update").run()?;
-            cmd!(
-                "cargo",
-                "run",
-                "-p",
-                "spacetimedb-cli",
-                "--",
-                "build",
-                "--project-path",
-                "modules/module-test",
-            )
-            .run()?;
+            let cli_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .ancestors()
+                .nth(2)
+                .unwrap()
+                .join("target/debug/spacetimedb-cli")
+                .with_extension(std::env::consts::EXE_EXTENSION);
+            cmd!(cli_path, "build", "--module-path", "modules/module-test",).run()?;
         }
 
         Some(CiCmd::Dlls) => {

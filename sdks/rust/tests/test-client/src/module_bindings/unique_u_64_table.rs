@@ -5,7 +5,7 @@
 use super::unique_u_64_type::UniqueU64;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `unique_u64`.
+/// Table handle for the table `unique_u_64`.
 ///
 /// Obtain a handle from the [`UniqueU64TableAccess::unique_u_64`] method on [`super::RemoteTables`],
 /// like `ctx.db.unique_u_64()`.
@@ -19,19 +19,19 @@ pub struct UniqueU64TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `unique_u64`.
+/// Extension trait for access to the table `unique_u_64`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait UniqueU64TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`UniqueU64TableHandle`], which mediates access to the table `unique_u64`.
+    /// Obtain a [`UniqueU64TableHandle`], which mediates access to the table `unique_u_64`.
     fn unique_u_64(&self) -> UniqueU64TableHandle<'_>;
 }
 
 impl UniqueU64TableAccess for super::RemoteTables {
     fn unique_u_64(&self) -> UniqueU64TableHandle<'_> {
         UniqueU64TableHandle {
-            imp: self.imp.get_table::<UniqueU64>("unique_u64"),
+            imp: self.imp.get_table::<UniqueU64>("unique_u_64"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -78,24 +78,7 @@ impl<'ctx> __sdk::Table for UniqueU64TableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<UniqueU64>("unique_u64");
-    _table.add_unique_constraint::<u64>("n", |row| &row.n);
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<UniqueU64>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<UniqueU64>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
-}
-
-/// Access to the `n` unique index on the table `unique_u64`,
+/// Access to the `n` unique index on the table `unique_u_64`,
 /// which allows point queries on the field of the same name
 /// via the [`UniqueU64NUnique::find`] method.
 ///
@@ -108,7 +91,7 @@ pub struct UniqueU64NUnique<'ctx> {
 }
 
 impl<'ctx> UniqueU64TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `unique_u64`.
+    /// Get a handle on the `n` unique index on the table `unique_u_64`.
     pub fn n(&self) -> UniqueU64NUnique<'ctx> {
         UniqueU64NUnique {
             imp: self.imp.get_unique_constraint::<u64>("n"),
@@ -125,18 +108,33 @@ impl<'ctx> UniqueU64NUnique<'ctx> {
     }
 }
 
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<UniqueU64>("unique_u_64");
+    _table.add_unique_constraint::<u64>("n", |row| &row.n);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<UniqueU64>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<UniqueU64>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for query builder access to the table `UniqueU64`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait unique_u64QueryTableAccess {
+pub trait unique_u_64QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `UniqueU64`.
-    fn unique_u64(&self) -> __sdk::__query_builder::Table<UniqueU64>;
+    fn unique_u_64(&self) -> __sdk::__query_builder::Table<UniqueU64>;
 }
 
-impl unique_u64QueryTableAccess for __sdk::QueryTableAccessor {
-    fn unique_u64(&self) -> __sdk::__query_builder::Table<UniqueU64> {
-        __sdk::__query_builder::Table::new("unique_u64")
+impl unique_u_64QueryTableAccess for __sdk::QueryTableAccessor {
+    fn unique_u_64(&self) -> __sdk::__query_builder::Table<UniqueU64> {
+        __sdk::__query_builder::Table::new("unique_u_64")
     }
 }

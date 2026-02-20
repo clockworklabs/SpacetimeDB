@@ -5,6 +5,7 @@ slug: /functions/reducers/lifecycle
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Special reducers handle system events during the database lifecycle.
@@ -17,7 +18,7 @@ Runs once when the module is first published or when the database is cleared.
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.init((ctx) => {
+export const init = spacetimedb.init((ctx) => {
   console.log('Database initializing...');
   
   // Set up default data
@@ -72,6 +73,38 @@ pub fn init(ctx: &ReducerContext) -> Result<(), String> {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
+
+```cpp
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+struct Settings {
+    std::string key;
+    std::string value;
+};
+SPACETIMEDB_STRUCT(Settings, key, value);
+SPACETIMEDB_TABLE(Settings, settings, Private);
+FIELD_Unique(settings, key);
+
+SPACETIMEDB_INIT(init, ReducerContext ctx) {
+    LOG_INFO("Database initializing...");
+    
+    // Set up default data
+    if (ctx.db[settings].count() == 0) {
+        ctx.db[settings].insert(Settings{
+            "welcome_message",
+            "Hello, SpacetimeDB!"
+        });
+    }
+    
+    return Ok();
+}
+```
+
+</TabItem>
 </Tabs>
 
 The `init` reducer:
@@ -88,7 +121,7 @@ Runs when a client establishes a connection.
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.clientConnected((ctx) => {
+export const onConnect = spacetimedb.clientConnected((ctx) => {
   console.log(`Client connected: ${ctx.sender}`);
   
   // ctx.connectionId is guaranteed to be defined
@@ -148,6 +181,39 @@ pub fn on_connect(ctx: &ReducerContext) -> Result<(), String> {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+struct Session {
+    ConnectionId connection_id;
+    Identity identity;
+    Timestamp connected_at;
+};
+SPACETIMEDB_STRUCT(Session, connection_id, identity, connected_at);
+SPACETIMEDB_TABLE(Session, sessions, Private);
+FIELD_PrimaryKey(sessions, connection_id);
+
+SPACETIMEDB_CLIENT_CONNECTED(on_connect, ReducerContext ctx) {
+    LOG_INFO("Client connected: " + ctx.sender.to_string());
+    
+    // ctx.connection_id is guaranteed to be present
+    auto conn_id = ctx.connection_id.value();
+    
+    // Initialize client session
+    ctx.db[sessions].insert(Session{
+        conn_id,
+        ctx.sender,
+        ctx.timestamp
+    });
+    
+    return Ok();
+}
+```
+
+</TabItem>
 </Tabs>
 
 The `client_connected` reducer:
@@ -164,7 +230,7 @@ Runs when a client connection terminates.
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.clientDisconnected((ctx) => {
+export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
   console.log(`Client disconnected: ${ctx.sender}`);
   
   // ctx.connectionId is guaranteed to be defined
@@ -207,6 +273,35 @@ pub fn on_disconnect(ctx: &ReducerContext) -> Result<(), String> {
     ctx.db.sessions().connection_id().delete(&conn_id);
     
     Ok(())
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+struct Session {
+    ConnectionId connection_id;
+    Identity identity;
+    Timestamp connected_at;
+};
+SPACETIMEDB_STRUCT(Session, connection_id, identity, connected_at);
+SPACETIMEDB_TABLE(Session, sessions, Private);
+FIELD_PrimaryKey(sessions, connection_id);
+
+SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) {
+    LOG_INFO("Client disconnected: " + ctx.sender.to_string());
+    
+    // ctx.connection_id is guaranteed to be present
+    auto conn_id = ctx.connection_id.value();
+    
+    // Clean up client session
+    ctx.db[sessions_connection_id].delete_by_key(conn_id);
+    
+    return Ok();
 }
 ```
 

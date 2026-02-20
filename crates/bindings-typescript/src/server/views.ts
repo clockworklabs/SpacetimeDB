@@ -9,7 +9,6 @@ import type { Identity } from '../lib/identity';
 import type { OptionAlgebraicType } from '../lib/option';
 import type { ParamsObj } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
-import type { ReadonlyTable } from '../lib/table';
 import {
   RowBuilder,
   type Infer,
@@ -18,8 +17,60 @@ import {
   type TypeBuilder,
 } from '../lib/type_builders';
 import { bsatnBaseSize, toPascalCase } from '../lib/util';
+import type { ReadonlyDbView } from './db_view';
 import { type QueryBuilder, type RowTypedQuery } from './query';
-import type { SchemaInner } from './schema';
+import {
+  exportContext,
+  registerExport,
+  type ModuleExport,
+  type SchemaInner,
+} from './schema';
+
+export type ViewExport<ViewFn> = ViewFn & ModuleExport;
+
+export function makeViewExport<
+  S extends UntypedSchemaDef,
+  Params extends ParamsObj,
+  Ret extends ViewReturnTypeBuilder,
+  F extends ViewFn<S, Params, Ret>,
+>(
+  ctx: SchemaInner,
+  opts: ViewOpts,
+  params: Params,
+  ret: Ret,
+  fn: F
+): ViewExport<F> {
+  const viewExport =
+    // @ts-expect-error typescript incorrectly says Function#bind requires an argument.
+    fn.bind() as ViewExport<F>;
+  viewExport[exportContext] = ctx;
+  viewExport[registerExport] = (ctx, exportName) => {
+    registerView(ctx, opts, exportName, false, params, ret, fn);
+  };
+  return viewExport;
+}
+
+export function makeAnonViewExport<
+  S extends UntypedSchemaDef,
+  Params extends ParamsObj,
+  Ret extends ViewReturnTypeBuilder,
+  F extends AnonymousViewFn<S, Params, Ret>,
+>(
+  ctx: SchemaInner,
+  opts: ViewOpts,
+  params: Params,
+  ret: Ret,
+  fn: F
+): ViewExport<F> {
+  const viewExport =
+    // @ts-expect-error typescript incorrectly says Function#bind requires an argument.
+    fn.bind() as ViewExport<F>;
+  viewExport[exportContext] = ctx;
+  viewExport[registerExport] = (ctx, exportName) => {
+    registerView(ctx, opts, exportName, true, params, ret, fn);
+  };
+  return viewExport;
+}
 
 export type ViewCtx<S extends UntypedSchemaDef> = Readonly<{
   sender: Identity;
@@ -32,12 +83,8 @@ export type AnonymousViewCtx<S extends UntypedSchemaDef> = Readonly<{
   from: QueryBuilder<S>;
 }>;
 
-export type ReadonlyDbView<SchemaDef extends UntypedSchemaDef> = {
-  readonly [Tbl in SchemaDef['tables'][number] as Tbl['name']]: ReadonlyTable<Tbl>;
-};
-
 export type ViewOpts = {
-  name: string;
+  name?: string;
   public: true;
 };
 
@@ -80,7 +127,7 @@ export type ViewReturnTypeBuilder =
       OptionAlgebraicType<AlgebraicTypeVariants.Product>
     >;
 
-export function defineView<
+export function registerView<
   S extends UntypedSchemaDef,
   const Anonymous extends boolean,
   Params extends ParamsObj,
@@ -88,6 +135,7 @@ export function defineView<
 >(
   ctx: SchemaInner,
   opts: ViewOpts,
+  exportName: string,
   anon: Anonymous,
   params: Params,
   ret: Ret,
@@ -95,7 +143,7 @@ export function defineView<
     ? AnonymousViewFn<S, Params, Ret>
     : ViewFn<S, Params, Ret>
 ) {
-  const paramsBuilder = new RowBuilder(params, toPascalCase(opts.name));
+  const paramsBuilder = new RowBuilder(params, toPascalCase(exportName));
 
   // Register return types if they are product types
   let returnType = ctx.registerTypesRecursively(ret).algebraicType;
@@ -106,17 +154,24 @@ export function defineView<
     ctx.registerTypesRecursively(paramsBuilder)
   );
 
-  ctx.moduleDef.miscExports.push({
-    tag: 'View',
-    value: {
-      name: opts.name,
-      index: (anon ? ctx.anonViews : ctx.views).length,
-      isPublic: opts.public,
-      isAnonymous: anon,
-      params: paramType,
-      returnType,
-    },
+  ctx.moduleDef.views.push({
+    sourceName: exportName,
+    index: (anon ? ctx.anonViews : ctx.views).length,
+    isPublic: opts.public,
+    isAnonymous: anon,
+    params: paramType,
+    returnType,
   });
+
+  if (opts.name != null) {
+    ctx.moduleDef.explicitNames.entries.push({
+      tag: 'Function',
+      value: {
+        sourceName: exportName,
+        canonicalName: opts.name,
+      },
+    });
+  }
 
   // If it is an option, we wrap the function to make the return look like an array.
   if (returnType.tag == 'Sum') {

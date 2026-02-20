@@ -16,7 +16,7 @@ DbConnection ConnectToDB()
     DbConnection? conn = null;
     conn = DbConnection.Builder()
         .WithUri(HOST)
-        .WithModuleName(DBNAME)
+        .WithDatabaseName(DBNAME)
         .OnConnect(OnConnected)
         .OnConnectError((err) =>
         {

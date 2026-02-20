@@ -1,9 +1,15 @@
+import type { ProcedureExport, ReducerExport, t } from '../server';
 import type { errors } from '../server/errors';
-import type RawConstraintDefV9 from './autogen/raw_constraint_def_v_9_type';
-import RawIndexAlgorithm from './autogen/raw_index_algorithm_type';
-import type RawIndexDefV9 from './autogen/raw_index_def_v_9_type';
-import type RawSequenceDefV9 from './autogen/raw_sequence_def_v_9_type';
-import type RawTableDefV9 from './autogen/raw_table_def_v_9_type';
+import {
+  ExplicitNameEntry,
+  RawColumnDefaultValueV10,
+  RawConstraintDefV10,
+  RawIndexAlgorithm,
+  RawIndexDefV10,
+  RawSequenceDefV10,
+  RawTableDefV10,
+} from './autogen/types';
+import BinaryWriter from './binary_writer';
 import type { AllUnique, ConstraintOpts } from './constraints';
 import type {
   ColumnIndex,
@@ -13,13 +19,11 @@ import type {
   ReadonlyIndexes,
 } from './indexes';
 import ScheduleAt from './schedule_at';
-import type { ModuleContext } from './schema';
 import type { TableSchema } from './table_schema';
 import {
   RowBuilder,
   type ColumnBuilder,
   type ColumnMetadata,
-  type Infer,
   type InferTypeOfRow,
   type RowObj,
   type TypeBuilder,
@@ -38,15 +42,20 @@ type ColList = ColId[];
 /**
  * Check if any column in the row has invalid metadata.
  */
-type HasInvalidColumn<Row extends RowObj> = {
-  [K in keyof Row]: Row[K] extends ColumnBuilder<any, any, infer M>
-    ? ValidateColumnMetadata<M> extends InvalidColumnMetadata<any>
-      ? true
-      : false
-    : false;
-}[keyof Row] extends false
-  ? false
-  : true;
+type HasInvalidColumn<Row extends RowObj> =
+  // this checks if Row exactly equals RowObj - if it does, we can't
+  // do type-system-level checking, so just let it pass
+  (<G>() => G extends Row ? 1 : 2) extends <G>() => G extends RowObj ? 1 : 2
+    ? false
+    : {
+          [K in keyof Row]: Row[K] extends ColumnBuilder<any, any, infer M>
+            ? ValidateColumnMetadata<M> extends InvalidColumnMetadata<any>
+              ? true
+              : false
+            : false;
+        }[keyof Row] extends false
+      ? false
+      : true;
 
 /**
  * Extract the names of columns that have invalid metadata.
@@ -102,13 +111,15 @@ type CoerceArray<X extends IndexOpts<any>[]> = X;
  * An untyped representation of a table's schema.
  */
 export type UntypedTableDef = {
-  name: string;
+  sourceName: string;
   accessorName: string;
   columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
   // This is really just a ProductType where all the elements have names.
   rowType: RowBuilder<RowObj>['algebraicType']['value'];
   indexes: readonly IndexOpts<any>[];
   constraints: readonly ConstraintOpts<any>[];
+  tableDef: RawTableDefV10;
+  isEvent?: boolean;
 };
 
 /**
@@ -122,7 +133,7 @@ export type TableIndexes<TableDef extends UntypedTableDef> = {
     ? never
     : K]: ColumnIndex<K, TableDef['columns'][K]['columnMetadata']>;
 } & {
-  [I in TableDef['indexes'][number] as I['name'] & {}]: TableIndexFromDef<
+  [I in TableDef['indexes'][number] as I['accessor'] & {}]: TableIndexFromDef<
     TableDef,
     I
   >;
@@ -136,7 +147,7 @@ type TableIndexFromDef<
     keyof TableDef['columns'] & string
   >
     ? {
-        name: I['name'];
+        name: I['accessor'];
         unique: AllUnique<TableDef, Cols>;
         algorithm: Lowercase<I['algorithm']>;
         columns: Cols;
@@ -160,11 +171,18 @@ type NormalizeIndexColumns<
  * - `scheduled`: The name of the reducer to be executed based on the scheduled rows in this table.
  */
 export type TableOpts<Row extends RowObj> = {
-  name: string;
+  name?: string;
   public?: boolean;
   indexes?: IndexOpts<keyof Row & string>[]; // declarative multi‑column indexes
   constraints?: ConstraintOpts<keyof Row & string>[];
-  scheduled?: string;
+  scheduled?: () =>
+    | ReducerExport<any, { [k: string]: RowBuilder<RowObj> }>
+    | ProcedureExport<
+        any,
+        { [k: string]: RowBuilder<RowObj> },
+        ReturnType<typeof t.unit>
+      >;
+  event?: boolean;
 };
 
 /**
@@ -281,12 +299,13 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         >,
       ]
     : []
-): TableSchema<Opts['name'], CoerceRow<Row>, OptsIndices<Opts>> {
+): TableSchema<CoerceRow<Row>, OptsIndices<Opts>> {
   const {
     name,
     public: isPublic = false,
     indexes: userIndexes = [],
     scheduled,
+    event: isEvent = false,
   } = opts;
 
   // 1. column catalogue + helpers
@@ -297,10 +316,6 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     row = new RowBuilder(row);
   }
 
-  if (row.typeName === undefined) {
-    row.typeName = toPascalCase(name);
-  }
-
   row.algebraicType.value.elements.forEach((elem, i) => {
     colIds.set(elem.name, i);
     colNameList.push(elem.name);
@@ -308,11 +323,12 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
   // gather primary keys, per‑column indexes, uniques, sequences
   const pk: ColList = [];
-  const indexes: Infer<typeof RawIndexDefV9>[] = [];
-  const constraints: Infer<typeof RawConstraintDefV9>[] = [];
-  const sequences: Infer<typeof RawSequenceDefV9>[] = [];
+  const indexes: (RawIndexDefV10 & { canonicalName?: string })[] = [];
+  const constraints: RawConstraintDefV10[] = [];
+  const sequences: RawSequenceDefV10[] = [];
 
   let scheduleAtCol: ColId | undefined;
+  const defaultValues: RawColumnDefaultValueV10[] = [];
 
   for (const [name, builder] of Object.entries(row.row)) {
     const meta: ColumnMetadata<any> = builder.columnMetadata;
@@ -327,37 +343,49 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     if (meta.indexType || isUnique) {
       const algo = meta.indexType ?? 'btree';
       const id = colIds.get(name)!;
-      let algorithm: Infer<typeof RawIndexAlgorithm>;
+      let algorithm: RawIndexAlgorithm;
       switch (algo) {
         case 'btree':
           algorithm = RawIndexAlgorithm.BTree([id]);
+          break;
+        case 'hash':
+          algorithm = RawIndexAlgorithm.Hash([id]);
           break;
         case 'direct':
           algorithm = RawIndexAlgorithm.Direct(id);
           break;
       }
       indexes.push({
-        name: undefined, // Unnamed indexes will be assigned a globally unique name
-        accessorName: name, // The name of this column will be used as the accessor name
+        sourceName: undefined, // Unnamed indexes will be assigned a globally unique name
+        accessorName: name,
         algorithm,
       });
     }
 
     if (isUnique) {
       constraints.push({
-        name: undefined,
+        sourceName: undefined,
         data: { tag: 'Unique', value: { columns: [colIds.get(name)!] } },
       });
     }
 
     if (meta.isAutoIncrement) {
       sequences.push({
-        name: undefined,
+        sourceName: undefined,
         start: undefined,
         minValue: undefined,
         maxValue: undefined,
         column: colIds.get(name)!,
         increment: 1n,
+      });
+    }
+
+    if (meta.defaultValue) {
+      const writer = new BinaryWriter(16);
+      builder.serialize(writer, meta.defaultValue);
+      defaultValues.push({
+        colId: colIds.get(name)!,
+        value: writer.getBuffer(),
       });
     }
 
@@ -372,11 +400,17 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
   // convert explicit multi‑column indexes coming from options.indexes
   for (const indexOpts of userIndexes ?? []) {
-    let algorithm: Infer<typeof RawIndexAlgorithm>;
+    let algorithm: RawIndexAlgorithm;
     switch (indexOpts.algorithm) {
       case 'btree':
         algorithm = {
           tag: 'BTree',
+          value: indexOpts.columns.map(c => colIds.get(c)!),
+        };
+        break;
+      case 'hash':
+        algorithm = {
+          tag: 'Hash',
           value: indexOpts.columns.map(c => colIds.get(c)!),
         };
         break;
@@ -391,62 +425,79 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     // no actual way for the user to set the actual index name.
     // I think we should standardize: name and accessorName as the way to set
     // the name and accessor name of an index across all SDKs.
-    indexes.push({ name: undefined, accessorName: indexOpts.name, algorithm });
+    indexes.push({
+      sourceName: undefined,
+      accessorName: indexOpts.accessor,
+      algorithm,
+      canonicalName: indexOpts.name,
+    });
   }
 
   // add explicit constraints from options.constraints
   for (const constraintOpts of opts.constraints ?? []) {
     if (constraintOpts.constraint === 'unique') {
-      const data: Infer<typeof RawConstraintDefV9>['data'] = {
+      const data: RawConstraintDefV10['data'] = {
         tag: 'Unique',
         value: { columns: constraintOpts.columns.map(c => colIds.get(c)!) },
       };
-      constraints.push({ name: constraintOpts.name, data });
+      constraints.push({ sourceName: constraintOpts.name, data });
       continue;
     }
   }
-
-  for (const index of indexes) {
-    const cols =
-      index.algorithm.tag === 'Direct'
-        ? [index.algorithm.value]
-        : index.algorithm.value;
-    const colS = cols.map(i => colNameList[i]).join('_');
-    index.name = `${name}_${colS}_idx_${index.algorithm.tag.toLowerCase()}`;
-  }
-
-  // Temporarily set the type ref to 0. We will set this later
-  // in the schema function.
-
-  const tableDef = (ctx: ModuleContext): Infer<typeof RawTableDefV9> => ({
-    name,
-    productTypeRef: ctx.registerTypesRecursively(row).ref,
-    primaryKey: pk,
-    indexes,
-    constraints,
-    sequences,
-    schedule:
-      scheduled && scheduleAtCol !== undefined
-        ? {
-            name: undefined,
-            reducerName: scheduled,
-            scheduledAtColumn: scheduleAtCol,
-          }
-        : undefined,
-    tableType: { tag: 'User' },
-    tableAccess: { tag: isPublic ? 'Public' : 'Private' },
-  });
 
   const productType = row.algebraicType.value as RowBuilder<
     CoerceRow<Row>
   >['algebraicType']['value'];
 
+  const schedule =
+    scheduled && scheduleAtCol !== undefined
+      ? { scheduleAtCol, reducer: scheduled }
+      : undefined;
+
   return {
     rowType: row as RowBuilder<CoerceRow<Row>>,
     tableName: name,
     rowSpacetimeType: productType,
-    tableDef,
+    tableDef: (ctx, accName) => {
+      const tableName = name ?? accName;
+      if (row.typeName === undefined) {
+        row.typeName = toPascalCase(tableName);
+      }
+
+      // Build index source names using accName
+      for (const index of indexes) {
+        const cols =
+          index.algorithm.tag === 'Direct'
+            ? [index.algorithm.value]
+            : index.algorithm.value;
+
+        const colS = cols.map(i => colNameList[i]).join('_');
+        const sourceName =
+          (index.sourceName = `${accName}_${colS}_idx_${index.algorithm.tag.toLowerCase()}`);
+
+        const { canonicalName } = index;
+        if (canonicalName !== undefined) {
+          ctx.moduleDef.explicitNames.entries.push(
+            ExplicitNameEntry.Index({ sourceName, canonicalName })
+          );
+        }
+      }
+
+      return {
+        sourceName: accName,
+        productTypeRef: ctx.registerTypesRecursively(row).ref,
+        primaryKey: pk,
+        indexes,
+        constraints,
+        sequences,
+        tableType: { tag: 'User' },
+        tableAccess: { tag: isPublic ? 'Public' : 'Private' },
+        defaultValues,
+        isEvent,
+      };
+    },
     idxs: {} as OptsIndices<Opts>,
     constraints: constraints as OptsConstraints<Opts>,
+    schedule,
   };
 }

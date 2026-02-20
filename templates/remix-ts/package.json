@@ -1,0 +1,31 @@
+{
+  "name": "@clockworklabs/remix-ts",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "npx remix vite:dev",
+    "build": "npx remix vite:build",
+    "start": "npx remix-serve ./build/server/index.js",
+    "generate": "pnpm --dir spacetimedb install && cargo run -p gen-bindings -- --out-dir src/module_bindings --module-path spacetimedb && prettier --write src/module_bindings",
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb",
+    "spacetime:publish:local": "spacetime publish --module-path spacetimedb --server local",
+    "spacetime:publish": "spacetime publish --module-path spacetimedb --server maincloud"
+  },
+  "dependencies": {
+    "@remix-run/node": "^2.16.0",
+    "@remix-run/react": "^2.16.0",
+    "@remix-run/serve": "^2.16.0",
+    "isbot": "^5.1.17",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "spacetimedb": "workspace:*"
+  },
+  "devDependencies": {
+    "@remix-run/dev": "^2.16.0",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "typescript": "~5.6.2",
+    "vite": "^5.4.0"
+  }
+}

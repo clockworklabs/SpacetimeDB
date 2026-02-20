@@ -5,6 +5,7 @@ slug: /databases/developing
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 # `spacetime dev`
 
@@ -67,6 +68,7 @@ Choose from several built-in templates:
 - `basic-ts` - Basic TypeScript client and server stubs
 - `basic-cs` - Basic C# client and server stubs
 - `basic-rs` - Basic Rust client and server stubs
+- `basic-cpp` - Basic C++ server stubs
 - `react-ts` - React web app with TypeScript server
 - `chat-console-rs` - Complete Rust chat implementation
 - `chat-console-cs` - Complete C# chat implementation
@@ -81,6 +83,7 @@ Creates a server module only, without any client code. You'll choose your server
 - **TypeScript** - Server module in TypeScript
 - **Rust** - Server module in Rust
 - **C#** - Server module in C#
+- **C++** - Server module in C++
 
 The server code will be created in a `spacetimedb/` subdirectory within your project.
 
@@ -93,8 +96,29 @@ After completing setup, `spacetime dev`:
 - Builds and publishes your module to the database
 - Watches your source files for changes
 - Automatically rebuilds and republishes when you save changes
+- **Runs your client development server** (if configured)
 
 Your database will be available at `https://maincloud.spacetimedb.com`.
+
+### Client Development Server
+
+`spacetime dev` can automatically run your client's development server alongside the SpacetimeDB module. This is configured via the `spacetime.json` file in your project root:
+
+```json
+{
+  "dev": {
+    "run": "npm run dev"
+  }
+}
+```
+
+The client command can be:
+- Auto-detected from your project (package.json, Cargo.toml, .csproj)
+- Configured in `spacetime.json`
+- Overridden via CLI flag: `spacetime dev --run "yarn dev"`
+- Disabled with: `spacetime dev --server-only`
+
+When you run `spacetime init` with a client template, a default client command is automatically configured in `spacetime.json` based on your project type.
 
 ### Project Structure
 
@@ -114,6 +138,7 @@ my-project/
 │   └── module_bindings/    # Generated client bindings
 ├── package.json
 ├── tsconfig.json
+├── spacetime.json          # SpacetimeDB configuration
 └── README.md
 ```
 
@@ -128,6 +153,7 @@ my-project/
 ├── module_bindings/        # Generated client bindings
 ├── client.csproj
 ├── Program.cs
+├── spacetime.json          # SpacetimeDB configuration
 └── README.md
 ```
 
@@ -143,7 +169,22 @@ my-project/
 ├── src/                    # Client code
 │   └── module_bindings/    # Generated client bindings
 ├── Cargo.toml
+├── spacetime.json          # SpacetimeDB configuration
 ├── .gitignore
+└── README.md
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
+
+```text
+my-project/
+├── spacetimedb/            # Server module code (C++)
+│   ├── CMakeLists.txt
+│   └── src/
+│       └── lib.cpp
 └── README.md
 ```
 
@@ -196,6 +237,20 @@ This creates a new Rust project with:
 
 - A `Cargo.toml` configured for SpacetimeDB
 - A `src/lib.rs` with a sample module
+- Sample table and reducer definitions
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```bash
+spacetime init --lang cpp --project-path ./my-project my-project
+cd my-project
+```
+
+This creates a new C++ project with:
+
+- A `CMakeLists.txt` configured for SpacetimeDB
+- A `src/lib.cpp` with a sample module
 - Sample table and reducer definitions
 
 </TabItem>

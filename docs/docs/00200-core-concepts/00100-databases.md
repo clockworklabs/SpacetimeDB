@@ -3,11 +3,12 @@ title: The Database Module
 slug: /databases
 ---
 
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-A **module** is a collection of functions and schema definitions, which can be written in TypeScript, C# or Rust. Modules define the structure of your database and the server-side logic that processes and handles client requests.
+A **module** is a collection of functions and schema definitions, which can be written in TypeScript, C#, Rust, or C++. Modules define the structure of your database and the server-side logic that processes and handles client requests.
 
 A **database** is a running instance of a module. While a module is the code you write (schema and reducers), a database is the actual deployed entity running on a SpacetimeDB **host** with stored data and active connections.
 
@@ -15,7 +16,7 @@ A **database** is a running instance of a module. While a module is the code you
 
 Understanding this distinction is important:
 
-- A **module** is the code you write; it defines your schema (tables) and business logic (reducers, procedures, and views). Modules are compiled and deployed to SpacetimeDB. Rust and C# modules compile to WebAssembly, while TypeScript modules run on V8.
+- A **module** is the code you write; it defines your schema (tables) and business logic (reducers, procedures, and views). Modules are compiled and deployed to SpacetimeDB. Rust, C#, and C++ modules compile to WebAssembly, while TypeScript modules run on V8.
 - A **database** is a *running instance* of a module; it has the module's schema and logic, plus actual stored data.
 
 You can deploy the same module to multiple databases (e.g. separate environments for testing, staging, production), each with its own independent data. When you update your module code and re-publish, SpacetimeDB will update the database's schema/logic — the existing data remains (though for complicated schema changes you may need to handle migrations carefully).
@@ -58,6 +59,15 @@ Rust is fully supported for server modules. Rust is a great choice for performan
 - [Rust Quickstart Guide](/quickstarts/rust)
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
+
+C++ is fully supported for server modules. C++ is an excellent choice for developers working with Unreal Engine or those who prefer to stay in the C++ ecosystem.
+
+- [C++ Quickstart Guide](/quickstarts/c-plus-plus)
+
+</TabItem>
 </Tabs>
 
 ## Database Names
@@ -88,6 +98,7 @@ See [`spacetime publish`](/databases/building-publishing) for details on the pub
 
 When you republish to an existing database, SpacetimeDB attempts to automatically migrate the schema. For details on what changes are supported and migration strategies:
 
+- [1.x to 2.0 Upgrade Notes](/upgrade) - Required reading before major-version upgrades.
 - [Automatic Migrations](/databases/automatic-migrations) - Learn which schema changes are safe, breaking, or forbidden.
 - [Incremental Migrations](/databases/incremental-migrations) - Advanced pattern for complex schema changes.
 
@@ -199,7 +210,7 @@ If you're new to SpacetimeDB, follow this recommended learning path:
 2. **[Build and Publish](/databases/building-publishing)** - Learn how to compile and deploy your module
 3. **[Define Tables](/tables)** - Structure your data with tables, columns, and indexes
 4. **[Write Reducers](/functions/reducers)** - Create transactional functions that modify your database
-5. **[Connect a Client](/sdks)** - Build a client application that connects to your database
+5. **[Connect a Client](/clients)** - Build a client application that connects to your database
 
 ### Core Concepts
 
@@ -231,5 +242,5 @@ When you're ready to go live:
 
 - Learn about [Tables](/tables) to define your database schema
 - Create [Reducers](/functions/reducers) to modify database state
-- Understand [Subscriptions](/subscriptions) for real-time data sync
+- Understand [Subscriptions](/clients/subscriptions) for real-time data sync
 - Review the [CLI Reference](/cli-reference) for all available commands

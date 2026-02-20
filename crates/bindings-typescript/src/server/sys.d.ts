@@ -6,8 +6,17 @@ declare module 'spacetime:sys@2.0' {
   export type u128 = bigint;
   export type u256 = bigint;
 
-  export type ModuleHooks = {
+  export const moduleHooks: unique symbol;
+
+  interface ModuleDefaultExport {
+    [moduleHooks](exports: object): ModuleHooks;
+  }
+
+  export interface ModuleHooks {
     __describe_module__(): Uint8Array;
+
+    __get_error_constructor__(code: number): new (msg: string) => Error;
+    __sender_error_class__: new (msg: string) => Error;
 
     __call_reducer__(
       reducerId: u32,
@@ -15,7 +24,7 @@ declare module 'spacetime:sys@2.0' {
       connId: u128,
       timestamp: bigint,
       argsBuf: DataView
-    ): undefined | { tag: 'ok' } | { tag: 'err'; value: string };
+    ): void;
 
     __call_view__(id: u32, sender: u256, args: Uint8Array): Uint8Array | object;
 
@@ -28,7 +37,7 @@ declare module 'spacetime:sys@2.0' {
       timestamp: bigint,
       args: Uint8Array
     ): Uint8Array;
-  };
+  }
 
   export function register_hooks(hooks: ModuleHooks);
 

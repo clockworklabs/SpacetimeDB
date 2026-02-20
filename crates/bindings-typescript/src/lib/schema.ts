@@ -5,8 +5,12 @@ import {
   type AlgebraicTypeType,
   type AlgebraicTypeVariants,
 } from './algebraic_type';
-import type RawModuleDefV9 from './autogen/raw_module_def_v_9_type';
-import type RawScopedTypeNameV9 from './autogen/raw_scoped_type_name_v_9_type';
+import type {
+  RawModuleDefV10,
+  RawModuleDefV10Section,
+  RawScopedTypeNameV10,
+  RawTableDefV10,
+} from './autogen/types';
 import type { UntypedIndex } from './indexes';
 import type { UntypedTableDef } from './table';
 import type { UntypedTableSchema } from './table_schema';
@@ -26,66 +30,72 @@ import {
   type RowObj,
   type VariantsObj,
 } from './type_builders';
-import type { CamelCase } from './type_util';
-import { toCamelCase } from './util';
+import type { Values } from './type_util';
 
-export type TableNamesOf<S extends UntypedSchemaDef> =
-  S['tables'][number]['name'];
+export type TableNamesOf<S extends UntypedSchemaDef> = Values<
+  S['tables']
+>['accessorName'];
 
 /**
  * An untyped representation of the database schema.
  */
 export type UntypedSchemaDef = {
-  tables: readonly UntypedTableDef[];
+  tables: Record<string, UntypedTableDef>;
 };
 
 /**
  * Helper type to convert an array of TableSchema into a schema definition
  */
-export interface TablesToSchema<T extends readonly UntypedTableSchema[]>
+export interface TablesToSchema<T extends Record<string, UntypedTableSchema>>
   extends UntypedSchemaDef {
   tables: {
-    readonly [i in keyof T]: TableToSchema<T[i]>;
+    readonly [AccName in keyof T & string]: TableToSchema<AccName, T[AccName]>;
   };
 }
 
-export interface TableToSchema<T extends UntypedTableSchema>
-  extends UntypedTableDef {
-  name: T['tableName'];
-  accessorName: CamelCase<T['tableName']>;
+export interface TableToSchema<
+  AccName extends string,
+  T extends UntypedTableSchema,
+> extends UntypedTableDef {
+  accessorName: AccName;
   columns: T['rowType']['row'];
   rowType: T['rowSpacetimeType'];
   indexes: T['idxs'];
   constraints: T['constraints'];
 }
 
-export function tablesToSchema<const T extends readonly UntypedTableSchema[]>(
-  ctx: ModuleContext,
-  tables: T
-): TablesToSchema<T> {
+export function tablesToSchema<
+  const T extends Record<string, UntypedTableSchema>,
+>(ctx: ModuleContext, tables: T): TablesToSchema<T> {
   return {
-    tables: tables.map(schema =>
-      tableToSchema(ctx, schema)
+    tables: Object.fromEntries(
+      Object.entries(tables).map(([accName, schema]) => [
+        accName,
+        tableToSchema(accName, schema, schema.tableDef(ctx, accName)),
+      ])
     ) as TablesToSchema<T>['tables'],
   };
 }
 
-function tableToSchema<T extends UntypedTableSchema>(
-  ctx: ModuleContext,
-  schema: T
-): TableToSchema<T> {
+export function tableToSchema<
+  AccName extends string,
+  const T extends UntypedTableSchema,
+>(
+  accName: AccName,
+  schema: T,
+  tableDef: RawTableDefV10
+): TableToSchema<AccName, T> {
   const getColName = (i: number) =>
     schema.rowType.algebraicType.value.elements[i].name;
-  const tableDef = schema.tableDef(ctx);
 
   type AllowedCol = keyof T['rowType']['row'] & string;
   return {
-    name: schema.tableName,
-    accessorName: toCamelCase(schema.tableName as T['tableName']),
+    sourceName: accName,
+    accessorName: accName,
     columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
     rowType: schema.rowSpacetimeType,
     constraints: tableDef.constraints.map(c => ({
-      name: c.name,
+      name: c.sourceName,
       constraint: 'unique',
       columns: c.data.value.columns.map(getColName) as [string],
     })),
@@ -107,6 +117,8 @@ function tableToSchema<T extends UntypedTableSchema>(
         columns: columnIds.map(getColName),
       };
     }) as T['idxs'],
+    tableDef,
+    ...(tableDef.isEvent ? { isEvent: true } : {}),
   };
 }
 
@@ -115,10 +127,15 @@ type CompoundTypeCache = Map<
   RefBuilder<any, any>
 >;
 
-type ModuleDef = Infer<typeof RawModuleDefV9>;
+export type ModuleDef = {
+  [S in RawModuleDefV10Section as Uncapitalize<S['tag']>]: S['value'];
+};
+
+type Section = RawModuleDefV10Section;
 
 export class ModuleContext {
   #compoundTypes: CompoundTypeCache = new Map();
+
   /**
    * The global module definition that gets populated by calls to `reducer()` and lifecycle hooks.
    */
@@ -127,12 +144,56 @@ export class ModuleContext {
     tables: [],
     reducers: [],
     types: [],
-    miscExports: [],
     rowLevelSecurity: [],
+    schedules: [],
+    procedures: [],
+    views: [],
+    lifeCycleReducers: [],
+    caseConversionPolicy: { tag: 'SnakeCase' },
+    explicitNames: {
+      entries: [],
+    },
   };
 
-  get moduleDef() {
+  get moduleDef(): ModuleDef {
     return this.#moduleDef;
+  }
+
+  rawModuleDefV10(): RawModuleDefV10 {
+    const sections: Section[] = [];
+
+    const push = <T extends Section>(s: T | undefined) => {
+      if (s) sections.push(s);
+    };
+
+    const module = this.#moduleDef;
+
+    push(module.typespace && { tag: 'Typespace', value: module.typespace });
+    push(module.types && { tag: 'Types', value: module.types });
+    push(module.tables && { tag: 'Tables', value: module.tables });
+    push(module.reducers && { tag: 'Reducers', value: module.reducers });
+    push(module.procedures && { tag: 'Procedures', value: module.procedures });
+    push(module.views && { tag: 'Views', value: module.views });
+    push(module.schedules && { tag: 'Schedules', value: module.schedules });
+    push(
+      module.lifeCycleReducers && {
+        tag: 'LifeCycleReducers',
+        value: module.lifeCycleReducers,
+      }
+    );
+    push(
+      module.rowLevelSecurity && {
+        tag: 'RowLevelSecurity',
+        value: module.rowLevelSecurity,
+      }
+    );
+    push(
+      module.explicitNames && {
+        tag: 'ExplicitNames',
+        value: module.explicitNames,
+      }
+    );
+    return { sections };
   }
 
   get typespace() {
@@ -256,7 +317,7 @@ export class ModuleContext {
     }
 
     this.#moduleDef.types.push({
-      name: splitName(name),
+      sourceName: splitName(name),
       ty: r.ref,
       customOrdering: true,
     });
@@ -272,7 +333,7 @@ function isUnit(typeBuilder: ProductBuilder<ElementsObj>): boolean {
   );
 }
 
-export function splitName(name: string): Infer<typeof RawScopedTypeNameV9> {
+export function splitName(name: string): RawScopedTypeNameV10 {
   const scope = name.split('.');
-  return { name: scope.pop()!, scope };
+  return { sourceName: scope.pop()!, scope };
 }

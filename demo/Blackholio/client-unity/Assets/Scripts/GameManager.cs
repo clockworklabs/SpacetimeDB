@@ -27,11 +27,14 @@ public class GameManager : MonoBehaviour
     public static Dictionary<int, EntityController> Entities = new Dictionary<int, EntityController>();
     public static Dictionary<int, PlayerController> Players = new Dictionary<int, PlayerController>();
 
+    private static HashSet<int> _pendingConsumeAnimations = new();
+
     private void Start()
     {
         // Clear game state in case we've disconnected and reconnected
         Entities.Clear();
         Players.Clear();
+        _pendingConsumeAnimations.Clear();
         Instance = this;
         Application.targetFrameRate = 60;
 
@@ -42,7 +45,7 @@ public class GameManager : MonoBehaviour
             .OnConnectError(HandleConnectError)
             .OnDisconnect(HandleDisconnect)
             .WithUri(SERVER_URL)
-            .WithModuleName(MODULE_NAME);
+            .WithDatabaseName(MODULE_NAME);
 
         // If the user has a SpacetimeDB auth token stored in the Unity PlayerPrefs,
         // we can use it to authenticate the connection.
@@ -75,6 +78,7 @@ public class GameManager : MonoBehaviour
         conn.Db.Food.OnInsert += FoodOnInsert;
         conn.Db.Player.OnInsert += PlayerOnInsert;
         conn.Db.Player.OnDelete += PlayerOnDelete;
+        conn.Db.ConsumeEntityEvent.OnInsert += ConsumeEntityEventOnInsert;
 
         OnConnected?.Invoke();
 
@@ -190,7 +194,22 @@ public class GameManager : MonoBehaviour
     {
         if (Entities.Remove(oldEntity.EntityId, out var entityController))
         {
+            if (_pendingConsumeAnimations.Remove(oldEntity.EntityId))
+            {
+                // Already being animated by ConsumeEntityEventOnInsert — don't destroy yet
+                return;
+            }
             entityController.OnDelete(context);
+        }
+    }
+
+    private static void ConsumeEntityEventOnInsert(EventContext context, ConsumeEntityEvent evt)
+    {
+        if (Entities.TryGetValue(evt.ConsumedEntityId, out var consumedEntity) &&
+            Entities.TryGetValue(evt.ConsumerEntityId, out var consumerEntity))
+        {
+            _pendingConsumeAnimations.Add(evt.ConsumedEntityId);
+            consumedEntity.StartCoroutine(consumedEntity.DespawnCoroutine(consumerEntity.transform));
         }
     }
 

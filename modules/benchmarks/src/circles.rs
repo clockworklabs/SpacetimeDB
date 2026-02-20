@@ -11,7 +11,7 @@ pub struct Vector2 {
 
 // ---------- schemas ----------
 
-#[spacetimedb::table(name = entity)]
+#[spacetimedb::table(accessor = entity)]
 pub struct Entity {
     #[auto_inc]
     #[primary_key]
@@ -30,7 +30,7 @@ impl Entity {
     }
 }
 
-#[spacetimedb::table(name = circle)]
+#[spacetimedb::table(accessor = circle)]
 pub struct Circle {
     #[primary_key]
     pub entity_id: u32,
@@ -53,7 +53,7 @@ impl Circle {
     }
 }
 
-#[spacetimedb::table(name = food)]
+#[spacetimedb::table(accessor = food)]
 pub struct Food {
     #[primary_key]
     pub entity_id: u32,
