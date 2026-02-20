@@ -8,11 +8,11 @@ export default function DocVersionBannerWrapper(
 ): JSX.Element {
   const version = useDocsVersion();
 
-  if (version.version === 'v1') {
+  if (version.version === '1.12.0') {
     return (
       <div className="alert alert--warning margin-bottom--md" role="alert">
         Using stable v1 docs. Want the latest features? Try the{' '}
-        <Link to="/prerelease">Prerelease docs</Link>.
+        <Link to="/2.0.0-prerelease">Prerelease docs</Link>.
       </div>
     );
   }

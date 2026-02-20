@@ -104,15 +104,15 @@ const config: Config = {
           sidebarPath: './sidebars.ts',
           sidebarCollapsed: false,
           includeCurrentVersion: true,
+          lastVersion: '1.12.0',
           versions: {
             current: {
-              label: 'Prerelease',
-              path: 'prerelease',
+              label: '2.0.0-prerelease',
+              path: '2.0.0-prerelease',
               banner: 'unreleased',
             },
-            v1: {
-              label: 'v1',
-              path: 'v1',
+            '1.12.0': {
+              label: '1.12.0',
               banner: 'none',
             },
           },
