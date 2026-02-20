@@ -18,6 +18,7 @@ use colored::Colorize;
 use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect, Input};
 use futures::stream::{self, StreamExt};
 use futures::{AsyncBufReadExt, TryStreamExt};
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use indicatif::{ProgressBar, ProgressStyle};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use regex::Regex;
@@ -386,6 +387,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 template: args.get_one::<String>("template").cloned(),
                 project_name_default: database_name_from_cli_for_init.clone(),
                 database_name_default: database_name_from_cli_for_init.clone(),
+                skip_next_steps: true,
                 ..Default::default()
             };
             let created_project_path = init::exec_with_options(&mut config, &init_options).await?;
@@ -395,7 +397,25 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 .context("Failed to canonicalize created project path")?;
             spacetimedb_dir = canonical_created_path.join("spacetimedb");
             module_bindings_dir = canonical_created_path.join(module_bindings_path);
-            project_dir = canonical_created_path;
+            project_dir = canonical_created_path.clone();
+
+            // If the project was created in a subdirectory, hint the user to cd into it
+            // and show useful CLI commands they can run from there.
+            let current_dir = std::env::current_dir().context("Failed to get current directory")?;
+            if canonical_created_path != current_dir {
+                let rel_path = canonical_created_path
+                    .strip_prefix(&current_dir)
+                    .unwrap_or(&canonical_created_path);
+                println!(
+                    "\n{} To interact with your database, open a new terminal and run:",
+                    "Tip:".yellow().bold(),
+                );
+                println!("  cd ./{}", rel_path.display());
+                println!("  spacetime call add Alice");
+                println!("  spacetime sql \"SELECT * FROM person\"");
+                println!("  spacetime logs");
+                println!();
+            }
 
             if !spacetimedb_dir.exists() {
                 anyhow::bail!("Project initialization did not create spacetimedb directory");
@@ -634,27 +654,29 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         }
     }
 
-    // Safety prompt: warn if publishing from spacetime.json (not a dev-specific config)
+    // Safety prompt: warn if any selected database target is defined in spacetime.json.
     if let Some(ref lc) = loaded_config {
-        // Treat local overrides as dev-safe to avoid warning when per-user config is present.
-        // TODO: Should this also accept other env local files (for example: spacetime.staging.local.json)?
-        let has_local_override = lc.loaded_files.iter().any(|p| {
-            p.file_name()
-                .and_then(|s| s.to_str())
-                .map(|name| name == "spacetime.local.json" || name == "spacetime.dev.local.json")
-                .unwrap_or(false)
-        });
+        let database_sources = resolve_database_sources(&lc.config);
+        let databases_from_main_config: Vec<String> = db_names_for_logging
+            .iter()
+            .filter(|db| {
+                database_sources
+                    .get((*db).as_str())
+                    .is_some_and(|src| src.as_deref() == Some("spacetime.json"))
+            })
+            .cloned()
+            .collect();
 
-        if !lc.has_dev_file && !has_local_override && !force {
+        if !databases_from_main_config.is_empty() && !force {
             eprintln!(
-                "{} Publishing from spacetime.json (not a dev-specific config).",
-                "Warning:".yellow().bold()
+                "{} Database(s) `{}` are defined in spacetime.json (usually reserved for production databases).",
+                "Warning:".yellow().bold(),
+                databases_from_main_config.join(", ")
             );
-            eprintln!(
-                "{}",
-                "Consider creating spacetime.dev.json for development settings.".dimmed()
-            );
-            let should_continue = Confirm::new().with_prompt("Continue?").default(true).interact()?;
+            let should_continue = Confirm::new()
+                .with_prompt("Do you want to proceed with publishing in dev mode?")
+                .default(true)
+                .interact()?;
             if !should_continue {
                 anyhow::bail!("Aborted.");
             }
@@ -745,6 +767,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         None
     };
 
+    let gitignore = build_gitignore_matcher(&project_dir, &spacetimedb_dir);
+
     let (tx, rx) = channel();
     let mut watcher: RecommendedWatcher = Watcher::new(
         move |res: Result<Event, notify::Error>| {
@@ -752,7 +776,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 if matches!(
                     event.kind,
                     notify::EventKind::Modify(_) | notify::EventKind::Create(_) | notify::EventKind::Remove(_)
-                ) {
+                ) && event.paths.iter().any(|p| !should_ignore_path(p, &gitignore))
+                {
                     let _ = tx.send(());
                 }
             }
@@ -1315,9 +1340,113 @@ fn format_log_record<W: WriteColor>(
     Ok(())
 }
 
+/// Directory names that should always be ignored by the file watcher,
+/// regardless of `.gitignore` rules.
+const ALWAYS_IGNORE_DIRS: &[&str] = &[
+    ".git",
+    ".hg",
+    ".svn",   // VCS
+    "target", // Rust
+    "bin",
+    "obj", // .NET/C#
+    "node_modules",
+    "dist",
+    ".next", // JS/TS
+    ".nuxt",
+    ".output", // Nuxt
+    "__pycache__",
+    ".venv",
+    "venv", // Python
+    ".vs",
+    ".idea", // IDE
+];
+
+/// Returns `true` if the given path should always trigger a rebuild,
+/// even if it would otherwise be gitignored.
+fn is_always_watched(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    name == ".env.local" || (name.starts_with("spacetime.") && name.ends_with(".local.json"))
+}
+
+/// Build a gitignore matcher that loads rules from:
+/// - the global gitignore (via `gitconfig_excludes_path`)
+/// - `project_dir/.gitignore` (if different from `spacetimedb_dir`)
+/// - `spacetimedb_dir/.gitignore`
+fn build_gitignore_matcher(project_dir: &Path, spacetimedb_dir: &Path) -> Gitignore {
+    let mut builder = GitignoreBuilder::new(spacetimedb_dir);
+
+    // Global gitignore
+    if let Some(global) = ignore::gitignore::gitconfig_excludes_path() {
+        let _ = builder.add(global);
+    }
+
+    // Project-level .gitignore (if the project root differs from the module dir)
+    let project_gitignore = project_dir.join(".gitignore");
+    let spacetimedb_gitignore = spacetimedb_dir.join(".gitignore");
+    if project_dir != spacetimedb_dir && project_gitignore.exists() {
+        let _ = builder.add(&project_gitignore);
+    }
+
+    // Module-level .gitignore
+    if spacetimedb_gitignore.exists() {
+        let _ = builder.add(&spacetimedb_gitignore);
+    }
+
+    match builder.build() {
+        Ok(gi) => gi,
+        Err(e) => {
+            eprintln!(
+                "{} Failed to parse .gitignore rules: {}. Falling back to no gitignore filtering.",
+                "Warning:".yellow().bold(),
+                e
+            );
+            Gitignore::empty()
+        }
+    }
+}
+
+/// Determines whether a path should be ignored by the file watcher.
+///
+/// Layered filtering:
+/// 1. If any path component is in `ALWAYS_IGNORE_DIRS` → ignore
+/// 2. If the filename matches always-watch patterns → don't ignore
+/// 3. Otherwise, consult the gitignore matcher
+fn should_ignore_path(path: &Path, gitignore: &Gitignore) -> bool {
+    // Layer 1: always-ignore directories
+    for component in path.components() {
+        if let std::path::Component::Normal(c) = component {
+            if let Some(s) = c.to_str() {
+                if ALWAYS_IGNORE_DIRS.contains(&s) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Layer 2 exception: always-watch files
+    if is_always_watched(path) {
+        return false;
+    }
+
+    // Layer 3: gitignore rules
+    gitignore.matched(path, path.is_dir()).is_ignore()
+}
+
 fn generate_database_name() -> String {
     let mut generator = names::Generator::with_naming(names::Name::Numbered);
     generator.next().unwrap()
+}
+
+fn resolve_database_sources(config: &SpacetimeConfig) -> HashMap<String, Option<String>> {
+    let mut sources = HashMap::new();
+    for target in config.collect_all_targets_with_inheritance() {
+        if let Some(database) = target.fields.get("database").and_then(|v| v.as_str()) {
+            sources.insert(database.to_string(), target.source_config.clone());
+        }
+    }
+    sources
 }
 
 /// Extract unique watch directories from publish configs

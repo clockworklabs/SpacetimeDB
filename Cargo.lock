@@ -7605,6 +7605,7 @@ dependencies = [
  "git2",
  "glob",
  "http 1.3.1",
+ "ignore",
  "indicatif",
  "is-terminal",
  "itertools 0.12.1",
