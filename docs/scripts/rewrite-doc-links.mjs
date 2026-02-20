@@ -169,7 +169,7 @@ async function main() {
       knownVersionNames = [...new Set([...knownVersionNames, ...versions])];
     }
   } catch {}
-  knownVersionNames.push('2.0.0-prerelease');
+  knownVersionNames.push('2.0.0-rc1');
   knownVersionNames = [...new Set(knownVersionNames)];
 
   let changedFiles = 0;

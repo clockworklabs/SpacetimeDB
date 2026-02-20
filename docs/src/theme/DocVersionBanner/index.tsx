@@ -12,7 +12,7 @@ export default function DocVersionBannerWrapper(
     return (
       <div className="alert alert--info margin-bottom--md" role="alert">
         Want to try the upcoming v2 features? Try the {' '}
-        <Link to="/2.0.0-prerelease">Prerelease docs</Link>.
+        <Link to="/2.0.0-rc1">Prerelease docs</Link>.
       </div>
     );
   }

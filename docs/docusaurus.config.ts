@@ -107,8 +107,8 @@ const config: Config = {
           lastVersion: '1.12.0',
           versions: {
             current: {
-              label: '2.0.0-prerelease',
-              path: '2.0.0-prerelease',
+              label: '2.0.0-rc1',
+              path: '2.0.0-rc1',
               banner: 'unreleased',
             },
             '1.12.0': {
