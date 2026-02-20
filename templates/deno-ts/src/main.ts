@@ -20,7 +20,7 @@ async function main(): Promise<void> {
   // Build and establish connection
   DbConnection.builder()
     .withUri(HOST)
-    .withModuleName(DB_NAME)
+    .withDatabaseName(DB_NAME)
     .withToken(token)
     .onConnect(onConnect)
     .onDisconnect(onDisconnect)

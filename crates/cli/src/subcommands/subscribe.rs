@@ -18,23 +18,18 @@ use tokio_tungstenite::tungstenite::{Error as WsError, Message as WsMessage};
 
 use crate::api::ClientApi;
 use crate::common_args;
-use crate::sql::parse_req;
+use crate::subcommands::db_arg_resolution::{load_config_db_targets, resolve_optional_database_parts};
 use crate::util::UNSTABLE_WARNING;
+use crate::util::{database_identity, get_auth_header};
 use crate::Config;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("subscribe")
         .about(format!("Subscribe to SQL queries on the database. {UNSTABLE_WARNING}"))
         .arg(
-            Arg::new("database")
-                .required(true)
-                .help("The name or identity of the database you would like to query"),
-        )
-        .arg(
-            Arg::new("query")
-                .required(true)
+            Arg::new("subscribe_parts")
                 .num_args(1..)
-                .help("The SQL query to execute"),
+                .help("Subscribe arguments: [DATABASE] <QUERY> [QUERY...]"),
         )
         .arg(
             Arg::new("num-updates")
@@ -68,6 +63,12 @@ pub fn cli() -> clap::Command {
         .arg(common_args::confirmed())
         .arg(common_args::anonymous())
         .arg(common_args::yes())
+        .arg(
+            Arg::new("no_config")
+                .long("no-config")
+                .action(ArgAction::SetTrue)
+                .help("Ignore spacetime.json configuration"),
+        )
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
 }
 
@@ -126,13 +127,37 @@ struct SubscriptionTable {
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     eprintln!("{UNSTABLE_WARNING}\n");
 
-    let queries = args.get_many::<String>("query").unwrap();
+    let server = args.get_one::<String>("server").map(|s| s.as_ref());
+    let force = args.get_flag("force");
+    let anon_identity = args.get_flag("anon_identity");
+    let no_config = args.get_flag("no_config");
+
+    let raw_parts: Vec<String> = args
+        .get_many::<String>("subscribe_parts")
+        .map(|vals| vals.cloned().collect())
+        .unwrap_or_default();
+    let config_targets = load_config_db_targets(no_config)?;
+    let resolved = resolve_optional_database_parts(
+        &raw_parts,
+        config_targets.as_deref(),
+        "query",
+        "spacetime subscribe [database] <query> [query...] (or --no-config for legacy behavior)",
+    )?;
+    let queries: Vec<String> = resolved.remaining_args;
+
     let num = args.get_one::<u32>("num-updates").copied();
     let timeout = args.get_one::<u32>("timeout").copied();
     let print_initial_update = args.get_flag("print_initial_update");
     let confirmed = args.get_flag("confirmed");
+    let resolved_server = server.or(resolved.server.as_deref());
 
-    let conn = parse_req(config, args).await?;
+    let mut config = config;
+    let conn = crate::api::Connection {
+        host: config.get_host_url(resolved_server)?,
+        auth_header: get_auth_header(&mut config, anon_identity, resolved_server, !force).await?,
+        database_identity: database_identity(&config, &resolved.database, resolved_server).await?,
+        database: resolved.database.clone(),
+    };
     let api = ClientApi::new(conn);
     let module_def = api.module_def().await?;
 
@@ -161,7 +186,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let mut ws = tokio_tungstenite::connect_async(req).await.map(|(ws, _)| ws)?;
 
     let task = async {
-        subscribe(&mut ws, queries.cloned().map(Into::into).collect()).await?;
+        subscribe(&mut ws, queries.iter().cloned().map(Into::into).collect()).await?;
         await_initial_update(&mut ws, print_initial_update.then_some(&module_def)).await?;
         consume_transaction_updates(&mut ws, num, &module_def).await
     };

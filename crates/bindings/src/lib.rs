@@ -36,6 +36,7 @@ pub use sats::SpacetimeType;
 pub use spacetimedb_bindings_macro::__TableHelper;
 pub use spacetimedb_bindings_sys as sys;
 pub use spacetimedb_lib;
+pub use spacetimedb_lib::db::raw_def::v10::CaseConversionPolicy;
 pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};
 pub use spacetimedb_lib::sats;
 pub use spacetimedb_lib::ser::Serialize;
@@ -98,6 +99,30 @@ pub use spacetimedb_bindings_macro::duration;
 #[cfg(feature = "unstable")]
 #[doc(inline, hidden)] // TODO: RLS filters are currently unimplemented, and are not enforced.
 pub use spacetimedb_bindings_macro::client_visibility_filter;
+
+/// Declare a module-level setting.
+///
+/// Apply this attribute to a `const` item whose name is a known setting:
+///
+/// ```ignore
+/// use spacetimedb::CaseConversionPolicy;
+///
+/// #[spacetimedb::settings]
+/// const CASE_CONVERSION_POLICY: CaseConversionPolicy = CaseConversionPolicy::SnakeCase;
+/// ```
+///
+/// # Known Settings
+///
+/// | Const Name | Type | Default | Description |
+/// |---|---|---|---|
+/// | `CASE_CONVERSION_POLICY` | [`CaseConversionPolicy`] | `SnakeCase` | How identifiers are converted to canonical names |
+///
+/// # Errors
+///
+/// - Unknown setting name: compile error listing known settings
+/// - Duplicate setting: linker error (duplicate symbol)
+#[doc(inline)]
+pub use spacetimedb_bindings_macro::settings;
 
 /// Declares a table with a particular row type.
 ///
