@@ -36,6 +36,7 @@ pub use sats::SpacetimeType;
 pub use spacetimedb_bindings_macro::__TableHelper;
 pub use spacetimedb_bindings_sys as sys;
 pub use spacetimedb_lib;
+pub use spacetimedb_lib::db::raw_def::v10::CaseConversionPolicy;
 pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};
 pub use spacetimedb_lib::sats;
 pub use spacetimedb_lib::ser::Serialize;
