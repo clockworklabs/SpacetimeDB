@@ -133,6 +133,8 @@ pub struct InitOptions {
     pub template: Option<String>,
     pub local: bool,
     pub non_interactive: bool,
+    /// When true, suppress the "Next steps" message after init (e.g. when called from `spacetime dev`).
+    pub skip_next_steps: bool,
 }
 
 impl InitOptions {
@@ -147,6 +149,7 @@ impl InitOptions {
             template: args.get_one::<String>("template").cloned(),
             local: args.get_flag("local"),
             non_interactive: args.get_flag("non-interactive"),
+            skip_next_steps: false,
         }
     }
 }
@@ -557,6 +560,10 @@ pub async fn exec_with_options(config: &mut Config, options: &InitOptions) -> an
 
     if let Some(path) = create_local_spacetime_config_if_missing(&project_path, &local_database_name)? {
         println!("{} Created {}", "✓".green(), path.display());
+    }
+
+    if !options.skip_next_steps {
+        print_next_steps(&template_config, &project_path)?;
     }
 
     Ok(project_path)
@@ -1264,7 +1271,6 @@ pub async fn init_from_template(
     install_ai_rules(config, project_path)?;
 
     println!("{}", "Project initialized successfully!".green());
-    print_next_steps(config, project_path)?;
 
     Ok(())
 }

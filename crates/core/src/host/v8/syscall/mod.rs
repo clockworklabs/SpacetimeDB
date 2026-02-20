@@ -2,7 +2,9 @@ use super::de::scratch_buf;
 use super::error::{ErrorOrException, ExcResult, ExceptionThrown, PinTryCatch, Throwable, TypeError};
 use super::exception_already_thrown;
 use crate::host::wasm_common::abi::parse_abi_version;
-use crate::host::wasm_common::module_host_actor::{AnonymousViewOp, ReducerOp, ReducerResult, ViewOp, ViewReturnData};
+use crate::host::wasm_common::module_host_actor::{
+    AnonymousViewOp, ExecutionError, ReducerOp, ReducerResult, ViewOp, ViewReturnData,
+};
 use spacetimedb_lib::VersionTuple;
 use v8::{callback_scope, ArrayBuffer, Context, FixedArray, Local, Module, PinScope};
 
@@ -136,4 +138,16 @@ pub(super) fn get_hooks<'scope>(
     let hooks = v2::get_hooks_from_default_export(scope, default_export, exports_obj)?
         .ok_or_else(|| anyhow::anyhow!("default export is not a Schema object"))?;
     Ok(Some(hooks))
+}
+
+/// Process the thrown exception value into an `ExecutionError`.
+pub(super) fn process_thrown_exception(
+    scope: &mut PinScope<'_, '_>,
+    hooks: &HookFunctions<'_>,
+    exc: Local<'_, v8::Value>,
+) -> ExcResult<Option<ExecutionError>> {
+    match hooks.abi {
+        AbiVersion::V1 => Ok(None),
+        AbiVersion::V2 => v2::process_thrown_exception(scope, hooks, exc),
+    }
 }

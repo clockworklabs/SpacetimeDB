@@ -46,7 +46,7 @@ fn check_global_json_policy() -> Result<()> {
     ensure_repo_root()?;
 
     let root_json = Path::new("global.json");
-    let root_real = fs::canonicalize(root_json)?;
+    let root_contents = fs::read_to_string(root_json)?;
 
     fn find_all_global_json(dir: &Path) -> Result<Vec<PathBuf>> {
         let mut out = Vec::new();
@@ -67,25 +67,24 @@ fn check_global_json_policy() -> Result<()> {
 
     let mut ok = true;
     for p in globals {
-        let resolved = fs::canonicalize(&p)?;
-
-        // The root global.json itself is allowed.
-        if resolved == root_real {
-            println!("OK: {}", p.display());
-            continue;
-        }
-
         let meta = fs::symlink_metadata(&p)?;
-        if !meta.file_type().is_symlink() {
-            eprintln!("Error: {} is not a symlink to root global.json", p.display());
+        let is_symlink = meta.file_type().is_symlink();
+        let is_template_global_json = p.strip_prefix(".").unwrap_or(&p).starts_with(Path::new("templates"));
+        if is_template_global_json && is_symlink {
+            eprintln!(
+                "Error: {} is a symlink. Template files must not be symlinks; they are copied literally and this will break if the CLI is built under Windows where symlinks are not supported.",
+                p.display()
+            );
             ok = false;
-            continue;
         }
 
-        eprintln!("Error: {} does not resolve to root global.json", p.display());
-        eprintln!("  resolved: {}", resolved.display());
-        eprintln!("  expected: {}", root_real.display());
-        ok = false;
+        let contents = fs::read_to_string(&p)?;
+        if contents != root_contents {
+            eprintln!("Error: {} does not match the root global.json contents", p.display());
+            ok = false;
+        } else if !is_template_global_json || !is_symlink {
+            println!("OK: {}", p.display());
+        }
     }
 
     if !ok {

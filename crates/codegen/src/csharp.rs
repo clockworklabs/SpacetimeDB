@@ -517,7 +517,7 @@ impl Lang for Csharp<'_> {
 
         writeln!(output, "public sealed partial class RemoteTables");
         indented_block(&mut output, |output| {
-            let csharp_table_name = table.name.deref().to_case(Case::Pascal);
+            let csharp_table_name = table.accessor_name.deref().to_case(Case::Pascal);
             let csharp_table_class_name = csharp_table_name.clone() + "Handle";
             let table_type = type_ref_name(module, table.product_type_ref);
 
@@ -639,7 +639,7 @@ impl Lang for Csharp<'_> {
         // Emit top-level Cols/IxCols helpers for the typed query builder.
         writeln!(output);
 
-        let cols_owner_name = table.name.deref().to_case(Case::Pascal);
+        let cols_owner_name = table.accessor_name.deref().to_case(Case::Pascal);
         let row_type = type_ref_name(module, table.product_type_ref);
         let product_type = module.typespace_for_generate()[table.product_type_ref]
             .as_product()
@@ -724,7 +724,7 @@ impl Lang for Csharp<'_> {
         });
 
         OutputFile {
-            filename: format!("Tables/{}.g.cs", table.name.deref().to_case(Case::Pascal)),
+            filename: format!("Tables/{}.g.cs", table.accessor_name.deref().to_case(Case::Pascal)),
             code: output.into_inner(),
         }
     }
@@ -756,7 +756,7 @@ impl Lang for Csharp<'_> {
 
         writeln!(output, "public sealed partial class RemoteReducers : RemoteBase");
         indented_block(&mut output, |output| {
-            let func_name_pascal_case = reducer.name.deref().to_case(Case::Pascal);
+            let func_name_pascal_case = reducer.accessor_name.deref().to_case(Case::Pascal);
             let delegate_separator = if reducer.params_for_generate.elements.is_empty() {
                 ""
             } else {
@@ -829,7 +829,7 @@ impl Lang for Csharp<'_> {
             autogen_csharp_product_common(
                 module,
                 output,
-                reducer.name.deref().to_case(Case::Pascal),
+                reducer.accessor_name.deref().to_case(Case::Pascal),
                 &reducer.params_for_generate,
                 "Reducer, IReducerArgs",
                 |output| {
@@ -842,7 +842,7 @@ impl Lang for Csharp<'_> {
         });
 
         OutputFile {
-            filename: format!("Reducers/{}.g.cs", reducer.name.deref().to_case(Case::Pascal)),
+            filename: format!("Reducers/{}.g.cs", reducer.accessor_name.deref().to_case(Case::Pascal)),
             code: output.into_inner(),
         }
     }
@@ -864,7 +864,7 @@ impl Lang for Csharp<'_> {
 
         writeln!(output, "public sealed partial class RemoteProcedures : RemoteBase");
         indented_block(&mut output, |output| {
-            let func_name_pascal_case = procedure.name.deref().to_case(Case::Pascal);
+            let func_name_pascal_case = procedure.accessor_name.deref().to_case(Case::Pascal);
             let delegate_separator = if procedure.params_for_generate.elements.is_empty() {
                 ""
             } else {
@@ -925,14 +925,14 @@ impl Lang for Csharp<'_> {
             autogen_csharp_proc_return(
                 module,
                 output,
-                procedure.name.deref().to_case(Case::Pascal).to_string(),
+                procedure.accessor_name.deref().to_case(Case::Pascal).to_string(),
                 &procedure.return_type_for_generate,
                 self.namespace,
             );
             autogen_csharp_product_common(
                 module,
                 output,
-                format!("{}Args", procedure.name.deref().to_case(Case::Pascal)),
+                format!("{}Args", procedure.accessor_name.deref().to_case(Case::Pascal)),
                 &procedure.params_for_generate,
                 "Procedure, IProcedureArgs",
                 |output| {
@@ -946,7 +946,10 @@ impl Lang for Csharp<'_> {
         });
 
         OutputFile {
-            filename: format!("Procedures/{}.g.cs", procedure.name.deref().to_case(Case::Pascal)),
+            filename: format!(
+                "Procedures/{}.g.cs",
+                procedure.accessor_name.deref().to_case(Case::Pascal)
+            ),
             code: output.into_inner(),
         }
     }
@@ -985,11 +988,11 @@ impl Lang for Csharp<'_> {
         indented_block(&mut output, |output| {
             writeln!(output, "public RemoteTables(DbConnection conn)");
             indented_block(output, |output| {
-                for (table_name, _) in iter_table_names_and_types(module, options.visibility) {
+                for (_, accessor_name, _) in iter_table_names_and_types(module, options.visibility) {
                     writeln!(
                         output,
                         "AddTable({} = new(conn));",
-                        table_name.deref().to_case(Case::Pascal)
+                        accessor_name.deref().to_case(Case::Pascal)
                     );
                 }
             });
@@ -1004,8 +1007,8 @@ impl Lang for Csharp<'_> {
             writeln!(output);
             writeln!(output, "internal static string[] AllTablesSqlQueries() => new string[]");
             indented_block(output, |output| {
-                for (table_name, _) in iter_table_names_and_types(module, options.visibility) {
-                    let method_name = table_name.deref().to_case(Case::Pascal);
+                for (_, accessor_name, _) in iter_table_names_and_types(module, options.visibility) {
+                    let method_name = accessor_name.deref().to_case(Case::Pascal);
                     writeln!(output, "new QueryBuilder().From.{method_name}().ToSql(),");
                 }
             });
@@ -1015,10 +1018,10 @@ impl Lang for Csharp<'_> {
 
         writeln!(output, "public sealed class From");
         indented_block(&mut output, |output| {
-            for (table_name, product_type_ref) in iter_table_names_and_types(module, options.visibility) {
-                let method_name = table_name.deref().to_case(Case::Pascal);
+            for (name, accessor_name, product_type_ref) in iter_table_names_and_types(module, options.visibility) {
+                let method_name = accessor_name.deref().to_case(Case::Pascal);
                 let row_type = type_ref_name(module, product_type_ref);
-                let table_name_lit = format!("{:?}", table_name.deref());
+                let table_name_lit = format!("{:?}", name.deref());
                 writeln!(
                     output,
                     "public global::SpacetimeDB.Table<{row_type}, {method_name}Cols, {method_name}IxCols> {method_name}() => new({table_name_lit}, new {method_name}Cols({table_name_lit}), new {method_name}IxCols({table_name_lit}));"
@@ -1158,7 +1161,7 @@ impl Lang for Csharp<'_> {
                 {
                     indent_scope!(output);
                     for reducer_name in
-                        iter_reducers(module, options.visibility).map(|r| r.name.deref().to_case(Case::Pascal))
+                        iter_reducers(module, options.visibility).map(|r| r.accessor_name.deref().to_case(Case::Pascal))
                     {
                         writeln!(
                             output,
@@ -1383,6 +1386,7 @@ fn autogen_csharp_sum(module: &ModuleDef, sum_type_name: String, sum_type: &SumT
                 write!(output, ",");
             }
             writeln!(output);
+            let variant_name = variant_name.deref().to_case(Case::Pascal);
             write!(output, "{} {variant_name}", ty_fmt(module, variant_ty));
         }
         // If we have fewer than 2 variants, we need to add some dummy variants to make the tuple work.
@@ -1412,6 +1416,7 @@ fn autogen_csharp_plain_enum(enum_type_name: String, enum_type: &PlainEnumTypeDe
     writeln!(output, "public enum {enum_type_name}");
     indented_block(&mut output, |output| {
         for variant in &*enum_type.variants {
+            let variant = variant.deref().to_case(Case::Pascal);
             writeln!(output, "{variant},");
         }
     });

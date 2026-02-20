@@ -53,7 +53,7 @@ namespace SpacetimeDB.Types
         {
             [DataMember(Name = "id")]
             public uint Id;
-            [DataMember(Name = "hasPos")]
+            [DataMember(Name = "has_pos")]
             public bool HasPos;
             [DataMember(Name = "x")]
             public int X;
@@ -77,7 +77,7 @@ namespace SpacetimeDB.Types
             {
             }
 
-            string IReducerArgs.ReducerName => "SetNullableVec";
+            string IReducerArgs.ReducerName => "set_nullable_vec";
         }
     }
 }
