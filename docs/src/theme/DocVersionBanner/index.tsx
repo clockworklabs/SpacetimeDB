@@ -1,0 +1,21 @@
+import React from 'react';
+import Link from '@docusaurus/Link';
+import { useDocsVersion } from '@docusaurus/plugin-content-docs/client';
+import DocVersionBanner from '@theme-original/DocVersionBanner';
+
+export default function DocVersionBannerWrapper(
+  props: React.ComponentProps<typeof DocVersionBanner>,
+): JSX.Element {
+  const version = useDocsVersion();
+
+  if (version.version === 'v1') {
+    return (
+      <div className="alert alert--warning margin-bottom--md" role="alert">
+        Using stable v1 docs. Want the latest features? Try the{' '}
+        <Link to="/prerelease">Prerelease docs</Link>.
+      </div>
+    );
+  }
+
+  return <DocVersionBanner {...props} />;
+}

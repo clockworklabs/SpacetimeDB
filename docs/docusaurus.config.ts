@@ -103,6 +103,19 @@ const config: Config = {
           routeBasePath: '/',
           sidebarPath: './sidebars.ts',
           sidebarCollapsed: false,
+          includeCurrentVersion: true,
+          versions: {
+            current: {
+              label: 'Prerelease',
+              path: 'prerelease',
+              banner: 'unreleased',
+            },
+            v1: {
+              label: 'v1',
+              path: 'v1',
+              banner: 'none',
+            },
+          },
           beforeDefaultRehypePlugins: [
             [
               rehypeShiki,
@@ -150,6 +163,7 @@ const config: Config = {
       hideOnScroll: false,
       items: [
         { type: 'search', position: 'left' },
+        { type: 'docsVersionDropdown', position: 'left' },
         {
           href: 'https://spacetimedb.com/install',
           label: 'Install',
