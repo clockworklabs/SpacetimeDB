@@ -5,7 +5,6 @@ slug: /tables
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Tables are the way to store data in SpacetimeDB. All data in SpacetimeDB is stored in memory for extremely low latency and high throughput access. SpacetimeDB also automatically persists all data to disk.
@@ -126,7 +125,7 @@ The first argument defines table options, and the second defines columns.
 Use the `[SpacetimeDB.Table]` attribute on a `partial struct` or `partial class`:
 
 ```csharp
-[SpacetimeDB.Table(Accessor = "Person", Public = true)]
+[SpacetimeDB.Table(Name = "Person", Public = true)]
 public partial struct Person
 {
     [SpacetimeDB.PrimaryKey]
@@ -149,7 +148,7 @@ The `partial` modifier is required to allow code generation.
 Use the `#[spacetimedb::table]` macro on a struct:
 
 ```rust
-#[spacetimedb::table(accessor = person, public)]
+#[spacetimedb::table(name = person, public)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -164,26 +163,6 @@ pub struct Person {
 :::note Rust Visibility vs SpacetimeDB Visibility
 The `pub` modifier on the struct follows normal Rust visibility rules and has no meaning to SpacetimeDB. It controls whether the struct is accessible from other Rust modules in your crate, not whether the table is public to clients. Use the `public` attribute in `#[spacetimedb::table]` to control client visibility.
 :::
-
-</TabItem>
-<TabItem value="cpp" label="C++">
-
-<CppModuleVersionNotice />
-
-Register the struct with `SPACETIMEDB_STRUCT`, the table with `SPACETIMEDB_TABLE`, then add field constraints:
-
-```cpp
-struct Person {
-    uint32_t id;
-    std::string name;
-    std::string email;
-};
-SPACETIMEDB_STRUCT(Person, id, name, email)
-SPACETIMEDB_TABLE(Person, person, Public)
-FIELD_PrimaryKeyAutoInc(person, id)
-FIELD_Index(person, name)
-FIELD_Unique(person, email)
-```
 
 </TabItem>
 </Tabs>
@@ -223,7 +202,7 @@ The accessor name **exactly matches** the `Name` attribute value:
 
 ```csharp
 // Table definition
-[SpacetimeDB.Table(Accessor = "Player", Public = true)]
+[SpacetimeDB.Table(Name = "Player", Public = true)]
 public partial struct Player { /* columns */ }
 
 // Accessor matches Name exactly
@@ -247,7 +226,7 @@ The accessor name **exactly matches** the `name` attribute value:
 
 ```rust
 // Table definition
-#[spacetimedb::table(accessor = player, public)]
+#[spacetimedb::table(name = player, public)]
 pub struct Player { /* columns */ }
 
 // Accessor matches name exactly
@@ -261,29 +240,6 @@ ctx.db.player().insert(Player { /* ... */ });
 | `name = game_session` | `ctx.db.game_session()` |
 
 </TabItem>
-<TabItem value="cpp" label="C++">
-
-The accessor name matches the table identifier you pass to `SPACETIMEDB_TABLE`:
-
-```cpp
-struct PlayerScores {
-  uint64_t id;
-};
-SPACETIMEDB_STRUCT(PlayerScores, id)
-SPACETIMEDB_TABLE(PlayerScores, player_scores, Public)
-FIELD_PrimaryKeyAutoInc(player_scores, id)
-
-// Accessor matches the table identifier
-ctx.db[player_scores].insert(PlayerScores{ /* ... */ });
-```
-
-| Table Identifier | Accessor |
-|------------------|----------|
-| `user` | `ctx.db[user]` |
-| `player_scores` | `ctx.db[player_scores]` |
-| `game_session` | `ctx.db[game_session]` |
-
-</TabItem>
 </Tabs>
 
 ### Recommended Naming Conventions
@@ -295,7 +251,6 @@ Use idiomatic naming conventions for each language:
 | **TypeScript** | snake_case | `'player_score'` | `ctx.db.playerScore` |
 | **C#** | PascalCase | `Name = "PlayerScore"` | `ctx.Db.PlayerScore` |
 | **Rust** | lower_snake_case | `name = player_score` | `ctx.db.player_score()` |
-| **C++** | lower_snake_case | `player_score` | `ctx.db[player_score]` |
 
 These conventions align with each language's standard style guides and make your code feel natural within its ecosystem.
 
@@ -304,7 +259,7 @@ These conventions align with each language's standard style guides and make your
 Tables can be **private** (default) or **public**:
 
 - **Private tables**: Visible only to [reducers](/functions/reducers) and the database owner. Clients cannot access them.
-- **Public tables**: Exposed for client read access through [subscriptions](/clients/subscriptions). Writes still occur only through reducers.
+- **Public tables**: Exposed for client read access through [subscriptions](/subscriptions). Writes still occur only through reducers.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -318,10 +273,10 @@ const privateTable = table({ name: 'secret', public: false }, { /* ... */ });
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Accessor = "User", Public = true)]
+[SpacetimeDB.Table(Name = "User", Public = true)]
 public partial struct User { /* ... */ }
 
-[SpacetimeDB.Table(Accessor = "Secret", Public = false)]
+[SpacetimeDB.Table(Name = "Secret", Public = false)]
 public partial struct Secret { /* ... */ }
 ```
 
@@ -329,30 +284,11 @@ public partial struct Secret { /* ... */ }
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(accessor = user, public)]
+#[spacetimedb::table(name = user, public)]
 pub struct User { /* ... */ }
 
-#[spacetimedb::table(accessor = secret)]
+#[spacetimedb::table(name = secret)]
 pub struct Secret { /* ... */ }
-```
-
-</TabItem>
-<TabItem value="cpp" label="C++">
-
-```cpp
-struct User {
-  uint64_t id;
-};
-SPACETIMEDB_STRUCT(User, id)
-SPACETIMEDB_TABLE(User, user, Public)
-FIELD_PrimaryKeyAutoInc(user, id)
-
-struct Secret {
-  uint64_t id;
-};
-SPACETIMEDB_STRUCT(Secret, id)
-SPACETIMEDB_TABLE(Secret, secret, Private)
-FIELD_PrimaryKeyAutoInc(secret, id)
 ```
 
 </TabItem>
@@ -392,8 +328,8 @@ const LoggedOutPlayer = table({ name: 'LoggedOutPlayer' }, playerColumns);
 Apply multiple `[Table]` attributes to the same struct:
 
 ```csharp
-[SpacetimeDB.Table(Accessor = "Player", Public = true)]
-[SpacetimeDB.Table(Accessor = "LoggedOutPlayer")]
+[SpacetimeDB.Table(Name = "Player", Public = true)]
+[SpacetimeDB.Table(Name = "LoggedOutPlayer")]
 public partial struct Player
 {
     [PrimaryKey]
@@ -426,8 +362,8 @@ if (player != null)
 Apply multiple `#[spacetimedb::table]` attributes to the same struct:
 
 ```rust
-#[spacetimedb::table(accessor = player, public)]
-#[spacetimedb::table(accessor = logged_out_player)]
+#[spacetimedb::table(name = player, public)]
+#[spacetimedb::table(name = logged_out_player)]
 pub struct Player {
     #[primary_key]
     identity: Identity,
@@ -446,36 +382,9 @@ ctx.db.player().insert(Player { /* ... */ });
 ctx.db.logged_out_player().insert(Player { /* ... */ });
 
 // Move a row between tables
-if let Some(player) = ctx.db.logged_out_player().identity().find(&ctx.sender()) {
+if let Some(player) = ctx.db.logged_out_player().identity().find(&ctx.sender) {
     ctx.db.player().insert(player.clone());
     ctx.db.logged_out_player().identity().delete(&player.identity);
-}
-```
-
-</TabItem>
-<TabItem value="cpp" label="C++">
-
-Apply multiple `SPACETIMEDB_TABLE` macros to the same struct:
-
-```cpp
-struct Player {
-  Identity identity;
-  int32_t player_id;
-  std::string name;
-};
-SPACETIMEDB_STRUCT(Player, identity, player_id, name)
-SPACETIMEDB_TABLE(Player, player, Public)
-SPACETIMEDB_TABLE(Player, logged_out_player, Private)
-FIELD_PrimaryKey(player, identity)
-FIELD_PrimaryKey(logged_out_player, identity)
-FIELD_UniqueAutoInc(player, player_id)
-FIELD_UniqueAutoInc(logged_out_player, player_id)
-
-// Move a row between tables
-auto maybe_logged_out = ctx.db[logged_out_player_identity].find(ctx.sender);
-if (maybe_logged_out) {
-  ctx.db[player].insert(*maybe_logged_out);
-  ctx.db[logged_out_player_identity].delete_by_key(ctx.sender);
 }
 ```
 

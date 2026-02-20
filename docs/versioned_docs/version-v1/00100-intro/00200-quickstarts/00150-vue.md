@@ -72,21 +72,20 @@ my-spacetime-app/
 ```typescript
 import { schema, table, t } from 'spacetimedb/server';
 
-const spacetimedb = schema({
-  person: table(
-    { public: true },
+export const spacetimedb = schema(
+  table(
+    { name: 'person', public: true },
     {
       name: t.string(),
     }
   )
-});
-export default spacetimedb;
+);
 
-export const add = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
+spacetimedb.reducer('add', { name: t.string() }, (ctx, { name }) => {
   ctx.db.person.insert({ name });
 });
 
-export const say_hello = spacetimedb.reducer((ctx) => {
+spacetimedb.reducer('say_hello', (ctx) => {
   for (const person of ctx.db.person.iter()) {
     console.info(`Hello, ${person.name}!`);
   }
@@ -98,26 +97,24 @@ export const say_hello = spacetimedb.reducer((ctx) => {
 
   <Step title="Test with the CLI">
     <StepText>
-      Open a new terminal and navigate to your project directory. Then use the SpacetimeDB CLI to call reducers and query your data directly.
+      Use the SpacetimeDB CLI to call reducers and query your data directly.
     </StepText>
     <StepCode>
 ```bash
-cd my-spacetime-app
-
 # Call the add reducer to insert a person
-spacetime call add Alice
+spacetime call <database-name> add Alice
 
 # Query the person table
-spacetime sql "SELECT * FROM person"
+spacetime sql <database-name> "SELECT * FROM person"
  name
 ---------
  "Alice"
 
 # Call say_hello to greet everyone
-spacetime call say_hello
+spacetime call <database-name> say_hello
 
 # View the module logs
-spacetime logs
+spacetime logs <database-name>
 2025-01-13T12:00:00.000000Z  INFO: Hello, Alice!
 2025-01-13T12:00:00.000000Z  INFO: Hello, World!
 ```
@@ -127,4 +124,4 @@ spacetime logs
 
 ## Next steps
 
-- Read the [TypeScript SDK Reference](/clients/typescript) for detailed API docs
+- Read the [TypeScript SDK Reference](/sdks/typescript) for detailed API docs

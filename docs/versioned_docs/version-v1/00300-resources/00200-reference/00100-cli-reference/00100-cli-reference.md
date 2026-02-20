@@ -97,7 +97,9 @@ Run `spacetime help publish` for more detailed information.
 * `--build-options <BUILD_OPTIONS>` — Options to pass to the build command, for example --build-options='--lint-dir='
 
   Default value: ``
-* `-p`, `--module-path <MODULE_PATH>` — The system path (absolute or relative) to the module project. Defaults to spacetimedb/ subdirectory, then current directory.
+* `-p`, `--project-path <PROJECT_PATH>` — The system path (absolute or relative) to the module project
+
+  Default value: `.`
 * `-b`, `--bin-path <WASM_FILE>` — The system path (absolute or relative) to the compiled wasm binary we should publish, instead of building the project.
 * `-j`, `--js-path <JS_FILE>` — UNSTABLE: The system path (absolute or relative) to the javascript file we should publish, instead of building the project.
 * `--break-clients` — Allow breaking changes when publishing to an existing database identity. This will force publish even if it will break existing clients, but will NOT force publish if it would cause deletion of any data in the database. See --yes and --delete-data for details.
@@ -112,8 +114,6 @@ Run `spacetime help publish` for more detailed information.
    An organization can only be set when a database is created, not when it is updated.
 * `-s`, `--server <SERVER>` — The nickname, domain name or URL of the server to host the database.
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
-* `--no-config` — Ignore spacetime.json configuration
-* `--env <ENV>` — Environment name for config file layering (e.g., dev, staging)
 
 
 
@@ -233,7 +233,9 @@ Start development mode with auto-regenerate client module bindings, auto-rebuild
 * `--module-bindings-path <MODULE-BINDINGS-PATH>` — The path to the module bindings directory relative to the project directory, defaults to `<project-path>/src/module_bindings`
 
   Default value: `src/module_bindings`
-* `--module-path <MODULE-PATH>` — Path to the SpacetimeDB server module, relative to current directory. Defaults to `<project-path>/spacetimedb`.
+* `--module-project-path <MODULE-PROJECT-PATH>` — The path to the SpacetimeDB server module project relative to the project directory, defaults to `<project-path>/spacetimedb`
+
+  Default value: `spacetimedb`
 * `--client-lang <CLIENT-LANG>` — The programming language for the generated client module bindings (e.g., typescript, csharp, python). If not specified, it will be detected from the project.
 
   Possible values: `csharp`, `typescript`, `rust`, `unrealcpp`
@@ -245,12 +247,6 @@ Start development mode with auto-regenerate client module bindings, auto-rebuild
   Possible values: `always`, `on-conflict`, `never`
 
 * `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL) for project initialization
-* `--run <COMMAND>` — Command to run the client development server (overrides spacetime.json config)
-* `--server-only` — Only run the server (module) without starting the client
-* `--no-config` — Ignore spacetime.json configuration
-* `--env <ENV>` — Environment name for config file layering (e.g., dev, staging). Defaults to 'dev'.
-* `--skip-publish` — Skip the publish step
-* `--skip-generate` — Skip the generate step
 
 
 
@@ -327,25 +323,23 @@ Run `spacetime rename --help` for more detailed information.
 
 Generate client files for a spacetime module.
 
-**Usage:** `spacetime generate [DATABASE] --lang <LANG> --out-dir <DIR> [--module-path <DIR> | --bin-path <PATH> | --unreal-module-name <MODULE_NAME> | --uproject-dir <DIR> | --include-private]`
+**Usage:** `spacetime spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH> | --module-name <MODULE_NAME> | --uproject-dir <DIR>]`
 
-Run `spacetime help generate` for more detailed information.
-
-###### **Arguments:**
-
-* `<DATABASE>` — Database name or glob pattern to filter which databases to generate for
+Run `spacetime help publish` for more detailed information.
 
 ###### **Options:**
 
 * `-b`, `--bin-path <WASM_FILE>` — The system path (absolute or relative) to the compiled wasm binary we should inspect
 * `-j`, `--js-path <JS_FILE>` — The system path (absolute or relative) to the bundled javascript file we should inspect
-* `-p`, `--module-path <MODULE_PATH>` — The system path (absolute or relative) to the module project. Defaults to spacetimedb/ subdirectory, then current directory.
+* `-p`, `--project-path <PROJECT_PATH>` — The system path (absolute or relative) to the project you would like to inspect
+
+  Default value: `.`
 * `-o`, `--out-dir <OUT_DIR>` — The system path (absolute or relative) to the generate output directory
 * `--uproject-dir <UPROJECT_DIR>` — Path to the Unreal project directory, replaces --out-dir for Unreal generation (only used with --lang unrealcpp)
 * `--namespace <NAMESPACE>` — The namespace that should be used
 
   Default value: `SpacetimeDB.Types`
-* `--unreal-module-name <UNREAL_MODULE_NAME>` — The module name that should be used for DLL export macros (required for lang unrealcpp)
+* `--module-name <MODULE_NAME>` — The module name that should be used for DLL export macros (required for lang unrealcpp)
 * `-l`, `--lang <LANG>` — The language to generate
 
   Possible values: `csharp`, `typescript`, `rust`, `unrealcpp`
@@ -353,12 +347,7 @@ Run `spacetime help generate` for more detailed information.
 * `--build-options <BUILD_OPTIONS>` — Options to pass to the build command, for example --build-options='--lint-dir='
 
   Default value: ``
-* `--include-private` — Include private tables and functions in generated code (types are always included).
-
-  Default value: `false`
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
-* `--no-config` — Ignore spacetime.json configuration
-* `--env <ENV>` — Environment name for config file layering (e.g., dev, staging)
 
 
 
@@ -435,7 +424,7 @@ Initializes a new spacetime project. WARNING: This command is UNSTABLE and subje
 
 * `--project-path <PATH>` — Directory where the project will be created (defaults to `./<PROJECT_NAME>`)
 * `--server-only` — Initialize server only from the template (no client)
-* `--lang <LANG>` — Server language: rust, csharp, typescript, cpp (it can only be used when --template is not specified)
+* `--lang <LANG>` — Server language: rust, csharp, typescript (it can only be used when --template is not specified)
 * `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL)
 * `--local` — Use local deployment instead of Maincloud
 * `--non-interactive` — Run in non-interactive mode
@@ -450,7 +439,9 @@ Builds a spacetime module.
 
 ###### **Options:**
 
-* `-p`, `--module-path <MODULE_PATH>` — The system path (absolute or relative) to the module project. Defaults to spacetimedb/ subdirectory, then current directory.
+* `-p`, `--project-path <PROJECT_PATH>` — The system path (absolute or relative) to the project you would like to build
+
+  Default value: `.`
 * `--lint-dir <LINT_DIR>` — The directory to lint for nonfunctional print statements. If set to the empty string, skips linting.
 
   Default value: `src`

@@ -1,6 +1,6 @@
 ---
 title: Unreal Reference
-slug: /clients/unreal
+slug: /sdks/unreal
 ---
 
 
@@ -8,9 +8,9 @@ The SpacetimeDB client for Unreal Engine contains all the tools you need to buil
 
 Before diving into the reference, you may want to review:
 
-- [Generating Client Bindings](/clients/codegen) - How to generate Unreal bindings from your module
-- [Connecting to SpacetimeDB](/clients/connection) - Establishing and managing connections
-- [SDK API Reference](/clients/api) - Core concepts that apply across all SDKs
+- [Generating Client Bindings](/sdks/codegen) - How to generate Unreal bindings from your module
+- [Connecting to SpacetimeDB](/sdks/connection) - Establishing and managing connections
+- [SDK API Reference](/sdks/api) - Core concepts that apply across all SDKs
 
 | Name                                                        | Description                                                                                             |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
@@ -34,7 +34,7 @@ Add the SpacetimeDB Unreal SDK to your project as a plugin. The SDK provides bot
 Each SpacetimeDB client depends on some bindings specific to your module. Generate the Unreal interface files using the Spacetime CLI. From your project directory, run:
 
 ```bash
-spacetime generate --lang unrealcpp --uproject-dir <uproject_directory> --module-path <module_path> --unreal-module-name <module_name>
+spacetime generate --lang unrealcpp --uproject-dir <uproject_directory> --project-path <module_path> --module-name <module_name>
 ```
 
 Replace:
@@ -46,7 +46,7 @@ Replace:
 **Example:**
 
 ```bash
-spacetime generate --lang unrealcpp --uproject-dir /path/to/MyGame --module-path /path/to/quickstart-chat --unreal-module-name QuickstartChat
+spacetime generate --lang unrealcpp --uproject-dir /path/to/MyGame --project-path /path/to/quickstart-chat --module-name QuickstartChat
 ```
 
 This generates module-specific bindings in your project's `ModuleBindings` directory.
@@ -71,12 +71,12 @@ class UDbConnection
 };
 ```
 
-Construct a `UDbConnection` by calling `UDbConnection::Builder()`, chaining configuration methods, and finally calling `.Build()`. At a minimum, you must specify `WithUri` to provide the URI of the SpacetimeDB instance, and `WithDatabaseName` to specify the database's name or identity.
+Construct a `UDbConnection` by calling `UDbConnection::Builder()`, chaining configuration methods, and finally calling `.Build()`. At a minimum, you must specify `WithUri` to provide the URI of the SpacetimeDB instance, and `WithModuleName` to specify the database's name or identity.
 
 | Name                                                | Description                                                                          |
-|-----------------------------------------------------|--------------------------------------------------------------------------------------|
+| --------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | [WithUri method](#method-withuri)                   | Set the URI of the SpacetimeDB instance hosting the remote database.                 |
-| [WithDatabaseName method](#method-withdatabasename) | Set the name or identity of the remote database.                                     |
+| [WithModuleName method](#method-withmodulename)     | Set the name or identity of the remote database.                                     |
 | [WithToken method](#method-withtoken)               | Supply a token to authenticate with the remote database.                             |
 | [WithCompression method](#method-withcompression)   | Set the compression method for WebSocket communication.                              |
 | [OnConnect callback](#callback-onconnect)           | Register a callback to run when the connection is successfully established.          |
@@ -96,13 +96,13 @@ class UDbConnectionBuilder
 
 Configure the URI of the SpacetimeDB instance or cluster which hosts the remote module and database.
 
-#### Method `WithDatabaseName`
+#### Method `WithModuleName`
 
 ```cpp
 class UDbConnectionBuilder
 {
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
-    UDbConnectionBuilder* WithDatabaseName(const FString& InName);
+    UDbConnectionBuilder* WithModuleName(const FString& InName);
 };
 ```
 
@@ -570,7 +570,7 @@ Subscribe to the provided SQL queries and return a handle for managing the subsc
 USubscriptionHandle* SubscribeToAllTables();
 ```
 
-Subscribe to all public tables in the module.
+Subscribe to all tables in the module (equivalent to `Subscribe({ "SELECT * FROM *" })`).
 
 ### Type `USubscriptionHandle`
 
@@ -707,7 +707,7 @@ void AMyActor::BeginPlay()
     // Build and connect
     Conn = UDbConnection::Builder()
         ->WithUri(TEXT("127.0.0.1:3000"))
-        ->WithDatabaseName(TEXT("my-module"))
+        ->WithModuleName(TEXT("my-module"))
         ->OnConnect(ConnectDelegate)
         ->OnDisconnect(DisconnectDelegate)
         ->Build();

@@ -1,7 +1,7 @@
 ---
 title: C# Reference
 toc_max_heading_level: 6
-slug: /clients/c-sharp
+slug: /sdks/c-sharp
 ---
 
 
@@ -9,9 +9,9 @@ The SpacetimeDB client for C# contains all the tools you need to build native cl
 
 Before diving into the reference, you may want to review:
 
-- [Generating Client Bindings](/clients/codegen) - How to generate C# bindings from your module
-- [Connecting to SpacetimeDB](/clients/connection) - Establishing and managing connections (important: C# requires manual connection advancement!)
-- [SDK API Reference](/clients/api) - Core concepts that apply across all SDKs
+- [Generating Client Bindings](/sdks/codegen) - How to generate C# bindings from your module
+- [Connecting to SpacetimeDB](/sdks/connection) - Establishing and managing connections (important: C# requires manual connection advancement!)
+- [SDK API Reference](/sdks/api) - Core concepts that apply across all SDKs
 
 | Name                                                              | Description                                                                                             |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
@@ -23,7 +23,6 @@ Before diving into the reference, you may want to review:
 | [`ReducerEventContext` type](#type-reducereventcontext)           | Implements [`IDbContext`](#interface-idbcontext) for [reducer callbacks](#observe-and-invoke-reducers). |
 | [`SubscriptionEventContext` type](#type-subscriptioneventcontext) | Implements [`IDbContext`](#interface-idbcontext) for [subscription callbacks](#subscribe-to-queries).   |
 | [`ErrorContext` type](#type-errorcontext)                         | Implements [`IDbContext`](#interface-idbcontext) for error-related callbacks.                           |
-| [Query Builder API](#query-builder-api)                           | Type-safe query builder for typed subscription queries.                                                  |
 | [Access the client cache](#access-the-client-cache)               | Access to your local view of the database.                                                              |
 | [Observe and invoke reducers](#observe-and-invoke-reducers)       | Send requests to the database to run reducers, and register callbacks to run when notified of reducers. |
 | [Identify a client](#identify-a-client)                           | Types for identifying users and client connections.                                                     |
@@ -56,7 +55,7 @@ Each SpacetimeDB client depends on some bindings specific to your module. Create
 
 ```bash
 mkdir -p module_bindings
-spacetime generate --lang cs --out-dir module_bindings --module-path PATH-TO-MODULE-DIRECTORY
+spacetime generate --lang cs --out-dir module_bindings --project-path PATH-TO-MODULE-DIRECTORY
 ```
 
 Replace `PATH-TO-MODULE-DIRECTORY` with the path to your SpacetimeDB module.
@@ -80,12 +79,12 @@ class DbConnection
 }
 ```
 
-Construct a `DbConnection` by calling `DbConnection.Builder()`, chaining configuration methods, and finally calling `.Build()`. At a minimum, you must specify `WithUri` to provide the URI of the SpacetimeDB instance, and `WithDatabaseName` to specify the database's name or identity.
+Construct a `DbConnection` by calling `DbConnection.Builder()`, chaining configuration methods, and finally calling `.Build()`. At a minimum, you must specify `WithUri` to provide the URI of the SpacetimeDB instance, and `WithModuleName` to specify the database's name or identity.
 
 | Name                                                    | Description                                                                          |
-|---------------------------------------------------------|--------------------------------------------------------------------------------------|
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | [WithUri method](#method-withuri)                       | Set the URI of the SpacetimeDB instance hosting the remote database.                 |
-| [WithDatabaseName method](#method-withdatabasename)     | Set the name or identity of the remote database.                                     |
+| [WithModuleName method](#method-withmodulename)         | Set the name or identity of the remote database.                                     |
 | [WithConfirmedReads method](#method-withconfirmedreads) | Enable or disable confirmed reads.                                                   |
 | [OnConnect callback](#callback-onconnect)               | Register a callback to run when the connection is successfully established.          |
 | [OnConnectError callback](#callback-onconnecterror)     | Register a callback to run if the connection is rejected or the host is unreachable. |
@@ -104,12 +103,12 @@ class DbConnectionBuilder<DbConnection>
 
 Configure the URI of the SpacetimeDB instance or cluster which hosts the remote module and database.
 
-#### Method `WithDatabaseName`
+#### Method `WithModuleName`
 
 ```csharp
 class DbConnectionBuilder
 {
-    public DbConnectionBuilder<DbConnection> WithDatabaseName(string nameOrIdentity);
+    public DbConnectionBuilder<DbConnection> WithModuleName(string nameOrIdentity);
 }
 ```
 
@@ -254,7 +253,7 @@ The `IDbContext` interface is implemented by connections and contexts to _every_
 | [`Db` method](#method-db)                                   | Provides access to the subscribed view of the remote database's tables. |
 | [`Reducers` method](#method-reducers)                       | Provides access to reducers exposed by the remote module.               |
 | [`Disconnect` method](#method-disconnect)                   | End the connection.                                                     |
-| [Subscribe to queries](#subscribe-to-queries)               | Register subscription queries to receive updates about matching rows.    |
+| [Subscribe to queries](#subscribe-to-queries)               | Register SQL queries to receive updates about matching rows.            |
 | [Read connection metadata](#read-connection-metadata)       | Access the connection's `Identity` and `ConnectionId`                   |
 
 ### Interface `IRemoteDbContext`
@@ -318,8 +317,7 @@ Gracefully close the `DbConnection`. Throws an error if the connection is alread
 | Name                                                    | Description                                                 |
 | ------------------------------------------------------- | ----------------------------------------------------------- |
 | [`SubscriptionBuilder` type](#type-subscriptionbuilder) | Builder-pattern constructor to register subscribed queries. |
-| [`TypedSubscriptionBuilder` type](#type-typedsubscriptionbuilder) | Builder for typed query subscriptions. |
-| [`SubscriptionHandle` type](#type-subscriptionhandle)   | Manage an active subscription.                              |
+| [`SubscriptionHandle` type](#type-subscriptionhandle)   | Manage an active subscripion.                               |
 
 #### Type `SubscriptionBuilder`
 
@@ -328,8 +326,7 @@ Gracefully close the `DbConnection`. Throws an error if the connection is alread
 | [`ctx.SubscriptionBuilder()` constructor](#constructor-ctxsubscriptionbuilder) | Begin configuring a new subscription.                           |
 | [`OnApplied` callback](#callback-onapplied)                                    | Register a callback to run when matching rows become available. |
 | [`OnError` callback](#callback-onerror)                                        | Register a callback to run if the subscription fails.           |
-| [`Subscribe` method](#method-subscribe)                                        | Finish configuration and subscribe to one or more queries.       |
-| [`AddQuery` method](#method-addquery)                                          | Build a typed subscription query without writing query strings. |
+| [`Subscribe` method](#method-subscribe)                                        | Finish configuration and subscribe to one or more SQL queries.  |
 | [`SubscribeToAllTables` method](#method-subscribetoalltables)                  | Convenience method to subscribe to the entire database.         |
 
 ##### Constructor `ctx.SubscriptionBuilder()`
@@ -378,29 +375,6 @@ Subscribe to a set of queries. `queries` should be an array of SQL query strings
 
 See [the SpacetimeDB SQL Reference](/reference/sql#subscriptions) for information on the queries SpacetimeDB supports as subscriptions.
 
-For typed query subscriptions, use [`AddQuery`](#method-addquery).
-
-##### Method `AddQuery`
-
-```csharp
-class SubscriptionBuilder
-{
-    public TypedSubscriptionBuilder AddQuery<TRow>(
-        Func<QueryBuilder, IQuery<TRow>> build
-    );
-}
-```
-
-Start a typed query subscription. Once a typed query is added, continue with typed queries on `TypedSubscriptionBuilder` and finish with `Subscribe()`.
-
-```csharp
-var handle = conn
-    .SubscriptionBuilder()
-    .AddQuery(q => q.From.User())
-    .AddQuery(q => q.From.Message())
-    .Subscribe();
-```
-
 ##### Method `SubscribeToAllTables`
 
 ```csharp
@@ -411,126 +385,6 @@ class SubscriptionBuilder
 ```
 
 Subscribe to all rows from all public tables. This method is provided as a convenience for simple clients. The subscription initiated by `SubscribeToAllTables` cannot be canceled after it is initiated. You should [`subscribe` to specific queries](#method-subscribe) if you need fine-grained control over the lifecycle of your subscriptions.
-
-#### Type `TypedSubscriptionBuilder`
-
-| Name                                             | Description |
-| ------------------------------------------------ | ----------- |
-| [`AddQuery` method](#method-addquery-typedsubscriptionbuilder) | Add another typed query to the same subscription. |
-| [`Subscribe` method](#method-subscribe-typedsubscriptionbuilder) | Subscribe to all typed queries added so far. |
-
-##### Method `AddQuery` (TypedSubscriptionBuilder)
-
-```csharp
-class TypedSubscriptionBuilder
-{
-    public TypedSubscriptionBuilder AddQuery<TRow>(
-        Func<QueryBuilder, IQuery<TRow>> build
-    );
-}
-```
-
-Add another typed query. This keeps all added queries grouped under one returned `SubscriptionHandle`.
-
-##### Method `Subscribe` (TypedSubscriptionBuilder)
-
-```csharp
-class TypedSubscriptionBuilder
-{
-    public SubscriptionHandle Subscribe();
-}
-```
-
-Subscribe to the set of typed queries that were added to the builder.
-
-## Query Builder API
-
-The C# SDK provides a type-safe query builder for subscriptions. You use it through `SubscriptionBuilder.AddQuery(...)` and `TypedSubscriptionBuilder.AddQuery(...)`.
-
-### Entry Point
-
-Typed query builders are created from generated table accessors under `QueryBuilder.From`.
-
-```csharp
-var handle = conn
-    .SubscriptionBuilder()
-    .AddQuery(q => q.From.User())
-    .Subscribe();
-```
-
-### Building Queries with `Where` / `Filter`
-
-Each generated table accessor supports both `Where(...)` and `Filter(...)`. They are equivalent. Chaining multiple `Where`/`Filter` calls combines conditions with logical `AND`.
-
-```csharp
-// All users
-q.From.User()
-
-// Filtered users
-q.From.User().Where(u => u.Online.Eq(true))
-q.From.User().Filter(u => u.Name.Neq("Anonymous"))
-
-// Chained filters (AND semantics)
-q.From.User()
-    .Where(u => u.Score.Gte(1000UL))
-    .Filter(u => u.Level.Gte(10U))
-```
-
-### Comparison Operators
-
-| Operator | Description              | Example                      |
-| --- | --- | --- |
-| `Eq` | Equal to | `u.Online.Eq(true)` |
-| `Neq` | Not equal to | `u.Name.Neq("BOT")` |
-| `Lt` | Less than | `u.Level.Lt(10U)` |
-| `Lte` | Less than or equal to | `u.Level.Lte(10U)` |
-| `Gt` | Greater than | `u.Score.Gt(1000UL)` |
-| `Gte` | Greater than or equal to | `u.Score.Gte(1000UL)` |
-
-### Boolean Combinators
-
-Combine conditions with `And`, `Or`, and `Not`:
-
-```csharp
-q.From.User().Where(u => u.Level.Gte(5U).And(u.Level.Lt(10U)))
-q.From.User().Where(u => u.Online.Eq(true).Or(u.Name.Eq("Admin")))
-q.From.User().Where(u => u.Banned.Eq(true).Not())
-```
-
-### Semijoins
-
-Semijoins match rows across two tables and return rows from one side:
-
-- `LeftSemijoin(...)` returns rows from the left side that match at least one row on the right.
-- `RightSemijoin(...)` returns rows from the right side that match at least one row on the left.
-- The join predicate uses indexed columns (`IxCols`) and must compare one indexed column from each side with `Eq`.
-- Filters before a semijoin apply to the pre-join source side. Filters after a semijoin apply to the returned side.
-
-```csharp
-var handle = conn
-    .SubscriptionBuilder()
-    .AddQuery(q => q.From.Player()
-        .Where(p => p.Score.Gte(1000UL))
-        .LeftSemijoin(q.From.PlayerLevel(), (p, pl) => p.Id.Eq(pl.PlayerId))
-        .Where(p => p.Online.Eq(true)))
-    .AddQuery(q => q.From.Player()
-        .Where(p => p.Score.Gte(1000UL))
-        .RightSemijoin(q.From.PlayerLevel(), (p, pl) => p.Id.Eq(pl.PlayerId))
-        .Where(pl => pl.Level.Gte(10U)))
-    .Subscribe();
-```
-
-### Using Query Builders with Subscriptions
-
-`AddQuery` accepts a builder function that returns an `IQuery<TRow>`. You can add multiple typed queries and subscribe once.
-
-```csharp
-var handle = conn
-    .SubscriptionBuilder()
-    .AddQuery(q => q.From.User().Where(u => u.Online.Eq(true)))
-    .AddQuery(q => q.From.Message().Where(m => m.ChannelId.Eq(1U)))
-    .Subscribe();
-```
 
 #### Type `SubscriptionHandle`
 
@@ -1025,7 +879,7 @@ For each unique constraint on a table, its table handle has a property which is 
 Given the following module-side `User` definition:
 
 ```csharp
-[Table(Accessor = "User", Public = true)]
+[Table(Name = "User", Public = true)]
 public partial class User
 {
     [Unique] // Or [PrimaryKey]
@@ -1049,13 +903,13 @@ For each btree index defined on a remote table, its corresponding table handle h
 Given the following module-side `Player` definition:
 
 ```csharp
-[Table(Accessor = "Player", Public = true)]
+[Table(Name = "Player", Public = true)]
 public partial class Player
 {
     [PrimaryKey]
     public Identity id;
 
-    [Index.BTree(Accessor = "Level")]
+    [Index.BTree(Name = "Level")]
     public uint level;
     ..
 }

@@ -5,7 +5,6 @@ slug: /tables/indexes
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Indexes accelerate queries by maintaining sorted data structures alongside your tables. Without an index, finding rows that match a condition requires scanning every row. With an index, the database locates matching rows directly.
@@ -74,7 +73,7 @@ const position = table(
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(accessor = position, public)]
+#[spacetimedb::table(name = position, public)]
 pub struct Position {
     #[primary_key]
     #[index(direct)]
@@ -118,7 +117,7 @@ const user = table(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Accessor = "User", Public = true)]
+[SpacetimeDB.Table(Name = "User", Public = true)]
 public partial struct User
 {
     [SpacetimeDB.PrimaryKey]
@@ -136,7 +135,7 @@ public partial struct User
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(accessor = user, public)]
+#[spacetimedb::table(name = user, public)]
 pub struct User {
     #[primary_key]
     id: u32,
@@ -146,26 +145,6 @@ pub struct User {
     age: u8,
 }
 ```
-
-</TabItem>
-<TabItem value="cpp" label="C++">
-
-<CppModuleVersionNotice />
-
-```cpp
-struct User {
-  uint32_t id;
-  std::string name;
-  uint8_t age;
-};
-SPACETIMEDB_STRUCT(User, id, name, age)
-SPACETIMEDB_TABLE(User, user, Public)
-FIELD_PrimaryKey(user, id)
-FIELD_Index(user, name)
-FIELD_Index(user, age)
-```
-
-Use `FIELD_Index(table, field)` to create a B-tree index on individual columns.
 
 </TabItem>
 </Tabs>
@@ -198,8 +177,8 @@ const user = table(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Accessor = "User", Public = true)]
-[SpacetimeDB.Index.BTree(Accessor = "idx_age", Columns = new[] { "Age" })]
+[SpacetimeDB.Table(Name = "User", Public = true)]
+[SpacetimeDB.Index.BTree(Name = "idx_age", Columns = new[] { "Age" })]
 public partial struct User
 {
     [SpacetimeDB.PrimaryKey]
@@ -215,7 +194,7 @@ public partial struct User
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(accessor = user, public, index(accessor = idx_age, btree(columns = [age])))]
+#[spacetimedb::table(name = user, public, index(name = idx_age, btree(columns = [age])))]
 pub struct User {
     #[primary_key]
     id: u32,
@@ -267,8 +246,8 @@ const score = table(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Accessor = "Score", Public = true)]
-[SpacetimeDB.Index.BTree(Accessor = "by_player_and_level", Columns = new[] { "PlayerId", "Level" })]
+[SpacetimeDB.Table(Name = "Score", Public = true)]
+[SpacetimeDB.Index.BTree(Name = "by_player_and_level", Columns = new[] { "PlayerId", "Level" })]
 public partial struct Score
 {
     public uint PlayerId;
@@ -281,29 +260,13 @@ public partial struct Score
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(accessor = score, public, index(accessor = by_player_and_level, btree(columns = [player_id, level])))]
+#[spacetimedb::table(name = score, public, index(name = by_player_and_level, btree(columns = [player_id, level])))]
 pub struct Score {
     player_id: u32,
     level: u32,
     points: i64,
 }
 ```
-
-</TabItem>
-<TabItem value="cpp" label="C++">
-
-```cpp
-struct Score {
-  uint32_t player_id;
-  uint32_t level;
-  int64_t points;
-};
-SPACETIMEDB_STRUCT(Score, player_id, level, points)
-SPACETIMEDB_TABLE(Score, score, Public)
-FIELD_NamedMultiColumnIndex(score, by_player_and_level, player_id, level)
-```
-
-Use `FIELD_NamedMultiColumnIndex(table, index_name, field1, field2, ...)` to create a named multi-column B-tree index.
 
 </TabItem>
 </Tabs>
@@ -346,18 +309,6 @@ for user in ctx.db.user().name().filter("Alice") {
     log::info!("Found user: {}", user.id);
 }
 ```
-
-</TabItem>
-<TabItem value="cpp" label="C++">
-
-```cpp
-// Find users with a specific name
-for (auto user : ctx.db[user_name].filter("Alice")) {
-    LOG_INFO("Found user: " + user.name);
-}
-```
-
-Use the index accessor `ctx.db[index_name]` created by `FIELD_Index` to perform filtered queries.
 
 </TabItem>
 </Tabs>
@@ -424,28 +375,6 @@ for user in ctx.db.user().age().filter(..18) {
     log::info!("{} is a minor", user.name);
 }
 ```
-
-</TabItem>
-<TabItem value="cpp" label="C++">
-
-```cpp
-// Find users aged 18 to 65 (inclusive)
-for (auto user : ctx.db[user_age].filter(range_inclusive(uint8_t(18), uint8_t(65)))) {
-    // Process user
-}
-
-// Find users aged 18 or older
-for (auto user : ctx.db[user_age].filter(range_from(uint8_t(18)))) {
-    // Process user
-}
-
-// Find users younger than 18
-for (auto user : ctx.db[user_age].filter(range_to(uint8_t(18)))) {
-    // Process user
-}
-```
-
-Use range query functions: `range_inclusive()`, `range_from()`, `range_to()`, and `range_to_inclusive()`. Include `<spacetimedb/range_queries.h>` for full range query support.
 
 </TabItem>
 </Tabs>

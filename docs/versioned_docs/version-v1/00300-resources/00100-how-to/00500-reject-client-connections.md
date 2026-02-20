@@ -4,7 +4,6 @@ slug: /how-to/reject-client-connections
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 # Reject Client Connections
 
@@ -65,39 +64,6 @@ Client behavior can vary by client type. For example:
 - **TypeScript clients**: Client will receive an `Error connecting to SpacetimeDB:` and a `CloseEvent` with a code of 1006.
 
 Regardless of the client type, from the rust server's perspective, the client will be disconnected and the server module's logs will contain an entry reading:
-`ERROR: : The client connection was rejected. With our current code logic, all clients will be rejected.`
-</TabItem>
-<TabItem value="cpp" label="C++">
-
-<CppModuleVersionNotice />
-In C++, if we return an error during the `client_connected` reducer, the client will be disconnected.
-
-Here is a simple example where the server module returns an error for all incoming client connections.
-
-```cpp
-using namespace SpacetimeDB;
-
-SPACETIMEDB_CLIENT_CONNECTED(client_connected, ReducerContext ctx) {
-    bool client_is_rejected = true;
-    if (client_is_rejected) {
-        return Err("The client connection was rejected. With our current code logic, all clients will be rejected.");
-    } else {
-        return Ok();
-    }
-}
-```
-
-Client behavior can vary by client type. For example:
-
-- **C# clients**: Client disconnection behavior is currently undefined and will generate an error reading:
-  `Disconnected abnormally: System.Net.WebSockets.WebSocketException (0x80004005): The remote party closed the WebSocket connection without completing the close handshake.`
-
-- **Rust clients**: Client disconnection behavior is currently undefined and will generate an error reading:
-  `Unable to send subscribe message: WS sender loop has dropped its recv channel: TrySendError { kind: Disconnected }`
-
-- **TypeScript clients**: Client will receive an `Error connecting to SpacetimeDB:` and a `CloseEvent` with a code of 1006.
-
-Regardless of the client type, from the C++ server's perspective, the client will be disconnected and the server module's logs will contain an entry reading:
 `ERROR: : The client connection was rejected. With our current code logic, all clients will be rejected.`
 </TabItem>
 </Tabs>

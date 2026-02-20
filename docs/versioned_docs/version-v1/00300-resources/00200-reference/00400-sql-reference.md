@@ -545,7 +545,7 @@ In order to conform with the best practices for optimizing performance and scala
 <TabItem value="csharp" label="C#">
 
 ```cs
-[SpacetimeDB.Table(Accessor = "Inventory")]
+[SpacetimeDB.Table(Name = "Inventory")]
 [SpacetimeDB.Index(Name = "product_name", BTree = ["name"])]
 public partial struct Inventory
 {
@@ -555,7 +555,7 @@ public partial struct Inventory
     ..
 }
 
-[SpacetimeDB.Table(Accessor = "Customers")]
+[SpacetimeDB.Table(Name = "Customers")]
 public partial struct Customers
 {
     [SpacetimeDB.PrimaryKey]
@@ -565,7 +565,7 @@ public partial struct Customers
     ..
 }
 
-[SpacetimeDB.Table(Accessor = "Orders")]
+[SpacetimeDB.Table(Name = "Orders")]
 public partial struct Orders
 {
     [SpacetimeDB.PrimaryKey]
@@ -583,8 +583,8 @@ public partial struct Orders
 
 ```rust
 #[table(
-    accessor = Inventory,
-    index(accessor = product_name, btree = [name]),
+    name = Inventory,
+    index(name = product_name, btree = [name]),
     public
 )]
 struct Inventory {
@@ -595,7 +595,7 @@ struct Inventory {
 }
 
 #[table(
-    accessor = Customers,
+    name = Customers,
     public
 )]
 struct Customers {
@@ -607,7 +607,7 @@ struct Customers {
 }
 
 #[table(
-    accessor = Orders,
+    name = Orders,
     public
 )]
 struct Orders {

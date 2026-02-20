@@ -5,7 +5,6 @@ slug: /tables/performance
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Follow these guidelines to optimize table performance in your SpacetimeDB modules.
@@ -41,16 +40,6 @@ ctx.db.player().name().filter("Alice")
 ```
 
 </TabItem>
-<TabItem value="cpp" label="C++">
-
-<CppModuleVersionNotice />
-
-```cpp
-// Fast: Uses index on name
-auto results = ctx.db[player_name].filter("Alice");
-```
-
-</TabItem>
 </Tabs>
 
 ❌ **Avoid - Full table scan:**
@@ -81,19 +70,6 @@ ctx.Db.Player.Iter()
 ctx.db.player()
     .iter()
     .find(|p| p.name == "Alice")
-```
-
-</TabItem>
-<TabItem value="cpp" label="C++">
-
-```cpp
-// Slow: Iterates through all rows
-for (const auto& p : ctx.db[player]) {
-    if (p.name == "Alice") {
-        // Found it
-        break;
-    }
-}
 ```
 
 </TabItem>
@@ -158,7 +134,7 @@ public partial struct Player
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(accessor = player)]
+#[spacetimedb::table(name = player)]
 pub struct Player {
     id: u32,
     name: String,
@@ -174,28 +150,6 @@ pub struct Player {
     audio_volume: f32,
     graphics_quality: u8,
 }
-```
-
-</TabItem>
-<TabItem value="cpp" label="C++">
-
-```cpp
-// Instead of one large table with all fields:
-struct Player {
-    uint32_t id;
-    std::string name;
-    // Game state
-    float position_x;
-    float position_y;
-    uint32_t health;
-    // Statistics (rarely accessed)
-    uint32_t total_kills;
-    uint32_t total_deaths;
-    uint64_t play_time_seconds;
-    // Settings (rarely changed)
-    float audio_volume;
-    uint8_t graphics_quality;
-};
 ```
 
 </TabItem>
@@ -292,7 +246,7 @@ public partial struct PlayerSettings
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(accessor = player)]
+#[spacetimedb::table(name = player)]
 pub struct Player {
     #[primary_key]
     id: u32,
@@ -300,7 +254,7 @@ pub struct Player {
     name: String,
 }
 
-#[spacetimedb::table(accessor = player_state)]
+#[spacetimedb::table(name = player_state)]
 pub struct PlayerState {
     #[unique]
     player_id: u32,
@@ -309,7 +263,7 @@ pub struct PlayerState {
     health: u32,
 }
 
-#[spacetimedb::table(accessor = player_stats)]
+#[spacetimedb::table(name = player_stats)]
 pub struct PlayerStats {
     #[unique]
     player_id: u32,
@@ -318,55 +272,13 @@ pub struct PlayerStats {
     play_time_seconds: u64,
 }
 
-#[spacetimedb::table(accessor = player_settings)]
+#[spacetimedb::table(name = player_settings)]
 pub struct PlayerSettings {
     #[unique]
     player_id: u32,
     audio_volume: f32,
     graphics_quality: u8,
 }
-```
-
-</TabItem>
-<TabItem value="cpp" label="C++">
-
-```cpp
-struct Player {
-    uint32_t id;
-    std::string name;
-};
-SPACETIMEDB_STRUCT(Player, id, name)
-SPACETIMEDB_TABLE(Player, player, Public)
-FIELD_PrimaryKey(player, id)
-
-struct PlayerState {
-    uint32_t player_id;
-    float position_x;
-    float position_y;
-    uint32_t health;
-};
-SPACETIMEDB_STRUCT(PlayerState, player_id, position_x, position_y, health)
-SPACETIMEDB_TABLE(PlayerState, player_state, Public)
-FIELD_Unique(player_state, player_id)
-
-struct PlayerStats {
-    uint32_t player_id;
-    uint32_t total_kills;
-    uint32_t total_deaths;
-    uint64_t play_time_seconds;
-};
-SPACETIMEDB_STRUCT(PlayerStats, player_id, total_kills, total_deaths, play_time_seconds)
-SPACETIMEDB_TABLE(PlayerStats, player_stats, Public)
-FIELD_Unique(player_stats, player_id)
-
-struct PlayerSettings {
-    uint32_t player_id;
-    float audio_volume;
-    uint8_t graphics_quality;
-};
-SPACETIMEDB_STRUCT(PlayerSettings, player_id, audio_volume, graphics_quality)
-SPACETIMEDB_TABLE(PlayerSettings, player_settings, Public)
-FIELD_Unique(player_settings, player_id)
 ```
 
 </TabItem>
@@ -410,17 +322,6 @@ public uint EntityId;        // Not ulong
 level: u8,           // Not u64
 player_count: u16,   // Not u64
 entity_id: u32,      // Not u64
-```
-
-</TabItem>
-<TabItem value="cpp" label="C++">
-
-```cpp
-// If you only need 0-255, use byte instead of uint64_t
-uint8_t level;             // Not uint64_t
-uint16_t player_count;      // Not uint64_t
-uint32_t entity_id;         // Not uint64_t
-
 ```
 
 </TabItem>
@@ -472,29 +373,13 @@ public partial struct InternalState { /* ... */ }
 
 ```rust
 // Public table - clients can subscribe and receive updates
-#[spacetimedb::table(accessor = player, public)]
+#[spacetimedb::table(name = player, public)]
 pub struct Player { /* ... */ }
 
 // Private table - only visible to module and owner
 // Better for internal state, caches, or sensitive data
-#[spacetimedb::table(accessor = internal_state)]
+#[spacetimedb::table(name = internal_state)]
 pub struct InternalState { /* ... */ }
-```
-
-</TabItem>
-<TabItem value="cpp" label="C++">
-
-```cpp
-// Public table - clients can subscribe and receive updates
-struct Player { /* ... */ };
-SPACETIMEDB_STRUCT(Player, /* ... fields ... */)
-SPACETIMEDB_TABLE(Player, player, Public)
-
-// Private table - only visible to module and owner
-// Better for internal state, caches, or sensitive data
-struct InternalState {/* ... */ };
-SPACETIMEDB_STRUCT(InternalState, /* ... fields ... */ )
-SPACETIMEDB_TABLE(InternalState, internal_state, Private)
 ```
 
 </TabItem>
@@ -515,7 +400,7 @@ When inserting or updating multiple rows, batch them in a single reducer call ra
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-export const spawn_enemies = spacetimedb.reducer({ count: t.u32() }, (ctx, { count }) => {
+spacetimedb.reducer('spawn_enemies', { count: t.u32() }, (ctx, { count }) => {
   for (let i = 0; i < count; i++) {
     ctx.db.enemy.insert({
       id: 0, // auto_inc
@@ -559,20 +444,6 @@ fn spawn_enemies(ctx: &ReducerContext, count: u32) {
 ```
 
 </TabItem>
-<TabItem value="cpp" label="C++">
-
-```cpp
-// Good - Batch operation in a single reducer call
-void spawn_enemies(ReducerContext& ctx, uint32_t count) {
-    for (uint32_t i = 0; i < count; ++i) {
-        Enemy new_enemy;
-        new_enemy.health = 100;
-        ctx.db[enemy].insert(new_enemy);
-    }
-}
-```
-
-</TabItem>
 </Tabs>
 
 ❌ **Avoid - Multiple calls:**
@@ -609,16 +480,6 @@ for i in 0..10 {
 ```
 
 </TabItem>
-<TabItem value="cpp" label="C++">
-
-```cpp
-// Client making many separate reducer calls
-for (int i = 0; i < 10; ++i) {
-    connection.reducers.spawn_enemy();
-}
-```
-
-</TabItem>
 </Tabs>
 
 Batch operations are more efficient because:
@@ -638,5 +499,5 @@ Be mindful of unbounded table growth:
 ## Next Steps
 
 - Learn about [Indexes](/tables/indexes) to optimize queries
-- Explore [Subscriptions](/clients/subscriptions) for efficient client data sync
+- Explore [Subscriptions](/subscriptions) for efficient client data sync
 - Review [Reducers](/functions/reducers) for efficient data modification patterns

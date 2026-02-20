@@ -1,6 +1,6 @@
 ---
-title: Clients
-slug: /clients
+title: Overview
+slug: /sdks
 ---
 
 The SpacetimeDB Client SDKs provide a comprehensive interface for building applications that connect to SpacetimeDB [databases](/databases). Client applications can query data, invoke server-side functions, and receive real-time updates as the database state changes.
@@ -9,18 +9,18 @@ The SpacetimeDB Client SDKs provide a comprehensive interface for building appli
 
 SpacetimeDB provides client SDKs for multiple languages:
 
-- [Rust](/clients/rust) - [(Quickstart)](/docs/quickstarts/rust)
-- [C#](/clients/c-sharp) - [(Quickstart)](/docs/quickstarts/c-sharp)
-- [TypeScript](/clients/typescript) - [(Quickstart)](/docs/quickstarts/typescript)
-- [Unreal](/clients/unreal) - [(Tutorial)](/tutorials/unreal)
+- [Rust](/sdks/rust) - [(Quickstart)](/docs/quickstarts/rust)
+- [C#](/sdks/c-sharp) - [(Quickstart)](/docs/quickstarts/c-sharp)
+- [TypeScript](/sdks/typescript) - [(Quickstart)](/docs/quickstarts/typescript)
+- [Unreal](/sdks/unreal) - [(Tutorial)](/tutorials/unreal)
 
 ## Getting Started
 
 To build a client application with SpacetimeDB:
 
-1. **[Generate client bindings](/clients/codegen)** - Use `spacetime generate` to create type-safe bindings for your [database](/databases)
-2. **[Connect to your database](/clients/connection)** - Establish a WebSocket connection to SpacetimeDB
-3. **[Use the SDK API](/clients/api)** - Subscribe to data, invoke functions, and register callbacks
+1. **[Generate client bindings](/sdks/codegen)** - Use `spacetime generate` to create type-safe bindings for your [database](/databases)
+2. **[Connect to your database](/sdks/connection)** - Establish a WebSocket connection to SpacetimeDB
+3. **[Use the SDK API](/sdks/api)** - Subscribe to data, invoke functions, and register callbacks
 
 ## Core Capabilities
 
@@ -28,11 +28,11 @@ To build a client application with SpacetimeDB:
 
 The SDKs handle establishing and maintaining WebSocket connections to SpacetimeDB servers. Connections support authentication via tokens (for example, from [SpacetimeAuth](./00500-authentication/00100-spacetimeauth/index.md)) and provide lifecycle callbacks for connect, disconnect, and error events.
 
-See [Connecting to SpacetimeDB](/clients/connection) for details.
+See [Connecting to SpacetimeDB](/sdks/connection) for details.
 
 ### Client-Side Data Cache
 
-Each client maintains a local cache of database rows through [subscriptions](/clients/subscriptions). Clients define which data they need using typed query builders (or raw SQL when needed), and SpacetimeDB automatically synchronizes changes to the subscribed data. The local cache can be queried without network round-trips, providing fast access to frequently-read data.
+Each client maintains a local cache of database rows through [subscriptions](/subscriptions). Clients define which data they need using SQL queries, and SpacetimeDB automatically synchronizes changes to the subscribed data. The local cache can be queried without network round-trips, providing fast access to frequently-read data.
 
 ### Real-Time Updates
 
@@ -52,7 +52,7 @@ Clients can invoke server-side functions to modify data or perform operations:
 
 ### Type Safety
 
-The [generated client bindings](/clients/codegen) provide compile-time type safety between your client and server code. Table schemas, function signatures, and return types are all reflected in the generated code, catching errors before runtime.
+The [generated client bindings](/sdks/codegen) provide compile-time type safety between your client and server code. Table schemas, function signatures, and return types are all reflected in the generated code, catching errors before runtime.
 
 ## Choosing a Language
 
@@ -80,14 +80,14 @@ The functionality of the SDKs remains consistent across languages, so transition
 
 New to SpacetimeDB client development? Follow this progression:
 
-1. **[Generate Client Bindings](/clients/codegen)** - Create type-safe interfaces from your module
-2. **[Connect to SpacetimeDB](/clients/connection)** - Establish a connection and understand the lifecycle
-3. **[Use the SDK API](/clients/api)** - Learn about subscriptions, reducers, and callbacks
-4. **Language Reference** - Dive into language-specific details: [Rust](/clients/rust), [C#](/clients/c-sharp), [TypeScript](/clients/typescript)
+1. **[Generate Client Bindings](/sdks/codegen)** - Create type-safe interfaces from your module
+2. **[Connect to SpacetimeDB](/sdks/connection)** - Establish a connection and understand the lifecycle
+3. **[Use the SDK API](/sdks/api)** - Learn about subscriptions, reducers, and callbacks
+4. **Language Reference** - Dive into language-specific details: [Rust](/sdks/rust), [C#](/sdks/c-sharp), [TypeScript](/sdks/typescript)
 
 ## Next Steps
 
 - Follow a **Quickstart guide** [Rust](/quickstarts/rust), [C#](/quickstarts/c-sharp), or [TypeScript](/quickstarts/typescript) to build your first client
 - Learn about [Databases](/databases) to understand what you're connecting to
-- Explore [Subscriptions](/clients/subscriptions) for efficient data synchronization
+- Explore [Subscriptions](/subscriptions) for efficient data synchronization
 - Review [Reducers](/functions/reducers) to understand server-side state changes

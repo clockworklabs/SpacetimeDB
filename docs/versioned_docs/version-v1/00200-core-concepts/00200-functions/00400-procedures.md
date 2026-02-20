@@ -5,11 +5,10 @@ slug: /functions/procedures
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 A **procedure** is a function exported by a [database](/databases), similar to a [reducer](/functions/reducers).
-Connected [clients](/clients) can call procedures.
+Connected [clients](/sdks) can call procedures.
 Procedures can perform additional operations not possible in reducers, including making HTTP requests to external services.
 However, procedures don't automatically run in database transactions,
 and must manually open and commit a transaction in order to read from or modify the database state.
@@ -27,7 +26,8 @@ For this reason, prefer defining reducers rather than procedures unless you need
 Define a procedure with `spacetimedb.procedure`:
 
 ```typescript
-export const add_two_numbers = spacetimedb.procedure(
+spacetimedb.procedure(
+    "add_two_numbers",
     { lhs: t.u32(), rhs: t.u32() },
     t.u64(),
     (ctx, { lhs, rhs }) => BigInt(lhs) + BigInt(rhs),
@@ -97,29 +97,6 @@ fn add_two_numbers(ctx: &mut spacetimedb::ProcedureContext, lhs: u32, rhs: u32) 
 ```
 
 </TabItem>
-<TabItem value="cpp" label="C++">
-
-<CppModuleVersionNotice />
-
-:::warning Unstable Feature
-Procedures in C++ are currently unstable. To use them, add `#define SPACETIMEDB_UNSTABLE_FEATURES` before including the SpacetimeDB header.
-:::
-
-Define a procedure using the `SPACETIMEDB_PROCEDURE` macro.
-
-The macro's first parameter is the return type, followed by the procedure name. The function's first argument must be of type `ProcedureContext`. By convention, this argument is named `ctx`. A procedure may accept any number of additional arguments and must return a value.
-
-```cpp
-#define SPACETIMEDB_UNSTABLE_FEATURES
-#include <spacetimedb.h>
-using namespace SpacetimeDB;
-
-SPACETIMEDB_PROCEDURE(uint64_t, add_two_numbers, ProcedureContext ctx, uint32_t lhs, uint32_t rhs) {
-    return static_cast<uint64_t>(lhs) + static_cast<uint64_t>(rhs);
-}
-```
-
-</TabItem>
 </Tabs>
 
 ### Accessing the database
@@ -132,7 +109,7 @@ This means there's no `ctx.db` field to access the database.
 Instead, procedure code must manage transactions explicitly with `ProcedureCtx.withTx`.
 
 ```typescript
-const myTable = table(
+const MyTable = table(
     { name: "my_table" },
     {
         a: t.u32(),
@@ -140,10 +117,10 @@ const myTable = table(
     },
 )
 
-const spacetimedb = schema({ myTable });
-export default spacetimedb;
+const spacetimedb = schema(MyTable);
 
-export const insert_a_value = spacetimedb.procedure({ a: t.u32(), b: t.u32() }, t.unit(), (ctx, { a, b }) => {
+#[spacetimedb::procedure]
+spacetimedb.procedure("insert_a_value", { a: t.u32(), b: t.u32() }, t.unit(), (ctx, { a, b }) => {
     ctx.withTx(ctx => {
         ctx.myTable.insert({ a, b });
     });
@@ -184,7 +161,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Accessor = "MyTable")]
+    [SpacetimeDB.Table(Name = "MyTable")]
     public partial struct MyTable
     {
         public uint A;
@@ -231,7 +208,7 @@ This means there's no `ctx.db` field to access the database.
 Instead, procedure code must manage transactions explicitly with `ProcedureContext::with_tx`.
 
 ```rust
-#[spacetimedb::table(accessor = my_table)]
+#[spacetimedb::table(name = my_table)]
 struct MyTable {
     a: u32,
     b: String,
@@ -268,55 +245,6 @@ Avoid capturing mutable state within functions passed to `with_tx`.
 :::
 
 </TabItem>
-<TabItem value="cpp" label="C++">
-
-Unlike reducers, procedures don't automatically run in database transactions.
-This means there's no `ctx.db` field to access the database.
-Instead, procedure code must manage transactions explicitly with `ctx.with_tx`.
-
-```cpp
-#define SPACETIMEDB_UNSTABLE_FEATURES
-#include <spacetimedb.h>
-using namespace SpacetimeDB;
-
-struct MyTable {
-    uint32_t a;
-    std::string b;
-};
-SPACETIMEDB_STRUCT(MyTable, a, b)
-SPACETIMEDB_TABLE(MyTable, my_table, Public)
-
-SPACETIMEDB_PROCEDURE(Unit, insert_a_value, ProcedureContext ctx, uint32_t a, std::string b) {
-    ctx.with_tx([&](TxContext& tx) {
-        tx.db[my_table].insert(MyTable{a, b});
-    });
-    return Unit{};
-}
-```
-
-`ctx.with_tx` takes a lambda function with signature `[](TxContext& tx) -> T`.
-Within that function, the `TxContext` can be used to access the database
-[in all the same ways as a `ReducerContext`](/functions/reducers/reducer-context).
-When the function returns, the transaction will be committed,
-and its changes to the database state will become permanent and be broadcast to clients.
-If the function throws an exception, the transaction will be rolled back, and its changes will be discarded.
-However, for transactions that may fail,
-[prefer calling `try_with_tx` and returning `bool`](#fallible-database-operations) rather than throwing.
-
-:::warning
-The function passed to `ctx.with_tx` may be invoked multiple times,
-possibly seeing a different version of the database state each time.
-
-If invoked more than once with reference to the same database state,
-it must perform the same operations and return the same result each time.
-
-If invoked more than once with reference to different database states,
-values observed during prior runs must not influence the behavior of the function or the calling procedure.
-
-Avoid capturing mutable state within functions passed to `with_tx`.
-:::
-
-</TabItem>
 </Tabs>
 
 #### Fallible database operations
@@ -327,7 +255,7 @@ Avoid capturing mutable state within functions passed to `with_tx`.
 For fallible database operations, you can throw an error inside the transaction function:
 
 ```typescript
-export const maybe_insert_a_value = spacetimedb.procedure({ a: t.u32(), b: t.string() }, t.unit(), (ctx, { a, b }) => {
+spacetimedb.procedure("maybe_insert_a_value", { a: t.u32(), b: t.string() }, t.unit(), (ctx, { a, b }) => {
     ctx.withTx(ctx => {
         if (a < 10) {
             throw new SenderError("a is less than 10!");
@@ -388,36 +316,6 @@ and its changes to the database state will become permanent and be broadcast to 
 If that function returns `Err`, the transaction will be rolled back, and its changes will be discarded.
 
 </TabItem>
-<TabItem value="cpp" label="C++">
-
-For fallible database operations, use `ctx.try_with_tx` with a lambda that returns `bool`:
-
-```cpp
-#define SPACETIMEDB_UNSTABLE_FEATURES
-#include <spacetimedb.h>
-using namespace SpacetimeDB;
-
-SPACETIMEDB_PROCEDURE(bool, maybe_insert_a_value, ProcedureContext ctx, uint32_t a, std::string b) {
-    return ctx.try_with_tx([&](TxContext& tx) -> bool {
-        if (a < 10) {
-            return false;  // Rollback transaction
-        }
-        tx.db[my_table].insert(MyTable{a, b});
-        return true;  // Commit transaction
-    });
-}
-```
-
-`ctx.try_with_tx` takes a lambda function with signature `[](TxContext& tx) -> bool`.
-If the function returns `true`, the transaction will be committed,
-and its changes to the database state will become permanent and be broadcast to clients.
-If the function returns `false`, the transaction will be rolled back, and its changes will be discarded.
-
-:::note
-For non-bool return types, `try_with_tx` always commits the transaction. To abort in those cases, use `LOG_PANIC`.
-:::
-
-</TabItem>
 </Tabs>
 
 #### Reading values out of the database
@@ -432,7 +330,7 @@ may return a value, and that value will be returned to the calling procedure.
 Transaction return values are never saved or broadcast to clients, and are used only by the calling procedure.
 
 ```typescript
-const player = table(
+const Player = table(
     { name: "player" },
     {
         id: t.identity(),
@@ -440,10 +338,9 @@ const player = table(
     },
 );
 
-const spacetimedb = schema({ player });
-export default spacetimedb;
+const spacetimedb = schema(Player);
 
-export const find_highest_level_player = spacetimedb.procedure(t.unit(), ctx => {
+spacetimedb.procedure("find_highest_level_player", t.unit(), ctx => {
     let highestLevelPlayer = ctx.withTx(ctx =>
         Iterator.from(ctx.db.player).reduce(
             (a, b) => a == null || b.level > a.level ? b : a,
@@ -474,7 +371,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Accessor = "Player")]
+    [SpacetimeDB.Table(Name = "Player")]
     public partial struct Player
     {
         public Identity Id;
@@ -519,7 +416,7 @@ may return a value, and that value will be returned to the calling procedure.
 Transaction return values are never saved or broadcast to clients, and are used only by the calling procedure.
 
 ```rust
-#[spacetimedb::table(accessor = player)]
+#[spacetimedb::table(name = player)]
 struct Player {
     id: spacetimedb::Identity,
     level: u32,
@@ -538,47 +435,6 @@ fn find_highest_level_player(ctx: &mut ProcedureContext) {
 ```
 
 </TabItem>
-<TabItem value="cpp" label="C++">
-
-Functions passed to
-[`ctx.with_tx`](#accessing-the-database) and [`ctx.try_with_tx`](#fallible-database-operations)
-may return a value, and that value will be returned to the calling procedure.
-
-Transaction return values are never saved or broadcast to clients, and are used only by the calling procedure.
-
-```cpp
-#define SPACETIMEDB_UNSTABLE_FEATURES
-#include <spacetimedb.h>
-using namespace SpacetimeDB;
-
-struct Player {
-    Identity id;
-    uint32_t level;
-};
-SPACETIMEDB_STRUCT(Player, id, level)
-SPACETIMEDB_TABLE(Player, player, Public)
-
-SPACETIMEDB_PROCEDURE(Unit, find_highest_level_player, ProcedureContext ctx) {
-    auto highest_level_player = ctx.with_tx([](TxContext& tx) -> std::optional<Player> {
-        std::optional<Player> highest;
-        for (const auto& player : tx.db[player]) {
-            if (!highest || player.level > highest->level) {
-                highest = player;
-            }
-        }
-        return highest;
-    });
-    
-    if (highest_level_player) {
-        LOG_INFO("Congratulations to " + highest_level_player->id.to_hex_string());
-    } else {
-        LOG_WARN("No players...");
-    }
-    return Unit{};
-}
-```
-
-</TabItem>
 </Tabs>
 
 ## HTTP Requests
@@ -593,7 +449,8 @@ Procedures can make HTTP requests to external services using methods contained i
 It can perform simple `GET` requests:
 
 ```typescript
-export const get_request = spacetimedb.procedure(t.unit(), ctx => {
+#[spacetimedb::procedure]
+spacetimedb.procedure("get_request", t.unit(), ctx => {
     try {
         const response = ctx.http.fetch("https://example.invalid");
         const body = response.text();
@@ -608,7 +465,7 @@ export const get_request = spacetimedb.procedure(t.unit(), ctx => {
 It can also accept an options object to specify a body, headers, HTTP method, and timeout:
 
 ```typescript
-export const post_request = spacetimedb.procedure(t.unit(), ctx => {
+spacetimedb.procedure("post_request", t.unit(), ctx => {
     try {
         const response = ctx.http.fetch("https://example.invalid/upload", {
             method: "POST",
@@ -623,7 +480,7 @@ export const post_request = spacetimedb.procedure(t.unit(), ctx => {
     return {};
 });
 
-export const get_request_with_short_timeout = spacetimedb.procedure(t.unit(), ctx => {
+spacetimedb.procedure("get_request_with_short_timeout", t.unit(), ctx => {
     try {
         const response = ctx.http.fetch("https://example.invalid", {
             method: "GET",
@@ -783,103 +640,6 @@ fn get_request_with_short_timeout(ctx: &mut spacetimedb::ProcedureContext) {
 Procedures can't send requests at the same time as holding open a [transaction](#accessing-the-database).
 
 </TabItem>
-<TabItem value="cpp" label="C++">
-
-:::warning Unstable Feature
-HTTP requests in C++ procedures are currently unstable. To use them, add `#define SPACETIMEDB_UNSTABLE_FEATURES` before including the SpacetimeDB header.
-:::
-
-Procedures can make HTTP requests to external services using methods on `ctx.http`.
-
-`ctx.http.get` performs simple `GET` requests:
-
-```cpp
-#define SPACETIMEDB_UNSTABLE_FEATURES
-#include <spacetimedb.h>
-using namespace SpacetimeDB;
-
-SPACETIMEDB_PROCEDURE(Unit, get_request, ProcedureContext ctx) {
-    auto result = ctx.http.get("https://example.invalid");
-    
-    if (result.is_ok()) {
-        auto& response = result.value();
-        auto body = response.body.to_string_utf8_lossy();
-        LOG_INFO("Got response with status " + std::to_string(response.status_code) + 
-                 " and body " + body);
-    } else {
-        LOG_ERROR("Request failed: " + result.error());
-    }
-    
-    return Unit{};
-}
-```
-
-`ctx.http.send` sends an `HttpRequest` with custom method, headers, and body:
-
-```cpp
-#define SPACETIMEDB_UNSTABLE_FEATURES
-#include <spacetimedb.h>
-using namespace SpacetimeDB;
-
-SPACETIMEDB_PROCEDURE(Unit, post_request, ProcedureContext ctx) {
-    HttpRequest request{
-        .uri = "https://example.invalid/upload",
-        .method = HttpMethod::post(),
-        .headers = {HttpHeader{"Content-Type", "text/plain"}},
-        .body = HttpBody::from_string("This is the body of the HTTP request")
-    };
-    
-    auto result = ctx.http.send(request);
-    
-    if (result.is_ok()) {
-        auto& response = result.value();
-        auto body = response.body.to_string_utf8_lossy();
-        LOG_INFO("Got response with status " + std::to_string(response.status_code) + 
-                 " and body " + body);
-    } else {
-        LOG_ERROR("Request failed: " + result.error());
-    }
-    
-    return Unit{};
-}
-```
-
-Set a timeout for a request using `TimeDuration::from_millis()`:
-
-```cpp
-#define SPACETIMEDB_UNSTABLE_FEATURES
-#include <spacetimedb.h>
-using namespace SpacetimeDB;
-
-SPACETIMEDB_PROCEDURE(Unit, get_request_with_short_timeout, ProcedureContext ctx) {
-    HttpRequest request{
-        .uri = "https://example.invalid",
-        .method = HttpMethod::get(),
-        .timeout = TimeDuration::from_millis(10)
-    };
-    
-    auto result = ctx.http.send(request);
-    
-    if (result.is_ok()) {
-        auto& response = result.value();
-        auto body = response.body.to_string_utf8_lossy();
-        LOG_INFO("Got response with status " + std::to_string(response.status_code) + 
-                 " and body " + body);
-    } else {
-        LOG_ERROR("Request failed: " + result.error());
-    }
-    
-    return Unit{};
-}
-```
-
-:::note
-All timeouts are clamped to a maximum of 500ms by the host.
-:::
-
-Procedures can't send requests at the same time as holding open a [transaction](#accessing-the-database).
-
-</TabItem>
 </Tabs>
 
 ## Calling Reducers from Procedures
@@ -896,7 +656,7 @@ const processItem = spacetimedb.reducer('process_item', { itemId: t.u64() }, (ct
 });
 
 // Call it from a procedure using the saved reference
-export const fetch_and_process = spacetimedb.procedure({ url: t.string() }, t.unit(), (ctx, { url }) => {
+spacetimedb.procedure('fetch_and_process', { url: t.string() }, t.unit(), (ctx, { url }) => {
   // Fetch external data
   const response = ctx.http.fetch(url);
   const data = response.json();
@@ -973,60 +733,6 @@ fn fetch_and_process(ctx: &mut ProcedureContext, url: String) -> Result<(), Stri
     });
 
     Ok(())
-}
-```
-
-</TabItem>
-<TabItem value="cpp" label="C++">
-
-:::warning Unstable Feature
-Procedures in C++ are currently unstable. To use them, add `#define SPACETIMEDB_UNSTABLE_FEATURES` before including the SpacetimeDB header.
-:::
-
-In C++, `TxContext` and `ReducerContext` share the same database API, so it’s common to move shared logic into a helper that takes a `DatabaseContext&` and call it from both the reducer and the procedure.
-
-```cpp
-#define SPACETIMEDB_UNSTABLE_FEATURES
-#include <spacetimedb.h>
-using namespace SpacetimeDB;
-
-struct ProcessedItem {
-    uint64_t id;
-};
-SPACETIMEDB_STRUCT(ProcessedItem, id)
-SPACETIMEDB_TABLE(ProcessedItem, processed_item_proc, Public)
-FIELD_PrimaryKey(processed_item_proc, id)
-
-static void process_item_logic(DatabaseContext& db, uint64_t item_id) {
-    db[processed_item_proc].insert(ProcessedItem{item_id});
-}
-
-SPACETIMEDB_REDUCER(process_item, ReducerContext& ctx, uint64_t item_id) {
-    process_item_logic(ctx.db, item_id);
-    return Ok();
-}
-
-SPACETIMEDB_PROCEDURE(Unit, fetch_and_process, ProcedureContext ctx, std::string url) {
-    auto result = ctx.http.get(url);
-    if (!result.is_ok()) {
-        LOG_ERROR("Request failed: " + result.error());
-        return Unit{};
-    }
-
-    auto& response = result.value();
-    if (response.status_code != 200) {
-        LOG_ERROR("HTTP status: " + std::to_string(response.status_code));
-        return Unit{};
-    }
-
-    auto body = response.body.to_string_utf8_lossy();
-    uint64_t item_id = std::stoull(body);
-
-    ctx.with_tx([&](TxContext& tx) {
-        process_item_logic(tx.db, item_id);
-    });
-
-    return Unit{};
 }
 ```
 
@@ -1192,9 +898,8 @@ A common use case for procedures is integrating with external APIs like OpenAI's
 
 ```typescript
 import { schema, t, table, SenderError } from 'spacetimedb/server';
-import { TimeDuration } from 'spacetimedb';
 
-const aiMessage = table(
+const AiMessage = table(
   { name: 'ai_message', public: true },
   {
     user: t.identity(),
@@ -1204,10 +909,10 @@ const aiMessage = table(
   }
 );
 
-const spacetimedb = schema({ aiMessage });
-export default spacetimedb;
+const spacetimedb = schema(AiMessage);
 
-export const ask_ai = spacetimedb.procedure(
+spacetimedb.procedure(
+  'ask_ai',
   { prompt: t.string(), apiKey: t.string() },
   t.string(),
   (ctx, { prompt, apiKey }) => {
@@ -1222,8 +927,6 @@ export const ask_ai = spacetimedb.procedure(
         model: 'gpt-4',
         messages: [{ role: 'user', content: prompt }],
       }),
-      // Give it some time to think
-      timeout: TimeDuration.fromMillis(3000),
     });
 
     if (response.status !== 200) {
@@ -1262,7 +965,7 @@ using System.Text.Json;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Accessor = "AiMessage", Public = true)]
+    [SpacetimeDB.Table(Name = "AiMessage", Public = true)]
     public partial struct AiMessage
     {
         public Identity User;
@@ -1290,9 +993,7 @@ public static partial class Module
                 new HttpHeader("Content-Type", "application/json"),
                 new HttpHeader("Authorization", $"Bearer {apiKey}")
             },
-            Body = HttpBody.FromString(requestBody),
-            // Give it some time to think
-            Timeout = TimeSpan.FromMilliseconds(3000)
+            Body = HttpBody.FromString(requestBody)
         };
 
         // Make the HTTP request
@@ -1342,9 +1043,9 @@ public static partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::{procedure, table, Identity, ProcedureContext, Table, TimeDuration, Timestamp};
+use spacetimedb::{table, procedure, ProcedureContext, Identity, Timestamp};
 
-#[table(accessor = ai_message, public)]
+#[table(name = ai_message, public)]
 pub struct AiMessage {
     user: Identity,
     prompt: String,
@@ -1352,40 +1053,20 @@ pub struct AiMessage {
     created_at: Timestamp,
 }
 
-#[derive(serde::Deserialize)]
-struct AiResponse {
-    choices: Vec<AiResponseChoice>,
-    // more fields...
-}
-
-#[derive(serde::Deserialize)]
-struct AiResponseChoice {
-    message: AiResponseMessage,
-    // more fields...
-}
-
-#[derive(serde::Deserialize)]
-struct AiResponseMessage {
-    content: String,
-    // more fields...
-}
-
 #[procedure]
 pub fn ask_ai(ctx: &mut ProcedureContext, prompt: String, api_key: String) -> Result<String, String> {
     // Build the request to OpenAI's API
-    let request_body = serde_json::json!({
-        "model": "gpt-4",
-        "messages": [{ "role": "user", "content": prompt }]
-    });
+    let request_body = format!(
+        r#"{{"model": "gpt-4", "messages": [{{"role": "user", "content": "{}"}}]}}"#,
+        prompt.replace('"', "\\\"")
+    );
 
     let request = spacetimedb::http::Request::builder()
         .uri("https://api.openai.com/v1/chat/completions")
         .method("POST")
         .header("Content-Type", "application/json")
         .header("Authorization", format!("Bearer {}", api_key))
-        // Give it some time to think
-        .extension(spacetimedb::http::Timeout(TimeDuration::from_micros(3_000_000)))
-        .body(serde_json::to_vec(&request_body).unwrap())
+        .body(request_body)
         .map_err(|e| format!("Failed to build request: {e}"))?;
 
     // Make the HTTP request
@@ -1398,15 +1079,16 @@ pub fn ask_ai(ctx: &mut ProcedureContext, prompt: String, api_key: String) -> Re
         return Err(format!("API returned status {}", parts.status));
     }
 
-    let body = body.into_bytes();
-    let ai_response: AiResponse =
-        serde_json::from_slice(&body).map_err(|e| format!("Failed to parse AI response: {e}"))?;
-    let ai_response = ai_response.choices[0].message.content.clone();
+    let body_str = body.into_string_lossy();
+
+    // Parse the response (simplified - in production use serde_json)
+    let ai_response = extract_content(&body_str)
+        .ok_or("Failed to parse AI response")?;
 
     // Store the conversation in the database
     ctx.with_tx(|tx_ctx| {
         tx_ctx.db.ai_message().insert(AiMessage {
-            user: tx_ctx.sender(),
+            user: tx_ctx.sender,
             prompt: prompt.clone(),
             response: ai_response.clone(),
             created_at: tx_ctx.timestamp,
@@ -1414,6 +1096,13 @@ pub fn ask_ai(ctx: &mut ProcedureContext, prompt: String, api_key: String) -> Re
     });
 
     Ok(ai_response)
+}
+
+fn extract_content(json: &str) -> Option<String> {
+    // Simple extraction - in production, use proper JSON parsing
+    let content_start = json.find("\"content\":")? + 11;
+    let content_end = json[content_start..].find('"')? + content_start;
+    Some(json[content_start..content_end].to_string())
 }
 ```
 

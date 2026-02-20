@@ -88,8 +88,6 @@ spacetime publish --break-clients <DATABASE_NAME>
 
 ⚠️ **Warning:** This will break existing clients that haven't been updated to match your new schema.
 
-If this publish is a major upgrade from 1.x to 2.0, read [1.x to 2.0 Upgrade Notes](/upgrade) first.
-
 #### Clearing Data
 
 To completely reset your database and delete all data:
@@ -108,5 +106,5 @@ For all available publishing options and flags, see the [`spacetime publish` CLI
 
 After publishing:
 
-- Learn about [connecting a client](/clients) to your database
+- Learn about [connecting a client](/sdks) to your database
 - Learn about [Tables](/tables), [Reducers](/functions/reducers), and [Procedures](/functions/procedures)

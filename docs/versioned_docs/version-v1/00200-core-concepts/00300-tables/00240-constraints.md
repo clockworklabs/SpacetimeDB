@@ -5,7 +5,6 @@ slug: /tables/constraints
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Constraints enforce data integrity rules on your tables. SpacetimeDB supports primary key and unique constraints.
@@ -36,7 +35,7 @@ Use the `.primaryKey()` method on a column builder to mark it as the primary key
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Accessor = "User", Public = true)]
+[SpacetimeDB.Table(Name = "User", Public = true)]
 public partial struct User
 {
     [SpacetimeDB.PrimaryKey]
@@ -52,7 +51,7 @@ Use the `[SpacetimeDB.PrimaryKey]` attribute to mark a field as the primary key.
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(accessor = user, public)]
+#[spacetimedb::table(name = user, public)]
 pub struct User {
     #[primary_key]
     id: u64,
@@ -62,24 +61,6 @@ pub struct User {
 ```
 
 Use the `#[primary_key]` attribute to mark a field as the primary key.
-
-</TabItem>
-<TabItem value="cpp" label="C++">
-
-<CppModuleVersionNotice />
-
-```cpp
-struct User {
-  uint64_t id;
-  std::string name;
-  std::string email;
-};
-SPACETIMEDB_STRUCT(User, id, name, email)
-SPACETIMEDB_TABLE(User, user, Public)
-FIELD_PrimaryKey(user, id)
-```
-
-Use `FIELD_PrimaryKey(table, field)` after table registration to mark the primary key.
 
 </TabItem>
 </Tabs>
@@ -121,8 +102,8 @@ const inventory = table(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Accessor = "Inventory", Public = true)]
-[SpacetimeDB.Index.BTree(Accessor = "by_user_item", Columns = new[] { nameof(UserId), nameof(ItemId) })]
+[SpacetimeDB.Table(Name = "Inventory", Public = true)]
+[SpacetimeDB.Index.BTree(Name = "by_user_item", Columns = new[] { nameof(UserId), nameof(ItemId) })]
 public partial struct Inventory
 {
     [SpacetimeDB.PrimaryKey]
@@ -139,7 +120,7 @@ public partial struct Inventory
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(accessor = inventory, public, index(accessor = inventory_index, btree(columns = [user_id, item_id])))]
+#[spacetimedb::table(name = inventory, public, index(name = inventory_index, btree(columns = [user_id, item_id])))]
 pub struct Inventory {
     #[primary_key]
     #[auto_inc]
@@ -148,23 +129,6 @@ pub struct Inventory {
     item_id: u64,
     quantity: u32,
 }
-```
-
-</TabItem>
-<TabItem value="cpp" label="C++">
-
-```cpp
-struct Inventory {
-  uint64_t id;
-  uint64_t user_id;
-  uint64_t item_id;
-  uint32_t quantity;
-};
-SPACETIMEDB_STRUCT(Inventory, id, user_id, item_id, quantity)
-SPACETIMEDB_TABLE(Inventory, inventory, Public)
-FIELD_PrimaryKeyAutoInc(inventory, id)
-// Named multi-column btree index on (user_id, item_id)
-FIELD_NamedMultiColumnIndex(inventory, by_user_item, user_id, item_id)
 ```
 
 </TabItem>
@@ -183,7 +147,7 @@ When you update a row, SpacetimeDB uses the primary key to determine whether it'
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-export const update_user_name = spacetimedb.reducer({ id: t.u64(), newName: t.string() }, (ctx, { id, newName }) => {
+spacetimedb.reducer('update_user_name', { id: t.u64(), newName: t.string() }, (ctx, { id, newName }) => {
   const user = ctx.db.user.id.find(id);
   if (user) {
     // This is an update — primary key (id) stays the same
@@ -225,21 +189,6 @@ fn update_user_name(ctx: &ReducerContext, id: u64, new_name: String) -> Result<(
 ```
 
 </TabItem>
-<TabItem value="cpp" label="C++">
-
-```cpp
-SPACETIMEDB_REDUCER(update_user_name, ReducerContext ctx, uint64_t id, std::string new_name) {
-  auto user_opt = ctx.db[user_id].find(id);
-  if (user_opt.has_value()) {
-    User user_update = user_opt.value();
-    user_update.name = new_name;
-    ctx.db[user_id].update(user_update);
-  }
-  return Ok();
-}
-```
-
-</TabItem>
 </Tabs>
 
 ### Tables Without Primary Keys
@@ -259,7 +208,7 @@ Primary keys add indexing overhead. If your table is only accessed by iterating 
 **Auto-incrementing IDs**: Combine `primaryKey()` with `autoInc()` for automatically assigned unique identifiers:
 
 ```rust
-#[spacetimedb::table(accessor = post, public)]
+#[spacetimedb::table(name = post, public)]
 pub struct Post {
     #[primary_key]
     #[auto_inc]
@@ -272,7 +221,7 @@ pub struct Post {
 **Identity as primary key**: Use the caller's identity as the primary key for user-specific data:
 
 ```rust
-#[spacetimedb::table(accessor = user_profile, public)]
+#[spacetimedb::table(name = user_profile, public)]
 pub struct UserProfile {
     #[primary_key]
     identity: Identity,
@@ -307,7 +256,7 @@ Use the `.unique()` method on a column builder.
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Accessor = "User", Public = true)]
+[SpacetimeDB.Table(Name = "User", Public = true)]
 public partial struct User
 {
     [SpacetimeDB.PrimaryKey]
@@ -327,7 +276,7 @@ Use the `[SpacetimeDB.Unique]` attribute.
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(accessor = user, public)]
+#[spacetimedb::table(name = user, public)]
 pub struct User {
     #[primary_key]
     id: u32,
@@ -339,24 +288,6 @@ pub struct User {
 ```
 
 Use the `#[unique]` attribute.
-
-</TabItem>
-<TabItem value="cpp" label="C++">
-
-```cpp
-struct User {
-  uint32_t id;
-  std::string email;
-  std::string username;
-};
-SPACETIMEDB_STRUCT(User, id, email, username)
-SPACETIMEDB_TABLE(User, user, Public)
-FIELD_PrimaryKey(user, id)
-FIELD_Unique(user, email)
-FIELD_Unique(user, username)
-```
-
-Use `FIELD_Unique(table, field)` after table registration to mark columns as unique.
 
 </TabItem>
 </Tabs>
