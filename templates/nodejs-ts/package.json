@@ -4,7 +4,7 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev": "esbuild src/main.ts --bundle --platform=node --outfile=dist/main.js --format=esm --watch",
+    "dev": "esbuild src/main.ts --bundle --platform=node --outfile=dist/main.js --format=esm && node dist/main.js",
     "start": "node dist/main.js",
     "build": "esbuild src/main.ts --bundle --platform=node --outfile=dist/main.js --format=esm",
     "typecheck": "tsc --noEmit",
