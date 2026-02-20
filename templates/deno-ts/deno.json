@@ -5,6 +5,6 @@
     "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb"
   },
   "imports": {
-    "spacetimedb": "npm:spacetimedb@1.*"
+    "spacetimedb": "npm:spacetimedb@2.*"
   }
 }
