@@ -25,6 +25,7 @@ reqwest.workspace = true
 self-replace.workspace = true
 semver = { workspace = true, features = ["serde"] }
 serde.workspace = true
+serde_json.workspace = true
 tar.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
