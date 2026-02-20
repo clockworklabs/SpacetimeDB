@@ -1296,7 +1296,19 @@ fn cmd_scan_rerun_commands(args: ScanRerunCommandsArgs) -> Result<()> {
     Ok(())
 }
 
+/// True if (vendor, api_model) matches a route in default_model_routes (model_routes.rs).
+fn is_model_in_routes(vendor_str: &str, api_model: &str) -> bool {
+    let Some(vendor) = Vendor::parse(vendor_str) else {
+        return false;
+    };
+    let api_lower = api_model.to_ascii_lowercase();
+    default_model_routes().iter().any(|r| {
+        r.vendor == vendor && r.api_model.to_ascii_lowercase() == api_lower
+    })
+}
+
 /// Collect LLM API failures with full (lang, mode, vendor, api_model, model_name, task_id) for building rerun commands.
+/// Only includes models that are in default_model_routes (model_routes.rs).
 fn collect_http_failures_full(details_path: &Path) -> Result<Vec<(String, String, String, String, String, String)>> {
     use xtask_llm_benchmark::results::schema::Results;
 
@@ -1338,6 +1350,9 @@ fn collect_http_failures_full(details_path: &Path) -> Result<Vec<(String, String
                         .unwrap_or_else(|| {
                             model_entry.name.to_ascii_lowercase().replace(' ', "-")
                         });
+                    if !is_model_in_routes(&vendor, &api_model) {
+                        continue;
+                    }
                     out.push((
                         lang_entry.lang.clone(),
                         mode_entry.mode.clone(),

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-02-20T21:23:55.720Z",
+  "generated_at": "2026-02-20T21:32:40.491Z",
   "by_language": {
     "csharp": {
       "modes": {
@@ -652,6 +652,90 @@
                 "pass_pct": 90.16393,
                 "task_pass_equiv": 19.0,
                 "task_pass_pct": 86.36364
+              }
+            },
+            "Claude Haiku 4.5": {
+              "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 5,
+                  "pass_pct": 18.518518,
+                  "task_pass_equiv": 3.0,
+                  "task_pass_pct": 25.0
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 6,
+                  "pass_pct": 17.647058,
+                  "task_pass_equiv": 2.0,
+                  "task_pass_pct": 20.0
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 11,
+                "pass_pct": 18.032787,
+                "task_pass_equiv": 5.0,
+                "task_pass_pct": 22.727274
+              }
+            },
+            "Claude Opus 4.6": {
+              "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 27,
+                  "pass_pct": 100.0,
+                  "task_pass_equiv": 12.0,
+                  "task_pass_pct": 100.0
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 34,
+                  "pass_pct": 100.0,
+                  "task_pass_equiv": 10.0,
+                  "task_pass_pct": 100.0
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 61,
+                "pass_pct": 100.0,
+                "task_pass_equiv": 22.0,
+                "task_pass_pct": 100.0
+              }
+            },
+            "Claude Sonnet 4.6": {
+              "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 11,
+                  "pass_pct": 40.74074,
+                  "task_pass_equiv": 5.5,
+                  "task_pass_pct": 45.833336
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 5,
+                  "pass_pct": 14.705882,
+                  "task_pass_equiv": 2.0,
+                  "task_pass_pct": 20.0
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 16,
+                "pass_pct": 26.229507,
+                "task_pass_equiv": 7.5,
+                "task_pass_pct": 34.090908
               }
             },
             "DeepSeek R1": {
