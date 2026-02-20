@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-02-20T23:15:32.557Z",
+  "generated_at": "2026-02-20T23:28:12.886Z",
   "by_language": {
     "csharp": {
       "modes": {
@@ -738,6 +738,34 @@
                 "task_pass_pct": 34.090908
               }
             },
+            "DeepSeek Chat": {
+              "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 23,
+                  "pass_pct": 85.18519,
+                  "task_pass_equiv": 11.0,
+                  "task_pass_pct": 91.66667
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 26,
+                  "pass_pct": 76.47059,
+                  "task_pass_equiv": 7.4,
+                  "task_pass_pct": 74.0
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 49,
+                "pass_pct": 80.327866,
+                "task_pass_equiv": 18.4,
+                "task_pass_pct": 83.63636
+              }
+            },
             "DeepSeek R1": {
               "categories": {
                 "basics": {
@@ -764,6 +792,34 @@
                 "pass_pct": 22.950819,
                 "task_pass_equiv": 6.0,
                 "task_pass_pct": 27.272728
+              }
+            },
+            "DeepSeek Reasoner": {
+              "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 22,
+                  "pass_pct": 81.48148,
+                  "task_pass_equiv": 8.333333,
+                  "task_pass_pct": 69.44444
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 12,
+                  "pass_pct": 35.294117,
+                  "task_pass_equiv": 3.4,
+                  "task_pass_pct": 34.0
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 34,
+                "pass_pct": 55.737705,
+                "task_pass_equiv": 11.733333,
+                "task_pass_pct": 53.33333
               }
             },
             "DeepSeek V3": {
