@@ -106,7 +106,7 @@ TODO
 **Server (module) -- before:**
 ```rust
 // 1.0 server -- reducer args were automatically broadcast
-#[reducer]
+#[spacetimedb::reducer]
 fn deal_damage(ctx: &ReducerContext, target: Identity, amount: u32) {
     // update game state...
 }
@@ -444,7 +444,8 @@ let conn = DbConnection::builder()
     .with_uri("https://maincloud.spacetimedb.com")
     .with_module_name("my-database")
     // other options...
-    .build();
+    .build()
+    .expect("Failed to connect");
 
 // 2.0
 let conn = DbConnection::builder()
@@ -452,6 +453,7 @@ let conn = DbConnection::builder()
     .with_database_name("my-database")
     // other options...
     .build()
+    .expect("Failed to connect");
 ```
 
 </TabItem>
@@ -547,6 +549,7 @@ fn add_apple(ctx: &ReducerContext, name: String) {
 
 ```rust
 #[spacetimedb::table(accessor = user)]
+#[derive(Clone)]
 struct User {
     #[primary_key]
     identity: Identity,
