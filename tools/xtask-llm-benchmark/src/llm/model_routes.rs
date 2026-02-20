@@ -66,5 +66,16 @@ pub fn default_model_routes() -> &'static [ModelRoute] {
             vendor: Meta,
             api_model: "meta-llama/llama-3.2-3b-instruct",
         },
+        // DeepSeek: Reasoner (thinking), Chat (general)
+        ModelRoute {
+            display_name: "DeepSeek Reasoner",
+            vendor: DeepSeek,
+            api_model: "deepseek-reasoner",
+        },
+        ModelRoute {
+            display_name: "DeepSeek Chat",
+            vendor: DeepSeek,
+            api_model: "deepseek-chat",
+        },
     ]
 }

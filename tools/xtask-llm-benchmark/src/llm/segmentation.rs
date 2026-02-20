@@ -95,7 +95,7 @@ pub fn anthropic_ctx_limit_tokens(_model: &str) -> usize {
 pub fn openai_ctx_limit_tokens(model: &str) -> usize {
     let m = model.to_ascii_lowercase();
     if m.contains("gpt-5") || m.contains("gpt-4.1") {
-        300_000
+        400_000
     } else {
         128_000
     }
@@ -104,16 +104,16 @@ pub fn openai_ctx_limit_tokens(model: &str) -> usize {
 pub fn deepseek_ctx_limit_tokens(model: &str) -> usize {
     let m = model.to_ascii_lowercase();
 
-    // Use 100k so (static + system + segments + headroom) stays under API limit
+    // API limit 128K for deepseek-chat and deepseek-reasoner
     if m.starts_with("deepseek-reasoner") || m.starts_with("deepseek-r1") {
-        return 100_000;
+        return 128_000;
     }
     if m.starts_with("deepseek-chat") || m.starts_with("deepseek-v3") {
-        return 100_000;
+        return 128_000;
     }
 
     // Fallback
-    100_000
+    128_000
 }
 
 /// Return Gemini's context window (in tokens) for a given model.
