@@ -101,10 +101,6 @@ pub enum CaseConversionPolicy {
     /// Convert to snake_case (SpacetimeDB default)
     #[default]
     SnakeCase,
-    /// Convert to camelCase
-    CamelCase,
-    /// Convert to PascalCase (UpperCamelCase)
-    PascalCase,
 }
 
 #[derive(Debug, Clone, SpacetimeType)]

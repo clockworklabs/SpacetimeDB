@@ -1,4 +1,4 @@
-use crate::def::validate::v10::ExplicitNamesLookup;
+use crate::def::validate::v10::{ExplicitNamesLookup, ValidationCase};
 use crate::def::*;
 use crate::error::{RawColumnName, ValidationError};
 use crate::type_for_generate::{ClientCodegenError, ProductTypeDef, TypespaceForGenerateBuilder};
@@ -8,9 +8,7 @@ use lean_string::LeanString;
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors};
 use spacetimedb_data_structures::map::{HashMap, HashSet};
 use spacetimedb_lib::db::default_element_ordering::{product_type_has_default_ordering, sum_type_has_default_ordering};
-use spacetimedb_lib::db::raw_def::v10::{
-    reducer_default_err_return_type, reducer_default_ok_return_type, CaseConversionPolicy,
-};
+use spacetimedb_lib::db::raw_def::v10::{reducer_default_err_return_type, reducer_default_ok_return_type};
 use spacetimedb_lib::db::raw_def::v9::RawViewDefV9;
 use spacetimedb_lib::ProductType;
 use spacetimedb_primitives::col_list;
@@ -37,7 +35,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
             type_namespace: Default::default(),
             lifecycle_reducers: Default::default(),
             typespace_for_generate: TypespaceForGenerate::builder(&typespace, known_type_definitions),
-            case_policy: CaseConversionPolicy::None,
+            case_policy: ValidationCase::None,
             explicit_names: ExplicitNamesLookup::default(),
         },
     };
@@ -595,7 +593,7 @@ pub(crate) struct CoreValidator<'a> {
     /// Reducers that play special lifecycle roles.
     pub(crate) lifecycle_reducers: EnumMap<Lifecycle, Option<ReducerId>>,
 
-    pub(crate) case_policy: CaseConversionPolicy,
+    pub(crate) case_policy: ValidationCase,
 
     pub(crate) explicit_names: ExplicitNamesLookup,
 }
@@ -643,7 +641,7 @@ impl CoreValidator<'_> {
     /// unless explicitly specified by the user.
     pub(crate) fn resolve_type_with_case(&self, raw: RawIdentifier) -> Result<Identifier> {
         let mut ident = raw.to_string();
-        if !matches!(self.case_policy, CaseConversionPolicy::None) {
+        if !matches!(self.case_policy, ValidationCase::None) {
             ident = ident.to_case(Case::Pascal);
         }
 
@@ -652,9 +650,9 @@ impl CoreValidator<'_> {
 
     // Recursive function to change typenames in the typespace according to the case conversion
     // policy.
-    pub(crate) fn typespace_case_conversion(case_policy: CaseConversionPolicy, typespace: &mut Typespace) {
-        let case_policy_for_enum_variants = if matches!(case_policy, CaseConversionPolicy::SnakeCase) {
-            CaseConversionPolicy::CamelCase
+    pub(crate) fn typespace_case_conversion(case_policy: ValidationCase, typespace: &mut Typespace) {
+        let case_policy_for_enum_variants = if matches!(case_policy, ValidationCase::SnakeCase) {
+            ValidationCase::CamelCase
         } else {
             case_policy
         };
@@ -667,8 +665,8 @@ impl CoreValidator<'_> {
     // Recursively convert names in an AlgebraicType
     fn convert_algebraic_type(
         ty: &mut AlgebraicType,
-        case_policy: CaseConversionPolicy,
-        case_policy_for_enum_variants: CaseConversionPolicy,
+        case_policy: ValidationCase,
+        case_policy_for_enum_variants: ValidationCase,
     ) {
         if ty.is_special() {
             return;
@@ -1470,14 +1468,13 @@ pub fn generate_unique_constraint_name(
 //pub(crate) fn identifier(name: RawIdentifier) -> Result<Identifier> {
 //    Identifier::new(name).map_err(|error| ValidationError::IdentifierError { error }.into())
 //}
-pub fn convert(identifier: RawIdentifier, policy: CaseConversionPolicy) -> String {
+pub(crate) fn convert(identifier: RawIdentifier, policy: ValidationCase) -> String {
     let identifier = identifier.to_string();
 
     match policy {
-        CaseConversionPolicy::SnakeCase => identifier.to_case(Case::Snake),
-        CaseConversionPolicy::CamelCase => identifier.to_case(Case::Camel),
-        CaseConversionPolicy::PascalCase => identifier.to_case(Case::Pascal),
-        CaseConversionPolicy::None | _ => identifier,
+        ValidationCase::SnakeCase => identifier.to_case(Case::Snake),
+        ValidationCase::CamelCase => identifier.to_case(Case::Camel),
+        ValidationCase::None => identifier,
     }
 }
 

@@ -51,12 +51,30 @@ impl ExplicitNamesLookup {
     }
 }
 
+/// Internal representation of case conversion policy, used during validation to determine how to
+/// apply case conversion to names.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ValidationCase {
+    None,
+    SnakeCase,
+    CamelCase,
+}
+
+impl From<CaseConversionPolicy> for ValidationCase {
+    fn from(policy: CaseConversionPolicy) -> Self {
+        match policy {
+            CaseConversionPolicy::None => ValidationCase::None,
+            CaseConversionPolicy::SnakeCase => ValidationCase::SnakeCase,
+            _ => panic!("Unsupported case conversion policy: {:?}", policy),
+        }
+    }
+}
 /// Validate a `RawModuleDefV9` and convert it into a `ModuleDef`,
 /// or return a stream of errors if the definition is invalid.
 pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
     let mut typespace = def.typespace().cloned().unwrap_or_else(|| Typespace::EMPTY.clone());
     let known_type_definitions = def.types().into_iter().flatten().map(|def| def.ty);
-    let case_policy = def.case_conversion_policy();
+    let case_policy = def.case_conversion_policy().into();
     let explicit_names = def
         .explicit_names()
         .cloned()
