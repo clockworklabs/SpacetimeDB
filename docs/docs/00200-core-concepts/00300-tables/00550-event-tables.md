@@ -183,7 +183,7 @@ Conceptually, every insert into an event table is a **noop**: an insert paired w
 **Wire format.** Event tables require the v2 WebSocket protocol. Clients connected via the v1 protocol that attempt to subscribe to an event table will receive an error message directing them to upgrade.
 
 :::tip Migrating from reducer callbacks
-If you previously used `ctx.reducers.on_<reducer_name>()` callbacks to receive transient data, event tables are the recommended replacement. Define an event table with the fields you want to publish, insert a row in your reducer, and register an `on_insert` callback on the client via `ctx.db.<event_table>().on_insert(...)`. See the [migration guide](/how-to/migrating-to-2-0) for details.
+If you previously used `ctx.reducers.on_<reducer_name>()` callbacks to receive transient data, event tables are the recommended replacement. Define an event table with the fields you want to publish, insert a row in your reducer, and register an `on_insert` callback on the client via `ctx.db.<event_table>().on_insert(...)`. See the [migration guide](/upgrade) for details.
 :::
 
 ## Row-Level Security

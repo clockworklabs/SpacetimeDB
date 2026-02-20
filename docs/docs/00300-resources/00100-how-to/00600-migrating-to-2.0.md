@@ -1,6 +1,6 @@
 ---
 title: Migrating from 1.0 to 2.0
-slug: /how-to/migrating-to-2-0
+slug: /upgrade
 ---
 
 import Tabs from '@theme/Tabs';
