@@ -568,6 +568,7 @@ fn change_user_identity(ctx: &ReducerContext, name: String, identity: Identity) 
 }
 
 // 2.0
+#[spacetimedb::reducer]
 fn change_user_identity(ctx: &ReducerContext, name: String, identity: Identity) {
     let user = ctx.db.user().name().find(&name).unwrap();
     ctx.db.user().delete(user.clone());
