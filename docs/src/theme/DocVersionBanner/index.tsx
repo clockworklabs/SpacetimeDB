@@ -10,8 +10,8 @@ export default function DocVersionBannerWrapper(
 
   if (version.version === '1.12.0') {
     return (
-      <div className="alert alert--warning margin-bottom--md" role="alert">
-        Using stable v1 docs. Want the latest features? Try the{' '}
+      <div className="alert alert--info margin-bottom--md" role="alert">
+        Want to try the upcoming v2 features? Try the {' '}
         <Link to="/2.0.0-prerelease">Prerelease docs</Link>.
       </div>
     );
