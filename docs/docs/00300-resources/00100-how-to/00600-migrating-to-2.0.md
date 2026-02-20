@@ -30,7 +30,7 @@ In 1.0, you could register global callbacks on reducers that would fire whenever
 
 ```typescript
 // 1.0 -- REMOVED in 2.0
-conn.reducers.onDealDamage((ctx, { target, amount } => {
+conn.reducers.onDealDamage((ctx, { target, amount }) => {
   console.log(`Someone called dealDamage with args: (${target}, ${amount})`);
 });
 ```
@@ -75,7 +75,7 @@ try {
 } catch (err) {
   if (err instanceof SenderError) {
     console.log(`You made an error: ${err}`)
-  } else if (err as InternalError) {
+  } else if (err instanceof InternalError) {
     console.log(`The server had an error: ${err}`);
   }
 }
@@ -325,12 +325,12 @@ In 2.0, the event model is simplified:
 - **Other clients** see `{ tag: 'Transaction' }` (no reducer details).
 - `{ tag: 'UnknownTransaction' }` is removed.
 
-```rust
+```typescript
 // 2.0 -- checking who caused a table change
 conn.db.myTable().onInsert((ctx, row) => {
   if (ctx.event.tag === 'Reducer') {
     // This client called the reducer that caused this insert.
-    console.log(`Our reducer: ${}`, ctx.event.value.reducer);
+    console.log(`Our reducer: ${ctx.event.value.reducer}`);
   }
   if (ctx.event.tag === 'Transaction') {
     // Another client's action caused this insert.
@@ -456,7 +456,7 @@ Note that subscribing to event tables requires an explicit query:
 // Event tables are excluded from subscribe_to_all_tables(), so subscribe explicitly:
 import { tables } from "./module_bindings";
 ctx.subscriptionBuilder()
-    .onApplied(|ctx| { /* ... */ })
+    .onApplied((ctx) => { /* ... */ })
     .subscribe([tables.damageEvent]);
 ```
 
@@ -579,7 +579,7 @@ struct MyTable {
 
 // 2.0
 #[spacetimedb::table(
-    accessor= my_table,
+    accessor = my_table,
     public,
     index(
         accessor = position,
@@ -1028,9 +1028,6 @@ const spacetimedb = schema({ myTimer });
 
 // 2.0 -- Can only be called by the database
 spacetimedb.reducer('runMyTimer', myTimer.rowType, (ctx, timer) => {
-  if (ctx.sender != ctx.identity) {
-    throw SenderError(`'runMyTimer' should only be invoked by the database!`);
-  }
   // Do stuff
 })
 ```
@@ -1226,12 +1223,12 @@ In 2.0, the server never broadcasts reducer argument data to any client, so `lig
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
-```rust
+```typescript
 // 2.0
 DbConnection.builder()
-    .with_uri(uri)
+    .withUri(uri)
     .withDatabaseName(name)
-    // no with_light_mode needed
+    // no withLightMode needed
     .build()
 ```
 
