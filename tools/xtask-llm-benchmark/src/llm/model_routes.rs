@@ -22,12 +22,6 @@ pub fn default_model_routes() -> &'static [ModelRoute] {
             vendor: OpenAi,
             api_model: "gpt-5.2",
         },
-        // API not available yet
-        // ModelRoute {
-        //     display_name: "GPT-5.3-Codex",
-        //     vendor: OpenAi,
-        //     api_model: "gpt-5.3-codex",
-        // },
         ModelRoute {
             display_name: "GPT-4.1",
             vendor: OpenAi,
@@ -38,11 +32,17 @@ pub fn default_model_routes() -> &'static [ModelRoute] {
             vendor: OpenAi,
             api_model: "o4-mini",
         },
-        ModelRoute {
-            display_name: "GPT-4o",
-            vendor: OpenAi,
-            api_model: "gpt-4o",
-        },
+        // API not available yet
+        // ModelRoute {
+        //     display_name: "GPT-5.3-Codex",
+        //     vendor: OpenAi,
+        //     api_model: "gpt-5.3-codex",
+        // },
+        // ModelRoute {
+        //     display_name: "GPT-4o",
+        //     vendor: OpenAi,
+        //     api_model: "gpt-4o",
+        // },
         // CLAUDE (Anthropic)
         ModelRoute {
             display_name: "Claude Opus 4.6",
@@ -50,25 +50,25 @@ pub fn default_model_routes() -> &'static [ModelRoute] {
             api_model: "claude-opus-4-6",
         },
         ModelRoute {
-            display_name: "Claude 4.5 Sonnet",
-            vendor: Anthropic,
-            api_model: "claude-sonnet-4-5",
-        },
-        ModelRoute {
             display_name: "Claude Sonnet 4.6",
             vendor: Anthropic,
             api_model: "claude-sonnet-4-6",
         },
         ModelRoute {
-            display_name: "Claude 4 Sonnet",
+            display_name: "Claude Haiku 4.5",
             vendor: Anthropic,
-            api_model: "claude-sonnet-4",
+            api_model: "claude-haiku-4-5-20251001",
         },
-        ModelRoute {
-            display_name: "Claude 4.5 Haiku",
-            vendor: Anthropic,
-            api_model: "claude-haiku-4-5",
-        },
+        // ModelRoute {
+        //     display_name: "Claude 4.5 Sonnet",
+        //     vendor: Anthropic,
+        //     api_model: "claude-sonnet-4-5",
+        // },
+        // ModelRoute {
+        //     display_name: "Claude 4 Sonnet",
+        //     vendor: Anthropic,
+        //     api_model: "claude-sonnet-4",
+        // },
         //GROK
         ModelRoute {
             display_name: "Grok 4",
@@ -76,15 +76,15 @@ pub fn default_model_routes() -> &'static [ModelRoute] {
             api_model: "grok-4",
         },
         ModelRoute {
-            display_name: "Grok Code Fast 1",
+            display_name: "Grok Code",
             vendor: Xai,
             api_model: "grok-code-fast-1",
         },
-        ModelRoute {
-            display_name: "Grok 3 Mini (Beta)",
-            vendor: Xai,
-            api_model: "grok-3-mini",
-        },
+        // ModelRoute {
+        //     display_name: "Grok 3 Mini (Beta)",
+        //     vendor: Xai,
+        //     api_model: "grok-3-mini",
+        // },
         //GEMINI
         ModelRoute {
             display_name: "Gemini 2.5 Pro",
