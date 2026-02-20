@@ -21,7 +21,7 @@ export async function fetchPeople(): Promise<PersonData[]> {
 
     const connection = DbConnection.builder()
       .withUri(HOST)
-      .withModuleName(DB_NAME)
+      .withDatabaseName(DB_NAME)
       .onConnect(conn => {
         // Subscribe to all people
         conn
