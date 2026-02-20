@@ -47,3 +47,5 @@ impl __sdk::__query_builder::HasIxCols for TableHoldsTable {
         TableHoldsTableIxCols {}
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for TableHoldsTable {}

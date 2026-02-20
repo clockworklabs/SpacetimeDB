@@ -1,5 +1,43 @@
 use serde_json::json;
-use spacetimedb_smoketests::Smoketest;
+use spacetimedb_smoketests::{require_pnpm, Smoketest};
+
+const TS_VIEWS_SUBSCRIBE_MODULE: &str = r#"import { schema, t, table } from "spacetimedb/server";
+
+const playerState = table(
+  { name: "player_state" },
+  {
+    identity: t.identity().primaryKey(),
+    name: t.string().unique(),
+  }
+);
+
+const spacetimedb = schema({ playerState });
+export default spacetimedb;
+
+export const my_player = spacetimedb.view(
+  { public: true },
+  t.option(playerState.rowType),
+  ctx => ctx.db.playerState.identity.find(ctx.sender)
+);
+
+export const all_players = spacetimedb.anonymousView(
+  { public: true },
+  t.array(playerState.rowType),
+  ctx => ctx.from.playerState
+);
+
+export const insert_player_proc = spacetimedb.procedure(
+  { name: t.string() },
+  t.unit(),
+  (ctx, { name }) => {
+    const sender = ctx.sender;
+    ctx.withTx(tx => {
+      tx.db.playerState.insert({ name, identity: sender });
+    });
+    return {};
+  }
+);
+"#;
 
 /// Tests that views populate the st_view_* system tables
 #[test]
@@ -400,5 +438,102 @@ fn test_where_expr_view() {
 ----------+---------+-----
  1        | "Alice" | 30
  2        | "BOB"   | 20"#,
+    );
+}
+
+#[test]
+fn test_procedure_triggers_subscription_updates() {
+    let test = Smoketest::builder().precompiled_module("views-subscribe").build();
+    let sub = test.subscribe_background(&["select * from my_player"], 1).unwrap();
+    test.call("insert_player_proc", &["Alice"]).unwrap();
+    let events = sub.collect().unwrap();
+
+    let projection: Vec<serde_json::Value> = events
+        .into_iter()
+        .map(|event| {
+            let deletes = event["my_player"]["deletes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| json!({"name": row["name"]}))
+                .collect::<Vec<_>>();
+            let inserts = event["my_player"]["inserts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| json!({"name": row["name"]}))
+                .collect::<Vec<_>>();
+            json!({"my_player": {"deletes": deletes, "inserts": inserts}})
+        })
+        .collect();
+
+    assert_eq!(
+        serde_json::json!(projection),
+        serde_json::json!([
+            {"my_player": {"deletes": [], "inserts": [{"name": "Alice"}]}}
+        ])
+    );
+}
+
+#[test]
+fn test_typescript_procedure_triggers_subscription_updates() {
+    require_pnpm!();
+    let mut test = Smoketest::builder().autopublish(false).build();
+    test.publish_typescript_module_source(
+        "views-subscribe-typescript",
+        "views-subscribe-typescript",
+        TS_VIEWS_SUBSCRIBE_MODULE,
+    )
+    .unwrap();
+
+    let sub = test.subscribe_background(&["select * from my_player"], 1).unwrap();
+    test.call("insert_player_proc", &["Alice"]).unwrap();
+    let events = sub.collect().unwrap();
+
+    let projection: Vec<serde_json::Value> = events
+        .into_iter()
+        .map(|event| {
+            let deletes = event["my_player"]["deletes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| json!({"name": row["name"]}))
+                .collect::<Vec<_>>();
+            let inserts = event["my_player"]["inserts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| json!({"name": row["name"]}))
+                .collect::<Vec<_>>();
+            json!({"my_player": {"deletes": deletes, "inserts": inserts}})
+        })
+        .collect();
+
+    assert_eq!(
+        serde_json::json!(projection),
+        serde_json::json!([
+            {"my_player": {"deletes": [], "inserts": [{"name": "Alice"}]}}
+        ])
+    );
+}
+
+#[test]
+fn test_typescript_query_builder_view_query() {
+    require_pnpm!();
+    let mut test = Smoketest::builder().autopublish(false).build();
+    test.publish_typescript_module_source(
+        "views-subscribe-typescript",
+        "views-subscribe-typescript",
+        TS_VIEWS_SUBSCRIBE_MODULE,
+    )
+    .unwrap();
+
+    test.call("insert_player_proc", &["Alice"]).unwrap();
+
+    test.assert_sql(
+        "SELECT name FROM all_players",
+        r#" name
+---------
+ "Alice""#,
     );
 }

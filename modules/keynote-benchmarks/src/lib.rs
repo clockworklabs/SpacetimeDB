@@ -2,7 +2,7 @@ use core::ops::AddAssign;
 use spacetimedb::{log_stopwatch::LogStopwatch, rand::Rng, reducer, table, DbContext, ReducerContext, Table};
 
 #[derive(Clone, Copy, Debug)]
-#[table(name = position, public)]
+#[table(accessor = position, public)]
 #[repr(C)]
 pub struct Position {
     #[primary_key]
@@ -14,7 +14,7 @@ pub struct Position {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[table(name = velocity, public)]
+#[table(accessor = velocity, public)]
 #[repr(C)]
 pub struct Velocity {
     #[primary_key]

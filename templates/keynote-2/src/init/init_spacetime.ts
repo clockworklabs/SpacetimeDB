@@ -26,7 +26,7 @@ export async function initSpacetime() {
       '-y',
       '--server',
       server,
-      '--project-path',
+      '--module-path',
       modulePath,
       dbName,
     ]);
@@ -43,7 +43,7 @@ export async function initSpacetime() {
     'typescript',
     '--out-dir',
     outDir,
-    '--project-path',
+    '--module-path',
     modulePath,
   ]);
 

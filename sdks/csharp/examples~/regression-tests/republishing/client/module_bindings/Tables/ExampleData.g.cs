@@ -17,18 +17,18 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "ExampleData";
 
-            public sealed class PrimaryUniqueIndex : UniqueIndexBase<uint>
+            public sealed class ExampleDataPrimaryIdxBtreeUniqueIndex : UniqueIndexBase<uint>
             {
                 protected override uint GetKey(ExampleData row) => row.Primary;
 
-                public PrimaryUniqueIndex(ExampleDataHandle table) : base(table) { }
+                public ExampleDataPrimaryIdxBtreeUniqueIndex(ExampleDataHandle table) : base(table) { }
             }
 
-            public readonly PrimaryUniqueIndex Primary;
+            public readonly ExampleDataPrimaryIdxBtreeUniqueIndex ExampleDataPrimaryIdxBtree;
 
             internal ExampleDataHandle(DbConnection conn) : base(conn)
             {
-                Primary = new(this);
+                ExampleDataPrimaryIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(ExampleData row) => row.Primary;

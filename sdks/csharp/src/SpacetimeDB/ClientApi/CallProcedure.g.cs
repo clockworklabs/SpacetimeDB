@@ -13,26 +13,26 @@ namespace SpacetimeDB.ClientApi
     [DataContract]
     public sealed partial class CallProcedure
     {
-        [DataMember(Name = "procedure")]
-        public string Procedure;
-        [DataMember(Name = "args")]
-        public System.Collections.Generic.List<byte> Args;
         [DataMember(Name = "request_id")]
         public uint RequestId;
         [DataMember(Name = "flags")]
         public byte Flags;
+        [DataMember(Name = "procedure")]
+        public string Procedure;
+        [DataMember(Name = "args")]
+        public System.Collections.Generic.List<byte> Args;
 
         public CallProcedure(
-            string Procedure,
-            System.Collections.Generic.List<byte> Args,
             uint RequestId,
-            byte Flags
+            byte Flags,
+            string Procedure,
+            System.Collections.Generic.List<byte> Args
         )
         {
-            this.Procedure = Procedure;
-            this.Args = Args;
             this.RequestId = RequestId;
             this.Flags = Flags;
+            this.Procedure = Procedure;
+            this.Args = Args;
         }
 
         public CallProcedure()

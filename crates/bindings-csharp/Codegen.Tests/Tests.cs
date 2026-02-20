@@ -222,6 +222,23 @@ public static class GeneratorSnapshotTests
     }
 
     [Fact]
+    public static async Task SettingsAndExplicitNames()
+    {
+        var fixture = await Fixture.Compile("explicitnames");
+
+        var compilationAfterGen = await fixture.RunAndCheckGenerators(
+            new SpacetimeDB.Codegen.Type(),
+            new SpacetimeDB.Codegen.Module()
+        );
+
+        Assert.Empty(GetCompilationErrors(compilationAfterGen));
+
+        AssertPublicBoundIsAvailableInRuntime(compilationAfterGen);
+        AssertRuntimeDoesNotDefineLocal(compilationAfterGen);
+        AssertGeneratedCodeDoesNotUseInternalBound(compilationAfterGen);
+    }
+
+    [Fact]
     public static async Task TestDiagnostics()
     {
         var fixture = await Fixture.Compile("diag");

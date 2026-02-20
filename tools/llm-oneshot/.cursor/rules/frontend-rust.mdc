@@ -103,7 +103,7 @@ fn call_reducer<F>(&self, f: F) where F: FnOnce(&DbConnection) {
 
 ```bash
 # Generate Rust bindings
-spacetime generate --lang rust --out-dir client/src/module_bindings --project-path backend/
+spacetime generate --lang rust --out-dir client/src/module_bindings --module-path backend/
 
 # Build and run
 cd client && cargo build --release && ./target/release/my-client

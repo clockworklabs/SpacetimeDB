@@ -1,13 +1,13 @@
 import { schema, table, t } from 'spacetimedb/server';
 
-const spacetimedb = schema(
-  table(
-    { name: 'person' },
+const spacetimedb = schema({
+  person: table(
+    { public: true },
     {
       name: t.string(),
     }
-  )
-);
+  ),
+});
 export default spacetimedb;
 
 export const init = spacetimedb.init(_ctx => {

@@ -263,8 +263,9 @@ pub trait ControlStateReadAccess {
     async fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>>;
 
     // DNS
-    async fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>>;
+    async fn lookup_database_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>>;
     async fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>>;
+    async fn lookup_namespace_owner(&self, name: &str) -> anyhow::Result<Option<Identity>>;
 }
 
 /// Write operations on the SpacetimeDB control plane.
@@ -355,22 +356,26 @@ impl<T: ControlStateReadAccess + Send + Sync + Sync + ?Sized> ControlStateReadAc
         (**self).get_replicas().await
     }
 
+    async fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
+        (**self).get_leader_replica_by_database(database_id).await
+    }
+
     // Energy
     async fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
         (**self).get_energy_balance(identity).await
     }
 
     // DNS
-    async fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
-        (**self).lookup_identity(domain).await
+    async fn lookup_database_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
+        (**self).lookup_database_identity(domain).await
     }
 
     async fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
         (**self).reverse_lookup(database_identity).await
     }
 
-    async fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
-        (**self).get_leader_replica_by_database(database_id).await
+    async fn lookup_namespace_owner(&self, name: &str) -> anyhow::Result<Option<Identity>> {
+        (**self).lookup_namespace_owner(name).await
     }
 }
 

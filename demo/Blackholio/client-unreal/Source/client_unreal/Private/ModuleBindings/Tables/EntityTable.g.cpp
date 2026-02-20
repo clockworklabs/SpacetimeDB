@@ -16,8 +16,8 @@ void UEntityTable::PostInitialize()
     EntityTable->AddUniqueConstraint<int32>("entity_id", [](const FEntityType& Row) -> const int32& {
         return Row.EntityId; });
 
-    EntityId = NewObject<UEntityEntityIdUniqueIndex>(this);
-    EntityId->SetCache(EntityTable);
+    EntityEntityIdIdxBtree = NewObject<UEntityEntityEntityIdIdxBtreeUniqueIndex>(this);
+    EntityEntityIdIdxBtree->SetCache(EntityTable);
 
     /***/
 }

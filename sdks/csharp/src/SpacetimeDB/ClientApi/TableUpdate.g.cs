@@ -13,32 +13,24 @@ namespace SpacetimeDB.ClientApi
     [DataContract]
     public sealed partial class TableUpdate
     {
-        [DataMember(Name = "table_id")]
-        public uint TableId;
         [DataMember(Name = "table_name")]
         public string TableName;
-        [DataMember(Name = "num_rows")]
-        public ulong NumRows;
-        [DataMember(Name = "updates")]
-        public System.Collections.Generic.List<CompressableQueryUpdate> Updates;
+        [DataMember(Name = "rows")]
+        public System.Collections.Generic.List<TableUpdateRows> Rows;
 
         public TableUpdate(
-            uint TableId,
             string TableName,
-            ulong NumRows,
-            System.Collections.Generic.List<CompressableQueryUpdate> Updates
+            System.Collections.Generic.List<TableUpdateRows> Rows
         )
         {
-            this.TableId = TableId;
             this.TableName = TableName;
-            this.NumRows = NumRows;
-            this.Updates = Updates;
+            this.Rows = Rows;
         }
 
         public TableUpdate()
         {
             this.TableName = "";
-            this.Updates = new();
+            this.Rows = new();
         }
     }
 }

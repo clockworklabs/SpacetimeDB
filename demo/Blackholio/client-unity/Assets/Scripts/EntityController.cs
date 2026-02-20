@@ -23,7 +23,7 @@ public abstract class EntityController : MonoBehaviour
 	{
 		EntityId = entityId;
 
-		var entity = GameManager.Conn.Db.Entity.EntityId.Find(entityId);
+		var entity = GameManager.Conn.Db.Entity.EntityEntityIdIdxBtree.Find(entityId);
 		LerpStartPosition = LerpTargetPosition = transform.position = (Vector2)entity.Position;
 		transform.localScale = Vector3.one;
 		TargetScale = MassToScale(entity.Mass);
@@ -44,17 +44,6 @@ public abstract class EntityController : MonoBehaviour
 
 	public virtual void OnDelete(EventContext context)
 	{
-		if (context.Event is SpacetimeDB.Event<Reducer>.Reducer reducer &&
-			reducer.ReducerEvent.Reducer is Reducer.ConsumeEntity consume)
-		{
-			var consumerId = consume.Request.ConsumerEntityId;
-			if (GameManager.Entities.TryGetValue(consumerId, out var consumerEntity))
-			{
-				StartCoroutine(DespawnCoroutine(consumerEntity.transform));
-				return;
-			}
-		}
-
 		Destroy(gameObject);
 	}
 

@@ -42,7 +42,7 @@ fn target_dir() -> PathBuf {
 
 /// Returns the expected CLI binary path.
 fn cli_binary_path() -> PathBuf {
-    let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
+    let profile = "release";
     let cli_name = if cfg!(windows) {
         "spacetimedb-cli.exe"
     } else {

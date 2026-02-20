@@ -37,3 +37,5 @@ dist-ssr
 *.sln
 *.sw?
 /runs
+
+spacetime.local.json

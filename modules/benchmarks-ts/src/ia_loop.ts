@@ -226,7 +226,8 @@ function moveAgent(
   ctx.db.gameTargetableState.entity_id.update(targetable);
 
   if (ctx.db.gameLiveTargetableState.entity_id.find(entityId) != null) {
-    ctx.db.gameLiveTargetableState.entity_id.update({
+    ctx.db.gameLiveTargetableState.entity_id.delete(entityId);
+    ctx.db.gameLiveTargetableState.insert({
       entity_id: entityId,
       quad: newHash,
     });

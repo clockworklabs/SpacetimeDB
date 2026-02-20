@@ -73,45 +73,6 @@ namespace SpacetimeDB
             return new ServerMessage.BSATN().Read(new BinaryReader(memoryStream));
         }
 
-
-        /// <summary>
-        /// Decompresses and decodes a <see cref="CompressableQueryUpdate"/> into a <see cref="QueryUpdate"/> object,
-        /// automatically handling uncompressed, Brotli, or Gzip-encoded data. Ensures efficient decompression by
-        /// reading the entire stream at once to avoid performance issues with certain stream implementations.
-        /// Throws <see cref="InvalidOperationException"/> if the compression type is unrecognized.
-        /// </summary>
-        /// <param name="update">The compressed or uncompressed query update.</param>
-        /// <returns>The deserialized <see cref="QueryUpdate"/> object.</returns>
-        internal static QueryUpdate DecompressDecodeQueryUpdate(CompressableQueryUpdate update)
-        {
-            Stream decompressedStream;
-
-            switch (update)
-            {
-                case CompressableQueryUpdate.Uncompressed(var qu):
-                    return qu;
-
-                case CompressableQueryUpdate.Brotli(var bytes):
-                    decompressedStream = CompressionHelpers.BrotliReader(new MemoryStream(bytes.ToArray()));
-                    break;
-
-                case CompressableQueryUpdate.Gzip(var bytes):
-                    decompressedStream = CompressionHelpers.GzipReader(new MemoryStream(bytes.ToArray()));
-                    break;
-
-                default:
-                    throw new InvalidOperationException();
-            }
-
-            // TODO: consider pooling these.
-            // DO NOT TRY TO TAKE THIS OUT. The BrotliStream ReadByte() implementation allocates an array
-            // PER BYTE READ. You have to do it all at once to avoid that problem.
-            MemoryStream memoryStream = new MemoryStream();
-            decompressedStream.CopyTo(memoryStream);
-            memoryStream.Seek(0, SeekOrigin.Begin);
-            return new QueryUpdate.BSATN().Read(new BinaryReader(memoryStream));
-        }
-
         /// <summary>
         /// Prepare to read a BsatnRowList.
         ///
@@ -137,12 +98,14 @@ namespace SpacetimeDB
         internal static (BinaryReader reader, int rowCount) ParseRowList(BsatnRowList list) =>
         (
             new BinaryReader(new ListStream(list.RowsData)),
-            list.SizeHint switch
-            {
-                RowSizeHint.FixedSize(var size) => list.RowsData.Count / size,
-                RowSizeHint.RowOffsets(var offsets) => offsets.Count,
-                _ => throw new NotImplementedException()
-            }
+            list.RowsData.Count == 0
+                ? 0
+                : list.SizeHint switch
+                {
+                    RowSizeHint.FixedSize(var size) => list.RowsData.Count / size,
+                    RowSizeHint.RowOffsets(var offsets) => offsets.Count,
+                    _ => throw new NotImplementedException()
+                }
         );
     }
 }

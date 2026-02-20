@@ -1,7 +1,7 @@
 import { schema, table, t } from 'spacetimedb/server';
 
 // User table - stores display names
-export const User = table(
+export const user = table(
   {
     name: 'user',
     public: true,

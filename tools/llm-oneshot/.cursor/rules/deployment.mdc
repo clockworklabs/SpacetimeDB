@@ -109,7 +109,7 @@ Client code imports from generated `module_bindings/`. If you write client code 
 
 ```bash
 cd <backend-dir> && npm install
-spacetime publish <MODULE_NAME> --project-path <backend-dir>
+spacetime publish <MODULE_NAME> --module-path <backend-dir>
 ```
 
 **Module naming:** Use the timestamped folder name (e.g., `chat-app-20260106-180327`) for unique module names.
@@ -119,7 +119,7 @@ spacetime publish <MODULE_NAME> --project-path <backend-dir>
 ### Phase 2: Generate Bindings
 
 ```bash
-spacetime generate --lang typescript --out-dir <client>/src/module_bindings --project-path <backend>
+spacetime generate --lang typescript --out-dir <client>/src/module_bindings --module-path <backend>
 ```
 
 This creates the `module_bindings/` folder with:
@@ -218,10 +218,10 @@ spacetime server set-default docker
 # If bindings already exist from Phase 2, skip step 6
 
 # 5. Publish module (use echo y to auto-confirm)
-echo y | spacetime publish <MODULE_NAME> --clear-database --project-path <backend-dir>
+echo y | spacetime publish <MODULE_NAME> --clear-database --module-path <backend-dir>
 
 # 6. Generate bindings (skip if already done in Phase 2)
-spacetime generate --lang typescript --out-dir <client>/src/module_bindings --project-path <backend>
+spacetime generate --lang typescript --out-dir <client>/src/module_bindings --module-path <backend>
 
 # 7. Install and run client (background)
 cd <client-dir> && npm install && npm run dev
@@ -237,10 +237,10 @@ spacetime server ping local
 spacetime start
 
 # 2. Publish module (use echo y to auto-confirm)
-echo y | spacetime publish <MODULE_NAME> --clear-database --project-path <backend-dir>
+echo y | spacetime publish <MODULE_NAME> --clear-database --module-path <backend-dir>
 
 # 3. Generate bindings (skip if already done in Phase 2)
-spacetime generate --lang typescript --out-dir <client>/src/module_bindings --project-path <backend>
+spacetime generate --lang typescript --out-dir <client>/src/module_bindings --module-path <backend>
 
 # 4. Install and run client (background)
 cd <client-dir> && npm install && npm run dev

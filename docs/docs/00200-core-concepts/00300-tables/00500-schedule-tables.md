@@ -5,6 +5,7 @@ slug: /tables/schedule-tables
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Tables can trigger [reducers](/functions/reducers) or [procedures](/functions/procedures) at specific times by including a special scheduling column. This allows you to schedule future actions like sending reminders, expiring items, or running periodic maintenance tasks.
@@ -24,7 +25,7 @@ The table attribute uses `scheduled` (with a "d") because it refers to the **sch
 
 ```typescript
 const reminder = table(
-  { name: 'reminder', scheduled: 'send_reminder' },
+  { name: 'reminder', scheduled: (): any => send_reminder },
   {
     scheduled_id: t.u64().primaryKey().autoInc(),
     scheduled_at: t.scheduleAt(),
@@ -69,7 +70,7 @@ public static partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = reminder_schedule, scheduled(send_reminder))]
+#[spacetimedb::table(accessor = reminder_schedule, scheduled(send_reminder))]
 pub struct Reminder {
     #[primary_key]
     #[auto_inc]
@@ -88,6 +89,8 @@ fn send_reminder(ctx: &ReducerContext, reminder: Reminder) -> Result<(), String>
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 struct Reminder {
@@ -130,7 +133,7 @@ Use intervals for periodic tasks like game ticks, heartbeats, or recurring maint
 ```typescript
 import { ScheduleAt } from 'spacetimedb';
 import { schema, t, table, SenderError } from 'spacetimedb/server';
-const spacetimedb = schema();
+const spacetimedb = schema({});
 export default spacetimedb;
 
 export const schedule_periodic_tasks = spacetimedb.reducer((ctx) => {
@@ -233,7 +236,7 @@ Use specific times for one-shot actions like sending a reminder at a particular 
 ```typescript
 import { ScheduleAt } from 'spacetimedb';
 import { schema, t, table, SenderError } from 'spacetimedb/server';
-const spacetimedb = schema();
+const spacetimedb = schema({});
 export default spacetimedb;
 
 export const schedule_timed_tasks = spacetimedb.reducer((ctx) => {

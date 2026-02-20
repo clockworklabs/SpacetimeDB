@@ -14,7 +14,9 @@ public interface IReducerContext
 
 public interface IReducer
 {
-    RawReducerDefV9 MakeReducerDef(ITypeRegistrar registrar);
+    RawReducerDefV10 MakeReducerDef(ITypeRegistrar registrar);
+
+    Lifecycle? Lifecycle { get; }
 
     // This one is not static because we need to be able to store IReducer in a list.
     void Invoke(BinaryReader reader, IReducerContext args);

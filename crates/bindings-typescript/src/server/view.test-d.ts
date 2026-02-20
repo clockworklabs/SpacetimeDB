@@ -61,13 +61,13 @@ const order = table(
   }
 );
 
-const spacetime = schema(
+const spacetime = schema({
   person,
   order,
   personWithExtra,
   personReordered,
-  personWithMissing
-);
+  personWithMissing,
+});
 
 const arrayRetValue = t.array(person.rowType);
 const optionalPerson = t.option(person.rowType);

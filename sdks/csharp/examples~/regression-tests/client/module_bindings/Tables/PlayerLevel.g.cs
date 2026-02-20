@@ -17,28 +17,28 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "player_level";
 
-            public sealed class LevelIndex : BTreeIndexBase<ulong>
+            public sealed class PlayerLevelLevelIdxBtreeIndex : BTreeIndexBase<ulong>
             {
                 protected override ulong GetKey(PlayerLevel row) => row.Level;
 
-                public LevelIndex(PlayerLevelHandle table) : base(table) { }
+                public PlayerLevelLevelIdxBtreeIndex(PlayerLevelHandle table) : base(table) { }
             }
 
-            public readonly LevelIndex Level;
+            public readonly PlayerLevelLevelIdxBtreeIndex PlayerLevelLevelIdxBtree;
 
-            public sealed class PlayerIdUniqueIndex : UniqueIndexBase<ulong>
+            public sealed class PlayerLevelPlayerIdIdxBtreeUniqueIndex : UniqueIndexBase<ulong>
             {
                 protected override ulong GetKey(PlayerLevel row) => row.PlayerId;
 
-                public PlayerIdUniqueIndex(PlayerLevelHandle table) : base(table) { }
+                public PlayerLevelPlayerIdIdxBtreeUniqueIndex(PlayerLevelHandle table) : base(table) { }
             }
 
-            public readonly PlayerIdUniqueIndex PlayerId;
+            public readonly PlayerLevelPlayerIdIdxBtreeUniqueIndex PlayerLevelPlayerIdIdxBtree;
 
             internal PlayerLevelHandle(DbConnection conn) : base(conn)
             {
-                Level = new(this);
-                PlayerId = new(this);
+                PlayerLevelLevelIdxBtree = new(this);
+                PlayerLevelPlayerIdIdxBtree = new(this);
             }
         }
 

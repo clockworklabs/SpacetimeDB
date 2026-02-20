@@ -23,8 +23,6 @@ impl __sdk::InModule for UpdateIndexedSimpleEnumArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct UpdateIndexedSimpleEnumCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `update_indexed_simple_enum`.
 ///
@@ -34,73 +32,40 @@ pub trait update_indexed_simple_enum {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_update_indexed_simple_enum`] callbacks.
-    fn update_indexed_simple_enum(&self, a: SimpleEnum, b: SimpleEnum) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `update_indexed_simple_enum`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`update_indexed_simple_enum:update_indexed_simple_enum_then`] to run a callback after the reducer completes.
+    fn update_indexed_simple_enum(&self, a: SimpleEnum, b: SimpleEnum) -> __sdk::Result<()> {
+        self.update_indexed_simple_enum_then(a, b, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `update_indexed_simple_enum` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`UpdateIndexedSimpleEnumCallbackId`] can be passed to [`Self::remove_on_update_indexed_simple_enum`]
-    /// to cancel the callback.
-    fn on_update_indexed_simple_enum(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn update_indexed_simple_enum_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &SimpleEnum, &SimpleEnum) + Send + 'static,
-    ) -> UpdateIndexedSimpleEnumCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_update_indexed_simple_enum`],
-    /// causing it not to run in the future.
-    fn remove_on_update_indexed_simple_enum(&self, callback: UpdateIndexedSimpleEnumCallbackId);
+        a: SimpleEnum,
+        b: SimpleEnum,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl update_indexed_simple_enum for super::RemoteReducers {
-    fn update_indexed_simple_enum(&self, a: SimpleEnum, b: SimpleEnum) -> __sdk::Result<()> {
-        self.imp
-            .call_reducer("update_indexed_simple_enum", UpdateIndexedSimpleEnumArgs { a, b })
-    }
-    fn on_update_indexed_simple_enum(
+    fn update_indexed_simple_enum_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &SimpleEnum, &SimpleEnum) + Send + 'static,
-    ) -> UpdateIndexedSimpleEnumCallbackId {
-        UpdateIndexedSimpleEnumCallbackId(self.imp.on_reducer(
-            "update_indexed_simple_enum",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::UpdateIndexedSimpleEnum { a, b },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, a, b)
-            }),
-        ))
-    }
-    fn remove_on_update_indexed_simple_enum(&self, callback: UpdateIndexedSimpleEnumCallbackId) {
-        self.imp.remove_on_reducer("update_indexed_simple_enum", callback.0)
-    }
-}
+        a: SimpleEnum,
+        b: SimpleEnum,
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `update_indexed_simple_enum`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_update_indexed_simple_enum {
-    /// Set the call-reducer flags for the reducer `update_indexed_simple_enum` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn update_indexed_simple_enum(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_update_indexed_simple_enum for super::SetReducerFlags {
-    fn update_indexed_simple_enum(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("update_indexed_simple_enum", flags);
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp
+            .invoke_reducer_with_callback(UpdateIndexedSimpleEnumArgs { a, b }, callback)
     }
 }

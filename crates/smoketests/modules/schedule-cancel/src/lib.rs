@@ -17,7 +17,7 @@ fn init(ctx: &ReducerContext) {
      do_cancel(ctx, schedule.scheduled_id);
 }
 
-#[spacetimedb::table(name = scheduled_reducer_args, public, scheduled(reducer))]
+#[spacetimedb::table(accessor = scheduled_reducer_args, public, scheduled(reducer))]
 pub struct ScheduledReducerArgs {
     #[primary_key]
     #[auto_inc]

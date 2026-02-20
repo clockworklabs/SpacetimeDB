@@ -213,5 +213,5 @@ pub(super) fn iter_constraints(table: &TableDef) -> impl Iterator<Item = &Constr
 ///
 /// Sorting is necessary to have deterministic reproducible codegen.
 pub fn iter_types(module: &ModuleDef) -> impl Iterator<Item = &TypeDef> {
-    module.types().sorted_by_key(|table| &table.name)
+    module.types().sorted_by_key(|table| &table.accessor_name)
 }

@@ -367,8 +367,17 @@ fn main() -> anyhow::Result<()> {
         )?;
     }
     if matches.get_flag("cpp") || matches.get_flag("all") {
-        rewrite_cmake_version_inplace("crates/bindings-cpp/CMakeLists.txt", &full_version)?;
-        rewrite_cmake_version_inplace("templates/basic-cpp/spacetimedb/CMakeLists.txt", &full_version)?;
+        // TODO(26-02-17 jlarabie): Keep C++ pinned to 1.12.x for the 2.0 release train.
+        // Re-enable this codepath when C++ 2.0 is ready and we're intentionally
+        // moving the C++ SDK/template versions forward.
+        eprintln!("Warning: Not bumping C++ version. See inline comment for details.");
+        return Ok(());
+
+        #[allow(unreachable_code)]
+        {
+            rewrite_cmake_version_inplace("crates/bindings-cpp/CMakeLists.txt", &full_version)?;
+            rewrite_cmake_version_inplace("templates/basic-cpp/spacetimedb/CMakeLists.txt", &full_version)?;
+        }
     }
     Ok(())
 }

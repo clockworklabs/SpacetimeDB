@@ -13,7 +13,7 @@ export const UserStatus = {
   OFFLINE: 'offline',
 } as const;
 
-export const User = table(
+export const user = table(
   { name: 'user', public: true },
   {
     identity: t.identity().primaryKey(),

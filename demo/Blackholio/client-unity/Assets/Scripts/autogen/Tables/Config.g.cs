@@ -17,18 +17,18 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "config";
 
-            public sealed class IdUniqueIndex : UniqueIndexBase<int>
+            public sealed class ConfigIdIdxBtreeUniqueIndex : UniqueIndexBase<int>
             {
                 protected override int GetKey(Config row) => row.Id;
 
-                public IdUniqueIndex(ConfigHandle table) : base(table) { }
+                public ConfigIdIdxBtreeUniqueIndex(ConfigHandle table) : base(table) { }
             }
 
-            public readonly IdUniqueIndex Id;
+            public readonly ConfigIdIdxBtreeUniqueIndex ConfigIdIdxBtree;
 
             internal ConfigHandle(DbConnection conn) : base(conn)
             {
-                Id = new(this);
+                ConfigIdIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(Config row) => row.Id;

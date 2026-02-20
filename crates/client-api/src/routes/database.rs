@@ -343,7 +343,7 @@ where
     let module_def = &module.info.module_def;
     let response_json = match version {
         SchemaVersion::V9 => {
-            let raw = RawModuleDefV9::from(module_def.clone());
+            let raw = RawModuleDefV9::from(module_def.as_ref().clone());
             axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
         }
     };
@@ -715,7 +715,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
     };
     let maybe_org_identity = match organization.as_ref() {
         None => None,
-        Some(org) => org.resolve(&ctx).await.map(Some)?,
+        Some(org) => org.resolve_namespace_owner(&ctx).await.map(Some)?,
     };
 
     // Check that the replication factor looks somewhat sane.
@@ -1093,7 +1093,7 @@ pub async fn set_names<S: ControlStateDelegate + Authorization>(
         })?;
 
     for name in &validated_names {
-        if ctx.lookup_identity(name.as_str()).await.unwrap().is_some() {
+        if ctx.lookup_database_identity(name.as_str()).await.unwrap().is_some() {
             return Ok((
                 StatusCode::BAD_REQUEST,
                 axum::Json(name::SetDomainsResult::OtherError(format!(

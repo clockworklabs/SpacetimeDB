@@ -1,6 +1,6 @@
 import { schema, t } from 'spacetimedb/server';
 
-const spacetimedb = schema();
+const spacetimedb = schema({});
 export default spacetimedb;
 
 export const emptyReducerNoArgs = spacetimedb.reducer({}, ctx => {

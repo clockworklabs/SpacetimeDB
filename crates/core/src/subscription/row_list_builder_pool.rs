@@ -2,7 +2,7 @@ use crate::subscription::websocket_building::{BsatnRowListBuilder, BuildableWebs
 use bytes::{Bytes, BytesMut};
 use core::sync::atomic::{AtomicUsize, Ordering};
 use derive_more::Deref;
-use spacetimedb_client_api_messages::websocket::{BsatnFormat, JsonFormat};
+use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_data_structures::object_pool::{Pool, PooledObject};
 use spacetimedb_memory_usage::MemoryUsage;
 
@@ -70,7 +70,7 @@ impl BsatnRowListBuilderPool {
     }
 }
 
-impl RowListBuilderSource<BsatnFormat> for BsatnRowListBuilderPool {
+impl RowListBuilderSource<ws_v1::BsatnFormat> for BsatnRowListBuilderPool {
     fn take_row_list_builder(&self) -> BsatnRowListBuilder {
         let PooledBuffer(buffer) = self.pool.take(
             |buffer| buffer.0.clear(),
@@ -83,8 +83,8 @@ impl RowListBuilderSource<BsatnFormat> for BsatnRowListBuilderPool {
 /// The "pool" for the builder for the [`JsonFormat`].
 pub(crate) struct JsonRowListBuilderFakePool;
 
-impl RowListBuilderSource<JsonFormat> for JsonRowListBuilderFakePool {
-    fn take_row_list_builder(&self) -> <JsonFormat as BuildableWebsocketFormat>::ListBuilder {
+impl RowListBuilderSource<ws_v1::JsonFormat> for JsonRowListBuilderFakePool {
+    fn take_row_list_builder(&self) -> <ws_v1::JsonFormat as BuildableWebsocketFormat>::ListBuilder {
         Vec::new()
     }
 }

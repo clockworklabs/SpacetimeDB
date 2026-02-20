@@ -33,10 +33,10 @@ spacetime server set-default docker
 cd backend/spacetimedb
 npm install
 cd ../..
-echo y | spacetime publish chat-app --clear-database --project-path backend/spacetimedb
+echo y | spacetime publish chat-app --clear-database --module-path backend/spacetimedb
 
 # Generate client bindings
-spacetime generate --lang typescript --out-dir client/src/module_bindings --project-path backend/spacetimedb
+spacetime generate --lang typescript --out-dir client/src/module_bindings --module-path backend/spacetimedb
 
 # Install and run client
 cd client
@@ -54,10 +54,10 @@ spacetime start
 cd backend/spacetimedb
 npm install
 cd ../..
-echo y | spacetime publish chat-app --clear-database --project-path backend/spacetimedb
+echo y | spacetime publish chat-app --clear-database --module-path backend/spacetimedb
 
 # Generate client bindings
-spacetime generate --lang typescript --out-dir client/src/module_bindings --project-path backend/spacetimedb
+spacetime generate --lang typescript --out-dir client/src/module_bindings --module-path backend/spacetimedb
 
 # Install and run client
 cd client

@@ -17,28 +17,28 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "where_test";
 
-            public sealed class IdUniqueIndex : UniqueIndexBase<uint>
+            public sealed class WhereTestIdIdxBtreeUniqueIndex : UniqueIndexBase<uint>
             {
                 protected override uint GetKey(WhereTest row) => row.Id;
 
-                public IdUniqueIndex(WhereTestHandle table) : base(table) { }
+                public WhereTestIdIdxBtreeUniqueIndex(WhereTestHandle table) : base(table) { }
             }
 
-            public readonly IdUniqueIndex Id;
+            public readonly WhereTestIdIdxBtreeUniqueIndex WhereTestIdIdxBtree;
 
-            public sealed class ValueIndex : BTreeIndexBase<uint>
+            public sealed class WhereTestValueIdxBtreeIndex : BTreeIndexBase<uint>
             {
                 protected override uint GetKey(WhereTest row) => row.Value;
 
-                public ValueIndex(WhereTestHandle table) : base(table) { }
+                public WhereTestValueIdxBtreeIndex(WhereTestHandle table) : base(table) { }
             }
 
-            public readonly ValueIndex Value;
+            public readonly WhereTestValueIdxBtreeIndex WhereTestValueIdxBtree;
 
             internal WhereTestHandle(DbConnection conn) : base(conn)
             {
-                Id = new(this);
-                Value = new(this);
+                WhereTestIdIdxBtree = new(this);
+                WhereTestValueIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(WhereTest row) => row.Id;

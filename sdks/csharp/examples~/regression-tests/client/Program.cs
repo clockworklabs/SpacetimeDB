@@ -16,6 +16,8 @@ const string DBNAME = "btree-repro";
 const string THROW_ERROR_MESSAGE = "this is an error";
 const uint UPDATED_WHERE_TEST_VALUE = 42;
 const string UPDATED_WHERE_TEST_NAME = "this_name_was_updated";
+const string EXPECTED_TEST_EVENT_NAME = "hello";
+const ulong EXPECTED_TEST_EVENT_VALUE = 42;
 
 DbConnection ConnectToDB()
 {
@@ -51,6 +53,7 @@ DbConnection ConnectToDB()
 uint waiting = 0;
 var applied = false;
 SubscriptionHandle? handle = null;
+uint testEventInsertCount = 0;
 
 void OnConnected(DbConnection conn, Identity identity, string authToken)
 {
@@ -72,6 +75,7 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         .AddQuery(qb => qb.From.NullStringNonnullable().Build())
         .AddQuery(qb => qb.From.NullStringNullable().Build())
         .AddQuery(qb => qb.From.MyLog().Build())
+        .AddQuery(qb => qb.From.TestEvent().Build())
         .AddQuery(qb => qb.From.Admins().Build())
         .AddQuery(qb => qb.From.NullableVecView().Build())
         .AddQuery(qb => qb.From.WhereTest().Where(c => c.Value.Gt(10)).Build())
@@ -94,7 +98,12 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         .AddQuery(qb => qb.From.ScoresPlayer123().Build())
         .AddQuery(qb => qb.From.ScoresPlayer123Range().Build())
         .AddQuery(qb => qb.From.ScoresPlayer123Level5().Build())
-        .AddQuery(qb => qb.From.User().Build())
+        .AddQuery(qb =>
+            qb.From.User()
+                .Where(c => c.Age.Gte((byte)18).And(c.Age.Lt((byte)65)))
+                .Where(c => c.IsAdmin.Eq(true).Or(c.Name.Eq("Charlie")))
+                .Build()
+        )
         .AddQuery(qb => qb.From.Score().Build())
         .AddQuery(qb => qb.From.WhereTestView().Build())
         .AddQuery(qb => qb.From.FindWhereTest().Build())
@@ -226,6 +235,58 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         ValidateWhereSubscription(ctx, UPDATED_WHERE_TEST_NAME);
         ValidateWhereTestViews(ctx, UPDATED_WHERE_TEST_VALUE, UPDATED_WHERE_TEST_NAME);
     };
+
+    conn.Db.TestEvent.OnInsert += (EventContext ctx, TestEvent row) =>
+    {
+        Log.Info($"Got TestEvent.OnInsert callback: {row.Name} / {row.Value}");
+        testEventInsertCount++;
+        Debug.Assert(
+            row.Name == EXPECTED_TEST_EVENT_NAME,
+            $"Expected TestEvent.Name == {EXPECTED_TEST_EVENT_NAME}, got {row.Name}"
+        );
+        Debug.Assert(
+            row.Value == EXPECTED_TEST_EVENT_VALUE,
+            $"Expected TestEvent.Value == {EXPECTED_TEST_EVENT_VALUE}, got {row.Value}"
+        );
+        Debug.Assert(
+            ctx.Db.TestEvent.Count == 0,
+            $"Event table should not persist rows. Count was {ctx.Db.TestEvent.Count}"
+        );
+        Debug.Assert(
+            !ctx.Db.TestEvent.Iter().Any(),
+            "Event table iterator should be empty after event delivery"
+        );
+    };
+
+    conn.Reducers.OnEmitTestEvent += (ReducerEventContext ctx, string name, ulong value) =>
+    {
+        Log.Info("Got EmitTestEvent callback");
+        waiting--;
+        Debug.Assert(
+            ctx.Event.Status is Status.Committed,
+            $"EmitTestEvent should commit, got {ctx.Event.Status}"
+        );
+        Debug.Assert(name == EXPECTED_TEST_EVENT_NAME, $"Expected name={EXPECTED_TEST_EVENT_NAME}, got {name}");
+        Debug.Assert(value == EXPECTED_TEST_EVENT_VALUE, $"Expected value={EXPECTED_TEST_EVENT_VALUE}, got {value}");
+    };
+
+    conn.Reducers.OnNoop += (ReducerEventContext ctx) =>
+    {
+        Log.Info("Got Noop callback");
+        waiting--;
+        Debug.Assert(
+            testEventInsertCount == 1,
+            $"Expected exactly one TestEvent insert callback after noop, got {testEventInsertCount}"
+        );
+        Debug.Assert(
+            ctx.Db.TestEvent.Count == 0,
+            $"Event table should still be empty after noop. Count was {ctx.Db.TestEvent.Count}"
+        );
+        Debug.Assert(
+            !ctx.Db.TestEvent.Iter().Any(),
+            "Event table iterator should remain empty after noop"
+        );
+    };
 }
 
 const uint MAX_ID = 10;
@@ -237,13 +298,15 @@ void ValidateBTreeIndexes(IRemoteDbContext conn)
     Log.Debug("Checking indexes...");
     foreach (var data in conn.Db.ExampleData.Iter())
     {
-        Debug.Assert(conn.Db.ExampleData.Indexed.Filter(data.Id).Contains(data));
+        Debug.Assert(
+            conn.Db.ExampleData.ExampleDataIndexedIdxBtree.Filter(data.Id).Contains(data)
+        );
     }
     var outOfIndex = conn.Db.ExampleData.Iter().ToHashSet();
 
     for (uint i = 0; i < MAX_ID; i++)
     {
-        foreach (var data in conn.Db.ExampleData.Indexed.Filter(i))
+        foreach (var data in conn.Db.ExampleData.ExampleDataIndexedIdxBtree.Filter(i))
         {
             Debug.Assert(outOfIndex.Contains(data));
         }
@@ -356,6 +419,26 @@ void ValidateQueryingWithIndexesExamples(IRemoteDbContext conn)
     Debug.Assert(
         player123Level5.Count == 1 && player123Level5[0].Points == 5_000,
         "Expected a single level-5 score worth 5,000 points for player 123"
+    );
+
+    Log.Debug("Checking advanced typed query builder predicates...");
+    Debug.Assert(conn.Db.User != null, "conn.Db.User should not be null");
+    var advancedUsers = conn.Db.User.Iter().ToList();
+    Debug.Assert(
+        advancedUsers.Count == 2,
+        $"Expected 2 rows from advanced user predicate, got {advancedUsers.Count}"
+    );
+    Debug.Assert(
+        advancedUsers.All(u => u.Age >= 18 && u.Age < 65),
+        "Advanced predicate rows should have 18 <= age < 65"
+    );
+    Debug.Assert(
+        advancedUsers.All(u => u.IsAdmin || u.Name == "Charlie"),
+        "Advanced predicate rows should satisfy admin || name == Charlie"
+    );
+    Debug.Assert(
+        advancedUsers.Select(u => u.Name).OrderBy(n => n).SequenceEqual(new[] { "Alice", "Charlie" }),
+        "Expected Alice and Charlie from advanced predicate"
     );
 }
 
@@ -645,6 +728,14 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     Log.Debug("Calling InsertNullStringIntoNullable");
     waiting++;
     context.Reducers.InsertNullStringIntoNullable();
+
+    Log.Debug("Calling EmitTestEvent");
+    waiting++;
+    context.Reducers.EmitTestEvent(EXPECTED_TEST_EVENT_NAME, EXPECTED_TEST_EVENT_VALUE);
+
+    Log.Debug("Calling Noop after EmitTestEvent");
+    waiting++;
+    context.Reducers.Noop();
 
     // Procedures tests
     Log.Debug("Calling ReadMySchemaViaHttp");

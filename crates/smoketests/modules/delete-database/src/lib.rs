@@ -1,13 +1,13 @@
 use spacetimedb::{ReducerContext, Table, duration};
 
-#[spacetimedb::table(name = counter, public)]
+#[spacetimedb::table(accessor = counter, public)]
 pub struct Counter {
     #[primary_key]
     id: u64,
     val: u64
 }
 
-#[spacetimedb::table(name = scheduled_counter, public, scheduled(inc, at = sched_at))]
+#[spacetimedb::table(accessor = scheduled_counter, public, scheduled(inc, at = sched_at))]
 pub struct ScheduledCounter {
     #[primary_key]
     #[auto_inc]

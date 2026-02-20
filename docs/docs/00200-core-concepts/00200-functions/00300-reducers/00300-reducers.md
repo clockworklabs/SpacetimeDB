@@ -5,6 +5,7 @@ slug: /functions/reducers
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Reducers are functions that modify database state in response to client requests or system events. They are the **only** way to mutate tables in SpacetimeDB - all database changes must go through reducers.
@@ -110,6 +111,8 @@ If you see errors like "no method named `try_insert` found", add this import.
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 Use the `SPACETIMEDB_REDUCER` macro on a function:
 
@@ -522,7 +525,7 @@ Reducers are designed to be free of side effects. They should only modify tables
 static mut COUNTER: u64 = 0;
 
 // ✅ Store state in a table instead
-#[spacetimedb::table(name = counter)]
+#[spacetimedb::table(accessor = counter)]
 pub struct Counter {
     #[primary_key]
     id: u32,
@@ -543,7 +546,7 @@ import { schema, t, table, SenderError } from 'spacetimedb/server';
 
 // Define a schedule table for the procedure
 const fetchSchedule = table(
-  { name: 'fetch_schedule', scheduled: 'fetch_external_data' },
+  { name: 'fetch_schedule', scheduled: (): any => fetch_external_data },
   {
     scheduled_id: t.u64().primaryKey().autoInc(),
     scheduled_at: t.scheduleAt(),
@@ -551,7 +554,7 @@ const fetchSchedule = table(
   }
 );
 
-const spacetimedb = schema(fetchSchedule);
+const spacetimedb = schema({ fetchSchedule });
 export default spacetimedb;
 
 // The procedure to be scheduled
@@ -585,7 +588,7 @@ using SpacetimeDB;
 
 public partial class Module
 {
-    [SpacetimeDB.Table(Name = "FetchSchedule", Scheduled = "FetchExternalData", ScheduledAt = "ScheduledAt")]
+    [SpacetimeDB.Table(Accessor = "FetchSchedule", Scheduled = "FetchExternalData", ScheduledAt = "ScheduledAt")]
     public partial struct FetchSchedule
     {
         [SpacetimeDB.PrimaryKey]
@@ -626,7 +629,7 @@ public partial class Module
 use spacetimedb::{ScheduleAt, ReducerContext, ProcedureContext, Table};
 use std::time::Duration;
 
-#[spacetimedb::table(name = fetch_schedule, scheduled(fetch_external_data))]
+#[spacetimedb::table(accessor = fetch_schedule, scheduled(fetch_external_data))]
 pub struct FetchSchedule {
     #[primary_key]
     #[auto_inc]
@@ -704,4 +707,4 @@ See [Schedule Tables](/tables/schedule-tables) for more scheduling options.
 
 - Learn about [Tables](/tables) to understand data storage
 - Explore [Procedures](/functions/procedures) for side effects beyond the database
-- Review [Subscriptions](/subscriptions) for real-time client updates
+- Review [Subscriptions](/clients/subscriptions) for real-time client updates

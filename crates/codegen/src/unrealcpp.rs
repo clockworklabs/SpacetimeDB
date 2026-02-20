@@ -383,7 +383,7 @@ impl Lang for UnrealCpp<'_> {
 
     fn generate_type_files(&self, module: &ModuleDef, typ: &TypeDef) -> Vec<OutputFile> {
         let name = typ
-            .name
+            .accessor_name
             .name_segments()
             .last()
             .map(|id| id.deref())
@@ -391,7 +391,7 @@ impl Lang for UnrealCpp<'_> {
         let filename = format!(
             "Source/{}/Public/ModuleBindings/Types/{}Type.g.h",
             self.module_name,
-            collect_case(Case::Pascal, typ.name.name_segments())
+            collect_case(Case::Pascal, typ.accessor_name.name_segments())
         );
         let code: String = match &module.typespace_for_generate()[typ.ty] {
             AlgebraicTypeDef::PlainEnum(plain_enum) => autogen_cpp_enum(name, plain_enum),
@@ -4116,7 +4116,7 @@ fn get_cpp_type_for_array_element(elem_type_str: &str, module: &ModuleDef, modul
         _ => {
             let is_enum = module.types().any(|type_def| {
                 let type_name = type_def
-                    .name
+                    .accessor_name
                     .name_segments()
                     .last()
                     .map(|id| id.deref().to_string())
@@ -4278,7 +4278,7 @@ fn determine_cpp_type_for_result(type_name: &str, module: &ModuleDef, module_nam
             // For custom types, check if it's an enum or struct
             let is_enum = module.types().any(|type_def| {
                 let type_name_from_def = type_def
-                    .name
+                    .accessor_name
                     .name_segments()
                     .last()
                     .map(|id| id.deref().to_string())

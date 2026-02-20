@@ -437,33 +437,33 @@ public partial struct MyStruct
 }
 
 [SpacetimeDB.Table]
-[SpacetimeDB.Index.BTree(Name = "TestIndexWithoutColumns")]
-[SpacetimeDB.Index.BTree(Name = "TestIndexWithEmptyColumns", Columns = [])]
-[SpacetimeDB.Index.BTree(Name = "TestUnknownColumns", Columns = ["UnknownColumn"])]
+[SpacetimeDB.Index.BTree(Accessor = "TestIndexWithoutColumns")]
+[SpacetimeDB.Index.BTree(Accessor = "TestIndexWithEmptyColumns", Columns = [])]
+[SpacetimeDB.Index.BTree(Accessor = "TestUnknownColumns", Columns = ["UnknownColumn"])]
 public partial struct TestIndexIssues
 {
-    [SpacetimeDB.Index.BTree(Name = "TestUnexpectedColumns", Columns = ["UnexpectedColumn"])]
+    [SpacetimeDB.Index.BTree(Accessor = "TestUnexpectedColumns", Columns = ["UnexpectedColumn"])]
     public int SelfIndexingColumn;
 }
 
 [SpacetimeDB.Table(
-    Name = "TestScheduleWithoutPrimaryKey",
+    Accessor = "TestScheduleWithoutPrimaryKey",
     Scheduled = "DummyScheduledReducer",
     ScheduledAt = nameof(ScheduleAtCorrectType)
 )]
 [SpacetimeDB.Table(
-    Name = "TestScheduleWithWrongPrimaryKeyType",
+    Accessor = "TestScheduleWithWrongPrimaryKeyType",
     Scheduled = "DummyScheduledReducer",
     ScheduledAt = nameof(ScheduleAtCorrectType)
 )]
-[SpacetimeDB.Table(Name = "TestScheduleWithoutScheduleAt", Scheduled = "DummyScheduledReducer")]
+[SpacetimeDB.Table(Accessor = "TestScheduleWithoutScheduleAt", Scheduled = "DummyScheduledReducer")]
 [SpacetimeDB.Table(
-    Name = "TestScheduleWithWrongScheduleAtType",
+    Accessor = "TestScheduleWithWrongScheduleAtType",
     Scheduled = "DummyScheduledReducer",
     ScheduledAt = nameof(ScheduleAtWrongType)
 )]
 [SpacetimeDB.Table(
-    Name = "TestScheduleWithMissingScheduleAtField",
+    Accessor = "TestScheduleWithMissingScheduleAtField",
     Scheduled = "DummyScheduledReducer",
     ScheduledAt = "MissingField"
 )]
@@ -517,28 +517,28 @@ public partial class Module
     );
 
     // Invalid: View definition missing Public=true
-    [SpacetimeDB.View(Name = "view_def_no_public")]
+    [SpacetimeDB.View(Accessor = "view_def_no_public")]
     public static List<Player> ViewDefNoPublic(ViewContext ctx)
     {
         return new List<Player>();
     }
 
     // Invalid: View definition with missing context type
-    [SpacetimeDB.View(Name = "view_def_no_context", Public = true)]
+    [SpacetimeDB.View(Accessor = "view_def_no_context", Public = true)]
     public static List<Player> ViewDefNoContext()
     {
         return new List<Player>();
     }
 
     // Invalid: View definition with wrong context type
-    [SpacetimeDB.View(Name = "view_def_wrong_context", Public = true)]
+    [SpacetimeDB.View(Accessor = "view_def_wrong_context", Public = true)]
     public static List<Player> ViewDefWrongContext(ReducerContext ctx)
     {
         return new List<Player>();
     }
 
     // Invalid: View that performs Insert
-    [SpacetimeDB.View(Name = "view_no_insert", Public = true)]
+    [SpacetimeDB.View(Accessor = "view_no_insert", Public = true)]
     public static Player? ViewNoInsert(ViewContext ctx)
     {
         ctx.Db.Player.Insert(new Player { Identity = new() });
@@ -546,7 +546,7 @@ public partial class Module
     }
 
     // Invalid: View that performs Delete
-    [SpacetimeDB.View(Name = "view_no_delete", Public = true)]
+    [SpacetimeDB.View(Accessor = "view_no_delete", Public = true)]
     public static Player? ViewNoDelete(ViewContext ctx)
     {
         ctx.Db.Player.Delete(new Player { Identity = new() });
@@ -555,41 +555,41 @@ public partial class Module
 
     // TODO: Investigate why void return breaks the FFI generation
     // // Invalid: Void return type is not Vec<T> or Option<T>
-    // [SpacetimeDB.View(Name = "view_def_no_return", Public = true)]
+    // [SpacetimeDB.View(Accessor = "view_def_no_return", Public = true)]
     // public static void ViewDefNoReturn(ViewContext ctx)
     // {
     //     return;
     // }
 
     // Invalid: Wrong return type is not Vec<T> or Option<T>
-    [SpacetimeDB.View(Name = "view_def_wrong_return", Public = true)]
+    [SpacetimeDB.View(Accessor = "view_def_wrong_return", Public = true)]
     public static Player ViewDefWrongReturn(ViewContext ctx)
     {
         return new Player { Identity = new() };
     }
 
     // Invalid: Returns type that is not a SpacetimeType
-    [SpacetimeDB.View(Name = "view_def_returns_not_a_spacetime_type", Public = true)]
+    [SpacetimeDB.View(Accessor = "view_def_returns_not_a_spacetime_type", Public = true)]
     public static NotSpacetimeType? ViewDefReturnsNotASpacetimeType(AnonymousViewContext ctx)
     {
         return new NotSpacetimeType();
     }
 
-    [SpacetimeDB.View(Name = "view_def_no_anon_identity", Public = true)]
+    [SpacetimeDB.View(Accessor = "view_def_no_anon_identity", Public = true)]
     public static Player? ViewDefNoAnonIdentity(AnonymousViewContext ctx)
     {
         ctx.GetIdentity();
         return null;
     }
 
-    [SpacetimeDB.View(Name = "view_def_no_iter", Public = true)]
+    [SpacetimeDB.View(Accessor = "view_def_no_iter", Public = true)]
     public static Player? ViewDefNoIter(AnonymousViewContext ctx)
     {
         ctx.Db.Player.Iter();
         return null;
     }
 
-    [SpacetimeDB.View(Name = "view_def_index_no_mutation", Public = true)]
+    [SpacetimeDB.View(Accessor = "view_def_index_no_mutation", Public = true)]
     public static Player? ViewDefIndexNoMutation(AnonymousViewContext ctx)
     {
         ctx.Db.Player.Identity.Delete(0);

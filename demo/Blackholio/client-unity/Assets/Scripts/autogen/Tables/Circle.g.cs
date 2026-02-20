@@ -17,28 +17,28 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "circle";
 
-            public sealed class EntityIdUniqueIndex : UniqueIndexBase<int>
+            public sealed class CircleEntityIdIdxBtreeUniqueIndex : UniqueIndexBase<int>
             {
                 protected override int GetKey(Circle row) => row.EntityId;
 
-                public EntityIdUniqueIndex(CircleHandle table) : base(table) { }
+                public CircleEntityIdIdxBtreeUniqueIndex(CircleHandle table) : base(table) { }
             }
 
-            public readonly EntityIdUniqueIndex EntityId;
+            public readonly CircleEntityIdIdxBtreeUniqueIndex CircleEntityIdIdxBtree;
 
-            public sealed class PlayerIdIndex : BTreeIndexBase<int>
+            public sealed class CirclePlayerIdIdxBtreeIndex : BTreeIndexBase<int>
             {
                 protected override int GetKey(Circle row) => row.PlayerId;
 
-                public PlayerIdIndex(CircleHandle table) : base(table) { }
+                public CirclePlayerIdIdxBtreeIndex(CircleHandle table) : base(table) { }
             }
 
-            public readonly PlayerIdIndex PlayerId;
+            public readonly CirclePlayerIdIdxBtreeIndex CirclePlayerIdIdxBtree;
 
             internal CircleHandle(DbConnection conn) : base(conn)
             {
-                EntityId = new(this);
-                PlayerId = new(this);
+                CircleEntityIdIdxBtree = new(this);
+                CirclePlayerIdIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(Circle row) => row.EntityId;

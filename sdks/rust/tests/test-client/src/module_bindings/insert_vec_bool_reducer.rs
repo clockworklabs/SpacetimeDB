@@ -20,8 +20,6 @@ impl __sdk::InModule for InsertVecBoolArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertVecBoolCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_vec_bool`.
 ///
@@ -31,72 +29,37 @@ pub trait insert_vec_bool {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_insert_vec_bool`] callbacks.
-    fn insert_vec_bool(&self, b: Vec<bool>) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_vec_bool`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`insert_vec_bool:insert_vec_bool_then`] to run a callback after the reducer completes.
+    fn insert_vec_bool(&self, b: Vec<bool>) -> __sdk::Result<()> {
+        self.insert_vec_bool_then(b, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `insert_vec_bool` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`InsertVecBoolCallbackId`] can be passed to [`Self::remove_on_insert_vec_bool`]
-    /// to cancel the callback.
-    fn on_insert_vec_bool(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn insert_vec_bool_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &Vec<bool>) + Send + 'static,
-    ) -> InsertVecBoolCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_insert_vec_bool`],
-    /// causing it not to run in the future.
-    fn remove_on_insert_vec_bool(&self, callback: InsertVecBoolCallbackId);
+        b: Vec<bool>,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl insert_vec_bool for super::RemoteReducers {
-    fn insert_vec_bool(&self, b: Vec<bool>) -> __sdk::Result<()> {
-        self.imp.call_reducer("insert_vec_bool", InsertVecBoolArgs { b })
-    }
-    fn on_insert_vec_bool(
+    fn insert_vec_bool_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &Vec<bool>) + Send + 'static,
-    ) -> InsertVecBoolCallbackId {
-        InsertVecBoolCallbackId(self.imp.on_reducer(
-            "insert_vec_bool",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::InsertVecBool { b },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, b)
-            }),
-        ))
-    }
-    fn remove_on_insert_vec_bool(&self, callback: InsertVecBoolCallbackId) {
-        self.imp.remove_on_reducer("insert_vec_bool", callback.0)
-    }
-}
+        b: Vec<bool>,
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `insert_vec_bool`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_insert_vec_bool {
-    /// Set the call-reducer flags for the reducer `insert_vec_bool` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn insert_vec_bool(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_insert_vec_bool for super::SetReducerFlags {
-    fn insert_vec_bool(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_vec_bool", flags);
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(InsertVecBoolArgs { b }, callback)
     }
 }

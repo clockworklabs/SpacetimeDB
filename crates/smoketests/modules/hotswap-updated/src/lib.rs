@@ -1,6 +1,6 @@
 use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb::table(name = person, public)]
+#[spacetimedb::table(accessor = person, public)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -13,7 +13,7 @@ pub fn add_person(ctx: &ReducerContext, name: String) {
     ctx.db.person().insert(Person { id: 0, name });
 }
 
-#[spacetimedb::table(name = pet, public)]
+#[spacetimedb::table(accessor = pet, public)]
 pub struct Pet {
     #[primary_key]
     species: String,

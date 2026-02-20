@@ -13,7 +13,7 @@ public interface IProcedure
     /// <summary>
     /// Creates a procedure definition for registration with the module system.
     /// </summary>
-    RawProcedureDefV9 MakeProcedureDef(ITypeRegistrar registrar);
+    RawProcedureDefV10 MakeProcedureDef(ITypeRegistrar registrar);
 
     /// <summary>
     /// Invokes the procedure with the given arguments and context.

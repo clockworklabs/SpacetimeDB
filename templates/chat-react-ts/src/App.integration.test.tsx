@@ -10,7 +10,11 @@ describe('App Integration Test', () => {
     const connectionBuilder = DbConnection.builder()
       .withUri('ws://localhost:3000')
       .withDatabaseName('quickstart-chat')
-      .withToken(localStorage.getItem('auth_token') || '');
+      .withToken(
+        localStorage.getItem(
+          'ws://localhost:3000/quickstart-chat/auth_token'
+        ) || ''
+      );
     render(
       <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
         <App />

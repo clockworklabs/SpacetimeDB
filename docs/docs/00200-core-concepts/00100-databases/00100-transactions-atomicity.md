@@ -5,6 +5,7 @@ slug: /databases/transactions-atomicity
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 SpacetimeDB provides strong transactional guarantees for all database operations. Every [reducer](/functions/reducers) runs inside a database transaction, ensuring your data remains consistent and reliable even under concurrent load.
@@ -155,6 +156,8 @@ pub fn child_reducer(ctx: &ReducerContext) -> Result<(), String> {
 </TabItem>
 <TabItem value="cpp" label="C++">
 
+<CppModuleVersionNotice />
+
 ```cpp
 using namespace SpacetimeDB;
 
@@ -237,4 +240,4 @@ The `#[auto_inc]` sequence generator is not transactional:
 - **[Reducers](/functions/reducers)** - Functions that modify database state transactionally
 - **[Procedures](/functions/procedures)** - Functions with manual transaction control
 - **[Schedule Tables](/tables/schedule-tables)** - Schedule reducers for separate transactions
-- **[Subscriptions](/subscriptions)** - How clients receive transactional updates
+- **[Subscriptions](/clients/subscriptions)** - How clients receive transactional updates

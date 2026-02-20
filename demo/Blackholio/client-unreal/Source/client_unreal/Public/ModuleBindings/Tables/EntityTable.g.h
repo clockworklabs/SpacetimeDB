@@ -13,19 +13,19 @@
 #include "EntityTable.g.generated.h"
 
 UCLASS(Blueprintable)
-class CLIENT_UNREAL_API UEntityEntityIdUniqueIndex : public UObject
+class CLIENT_UNREAL_API UEntityEntityEntityIdIdxBtreeUniqueIndex : public UObject
 {
     GENERATED_BODY()
 
 private:
     // Declare an instance of your templated helper.
     // It's private because the UObject wrapper will expose its functionality.
-    FUniqueIndexHelper<FEntityType, int32, FTableCache<FEntityType>> EntityIdIndexHelper;
+    FUniqueIndexHelper<FEntityType, int32, FTableCache<FEntityType>> EntityEntityIdIdxBtreeIndexHelper;
 
 public:
-    UEntityEntityIdUniqueIndex()
+    UEntityEntityEntityIdIdxBtreeUniqueIndex()
         // Initialize the helper with the specific unique index name
-        : EntityIdIndexHelper("entity_id") {
+        : EntityEntityIdIdxBtreeIndexHelper("entity_id") {
     }
 
     /**
@@ -37,14 +37,14 @@ public:
     FEntityType Find(int32 Key)
     {
         // Simply delegate the call to the internal helper
-        return EntityIdIndexHelper.FindUniqueIndex(Key);
+        return EntityEntityIdIdxBtreeIndexHelper.FindUniqueIndex(Key);
     }
 
     // A public setter to provide the cache to the helper after construction
     // This is a common pattern when the cache might be created or provided by another system.
     void SetCache(TSharedPtr<const FTableCache<FEntityType>> InEntityCache)
     {
-        EntityIdIndexHelper.Cache = InEntityCache;
+        EntityEntityIdIdxBtreeIndexHelper.Cache = InEntityCache;
     }
 };
 /***/
@@ -56,7 +56,7 @@ class CLIENT_UNREAL_API UEntityTable : public URemoteTable
 
 public:
     UPROPERTY(BlueprintReadOnly)
-    UEntityEntityIdUniqueIndex* EntityId;
+    UEntityEntityEntityIdIdxBtreeUniqueIndex* EntityEntityIdIdxBtree;
 
     void PostInitialize();
 

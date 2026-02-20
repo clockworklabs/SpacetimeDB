@@ -147,9 +147,9 @@ const playerLikeRow = t.row({
 // ─────────────────────────────────────────────────────────────────────────────
 // SCHEMA (tables + indexes + visibility)
 // ─────────────────────────────────────────────────────────────────────────────
-const spacetimedb = schema(
+const spacetimedb = schema({
   // person (public) with btree index on age
-  table(
+  person: table(
     {
       name: 'person',
       public: true,
@@ -159,7 +159,7 @@ const spacetimedb = schema(
   ),
 
   // test_a with index foo on x
-  table(
+  testA: table(
     {
       name: 'test_a',
       indexes: [{ name: 'foo', algorithm: 'btree', columns: ['x'] }],
@@ -168,10 +168,10 @@ const spacetimedb = schema(
   ),
 
   // test_d (public) with default(Some(DEFAULT_TEST_C)) option field
-  table({ name: 'test_d', public: true }, testDRow),
+  testD: table({ name: 'test_d', public: true }, testDRow),
 
   // test_e, default private, with primary key id auto_inc and btree index on name
-  table(
+  testE: table(
     {
       name: 'test_e',
       public: false,
@@ -181,13 +181,16 @@ const spacetimedb = schema(
   ),
 
   // test_f (public) with Foobar field
-  table({ name: 'test_f', public: true }, testFRow),
+  testF: table({ name: 'test_f', public: true }, testFRow),
 
   // private_table (explicit private)
-  table({ name: 'private_table', public: false }, privateTableRow),
+  privateTable: table(
+    { name: 'private_table', public: false },
+    privateTableRow
+  ),
 
   // points (private) with multi-column btree index (x, y)
-  table(
+  points: table(
     {
       name: 'points',
       public: false,
@@ -199,22 +202,28 @@ const spacetimedb = schema(
   ),
 
   // pk_multi_identity with multiple constraints
-  table({ name: 'pk_multi_identity' }, pkMultiIdentityRow),
+  pkMultiIdentity: table({ name: 'pk_multi_identity' }, pkMultiIdentityRow),
 
   // repeating_test_arg table with scheduled(repeating_test)
-  table(
-    { name: 'repeating_test_arg', scheduled: 'repeating_test' },
+  repeatingTestArg: table(
+    {
+      name: 'repeating_test_arg',
+      scheduled: (): any => repeating_test,
+    },
     repeatingTestArg
   ),
 
   // has_special_stuff with Identity and ConnectionId
-  table({ name: 'has_special_stuff' }, hasSpecialStuffRow),
+  hasSpecialStuff: table({ name: 'has_special_stuff' }, hasSpecialStuffRow),
 
   // Two tables with the same row type: player and logged_out_player
-  table({ name: 'player', public: true }, playerLikeRow),
-  table({ name: 'logged_out_player', public: true }, playerLikeRow),
-  table({ name: 'table_to_remove' }, { id: t.u32() })
-);
+  player: table({ name: 'player', public: true }, playerLikeRow),
+  loggedOutPlayer: table(
+    { name: 'logged_out_player', public: true },
+    playerLikeRow
+  ),
+  tableToRemove: table({ name: 'table_to_remove' }, { id: t.u32() }),
+});
 export default spacetimedb;
 
 // ─────────────────────────────────────────────────────────────────────────────

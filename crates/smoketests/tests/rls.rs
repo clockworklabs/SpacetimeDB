@@ -33,7 +33,7 @@ fn test_rls_rules() {
 const MODULE_CODE_BROKEN_RLS: &str = r#"
 use spacetimedb::{client_visibility_filter, Filter, Identity};
 
-#[spacetimedb::table(name = user)]
+#[spacetimedb::table(accessor = user)]
 pub struct User {
     identity: Identity,
 }

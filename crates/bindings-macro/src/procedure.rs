@@ -1,4 +1,4 @@
-use crate::reducer::{assert_only_lifetime_generics, extract_typed_args};
+use crate::reducer::{assert_only_lifetime_generics, extract_typed_args, generate_explicit_names_impl};
 use crate::sym;
 use crate::util::{check_duplicate, ident_to_litstr, match_meta};
 use proc_macro2::TokenStream;
@@ -29,11 +29,12 @@ impl ProcedureArgs {
     }
 }
 
-pub(crate) fn procedure_impl(args: ProcedureArgs, original_function: &ItemFn) -> syn::Result<TokenStream> {
+pub(crate) fn procedure_impl(_args: ProcedureArgs, original_function: &ItemFn) -> syn::Result<TokenStream> {
     let func_name = &original_function.sig.ident;
     let vis = &original_function.vis;
+    let explicit_name = _args.name.as_ref();
 
-    let procedure_name = args.name.unwrap_or_else(|| ident_to_litstr(func_name));
+    let procedure_name = ident_to_litstr(func_name);
 
     assert_only_lifetime_generics(original_function, "procedures")?;
 
@@ -86,6 +87,8 @@ pub(crate) fn procedure_impl(args: ProcedureArgs, original_function: &ItemFn) ->
         }
     };
 
+    let generate_explicit_names = generate_explicit_names_impl(&procedure_name.value(), func_name, explicit_name);
+
     Ok(quote! {
         const _: () = {
             #generated_describe_function
@@ -126,5 +129,7 @@ pub(crate) fn procedure_impl(args: ProcedureArgs, original_function: &ItemFn) ->
                 Some(<#ret_ty_for_info as spacetimedb::SpacetimeType>::make_type(ts))
             }
         }
+
+        #generate_explicit_names
     })
 }

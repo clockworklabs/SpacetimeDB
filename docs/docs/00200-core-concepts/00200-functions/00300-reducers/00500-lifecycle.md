@@ -5,6 +5,7 @@ slug: /functions/reducers/lifecycle
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Special reducers handle system events during the database lifecycle.
@@ -73,6 +74,8 @@ pub fn init(ctx: &ReducerContext) -> Result<(), String> {
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 #include <spacetimedb.h>

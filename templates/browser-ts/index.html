@@ -90,7 +90,7 @@
 
           conn.subscriptionBuilder()
             .onApplied(() => renderPeople(conn))
-            .subscribe(['SELECT * FROM person']);
+            .subscribe(tables.person);
 
           conn.db.person.onInsert(() => renderPeople(conn));
           conn.db.person.onDelete(() => renderPeople(conn));

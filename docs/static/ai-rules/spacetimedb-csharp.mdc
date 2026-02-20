@@ -65,7 +65,7 @@ ScheduledAt = ScheduleAt.Time(ctx.Timestamp + TimeSpan.FromSeconds(60))
 ### 6. Table Accessor Casing: Server vs Client DIFFER!
 ```csharp
 // Table defined as:
-[SpacetimeDB.Table(Name = "user", Public = true)]
+[SpacetimeDB.Table(Accessor = "user", Public = true)]
 public partial class User { ... }
 
 // SERVER-SIDE: Use PascalCase
@@ -150,10 +150,10 @@ public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> {
 ### 13. Index Attribute Ambiguity
 ```csharp
 // ❌ WRONG — ambiguous with System.Index
-[Index.BTree(Name = "idx", Columns = new[] { "Col" })]
+[Index.BTree(Accessor = "idx", Columns = new[] { "Col" })]
 
 // ✅ CORRECT — fully qualify
-[SpacetimeDB.Index.BTree(Name = "idx", Columns = new[] { "Col" })]
+[SpacetimeDB.Index.BTree(Accessor = "idx", Columns = new[] { "Col" })]
 ```
 
 ---
@@ -190,11 +190,11 @@ public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> {
 using SpacetimeDB;
 
 // ❌ WRONG — missing partial!
-[SpacetimeDB.Table(Name = "player")]
+[SpacetimeDB.Table(Accessor = "player")]
 public struct Player { }  // Will not generate properly!
 
 // ✅ CORRECT — with partial keyword
-[SpacetimeDB.Table(Name = "player", Public = true)]
+[SpacetimeDB.Table(Accessor = "player", Public = true)]
 public partial struct Player
 {
     [SpacetimeDB.PrimaryKey]
@@ -207,7 +207,7 @@ public partial struct Player
 }
 
 // With single-column index
-[SpacetimeDB.Table(Name = "task", Public = true)]
+[SpacetimeDB.Table(Accessor = "task", Public = true)]
 public partial struct Task
 {
     [SpacetimeDB.PrimaryKey]
@@ -222,8 +222,8 @@ public partial struct Task
 }
 
 // Multi-column index (use fully-qualified attribute!)
-[SpacetimeDB.Table(Name = "score", Public = true)]
-[SpacetimeDB.Index.BTree(Name = "by_player_game", Columns = new[] { "PlayerId", "GameId" })]
+[SpacetimeDB.Table(Accessor = "score", Public = true)]
+[SpacetimeDB.Index.BTree(Accessor = "by_player_game", Columns = new[] { "PlayerId", "GameId" })]
 public partial struct Score
 {
     [SpacetimeDB.PrimaryKey]
@@ -451,7 +451,7 @@ public partial struct PlayerStats
 }
 
 // Use in table
-[SpacetimeDB.Table(Name = "player", Public = true)]
+[SpacetimeDB.Table(Accessor = "player", Public = true)]
 public partial struct Player
 {
     [SpacetimeDB.PrimaryKey]
@@ -484,7 +484,7 @@ public partial struct Rectangle { public int Width; public int Height; }
 public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> { }
 
 // Step 3: Use in a table
-[SpacetimeDB.Table(Name = "drawings", Public = true)]
+[SpacetimeDB.Table(Accessor = "drawings", Public = true)]
 public partial struct Drawing
 {
     [SpacetimeDB.PrimaryKey]
@@ -588,7 +588,7 @@ _conn.Reducers.OnCreateTask += (ctx) =>
 ```csharp
 using SpacetimeDB;
 
-[SpacetimeDB.Table(Name = "reminder", Scheduled = nameof(Module.SendReminder))]
+[SpacetimeDB.Table(Accessor = "reminder", Scheduled = nameof(Module.SendReminder))]
 public partial struct Reminder
 {
     [SpacetimeDB.PrimaryKey]
@@ -709,13 +709,13 @@ dotnet workload install wasi-experimental
 spacetime start
 
 # Publish module
-spacetime publish <module-name> --project-path <backend-dir>
+spacetime publish <module-name> --module-path <backend-dir>
 
 # Clear database and republish
-spacetime publish <module-name> --clear-database -y --project-path <backend-dir>
+spacetime publish <module-name> --clear-database -y --module-path <backend-dir>
 
 # Generate bindings
-spacetime generate --lang csharp --out-dir <client>/SpacetimeDB --project-path <backend-dir>
+spacetime generate --lang csharp --out-dir <client>/SpacetimeDB --module-path <backend-dir>
 
 # View logs
 spacetime logs <module-name>

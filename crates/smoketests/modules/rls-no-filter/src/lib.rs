@@ -1,6 +1,6 @@
 use spacetimedb::{Identity, ReducerContext, Table};
 
-#[spacetimedb::table(name = users, public)]
+#[spacetimedb::table(accessor = users, public)]
 pub struct Users {
     name: String,
     identity: Identity,

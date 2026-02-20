@@ -15,75 +15,23 @@ use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_primitives::ColId;
-use spacetimedb_schema::def::{ConstraintDef, IndexDef, ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
+use spacetimedb_schema::def::{ConstraintDef, IndexDef, ModuleDef, ReducerDef, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::TableSchema;
-use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, ProductTypeDef};
+use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse};
 
 use super::code_indenter::{CodeIndenter, Indenter};
 use super::Lang;
 use spacetimedb_lib::version::spacetimedb_lib_version;
-
-type Imports = BTreeSet<AlgebraicTypeRef>;
 
 const INDENT: &str = "  ";
 
 pub struct TypeScript;
 
 impl Lang for TypeScript {
-    fn generate_type_files(&self, module: &ModuleDef, typ: &TypeDef) -> Vec<OutputFile> {
-        let type_name = collect_case(Case::Pascal, typ.name.name_segments());
-
-        let define_type_for_product = |product: &ProductTypeDef| {
-            let mut output = CodeIndenter::new(String::new(), INDENT);
-            let out = &mut output;
-
-            print_file_header(out, false, true);
-            gen_and_print_imports(module, out, product.element_types(), &[typ.ty], None);
-            writeln!(out);
-            define_body_for_product(module, out, &type_name, &product.elements);
-            out.newline();
-            OutputFile {
-                filename: type_module_name(&typ.name) + ".ts",
-                code: output.into_inner(),
-            }
-        };
-
-        let define_type_for_sum = |variants: &[(Identifier, AlgebraicTypeUse)]| {
-            let mut output = CodeIndenter::new(String::new(), INDENT);
-            let out = &mut output;
-
-            print_file_header(out, false, true);
-            gen_and_print_imports(module, out, variants.iter().map(|(_, ty)| ty), &[typ.ty], None);
-            writeln!(out);
-            // For the purpose of bootstrapping AlgebraicType, if the name of the type
-            // is `AlgebraicType`, we need to use an alias.
-            define_body_for_sum(module, out, &type_name, variants);
-            out.newline();
-            OutputFile {
-                filename: type_module_name(&typ.name) + ".ts",
-                code: output.into_inner(),
-            }
-        };
-
-        match &module.typespace_for_generate()[typ.ty] {
-            AlgebraicTypeDef::Product(product) => {
-                vec![define_type_for_product(product)]
-            }
-            AlgebraicTypeDef::Sum(sum) => {
-                vec![define_type_for_sum(&sum.variants)]
-            }
-            AlgebraicTypeDef::PlainEnum(plain_enum) => {
-                let variants = plain_enum
-                    .variants
-                    .iter()
-                    .cloned()
-                    .map(|var| (var, AlgebraicTypeUse::Unit))
-                    .collect::<Vec<_>>();
-                vec![define_type_for_sum(&variants)]
-            }
-        }
+    fn generate_type_files(&self, _module: &ModuleDef, _typ: &TypeDef) -> Vec<OutputFile> {
+        vec![]
     }
 
     /// e.g.
@@ -122,7 +70,6 @@ impl Lang for TypeScript {
             out,
             product_def.element_types(),
             &[], // No need to skip any imports; we're not defining a type, so there's no chance of circular imports.
-            None,
         );
 
         writeln!(out);
@@ -152,7 +99,6 @@ impl Lang for TypeScript {
             reducer.params_for_generate.element_types(),
             // No need to skip any imports; we're not emitting a type that other modules can import.
             &[],
-            None,
         );
 
         define_body_for_reducer(module, out, &reducer.params_for_generate.elements);
@@ -184,7 +130,6 @@ impl Lang for TypeScript {
                 .chain([&procedure.return_type_for_generate]),
             // No need to skip any imports; we're not emitting a type that other modules can import.
             &[],
-            None,
         );
 
         writeln!(out, "export const params = {{");
@@ -246,12 +191,12 @@ impl Lang for TypeScript {
 
         writeln!(out);
         writeln!(out, "/** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */");
-        writeln!(out, "const tablesSchema = __schema(");
+        writeln!(out, "const tablesSchema = __schema({{");
         out.indent(1);
         for table in iter_tables(module, options.visibility) {
             let type_ref = table.product_type_ref;
             let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
-            writeln!(out, "__table({{");
+            writeln!(out, "{}: __table({{", table.name);
             out.indent(1);
             write_table_opts(
                 module,
@@ -260,6 +205,7 @@ impl Lang for TypeScript {
                 &table.name,
                 iter_indexes(table),
                 iter_constraints(table),
+                table.is_event,
             );
             out.dedent(1);
             writeln!(out, "}}, {}Row),", table_name_pascalcase);
@@ -267,14 +213,14 @@ impl Lang for TypeScript {
         for view in iter_views(module) {
             let type_ref = view.product_type_ref;
             let view_name_pascalcase = view.name.deref().to_case(Case::Pascal);
-            writeln!(out, "__table({{");
+            writeln!(out, "{}: __table({{", view.name);
             out.indent(1);
-            write_table_opts(module, out, type_ref, &view.name, iter::empty(), iter::empty());
+            write_table_opts(module, out, type_ref, &view.name, iter::empty(), iter::empty(), false);
             out.dedent(1);
             writeln!(out, "}}, {}Row),", view_name_pascalcase);
         }
         out.dedent(1);
-        writeln!(out, ");");
+        writeln!(out, "}});");
 
         writeln!(out);
         writeln!(out, "/** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */");
@@ -336,16 +282,10 @@ impl Lang for TypeScript {
         out.dedent(1);
 
         writeln!(out);
-        writeln!(out, "/** The tables available in this remote SpacetimeDB module. */");
+        writeln!(out, "/** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */");
         writeln!(
             out,
-            "export const tables = __convertToAccessorMap(tablesSchema.schemaType.tables);"
-        );
-        writeln!(out);
-        writeln!(out, "/** A typed query builder for this remote SpacetimeDB module. */");
-        writeln!(
-            out,
-            "export const query: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQueryBuilder(tablesSchema.schemaType);"
+            "export const tables: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQueryBuilder(tablesSchema.schemaType);"
         );
         writeln!(out);
         writeln!(out, "/** The reducers available in this remote SpacetimeDB module. */");
@@ -530,38 +470,37 @@ fn generate_types_file(module: &ModuleDef) -> OutputFile {
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
 
-    print_auto_generated_file_comment(out);
-    print_lint_suppression(out);
-    writeln!(out, "import {{ type Infer as __Infer }} from \"spacetimedb\";");
+    print_file_header(out, false, true);
+    out.newline();
 
     let reducer_type_names = module
         .reducers()
         .map(|reducer| reducer.name.deref().to_case(Case::Pascal))
         .collect::<BTreeSet<_>>();
 
-    writeln!(out);
-    writeln!(out, "// Import all non-reducer types");
     for ty in iter_types(module) {
-        let type_name = collect_case(Case::Pascal, ty.name.name_segments());
+        let type_name = collect_case(Case::Pascal, ty.accessor_name.name_segments());
         if reducer_type_names.contains(&type_name) {
             continue;
         }
-        let type_module_name = type_module_name(&ty.name);
-        writeln!(out, "import {type_name} from \"../{type_module_name}\";");
-    }
 
-    writeln!(out);
-    for ty in iter_types(module) {
-        let type_name = collect_case(Case::Pascal, ty.name.name_segments());
-        if reducer_type_names.contains(&type_name) {
-            continue;
+        match &module.typespace_for_generate()[ty.ty] {
+            AlgebraicTypeDef::Product(product) => define_body_for_product(module, out, &type_name, &product.elements),
+            AlgebraicTypeDef::Sum(sum) => define_body_for_sum(module, out, &type_name, &sum.variants),
+            AlgebraicTypeDef::PlainEnum(plain_enum) => {
+                let variants = plain_enum
+                    .variants
+                    .iter()
+                    .cloned()
+                    .map(|var| (var, AlgebraicTypeUse::Unit))
+                    .collect::<Vec<_>>();
+                define_body_for_sum(module, out, &type_name, &variants)
+            }
         }
-        writeln!(out, "export type {type_name} = __Infer<typeof {type_name}>;");
     }
-    out.newline();
 
     OutputFile {
-        filename: "types/index.ts".to_string(),
+        filename: "types.ts".to_string(),
         code: output.into_inner(),
     }
 }
@@ -664,11 +603,12 @@ fn define_body_for_reducer(module: &ModuleDef, out: &mut Indenter, params: &[(Id
 
 /// e.g.
 /// ```ts
-/// export default __t.object('Point', {
+/// export const Point = __t.object('Point', {
 ///   x: __t.f32(),
 ///   y: __t.f32(),
 ///   fooBar: __t.string(),
 /// });
+/// export type Point = __Infer<typeof Point>;
 /// ```
 fn define_body_for_product(
     module: &ModuleDef,
@@ -676,7 +616,7 @@ fn define_body_for_product(
     name: &str,
     elements: &[(Identifier, AlgebraicTypeUse)],
 ) {
-    write!(out, "export default __t.object(\"{name}\", {{");
+    write!(out, "export const {name} = __t.object(\"{name}\", {{");
     if elements.is_empty() {
         writeln!(out, "}});");
     } else {
@@ -684,6 +624,7 @@ fn define_body_for_product(
         out.with_indent(|out| write_object_type_builder_fields(module, out, elements, None, true, false).unwrap());
         writeln!(out, "}});");
     }
+    writeln!(out, "export type {name} = __Infer<typeof {name}>;");
     out.newline();
 }
 
@@ -694,6 +635,7 @@ fn write_table_opts<'a>(
     name: &Identifier,
     indexes: impl Iterator<Item = &'a IndexDef>,
     constraints: impl Iterator<Item = &'a ConstraintDef>,
+    is_event: bool,
 ) {
     let product_def = module.typespace_for_generate()[type_ref].as_product().unwrap();
     writeln!(out, "name: '{}',", name.deref());
@@ -760,6 +702,9 @@ fn write_table_opts<'a>(
     }
     out.dedent(1);
     writeln!(out, "],");
+    if is_event {
+        writeln!(out, "event: true,");
+    }
 }
 
 /// e.g.
@@ -807,6 +752,9 @@ fn write_type_builder_field(
         AlgebraicTypeUse::Ref(_) => true,
         AlgebraicTypeUse::Option(inner) | AlgebraicTypeUse::Array(inner) => {
             matches!(inner.as_ref(), AlgebraicTypeUse::Ref(_))
+        }
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            matches!(ok_ty.as_ref(), AlgebraicTypeUse::Ref(_)) || matches!(err_ty.as_ref(), AlgebraicTypeUse::Ref(_))
         }
         _ => false,
     };
@@ -895,10 +843,11 @@ fn write_type_builder<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicT
 /// e.g.
 /// ```ts
 /// // The tagged union or sum type for the algebraic type `Option`.
-/// export default __t.enum("Option", {
+/// export const Option = __t.enum("Option", {
 ///   none: __t.unit(),
 ///   some: { value: __t.i32() },
 /// });
+/// export type Option = __Infer<typeof Option>;
 /// ```
 fn define_body_for_sum(
     module: &ModuleDef,
@@ -907,25 +856,15 @@ fn define_body_for_sum(
     variants: &[(Identifier, AlgebraicTypeUse)],
 ) {
     writeln!(out, "// The tagged union or sum type for the algebraic type `{name}`.");
-    write!(out, "const {name}");
+    write!(out, "export const {name}");
     if name == "AlgebraicType" {
         write!(out, ": __TypeBuilder<__AlgebraicTypeType, __AlgebraicTypeType>");
     }
-    write!(out, " = __t.enum(\"{name}\", {{");
+    writeln!(out, " = __t.enum(\"{name}\", {{");
     out.with_indent(|out| write_object_type_builder_fields(module, out, variants, None, false, false).unwrap());
     writeln!(out, "}});");
+    writeln!(out, "export type {name} = __Infer<typeof {name}>;");
     out.newline();
-    writeln!(out, "export default {name};");
-    out.newline();
-}
-
-fn type_ref_module_name(module: &ModuleDef, type_ref: AlgebraicTypeRef) -> String {
-    let (name, _) = module.type_def_from_ref(type_ref).unwrap();
-    type_module_name(name)
-}
-
-fn type_module_name(type_name: &ScopedTypeName) -> String {
-    collect_case(Case::Snake, type_name.name_segments()) + "_type"
 }
 
 fn table_module_name(table_name: &Identifier) -> String {
@@ -1054,19 +993,6 @@ pub fn write_type<W: Write>(
     Ok(())
 }
 
-/// Print imports for each of the `imports`.
-fn print_imports(module: &ModuleDef, out: &mut Indenter, imports: Imports, suffix: Option<&str>) {
-    for typeref in imports {
-        let module_name = type_ref_module_name(module, typeref);
-        let type_name = type_ref_name(module, typeref);
-        if let Some(suffix) = suffix {
-            writeln!(out, "import {type_name}{suffix} from \"./{module_name}\";");
-        } else {
-            writeln!(out, "import {type_name} from \"./{module_name}\";");
-        }
-    }
-}
-
 /// Use `search_function` on `roots` to detect required imports, then print them with `print_imports`.
 ///
 /// `this_file` is passed and excluded for the case of recursive types:
@@ -1077,7 +1003,6 @@ fn gen_and_print_imports<'a>(
     out: &mut Indenter,
     roots: impl Iterator<Item = &'a AlgebraicTypeUse>,
     dont_import: &[AlgebraicTypeRef],
-    suffix: Option<&str>,
 ) {
     let mut imports = BTreeSet::new();
 
@@ -1089,12 +1014,17 @@ fn gen_and_print_imports<'a>(
     for skip in dont_import {
         imports.remove(skip);
     }
-    let len = imports.len();
 
-    print_imports(module, out, imports, suffix);
-
-    if len > 0 {
-        out.newline();
+    if !imports.is_empty() {
+        writeln!(out, "import {{");
+        out.indent(1);
+        for typeref in imports {
+            let type_name = type_ref_name(module, typeref);
+            writeln!(out, "{type_name},");
+        }
+        out.dedent(1);
+        writeln!(out, "}} from \"./types\";");
+        out.newline()
     }
 }
 

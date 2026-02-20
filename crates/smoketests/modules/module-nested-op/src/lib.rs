@@ -1,13 +1,13 @@
 use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb::table(name = account)]
+#[spacetimedb::table(accessor = account)]
 pub struct Account {
     name: String,
     #[unique]
     id: i32,
 }
 
-#[spacetimedb::table(name = friends)]
+#[spacetimedb::table(accessor = friends)]
 pub struct Friends {
     friend_1: i32,
     friend_2: i32,

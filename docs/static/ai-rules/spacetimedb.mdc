@@ -66,13 +66,13 @@ spacetime login
 spacetime start
 
 # Publish module
-spacetime publish <db-name> --project-path <module-path>
+spacetime publish <db-name> --module-path <module-path>
 
 # Clear and republish
-spacetime publish <db-name> --clear-database -y --project-path <module-path>
+spacetime publish <db-name> --clear-database -y --module-path <module-path>
 
 # Generate client bindings
-spacetime generate --lang <lang> --out-dir <out> --project-path <module-path>
+spacetime generate --lang <lang> --out-dir <out> --module-path <module-path>
 
 # View logs
 spacetime logs <db-name>

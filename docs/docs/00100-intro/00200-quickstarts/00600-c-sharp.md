@@ -40,7 +40,7 @@ dotnet workload install wasi-experimental
     </StepText>
     <StepCode>
 ```bash
-spacetime dev --template basic-cs my-spacetime-app
+spacetime dev --template basic-cs
 ```
     </StepCode>
   </Step>
@@ -78,7 +78,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "Person", Public = true)]
+    [SpacetimeDB.Table(Accessor = "Person", Public = true)]
     public partial struct Person
     {
         public string Name;
@@ -106,24 +106,26 @@ public static partial class Module
 
   <Step title="Test with the CLI">
     <StepText>
-      Use the SpacetimeDB CLI to call reducers and query your data directly.
+      Open a new terminal and navigate to your project directory. Then use the SpacetimeDB CLI to call reducers and query your data directly.
     </StepText>
     <StepCode>
 ```bash
+cd my-spacetime-app
+
 # Call the add reducer to insert a person
-spacetime call <database-name> Add Alice
+spacetime call Add Alice
 
 # Query the person table
-spacetime sql <database-name> "SELECT * FROM Person"
+spacetime sql "SELECT * FROM Person"
  name
 ---------
  "Alice"
 
 # Call say_hello to greet everyone
-spacetime call <database-name> SayHello
+spacetime call SayHello
 
 # View the module logs
-spacetime logs <database-name>
+spacetime logs
 2025-01-13T12:00:00.000000Z  INFO: Hello, Alice!
 2025-01-13T12:00:00.000000Z  INFO: Hello, World!
 ```
@@ -134,4 +136,4 @@ spacetime logs <database-name>
 ## Next steps
 
 - See the [Chat App Tutorial](/tutorials/chat-app) for a complete example
-- Read the [C# SDK Reference](/sdks/c-sharp) for detailed API docs
+- Read the [C# SDK Reference](/clients/c-sharp) for detailed API docs

@@ -5,6 +5,7 @@ slug: /functions/reducers/error-handling
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 ## Error Handling
@@ -102,6 +103,8 @@ pub fn transfer_credits(
 
 </TabItem>
   <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
   ```cpp
   #include <spacetimedb.h>

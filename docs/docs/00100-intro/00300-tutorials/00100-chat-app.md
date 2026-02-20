@@ -8,6 +8,7 @@ toc_max_heading_level: 2
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import { InstallCardLink } from "@site/src/components/InstallCardLink";
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 In this tutorial, we'll implement a simple chat server as a SpacetimeDB module. You can write your module in TypeScript, C#, or Rust - use the tabs throughout this guide to see code examples in your preferred language.
@@ -37,12 +38,14 @@ SpacetimeDB runs your module inside the database host (not Node.js). There's no 
 </TabItem>
 <TabItem value="rust" label="Rust">
 
-- Each table is defined as a Rust struct annotated with `#[table(name = table_name)]`. An instance of the struct represents a row, and each field represents a column.
-- By default, tables are **private**. The `#[table(name = table_name, public)]` macro makes a table public. **Public** tables are readable by all users but can still only be modified by your server module code.
+- Each table is defined as a Rust struct annotated with `#[table(accessor = table_name)]`. An instance of the struct represents a row, and each field represents a column.
+- By default, tables are **private**. The `#[table(accessor = table_name, public)]` macro makes a table public. **Public** tables are readable by all users but can still only be modified by your server module code.
 - A reducer is a function that traverses and updates the database. Each reducer call runs in its own transaction, and its updates to the database are only committed if the reducer returns successfully. Reducers may return a `Result<()>`, with an `Err` return aborting the transaction.
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 - Each table is defined as a C++ struct with the `SPACETIMEDB_STRUCT` macro to register its fields, and the `SPACETIMEDB_TABLE` macro to create the table. An instance of the struct represents a row, and each field represents a column.
 - By default, tables are **private**. Use `SPACETIMEDB_TABLE(StructName, table_name, Public)` to make a table public. **Public** tables are readable by all users but can still only be modified by your server module code.
@@ -278,7 +281,7 @@ For each `User`, we'll store their `Identity` (the caller's unique identifier), 
 Add to `spacetimedb/src/index.ts`:
 
 ```ts server
-const User = table(
+const user = table(
   { name: 'user', public: true },
   {
     identity: t.identity().primaryKey(),
@@ -287,7 +290,7 @@ const User = table(
   }
 );
 
-const Message = table(
+const message = table(
   { name: 'message', public: true },
   {
     sender: t.identity(),
@@ -297,7 +300,7 @@ const Message = table(
 );
 
 // Compose the schema (gives us ctx.db.user and ctx.db.message, etc.)
-const spacetimedb = schema(User, Message);
+const spacetimedb = schema({ user, message });
 export default spacetimedb;
 ```
 
@@ -307,7 +310,7 @@ export default spacetimedb;
 In `spacetimedb/Lib.cs`, add the definition of the tables to the `Module` class:
 
 ```csharp server
-[Table(Name = "User", Public = true)]
+[Table(Accessor = "User", Public = true)]
 public partial class User
 {
     [PrimaryKey]
@@ -316,7 +319,7 @@ public partial class User
     public bool Online;
 }
 
-[Table(Name = "Message", Public = true)]
+[Table(Accessor = "Message", Public = true)]
 public partial class Message
 {
     public Identity Sender;
@@ -331,7 +334,7 @@ public partial class Message
 Add to `spacetimedb/src/lib.rs`:
 
 ```rust server
-#[table(name = user, public)]
+#[table(accessor = user, public)]
 pub struct User {
     #[primary_key]
     identity: Identity,
@@ -339,7 +342,7 @@ pub struct User {
     online: bool,
 }
 
-#[table(name = message, public)]
+#[table(accessor = message, public)]
 pub struct Message {
     sender: Identity,
     sent: Timestamp,
@@ -765,28 +768,28 @@ From the `quickstart-chat` directory:
 <TabItem value="typescript" label="TypeScript">
 
 ```bash
-spacetime publish --server local --project-path spacetimedb quickstart-chat
+spacetime publish --server local --module-path spacetimedb quickstart-chat
 ```
 
 </TabItem>
 <TabItem value="csharp" label="C#">
 
 ```bash
-spacetime publish --server local --project-path spacetimedb quickstart-chat
+spacetime publish --server local --module-path spacetimedb quickstart-chat
 ```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
 
 ```bash
-spacetime publish --server local --project-path spacetimedb quickstart-chat
+spacetime publish --server local --module-path spacetimedb quickstart-chat
 ```
 
 </TabItem>
 <TabItem value="cpp" label="C++">
 
 ```bash
-spacetime publish --server local --project-path spacetimedb quickstart-chat
+spacetime publish --server local --module-path spacetimedb quickstart-chat
 ```
 
 </TabItem>
@@ -840,9 +843,36 @@ spacetime logs --server local quickstart-chat
 
 SpacetimeDB supports a subset of SQL so you can query your data:
 
+<Tabs groupId="lang">
+<TabItem value="typescript" label="TypeScript">
+
 ```bash
 spacetime sql --server local quickstart-chat "SELECT * FROM message"
 ```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```bash
+spacetime sql --server local quickstart-chat "SELECT * FROM Message"
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```bash
+spacetime sql --server local quickstart-chat "SELECT * FROM message"
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```bash
+spacetime sql --server local quickstart-chat "SELECT * FROM message"
+```
+
+</TabItem>
+</Tabs>
 
 Output will resemble:
 
@@ -923,9 +953,10 @@ The app we're going to create is a basic chat application. We will begin by crea
 Replace the entire contents of `src/App.tsx` with the following:
 
 ```tsx
-import React, { useEffect, useState } from 'react';
-import { Message, tables, reducers } from './module_bindings';
-import { useSpacetimeDB, useTable, where, eq, useReducer } from 'spacetimedb/react';
+import React, { useState } from 'react';
+import { tables, reducers } from './module_bindings';
+import type * as Types from './module_bindings/types';
+import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
 import { Identity, Timestamp } from 'spacetimedb';
 import './App.css';
 
@@ -939,11 +970,11 @@ export type PrettyMessage = {
 function App() {
   const [newName, setNewName] = useState('');
   const [settingName, setSettingName] = useState(false);
-  const [systemMessages, setSystemMessages] = useState([] as Infer<typeof Message>[]);
+  const [systemMessages, setSystemMessages] = useState([] as Types.Message[]);
   const [newMessage, setNewMessage] = useState('');
 
-  const onlineUsers: User[] = [];
-  const offlineUsers: User[] = [];
+  const onlineUsers: Types.User[] = [];
+  const offlineUsers: Types.User[] = [];
   const users = [...onlineUsers, ...offlineUsers];
   const prettyMessages: PrettyMessage[] = [];
 
@@ -1320,23 +1351,29 @@ Before we can run the app, we need to generate the TypeScript bindings that `App
 In your `quickstart-chat` directory, run:
 
 ```bash
-spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb
+spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb
 ```
 
 Take a look inside `src/module_bindings`. The CLI should have generated several files:
 
 ```
 module_bindings
-├── client_connected_reducer.ts
-├── client_disconnected_reducer.ts
 ├── index.ts
-├── init_reducer.ts
+├── init_type.ts
 ├── message_table.ts
 ├── message_type.ts
+├── on_connect_type.ts
+├── on_disconnect_type.ts
 ├── send_message_reducer.ts
+├── send_message_type.ts
 ├── set_name_reducer.ts
+├── set_name_type.ts
 ├── user_table.ts
-└── user_type.ts
+├── user_type.ts
+└── types
+    ├── index.ts
+    ├── procedures.ts
+    └── reducers.ts
 ```
 
 With `spacetime generate` we have generated TypeScript types derived from the types you specified in your module, which we can conveniently use in our client. We've placed these in the `module_bindings` folder.
@@ -1366,15 +1403,16 @@ Now that we've imported the `DbConnection` type, we can use it to connect our ap
 Replace the body of the `main.tsx` file with the following, just below your imports:
 
 ```tsx
+const HOST = import.meta.env.VITE_SPACETIMEDB_HOST ?? 'ws://localhost:3000';
+const DB_NAME = import.meta.env.VITE_SPACETIMEDB_DB_NAME ?? 'quickstart-chat';
+const TOKEN_KEY = `${HOST}/${DB_NAME}/auth_token`;
+
 const onConnect = (conn: DbConnection, identity: Identity, token: string) => {
-  localStorage.setItem('auth_token', token);
+  localStorage.setItem(TOKEN_KEY, token);
   console.log(
     'Connected to SpacetimeDB with identity:',
     identity.toHexString()
   );
-  conn.reducers.onSendMessage(() => {
-    console.log('Message sent.');
-  });
 };
 
 const onDisconnect = () => {
@@ -1386,9 +1424,9 @@ const onConnectError = (_ctx: ErrorContext, err: Error) => {
 };
 
 const connectionBuilder = DbConnection.builder()
-  .withUri('ws://localhost:3000')
-  .withDatabaseName('quickstart-chat')
-  .withToken(localStorage.getItem('auth_token') || undefined)
+  .withUri(HOST)
+  .withDatabaseName(DB_NAME)
+  .withToken(localStorage.getItem(TOKEN_KEY) || undefined)
   .onConnect(onConnect)
   .onDisconnect(onDisconnect)
   .onConnectError(onConnectError);
@@ -1402,7 +1440,7 @@ createRoot(document.getElementById('root')!).render(
 );
 ```
 
-Here we are configuring our SpacetimeDB connection by specifying the server URI, database name, and a few callbacks including the `onConnect` callback. When `onConnect` is called after connecting, we store the connection state, our `Identity`, and our SpacetimeDB credentials in our React state. If there is an error connecting, we also print that error to the console.
+Here we are configuring our SpacetimeDB connection by specifying the server URI, database name, and a few callbacks including the `onConnect` callback. When `onConnect` is called after connecting, we store our credentials in `localStorage` and log our `Identity`. If there is an error connecting, we also print that error to the console.
 
 We are also using `localStorage` to store our SpacetimeDB credentials. This way, we can reconnect to SpacetimeDB with the same `Identity` and token if we refresh the page. The first time we connect, we won't have any credentials stored, so we pass `undefined` to the `withToken` method. This will cause SpacetimeDB to generate new credentials for us.
 
@@ -1431,19 +1469,17 @@ const sendMessage = useReducer(reducers.sendMessage);
 const [messages] = useTable(tables.message);
 ```
 
-Next replace `const onlineUsers: User[] = [];` with the following:
+Next replace `const onlineUsers: Types.User[] = [];` with the following:
 
 ```tsx
 // Subscribe to all online users in the chat
-// so we can show who's online and demonstrate
-// the `where` and `eq` query expressions
+// using the query builder's `.where()` method
 const [onlineUsers] = useTable(
-  tables.user,
-  where(eq('online', true))
+  tables.user.where(r => r.online.eq(true))
 );
 ```
 
-Notice that we can filter users in the `user` table based on their online status by passing a query expression into the `useTable` hook as the second argument.
+Notice that we can filter users in the `user` table based on their online status by chaining `.where()` on the table ref with a typed predicate function.
 
 Let's now prettify our messages in our render function by sorting them by their `sent` timestamp, and joining the username of the sender to the message by looking up the user by their `Identity` in the `user` table. Replace `const prettyMessages: PrettyMessage[] = [];` with the following:
 
@@ -1543,11 +1579,9 @@ Update your `onlineUsers` React hook to add the following callbacks:
 
 ```tsx
 // Subscribe to all online users in the chat
-// so we can show who's online and demonstrate
-// the `where` and `eq` query expressions
+// using the query builder's `.where()` method
 const [ onlineUsers ] = useTable(
-  tables.user,
-  where(eq('online', true)),
+  tables.user.where(r => r.online.eq(true)),
   {
     onInsert: user => {
       // All users being inserted here are online
@@ -1577,7 +1611,7 @@ const [ onlineUsers ] = useTable(
 );
 ```
 
-These callbacks will be called any time the state of the `useTable` result changes to add or remove a row, while respecting your `where` filter.
+These callbacks will be called any time the state of the `useTable` result changes to add or remove a row, while respecting your `.where()` filter.
 
 Here, we post a system message indicating that a new user has connected if the user is being added to the `user` table and they're online, or if an existing user's online status is being updated to "online".
 
@@ -1600,12 +1634,11 @@ const prettyMessages: PrettyMessage[] = Array.from(messages)
   });
 ```
 
-Finally, let's also subscribe to offline users so we can show them in the sidebar as well. Replace `const offlineUsers: User[] = [];` with:
+Finally, let's also subscribe to offline users so we can show them in the sidebar as well. Replace `const offlineUsers: Types.User[] = [];` with:
 
 ```tsx
 const [offlineUsers] = useTable(
-  tables.user,
-  where(eq('online', false))
+  tables.user.where(r => r.online.eq(false))
 );
 ```
 
@@ -1638,6 +1671,8 @@ Next, we'll show you how to get up and running with a simple SpacetimeDB app wit
 
 We'll implement a command-line client for the module created in our [Rust](/docs/quickstarts/rust) or [C# Module](/docs/quickstarts/c-sharp) Quickstart guides. Ensure you followed one of these guides before continuing.
 
+If you've not already installed .NET 8, the [C# Module](/docs/quickstarts/c-sharp) Quickstart guide will show you how to install it, which we will need to run the client.
+
 ### Project structure
 
 Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/quickstarts/rust) or [C# Module Quickstart](/docs/quickstarts/c-sharp) guides:
@@ -1662,6 +1697,39 @@ Add the `SpacetimeDB.ClientSDK` [NuGet package](https://www.nuget.org/packages/S
 dotnet add package SpacetimeDB.ClientSDK
 ```
 
+Note:
+For developers with multiple .NET version installed, you may need to update the `.csproj` file at the root of your client project, to specify .NET 8.0 in the `<TargetFramework>` element like this:`<TargetFramework>net8.0</TargetFramework>`
+For developers creating both a C# server and a C# client, you will need to update the `.csproj` file at the root of your server project, to ignore the server code in the `spacetimedb` directory by adding the following:
+```xml
+  <ItemGroup>
+    <Compile Remove="spacetimedb/**" />
+  </ItemGroup>
+```
+Or simply replace the contents of your client's `.csproj` file with:
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SpacetimeDB.ClientSDK" Version="2.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="spacetimedb/**" />
+  </ItemGroup>
+
+</Project>
+```
+
 ### Clear `Program.cs`
 
 Clear out any data from `Program.cs` so we can write our chat client.
@@ -1673,7 +1741,7 @@ The `spacetime` CLI's `generate` command will generate client-side interfaces fo
 In your `quickstart-chat` directory, run:
 
 ```bash
-spacetime generate --lang csharp --out-dir module_bindings --project-path spacetimedb
+spacetime generate --lang csharp --out-dir module_bindings --module-path spacetimedb
 ```
 
 Take a look inside `module_bindings`. The CLI should have generated three folders and nine files:
@@ -1681,8 +1749,6 @@ Take a look inside `module_bindings`. The CLI should have generated three folder
 ```
 module_bindings
 ├── Reducers
-│   ├── ClientConnected.g.cs
-│   ├── ClientDisconnected.g.cs
 │   ├── SendMessage.g.cs
 │   └── SetName.g.cs
 ├── Tables
@@ -1965,7 +2031,7 @@ void Message_OnInsert(EventContext ctx, Message insertedValue)
 
 void PrintMessage(RemoteTables tables, Message message)
 {
-    var sender = tables.User.Identity.Find(message.Sender);
+    var sender = tables.User.UserIdentityIdxBtree.Find(message.Sender);
     var senderName = "unknown";
     if (sender != null)
     {
@@ -2035,13 +2101,11 @@ void Reducer_OnSendMessageEvent(ReducerEventContext ctx, string text)
 
 ### Subscribe to queries
 
-SpacetimeDB is set up so that each client subscribes via SQL queries to some subset of the database, and is notified about changes only to that subset. For complex apps with large databases, judicious subscriptions can save each client significant network bandwidth, memory and computation. For example, in [BitCraft](https://bitcraftonline.com), each player's client subscribes only to the entities in the "chunk" of the world where that player currently resides, rather than the entire game world. Our app is much simpler than BitCraft, so we'll just subscribe to the whole database using `SubscribeToAllTables`.
-
-You can also subscribe to specific tables using SQL syntax, e.g. `SELECT * FROM my_table`. Our [SQL documentation](/reference/sql) enumerates the operations that are accepted in our SQL syntax.
+SpacetimeDB is set up so that each client subscribes to some subset of the database, and is notified about changes only to that subset. For complex apps with large databases, judicious subscriptions can save each client significant network bandwidth, memory and computation. For example, in [BitCraft](https://bitcraftonline.com), each player's client subscribes only to the entities in the "chunk" of the world where that player currently resides, rather than the entire game world. Our app is much simpler than BitCraft, so we'll just subscribe to the whole database using `SubscribeToAllTables`.
 
 When we specify our subscriptions, we can supply an `OnApplied` callback. This will run when the subscription is applied and the matching rows become available in our client cache. We'll use this opportunity to print the message backlog in proper order.
 
-We can also provide an `OnError` callback. This will run if the subscription fails, usually due to an invalid or malformed SQL queries. We can't handle this case, so we'll just print out the error and exit the process.
+We can also provide an `OnError` callback. With query-builder subscriptions, invalid query shapes are caught by the type system, so this callback is less likely to fire due to query construction mistakes. (With raw SQL subscriptions, invalid query text can fail at runtime.) We can't handle this case here, so we'll just print out the error and exit the process.
 
 In `Program.cs`, update our `OnConnected` function to include `conn.SubscriptionBuilder().OnApplied(OnSubscriptionApplied).SubscribeToAllTables();` so that it reads:
 
@@ -2182,7 +2246,7 @@ Main();
 Now, we can run the client by hitting start in Visual Studio or Rider; or by running the following command in the `client` directory:
 
 ```bash
-dotnet run --project client
+dotnet run --project quickstart-chat
 ```
 
 </TabItem>
@@ -2216,7 +2280,7 @@ cargo init
 Below the `[dependencies]` line in `Cargo.toml`, add:
 
 ```toml
-spacetimedb-sdk = "1.0"
+spacetimedb-sdk = "2.0"
 hex = "0.4"
 ```
 
@@ -2240,15 +2304,13 @@ The `spacetime` CLI's `generate` command will generate client-side interfaces fo
 In your `quickstart-chat` directory, run:
 
 ```bash
-spacetime generate --lang rust --out-dir src/module_bindings --project-path spacetimedb
+spacetime generate --lang rust --out-dir src/module_bindings --module-path spacetimedb
 ```
 
 Take a look inside `src/module_bindings`. The CLI should have generated a few files:
 
 ```
 module_bindings/
-├── client_connected_reducer.rs
-├── client_disconnected_reducer.rs
 ├── message_table.rs
 ├── message_type.rs
 ├── mod.rs
@@ -2283,7 +2345,7 @@ Our `main` function will do the following:
 
 1. Connect to the database.
 2. Register a number of callbacks to run in response to various database events.
-3. Subscribe to a set of SQL queries, whose results will be replicated and automatically updated in our client.
+3. Subscribe to a set of queries, whose results will be replicated and automatically updated in our client.
 4. Spawn a background thread where our connection will process messages and invoke callbacks.
 5. Enter a loop to handle user input from the command line.
 
@@ -2297,7 +2359,7 @@ fn main() {
     // Register callbacks to run in response to database events.
     register_callbacks(&ctx);
 
-    // Subscribe to SQL queries in order to construct a local partial replica of the database.
+    // Subscribe to queries in order to construct a local partial replica of the database.
     subscribe_to_tables(&ctx);
 
     // Spawn a thread, where the connection will process messages and invoke callbacks.
@@ -2406,8 +2468,6 @@ We need to handle several sorts of events:
 1. When a new user joins, we'll print a message introducing them.
 2. When a user is updated, we'll print their new name, or declare their new online status.
 3. When we receive a new message, we'll print it.
-4. If the server rejects our attempt to set our name, we'll print an error.
-5. If the server rejects a message we send, we'll print an error.
 
 To `src/main.rs`, add:
 
@@ -2422,12 +2482,6 @@ fn register_callbacks(ctx: &DbConnection) {
 
     // When a new message is received, print it.
     ctx.db.message().on_insert(on_message_inserted);
-
-    // When we fail to set our name, print a warning.
-    ctx.reducers.on_set_name(on_name_set);
-
-    // When we fail to send a message, print a warning.
-    ctx.reducers.on_send_message(on_message_sent);
 }
 ```
 
@@ -2532,46 +2586,13 @@ fn print_message(ctx: &impl RemoteDbContext, message: &Message) {
 }
 ```
 
-#### Handle reducer failures
-
-We can also register callbacks to run each time a reducer is invoked. We register these callbacks using the `on_reducer` method of the `Reducer` trait, which is automatically implemented for each reducer by `spacetime generate`.
-
-Each reducer callback first takes a `&ReducerEventContext` which contains metadata about the reducer call, including the identity of the caller and whether or not the reducer call suceeded.
-
-These callbacks will be invoked in one of two cases:
-
-1. If the reducer was successful and altered any of our subscribed rows.
-2. If we requested an invocation which failed.
-
-Note that a status of `Failed` or `OutOfEnergy` implies that the caller identity is our own identity.
-
-We already handle successful `set_name` invocations using our `ctx.db.user().on_update(..)` callback, but if the module rejects a user's chosen name, we'd like that user's client to let them know. We define a function `on_set_name` as a `conn.reducers.on_set_name(..)` callback which checks if the reducer failed, and if it did, prints a message including the rejected name and the error.
-
-To `src/main.rs`, add:
-
-```rust
-/// Our `on_set_name` callback: print a warning if the reducer failed.
-fn on_name_set(ctx: &ReducerEventContext, name: &String) {
-    if let Status::Failed(err) = &ctx.event.status {
-        eprintln!("Failed to change name to {:?}: {}", name, err);
-    }
-}
-
-/// Our `on_send_message` callback: print a warning if the reducer failed.
-fn on_message_sent(ctx: &ReducerEventContext, text: &String) {
-    if let Status::Failed(err) = &ctx.event.status {
-        eprintln!("Failed to send message {:?}: {}", text, err);
-    }
-}
-```
-
 ### Subscribe to queries
 
-SpacetimeDB is set up so that each client subscribes via SQL queries to some subset of the database, and is notified about changes only to that subset. For complex apps with large databases, judicious subscriptions can save each client significant network bandwidth, memory and computation. For example, in [BitCraft](https://bitcraftonline.com), each player's client subscribes only to the entities in the "chunk" of the world where that player currently resides, rather than the entire game world. Our app is much simpler than BitCraft, so we'll just subscribe to the whole database.
+SpacetimeDB is set up so that each client subscribes to some subset of the database, and is notified about changes only to that subset. For complex apps with large databases, judicious subscriptions can save each client significant network bandwidth, memory and computation. For example, in [BitCraft](https://bitcraftonline.com), each player's client subscribes only to the entities in the "chunk" of the world where that player currently resides, rather than the entire game world. Our app is much simpler than BitCraft, so we'll just subscribe to the whole database.
 
 When we specify our subscriptions, we can supply an `on_applied` callback. This will run when the subscription is applied and the matching rows become available in our client cache. We'll use this opportunity to print the message backlog in proper order.
 
-We'll also provide an `on_error` callback. This will run if the subscription fails, usually due to an invalid or malformed SQL queries. We can't handle this case, so we'll just print out the error and exit the process.
+We'll also provide an `on_error` callback. This will run if the subscription fails for any reason, such as for an invalid or malformed query. These errors are less likely when using the query builder since invalid query shapes are caught by the type system. They are more likely to occur when using raw SQL.
 
 To `src/main.rs`, add:
 
@@ -2581,7 +2602,9 @@ fn subscribe_to_tables(ctx: &DbConnection) {
     ctx.subscription_builder()
         .on_applied(on_sub_applied)
         .on_error(on_sub_error)
-        .subscribe(["SELECT * FROM user", "SELECT * FROM message"]);
+        .add_query(|q| q.from.user())
+        .add_query(|q| q.from.message())
+        .subscribe();
 }
 ```
 
@@ -2609,9 +2632,7 @@ fn on_sub_applied(ctx: &SubscriptionEventContext) {
 
 #### Notify about failed subscriptions
 
-It's possible for SpacetimeDB to reject subscriptions. This happens most often because of a typo in the SQL queries, but can be due to use of SQL features that SpacetimeDB doesn't support. See [SQL Support: Subscriptions](/reference/sql#subscriptions) for more information about what subscription queries SpacetimeDB supports.
-
-In our case, we're pretty confident that our queries are valid, but if SpacetimeDB rejects them, we want to know about it. Our callback will print the error, then exit the process.
+It's possible for SpacetimeDB to reject subscriptions. With raw SQL subscriptions, this often happens due to invalid query text. In our case, because we're using the query builder, we can be confident our queries are valid unless the database we're connecting to has changed. If SpacetimeDB rejects them, our callback will print the error, then exit the process.
 
 ```rust
 /// Or `on_error` callback:
@@ -2628,6 +2649,8 @@ Our app should allow the user to interact by typing lines into their terminal. I
 
 For each reducer defined by our module, `ctx.reducers` has a method to request an invocation. In our case, we pass `set_name` and `send_message` a `String`, which gets sent to the server to execute the corresponding reducer.
 
+When we invoke either of these reducers, we'll register a callback to run when the client hears back about the result. If the database rejects our input, we'll print a message to the user. If there's a more serious error, we'll `panic!`.
+
 To `src/main.rs`, add:
 
 ```rust
@@ -2638,9 +2661,26 @@ fn user_input_loop(ctx: &DbConnection) {
             panic!("Failed to read from stdin.");
         };
         if let Some(name) = line.strip_prefix("/name ") {
-            ctx.reducers.set_name(name.to_string()).unwrap();
+            ctx.reducers
+                .set_name_then(name.to_string(), {
+                    let name = name.to_string();
+                    move |_ctx, result| match result {
+                        Err(e) => panic!("Internal error when setting name: {e}"),
+                        Ok(Err(e)) => eprintln!("Failed to set name to {name}: {e}"),
+                        Ok(Ok(())) => (),
+                    }
+                })
+                .unwrap();
         } else {
-            ctx.reducers.send_message(line).unwrap();
+            ctx.reducers
+                .send_message_then(line.clone(), {
+                    move |_ctx, result| match result {
+                        Err(e) => panic!("Internal error when sending message: {e}"),
+                        Ok(Err(e)) => eprintln!("Failed to send message {line:?}: {e}"),
+                        Ok(Ok(())) => (),
+                    }
+                })
+                .unwrap();
         }
     }
 }
@@ -2693,6 +2733,6 @@ User <my-name> connected.
 
 Congratulations! You've built a chat app with SpacetimeDB.
 
-- Check out the [SDK Reference documentation](/sdks) for more advanced usage
+- Check out the [SDK Reference documentation](/clients) for more advanced usage
 - Explore the [Unity Tutorial](/docs/tutorials/unity) or [Unreal Tutorial](/docs/tutorials/unreal) for game development
 - Learn about [Procedures](/functions/procedures) for making external API calls

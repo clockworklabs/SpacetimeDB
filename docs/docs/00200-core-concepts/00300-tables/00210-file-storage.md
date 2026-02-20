@@ -5,6 +5,7 @@ slug: /tables/file-storage
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 SpacetimeDB can store binary data directly in table columns, making it suitable for files, images, and other blobs that need to participate in transactions and subscriptions.
@@ -29,7 +30,7 @@ const userAvatar = table(
   }
 );
 
-const spacetimedb = schema(userAvatar);
+const spacetimedb = schema({ userAvatar });
 export default spacetimedb;
 
 export const upload_avatar = spacetimedb.reducer({
@@ -58,7 +59,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "UserAvatar", Public = true)]
+    [SpacetimeDB.Table(Accessor = "UserAvatar", Public = true)]
     public partial struct UserAvatar
     {
         [SpacetimeDB.PrimaryKey]
@@ -92,7 +93,7 @@ public static partial class Module
 ```rust
 use spacetimedb::{ReducerContext, Timestamp, Table};
 
-#[spacetimedb::table(name = user_avatar, public)]
+#[spacetimedb::table(accessor = user_avatar, public)]
 pub struct UserAvatar {
     #[primary_key]
     user_id: u64,
@@ -123,6 +124,8 @@ pub fn upload_avatar(
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 struct UserAvatar {
@@ -197,7 +200,7 @@ const document = table(
   }
 );
 
-const spacetimedb = schema(document);
+const spacetimedb = schema({ document });
 export default spacetimedb;
 
 // Called after uploading file to external storage
@@ -227,7 +230,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "Document", Public = true)]
+    [SpacetimeDB.Table(Accessor = "Document", Public = true)]
     public partial struct Document
     {
         [SpacetimeDB.PrimaryKey]
@@ -271,7 +274,7 @@ public static partial class Module
 ```rust
 use spacetimedb::{Identity, ReducerContext, Timestamp, Table};
 
-#[spacetimedb::table(name = document, public)]
+#[spacetimedb::table(accessor = document, public)]
 pub struct Document {
     #[primary_key]
     #[auto_inc]
@@ -387,7 +390,7 @@ const document = table(
   }
 );
 
-const spacetimedb = schema(document);
+const spacetimedb = schema({ document });
 export default spacetimedb;
 
 // Upload file to S3 and register in database
@@ -445,7 +448,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "Document", Public = true)]
+    [SpacetimeDB.Table(Accessor = "Document", Public = true)]
     public partial struct Document
     {
         [SpacetimeDB.PrimaryKey]
@@ -519,7 +522,7 @@ public static partial class Module
 ```rust
 use spacetimedb::{Identity, ProcedureContext, Timestamp, Table};
 
-#[spacetimedb::table(name = document, public)]
+#[spacetimedb::table(accessor = document, public)]
 pub struct Document {
     #[primary_key]
     #[auto_inc]
@@ -764,7 +767,7 @@ using SpacetimeDB;
 
 public partial class Module
 {
-    [SpacetimeDB.Table(Name = "Image", Public = true)]
+    [SpacetimeDB.Table(Accessor = "Image", Public = true)]
     public partial struct Image
     {
         [SpacetimeDB.PrimaryKey]
@@ -787,7 +790,7 @@ public partial class Module
 ```rust
 use spacetimedb::{Identity, Timestamp};
 
-#[spacetimedb::table(name = image, public)]
+#[spacetimedb::table(accessor = image, public)]
 pub struct Image {
     #[primary_key]
     #[auto_inc]

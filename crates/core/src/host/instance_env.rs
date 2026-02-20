@@ -259,6 +259,11 @@ impl InstanceEnv {
         self.func_name.as_deref()
     }
 
+    /// Swap in a temporary function type, returning the previous one.
+    pub fn swap_func_type(&mut self, func_type: FuncCallType) -> FuncCallType {
+        mem::replace(&mut self.func_type, func_type)
+    }
+
     fn get_tx(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
         self.tx.get()
     }
@@ -733,10 +738,19 @@ impl InstanceEnv {
     // on `tokio::runtime::Handle::try_current()` before being able to run the `get_tx()` check.
 
     pub fn commit_mutable_tx(&mut self) -> Result<(), NodesError> {
-        self.finish_anon_tx()?;
+        let tx = self.take_mutable_tx_for_commit()?;
+        self.commit_procedure_tx(tx)
+    }
 
+    /// Extract an anonymous mutable tx so callers can perform extra work before commit.
+    pub fn take_mutable_tx_for_commit(&mut self) -> Result<MutTxId, NodesError> {
+        self.finish_anon_tx()?;
+        Ok(self.take_tx()?)
+    }
+
+    /// Commit an anonymous procedure tx and broadcast resulting updates.
+    pub fn commit_procedure_tx(&mut self, tx: MutTxId) -> Result<(), NodesError> {
         let stdb = self.relational_db().clone();
-        let tx = self.take_tx()?;
         let subs = self.replica_ctx.subscriptions.clone();
 
         let event = ModuleEvent {
@@ -745,6 +759,7 @@ impl InstanceEnv {
             caller_connection_id: None,
             function_call: ModuleFunctionCall::default(),
             status: EventStatus::Committed(DatabaseUpdate::default()),
+            reducer_return_value: None,
             request_id: None,
             timer: None,
             // The procedure will pick up the tab for the energy.
@@ -760,13 +775,16 @@ impl InstanceEnv {
 
     pub fn abort_mutable_tx(&mut self) -> Result<(), NodesError> {
         self.finish_anon_tx()?;
-        let stdb = self.relational_db().clone();
         let tx = self.take_tx()?;
+        self.rollback_procedure_tx(tx);
+        Ok(())
+    }
 
-        // Roll back the tx.
+    /// Roll back an anonymous procedure tx and record the resulting offset.
+    pub fn rollback_procedure_tx(&mut self, tx: MutTxId) {
+        let stdb = self.relational_db().clone();
         let offset = ModuleSubscriptions::rollback_mut_tx(&stdb, tx);
         self.procedure_last_tx_offset = Some(from_tx_offset(offset));
-        Ok(())
     }
 
     /// In-case there is a anonymous tx at the end of a procedure,
@@ -860,7 +878,7 @@ impl InstanceEnv {
 
         // If the user requested a timeout using our extension, slot it in to reqwest's timeout.
         // Clamp to the range `0..HTTP_DEFAULT_TIMEOUT`.
-        let timeout = timeout.unwrap_or(HTTP_DEFAULT_TIMEOUT).min(HTTP_DEFAULT_TIMEOUT);
+        let timeout = timeout.unwrap_or(HTTP_DEFAULT_TIMEOUT).min(HTTP_MAX_TIMEOUT);
 
         // reqwest's timeout covers from the start of the request to the end of reading the body,
         // so there's no need to do our own timeout operation.
@@ -950,12 +968,14 @@ impl InstanceEnv {
     }
 }
 
-/// Default / maximum timeout for HTTP requests performed by [`InstanceEnv::http_request`].
-///
-/// If the user requests a timeout longer than this, we will clamp to this value.
+/// Default timeout for HTTP requests performed by [`InstanceEnv::http_request`].
 ///
 /// Value chosen arbitrarily by pgoldman 2025-11-18, based on little more than a vague guess.
 const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
+/// Maximum timeout for HTTP requests performed by [`InstanceEnv::http_request`].
+///
+/// If the user requests a timeout longer than this, we will clamp to this value.
+const HTTP_MAX_TIMEOUT: Duration = Duration::from_secs(10);
 const BLOCKED_HTTP_ADDRESS_ERROR: &str = "refusing to connect to private or special-purpose addresses";
 
 struct FilteredDnsResolver;

@@ -63,3 +63,72 @@ fn test_sql_format() {
  (bool_opt = (some = true), bool_result = (ok = false), action = (Active = ()))"#,
     );
 }
+
+// #[test]
+fn _test_sql_resolves_accessor_and_canonical_names_for_table() {
+    let test = Smoketest::builder().precompiled_module("sql-format").build();
+
+    test.assert_sql(
+        "SELECT * FROM accessor_table",
+        r#" id | accessor_value
+----+----------------
+ 1  | 7"#,
+    );
+
+    test.assert_sql(
+        "SELECT * FROM canonical_table",
+        r#" id | accessor_value
+----+----------------
+ 1  | 7"#,
+    );
+}
+
+// #[test]
+fn _test_sql_resolves_accessor_and_canonical_names_for_view() {
+    let test = Smoketest::builder().precompiled_module("sql-format").build();
+
+    test.assert_sql(
+        "SELECT * FROM accessor_filtered",
+        r#" id | accessor_value
+----+----------------
+ 1  | 7"#,
+    );
+
+    test.assert_sql(
+        "SELECT * FROM canonical_filtered",
+        r#" id | accessor_value
+----+----------------
+ 1  | 7"#,
+    );
+}
+
+// #[test]
+fn _test_sql_resolves_accessor_and_canonical_names_for_column() {
+    let test = Smoketest::builder().precompiled_module("sql-format").build();
+
+    test.assert_sql(
+        "SELECT accessor_value FROM accessor_table",
+        r#" accessor_value
+----------------
+ 7"#,
+    );
+
+    test.assert_sql(
+        "SELECT canonical_value FROM accessor_table",
+        r#" canonical_value
+----------------
+ 7"#,
+    );
+}
+
+// #[test]
+fn _test_query_builder_resolves_accessor_and_canonical_names() {
+    let test = Smoketest::builder().precompiled_module("sql-format").build();
+
+    test.assert_sql(
+        "SELECT * FROM accessor_filtered",
+        r#" id | accessor_value
+----+----------------
+ 1  | 7"#,
+    );
+}

@@ -243,7 +243,7 @@ async function prepSystem(system: string): Promise<void> {
         '--server',
         server,
         moduleName,
-        '--project-path',
+        '--module-path',
         modulePath,
       ]);
       await sh('spacetime', [

@@ -117,12 +117,12 @@ chat-app-20260102-171317/
 
    ```bash
    cd backend/spacetimedb
-   spacetime publish chat-app --project-path .
+   spacetime publish chat-app --module-path .
    ```
 
 3. Generate client bindings:
    ```bash
-   spacetime generate --lang typescript --out-dir ../../client/src/module_bindings --project-path .
+   spacetime generate --lang typescript --out-dir ../../client/src/module_bindings --module-path .
    ```
 
 ### Client Setup

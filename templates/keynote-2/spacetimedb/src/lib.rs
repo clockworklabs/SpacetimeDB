@@ -45,13 +45,7 @@ pub fn create_account(ctx: &ReducerContext, id: u32, balance: i64) -> Result<(),
 }
 
 #[reducer]
-pub fn transfer(
-    ctx: &ReducerContext,
-    from: u32,
-    to: u32,
-    amount: i64,
-    _client_txn_id: u64,
-) -> Result<(), String> {
+pub fn transfer(ctx: &ReducerContext, from: u32, to: u32, amount: i64, _client_txn_id: u64) -> Result<(), String> {
     if from == to {
         return Err("same_account".into());
     }

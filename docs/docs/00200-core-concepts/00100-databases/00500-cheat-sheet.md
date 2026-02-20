@@ -3,6 +3,7 @@ title: Cheat Sheet
 slug: /databases/cheat-sheet
 ---
 
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
@@ -43,6 +44,8 @@ spacetime publish <DATABASE_NAME>
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```bash
 spacetime init --lang cpp --project-path my-project my-project
@@ -115,7 +118,7 @@ public partial struct Player
 
 // Multi-column index
 [SpacetimeDB.Table]
-[SpacetimeDB.Index.BTree(Name = "idx", Columns = ["PlayerId", "Level"])]
+[SpacetimeDB.Index.BTree(Accessor = "idx", Columns = ["PlayerId", "Level"])]
 public partial struct Score
 {
     public ulong PlayerId;
@@ -138,7 +141,7 @@ public enum Status
 use spacetimedb::{table, SpacetimeType};
 
 // Basic table
-#[table(name = player, public)]
+#[table(accessor = player, public)]
 pub struct Player {
     #[primary_key]
     #[auto_inc]
@@ -150,7 +153,7 @@ pub struct Player {
 }
 
 // Multi-column index
-#[table(name = score, index(name = idx, btree(columns = [player_id, level])))]
+#[table(accessor = score, index(accessor = idx, btree(columns = [player_id, level])))]
 pub struct Score {
     player_id: u64,
     level: u32,
@@ -209,7 +212,7 @@ SPACETIMEDB_ENUM(PlayerStatus, Active, Inactive);
 ```typescript
 import { schema } from 'spacetimedb/server';
 
-const spacetimedb = schema(player);
+const spacetimedb = schema({ player });
 export default spacetimedb;
 
 // Basic reducer
@@ -390,7 +393,7 @@ SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) { /* ... */ }
 
 ```typescript
 const reminder = table(
-  { name: 'reminder', scheduled: 'send_reminder' },
+  { name: 'reminder', scheduled: (): any => send_reminder },
   {
     id: t.u64().primaryKey().autoInc(),
     message: t.string(),
@@ -428,7 +431,7 @@ public static void SendReminder(ReducerContext ctx, Reminder reminder)
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[table(name = reminder, scheduled(send_reminder))]
+#[table(accessor = reminder, scheduled(send_reminder))]
 pub struct Reminder {
     #[primary_key]
     #[auto_inc]
@@ -634,20 +637,20 @@ public static IQuery<Player> BottomPlayers(ViewContext ctx)
 use spacetimedb::{view, Query, ViewContext};
 
 // Return single row
-#[view(name = my_player, public)]
+#[view(accessor = my_player, public)]
 fn my_player(ctx: &ViewContext) -> Option<Player> {
     ctx.db.player().identity().find(ctx.sender())
 }
 
-// Return potentially multiple rows
-#[view(name = top_players, public)]
+// Return multiple rows
+#[view(accessor = top_players, public)]
 fn top_players(ctx: &ViewContext) -> Vec<Player> {
     ctx.db.player().score().filter(1000).collect()
 }
 
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
-#[view(name = bottom_players, public)]
+#[view(accessor = bottom_players, public)]
 fn bottom_players(ctx: &ViewContext) -> impl Query<Player> {
     ctx.from.player().r#where(|p| p.score.lt(1000))
 }

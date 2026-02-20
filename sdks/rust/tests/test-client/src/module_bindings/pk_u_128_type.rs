@@ -48,3 +48,5 @@ impl __sdk::__query_builder::HasIxCols for PkU128 {
         }
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for PkU128 {}

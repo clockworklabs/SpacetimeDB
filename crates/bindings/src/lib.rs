@@ -117,8 +117,8 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// ```ignore
 /// use spacetimedb::{table, ReducerContext};
 ///
-/// #[table(name = user, public,
-///         index(name = popularity_and_username, btree(columns = [popularity, username])),
+/// #[table(accessor = user, public,
+///         index(accessor = popularity_and_username, btree(columns = [popularity, username])),
 /// )]
 /// pub struct User {
 ///     #[auto_inc]
@@ -194,7 +194,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// For a table *table*, use `ctx.db.{table}()` to do this.
 /// For example:
 /// ```ignore
-///  #[table(name = user)]
+///  #[table(accessor = user)]
 ///  pub struct User {
 ///      #[auto_inc]
 ///      #[primary_key]
@@ -227,7 +227,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// ### `index(...)`
 ///
 /// You can specify an index on one or more of the table's columns with the syntax:
-/// `index(name = my_index, btree(columns = [a, b, c]))`
+/// `index(accessor = my_index, btree(columns = [a, b, c]))`
 ///
 /// You can also just put `#[index(btree)]` on the field itself if you only need
 /// a single-column index; see column attributes below.
@@ -314,7 +314,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 ///
 /// type CountryCode = String;
 ///
-/// #[table(name = country)]
+/// #[table(accessor = country)]
 /// struct Country {
 ///     #[unique]
 ///     code: CountryCode,
@@ -378,7 +378,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 ///
 /// # Generated code
 ///
-/// For each `[table(name = {name})]` annotation on a type `{T}`, generates a struct
+/// For each `[table(accessor = {name})]` annotation on a type `{T}`, generates a struct
 /// `{name}__TableHandle` implementing [`Table<Row={T}>`](crate::Table), and a trait that allows looking up such a
 /// `{name}Handle` in a [`ReducerContext`].
 ///
@@ -577,7 +577,7 @@ pub use spacetimedb_bindings_macro::table;
 ///
 /// // First, we declare the table with scheduling information.
 ///
-/// #[table(name = send_message_schedule, scheduled(send_message))]
+/// #[table(accessor = send_message_schedule, scheduled(send_message))]
 /// struct SendMessageSchedule {
 ///     // Mandatory fields:
 ///     // ============================
@@ -768,7 +768,7 @@ pub use spacetimedb_bindings_macro::procedure;
 /// use spacetimedb::{view, table, AnonymousViewContext, SpacetimeType, ViewContext};
 /// use spacetimedb_lib::Identity;
 ///
-/// #[table(name = player)]
+/// #[table(accessor = player)]
 /// struct Player {
 ///     #[auto_inc]
 ///     #[primary_key]
@@ -797,7 +797,7 @@ pub use spacetimedb_bindings_macro::procedure;
 ///     id: u64,
 /// }
 ///
-/// #[table(name = location, index(name = coordinates, btree(columns = [x, y])))]
+/// #[table(accessor = location, index(accessor = coordinates, btree(columns = [x, y])))]
 /// struct Location {
 ///     #[unique]
 ///     player_id: u64,
@@ -814,19 +814,19 @@ pub use spacetimedb_bindings_macro::procedure;
 /// }
 ///
 /// // A view that selects at most one row from a table
-/// #[view(name = my_player, public)]
+/// #[view(accessor = my_player, public)]
 /// fn my_player(ctx: &ViewContext) -> Option<Player> {
 ///     ctx.db.player().identity().find(ctx.sender())
 /// }
 ///
 /// // An example of column projection
-/// #[view(name = my_player_id, public)]
+/// #[view(accessor = my_player_id, public)]
 /// fn my_player_id(ctx: &ViewContext) -> Option<PlayerId> {
 ///     ctx.db.player().identity().find(ctx.sender()).map(|Player { id, .. }| PlayerId { id })
 /// }
 ///
 /// // An example that is analogous to a semijoin in sql
-/// #[view(name = players_at_coordinates, public)]
+/// #[view(accessor = players_at_coordinates, public)]
 /// fn players_at_coordinates(ctx: &AnonymousViewContext) -> Vec<Player> {
 ///     ctx
 ///         .db
@@ -838,7 +838,7 @@ pub use spacetimedb_bindings_macro::procedure;
 /// }
 ///
 /// // An example of a join that combines fields from two different tables
-/// #[view(name = players_with_coordinates, public)]
+/// #[view(accessor = players_with_coordinates, public)]
 /// fn players_with_coordinates(ctx: &AnonymousViewContext) -> Vec<PlayerAndLocation> {
 ///     ctx
 ///         .db
@@ -872,7 +872,7 @@ pub use spacetimedb_bindings_macro::procedure;
 pub use spacetimedb_bindings_macro::view;
 
 pub struct QueryBuilder {}
-pub use query_builder::Query;
+pub use query_builder::{Query, RawQuery};
 
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`ViewContext`].
@@ -955,7 +955,7 @@ pub struct ReducerContext {
     /// # #![cfg(target_arch = "wasm32")]
     /// use spacetimedb::{table, reducer, ReducerContext};
     ///
-    /// #[table(name = book)]
+    /// #[table(accessor = book)]
     /// #[derive(Debug)]
     /// struct Book {
     ///     #[primary_key]

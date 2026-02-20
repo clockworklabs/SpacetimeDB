@@ -1074,9 +1074,9 @@ impl From<RawScopedTypeNameV10> for RawScopedTypeNameV9 {
 impl From<RawIndexDefV10> for RawIndexDefV9 {
     fn from(raw: RawIndexDefV10) -> Self {
         RawIndexDefV9 {
-            name: raw.source_name,
-            accessor_name: raw.accessor_name,
+            accessor_name: raw.source_name,
             algorithm: raw.algorithm,
+            name: None,
         }
     }
 }

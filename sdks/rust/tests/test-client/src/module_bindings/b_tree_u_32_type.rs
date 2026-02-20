@@ -48,3 +48,5 @@ impl __sdk::__query_builder::HasIxCols for BTreeU32 {
         }
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for BTreeU32 {}

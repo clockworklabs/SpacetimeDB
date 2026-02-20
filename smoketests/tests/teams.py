@@ -209,7 +209,7 @@ class TeamsPermissionsTest(Smoketest):
 
 class TeamsMutableSql(TeamsPermissionsTest):
     MODULE_CODE = """
-#[spacetimedb::table(name = person, public)]
+#[spacetimedb::table(accessor = person, public)]
 struct Person {
     name: String,
 }
@@ -257,35 +257,35 @@ class OrgMutableSql(TeamsMutableSql):
 
 class TeamsPublishDatabase(TeamsPermissionsTest):
     MODULE_CODE = """
-#[spacetimedb::table(name = person, public)]
+#[spacetimedb::table(accessor = person, public)]
 struct Person {
     name: String,
 }
 """
 
     MODULE_CODE_OWNER = MODULE_CODE + """
-#[spacetimedb::table(name = owner)]
+#[spacetimedb::table(accessor = owner)]
 struct Owner {
     name: String,
 }
 """
 
     MODULE_CODE_ADMIN = MODULE_CODE_OWNER + """
-#[spacetimedb::table(name = admin)]
+#[spacetimedb::table(accessor = admin)]
 struct Admin {
     name: String,
 }
 """
 
     MODULE_CODE_DEVELOPER = MODULE_CODE_ADMIN + """
-#[spacetimedb::table(name = developer)]
+#[spacetimedb::table(accessor = developer)]
 struct Developer {
     name: String,
 }
 """
 
     MODULE_CODE_VIEWER = MODULE_CODE_DEVELOPER + """
-#[spacetimedb::table(name = viewer)]
+#[spacetimedb::table(accessor = viewer)]
 struct Viewer {
     name: String,
 }

@@ -53,7 +53,7 @@ pub fn invoke_cli(paths: &SpacetimePaths, args: &[&str]) {
     RUNTIME
         .block_on(async {
             if cmd == "generate" {
-                spacetimedb_cli::generate::exec_ex(config, sub_args, extract_descriptions).await
+                spacetimedb_cli::generate::exec_ex(config, sub_args, extract_descriptions, false, None).await
             } else {
                 spacetimedb_cli::exec_subcommand(config, paths, None, cmd, sub_args)
                     .await

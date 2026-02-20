@@ -1,13 +1,13 @@
 use self::budget::energy_from_elapsed;
 use self::error::{
-    catch_exception, exception_already_thrown, log_traceback, CanContinue, ErrorOrException, ExcResult,
-    ExceptionThrown, PinTryCatch, Throwable,
+    catch_exception, exception_already_thrown, log_traceback, ErrorOrException, ExcResult, ExceptionThrown,
+    PinTryCatch, Throwable,
 };
 use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
 use self::syscall::{
     call_call_procedure, call_call_reducer, call_call_view, call_call_view_anon, call_describe_module, get_hooks,
-    resolve_sys_module, FnRet, HookFunctions,
+    process_thrown_exception, resolve_sys_module, FnRet, HookFunctions,
 };
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{CallProcedureParams, CallReducerParams, ModuleInfo, ModuleWithInstance};
@@ -43,6 +43,7 @@ use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
+use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_table::static_assert_size;
 use std::panic::AssertUnwindSafe;
@@ -209,6 +210,7 @@ fn env_on_isolate_unwrap(isolate: &mut Isolate) -> &mut JsInstanceEnv {
 /// The environment of a [`JsInstance`].
 struct JsInstanceEnv {
     instance_env: InstanceEnv,
+    module_def: Option<Arc<ModuleDef>>,
 
     /// The slab of `BufferIters` created for this instance.
     iters: RowIters,
@@ -232,6 +234,7 @@ impl JsInstanceEnv {
     fn new(instance_env: InstanceEnv) -> Self {
         Self {
             instance_env,
+            module_def: None,
             call_times: CallTimes::new(),
             iters: <_>::default(),
             chunk_pool: <_>::default(),
@@ -271,6 +274,14 @@ impl JsInstanceEnv {
             total_duration,
             wasm_instance_env_call_times,
         }
+    }
+
+    fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
+        self.module_def = Some(module_def);
+    }
+
+    fn module_def(&self) -> Option<Arc<ModuleDef>> {
+        self.module_def.clone()
     }
 }
 
@@ -601,20 +612,25 @@ async fn spawn_instance_worker(
 
         // Setup the JS module, find call_reducer, and maybe build the module.
         let send_result = |res| {
-            if result_tx.send(res).is_err() {
-                unreachable!("should have a live receiver");
-            }
+            result_tx.send(res).inspect_err(|_| {
+                // This should never happen as we immediately `.recv` on the
+                // other end of the channel, but sometimes it gets cancelled.
+                log::error!("startup result receiver disconnected");
+            })
         };
         let (hooks, module_common) = match startup_instance_worker(scope, program, module_or_mcc) {
             Err(err) => {
                 // There was some error in module setup.
                 // Return the error and terminate the worker.
-                send_result(Err(err));
+                let _ = send_result(Err(err));
                 return;
             }
             Ok((crf, module_common)) => {
+                env_on_isolate_unwrap(scope).set_module_def(module_common.info().module_def.clone());
                 // Success! Send `module_common` to the spawner.
-                send_result(Ok(module_common.clone()));
+                if send_result(Ok(module_common.clone())).is_err() {
+                    return;
+                }
                 (crf, module_common)
             }
         };
@@ -752,8 +768,7 @@ async fn spawn_instance_worker(
 }
 
 /// The embedder data slot for the `__get_error_constructor__` function.
-/// One greater than the greatest value of [`syscall::ModuleHookKey`].
-const GET_ERROR_CONSTRUCTOR_SLOT: i32 = 5;
+const GET_ERROR_CONSTRUCTOR_SLOT: i32 = syscall::ModuleHookKey::GetErrorConstructor as i32;
 
 /// Compiles, instantiate, and evaluate `code` as a module.
 fn eval_module<'scope>(
@@ -849,21 +864,25 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
         self.scope.get_slot::<JsInstanceEnv>().unwrap().instance_env.tx.clone()
     }
 
+    fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
+        env_on_isolate_unwrap(self.scope).set_module_def(module_def);
+    }
+
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {
-        common_call(self.scope, budget, op, |scope, op| {
+        common_call(self.scope, self.hooks, budget, op, |scope, op| {
             Ok(call_call_reducer(scope, self.hooks, op, self.reducer_args_buf)?)
         })
         .map_result(|call_result| call_result.and_then(|res| res.map_err(ExecutionError::User)))
     }
 
     fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
-        common_call(self.scope, budget, op, |scope, op| {
+        common_call(self.scope, self.hooks, budget, op, |scope, op| {
             call_call_view(scope, self.hooks, op)
         })
     }
 
     fn call_view_anon(&mut self, op: AnonymousViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
-        common_call(self.scope, budget, op, |scope, op| {
+        common_call(self.scope, self.hooks, budget, op, |scope, op| {
             call_call_view_anon(scope, self.hooks, op)
         })
     }
@@ -877,7 +896,7 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
         op: ProcedureOp,
         budget: FunctionBudget,
     ) -> (ProcedureExecuteResult, Option<TransactionOffset>) {
-        let result = common_call(self.scope, budget, op, |scope, op| {
+        let result = common_call(self.scope, self.hooks, budget, op, |scope, op| {
             call_call_procedure(scope, self.hooks, op)
         })
         .map_result(|call_result| {
@@ -895,6 +914,7 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
 
 fn common_call<'scope, R, O, F>(
     scope: &mut PinScope<'scope, '_>,
+    hooks: &HookFunctions<'_>,
     budget: FunctionBudget,
     op: O,
     call: F,
@@ -910,26 +930,31 @@ where
     // We'd like this tightly around `call`.
     env.start_funcall(op.name().clone(), op.timestamp(), op.call_type());
 
-    // By default, we can continue execution, but an exception might mean that we can't.
-    let mut can_continue = CanContinue::Yes;
-    let call_result = catch_exception(scope, |scope| {
-        let res = call(scope, op);
-        if let Err(ErrorOrException::Exception(_)) = res {
-            can_continue = CanContinue::from_catch(scope);
-        }
-        res
-    })
-    .map_err(|e| {
-        // Convert `can_continue` to whether the isolate has "trapped".
-        // Also cancel execution termination if needed,
-        // that can occur due to terminating long running reducers.
-        match can_continue {
-            CanContinue::No => ExecutionError::Trap(e.into()),
-            CanContinue::Yes => ExecutionError::Recoverable(e.into()),
-            CanContinue::YesCancelTermination => {
-                scope.cancel_terminate_execution();
-                ExecutionError::Recoverable(e.into())
+    v8::tc_scope!(scope, scope);
+    let call_result = call(scope, op).map_err(|mut e| {
+        if let ErrorOrException::Exception(_) = e {
+            // If we're terminating execution, don't try to check `instanceof`.
+            if scope.can_continue() {
+                if let Some(exc) = scope.exception() {
+                    match process_thrown_exception(scope, hooks, exc) {
+                        Ok(Some(err)) => return err,
+                        Ok(None) => {}
+                        Err(exc) => e = ErrorOrException::Exception(exc),
+                    }
+                }
             }
+        }
+        let e = e.map_exception(|exc| exc.into_error(scope)).into();
+        if scope.can_continue() {
+            // We can continue.
+            ExecutionError::Recoverable(e)
+        } else if scope.has_terminated() {
+            // We can continue if we do `Isolate::cancel_terminate_execution`.
+            scope.cancel_terminate_execution();
+            ExecutionError::Recoverable(e)
+        } else {
+            // We cannot continue.
+            ExecutionError::Trap(e)
         }
     });
 
@@ -1025,9 +1050,9 @@ mod test {
             })
         "#,
         );
-        let actual = format!("{}", ret.expect_err("should trap")).replace("\t", "    ");
+        let actual = ret.expect_err("should trap").to_string().replace("\t", "    ");
         let expected = r#"
-js error Uncaught Error: foobar
+Uncaught Error: foobar
     at __call_reducer__ (spacetimedb_module:6:27)
         "#;
         assert_eq!(actual.trim(), expected.trim());

@@ -309,4 +309,61 @@ public sealed class QueryBuilderTests
             sql
         );
     }
+
+    [Fact]
+    public void BoolExpr_Not_FormatsCorrectly()
+    {
+        var age = new Col<Row, int>("T", "Age");
+        var expr = age.Gt(18).Not();
+        Assert.Equal("(NOT (\"T\".\"Age\" > 18))", expr.Sql);
+    }
+
+    [Fact]
+    public void BoolExpr_NotWithAnd_FormatsCorrectly()
+    {
+        var age = new Col<Row, int>("T", "Age");
+        var isAdmin = new Col<Row, bool>("T", "IsAdmin");
+        var expr = age.Gt(18).Not().And(isAdmin.Eq(true));
+        Assert.Equal("((NOT (\"T\".\"Age\" > 18)) AND (\"T\".\"IsAdmin\" = TRUE))", expr.Sql);
+    }
+
+    [Fact]
+    public void Table_ImplementsIQuery()
+    {
+        var table = MakeTable("T");
+        IQuery<Row> query = table;
+        Assert.Equal("SELECT * FROM \"T\"", query.ToSql());
+    }
+
+    [Fact]
+    public void FromWhere_ImplementsIQuery()
+    {
+        var table = MakeTable("T");
+        IQuery<Row> query = table.Where(c => c.Age.Gt(18));
+        Assert.Equal("SELECT * FROM \"T\" WHERE (\"T\".\"Age\" > 18)", query.ToSql());
+    }
+
+    [Fact]
+    public void LeftSemijoin_ImplementsIQuery()
+    {
+        var left = MakeLeftTable("users");
+        var right = MakeRightTable("other");
+        IQuery<LeftRow> query = left.LeftSemijoin(right, (l, r) => l.Id.Eq(r.Uid));
+        Assert.Equal(
+            "SELECT \"users\".* FROM \"users\" JOIN \"other\" ON \"users\".\"id\" = \"other\".\"uid\"",
+            query.ToSql()
+        );
+    }
+
+    [Fact]
+    public void RightSemijoin_ImplementsIQuery()
+    {
+        var left = MakeLeftTable("users");
+        var right = MakeRightTable("other");
+        IQuery<RightRow> query = left.RightSemijoin(right, (l, r) => l.Id.Eq(r.Uid));
+        Assert.Equal(
+            "SELECT \"other\".* FROM \"users\" JOIN \"other\" ON \"users\".\"id\" = \"other\".\"uid\"",
+            query.ToSql()
+        );
+    }
 }

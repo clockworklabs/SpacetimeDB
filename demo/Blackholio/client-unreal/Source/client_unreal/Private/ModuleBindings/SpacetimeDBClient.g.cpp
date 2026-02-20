@@ -14,46 +14,10 @@ static FReducer DecodeReducer(const FReducerEvent& Event)
 {
     const FString& ReducerName = Event.ReducerCall.ReducerName;
 
-    if (ReducerName == TEXT("circle_decay"))
-    {
-        FCircleDecayArgs Args = UE::SpacetimeDB::Deserialize<FCircleDecayArgs>(Event.ReducerCall.Args);
-        return FReducer::CircleDecay(Args);
-    }
-
-    if (ReducerName == TEXT("circle_recombine"))
-    {
-        FCircleRecombineArgs Args = UE::SpacetimeDB::Deserialize<FCircleRecombineArgs>(Event.ReducerCall.Args);
-        return FReducer::CircleRecombine(Args);
-    }
-
-    if (ReducerName == TEXT("connect"))
-    {
-        FConnectArgs Args = UE::SpacetimeDB::Deserialize<FConnectArgs>(Event.ReducerCall.Args);
-        return FReducer::Connect(Args);
-    }
-
-    if (ReducerName == TEXT("consume_entity"))
-    {
-        FConsumeEntityArgs Args = UE::SpacetimeDB::Deserialize<FConsumeEntityArgs>(Event.ReducerCall.Args);
-        return FReducer::ConsumeEntity(Args);
-    }
-
-    if (ReducerName == TEXT("disconnect"))
-    {
-        FDisconnectArgs Args = UE::SpacetimeDB::Deserialize<FDisconnectArgs>(Event.ReducerCall.Args);
-        return FReducer::Disconnect(Args);
-    }
-
     if (ReducerName == TEXT("enter_game"))
     {
         FEnterGameArgs Args = UE::SpacetimeDB::Deserialize<FEnterGameArgs>(Event.ReducerCall.Args);
         return FReducer::EnterGame(Args);
-    }
-
-    if (ReducerName == TEXT("move_all_players"))
-    {
-        FMoveAllPlayersArgs Args = UE::SpacetimeDB::Deserialize<FMoveAllPlayersArgs>(Event.ReducerCall.Args);
-        return FReducer::MoveAllPlayers(Args);
     }
 
     if (ReducerName == TEXT("player_split"))
@@ -66,12 +30,6 @@ static FReducer DecodeReducer(const FReducerEvent& Event)
     {
         FRespawnArgs Args = UE::SpacetimeDB::Deserialize<FRespawnArgs>(Event.ReducerCall.Args);
         return FReducer::Respawn(Args);
-    }
-
-    if (ReducerName == TEXT("spawn_food"))
-    {
-        FSpawnFoodArgs Args = UE::SpacetimeDB::Deserialize<FSpawnFoodArgs>(Event.ReducerCall.Args);
-        return FReducer::SpawnFood(Args);
     }
 
     if (ReducerName == TEXT("suicide"))
@@ -159,33 +117,9 @@ void URemoteTables::Initialize()
 	/**/
 }
 
-void USetReducerFlags::CircleDecay(ECallReducerFlags Flag)
-{
-	FlagMap.Add("CircleDecay", Flag);
-}
-void USetReducerFlags::CircleRecombine(ECallReducerFlags Flag)
-{
-	FlagMap.Add("CircleRecombine", Flag);
-}
-void USetReducerFlags::Connect(ECallReducerFlags Flag)
-{
-	FlagMap.Add("Connect", Flag);
-}
-void USetReducerFlags::ConsumeEntity(ECallReducerFlags Flag)
-{
-	FlagMap.Add("ConsumeEntity", Flag);
-}
-void USetReducerFlags::Disconnect(ECallReducerFlags Flag)
-{
-	FlagMap.Add("Disconnect", Flag);
-}
 void USetReducerFlags::EnterGame(ECallReducerFlags Flag)
 {
 	FlagMap.Add("EnterGame", Flag);
-}
-void USetReducerFlags::MoveAllPlayers(ECallReducerFlags Flag)
-{
-	FlagMap.Add("MoveAllPlayers", Flag);
 }
 void USetReducerFlags::PlayerSplit(ECallReducerFlags Flag)
 {
@@ -195,10 +129,6 @@ void USetReducerFlags::Respawn(ECallReducerFlags Flag)
 {
 	FlagMap.Add("Respawn", Flag);
 }
-void USetReducerFlags::SpawnFood(ECallReducerFlags Flag)
-{
-	FlagMap.Add("SpawnFood", Flag);
-}
 void USetReducerFlags::Suicide(ECallReducerFlags Flag)
 {
 	FlagMap.Add("Suicide", Flag);
@@ -206,226 +136,6 @@ void USetReducerFlags::Suicide(ECallReducerFlags Flag)
 void USetReducerFlags::UpdatePlayerInput(ECallReducerFlags Flag)
 {
 	FlagMap.Add("UpdatePlayerInput", Flag);
-}
-
-void URemoteReducers::CircleDecay(const FCircleDecayTimerType& Timer)
-{
-    if (!Conn)
-    {
-        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
-        return;
-    }
-
-	Conn->CallReducerTyped(TEXT("circle_decay"), FCircleDecayArgs(Timer), SetCallReducerFlags);
-}
-
-bool URemoteReducers::InvokeCircleDecay(const FReducerEventContext& Context, const UCircleDecayReducer* Args)
-{
-    if (!OnCircleDecay.IsBound())
-    {
-        // Handle unhandled reducer error
-        if (InternalOnUnhandledReducerError.IsBound())
-        {
-            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
-            // For now, just broadcast any error
-            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for CircleDecay"));
-        }
-        return false;
-    }
-
-    OnCircleDecay.Broadcast(Context, Args->Timer);
-    return true;
-}
-
-bool URemoteReducers::InvokeCircleDecayWithArgs(const FReducerEventContext& Context, const FCircleDecayArgs& Args)
-{
-    if (!OnCircleDecay.IsBound())
-    {
-        if (InternalOnUnhandledReducerError.IsBound())
-        {
-            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for CircleDecay"));
-        }
-        return false;
-    }
-
-    OnCircleDecay.Broadcast(Context, Args.Timer);
-    return true;
-}
-
-void URemoteReducers::CircleRecombine(const FCircleRecombineTimerType& Timer)
-{
-    if (!Conn)
-    {
-        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
-        return;
-    }
-
-	Conn->CallReducerTyped(TEXT("circle_recombine"), FCircleRecombineArgs(Timer), SetCallReducerFlags);
-}
-
-bool URemoteReducers::InvokeCircleRecombine(const FReducerEventContext& Context, const UCircleRecombineReducer* Args)
-{
-    if (!OnCircleRecombine.IsBound())
-    {
-        // Handle unhandled reducer error
-        if (InternalOnUnhandledReducerError.IsBound())
-        {
-            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
-            // For now, just broadcast any error
-            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for CircleRecombine"));
-        }
-        return false;
-    }
-
-    OnCircleRecombine.Broadcast(Context, Args->Timer);
-    return true;
-}
-
-bool URemoteReducers::InvokeCircleRecombineWithArgs(const FReducerEventContext& Context, const FCircleRecombineArgs& Args)
-{
-    if (!OnCircleRecombine.IsBound())
-    {
-        if (InternalOnUnhandledReducerError.IsBound())
-        {
-            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for CircleRecombine"));
-        }
-        return false;
-    }
-
-    OnCircleRecombine.Broadcast(Context, Args.Timer);
-    return true;
-}
-
-void URemoteReducers::Connect()
-{
-    if (!Conn)
-    {
-        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
-        return;
-    }
-
-	Conn->CallReducerTyped(TEXT("connect"), FConnectArgs(), SetCallReducerFlags);
-}
-
-bool URemoteReducers::InvokeConnect(const FReducerEventContext& Context, const UConnectReducer* Args)
-{
-    if (!OnConnect.IsBound())
-    {
-        // Handle unhandled reducer error
-        if (InternalOnUnhandledReducerError.IsBound())
-        {
-            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
-            // For now, just broadcast any error
-            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for Connect"));
-        }
-        return false;
-    }
-
-    OnConnect.Broadcast(Context);
-    return true;
-}
-
-bool URemoteReducers::InvokeConnectWithArgs(const FReducerEventContext& Context, const FConnectArgs& Args)
-{
-    if (!OnConnect.IsBound())
-    {
-        if (InternalOnUnhandledReducerError.IsBound())
-        {
-            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for Connect"));
-        }
-        return false;
-    }
-
-    OnConnect.Broadcast(Context);
-    return true;
-}
-
-void URemoteReducers::ConsumeEntity(const FConsumeEntityTimerType& Request)
-{
-    if (!Conn)
-    {
-        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
-        return;
-    }
-
-	Conn->CallReducerTyped(TEXT("consume_entity"), FConsumeEntityArgs(Request), SetCallReducerFlags);
-}
-
-bool URemoteReducers::InvokeConsumeEntity(const FReducerEventContext& Context, const UConsumeEntityReducer* Args)
-{
-    if (!OnConsumeEntity.IsBound())
-    {
-        // Handle unhandled reducer error
-        if (InternalOnUnhandledReducerError.IsBound())
-        {
-            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
-            // For now, just broadcast any error
-            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for ConsumeEntity"));
-        }
-        return false;
-    }
-
-    OnConsumeEntity.Broadcast(Context, Args->Request);
-    return true;
-}
-
-bool URemoteReducers::InvokeConsumeEntityWithArgs(const FReducerEventContext& Context, const FConsumeEntityArgs& Args)
-{
-    if (!OnConsumeEntity.IsBound())
-    {
-        if (InternalOnUnhandledReducerError.IsBound())
-        {
-            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for ConsumeEntity"));
-        }
-        return false;
-    }
-
-    OnConsumeEntity.Broadcast(Context, Args.Request);
-    return true;
-}
-
-void URemoteReducers::Disconnect()
-{
-    if (!Conn)
-    {
-        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
-        return;
-    }
-
-	Conn->CallReducerTyped(TEXT("disconnect"), FDisconnectArgs(), SetCallReducerFlags);
-}
-
-bool URemoteReducers::InvokeDisconnect(const FReducerEventContext& Context, const UDisconnectReducer* Args)
-{
-    if (!OnDisconnect.IsBound())
-    {
-        // Handle unhandled reducer error
-        if (InternalOnUnhandledReducerError.IsBound())
-        {
-            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
-            // For now, just broadcast any error
-            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for Disconnect"));
-        }
-        return false;
-    }
-
-    OnDisconnect.Broadcast(Context);
-    return true;
-}
-
-bool URemoteReducers::InvokeDisconnectWithArgs(const FReducerEventContext& Context, const FDisconnectArgs& Args)
-{
-    if (!OnDisconnect.IsBound())
-    {
-        if (InternalOnUnhandledReducerError.IsBound())
-        {
-            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for Disconnect"));
-        }
-        return false;
-    }
-
-    OnDisconnect.Broadcast(Context);
-    return true;
 }
 
 void URemoteReducers::EnterGame(const FString& Name)
@@ -469,50 +179,6 @@ bool URemoteReducers::InvokeEnterGameWithArgs(const FReducerEventContext& Contex
     }
 
     OnEnterGame.Broadcast(Context, Args.Name);
-    return true;
-}
-
-void URemoteReducers::MoveAllPlayers(const FMoveAllPlayersTimerType& Timer)
-{
-    if (!Conn)
-    {
-        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
-        return;
-    }
-
-	Conn->CallReducerTyped(TEXT("move_all_players"), FMoveAllPlayersArgs(Timer), SetCallReducerFlags);
-}
-
-bool URemoteReducers::InvokeMoveAllPlayers(const FReducerEventContext& Context, const UMoveAllPlayersReducer* Args)
-{
-    if (!OnMoveAllPlayers.IsBound())
-    {
-        // Handle unhandled reducer error
-        if (InternalOnUnhandledReducerError.IsBound())
-        {
-            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
-            // For now, just broadcast any error
-            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for MoveAllPlayers"));
-        }
-        return false;
-    }
-
-    OnMoveAllPlayers.Broadcast(Context, Args->Timer);
-    return true;
-}
-
-bool URemoteReducers::InvokeMoveAllPlayersWithArgs(const FReducerEventContext& Context, const FMoveAllPlayersArgs& Args)
-{
-    if (!OnMoveAllPlayers.IsBound())
-    {
-        if (InternalOnUnhandledReducerError.IsBound())
-        {
-            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for MoveAllPlayers"));
-        }
-        return false;
-    }
-
-    OnMoveAllPlayers.Broadcast(Context, Args.Timer);
     return true;
 }
 
@@ -601,50 +267,6 @@ bool URemoteReducers::InvokeRespawnWithArgs(const FReducerEventContext& Context,
     }
 
     OnRespawn.Broadcast(Context);
-    return true;
-}
-
-void URemoteReducers::SpawnFood(const FSpawnFoodTimerType& Timer)
-{
-    if (!Conn)
-    {
-        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
-        return;
-    }
-
-	Conn->CallReducerTyped(TEXT("spawn_food"), FSpawnFoodArgs(Timer), SetCallReducerFlags);
-}
-
-bool URemoteReducers::InvokeSpawnFood(const FReducerEventContext& Context, const USpawnFoodReducer* Args)
-{
-    if (!OnSpawnFood.IsBound())
-    {
-        // Handle unhandled reducer error
-        if (InternalOnUnhandledReducerError.IsBound())
-        {
-            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
-            // For now, just broadcast any error
-            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for SpawnFood"));
-        }
-        return false;
-    }
-
-    OnSpawnFood.Broadcast(Context, Args->Timer);
-    return true;
-}
-
-bool URemoteReducers::InvokeSpawnFoodWithArgs(const FReducerEventContext& Context, const FSpawnFoodArgs& Args)
-{
-    if (!OnSpawnFood.IsBound())
-    {
-        if (InternalOnUnhandledReducerError.IsBound())
-        {
-            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for SpawnFood"));
-        }
-        return false;
-    }
-
-    OnSpawnFood.Broadcast(Context, Args.Timer);
     return true;
 }
 
@@ -790,46 +412,10 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
     // Use hardcoded string matching for reducer dispatching
     const FString& ReducerName = Event.ReducerCall.ReducerName;
 
-    if (ReducerName == TEXT("circle_decay"))
-    {
-        FCircleDecayArgs Args = ReducerEvent.Reducer.GetAsCircleDecay();
-        Reducers->InvokeCircleDecayWithArgs(Context, Args);
-        return;
-    }
-    if (ReducerName == TEXT("circle_recombine"))
-    {
-        FCircleRecombineArgs Args = ReducerEvent.Reducer.GetAsCircleRecombine();
-        Reducers->InvokeCircleRecombineWithArgs(Context, Args);
-        return;
-    }
-    if (ReducerName == TEXT("connect"))
-    {
-        FConnectArgs Args = ReducerEvent.Reducer.GetAsConnect();
-        Reducers->InvokeConnectWithArgs(Context, Args);
-        return;
-    }
-    if (ReducerName == TEXT("consume_entity"))
-    {
-        FConsumeEntityArgs Args = ReducerEvent.Reducer.GetAsConsumeEntity();
-        Reducers->InvokeConsumeEntityWithArgs(Context, Args);
-        return;
-    }
-    if (ReducerName == TEXT("disconnect"))
-    {
-        FDisconnectArgs Args = ReducerEvent.Reducer.GetAsDisconnect();
-        Reducers->InvokeDisconnectWithArgs(Context, Args);
-        return;
-    }
     if (ReducerName == TEXT("enter_game"))
     {
         FEnterGameArgs Args = ReducerEvent.Reducer.GetAsEnterGame();
         Reducers->InvokeEnterGameWithArgs(Context, Args);
-        return;
-    }
-    if (ReducerName == TEXT("move_all_players"))
-    {
-        FMoveAllPlayersArgs Args = ReducerEvent.Reducer.GetAsMoveAllPlayers();
-        Reducers->InvokeMoveAllPlayersWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("player_split"))
@@ -842,12 +428,6 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
     {
         FRespawnArgs Args = ReducerEvent.Reducer.GetAsRespawn();
         Reducers->InvokeRespawnWithArgs(Context, Args);
-        return;
-    }
-    if (ReducerName == TEXT("spawn_food"))
-    {
-        FSpawnFoodArgs Args = ReducerEvent.Reducer.GetAsSpawnFood();
-        Reducers->InvokeSpawnFoodWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("suicide"))

@@ -28,7 +28,7 @@
 //! const MODULE_CODE: &str = r#"
 //! use spacetimedb::{table, reducer};
 //!
-//! #[spacetimedb::table(name = person, public)]
+//! #[spacetimedb::table(accessor = person, public)]
 //! pub struct Person {
 //!     name: String,
 //! }
@@ -169,6 +169,33 @@ pub fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// Rewrites `spacetimedb` dependency in `<module_dir>/Cargo.toml` to use local workspace bindings.
+pub fn patch_module_cargo_to_local_bindings(module_dir: &Path) -> Result<()> {
+    let cargo_toml_path = module_dir.join("Cargo.toml");
+    let cargo_toml = fs::read_to_string(&cargo_toml_path)
+        .with_context(|| format!("Failed to read {}", cargo_toml_path.display()))?;
+
+    let bindings_path = workspace_root().join("crates/bindings");
+    let bindings_path_str = bindings_path.display().to_string().replace('\\', "/");
+    let replacement = format!(r#"spacetimedb = {{ path = "{bindings_path_str}", features = ["unstable"] }}"#);
+
+    let patched = cargo_toml
+        .lines()
+        .map(|line| {
+            if line.trim_start().starts_with("spacetimedb = ") {
+                replacement.as_str()
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    fs::write(&cargo_toml_path, format!("{patched}\n"))
+        .with_context(|| format!("Failed to write {}", cargo_toml_path.display()))?;
+    Ok(())
+}
+
 /// Returns the shared target directory for smoketest module builds.
 ///
 /// All tests share this directory to cache compiled dependencies. The warmup step
@@ -249,6 +276,73 @@ pub fn have_psql() -> bool {
 pub fn pnpm_path() -> Option<PathBuf> {
     static PNPM_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
     PNPM_PATH.get_or_init(|| which("pnpm").ok()).clone()
+}
+
+/// Runs a command and returns stdout as a string.
+pub fn run_cmd(args: &[&str], cwd: &Path) -> Result<String> {
+    run_cmd_inner(args, cwd, None)
+}
+
+/// Runs a command with stdin input and returns stdout as a string.
+pub fn run_cmd_with_stdin(args: &[&str], cwd: &Path, stdin_input: &str) -> Result<String> {
+    run_cmd_inner(args, cwd, Some(stdin_input))
+}
+
+fn run_cmd_inner(args: &[&str], cwd: &Path, stdin_input: Option<&str>) -> Result<String> {
+    let Some(program) = args.first() else {
+        bail!("run_cmd called with no program");
+    };
+
+    let mut cmd = Command::new(program);
+    cmd.args(&args[1..])
+        .current_dir(cwd)
+        .stderr(Stdio::piped())
+        .stdout(Stdio::piped());
+
+    if stdin_input.is_some() {
+        cmd.stdin(Stdio::piped());
+    }
+
+    let mut child = cmd
+        .spawn()
+        .with_context(|| format!("Failed to spawn command: {args:?}"))?;
+
+    if let Some(input) = stdin_input {
+        use std::io::Write;
+        if let Some(stdin) = child.stdin.as_mut() {
+            stdin.write_all(input.as_bytes())?;
+        }
+    }
+
+    let output = child.wait_with_output()?;
+
+    if !output.status.success() {
+        bail!(
+            "command {:?} failed:\nstdout: {}\nstderr: {}",
+            args,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Runs a `pnpm` command and returns stdout as a string.
+pub fn pnpm(args: &[&str], cwd: &Path) -> Result<String> {
+    let pnpm_path = pnpm_path().context("Could not locate pnpm")?;
+    let pnpm_path = pnpm_path.to_str().context("pnpm path is not valid UTF-8")?;
+    let mut full_args = vec![pnpm_path];
+    full_args.extend(args);
+    run_cmd(&full_args, cwd)
+}
+
+/// Builds the local TypeScript bindings package.
+pub fn build_typescript_sdk() -> Result<()> {
+    let workspace = workspace_root();
+    let ts_bindings = workspace.join("crates/bindings-typescript");
+    pnpm(&["install"], &ts_bindings)?;
+    pnpm(&["build"], &ts_bindings)?;
+    Ok(())
 }
 
 /// Returns true if Emscripten (emcc) is available on the system.
@@ -675,6 +769,61 @@ impl Smoketest {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
+    /// Initializes, writes, and publishes a TypeScript module from source.
+    ///
+    /// The module is initialized at `<test_project_dir>/<project_dir_name>/spacetimedb`.
+    /// On success this updates `self.database_identity`.
+    pub fn publish_typescript_module_source(
+        &mut self,
+        project_dir_name: &str,
+        module_name: &str,
+        module_source: &str,
+    ) -> Result<String> {
+        let module_root = self.project_dir.path().join(project_dir_name);
+        let module_root_str = module_root.to_str().context("Invalid TypeScript project path")?;
+        self.spacetime(&[
+            "init",
+            "--non-interactive",
+            "--lang",
+            "typescript",
+            "--project-path",
+            module_root_str,
+            module_name,
+        ])?;
+
+        let module_path = module_root.join("spacetimedb");
+        fs::write(module_path.join("src/index.ts"), module_source).context("Failed to write TypeScript module code")?;
+
+        build_typescript_sdk()?;
+        let _ = pnpm(&["uninstall", "spacetimedb"], &module_path);
+
+        let ts_bindings = workspace_root().join("crates/bindings-typescript");
+        let ts_bindings_path = ts_bindings.to_str().context("Invalid TypeScript bindings path")?;
+        pnpm(&["install", ts_bindings_path], &module_path)?;
+
+        let module_path_str = module_path.to_str().context("Invalid TypeScript module path")?;
+        let publish_output = self.spacetime(&[
+            "publish",
+            "--server",
+            &self.server_url,
+            "--module-path",
+            module_path_str,
+            "--yes",
+            "--clear-database",
+            module_name,
+        ])?;
+
+        let re = Regex::new(r"identity: ([0-9a-fA-F]+)").unwrap();
+        let identity = re
+            .captures(&publish_output)
+            .and_then(|caps| caps.get(1))
+            .map(|m| m.as_str().to_string())
+            .context("Failed to parse database identity from publish output")?;
+        self.database_identity = Some(identity.clone());
+
+        Ok(identity)
+    }
+
     /// Writes new module code to the project.
     ///
     /// This switches from precompiled mode to runtime compilation mode.
@@ -766,7 +915,7 @@ log = "0.4"
         let cli_path = ensure_binaries_built();
 
         let mut cmd = Command::new(&cli_path);
-        cmd.args(["build", "--project-path", project_path])
+        cmd.args(["build", "--module-path", project_path])
             .current_dir(self.project_dir.path())
             .env("CARGO_TARGET_DIR", shared_target_dir());
 
@@ -842,7 +991,7 @@ log = "0.4"
 
             let mut build_cmd = Command::new(&cli_path);
             build_cmd
-                .args(["build", "--project-path", &project_path])
+                .args(["build", "--module-path", &project_path])
                 .current_dir(self.project_dir.path())
                 .env("CARGO_TARGET_DIR", &target_dir);
 

@@ -16,9 +16,10 @@ import { DbConnection, type ErrorContext } from './module_bindings';
 
 const HOST = import.meta.env.VITE_SPACETIMEDB_HOST ?? 'ws://localhost:3000';
 const DB_NAME = import.meta.env.VITE_SPACETIMEDB_DB_NAME ?? 'nuxt-ts';
+const TOKEN_KEY = `${HOST}/${DB_NAME}/auth_token`;
 
 const onConnect = (_conn: DbConnection, identity: Identity, token: string) => {
-  localStorage.setItem('auth_token', token);
+  localStorage.setItem(TOKEN_KEY, token);
   console.log(
     'Connected to SpacetimeDB with identity:',
     identity.toHexString()
@@ -36,8 +37,8 @@ const onConnectError = (_ctx: ErrorContext, err: Error) => {
 const connectionBuilder = import.meta.client
   ? DbConnection.builder()
       .withUri(HOST)
-      .withModuleName(DB_NAME)
-      .withToken(localStorage.getItem('auth_token') || undefined)
+      .withDatabaseName(DB_NAME)
+      .withToken(localStorage.getItem(TOKEN_KEY) || undefined)
       .onConnect(onConnect)
       .onDisconnect(onDisconnect)
       .onConnectError(onConnectError)

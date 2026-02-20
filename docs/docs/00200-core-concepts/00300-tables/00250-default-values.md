@@ -5,6 +5,7 @@ slug: /tables/default-values
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Default values allow you to add new columns to existing tables during [automatic migrations](/databases/automatic-migrations). When you republish a module with a new column that has a default value, existing rows are automatically populated with that default.
@@ -38,7 +39,7 @@ The `.default(value)` method can be chained on any column type builder. The valu
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "Player", Public = true)]
+[SpacetimeDB.Table(Accessor = "Player", Public = true)]
 public partial struct Player
 {
     [SpacetimeDB.PrimaryKey]
@@ -65,7 +66,7 @@ The `[SpacetimeDB.Default(value)]` attribute specifies the default value. The va
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = player, public)]
+#[spacetimedb::table(accessor = player, public)]
 pub struct Player {
     #[primary_key]
     #[auto_inc]
@@ -87,6 +88,8 @@ Default values in Rust must be const-evaluable. This means you **cannot** use `S
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 struct Player {

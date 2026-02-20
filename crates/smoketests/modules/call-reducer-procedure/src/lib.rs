@@ -1,6 +1,6 @@
 use spacetimedb::{log, ProcedureContext, ReducerContext};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     name: String,
 }

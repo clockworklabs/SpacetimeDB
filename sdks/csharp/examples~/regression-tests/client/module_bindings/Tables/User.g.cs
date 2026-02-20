@@ -17,48 +17,48 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "user";
 
-            public sealed class AgeIndex : BTreeIndexBase<byte>
+            public sealed class UserAgeIdxBtreeIndex : BTreeIndexBase<byte>
             {
                 protected override byte GetKey(User row) => row.Age;
 
-                public AgeIndex(UserHandle table) : base(table) { }
+                public UserAgeIdxBtreeIndex(UserHandle table) : base(table) { }
             }
 
-            public readonly AgeIndex Age;
+            public readonly UserAgeIdxBtreeIndex UserAgeIdxBtree;
 
-            public sealed class IdUniqueIndex : UniqueIndexBase<SpacetimeDB.Uuid>
+            public sealed class UserIdIdxBtreeUniqueIndex : UniqueIndexBase<SpacetimeDB.Uuid>
             {
                 protected override SpacetimeDB.Uuid GetKey(User row) => row.Id;
 
-                public IdUniqueIndex(UserHandle table) : base(table) { }
+                public UserIdIdxBtreeUniqueIndex(UserHandle table) : base(table) { }
             }
 
-            public readonly IdUniqueIndex Id;
+            public readonly UserIdIdxBtreeUniqueIndex UserIdIdxBtree;
 
-            public sealed class IsAdminIndex : BTreeIndexBase<bool>
+            public sealed class UserIsAdminIdxBtreeIndex : BTreeIndexBase<bool>
             {
                 protected override bool GetKey(User row) => row.IsAdmin;
 
-                public IsAdminIndex(UserHandle table) : base(table) { }
+                public UserIsAdminIdxBtreeIndex(UserHandle table) : base(table) { }
             }
 
-            public readonly IsAdminIndex IsAdmin;
+            public readonly UserIsAdminIdxBtreeIndex UserIsAdminIdxBtree;
 
-            public sealed class NameIndex : BTreeIndexBase<string>
+            public sealed class UserNameIdxBtreeIndex : BTreeIndexBase<string>
             {
                 protected override string GetKey(User row) => row.Name;
 
-                public NameIndex(UserHandle table) : base(table) { }
+                public UserNameIdxBtreeIndex(UserHandle table) : base(table) { }
             }
 
-            public readonly NameIndex Name;
+            public readonly UserNameIdxBtreeIndex UserNameIdxBtree;
 
             internal UserHandle(DbConnection conn) : base(conn)
             {
-                Age = new(this);
-                Id = new(this);
-                IsAdmin = new(this);
-                Name = new(this);
+                UserAgeIdxBtree = new(this);
+                UserIdIdxBtree = new(this);
+                UserIsAdminIdxBtree = new(this);
+                UserNameIdxBtree = new(this);
             }
 
             protected override object GetPrimaryKey(User row) => row.Id;
