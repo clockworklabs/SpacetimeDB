@@ -108,38 +108,6 @@ conn.Reducers.DealDamage(target, amount);
 </TabItem>
 <TabItem value="rust" label="Rust">
 
-<Tabs groupId="client-language" queryString>
-<TabItem value="typescript" label="TypeScript">
-
-TODO
-
-</TabItem>
-<TabItem value="csharp" label="C#">
-
-```csharp
-// 2.0 -- per-call callback on the calling connection
-conn.Reducers.OnDealDamage += (ctx, _, _) =>
-{
-    if (ctx.Event.Status is Status.Committed)
-    {
-        Console.WriteLine("Reducer succeeded");
-    }
-    else if (ctx.Event.Status is Status.Failed failed)
-    {
-        Console.WriteLine($"Reducer failed: {failed}");
-    }
-    else if (ctx.Event.Status is Status.OutOfEnergy)
-    {
-        Console.WriteLine("Reducer failed: out of energy");
-    }
-};
-
-conn.Reducers.DealDamage(target, amount);
-```
-
-</TabItem>
-<TabItem value="rust" label="Rust">
-
 ```rust
 // 2.0 -- per-call callback
 ctx.reducers.deal_damage_then(target, amount, |ctx, result| {
@@ -151,16 +119,15 @@ ctx.reducers.deal_damage_then(target, amount, |ctx, result| {
 }).unwrap();
 ```
 
-</TabItem>
-</Tabs>
-
-
 The fire-and-forget form still works:
 
 ```rust
 // 2.0 -- fire and forget (unchanged)
 ctx.reducers.deal_damage(target, amount).unwrap();
 ```
+
+</TabItem>
+</Tabs>
 
 ### Option B: Event tables (recommended for most use cases)
 
@@ -453,26 +420,6 @@ ctx.subscriptionBuilder()
   .onError((ctx, err) => { /* ... */ })
   .subscribe([tables.myTable]);
 ```
-
-</TabItem>
-<TabItem value="csharp" label="C#">
-
-```csharp
-// 2.0 -- same as 1.0
-conn.SubscriptionBuilder()
-    .OnApplied(_ => { /* ... */ })
-    .OnError((_, error) => { /* ... */ })
-    .AddQuery(q => q.From.Person())
-    .Subscribe();
-```
-
-</TabItem>
-<TabItem value="rust" label="Rust">
-
-<Tabs groupId="client-language" queryString>
-<TabItem value="typescript" label="TypeScript">
-
-TODO
 
 </TabItem>
 <TabItem value="csharp" label="C#">
