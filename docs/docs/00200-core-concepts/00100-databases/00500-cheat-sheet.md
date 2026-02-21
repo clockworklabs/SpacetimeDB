@@ -791,11 +791,13 @@ LOG_DEBUG("Debug: " + msg);
 
 1. **ScheduleAt import** — Import `ScheduleAt` from `'spacetimedb'`, not `'spacetimedb/server'`.
 2. **Schema-first** — Create `const spacetimedb = schema({...})` before reducers/init/clientConnected.
-3. **No `ReducerContext` import** — Use the `ctx` parameter; do not import `ReducerContext`.
-4. **Export rules** — Only export schema, reducers, init, clientConnected, clientDisconnected, views. Keep helpers local.
-5. **Use `spacetimedb/server`** — For modules, use `spacetimedb/server` (builder API), not `spacetimedb-sdk` (client decorators).
-6. **`t.object` not `t.struct`** — Use `t.object('Name', {...})` for product types.
-7. **`autoInc` not `autoIncrement`** — Use `.autoInc()` on column builders.
+3. **`schema()` shape** — Use `schema({ table })` or `schema({ a, b })`, not `schema(table)` or `schema(a, b)`.
+4. **Reducer naming** — Reducer names come from exports: `export const doThing = spacetimedb.reducer(...)`. Do not pass a string name.
+5. **No `ReducerContext` import** — Use the `ctx` parameter; do not import `ReducerContext`.
+6. **Export rules** — Only export schema, reducers, init, clientConnected, clientDisconnected, views. Keep helpers local.
+7. **Use `spacetimedb/server`** — For modules, use `spacetimedb/server` (builder API), not `spacetimedb-sdk` (client decorators).
+8. **`t.object` not `t.struct`** — Use `t.object('Name', {...})` for product types.
+9. **`autoInc` not `autoIncrement`** — Use `.autoInc()` on column builders.
 
 </TabItem>
 <TabItem value="csharp" label="C#">

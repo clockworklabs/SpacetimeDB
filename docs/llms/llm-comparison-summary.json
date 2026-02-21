@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-02-21T18:27:29.809Z",
+  "generated_at": "2026-02-21T18:54:44.037Z",
   "by_language": {
     "csharp": {
       "modes": {
@@ -2309,7 +2309,7 @@
           }
         },
         "docs": {
-          "hash": "f0986524ee7bda1802573e7e4794bd56933365fb35e4af7c830014214cb8ec77",
+          "hash": "3924da8acd3f980dd3c715b8feeec704c6d1a33c376ebb95ece2d4e0eef81093",
           "models": {
             "Claude 4 Sonnet": {
               "categories": {
@@ -2708,10 +2708,10 @@
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
-                  "passed_tests": 5,
-                  "pass_pct": 18.518518,
-                  "task_pass_equiv": 3.0,
-                  "task_pass_pct": 25.0
+                  "passed_tests": 15,
+                  "pass_pct": 55.555557,
+                  "task_pass_equiv": 6.0,
+                  "task_pass_pct": 50.0
                 },
                 "schema": {
                   "tasks": 10,
@@ -2725,10 +2725,10 @@
               "totals": {
                 "tasks": 22,
                 "total_tests": 61,
-                "passed_tests": 33,
-                "pass_pct": 54.098362,
-                "task_pass_equiv": 10.666667,
-                "task_pass_pct": 48.484848
+                "passed_tests": 43,
+                "pass_pct": 70.491806,
+                "task_pass_equiv": 13.666667,
+                "task_pass_pct": 62.121212
               }
             },
             "Gemini 2.5 Flash": {
