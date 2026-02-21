@@ -61,6 +61,11 @@ my-spacetime-app/
 
       Tables store your data. Reducers are functions that modify data — they're the only way to write to the database.
     </StepText>
+
+:::tip Module vs client SDK
+Use `spacetimedb/server` for module code. The `spacetimedb-sdk` package is for client applications only and uses a different API.
+:::
+
     <StepCode>
 ```typescript
 import { schema, table, t } from 'spacetimedb/server';

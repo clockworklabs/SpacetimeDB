@@ -62,17 +62,16 @@ ScheduledAt = new ScheduleAt.Time(new Timestamp(microseconds))
 ScheduledAt = ScheduleAt.Time(ctx.Timestamp + TimeSpan.FromSeconds(60))
 ```
 
-### 6. Table Accessor Casing: Server vs Client DIFFER!
+### 6. Table Accessor: PascalCase Singular
 ```csharp
-// Table defined as:
-[SpacetimeDB.Table(Accessor = "user", Public = true)]
+// ✅ CORRECT — Accessor is PascalCase singular
+[SpacetimeDB.Table(Accessor = "User", Public = true)]
 public partial class User { ... }
+ctx.Db.User.Insert(...);
 
-// SERVER-SIDE: Use PascalCase
-ctx.Db.User.Insert(...)  // ✅ PascalCase
-
-// CLIENT-SIDE: Also PascalCase
-_conn.Db.User.OnInsert += ...  // ✅ PascalCase
+// ❌ WRONG — lowercase or plural
+[SpacetimeDB.Table(Accessor = "users", Public = true)]  // Use "User"
+[SpacetimeDB.Table(Accessor = "accounts", Public = true)]  // Use "Account"
 ```
 
 ### 7. Client Callback Signature Errors
@@ -165,6 +164,7 @@ public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> {
 | Wrong | Right | Error |
 |-------|-------|-------|
 | Missing `partial` keyword | `public partial struct Table` | Generated code won't compile |
+| `Accessor = "users"` or `"accounts"` | `Accessor = "User"` or `"Account"` | Use PascalCase singular |
 | `ctx.Db.player` (lowercase) | `ctx.Db.Player` (PascalCase) | Property not found |
 | `Optional<string>` | `string?` | Type not found |
 | `ctx.Db.Table.Get(id)` | `ctx.Db.Table.Id.Find(id)` | Method not found |
@@ -177,7 +177,7 @@ public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> {
 | async/await in reducers | Synchronous only | Not supported |
 | `[Index.BTree(...)]` | `[SpacetimeDB.Index.BTree(...)]` | Ambiguous with System.Index |
 | `Columns = ["A", "B"]` | `Columns = new[] { "A", "B" }` | Collection expressions invalid in attributes |
-| `partial struct : TaggedEnum` | `partial record : TaggedEnum` | Sum types must be record |
+| `partial struct` or `partial class : TaggedEnum` | `partial record : TaggedEnum` | Sum types must be record |
 | `TaggedEnum<(A, B)>` | `TaggedEnum<(A A, B B)>` | Tuple must include variant names |
 
 ---
@@ -190,11 +190,11 @@ public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> {
 using SpacetimeDB;
 
 // ❌ WRONG — missing partial!
-[SpacetimeDB.Table(Accessor = "player")]
+[SpacetimeDB.Table(Accessor = "Player")]
 public struct Player { }  // Will not generate properly!
 
 // ✅ CORRECT — with partial keyword
-[SpacetimeDB.Table(Accessor = "player", Public = true)]
+[SpacetimeDB.Table(Accessor = "Player", Public = true)]
 public partial struct Player
 {
     [SpacetimeDB.PrimaryKey]
@@ -207,7 +207,7 @@ public partial struct Player
 }
 
 // With single-column index
-[SpacetimeDB.Table(Accessor = "task", Public = true)]
+[SpacetimeDB.Table(Accessor = "Task", Public = true)]
 public partial struct Task
 {
     [SpacetimeDB.PrimaryKey]
@@ -222,7 +222,7 @@ public partial struct Task
 }
 
 // Multi-column index (use fully-qualified attribute!)
-[SpacetimeDB.Table(Accessor = "score", Public = true)]
+[SpacetimeDB.Table(Accessor = "Score", Public = true)]
 [SpacetimeDB.Index.BTree(Accessor = "by_player_game", Columns = new[] { "PlayerId", "GameId" })]
 public partial struct Score
 {
@@ -451,7 +451,7 @@ public partial struct PlayerStats
 }
 
 // Use in table
-[SpacetimeDB.Table(Accessor = "player", Public = true)]
+[SpacetimeDB.Table(Accessor = "Player", Public = true)]
 public partial struct Player
 {
     [SpacetimeDB.PrimaryKey]
@@ -466,7 +466,7 @@ public partial struct Player
 
 ## 6) Sum Types / Tagged Enums (CRITICAL)
 
-**Sum types MUST use `partial record` and inherit from `TaggedEnum<T>`.**
+**Sum types MUST use `partial record` (not `partial class`) and inherit from `TaggedEnum<T>`.**
 
 ```csharp
 using SpacetimeDB;
@@ -478,13 +478,13 @@ public partial struct Circle { public int Radius; }
 [SpacetimeDB.Type]
 public partial struct Rectangle { public int Width; public int Height; }
 
-// Step 2: Define sum type as partial RECORD (not struct!) inheriting TaggedEnum
+// Step 2: Define sum type as partial RECORD (not struct or class!) inheriting TaggedEnum
 // The tuple MUST include both the type AND a name for each variant
 [SpacetimeDB.Type]
 public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> { }
 
 // Step 3: Use in a table
-[SpacetimeDB.Table(Accessor = "drawings", Public = true)]
+[SpacetimeDB.Table(Accessor = "Drawing", Public = true)]
 public partial struct Drawing
 {
     [SpacetimeDB.PrimaryKey]
@@ -585,10 +585,12 @@ _conn.Reducers.OnCreateTask += (ctx) =>
 
 ## 8) Scheduled Tables
 
+For C# scheduled tables, the schedule column must use PascalCase (e.g. `ScheduledAt`), not snake_case (`scheduled_at`).
+
 ```csharp
 using SpacetimeDB;
 
-[SpacetimeDB.Table(Accessor = "reminder", Scheduled = nameof(Module.SendReminder))]
+[SpacetimeDB.Table(Accessor = "Reminder", Scheduled = "SendReminder")]
 public partial struct Reminder
 {
     [SpacetimeDB.PrimaryKey]

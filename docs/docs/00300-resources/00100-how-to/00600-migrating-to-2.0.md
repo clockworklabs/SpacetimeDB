@@ -418,7 +418,7 @@ To migrate a 1.0 table definition to 2.0, replace `Name =` with `Accessor =` in 
 ```csharp
 // 1.0 style -- NO LONGER VALID in 2.0
 [SpacetimeDB.Table(Name = "MyTable", Public = true)]
-[SpacetimeDB.Index.BTree(Name = "Position", Columns = [nameof(X), nameof(Y)])]
+[SpacetimeDB.Index.BTree(Name = "Position", Columns = new[] { nameof(X), nameof(Y) })]
 public partial struct MyTable
 {
     [SpacetimeDB.PrimaryKey]
@@ -430,7 +430,7 @@ public partial struct MyTable
 
 // 2.0
 [SpacetimeDB.Table(Accessor = "MyTable", Public = true)]
-[SpacetimeDB.Index.BTree(Accessor = "Position", Columns = [nameof(X), nameof(Y)])]
+[SpacetimeDB.Index.BTree(Accessor = "Position", Columns = new[] { nameof(X), nameof(Y) })]
 public partial struct MyTable
 {
     [SpacetimeDB.PrimaryKey]
@@ -540,7 +540,7 @@ Alternatively, manually specify the correct canonical name of each table:
 
 ```csharp
 [SpacetimeDB.Table(Accessor = "MyTable", Name = "MyTable", Public = true)]
-[SpacetimeDB.Index.BTree(Accessor = "Position", Columns = [nameof(X), nameof(Y)])]
+[SpacetimeDB.Index.BTree(Accessor = "Position", Columns = new[] { nameof(X), nameof(Y) })]
 public partial struct MyTable
 {
     [SpacetimeDB.PrimaryKey]

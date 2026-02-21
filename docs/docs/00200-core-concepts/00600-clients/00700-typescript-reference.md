@@ -155,7 +155,7 @@ Configure the SpacetimeDB domain name or hex string encoded `Identity` of the re
 
 ```typescript
 class DbConnectionBuilder {
-  public withConfirmedReads(confirmedReads: bool): DbConnectionBuilder;
+  public withConfirmedReads(confirmedReads: boolean): DbConnectionBuilder;
 }
 ```
 
@@ -511,7 +511,7 @@ The `SubscriptionHandle` does not contain or provide access to the subscribed ro
 
 ```typescript
 class SubscriptionHandle {
-  public isEnded(): bool;
+  public isEnded(): boolean;
 }
 ```
 
@@ -521,7 +521,7 @@ Returns true if this subscription has been terminated due to an unsubscribe call
 
 ```typescript
 class SubscriptionHandle {
-  public isActive(): bool;
+  public isActive(): boolean;
 }
 ```
 
@@ -559,7 +559,7 @@ Returns an error if the subscription has already ended, either due to a previous
 
 ```typescript
 interface DbContext {
-  isActive: bool;
+  isActive: boolean;
 }
 ```
 
@@ -613,7 +613,7 @@ The `reducers` field of the context provides access to reducers exposed by the r
 
 ### Type `Event`
 
-```rust
+```typescript
 type Event<Reducer> =
   | { tag: 'Reducer'; value: ReducerEvent<Reducer> }
   | { tag: 'SubscribeApplied' }
@@ -788,7 +788,7 @@ The reducer was aborted due to insufficient energy balance of the module owner.
 
 ### Type `Reducer`
 
-```rust
+```typescript
 type Reducer =
   | { name: 'ReducerA'; args: ReducerA }
   | { name: 'ReducerB'; args: ReducerB }
@@ -1040,7 +1040,7 @@ import { SpacetimeDBProvider } from 'spacetimedb/react';
 
 const connectionBuilder = DbConnection.builder()
   .withUri('ws://localhost:3000')
-  .withModuleName('my-module')
+  .withDatabaseName('my-module')
   .onConnect((conn, identity, token) => {
     console.log('Connected:', identity.toHexString());
     conn.subscriptionBuilder().subscribe('SELECT * FROM player');
@@ -1130,7 +1130,7 @@ function PlayerList() {
 
 ### Type `Identity`
 
-```rust
+```typescript
 Identity
 ```
 
@@ -1138,7 +1138,7 @@ A unique public identifier for a client connected to a database.
 
 ### Type `ConnectionId`
 
-```rust
+```typescript
 ConnectionId
 ```
 
@@ -1150,26 +1150,30 @@ The SpacetimeDB TypeScript SDK includes built-in integrations for React, Vue, an
 
 ### React
 
-```bash
+```typescript
 import { SpacetimeDBProvider, useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
 ```
 
 #### `SpacetimeDBProvider`
 
-Wrap your app in `SpacetimeDBProvider` to provide the SpacetimeDB connection to all child components:
+Wrap your app in `SpacetimeDBProvider` to provide the SpacetimeDB connection to all child components. Pass a configured `DbConnectionBuilder` (without calling `.build()`):
 
 ```tsx
 import { SpacetimeDBProvider } from 'spacetimedb/react';
 import { DbConnection } from './module_bindings';
 
+const connectionBuilder = DbConnection.builder()
+  .withUri('wss://maincloud.spacetimedb.com')
+  .withDatabaseName('my_module')
+  .onConnect((conn, identity, token) => {
+    console.log('Connected:', identity.toHexString());
+    conn.subscriptionBuilder().subscribeToAllTables();
+  })
+  .onDisconnect(() => console.log('Disconnected'));
+
 function Root() {
   return (
-    <SpacetimeDBProvider connect={() =>
-      DbConnection.builder()
-        .withUri('wss://maincloud.spacetimedb.com')
-        .withModuleName('my_module')
-        .build()
-    }>
+    <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
       <App />
     </SpacetimeDBProvider>
   );

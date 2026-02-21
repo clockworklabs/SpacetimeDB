@@ -167,7 +167,7 @@ import { DbConnection } from './module_bindings/index.js';
 // Build and establish connection
 DbConnection.builder()
   .withUri(HOST)
-  .withModuleName(DB_NAME)
+  .withDatabaseName(DB_NAME)
   .withToken(loadToken())  // Load saved token from file
   .onConnect((conn, identity, token) => {
     console.log('Connected! Identity:', identity.toHexString());

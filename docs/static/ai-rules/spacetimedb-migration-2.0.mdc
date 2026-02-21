@@ -89,7 +89,7 @@ conn.Db.DamageEvent.OnInsert += (ctx, damageEvent) => {
 
 // C#
 [SpacetimeDB.Table(Name = "MyTable", Public = true)]
-[SpacetimeDB.Index.BTree(Name = "Position", Columns = [nameof(X), nameof(Y)])]
+[SpacetimeDB.Index.BTree(Name = "Position", Columns = new[] { nameof(X), nameof(Y) })]
 ```
 
 ### ✅ 2.0
@@ -100,7 +100,7 @@ conn.Db.DamageEvent.OnInsert += (ctx, damageEvent) => {
 
 ```csharp
 [SpacetimeDB.Table(Accessor = "MyTable", Public = true)]
-[SpacetimeDB.Index.BTree(Accessor = "Position", Columns = [nameof(X), nameof(Y)])]
+[SpacetimeDB.Index.BTree(Accessor = "Position", Columns = new[] { nameof(X), nameof(Y) })]
 ```
 
 - `accessor` = API names in module/client code

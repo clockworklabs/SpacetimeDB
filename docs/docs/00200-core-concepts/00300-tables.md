@@ -190,7 +190,11 @@ FIELD_Unique(person, email)
 
 ## Table Naming and Accessors
 
-The table name you specify determines how you access the table in your code. Understanding this relationship is essential for writing correct SpacetimeDB modules.
+The table name you specify determines how you access the table in your code and in SQL. Understanding this relationship is essential for writing correct SpacetimeDB modules.
+
+:::note Table names in SQL
+The table `name` in your schema is used **verbatim** in SQL queries and subscriptions. There is no automatic pluralization or case conversion. If you define `name: 'position'`, SQL uses `position`; if you define `name: 'positions'`, SQL uses `positions`. Ensure your schema names match what your SQL queries expect.
+:::
 
 ### How Accessor Names Are Derived
 
@@ -219,25 +223,29 @@ ctx.db.playerScores.insert({ /* ... */ });
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-The accessor name **exactly matches** the `Name` attribute value:
+The accessor name **exactly matches** the `Accessor` attribute value. When `Name` is not specified, `Accessor` is also used as the SQL table name:
 
 ```csharp
 // Table definition
 [SpacetimeDB.Table(Accessor = "Player", Public = true)]
 public partial struct Player { /* columns */ }
 
-// Accessor matches Name exactly
+// Accessor matches Accessor value exactly
 ctx.Db.Player.Insert(new Player { /* ... */ });
 ```
 
-| Name Attribute | Accessor |
-|----------------|----------|
-| `Name = "User"` | `ctx.Db.User` |
-| `Name = "Player"` | `ctx.Db.Player` |
-| `Name = "GameSession"` | `ctx.Db.GameSession` |
+| Accessor | API Accessor | SQL Table Name (when Name omitted) |
+|----------|---------------|-------------------------------------|
+| `"User"` | `ctx.Db.User` | `User` |
+| `"Player"` | `ctx.Db.Player` | `Player` |
+| `"GameSession"` | `ctx.Db.GameSession` | `GameSession` |
 
 :::warning Case Sensitivity
-The accessor is case-sensitive and must match the `Name` value exactly. `Name = "user"` produces `ctx.Db.user`, not `ctx.Db.User`.
+The accessor is case-sensitive and must match the `Accessor` value exactly. `Accessor = "user"` produces `ctx.Db.user`, not `ctx.Db.User`.
+:::
+
+:::tip C# Convention
+Use `Accessor = "TableName"` with PascalCase singular (e.g. `User` not `users`). The Accessor value is used verbatim as the SQL table name and API accessor.
 :::
 
 </TabItem>
