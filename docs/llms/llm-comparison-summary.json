@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-02-21T17:25:11.147Z",
+  "generated_at": "2026-02-21T17:26:49.691Z",
   "by_language": {
     "csharp": {
       "modes": {
@@ -2367,27 +2367,27 @@
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
-                  "passed_tests": 17,
-                  "pass_pct": 62.962963,
-                  "task_pass_equiv": 7.333333,
-                  "task_pass_pct": 61.11111
+                  "passed_tests": 26,
+                  "pass_pct": 96.296295,
+                  "task_pass_equiv": 11.0,
+                  "task_pass_pct": 91.66667
                 },
                 "schema": {
                   "tasks": 10,
                   "total_tests": 34,
-                  "passed_tests": 28,
-                  "pass_pct": 82.35294,
-                  "task_pass_equiv": 8.0,
-                  "task_pass_pct": 80.0
+                  "passed_tests": 30,
+                  "pass_pct": 88.23529,
+                  "task_pass_equiv": 8.666667,
+                  "task_pass_pct": 86.666664
                 }
               },
               "totals": {
                 "tasks": 22,
                 "total_tests": 61,
-                "passed_tests": 45,
-                "pass_pct": 73.77049,
-                "task_pass_equiv": 15.333333,
-                "task_pass_pct": 69.69697
+                "passed_tests": 56,
+                "pass_pct": 91.803276,
+                "task_pass_equiv": 19.666666,
+                "task_pass_pct": 89.393936
               }
             },
             "Claude Sonnet 4.6": {
