@@ -11,7 +11,7 @@ The "schema" refers to the collection of tables, reducers, procedures, views, an
 :::
 
 :::warning
-If you are upgrading an existing 1.x database to 2.0, review [1.x to 2.0 Upgrade Notes](./00100-upgrade-notes-2-0.md) before publishing.
+If you are upgrading an existing 1.x database to 2.0, review [1.x to 2.0 Upgrade Notes](../../../00300-resources/00100-how-to/00600-migrating-to-2.0.md) before publishing.
 :::
 
 ## ✅ Safe Changes (Always Allowed)
