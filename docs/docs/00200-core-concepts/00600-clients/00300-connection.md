@@ -6,14 +6,14 @@ slug: /clients/connection
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-After [generating client bindings](/clients/codegen) for your module, you can establish a connection to your SpacetimeDB [database](/databases) from your client application. The `DbConnection` type provides a persistent WebSocket connection that enables real-time communication with the server.
+After [generating client bindings](./00200-codegen.md) for your module, you can establish a connection to your SpacetimeDB [database](../00100-databases.md) from your client application. The `DbConnection` type provides a persistent WebSocket connection that enables real-time communication with the server.
 
 ## Prerequisites
 
 Before connecting, ensure you have:
 
-1. [Generated client bindings](/clients/codegen) for your module
-2. A published database running on SpacetimeDB (local or on [MainCloud](/how-to/deploy/maincloud))
+1. [Generated client bindings](./00200-codegen.md) for your module
+2. A published database running on SpacetimeDB (local or on [MainCloud](../../00300-resources/00100-how-to/00100-deploy/00100-maincloud.md))
 3. The database's URI and name or identity
 
 ## Basic Connection
@@ -400,7 +400,7 @@ We recommend implementing reconnection logic in your application if reliable con
 
 ## Connection Identity
 
-Every connection receives a unique [identity](/intro/key-architecture#identity) from the server. Access it through the `on_connect` callback:
+Every connection receives a unique [identity](../../00100-intro/00100-getting-started/00400-key-architecture.md#identity) from the server. Access it through the `on_connect` callback:
 
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -448,19 +448,19 @@ void OnConnected(UDbConnection* Connection, FSpacetimeDBIdentity Identity, const
 </TabItem>
 </Tabs>
 
-The [identity](/intro/key-architecture#identity) persists across connections and represents the user, while the [connection ID](/intro/key-architecture#connectionid) is unique to each connection session.
+The [identity](../../00100-intro/00100-getting-started/00400-key-architecture.md#identity) persists across connections and represents the user, while the [connection ID](../../00100-intro/00100-getting-started/00400-key-architecture.md#connectionid) is unique to each connection session.
 
 ## Next Steps
 
 Now that you have a connection established, you can:
 
-- [Use the SDK API](/clients/api) to interact with tables, invoke reducers, and subscribe to data
+- [Use the SDK API](./00400-sdk-api.md) to interact with tables, invoke reducers, and subscribe to data
 - Register callbacks for observing database changes
 - Call reducers and procedures on the server
 
 For language-specific details, see:
 
-- [Rust SDK Reference](/clients/rust)
-- [C# SDK Reference](/clients/c-sharp)
-- [TypeScript SDK Reference](/clients/typescript)
-- [Unreal SDK Reference](/clients/unreal)
+- [Rust SDK Reference](./00500-rust-reference.md)
+- [C# SDK Reference](./00600-csharp-reference.md)
+- [TypeScript SDK Reference](./00700-typescript-reference.md)
+- [Unreal SDK Reference](./00800-unreal-reference.md)

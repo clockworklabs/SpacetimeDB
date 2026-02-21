@@ -1,6 +1,6 @@
 ---
 title: Migrating from 1.0 to 2.0
-slug: /how-to/migrating-to-2-0
+slug: /upgrade
 ---
 
 import Tabs from '@theme/Tabs';
@@ -28,7 +28,12 @@ In 1.0, you could register global callbacks on reducers that would fire whenever
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
-TODO
+```typescript
+// 1.0 -- REMOVED in 2.0
+conn.reducers.onDealDamage((ctx, { target, amount }) => {
+  console.log(`Someone called dealDamage with args: (${target}, ${amount})`);
+});
+```
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -58,7 +63,50 @@ In 2.0, global reducer callbacks no longer exist. The server does not broadcast 
 
 ### Option A: Per-call result callbacks (`_then()`)
 
-If you only need to know the result of a reducer *you* called, use the `_then()` variant:
+If you only need to know the result of a reducer *you* called, you can await the result or use the `_then()` variant:
+
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+try {
+  await ctx.reducers.dealDamage({ target, amount });
+  console.log(`You called dealDamage with args: (${target}, ${amount})`);
+} catch (err) {
+  if (err instanceof SenderError) {
+    console.log(`You made an error: ${err}`)
+  } else if (err instanceof InternalError) {
+    console.log(`The server had an error: ${err}`);
+  }
+}
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+// 2.0 -- per-call callback on the calling connection
+conn.Reducers.OnDealDamage += (ctx, _, _) =>
+{
+    if (ctx.Event.Status is Status.Committed)
+    {
+        Console.WriteLine("Reducer succeeded");
+    }
+    else if (ctx.Event.Status is Status.Failed failed)
+    {
+        Console.WriteLine($"Reducer failed: {failed}");
+    }
+    else if (ctx.Event.Status is Status.OutOfEnergy)
+    {
+        Console.WriteLine("Reducer failed: out of energy");
+    }
+};
+
+conn.Reducers.DealDamage(target, amount);
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
 
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -121,7 +169,27 @@ If you need *other* clients to observe that something happened (the primary use 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
-TODO
+**Server (module) -- before:**
+```typescript
+// 1.0 server -- reducer args were automatically broadcast
+spacetimedb.reducer('deal_damage', { target: t.identity(), amount: t.u32() }, (ctx, { target, amount }) => {
+  // update game state
+});
+```
+
+**Server (module) -- after:**
+```typescript
+// 2.0 server -- explicitly publish events via an event table
+const damageEvent = table({ event: true }, {
+    target: t.identity(),
+    amount: t.u32(),
+})
+const spacetimedb = schema({ damageEvent });
+
+export const dealDamage = spacetimedb.reducer(damageEvent.rowType, (ctx, { target, amount }) => {
+  // update game state
+});
+```
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -196,7 +264,23 @@ fn deal_damage(ctx: &ReducerContext, target: Identity, amount: u32) {
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
-TODO
+**Client -- before:**
+```typescript
+// 1.0 client -- global reducer callback
+conn.reducers.onDealDamage((ctx, { target, amount }) => {
+    playDamageAnimation(target, amount);
+});
+```
+
+**Client -- after:**
+```typescript
+// 2.0 client -- event table callback
+// Note that although this callback fires, the `damageEvent`
+// table will never have any rows present in the client cache
+conn.db.damageEvent().onInsert((ctx, { target, amount }) => {
+    playDamageAnimation(target, amount);
+});
+```
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -233,6 +317,8 @@ conn.reducers.on_deal_damage(|ctx, target, amount| {
 **Client -- after:**
 ```rust
 // 2.0 client -- event table callback
+// Note that although this callback fires, the `damage_event`
+// table will never have any rows present in the client cache
 conn.db.damage_event().on_insert(|ctx, event| {
     play_damage_animation(event.target, event.amount);
 });
@@ -265,7 +351,26 @@ conn.db.damage_event().on_insert(|ctx, event| {
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
-TODO
+In 1.0, table callbacks received `{ tag: 'Reducer'; value: ReducerEvent<Reducer> }` with full reducer information when a reducer caused a table change. Non-callers could also receive `{ tag: 'UnknownTransaction' }`.
+
+In 2.0, the event model is simplified:
+
+- **The caller** sees `{ tag: 'Reducer'; value: ReducerEvent<Reducer> }` with `type ReducerEvent = { timestamp, status, reducer }` in response to their own reducer calls.
+- **Other clients** see `{ tag: 'Transaction' }` (no reducer details).
+- `{ tag: 'UnknownTransaction' }` is removed.
+
+```typescript
+// 2.0 -- checking who caused a table change
+conn.db.myTable().onInsert((ctx, row) => {
+  if (ctx.event.tag === 'Reducer') {
+    // This client called the reducer that caused this insert.
+    console.log(`Our reducer: ${ctx.event.value.reducer}`);
+  }
+  if (ctx.event.tag === 'Transaction') {
+    // Another client's action caused this insert.
+  }
+});
+```
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -327,7 +432,42 @@ If you need metadata about reducers invoked by other clients, update your reduce
 
 ## Subscription API
 
-The subscription API is largely unchanged:
+In 2.0, the subscription API is largely the same, but you can now subscribe to the database with a typed query builder:
+
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+// 1.0
+ctx.subscriptionBuilder()
+  .onApplied(ctx => { /* ... */ })
+  .onError((ctx, err) => { /* ... */ })
+  .subscribe(["SELECT * FROM my_table"]);
+```
+
+```typescript
+// 2.0 -- Typed query builder
+import { tables } from './module_bindings';
+ctx.subscriptionBuilder()
+  .onApplied(ctx => { /* ... */ })
+  .onError((ctx, err) => { /* ... */ })
+  .subscribe([tables.myTable]);
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+// 2.0 -- same as 1.0
+conn.SubscriptionBuilder()
+    .OnApplied(_ => { /* ... */ })
+    .OnError((_, error) => { /* ... */ })
+    .AddQuery(q => q.From.Person())
+    .Subscribe();
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
 
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -366,7 +506,13 @@ Note that subscribing to event tables requires an explicit query:
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
-TODO
+```typescript
+// Event tables are excluded from subscribe_to_all_tables(), so subscribe explicitly:
+import { tables } from "./module_bindings";
+ctx.subscriptionBuilder()
+    .onApplied((ctx) => { /* ... */ })
+    .subscribe([tables.damageEvent]);
+```
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -404,7 +550,24 @@ SpacetimeDB 2.0 no longer equates the canonical name of your tables and indexes 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
-TODO
+The `name` option for table definitions is now used to overwrite the canonical name, and is optional. The name of the key passed to the `schema` function controls the method names you write in your module and client source code.
+
+By default, the canonical name is derived from the accessor by converting it to snake case.
+
+To migrate a 1.0 table definition to 2.0, remove `name` from the table options and pass an object to the `schema` functions.
+
+```typescript
+// 1.0
+const myTable = table({ name: "my_table", public: true });
+const spacetimedb = schema(myTable); // NO LONGER VALID in 2.0
+```
+
+```typescript
+// 2.0
+const myTable = table({ public: true }); // Name is no longer required
+const spacetimedb = schema({ myTable }); // NOTE! We are passing `{ myTable }`, not `myTable`
+export default spacetimedb; // You must now also export the schema from your module.
+```
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -470,7 +633,7 @@ struct MyTable {
 
 // 2.0
 #[spacetimedb::table(
-    accessor= my_table,
+    accessor = my_table,
     public,
     index(
         accessor = position,
@@ -582,8 +745,21 @@ struct MyTable {
 
 When constructing a `DbConnection` to a remote database, you now use `withDatabaseName` to provide the database name, rather than `withModuleName`. This is a more accurate terminology.
 
-TODO: code snippet
+```typescript
+// 1.0 -- NO LONGER CORRECT
+const conn = DbConnection.builder()
+    .withUri("https://maincloud.spacetimedb.com")
+    .withModuleName("my-database")
+    // other options...
+    .build();
 
+// 2.0
+const conn = DbConnection.builder()
+    .withUri("https://maincloud.spacetimedb.com")
+    .withDatabaseName("my-database")
+    // other options...
+    .build()
+```
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -672,6 +848,32 @@ fn my_reducer(ctx: &ReducerContext) {
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
+In 2.0 modules, only columns with a `.primaryKey()` constraint expose an `update` method, whereas previously, `.unique()` constraints also provided that method. The previous behavior led to confusion, as only updates which preserved the value in the primary key column resulted in `onUpdate` callbacks being invoked on the client.
+
+```typescript
+const myTable = table({ name: 'my_table' }, {
+    id: t.u32().unique(),
+    name: t.string(),
+}) 
+
+// 1.0 -- REMOVED in 2.0 
+spacetimedb.reducer('my_reducer', ctx => {
+    ctx.db.myTable.id.update({
+        id: 1,
+        name: "Foobar",
+    });
+})
+
+// 2.0 -- Perform a delete followed by an insert
+// OR change the `.unique()` constraint into `.primaryKey()` constraint
+spacetimedb.reducer('my_reducer', ctx => {
+    ctx.db.myTable.id.delete(1);
+    ctx.db.myTable.insert({
+        id: 1,
+        name: "Foobar"
+    });
+})
+```
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -766,7 +968,7 @@ public static void ChangeUserIdentity(ReducerContext ctx, string name, Identity 
 </TabItem>
 <TabItem value="rust" label="Rust">
 
-In 2.0 modules, only `#[primary_key]` indexes expose an `update` method, whereas previously, `#[unique]` indexes also provided that method. The previous behavior led to confusion, as only updates which preserved the value in the primary key column resulted in `on_update` callbacks being invoked on the client.
+In 2.0 modules, only `#[primary_key]` constraints expose an `update` method, whereas previously, `#[unique]` constraints also provided that method. The previous behavior led to confusion, as only updates which preserved the value in the primary key column resulted in `on_update` callbacks being invoked on the client.
 
 ### Updates which preserve the primary key - update with the primary key index
 
@@ -854,6 +1056,35 @@ Because scheduled reducers and procedures are now private, it's no longer necess
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
+```typescript
+const myTimer = table({ name: "my_timer", scheduled: 'runMyTimer' }, {
+  scheduledId: t.u64(),
+  scheduledAt: t.scheduleAt(),
+});
+const spacetimedb = schema(myTimer);
+
+// 1.0 - SUPERFLUOUS IN 2.0
+spacetimedb.reducer('runMyTimer', myTimer.rowType, (ctx, timer) => {
+  if (ctx.sender != ctx.identity) {
+    throw SenderError(`'runMyTimer' should only be invoked by the database!`);
+  }
+  // Do stuff
+})
+```
+
+```typescript
+const myTimer = table({ scheduled: 'runMyTimer' }, {
+  scheduledId: t.u64(),
+  scheduledAt: t.scheduleAt(),
+});
+const spacetimedb = schema({ myTimer });
+
+// 2.0 -- Can only be called by the database
+spacetimedb.reducer('runMyTimer', myTimer.rowType, (ctx, timer) => {
+  // Do stuff
+})
+```
+
 </TabItem>
 <TabItem value="csharp" label="C#">
 
@@ -898,7 +1129,7 @@ struct MyTimer {
     scheduled_at: spacetimedb::ScheduleAt,
 }
 
-// 1.0 - SUPERFLUOUS
+// 1.0 - SUPERFLUOUS IN 2.0
 #[spacetimedb::reducer]
 fn run_my_timer(ctx: &ReducerContext, timer: MyTimer) -> Result<(), String> {
     if ctx.sender() != ctx.identity() {
@@ -908,7 +1139,7 @@ fn run_my_timer(ctx: &ReducerContext, timer: MyTimer) -> Result<(), String> {
     Ok(())
 }
 
-// 2.0
+// 2.0 -- Can only be called by the database
 #[spacetimedb::reducer]
 fn run_my_timer(ctx: &ReducerContext, timer: MyTimer) {
     // Do stuff...
@@ -925,6 +1156,21 @@ In the rare event that you have a reducer or procedure which is intended to be i
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
+```typescript
+const myTimer = table({ scheduled: 'runMyTimerPrivate' }, {
+  scheduledId: t.u64(),
+  scheduledAt: t.scheduleAt(),
+});
+const spacetimedb = schema({ myTimer });
+
+export const runMyTimerPrivate = spacetimedb.reducer(myTimer.rowType, (ctx, timer) => {
+    // Do stuff...
+});
+
+export const runMyTimer = spacetimedb.reducer(myTimer.rowType, (ctx, timer) => {
+  runMyTimerPrivate(ctx, timer);
+});
+```
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -995,7 +1241,12 @@ In 1.0, `light_mode` prevented the server from sending reducer event data to a c
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
-TODO
+```typescript
+// 1.0 -- REMOVED in 2.0
+DbConnection.builder()
+    .withLightMode(true)
+    // ...
+```
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -1025,7 +1276,14 @@ In 2.0, the server never broadcasts reducer argument data to any client, so `lig
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
-TODO
+```typescript
+// 2.0
+DbConnection.builder()
+    .withUri(uri)
+    .withDatabaseName(name)
+    // no withLightMode needed
+    .build()
+```
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -1063,7 +1321,13 @@ In 1.0, you could suppress success notifications for individual reducer calls:
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
-TODO
+```typescript
+// 1.0 -- REMOVED in 2.0
+ctx.setReducerFlags(CallReducerFlags.NoSuccessNotify);
+ctx.reducers.myReducer(args);
+```
+
+In 2.0, the success notification is lightweight (just `requestId` and `timestamp`, no reducer args or full event data), so there is no need to suppress it. Remove any `setReducerFlags` calls and `CallReducerFlags` imports.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -1079,11 +1343,10 @@ ctx.set_reducer_flags(CallReducerFlags::NoSuccessNotify);
 ctx.reducers.my_reducer(args).unwrap();
 ```
 
+In 2.0, the success notification is lightweight (just `request_id` and `timestamp`, no reducer args or full event data), so there is no need to suppress it. Remove any `set_reducer_flags` calls and `CallReducerFlags` imports.
+
 </TabItem>
 </Tabs>
-
-
-In 2.0, the success notification is lightweight (just `request_id` and `timestamp`, no reducer args or full event data), so there is no need to suppress it. Remove any `set_reducer_flags` calls and `CallReducerFlags` imports.
 
 ## Quick Migration Checklist
 
