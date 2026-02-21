@@ -129,4 +129,4 @@ spacetime logs
 
 ## Next steps
 
-- Read the [TypeScript SDK Reference](/clients/typescript) for detailed API docs
+- Read the [TypeScript SDK Reference](../../00200-core-concepts/00600-clients/00700-typescript-reference.md) for detailed API docs

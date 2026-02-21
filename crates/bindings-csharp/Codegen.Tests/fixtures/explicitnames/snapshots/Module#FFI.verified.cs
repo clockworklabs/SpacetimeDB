@@ -523,7 +523,7 @@ static class ModuleRegistration
                 new SpacetimeDB.ProcedureContext(identity, connectionId, random, time)
         );
         SpacetimeDB.Internal.Module.SetCaseConversionPolicy(
-            SpacetimeDB.Internal.CaseConversionPolicy.SnakeCase
+            SpacetimeDB.CaseConversionPolicy.SnakeCase
         );
         SpacetimeDB.Internal.Module.RegisterExplicitTableName("DemoTable", "canonical_table");
         SpacetimeDB.Internal.Module.RegisterExplicitFunctionName(

@@ -54,6 +54,23 @@ fn main() -> anyhow::Result<()> {
             return Ok(());
         }
 
+        // CaseConversionPolicy is part of the public API — move it to
+        // the SpacetimeDB namespace so users don't have to write
+        // SpacetimeDB.Internal.CaseConversionPolicy.
+        let code = if filename == "CaseConversionPolicy.g.cs" {
+            regex_replace!(&code, r"namespace SpacetimeDB\.Internal", "namespace SpacetimeDB")
+        } else {
+            // In other autogen files, qualify the type name in type position
+            // (before a space+identifier) so it resolves after the namespace move.
+            // The pattern "CaseConversionPolicy CaseConversionPolicy" becomes
+            // "SpacetimeDB.CaseConversionPolicy CaseConversionPolicy".
+            regex_replace!(
+                &code,
+                r"\bCaseConversionPolicy(\s+)CaseConversionPolicy\b",
+                "SpacetimeDB.CaseConversionPolicy${1}CaseConversionPolicy"
+            )
+        };
+
         let code = regex_replace!(&code, r"\bAlgebraicType\b", "SpacetimeDB.BSATN.$0");
         let code = regex_replace!(
             &code,
