@@ -88,7 +88,7 @@ spacetime publish --break-clients <DATABASE_NAME>
 
 ⚠️ **Warning:** This will break existing clients that haven't been updated to match your new schema.
 
-If this publish is a major upgrade from 1.x to 2.0, read [1.x to 2.0 Upgrade Notes](./00500-migrations/00100-upgrade-notes-2-0.md) first.
+If this publish is a major upgrade from 1.x to 2.0, read [1.x to 2.0 Upgrade Notes](../../00300-resources/00100-how-to/00600-migrating-to-2.0.md) first.
 
 #### Clearing Data
 
