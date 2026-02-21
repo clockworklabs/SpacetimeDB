@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "generated_at": "2026-02-21T04:53:15.865Z",
+  "generated_at": "2026-02-21T16:25:51.444Z",
   "by_language": {
     "csharp": {
       "modes": {
         "docs": {
-          "hash": "b3fdea5688a4ad4c1edfa59e95742d55e1881ee0b16fe7eba408af59d2743fc2",
+          "hash": "095d03ebbd493ab34c778e2d3777e054405cbb7a8e0b9cee30634d4b3a27c6ed",
           "models": {
             "Claude 4 Sonnet": {
               "categories": {
@@ -96,27 +96,27 @@
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
-                  "passed_tests": 17,
-                  "pass_pct": 62.962963,
-                  "task_pass_equiv": 7.8333335,
-                  "task_pass_pct": 65.27778
+                  "passed_tests": 23,
+                  "pass_pct": 85.18519,
+                  "task_pass_equiv": 10.833334,
+                  "task_pass_pct": 90.27779
                 },
                 "schema": {
                   "tasks": 10,
                   "total_tests": 34,
-                  "passed_tests": 10,
-                  "pass_pct": 29.411764,
-                  "task_pass_equiv": 3.3166668,
-                  "task_pass_pct": 33.166668
+                  "passed_tests": 24,
+                  "pass_pct": 70.588234,
+                  "task_pass_equiv": 7.0,
+                  "task_pass_pct": 70.0
                 }
               },
               "totals": {
                 "tasks": 22,
                 "total_tests": 61,
-                "passed_tests": 27,
-                "pass_pct": 44.262295,
-                "task_pass_equiv": 11.149999,
-                "task_pass_pct": 50.681812
+                "passed_tests": 47,
+                "pass_pct": 77.04918,
+                "task_pass_equiv": 17.833334,
+                "task_pass_pct": 81.06061
               }
             },
             "Claude Sonnet 4.6": {
@@ -124,27 +124,27 @@
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
-                  "passed_tests": 19,
-                  "pass_pct": 70.37037,
-                  "task_pass_equiv": 9.333333,
-                  "task_pass_pct": 77.77777
+                  "passed_tests": 27,
+                  "pass_pct": 100.0,
+                  "task_pass_equiv": 12.0,
+                  "task_pass_pct": 100.0
                 },
                 "schema": {
                   "tasks": 10,
                   "total_tests": 34,
-                  "passed_tests": 11,
-                  "pass_pct": 32.35294,
-                  "task_pass_equiv": 3.65,
-                  "task_pass_pct": 36.5
+                  "passed_tests": 34,
+                  "pass_pct": 100.0,
+                  "task_pass_equiv": 10.0,
+                  "task_pass_pct": 100.0
                 }
               },
               "totals": {
                 "tasks": 22,
                 "total_tests": 61,
-                "passed_tests": 30,
-                "pass_pct": 49.18033,
-                "task_pass_equiv": 12.983331,
-                "task_pass_pct": 59.015137
+                "passed_tests": 61,
+                "pass_pct": 100.0,
+                "task_pass_equiv": 22.0,
+                "task_pass_pct": 100.0
               }
             },
             "DeepSeek Chat": {
