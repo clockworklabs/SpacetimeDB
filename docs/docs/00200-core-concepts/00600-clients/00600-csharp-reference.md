@@ -16,7 +16,7 @@ If you are **writing a SpacetimeDB module** (tables and reducers), use these pat
 - **Primary key**: Every table needs `[SpacetimeDB.PrimaryKey]` on exactly one column
 - **Reducers**: `[SpacetimeDB.Reducer]` on static methods with `ReducerContext ctx` as first parameter
 - **Required**: `using SpacetimeDB;` and `partial` on all table structs and the Module class
-- **Index**: Always use `SpacetimeDB.Index.BTree` (never bare `Index`). For multi-column: `Columns = new[] { nameof(Col1), nameof(Col2) }`, not collection expressions `[nameof(X)]`
+- **Index**: Always use `SpacetimeDB.Index.BTree` (never bare `Index`). Bare `Index` is ambiguous with `System.Index`. For multi-column: `Columns = new[] { nameof(Col1), nameof(Col2) }`, not collection expressions `[nameof(X)]`
 - **Sum types**: Use `TaggedEnum<(VariantA A, VariantB B)>` with `partial record`, not `partial class`
 - **Scheduled tables**: The schedule column (e.g. `ScheduledAt`) must use PascalCase, not snake_case
 

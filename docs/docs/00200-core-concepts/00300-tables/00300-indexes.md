@@ -117,8 +117,8 @@ const user = table(
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-:::tip C# index syntax
-Always use `SpacetimeDB.Index.BTree` (never bare `Index`). For table-level indexes, use `Columns = new[] { nameof(Col) }` or `new[] { "Col1", "Col2" }`, not collection expressions like `[nameof(X)]`.
+:::danger Use full namespace
+Never use bare `Index` — it conflicts with `System.Index`. Always write `SpacetimeDB.Index.BTree`. For table-level indexes, use `Columns = new[] { nameof(Col) }` or `new[] { "Col1", "Col2" }`, not collection expressions like `[nameof(X)]`.
 :::
 
 ```csharp

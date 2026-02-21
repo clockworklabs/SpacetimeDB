@@ -523,7 +523,7 @@ The `Name` argument on table and index attributes is now used to override the ca
 
 By default, the canonical name is derived from the accessor using the module's case-conversion policy.
 
-To migrate a 1.0 table definition to 2.0, replace `Name =` with `Accessor =` in table and index definitions:
+To migrate a 1.0 table definition to 2.0, replace `Name =` with `Accessor =` in table and index definitions. Always use `SpacetimeDB.Index.BTree` (never bare `Index` — it conflicts with `System.Index`):
 
 ```csharp
 // 1.0 style -- NO LONGER VALID in 2.0
@@ -647,6 +647,8 @@ Alternatively, manually specify the correct canonical name of each table:
 
 </TabItem>
 <TabItem value="csharp" label="C#">
+
+Always use `SpacetimeDB.Index.BTree` (never bare `Index` — it conflicts with `System.Index`):
 
 ```csharp
 [SpacetimeDB.Table(Accessor = "MyTable", Name = "MyTable", Public = true)]
