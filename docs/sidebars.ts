@@ -96,9 +96,9 @@ const sidebars: SidebarsConfig = {
       defaultStyle: false,
     },
     {
-      type: 'link',
+      type: 'ref',
       label: 'Migrating from 1.0 to 2.0',
-      href: '/upgrade',
+      id: '/upgrade',
     },
     {
       type: 'category',
