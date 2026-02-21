@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-02-21T18:20:33.172Z",
+  "generated_at": "2026-02-21T18:27:29.809Z",
   "by_language": {
     "csharp": {
       "modes": {
@@ -2456,27 +2456,27 @@
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
-                  "passed_tests": 19,
-                  "pass_pct": 70.37037,
-                  "task_pass_equiv": 7.833333,
-                  "task_pass_pct": 65.27777
+                  "passed_tests": 25,
+                  "pass_pct": 92.59259,
+                  "task_pass_equiv": 10.0,
+                  "task_pass_pct": 83.33333
                 },
                 "schema": {
                   "tasks": 10,
                   "total_tests": 34,
-                  "passed_tests": 26,
-                  "pass_pct": 76.47059,
-                  "task_pass_equiv": 7.0,
-                  "task_pass_pct": 70.0
+                  "passed_tests": 25,
+                  "pass_pct": 73.52941,
+                  "task_pass_equiv": 7.066667,
+                  "task_pass_pct": 70.66667
                 }
               },
               "totals": {
                 "tasks": 22,
                 "total_tests": 61,
-                "passed_tests": 45,
-                "pass_pct": 73.77049,
-                "task_pass_equiv": 14.833332,
-                "task_pass_pct": 67.42424
+                "passed_tests": 50,
+                "pass_pct": 81.96722,
+                "task_pass_equiv": 17.066666,
+                "task_pass_pct": 77.57575
               }
             },
             "DeepSeek R1": {
@@ -2512,27 +2512,27 @@
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
-                  "passed_tests": 16,
-                  "pass_pct": 59.25926,
-                  "task_pass_equiv": 6.3333335,
-                  "task_pass_pct": 52.77778
+                  "passed_tests": 17,
+                  "pass_pct": 62.962963,
+                  "task_pass_equiv": 6.833333,
+                  "task_pass_pct": 56.944443
                 },
                 "schema": {
                   "tasks": 10,
                   "total_tests": 34,
-                  "passed_tests": 24,
-                  "pass_pct": 70.588234,
-                  "task_pass_equiv": 6.3333335,
-                  "task_pass_pct": 63.333332
+                  "passed_tests": 15,
+                  "pass_pct": 44.117645,
+                  "task_pass_equiv": 4.3333335,
+                  "task_pass_pct": 43.333332
                 }
               },
               "totals": {
                 "tasks": 22,
                 "total_tests": 61,
-                "passed_tests": 40,
-                "pass_pct": 65.57377,
-                "task_pass_equiv": 12.666667,
-                "task_pass_pct": 57.575756
+                "passed_tests": 32,
+                "pass_pct": 52.459015,
+                "task_pass_equiv": 11.166666,
+                "task_pass_pct": 50.757576
               }
             },
             "DeepSeek V3": {
