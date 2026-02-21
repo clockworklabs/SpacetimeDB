@@ -242,7 +242,7 @@ describe('DbConnection', () => {
     const onErrorPromise = new Deferred<void>();
     client
       .subscriptionBuilder()
-      .onError((ctx) => {
+      .onError(ctx => {
         expect(ctx.event!.message).toEqual('test subscription error');
         onErrorPromise.resolve();
       })
