@@ -1,6 +1,6 @@
 import { schema, table, t } from 'spacetimedb/server';
 
-export const placeholder = table({ name: 'placeholder' }, { id: t.i32().primaryKey() });
+const placeholder = table({ name: 'placeholder' }, { id: t.i32().primaryKey() });
 
 const spacetimedb = schema({ placeholder });
 export default spacetimedb;

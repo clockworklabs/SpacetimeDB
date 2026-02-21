@@ -1,4 +1,5 @@
-﻿Write a SpacetimeDB backend module in C# that defines one table and a reducer that performs insert, update, and delete in one call.
+Write a SpacetimeDB backend module in C# that defines one table and a reducer that performs insert, update, and delete in one call.
+Use Accessor = "TableName" exactly as shown (e.g. User). Do not pluralize.
 
 TABLE
 - User

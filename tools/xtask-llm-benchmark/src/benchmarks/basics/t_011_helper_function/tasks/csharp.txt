@@ -1,4 +1,5 @@
-﻿Write a SpacetimeDB backend module in C# that defines a table, a non-reducer helper function, and a reducer that uses the helper.
+Write a SpacetimeDB backend module in C# that defines a table, a non-reducer helper function, and a reducer that uses the helper.
+Use Accessor = "TableName" exactly as shown (e.g. Result). Do not pluralize.
 
 TABLE
 - Result

@@ -1,4 +1,5 @@
 Write a SpacetimeDB backend module in C# that defines a minimal placeholder table and these five empty reducers.
+Use Accessor = "TableName" exactly as shown (e.g. Placeholder). Do not pluralize.
 
 TABLES
 - Placeholder

@@ -1,4 +1,5 @@
-﻿Write a SpacetimeDB backend module in C# that defines one table and an Init reducer that seeds rows on database initialization.
+Write a SpacetimeDB backend module in C# that defines one table and an Init reducer that seeds rows on database initialization.
+Use Accessor = "TableName" exactly as shown (e.g. User). Do not pluralize.
 
 TABLE
 - User

@@ -1403,6 +1403,24 @@ fn load_details_and_http_failures(
                         ) {
                             continue;
                         }
+                        let vendor = outcome.vendor.clone();
+                        let api_model = outcome
+                            .route_api_model
+                            .clone()
+                            .or_else(|| model_entry.route_api_model.clone())
+                            .or_else(|| {
+                                default_model_routes()
+                                    .iter()
+                                    .find(|r| r.display_name == model_entry.name)
+                                    .map(|r| r.api_model.to_string())
+                            })
+                            .unwrap_or_else(|| {
+                                model_entry.name.to_ascii_lowercase().replace(' ', "-")
+                            });
+                        // Only count/show failures for models in default_model_routes().
+                        if !is_model_in_routes(&vendor, &api_model) {
+                            continue;
+                        }
                         total_failures += 1;
                         // Only count LLM API failures (timeout, 429, etc.): we never got a response.
                         // If llm_output is present, we got a response and the failure was publish/compile.
@@ -1411,20 +1429,6 @@ fn load_details_and_http_failures(
                         }
                         if let Some(err) = get_publish_error_from_outcome(outcome) {
                             if is_http_like_error(&err) {
-                                let vendor = outcome.vendor.clone();
-                                let api_model = outcome
-                                    .route_api_model
-                                    .clone()
-                                    .or_else(|| model_entry.route_api_model.clone())
-                                    .or_else(|| {
-                                        default_model_routes()
-                                            .iter()
-                                            .find(|r| r.display_name == model_entry.name)
-                                            .map(|r| r.api_model.to_string())
-                                    })
-                                    .unwrap_or_else(|| {
-                                        model_entry.name.to_ascii_lowercase().replace(' ', "-")
-                                    });
                                 http_failures.push((
                                     lang_entry.lang.clone(),
                                     mode_entry.mode.clone(),
