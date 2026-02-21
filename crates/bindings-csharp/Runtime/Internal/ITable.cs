@@ -9,12 +9,17 @@ internal abstract class RawTableIterBase<T>
     public sealed class Enumerator(FFI.RowIter handle) : IDisposable
     {
         private const int InitialBufferSize = 1024;
-        private byte[] buffer = ArrayPool<byte>.Shared.Rent(InitialBufferSize);
+        private byte[]? buffer = ArrayPool<byte>.Shared.Rent(InitialBufferSize);
         public ArraySegment<byte> Current { get; private set; } = ArraySegment<byte>.Empty;
 
         public bool MoveNext()
         {
             if (handle == FFI.RowIter.INVALID)
+            {
+                return false;
+            }
+
+            if (buffer is null)
             {
                 return false;
             }
@@ -69,7 +74,11 @@ internal abstract class RawTableIterBase<T>
                 handle = FFI.RowIter.INVALID;
             }
 
-            ArrayPool<byte>.Shared.Return(buffer);
+            if (buffer is not null)
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+                buffer = null;
+            }
         }
 
         public void Reset()
