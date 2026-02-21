@@ -1,5 +1,4 @@
 Write a SpacetimeDB backend module in C# that defines three tables with basic columns.
-Use Accessor = "TableName" exactly as shown (e.g. User, Product, Note). Do not pluralize.
 
 TABLES
 - User

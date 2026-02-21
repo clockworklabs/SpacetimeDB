@@ -1,5 +1,4 @@
 Write a SpacetimeDB backend module in C# that defines a scheduled table and a scheduled reducer.
-Use Accessor = "TableName" exactly as shown (e.g. TickTimer). Do not pluralize.
 
 TABLE
 - TickTimer

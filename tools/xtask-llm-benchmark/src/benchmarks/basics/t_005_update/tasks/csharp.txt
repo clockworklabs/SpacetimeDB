@@ -1,5 +1,4 @@
 Write a SpacetimeDB backend module in C# that defines one table and a reducer that updates a row.
-Use Accessor = "TableName" exactly as shown (e.g. User). Do not pluralize.
 
 TABLE
 - User

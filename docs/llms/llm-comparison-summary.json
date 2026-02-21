@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-02-21T02:01:39.315Z",
+  "generated_at": "2026-02-21T02:15:39.000Z",
   "by_language": {
     "csharp": {
       "modes": {
@@ -2276,7 +2276,7 @@
     "typescript": {
       "modes": {
         "docs": {
-          "hash": "5be53b47d2091f80858cfd25cc719269df9a0fc498d631ac3ef58e37c73adf70",
+          "hash": "eb0bf879a6a0ee374428c39e527eef70aa7018062147077bef6273d987dd777c",
           "models": {
             "Claude 4 Sonnet": {
               "categories": {
@@ -2367,46 +2367,18 @@
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
-                  "passed_tests": 26,
-                  "pass_pct": 96.296295,
-                  "task_pass_equiv": 11.0,
-                  "task_pass_pct": 91.66667
+                  "passed_tests": 19,
+                  "pass_pct": 70.37037,
+                  "task_pass_equiv": 7.833333,
+                  "task_pass_pct": 65.27777
                 },
                 "schema": {
                   "tasks": 10,
                   "total_tests": 34,
-                  "passed_tests": 25,
-                  "pass_pct": 73.52941,
-                  "task_pass_equiv": 7.366667,
-                  "task_pass_pct": 73.66667
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 61,
-                "passed_tests": 51,
-                "pass_pct": 83.60656,
-                "task_pass_equiv": 18.366667,
-                "task_pass_pct": 83.48485
-              }
-            },
-            "Claude Sonnet 4.6": {
-              "categories": {
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 22,
-                  "pass_pct": 81.48148,
-                  "task_pass_equiv": 9.833334,
-                  "task_pass_pct": 81.94445
-                },
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 25,
-                  "pass_pct": 73.52941,
-                  "task_pass_equiv": 7.366667,
-                  "task_pass_pct": 73.66667
+                  "passed_tests": 28,
+                  "pass_pct": 82.35294,
+                  "task_pass_equiv": 8.0,
+                  "task_pass_pct": 80.0
                 }
               },
               "totals": {
@@ -2414,8 +2386,64 @@
                 "total_tests": 61,
                 "passed_tests": 47,
                 "pass_pct": 77.04918,
-                "task_pass_equiv": 17.2,
-                "task_pass_pct": 78.18182
+                "task_pass_equiv": 15.833332,
+                "task_pass_pct": 71.969696
+              }
+            },
+            "Claude Sonnet 4.6": {
+              "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 18,
+                  "pass_pct": 66.666664,
+                  "task_pass_equiv": 8.333333,
+                  "task_pass_pct": 69.44444
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 28,
+                  "pass_pct": 82.35294,
+                  "task_pass_equiv": 8.0,
+                  "task_pass_pct": 80.0
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 46,
+                "pass_pct": 75.409836,
+                "task_pass_equiv": 16.333332,
+                "task_pass_pct": 74.24242
+              }
+            },
+            "DeepSeek Chat": {
+              "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 17,
+                  "pass_pct": 62.962963,
+                  "task_pass_equiv": 7.333333,
+                  "task_pass_pct": 61.11111
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 26,
+                  "pass_pct": 76.47059,
+                  "task_pass_equiv": 7.0,
+                  "task_pass_pct": 70.0
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 43,
+                "pass_pct": 70.491806,
+                "task_pass_equiv": 14.333333,
+                "task_pass_pct": 65.15151
               }
             },
             "DeepSeek R1": {
@@ -2444,6 +2472,34 @@
                 "pass_pct": 32.786884,
                 "task_pass_equiv": 7.033333,
                 "task_pass_pct": 31.969694
+              }
+            },
+            "DeepSeek Reasoner": {
+              "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 13,
+                  "pass_pct": 48.148148,
+                  "task_pass_equiv": 6.0,
+                  "task_pass_pct": 50.0
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 23,
+                  "pass_pct": 67.64706,
+                  "task_pass_equiv": 6.4,
+                  "task_pass_pct": 64.0
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 36,
+                "pass_pct": 59.01639,
+                "task_pass_equiv": 12.4,
+                "task_pass_pct": 56.363636
               }
             },
             "DeepSeek V3": {
@@ -2558,6 +2614,34 @@
                 "task_pass_pct": 78.18182
               }
             },
+            "GPT-5-mini": {
+              "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 14,
+                  "pass_pct": 51.851852,
+                  "task_pass_equiv": 6.333333,
+                  "task_pass_pct": 52.777775
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 23,
+                  "pass_pct": 67.64706,
+                  "task_pass_equiv": 7.0,
+                  "task_pass_pct": 70.0
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 37,
+                "pass_pct": 60.65574,
+                "task_pass_equiv": 13.333333,
+                "task_pass_pct": 60.606056
+              }
+            },
             "GPT-5.2": {
               "categories": {
                 "basics": {
@@ -2584,6 +2668,34 @@
                 "pass_pct": 77.04918,
                 "task_pass_equiv": 17.2,
                 "task_pass_pct": 78.18182
+              }
+            },
+            "GPT-5.2-Codex": {
+              "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 18,
+                  "pass_pct": 66.666664,
+                  "task_pass_equiv": 8.333333,
+                  "task_pass_pct": 69.44444
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 28,
+                  "pass_pct": 82.35294,
+                  "task_pass_equiv": 8.0,
+                  "task_pass_pct": 80.0
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 46,
+                "pass_pct": 75.409836,
+                "task_pass_equiv": 16.333332,
+                "task_pass_pct": 74.24242
               }
             },
             "Gemini 2.5 Flash": {
@@ -2642,6 +2754,62 @@
                 "task_pass_pct": 78.9394
               }
             },
+            "Gemini 3 Flash": {
+              "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 21,
+                  "passed_tests": 13,
+                  "pass_pct": 61.904762,
+                  "task_pass_equiv": 6.0,
+                  "task_pass_pct": 50.0
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 19,
+                  "passed_tests": 11,
+                  "pass_pct": 57.894737,
+                  "task_pass_equiv": 3.3333333,
+                  "task_pass_pct": 33.333332
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 40,
+                "passed_tests": 24,
+                "pass_pct": 60.0,
+                "task_pass_equiv": 9.333333,
+                "task_pass_pct": 42.42424
+              }
+            },
+            "Gemini 3.1 Pro": {
+              "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 20,
+                  "passed_tests": 10,
+                  "pass_pct": 50.0,
+                  "task_pass_equiv": 5.333333,
+                  "task_pass_pct": 44.444443
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 18,
+                  "passed_tests": 10,
+                  "pass_pct": 55.555557,
+                  "task_pass_equiv": 3.3333333,
+                  "task_pass_pct": 33.333332
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 38,
+                "passed_tests": 20,
+                "pass_pct": 52.63158,
+                "task_pass_equiv": 8.666666,
+                "task_pass_pct": 39.393936
+              }
+            },
             "Grok 3 Mini (Beta)": {
               "categories": {
                 "basics": {
@@ -2675,27 +2843,55 @@
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
-                  "passed_tests": 24,
-                  "pass_pct": 88.888885,
-                  "task_pass_equiv": 9.0,
-                  "task_pass_pct": 75.0
+                  "passed_tests": 17,
+                  "pass_pct": 62.962963,
+                  "task_pass_equiv": 7.333333,
+                  "task_pass_pct": 61.11111
                 },
                 "schema": {
                   "tasks": 10,
                   "total_tests": 34,
                   "passed_tests": 24,
                   "pass_pct": 70.588234,
-                  "task_pass_equiv": 6.866667,
-                  "task_pass_pct": 68.666664
+                  "task_pass_equiv": 6.333333,
+                  "task_pass_pct": 63.333332
                 }
               },
               "totals": {
                 "tasks": 22,
                 "total_tests": 61,
-                "passed_tests": 48,
-                "pass_pct": 78.68852,
-                "task_pass_equiv": 15.866666,
-                "task_pass_pct": 72.12121
+                "passed_tests": 41,
+                "pass_pct": 67.21311,
+                "task_pass_equiv": 13.666666,
+                "task_pass_pct": 62.12121
+              }
+            },
+            "Grok Code": {
+              "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 18,
+                  "pass_pct": 66.666664,
+                  "task_pass_equiv": 8.333333,
+                  "task_pass_pct": 69.44444
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 25,
+                  "pass_pct": 73.52941,
+                  "task_pass_equiv": 6.666667,
+                  "task_pass_pct": 66.66667
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 43,
+                "pass_pct": 70.491806,
+                "task_pass_equiv": 14.999999,
+                "task_pass_pct": 68.181816
               }
             },
             "Grok Code Fast 1": {
@@ -2752,6 +2948,62 @@
                 "pass_pct": 77.04918,
                 "task_pass_equiv": 16.199999,
                 "task_pass_pct": 73.63636
+              }
+            },
+            "Meta Llama 3.2 3B": {
+              "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0,
+                  "task_pass_equiv": 0.0,
+                  "task_pass_pct": 0.0
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0,
+                  "task_pass_equiv": 0.0,
+                  "task_pass_pct": 0.0
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 0,
+                "pass_pct": 0.0,
+                "task_pass_equiv": 0.0,
+                "task_pass_pct": 0.0
+              }
+            },
+            "Meta Llama 3.3 70B": {
+              "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 12,
+                  "pass_pct": 44.444443,
+                  "task_pass_equiv": 5.166667,
+                  "task_pass_pct": 43.055557
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 10,
+                  "pass_pct": 29.411764,
+                  "task_pass_equiv": 2.4,
+                  "task_pass_pct": 24.0
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 22,
+                "pass_pct": 36.065575,
+                "task_pass_equiv": 7.566667,
+                "task_pass_pct": 34.393944
               }
             },
             "o4-mini": {
