@@ -99,7 +99,7 @@ for (const auto& p : ctx.db[player]) {
 </TabItem>
 </Tabs>
 
-Add indexes to columns you frequently filter or join on. See [Indexes](/tables/indexes) for details.
+Add indexes to columns you frequently filter or join on. See [Indexes](./00300-indexes.md) for details.
 
 ## Keep Tables Focused
 
@@ -637,6 +637,6 @@ Be mindful of unbounded table growth:
 
 ## Next Steps
 
-- Learn about [Indexes](/tables/indexes) to optimize queries
-- Explore [Subscriptions](/clients/subscriptions) for efficient client data sync
-- Review [Reducers](/functions/reducers) for efficient data modification patterns
+- Learn about [Indexes](./00300-indexes.md) to optimize queries
+- Explore [Subscriptions](../00400-subscriptions.md) for efficient client data sync
+- Review [Reducers](../00200-functions/00300-reducers/00300-reducers.md) for efficient data modification patterns

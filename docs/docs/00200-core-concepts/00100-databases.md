@@ -25,10 +25,10 @@ You can deploy the same module to multiple databases (e.g. separate environments
 
 A module contains:
 
-- **[Tables](/tables)** - Define your data structure and storage.
-- **[Reducers](/functions/reducers)** - Server-side functions that modify your data transactionally.
-- **[Procedures](/functions/procedures)** - Functions that can perform external operations like HTTP requests and return results.
-- **[Views](/functions/views)** - Read-only computed queries over your data.
+- **[Tables](./00300-tables.md)** - Define your data structure and storage.
+- **[Reducers](./00200-functions/00300-reducers/00300-reducers.md)** - Server-side functions that modify your data transactionally.
+- **[Procedures](./00200-functions/00400-procedures.md)** - Functions that can perform external operations like HTTP requests and return results.
+- **[Views](./00200-functions/00500-views.md)** - Read-only computed queries over your data.
 
 The logic is contained within these three categories of server-side functions: reducers (transactional state changes), procedures (functions with external capabilities), and views (read-only queries).
 
@@ -41,14 +41,14 @@ SpacetimeDB modules can be written in multiple languages:
 
 TypeScript is fully supported for server modules. TypeScript is ideal for developers familiar with JavaScript/Node.js.
 
-- [TypeScript Quickstart Guide](/quickstarts/typescript)
+- [TypeScript Quickstart Guide](../00100-intro/00200-quickstarts/00400-typescript.md)
 
 </TabItem>
 <TabItem value="csharp" label="C#">
 
 C# is fully supported for server modules. C# is an excellent choice for developers using Unity or .NET.
 
-- [C# Quickstart Guide](/quickstarts/c-sharp)
+- [C# Quickstart Guide](../00100-intro/00200-quickstarts/00600-c-sharp.md)
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -56,7 +56,7 @@ C# is fully supported for server modules. C# is an excellent choice for develope
 Rust is fully supported for server modules. Rust is a great choice for performance-critical applications.
 
 - The Rust Module SDK docs are [hosted on docs.rs](https://docs.rs/spacetimedb/latest/spacetimedb/).
-- [Rust Quickstart Guide](/quickstarts/rust)
+- [Rust Quickstart Guide](../00100-intro/00200-quickstarts/00500-rust.md)
 
 </TabItem>
 <TabItem value="cpp" label="C++">
@@ -65,7 +65,7 @@ Rust is fully supported for server modules. Rust is a great choice for performan
 
 C++ is fully supported for server modules. C++ is an excellent choice for developers working with Unreal Engine or those who prefer to stay in the C++ ecosystem.
 
-- [C++ Quickstart Guide](/quickstarts/c-plus-plus)
+- [C++ Quickstart Guide](../00100-intro/00200-quickstarts/00700-cpp.md)
 
 </TabItem>
 </Tabs>
@@ -94,15 +94,15 @@ Create or update a database by publishing your module:
 spacetime publish <DATABASE_NAME>
 ```
 
-See [`spacetime publish`](/databases/building-publishing) for details on the publishing workflow.
+See [`spacetime publish`](./00100-databases/00300-spacetime-publish.md) for details on the publishing workflow.
 
 When you republish to an existing database, SpacetimeDB attempts to automatically migrate the schema. For details on what changes are supported and migration strategies:
 
-- [1.x to 2.0 Upgrade Notes](/upgrade) - Required reading before major-version upgrades.
-- [Automatic Migrations](/databases/automatic-migrations) - Learn which schema changes are safe, breaking, or forbidden.
-- [Incremental Migrations](/databases/incremental-migrations) - Advanced pattern for complex schema changes.
+- [1.x to 2.0 Upgrade Notes](./00100-databases/00500-migrations/00100-upgrade-notes-2-0.md) - Required reading before major-version upgrades.
+- [Automatic Migrations](./00100-databases/00500-migrations/00200-automatic-migrations.md) - Learn which schema changes are safe, breaking, or forbidden.
+- [Incremental Migrations](./00100-databases/00500-migrations/00300-incremental-migrations.md) - Advanced pattern for complex schema changes.
 
-For all available publish options, see the [`spacetime publish` CLI reference](/cli-reference#spacetime-publish).
+For all available publish options, see the [`spacetime publish` CLI reference](../00300-resources/00200-reference/00100-cli-reference/00100-cli-reference.md#spacetime-publish).
 
 ### Deleting a Database
 
@@ -118,7 +118,7 @@ You'll be prompted to confirm the deletion. Use `--yes` to skip the confirmation
 Deleting a database is permanent and cannot be undone. All data will be lost.
 :::
 
-For more options, see the [`spacetime delete` CLI reference](/cli-reference#spacetime-delete).
+For more options, see the [`spacetime delete` CLI reference](../00300-resources/00200-reference/00100-cli-reference/00100-cli-reference.md#spacetime-delete).
 
 ### Querying with SQL
 
@@ -140,7 +140,7 @@ spacetime sql --anonymous <DATABASE_NAME> "SELECT * FROM user"
 
 This executes the query as an anonymous client, respecting table visibility rules.
 
-For more SQL options, see the [`spacetime sql` CLI reference](/cli-reference#spacetime-sql).
+For more SQL options, see the [`spacetime sql` CLI reference](../00300-resources/00200-reference/00100-cli-reference/00100-cli-reference.md#spacetime-sql).
 
 ### Viewing Logs
 
@@ -166,7 +166,7 @@ To view only the last N lines:
 spacetime logs --num-lines 100 <DATABASE_NAME>
 ```
 
-For more logging options, see the [`spacetime logs` CLI reference](/cli-reference#spacetime-logs).
+For more logging options, see the [`spacetime logs` CLI reference](../00300-resources/00200-reference/00100-cli-reference/00100-cli-reference.md#spacetime-logs).
 
 ### Listing Your Databases
 
@@ -206,41 +206,41 @@ SpacetimeDB supports organizing databases into projects and managing team access
 
 If you're new to SpacetimeDB, follow this recommended learning path:
 
-1. **[Create Your First Database Module](/databases/developing)** - Set up a new module project with `spacetime init` or `spacetime dev`
-2. **[Build and Publish](/databases/building-publishing)** - Learn how to compile and deploy your module
-3. **[Define Tables](/tables)** - Structure your data with tables, columns, and indexes
-4. **[Write Reducers](/functions/reducers)** - Create transactional functions that modify your database
-5. **[Connect a Client](/clients)** - Build a client application that connects to your database
+1. **[Create Your First Database Module](./00100-databases/00200-spacetime-dev.md)** - Set up a new module project with `spacetime init` or `spacetime dev`
+2. **[Build and Publish](./00100-databases/00300-spacetime-publish.md)** - Learn how to compile and deploy your module
+3. **[Define Tables](./00300-tables.md)** - Structure your data with tables, columns, and indexes
+4. **[Write Reducers](./00200-functions/00300-reducers/00300-reducers.md)** - Create transactional functions that modify your database
+5. **[Connect a Client](./00600-clients.md)** - Build a client application that connects to your database
 
 ### Core Concepts
 
 Once you have the basics down, explore these essential topics:
 
-- **[Error Handling](/functions/reducers/error-handling)** - Handle errors gracefully in reducers
-- **[Lifecycle Reducers](/functions/reducers/lifecycle)** - Respond to system events like initialization and client connections
-- **[Automatic Migrations](/databases/automatic-migrations)** - Understand how schema changes work
-- **[Logging](/how-to/logging)** - Debug and monitor your module with logging
+- **[Error Handling](./00200-functions/00300-reducers/00600-error-handling.md)** - Handle errors gracefully in reducers
+- **[Lifecycle Reducers](./00200-functions/00300-reducers/00500-lifecycle.md)** - Respond to system events like initialization and client connections
+- **[Automatic Migrations](./00100-databases/00500-migrations/00200-automatic-migrations.md)** - Understand how schema changes work
+- **[Logging](../00300-resources/00100-how-to/00300-logging.md)** - Debug and monitor your module with logging
 
 ### Advanced Features
 
 Ready to level up? Dive into these advanced capabilities:
 
-- **[Procedures](/functions/procedures)** - Make HTTP requests and interact with external services
-- **[Views](/functions/views)** - Create computed, subscribable queries
-- **[Schedule Tables](/tables/schedule-tables)** - Schedule reducers to run at specific times
-- **[Incremental Migrations](/databases/incremental-migrations)** - Handle complex schema changes
-- **[SQL Queries](/reference/sql)** - Query your database with SQL
+- **[Procedures](./00200-functions/00400-procedures.md)** - Make HTTP requests and interact with external services
+- **[Views](./00200-functions/00500-views.md)** - Create computed, subscribable queries
+- **[Schedule Tables](./00300-tables/00500-schedule-tables.md)** - Schedule reducers to run at specific times
+- **[Incremental Migrations](./00100-databases/00500-migrations/00300-incremental-migrations.md)** - Handle complex schema changes
+- **[SQL Queries](../00300-resources/00200-reference/00400-sql-reference.md)** - Query your database with SQL
 
 ### Deployment
 
 When you're ready to go live:
 
-- **[Deploy to MainCloud](/how-to/deploy/maincloud)** - Host your database on SpacetimeDB's managed service
-- **[Self-Hosting](/how-to/deploy/self-hosting)** - Run your own SpacetimeDB instance
+- **[Deploy to MainCloud](../00300-resources/00100-how-to/00100-deploy/00100-maincloud.md)** - Host your database on SpacetimeDB's managed service
+- **[Self-Hosting](../00300-resources/00100-how-to/00100-deploy/00200-self-hosting.md)** - Run your own SpacetimeDB instance
 
 ## Next Steps
 
-- Learn about [Tables](/tables) to define your database schema
-- Create [Reducers](/functions/reducers) to modify database state
-- Understand [Subscriptions](/clients/subscriptions) for real-time data sync
-- Review the [CLI Reference](/cli-reference) for all available commands
+- Learn about [Tables](./00300-tables.md) to define your database schema
+- Create [Reducers](./00200-functions/00300-reducers/00300-reducers.md) to modify database state
+- Understand [Subscriptions](./00400-subscriptions.md) for real-time data sync
+- Review the [CLI Reference](../00300-resources/00200-reference/00100-cli-reference/00100-cli-reference.md) for all available commands
