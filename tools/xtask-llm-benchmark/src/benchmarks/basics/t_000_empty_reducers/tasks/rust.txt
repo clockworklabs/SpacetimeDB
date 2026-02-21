@@ -1,8 +1,8 @@
-Write a SpacetimeDB backend module in Rust that defines a minimal placeholder table and these five empty reducers.
+Write a SpacetimeDB backend module in Rust that defines a table and these five empty reducers.
 
 TABLES
-- Placeholder
-  - Struct: Placeholder
+- EmptyTable
+  - Struct: EmptyTable
   - Fields:
     - id: i32 (primary key)
 

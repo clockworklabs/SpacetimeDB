@@ -2,8 +2,8 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [Table(Accessor = "Placeholder")]
-    public partial struct Placeholder
+    [Table(Accessor = "EmptyTable")]
+    public partial struct EmptyTable
     {
         [PrimaryKey] public int Id;
     }

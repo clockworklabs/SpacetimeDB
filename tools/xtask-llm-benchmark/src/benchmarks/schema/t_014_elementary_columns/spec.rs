@@ -8,7 +8,7 @@ pub fn spec() -> BenchmarkSpec {
         let mut v = default_schema_parity_scorers(host_url, file!(), route_tag);
         let casing = casing_for_lang(lang);
         let sb = SqlBuilder::new(casing);
-        let reducer = ident("Seed", casing);
+        let reducer = ident("Seed", crate::eval::Casing::Snake);
         let primitive_table = table_name("primitive", lang);
 
         let select = sb.select_by_id(

@@ -1,7 +1,7 @@
-Write a SpacetimeDB backend module in TypeScript that defines a minimal placeholder table and five empty reducers with different argument patterns.
+Write a SpacetimeDB backend module in TypeScript that defines a table and five empty reducers with different argument patterns.
 
 TABLES
-- placeholder
+- emptyTable
   - Fields:
     - id: number (i32, primary key)
 

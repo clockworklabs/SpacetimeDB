@@ -11,7 +11,7 @@ pub fn spec() -> BenchmarkSpec {
         let casing = casing_for_lang(lang);
 
         let sb = SqlBuilder::new(casing);
-        let reducer_name = ident("Seed", casing);
+        let reducer_name = ident("Seed", crate::eval::Casing::Snake);
         let membership_table = table_name("membership", lang);
 
         let user_id = ident("user_id", sb.case);

@@ -1,7 +1,7 @@
 use spacetimedb::{reducer, table, ReducerContext};
 
-#[table(accessor = placeholder)]
-pub struct Placeholder {
+#[table(accessor = empty_table)]
+pub struct EmptyTable {
     #[primary_key]
     pub id: i32,
 }

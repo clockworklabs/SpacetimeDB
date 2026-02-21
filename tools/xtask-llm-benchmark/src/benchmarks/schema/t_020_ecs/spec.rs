@@ -11,8 +11,8 @@ pub fn spec() -> BenchmarkSpec {
         let case = casing_for_lang(lang);
         let sb   = SqlBuilder::new(case);
 
-        let seed = ident("Seed", case);
-        let step = ident("Step", case);
+        let seed = ident("Seed", crate::eval::Casing::Snake);
+        let step = ident("Step", crate::eval::Casing::Snake);
 
         let entity_id = ident("entity_id", sb.case);
         let x = ident("x", sb.case);

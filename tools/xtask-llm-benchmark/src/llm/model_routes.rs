@@ -44,17 +44,27 @@ pub fn default_model_routes() -> &'static [ModelRoute] {
             vendor: Xai,
             api_model: "grok-code-fast-1",
         },
-        // Gemini: Best 3.1 Pro, Cheaper 3 Flash
         ModelRoute {
             display_name: "Gemini 3.1 Pro",
-            vendor: Meta,
-            api_model: "gemini-3.1-pro-preview",
+            vendor: Meta,  // uses MetaLlamaClient = OpenRouter
+            api_model: "google/gemini-3.1-pro-preview",
         },
         ModelRoute {
             display_name: "Gemini 3 Flash",
             vendor: Meta,
-            api_model: "gemini-3-flash-preview",
+            api_model: "google/gemini-3-flash-preview",
         },
+        // Gemini: Best 3.1 Pro, Cheaper 3 Flash
+        // ModelRoute {
+        //     display_name: "Gemini 3.1 Pro",
+        //     vendor: Google,
+        //     api_model: "gemini-3.1-pro-preview",
+        // },
+        // ModelRoute {
+        //     display_name: "Gemini 3 Flash",
+        //     vendor: Google,
+        //     api_model: "gemini-3-flash-preview",
+        // },
         // DeepSeek: Reasoner (thinking), Chat (general)
         ModelRoute {
             display_name: "DeepSeek Reasoner",
