@@ -47,24 +47,13 @@ pub fn default_model_routes() -> &'static [ModelRoute] {
         // Gemini: Best 3.1 Pro, Cheaper 3 Flash
         ModelRoute {
             display_name: "Gemini 3.1 Pro",
-            vendor: Google,
+            vendor: Meta,
             api_model: "gemini-3.1-pro-preview",
         },
         ModelRoute {
             display_name: "Gemini 3 Flash",
-            vendor: Google,
+            vendor: Meta,
             api_model: "gemini-3-flash-preview",
-        },
-        // Meta: Best Llama 3.3 70B, Cheaper 3.2 3B
-        ModelRoute {
-            display_name: "Meta Llama 3.3 70B",
-            vendor: Meta,
-            api_model: "meta-llama/llama-3.3-70b-instruct",
-        },
-        ModelRoute {
-            display_name: "Meta Llama 3.2 3B",
-            vendor: Meta,
-            api_model: "meta-llama/llama-3.2-3b-instruct",
         },
         // DeepSeek: Reasoner (thinking), Chat (general)
         ModelRoute {

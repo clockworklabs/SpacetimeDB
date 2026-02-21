@@ -1,5 +1,4 @@
 Write a SpacetimeDB backend module in C# that defines a product type and uses it in a table.
-Use Accessor = "TableName" exactly as shown (e.g. Result). Do not pluralize.
 
 TYPES
 - Struct: Score
