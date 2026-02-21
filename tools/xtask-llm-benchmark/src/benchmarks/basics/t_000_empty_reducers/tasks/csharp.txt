@@ -1,4 +1,10 @@
-﻿Write a SpacetimeDB backend module in C# that defines only these five empty reducers.
+Write a SpacetimeDB backend module in C# that defines a minimal placeholder table and these five empty reducers.
+
+TABLES
+- Placeholder
+  - Struct: Placeholder
+  - Fields:
+    - Id: int (primary key)
 
 REDUCERS
 - EmptyReducer_NoArgs: no arguments, returns void, empty body

@@ -1,4 +1,10 @@
-use spacetimedb::{reducer, ReducerContext};
+use spacetimedb::{reducer, table, ReducerContext};
+
+#[table(accessor = placeholder)]
+pub struct Placeholder {
+    #[primary_key]
+    pub id: i32,
+}
 
 #[reducer]
 pub fn empty_reducer_no_args(ctx: &ReducerContext) -> Result<(), String> {
