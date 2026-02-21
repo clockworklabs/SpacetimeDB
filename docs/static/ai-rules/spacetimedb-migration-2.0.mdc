@@ -78,6 +78,44 @@ conn.Db.DamageEvent.OnInsert += (ctx, damageEvent) => {
 
 **Event tables must be subscribed explicitly** — they are excluded from `subscribe_to_all_tables()`.
 
+**TypeScript:** Use `reducer(params, fn)` with `export const name = ...` — never `reducer('name', params, fn)`.
+
+```typescript
+// ❌ 1.0 — NO LONGER VALID
+spacetimedb.reducer('deal_damage', { target: t.identity(), amount: t.u32() }, (ctx, { target, amount }) => { ... });
+
+// ✅ 2.0 — name from export
+export const deal_damage = spacetimedb.reducer({ target: t.identity(), amount: t.u32() }, (ctx, { target, amount }) => {
+  ctx.db.damage_event.insert({ target, amount });
+});
+```
+
+---
+
+## TypeScript: schema, reducer, scheduled
+
+### schema() — object only
+```typescript
+// ❌ 1.0 — NO LONGER VALID
+const spacetimedb = schema(myTable);
+const spacetimedb = schema(t1, t2, t3);
+
+// ✅ 2.0 — single object argument
+export const spacetimedb = schema({ myTable });
+export const spacetimedb = schema({ t1, t2, t3 });
+```
+
+### scheduled tables
+```typescript
+// ❌ 1.0 — string reducer name
+scheduled: 'run_cleanup'
+
+// ✅ 2.0 — function returning exported reducer
+export const run_cleanup = spacetimedb.reducer({ arg: CleanupJob.rowType }, (ctx, { arg }) => { ... });
+// In table options:
+scheduled: () => run_cleanup
+```
+
 ---
 
 ## Table/Index: `name` → `accessor`
@@ -86,10 +124,15 @@ conn.Db.DamageEvent.OnInsert += (ctx, damageEvent) => {
 
 ```rust
 #[table(name = my_table, public, index(name = position, btree(columns = [x, y])))]
+```
 
-// C#
+```csharp
 [SpacetimeDB.Table(Name = "MyTable", Public = true)]
 [SpacetimeDB.Index.BTree(Name = "Position", Columns = new[] { nameof(X), nameof(Y) })]
+```
+
+```typescript
+// schema(myTable) or schema(t1, t2) — NO LONGER VALID
 ```
 
 ### ✅ 2.0
@@ -101,6 +144,11 @@ conn.Db.DamageEvent.OnInsert += (ctx, damageEvent) => {
 ```csharp
 [SpacetimeDB.Table(Accessor = "MyTable", Public = true)]
 [SpacetimeDB.Index.BTree(Accessor = "Position", Columns = new[] { nameof(X), nameof(Y) })]
+```
+
+```typescript
+// schema({ myTable }) — object keys become accessors
+export const spacetimedb = schema({ myTable });
 ```
 
 - `accessor` = API names in module/client code

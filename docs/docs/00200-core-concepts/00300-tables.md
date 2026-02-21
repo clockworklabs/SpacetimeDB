@@ -106,7 +106,7 @@ Tables are defined in your module code with a name, columns, and optional config
 Use the `table` function to declare a new table:
 
 ```typescript
-import { table, t } from 'spacetimedb/server';
+import { schema, table, t } from 'spacetimedb/server';
 
 const people = table(
   { name: 'people', public: true },
@@ -116,9 +116,12 @@ const people = table(
     email: t.string().unique(),
   }
 );
+
+const spacetimedb = schema({ people });
+export default spacetimedb;
 ```
 
-The first argument defines table options, and the second defines columns.
+The first argument to `table()` defines table options, and the second defines columns. Pass your tables to `schema()` as an object: `schema({ people })` or `schema({ table1, table2 })`. Never use `schema(table)` or `schema(t1, t2, t3)`.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -187,6 +190,20 @@ FIELD_Unique(person, email)
 
 </TabItem>
 </Tabs>
+
+### Creating the schema (TypeScript)
+
+After defining tables, pass them to `schema()` as a single object. The object keys become the accessor names in `ctx.db`:
+
+```typescript
+const people = table({ name: 'people', public: true }, { /* columns */ });
+const products = table({ name: 'products', public: true }, { /* columns */ });
+
+const spacetimedb = schema({ people, products });
+export default spacetimedb;
+```
+
+Use `schema({ table1 })` or `schema({ t1, t2 })`. Never use `schema(table)` or `schema(t1, t2, t3)`.
 
 ## Table Naming and Accessors
 

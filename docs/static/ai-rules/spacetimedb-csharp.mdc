@@ -149,10 +149,10 @@ public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> {
 ### 13. Index Attribute Ambiguity
 ```csharp
 // ❌ WRONG — ambiguous with System.Index
-[Index.BTree(Accessor = "idx", Columns = new[] { "Col" })]
+[Index.BTree(Accessor = "by_name", Columns = new[] { nameof(Name) })]
 
-// ✅ CORRECT — fully qualify
-[SpacetimeDB.Index.BTree(Accessor = "idx", Columns = new[] { "Col" })]
+// ✅ CORRECT — always use full namespace
+[SpacetimeDB.Index.BTree(Accessor = "by_name", Columns = new[] { nameof(Name) })]
 ```
 
 ---
@@ -590,7 +590,7 @@ For C# scheduled tables, the schedule column must use PascalCase (e.g. `Schedule
 ```csharp
 using SpacetimeDB;
 
-[SpacetimeDB.Table(Accessor = "Reminder", Scheduled = "SendReminder")]
+[SpacetimeDB.Table(Accessor = "Reminder", Scheduled = nameof(SendReminder))]
 public partial struct Reminder
 {
     [SpacetimeDB.PrimaryKey]

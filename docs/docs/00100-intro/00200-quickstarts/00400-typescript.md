@@ -76,7 +76,7 @@ const spacetimedb = schema({
     {
       name: t.string(),
     }
-  )
+  ),
 });
 export default spacetimedb;
 
