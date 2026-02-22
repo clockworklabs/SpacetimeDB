@@ -579,6 +579,12 @@ public partial class Module
         return ctx.From.Player();
     }
 
+    // Invalid: Query builder no longer supports `.Build()`
+    public static string NoBuildForQueryBuilder(ViewContext ctx)
+    {
+        return ctx.From.Player().Build().ToSql();
+    }
+
     // Invalid: Returns type that is not a SpacetimeType
     [SpacetimeDB.View(Accessor = "view_def_returns_not_a_spacetime_type", Public = true)]
     public static NotSpacetimeType? ViewDefReturnsNotASpacetimeType(AnonymousViewContext ctx)

@@ -1158,14 +1158,14 @@ record ViewDeclaration
         ITypeSymbol? queryRowType = null;
         if (method.ReturnType is INamedTypeSymbol namedReturnType)
         {
-            static bool IsSpacetimeQueryReturnType(INamedTypeSymbol type) =>
-                (type.Name == "Query" || type.Name == "IQuery")
+            static bool IsSpacetimeIQueryReturnType(INamedTypeSymbol type) =>
+                type.Name == "IQuery"
                 && type.TypeArguments.Length == 1
                 && type.ContainingNamespace.ToDisplayString() == "SpacetimeDB";
 
-            // Accept only explicit Query<T> or IQuery<T> view return types.
+            // Accept only explicit IQuery<T> view return types.
             if (
-                IsSpacetimeQueryReturnType(namedReturnType)
+                IsSpacetimeIQueryReturnType(namedReturnType)
                 && namedReturnType.TypeArguments is [var rowType]
             )
             {
@@ -1181,7 +1181,7 @@ record ViewDeclaration
                 ? "SpacetimeDB.BSATN.ValueOption"
                 : "SpacetimeDB.BSATN.RefOption";
             var opt = $"{optType}<{rowType.Name}, {rowType.BSATNName}>";
-            // Match Rust semantics: Query<T> is described as Option<T>.
+            // Match Rust semantics: IQuery<T> is described as Option<T>.
             ReturnType = new ReferenceUse(opt, opt);
         }
         else
