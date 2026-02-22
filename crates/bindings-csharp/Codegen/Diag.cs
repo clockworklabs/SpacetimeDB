@@ -216,8 +216,7 @@ internal static class ErrorDescriptor
         new(
             group,
             "Views must return Vec<T>, Option<T>, or IQuery<T>",
-            method =>
-                $"View '{method.Identifier}' must return Vec<T>, Option<T>, or IQuery<T>.",
+            method => $"View '{method.Identifier}' must return Vec<T>, Option<T>, or IQuery<T>.",
             method => method
         );
 

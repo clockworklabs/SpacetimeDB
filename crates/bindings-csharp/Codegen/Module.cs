@@ -1164,7 +1164,10 @@ record ViewDeclaration
                 && type.ContainingNamespace.ToDisplayString() == "SpacetimeDB";
 
             // Accept only explicit Query<T> or IQuery<T> view return types.
-            if (IsSpacetimeQueryReturnType(namedReturnType) && namedReturnType.TypeArguments is [var rowType])
+            if (
+                IsSpacetimeQueryReturnType(namedReturnType)
+                && namedReturnType.TypeArguments is [var rowType]
+            )
             {
                 queryRowType = rowType;
             }
