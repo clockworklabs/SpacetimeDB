@@ -343,12 +343,45 @@ public partial struct TestScheduleIssues
 ^^^^^
 
 */
-      Message: View 'ViewDefWrongReturn' must return Vec<T> or Option<T>.,
+      Message: View 'ViewDefWrongReturn' must return Vec<T>, Option<T>, or IQuery<T>.,
       Severity: Error,
       Descriptor: {
         Id: STDB0024,
-        Title: Views must return Vec<T> or Option<T>,
-        MessageFormat: View '{0}' must return Vec<T> or Option<T>.,
+        Title: Views must return Vec<T>, Option<T>, or IQuery<T>,
+        MessageFormat: View '{0}' must return Vec<T>, Option<T>, or IQuery<T>.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    // Invalid: Query builder views must not return concrete builder types.
+    [SpacetimeDB.View(Accessor = "view_return_concrete_query_builder_type", Public = true)]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public static SpacetimeDB.Table<
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        Player,
+^^^^^^^^^^^^^^^
+        SpacetimeDB.PlayerCols,
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        SpacetimeDB.PlayerIxCols
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    > ViewReturnConcreteQueryBuilderType(ViewContext ctx)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    {
+^^^^^
+        return ctx.From.Player();
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
+^^^^^
+
+*/
+      Message: View 'ViewReturnConcreteQueryBuilderType' must return Vec<T>, Option<T>, or IQuery<T>.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0024,
+        Title: Views must return Vec<T>, Option<T>, or IQuery<T>,
+        MessageFormat: View '{0}' must return Vec<T>, Option<T>, or IQuery<T>.,
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true

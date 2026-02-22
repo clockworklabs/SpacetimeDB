@@ -2059,6 +2059,50 @@ sealed class view_no_insertViewDispatcher : global::SpacetimeDB.Internal.IView
     }
 }
 
+sealed class view_return_concrete_query_builder_typeViewDispatcher
+    : global::SpacetimeDB.Internal.IView
+{
+    public SpacetimeDB.Internal.RawViewDefV10 MakeViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "view_return_concrete_query_builder_type",
+            Index: 6,
+            IsPublic: true,
+            IsAnonymous: false,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.Unsupported<object>().GetAlgebraicType(registrar)
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.ViewReturnConcreteQueryBuilderType(
+                (SpacetimeDB.ViewContext)ctx
+            );
+            SpacetimeDB.BSATN.Unsupported<object> returnRW = new();
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
+            returnRW.Write(writer, returnValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error(
+                "Error in view 'view_return_concrete_query_builder_type': " + e
+            );
+            throw;
+        }
+    }
+}
+
 sealed class view_def_index_no_mutationViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
 {
     public SpacetimeDB.Internal.RawViewDefV10 MakeAnonymousViewDef(
@@ -2756,6 +2800,7 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterView<view_def_wrong_returnViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<view_no_deleteViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<view_no_insertViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterView<view_return_concrete_query_builder_typeViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterAnonymousView<view_def_index_no_mutationViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterAnonymousView<view_def_no_anon_identityViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterAnonymousView<view_def_no_iterViewDispatcher>();

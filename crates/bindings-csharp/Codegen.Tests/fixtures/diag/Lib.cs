@@ -568,6 +568,17 @@ public partial class Module
         return new Player { Identity = new() };
     }
 
+    // Invalid: Query builder views must not return concrete builder types.
+    [SpacetimeDB.View(Accessor = "view_return_concrete_query_builder_type", Public = true)]
+    public static SpacetimeDB.Table<
+        Player,
+        SpacetimeDB.PlayerCols,
+        SpacetimeDB.PlayerIxCols
+    > ViewReturnConcreteQueryBuilderType(ViewContext ctx)
+    {
+        return ctx.From.Player();
+    }
+
     // Invalid: Returns type that is not a SpacetimeType
     [SpacetimeDB.View(Accessor = "view_def_returns_not_a_spacetime_type", Public = true)]
     public static NotSpacetimeType? ViewDefReturnsNotASpacetimeType(AnonymousViewContext ctx)

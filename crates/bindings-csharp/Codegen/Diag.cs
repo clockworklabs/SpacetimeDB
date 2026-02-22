@@ -215,8 +215,9 @@ internal static class ErrorDescriptor
     public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewInvalidReturn =
         new(
             group,
-            "Views must return Vec<T> or Option<T>",
-            method => $"View '{method.Identifier}' must return Vec<T> or Option<T>.",
+            "Views must return Vec<T>, Option<T>, or IQuery<T>",
+            method =>
+                $"View '{method.Identifier}' must return Vec<T>, Option<T>, or IQuery<T>.",
             method => method
         );
 
