@@ -428,7 +428,7 @@ ctx.subscriptionBuilder()
 conn.SubscriptionBuilder()
     .OnApplied(_ => { /* ... */ })
     .OnError((_, error) => { /* ... */ })
-    .AddQuery(q => q.From.Person())
+    .AddQuery(q => q.From.Person().Build())
     .Subscribe();
 ```
 
@@ -467,7 +467,7 @@ ctx.subscriptionBuilder()
 // Subscribe explicitly to an event table:
 conn.SubscriptionBuilder()
     .OnApplied(_ => { /* ... */ })
-    .AddQuery(q => q.From.DamageEvent())
+    .AddQuery(q => q.From.DamageEvent().Build())
     .Subscribe();
 ```
 

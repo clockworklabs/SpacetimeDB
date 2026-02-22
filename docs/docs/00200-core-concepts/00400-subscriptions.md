@@ -74,8 +74,8 @@ var conn = DbConnection.Builder()
                     Console.WriteLine($"User: {user.Name}");
                 }
             })
-            .AddQuery(q => q.From.User())
-            .AddQuery(q => q.From.Message())
+            .AddQuery(q => q.From.User().Build())
+            .AddQuery(q => q.From.Message().Build())
             .Subscribe();
     })
     .Build();
@@ -258,14 +258,14 @@ var conn = ConnectToDB();
 // Never need to unsubscribe from global subscriptions
 var globalSubscriptions = conn
     .SubscriptionBuilder()
-    .AddQuery(q => q.From.Announcements())
-    .AddQuery(q => q.From.Badges())
+    .AddQuery(q => q.From.Announcements().Build())
+    .AddQuery(q => q.From.Badges().Build())
     .Subscribe();
 
 // May unsubscribe to shop_items as player advances
 var shopSubscription = conn
     .SubscriptionBuilder()
-    .AddQuery(q => q.From.ShopItems().Where(r => r.RequiredLevel.Lte(5U)))
+    .AddQuery(q => q.From.ShopItems().Where(r => r.RequiredLevel.Lte(5U)).Build())
     .Subscribe();
 ```
 
@@ -348,15 +348,15 @@ var conn = ConnectToDB();
 // Initial subscription: player at level 5.
 var shopSubscription = conn
     .SubscriptionBuilder()
-    .AddQuery(q => q.From.ExchangeRates())
-    .AddQuery(q => q.From.ShopItems().Where(r => r.RequiredLevel.Lte(5U)))
+    .AddQuery(q => q.From.ExchangeRates().Build())
+    .AddQuery(q => q.From.ShopItems().Where(r => r.RequiredLevel.Lte(5U)).Build())
     .Subscribe();
 
 // New subscription: player now at level 6, which overlaps with the previous query.
 var newShopSubscription = conn
     .SubscriptionBuilder()
-    .AddQuery(q => q.From.ExchangeRates())
-    .AddQuery(q => q.From.ShopItems().Where(r => r.RequiredLevel.Lte(6U)))
+    .AddQuery(q => q.From.ExchangeRates().Build())
+    .AddQuery(q => q.From.ShopItems().Where(r => r.RequiredLevel.Lte(6U)).Build())
     .Subscribe();
 
 // Unsubscribe from the old subscription once the new one is in place.

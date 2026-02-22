@@ -624,9 +624,9 @@ public static IEnumerable<Player> TopPlayers(ViewContext ctx)
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
 [SpacetimeDB.View(Public = true)]
-public static IQuery<Player> BottomPlayers(ViewContext ctx)
+public static Query<Player> BottomPlayers(ViewContext ctx)
 {
-    return ctx.From.Player.Where(p => p.Score.Lt(1000));
+    return ctx.From.Player.Where(p => p.Score.Lt(1000)).Build();
 }
 ```
 
