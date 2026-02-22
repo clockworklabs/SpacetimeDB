@@ -491,11 +491,17 @@ pub struct SqlParams {
     pub name_or_identity: NameOrIdentity,
 }
 
+const fn default_true() -> bool {
+    true
+}
+
 #[derive(Deserialize)]
 pub struct SqlQueryParams {
     /// If `true`, return the query result only after its transaction offset
     /// is confirmed to be durable.
-    #[serde(default)]
+    ///
+    /// Defaults to `true` for data integrity.
+    #[serde(default = "default_true")]
     pub confirmed: bool,
 }
 

@@ -78,6 +78,10 @@ pub struct SubscribeParams {
     pub name_or_identity: NameOrIdentity,
 }
 
+const fn default_true() -> bool {
+    true
+}
+
 #[derive(Deserialize)]
 pub struct SubscribeQueryParams {
     pub connection_id: Option<ConnectionIdForUrl>,
@@ -91,7 +95,9 @@ pub struct SubscribeQueryParams {
     /// offset they're computed from is confirmed to be durable.
     ///
     /// If `false`, send them immediately.
-    #[serde(default)]
+    ///
+    /// Defaults to `true` for data integrity.
+    #[serde(default = "default_true")]
     pub confirmed: bool,
 }
 
