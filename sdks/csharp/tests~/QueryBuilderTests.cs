@@ -366,4 +366,16 @@ public sealed class QueryBuilderTests
             query.ToSql()
         );
     }
+
+    [Fact]
+    public void QueryBuilderTypes_ImplicitlyConvertToQuery()
+    {
+        var table = MakeTable("T");
+
+        Query<Row> fromWhere = table.Where(c => c.Age.Gt(18));
+        Assert.Equal("SELECT * FROM \"T\" WHERE (\"T\".\"Age\" > 18)", fromWhere.Sql);
+
+        Query<Row> allRows = table;
+        Assert.Equal("SELECT * FROM \"T\"", allRows.Sql);
+    }
 }

@@ -277,6 +277,16 @@ public sealed class Table<TRow, TCols, TIxCols> : IQuery<TRow>
 
     public Query<TRow> Build() => new(ToSql());
 
+    public static implicit operator Query<TRow>(Table<TRow, TCols, TIxCols> query)
+    {
+        if (query is null)
+        {
+            throw new ArgumentNullException(nameof(query));
+        }
+
+        return query.Build();
+    }
+
     public FromWhere<TRow, TCols, TIxCols> Where(Func<TCols, BoolExpr<TRow>> predicate) =>
         new(this, predicate(cols));
 
@@ -334,6 +344,16 @@ public sealed class FromWhere<TRow, TCols, TIxCols> : IQuery<TRow>
     public string ToSql() => $"{table.ToSql()} WHERE {expr.Sql}";
 
     public Query<TRow> Build() => new(ToSql());
+
+    public static implicit operator Query<TRow>(FromWhere<TRow, TCols, TIxCols> query)
+    {
+        if (query is null)
+        {
+            throw new ArgumentNullException(nameof(query));
+        }
+
+        return query.Build();
+    }
 
     public LeftSemiJoin<TRow, TCols, TIxCols, TRightRow, TRightCols, TRightIxCols> LeftSemijoin<
         TRightRow,
@@ -446,6 +466,18 @@ public sealed class LeftSemiJoin<
     }
 
     public Query<TLeftRow> Build() => new(ToSql());
+
+    public static implicit operator Query<TLeftRow>(
+        LeftSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols> query
+    )
+    {
+        if (query is null)
+        {
+            throw new ArgumentNullException(nameof(query));
+        }
+
+        return query.Build();
+    }
 }
 
 public sealed class RightSemiJoin<
@@ -571,6 +603,18 @@ public sealed class RightSemiJoin<
     }
 
     public Query<TRightRow> Build() => new(ToSql());
+
+    public static implicit operator Query<TRightRow>(
+        RightSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols> query
+    )
+    {
+        if (query is null)
+        {
+            throw new ArgumentNullException(nameof(query));
+        }
+
+        return query.Build();
+    }
 }
 
 public static class QueryBuilderExtensions
