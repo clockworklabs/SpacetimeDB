@@ -169,9 +169,10 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         unknown => unreachable!("Invalid URL scheme in `Connection::db_uri`: {unknown}"),
     })
     .unwrap();
-    if confirmed {
-        url.query_pairs_mut().append_pair("confirmed", "true");
-    }
+    // Always send the confirmed parameter explicitly so the CLI behavior
+    // is not affected by server-side default changes.
+    url.query_pairs_mut()
+        .append_pair("confirmed", if confirmed { "true" } else { "false" });
 
     // Create the websocket request.
     let mut req = url.into_client_request()?;
