@@ -382,8 +382,7 @@ For typed query subscriptions, use [`AddQuery`](#method-addquery).
 
 ##### Method `AddQuery`
 
-`AddQuery` takes a builder function that returns an `IQuery<TRow>`, which is the common interface implemented by all typed subscription queries.
-In most cases, you’ll create the query with the generated query builder and call `.Build()` to materialize it into a `Query<TRow>` (which implements `IQuery<TRow>`).
+`AddQuery` takes a builder function that returns an `IQuery<TRow>`. Generated query builders produce a `Query<TRow>` that implements `IQuery<TRow>` so can be passed directly to `AddQuery`.
 
 ```csharp
 class SubscriptionBuilder
@@ -399,8 +398,8 @@ Start a typed query subscription. Once a typed query is added, continue with typ
 ```csharp
 var handle = conn
     .SubscriptionBuilder()
-    .AddQuery(q => q.From.User().Build())
-    .AddQuery(q => q.From.Message().Build())
+    .AddQuery(q => q.From.User())
+    .AddQuery(q => q.From.Message())
     .Subscribe();
 ```
 
@@ -424,7 +423,7 @@ Subscribe to all rows from all public tables. This method is provided as a conve
 
 ##### Method `AddQuery` (TypedSubscriptionBuilder)
 
-Like `SubscriptionBuilder.AddQuery`, this method accepts any `IQuery<TRow>`. Most callers return a `Query<TRow>` by ending the builder chain with `.Build()`.
+Like `SubscriptionBuilder.AddQuery`, this method accepts any `IQuery<TRow>`. Generated query builders produce a `Query<TRow>` that implements `IQuery<TRow>` so can be passed directly to `AddQuery`.
 
 ```csharp
 class TypedSubscriptionBuilder
@@ -459,7 +458,7 @@ Typed query builders are created from generated table accessors under `QueryBuil
 ```csharp
 var handle = conn
     .SubscriptionBuilder()
-    .AddQuery(q => q.From.User().Build())
+    .AddQuery(q => q.From.User())
     .Subscribe();
 ```
 
@@ -469,17 +468,16 @@ Each generated table accessor supports both `Where(...)` and `Filter(...)`. They
 
 ```csharp
 // All users
-q.From.User().Build()
+q.From.User()
 
 // Filtered users
-q.From.User().Where(u => u.Online.Eq(true)).Build()
-q.From.User().Filter(u => u.Name.Neq("Anonymous")).Build()
+q.From.User().Where(u => u.Online.Eq(true))
+q.From.User().Filter(u => u.Name.Neq("Anonymous"))
 
 // Chained filters (AND semantics)
 q.From.User()
     .Where(u => u.Score.Gte(1000UL))
     .Filter(u => u.Level.Gte(10U))
-    .Build()
 ```
 
 ### Comparison Operators
@@ -518,26 +516,23 @@ var handle = conn
     .AddQuery(q => q.From.Player()
         .Where(p => p.Score.Gte(1000UL))
         .LeftSemijoin(q.From.PlayerLevel(), (p, pl) => p.Id.Eq(pl.PlayerId))
-        .Where(p => p.Online.Eq(true))
-        .Build())
+        .Where(p => p.Online.Eq(true)))
     .AddQuery(q => q.From.Player()
         .Where(p => p.Score.Gte(1000UL))
         .RightSemijoin(q.From.PlayerLevel(), (p, pl) => p.Id.Eq(pl.PlayerId))
-        .Where(pl => pl.Level.Gte(10U))
-        .Build())
+        .Where(pl => pl.Level.Gte(10U)))
     .Subscribe();
 ```
 
 ### Using Query Builders with Subscriptions
 
-`AddQuery` accepts a builder function that produces a typed subscription query.
-In most cases you’ll call `.Build()` to materialize the query into a `Query<TRow>` and return that.
+`AddQuery` accepts a builder function that returns an `IQuery<TRow>`. You can add multiple typed queries and subscribe once.
 
 ```csharp
 var handle = conn
     .SubscriptionBuilder()
-    .AddQuery(q => q.From.User().Where(u => u.Online.Eq(true)).Build())
-    .AddQuery(q => q.From.Message().Where(m => m.ChannelId.Eq(1U)).Build())
+    .AddQuery(q => q.From.User().Where(u => u.Online.Eq(true)))
+    .AddQuery(q => q.From.Message().Where(m => m.ChannelId.Eq(1U)))
     .Subscribe();
 ```
 

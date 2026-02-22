@@ -64,7 +64,7 @@ var handle = conn
     {
         Console.WriteLine($"Subscription failed: {error}");
     })
-    .AddQuery(q => q.From.User().Build())
+    .AddQuery(q => q.From.User())
     .Subscribe();
 ```
 

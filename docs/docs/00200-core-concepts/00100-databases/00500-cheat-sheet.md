@@ -626,7 +626,7 @@ public static IEnumerable<Player> TopPlayers(ViewContext ctx)
 [SpacetimeDB.View(Public = true)]
 public static Query<Player> BottomPlayers(ViewContext ctx)
 {
-    return ctx.From.Player.Where(p => p.Score.Lt(1000)).Build();
+    return ctx.From.Player.Where(p => p.Score.Lt(1000));
 }
 ```
 
