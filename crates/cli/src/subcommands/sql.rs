@@ -237,12 +237,12 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             }
         })?;
         let query = resolved.remaining_args.join(" ");
-        let confirmed = args.get_flag("confirmed");
+        let confirmed = args.get_one::<bool>("confirmed").copied();
 
         let con = parse_req(config, args, &resolved.database, resolved.server.as_deref()).await?;
         let mut api = ClientApi::new(con).sql();
-        if confirmed {
-            api = api.query(&[("confirmed", "true")]);
+        if let Some(confirmed) = confirmed {
+            api = api.query(&[("confirmed", if confirmed { "true" } else { "false" })]);
         }
 
         run_sql(api, &query, false).await?;
