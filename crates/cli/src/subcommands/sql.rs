@@ -240,11 +240,10 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         let confirmed = args.get_flag("confirmed");
 
         let con = parse_req(config, args, &resolved.database, resolved.server.as_deref()).await?;
-        // Always send the confirmed parameter explicitly so the CLI behavior
-        // is not affected by server-side default changes.
-        let api = ClientApi::new(con)
-            .sql()
-            .query(&[("confirmed", if confirmed { "true" } else { "false" })]);
+        let mut api = ClientApi::new(con).sql();
+        if confirmed {
+            api = api.query(&[("confirmed", "true")]);
+        }
 
         run_sql(api, &query, false).await?;
     }
