@@ -7,8 +7,8 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct BanPlayer1Args {
-    pub player_1_id: u64,
-    pub ban_until_6: u64,
+    pub player_1_id: u32,
+    pub ban_until_6: u32,
 }
 
 impl From<BanPlayer1Args> for super::Reducer {
@@ -35,7 +35,7 @@ pub trait ban_player_1 {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`ban_player_1:ban_player_1_then`] to run a callback after the reducer completes.
-    fn ban_player_1(&self, player_1_id: u64, ban_until_6: u64) -> __sdk::Result<()> {
+    fn ban_player_1(&self, player_1_id: u32, ban_until_6: u32) -> __sdk::Result<()> {
         self.ban_player_1_then(player_1_id, ban_until_6, |_, _| {})
     }
 
@@ -47,8 +47,8 @@ pub trait ban_player_1 {
     ///  and its status can be observed with the `callback`.
     fn ban_player_1_then(
         &self,
-        player_1_id: u64,
-        ban_until_6: u64,
+        player_1_id: u32,
+        ban_until_6: u32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -59,8 +59,8 @@ pub trait ban_player_1 {
 impl ban_player_1 for super::RemoteReducers {
     fn ban_player_1_then(
         &self,
-        player_1_id: u64,
-        ban_until_6: u64,
+        player_1_id: u32,
+        ban_until_6: u32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send

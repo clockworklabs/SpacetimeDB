@@ -3,7 +3,7 @@ import { schema, t, table } from 'spacetimedb/server';
 
 const Player2Status = t.enum('Player2Status', {
   Active1: t.unit(),
-  BannedUntil: t.u64(),
+  BannedUntil: t.u32(),
 });
 
 const Person3Info = t.object('Person3Info', {
@@ -13,16 +13,16 @@ const Person3Info = t.object('Person3Info', {
 
 
 const PlayerRow = t.row('PlayerRow', {
-    Player1Id: t.u64().primaryKey(),
-    player_name: t.array(t.string()),
+    Player1Id: t.u32().primaryKey().autoInc(),
+    player_name: t.string(),
     currentLevel2: t.u32(),
     status3Field: Player2Status,
 })
 
 const PersonRow = t.row({
-    Person2Id: t.u64().primaryKey(),
+    Person2Id: t.u32().primaryKey().autoInc(),
     FirstName: t.string(),
-    playerRef: t.u64().index(),
+    playerRef: t.u32().index(),
     personInfo: Person3Info,
 })
 
@@ -44,7 +44,7 @@ export const CreatePlayer1 = spacetimedb.reducer(
   (ctx, { Player1Name, Start2Level }) => {
     ctx.db.Player1.insert({
       Player1Id: 0,
-      Player1Name,
+      player_name: Player1Name,
       currentLevel2: Start2Level,
       status3Field: { tag: 'Active1' },
     });
@@ -52,7 +52,7 @@ export const CreatePlayer1 = spacetimedb.reducer(
 );
 
 export const AddPerson2 = spacetimedb.reducer(
-  { First3Name: t.string(), playerRef: t.u64(), AgeValue: t.u8(), ScoreTotal: t.u32() },
+  { First3Name: t.string(), playerRef: t.u32(), AgeValue: t.u8(), ScoreTotal: t.u32() },
   (ctx, { First3Name, playerRef, AgeValue, ScoreTotal }) => {
     ctx.db.Person2.insert({
       Person2Id: 0,
@@ -65,7 +65,7 @@ export const AddPerson2 = spacetimedb.reducer(
 
 export const BanPlayer1 = spacetimedb.reducer(
   {name: "banPlayer1"},
-  { Player1Id: t.u64(), BanUntil6: t.u64() },
+  { Player1Id: t.u32(), BanUntil6: t.u32() },
   (ctx, { Player1Id, BanUntil6 }) => {
     const player = ctx.db.Player1.Player1Id.find(Player1Id);
     if (player) {
@@ -78,11 +78,11 @@ export const BanPlayer1 = spacetimedb.reducer(
 );
 
 
-export const PlayersAtLevel2 = spacetimedb.view(
-  { name:"Level2Players", public: true },
-  t.option(Player1.rowType),
+export const PersonAtLevel2 = spacetimedb.view(
+  { name:"Level2Person", public: true },
+  t.option(Person2.rowType),
   (ctx) => {
-    const player =  ctx.from.Player1.where((p) => p.currentLevel2.eq(2)).rightSemijoin(ctx.from.Person2, (player, person) => player.Player1Id.eq(person.Person2Id));
-    return player ?? undefined
+    const person =  ctx.from.Player1.where((p) => p.currentLevel2.eq(2)).rightSemijoin(ctx.from.Person2, (player, person) => player.Player1Id.eq(person.playerRef));
+    return person
   }
 );

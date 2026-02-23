@@ -9,8 +9,8 @@ use super::player_2_status_type::Player2Status;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct PlayerRow {
-    pub player_1_id: u64,
-    pub player_name: Vec<String>,
+    pub player_1_id: u32,
+    pub player_name: String,
     pub current_level_2: u32,
     pub status_3_field: Player2Status,
 }
@@ -23,8 +23,8 @@ impl __sdk::InModule for PlayerRow {
 ///
 /// Provides typed access to columns for query building.
 pub struct PlayerRowCols {
-    pub player_1_id: __sdk::__query_builder::Col<PlayerRow, u64>,
-    pub player_name: __sdk::__query_builder::Col<PlayerRow, Vec<String>>,
+    pub player_1_id: __sdk::__query_builder::Col<PlayerRow, u32>,
+    pub player_name: __sdk::__query_builder::Col<PlayerRow, String>,
     pub current_level_2: __sdk::__query_builder::Col<PlayerRow, u32>,
     pub status_3_field: __sdk::__query_builder::Col<PlayerRow, Player2Status>,
 }
@@ -45,7 +45,7 @@ impl __sdk::__query_builder::HasCols for PlayerRow {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct PlayerRowIxCols {
-    pub player_1_id: __sdk::__query_builder::IxCol<PlayerRow, u64>,
+    pub player_1_id: __sdk::__query_builder::IxCol<PlayerRow, u32>,
 }
 
 impl __sdk::__query_builder::HasIxCols for PlayerRow {

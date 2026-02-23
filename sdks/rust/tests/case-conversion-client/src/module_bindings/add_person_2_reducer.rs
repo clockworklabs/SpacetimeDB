@@ -8,7 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub(super) struct AddPerson2Args {
     pub first_3_name: String,
-    pub player_ref: u64,
+    pub player_ref: u32,
     pub age_value: u8,
     pub score_total: u32,
 }
@@ -42,7 +42,7 @@ pub trait add_person_2 {
     fn add_person_2(
         &self,
         first_3_name: String,
-        player_ref: u64,
+        player_ref: u32,
         age_value: u8,
         score_total: u32,
     ) -> __sdk::Result<()> {
@@ -58,7 +58,7 @@ pub trait add_person_2 {
     fn add_person_2_then(
         &self,
         first_3_name: String,
-        player_ref: u64,
+        player_ref: u32,
         age_value: u8,
         score_total: u32,
 
@@ -72,7 +72,7 @@ impl add_person_2 for super::RemoteReducers {
     fn add_person_2_then(
         &self,
         first_3_name: String,
-        player_ref: u64,
+        player_ref: u32,
         age_value: u8,
         score_total: u32,
 

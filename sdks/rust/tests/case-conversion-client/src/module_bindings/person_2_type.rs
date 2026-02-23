@@ -9,9 +9,9 @@ use super::person_3_info_type::Person3Info;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct Person2 {
-    pub person_2_id: u64,
+    pub person_2_id: u32,
     pub first_name: String,
-    pub player_ref: u64,
+    pub player_ref: u32,
     pub person_info: Person3Info,
 }
 
@@ -23,9 +23,9 @@ impl __sdk::InModule for Person2 {
 ///
 /// Provides typed access to columns for query building.
 pub struct Person2Cols {
-    pub person_2_id: __sdk::__query_builder::Col<Person2, u64>,
+    pub person_2_id: __sdk::__query_builder::Col<Person2, u32>,
     pub first_name: __sdk::__query_builder::Col<Person2, String>,
-    pub player_ref: __sdk::__query_builder::Col<Person2, u64>,
+    pub player_ref: __sdk::__query_builder::Col<Person2, u32>,
     pub person_info: __sdk::__query_builder::Col<Person2, Person3Info>,
 }
 
@@ -45,8 +45,8 @@ impl __sdk::__query_builder::HasCols for Person2 {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct Person2IxCols {
-    pub person_2_id: __sdk::__query_builder::IxCol<Person2, u64>,
-    pub player_ref: __sdk::__query_builder::IxCol<Person2, u64>,
+    pub person_2_id: __sdk::__query_builder::IxCol<Person2, u32>,
+    pub player_ref: __sdk::__query_builder::IxCol<Person2, u32>,
 }
 
 impl __sdk::__query_builder::HasIxCols for Person2 {

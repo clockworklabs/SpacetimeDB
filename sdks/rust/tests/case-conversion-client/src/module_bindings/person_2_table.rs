@@ -104,7 +104,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for Person2TableHandle<'ctx> {
 /// but to directly chain method calls,
 /// like `ctx.db.person_2().person_2_id().find(...)`.
 pub struct Person2Person2IdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<Person2, u64>,
+    imp: __sdk::UniqueConstraintHandle<Person2, u32>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -112,7 +112,7 @@ impl<'ctx> Person2TableHandle<'ctx> {
     /// Get a handle on the `person_2_id` unique index on the table `person_2`.
     pub fn person_2_id(&self) -> Person2Person2IdUnique<'ctx> {
         Person2Person2IdUnique {
-            imp: self.imp.get_unique_constraint::<u64>("person_2_id"),
+            imp: self.imp.get_unique_constraint::<u32>("person_2_id"),
             phantom: std::marker::PhantomData,
         }
     }
@@ -121,7 +121,7 @@ impl<'ctx> Person2TableHandle<'ctx> {
 impl<'ctx> Person2Person2IdUnique<'ctx> {
     /// Find the subscribed row whose `person_2_id` column value is equal to `col_val`,
     /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &u64) -> Option<Person2> {
+    pub fn find(&self, col_val: &u32) -> Option<Person2> {
         self.imp.find(col_val)
     }
 }
@@ -129,7 +129,7 @@ impl<'ctx> Person2Person2IdUnique<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<Person2>("person_2");
-    _table.add_unique_constraint::<u64>("person_2_id", |row| &row.person_2_id);
+    _table.add_unique_constraint::<u32>("person_2_id", |row| &row.person_2_id);
 }
 
 #[doc(hidden)]
