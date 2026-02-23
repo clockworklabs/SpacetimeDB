@@ -81,16 +81,13 @@ public static partial class Module
     [SpacetimeDB.Table(Accessor = "Person", Public = true)]
     public partial struct Person
     {
-        [SpacetimeDB.PrimaryKey]
-        [SpacetimeDB.AutoInc]
-        public int Id;
         public string Name;
     }
 
     [SpacetimeDB.Reducer]
     public static void Add(ReducerContext ctx, string name)
     {
-        ctx.Db.Person.Insert(new Person { Id = 0, Name = name });
+        ctx.Db.Person.Insert(new Person { Name = name });
     }
 
     [SpacetimeDB.Reducer]

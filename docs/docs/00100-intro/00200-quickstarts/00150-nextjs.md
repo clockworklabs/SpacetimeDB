@@ -78,21 +78,20 @@ my-nextjs-app/
 ```typescript
 import { schema, table, t } from 'spacetimedb/server';
 
-const spacetimedb = schema({
-  person: table(
-    { public: true },
+export const spacetimedb = schema(
+  table(
+    { name: 'person', public: true },
     {
       name: t.string(),
     }
-  ),
-});
-export default spacetimedb;
+  )
+);
 
-export const add = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
+spacetimedb.reducer('add', { name: t.string() }, (ctx, { name }) => {
   ctx.db.person.insert({ name });
 });
 
-export const say_hello = spacetimedb.reducer((ctx) => {
+spacetimedb.reducer('say_hello', (ctx) => {
   for (const person of ctx.db.person.iter()) {
     console.info(`Hello, ${person.name}!`);
   }
