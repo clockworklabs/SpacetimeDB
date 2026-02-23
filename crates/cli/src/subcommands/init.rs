@@ -9,13 +9,15 @@ use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use spacetimedb_client_api_messages::name::parse_database_name;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 use toml_edit::{value, DocumentMut, Item};
 use xmltree::{Element, XMLNode};
 
-use crate::spacetime_config::PackageManager;
+use crate::spacetime_config::{PackageManager, SpacetimeConfig, CONFIG_FILENAME};
 use crate::subcommands::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
 
 mod embedded {
@@ -120,6 +122,38 @@ pub struct TemplateConfig {
     pub use_local: bool,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct InitOptions {
+    pub project_path: Option<PathBuf>,
+    pub project_name: Option<String>,
+    pub project_name_default: Option<String>,
+    pub database_name_default: Option<String>,
+    pub server_only: bool,
+    pub lang: Option<String>,
+    pub template: Option<String>,
+    pub local: bool,
+    pub non_interactive: bool,
+    /// When true, suppress the "Next steps" message after init (e.g. when called from `spacetime dev`).
+    pub skip_next_steps: bool,
+}
+
+impl InitOptions {
+    pub fn from_args(args: &ArgMatches) -> Self {
+        Self {
+            project_path: args.get_one::<PathBuf>("project-path").cloned(),
+            project_name: args.get_one::<String>("project-name").cloned(),
+            project_name_default: None,
+            database_name_default: None,
+            server_only: args.get_flag("server-only"),
+            lang: args.get_one::<String>("lang").cloned(),
+            template: args.get_one::<String>("template").cloned(),
+            local: args.get_flag("local"),
+            non_interactive: args.get_flag("non-interactive"),
+            skip_next_steps: false,
+        }
+    }
+}
+
 pub fn cli() -> clap::Command {
     clap::Command::new("init")
         .about(format!("Initializes a new spacetime project. {UNSTABLE_WARNING}"))
@@ -197,8 +231,8 @@ fn slugify(name: &str) -> String {
     name.to_case(Case::Kebab)
 }
 
-async fn get_project_name(args: &ArgMatches, is_interactive: bool) -> anyhow::Result<String> {
-    if let Some(name) = args.get_one::<String>("project-name") {
+async fn get_project_name(options: &InitOptions, is_interactive: bool) -> anyhow::Result<String> {
+    if let Some(name) = &options.project_name {
         if is_interactive {
             println!("{} {}", "Project name:".bold(), name);
         }
@@ -209,10 +243,15 @@ async fn get_project_name(args: &ArgMatches, is_interactive: bool) -> anyhow::Re
         anyhow::bail!("PROJECT_NAME is required in non-interactive mode");
     }
 
+    let default_project_name = options
+        .project_name_default
+        .clone()
+        .unwrap_or_else(|| "my-spacetime-app".to_string());
+
     let theme = ColorfulTheme::default();
     let name = Input::with_theme(&theme)
         .with_prompt("Project name")
-        .default("my-spacetime-app".to_string())
+        .default(default_project_name)
         .validate_with(|input: &String| -> Result<(), String> {
             if input.trim().is_empty() {
                 return Err("Project name cannot be empty".to_string());
@@ -227,12 +266,12 @@ async fn get_project_name(args: &ArgMatches, is_interactive: bool) -> anyhow::Re
 }
 
 async fn get_project_path(
-    args: &ArgMatches,
+    options: &InitOptions,
     project_name: &str,
     is_interactive: bool,
     is_server_only: bool,
 ) -> anyhow::Result<PathBuf> {
-    if let Some(path) = args.get_one::<PathBuf>("project-path") {
+    if let Some(path) = &options.project_path {
         if is_interactive {
             println!("{} {}", "Project path:".bold(), path.display());
         }
@@ -441,8 +480,10 @@ pub fn install_typescript_dependencies(
     Ok(())
 }
 
-pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: bool) -> anyhow::Result<PathBuf> {
-    let use_local = if args.get_flag("local") {
+pub async fn exec_with_options(config: &mut Config, options: &InitOptions) -> anyhow::Result<PathBuf> {
+    let is_interactive = !options.non_interactive;
+
+    let use_local = if options.local {
         true
     } else if is_interactive {
         !check_and_prompt_login(config).await?
@@ -451,15 +492,16 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
         config.spacetimedb_token().is_none()
     };
 
-    let is_server_only = args.get_flag("server-only");
+    let is_server_only = options.server_only;
 
-    let project_name = get_project_name(args, is_interactive).await?;
-    let project_path = get_project_path(args, &project_name, is_interactive, is_server_only).await?;
+    let project_name = get_project_name(options, is_interactive).await?;
+    let project_path = get_project_path(options, &project_name, is_interactive, is_server_only).await?;
+    let local_database_name = get_local_database_name(options, &project_name, is_interactive)?;
 
     let mut template_config = if is_interactive {
-        get_template_config_interactive(args, project_name, project_path.clone()).await?
+        get_template_config_interactive(options, project_name, project_path.clone()).await?
     } else {
-        get_template_config_non_interactive(args, project_name, project_path.clone()).await?
+        get_template_config_non_interactive(options, project_name, project_path.clone()).await?
     };
 
     template_config.use_local = use_local;
@@ -470,6 +512,10 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
         is_server_only,
     )?;
     init_from_template(&template_config, &template_config.project_path, is_server_only).await?;
+
+    if let Some(path) = create_default_spacetime_config_if_missing(&project_path)? {
+        println!("{} Created {}", "✓".green(), path.display());
+    }
 
     // Determine package manager for TypeScript projects
     let uses_typescript = template_config.server_lang == Some(ServerLanguage::TypeScript)
@@ -512,23 +558,118 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
         }
     }
 
+    if let Some(path) = create_local_spacetime_config_if_missing(&project_path, &local_database_name)? {
+        println!("{} Created {}", "✓".green(), path.display());
+    }
+
+    if !options.skip_next_steps {
+        print_next_steps(&template_config, &project_path)?;
+    }
+
     Ok(project_path)
 }
 
+fn get_local_database_name(options: &InitOptions, project_name: &str, is_interactive: bool) -> anyhow::Result<String> {
+    let default_database = options
+        .database_name_default
+        .clone()
+        .unwrap_or_else(|| format!("{project_name}-{}", random_suffix(5)));
+    if !is_interactive {
+        return Ok(default_database);
+    }
+
+    let theme = ColorfulTheme::default();
+    let database_name = Input::with_theme(&theme)
+        .with_prompt("Database name")
+        .default(default_database)
+        .validate_with(|input: &String| -> Result<(), String> {
+            parse_database_name(input.trim()).map_err(|e| e.to_string())?;
+            Ok(())
+        })
+        .interact_text()?
+        .trim()
+        .to_string();
+
+    Ok(database_name)
+}
+
+fn create_default_spacetime_config_if_missing(project_path: &Path) -> anyhow::Result<Option<PathBuf>> {
+    let config_path = project_path.join(CONFIG_FILENAME);
+    if config_path.exists() {
+        return Ok(None);
+    }
+
+    let mut config = SpacetimeConfig::default();
+    config
+        .additional_fields
+        .insert("server".to_string(), json!("maincloud"));
+
+    if project_path.join("spacetimedb").is_dir() {
+        config
+            .additional_fields
+            .insert("module-path".to_string(), json!("./spacetimedb"));
+    }
+
+    Ok(Some(config.save_to_dir(project_path)?))
+}
+
+fn create_local_spacetime_config_if_missing(
+    project_path: &Path,
+    database_name: &str,
+) -> anyhow::Result<Option<PathBuf>> {
+    let main_config_path = project_path.join(CONFIG_FILENAME);
+    if !main_config_path.exists() {
+        return Ok(None);
+    }
+
+    let local_config_path = project_path.join("spacetime.local.json");
+    if local_config_path.exists() {
+        return Ok(None);
+    }
+
+    let mut local_config = SpacetimeConfig::default();
+    local_config
+        .additional_fields
+        .insert("database".to_string(), json!(database_name));
+    local_config.save(&local_config_path)?;
+
+    Ok(Some(local_config_path))
+}
+
+fn random_suffix(len: usize) -> String {
+    const ALNUM: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    let pid = std::process::id() as u64;
+    let mut state = now ^ (pid << 16);
+    let mut out = String::with_capacity(len);
+    for _ in 0..len {
+        // Simple xorshift to derive pseudo-random chars without extra deps.
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        let idx = (state % ALNUM.len() as u64) as usize;
+        out.push(ALNUM[idx] as char);
+    }
+    out
+}
+
 async fn get_template_config_non_interactive(
-    args: &ArgMatches,
+    options: &InitOptions,
     project_name: String,
     project_path: PathBuf,
 ) -> anyhow::Result<TemplateConfig> {
     // Check if template is provided
-    if let Some(template_str) = args.get_one::<String>("template") {
+    if let Some(template_str) = options.template.as_ref() {
         // Check if it's a builtin template
         let (_, templates) = fetch_templates_list().await?;
         return create_template_config_from_template_str(project_name, project_path, template_str, &templates);
     }
 
     // No template - require at least one language option
-    let server_lang_str = args.get_one::<String>("lang").cloned();
+    let server_lang_str = options.lang.clone();
 
     if server_lang_str.is_none() {
         anyhow::bail!("Either --template or --lang must be provided in non-interactive mode");
@@ -578,21 +719,21 @@ pub fn ensure_empty_directory(_project_name: &str, project_path: &Path, is_serve
 }
 
 async fn get_template_config_interactive(
-    args: &ArgMatches,
+    options: &InitOptions,
     project_name: String,
     project_path: PathBuf,
 ) -> anyhow::Result<TemplateConfig> {
     let theme = ColorfulTheme::default();
 
     // Check if template is provided
-    if let Some(template_str) = args.get_one::<String>("template") {
+    if let Some(template_str) = options.template.as_ref() {
         println!("{} {}", "Template:".bold(), template_str);
 
         let (_, templates) = fetch_templates_list().await?;
         return create_template_config_from_template_str(project_name, project_path, template_str, &templates);
     }
 
-    let server_lang_arg = args.get_one::<String>("lang");
+    let server_lang_arg = options.lang.as_ref();
     if server_lang_arg.is_some() {
         let server_lang = parse_server_lang(&server_lang_arg.cloned())?;
         if let Some(lang_str) = server_lang_arg {
@@ -1057,13 +1198,13 @@ fn pretty_format_xml(xml: &str) -> anyhow::Result<String> {
     Ok(String::from_utf8(result)?)
 }
 
-/// Just do 1.* for now
+/// Just do 2.* for now
 fn get_spacetimedb_csharp_runtime_version() -> String {
-    "1.*".to_string()
+    "2.*".to_string()
 }
 
 fn get_spacetimedb_csharp_clientsdk_version() -> String {
-    "1.*".to_string()
+    "2.*".to_string()
 }
 
 /// Writes a `.env.local` file that includes all common
@@ -1130,7 +1271,6 @@ pub async fn init_from_template(
     install_ai_rules(config, project_path)?;
 
     println!("{}", "Project initialized successfully!".green());
-    print_next_steps(config, project_path)?;
 
     Ok(())
 }
@@ -1457,10 +1597,11 @@ fn check_for_git() -> bool {
 pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathBuf> {
     println!("{UNSTABLE_WARNING}\n");
 
-    let is_interactive = !args.get_flag("non-interactive");
-    let template = args.get_one::<String>("template");
-    let server_lang = args.get_one::<String>("lang");
-    let project_name_arg = args.get_one::<String>("project-name");
+    let options = InitOptions::from_args(args);
+    let is_interactive = !options.non_interactive;
+    let template = options.template.as_ref();
+    let server_lang = options.lang.as_ref();
+    let project_name_arg = options.project_name.as_ref();
 
     // Validate that template and lang options are not used together
     if template.is_some() && server_lang.is_some() {
@@ -1477,7 +1618,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathB
         }
     }
 
-    exec_init(&mut config, args, is_interactive).await
+    exec_with_options(&mut config, &options).await
 }
 
 pub fn init_rust_project(project_path: &Path) -> anyhow::Result<()> {
@@ -1822,4 +1963,66 @@ fn check_for_emscripten_and_cmake() -> bool {
     }
 
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_default_spacetime_config_if_missing_creates_expected_config() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let project_path = temp.path();
+        std::fs::create_dir_all(project_path.join("spacetimedb")).unwrap();
+
+        let created = create_default_spacetime_config_if_missing(project_path)
+            .unwrap()
+            .expect("expected config to be created");
+        assert_eq!(created, project_path.join("spacetime.json"));
+
+        let content = std::fs::read_to_string(&created).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert!(parsed.get("database").is_none());
+        assert_eq!(parsed.get("server").and_then(|v| v.as_str()), Some("maincloud"));
+        assert_eq!(
+            parsed.get("module-path").and_then(|v| v.as_str()),
+            Some("./spacetimedb")
+        );
+    }
+
+    #[test]
+    fn test_create_local_spacetime_config_if_missing_creates_database_override() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let project_path = temp.path();
+
+        std::fs::write(project_path.join("spacetime.json"), "{}").unwrap();
+
+        let created = create_local_spacetime_config_if_missing(project_path, "my-app-abc12")
+            .unwrap()
+            .expect("expected local config to be created");
+        assert_eq!(created, project_path.join("spacetime.local.json"));
+
+        let content = std::fs::read_to_string(&created).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let db = parsed
+            .get("database")
+            .and_then(|v| v.as_str())
+            .expect("database should be present");
+
+        assert_eq!(db, "my-app-abc12");
+
+        let obj = parsed.as_object().expect("local config should be a JSON object");
+        assert_eq!(obj.len(), 1, "local config should only contain database");
+    }
+
+    #[test]
+    fn test_get_local_database_name_uses_explicit_default_without_suffix() {
+        let options = InitOptions {
+            database_name_default: Some("my-explicit-db".to_string()),
+            ..Default::default()
+        };
+
+        let db = get_local_database_name(&options, "my-project", false).unwrap();
+        assert_eq!(db, "my-explicit-db");
+    }
 }

@@ -48,6 +48,7 @@ fs-err.workspace = true
 http.workspace = true
 is-terminal.workspace = true
 itertools.workspace = true
+ignore.workspace = true
 indicatif.workspace = true
 json5.workspace = true
 jsonwebtoken.workspace = true

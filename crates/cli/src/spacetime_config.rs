@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use thiserror::Error;
 
 /// The filename for configuration
@@ -119,6 +119,10 @@ pub struct SpacetimeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub children: Option<Vec<SpacetimeConfig>>,
 
+    /// Name of the config file from which this target's `database` value was merged.
+    #[serde(rename = "_source-config", skip_serializing_if = "Option::is_none")]
+    pub source_config: Option<String>,
+
     /// All other entity-level fields (database, module-path, server, etc.)
     #[serde(flatten)]
     pub additional_fields: HashMap<String, Value>,
@@ -141,6 +145,8 @@ pub struct DevConfig {
 pub struct FlatTarget {
     /// All entity-level fields (database, module-path, server, etc.)
     pub fields: HashMap<String, Value>,
+    /// Name of the config file from which this target's `database` value was merged.
+    pub source_config: Option<String>,
     /// Generate entries for this target (inherited or overridden)
     pub generate: Option<Vec<HashMap<String, Value>>>,
 }
@@ -188,6 +194,7 @@ impl SpacetimeConfig {
 
         let target = FlatTarget {
             fields: fields.clone(),
+            source_config: self.source_config.clone(),
             generate: effective_generate.clone(),
         };
 
@@ -730,6 +737,31 @@ impl<'a> CommandConfig<'a> {
         self.config_values.get(key)
     }
 
+    /// Get a path value and resolve it against `config_dir` if it came from config (not CLI).
+    pub fn get_resolved_path(
+        &self,
+        key: &str,
+        config_dir: Option<&Path>,
+    ) -> Result<Option<PathBuf>, CommandConfigError> {
+        let path = self.get_one::<PathBuf>(key)?;
+        let from_cli = self.is_from_cli(key);
+        Ok(path.map(|p| {
+            let resolved = if p.is_absolute() || from_cli {
+                p
+            } else if let Some(base_dir) = config_dir {
+                base_dir.join(p)
+            } else {
+                p
+            };
+            normalize_path_lexical(&resolved)
+        }))
+    }
+
+    /// Returns true when this key was explicitly provided via CLI.
+    pub fn is_from_cli(&self, key: &str) -> bool {
+        self.schema.is_from_cli(self.matches, key)
+    }
+
     /// Validate that all required keys are present in either config or CLI.
     pub fn validate(&self) -> Result<(), CommandConfigError> {
         for key in &self.schema.keys {
@@ -743,6 +775,24 @@ impl<'a> CommandConfig<'a> {
             }
         }
         Ok(())
+    }
+}
+
+fn normalize_path_lexical(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+    if normalized.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        normalized
     }
 }
 
@@ -874,11 +924,65 @@ fn load_json_value(path: &Path) -> anyhow::Result<Option<serde_json::Value>> {
     Ok(Some(value))
 }
 
-/// Overlay `overlay` values onto `base` using top-level key replacement (shallow merge).
-fn overlay_json(base: &mut serde_json::Value, overlay: serde_json::Value) {
+const SOURCE_CONFIG_KEY: &str = "_source-config";
+
+fn mark_source_config(value: &mut serde_json::Value, source_file_name: &str) {
+    if let Some(obj) = value.as_object_mut() {
+        if obj.contains_key("database") {
+            obj.insert(
+                SOURCE_CONFIG_KEY.to_string(),
+                serde_json::Value::String(source_file_name.to_string()),
+            );
+        }
+        if let Some(serde_json::Value::Array(children)) = obj.get_mut("children") {
+            for child in children {
+                mark_source_config(child, source_file_name);
+            }
+        }
+    }
+}
+
+fn overlay_children_arrays(
+    base_children: &mut [serde_json::Value],
+    overlay_children: Vec<serde_json::Value>,
+    source_file_name: &str,
+) {
+    let merge_len = std::cmp::min(base_children.len(), overlay_children.len());
+    for (idx, overlay_child) in overlay_children.into_iter().enumerate().take(merge_len) {
+        let base_child = &mut base_children[idx];
+        match overlay_child {
+            serde_json::Value::Object(_) if base_child.is_object() => {
+                // Recursively apply overlay semantics to child objects.
+                overlay_json(base_child, overlay_child, source_file_name);
+            }
+            other => {
+                // For non-object child entries, replace value directly.
+                *base_child = other;
+            }
+        }
+    }
+}
+
+/// Overlay `overlay` values onto `base`.
+/// Most keys use top-level replacement. `children` is merged recursively by index,
+/// up to the lower of base/overlay lengths.
+fn overlay_json(base: &mut serde_json::Value, mut overlay: serde_json::Value, source_file_name: &str) {
+    mark_source_config(&mut overlay, source_file_name);
     if let (Some(base_obj), Some(overlay_obj)) = (base.as_object_mut(), overlay.as_object()) {
         for (key, value) in overlay_obj {
-            base_obj.insert(key.clone(), value.clone());
+            let value_owned = value.clone();
+            if key == "children" {
+                match (base_obj.get_mut("children"), value_owned) {
+                    (Some(serde_json::Value::Array(base_children)), serde_json::Value::Array(overlay_children)) => {
+                        overlay_children_arrays(base_children, overlay_children, source_file_name);
+                    }
+                    (_, other) => {
+                        base_obj.insert(key.clone(), other);
+                    }
+                }
+            } else {
+                base_obj.insert(key.clone(), value_owned);
+            }
         }
     }
 }
@@ -887,8 +991,8 @@ fn overlay_json(base: &mut serde_json::Value, overlay: serde_json::Value) {
 ///
 /// Loading order (each overlays the previous via top-level key replacement):
 /// 1. `spacetime.json` (required)
-/// 2. `spacetime.<env>.json` (if env specified and file exists)
-/// 3. `spacetime.local.json` (if exists)
+/// 2. `spacetime.local.json` (if exists)
+/// 3. `spacetime.<env>.json` (if env specified and file exists)
 /// 4. `spacetime.<env>.local.json` (if env specified and file exists)
 pub fn find_and_load_with_env(env: Option<&str>) -> anyhow::Result<Option<LoadedConfig>> {
     find_and_load_with_env_from(env, std::env::current_dir()?)
@@ -904,15 +1008,23 @@ pub fn find_and_load_with_env_from(env: Option<&str>, start_dir: PathBuf) -> any
     let base_path = config_dir.join("spacetime.json");
     let mut merged = load_json_value(&base_path)?
         .ok_or_else(|| anyhow::anyhow!("spacetime.json not found in {}", config_dir.display()))?;
+    mark_source_config(&mut merged, "spacetime.json");
 
     let mut loaded_files = vec![base_path];
     let mut has_dev_file = false;
+
+    // Overlay local file
+    let local_path = config_dir.join("spacetime.local.json");
+    if let Some(local_value) = load_json_value(&local_path)? {
+        overlay_json(&mut merged, local_value, "spacetime.local.json");
+        loaded_files.push(local_path);
+    }
 
     // Overlay environment-specific file
     if let Some(env_name) = env {
         let env_path = config_dir.join(format!("spacetime.{env_name}.json"));
         if let Some(env_value) = load_json_value(&env_path)? {
-            overlay_json(&mut merged, env_value);
+            overlay_json(&mut merged, env_value, &format!("spacetime.{env_name}.json"));
             loaded_files.push(env_path);
             if env_name == "dev" {
                 has_dev_file = true;
@@ -920,18 +1032,15 @@ pub fn find_and_load_with_env_from(env: Option<&str>, start_dir: PathBuf) -> any
         }
     }
 
-    // Overlay local file
-    let local_path = config_dir.join("spacetime.local.json");
-    if let Some(local_value) = load_json_value(&local_path)? {
-        overlay_json(&mut merged, local_value);
-        loaded_files.push(local_path);
-    }
-
     // Overlay environment-specific local file
     if let Some(env_name) = env {
         let env_local_path = config_dir.join(format!("spacetime.{env_name}.local.json"));
         if let Some(env_local_value) = load_json_value(&env_local_path)? {
-            overlay_json(&mut merged, env_local_value);
+            overlay_json(
+                &mut merged,
+                env_local_value,
+                &format!("spacetime.{env_name}.local.json"),
+            );
             loaded_files.push(env_local_path);
             if env_name == "dev" {
                 has_dev_file = true;
@@ -958,6 +1067,10 @@ pub fn setup_for_project(
     client_lang: Option<&str>,
     package_manager: Option<PackageManager>,
 ) -> anyhow::Result<Option<PathBuf>> {
+    if project_path.join(CONFIG_FILENAME).exists() {
+        return Ok(None);
+    }
+
     if let Some(lang) = client_lang {
         let config = SpacetimeConfig::for_client_lang(lang, package_manager);
         return Ok(Some(config.save_to_dir(project_path)?));
@@ -2590,8 +2703,232 @@ mod tests {
     }
 
     #[test]
+    fn test_children_overlay_merges_by_index_with_lower_count() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        fs::write(
+            root.join("spacetime.json"),
+            r#"{
+                "database": "root",
+                "children": [
+                    { "database": "db-a", "server": "base-a" },
+                    { "database": "db-b", "server": "base-b" }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        fs::write(
+            root.join("spacetime.local.json"),
+            r#"{
+                "children": [
+                    { "server": "local-a", "module-path": "./a" },
+                    { "server": "local-b", "module-path": "./b" },
+                    { "database": "db-extra", "server": "extra" }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let result = find_and_load_with_env_from(None, root.to_path_buf()).unwrap().unwrap();
+        let children = result.config.children.as_ref().unwrap();
+        assert_eq!(children.len(), 2, "child count should remain from base config");
+
+        assert_eq!(
+            children[0].additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("db-a")
+        );
+        assert_eq!(
+            children[0].additional_fields.get("server").and_then(|v| v.as_str()),
+            Some("local-a")
+        );
+        assert_eq!(
+            children[0]
+                .additional_fields
+                .get("module-path")
+                .and_then(|v| v.as_str()),
+            Some("./a")
+        );
+
+        assert_eq!(
+            children[1].additional_fields.get("database").and_then(|v| v.as_str()),
+            Some("db-b")
+        );
+        assert_eq!(
+            children[1].additional_fields.get("server").and_then(|v| v.as_str()),
+            Some("local-b")
+        );
+        assert_eq!(
+            children[1]
+                .additional_fields
+                .get("module-path")
+                .and_then(|v| v.as_str()),
+            Some("./b")
+        );
+    }
+
+    #[test]
+    fn test_children_overlay_merges_recursively_for_nested_children() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        fs::write(
+            root.join("spacetime.json"),
+            r#"{
+                "database": "root",
+                "children": [
+                    {
+                        "database": "parent-a",
+                        "children": [
+                            { "database": "grand-a1", "server": "base-g1" },
+                            { "database": "grand-a2", "server": "base-g2" }
+                        ]
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        fs::write(
+            root.join("spacetime.local.json"),
+            r#"{
+                "children": [
+                    {
+                        "children": [
+                            { "server": "local-g1", "module-path": "./nested" }
+                        ]
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let result = find_and_load_with_env_from(None, root.to_path_buf()).unwrap().unwrap();
+        let children = result.config.children.as_ref().unwrap();
+        let grandchildren = children[0].children.as_ref().unwrap();
+        assert_eq!(grandchildren.len(), 2);
+
+        assert_eq!(
+            grandchildren[0]
+                .additional_fields
+                .get("database")
+                .and_then(|v| v.as_str()),
+            Some("grand-a1")
+        );
+        assert_eq!(
+            grandchildren[0]
+                .additional_fields
+                .get("server")
+                .and_then(|v| v.as_str()),
+            Some("local-g1")
+        );
+        assert_eq!(
+            grandchildren[0]
+                .additional_fields
+                .get("module-path")
+                .and_then(|v| v.as_str()),
+            Some("./nested")
+        );
+
+        assert_eq!(
+            grandchildren[1]
+                .additional_fields
+                .get("database")
+                .and_then(|v| v.as_str()),
+            Some("grand-a2")
+        );
+        assert_eq!(
+            grandchildren[1]
+                .additional_fields
+                .get("server")
+                .and_then(|v| v.as_str()),
+            Some("base-g2")
+        );
+    }
+
+    #[test]
+    fn test_source_config_tracks_database_origin_per_target() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        fs::write(
+            root.join("spacetime.json"),
+            r#"{
+                "database": "root-base",
+                "children": [
+                    { "database": "child-a-base", "server": "base-a" },
+                    { "database": "child-b-base", "server": "base-b" }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        fs::write(
+            root.join("spacetime.local.json"),
+            r#"{
+                "database": "root-local",
+                "children": [
+                    { "database": "child-a-local" },
+                    { "server": "only-server-override" }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        fs::write(
+            root.join("spacetime.dev.json"),
+            r#"{
+                "children": [
+                    { "server": "dev-a" },
+                    { "database": "child-b-dev" }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let result = find_and_load_with_env_from(Some("dev"), root.to_path_buf())
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(result.config.source_config.as_deref(), Some("spacetime.local.json"));
+
+        let children = result.config.children.as_ref().unwrap();
+        assert_eq!(children[0].source_config.as_deref(), Some("spacetime.local.json"));
+        assert_eq!(children[1].source_config.as_deref(), Some("spacetime.dev.json"));
+    }
+
+    #[test]
+    fn test_source_config_not_inherited_to_children_without_database() {
+        let json = r#"{
+            "database": "root-db",
+            "_source-config": "spacetime.local.json",
+            "children": [
+                { "server": "local" }
+            ]
+        }"#;
+
+        let config: SpacetimeConfig = json5::from_str(json).unwrap();
+        assert_eq!(config.source_config.as_deref(), Some("spacetime.local.json"));
+        let child = config.children.as_ref().unwrap().first().unwrap();
+        assert!(
+            child.source_config.is_none(),
+            "_source-config should not be inherited to children"
+        );
+    }
+
+    #[test]
     fn test_multi_level_env_layering_staging() {
-        // Full overlay order: base → staging → local → staging.local
+        // Full overlay order: base → local → staging → staging.local
         use std::fs;
         use tempfile::TempDir;
 
@@ -2605,14 +2942,14 @@ mod tests {
         )
         .unwrap();
 
-        // Staging env overlay
+        // Staging env overlay (applies after local)
         fs::write(
             root.join("spacetime.staging.json"),
             r#"{ "server": "staging-server", "database": "staging-db" }"#,
         )
         .unwrap();
 
-        // Local overlay (applies after env)
+        // Local overlay (applies before env)
         fs::write(
             root.join("spacetime.local.json"),
             r#"{ "database": "local-override-db" }"#,
@@ -2630,7 +2967,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        // database: base-db → staging-db → local-override-db → staging-local-db
+        // database: base-db → local-override-db → staging-db → staging-local-db
         assert_eq!(
             result.config.additional_fields.get("database").and_then(|v| v.as_str()),
             Some("staging-local-db")
@@ -2651,6 +2988,14 @@ mod tests {
         );
         // 4 files loaded
         assert_eq!(result.loaded_files.len(), 4);
+        assert_eq!(
+            result.loaded_files[1].file_name().and_then(|s| s.to_str()),
+            Some("spacetime.local.json")
+        );
+        assert_eq!(
+            result.loaded_files[2].file_name().and_then(|s| s.to_str()),
+            Some("spacetime.staging.json")
+        );
     }
 
     #[test]

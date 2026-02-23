@@ -5,6 +5,7 @@ slug: /tables/performance
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Follow these guidelines to optimize table performance in your SpacetimeDB modules.
@@ -41,6 +42,8 @@ ctx.db.player().name().filter("Alice")
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 // Fast: Uses index on name
@@ -96,7 +99,7 @@ for (const auto& p : ctx.db[player]) {
 </TabItem>
 </Tabs>
 
-Add indexes to columns you frequently filter or join on. See [Indexes](/tables/indexes) for details.
+Add indexes to columns you frequently filter or join on. See [Indexes](./00300-indexes.md) for details.
 
 ## Keep Tables Focused
 
@@ -155,7 +158,7 @@ public partial struct Player
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = player)]
+#[spacetimedb::table(accessor = player)]
 pub struct Player {
     id: u32,
     name: String,
@@ -289,7 +292,7 @@ public partial struct PlayerSettings
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = player)]
+#[spacetimedb::table(accessor = player)]
 pub struct Player {
     #[primary_key]
     id: u32,
@@ -297,7 +300,7 @@ pub struct Player {
     name: String,
 }
 
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[unique]
     player_id: u32,
@@ -306,7 +309,7 @@ pub struct PlayerState {
     health: u32,
 }
 
-#[spacetimedb::table(name = player_stats)]
+#[spacetimedb::table(accessor = player_stats)]
 pub struct PlayerStats {
     #[unique]
     player_id: u32,
@@ -315,7 +318,7 @@ pub struct PlayerStats {
     play_time_seconds: u64,
 }
 
-#[spacetimedb::table(name = player_settings)]
+#[spacetimedb::table(accessor = player_settings)]
 pub struct PlayerSettings {
     #[unique]
     player_id: u32,
@@ -469,12 +472,12 @@ public partial struct InternalState { /* ... */ }
 
 ```rust
 // Public table - clients can subscribe and receive updates
-#[spacetimedb::table(name = player, public)]
+#[spacetimedb::table(accessor = player, public)]
 pub struct Player { /* ... */ }
 
 // Private table - only visible to module and owner
 // Better for internal state, caches, or sensitive data
-#[spacetimedb::table(name = internal_state)]
+#[spacetimedb::table(accessor = internal_state)]
 pub struct InternalState { /* ... */ }
 ```
 
@@ -634,6 +637,6 @@ Be mindful of unbounded table growth:
 
 ## Next Steps
 
-- Learn about [Indexes](/tables/indexes) to optimize queries
-- Explore [Subscriptions](/subscriptions) for efficient client data sync
-- Review [Reducers](/functions/reducers) for efficient data modification patterns
+- Learn about [Indexes](./00300-indexes.md) to optimize queries
+- Explore [Subscriptions](../00400-subscriptions.md) for efficient client data sync
+- Review [Reducers](../00200-functions/00300-reducers/00300-reducers.md) for efficient data modification patterns

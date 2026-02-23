@@ -5,12 +5,13 @@ slug: /tables/schedule-tables
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
-Tables can trigger [reducers](/functions/reducers) or [procedures](/functions/procedures) at specific times by including a special scheduling column. This allows you to schedule future actions like sending reminders, expiring items, or running periodic maintenance tasks.
+Tables can trigger [reducers](../00200-functions/00300-reducers/00300-reducers.md) or [procedures](../00200-functions/00400-procedures.md) at specific times by including a special scheduling column. This allows you to schedule future actions like sending reminders, expiring items, or running periodic maintenance tasks.
 
 :::tip Scheduling Procedures
-Procedures use the same scheduling pattern as reducers. Simply reference the procedure name in the `scheduled` attribute. This is particularly useful when you need scheduled tasks that make HTTP requests or perform other side effects. See [Scheduling Procedures](/functions/reducers#scheduling-procedures) for an example.
+Procedures use the same scheduling pattern as reducers. Simply reference the procedure name in the `scheduled` attribute. This is particularly useful when you need scheduled tasks that make HTTP requests or perform other side effects. See [Scheduling Procedures](../00200-functions/00300-reducers/00300-reducers.md#scheduling-procedures) for an example.
 :::
 
 ## Defining a Schedule Table
@@ -69,7 +70,7 @@ public static partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = reminder_schedule, scheduled(send_reminder))]
+#[spacetimedb::table(accessor = reminder_schedule, scheduled(send_reminder))]
 pub struct Reminder {
     #[primary_key]
     #[auto_inc]
@@ -88,6 +89,8 @@ fn send_reminder(ctx: &ReducerContext, reminder: Reminder) -> Result<(), String>
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 struct Reminder {
@@ -421,5 +424,5 @@ SPACETIMEDB_REDUCER(send_reminder, ReducerContext ctx, Reminder arg)
 
 ## Next Steps
 
-- Learn about [Reducers](/functions/reducers) to handle scheduled actions
-- Explore [Procedures](/functions/procedures) for scheduled execution patterns
+- Learn about [Reducers](../00200-functions/00300-reducers/00300-reducers.md) to handle scheduled actions
+- Explore [Procedures](../00200-functions/00400-procedures.md) for scheduled execution patterns

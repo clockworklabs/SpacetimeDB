@@ -22,7 +22,7 @@ macro_rules! impl_simple_test_table {
     (__impl $table:ident {
         Contents = $contents:ty;
         field_name = $field_name:ident;
-        insert_reducer = $insert_reducer:ident;
+        insert_then = $insert_reducer_then:ident;
         insert_reducer_event = $insert_reducer_event:ident;
         accessor_method = $accessor_method:ident;
     }) => {
@@ -38,7 +38,13 @@ macro_rules! impl_simple_test_table {
             }
 
             fn insert(ctx: &impl RemoteDbContext, contents: Self::Contents) {
-                ctx.reducers().$insert_reducer(contents).unwrap();
+                ctx.reducers().$insert_reducer_then(contents, |ctx, outcome| {
+                    match outcome {
+                        Ok(Ok(())) => assert!(Self::is_insert_reducer_event(&ctx.event.reducer)),
+                        Ok(Err(msg)) => panic!("Insert reducer returned error: {msg}"),
+                        Err(internal_error) => panic!("Insert reducer panicked: {internal_error:?}"),
+                    }
+                }).unwrap();
             }
 
             fn on_insert(ctx: &impl RemoteDbContext, callback: impl FnMut(&EventContext, &Self) + Send + 'static) {
@@ -55,42 +61,42 @@ impl_simple_test_table! {
     OneU8 {
         Contents = u8;
         field_name = n;
-        insert_reducer = insert_one_u_8;
+        insert_then = insert_one_u_8_then;
         insert_reducer_event = InsertOneU8;
         accessor_method = one_u_8;
     }
     OneU16 {
         Contents = u16;
         field_name = n;
-        insert_reducer = insert_one_u_16;
+        insert_then = insert_one_u_16_then;
         insert_reducer_event = InsertOneU16;
         accessor_method = one_u_16;
     }
     OneU32 {
         Contents = u32;
         field_name = n;
-        insert_reducer = insert_one_u_32;
+        insert_then = insert_one_u_32_then;
         insert_reducer_event = InsertOneU32;
         accessor_method = one_u_32;
     }
     OneU64 {
         Contents = u64;
         field_name = n;
-        insert_reducer = insert_one_u_64;
+        insert_then = insert_one_u_64_then;
         insert_reducer_event = InsertOneU64;
         accessor_method = one_u_64;
     }
     OneU128 {
         Contents = u128;
         field_name = n;
-        insert_reducer = insert_one_u_128;
+        insert_then = insert_one_u_128_then;
         insert_reducer_event = InsertOneU128;
         accessor_method = one_u_128;
     }
     OneU256 {
         Contents = u256;
         field_name = n;
-        insert_reducer = insert_one_u_256;
+        insert_then = insert_one_u_256_then;
         insert_reducer_event = InsertOneU256;
         accessor_method = one_u_256;
     }
@@ -98,42 +104,42 @@ impl_simple_test_table! {
     OneI8 {
         Contents = i8;
         field_name = n;
-        insert_reducer = insert_one_i_8;
+        insert_then = insert_one_i_8_then;
         insert_reducer_event = InsertOneI8;
         accessor_method = one_i_8;
     }
     OneI16 {
         Contents = i16;
         field_name = n;
-        insert_reducer = insert_one_i_16;
+        insert_then = insert_one_i_16_then;
         insert_reducer_event = InsertOneI16;
         accessor_method = one_i_16;
     }
     OneI32 {
         Contents = i32;
         field_name = n;
-        insert_reducer = insert_one_i_32;
+        insert_then = insert_one_i_32_then;
         insert_reducer_event = InsertOneI32;
         accessor_method = one_i_32;
     }
     OneI64 {
         Contents = i64;
         field_name = n;
-        insert_reducer = insert_one_i_64;
+        insert_then = insert_one_i_64_then;
         insert_reducer_event = InsertOneI64;
         accessor_method = one_i_64;
     }
     OneI128 {
         Contents = i128;
         field_name = n;
-        insert_reducer = insert_one_i_128;
+        insert_then = insert_one_i_128_then;
         insert_reducer_event = InsertOneI128;
         accessor_method = one_i_128;
     }
     OneI256 {
         Contents = i256;
         field_name = n;
-        insert_reducer = insert_one_i_256;
+        insert_then = insert_one_i_256_then;
         insert_reducer_event = InsertOneI256;
         accessor_method = one_i_256;
     }
@@ -141,14 +147,14 @@ impl_simple_test_table! {
     OneF32 {
         Contents = f32;
         field_name = f;
-        insert_reducer = insert_one_f_32;
+        insert_then = insert_one_f_32_then;
         insert_reducer_event = InsertOneF32;
         accessor_method = one_f_32;
     }
     OneF64 {
         Contents = f64;
         field_name = f;
-        insert_reducer = insert_one_f_64;
+        insert_then = insert_one_f_64_then;
         insert_reducer_event = InsertOneF64;
         accessor_method = one_f_64;
     }
@@ -156,7 +162,7 @@ impl_simple_test_table! {
     OneBool {
         Contents = bool;
         field_name = b;
-        insert_reducer = insert_one_bool;
+        insert_then = insert_one_bool_then;
         insert_reducer_event = InsertOneBool;
         accessor_method = one_bool;
     }
@@ -164,7 +170,7 @@ impl_simple_test_table! {
     OneString {
         Contents = String;
         field_name = s;
-        insert_reducer = insert_one_string;
+        insert_then = insert_one_string_then;
         insert_reducer_event = InsertOneString;
         accessor_method = one_string;
     }
@@ -172,7 +178,7 @@ impl_simple_test_table! {
     OneIdentity {
         Contents = Identity;
         field_name = i;
-        insert_reducer = insert_one_identity;
+        insert_then = insert_one_identity_then;
         insert_reducer_event = InsertOneIdentity;
         accessor_method = one_identity;
     }
@@ -180,7 +186,7 @@ impl_simple_test_table! {
     OneConnectionId {
         Contents = ConnectionId;
         field_name = a;
-        insert_reducer = insert_one_connection_id;
+        insert_then = insert_one_connection_id_then;
         insert_reducer_event = InsertOneConnectionId;
         accessor_method = one_connection_id;
     }
@@ -188,7 +194,7 @@ impl_simple_test_table! {
     OneTimestamp {
         Contents = Timestamp;
         field_name = t;
-        insert_reducer = insert_one_timestamp;
+        insert_then = insert_one_timestamp_then;
         insert_reducer_event = InsertOneTimestamp;
         accessor_method = one_timestamp;
     }
@@ -196,7 +202,7 @@ impl_simple_test_table! {
     OneUuid {
         Contents = Uuid;
         field_name = u;
-        insert_reducer = insert_one_uuid;
+        insert_then = insert_one_uuid_then;
         insert_reducer_event = InsertOneUuid;
         accessor_method = one_uuid;
     }
@@ -204,14 +210,14 @@ impl_simple_test_table! {
     OneSimpleEnum {
         Contents = SimpleEnum;
         field_name = e;
-        insert_reducer = insert_one_simple_enum;
+        insert_then = insert_one_simple_enum_then;
         insert_reducer_event = InsertOneSimpleEnum;
         accessor_method = one_simple_enum;
     }
     OneEnumWithPayload {
         Contents = EnumWithPayload;
         field_name = e;
-        insert_reducer = insert_one_enum_with_payload;
+        insert_then = insert_one_enum_with_payload_then;
         insert_reducer_event = InsertOneEnumWithPayload;
         accessor_method = one_enum_with_payload;
     }
@@ -219,28 +225,28 @@ impl_simple_test_table! {
     OneUnitStruct {
         Contents = UnitStruct;
         field_name = s;
-        insert_reducer = insert_one_unit_struct;
+        insert_then = insert_one_unit_struct_then;
         insert_reducer_event = InsertOneUnitStruct;
         accessor_method = one_unit_struct;
     }
     OneByteStruct {
         Contents = ByteStruct;
         field_name = s;
-        insert_reducer = insert_one_byte_struct;
+        insert_then = insert_one_byte_struct_then;
         insert_reducer_event = InsertOneByteStruct;
         accessor_method = one_byte_struct;
     }
     OneEveryPrimitiveStruct {
         Contents = EveryPrimitiveStruct;
         field_name = s;
-        insert_reducer = insert_one_every_primitive_struct;
+        insert_then = insert_one_every_primitive_struct_then;
         insert_reducer_event = InsertOneEveryPrimitiveStruct;
         accessor_method = one_every_primitive_struct;
     }
     OneEveryVecStruct {
         Contents = EveryVecStruct;
         field_name = s;
-        insert_reducer = insert_one_every_vec_struct;
+        insert_then = insert_one_every_vec_struct_then;
         insert_reducer_event = InsertOneEveryVecStruct;
         accessor_method = one_every_vec_struct;
     }
@@ -248,42 +254,42 @@ impl_simple_test_table! {
     VecU8 {
         Contents = Vec<u8>;
         field_name = n;
-        insert_reducer = insert_vec_u_8;
+        insert_then = insert_vec_u_8_then;
         insert_reducer_event = InsertVecU8;
         accessor_method = vec_u_8;
     }
     VecU16 {
         Contents = Vec<u16>;
         field_name = n;
-        insert_reducer = insert_vec_u_16;
+        insert_then = insert_vec_u_16_then;
         insert_reducer_event = InsertVecU16;
         accessor_method = vec_u_16;
     }
     VecU32 {
         Contents = Vec<u32>;
         field_name = n;
-        insert_reducer = insert_vec_u_32;
+        insert_then = insert_vec_u_32_then;
         insert_reducer_event = InsertVecU32;
         accessor_method = vec_u_32;
     }
     VecU64 {
         Contents = Vec<u64>;
         field_name = n;
-        insert_reducer = insert_vec_u_64;
+        insert_then = insert_vec_u_64_then;
         insert_reducer_event = InsertVecU64;
         accessor_method = vec_u_64;
     }
     VecU128 {
         Contents = Vec<u128>;
         field_name = n;
-        insert_reducer = insert_vec_u_128;
+        insert_then = insert_vec_u_128_then;
         insert_reducer_event = InsertVecU128;
         accessor_method = vec_u_128;
     }
     VecU256 {
         Contents = Vec<u256>;
         field_name = n;
-        insert_reducer = insert_vec_u_256;
+        insert_then = insert_vec_u_256_then;
         insert_reducer_event = InsertVecU256;
         accessor_method = vec_u_256;
     }
@@ -291,42 +297,42 @@ impl_simple_test_table! {
     VecI8 {
         Contents = Vec<i8>;
         field_name = n;
-        insert_reducer = insert_vec_i_8;
+        insert_then = insert_vec_i_8_then;
         insert_reducer_event = InsertVecI8;
         accessor_method = vec_i_8;
     }
     VecI16 {
         Contents = Vec<i16>;
         field_name = n;
-        insert_reducer = insert_vec_i_16;
+        insert_then = insert_vec_i_16_then;
         insert_reducer_event = InsertVecI16;
         accessor_method = vec_i_16;
     }
     VecI32 {
         Contents = Vec<i32>;
         field_name = n;
-        insert_reducer = insert_vec_i_32;
+        insert_then = insert_vec_i_32_then;
         insert_reducer_event = InsertVecI32;
         accessor_method = vec_i_32;
     }
     VecI64 {
         Contents = Vec<i64>;
         field_name = n;
-        insert_reducer = insert_vec_i_64;
+        insert_then = insert_vec_i_64_then;
         insert_reducer_event = InsertVecI64;
         accessor_method = vec_i_64;
     }
     VecI128 {
         Contents = Vec<i128>;
         field_name = n;
-        insert_reducer = insert_vec_i_128;
+        insert_then = insert_vec_i_128_then;
         insert_reducer_event = InsertVecI128;
         accessor_method = vec_i_128;
     }
     VecI256 {
         Contents = Vec<i256>;
         field_name = n;
-        insert_reducer = insert_vec_i_256;
+        insert_then = insert_vec_i_256_then;
         insert_reducer_event = InsertVecI256;
         accessor_method = vec_i_256;
     }
@@ -334,14 +340,14 @@ impl_simple_test_table! {
     VecF32 {
         Contents = Vec<f32>;
         field_name = f;
-        insert_reducer = insert_vec_f_32;
+        insert_then = insert_vec_f_32_then;
         insert_reducer_event = InsertVecF32;
         accessor_method = vec_f_32;
     }
     VecF64 {
         Contents = Vec<f64>;
         field_name = f;
-        insert_reducer = insert_vec_f_64;
+        insert_then = insert_vec_f_64_then;
         insert_reducer_event = InsertVecF64;
         accessor_method = vec_f_64;
     }
@@ -349,7 +355,7 @@ impl_simple_test_table! {
     VecBool {
         Contents = Vec<bool>;
         field_name = b;
-        insert_reducer = insert_vec_bool;
+        insert_then = insert_vec_bool_then;
         insert_reducer_event = InsertVecBool;
         accessor_method = vec_bool;
     }
@@ -357,7 +363,7 @@ impl_simple_test_table! {
     VecString {
         Contents = Vec<String>;
         field_name = s;
-        insert_reducer = insert_vec_string;
+        insert_then = insert_vec_string_then;
         insert_reducer_event = InsertVecString;
         accessor_method = vec_string;
     }
@@ -365,7 +371,7 @@ impl_simple_test_table! {
     VecIdentity {
         Contents = Vec<Identity>;
         field_name = i;
-        insert_reducer = insert_vec_identity;
+        insert_then = insert_vec_identity_then;
         insert_reducer_event = InsertVecIdentity;
         accessor_method = vec_identity;
     }
@@ -373,7 +379,7 @@ impl_simple_test_table! {
     VecConnectionId {
         Contents = Vec<ConnectionId>;
         field_name = a;
-        insert_reducer = insert_vec_connection_id;
+        insert_then = insert_vec_connection_id_then;
         insert_reducer_event = InsertVecConnectionId;
         accessor_method = vec_connection_id;
     }
@@ -381,7 +387,7 @@ impl_simple_test_table! {
     VecTimestamp {
         Contents = Vec<Timestamp>;
         field_name = t;
-        insert_reducer = insert_vec_timestamp;
+        insert_then = insert_vec_timestamp_then;
         insert_reducer_event = InsertVecTimestamp;
         accessor_method = vec_timestamp;
     }
@@ -389,7 +395,7 @@ impl_simple_test_table! {
     VecUuid {
         Contents = Vec<Uuid>;
         field_name = u;
-        insert_reducer = insert_vec_uuid;
+        insert_then = insert_vec_uuid_then;
         insert_reducer_event = InsertVecUuid;
         accessor_method = vec_uuid;
     }
@@ -397,14 +403,14 @@ impl_simple_test_table! {
     VecSimpleEnum {
         Contents = Vec<SimpleEnum>;
         field_name = e;
-        insert_reducer = insert_vec_simple_enum;
+        insert_then = insert_vec_simple_enum_then;
         insert_reducer_event = InsertVecSimpleEnum;
         accessor_method = vec_simple_enum;
     }
     VecEnumWithPayload {
         Contents = Vec<EnumWithPayload>;
         field_name = e;
-        insert_reducer = insert_vec_enum_with_payload;
+        insert_then = insert_vec_enum_with_payload_then;
         insert_reducer_event = InsertVecEnumWithPayload;
         accessor_method = vec_enum_with_payload;
     }
@@ -412,77 +418,77 @@ impl_simple_test_table! {
     VecUnitStruct {
         Contents = Vec<UnitStruct>;
         field_name = s;
-        insert_reducer = insert_vec_unit_struct;
+        insert_then = insert_vec_unit_struct_then;
         insert_reducer_event = InsertVecUnitStruct;
         accessor_method = vec_unit_struct;
     }
     VecByteStruct {
         Contents = Vec<ByteStruct>;
         field_name = s;
-        insert_reducer = insert_vec_byte_struct;
+        insert_then = insert_vec_byte_struct_then;
         insert_reducer_event = InsertVecByteStruct;
         accessor_method = vec_byte_struct;
     }
     VecEveryPrimitiveStruct {
         Contents = Vec<EveryPrimitiveStruct>;
         field_name = s;
-        insert_reducer = insert_vec_every_primitive_struct;
+        insert_then = insert_vec_every_primitive_struct_then;
         insert_reducer_event = InsertVecEveryPrimitiveStruct;
         accessor_method = vec_every_primitive_struct;
     }
     VecEveryVecStruct {
         Contents = Vec<EveryVecStruct>;
         field_name = s;
-        insert_reducer = insert_vec_every_vec_struct;
+        insert_then = insert_vec_every_vec_struct_then;
         insert_reducer_event = InsertVecEveryVecStruct;
         accessor_method = vec_every_vec_struct;
     }
     OptionI32 {
         Contents = Option<i32>;
         field_name = n;
-        insert_reducer = insert_option_i_32;
+        insert_then = insert_option_i_32_then;
         insert_reducer_event = InsertOptionI32;
         accessor_method = option_i_32;
     }
     OptionString {
         Contents = Option<String>;
         field_name = s;
-        insert_reducer = insert_option_string;
+        insert_then = insert_option_string_then;
         insert_reducer_event = InsertOptionString;
         accessor_method = option_string;
     }
     OptionIdentity {
         Contents = Option<Identity>;
         field_name = i;
-        insert_reducer = insert_option_identity;
+        insert_then = insert_option_identity_then;
         insert_reducer_event = InsertOptionIdentity;
         accessor_method = option_identity;
     }
     OptionUuid {
         Contents = Option<Uuid>;
         field_name = u;
-        insert_reducer = insert_option_uuid;
+        insert_then = insert_option_uuid_then;
         insert_reducer_event = InsertOptionUuid;
         accessor_method = option_uuid;
     }
     OptionSimpleEnum {
         Contents = Option<SimpleEnum>;
         field_name = e;
-        insert_reducer = insert_option_simple_enum;
+        insert_then = insert_option_simple_enum_then;
         insert_reducer_event = InsertOptionSimpleEnum;
         accessor_method = option_simple_enum;
     }
     OptionEveryPrimitiveStruct {
         Contents = Option<EveryPrimitiveStruct>;
         field_name = s;
-        insert_reducer = insert_option_every_primitive_struct;
+        insert_then = insert_option_every_primitive_struct_then;
         insert_reducer_event = InsertOptionEveryPrimitiveStruct;
         accessor_method = option_every_primitive_struct;
     }
     OptionVecOptionI32 {
         Contents = Option<Vec<Option<i32>>>;
         field_name = v;
-        insert_reducer = insert_option_vec_option_i_32;
+        insert_then = insert_option_vec_option_i_32_then;
         insert_reducer_event = InsertOptionVecOptionI32;
         accessor_method = option_vec_option_i_32;
     }

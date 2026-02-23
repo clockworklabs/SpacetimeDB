@@ -17,18 +17,18 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "null_string_nonnullable";
 
-            public sealed class NullStringNonnullableIdIdxBtreeUniqueIndex : UniqueIndexBase<ulong>
+            public sealed class IdUniqueIndex : UniqueIndexBase<ulong>
             {
                 protected override ulong GetKey(NullStringNonNullable row) => row.Id;
 
-                public NullStringNonnullableIdIdxBtreeUniqueIndex(NullStringNonnullableHandle table) : base(table) { }
+                public IdUniqueIndex(NullStringNonnullableHandle table) : base(table) { }
             }
 
-            public readonly NullStringNonnullableIdIdxBtreeUniqueIndex NullStringNonnullableIdIdxBtree;
+            public readonly IdUniqueIndex Id;
 
             internal NullStringNonnullableHandle(DbConnection conn) : base(conn)
             {
-                NullStringNonnullableIdIdxBtree = new(this);
+                Id = new(this);
             }
 
             protected override object GetPrimaryKey(NullStringNonNullable row) => row.Id;
@@ -44,8 +44,8 @@ namespace SpacetimeDB.Types
 
         public NullStringNonnullableCols(string tableName)
         {
-            Id = new global::SpacetimeDB.Col<NullStringNonNullable, ulong>(tableName, "Id");
-            Name = new global::SpacetimeDB.Col<NullStringNonNullable, string>(tableName, "Name");
+            Id = new global::SpacetimeDB.Col<NullStringNonNullable, ulong>(tableName, "id");
+            Name = new global::SpacetimeDB.Col<NullStringNonNullable, string>(tableName, "name");
         }
     }
 
@@ -55,7 +55,7 @@ namespace SpacetimeDB.Types
 
         public NullStringNonnullableIxCols(string tableName)
         {
-            Id = new global::SpacetimeDB.IxCol<NullStringNonNullable, ulong>(tableName, "Id");
+            Id = new global::SpacetimeDB.IxCol<NullStringNonNullable, ulong>(tableName, "id");
         }
     }
 }

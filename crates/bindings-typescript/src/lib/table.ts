@@ -1,9 +1,15 @@
+import type { ProcedureExport, ReducerExport, t } from '../server';
 import type { errors } from '../server/errors';
-import type RawConstraintDefV10 from './autogen/raw_constraint_def_v_10_type';
-import RawIndexAlgorithm from './autogen/raw_index_algorithm_type';
-import type RawIndexDefV10 from './autogen/raw_index_def_v_10_type';
-import type RawSequenceDefV10 from './autogen/raw_sequence_def_v_10_type';
-import type RawColumnDefaultValueV10 from './autogen/raw_column_default_value_v_10_type';
+import {
+  ExplicitNameEntry,
+  RawColumnDefaultValueV10,
+  RawConstraintDefV10,
+  RawIndexAlgorithm,
+  RawIndexDefV10,
+  RawSequenceDefV10,
+  RawTableDefV10,
+} from './autogen/types';
+import BinaryWriter from './binary_writer';
 import type { AllUnique, ConstraintOpts } from './constraints';
 import type {
   ColumnIndex,
@@ -18,7 +24,6 @@ import {
   RowBuilder,
   type ColumnBuilder,
   type ColumnMetadata,
-  type Infer,
   type InferTypeOfRow,
   type RowObj,
   type TypeBuilder,
@@ -29,9 +34,6 @@ import type {
   ValidateColumnMetadata,
 } from './type_util';
 import { toPascalCase } from './util';
-import BinaryWriter from './binary_writer';
-import type { ProcedureExport, ReducerExport, t } from '../server';
-import type RawTableDefV10 from './autogen/raw_table_def_v_10_type';
 
 export type AlgebraicTypeRef = number;
 type ColId = number;
@@ -116,7 +118,7 @@ export type UntypedTableDef = {
   rowType: RowBuilder<RowObj>['algebraicType']['value'];
   indexes: readonly IndexOpts<any>[];
   constraints: readonly ConstraintOpts<any>[];
-  tableDef: Infer<typeof RawTableDefV10>;
+  tableDef: RawTableDefV10;
   isEvent?: boolean;
 };
 
@@ -131,7 +133,7 @@ export type TableIndexes<TableDef extends UntypedTableDef> = {
     ? never
     : K]: ColumnIndex<K, TableDef['columns'][K]['columnMetadata']>;
 } & {
-  [I in TableDef['indexes'][number] as I['name'] & {}]: TableIndexFromDef<
+  [I in TableDef['indexes'][number] as I['accessor'] & {}]: TableIndexFromDef<
     TableDef,
     I
   >;
@@ -145,7 +147,7 @@ type TableIndexFromDef<
     keyof TableDef['columns'] & string
   >
     ? {
-        name: I['name'];
+        name: I['accessor'];
         unique: AllUnique<TableDef, Cols>;
         algorithm: Lowercase<I['algorithm']>;
         columns: Cols;
@@ -321,12 +323,12 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
   // gather primary keys, per‑column indexes, uniques, sequences
   const pk: ColList = [];
-  const indexes: Infer<typeof RawIndexDefV10>[] = [];
-  const constraints: Infer<typeof RawConstraintDefV10>[] = [];
-  const sequences: Infer<typeof RawSequenceDefV10>[] = [];
+  const indexes: (RawIndexDefV10 & { canonicalName?: string })[] = [];
+  const constraints: RawConstraintDefV10[] = [];
+  const sequences: RawSequenceDefV10[] = [];
 
   let scheduleAtCol: ColId | undefined;
-  const defaultValues: Infer<typeof RawColumnDefaultValueV10>[] = [];
+  const defaultValues: RawColumnDefaultValueV10[] = [];
 
   for (const [name, builder] of Object.entries(row.row)) {
     const meta: ColumnMetadata<any> = builder.columnMetadata;
@@ -341,7 +343,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     if (meta.indexType || isUnique) {
       const algo = meta.indexType ?? 'btree';
       const id = colIds.get(name)!;
-      let algorithm: Infer<typeof RawIndexAlgorithm>;
+      let algorithm: RawIndexAlgorithm;
       switch (algo) {
         case 'btree':
           algorithm = RawIndexAlgorithm.BTree([id]);
@@ -398,7 +400,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
   // convert explicit multi‑column indexes coming from options.indexes
   for (const indexOpts of userIndexes ?? []) {
-    let algorithm: Infer<typeof RawIndexAlgorithm>;
+    let algorithm: RawIndexAlgorithm;
     switch (indexOpts.algorithm) {
       case 'btree':
         algorithm = {
@@ -425,30 +427,22 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     // the name and accessor name of an index across all SDKs.
     indexes.push({
       sourceName: undefined,
-      accessorName: indexOpts.name,
+      accessorName: indexOpts.accessor,
       algorithm,
+      canonicalName: indexOpts.name,
     });
   }
 
   // add explicit constraints from options.constraints
   for (const constraintOpts of opts.constraints ?? []) {
     if (constraintOpts.constraint === 'unique') {
-      const data: Infer<typeof RawConstraintDefV10>['data'] = {
+      const data: RawConstraintDefV10['data'] = {
         tag: 'Unique',
         value: { columns: constraintOpts.columns.map(c => colIds.get(c)!) },
       };
       constraints.push({ sourceName: constraintOpts.name, data });
       continue;
     }
-  }
-
-  for (const index of indexes) {
-    const cols =
-      index.algorithm.tag === 'Direct'
-        ? [index.algorithm.value]
-        : index.algorithm.value;
-    const colS = cols.map(i => colNameList[i]).join('_');
-    index.sourceName = `${name}_${colS}_idx_${index.algorithm.tag.toLowerCase()}`;
   }
 
   const productType = row.algebraicType.value as RowBuilder<
@@ -469,8 +463,28 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
       if (row.typeName === undefined) {
         row.typeName = toPascalCase(tableName);
       }
+
+      // Build index source names using accName
+      for (const index of indexes) {
+        const cols =
+          index.algorithm.tag === 'Direct'
+            ? [index.algorithm.value]
+            : index.algorithm.value;
+
+        const colS = cols.map(i => colNameList[i]).join('_');
+        const sourceName =
+          (index.sourceName = `${accName}_${colS}_idx_${index.algorithm.tag.toLowerCase()}`);
+
+        const { canonicalName } = index;
+        if (canonicalName !== undefined) {
+          ctx.moduleDef.explicitNames.entries.push(
+            ExplicitNameEntry.Index({ sourceName, canonicalName })
+          );
+        }
+      }
+
       return {
-        sourceName: tableName,
+        sourceName: accName,
         productTypeRef: ctx.registerTypesRecursively(row).ref,
         primaryKey: pk,
         indexes,

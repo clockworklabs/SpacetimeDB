@@ -3,6 +3,7 @@ import { Identity } from './identity';
 import type { ColumnIndex, IndexColumns, IndexOpts } from './indexes';
 import type { UntypedSchemaDef } from './schema';
 import type { UntypedTableSchema } from './table_schema';
+import { Timestamp } from './timestamp';
 import type {
   ColumnBuilder,
   ColumnMetadata,
@@ -615,6 +616,7 @@ type LiteralValue =
   | bigint
   | boolean
   | Identity
+  | Timestamp
   | ConnectionId;
 
 type ValueLike = LiteralValue | ColumnExpr<any, any> | LiteralExpr<any>;
@@ -788,6 +790,9 @@ function literalValueToSql(value: unknown): string {
     // We use this hex string syntax.
     return `0x${value.toHexString()}`;
   }
+  if (value instanceof Timestamp) {
+    return `'${value.toISOString()}'`;
+  }
   switch (typeof value) {
     case 'number':
     case 'bigint':
@@ -853,9 +858,51 @@ function resolveValue(
   row: Record<string, any>
 ): any {
   if (isLiteralExpr(expr)) {
-    return expr.value;
+    return toComparableValue(expr.value);
   }
-  return row[expr.column];
+  return toComparableValue(row[expr.column]);
+}
+
+type TimestampLike = {
+  __timestamp_micros_since_unix_epoch__: bigint;
+};
+
+type HexSerializableLike = {
+  toHexString: () => string;
+};
+
+function isHexSerializableLike(value: unknown): value is HexSerializableLike {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof (value as { toHexString?: unknown }).toHexString === 'function'
+  );
+}
+
+// Check if this value is a Timestamp-like object. This is here because
+// running locally can end up with different versions of the Timestamp class,
+// which breaks the simple instanceof version.
+function isTimestampLike(value: unknown): value is TimestampLike {
+  if (!value || typeof value !== 'object') return false;
+
+  if (value instanceof Timestamp) return true;
+
+  const micros = (value as Record<string, unknown>)[
+    '__timestamp_micros_since_unix_epoch__'
+  ];
+  return typeof micros === 'bigint';
+}
+
+// Exported for tests.
+export function toComparableValue(value: any): any {
+  // Handle `ConnectionId` and `Identity`.
+  if (isHexSerializableLike(value)) {
+    return value.toHexString();
+  }
+  if (isTimestampLike(value)) {
+    return value.__timestamp_micros_since_unix_epoch__;
+  }
+  return value;
 }
 
 /**

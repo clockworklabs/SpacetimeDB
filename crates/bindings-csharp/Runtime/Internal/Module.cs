@@ -21,6 +21,9 @@ partial class RawModuleDefV10
     private readonly Dictionary<string, List<RawColumnDefaultValueV10>> defaultValuesByTable =
         new(StringComparer.Ordinal);
 
+    private SpacetimeDB.CaseConversionPolicy? caseConversionPolicy = null;
+    private readonly List<ExplicitNameEntry> explicitNames = [];
+
     // Note: this intends to generate a valid identifier, but it's not guaranteed to be unique as it's not proper mangling.
     // Fix it up to a different mangling scheme if it causes problems.
     private static string GetFriendlyName(Type type) =>
@@ -85,6 +88,20 @@ partial class RawModuleDefV10
         }
         defaults.Add(new RawColumnDefaultValueV10(colId, new List<byte>(value)));
     }
+
+    internal void SetCaseConversionPolicy(SpacetimeDB.CaseConversionPolicy policy) =>
+        caseConversionPolicy = policy;
+
+    internal void RegisterExplicitTableName(string sourceName, string canonicalName) =>
+        explicitNames.Add(new ExplicitNameEntry.Table(new NameMapping(sourceName, canonicalName)));
+
+    internal void RegisterExplicitFunctionName(string sourceName, string canonicalName) =>
+        explicitNames.Add(
+            new ExplicitNameEntry.Function(new NameMapping(sourceName, canonicalName))
+        );
+
+    internal void RegisterExplicitIndexName(string sourceName, string canonicalName) =>
+        explicitNames.Add(new ExplicitNameEntry.Index(new NameMapping(sourceName, canonicalName)));
 
     internal RawModuleDefV10 BuildModuleDefinition()
     {
@@ -165,6 +182,18 @@ partial class RawModuleDefV10
             sections.Add(new RawModuleDefV10Section.LifeCycleReducers(lifecycleReducerDefs));
         }
         // TODO: Add sections for Event tables and Case conversion policy (mirrors Rust `raw_def/v10.rs` TODO).
+        if (caseConversionPolicy is { } policy)
+        {
+            sections.Add(new RawModuleDefV10Section.CaseConversionPolicy(policy));
+        }
+        if (explicitNames.Count > 0)
+        {
+            sections.Add(
+                new RawModuleDefV10Section.ExplicitNames(
+                    new ExplicitNames(new List<ExplicitNameEntry>(explicitNames))
+                )
+            );
+        }
         if (rowLevelSecurityDefs.Count > 0)
         {
             sections.Add(new RawModuleDefV10Section.RowLevelSecurity(rowLevelSecurityDefs));
@@ -302,6 +331,18 @@ public static class Module
 
     public static void RegisterTableDefaultValue(string table, ushort colId, byte[] value) =>
         moduleDef.RegisterTableDefaultValue(table, colId, value);
+
+    public static void SetCaseConversionPolicy(SpacetimeDB.CaseConversionPolicy policy) =>
+        moduleDef.SetCaseConversionPolicy(policy);
+
+    public static void RegisterExplicitTableName(string sourceName, string canonicalName) =>
+        moduleDef.RegisterExplicitTableName(sourceName, canonicalName);
+
+    public static void RegisterExplicitFunctionName(string sourceName, string canonicalName) =>
+        moduleDef.RegisterExplicitFunctionName(sourceName, canonicalName);
+
+    public static void RegisterExplicitIndexName(string sourceName, string canonicalName) =>
+        moduleDef.RegisterExplicitIndexName(sourceName, canonicalName);
 
     public static byte[] Consume(this BytesSource source)
     {

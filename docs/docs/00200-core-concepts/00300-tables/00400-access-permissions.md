@@ -5,6 +5,7 @@ slug: /tables/access-permissions
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 SpacetimeDB controls data access through table visibility and context-based permissions. Tables can be public or private, and different execution contexts (reducers, views, clients) have different levels of access.
@@ -69,7 +70,7 @@ public partial struct Player
 
 ```rust
 // Private table (default) - only accessible from server-side code
-#[spacetimedb::table(name = internal_config)]
+#[spacetimedb::table(accessor = internal_config)]
 pub struct InternalConfig {
     #[primary_key]
     key: String,
@@ -77,7 +78,7 @@ pub struct InternalConfig {
 }
 
 // Public table - clients can subscribe and query
-#[spacetimedb::table(name = player, public)]
+#[spacetimedb::table(accessor = player, public)]
 pub struct Player {
     #[primary_key]
     #[auto_inc]
@@ -89,6 +90,8 @@ pub struct Player {
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 // Private table (default) - only accessible from server-side code
@@ -339,11 +342,11 @@ SPACETIMEDB_PROCEDURE(Unit, update_user_procedure, ProcedureContext ctx, uint64_
 </TabItem>
 </Tabs>
 
-See the [Procedures documentation](/functions/procedures) for more details on using procedures, including making HTTP requests to external services.
+See the [Procedures documentation](../00200-functions/00400-procedures.md) for more details on using procedures, including making HTTP requests to external services.
 
 ## Views - Read-Only Access
 
-[Views](/functions/views) receive a `ViewContext` or `AnonymousViewContext` which provides read-only access to all tables (both public and private). They can query and iterate tables, but cannot insert, update, or delete rows.
+[Views](../00200-functions/00500-views.md) receive a `ViewContext` or `AnonymousViewContext` which provides read-only access to all tables (both public and private). They can query and iterate tables, but cannot insert, update, or delete rows.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -404,14 +407,14 @@ SPACETIMEDB_VIEW(std::vector<User>, find_users_by_name, Public, ViewContext ctx)
 </TabItem>
 </Tabs>
 
-See the [Views documentation](/functions/views) for more details on defining and querying views.
+See the [Views documentation](../00200-functions/00500-views.md) for more details on defining and querying views.
 
 ## Using Views for Fine-Grained Access Control
 
 While table visibility controls whether clients can access a table at all, views provide fine-grained control over which rows and columns clients can see. Views can read from private tables and expose only the data appropriate for each client.
 
 :::note
-Views can only access table data through indexed lookups, not by scanning all rows. This restriction ensures views remain performant. See the [Views documentation](/functions/views) for details.
+Views can only access table data through indexed lookups, not by scanning all rows. This restriction ensures views remain performant. See the [Views documentation](../00200-functions/00500-views.md) for details.
 :::
 
 ### Filtering Rows by Caller
@@ -496,7 +499,7 @@ public partial class Module
 use spacetimedb::{Identity, Timestamp, ViewContext};
 
 // Private table containing all messages
-#[spacetimedb::table(name = message)]  // Private by default
+#[spacetimedb::table(accessor = message)]  // Private by default
 pub struct Message {
     #[primary_key]
     #[auto_inc]
@@ -664,7 +667,7 @@ public partial class Module
 use spacetimedb::{SpacetimeType, ViewContext, Timestamp, Identity};
 
 // Private table with sensitive data
-#[spacetimedb::table(name = user_account)]  // Private by default
+#[spacetimedb::table(accessor = user_account)]  // Private by default
 pub struct UserAccount {
     #[primary_key]
     #[auto_inc]
@@ -863,7 +866,7 @@ public partial class Module
 use spacetimedb::{SpacetimeType, Identity, ViewContext};
 
 // Private table with all employee data
-#[spacetimedb::table(name = employee)]
+#[spacetimedb::table(accessor = employee)]
 pub struct Employee {
     #[primary_key]
     id: u64,
@@ -954,4 +957,4 @@ SPACETIMEDB_VIEW(std::vector<Colleague>, my_colleagues, Public, ViewContext ctx)
 
 ## Client Access - Read-Only Access
 
-Clients connect to databases and can access public tables and views through subscriptions and queries. They cannot access private tables directly. See the [Subscriptions documentation](/subscriptions) for details on client-side table access.
+Clients connect to databases and can access public tables and views through subscriptions and queries. They cannot access private tables directly. See the [Subscriptions documentation](../00400-subscriptions.md) for details on client-side table access.

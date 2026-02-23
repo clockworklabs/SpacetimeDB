@@ -5,6 +5,7 @@ use clap::ArgMatches;
 use reqwest::{StatusCode, Url};
 use spacetimedb_client_api_messages::name::{is_identity, parse_database_name, PublishResult};
 use spacetimedb_client_api_messages::name::{DatabaseNameError, PrePublishResult, PrettyPrintStyle, PublishOp};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::{env, fs};
 
@@ -14,7 +15,7 @@ use crate::spacetime_config::{
     find_and_load_with_env, CommandConfig, CommandSchema, CommandSchemaBuilder, FlatTarget, Key, LoadedConfig,
     SpacetimeConfig,
 };
-use crate::util::{add_auth_header_opt, find_module_path, get_auth_header, AuthHeader, ResponseExt};
+use crate::util::{add_auth_header_opt, get_auth_header, AuthHeader, ResponseExt};
 use crate::util::{decode_identity, y_or_n};
 use crate::{build, common_args};
 
@@ -320,6 +321,57 @@ pub async fn exec_with_options(
         )
     };
 
+    let clear_database = args
+        .get_one::<ClearMode>("clear-database")
+        .copied()
+        .unwrap_or(ClearMode::Never);
+    let force = args.get_flag("force");
+    let config_dir = loaded_config_ref.map(|lc| lc.config_dir.as_path());
+
+    execute_publish_configs(
+        &mut config,
+        publish_configs,
+        using_config,
+        config_dir,
+        clear_database,
+        force,
+    )
+    .await
+}
+
+pub async fn exec_from_entry(
+    mut config: Config,
+    entry: HashMap<String, serde_json::Value>,
+    config_dir: Option<&std::path::Path>,
+    clear_database: ClearMode,
+    force: bool,
+) -> Result<(), anyhow::Error> {
+    let cmd = cli();
+    let schema = build_publish_schema(&cmd)?;
+    let matches = cmd.get_matches_from(vec!["publish"]);
+
+    let command_config = CommandConfig::new(&schema, entry, &matches)?;
+    command_config.validate()?;
+
+    execute_publish_configs(
+        &mut config,
+        vec![command_config],
+        true,
+        config_dir,
+        clear_database,
+        force,
+    )
+    .await
+}
+
+async fn execute_publish_configs<'a>(
+    config: &mut Config,
+    publish_configs: Vec<CommandConfig<'a>>,
+    using_config: bool,
+    config_dir: Option<&std::path::Path>,
+    clear_database: ClearMode,
+    force: bool,
+) -> Result<(), anyhow::Error> {
     // Execute publish for each config
     for command_config in publish_configs {
         // Get values using command_config.get_one() which merges CLI + config
@@ -327,28 +379,16 @@ pub async fn exec_with_options(
         let server = server_opt.as_deref();
         let name_or_identity_opt = command_config.get_one::<String>("database")?;
         let name_or_identity = name_or_identity_opt.as_deref();
-        let clear_database = args
-            .get_one::<ClearMode>("clear-database")
-            .copied()
-            .unwrap_or(ClearMode::Never);
-        let force = args.get_flag("force");
         let anon_identity = command_config.get_one::<bool>("anon_identity")?.unwrap_or(false);
         let wasm_file = command_config.get_one::<PathBuf>("wasm_file")?;
         let js_file = command_config.get_one::<PathBuf>("js_file")?;
+        let resolved_module_path = command_config.get_resolved_path("module_path", config_dir)?;
         let path_to_project = if wasm_file.is_some() || js_file.is_some() {
-            command_config.get_one::<PathBuf>("module_path")?
+            resolved_module_path
         } else {
-            Some(match command_config.get_one::<PathBuf>("module_path")? {
+            Some(match resolved_module_path {
                 Some(path) => path,
-                None if using_config => {
-                    anyhow::bail!("module-path must be specified for each publish target when using spacetime.json");
-                }
-                None => find_module_path(&std::env::current_dir()?).ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Could not find a SpacetimeDB module in spacetimedb/ or the current directory. \
-                         Use --module-path to specify the module location."
-                    )
-                })?,
+                None => default_publish_module_path(&std::env::current_dir()?),
             })
         };
 
@@ -381,7 +421,7 @@ pub async fn exec_with_options(
         // we want to use the default identity
         // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
         //  easily create a new identity with an email
-        let auth_header = get_auth_header(&mut config, anon_identity, server, !force).await?;
+        let auth_header = get_auth_header(config, anon_identity, server, !force).await?;
 
         let (name_or_identity, parent) = validate_name_and_parent(name_or_identity, parent)?;
 
@@ -404,7 +444,6 @@ pub async fn exec_with_options(
             (path.clone(), "Js")
         } else {
             build::exec_with_argstring(
-                config.clone(),
                 path_to_project
                     .as_ref()
                     .expect("path_to_project must exist when publishing from source"),
@@ -502,10 +541,16 @@ pub async fn exec_with_options(
                     PublishOp::Created => "Created new",
                     PublishOp::Updated => "Updated",
                 };
-                if let Some(domain) = domain {
+                if let Some(ref domain) = domain {
                     println!("{op} database with name: {domain}, identity: {database_identity}");
                 } else {
                     println!("{op} database with identity: {database_identity}");
+                }
+
+                if is_maincloud_host(&database_host) {
+                    if let Some(domain) = domain.as_ref() {
+                        println!("Dashboard: https://spacetimedb.com/{}", domain.as_ref());
+                    }
                 }
             }
             PublishResult::PermissionDenied { name } => {
@@ -528,6 +573,25 @@ pub async fn exec_with_options(
     }
 
     Ok(())
+}
+
+fn default_publish_module_path(current_dir: &std::path::Path) -> PathBuf {
+    let spacetimedb_dir = current_dir.join("spacetimedb");
+    if spacetimedb_dir.is_dir() {
+        spacetimedb_dir
+    } else {
+        current_dir.to_path_buf()
+    }
+}
+
+fn is_maincloud_host(database_host: &str) -> bool {
+    Url::parse(database_host)
+        .ok()
+        .and_then(|url| {
+            url.host_str()
+                .map(|h| h.eq_ignore_ascii_case("maincloud.spacetimedb.com"))
+        })
+        .unwrap_or(false)
 }
 
 fn validate_name_or_identity(name_or_identity: &str) -> Result<(), DatabaseNameError> {
@@ -855,6 +919,37 @@ mod tests {
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("No database target matches"));
+    }
+
+    #[test]
+    fn test_default_publish_module_path_prefers_spacetimedb_dir() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let cwd = temp.path().to_path_buf();
+        let spacetimedb_dir = cwd.join("spacetimedb");
+        std::fs::create_dir_all(&spacetimedb_dir).unwrap();
+
+        let resolved = default_publish_module_path(&cwd);
+        assert_eq!(resolved, spacetimedb_dir);
+    }
+
+    #[test]
+    fn test_default_publish_module_path_falls_back_to_current_dir() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let cwd = temp.path().to_path_buf();
+
+        let resolved = default_publish_module_path(&cwd);
+        assert_eq!(resolved, cwd);
+    }
+
+    #[test]
+    fn test_is_maincloud_host_true_for_maincloud_url() {
+        assert!(is_maincloud_host("https://maincloud.spacetimedb.com"));
+    }
+
+    #[test]
+    fn test_is_maincloud_host_false_for_non_maincloud_url() {
+        assert!(!is_maincloud_host("http://localhost:3000"));
+        assert!(!is_maincloud_host("https://testnet.spacetimedb.com"));
     }
 
     #[test]

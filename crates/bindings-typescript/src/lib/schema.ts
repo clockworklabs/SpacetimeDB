@@ -5,10 +5,13 @@ import {
   type AlgebraicTypeType,
   type AlgebraicTypeVariants,
 } from './algebraic_type';
-import type RawModuleDefV10Section from './autogen/raw_module_def_v_10_section_type';
-import type RawModuleDefV10 from './autogen/raw_module_def_v_10_type';
-import type RawScopedTypeNameV10 from './autogen/raw_scoped_type_name_v_10_type';
-import type RawTableDefV10 from './autogen/raw_table_def_v_10_type';
+import type {
+  CaseConversionPolicy,
+  RawModuleDefV10,
+  RawModuleDefV10Section,
+  RawScopedTypeNameV10,
+  RawTableDefV10,
+} from './autogen/types';
 import type { UntypedIndex } from './indexes';
 import type { UntypedTableDef } from './table';
 import type { UntypedTableSchema } from './table_schema';
@@ -28,8 +31,7 @@ import {
   type RowObj,
   type VariantsObj,
 } from './type_builders';
-import type { CamelCase, Values } from './type_util';
-import { toCamelCase } from './util';
+import type { Values } from './type_util';
 
 export type TableNamesOf<S extends UntypedSchemaDef> = Values<
   S['tables']
@@ -56,7 +58,7 @@ export interface TableToSchema<
   AccName extends string,
   T extends UntypedTableSchema,
 > extends UntypedTableDef {
-  accessorName: CamelCase<AccName>;
+  accessorName: AccName;
   columns: T['rowType']['row'];
   rowType: T['rowSpacetimeType'];
   indexes: T['idxs'];
@@ -82,15 +84,15 @@ export function tableToSchema<
 >(
   accName: AccName,
   schema: T,
-  tableDef: Infer<typeof RawTableDefV10>
+  tableDef: RawTableDefV10
 ): TableToSchema<AccName, T> {
   const getColName = (i: number) =>
     schema.rowType.algebraicType.value.elements[i].name;
 
   type AllowedCol = keyof T['rowType']['row'] & string;
   return {
-    sourceName: schema.tableName ?? accName,
-    accessorName: toCamelCase(accName),
+    sourceName: accName,
+    accessorName: accName,
     columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
     rowType: schema.rowSpacetimeType,
     constraints: tableDef.constraints.map(c => ({
@@ -127,12 +129,10 @@ type CompoundTypeCache = Map<
 >;
 
 export type ModuleDef = {
-  [S in Infer<typeof RawModuleDefV10Section> as Uncapitalize<
-    S['tag']
-  >]: S['value'];
+  [S in RawModuleDefV10Section as Uncapitalize<S['tag']>]: S['value'];
 };
 
-type Section = Infer<typeof RawModuleDefV10Section>;
+type Section = RawModuleDefV10Section;
 
 export class ModuleContext {
   #compoundTypes: CompoundTypeCache = new Map();
@@ -160,7 +160,7 @@ export class ModuleContext {
     return this.#moduleDef;
   }
 
-  rawModuleDefV10(): Infer<typeof RawModuleDefV10> {
+  rawModuleDefV10(): RawModuleDefV10 {
     const sections: Section[] = [];
 
     const push = <T extends Section>(s: T | undefined) => {
@@ -188,7 +188,27 @@ export class ModuleContext {
         value: module.rowLevelSecurity,
       }
     );
+    push(
+      module.explicitNames && {
+        tag: 'ExplicitNames',
+        value: module.explicitNames,
+      }
+    );
+    push(
+      module.caseConversionPolicy && {
+        tag: 'CaseConversionPolicy',
+        value: module.caseConversionPolicy,
+      }
+    );
     return { sections };
+  }
+
+  /**
+   * Set the case conversion policy for this module.
+   * Called by the settings mechanism.
+   */
+  setCaseConversionPolicy(policy: CaseConversionPolicy) {
+    this.#moduleDef.caseConversionPolicy = policy;
   }
 
   get typespace() {
@@ -328,7 +348,7 @@ function isUnit(typeBuilder: ProductBuilder<ElementsObj>): boolean {
   );
 }
 
-export function splitName(name: string): Infer<typeof RawScopedTypeNameV10> {
+export function splitName(name: string): RawScopedTypeNameV10 {
   const scope = name.split('.');
   return { sourceName: scope.pop()!, scope };
 }

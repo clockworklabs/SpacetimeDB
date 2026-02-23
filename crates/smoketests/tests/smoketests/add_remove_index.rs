@@ -1,6 +1,6 @@
 use spacetimedb_smoketests::Smoketest;
 
-const JOIN_QUERY: &str = "select t1.* from t1 join t2 on t1.id = t2.id where t2.id = 1001";
+const JOIN_QUERY: &str = "select t_1.* from t_1 join t_2 on t_1.id = t_2.id where t_2.id = 1001";
 
 /// First publish without the indices,
 /// then add the indices, and publish,

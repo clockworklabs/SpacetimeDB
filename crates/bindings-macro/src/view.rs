@@ -194,6 +194,7 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
         (
             quote! {
                 #(#original_attrs)*
+                #vis
                 #new_sig {
                     spacetimedb::RawQuery::new(
                         Query::into_sql(#original_body)
@@ -214,6 +215,7 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
         (
             quote! {
                 #(#original_attrs)*
+                #vis
                 #original_sig
                     #emitted_body
             },

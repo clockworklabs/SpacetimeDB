@@ -5,6 +5,7 @@ slug: /how-to/deploy/maincloud
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 Maincloud is SpacetimeDB's fully managed serverless platform. It handles infrastructure, scaling, replication, and backups so you can focus on building your application. Maincloud scales to zero when your database is idle, so you only pay for what you use.
 
@@ -27,7 +28,7 @@ If you previously published a database without logging in first, your CLI identi
 
 ## Publishing to Maincloud
 
-After creating your module (see [Getting Started](/)), publish it to Maincloud:
+After creating your module (see [Getting Started](../../../00100-intro/00100-getting-started/00100-getting-started.md)), publish it to Maincloud:
 
 ```bash
 spacetime publish my-database --server maincloud
@@ -35,7 +36,7 @@ spacetime publish my-database --server maincloud
 
 SpacetimeDB compiles your module, uploads it, runs your `init` reducer (if defined), and outputs the database identity. Save this identity for administrative tasks.
 
-To update an existing module, run the same command. SpacetimeDB hot-swaps the module code without disconnecting clients. See [Automatic Migrations](/databases/automatic-migrations) for details on schema changes during updates.
+To update an existing module, run the same command. SpacetimeDB hot-swaps the module code without disconnecting clients. See [Automatic Migrations](../../../00200-core-concepts/00100-databases/00500-migrations/00200-automatic-migrations.md) for details on schema changes during updates.
 
 To clear all data and start fresh:
 
@@ -81,6 +82,8 @@ DbConnection::builder()
 </TabItem>
 <TabItem value="cpp" label="C++">
 
+<CppModuleVersionNotice />
+
 ```cpp
 auto conn = DbConnection::builder()
     .with_uri("https://maincloud.spacetimedb.com")
@@ -110,7 +113,7 @@ The database dashboard gives you access to:
 - **Usage breakdown**: See this month's energy consumption broken down by bytes scanned, bytes written, index seeks, CPU instructions, bandwidth, and table storage.
 - **Logs**: View your module's log output in real time.
 - **SQL console**: Run ad-hoc SQL queries against your database.
-- **SpacetimeAuth**: Enable and configure the built-in authentication provider (see [SpacetimeAuth](/core-concepts/authentication/spacetimeauth)).
+- **SpacetimeAuth**: Enable and configure the built-in authentication provider (see [SpacetimeAuth](../../../00200-core-concepts/00500-authentication/00100-spacetimeauth/index.md)).
 
 ## Database Lifecycle
 
@@ -148,6 +151,6 @@ This action cannot be undone.
 ## Next Steps
 
 - **Explore the dashboard**: Visit [spacetimedb.com](https://spacetimedb.com) to view your database, check logs, and run queries.
-- **Set up authentication**: Enable [SpacetimeAuth](/core-concepts/authentication/spacetimeauth) or connect a third-party [OIDC provider](/core-concepts/authentication) to authenticate your users.
-- **Connect a client**: Follow a [quickstart guide](/quickstarts/react) to build a client that connects to your Maincloud database.
+- **Set up authentication**: Enable [SpacetimeAuth](../../../00200-core-concepts/00500-authentication/00100-spacetimeauth/index.md) or connect a third-party [OIDC provider](../../../00200-core-concepts/00500-authentication.md) to authenticate your users.
+- **Connect a client**: Follow a [quickstart guide](../../../00100-intro/00200-quickstarts/00100-react.md) to build a client that connects to your Maincloud database.
 - **Monitor your usage**: Check your energy consumption and plan limits on the [pricing page](https://spacetimedb.com/pricing).

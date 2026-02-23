@@ -1,3 +1,5 @@
 node_modules
 .output
 dist
+
+spacetime.local.json

@@ -7,3 +7,5 @@ node_modules
 .tanstack
 dist
 *.log
+
+spacetime.local.json

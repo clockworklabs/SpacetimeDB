@@ -30,11 +30,11 @@ pub struct User { ... }
 
 // ❌ WRONG — SpacetimeType on tables (causes conflicts!)
 #[derive(SpacetimeType)]
-#[table(name = my_table)]
+#[table(accessor = my_table)]
 pub struct MyTable { ... }
 
 // ✅ CORRECT — use #[table(...)] macro with options, NO SpacetimeType
-#[table(name = user, public)]
+#[table(accessor = user, public)]
 pub struct User {
     #[primary_key]
     identity: Identity,
@@ -194,7 +194,7 @@ The SpacetimeDB Rust client SDK uses blocking I/O. If mixing with async runtimes
 | `ctx.db.player().find(id)` | `ctx.db.player().id().find(&id)` | Must access via index |
 | `&mut ReducerContext` | `&ReducerContext` | Wrong context type |
 | Missing `use spacetimedb::Table;` | Add import | "no method named `insert`" |
-| `#[table(name = "my_table")]` | `#[table(name = my_table)]` | String literals not allowed |
+| `#[table(accessor = "my_table")]` | `#[table(accessor = my_table)]` | String literals not allowed |
 | Missing `public` on table | Add `public` flag | Clients can't subscribe |
 | `#[spacetimedb::reducer]` | `#[reducer]` after import | Wrong attribute path |
 | Network/filesystem in reducer | Use procedures instead | Sandbox violation |
@@ -213,11 +213,11 @@ use spacetimedb::{table, reducer, Table, ReducerContext, Identity, Timestamp};
 
 // ❌ WRONG — DO NOT derive SpacetimeType on tables!
 #[derive(SpacetimeType)]  // REMOVE THIS!
-#[table(name = task)]
+#[table(accessor = task)]
 pub struct Task { ... }
 
 // ✅ CORRECT — just the #[table] attribute
-#[table(name = user, public)]
+#[table(accessor = user, public)]
 pub struct User {
     #[primary_key]
     identity: Identity,
@@ -228,7 +228,7 @@ pub struct User {
     online: bool,
 }
 
-#[table(name = message, public)]
+#[table(accessor = message, public)]
 pub struct Message {
     #[primary_key]
     #[auto_inc]
@@ -240,7 +240,7 @@ pub struct Message {
 }
 
 // With multi-column index
-#[table(name = task, public, index(name = by_owner, btree(columns = [owner_id])))]
+#[table(accessor = task, public, index(name = by_owner, btree(columns = [owner_id])))]
 pub struct Task {
     #[primary_key]
     #[auto_inc]
@@ -253,8 +253,8 @@ pub struct Task {
 ### Table Options
 
 ```rust
-#[table(name = my_table)]           // Private table (default)
-#[table(name = my_table, public)]   // Public table - clients can subscribe
+#[table(accessor = my_table)]           // Private table (default)
+#[table(accessor = my_table, public)]   // Public table - clients can subscribe
 ```
 
 ### Column Attributes
@@ -399,7 +399,7 @@ if let Some(user) = user {
 ### BTree Index — `.filter()` returns iterator
 
 ```rust
-#[table(name = message, public)]
+#[table(accessor = message, public)]
 pub struct Message {
     #[primary_key]
     #[auto_inc]
@@ -453,7 +453,7 @@ pub enum PlayerStatus {
 }
 
 // Use in table (DO NOT derive SpacetimeType on the table!)
-#[table(name = player, public)]
+#[table(accessor = player, public)]
 pub struct Player {
     #[primary_key]
     pub id: Identity,
@@ -469,7 +469,7 @@ pub struct Player {
 ```rust
 use spacetimedb::{table, reducer, ReducerContext, ScheduleAt, Timestamp};
 
-#[table(name = cleanup_job, scheduled(cleanup_expired))]
+#[table(accessor = cleanup_job, scheduled(cleanup_expired))]
 pub struct CleanupJob {
     #[primary_key]
     #[auto_inc]

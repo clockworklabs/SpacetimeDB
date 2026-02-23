@@ -5,6 +5,7 @@ slug: /functions/reducers/reducer-context
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Every reducer receives a special context parameter as its first argument. This context provides read-write access to the database, information about the caller, and additional utilities like random number generation.
@@ -84,6 +85,8 @@ fn create_user(ctx: &ReducerContext, name: String) {
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 #include <spacetimedb.h>
@@ -263,7 +266,7 @@ Never use external random number generators (like `Math.random()` in TypeScript 
 
 The context provides access to the module's own identity, which is useful for distinguishing between user-initiated and system-initiated reducer calls.
 
-This is particularly important for [scheduled reducers](/functions/reducers) that should only be invoked by the system, not by external clients.
+This is particularly important for [scheduled reducers](./00300-reducers.md) that should only be invoked by the system, not by external clients.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">

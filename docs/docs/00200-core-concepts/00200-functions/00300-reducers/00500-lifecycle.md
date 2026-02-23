@@ -5,6 +5,7 @@ slug: /functions/reducers/lifecycle
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Special reducers handle system events during the database lifecycle.
@@ -73,6 +74,8 @@ pub fn init(ctx: &ReducerContext) -> Result<(), String> {
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 #include <spacetimedb.h>
@@ -313,7 +316,7 @@ The `client_disconnected` reducer:
 
 ## Scheduled Reducers
 
-Reducers can be triggered at specific times using schedule tables. See [Schedule Tables](/tables/schedule-tables) for details on:
+Reducers can be triggered at specific times using schedule tables. See [Schedule Tables](../../00300-tables/00500-schedule-tables.md) for details on:
 
 - Defining schedule tables
 - Triggering reducers at specific timestamps

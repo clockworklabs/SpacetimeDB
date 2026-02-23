@@ -1,6 +1,6 @@
 import { schema, table, t } from 'spacetimedb/server';
 
-export const spacetimedb = schema({
+const spacetimedb = schema({
   person: table(
     { public: true },
     {
@@ -8,24 +8,28 @@ export const spacetimedb = schema({
     }
   ),
 });
+export default spacetimedb;
 
-spacetimedb.init(_ctx => {
+export const init = spacetimedb.init(_ctx => {
   // Called when the module is initially published
 });
 
-spacetimedb.clientConnected(_ctx => {
+export const onConnect = spacetimedb.clientConnected(_ctx => {
   // Called every time a new client connects
 });
 
-spacetimedb.clientDisconnected(_ctx => {
+export const onDisconnect = spacetimedb.clientDisconnected(_ctx => {
   // Called every time a client disconnects
 });
 
-spacetimedb.reducer('add', { name: t.string() }, (ctx, { name }) => {
-  ctx.db.person.insert({ name });
-});
+export const add = spacetimedb.reducer(
+  { name: t.string() },
+  (ctx, { name }) => {
+    ctx.db.person.insert({ name });
+  }
+);
 
-spacetimedb.reducer('say_hello', ctx => {
+export const say_hello = spacetimedb.reducer(ctx => {
   for (const person of ctx.db.person.iter()) {
     console.info(`Hello, ${person.name}!`);
   }

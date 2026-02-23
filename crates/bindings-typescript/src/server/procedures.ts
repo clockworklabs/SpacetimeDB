@@ -4,7 +4,7 @@ import {
   type Deserializer,
   type Serializer,
 } from '../lib/algebraic_type';
-import FunctionVisibility from '../lib/autogen/function_visibility_type';
+import { FunctionVisibility } from '../lib/autogen/types';
 import BinaryReader from '../lib/binary_reader';
 import BinaryWriter from '../lib/binary_writer';
 import type { ConnectionId } from '../lib/connection_id';
@@ -101,12 +101,13 @@ function registerProcedure<
   Ret extends TypeBuilder<any, any>,
 >(
   ctx: SchemaInner,
-  name: string,
+  exportName: string,
   params: Params,
   ret: Ret,
-  fn: ProcedureFn<S, Params, Ret>
+  fn: ProcedureFn<S, Params, Ret>,
+  opts?: ProcedureOpts
 ) {
-  ctx.defineFunction(name);
+  ctx.defineFunction(exportName);
   const paramsType: ProductType = {
     elements: Object.entries(params).map(([n, c]) => ({
       name: n,
@@ -118,12 +119,21 @@ function registerProcedure<
   const returnType = ctx.registerTypesRecursively(ret).algebraicType;
 
   ctx.moduleDef.procedures.push({
-    sourceName: name,
+    sourceName: exportName,
     params: paramsType,
     returnType,
     visibility: FunctionVisibility.ClientCallable,
   });
 
+  if (opts?.name != null) {
+    ctx.moduleDef.explicitNames.entries.push({
+      tag: 'Function',
+      value: {
+        sourceName: exportName,
+        canonicalName: opts.name,
+      },
+    });
+  }
   const { typespace } = ctx;
 
   ctx.procedures.push({

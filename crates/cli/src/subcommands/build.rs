@@ -42,7 +42,7 @@ pub fn cli() -> clap::Command {
 }
 
 pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(PathBuf, &'static str), anyhow::Error> {
-    let project_path = match args.get_one::<PathBuf>("module_path").cloned() {
+    let module_path = match args.get_one::<PathBuf>("module_path").cloned() {
         Some(path) => path,
         None => find_module_path(&std::env::current_dir()?).ok_or_else(|| {
             anyhow::anyhow!(
@@ -59,30 +59,39 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(PathBuf, &'stat
         Some(PathBuf::from(lint_dir))
     };
     let build_debug = args.get_flag("debug");
+    let features = features.cloned();
 
+    run_build(module_path, lint_dir, build_debug, features)
+}
+
+pub fn run_build(
+    module_path: PathBuf,
+    lint_dir: Option<PathBuf>,
+    build_debug: bool,
+    features: Option<OsString>,
+) -> Result<(PathBuf, &'static str), anyhow::Error> {
     // Create the project path, or make sure the target project path is empty.
-    if project_path.exists() {
-        if !project_path.is_dir() {
+    if module_path.exists() {
+        if !module_path.is_dir() {
             return Err(anyhow::anyhow!(
                 "Fatal Error: path {} exists but is not a directory.",
-                project_path.display()
+                module_path.display()
             ));
         }
     } else {
         return Err(anyhow::anyhow!(
             "Fatal Error: path {} does not exist.",
-            project_path.display()
+            module_path.display()
         ));
     }
 
-    let result = crate::tasks::build(&project_path, lint_dir.as_deref(), build_debug, features)?;
+    let result = crate::tasks::build(&module_path, lint_dir.as_deref(), build_debug, features.as_ref())?;
     println!("Build finished successfully.");
 
     Ok(result)
 }
 
 pub async fn exec_with_argstring(
-    config: Config,
     project_path: &Path,
     arg_string: &str,
 ) -> Result<(PathBuf, &'static str), anyhow::Error> {
@@ -90,5 +99,19 @@ pub async fn exec_with_argstring(
     // If we don't include this, the args will be misinterpreted (e.g. as commands).
     let arg_string = format!("build {} --module-path {}", arg_string, project_path.display());
     let arg_matches = cli().get_matches_from(arg_string.split_whitespace());
-    exec(config.clone(), &arg_matches).await
+
+    let module_path = arg_matches
+        .get_one::<PathBuf>("module_path")
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("module_path is required"))?;
+    let features = arg_matches.get_one::<OsString>("features").cloned();
+    let lint_dir = arg_matches.get_one::<OsString>("lint_dir").unwrap();
+    let lint_dir = if lint_dir.is_empty() {
+        None
+    } else {
+        Some(PathBuf::from(lint_dir))
+    };
+    let build_debug = arg_matches.get_flag("debug");
+
+    run_build(module_path, lint_dir, build_debug, features)
 }
