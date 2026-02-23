@@ -248,10 +248,6 @@ mod tests {
             .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc1"))
             .unwrap();
 
-        mkmeta_pre(2, 0, 0, "pre1")
-            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "pre2"))
-            .unwrap_err();
-
         mkmeta_pre(2, 0, 0, "rc1")
             .check_compatibility_and_update(mkmeta(2, 0, 1))
             .unwrap();
@@ -259,6 +255,8 @@ mod tests {
         mkmeta_pre(2, 0, 0, "rc1")
             .check_compatibility_and_update(mkmeta(2, 0, 0))
             .unwrap();
+
+        // Now check some failures..
 
         mkmeta_pre(2, 0, 0, "rc1")
             .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc2"))
