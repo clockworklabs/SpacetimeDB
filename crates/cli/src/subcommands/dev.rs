@@ -7,7 +7,7 @@ use crate::spacetime_config::{
 use crate::subcommands::init;
 use crate::util::{
     add_auth_header_opt, database_identity, find_module_path, get_auth_header, get_login_token_or_log_in,
-    spacetime_reverse_dns, ResponseExt,
+    spacetime_reverse_dns, strip_verbatim_prefix, ResponseExt,
 };
 use crate::{common_args, generate};
 use crate::{publish, tasks};
@@ -39,16 +39,6 @@ use termcolor::{Color, ColorSpec, WriteColor};
 use tokio::process::{Child, Command as TokioCommand};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
-
-/// Strip the Windows extended-length path prefix (`\\?\`) if present.
-/// `fs::canonicalize()` on Windows produces these prefixes, which are
-/// correct but ugly in user-facing output.
-fn strip_verbatim_prefix(path: &Path) -> &Path {
-    path.to_str()
-        .and_then(|s| s.strip_prefix(r"\\?\"))
-        .map(Path::new)
-        .unwrap_or(path)
-}
 
 pub fn cli() -> Command {
     Command::new("dev")

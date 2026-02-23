@@ -15,7 +15,7 @@ use crate::spacetime_config::{
     find_and_load_with_env, CommandConfig, CommandSchema, CommandSchemaBuilder, FlatTarget, Key, LoadedConfig,
     SpacetimeConfig,
 };
-use crate::util::{add_auth_header_opt, get_auth_header, AuthHeader, ResponseExt};
+use crate::util::{add_auth_header_opt, get_auth_header, strip_verbatim_prefix, AuthHeader, ResponseExt};
 use crate::util::{decode_identity, y_or_n};
 use crate::{build, common_args};
 
@@ -396,7 +396,7 @@ async fn execute_publish_configs<'a>(
             if let Some(path_to_project) = path_to_project.as_ref() {
                 println!(
                     "Publishing module {} to database '{}'",
-                    path_to_project.display(),
+                    strip_verbatim_prefix(path_to_project).display(),
                     name_or_identity.unwrap()
                 );
             } else {
