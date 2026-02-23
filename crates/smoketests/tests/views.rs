@@ -306,6 +306,21 @@ fn test_auto_migration_add_view() {
 }
 
 #[test]
+fn test_view_accessibility() {
+    let test = Smoketest::builder().precompiled_module("views-callable").build();
+
+    test.new_identity().unwrap();
+    test.call("baz", &[]).unwrap();
+
+    test.assert_sql(
+        "SELECT * FROM items",
+        r#" value
+-------
+ 7"#,
+    );
+}
+
+#[test]
 fn test_recovery_from_trapped_views_auto_migration() {
     let mut test = Smoketest::builder().precompiled_module("views-auto-migrate").build();
 

@@ -9,9 +9,9 @@ The SpacetimeDB client for C# contains all the tools you need to build native cl
 
 Before diving into the reference, you may want to review:
 
-- [Generating Client Bindings](/clients/codegen) - How to generate C# bindings from your module
-- [Connecting to SpacetimeDB](/clients/connection) - Establishing and managing connections (important: C# requires manual connection advancement!)
-- [SDK API Reference](/clients/api) - Core concepts that apply across all SDKs
+- [Generating Client Bindings](./00200-codegen.md) - How to generate C# bindings from your module
+- [Connecting to SpacetimeDB](./00300-connection.md) - Establishing and managing connections (important: C# requires manual connection advancement!)
+- [SDK API Reference](./00400-sdk-api.md) - Core concepts that apply across all SDKs
 
 | Name                                                              | Description                                                                                             |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
@@ -38,7 +38,7 @@ If you would like to create a console application using .NET, you can create a n
 dotnet add package SpacetimeDB.ClientSDK
 ```
 
-(See also the [CSharp Quickstart](/docs/quickstarts/c-sharp) for an in-depth example of such a console application.)
+(See also the [CSharp Quickstart](../../00100-intro/00200-quickstarts/00600-c-sharp.md) for an in-depth example of such a console application.)
 
 ### Using Unity
 
@@ -48,7 +48,7 @@ Add the SpacetimeDB Unity Package using the Package Manager. Open the Package Ma
 https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git
 ```
 
-(See also the [Unity Tutorial](/docs/tutorials/unity/part-1))
+(See also the [Unity Tutorial](../../00100-intro/00300-tutorials/00300-unity-tutorial/00200-part-1.md))
 
 ## Generate module bindings
 
@@ -376,7 +376,7 @@ class SubscriptionBuilder
 
 Subscribe to a set of queries. `queries` should be an array of SQL query strings.
 
-See [the SpacetimeDB SQL Reference](/reference/sql#subscriptions) for information on the queries SpacetimeDB supports as subscriptions.
+See [the SpacetimeDB SQL Reference](../../00300-resources/00200-reference/00400-sql-reference.md#subscriptions) for information on the queries SpacetimeDB supports as subscriptions.
 
 For typed query subscriptions, use [`AddQuery`](#method-addquery).
 
@@ -986,7 +986,7 @@ class RemoteTableHandle
 
 The `OnInsert` callback runs whenever a new row is inserted into the client cache, either when applying a subscription or being notified of a transaction. The passed [`EventContext`](#type-eventcontext) contains an [`Event`](#record-event) which can identify the change which caused the insertion, and also allows the callback to interact with the connection, inspect the client cache and invoke reducers. Newly registered or canceled callbacks do not take effect until the following event.
 
-See [the quickstart](/quickstarts/c-sharp) for examples of registering and unregistering row callbacks.
+See [the quickstart](../../00100-intro/00200-quickstarts/00600-c-sharp.md) for examples of registering and unregistering row callbacks.
 
 #### Callback `OnDelete`
 
@@ -1000,7 +1000,7 @@ class RemoteTableHandle
 
 The `OnDelete` callback runs whenever a previously-resident row is deleted from the client cache. Newly registered or canceled callbacks do not take effect until the following event.
 
-See [the quickstart](/quickstarts/c-sharp) for examples of registering and unregistering row callbacks.
+See [the quickstart](../../00100-intro/00200-quickstarts/00600-c-sharp.md) for examples of registering and unregistering row callbacks.
 
 #### Callback `OnUpdate`
 
@@ -1014,7 +1014,7 @@ class RemoteTableHandle
 
 The `OnUpdate` callback runs whenever an already-resident row in the client cache is updated, i.e. replaced with a new row that has the same primary key. The table must have a primary key for callbacks to be triggered. Newly registered or canceled callbacks do not take effect until the following event.
 
-See [the quickstart](/quickstarts/c-sharp) for examples of registering and unregistering row callbacks.
+See [the quickstart](../../00100-intro/00200-quickstarts/00600-c-sharp.md) for examples of registering and unregistering row callbacks.
 
 ### Unique constraint index access
 
@@ -1082,19 +1082,19 @@ Each reducer defined by the module has three methods on the `.Reducers`:
 ### Type `Identity`
 
 A unique public identifier for a client connected to a database.
-See the [module docs](/intro/key-architecture#identity) for more details.
+See the [module docs](../../00100-intro/00100-getting-started/00400-key-architecture.md#identity) for more details.
 
 ### Type `ConnectionId`
 
 An opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#type-identity).
-See the [module docs](/intro/key-architecture#connectionid) for more details.
+See the [module docs](../../00100-intro/00100-getting-started/00400-key-architecture.md#connectionid) for more details.
 
 ### Type `Timestamp`
 
 A point in time, measured in microseconds since the Unix epoch.
-See the [module docs](/docs/tables/column-types) for more details.
+See the [module docs](../00300-tables/00200-column-types.md) for more details.
 
 ### Type `TaggedEnum`
 
 A [tagged union](https://en.wikipedia.org/wiki/Tagged_union) type.
-See the [module docs](/docs/tables/column-types) for more details.
+See the [module docs](../00300-tables/00200-column-types.md) for more details.

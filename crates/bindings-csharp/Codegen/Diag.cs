@@ -245,7 +245,7 @@ internal static class ErrorDescriptor
             group,
             "[SpacetimeDB.Settings] field must be a const CaseConversionPolicy",
             field =>
-                $"Settings field {field.Name} must be declared as 'public const SpacetimeDB.Internal.CaseConversionPolicy ...'.",
+                $"Settings field {field.Name} must be declared as 'public const SpacetimeDB.CaseConversionPolicy ...'.",
             field => field
         );
 

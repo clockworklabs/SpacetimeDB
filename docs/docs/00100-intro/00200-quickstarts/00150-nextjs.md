@@ -147,7 +147,7 @@ export async function fetchPeople() {
   return new Promise((resolve, reject) => {
     const connection = DbConnection.builder()
       .withUri(process.env.SPACETIMEDB_HOST!)
-      .withModuleName(process.env.SPACETIMEDB_DB_NAME!)
+      .withDatabaseName(process.env.SPACETIMEDB_DB_NAME!)
       .onConnect(conn => {
         conn.subscriptionBuilder()
           .onApplied(() => {
@@ -208,5 +208,5 @@ export function PersonList({ initialPeople }) {
 
 ## Next steps
 
-- See the [Chat App Tutorial](/tutorials/chat-app) for a complete example
-- Read the [TypeScript SDK Reference](/clients/typescript) for detailed API docs
+- See the [Chat App Tutorial](../00300-tutorials/00100-chat-app.md) for a complete example
+- Read the [TypeScript SDK Reference](../../00200-core-concepts/00600-clients/00700-typescript-reference.md) for detailed API docs

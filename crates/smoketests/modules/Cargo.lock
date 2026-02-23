@@ -880,6 +880,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-views-callable"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-views-drop-view"
 version = "0.1.0"
 dependencies = [
