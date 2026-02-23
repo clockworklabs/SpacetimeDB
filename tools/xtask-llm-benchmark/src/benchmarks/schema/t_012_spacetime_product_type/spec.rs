@@ -6,11 +6,10 @@ use std::time::Duration;
 pub fn spec() -> BenchmarkSpec {
     BenchmarkSpec::from_tasks_auto(file!(), |lang, route_tag, host_url| {
         let mut v = default_schema_parity_scorers(host_url, file!(), route_tag);
-        let casing = casing_for_lang(lang);
         let sb = SqlBuilder::new(casing_for_lang(lang));
         let result_table = table_name("result", lang);
 
-        let reducer = ident("SetScore", casing);
+        let reducer = ident("SetScore", crate::eval::Casing::Snake);
 
         // Compare the full row (including the product-typed column) across golden/llm
         let select = sb.select_by_id(&result_table, &["id","value"], "id", 1);

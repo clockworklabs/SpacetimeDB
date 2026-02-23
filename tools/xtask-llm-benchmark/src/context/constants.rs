@@ -12,7 +12,7 @@ pub const DOCS_BENCHMARK_COMMENT_DEFAULT: &str = "../../docs/llms/docs-benchmark
 pub const LLM_COMPARISON_DETAILS_DEFAULT: &str = "../../docs/llms/llm-comparison-details.json";
 pub const LLM_COMPARISON_SUMMARY_DEFAULT: &str = "../../docs/llms/llm-comparison-summary.json";
 
-pub const ALL_MODES: &[&str] = &["docs", "llms.md", "cursor_rules", "rustdoc_json"];
+pub const ALL_MODES: &[&str] = &["docs", "llms.md", "cursor_rules", "rustdoc_json", "none"];
 
 #[inline]
 pub fn docs_dir() -> PathBuf {

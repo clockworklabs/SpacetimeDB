@@ -1,7 +1,7 @@
 import { ScheduleAt } from 'spacetimedb';
 import { table, schema, t } from 'spacetimedb/server';
 
-export const tickTimer = table(
+const tickTimer = table(
   {
     name: 'tickTimer',
     scheduled: (): any => tick,
@@ -16,7 +16,7 @@ const spacetimedb = schema({ tickTimer });
 export default spacetimedb;
 
 export const tick = spacetimedb.reducer(
-  { schedule: TickTimer.rowType },
+  { schedule: tickTimer.rowType },
   (ctx, { schedule }) => {}
 );
 
