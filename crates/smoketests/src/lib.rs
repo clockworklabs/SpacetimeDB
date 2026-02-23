@@ -1136,6 +1136,7 @@ log = "0.4"
             "--server",
             &self.server_url,
             "--confirmed",
+            "true",
             identity.as_str(),
             query,
         ])
