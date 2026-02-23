@@ -307,7 +307,7 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
         NUM_SUBSCRIBERS = 20
         subs = [None] * NUM_SUBSCRIBERS
         for i in range(NUM_SUBSCRIBERS):
-            subs[i]= self.subscribe("select * from person", n=5)
+            subs[i]= self.subscribe("select * from person", n=5, confirmed=False)
 
         # Insert under initial schema
         self.call("add_person", "Robert")
