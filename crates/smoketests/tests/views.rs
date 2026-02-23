@@ -17,7 +17,7 @@ export default spacetimedb;
 export const my_player = spacetimedb.view(
   { public: true },
   t.option(playerState.rowType),
-  ctx => ctx.db.playerState.identity.find(ctx.sender)
+  ctx => ctx.db.playerState.identity.find(ctx.sender) ?? undefined
 );
 
 export const all_players = spacetimedb.anonymousView(
