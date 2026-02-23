@@ -91,8 +91,6 @@ pub struct SubscribeQueryParams {
     /// offset they're computed from is confirmed to be durable.
     ///
     /// If `false`, send them immediately.
-    ///
-    /// If not specified, defaults to `true`.
     #[serde(default)]
     pub confirmed: Option<bool>,
 }
