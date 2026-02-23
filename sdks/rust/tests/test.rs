@@ -534,12 +534,12 @@ mod case_conversion_ts {
     }
 
     #[test]
-    fn subscribe_view() {
-        make_test("subscribe-view").run();
+    fn query_builder_filter() {
+        make_test("query-builder-filter").run();
     }
 
     #[test]
-    fn subscribe_canonical_names() {
-        make_test("subscribe-canonical-names").run();
+    fn query_builder_join() {
+        make_test("query-builder-join").run();
     }
 }

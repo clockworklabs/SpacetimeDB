@@ -52,8 +52,8 @@ fn main() {
         "insert-player" => exec_insert_player(),
         "insert-person" => exec_insert_person(),
         "ban-player" => exec_ban_player(),
-        "subscribe-view" => exec_subscribe_view(),
-        "subscribe-canonical-names" => exec_subscribe_canonical_names(),
+        "query-builder-filter" => exec_query_builder_filter(),
+        "query-builder-join" => exec_query_builder_join(),
         _ => panic!("Unknown test: {test}"),
     }
 }
@@ -94,18 +94,7 @@ fn connect_then(
     conn
 }
 
-fn subscribe_then(
-    ctx: &impl RemoteDbContext,
-    queries: &[&str],
-    callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static,
-) {
-    ctx.subscription_builder()
-        .on_applied(callback)
-        .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
-        .subscribe(queries);
-}
-
-/// Test: Insert a player via CreatePlayer1 reducer.
+/// Test: Insert a player via CreatePlayer1 reducer using query builder subscription.
 /// Verifies that table accessor `player_1()`, field names with digits
 /// (`player_1_id`, `current_level_2`, `status_3_field`), and enum variant
 /// `Player2Status::Active1` all work correctly through case conversion.
@@ -114,34 +103,37 @@ fn exec_insert_player() {
     let mut insert_result = Some(test_counter.add_test("insert_player"));
 
     connect_then(&test_counter, move |ctx| {
-        // Subscribe using the canonical table name (case-converted wire name)
-        subscribe_then(ctx, &["SELECT * FROM Player1Canonical"], move |ctx| {
-            ctx.db.player_1().on_insert(move |_ctx, row| {
-                let check = || {
-                    // Verify field names with digit boundaries are correctly case-converted
-                    // player_1_id is auto-assigned (0 in insert becomes server-assigned)
-                    assert_eq_or_bail!("Alice".to_string(), row.player_name[0]);
-                    assert_eq_or_bail!(5u32, row.current_level_2);
-                    assert_eq_or_bail!(Player2Status::Active1, row.status_3_field);
-                    Ok(())
-                };
-                put_result(&mut insert_result, check());
-            });
+        ctx.subscription_builder()
+            .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
+            .on_applied(move |ctx| {
+                ctx.db.player_1().on_insert(move |_ctx, row| {
+                    let check = || {
+                        // Verify field names with digit boundaries are correctly case-converted
+                        assert_eq_or_bail!("Alice".to_string(), row.player_name[0]);
+                        assert_eq_or_bail!(5u32, row.current_level_2);
+                        assert_eq_or_bail!(Player2Status::Active1, row.status_3_field);
+                        Ok(())
+                    };
+                    put_result(&mut insert_result, check());
+                });
 
-            ctx.reducers()
-                .create_player_1_then(
-                    "Alice".to_string(),
-                    5,
-                    reducer_callback_assert_committed("create_player_1"),
-                )
-                .unwrap();
-        });
+                ctx.reducers()
+                    .create_player_1_then(
+                        "Alice".to_string(),
+                        5,
+                        reducer_callback_assert_committed("create_player_1"),
+                    )
+                    .unwrap();
+            })
+            // Query builder: subscribe to player_1 table (canonical: Player1Canonical)
+            .add_query(|q| q.from.player_1().build())
+            .subscribe();
     });
 
     test_counter.wait_for_all();
 }
 
-/// Test: Insert a person via AddPerson2 reducer.
+/// Test: Insert a person via AddPerson2 reducer using query builder subscription.
 /// Verifies nested struct `Person3Info` with digit-boundary fields
 /// (`age_value_1`, `score_total`), index on `player_ref`, and
 /// table accessor `person_2()`.
@@ -150,10 +142,9 @@ fn exec_insert_person() {
     let mut insert_person = Some(test_counter.add_test("insert_person"));
 
     connect_then(&test_counter, move |ctx| {
-        subscribe_then(
-            ctx,
-            &["SELECT * FROM Player1Canonical", "SELECT * FROM person_2"],
-            move |ctx| {
+        ctx.subscription_builder()
+            .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
+            .on_applied(move |ctx| {
                 ctx.db.person_2().on_insert(move |_ctx, person| {
                     let check = || {
                         assert_eq_or_bail!("Bob".to_string(), person.first_name);
@@ -184,8 +175,11 @@ fn exec_insert_person() {
                         Err(e) => panic!("create_player_1 panicked: {e:?}"),
                     })
                     .unwrap();
-            },
-        );
+            })
+            // Query builder: subscribe to both tables
+            .add_query(|q| q.from.player_1().build())
+            .add_query(|q| q.from.person_2().build())
+            .subscribe();
     });
 
     test_counter.wait_for_all();
@@ -194,26 +188,28 @@ fn exec_insert_person() {
 /// Test: Ban a player via BanPlayer1 reducer (which has explicit name `banPlayer1`).
 /// Verifies that reducers with explicit names work, and that updating a player's
 /// status from `Active1` to `BannedUntil(timestamp)` is reflected correctly.
+/// Uses query builder with a filter on current_level_2 to test digit-boundary
+/// column names in filter expressions.
 fn exec_ban_player() {
     let test_counter = TestCounter::new();
     let mut update_result = Some(test_counter.add_test("ban_player_update"));
 
     connect_then(&test_counter, move |ctx| {
-        subscribe_then(ctx, &["SELECT * FROM Player1Canonical"], move |ctx| {
-            ctx.db.player_1().on_update(move |_ctx, _old, new| {
-                let check = || {
-                    assert_eq_or_bail!(Player2Status::BannedUntil(9999), new.status_3_field);
-                    Ok(())
-                };
-                put_result(&mut update_result, check());
-            });
+        ctx.subscription_builder()
+            .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
+            .on_applied(move |ctx| {
+                ctx.db.player_1().on_update(move |_ctx, _old, new| {
+                    let check = || {
+                        assert_eq_or_bail!(Player2Status::BannedUntil(9999), new.status_3_field);
+                        Ok(())
+                    };
+                    put_result(&mut update_result, check());
+                });
 
-            // Insert a player, then ban them in the reducer callback
-            ctx.reducers()
-                .create_player_1_then("ToBan".to_string(), 1, move |ctx, outcome| {
-                    match outcome {
+                // Insert a player, then ban them in the reducer callback
+                ctx.reducers()
+                    .create_player_1_then("ToBan".to_string(), 1, move |ctx, outcome| match outcome {
                         Ok(Ok(())) => {
-                            // Find the inserted player to get their ID
                             let player = ctx.db.player_1().iter().next().expect("Player should exist");
                             ctx.reducers()
                                 .ban_player_1_then(
@@ -225,74 +221,142 @@ fn exec_ban_player() {
                         }
                         Ok(Err(msg)) => panic!("create_player_1 returned error: {msg}"),
                         Err(e) => panic!("create_player_1 panicked: {e:?}"),
-                    }
-                })
-                .unwrap();
-        });
+                    })
+                    .unwrap();
+            })
+            // Query builder: subscribe to player_1 table
+            .add_query(|q| q.from.player_1().build())
+            .subscribe();
     });
 
     test_counter.wait_for_all();
 }
 
-/// Test: Subscribe to the view `Level2Players` (accessor: `players_at_level_2`).
-/// Verifies that views with case-converted names work correctly and that
-/// the view returns PlayerRow typed data.
-fn exec_subscribe_view() {
+/// Test: Query builder with a filter on a digit-boundary column.
+/// Subscribes to player_1 rows WHERE current_level_2 == 5, verifying that
+/// the case-converted column name works correctly in query builder filters.
+fn exec_query_builder_filter() {
     let test_counter = TestCounter::new();
-    let mut view_applied = Some(test_counter.add_test("view_subscription_applied"));
+    let mut insert_match = Some(test_counter.add_test("insert_matching_filter"));
 
     connect_then(&test_counter, move |ctx| {
-        // Subscribe to both the table and the view
-        subscribe_then(
-            ctx,
-            &[
-                "SELECT * FROM Player1Canonical",
-                "SELECT * FROM person_2",
-                "SELECT * FROM Level2Players",
-            ],
-            move |ctx| {
-                // The view initially returns nothing — just verify subscription works
-                let check = || {
-                    // Access the view through its accessor name
-                    let _count = ctx.db.players_at_level_2().count();
-                    // View accessor works — case conversion is correct
-                    Ok(())
-                };
-                put_result(&mut view_applied, check());
-            },
-        );
+        ctx.subscription_builder()
+            .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
+            .on_applied(move |ctx| {
+                ctx.db.player_1().on_insert(move |_ctx, row| {
+                    let check = || {
+                        // Only level-5 players should come through the filter
+                        assert_eq_or_bail!(5u32, row.current_level_2);
+                        assert_eq_or_bail!("FilterMatch".to_string(), row.player_name[0]);
+                        Ok(())
+                    };
+                    put_result(&mut insert_match, check());
+                });
+
+                // Insert a player at level 3 (should NOT match filter)
+                ctx.reducers()
+                    .create_player_1_then(
+                        "NoMatch".to_string(),
+                        3,
+                        reducer_callback_assert_committed("create_player_1"),
+                    )
+                    .unwrap();
+
+                // Insert a player at level 5 (should match filter)
+                ctx.reducers()
+                    .create_player_1_then(
+                        "FilterMatch".to_string(),
+                        5,
+                        reducer_callback_assert_committed("create_player_1"),
+                    )
+                    .unwrap();
+            })
+            // Query builder: filter on digit-boundary column current_level_2
+            .add_query(|q| q.from.player_1().filter(|p| p.current_level_2.eq(5)).build())
+            .subscribe();
     });
 
     test_counter.wait_for_all();
 }
 
-/// Test: Verify that SQL queries must use canonical (wire) names, not accessor names.
-/// The canonical name for the Player1 table is `Player1Canonical` (explicitly set),
-/// and for Person2 table it is `person_2` (case-converted from `Person2`).
-fn exec_subscribe_canonical_names() {
+/// Test: Query builder with a JOIN between player_1 and person_2.
+/// Uses a right semijoin: person_2.player_ref == player_1.player_1_id.
+/// This tests that:
+/// - Digit-boundary column names work in join predicates
+/// - The query builder correctly resolves canonical table names for both tables
+/// - Joined results are received correctly through case-converted accessors
+fn exec_query_builder_join() {
     let test_counter = TestCounter::new();
-    let mut sub_result = Some(test_counter.add_test("canonical_names_subscribe"));
+    let mut join_result = Some(test_counter.add_test("join_insert"));
 
     connect_then(&test_counter, move |ctx| {
-        // Use canonical names in SQL — these should succeed
-        subscribe_then(
-            ctx,
-            &[
-                "SELECT * FROM Player1Canonical",
-                "SELECT * FROM person_2",
-                "SELECT * FROM Level2Players",
-            ],
-            move |ctx| {
-                let check = || {
-                    // Verify we can access all tables through their accessor methods
-                    let _p1_count = ctx.db.player_1().count();
-                    let _p2_count = ctx.db.person_2().count();
-                    let _view_count = ctx.db.players_at_level_2().count();
-                    Ok(())
-                };
-                put_result(&mut sub_result, check());
-            },
-        );
+        ctx.subscription_builder()
+            .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
+            .on_applied(move |ctx| {
+                // We listen for player_1 inserts that come through the join.
+                // The join is: person_2 RIGHT SEMIJOIN player_1 ON person_2.player_ref = player_1.player_1_id
+                // This means we see player_1 rows that have a matching person_2 row.
+                ctx.db.player_1().on_insert(move |_ctx, row| {
+                    let check = || {
+                        assert_eq_or_bail!("JoinedPlayer".to_string(), row.player_name[0]);
+                        assert_eq_or_bail!(7u32, row.current_level_2);
+                        Ok(())
+                    };
+                    put_result(&mut join_result, check());
+                });
+
+                // Insert a player that will NOT have a person (should NOT appear via join)
+                ctx.reducers()
+                    .create_player_1_then(
+                        "LonelyPlayer".to_string(),
+                        3,
+                        reducer_callback_assert_committed("create_player_1"),
+                    )
+                    .unwrap();
+
+                // Insert a player that WILL have a person (should appear via join)
+                ctx.reducers()
+                    .create_player_1_then("JoinedPlayer".to_string(), 7, move |ctx, outcome| {
+                        match outcome {
+                            Ok(Ok(())) => {
+                                // Find the player we just inserted
+                                let player = ctx
+                                    .db
+                                    .player_1()
+                                    .iter()
+                                    .find(|p| p.player_name.first().map(|n| n.as_str()) == Some("JoinedPlayer"))
+                                    .expect("JoinedPlayer should exist");
+
+                                // Insert a person referencing this player — triggers the join
+                                ctx.reducers()
+                                    .add_person_2_then(
+                                        "JoinPerson".to_string(),
+                                        player.player_1_id,
+                                        30,
+                                        500,
+                                        reducer_callback_assert_committed("add_person_2"),
+                                    )
+                                    .unwrap();
+                            }
+                            Ok(Err(msg)) => panic!("create_player_1 returned error: {msg}"),
+                            Err(e) => panic!("create_player_1 panicked: {e:?}"),
+                        }
+                    })
+                    .unwrap();
+            })
+            // Query builder: JOIN person_2 with player_1 on player_ref = player_1_id
+            // person_2 RIGHT SEMIJOIN player_1 means: show player_1 rows that have a matching person_2
+            .add_query(|q| {
+                q.from
+                    .person_2()
+                    .right_semijoin(q.from.player_1(), |person, player| {
+                        person.player_ref.eq(player.player_1_id)
+                    })
+                    .build()
+            })
+            // Also subscribe to person_2 so reducer callbacks can see inserted persons
+            .add_query(|q| q.from.person_2().build())
+            .subscribe();
     });
 
     test_counter.wait_for_all();
