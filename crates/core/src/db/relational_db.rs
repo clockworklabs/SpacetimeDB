@@ -362,6 +362,16 @@ impl RelationalDB {
         None
     }
 
+    /// Create any system tables that are missing from the datastore.
+    ///
+    /// This runs during database startup, *after* `restore_from_snapshot` and `apply_history`
+    /// have reconstructed the committed state from persisted data. Older snapshots may predate
+    /// the introduction of newer system tables (e.g. `st_event_table`, `st_view`), so those
+    /// tables won't exist in the restored state. This method fills them in.
+    ///
+    /// Because of this ordering, code that runs during snapshot restoration
+    /// (such as `schema_for_table_raw`) must tolerate missing system tables gracefully
+    /// — they will be created here shortly after.
     fn migrate_system_tables(&self) -> Result<(), DBError> {
         let mut tx = self.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
         for schema in system_tables() {

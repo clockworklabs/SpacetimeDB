@@ -44,8 +44,8 @@ namespace SpacetimeDB.Types
 
         public NullableVecCols(string tableName)
         {
-            Id = new global::SpacetimeDB.Col<NullableVec, uint>(tableName, "Id");
-            Pos = new global::SpacetimeDB.NullableCol<NullableVec, DbVector2>(tableName, "Pos");
+            Id = new global::SpacetimeDB.Col<NullableVec, uint>(tableName, "id");
+            Pos = new global::SpacetimeDB.NullableCol<NullableVec, DbVector2>(tableName, "pos");
         }
     }
 
@@ -55,7 +55,7 @@ namespace SpacetimeDB.Types
 
         public NullableVecIxCols(string tableName)
         {
-            Id = new global::SpacetimeDB.IxCol<NullableVec, uint>(tableName, "Id");
+            Id = new global::SpacetimeDB.IxCol<NullableVec, uint>(tableName, "id");
         }
     }
 }

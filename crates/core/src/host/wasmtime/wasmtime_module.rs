@@ -19,6 +19,8 @@ use futures_util::FutureExt;
 use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
+use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_schema::identifier::Identifier;
 use wasmtime::{
     AsContext, AsContextMut, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace, WasmParams,
     WasmResults,
@@ -99,6 +101,11 @@ fn handle_error_sink_code(code: i32, error: Vec<u8>) -> Result<(), ExecutionErro
     handle_result_sink_code(code, error).map(drop)
 }
 
+pub(super) enum ViewResultSinkError {
+    User(String),
+    UnexpectedCode(i32),
+}
+
 /// Handle the return code from a function using a result sink.
 ///
 /// On success, returns the result bytes.
@@ -114,11 +121,18 @@ fn handle_result_sink_code(code: i32, result: Vec<u8>) -> Result<Vec<u8>, Execut
 /// Handle the return code from a view function using a result sink.
 /// For views, we treat the return code 2 as a successful return using the header format.
 fn handle_view_result_sink_code(code: i32, result: Vec<u8>) -> Result<ViewReturnData, ExecutionError> {
+    decode_view_result_sink_code(code, result).map_err(|err| match err {
+        ViewResultSinkError::User(err) => ExecutionError::User(err.into()),
+        ViewResultSinkError::UnexpectedCode(_) => ExecutionError::Recoverable(anyhow::anyhow!("unknown return code")),
+    })
+}
+
+pub(super) fn decode_view_result_sink_code(code: i32, result: Vec<u8>) -> Result<ViewReturnData, ViewResultSinkError> {
     match code {
         0 => Ok(ViewReturnData::Rows(result.into())),
         2 => Ok(ViewReturnData::HeaderFirst(result.into())),
-        CALL_FAILURE => Err(ExecutionError::User(string_from_utf8_lossy_owned(result).into())),
-        _ => Err(ExecutionError::Recoverable(anyhow::anyhow!("unknown return code"))),
+        CALL_FAILURE => Err(ViewResultSinkError::User(string_from_utf8_lossy_owned(result))),
+        _ => Err(ViewResultSinkError::UnexpectedCode(code)),
     }
 }
 
@@ -131,18 +145,61 @@ const CALL_FAILURE: i32 = HOST_CALL_FAILURE.get() as i32;
 /// However, most of the WASM we execute, incl. reducers and startup functions, should never block/yield.
 /// Rather than crossing our fingers and trusting, we run [`TypedFunc::call_async`] in [`FutureExt::now_or_never`],
 /// an "async executor" which invokes [`std::task::Future::poll`] exactly once.
-fn call_sync_typed_func<Args, Ret>(
+pub(super) fn call_sync_typed_func<Args, Ret>(
     typed_func: &TypedFunc<Args, Ret>,
-    store: &mut Store<WasmInstanceEnv>,
+    mut ctx: impl AsContextMut<Data = WasmInstanceEnv>,
     args: Args,
 ) -> anyhow::Result<Ret>
 where
     Args: WasmParams + Sync,
     Ret: WasmResults + Sync,
 {
-    let fut = typed_func.call_async(store, args);
+    let fut = typed_func.call_async(ctx.as_context_mut(), args);
     fut.now_or_never()
         .expect("`call_async` of supposedly synchronous WASM function returned `Poll::Pending`")
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn call_view_export(
+    mut ctx: impl AsContextMut<Data = WasmInstanceEnv>,
+    call_view: Option<CallViewType>,
+    call_view_anon: Option<CallViewAnonType>,
+    view_name: &Identifier,
+    fn_ptr: u32,
+    sender: Option<Identity>,
+    args_source: u32,
+    result_sink: u32,
+) -> anyhow::Result<i32> {
+    if let Some(sender) = sender {
+        let [sender_0, sender_1, sender_2, sender_3] = prepare_identity_for_call(sender);
+        let call_view = call_view.ok_or_else(|| {
+            anyhow::anyhow!(
+                "Module defines view {} but does not export `{}`",
+                view_name,
+                CALL_VIEW_DUNDER
+            )
+        })?;
+
+        call_sync_typed_func(
+            &call_view,
+            ctx.as_context_mut(),
+            (fn_ptr, sender_0, sender_1, sender_2, sender_3, args_source, result_sink),
+        )
+    } else {
+        let call_view_anon = call_view_anon.ok_or_else(|| {
+            anyhow::anyhow!(
+                "Module defines anonymous view {} but does not export `{}`",
+                view_name,
+                CALL_VIEW_ANON_DUNDER,
+            )
+        })?;
+
+        call_sync_typed_func(
+            &call_view_anon,
+            ctx.as_context_mut(),
+            (fn_ptr, args_source, result_sink),
+        )
+    }
 }
 
 impl module_host_actor::WasmInstancePre for WasmtimeModule {
@@ -209,6 +266,9 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
         let call_procedure = get_call_procedure(&mut store, &instance);
         let call_view = get_call_view(&mut store, &instance);
         let call_view_anon = get_call_view_anon(&mut store, &instance);
+        store
+            .data_mut()
+            .set_call_view_exports(call_view.clone(), call_view_anon.clone());
 
         Ok(WasmtimeInstance {
             store,
@@ -308,7 +368,7 @@ type CallReducerType = TypedFunc<
 >;
 
 /// The function signature of `__call_view__`
-type CallViewType = TypedFunc<
+pub(super) type CallViewType = TypedFunc<
     (
         // ViewId
         u32,
@@ -329,7 +389,7 @@ type CallViewType = TypedFunc<
 >;
 
 /// The function signature of `__call_view_anon__`
-type CallViewAnonType = TypedFunc<
+pub(super) type CallViewAnonType = TypedFunc<
     (
         // ViewId
         u32,
@@ -352,27 +412,16 @@ pub struct WasmtimeInstance {
 
 impl module_host_actor::WasmInstance for WasmtimeInstance {
     fn extract_descriptions(&mut self) -> Result<RawModuleDef, DescribeError> {
-        let mut describer_res = None;
-        for &describe_func_name in describe_dunders() {
-            match self
-                .instance
-                .get_typed_func::<u32, ()>(&mut self.store, describe_func_name)
-            {
-                Ok(describer) => {
-                    describer_res = Some(Ok((describe_func_name, describer)));
-                    break;
-                }
-                Err(e) => describer_res = Some(Err(DescribeError::Signature(e))),
-            }
-        }
+        let describer_func_name = DESCRIBE_MODULE_DUNDER;
 
-        let (describer_func_name, describer) = describer_res
-            .transpose()?
-            .ok_or_else(|| DescribeError::Signature(anyhow::anyhow!("no describer function found")))?;
+        let describer = self
+            .instance
+            .get_typed_func::<u32, ()>(&mut self.store, describer_func_name)
+            .map_err(DescribeError::Signature)?;
 
         let sink = self.store.data_mut().setup_standard_bytes_sink();
 
-        run_describer(describer_func_name, log_traceback, || {
+        run_describer(log_traceback, || {
             call_sync_typed_func(&describer, &mut self.store, sink)
         })?;
 
@@ -390,6 +439,10 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
     fn tx_slot(&self) -> TxSlot {
         self.store.data().instance_env().tx.clone()
+    }
+
+    fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
+        self.store.data_mut().set_module_def(module_def);
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -432,7 +485,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let call_result = call_result
             .map_err(ExecutionError::Trap)
-            .and_then(|code| handle_error_sink_code(code, error));
+            .and_then(|code| handle_error_sink_code(code, error))
+            .map(|_| None);
 
         module_host_actor::ReducerExecuteResult { stats, call_result }
     }
@@ -441,8 +495,6 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let store = &mut self.store;
         prepare_store_for_call(store, budget);
 
-        // Prepare sender identity and connection ID, as LITTLE-ENDIAN byte arrays.
-        let [sender_0, sender_1, sender_2, sender_3] = prepare_identity_for_call(*op.sender);
         // Prepare arguments to the reducer + the error sink & start timings.
         let args_bytes = op.args.get_bsatn().clone();
 
@@ -451,29 +503,15 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
                 .data_mut()
                 .start_funcall(op.name.clone(), args_bytes, op.timestamp, op.call_type());
 
-        let Some(call_view) = self.call_view.as_ref() else {
-            return module_host_actor::ViewExecuteResult {
-                stats: zero_execution_stats(store),
-                call_result: Err(ExecutionError::Recoverable(anyhow::anyhow!(
-                    "Module defines view {} but does not export `{}`",
-                    op.name,
-                    CALL_VIEW_DUNDER,
-                ))),
-            };
-        };
-
-        let call_result = call_sync_typed_func(
-            call_view,
+        let call_result = call_view_export(
             &mut *store,
-            (
-                op.fn_ptr.0,
-                sender_0,
-                sender_1,
-                sender_2,
-                sender_3,
-                args_source.0,
-                errors_sink,
-            ),
+            self.call_view.clone(),
+            self.call_view_anon.clone(),
+            op.name,
+            op.fn_ptr.0,
+            Some(*op.sender),
+            args_source.0,
+            errors_sink,
         );
 
         let (stats, result_bytes) = finish_opcall(store, budget);
@@ -501,18 +539,16 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
                 .data_mut()
                 .start_funcall(op.name.clone(), args_bytes, op.timestamp, op.call_type());
 
-        let Some(call_view_anon) = self.call_view_anon.as_ref() else {
-            return module_host_actor::ViewExecuteResult {
-                stats: zero_execution_stats(store),
-                call_result: Err(ExecutionError::Recoverable(anyhow::anyhow!(
-                    "Module defines anonymous view {} but does not export `{}`",
-                    op.name,
-                    CALL_VIEW_ANON_DUNDER,
-                ))),
-            };
-        };
-
-        let call_result = call_sync_typed_func(call_view_anon, &mut *store, (op.fn_ptr.0, args_source.0, errors_sink));
+        let call_result = call_view_export(
+            &mut *store,
+            self.call_view.clone(),
+            self.call_view_anon.clone(),
+            op.name,
+            op.fn_ptr.0,
+            None,
+            args_source.0,
+            errors_sink,
+        );
 
         let (stats, result_bytes) = finish_opcall(store, budget);
 

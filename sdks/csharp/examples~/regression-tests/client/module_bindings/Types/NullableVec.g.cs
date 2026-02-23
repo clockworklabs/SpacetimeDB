@@ -13,9 +13,9 @@ namespace SpacetimeDB.Types
     [DataContract]
     public sealed partial class NullableVec
     {
-        [DataMember(Name = "Id")]
+        [DataMember(Name = "id")]
         public uint Id;
-        [DataMember(Name = "Pos")]
+        [DataMember(Name = "pos")]
         public DbVector2? Pos;
 
         public NullableVec(

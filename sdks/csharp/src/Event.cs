@@ -37,7 +37,7 @@ namespace SpacetimeDB
     /// <c>DbContext</c> is implemented by <c>DbConnection</c> and <c>EventContext</c>,
     /// both defined in your module-specific codegen.
     /// </summary>
-    public interface IDbContext<DbView, RemoteReducers, SetReducerFlags_, SubscriptionBuilder_, RemoteProcedures>
+    public interface IDbContext<DbView, RemoteReducers, SubscriptionBuilder_, RemoteProcedures>
     {
         /// <summary>
         /// Access to tables in the client cache, which stores a read-only replica of the remote database state.
@@ -53,15 +53,6 @@ namespace SpacetimeDB
         /// plus methods for adding and removing callbacks on each of those reducers.
         /// </summary>
         public RemoteReducers Reducers { get; }
-
-        /// <summary>
-        /// Access to setters for per-reducer flags.
-        ///
-        /// The returned <c>SetReducerFlags</c> will have a method to invoke,
-        /// for each reducer defined by the module,
-        /// which call-flags for the reducer can be set.
-        /// </summary>
-        public SetReducerFlags_ SetReducerFlags { get; }
 
         /// <summary>
         /// Access to procedures defined by the module.
@@ -143,6 +134,7 @@ namespace SpacetimeDB
         private Event() { }
 
         public record Reducer(ReducerEvent<R> ReducerEvent) : Event<R>;
+        public record Transaction : Event<R>;
         public record SubscribeApplied : Event<R>;
         public record UnsubscribeApplied : Event<R>;
         public record SubscribeError(Exception Exception) : Event<R>;
@@ -151,20 +143,10 @@ namespace SpacetimeDB
 
     public interface ISubscriptionHandle
     {
-        void OnApplied(ISubscriptionEventContext ctx, SubscriptionAppliedType state);
+        void OnApplied(ISubscriptionEventContext ctx);
         void OnError(IErrorContext ctx);
         void OnEnded(ISubscriptionEventContext ctx);
     }
-
-    /// <summary>
-    /// An applied subscription can either be a new-style subscription (with a query ID),
-    /// or a legacy subscription (no query ID).
-    /// </summary>
-    [Type]
-    public partial record SubscriptionAppliedType : TaggedEnum<(
-        QueryId Active,
-        Unit LegacyActive)>
-    { }
 
     /// <summary>
     /// State flow chart:
@@ -172,9 +154,9 @@ namespace SpacetimeDB
     ///           |
     ///           v
     ///        Pending
-    ///        |     |
-    ///        v     v
-    ///     Active  LegacyActive
+    ///          |
+    ///          v
+    ///       Active
     ///        |
     ///        v
     ///     Ended
@@ -182,7 +164,7 @@ namespace SpacetimeDB
     /// </summary>
     [Type]
     public partial record SubscriptionState
-        : TaggedEnum<(Unit Pending, QueryId Active, Unit LegacyActive, Unit Ended)>
+        : TaggedEnum<(Unit Pending, QuerySetId Active, Unit Ended)>
     { }
 
     public class SubscriptionHandleBase<SubscriptionEventContext, ErrorContext> : ISubscriptionHandle
@@ -194,7 +176,7 @@ namespace SpacetimeDB
         private readonly Action<ErrorContext, Exception>? onError;
         private Action<SubscriptionEventContext>? onEnded;
 
-        private QueryId? queryId;
+        private QuerySetId? queryId;
 
         private SubscriptionState state;
 
@@ -216,20 +198,13 @@ namespace SpacetimeDB
         {
             get
             {
-                return state is SubscriptionState.Active || state is SubscriptionState.LegacyActive;
+                return state is SubscriptionState.Active;
             }
         }
 
-        void ISubscriptionHandle.OnApplied(ISubscriptionEventContext ctx, SubscriptionAppliedType type)
+        void ISubscriptionHandle.OnApplied(ISubscriptionEventContext ctx)
         {
-            if (type is SubscriptionAppliedType.Active active)
-            {
-                state = new SubscriptionState.Active(active.Active_);
-            }
-            else if (type is SubscriptionAppliedType.LegacyActive)
-            {
-                state = new SubscriptionState.LegacyActive(new());
-            }
+            state = new SubscriptionState.Active(queryId ?? throw new InvalidOperationException("Subscription query id is missing."));
             onApplied?.Invoke((SubscriptionEventContext)ctx);
         }
 
@@ -243,22 +218,6 @@ namespace SpacetimeDB
         {
             state = new SubscriptionState.Ended(new());
             onError?.Invoke((ErrorContext)ctx, ctx.Event);
-        }
-
-        /// <summary>
-        /// Construct a legacy subscription handle.
-        /// </summary>
-        /// <param name="conn"></param>
-        /// <param name="onApplied"></param>
-        /// <param name="onError"></param>
-        /// <param name="querySqls"></param>
-        protected SubscriptionHandleBase(IDbConnection conn, Action<SubscriptionEventContext>? onApplied, string[] querySqls)
-        {
-            state = new SubscriptionState.Pending(new());
-            this.conn = conn;
-            this.onApplied = onApplied;
-            queryId = null;
-            conn.LegacySubscribe(this, querySqls);
         }
 
         /// <summary>

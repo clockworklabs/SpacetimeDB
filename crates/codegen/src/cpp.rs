@@ -1,6 +1,7 @@
 //! Minimal C++ code generation for SpacetimeDB module definitions.
 //! Generates only schema definitions - framework provides all functionality.
 
+use crate::CodegenOptions;
 use crate::Lang;
 use crate::OutputFile;
 use spacetimedb_lib::sats::layout::PrimitiveType;
@@ -457,7 +458,7 @@ impl Lang for Cpp<'_> {
         let mut output = String::new();
         self.write_header_comment(&mut output);
 
-        let name = type_def.name.name();
+        let name = type_def.accessor_name.name();
 
         // Special handling for AlgebraicType due to circular dependencies
         if name.to_string() == "AlgebraicType" {
@@ -557,7 +558,7 @@ impl Lang for Cpp<'_> {
         }
     }
 
-    fn generate_global_files(&self, _module: &ModuleDef) -> Vec<OutputFile> {
+    fn generate_global_files(&self, _module: &ModuleDef, _options: &CodegenOptions) -> Vec<OutputFile> {
         vec![]
     }
 }

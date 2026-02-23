@@ -94,12 +94,24 @@ pub fn replace_in_tree(
             continue;
         }
 
+        // Determine depth relative to root, in case we need to add ../
+        let rel_parent = path
+            .parent()
+            .and_then(|p| p.strip_prefix(&root).ok())
+            .unwrap_or_else(|| Path::new(""));
+        let depth = rel_parent.components().count();
+
         // Decide which replacement to use for this file
-        let is_index_ts = path.file_name().and_then(|n| n.to_str()) == Some("index.ts");
+        let is_index_ts = depth == 0 && path.file_name().and_then(|n| n.to_str()) == Some("index.ts");
         let repl = if is_index_ts {
             replacement_index_ts
         } else {
             replacement_other_ts
+        };
+        let repl = if depth > 0 {
+            format!("{}{}", "../".repeat(depth), repl)
+        } else {
+            repl.to_string()
         };
 
         let bytes = match fs::read(path) {

@@ -5,7 +5,7 @@
 use super::vec_u_64_type::VecU64;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `vec_u64`.
+/// Table handle for the table `vec_u_64`.
 ///
 /// Obtain a handle from the [`VecU64TableAccess::vec_u_64`] method on [`super::RemoteTables`],
 /// like `ctx.db.vec_u_64()`.
@@ -19,19 +19,19 @@ pub struct VecU64TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `vec_u64`.
+/// Extension trait for access to the table `vec_u_64`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait VecU64TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`VecU64TableHandle`], which mediates access to the table `vec_u64`.
+    /// Obtain a [`VecU64TableHandle`], which mediates access to the table `vec_u_64`.
     fn vec_u_64(&self) -> VecU64TableHandle<'_>;
 }
 
 impl VecU64TableAccess for super::RemoteTables {
     fn vec_u_64(&self) -> VecU64TableHandle<'_> {
         VecU64TableHandle {
-            imp: self.imp.get_table::<VecU64>("vec_u64"),
+            imp: self.imp.get_table::<VecU64>("vec_u_64"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,13 +80,11 @@ impl<'ctx> __sdk::Table for VecU64TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<VecU64>("vec_u64");
+    let _table = client_cache.get_or_make_table::<VecU64>("vec_u_64");
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<VecU64>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<VecU64>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<VecU64>", "TableUpdate")
             .with_cause(e)
@@ -98,14 +96,14 @@ pub(super) fn parse_table_update(
 /// Extension trait for query builder access to the table `VecU64`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait vec_u64QueryTableAccess {
+pub trait vec_u_64QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `VecU64`.
-    fn vec_u64(&self) -> __sdk::__query_builder::Table<VecU64>;
+    fn vec_u_64(&self) -> __sdk::__query_builder::Table<VecU64>;
 }
 
-impl vec_u64QueryTableAccess for __sdk::QueryTableAccessor {
-    fn vec_u64(&self) -> __sdk::__query_builder::Table<VecU64> {
-        __sdk::__query_builder::Table::new("vec_u64")
+impl vec_u_64QueryTableAccess for __sdk::QueryTableAccessor {
+    fn vec_u_64(&self) -> __sdk::__query_builder::Table<VecU64> {
+        __sdk::__query_builder::Table::new("vec_u_64")
     }
 }

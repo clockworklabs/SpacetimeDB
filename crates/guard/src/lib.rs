@@ -42,7 +42,7 @@ fn target_dir() -> PathBuf {
 
 /// Returns the expected CLI binary path.
 fn cli_binary_path() -> PathBuf {
-    let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
+    let profile = "release";
     let cli_name = if cfg!(windows) {
         "spacetimedb-cli.exe"
     } else {
@@ -79,7 +79,7 @@ pub fn ensure_binaries_built() -> PathBuf {
                     \n\
                     Or build manually:\n\
                     \n\
-                    cargo build -p spacetimedb-cli -p spacetimedb-standalone\n\
+                    cargo build -p spacetimedb-cli -p spacetimedb-standalone --features spacetimedb-standalone/allow_loopback_http_for_tests\n\
                     ========================================================================\n",
                     cli_path.display()
                 );

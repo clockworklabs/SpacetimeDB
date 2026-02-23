@@ -9,7 +9,7 @@ public static partial class Module
         public int Right;
     }
   
-    [Table(Name = "Result", Public = true)]
+    [Table(Accessor = "Result", Public = true)]
     public partial struct Result
     {
         [PrimaryKey] public int Id;

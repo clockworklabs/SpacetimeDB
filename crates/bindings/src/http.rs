@@ -83,9 +83,14 @@ impl HttpClient {
             Ok((response_source, body_source)) => {
                 let response = read_bytes_source_as::<st_http::Response>(response_source);
                 let response = convert_response(response).expect("Invalid http response returned from host");
-                let mut buf = IterBuf::take();
-                read_bytes_source_into(body_source, &mut buf);
-                let body = Body::from_bytes(buf.clone());
+                let body = if body_source == spacetimedb_bindings_sys::raw::BytesSource::INVALID {
+                    // Empty response body — host returns INVALID source for empty bytes
+                    Body::from_bytes(Vec::<u8>::new())
+                } else {
+                    let mut buf = IterBuf::take();
+                    read_bytes_source_into(body_source, &mut buf);
+                    Body::from_bytes(buf.clone())
+                };
 
                 Ok(http::Response::from_parts(response, body))
             }

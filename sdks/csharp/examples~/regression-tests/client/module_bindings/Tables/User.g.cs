@@ -76,10 +76,10 @@ namespace SpacetimeDB.Types
 
         public UserCols(string tableName)
         {
-            Id = new global::SpacetimeDB.Col<User, SpacetimeDB.Uuid>(tableName, "Id");
-            Name = new global::SpacetimeDB.Col<User, string>(tableName, "Name");
-            IsAdmin = new global::SpacetimeDB.Col<User, bool>(tableName, "IsAdmin");
-            Age = new global::SpacetimeDB.Col<User, byte>(tableName, "Age");
+            Id = new global::SpacetimeDB.Col<User, SpacetimeDB.Uuid>(tableName, "id");
+            Name = new global::SpacetimeDB.Col<User, string>(tableName, "name");
+            IsAdmin = new global::SpacetimeDB.Col<User, bool>(tableName, "is_admin");
+            Age = new global::SpacetimeDB.Col<User, byte>(tableName, "age");
         }
     }
 
@@ -92,10 +92,10 @@ namespace SpacetimeDB.Types
 
         public UserIxCols(string tableName)
         {
-            Id = new global::SpacetimeDB.IxCol<User, SpacetimeDB.Uuid>(tableName, "Id");
-            Name = new global::SpacetimeDB.IxCol<User, string>(tableName, "Name");
-            IsAdmin = new global::SpacetimeDB.IxCol<User, bool>(tableName, "IsAdmin");
-            Age = new global::SpacetimeDB.IxCol<User, byte>(tableName, "Age");
+            Id = new global::SpacetimeDB.IxCol<User, SpacetimeDB.Uuid>(tableName, "id");
+            Name = new global::SpacetimeDB.IxCol<User, string>(tableName, "name");
+            IsAdmin = new global::SpacetimeDB.IxCol<User, bool>(tableName, "is_admin");
+            Age = new global::SpacetimeDB.IxCol<User, byte>(tableName, "age");
         }
     }
 }

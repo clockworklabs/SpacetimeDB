@@ -39,6 +39,7 @@ mod sym {
         };
     }
 
+    symbol!(accessor);
     symbol!(at);
     symbol!(auto_inc);
     symbol!(btree);
@@ -61,6 +62,7 @@ mod sym {
     symbol!(unique);
     symbol!(update);
     symbol!(default);
+    symbol!(event);
 
     symbol!(u8);
     symbol!(i8);
@@ -125,10 +127,19 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 
 #[proc_macro_attribute]
 pub fn view(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
-    cvt_attr::<ItemFn>(args, item, quote!(), |args, original_function| {
-        let args = view::ViewArgs::parse(args, &original_function.sig.ident)?;
-        view::view_impl(args, original_function)
-    })
+    let item_ts: TokenStream = item.into();
+    let original_function = match syn::parse2::<ItemFn>(item_ts.clone()) {
+        Ok(f) => f,
+        Err(e) => return TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
+    };
+    let args = match view::ViewArgs::parse(args.into(), &original_function.sig.ident) {
+        Ok(a) => a,
+        Err(e) => return TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
+    };
+    match view::view_impl(args, &original_function) {
+        Ok(ts) => ts.into(),
+        Err(e) => TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
+    }
 }
 
 /// It turns out to be shockingly difficult to construct an [`Attribute`].
@@ -283,6 +294,58 @@ pub fn client_visibility_filter(args: StdTokenStream, item: StdTokenStream) -> S
                 #[export_name = #register_rls_symbol]
                 extern "C" fn __register_client_visibility_filter() {
                     spacetimedb::rt::register_row_level_security(#rls_ident.sql_text())
+                }
+            };
+        })
+    })
+}
+
+/// Known setting names and their registration code generators.
+const KNOWN_SETTINGS: &[&str] = &["CASE_CONVERSION_POLICY"];
+
+#[proc_macro_attribute]
+pub fn settings(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| {
+        if !args.is_empty() {
+            return Err(syn::Error::new_spanned(
+                TokenStream::from(args),
+                "The `settings` attribute does not accept arguments",
+            ));
+        }
+
+        let item: ItemConst = syn::parse(item)?;
+        let ident = &item.ident;
+        let ident_str = ident.to_string();
+
+        if !KNOWN_SETTINGS.contains(&ident_str.as_str()) {
+            return Err(syn::Error::new_spanned(
+                ident,
+                format!(
+                    "unknown setting `{ident_str}`. Known settings: {}",
+                    KNOWN_SETTINGS.join(", ")
+                ),
+            ));
+        }
+
+        // Use a fixed export name so that two `#[spacetimedb::settings]` consts
+        // for the same setting produce a linker error (duplicate symbol).
+        let register_symbol = format!("__preinit__05_setting_{ident_str}");
+
+        // Generate the registration call based on the setting name.
+        let register_call = match ident_str.as_str() {
+            "CASE_CONVERSION_POLICY" => quote! {
+                spacetimedb::rt::register_case_conversion_policy(#ident)
+            },
+            _ => unreachable!("validated above"),
+        };
+
+        Ok(quote! {
+            #item
+
+            const _: () = {
+                #[export_name = #register_symbol]
+                extern "C" fn __register_setting() {
+                    #register_call
                 }
             };
         })

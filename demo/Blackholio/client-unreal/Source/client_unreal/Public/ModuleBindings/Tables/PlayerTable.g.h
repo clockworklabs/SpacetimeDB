@@ -12,95 +12,15 @@
 #include "DBCache/TableCache.h"
 #include "PlayerTable.g.generated.h"
 
-UCLASS(Blueprintable)
-class CLIENT_UNREAL_API UPlayerIdentityUniqueIndex : public UObject
-{
-    GENERATED_BODY()
-
-private:
-    // Declare an instance of your templated helper.
-    // It's private because the UObject wrapper will expose its functionality.
-    FUniqueIndexHelper<FPlayerType, FSpacetimeDBIdentity, FTableCache<FPlayerType>> IdentityIndexHelper;
-
-public:
-    UPlayerIdentityUniqueIndex()
-        // Initialize the helper with the specific unique index name
-        : IdentityIndexHelper("identity") {
-    }
-
-    /**
-     * Finds a Player by their unique identity.
-     * @param Key The identity to search for.
-     * @return The found FPlayerType, or a default-constructed FPlayerType if not found.
-     */
-    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|PlayerIndex")
-    FPlayerType Find(FSpacetimeDBIdentity Key)
-    {
-        // Simply delegate the call to the internal helper
-        return IdentityIndexHelper.FindUniqueIndex(Key);
-    }
-
-    // A public setter to provide the cache to the helper after construction
-    // This is a common pattern when the cache might be created or provided by another system.
-    void SetCache(TSharedPtr<const FTableCache<FPlayerType>> InPlayerCache)
-    {
-        IdentityIndexHelper.Cache = InPlayerCache;
-    }
-};
-/***/
-
-UCLASS(Blueprintable)
-class CLIENT_UNREAL_API UPlayerPlayerIdUniqueIndex : public UObject
-{
-    GENERATED_BODY()
-
-private:
-    // Declare an instance of your templated helper.
-    // It's private because the UObject wrapper will expose its functionality.
-    FUniqueIndexHelper<FPlayerType, int32, FTableCache<FPlayerType>> PlayerIdIndexHelper;
-
-public:
-    UPlayerPlayerIdUniqueIndex()
-        // Initialize the helper with the specific unique index name
-        : PlayerIdIndexHelper("player_id") {
-    }
-
-    /**
-     * Finds a Player by their unique playerid.
-     * @param Key The playerid to search for.
-     * @return The found FPlayerType, or a default-constructed FPlayerType if not found.
-     */
-    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|PlayerIndex")
-    FPlayerType Find(int32 Key)
-    {
-        // Simply delegate the call to the internal helper
-        return PlayerIdIndexHelper.FindUniqueIndex(Key);
-    }
-
-    // A public setter to provide the cache to the helper after construction
-    // This is a common pattern when the cache might be created or provided by another system.
-    void SetCache(TSharedPtr<const FTableCache<FPlayerType>> InPlayerCache)
-    {
-        PlayerIdIndexHelper.Cache = InPlayerCache;
-    }
-};
-/***/
-
 UCLASS(BlueprintType)
 class CLIENT_UNREAL_API UPlayerTable : public URemoteTable
 {
     GENERATED_BODY()
 
 public:
-    UPROPERTY(BlueprintReadOnly)
-    UPlayerIdentityUniqueIndex* Identity;
-
-    UPROPERTY(BlueprintReadOnly)
-    UPlayerPlayerIdUniqueIndex* PlayerId;
-
     void PostInitialize();
 
-    /** Update function for logged_out_player table*/
+    /** Update function for player table*/
     FTableAppliedDiff<FPlayerType> Update(TArray<FWithBsatn<FPlayerType>> InsertsRef, TArray<FWithBsatn<FPlayerType>> DeletesRef);
 
     /** Number of subscribed rows currently in the cache */
@@ -138,7 +58,7 @@ public:
     FOnPlayerDelete OnDelete;
 
 private:
-    const FString TableName = TEXT("logged_out_player");
+    const FString TableName = TEXT("player");
 
     TSharedPtr<UClientCache<FPlayerType>> Data;
 };

@@ -1,5 +1,6 @@
 use std::{marker::PhantomData, path::Path};
 
+use convert_case::{Case, Casing};
 use spacetimedb::db::{Config, Storage};
 use spacetimedb_lib::{
     sats::{product, ArrayValue},
@@ -89,9 +90,14 @@ impl<L: ModuleLanguage> BenchDatabase for SpacetimeModule<L> {
         table_style: crate::schemas::IndexStrategy,
     ) -> ResultBench<Self::TableId> {
         // Noop. All tables are built into the "benchmarks" module.
+        // The module's default CaseConversionPolicy is SnakeCase, which
+        // inserts underscores at letter-digit boundaries (e.g. u32 -> u_32).
+        // We must match that here so reducer/table lookups succeed.
+        let raw = table_name::<T>(table_style);
+        let converted = raw.as_ref().to_case(Case::Snake);
         Ok(TableId {
-            pascal_case: table_name::<T>(table_style),
-            snake_case: table_name::<T>(table_style),
+            pascal_case: TableName::for_test(&converted),
+            snake_case: TableName::for_test(&converted),
         })
     }
 

@@ -1,0 +1,19 @@
+﻿services:
+  crdb-node:
+    image: cockroachdb/cockroach:latest
+    command:
+      - start
+      - --insecure
+      - --max-sql-memory=.25
+      - --cache=.3
+      - --listen-addr=:26257
+      - --http-addr=:8080
+      - --join=10.128.0.14:26257,10.128.0.15:26257,10.128.0.16:26257
+    healthcheck:
+      test: ["CMD", "/cockroach/cockroach", "node", "status", "--insecure"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+    volumes:
+      - ./crdb_data:/cockroach/cockroach-data
+    network_mode: host

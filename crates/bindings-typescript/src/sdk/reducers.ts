@@ -3,22 +3,10 @@ import type { ReducerSchema } from '../lib/reducer_schema';
 import type { ParamsObj } from '../lib/reducers';
 import type { CoerceRow } from '../lib/table';
 import { RowBuilder, type InferTypeOfRow } from '../lib/type_builders';
-import type { CamelCase, PascalCase } from '../lib/type_util';
+import type { CamelCase } from '../lib/type_util';
 import { toCamelCase } from '../lib/util';
-import type { CallReducerFlags } from './db_connection_impl';
-import type {
-  ReducerEventContextInterface,
-  SubscriptionEventContextInterface,
-} from './event_context';
+import type { SubscriptionEventContextInterface } from './event_context';
 import type { UntypedRemoteModule } from './spacetime_module';
-
-export type ReducerEventCallback<
-  RemoteModule extends UntypedRemoteModule,
-  ReducerArgs extends object = object,
-> = (
-  ctx: ReducerEventContextInterface<RemoteModule>,
-  args: ReducerArgs
-) => void;
 
 export type SubscriptionEventCallback<
   RemoteModule extends UntypedRemoteModule,
@@ -30,13 +18,7 @@ type IfAny<T, Y, N> = 0 extends 1 & T ? Y : N;
 // Loose shape that allows all three families even when key names are unknown
 type ReducersViewLoose = {
   // call: camelCase(name)
-  [k: string]: (params: any) => void;
-} & {
-  // onX
-  [k: `on${string}`]: (callback: ReducerEventCallback<any, any>) => void;
-} & {
-  // removeOnX
-  [k: `removeOn${string}`]: (callback: ReducerEventCallback<any, any>) => void;
+  [k: string]: (params: any) => Promise<void>;
 };
 
 export type ReducersView<RemoteModule> = IfAny<
@@ -47,23 +29,7 @@ export type ReducersView<RemoteModule> = IfAny<
       {
         [K in RemoteModule['reducers'][number] as CamelCase<
           K['accessorName']
-        >]: (params: InferTypeOfRow<K['params']>) => void;
-      } & {
-        // onX: `on${PascalCase(name)}`
-        [K in RemoteModule['reducers'][number] as `on${PascalCase<K['accessorName']>}`]: (
-          callback: ReducerEventCallback<
-            RemoteModule,
-            InferTypeOfRow<K['params']>
-          >
-        ) => void;
-      } & {
-        // removeOnX: `removeOn${PascalCase(name)}`
-        [K in RemoteModule['reducers'][number] as `removeOn${PascalCase<K['accessorName']>}`]: (
-          callback: ReducerEventCallback<
-            RemoteModule,
-            InferTypeOfRow<K['params']>
-          >
-        ) => void;
+        >]: (params: InferTypeOfRow<K['params']>) => Promise<void>;
       }
     : never
 >;
@@ -85,12 +51,6 @@ export type UntypedReducerDef = {
 
 export type UntypedReducersDef = {
   reducers: readonly UntypedReducerDef[];
-};
-
-export type SetReducerFlags<R extends UntypedReducersDef> = {
-  [K in keyof R['reducers'] as CamelCase<R['reducers'][number]['name']>]: (
-    flags: CallReducerFlags
-  ) => void;
 };
 
 class Reducers<ReducersDef extends UntypedReducersDef> {
@@ -148,10 +108,10 @@ export function reducersToSchema<
  * @returns ColumnBuilder representing the complete database schema
  * @example
  * ```ts
- * const s = schema(
- *   table({ name: 'user' }, userType),
- *   table({ name: 'post' }, postType)
- * );
+ * const s = schema({
+ *   user: table({}, userType),
+ *   post: table({}, postType)
+ * });
  * ```
  */
 export function reducers<const H extends readonly ReducerSchema<any, any>[]>(

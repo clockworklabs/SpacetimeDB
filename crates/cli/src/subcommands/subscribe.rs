@@ -4,7 +4,7 @@ use futures::{Sink, SinkExt, TryStream, TryStreamExt};
 use http::header;
 use reqwest::Url;
 use serde_json::Value;
-use spacetimedb_client_api_messages::websocket::{self as ws, JsonFormat};
+use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::de::serde::{DeserializeWrapper, SeedWrapper};
@@ -18,23 +18,18 @@ use tokio_tungstenite::tungstenite::{Error as WsError, Message as WsMessage};
 
 use crate::api::ClientApi;
 use crate::common_args;
-use crate::sql::parse_req;
+use crate::subcommands::db_arg_resolution::{load_config_db_targets, resolve_optional_database_parts};
 use crate::util::UNSTABLE_WARNING;
+use crate::util::{database_identity, get_auth_header};
 use crate::Config;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("subscribe")
         .about(format!("Subscribe to SQL queries on the database. {UNSTABLE_WARNING}"))
         .arg(
-            Arg::new("database")
-                .required(true)
-                .help("The name or identity of the database you would like to query"),
-        )
-        .arg(
-            Arg::new("query")
-                .required(true)
+            Arg::new("subscribe_parts")
                 .num_args(1..)
-                .help("The SQL query to execute"),
+                .help("Subscribe arguments: [DATABASE] <QUERY> [QUERY...]"),
         )
         .arg(
             Arg::new("num-updates")
@@ -68,19 +63,25 @@ pub fn cli() -> clap::Command {
         .arg(common_args::confirmed())
         .arg(common_args::anonymous())
         .arg(common_args::yes())
+        .arg(
+            Arg::new("no_config")
+                .long("no-config")
+                .action(ArgAction::SetTrue)
+                .help("Ignore spacetime.json configuration"),
+        )
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
 }
 
-fn parse_msg_json(msg: &WsMessage) -> Option<ws::ServerMessage<JsonFormat>> {
+fn parse_msg_json(msg: &WsMessage) -> Option<ws_v1::ServerMessage<ws_v1::JsonFormat>> {
     let WsMessage::Text(msg) = msg else { return None };
-    serde_json::from_str::<DeserializeWrapper<ws::ServerMessage<JsonFormat>>>(msg)
+    serde_json::from_str::<DeserializeWrapper<ws_v1::ServerMessage<ws_v1::JsonFormat>>>(msg)
         .inspect_err(|e| eprintln!("couldn't parse message from server: {e}"))
         .map(|wrapper| wrapper.0)
         .ok()
 }
 
 fn reformat_update<'a>(
-    msg: &'a ws::DatabaseUpdate<JsonFormat>,
+    msg: &'a ws_v1::DatabaseUpdate<ws_v1::JsonFormat>,
     schema: &RawModuleDefV9,
 ) -> anyhow::Result<HashMap<&'a str, SubscriptionTable>> {
     msg.tables
@@ -126,13 +127,37 @@ struct SubscriptionTable {
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     eprintln!("{UNSTABLE_WARNING}\n");
 
-    let queries = args.get_many::<String>("query").unwrap();
+    let server = args.get_one::<String>("server").map(|s| s.as_ref());
+    let force = args.get_flag("force");
+    let anon_identity = args.get_flag("anon_identity");
+    let no_config = args.get_flag("no_config");
+
+    let raw_parts: Vec<String> = args
+        .get_many::<String>("subscribe_parts")
+        .map(|vals| vals.cloned().collect())
+        .unwrap_or_default();
+    let config_targets = load_config_db_targets(no_config)?;
+    let resolved = resolve_optional_database_parts(
+        &raw_parts,
+        config_targets.as_deref(),
+        "query",
+        "spacetime subscribe [database] <query> [query...] (or --no-config for legacy behavior)",
+    )?;
+    let queries: Vec<String> = resolved.remaining_args;
+
     let num = args.get_one::<u32>("num-updates").copied();
     let timeout = args.get_one::<u32>("timeout").copied();
     let print_initial_update = args.get_flag("print_initial_update");
     let confirmed = args.get_flag("confirmed");
+    let resolved_server = server.or(resolved.server.as_deref());
 
-    let conn = parse_req(config, args).await?;
+    let mut config = config;
+    let conn = crate::api::Connection {
+        host: config.get_host_url(resolved_server)?,
+        auth_header: get_auth_header(&mut config, anon_identity, resolved_server, !force).await?,
+        database_identity: database_identity(&config, &resolved.database, resolved_server).await?,
+        database: resolved.database.clone(),
+    };
     let api = ClientApi::new(conn);
     let module_def = api.module_def().await?;
 
@@ -152,7 +177,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let mut req = url.into_client_request()?;
     req.headers_mut().insert(
         header::SEC_WEBSOCKET_PROTOCOL,
-        http::HeaderValue::from_static(ws::TEXT_PROTOCOL),
+        http::HeaderValue::from_static(ws_v1::TEXT_PROTOCOL),
     );
     //  Add the authorization header, if any.
     if let Some(auth_header) = api.con.auth_header.to_header() {
@@ -161,7 +186,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let mut ws = tokio_tungstenite::connect_async(req).await.map(|(ws, _)| ws)?;
 
     let task = async {
-        subscribe(&mut ws, queries.cloned().map(Into::into).collect()).await?;
+        subscribe(&mut ws, queries.iter().cloned().map(Into::into).collect()).await?;
         await_initial_update(&mut ws, print_initial_update.then_some(&module_def)).await?;
         consume_transaction_updates(&mut ws, num, &module_def).await
     };
@@ -241,8 +266,8 @@ async fn subscribe<S>(ws: &mut S, query_strings: Box<[Box<str>]>) -> Result<(), 
 where
     S: Sink<WsMessage, Error = WsError> + Unpin,
 {
-    let msg = serde_json::to_string(&SerializeWrapper::new(ws::ClientMessage::<()>::Subscribe(
-        ws::Subscribe {
+    let msg = serde_json::to_string(&SerializeWrapper::new(ws_v1::ClientMessage::<()>::Subscribe(
+        ws_v1::Subscribe {
             query_strings,
             request_id: 0,
         },
@@ -262,22 +287,22 @@ where
     while let Some(msg) = ws.try_next().await.map_err(|source| Error::Websocket { source })? {
         let Some(msg) = parse_msg_json(&msg) else { continue };
         match msg {
-            ws::ServerMessage::InitialSubscription(sub) => {
+            ws_v1::ServerMessage::InitialSubscription(sub) => {
                 if let Some(module_def) = module_def {
                     let output = format_output_json(&sub.database_update, module_def)?;
                     tokio::io::stdout().write_all(output.as_bytes()).await?
                 }
                 break;
             }
-            ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate { status, .. }) => {
+            ws_v1::ServerMessage::TransactionUpdate(ws_v1::TransactionUpdate { status, .. }) => {
                 return Err(match status {
-                    ws::UpdateStatus::Failed(msg) => Error::TransactionFailure { reason: msg },
+                    ws_v1::UpdateStatus::Failed(msg) => Error::TransactionFailure { reason: msg },
                     _ => Error::Protocol {
                         details: RECV_TX_UPDATE,
                     },
                 })
             }
-            ws::ServerMessage::TransactionUpdateLight(ws::TransactionUpdateLight { .. }) => {
+            ws_v1::ServerMessage::TransactionUpdateLight(ws_v1::TransactionUpdateLight { .. }) => {
                 return Err(Error::Protocol {
                     details: RECV_TX_UPDATE,
                 })
@@ -310,14 +335,14 @@ where
 
         let Some(msg) = parse_msg_json(&msg) else { continue };
         match msg {
-            ws::ServerMessage::InitialSubscription(_) => {
+            ws_v1::ServerMessage::InitialSubscription(_) => {
                 return Err(Error::Protocol {
                     details: "received a second initial subscription update",
                 })
             }
-            ws::ServerMessage::TransactionUpdateLight(ws::TransactionUpdateLight { update, .. })
-            | ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate {
-                status: ws::UpdateStatus::Committed(update),
+            ws_v1::ServerMessage::TransactionUpdateLight(ws_v1::TransactionUpdateLight { update, .. })
+            | ws_v1::ServerMessage::TransactionUpdate(ws_v1::TransactionUpdate {
+                status: ws_v1::UpdateStatus::Committed(update),
                 ..
             }) => {
                 let output = format_output_json(&update, module_def)?;
@@ -329,7 +354,10 @@ where
     }
 }
 
-fn format_output_json(msg: &ws::DatabaseUpdate<JsonFormat>, schema: &RawModuleDefV9) -> Result<String, Error> {
+fn format_output_json(
+    msg: &ws_v1::DatabaseUpdate<ws_v1::JsonFormat>,
+    schema: &RawModuleDefV9,
+) -> Result<String, Error> {
     let formatted = reformat_update(msg, schema).map_err(|source| Error::Reformat { source })?;
     let output = serde_json::to_string(&formatted)? + "\n";
 

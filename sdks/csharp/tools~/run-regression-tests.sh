@@ -19,9 +19,9 @@ cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- publish -c -y --
 
 # Publish module for republishing module test
 cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- publish -c -y --server local -p "$SDK_PATH/examples~/regression-tests/republishing/server-initial" republish-test
-cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" call --server local republish-test Insert 1
+cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" call --server local republish-test insert 1
 cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- publish  --server local -p "$SDK_PATH/examples~/regression-tests/republishing/server-republish" --break-clients republish-test
-cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" call --server local republish-test Insert 2
+cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" call --server local republish-test insert 2
 
 echo "Cleanup obj~ folders generated in $SDK_PATH/examples~/regression-tests/procedure-client"
 # There is a bug in the code generator that creates obj~ folders in the output directory using a Rust project.

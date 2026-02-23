@@ -2,7 +2,7 @@ use spacetimedb::sats::{i256, u256};
 use spacetimedb::{ConnectionId, Identity, ReducerContext, SpacetimeType, Table, Timestamp, TimeDuration, Uuid};
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = t_ints, public)]
+#[spacetimedb::table(accessor = t_ints, public)]
 pub struct TInts {
     i8: i8,
     i16: i16,
@@ -12,13 +12,13 @@ pub struct TInts {
     i256: i256,
 }
 
-#[spacetimedb::table(name = t_ints_tuple, public)]
+#[spacetimedb::table(accessor = t_ints_tuple, public)]
 pub struct TIntsTuple {
     tuple: TInts,
 }
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = t_uints, public)]
+#[spacetimedb::table(accessor = t_uints, public)]
 pub struct TUints {
     u8: u8,
     u16: u16,
@@ -28,13 +28,13 @@ pub struct TUints {
     u256: u256,
 }
 
-#[spacetimedb::table(name = t_uints_tuple, public)]
+#[spacetimedb::table(accessor = t_uints_tuple, public)]
 pub struct TUintsTuple {
     tuple: TUints,
 }
 
 #[derive(Clone)]
-#[spacetimedb::table(name = t_others, public)]
+#[spacetimedb::table(accessor = t_others, public)]
 pub struct TOthers {
     bool: bool,
     f32: f32,
@@ -48,7 +48,7 @@ pub struct TOthers {
     uuid: Uuid,
 }
 
-#[spacetimedb::table(name = t_others_tuple, public)]
+#[spacetimedb::table(accessor = t_others_tuple, public)]
 pub struct TOthersTuple {
     tuple: TOthers
 }
@@ -65,19 +65,19 @@ pub enum Color {
 }
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = t_simple_enum, public)]
+#[spacetimedb::table(accessor = t_simple_enum, public)]
 pub struct TSimpleEnum {
     id: u32,
     action: Action,
 }
 
-#[spacetimedb::table(name = t_enum, public)]
+#[spacetimedb::table(accessor = t_enum, public)]
 pub struct TEnum {
     id: u32,
     color: Color,
 }
 
-#[spacetimedb::table(name = t_nested, public)]
+#[spacetimedb::table(accessor = t_nested, public)]
 pub struct TNested {
    en: TEnum,
    se: TSimpleEnum,
@@ -85,14 +85,14 @@ pub struct TNested {
 }
 
 #[derive(Clone)]
-#[spacetimedb::table(name = t_enums)]
+#[spacetimedb::table(accessor = t_enums)]
 pub struct TEnums {
     bool_opt: Option<bool>,
     bool_result: Result<bool, String>,
     action: Action,
 }
 
-#[spacetimedb::table(name = t_enums_tuple)]
+#[spacetimedb::table(accessor = t_enums_tuple)]
 pub struct TEnumsTuple {
     tuple: TEnums,
 }

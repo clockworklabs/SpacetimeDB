@@ -1,85 +1,160 @@
 ---
-description: "MANDATORY: Read this ENTIRE file before writing ANY SpacetimeDB C# code. Contains critical SDK patterns and HALLUCINATED APIs to avoid."
+description: "⛔ MANDATORY: Read this ENTIRE file before writing ANY SpacetimeDB C# code. Contains SDK patterns from official documentation."
 globs: **/*.cs
 alwaysApply: true
 ---
 
 # SpacetimeDB C# SDK
 
-> **Tested with:** SpacetimeDB runtime 1.11.x, .NET 8 SDK
-> **Last updated:** 2026-01-14
+## ⛔ COMMON MISTAKES — LLM HALLUCINATIONS
 
----
+These are **actual errors** observed when LLMs generate SpacetimeDB C# code:
 
-## HALLUCINATED APIs — DO NOT USE
-
-**These APIs DO NOT EXIST. LLMs frequently hallucinate them.**
-
+### 1. Wrong Package Name for Server Modules
 ```csharp
-// WRONG — these do not exist
-[SpacetimeDB.Procedure]             // C# does NOT support procedures yet!
-ctx.db.tableName                    // Wrong casing, should be PascalCase
-ctx.Db.tableName.Get(id)            // Use Find, not Get
-ctx.Db.TableName.FindById(id)       // Use index accessor: ctx.Db.TableName.Id.Find(id)
-ctx.Db.table.field_name.Find(x)     // Wrong! Use PascalCase: ctx.Db.Table.FieldName.Find(x)
-Optional<string> field;             // Use C# nullable: string? field
+// ❌ WRONG — this package doesn't exist
+<PackageReference Include="SpacetimeDB.SDK" Version="1.*" />
+<PackageReference Include="SpacetimeDB.ServerSdk" Version="1.*" />
 
-// WRONG — missing partial keyword
-public struct MyTable { }           // Must be "partial struct"
-public class Module { }             // Must be "static partial class"
-
-// WRONG — non-partial types
-[SpacetimeDB.Table(Name = "player")]
-public struct Player { }            // WRONG — missing partial!
-
-// WRONG — sum type syntax (VERY COMMON MISTAKE)
-public partial struct Shape : TaggedEnum<(Circle, Rectangle)> { }     // WRONG: struct, missing names
-public partial record Shape : TaggedEnum<(Circle, Rectangle)> { }     // WRONG: missing variant names
-public partial class Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> { }  // WRONG: class
-
-// WRONG — Index attribute without full qualification
-[Index.BTree(Name = "idx", Columns = new[] { "Col" })]    // Ambiguous with System.Index!
-[Index.BTree(Name = "idx", Columns = ["Col"])]            // Collection expressions don't work in attributes!
+// ✅ CORRECT — use Runtime for server modules
+<PackageReference Include="SpacetimeDB.Runtime" Version="1.*" />
 ```
 
-### CORRECT PATTERNS:
-
+### 2. Missing `partial` Keyword
 ```csharp
-// CORRECT IMPORTS
-using SpacetimeDB;
+// ❌ WRONG — missing partial
+public struct MyTable { }
+public class Module { }
 
-// CORRECT TABLE — must be partial struct
-[SpacetimeDB.Table(Name = "player", Public = true)]
-public partial struct Player
-{
-    [SpacetimeDB.PrimaryKey]
-    [SpacetimeDB.AutoInc]
-    public ulong Id;
-
-    public Identity OwnerId;
-    public string Name;
-}
-
-// CORRECT MODULE — must be static partial class
-public static partial class Module
-{
-    [SpacetimeDB.Reducer]
-    public static void CreatePlayer(ReducerContext ctx, string name)
-    {
-        ctx.Db.Player.Insert(new Player { Id = 0, OwnerId = ctx.Sender, Name = name });
-    }
-}
-
-// CORRECT DATABASE ACCESS — PascalCase, index-based lookups
-var player = ctx.Db.Player.Id.Find(playerId);
-var player = ctx.Db.Player.OwnerId.Find(ctx.Sender);
+// ✅ CORRECT — must be partial
+public partial struct MyTable { }
+public static partial class Module { }
 ```
 
-### DO NOT:
-- **Forget `partial` keyword** — required on all tables and Module class
-- **Use lowercase table access** — `ctx.Db.Player` not `ctx.Db.player`
-- **Try to use procedures** — C# does not support procedures yet
-- **Use `Optional<T>`** — use C# nullable syntax `T?` instead
+### 3. Lifecycle Hook Names Starting with "On"
+```csharp
+// ❌ WRONG — will cause STDB0010 error
+[SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
+public static void OnClientConnected(ReducerContext ctx) { }
+
+// ✅ CORRECT — no "On" prefix
+[SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
+public static void ClientConnected(ReducerContext ctx) { }
+```
+
+### 4. Wrong Timestamp Property Name
+```csharp
+// ❌ WRONG — property doesn't exist
+var micros = timestamp.MicrosecondsSinceEpoch;
+
+// ✅ CORRECT — full name
+var micros = timestamp.MicrosecondsSinceUnixEpoch;
+```
+
+### 5. Wrong ScheduleAt Syntax
+```csharp
+// ❌ WRONG — ScheduleAt.Time is not a method
+ScheduledAt = ScheduleAt.Time(timestamp)
+
+// ✅ CORRECT — use constructor syntax
+ScheduledAt = new ScheduleAt.Time(new Timestamp(microseconds))
+// OR with TimeSpan
+ScheduledAt = ScheduleAt.Time(ctx.Timestamp + TimeSpan.FromSeconds(60))
+```
+
+### 6. Table Accessor Casing: Server vs Client DIFFER!
+```csharp
+// Table defined as:
+[SpacetimeDB.Table(Accessor = "user", Public = true)]
+public partial class User { ... }
+
+// SERVER-SIDE: Use PascalCase
+ctx.Db.User.Insert(...)  // ✅ PascalCase
+
+// CLIENT-SIDE: Also PascalCase
+_conn.Db.User.OnInsert += ...  // ✅ PascalCase
+```
+
+### 7. Client Callback Signature Errors
+```csharp
+// ❌ WRONG — guessing at signatures
+.OnDisconnect((conn, ctx, err) => ...)
+.OnConnectError((ctx, err) => ...)
+
+// ✅ CORRECT — check actual delegate types
+.OnDisconnect((conn, err) => ...)  // DbConnection, Exception?
+.OnConnectError(err => ...)         // Exception
+```
+
+### 8. WithUri Takes String, Not Uri
+```csharp
+// ❌ WRONG — Uri object not accepted
+.WithUri(new Uri("http://localhost:3000"))
+
+// ✅ CORRECT — use string directly
+.WithUri("http://localhost:3000")
+```
+
+### 9. Missing RuntimeIdentifier for WASM Build
+```xml
+<!-- ❌ WRONG — won't produce WASM output -->
+<TargetFramework>net8.0</TargetFramework>
+
+<!-- ✅ CORRECT — required for spacetime publish -->
+<TargetFramework>net8.0</TargetFramework>
+<RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
+```
+
+### 10. Subscribing Before Connected
+```csharp
+// ❌ WRONG — subscription fails silently
+_conn = builder.Build();
+_conn.SubscriptionBuilder().SubscribeToAllTables();  // NOT CONNECTED YET!
+
+// ✅ CORRECT — subscribe inside OnConnect callback
+private void OnConnected(DbConnection conn, Identity identity, string token)
+{
+    conn.SubscriptionBuilder()
+        .OnApplied(OnSubscriptionApplied)
+        .SubscribeToAllTables();
+}
+```
+
+### 11. Nullable Struct Handling with Find()
+```csharp
+// ❌ WRONG — accessing properties directly on nullable
+if (existing != null)
+{
+    ctx.Db.User.Id.Update(new User { Id = existing.Id, ... });
+}
+
+// ✅ CORRECT — use .Value or pattern matching
+if (ctx.Db.User.Id.Find(id) is User user)
+{
+    ctx.Db.User.Id.Update(user with { Name = newName });
+}
+```
+
+### 12. Sum Type Syntax Errors
+```csharp
+// ❌ WRONG — struct instead of record
+public partial struct Shape : TaggedEnum<(Circle, Rectangle)> { }
+
+// ❌ WRONG — missing variant names in tuple
+public partial record Shape : TaggedEnum<(Circle, Rectangle)> { }
+
+// ✅ CORRECT — record with named tuple elements
+public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> { }
+```
+
+### 13. Index Attribute Ambiguity
+```csharp
+// ❌ WRONG — ambiguous with System.Index
+[Index.BTree(Accessor = "idx", Columns = new[] { "Col" })]
+
+// ✅ CORRECT — fully qualify
+[SpacetimeDB.Index.BTree(Accessor = "idx", Columns = new[] { "Col" })]
+```
 
 ---
 
@@ -105,12 +180,6 @@ var player = ctx.Db.Player.OwnerId.Find(ctx.Sender);
 | `partial struct : TaggedEnum` | `partial record : TaggedEnum` | Sum types must be record |
 | `TaggedEnum<(A, B)>` | `TaggedEnum<(A A, B B)>` | Tuple must include variant names |
 
-### Client-side errors
-
-| Wrong | Right | Error |
-|-------|-------|-------|
-| Wrong namespace | `using SpacetimeDB.ClientApi;` | Types not found |
-
 ---
 
 ## 2) Table Definition (CRITICAL)
@@ -120,12 +189,12 @@ var player = ctx.Db.Player.OwnerId.Find(ctx.Sender);
 ```csharp
 using SpacetimeDB;
 
-// WRONG — missing partial!
-[SpacetimeDB.Table(Name = "player")]
+// ❌ WRONG — missing partial!
+[SpacetimeDB.Table(Accessor = "player")]
 public struct Player { }  // Will not generate properly!
 
-// RIGHT — with partial keyword
-[SpacetimeDB.Table(Name = "player", Public = true)]
+// ✅ CORRECT — with partial keyword
+[SpacetimeDB.Table(Accessor = "player", Public = true)]
 public partial struct Player
 {
     [SpacetimeDB.PrimaryKey]
@@ -137,8 +206,8 @@ public partial struct Player
     public Timestamp CreatedAt;
 }
 
-// With indexes
-[SpacetimeDB.Table(Name = "task", Public = true)]
+// With single-column index
+[SpacetimeDB.Table(Accessor = "task", Public = true)]
 public partial struct Task
 {
     [SpacetimeDB.PrimaryKey]
@@ -152,9 +221,9 @@ public partial struct Task
     public bool Completed;
 }
 
-// Multi-column index
-[SpacetimeDB.Table(Name = "score", Public = true)]
-[SpacetimeDB.Index.BTree(Name = "by_player_game", Columns = new[] { "PlayerId", "GameId" })]
+// Multi-column index (use fully-qualified attribute!)
+[SpacetimeDB.Table(Accessor = "score", Public = true)]
+[SpacetimeDB.Index.BTree(Accessor = "by_player_game", Columns = new[] { "PlayerId", "GameId" })]
 public partial struct Score
 {
     [SpacetimeDB.PrimaryKey]
@@ -239,18 +308,17 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void CompleteTask(ReducerContext ctx, ulong taskId)
     {
-        var task = ctx.Db.Task.Id.Find(taskId);
-        if (task is null)
+        if (ctx.Db.Task.Id.Find(taskId) is not Task task)
         {
             throw new Exception("Task not found");
         }
 
-        if (task.Value.OwnerId != ctx.Sender)
+        if (task.OwnerId != ctx.Sender)
         {
             throw new Exception("Not authorized");
         }
 
-        ctx.Db.Task.Id.Update(task.Value with { Completed = true });
+        ctx.Db.Task.Id.Update(task with { Completed = true });
     }
 
     [SpacetimeDB.Reducer]
@@ -259,6 +327,19 @@ public static partial class Module
         ctx.Db.Task.Id.Delete(taskId);
     }
 }
+```
+
+### Update Pattern (CRITICAL)
+
+```csharp
+// ✅ CORRECT — use `with` expression or provide complete row
+if (ctx.Db.Task.Id.Find(id) is Task task)
+{
+    ctx.Db.Task.Id.Update(task with { Title = newTitle });
+}
+
+// ❌ WRONG — partial update nulls out other fields!
+ctx.Db.Task.Id.Update(new Task { Id = id, Title = newTitle });
 ```
 
 ### Lifecycle reducers
@@ -274,14 +355,14 @@ public static partial class Module
     }
 
     [SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
-    public static void OnConnect(ReducerContext ctx)
+    public static void ClientConnected(ReducerContext ctx)
     {
         // ctx.Sender is the connecting client
         Log.Info($"Client connected: {ctx.Sender}");
     }
 
     [SpacetimeDB.Reducer(ReducerKind.ClientDisconnected)]
-    public static void OnDisconnect(ReducerContext ctx)
+    public static void ClientDisconnected(ReducerContext ctx)
     {
         // Clean up client state
         Log.Info($"Client disconnected: {ctx.Sender}");
@@ -303,17 +384,10 @@ ctx.ConnectionId    // Connection ID (nullable)
 
 ## 4) Database Access
 
-### Naming convention
-- **Tables**: Use PascalCase singular names in the `Name` attribute
-  - `[Table(Name = "User")]` → `ctx.Db.User`
-  - `[Table(Name = "PlayerStats")]` → `ctx.Db.PlayerStats`
-- **Indexes**: PascalCase, match field name
-  - Field `OwnerId` with `[Index.BTree]` → `ctx.Db.User.OwnerId`
-
 ### Primary key operations
 
 ```csharp
-// Find by primary key — returns nullable
+// Find by primary key — returns nullable, use pattern matching
 if (ctx.Db.Task.Id.Find(taskId) is Task task)
 {
     // Use task
@@ -377,7 +451,7 @@ public partial struct PlayerStats
 }
 
 // Use in table
-[SpacetimeDB.Table(Name = "player", Public = true)]
+[SpacetimeDB.Table(Accessor = "player", Public = true)]
 public partial struct Player
 {
     [SpacetimeDB.PrimaryKey]
@@ -410,7 +484,7 @@ public partial struct Rectangle { public int Width; public int Height; }
 public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> { }
 
 // Step 3: Use in a table
-[SpacetimeDB.Table(Name = "drawings", Public = true)]
+[SpacetimeDB.Table(Accessor = "drawings", Public = true)]
 public partial struct Drawing
 {
     [SpacetimeDB.PrimaryKey]
@@ -431,13 +505,81 @@ var rect = new Shape.Rectangle(new Rectangle { Width = 4, Height = 6 });
 ctx.Db.Drawing.Insert(new Drawing { Id = 1, ShapeA = circle, ShapeB = rect });
 ```
 
-### COMMON SUM TYPE MISTAKES
+---
 
-| Wrong | Right | Why |
-|-------|-------|-----|
-| `partial struct Shape : TaggedEnum<...>` | `partial record Shape : TaggedEnum<...>` | Must be `record`, not `struct` |
-| `TaggedEnum<(Circle, Rectangle)>` | `TaggedEnum<(Circle Circle, Rectangle Rectangle)>` | Tuple must have names |
-| `new Shape { ... }` | `new Shape.Circle(new Circle { ... })` | Use nested variant constructor |
+## 7) Client SDK Setup
+
+```csharp
+// Connection pattern
+_conn = DbConnection.Builder()
+    .WithUri("http://localhost:3000")  // String, NOT Uri object!
+    .WithModuleName("my-module")
+    .WithToken(savedToken)  // null for first connection
+    .OnConnect(OnConnected)
+    .OnDisconnect((conn, err) => { })
+    .OnConnectError(err => { })
+    .Build();
+
+// Subscribe in OnConnected callback, NOT before!
+private void OnConnected(DbConnection conn, Identity identity, string token)
+{
+    conn.SubscriptionBuilder()
+        .OnApplied(OnSubscriptionApplied)
+        .SubscribeToAllTables();
+}
+```
+
+### ⚠️ CRITICAL: FrameTick
+
+**You MUST call `FrameTick()` regularly** — without it, no callbacks fire:
+
+```csharp
+while (running)
+{
+    conn.FrameTick();
+    Thread.Sleep(16);  // ~60 times per second
+}
+```
+
+### Row Callbacks (Client-side)
+
+```csharp
+// Register callbacks BEFORE subscribing
+_conn.Db.Task.OnInsert += (EventContext ctx, Task row) =>
+{
+    // Row was inserted
+};
+
+_conn.Db.Task.OnUpdate += (EventContext ctx, Task oldRow, Task newRow) =>
+{
+    // Row was updated
+};
+
+_conn.Db.Task.OnDelete += (EventContext ctx, Task row) =>
+{
+    // Row was deleted
+};
+```
+
+### Invoking Reducers (Client-side)
+
+```csharp
+// Reducers are called as methods on conn.Reducers
+_conn.Reducers.CreateTask("My task");
+
+// Register callback for reducer completion
+_conn.Reducers.OnCreateTask += (ctx) =>
+{
+    if (ctx.Event.Status is Status.Committed)
+    {
+        // Success
+    }
+    else if (ctx.Event.Status is Status.Failed failed)
+    {
+        // Failed: failed.Item contains error
+    }
+};
+```
 
 ---
 
@@ -446,7 +588,7 @@ ctx.Db.Drawing.Insert(new Drawing { Id = 1, ShapeA = circle, ShapeB = rect });
 ```csharp
 using SpacetimeDB;
 
-[SpacetimeDB.Table(Name = "reminder", Scheduled = nameof(Module.SendReminder))]
+[SpacetimeDB.Table(Accessor = "reminder", Scheduled = nameof(Module.SendReminder))]
 public partial struct Reminder
 {
     [SpacetimeDB.PrimaryKey]
@@ -503,14 +645,29 @@ Log.Panic("Critical failure");  // Terminates execution
 
 ---
 
-## 10) Data Visibility
+## 10) Timestamps
 
-**`Public = true` exposes ALL rows to ALL clients.**
+### Server-side
 
-| Scenario | Pattern |
-|----------|---------|
-| Everyone sees all rows | `[Table(Name = "x", Public = true)]` |
-| Server-only data | `[Table(Name = "x")]` (private by default) |
+```csharp
+// Use ctx.Timestamp for current time
+ctx.Db.Task.Insert(new Task
+{
+    // ...
+    CreatedAt = ctx.Timestamp
+});
+
+// Never use DateTime.Now - it's non-deterministic!
+```
+
+### Client-side
+
+```csharp
+// Timestamp has MicrosecondsSinceUnixEpoch property
+var dateTime = DateTimeOffset.FromUnixTimeMilliseconds(
+    row.CreatedAt.MicrosecondsSinceUnixEpoch / 1000
+).LocalDateTime;
+```
 
 ---
 
@@ -528,7 +685,7 @@ Log.Panic("Critical failure");  // Terminates execution
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="SpacetimeDB.ServerSdk" Version="1.*" />
+    <PackageReference Include="SpacetimeDB.Runtime" Version="1.*" />
   </ItemGroup>
 </Project>
 ```
@@ -552,13 +709,13 @@ dotnet workload install wasi-experimental
 spacetime start
 
 # Publish module
-spacetime publish <module-name> --project-path <backend-dir>
+spacetime publish <module-name> --module-path <backend-dir>
 
 # Clear database and republish
-spacetime publish <module-name> --clear-database -y --project-path <backend-dir>
+spacetime publish <module-name> --clear-database -y --module-path <backend-dir>
 
 # Generate bindings
-spacetime generate --lang csharp --out-dir <client>/SpacetimeDB --project-path <backend-dir>
+spacetime generate --lang csharp --out-dir <client>/SpacetimeDB --module-path <backend-dir>
 
 # View logs
 spacetime logs <module-name>
@@ -567,6 +724,8 @@ spacetime logs <module-name>
 ---
 
 ## 13) Hard Requirements
+
+**C#-specific:**
 
 1. **Tables and Module MUST be `partial`** — required for code generation
 2. **Use PascalCase for table access** — `ctx.Db.TableName`, not `ctx.Db.tableName`
@@ -578,3 +737,5 @@ spacetime logs <module-name>
 8. **Add `Public = true`** — if clients need to subscribe to a table
 9. **Use `T?` for nullable fields** — not `Optional<T>`
 10. **Pass `0` for auto-increment** — to trigger ID generation on insert
+11. **MUST call `FrameTick()` regularly** — client callbacks won't fire otherwise
+12. **DO NOT edit generated bindings** — regenerate with `spacetime generate`

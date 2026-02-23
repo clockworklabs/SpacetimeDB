@@ -92,7 +92,7 @@ export class TableCacheImpl<
         keyof TableDefForTableName<RemoteModule, TableName>['columns'] & string
       >;
       const index = this.#makeReadonlyIndex(this.tableDef, idxDef);
-      (this as any)[idx.name!] = index;
+      (this as any)[idxDef.name] = index;
     }
   }
 
@@ -261,6 +261,23 @@ export class TableCacheImpl<
     ctx: EventContextInterface<RemoteModule>
   ): PendingCallback[] => {
     const pendingCallbacks: PendingCallback[] = [];
+
+    // Event tables: fire on_insert callbacks but don't store rows in the cache.
+    if (this.tableDef.isEvent) {
+      for (const op of operations) {
+        if (op.type === 'insert') {
+          pendingCallbacks.push({
+            type: 'insert',
+            table: this.tableDef.sourceName,
+            cb: () => {
+              this.emitter.emit('insert', ctx, op.row);
+            },
+          });
+        }
+      }
+      return pendingCallbacks;
+    }
+
     // TODO: performance
     const hasPrimaryKey = Object.values(this.tableDef.columns).some(
       col => col.columnMetadata.isPrimaryKey === true
@@ -349,7 +366,7 @@ export class TableCacheImpl<
       // TODO: this should throw an error and kill the connection.
       stdbLogger(
         'error',
-        `Updating a row that was not present in the cache. Table: ${this.tableDef.name}, RowId: ${rowId}`
+        `Updating a row that was not present in the cache. Table: ${this.tableDef.sourceName}, RowId: ${rowId}`
       );
       return undefined;
     }
@@ -358,7 +375,7 @@ export class TableCacheImpl<
     if (previousCount + refCountDelta <= 0) {
       stdbLogger(
         'error',
-        `Negative reference count for in table ${this.tableDef.name} row ${rowId} (${previousCount} + ${refCountDelta})`
+        `Negative reference count for in table ${this.tableDef.sourceName} row ${rowId} (${previousCount} + ${refCountDelta})`
       );
       return undefined;
     }
@@ -367,11 +384,11 @@ export class TableCacheImpl<
     if (previousCount === 0) {
       stdbLogger(
         'error',
-        `Updating a row id in table ${this.tableDef.name} which was not present in the cache (rowId: ${rowId})`
+        `Updating a row id in table ${this.tableDef.sourceName} which was not present in the cache (rowId: ${rowId})`
       );
       return {
         type: 'insert',
-        table: this.tableDef.name,
+        table: this.tableDef.sourceName,
         cb: () => {
           this.emitter.emit('insert', ctx, newRow);
         },
@@ -379,7 +396,7 @@ export class TableCacheImpl<
     }
     return {
       type: 'update',
-      table: this.tableDef.name,
+      table: this.tableDef.sourceName,
       cb: () => {
         this.emitter.emit('update', ctx, oldRow, newRow);
       },
@@ -401,7 +418,7 @@ export class TableCacheImpl<
     if (previousCount === 0) {
       return {
         type: 'insert',
-        table: this.tableDef.name,
+        table: this.tableDef.sourceName,
         cb: () => {
           this.emitter.emit('insert', ctx, operation.row);
         },
@@ -433,7 +450,7 @@ export class TableCacheImpl<
       this.rows.delete(operation.rowId);
       return {
         type: 'delete',
-        table: this.tableDef.name,
+        table: this.tableDef.sourceName,
         cb: () => {
           this.emitter.emit('delete', ctx, operation.row);
         },

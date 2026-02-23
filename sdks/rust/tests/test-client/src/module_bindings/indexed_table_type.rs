@@ -45,3 +45,5 @@ impl __sdk::__query_builder::HasIxCols for IndexedTable {
         }
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for IndexedTable {}

@@ -1,7 +1,10 @@
-use crate::host::v8::de::scratch_buf;
-use crate::host::v8::error::{ErrorOrException, ExcResult, ExceptionThrown, Throwable, TypeError};
+use super::de::scratch_buf;
+use super::error::{ErrorOrException, ExcResult, ExceptionThrown, PinTryCatch, Throwable, TypeError};
+use super::exception_already_thrown;
 use crate::host::wasm_common::abi::parse_abi_version;
-use crate::host::wasm_common::module_host_actor::{AnonymousViewOp, ReducerOp, ReducerResult, ViewOp, ViewReturnData};
+use crate::host::wasm_common::module_host_actor::{
+    AnonymousViewOp, ExecutionError, ReducerOp, ReducerResult, ViewOp, ViewReturnData,
+};
 use spacetimedb_lib::VersionTuple;
 use v8::{callback_scope, ArrayBuffer, Context, FixedArray, Local, Module, PinScope};
 
@@ -10,7 +13,7 @@ mod hooks;
 mod v1;
 mod v2;
 
-pub(super) use self::hooks::{get_hooks, HookFunctions, ModuleHookKey};
+pub(super) use self::hooks::{get_registered_hooks, set_registered_hooks, HookFunctions, ModuleHookKey};
 
 /// The return type of a module -> host syscall.
 pub(super) type FnRet<'scope> = ExcResult<Local<'scope, v8::Value>>;
@@ -72,7 +75,7 @@ fn resolve_sys_module_inner<'scope>(
 ///
 /// This handles any (future) ABI version differences.
 pub(super) fn call_call_reducer<'scope>(
-    scope: &mut PinScope<'scope, '_>,
+    scope: &mut PinTryCatch<'scope, '_, '_, '_>,
     hooks: &HookFunctions<'scope>,
     op: ReducerOp<'_>,
     reducer_args_buf: Local<'scope, ArrayBuffer>,
@@ -112,3 +115,39 @@ pub(super) fn call_call_view_anon(
 }
 
 pub use self::common::{call_call_procedure, call_describe_module};
+
+/// Get the hooks for the module.
+///
+/// May use the module's exports if it's a v2+ module, or the registered global
+/// hooks if it's v1 module.
+pub(super) fn get_hooks<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    exports_obj: Local<'_, v8::Object>,
+) -> Result<Option<HookFunctions<'scope>>, ErrorOrException<ExceptionThrown>> {
+    if let Some(hooks) = get_registered_hooks(scope) {
+        return Ok(Some(hooks));
+    }
+
+    let default = super::str_from_ident!(default).string(scope);
+    let default_export = exports_obj
+        .get(scope, default.into())
+        .ok_or_else(exception_already_thrown)?;
+    if default_export.is_null_or_undefined() {
+        return Ok(None);
+    }
+    let hooks = v2::get_hooks_from_default_export(scope, default_export, exports_obj)?
+        .ok_or_else(|| anyhow::anyhow!("default export is not a Schema object"))?;
+    Ok(Some(hooks))
+}
+
+/// Process the thrown exception value into an `ExecutionError`.
+pub(super) fn process_thrown_exception(
+    scope: &mut PinScope<'_, '_>,
+    hooks: &HookFunctions<'_>,
+    exc: Local<'_, v8::Value>,
+) -> ExcResult<Option<ExecutionError>> {
+    match hooks.abi {
+        AbiVersion::V1 => Ok(None),
+        AbiVersion::V2 => v2::process_thrown_exception(scope, hooks, exc),
+    }
+}

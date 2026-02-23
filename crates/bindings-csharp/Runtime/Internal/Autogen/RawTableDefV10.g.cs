@@ -31,6 +31,8 @@ namespace SpacetimeDB.Internal
         public TableAccess TableAccess;
         [DataMember(Name = "default_values")]
         public System.Collections.Generic.List<RawColumnDefaultValueV10> DefaultValues;
+        [DataMember(Name = "is_event")]
+        public bool IsEvent;
 
         public RawTableDefV10(
             string SourceName,
@@ -41,7 +43,8 @@ namespace SpacetimeDB.Internal
             System.Collections.Generic.List<RawSequenceDefV10> Sequences,
             TableType TableType,
             TableAccess TableAccess,
-            System.Collections.Generic.List<RawColumnDefaultValueV10> DefaultValues
+            System.Collections.Generic.List<RawColumnDefaultValueV10> DefaultValues,
+            bool IsEvent
         )
         {
             this.SourceName = SourceName;
@@ -53,6 +56,7 @@ namespace SpacetimeDB.Internal
             this.TableType = TableType;
             this.TableAccess = TableAccess;
             this.DefaultValues = DefaultValues;
+            this.IsEvent = IsEvent;
         }
 
         public RawTableDefV10()

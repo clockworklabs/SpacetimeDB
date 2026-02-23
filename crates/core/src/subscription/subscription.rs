@@ -26,13 +26,12 @@ use super::query;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdateRelValue, UpdatesRelValue};
-use crate::messages::websocket as ws;
 use crate::sql::ast::SchemaViewer;
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::vm::{build_query, TxMode};
 use anyhow::Context;
 use itertools::Either;
-use spacetimedb_client_api_messages::websocket::Compression;
+use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::TxId;
@@ -520,8 +519,8 @@ impl ExecutionSet {
         tx: &Tx,
         rlb_pool: &impl RowListBuilderSource<F>,
         slow_query_threshold: Option<Duration>,
-        compression: Compression,
-    ) -> ws::DatabaseUpdate<F> {
+        compression: ws_v1::Compression,
+    ) -> ws_v1::DatabaseUpdate<F> {
         // evaluate each of the execution units in this ExecutionSet in parallel
         let tables = self
             .exec_units
@@ -529,7 +528,7 @@ impl ExecutionSet {
             .iter()
             .filter_map(|unit| unit.eval(db, tx, rlb_pool, &unit.sql, slow_query_threshold, compression))
             .collect();
-        ws::DatabaseUpdate { tables }
+        ws_v1::DatabaseUpdate { tables }
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -625,7 +624,7 @@ where
     I: Iterator<Item = Arc<TableSchema>>,
 {
     Ok(get_all_tables(relational_db, tx)?
-        .filter(|t| t.table_type == StTableType::User && auth.has_read_access(t.table_access))
+        .filter(|t| t.table_type == StTableType::User && auth.has_read_access(t.table_access) && !t.is_event)
         .map(|schema| {
             let sql = format!("SELECT * FROM {}", schema.table_name);
             let tx = SchemaViewer::new(tx, auth);
@@ -663,7 +662,7 @@ pub(crate) fn legacy_get_all(
         .get_all_tables(tx)?
         .iter()
         .map(Deref::deref)
-        .filter(|t| t.table_type == StTableType::User && auth.has_read_access(t.table_access))
+        .filter(|t| t.table_type == StTableType::User && auth.has_read_access(t.table_access) && !t.is_event)
         .map(|src| SupportedQuery {
             kind: query::Supported::Select,
             expr: QueryExpr::new(src),

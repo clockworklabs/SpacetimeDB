@@ -81,7 +81,7 @@ fn connect_with_then(
     let connected_result = test_counter.add_test(format!("on_connect_{on_connect_suffix}"));
     let name = db_name_or_panic();
     let builder = DbConnection::builder()
-        .with_module_name(name)
+        .with_database_name(name)
         .with_uri(LOCALHOST)
         .on_connect(|ctx, _, _| {
             callback(ctx);
@@ -352,7 +352,13 @@ fn exec_schedule_procedure() {
 
             subscribe_all_then(ctx, move |ctx| {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
-                ctx.reducers.schedule_proc().unwrap();
+                ctx.reducers
+                    .schedule_proc_then(|_ctx, outcome| match outcome {
+                        Ok(Ok(())) => (),
+                        Ok(Err(msg)) => panic!("`schedule_proc` reducer returned error: {msg}"),
+                        Err(internal_error) => panic!("`schedule_proc` reducer panicked: {internal_error:?}"),
+                    })
+                    .unwrap();
             });
         }
     });

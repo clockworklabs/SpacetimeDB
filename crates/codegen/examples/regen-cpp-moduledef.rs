@@ -1,8 +1,9 @@
 //! This script is used to generate the C++ bindings for the `RawModuleDef` type.
 //! Run `cargo run --example regen-cpp-moduledef` to update C++ bindings whenever the module definition changes.
+#![allow(clippy::disallowed_macros)]
 
 use fs_err as fs;
-use spacetimedb_codegen::{cpp, generate, OutputFile};
+use spacetimedb_codegen::{cpp, generate, CodegenOptions, OutputFile};
 use spacetimedb_lib::db::raw_def::v9::{RawModuleDefV9, RawModuleDefV9Builder};
 use spacetimedb_schema::def::ModuleDef;
 use std::path::Path;
@@ -33,6 +34,7 @@ fn main() -> anyhow::Result<()> {
         &cpp::Cpp {
             namespace: "SpacetimeDB::Internal",
         },
+        &CodegenOptions::default(),
     )
     .into_iter()
     .try_for_each(|OutputFile { filename, code }| {

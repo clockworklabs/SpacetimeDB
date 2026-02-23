@@ -20,6 +20,7 @@ mod varint;
 use crate::segment::Committed;
 pub use crate::{
     commit::{Commit, StoredCommit},
+    commitlog::CommittedMeta,
     payload::{Decoder, Encode},
     repo::{fs::SizeOnDisk, TxOffset},
     segment::{Transaction, DEFAULT_LOG_FORMAT_VERSION},
@@ -547,7 +548,7 @@ impl<T: Encode> Commitlog<T> {
 /// ```
 ///
 /// Unlike `open`, no segment will be created in an empty `repo`.
-pub fn committed_meta(root: CommitLogDir) -> Result<Option<segment::Metadata>, error::SegmentMetadata> {
+pub fn committed_meta(root: CommitLogDir) -> io::Result<Option<CommittedMeta>> {
     commitlog::committed_meta(repo::Fs::new(root, None)?)
 }
 
