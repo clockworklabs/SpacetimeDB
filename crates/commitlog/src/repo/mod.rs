@@ -6,7 +6,7 @@ use crate::{
     commit::Commit,
     error,
     index::{IndexFile, IndexFileMut},
-    segment::{self, FileLike, Header, Metadata, OffsetIndexWriter, Reader, Writer},
+    segment::{FileLike, Header, Metadata, OffsetIndexWriter, Reader, Writer},
     Options,
 };
 
