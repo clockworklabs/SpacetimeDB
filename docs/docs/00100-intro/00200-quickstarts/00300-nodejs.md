@@ -113,16 +113,16 @@ spacetime dev --template nodejs-ts
     <StepCode>
 ```bash
 # Add a person
-spacetime call nodejs-ts add Alice
-spacetime call nodejs-ts add Bob
+spacetime call add Alice
+spacetime call add Bob
 
 # Greet everyone (check server logs)
 
-spacetime call nodejs-ts say_hello
+spacetime call say_hello
 
 # Query the database
 
-spacetime sql nodejs-ts "SELECT * FROM person"
+spacetime sql "SELECT * FROM person"
 
 ````
     </StepCode>
@@ -172,11 +172,11 @@ DbConnection.builder()
     <StepCode>
 ```bash
 # Call the add reducer to insert a person
-spacetime call nodejs-ts add Charlie
+spacetime call add Charlie
 
 # Query the person table
 
-spacetime sql nodejs-ts "SELECT * FROM person"
+spacetime sql "SELECT * FROM person"
 name
 
 ---
@@ -187,7 +187,7 @@ name
 
 # Call say_hello to greet everyone
 
-spacetime call nodejs-ts say_hello
+spacetime call say_hello
 
 # View the module logs
 
