@@ -522,13 +522,6 @@ async fn execute_publish_configs<'a>(
         // Set the host type.
         builder = builder.query(&[("host_type", host_type)]);
 
-        // JS/TS is beta quality atm.
-        if host_type == "Js" {
-            println!("JavaScript / TypeScript support is currently in BETA.");
-            println!("There may be bugs. Please file issues if you encounter any.");
-            println!("<https://github.com/clockworklabs/SpacetimeDB/issues/new>");
-        }
-
         let res = builder.body(program_bytes).send().await?;
         let response: PublishResult = res.json_or_error().await?;
         match response {
