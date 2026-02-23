@@ -337,9 +337,11 @@ fn run_benchmarks(args: RunArgs, details_path: &Path, summary_path: &Path) -> Re
         println!("  Summary: {}", summary_path.display());
 
         // Show HTTP/timeout failures for this run's scope (providers/models we ran)
-        if let Some((total, http_list)) =
-            load_details_and_http_failures(details_path, config.providers_filter.as_ref(), config.model_filter.as_ref())?
-        {
+        if let Some((total, http_list)) = load_details_and_http_failures(
+            details_path,
+            config.providers_filter.as_ref(),
+            config.model_filter.as_ref(),
+        )? {
             if !http_list.is_empty() {
                 print_http_failures_summary(total, &http_list);
             }
@@ -918,18 +920,16 @@ fn filter_routes(config: &RunConfig) -> Vec<ModelRoute> {
     default_model_routes()
         .iter()
         .filter(|r| config.providers_filter.as_ref().is_none_or(|f| f.contains(&r.vendor)))
-        .filter(|r| {
-            match &config.model_filter {
-                None => true,
-                Some(allowed_by_vendor) => match allowed_by_vendor.get(&r.vendor) {
-                    None => false,
-                    Some(allowed) => {
-                        let api = r.api_model.to_ascii_lowercase();
-                        let dn = r.display_name.to_ascii_lowercase();
-                        allowed.contains(&api) || allowed.contains(&dn)
-                    }
+        .filter(|r| match &config.model_filter {
+            None => true,
+            Some(allowed_by_vendor) => match allowed_by_vendor.get(&r.vendor) {
+                None => false,
+                Some(allowed) => {
+                    let api = r.api_model.to_ascii_lowercase();
+                    let dn = r.display_name.to_ascii_lowercase();
+                    allowed.contains(&api) || allowed.contains(&dn)
                 }
-            }
+            },
         })
         .cloned()
         .collect()
@@ -1284,7 +1284,9 @@ fn cmd_scan_rerun_commands(args: ScanRerunCommandsArgs) -> Result<()> {
     keys.sort();
 
     for (lang, mode, vendor, api_model) in keys {
-        let (model_name, tasks) = groups.get(&(lang.clone(), mode.clone(), vendor.clone(), api_model.clone())).unwrap();
+        let (model_name, tasks) = groups
+            .get(&(lang.clone(), mode.clone(), vendor.clone(), api_model.clone()))
+            .unwrap();
         let tasks_arg = tasks.join(",");
         println!("# {} + {} ({})", model_name, lang, mode);
         println!(
@@ -1302,9 +1304,9 @@ fn is_model_in_routes(vendor_str: &str, api_model: &str) -> bool {
         return false;
     };
     let api_lower = api_model.to_ascii_lowercase();
-    default_model_routes().iter().any(|r| {
-        r.vendor == vendor && r.api_model.to_ascii_lowercase() == api_lower
-    })
+    default_model_routes()
+        .iter()
+        .any(|r| r.vendor == vendor && r.api_model.to_ascii_lowercase() == api_lower)
 }
 
 /// Collect LLM API failures with full (lang, mode, vendor, api_model, model_name, task_id) for building rerun commands.
@@ -1347,9 +1349,7 @@ fn collect_http_failures_full(details_path: &Path) -> Result<Vec<(String, String
                                 .find(|r| r.display_name == model_entry.name)
                                 .map(|r| r.api_model.to_string())
                         })
-                        .unwrap_or_else(|| {
-                            model_entry.name.to_ascii_lowercase().replace(' ', "-")
-                        });
+                        .unwrap_or_else(|| model_entry.name.to_ascii_lowercase().replace(' ', "-"));
                     if !is_model_in_routes(&vendor, &api_model) {
                         continue;
                     }
@@ -1414,9 +1414,7 @@ fn load_details_and_http_failures(
                                     .find(|r| r.display_name == model_entry.name)
                                     .map(|r| r.api_model.to_string())
                             })
-                            .unwrap_or_else(|| {
-                                model_entry.name.to_ascii_lowercase().replace(' ', "-")
-                            });
+                            .unwrap_or_else(|| model_entry.name.to_ascii_lowercase().replace(' ', "-"));
                         // Only count/show failures for models in default_model_routes().
                         if !is_model_in_routes(&vendor, &api_model) {
                             continue;
@@ -1476,9 +1474,9 @@ fn outcome_matches_run_scope(
                 let a_norm = al.replace(' ', "-");
                 model_norm == a_norm
                     || model_lower == al
-                    || api_lower
-                        .as_ref()
-                        .map_or(false, |api| api == &al || api.contains(al.as_str()) || al.contains(api.as_str()))
+                    || api_lower.as_ref().map_or(false, |api| {
+                        api == &al || api.contains(al.as_str()) || al.contains(api.as_str())
+                    })
             });
             if !matches {
                 return false;
@@ -1518,7 +1516,9 @@ fn print_http_failures_summary(
     keys.sort();
 
     for (lang, mode, vendor, api_model) in keys {
-        let (model_name, tasks) = groups.get(&(lang.clone(), mode.clone(), vendor.clone(), api_model.clone())).unwrap();
+        let (model_name, tasks) = groups
+            .get(&(lang.clone(), mode.clone(), vendor.clone(), api_model.clone()))
+            .unwrap();
         let tasks_arg = tasks.join(",");
         println!("# {} + {} ({})", model_name, lang, mode);
         println!(

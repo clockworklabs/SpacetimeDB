@@ -94,11 +94,10 @@ pub fn gather_docs_files() -> Result<Vec<PathBuf>> {
     out.sort();
 
     // Process migration guide first so it appears at the start of context
-    if let Some(pos) = out.iter().position(|p| {
-        p.file_name()
-            .and_then(|n| n.to_str())
-            .map_or(false, |n| n == "00600-migrating-to-2.0.md")
-    }) {
+    if let Some(pos) = out
+        .iter()
+        .position(|p| p.file_name().and_then(|n| n.to_str()) == Some("00600-migrating-to-2.0.md"))
+    {
         let migration = out.remove(pos);
         out.insert(0, migration);
     }

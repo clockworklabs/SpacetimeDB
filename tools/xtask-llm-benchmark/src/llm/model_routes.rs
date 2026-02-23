@@ -46,7 +46,7 @@ pub fn default_model_routes() -> &'static [ModelRoute] {
         },
         ModelRoute {
             display_name: "Gemini 3.1 Pro",
-            vendor: Meta,  // uses MetaLlamaClient = OpenRouter
+            vendor: Meta, // uses MetaLlamaClient = OpenRouter
             api_model: "google/gemini-3.1-pro-preview",
         },
         ModelRoute {

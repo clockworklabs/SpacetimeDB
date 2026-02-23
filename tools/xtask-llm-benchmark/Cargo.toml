@@ -29,6 +29,7 @@ tempfile = "3.23.0"
 fs2 = "0.4.3"
 heck = "0.5.0"
 thiserror = "2.0.17"
+dotenvy = "0.15.7"
 
 [lib]
 path = "src/lib.rs"
