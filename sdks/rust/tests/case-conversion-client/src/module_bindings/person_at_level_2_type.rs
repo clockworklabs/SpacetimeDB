@@ -6,8 +6,8 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct PlayersAtLevel2 {}
+pub struct PersonAtLevel2 {}
 
-impl __sdk::InModule for PlayersAtLevel2 {
+impl __sdk::InModule for PersonAtLevel2 {
     type Module = super::RemoteModule;
 }

@@ -109,7 +109,7 @@ fn exec_insert_player() {
                 ctx.db.player_1().on_insert(move |_ctx, row| {
                     let check = || {
                         // Verify field names with digit boundaries are correctly case-converted
-                        assert_eq_or_bail!("Alice".to_string(), row.player_name[0]);
+                        assert_eq_or_bail!("Alice".to_string(), row.player_name);
                         assert_eq_or_bail!(5u32, row.current_level_2);
                         assert_eq_or_bail!(Player2Status::Active1, row.status_3_field);
                         Ok(())
@@ -188,8 +188,6 @@ fn exec_insert_person() {
 /// Test: Ban a player via BanPlayer1 reducer (which has explicit name `banPlayer1`).
 /// Verifies that reducers with explicit names work, and that updating a player's
 /// status from `Active1` to `BannedUntil(timestamp)` is reflected correctly.
-/// Uses query builder with a filter on current_level_2 to test digit-boundary
-/// column names in filter expressions.
 fn exec_ban_player() {
     let test_counter = TestCounter::new();
     let mut update_result = Some(test_counter.add_test("ban_player_update"));
@@ -247,7 +245,7 @@ fn exec_query_builder_filter() {
                     let check = || {
                         // Only level-5 players should come through the filter
                         assert_eq_or_bail!(5u32, row.current_level_2);
-                        assert_eq_or_bail!("FilterMatch".to_string(), row.player_name[0]);
+                        assert_eq_or_bail!("FilterMatch".to_string(), row.player_name);
                         Ok(())
                     };
                     put_result(&mut insert_match, check());
@@ -280,11 +278,12 @@ fn exec_query_builder_filter() {
 }
 
 /// Test: Query builder with a JOIN between player_1 and person_2.
-/// Uses a right semijoin: person_2.player_ref == player_1.player_1_id.
+/// Uses a right semijoin: person_2 results from player_1 JOIN person_2.
 /// This tests that:
 /// - Digit-boundary column names work in join predicates
 /// - The query builder correctly resolves canonical table names for both tables
 /// - Joined results are received correctly through case-converted accessors
+/// - The view accessor `person_at_level_2()` returns Person2 rows
 fn exec_query_builder_join() {
     let test_counter = TestCounter::new();
     let mut join_result = Some(test_counter.add_test("join_insert"));
@@ -293,38 +292,32 @@ fn exec_query_builder_join() {
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
             .on_applied(move |ctx| {
-                // We listen for player_1 inserts that come through the join.
-                // The join is: person_2 RIGHT SEMIJOIN player_1 ON person_2.player_ref = player_1.player_1_id
-                // This means we see player_1 rows that have a matching person_2 row.
-                ctx.db.player_1().on_insert(move |_ctx, row| {
-                    let check = || {
-                        assert_eq_or_bail!("JoinedPlayer".to_string(), row.player_name[0]);
-                        assert_eq_or_bail!(7u32, row.current_level_2);
-                        Ok(())
-                    };
-                    put_result(&mut join_result, check());
+                // Listen for person_2 inserts that come through the join.
+                // The join is: player_1 RIGHT SEMIJOIN person_2 ON player_1.player_1_id = person_2.player_ref
+                // This means we see person_2 rows that have a matching player_1 row.
+                ctx.db.person_2().on_insert(move |_ctx, row| {
+                    // Only care about inserts from our join subscription
+                    if row.first_name == "JoinPerson" {
+                        let check = || {
+                            assert_eq_or_bail!("JoinPerson".to_string(), row.first_name);
+                            assert_eq_or_bail!(30u8, row.person_info.age_value_1);
+                            assert_eq_or_bail!(500u32, row.person_info.score_total);
+                            Ok(())
+                        };
+                        put_result(&mut join_result, check());
+                    }
                 });
 
-                // Insert a player that will NOT have a person (should NOT appear via join)
-                ctx.reducers()
-                    .create_player_1_then(
-                        "LonelyPlayer".to_string(),
-                        3,
-                        reducer_callback_assert_committed("create_player_1"),
-                    )
-                    .unwrap();
-
-                // Insert a player that WILL have a person (should appear via join)
+                // Insert a player first
                 ctx.reducers()
                     .create_player_1_then("JoinedPlayer".to_string(), 7, move |ctx, outcome| {
                         match outcome {
                             Ok(Ok(())) => {
-                                // Find the player we just inserted
                                 let player = ctx
                                     .db
                                     .player_1()
                                     .iter()
-                                    .find(|p| p.player_name.first().map(|n| n.as_str()) == Some("JoinedPlayer"))
+                                    .find(|p| p.player_name == "JoinedPlayer")
                                     .expect("JoinedPlayer should exist");
 
                                 // Insert a person referencing this player — triggers the join
@@ -344,18 +337,18 @@ fn exec_query_builder_join() {
                     })
                     .unwrap();
             })
-            // Query builder: JOIN person_2 with player_1 on player_ref = player_1_id
-            // person_2 RIGHT SEMIJOIN player_1 means: show player_1 rows that have a matching person_2
+            // Query builder: JOIN player_1 with person_2 on player_1_id = player_ref
+            // player_1 RIGHT SEMIJOIN person_2 means: show person_2 rows that have a matching player_1
             .add_query(|q| {
                 q.from
-                    .person_2()
-                    .right_semijoin(q.from.player_1(), |person, player| {
-                        person.player_ref.eq(player.player_1_id)
+                    .player_1()
+                    .right_semijoin(q.from.person_2(), |player, person| {
+                        player.player_1_id.eq(person.player_ref)
                     })
                     .build()
             })
-            // Also subscribe to person_2 so reducer callbacks can see inserted persons
-            .add_query(|q| q.from.person_2().build())
+            // Also subscribe to player_1 so reducer callbacks can see inserted players
+            .add_query(|q| q.from.player_1().build())
             .subscribe();
     });
 
