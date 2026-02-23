@@ -1,6 +1,6 @@
 #![allow(non_snake_case, non_camel_case_types)]
 
-use spacetimedb::{reducer, table, view, AnonymousViewContext, ReducerContext, SpacetimeType, Table};
+use spacetimedb::{reducer, table, view, AnonymousViewContext, Query, ReducerContext, SpacetimeType, Table};
 
 #[derive(Clone, PartialEq, Eq, Hash, SpacetimeType)]
 pub enum Player2Status {
@@ -70,11 +70,9 @@ pub fn BanPlayer1(ctx: &ReducerContext, Player1Id: u32, BanUntil6: u32) {
 }
 
 #[view(name = "Level2Person", accessor = level2_person, public)]
-pub fn level2_person(ctx: &AnonymousViewContext) -> Vec<Person2> {
-    ctx.db
+pub fn level2_person(ctx: &AnonymousViewContext) -> impl Query<Person2> {
+    ctx.from
         .player1_canonical()
-        .currentLevel2()
-        .filter(2u32)
-        .filter_map(|player| ctx.db.person2().playerRef().filter(player.Player1Id).next())
-        .collect()
+        .r#where(|p| p.currentLevel2.eq(1))
+        .right_semijoin(ctx.from.person2(), |pl, per| pl.Player1Id.eq(per.playerRef))
 }
