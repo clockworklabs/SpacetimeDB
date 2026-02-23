@@ -1172,11 +1172,12 @@ record ViewDeclaration
             iquery = method
                 .ReturnType.AllInterfaces.OfType<INamedTypeSymbol>()
                 .FirstOrDefault(i =>
-                    i is {
-                        Name: "IQuery",
-                        ContainingNamespace: { Name: "SpacetimeDB" },
-                        TypeArguments.Length: 1
-                    }
+                    i
+                        is {
+                            Name: "IQuery",
+                            ContainingNamespace: { Name: "SpacetimeDB" },
+                            TypeArguments.Length: 1
+                        }
                 );
         }
 
