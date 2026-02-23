@@ -393,10 +393,14 @@ impl CommittedMeta {
         };
         let offset_index = repo.get_offset_index(offset).ok();
         match segment::Metadata::extract(offset, &mut storage, offset_index.as_ref()) {
-            // TODO: Should this be an `assert!` instead?
-            Ok(metadata) if metadata.tx_range.is_empty() => Ok(None),
             // Segment is intact.
-            Ok(metadata) => Ok(Some(CommittedMeta::Complete { metadata })),
+            Ok(metadata) => {
+                assert!(
+                    !metadata.tx_range.is_empty(),
+                    "segment was promised to be non-empty but contains zero transactions"
+                );
+                Ok(Some(CommittedMeta::Complete { metadata }))
+            }
             // Segment is non-empty, but first commit is corrupt.
             Err(error::SegmentMetadata::InvalidCommit { sofar, source }) if sofar.tx_range.is_empty() => {
                 Err(io::Error::new(
