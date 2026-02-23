@@ -65,20 +65,6 @@ public interface IQuery<TRow>
     string ToSql();
 }
 
-public readonly struct Query<TRow> : IQuery<TRow>
-{
-    public string Sql { get; }
-
-    public Query(string sql)
-    {
-        Sql = sql;
-    }
-
-    public string ToSql() => Sql;
-
-    public override string ToString() => Sql;
-}
-
 public readonly struct BoolExpr<TRow>
 {
     public string Sql { get; }
@@ -275,18 +261,6 @@ public sealed class Table<TRow, TCols, TIxCols> : IQuery<TRow>
 
     public string ToSql() => $"SELECT * FROM {SqlFormat.QuoteIdent(tableName)}";
 
-    public Query<TRow> Build() => new(ToSql());
-
-    public static implicit operator Query<TRow>(Table<TRow, TCols, TIxCols> query)
-    {
-        if (query is null)
-        {
-            throw new ArgumentNullException(nameof(query));
-        }
-
-        return query.Build();
-    }
-
     public FromWhere<TRow, TCols, TIxCols> Where(Func<TCols, BoolExpr<TRow>> predicate) =>
         new(this, predicate(cols));
 
@@ -342,18 +316,6 @@ public sealed class FromWhere<TRow, TCols, TIxCols> : IQuery<TRow>
         Where(predicate);
 
     public string ToSql() => $"{table.ToSql()} WHERE {expr.Sql}";
-
-    public Query<TRow> Build() => new(ToSql());
-
-    public static implicit operator Query<TRow>(FromWhere<TRow, TCols, TIxCols> query)
-    {
-        if (query is null)
-        {
-            throw new ArgumentNullException(nameof(query));
-        }
-
-        return query.Build();
-    }
 
     public LeftSemiJoin<TRow, TCols, TIxCols, TRightRow, TRightCols, TRightIxCols> LeftSemijoin<
         TRightRow,
@@ -463,20 +425,6 @@ public sealed class LeftSemiJoin<
     {
         var whereClause = whereExpr.HasValue ? $" WHERE {whereExpr.Value.Sql}" : string.Empty;
         return $"SELECT {left.TableRefSql}.* FROM {left.TableRefSql} JOIN {right.TableRefSql} ON {leftJoinRefSql} = {rightJoinRefSql}{whereClause}";
-    }
-
-    public Query<TLeftRow> Build() => new(ToSql());
-
-    public static implicit operator Query<TLeftRow>(
-        LeftSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols> query
-    )
-    {
-        if (query is null)
-        {
-            throw new ArgumentNullException(nameof(query));
-        }
-
-        return query.Build();
     }
 }
 
@@ -600,20 +548,6 @@ public sealed class RightSemiJoin<
         }
 
         return $"SELECT {right.TableRefSql}.* FROM {left.TableRefSql} JOIN {right.TableRefSql} ON {leftJoinRefSql} = {rightJoinRefSql}{whereClause}";
-    }
-
-    public Query<TRightRow> Build() => new(ToSql());
-
-    public static implicit operator Query<TRightRow>(
-        RightSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols> query
-    )
-    {
-        if (query is null)
-        {
-            throw new ArgumentNullException(nameof(query));
-        }
-
-        return query.Build();
     }
 }
 

@@ -1155,14 +1155,32 @@ record ViewDeclaration
         IsAnonymous = isAnonymousContext;
 
         ReturnsQuery = false;
+        INamedTypeSymbol? iquery = null;
         if (
             method.ReturnType is INamedTypeSymbol
             {
-                Name: "Query",
+                Name: "IQuery",
                 ContainingNamespace: { Name: "SpacetimeDB" },
-                TypeArguments: [var queryRowType]
-            }
+                TypeArguments: [var _]
+            } directIQuery
         )
+        {
+            iquery = directIQuery;
+        }
+        else
+        {
+            iquery = method
+                .ReturnType.AllInterfaces.OfType<INamedTypeSymbol>()
+                .FirstOrDefault(i =>
+                    i is {
+                        Name: "IQuery",
+                        ContainingNamespace: { Name: "SpacetimeDB" },
+                        TypeArguments.Length: 1
+                    }
+                );
+        }
+
+        if (iquery is { TypeArguments: [var queryRowType] })
         {
             ReturnsQuery = true;
             var rowType = TypeUse.Parse(method, queryRowType, diag);
