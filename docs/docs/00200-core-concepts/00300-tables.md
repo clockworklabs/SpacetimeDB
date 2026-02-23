@@ -205,7 +205,7 @@ export default spacetimedb;
 
 Use `schema({ table1 })` or `schema({ t1, t2 })`. Never use `schema(table)` or `schema(t1, t2, t3)`.
 
-For a compact list of TypeScript gotchas, see the [cheat sheet](../00100-databases/00500-cheat-sheet.md#common-mistakes).
+For a compact list of TypeScript gotchas, see the [cheat sheet](./00100-databases/00500-cheat-sheet.md#common-mistakes).
 
 ## Table Naming and Accessors
 
