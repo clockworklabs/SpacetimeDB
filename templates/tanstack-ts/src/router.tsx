@@ -59,7 +59,7 @@ const connectionBuilder = DbConnection.builder()
   .onDisconnect(onDisconnect)
   .onConnectError(onConnectError);
 
-export function createRouter() {
+export function getRouter() {
   const router = routerWithQueryClient(
     createTanStackRouter({
       routeTree,
@@ -85,6 +85,6 @@ export function createRouter() {
 
 declare module '@tanstack/react-router' {
   interface Register {
-    router: ReturnType<typeof createRouter>;
+    router: ReturnType<typeof getRouter>;
   }
 }
