@@ -99,7 +99,8 @@ enum Commands {
     CountHttpFailures(CountHttpFailuresArgs),
 
     /// Scan details file for LLM API failures and print rerun commands per (lang, model). Does not run anything.
-    ScanRerunCommands(ScanRerunCommandsArgs),
+    #[command(name = "scan-rerun-commands")]
+    ScanReruns(ScanRerunCommandsArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -192,6 +193,13 @@ struct AnalyzeArgs {
     lang: Option<Lang>,
 }
 
+type FailureGroupKey = (String, String, String, String);
+type FailureGroupValue = (String, Vec<String>);
+type FailureGroups = HashMap<FailureGroupKey, FailureGroupValue>;
+type RerunFailure = (String, String, String, String, String, String);
+type HttpFailureSummary = (String, String, String, String, String, String);
+type LoadedHttpFailures = (u32, Vec<HttpFailureSummary>);
+
 #[derive(Args, Debug, Clone)]
 struct CiCommentArgs {
     /// Output markdown file (default: docs-benchmark-comment.md)
@@ -255,7 +263,7 @@ fn main() -> Result<()> {
         Commands::Summary(args) => cmd_summary(args),
         Commands::Analyze(args) => cmd_analyze(args),
         Commands::CountHttpFailures(args) => cmd_count_http_failures(args),
-        Commands::ScanRerunCommands(args) => cmd_scan_rerun_commands(args),
+        Commands::ScanReruns(args) => cmd_scan_rerun_commands(args),
     }
 }
 
@@ -1268,7 +1276,7 @@ fn cmd_scan_rerun_commands(args: ScanRerunCommandsArgs) -> Result<()> {
     println!("Scanning {} — {} LLM API failures\n", details_path.display(), count);
 
     // Group by (lang, mode, vendor, api_model) -> sorted task IDs
-    let mut groups: HashMap<(String, String, String, String), (String, Vec<String>)> = HashMap::new();
+    let mut groups: FailureGroups = HashMap::new();
     for (lang, mode, vendor, api_model, model_name, task_id) in failures {
         let key = (lang.clone(), mode.clone(), vendor.clone(), api_model.clone());
         let entry = groups.entry(key).or_insert_with(|| (model_name, Vec::new()));
@@ -1311,7 +1319,7 @@ fn is_model_in_routes(vendor_str: &str, api_model: &str) -> bool {
 
 /// Collect LLM API failures with full (lang, mode, vendor, api_model, model_name, task_id) for building rerun commands.
 /// Only includes models that are in default_model_routes (model_routes.rs).
-fn collect_http_failures_full(details_path: &Path) -> Result<Vec<(String, String, String, String, String, String)>> {
+fn collect_http_failures_full(details_path: &Path) -> Result<Vec<RerunFailure>> {
     use xtask_llm_benchmark::results::schema::Results;
 
     let content = match fs::read_to_string(details_path) {
@@ -1321,7 +1329,7 @@ fn collect_http_failures_full(details_path: &Path) -> Result<Vec<(String, String
     };
     let results: Results = serde_json::from_str(&content).with_context(|| "parse details.json")?;
 
-    let mut out: Vec<(String, String, String, String, String, String)> = Vec::new();
+    let mut out: Vec<RerunFailure> = Vec::new();
     for lang_entry in &results.languages {
         for mode_entry in &lang_entry.modes {
             for model_entry in &mode_entry.models {
@@ -1376,7 +1384,7 @@ fn load_details_and_http_failures(
     details_path: &Path,
     providers_filter: Option<&HashSet<Vendor>>,
     model_filter: Option<&HashMap<Vendor, HashSet<String>>>,
-) -> Result<Option<(u32, Vec<(String, String, String, String, String, String)>)>> {
+) -> Result<Option<LoadedHttpFailures>> {
     use xtask_llm_benchmark::results::schema::Results;
 
     let content = match fs::read_to_string(details_path) {
@@ -1387,7 +1395,7 @@ fn load_details_and_http_failures(
     let results: Results = serde_json::from_str(&content).with_context(|| "parse details.json")?;
 
     let mut total_failures = 0u32;
-    let mut http_failures: Vec<(String, String, String, String, String, String)> = Vec::new();
+    let mut http_failures: Vec<HttpFailureSummary> = Vec::new();
 
     for lang_entry in &results.languages {
         for mode_entry in &lang_entry.modes {
@@ -1474,9 +1482,9 @@ fn outcome_matches_run_scope(
                 let a_norm = al.replace(' ', "-");
                 model_norm == a_norm
                     || model_lower == al
-                    || api_lower.as_ref().map_or(false, |api| {
-                        api == &al || api.contains(al.as_str()) || al.contains(api.as_str())
-                    })
+                    || api_lower
+                        .as_ref()
+                        .is_some_and(|api| api == &al || api.contains(al.as_str()) || al.contains(api.as_str()))
             });
             if !matches {
                 return false;
@@ -1487,10 +1495,7 @@ fn outcome_matches_run_scope(
 }
 
 /// Print a summary of HTTP/timeout failures: grouped by (lang, mode, vendor, api_model) with one rerun command per group.
-fn print_http_failures_summary(
-    total_failures: u32,
-    http_failures: &[(String, String, String, String, String, String)],
-) {
+fn print_http_failures_summary(total_failures: u32, http_failures: &[HttpFailureSummary]) {
     // (lang, mode, model, task_id, vendor, api_model)
     println!();
     println!("---");
@@ -1500,7 +1505,7 @@ fn print_http_failures_summary(
         total_failures
     );
 
-    let mut groups: HashMap<(String, String, String, String), (String, Vec<String>)> = HashMap::new();
+    let mut groups: FailureGroups = HashMap::new();
     for (lang, mode, model_name, task_id, vendor, api_model) in http_failures {
         let key = (lang.clone(), mode.clone(), vendor.clone(), api_model.clone());
         let entry = groups.entry(key).or_insert_with(|| (model_name.clone(), Vec::new()));
