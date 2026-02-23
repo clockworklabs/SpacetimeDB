@@ -772,6 +772,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "case-conversion-client"
+version = "2.0.0"
+dependencies = [
+ "anyhow",
+ "env_logger 0.10.2",
+ "spacetimedb-sdk",
+ "test-counter",
+]
+
+[[package]]
 name = "cast"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

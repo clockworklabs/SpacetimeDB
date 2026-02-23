@@ -488,3 +488,58 @@ macro_rules! view_tests {
 
 view_tests!(rust_view, "");
 //view_tests!(cpp_view, "-cpp");
+
+/// Tests of case conversion for TS modules with mixed-case names containing digit boundaries.
+///
+/// Uses <./case-conversion-client> and <../../../modules/sdk-test-case-conversion-ts>.
+/// Verifies that:
+/// - Table accessor names with digits (`player_1`, `person_2`) work correctly
+/// - Field names with digit boundaries (`player_1_id`, `current_level_2`, `status_3_field`) are converted
+/// - Nested struct fields (`Person3Info.age_value_1`) work
+/// - Enum variants (`Player2Status::Active1`, `Player2Status::BannedUntil`) work
+/// - Reducers with explicit names (`banPlayer1` → accessor `ban_player_1`) work
+/// - Views with explicit names (`Level2Players` → accessor `players_at_level_2`) work
+/// - SQL queries use canonical (wire) names, not accessor names
+mod case_conversion_ts {
+    use spacetimedb_testing::sdk::Test;
+
+    const MODULE: &str = "sdk-test-case-conversion-ts";
+    const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/case-conversion-client");
+
+    fn make_test(subcommand: &str) -> Test {
+        Test::builder()
+            .with_name(subcommand)
+            .with_module(MODULE)
+            .with_client(CLIENT)
+            .with_language("rust")
+            .with_bindings_dir("src/module_bindings")
+            .with_compile_command("cargo build")
+            .with_run_command(format!("cargo run -- {}", subcommand))
+            .build()
+    }
+
+    #[test]
+    fn insert_player() {
+        make_test("insert-player").run();
+    }
+
+    #[test]
+    fn insert_person() {
+        make_test("insert-person").run();
+    }
+
+    #[test]
+    fn ban_player() {
+        make_test("ban-player").run();
+    }
+
+    #[test]
+    fn subscribe_view() {
+        make_test("subscribe-view").run();
+    }
+
+    #[test]
+    fn subscribe_canonical_names() {
+        make_test("subscribe-canonical-names").run();
+    }
+}

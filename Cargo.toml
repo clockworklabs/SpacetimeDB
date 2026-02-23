@@ -55,6 +55,7 @@ members = [
   "sdks/rust/tests/connect_disconnect_client",
   "sdks/rust/tests/procedure-client",
   "sdks/rust/tests/view-client",
+  "sdks/rust/tests/case-conversion-client",
   "sdks/rust/tests/event-table-client",
   "tools/ci",
   "tools/upgrade-version",
