@@ -1807,6 +1807,98 @@ namespace SpacetimeDB.Internal.TableHandles
     }
 }
 
+sealed class view_def_ienumerable_return_from_filterViewDispatcher
+    : global::SpacetimeDB.Internal.IView
+{
+    public SpacetimeDB.Internal.RawViewDefV10 MakeViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "view_def_ienumerable_return_from_filter",
+            Index: 0,
+            IsPublic: true,
+            IsAnonymous: false,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.Unsupported<System.Collections.Generic.IEnumerable<Player>>().GetAlgebraicType(
+                registrar
+            )
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.ViewDefIEnumerableReturnFromFilter(
+                (SpacetimeDB.ViewContext)ctx
+            );
+            SpacetimeDB.BSATN.Unsupported<System.Collections.Generic.IEnumerable<Player>> returnRW =
+                new();
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
+            returnRW.Write(writer, returnValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error(
+                "Error in view 'view_def_ienumerable_return_from_filter': " + e
+            );
+            throw;
+        }
+    }
+}
+
+sealed class view_def_ienumerable_return_from_iterViewDispatcher
+    : global::SpacetimeDB.Internal.IView
+{
+    public SpacetimeDB.Internal.RawViewDefV10 MakeViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "view_def_ienumerable_return_from_iter",
+            Index: 1,
+            IsPublic: true,
+            IsAnonymous: false,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.Unsupported<System.Collections.Generic.IEnumerable<Player>>().GetAlgebraicType(
+                registrar
+            )
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.ViewDefIEnumerableReturnFromIter((SpacetimeDB.ViewContext)ctx);
+            SpacetimeDB.BSATN.Unsupported<System.Collections.Generic.IEnumerable<Player>> returnRW =
+                new();
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
+            returnRW.Write(writer, returnValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error(
+                "Error in view 'view_def_ienumerable_return_from_iter': " + e
+            );
+            throw;
+        }
+    }
+}
+
 sealed class view_def_no_contextViewDispatcher : global::SpacetimeDB.Internal.IView
 {
     public SpacetimeDB.Internal.RawViewDefV10 MakeViewDef(
@@ -1814,7 +1906,7 @@ sealed class view_def_no_contextViewDispatcher : global::SpacetimeDB.Internal.IV
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV10(
             SourceName: "view_def_no_context",
-            Index: 0,
+            Index: 2,
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
@@ -1855,7 +1947,7 @@ sealed class view_def_no_publicViewDispatcher : global::SpacetimeDB.Internal.IVi
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV10(
             SourceName: "view_def_no_public",
-            Index: 1,
+            Index: 3,
             IsPublic: false,
             IsAnonymous: false,
             Params: [],
@@ -1896,7 +1988,7 @@ sealed class view_def_wrong_contextViewDispatcher : global::SpacetimeDB.Internal
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV10(
             SourceName: "view_def_wrong_context",
-            Index: 2,
+            Index: 4,
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
@@ -1937,7 +2029,7 @@ sealed class view_def_wrong_returnViewDispatcher : global::SpacetimeDB.Internal.
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV10(
             SourceName: "view_def_wrong_return",
-            Index: 3,
+            Index: 5,
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
@@ -1976,7 +2068,7 @@ sealed class view_no_deleteViewDispatcher : global::SpacetimeDB.Internal.IView
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV10(
             SourceName: "view_no_delete",
-            Index: 4,
+            Index: 6,
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
@@ -2021,7 +2113,7 @@ sealed class view_no_insertViewDispatcher : global::SpacetimeDB.Internal.IView
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV10(
             SourceName: "view_no_insert",
-            Index: 5,
+            Index: 7,
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
@@ -2750,6 +2842,8 @@ static class ModuleRegistration
         // IMPORTANT: The order in which we register views matters.
         // It must correspond to the order in which we call `GenerateDispatcherClass`.
         // See the comment on `GenerateDispatcherClass` for more explanation.
+        SpacetimeDB.Internal.Module.RegisterView<view_def_ienumerable_return_from_filterViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterView<view_def_ienumerable_return_from_iterViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<view_def_no_contextViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<view_def_no_publicViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<view_def_wrong_contextViewDispatcher>();

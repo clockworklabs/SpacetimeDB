@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Collections.Generic;
 using SpacetimeDB;
 
 public enum LocalEnum { }
@@ -566,6 +567,20 @@ public partial class Module
     public static Player ViewDefWrongReturn(ViewContext ctx)
     {
         return new Player { Identity = new() };
+    }
+
+    // Invalid: IEnumerable<T> return type (from Iter()) is not Vec<T> or Option<T>
+    [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_iter", Public = true)]
+    public static IEnumerable<Player> ViewDefIEnumerableReturnFromIter(ViewContext ctx)
+    {
+        return ctx.Db.Player.Iter();
+    }
+
+    // Invalid: IEnumerable<T> return type (from Filter()) is not Vec<T> or Option<T>
+    [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_filter", Public = true)]
+    public static IEnumerable<Player> ViewDefIEnumerableReturnFromFilter(ViewContext ctx)
+    {
+        return ctx.Db.Player.Identity.Filter(ctx.Sender);
     }
 
     // Invalid: Returns type that is not a SpacetimeType
