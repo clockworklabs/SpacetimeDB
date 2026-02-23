@@ -63,6 +63,8 @@ impl MetadataFile {
             previous.edition,
         );
 
+        // This is mostly redundant with the caret comparison below, but
+        // pre-releases make it annoying.
         if previous.version == current.version {
             return Ok(());
         }
@@ -76,11 +78,9 @@ impl MetadataFile {
             op: semver::Op::Caret,
             major: previous.version.major,
             minor: Some(previous.version.minor),
-            // Note: We can only do exact matching for pre-releases; there's no partial ordering.
-            // Exceptions will essentially have to be created for each pair of pre-release versions
-            // that need to be compatible.
-            patch: (!previous.version.pre.is_empty()).then_some(previous.version.patch),
-            pre: previous.version.pre.clone(),
+            patch: None,
+            // We deal with pre-releases separately above.
+            pre: semver::Prerelease::new("").unwrap(),
         };
 
         if cmp.matches(&current.version) {
@@ -248,6 +248,10 @@ mod tests {
             .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc1"))
             .unwrap();
 
+        mkmeta_pre(2, 0, 0, "pre1")
+            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "pre2"))
+            .unwrap_err();
+
         mkmeta_pre(2, 0, 0, "rc1")
             .check_compatibility_and_update(mkmeta(2, 0, 1))
             .unwrap();
@@ -260,8 +264,12 @@ mod tests {
             .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc2"))
             .unwrap_err();
 
+        mkmeta_pre(2, 0, 0, "rc2")
+            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc1"))
+            .unwrap_err();
+
         mkmeta(2, 0, 0)
             .check_compatibility_and_update(mkmeta_pre(2, 1, 0, "rc1"))
-            .unwrap();
+            .unwrap_err();
     }
 }
