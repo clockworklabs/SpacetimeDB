@@ -495,8 +495,6 @@ pub struct SqlParams {
 pub struct SqlQueryParams {
     /// If `true`, return the query result only after its transaction offset
     /// is confirmed to be durable.
-    ///
-    /// If not specified, defaults to `true`.
     #[serde(default)]
     pub confirmed: Option<bool>,
 }
