@@ -108,6 +108,7 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           choco install psql -y --no-progress
           # Check for existence, since `choco` doesn't seem to fail the step if it fails to install..
+          # See https://github.com/clockworklabs/SpacetimeDB/pull/4399 for more background.
           Get-Command psql
 
       - name: Update dotnet workloads
