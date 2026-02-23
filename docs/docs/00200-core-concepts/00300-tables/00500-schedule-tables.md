@@ -42,12 +42,16 @@ export const send_reminder = spacetimedb.reducer({ arg: reminder.rowType }, (_ct
 </TabItem>
 <TabItem value="csharp" label="C#">
 
+:::tip C# schedule column
+Use PascalCase for the schedule column (e.g. `ScheduledAt`), not snake_case.
+:::
+
 ```csharp
 using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Scheduled = "SendReminder", ScheduledAt = "ScheduleAt")]
+    [SpacetimeDB.Table(Accessor = "Reminder", Scheduled = "SendReminder", ScheduledAt = "ScheduledAt")]
     public partial struct Reminder
     {
         [SpacetimeDB.PrimaryKey]
@@ -55,7 +59,7 @@ public static partial class Module
         public ulong Id;
         public uint UserId;
         public string Message;
-        public ScheduleAt ScheduleAt;
+        public ScheduleAt ScheduledAt;
     }
 
     [SpacetimeDB.Reducer]
@@ -70,7 +74,10 @@ public static partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(accessor = reminder_schedule, scheduled(send_reminder))]
+use spacetimedb::{reducer, table, ReducerContext, ScheduleAt, Table};
+use std::time::Duration;
+
+#[table(accessor = reminder_schedule, scheduled(send_reminder))]
 pub struct Reminder {
     #[primary_key]
     #[auto_inc]
@@ -80,10 +87,20 @@ pub struct Reminder {
     scheduled_at: ScheduleAt,
 }
 
-#[spacetimedb::reducer]
+#[reducer]
 fn send_reminder(ctx: &ReducerContext, reminder: Reminder) -> Result<(), String> {
     // Process the scheduled reminder
     Ok(())
+}
+
+#[reducer(init)]
+fn init(ctx: &ReducerContext) {
+    ctx.db.reminder_schedule().insert(Reminder {
+        id: 0,
+        user_id: 0,
+        message: "Game tick".to_string(),
+        scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).into()),
+    });
 }
 ```
 
@@ -127,6 +144,10 @@ To schedule an action, insert a row into the schedule table with a `scheduled_at
 
 Use intervals for periodic tasks like game ticks, heartbeats, or recurring maintenance:
 
+:::important TypeScript: ScheduleAt import
+`ScheduleAt` is imported from `'spacetimedb'`, **not** from `'spacetimedb/server'`. Use: `import { ScheduleAt } from 'spacetimedb';`
+:::
+
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
@@ -166,14 +187,14 @@ public partial class Module
         ctx.Db.Reminder.Insert(new Reminder
         {
             Message = "Check for updates",
-            ScheduleAt = new ScheduleAt.Interval(TimeSpan.FromSeconds(5))
+            ScheduledAt = new ScheduleAt.Interval(TimeSpan.FromSeconds(5))
         });
 
         // Schedule to run every 100 milliseconds
         ctx.Db.Reminder.Insert(new Reminder
         {
             Message = "Game tick",
-            ScheduleAt = new ScheduleAt.Interval(TimeSpan.FromMilliseconds(100))
+            ScheduledAt = new ScheduleAt.Interval(TimeSpan.FromMilliseconds(100))
         });
     }
 }
@@ -183,7 +204,7 @@ public partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::{ScheduleAt, ReducerContext};
+use spacetimedb::{ScheduleAt, ReducerContext, Table};
 use std::time::Duration;
 
 #[spacetimedb::reducer]
@@ -273,7 +294,7 @@ public static partial class Module
         ctx.Db.Reminder.Insert(new Reminder
         {
             Message = "Your auction has ended",
-            ScheduleAt = new ScheduleAt.Time(DateTimeOffset.UtcNow.AddSeconds(10))
+            ScheduledAt = new ScheduleAt.Time(DateTimeOffset.UtcNow.AddSeconds(10))
         });
 
         // Schedule for a specific time
@@ -281,7 +302,7 @@ public static partial class Module
         ctx.Db.Reminder.Insert(new Reminder
         {
             Message = "Happy New Year!",
-            ScheduleAt = new ScheduleAt.Time(targetTime)
+            ScheduledAt = new ScheduleAt.Time(targetTime)
         });
     }
 }
@@ -291,7 +312,7 @@ public static partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::{ScheduleAt, ReducerContext};
+use spacetimedb::{ScheduleAt, ReducerContext, Table};
 use std::time::Duration;
 
 #[spacetimedb::reducer]

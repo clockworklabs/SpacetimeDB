@@ -7,6 +7,23 @@ slug: /clients/c-sharp
 
 The SpacetimeDB client for C# contains all the tools you need to build native clients for SpacetimeDB modules using C#.
 
+## Server module quick reference
+
+If you are **writing a SpacetimeDB module** (tables and reducers), use these patterns:
+
+- **Module class**: `public static partial class Module`
+- **Tables**: `[SpacetimeDB.Table(Accessor = "TableName", Public = true)]` on `partial struct` — `Accessor` is the SQL table name and API accessor; use PascalCase singular (e.g. `User`, `Result`), do not pluralize
+- **Primary key**: Every table needs `[SpacetimeDB.PrimaryKey]` on exactly one column
+- **Reducers**: `[SpacetimeDB.Reducer]` on static methods with `ReducerContext ctx` as first parameter
+- **Required**: `using SpacetimeDB;` and `partial` on all table structs and the Module class
+- **Index**: Always use `SpacetimeDB.Index.BTree` (never bare `Index`). Bare `Index` is ambiguous with `System.Index`. For multi-column: `Columns = new[] { nameof(Col1), nameof(Col2) }`, not collection expressions `[nameof(X)]`
+- **Sum types**: Use `TaggedEnum<(VariantA A, VariantB B)>` with `partial record`, not `partial class`
+- **Scheduled tables**: The schedule column (e.g. `ScheduledAt`) must use PascalCase, not snake_case
+
+See [Tables](/tables), [Reducers](/functions/reducers), and [Column Types](/tables/column-types) for full server-side documentation. The rest of this page covers the **client SDK** (connections, subscriptions, callbacks).
+
+---
+
 Before diving into the reference, you may want to review:
 
 - [Generating Client Bindings](./00200-codegen.md) - How to generate C# bindings from your module
@@ -1055,7 +1072,7 @@ public partial class Player
     [PrimaryKey]
     public Identity id;
 
-    [Index.BTree(Accessor = "Level")]
+    [SpacetimeDB.Index.BTree(Accessor = "Level")]
     public uint level;
     ..
 }
@@ -1096,5 +1113,5 @@ See the [module docs](../00300-tables/00200-column-types.md) for more details.
 
 ### Type `TaggedEnum`
 
-A [tagged union](https://en.wikipedia.org/wiki/Tagged_union) type.
+A [tagged union](https://en.wikipedia.org/wiki/Tagged_union) type. When defining TaggedEnum types in a module, use `partial record`, not `partial class`.
 See the [module docs](../00300-tables/00200-column-types.md) for more details.

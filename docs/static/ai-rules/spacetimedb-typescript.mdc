@@ -126,6 +126,13 @@ t.bool()               // Boolean
 t.timestamp()          // Timestamp (use ctx.timestamp for current time)
 t.scheduleAt()         // For scheduled tables only
 
+// Product types (nested objects) — use t.object, NOT t.struct
+const Point = t.object('Point', { x: t.i32(), y: t.i32() });
+
+// Sum types (tagged unions) — use t.enum, NOT t.sum
+const Shape = t.enum('Shape', { circle: t.i32(), rectangle: Point });
+// Values use { tag: 'circle', value: 10 } or { tag: 'rectangle', value: { x: 1, y: 2 } }
+
 // Modifiers
 t.string().optional()           // Nullable
 t.u64().primaryKey()            // Primary key
@@ -153,10 +160,14 @@ const row = ctx.db.task.insert({ ... });
 const newId = row.id;  // Extract .id from returned row
 ```
 
-### Schema export
+### Schema export (CRITICAL)
 ```typescript
-// At end of schema.ts
+// At end of schema.ts — schema() takes exactly ONE argument: an object
 export const spacetimedb = schema({ table1, table2, table3 });
+
+// ❌ WRONG — never pass tables directly or as multiple args
+schema(myTable);      // WRONG!
+schema(t1, t2, t3);   // WRONG!
 ```
 
 ---
@@ -254,12 +265,15 @@ for (const row of ctx.db.scores.by_player.filter(playerId)) {
 
 ## 4) Reducers
 
-### Definition syntax
+### Definition syntax (CRITICAL)
+**Reducer name comes from the export — NOT from a string argument.** Use `reducer(params, fn)` or `reducer(fn)`.
+
 ```typescript
 import { spacetimedb } from './schema';
 import { t, SenderError } from 'spacetimedb/server';
 
-spacetimedb.reducer('reducer_name', { param1: t.string(), param2: t.u64() }, (ctx, { param1, param2 }) => {
+// ✅ CORRECT — export const name = spacetimedb.reducer(params, fn)
+export const reducer_name = spacetimedb.reducer({ param1: t.string(), param2: t.u64() }, (ctx, { param1, param2 }) => {
   // Validation
   if (!param1) throw new SenderError('param1 required');
   
@@ -271,6 +285,13 @@ spacetimedb.reducer('reducer_name', { param1: t.string(), param2: t.u64() }, (ct
   ctx.db.myTable.primaryKey.update({ ...row, newField: value });
   ctx.db.myTable.primaryKey.delete(param2);
 });
+
+// No params: export const init = spacetimedb.reducer((ctx) => { ... });
+```
+
+```typescript
+// ❌ WRONG — reducer('name', params, fn) does NOT exist
+spacetimedb.reducer('reducer_name', { param1: t.string() }, (ctx, { param1 }) => { ... });
 ```
 
 ### Update pattern (CRITICAL)
@@ -304,7 +325,7 @@ spacetimedb.clientDisconnected((ctx) => {
 ```
 
 ### Snake_case to camelCase conversion
-- Server: `spacetimedb.reducer('do_something', ...)` 
+- Server: `export const do_something = spacetimedb.reducer(...)` — name from export
 - Client: `conn.reducers.doSomething({ ... })`
 
 ### Object syntax required
@@ -321,18 +342,18 @@ conn.reducers.doSomething({ param: 'value' });
 ## 5) Scheduled Tables
 
 ```typescript
-// Scheduled table MUST use scheduledId and scheduledAt columns
+// 1. Define table first (scheduled: () => reducer — pass the exported reducer)
 export const CleanupJob = table({ 
   name: 'cleanup_job', 
-  scheduled: (): any => run_cleanup  // reducer name
+  scheduled: () => run_cleanup  // reducer defined below
 }, {
   scheduledId: t.u64().primaryKey().autoInc(),
   scheduledAt: t.scheduleAt(),
   targetId: t.u64(),  // Your custom data
 });
 
-// Scheduled reducer receives full row as arg
-spacetimedb.reducer('run_cleanup', { arg: CleanupJob.rowType }, (ctx, { arg }) => {
+// 2. Define scheduled reducer (receives full row as arg)
+export const run_cleanup = spacetimedb.reducer({ arg: CleanupJob.rowType }, (ctx, { arg }) => {
   // arg.scheduledId, arg.targetId available
   // Row is auto-deleted after reducer completes
 });
@@ -521,9 +542,11 @@ const isOwner = row.ownerId.toHexString() === myIdentity.toHexString();
 ⚠️ Procedures are currently in beta. API may change.
 
 ### Defining a procedure
+**Procedure name comes from the export — NOT from a string argument.** Use `procedure(params, ret, fn)` or `procedure(ret, fn)`.
+
 ```typescript
-spacetimedb.procedure(
-  'fetch_external_data',
+// ✅ CORRECT — export const name = spacetimedb.procedure(params, ret, fn)
+export const fetch_external_data = spacetimedb.procedure(
   { url: t.string() },
   t.string(),  // return type
   (ctx, { url }) => {
@@ -538,7 +561,7 @@ spacetimedb.procedure(
 ⚠️ **CRITICAL: Procedures don't have `ctx.db`. Use `ctx.withTx()` for database access.**
 
 ```typescript
-spacetimedb.procedure('save_fetched_data', { url: t.string() }, t.unit(), (ctx, { url }) => {
+spacetimedb.procedure({ url: t.string() }, t.unit(), (ctx, { url }) => {
   // Fetch external data (outside transaction)
   const response = ctx.http.fetch(url);
   const data = response.text();
@@ -621,12 +644,15 @@ spacetime logs <module-name>
 
 **TypeScript-specific:**
 
-1. **Reducer calls use object syntax** — `{ param: 'value' }` not positional args
-2. **Import `DbConnection` from `./module_bindings`** — not from `spacetimedb`
-3. **DO NOT edit generated bindings** — regenerate with `spacetime generate`
-4. **Indexes go in OPTIONS (1st arg)** — not in COLUMNS (2nd arg) of `table()`
-5. **Use BigInt for u64/i64 fields** — `0n`, `1n`, not `0`, `1`
-6. **Reducers are transactional** — they do not return data
-7. **Reducers must be deterministic** — no filesystem, network, timers, random
-8. **Views should use index lookups** — `.iter()` causes severe performance issues
-9. **Procedures need `ctx.withTx()`** — `ctx.db` doesn't exist in procedures
+1. **`schema({ table })`** — takes exactly one object; never `schema(table)` or `schema(t1, t2, t3)`
+2. **Reducer/procedure names from exports** — `export const name = spacetimedb.reducer(params, fn)`; never `reducer('name', ...)`
+3. **Reducer calls use object syntax** — `{ param: 'value' }` not positional args
+4. **Import `DbConnection` from `./module_bindings`** — not from `spacetimedb`
+5. **DO NOT edit generated bindings** — regenerate with `spacetime generate`
+6. **Indexes go in OPTIONS (1st arg)** — not in COLUMNS (2nd arg) of `table()`
+7. **Use BigInt for u64/i64 fields** — `0n`, `1n`, not `0`, `1`
+8. **Reducers are transactional** — they do not return data
+9. **Reducers must be deterministic** — no filesystem, network, timers, random
+10. **Views should use index lookups** — `.iter()` causes severe performance issues
+11. **Procedures need `ctx.withTx()`** — `ctx.db` doesn't exist in procedures
+12. **Sum type values** — use `{ tag: 'variant', value: payload }` not `{ variant: payload }`

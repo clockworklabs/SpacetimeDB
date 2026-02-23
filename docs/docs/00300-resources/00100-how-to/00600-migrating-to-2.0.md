@@ -119,16 +119,15 @@ ctx.reducers.deal_damage_then(target, amount, |ctx, result| {
 }).unwrap();
 ```
 
-</TabItem>
-</Tabs>
-
-
 The fire-and-forget form still works:
 
 ```rust
 // 2.0 -- fire and forget (unchanged)
 ctx.reducers.deal_damage(target, amount).unwrap();
 ```
+
+</TabItem>
+</Tabs>
 
 ### Option B: Event tables (recommended for most use cases)
 
@@ -139,8 +138,8 @@ If you need *other* clients to observe that something happened (the primary use 
 
 **Server (module) -- before:**
 ```typescript
-// 1.0 server -- reducer args were automatically broadcast
-spacetimedb.reducer('deal_damage', { target: t.identity(), amount: t.u32() }, (ctx, { target, amount }) => {
+// 1.0 -- NO LONGER VALID in 2.0 (reducer args were automatically broadcast)
+spacetimedb.reducer({ target: t.identity(), amount: t.u32() }, (ctx, { target, amount }) => {
   // update game state
 });
 ```
@@ -152,10 +151,11 @@ const damageEvent = table({ event: true }, {
     target: t.identity(),
     amount: t.u32(),
 })
+// schema() takes an object: schema({ damageEvent }), never schema(damageEvent)
 const spacetimedb = schema({ damageEvent });
 
-export const dealDamage = spacetimedb.reducer(damageEvent.rowType, (ctx, { target, amount }) => {
-  // update game state
+export const dealDamage = spacetimedb.reducer({ target: t.identity(), amount: t.u32() }, (ctx, { target, amount }) => {
+  ctx.db.damageEvent.insert({ target, amount });
 });
 ```
 
@@ -164,7 +164,7 @@ export const dealDamage = spacetimedb.reducer(damageEvent.rowType, (ctx, { targe
 
 **Server (module) -- before:**
 ```csharp
-// 1.0 server -- reducer args were automatically broadcast
+// 1.0 -- NO LONGER VALID in 2.0 (reducer args were automatically broadcast)
 [SpacetimeDB.Reducer]
 public static void DealDamage(ReducerContext ctx, Identity target, uint amount)
 {
@@ -200,7 +200,7 @@ public static void DealDamage(ReducerContext ctx, Identity target, uint amount)
 
 **Server (module) -- before:**
 ```rust
-// 1.0 server -- reducer args were automatically broadcast
+// 1.0 -- NO LONGER VALID in 2.0 (reducer args were automatically broadcast)
 #[spacetimedb::reducer]
 fn deal_damage(ctx: &ReducerContext, target: Identity, amount: u32) {
     // update game state...
@@ -210,6 +210,8 @@ fn deal_damage(ctx: &ReducerContext, target: Identity, amount: u32) {
 **Server (module) -- after:**
 ```rust
 // 2.0 server -- explicitly publish events via an event table
+use spacetimedb::{table, reducer, ReducerContext, Table, Identity};
+
 #[spacetimedb::table(accessor = damage_event, public, event)]
 pub struct DamageEvent {
     pub target: Identity,
@@ -232,7 +234,7 @@ fn deal_damage(ctx: &ReducerContext, target: Identity, amount: u32) {
 
 **Client -- before:**
 ```typescript
-// 1.0 client -- global reducer callback
+// 1.0 -- NO LONGER VALID in 2.0 (global reducer callback)
 conn.reducers.onDealDamage((ctx, { target, amount }) => {
     playDamageAnimation(target, amount);
 });
@@ -253,7 +255,7 @@ conn.db.damageEvent().onInsert((ctx, { target, amount }) => {
 
 **Client -- before:**
 ```csharp
-// 1.0 client -- global reducer callback
+// 1.0 -- NO LONGER VALID in 2.0 (global reducer callback)
 conn.Reducers.OnDealDamage += (ctx, target, amount) =>
 {
     PlayDamageAnimation(target, amount);
@@ -274,7 +276,7 @@ conn.Db.DamageEvent.OnInsert += (ctx, damageEvent) =>
 
 **Client -- before:**
 ```rust
-// 1.0 client -- global reducer callback
+// 1.0 -- NO LONGER VALID in 2.0 (global reducer callback)
 conn.reducers.on_deal_damage(|ctx, target, amount| {
     play_damage_animation(target, amount);
 });
@@ -404,7 +406,7 @@ In 2.0, the subscription API is largely the same, but you can now subscribe to t
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-// 1.0
+// 1.0 -- NO LONGER VALID in 2.0
 ctx.subscriptionBuilder()
   .onApplied(ctx => { /* ... */ })
   .onError((ctx, err) => { /* ... */ })
@@ -500,17 +502,21 @@ The `name` option for table definitions is now used to overwrite the canonical n
 
 By default, the canonical name is derived from the accessor by converting it to snake case.
 
-To migrate a 1.0 table definition to 2.0, remove `name` from the table options and pass an object to the `schema` functions.
+To migrate a 1.0 table definition to 2.0, pass an object to the `schema` function. Always use `schema({ table1 })` or `schema({ t1, t2 })` — never pass a single table directly.
+
+:::warning TypeScript: `schema()` takes exactly one argument — an object
+Use `schema({ table })` or `schema({ t1, t2 })`. **Never** use `schema(table)` or `schema(t1, t2, t3)`.
+:::
 
 ```typescript
-// 1.0
+// 1.0 -- NO LONGER VALID in 2.0
 const myTable = table({ name: "my_table", public: true });
 const spacetimedb = schema(myTable); // NO LONGER VALID in 2.0
 ```
 
 ```typescript
 // 2.0
-const myTable = table({ public: true }); // Name is no longer required
+const myTable = table({ public: true });
 const spacetimedb = schema({ myTable }); // NOTE! We are passing `{ myTable }`, not `myTable`
 export default spacetimedb; // You must now also export the schema from your module.
 ```
@@ -522,12 +528,12 @@ The `Name` argument on table and index attributes is now used to override the ca
 
 By default, the canonical name is derived from the accessor using the module's case-conversion policy.
 
-To migrate a 1.0 table definition to 2.0, replace `Name =` with `Accessor =` in table and index definitions:
+To migrate a 1.0 table definition to 2.0, replace `Name =` with `Accessor =` in table and index definitions. Always use `SpacetimeDB.Index.BTree` (never bare `Index` — it conflicts with `System.Index`):
 
 ```csharp
 // 1.0 style -- NO LONGER VALID in 2.0
 [SpacetimeDB.Table(Name = "MyTable", Public = true)]
-[SpacetimeDB.Index.BTree(Name = "Position", Columns = [nameof(X), nameof(Y)])]
+[SpacetimeDB.Index.BTree(Name = "Position", Columns = new[] { nameof(X), nameof(Y) })]
 public partial struct MyTable
 {
     [SpacetimeDB.PrimaryKey]
@@ -539,7 +545,7 @@ public partial struct MyTable
 
 // 2.0
 [SpacetimeDB.Table(Accessor = "MyTable", Public = true)]
-[SpacetimeDB.Index.BTree(Accessor = "Position", Columns = [nameof(X), nameof(Y)])]
+[SpacetimeDB.Index.BTree(Accessor = "Position", Columns = new[] { nameof(X), nameof(Y) })]
 public partial struct MyTable
 {
     [SpacetimeDB.PrimaryKey]
@@ -647,9 +653,11 @@ Alternatively, manually specify the correct canonical name of each table:
 </TabItem>
 <TabItem value="csharp" label="C#">
 
+Always use `SpacetimeDB.Index.BTree` (never bare `Index` — it conflicts with `System.Index`):
+
 ```csharp
 [SpacetimeDB.Table(Accessor = "MyTable", Name = "MyTable", Public = true)]
-[SpacetimeDB.Index.BTree(Accessor = "Position", Columns = [nameof(X), nameof(Y)])]
+[SpacetimeDB.Index.BTree(Accessor = "Position", Columns = new[] { nameof(X), nameof(Y) })]
 public partial struct MyTable
 {
     [SpacetimeDB.PrimaryKey]
@@ -706,7 +714,6 @@ const conn = DbConnection.builder()
     // other options...
     .build()
 ```
-
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -804,7 +811,7 @@ const myTable = table({ name: 'my_table' }, {
 }) 
 
 // 1.0 -- REMOVED in 2.0 
-spacetimedb.reducer('my_reducer', ctx => {
+spacetimedb.reducer(ctx => {
     ctx.db.myTable.id.update({
         id: 1,
         name: "Foobar",
@@ -813,7 +820,7 @@ spacetimedb.reducer('my_reducer', ctx => {
 
 // 2.0 -- Perform a delete followed by an insert
 // OR change the `.unique()` constraint into `.primaryKey()` constraint
-spacetimedb.reducer('my_reducer', ctx => {
+spacetimedb.reducer(ctx => {
     ctx.db.myTable.id.delete(1);
     ctx.db.myTable.insert({
         id: 1,
@@ -1004,14 +1011,15 @@ Because scheduled reducers and procedures are now private, it's no longer necess
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-const myTimer = table({ name: "my_timer", scheduled: 'runMyTimer' }, {
-  scheduledId: t.u64(),
+// 1.0 -- NO LONGER VALID in 2.0
+const myTimer = table({ name: "my_timer", scheduled: () => runMyTimer }, {
+  scheduledId: t.u64().primaryKey().autoInc(),
   scheduledAt: t.scheduleAt(),
 });
 const spacetimedb = schema(myTimer);
 
 // 1.0 - SUPERFLUOUS IN 2.0
-spacetimedb.reducer('runMyTimer', myTimer.rowType, (ctx, timer) => {
+const runMyTimer = spacetimedb.reducer({ arg: myTimer.rowType }, (ctx, { arg }) => {
   if (ctx.sender != ctx.identity) {
     throw SenderError(`'runMyTimer' should only be invoked by the database!`);
   }
@@ -1020,14 +1028,14 @@ spacetimedb.reducer('runMyTimer', myTimer.rowType, (ctx, timer) => {
 ```
 
 ```typescript
-const myTimer = table({ scheduled: 'runMyTimer' }, {
-  scheduledId: t.u64(),
+const myTimer = table({ scheduled: () => runMyTimer }, {
+  scheduledId: t.u64().primaryKey().autoInc(),
   scheduledAt: t.scheduleAt(),
 });
-const spacetimedb = schema({ myTimer });
+const spacetimedb = schema({ myTimer }); // schema({ table }), never schema(table)
 
 // 2.0 -- Can only be called by the database
-spacetimedb.reducer('runMyTimer', myTimer.rowType, (ctx, timer) => {
+export const runMyTimer = spacetimedb.reducer({ arg: myTimer.rowType }, (ctx, { arg }) => {
   // Do stuff
 })
 ```
@@ -1104,18 +1112,18 @@ In the rare event that you have a reducer or procedure which is intended to be i
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-const myTimer = table({ scheduled: 'runMyTimerPrivate' }, {
-  scheduledId: t.u64(),
+const myTimer = table({ scheduled: () => runMyTimerPrivate }, {
+  scheduledId: t.u64().primaryKey().autoInc(),
   scheduledAt: t.scheduleAt(),
 });
-const spacetimedb = schema({ myTimer });
+const spacetimedb = schema({ myTimer }); // schema({ table }), never schema(table)
 
-export const runMyTimerPrivate = spacetimedb.reducer(myTimer.rowType, (ctx, timer) => {
-    // Do stuff...
+export const runMyTimerPrivate = spacetimedb.reducer({ arg: myTimer.rowType }, (ctx, { arg }) => {
+  // Do stuff...
 });
 
-export const runMyTimer = spacetimedb.reducer(myTimer.rowType, (ctx, timer) => {
-  runMyTimerPrivate(ctx, timer);
+export const runMyTimer = spacetimedb.reducer({ arg: myTimer.rowType }, (ctx, { arg }) => {
+  // Same logic as runMyTimerPrivate — extract to a helper if needed
 });
 ```
 
@@ -1199,7 +1207,7 @@ DbConnection.builder()
 <TabItem value="csharp" label="C#">
 
 ```csharp
-// 1.0
+// 1.0 -- REMOVED in 2.0
 DbConnection.Builder()
     .WithLightMode(true)
     // ...
@@ -1307,6 +1315,7 @@ In 2.0, the success notification is lightweight (just `request_id` and `timestam
   3. Subscribe to it on the client
   4. Use `on_insert` instead of the old reducer callback
 - [ ] Replace `name =` with `accessor =` in table and index definitions
+- [ ] **TypeScript:** Use `schema({ table })` or `schema({ t1, t2 })` — never `schema(table)` or `schema(t1, t2, t3)`
 - [ ] Set your module's case conversion policy to `None`
 - [ ] Change `with_module_name` to `with_database_name`
 - [ ] Change `ctx.sender` to `ctx.sender()`
