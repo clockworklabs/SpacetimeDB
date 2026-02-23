@@ -40,6 +40,16 @@ use tokio::process::{Child, Command as TokioCommand};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 
+/// Strip the Windows extended-length path prefix (`\\?\`) if present.
+/// `fs::canonicalize()` on Windows produces these prefixes, which are
+/// correct but ugly in user-facing output.
+fn strip_verbatim_prefix(path: &Path) -> &Path {
+    path.to_str()
+        .and_then(|s| s.strip_prefix(r"\\?\"))
+        .map(Path::new)
+        .unwrap_or(path)
+}
+
 pub fn cli() -> Command {
     Command::new("dev")
         .about("Start development mode with auto-regenerate client module bindings, auto-rebuild, and auto-publish on file changes.")
@@ -228,7 +238,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 .map(|lc| {
                     lc.loaded_files
                         .iter()
-                        .map(|f| f.display().to_string())
+                        .map(|f| strip_verbatim_prefix(f).display().to_string())
                         .collect::<Vec<_>>()
                         .join(", ")
                 })
@@ -279,7 +289,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
             // Save to root `spacetime.json` (not env/local overlays), then reload merged config.
             let saved_path = save_root_module_path_to_spacetime_json(&config_dir, &provided_module_path)?;
-            println!("{} Updated {}", "✓".green(), saved_path.display());
+            println!(
+                "{} Updated {}",
+                "✓".green(),
+                strip_verbatim_prefix(&saved_path).display()
+            );
 
             loaded_config = find_and_load_with_env_from(Some(env), project_dir.clone())
                 .with_context(|| "Failed to reload spacetime.json after updating module-path")?;
@@ -402,10 +416,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             // If the project was created in a subdirectory, hint the user to cd into it
             // and show useful CLI commands they can run from there.
             let current_dir = std::env::current_dir().context("Failed to get current directory")?;
-            if canonical_created_path != current_dir {
-                let rel_path = canonical_created_path
-                    .strip_prefix(&current_dir)
-                    .unwrap_or(&canonical_created_path);
+            let display_path = strip_verbatim_prefix(&canonical_created_path);
+            if display_path != current_dir {
+                let rel_path = display_path.strip_prefix(&current_dir).unwrap_or(display_path);
                 println!(
                     "\n{} To interact with your database, open a new terminal and run:",
                     "Tip:".yellow().bold(),
@@ -474,7 +487,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     if !no_config {
         if let Some(path) = create_default_spacetime_config_if_missing(&project_dir)? {
-            println!("{} Created {}", "✓".green(), path.display());
+            println!("{} Created {}", "✓".green(), strip_verbatim_prefix(&path).display());
         }
     }
 
@@ -527,7 +540,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         });
         if let Some(db_name) = db_to_persist {
             if let Some(path) = create_local_spacetime_config_if_missing(&project_dir, db_name)? {
-                println!("{} Created {}", "✓".green(), path.display());
+                println!("{} Created {}", "✓".green(), strip_verbatim_prefix(&path).display());
             }
         }
     }
@@ -601,7 +614,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     } else if let Some(sc) = spacetime_config {
         // Reuse already-loaded config instead of loading again
         if let Some(ref lc) = loaded_config {
-            let files: Vec<_> = lc.loaded_files.iter().map(|f| f.display().to_string()).collect();
+            let files: Vec<_> = lc
+                .loaded_files
+                .iter()
+                .map(|f| strip_verbatim_prefix(f).display().to_string())
+                .collect();
             println!("{} Using configuration from {}", "✓".green(), files.join(", "));
         }
 
@@ -644,13 +661,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     if watch_dirs.len() == 1 {
         println!(
             "Watching for changes in: {}",
-            watch_dirs.iter().next().unwrap().display().to_string().cyan()
+            strip_verbatim_prefix(watch_dirs.iter().next().unwrap())
+                .display()
+                .to_string()
+                .cyan()
         );
     } else {
         let watch_dirs_vec: Vec<_> = watch_dirs.iter().collect();
         println!("Watching for changes in {} directories:", watch_dirs.len());
         for dir in &watch_dirs_vec {
-            println!("  - {}", dir.display().to_string().cyan());
+            println!("  - {}", strip_verbatim_prefix(dir).display().to_string().cyan());
         }
     }
 
@@ -1512,7 +1532,7 @@ fn detect_and_save_client_command(project_dir: &Path, existing_config: Option<Sp
             println!(
                 "{} Detected client command and saved to {}",
                 "✓".green(),
-                path.display()
+                strip_verbatim_prefix(&path).display()
             );
         }
         Some(detected_cmd)
