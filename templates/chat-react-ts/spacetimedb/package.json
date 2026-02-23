@@ -8,7 +8,9 @@
     "publish": "cargo run -p spacetimedb-cli -- publish"
   },
   "dependencies": {
-    "spacetimedb": "workspace:^",
+    "spacetimedb": "workspace:^"
+  },
+  "devDependencies": {
     "typescript": "^5.9.3"
   }
 }
