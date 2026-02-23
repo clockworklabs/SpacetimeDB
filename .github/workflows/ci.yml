@@ -101,8 +101,10 @@ jobs:
 
       - name: Install psql (Windows)
         if: runner.os == 'Windows'
-        run: choco install psql -y --no-progress
-        shell: powershell
+        shell: pwsh
+        run: |
+          choco install psql -y --no-progress
+          echo "C:\ProgramData\chocolatey\lib\psql\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Update dotnet workloads
         if: runner.os == 'Windows'
