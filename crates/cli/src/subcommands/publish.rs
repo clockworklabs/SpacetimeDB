@@ -460,8 +460,7 @@ async fn execute_publish_configs<'a>(
         if server_address != "localhost" && server_address != "127.0.0.1" {
             println!("You are about to publish to a non-local server: {server_address}");
             if !y_or_n(force, "Are you sure you want to proceed?")? {
-                println!("Aborting");
-                return Ok(());
+                anyhow::bail!("Publish aborted by user.");
             }
         }
 
