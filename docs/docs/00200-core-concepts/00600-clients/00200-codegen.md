@@ -7,7 +7,7 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 
-Before you can interact with a SpacetimeDB [database](/databases) from a client application, you must generate client bindings for your **module**. These bindings create type-safe interfaces that allow your client to query [tables](/tables), invoke [reducers](/functions/reducers), call [procedures](/functions/procedures), and subscribe to [tables](/tables), and/or [views](/functions/views).
+Before you can interact with a SpacetimeDB [database](../00100-databases.md) from a client application, you must generate client bindings for your **module**. These bindings create type-safe interfaces that allow your client to query [tables](../00300-tables.md), invoke [reducers](../00200-functions/00300-reducers/00300-reducers.md), call [procedures](../00200-functions/00400-procedures.md), and subscribe to [tables](../00300-tables.md), and/or [views](../00200-functions/00500-views.md).
 
 ## What Are Module Bindings?
 
@@ -91,7 +91,7 @@ The `spacetime generate` command creates client-side representations of your mod
 
 ### Tables
 
-For each [table](/tables) in your module, codegen generates:
+For each [table](../00300-tables.md) in your module, codegen generates:
 
 - **Type/class definitions** with properties for each column
 - **Table accessor** on the `DbConnection` for querying the client cache
@@ -172,11 +172,11 @@ Context.Db->User
 </TabItem>
 </Tabs>
 
-See the [Tables](/tables) documentation for details on defining tables in your module.
+See the [Tables](../00300-tables.md) documentation for details on defining tables in your module.
 
 ### Reducers
 
-For each [reducer](/functions/reducers) in your module, codegen generates:
+For each [reducer](../00200-functions/00300-reducers/00300-reducers.md) in your module, codegen generates:
 
 - **Client-callable function** that sends a reducer invocation request to the server
 - **Callback registration** method for observing when the reducer runs
@@ -247,11 +247,11 @@ void OnCreateUser(const FReducerEventContext& Ctx, const FString& Name, const FS
 </TabItem>
 </Tabs>
 
-See the [Reducers](/functions/reducers) documentation for details on defining reducers in your module.
+See the [Reducers](../00200-functions/00300-reducers/00300-reducers.md) documentation for details on defining reducers in your module.
 
 ### Procedures
 
-For each [procedure](/functions/procedures) in your module, codegen generates:
+For each [procedure](../00200-functions/00400-procedures.md) in your module, codegen generates:
 
 - **Client-callable function** that invokes the procedure
 - **Return value handling** for procedures that return results
@@ -337,11 +337,11 @@ void OnFetchComplete(const FProcedureEventContext& Ctx, const FString& Result, b
 </TabItem>
 </Tabs>
 
-See the [Procedures](/functions/procedures) documentation for details on defining procedures in your module.
+See the [Procedures](../00200-functions/00400-procedures.md) documentation for details on defining procedures in your module.
 
 ### Views
 
-For each [view](/functions/views) in your module, codegen generates:
+For each [view](../00200-functions/00500-views.md) in your module, codegen generates:
 
 - **Type definitions** for the view's return type
 - **Subscription interfaces** for subscribing to view results
@@ -349,7 +349,7 @@ For each [view](/functions/views) in your module, codegen generates:
 
 Views provide subscribable, computed queries over your data.
 
-See the [Views](/functions/views) documentation for details on defining views in your module.
+See the [Views](../00200-functions/00500-views.md) documentation for details on defining views in your module.
 
 ## Regenerating Bindings
 
@@ -361,9 +361,9 @@ If you're actively developing and testing changes, consider adding `spacetime ge
 
 Once you've generated the bindings, you're ready to connect to your database and start interacting with it. See:
 
-- [Connecting to SpacetimeDB](/clients/connection) for establishing a connection
-- [SDK API Reference](/clients/api) for using the generated bindings
-- Language-specific references: [Rust](/clients/rust), [C#](/clients/c-sharp), [TypeScript](/clients/typescript), [Unreal](/clients/unreal)
+- [Connecting to SpacetimeDB](./00300-connection.md) for establishing a connection
+- [SDK API Reference](./00400-sdk-api.md) for using the generated bindings
+- Language-specific references: [Rust](./00500-rust-reference.md), [C#](./00600-csharp-reference.md), [TypeScript](./00700-typescript-reference.md), [Unreal](./00800-unreal-reference.md)
 
 ## Troubleshooting
 

@@ -92,7 +92,7 @@ export class TableCacheImpl<
         keyof TableDefForTableName<RemoteModule, TableName>['columns'] & string
       >;
       const index = this.#makeReadonlyIndex(this.tableDef, idxDef);
-      (this as any)[idx.name!] = index;
+      (this as any)[idxDef.name] = index;
     }
   }
 

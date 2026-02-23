@@ -1669,13 +1669,13 @@ At this point you've learned how to create a basic TypeScript client for your Sp
 
 Next, we'll show you how to get up and running with a simple SpacetimeDB app with a client written in C#.
 
-We'll implement a command-line client for the module created in our [Rust](/docs/quickstarts/rust) or [C# Module](/docs/quickstarts/c-sharp) Quickstart guides. Ensure you followed one of these guides before continuing.
+We'll implement a command-line client for the module created in our [Rust](../00200-quickstarts/00500-rust.md) or [C# Module](../00200-quickstarts/00600-c-sharp.md) Quickstart guides. Ensure you followed one of these guides before continuing.
 
-If you've not already installed .NET 8, the [C# Module](/docs/quickstarts/c-sharp) Quickstart guide will show you how to install it, which we will need to run the client.
+If you've not already installed .NET 8, the [C# Module](../00200-quickstarts/00600-c-sharp.md) Quickstart guide will show you how to install it, which we will need to run the client.
 
 ### Project structure
 
-Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/quickstarts/rust) or [C# Module Quickstart](/docs/quickstarts/c-sharp) guides:
+Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](../00200-quickstarts/00500-rust.md) or [C# Module Quickstart](../00200-quickstarts/00600-c-sharp.md) guides:
 
 ```bash
 cd quickstart-chat
@@ -2031,7 +2031,7 @@ void Message_OnInsert(EventContext ctx, Message insertedValue)
 
 void PrintMessage(RemoteTables tables, Message message)
 {
-    var sender = tables.User.UserIdentityIdxBtree.Find(message.Sender);
+    var sender = tables.User.Identity.Find(message.Sender);
     var senderName = "unknown";
     if (sender != null)
     {
@@ -2258,7 +2258,7 @@ We'll implement a command-line client for the module created in our Rust or C# M
 
 ### Project structure
 
-Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/quickstarts/rust) or [C# Module Quickstart](/docs/quickstarts/c-sharp) guides:
+Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](../00200-quickstarts/00500-rust.md) or [C# Module Quickstart](../00200-quickstarts/00600-c-sharp.md) guides:
 
 ```bash
 cd quickstart-chat
@@ -2733,6 +2733,6 @@ User <my-name> connected.
 
 Congratulations! You've built a chat app with SpacetimeDB.
 
-- Check out the [SDK Reference documentation](/clients) for more advanced usage
-- Explore the [Unity Tutorial](/docs/tutorials/unity) or [Unreal Tutorial](/docs/tutorials/unreal) for game development
-- Learn about [Procedures](/functions/procedures) for making external API calls
+- Check out the [SDK Reference documentation](../../00200-core-concepts/00600-clients.md) for more advanced usage
+- Explore the [Unity Tutorial](./00300-unity-tutorial/index.md) or [Unreal Tutorial](./00400-unreal-tutorial/index.md) for game development
+- Learn about [Procedures](../../00200-core-concepts/00200-functions/00400-procedures.md) for making external API calls

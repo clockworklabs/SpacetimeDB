@@ -4,12 +4,6 @@ import { unsafeUniformIntDistribution } from 'pure-rand/distribution/UnsafeUnifo
 import { xoroshiro128plus } from 'pure-rand/generator/XoroShiro';
 import type { Timestamp } from '../lib/timestamp';
 
-declare global {
-  interface Math {
-    random(): never;
-  }
-}
-
 type IntArray =
   | Int8Array
   | Uint8Array

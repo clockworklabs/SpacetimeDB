@@ -60,7 +60,7 @@ namespace SpacetimeDB.Types
             {
             }
 
-            string IReducerArgs.ReducerName => "Insert";
+            string IReducerArgs.ReducerName => "insert";
         }
     }
 }

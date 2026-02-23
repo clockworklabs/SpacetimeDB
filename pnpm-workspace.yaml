@@ -10,6 +10,8 @@ packages:
   - 'templates/svelte-ts'
   - 'templates/angular-ts'
   - 'templates/nuxt-ts'
+  - 'templates/remix-ts'
+  - 'templates/bun-ts'
   - 'modules/benchmarks-ts'
   - 'modules/module-test-ts'
   - 'templates/chat-react-ts/spacetimedb'

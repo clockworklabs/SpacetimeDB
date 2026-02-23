@@ -5,7 +5,7 @@
 use super::vec_i_128_type::VecI128;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `vec_i128`.
+/// Table handle for the table `vec_i_128`.
 ///
 /// Obtain a handle from the [`VecI128TableAccess::vec_i_128`] method on [`super::RemoteTables`],
 /// like `ctx.db.vec_i_128()`.
@@ -19,19 +19,19 @@ pub struct VecI128TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `vec_i128`.
+/// Extension trait for access to the table `vec_i_128`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait VecI128TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`VecI128TableHandle`], which mediates access to the table `vec_i128`.
+    /// Obtain a [`VecI128TableHandle`], which mediates access to the table `vec_i_128`.
     fn vec_i_128(&self) -> VecI128TableHandle<'_>;
 }
 
 impl VecI128TableAccess for super::RemoteTables {
     fn vec_i_128(&self) -> VecI128TableHandle<'_> {
         VecI128TableHandle {
-            imp: self.imp.get_table::<VecI128>("vec_i128"),
+            imp: self.imp.get_table::<VecI128>("vec_i_128"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,7 +80,7 @@ impl<'ctx> __sdk::Table for VecI128TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<VecI128>("vec_i128");
+    let _table = client_cache.get_or_make_table::<VecI128>("vec_i_128");
 }
 
 #[doc(hidden)]
@@ -96,14 +96,14 @@ pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::R
 /// Extension trait for query builder access to the table `VecI128`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait vec_i128QueryTableAccess {
+pub trait vec_i_128QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `VecI128`.
-    fn vec_i128(&self) -> __sdk::__query_builder::Table<VecI128>;
+    fn vec_i_128(&self) -> __sdk::__query_builder::Table<VecI128>;
 }
 
-impl vec_i128QueryTableAccess for __sdk::QueryTableAccessor {
-    fn vec_i128(&self) -> __sdk::__query_builder::Table<VecI128> {
-        __sdk::__query_builder::Table::new("vec_i128")
+impl vec_i_128QueryTableAccess for __sdk::QueryTableAccessor {
+    fn vec_i_128(&self) -> __sdk::__query_builder::Table<VecI128> {
+        __sdk::__query_builder::Table::new("vec_i_128")
     }
 }

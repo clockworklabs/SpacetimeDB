@@ -61,7 +61,7 @@ namespace SpacetimeDB.Types
                 this.Msg = default!;
             }
 
-            string IReducerArgs.ReducerName => "InsertResult";
+            string IReducerArgs.ReducerName => "insert_result";
         }
     }
 }

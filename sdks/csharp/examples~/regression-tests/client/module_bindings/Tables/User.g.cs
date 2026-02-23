@@ -17,48 +17,48 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "user";
 
-            public sealed class UserAgeIdxBtreeIndex : BTreeIndexBase<byte>
+            public sealed class AgeIndex : BTreeIndexBase<byte>
             {
                 protected override byte GetKey(User row) => row.Age;
 
-                public UserAgeIdxBtreeIndex(UserHandle table) : base(table) { }
+                public AgeIndex(UserHandle table) : base(table) { }
             }
 
-            public readonly UserAgeIdxBtreeIndex UserAgeIdxBtree;
+            public readonly AgeIndex Age;
 
-            public sealed class UserIdIdxBtreeUniqueIndex : UniqueIndexBase<SpacetimeDB.Uuid>
+            public sealed class IdUniqueIndex : UniqueIndexBase<SpacetimeDB.Uuid>
             {
                 protected override SpacetimeDB.Uuid GetKey(User row) => row.Id;
 
-                public UserIdIdxBtreeUniqueIndex(UserHandle table) : base(table) { }
+                public IdUniqueIndex(UserHandle table) : base(table) { }
             }
 
-            public readonly UserIdIdxBtreeUniqueIndex UserIdIdxBtree;
+            public readonly IdUniqueIndex Id;
 
-            public sealed class UserIsAdminIdxBtreeIndex : BTreeIndexBase<bool>
+            public sealed class IsAdminIndex : BTreeIndexBase<bool>
             {
                 protected override bool GetKey(User row) => row.IsAdmin;
 
-                public UserIsAdminIdxBtreeIndex(UserHandle table) : base(table) { }
+                public IsAdminIndex(UserHandle table) : base(table) { }
             }
 
-            public readonly UserIsAdminIdxBtreeIndex UserIsAdminIdxBtree;
+            public readonly IsAdminIndex IsAdmin;
 
-            public sealed class UserNameIdxBtreeIndex : BTreeIndexBase<string>
+            public sealed class NameIndex : BTreeIndexBase<string>
             {
                 protected override string GetKey(User row) => row.Name;
 
-                public UserNameIdxBtreeIndex(UserHandle table) : base(table) { }
+                public NameIndex(UserHandle table) : base(table) { }
             }
 
-            public readonly UserNameIdxBtreeIndex UserNameIdxBtree;
+            public readonly NameIndex Name;
 
             internal UserHandle(DbConnection conn) : base(conn)
             {
-                UserAgeIdxBtree = new(this);
-                UserIdIdxBtree = new(this);
-                UserIsAdminIdxBtree = new(this);
-                UserNameIdxBtree = new(this);
+                Age = new(this);
+                Id = new(this);
+                IsAdmin = new(this);
+                Name = new(this);
             }
 
             protected override object GetPrimaryKey(User row) => row.Id;
@@ -76,10 +76,10 @@ namespace SpacetimeDB.Types
 
         public UserCols(string tableName)
         {
-            Id = new global::SpacetimeDB.Col<User, SpacetimeDB.Uuid>(tableName, "Id");
-            Name = new global::SpacetimeDB.Col<User, string>(tableName, "Name");
-            IsAdmin = new global::SpacetimeDB.Col<User, bool>(tableName, "IsAdmin");
-            Age = new global::SpacetimeDB.Col<User, byte>(tableName, "Age");
+            Id = new global::SpacetimeDB.Col<User, SpacetimeDB.Uuid>(tableName, "id");
+            Name = new global::SpacetimeDB.Col<User, string>(tableName, "name");
+            IsAdmin = new global::SpacetimeDB.Col<User, bool>(tableName, "is_admin");
+            Age = new global::SpacetimeDB.Col<User, byte>(tableName, "age");
         }
     }
 
@@ -92,10 +92,10 @@ namespace SpacetimeDB.Types
 
         public UserIxCols(string tableName)
         {
-            Id = new global::SpacetimeDB.IxCol<User, SpacetimeDB.Uuid>(tableName, "Id");
-            Name = new global::SpacetimeDB.IxCol<User, string>(tableName, "Name");
-            IsAdmin = new global::SpacetimeDB.IxCol<User, bool>(tableName, "IsAdmin");
-            Age = new global::SpacetimeDB.IxCol<User, byte>(tableName, "Age");
+            Id = new global::SpacetimeDB.IxCol<User, SpacetimeDB.Uuid>(tableName, "id");
+            Name = new global::SpacetimeDB.IxCol<User, string>(tableName, "name");
+            IsAdmin = new global::SpacetimeDB.IxCol<User, bool>(tableName, "is_admin");
+            Age = new global::SpacetimeDB.IxCol<User, byte>(tableName, "age");
         }
     }
 }

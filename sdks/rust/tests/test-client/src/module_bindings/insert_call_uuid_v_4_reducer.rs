@@ -19,11 +19,11 @@ impl __sdk::InModule for InsertCallUuidV4Args {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `insert_call_uuid_v4`.
+/// Extension trait for access to the reducer `insert_call_uuid_v_4`.
 ///
 /// Implemented for [`super::RemoteReducers`].
 pub trait insert_call_uuid_v_4 {
-    /// Request that the remote module invoke the reducer `insert_call_uuid_v4` to run as soon as possible.
+    /// Request that the remote module invoke the reducer `insert_call_uuid_v_4` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
@@ -33,7 +33,7 @@ pub trait insert_call_uuid_v_4 {
         self.insert_call_uuid_v_4_then(|_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `insert_call_uuid_v4` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `insert_call_uuid_v_4` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
