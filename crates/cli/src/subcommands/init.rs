@@ -960,7 +960,7 @@ fn get_spacetimedb_typescript_version() -> &'static str {
     embedded::get_typescript_bindings_version()
 }
 
-fn update_package_json(dir: &Path, package_name: &str) -> anyhow::Result<()> {
+fn update_package_json(dir: &Path, package_name: &str, is_server: bool) -> anyhow::Result<()> {
     let package_path = dir.join("package.json");
     if !package_path.exists() {
         return Ok(());
@@ -974,7 +974,12 @@ fn update_package_json(dir: &Path, package_name: &str) -> anyhow::Result<()> {
     // Update spacetimedb version if it exists in dependencies
     if let Some(deps) = package.get_mut("dependencies") {
         if deps.get("spacetimedb").is_some() {
-            deps["spacetimedb"] = json!(format!("^{}", get_spacetimedb_typescript_version()));
+            if is_server {
+                deps["spacetimedb"] = json!("file:../../../SpacetimeDB/crates/bindings-typescript");
+            } else {
+                deps["spacetimedb"] = json!("file:../../SpacetimeDB/crates/bindings-typescript");
+            }
+
         }
     }
 
@@ -1314,7 +1319,7 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path, is_server_only: bo
         // Update client name
         match config.client_lang {
             Some(ClientLanguage::TypeScript) => {
-                update_package_json(project_path, &config.project_name)?;
+                update_package_json(project_path, &config.project_name, false)?;
                 write_typescript_client_env_file(project_path, &config.project_name, config.use_local)?;
                 println!(
                     "{}",
@@ -1346,7 +1351,7 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path, is_server_only: bo
     // Update server name
     match config.server_lang {
         Some(ServerLanguage::TypeScript) => {
-            update_package_json(&server_dir, &config.project_name)?;
+            update_package_json(&server_dir, &config.project_name, true)?;
         }
         Some(ServerLanguage::Rust) => {
             update_cargo_toml_name(&server_dir, &config.project_name)?;
@@ -1437,7 +1442,7 @@ fn init_empty_csharp_server(server_dir: &Path, _project_name: &str) -> anyhow::R
 
 fn init_empty_typescript_server(server_dir: &Path, project_name: &str) -> anyhow::Result<()> {
     init_typescript_project(server_dir)?;
-    update_package_json(server_dir, project_name)?;
+    update_package_json(server_dir, project_name, true)?;
     Ok(())
 }
 
