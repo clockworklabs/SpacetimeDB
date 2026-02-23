@@ -41,10 +41,9 @@ pub fn confirmed() -> Arg {
     Arg::new("confirmed")
         .required(false)
         .long("confirmed")
-        .num_args(0..=1)
-        .default_missing_value("true")
+        .num_args(1)
         .value_parser(value_parser!(bool))
-        .help("Control whether the server delivers only confirmed (durable) transaction updates. Defaults to server setting if not specified. Pass --confirmed or --confirmed=true to enable, --confirmed=false to disable.")
+        .help("Control whether the server delivers only confirmed (durable) transaction updates. Defaults to server setting if not specified. Pass --confirmed=true to enable, --confirmed=false to disable.")
 }
 
 pub fn clear_database() -> Arg {

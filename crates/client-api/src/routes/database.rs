@@ -520,7 +520,8 @@ where
         .authorize_sql(caller_identity, database.database_identity)
         .await?;
 
-    host.exec_sql(auth, database, confirmed.unwrap_or(true), sql).await
+    host.exec_sql(auth, database, confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS), sql)
+        .await
 }
 
 pub async fn sql<S>(
