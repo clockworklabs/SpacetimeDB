@@ -49,6 +49,7 @@ members = [
   "modules/sdk-test-connect-disconnect",
   "modules/sdk-test-procedure",
   "modules/sdk-test-view",
+  "modules/sdk-test-case-conversion",
   "modules/sdk-test-event-table",
   "sdks/rust/tests/test-client",
   "sdks/rust/tests/test-counter",
