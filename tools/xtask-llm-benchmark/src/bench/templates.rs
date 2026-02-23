@@ -43,6 +43,15 @@ fn tmpl_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src").join("templates")
 }
 
+/// Workspace root (public/) for local SDK paths.
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("xtask-llm-benchmark is under public/tools/xtask-llm-benchmark")
+        .to_path_buf()
+}
+
 fn copy_tree_with_templates(src: &Path, dst: &Path) -> Result<()> {
     fn recurse(from: &Path, to: &Path) -> Result<()> {
         fs::create_dir_all(to)?;
@@ -98,7 +107,28 @@ fn inject_rust(root: &Path, llm_code: &str) -> anyhow::Result<()> {
         }
         contents.push_str(&cleaned);
     }
-    fs::write(&lib, contents).with_context(|| format!("write {}", lib.display()))
+    fs::write(&lib, contents).with_context(|| format!("write {}", lib.display()))?;
+
+    // Use local SDK: replace placeholder with relative path to crates/bindings.
+    // Relative path avoids Windows canonical paths (//?/D:/...) which can break Cargo.
+    let ws = workspace_root().canonicalize().with_context(|| "workspace root not found")?;
+    let sdk_path = ws.join("crates/bindings");
+    if !sdk_path.is_dir() {
+        bail!("local Rust SDK not found at {}", sdk_path.display());
+    }
+    let root_canon = root.canonicalize().with_context(|| format!("materialized root not found: {}", root.display()))?;
+    let root_rel = root_canon
+        .strip_prefix(&ws)
+        .with_context(|| format!("materialized dir {:?} not under workspace {:?}", root_canon, ws))?;
+    let ups = root_rel.components().count();
+    let relative = std::iter::repeat("..").take(ups).collect::<Vec<_>>().join("/")
+        + "/crates/bindings";
+    let replacement = format!(r#"{{ path = "{}" }}"#, relative);
+    let cargo_toml = root.join("Cargo.toml");
+    let mut toml = fs::read_to_string(&cargo_toml).with_context(|| format!("read {}", cargo_toml.display()))?;
+    toml = toml.replace("{SPACETIME_RUST_SDK_PATH}", &replacement);
+    fs::write(&cargo_toml, toml).with_context(|| format!("write {}", cargo_toml.display()))?;
+    Ok(())
 }
 
 fn inject_csharp(root: &Path, llm_code: &str) -> anyhow::Result<()> {
@@ -116,7 +146,32 @@ fn inject_csharp(root: &Path, llm_code: &str) -> anyhow::Result<()> {
         }
         contents.push_str(&cleaned);
     }
-    fs::write(&prog, contents).with_context(|| format!("write {}", prog.display()))
+    fs::write(&prog, contents).with_context(|| format!("write {}", prog.display()))?;
+
+    // Use local SDK: replace placeholder with relative path to crates/bindings-csharp/Runtime/Runtime.csproj.
+    // Relative path avoids Windows canonical paths (\\?\D:\...) which break MSBuild.
+    let ws = workspace_root().canonicalize().with_context(|| "workspace root not found")?;
+    let runtime_csproj = ws.join("crates/bindings-csharp/Runtime/Runtime.csproj");
+    if !runtime_csproj.is_file() {
+        bail!("local C# Runtime not found at {}", runtime_csproj.display());
+    }
+    let root_canon = root.canonicalize().with_context(|| format!("materialized root not found: {}", root.display()))?;
+    let root_rel = root_canon
+        .strip_prefix(&ws)
+        .with_context(|| format!("materialized dir {:?} not under workspace {:?}", root_canon, ws))?;
+    let ups = root_rel.components().count();
+    let base_rel = std::iter::repeat("..").take(ups).collect::<Vec<_>>().join("/")
+        + "/crates/bindings-csharp";
+    let runtime_ref = format!("{}/Runtime/Runtime.csproj", base_rel);
+    let runtime_dir = format!("{}/Runtime", base_rel);
+    let codegen_ref = format!("{}/Codegen/Codegen.csproj", base_rel);
+    let csproj_path = root.join("StdbModule.csproj");
+    let mut csproj = fs::read_to_string(&csproj_path).with_context(|| format!("read {}", csproj_path.display()))?;
+    csproj = csproj.replace("{SPACETIME_CSHARP_RUNTIME_DIR}", &runtime_dir);
+    csproj = csproj.replace("{SPACETIME_CSHARP_RUNTIME_REF}", &runtime_ref);
+    csproj = csproj.replace("{SPACETIME_CSHARP_CODEGEN_REF}", &codegen_ref);
+    fs::write(&csproj_path, csproj).with_context(|| format!("write {}", csproj_path.display()))?;
+    Ok(())
 }
 
 fn inject_typescript(root: &Path, llm_code: &str) -> anyhow::Result<()> {
@@ -134,7 +189,35 @@ fn inject_typescript(root: &Path, llm_code: &str) -> anyhow::Result<()> {
         }
         contents.push_str(&cleaned);
     }
-    fs::write(&lib, contents).with_context(|| format!("write {}", lib.display()))
+    fs::write(&lib, contents).with_context(|| format!("write {}", lib.display()))?;
+
+    // Use local SDK: replace placeholder with file: path to crates/bindings-typescript.
+    // Use a relative path so pnpm on Windows can resolve it (absolute file:D:/... can become /?/D:/... and fail).
+    let ws = workspace_root().canonicalize().with_context(|| "workspace root not found")?;
+    let sdk_path = ws.join("crates/bindings-typescript");
+    if !sdk_path.is_dir() {
+        bail!("local TypeScript SDK not found at {}", sdk_path.display());
+    }
+    let dist_server = sdk_path.join("dist/server/index.mjs");
+    if !dist_server.is_file() {
+        bail!(
+            "local TypeScript SDK at {} is not built (missing dist/server). Run: pnpm build (in crates/bindings-typescript)",
+            sdk_path.display()
+        );
+    }
+    let root_canon = root.canonicalize().with_context(|| format!("materialized root not found: {}", root.display()))?;
+    let root_rel = root_canon
+        .strip_prefix(&ws)
+        .with_context(|| format!("materialized dir {:?} not under workspace {:?}", root_canon, ws))?;
+    let ups = root_rel.components().count();
+    let relative = std::iter::repeat("..").take(ups).collect::<Vec<_>>().join("/")
+        + "/crates/bindings-typescript";
+    let replacement = format!("file:{}", relative);
+    let package_json = root.join("package.json");
+    let mut pkg = fs::read_to_string(&package_json).with_context(|| format!("read {}", package_json.display()))?;
+    pkg = pkg.replace("{SPACETIME_TS_SDK_REF}", &replacement);
+    fs::write(&package_json, pkg).with_context(|| format!("write {}", package_json.display()))?;
+    Ok(())
 }
 
 /// Remove leading/trailing Markdown fences like ```rust ... ``` or ~~~
