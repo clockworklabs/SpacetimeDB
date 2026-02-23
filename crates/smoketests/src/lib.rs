@@ -1413,6 +1413,7 @@ log = "0.4"
         ];
         if confirmed {
             args.push("--confirmed".to_string());
+            args.push("true".to_string());
         }
         args.push("--".to_string());
         cmd.args(&args)
