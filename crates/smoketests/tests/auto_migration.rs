@@ -343,7 +343,10 @@ fn test_add_table_columns() {
     // Subscribe to person table changes multiple times to simulate active clients
     let mut subs = Vec::with_capacity(NUM_SUBSCRIBERS);
     for _ in 0..NUM_SUBSCRIBERS {
-        subs.push(test.subscribe_background(&["select * from person"], 5).unwrap());
+        subs.push(
+            test.subscribe_background_unconfirmed(&["select * from person"], 5)
+                .unwrap(),
+        );
     }
 
     // Insert under initial schema

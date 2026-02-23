@@ -1376,16 +1376,26 @@ log = "0.4"
     /// This matches Python's subscribe semantics - start subscription first,
     /// perform actions, then call the handle to collect results.
     pub fn subscribe_background(&self, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
-        self.subscribe_background_opts(queries, n, false)
+        self.subscribe_background_opts(queries, n, None)
     }
 
     /// Starts a subscription in the background with --confirmed flag.
     pub fn subscribe_background_confirmed(&self, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
-        self.subscribe_background_opts(queries, n, true)
+        self.subscribe_background_opts(queries, n, Some(true))
+    }
+
+    /// Starts a subscription in the background with --confirmed flag.
+    pub fn subscribe_background_unconfirmed(&self, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
+        self.subscribe_background_opts(queries, n, Some(false))
     }
 
     /// Internal helper for background subscribe with options.
-    fn subscribe_background_opts(&self, queries: &[&str], n: usize, confirmed: bool) -> Result<SubscriptionHandle> {
+    fn subscribe_background_opts(
+        &self,
+        queries: &[&str],
+        n: usize,
+        confirmed: Option<bool>,
+    ) -> Result<SubscriptionHandle> {
         use std::io::{BufRead, BufReader};
 
         let identity = self
@@ -1411,9 +1421,9 @@ log = "0.4"
             n.to_string(),
             "--print-initial-update".to_string(),
         ];
-        if confirmed {
+        if let Some(confirmed) = confirmed {
             args.push("--confirmed".to_string());
-            args.push("true".to_string());
+            args.push(confirmed.to_string());
         }
         args.push("--".to_string());
         cmd.args(&args)
