@@ -24,7 +24,7 @@ Get a SpacetimeDB Node.js app running in under 5 minutes.
     <StepText>
       Run the `spacetime dev` command to create a new project with a SpacetimeDB module and Node.js client.
 
-      This will start the local SpacetimeDB server, publish your module, and generate TypeScript bindings.
+      This starts the local SpacetimeDB server, publishes your module, generates TypeScript bindings, and runs the Node.js client.
     </StepText>
     <StepCode>
 
@@ -98,58 +98,32 @@ export const say_hello = spacetimedb.reducer((ctx) => {
 
   <Step title="Run the client">
     <StepText>
-      In a new terminal, run the Node.js client. It will connect to SpacetimeDB and start an interactive CLI where you can add people and query the database.
+      `spacetime dev` starts both the server and the Node.js client. The client connects to SpacetimeDB, subscribes to tables, and displays people as they are added or removed. Press Ctrl+C to exit.
     </StepText>
     <StepCode>
 ```bash
-# Run with auto-reload during development
-npm run dev
-
-# Or run once
-
-npm run start
-
+spacetime dev --template nodejs-ts
 ```
     </StepCode>
   </Step>
 
-  <Step title="Use the interactive CLI">
+  <Step title="Call reducers from the SpacetimeDB CLI">
     <StepText>
-      The client provides a command-line interface to interact with your SpacetimeDB module. Type a name to add a person, or use the built-in commands.
+      Use the SpacetimeDB CLI to add people and invoke reducers. Changes appear in your Node.js client in real time.
     </StepText>
     <StepCode>
-```
+```bash
+# Add a person
+spacetime call nodejs-ts add Alice
+spacetime call nodejs-ts add Bob
 
-Connecting to SpacetimeDB...
-URI: ws://localhost:3000
-Module: nodejs-ts
+# Greet everyone (check server logs)
 
-Connected to SpacetimeDB!
-Identity: abc123def456...
+spacetime call nodejs-ts say_hello
 
-Current people (0):
-(none yet)
+# Query the database
 
-Commands:
-<name> - Add a person with that name
-list - Show all people
-hello - Greet everyone (check server logs)
-Ctrl+C - Quit
-
-> Alice
-> [Added] Alice
-
-> Bob
-> [Added] Bob
-
-> list
-> People in database:
-
-- Alice
-- Bob
-
-> hello
-> Called say_hello reducer (check server logs)
+spacetime sql nodejs-ts "SELECT * FROM person"
 
 ````
     </StepCode>
@@ -157,15 +131,12 @@ Ctrl+C - Quit
 
   <Step title="Understand the client code">
     <StepText>
-      Open `src/main.ts` to see the Node.js client. It uses `DbConnection.builder()` to connect to SpacetimeDB, subscribes to tables, and sets up the interactive CLI using Node's `readline` module.
-
-      Unlike browser apps, Node.js stores the authentication token in a file instead of localStorage.
+      Open `src/main.ts` to see the Node.js client. It uses `DbConnection.builder()` to connect to SpacetimeDB, subscribes to tables, and registers callbacks for insert/delete events. Unlike browser apps, Node.js stores the authentication token in a file instead of localStorage.
     </StepText>
     <StepCode>
 ```typescript
 import { DbConnection } from './module_bindings/index.js';
 
-// Build and establish connection
 DbConnection.builder()
   .withUri(HOST)
   .withDatabaseName(DB_NAME)
@@ -177,8 +148,9 @@ DbConnection.builder()
     // Subscribe to all tables
     conn.subscriptionBuilder()
       .onApplied((ctx) => {
-        // Show current data, start CLI
-        setupCLI(conn);
+        // Show current people
+        const people = [...ctx.db.person.iter()];
+        console.log('Current people:', people.length);
       })
       .subscribeToAllTables();
 
@@ -194,18 +166,18 @@ DbConnection.builder()
 
   </Step>
 
-  <Step title="Test with the SpacetimeDB CLI">
+  <Step title="More CLI examples">
     <StepText>
-      You can also use the SpacetimeDB CLI to call reducers and query your data directly. Changes made via the CLI will appear in your Node.js client in real-time.
+      The SpacetimeDB CLI can call reducers and query your data. Changes appear in your Node.js client in real time.
     </StepText>
     <StepCode>
 ```bash
 # Call the add reducer to insert a person
-spacetime call add Charlie
+spacetime call nodejs-ts add Charlie
 
 # Query the person table
 
-spacetime sql "SELECT \* FROM person"
+spacetime sql nodejs-ts "SELECT * FROM person"
 name
 
 ---
@@ -216,7 +188,7 @@ name
 
 # Call say_hello to greet everyone
 
-spacetime call say_hello
+spacetime call nodejs-ts say_hello
 
 # View the module logs
 
@@ -236,7 +208,7 @@ spacetime logs
 
       **Environment variables:** Configure the connection using `SPACETIMEDB_HOST` and `SPACETIMEDB_DB_NAME` environment variables.
 
-      **Graceful shutdown:** The template includes signal handlers for `SIGINT` and `SIGTERM` to cleanly disconnect when stopping the process.
+      **Exiting:** Press Ctrl+C to stop the client.
     </StepText>
     <StepCode>
 ```bash
