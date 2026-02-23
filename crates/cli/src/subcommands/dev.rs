@@ -631,7 +631,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let db_name_for_client = &db_names_for_logging[0];
 
     // Extract watch directories from publish configs
-    let watch_dirs = extract_watch_dirs(&publish_configs, &spacetimedb_dir);
+    let watch_dirs = extract_watch_dirs(&publish_configs, &spacetimedb_dir, &project_dir);
 
     println!("\n{}", "Starting development mode...".green().bold());
     if db_names_for_logging.len() == 1 {
@@ -936,6 +936,31 @@ async fn generate_build_and_publish(
         tasks::build(spacetimedb_dir, Some(Path::new("src")), false, None).context("Failed to build project")?;
     println!("{}", "Build complete!".green());
 
+    // For TypeScript client, always update .env.local with the database name
+    // from config so the client connects to the correct database.
+    if let Some(first_config) = publish_configs.first() {
+        let is_ts_client = client_language == Some(&Language::TypeScript)
+            || generate::resolve_language(spacetimedb_dir, client_language.copied())
+                .map(|l| l == Language::TypeScript)
+                .unwrap_or(false);
+
+        if is_ts_client {
+            if let Some(first_db_name) = first_config.get_config_value("database").and_then(|v| v.as_str()) {
+                let server_for_env =
+                    server.or_else(|| first_config.get_config_value("server").and_then(|v| v.as_str()));
+
+                println!(
+                    "{} {}...",
+                    "Updating .env.local with database name".cyan(),
+                    first_db_name
+                );
+                let env_path = project_dir.join(".env.local");
+                let server_host_url = config.get_host_url(server_for_env)?;
+                upsert_env_db_names_and_hosts(&env_path, &server_host_url, first_db_name)?;
+            }
+        }
+    }
+
     if skip_generate {
         println!("{}", "Skipping generate step (--skip-generate).".dimmed());
     } else if using_spacetime_config {
@@ -956,27 +981,6 @@ async fn generate_build_and_publish(
         }
     } else {
         let resolved_client_language = generate::resolve_language(spacetimedb_dir, client_language.copied())?;
-
-        // For TypeScript client, update .env.local with first database name
-        if resolved_client_language == Language::TypeScript {
-            let first_config = publish_configs.first().expect("publish_configs cannot be empty");
-            let first_db_name = first_config
-                .get_config_value("database")
-                .and_then(|v| v.as_str())
-                .expect("database is a required field");
-
-            // CLI server takes precedence, otherwise use server from config
-            let server_for_env = server.or_else(|| first_config.get_config_value("server").and_then(|v| v.as_str()));
-
-            println!(
-                "{} {}...",
-                "Updating .env.local with database name".cyan(),
-                first_db_name
-            );
-            let env_path = project_dir.join(".env.local");
-            let server_host_url = config.get_host_url(server_for_env)?;
-            upsert_env_db_names_and_hosts(&env_path, &server_host_url, first_db_name)?;
-        }
 
         println!("{}", "Generating module bindings...".cyan());
         let generate_entry = generate::build_generate_entry(
@@ -1453,6 +1457,7 @@ fn resolve_database_sources(config: &SpacetimeConfig) -> HashMap<String, Option<
 fn extract_watch_dirs(
     publish_configs: &[CommandConfig<'_>],
     default_spacetimedb_dir: &Path,
+    project_dir: &Path,
 ) -> std::collections::HashSet<PathBuf> {
     use std::collections::HashSet;
     let mut watch_dirs = HashSet::new();
@@ -1461,10 +1466,17 @@ fn extract_watch_dirs(
         let module_path = config_entry
             .get_config_value("module_path")
             .and_then(|v| v.as_str())
-            .map(PathBuf::from)
+            .map(|s| {
+                let p = PathBuf::from(s);
+                if p.is_absolute() {
+                    p
+                } else {
+                    project_dir.join(p)
+                }
+            })
             .unwrap_or_else(|| default_spacetimedb_dir.to_path_buf());
 
-        // Canonicalize to handle relative paths
+        // Canonicalize to normalize the path
         let canonical_path = module_path.canonicalize().unwrap_or(module_path);
 
         watch_dirs.insert(canonical_path);
