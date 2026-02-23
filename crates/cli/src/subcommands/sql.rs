@@ -5,6 +5,9 @@ use std::time::{Duration, Instant};
 use crate::api::{from_json_seed, ClientApi, Connection, SqlStmtResult, StmtStats};
 use crate::common_args;
 use crate::config::Config;
+use crate::subcommands::db_arg_resolution::{
+    load_config_db_targets, resolve_database_arg, resolve_optional_database_parts, ResolvedDbArgs,
+};
 use crate::util::{database_identity, get_auth_header, ResponseExt, UNSTABLE_WARNING};
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches};
@@ -17,35 +20,40 @@ pub fn cli() -> clap::Command {
     clap::Command::new("sql")
         .about(format!("Runs a SQL query on the database. {UNSTABLE_WARNING}"))
         .arg(
-            Arg::new("database")
-                .required(true)
-                .help("The name or identity of the database you would like to query"),
-        )
-        .arg(
-            Arg::new("query")
-                .action(ArgAction::Set)
-                .required(true)
+            Arg::new("sql_parts")
+                .num_args(0..)
                 .conflicts_with("interactive")
-                .help("The SQL query to execute"),
+                .help("SQL arguments: [DATABASE] <QUERY>"),
         )
         .arg(
             Arg::new("interactive")
                 .long("interactive")
                 .action(ArgAction::SetTrue)
-                .conflicts_with("query")
+                .conflicts_with("sql_parts")
                 .help("Instead of using a query, run an interactive command prompt for `SQL` expressions"),
         )
         .arg(common_args::confirmed())
         .arg(common_args::anonymous())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .arg(common_args::yes())
+        .arg(
+            Arg::new("no_config")
+                .long("no-config")
+                .action(ArgAction::SetTrue)
+                .help("Ignore spacetime.json configuration"),
+        )
 }
 
-pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<Connection, anyhow::Error> {
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
+pub(crate) async fn parse_req(
+    mut config: Config,
+    args: &ArgMatches,
+    database_name_or_identity: &str,
+    server_from_config: Option<&str>,
+) -> Result<Connection, anyhow::Error> {
+    let server_from_cli = args.get_one::<String>("server").map(|s| s.as_ref());
     let force = args.get_flag("force");
-    let database_name_or_identity = args.get_one::<String>("database").unwrap();
     let anon_identity = args.get_flag("anon_identity");
+    let server = server_from_cli.or(server_from_config);
 
     Ok(Connection {
         host: config.get_host_url(server)?,
@@ -175,21 +183,69 @@ fn stmt_result_to_table(client: PsqlClient, stmt_result: &SqlStmtResult) -> anyh
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     eprintln!("{UNSTABLE_WARNING}\n");
     let interactive = args.get_one::<bool>("interactive").unwrap_or(&false);
+    let no_config = args.get_flag("no_config");
+    let raw_parts: Vec<String> = args
+        .get_many::<String>("sql_parts")
+        .map(|vals| vals.cloned().collect())
+        .unwrap_or_default();
+    let config_targets = load_config_db_targets(no_config)?;
+
     if *interactive {
-        let con = parse_req(config, args).await?;
+        if raw_parts.len() > 1 {
+            anyhow::bail!(
+                "Too many positional arguments for interactive mode.\nUsage: spacetime sql [database] --interactive [--no-config]"
+            );
+        }
+        let resolved = resolve_database_arg(
+            raw_parts.first().map(|s| s.as_str()),
+            config_targets.as_deref(),
+            "spacetime sql [database] --interactive [--no-config]",
+        )?;
+        let con = parse_req(config, args, &resolved.database, resolved.server.as_deref()).await?;
 
         crate::repl::exec(con).await?;
     } else {
-        let query = args.get_one::<String>("query").unwrap();
+        let resolved = resolve_optional_database_parts(
+            &raw_parts,
+            config_targets.as_deref(),
+            "query",
+            "spacetime sql [database] <query> [--no-config]",
+        )
+        .or_else(|e| {
+            // `sql` expects exactly 1 query arg, so if we have 2+ positional args the first
+            // must be a database name. If it didn't match any config target, treat it as an
+            // ad-hoc database outside the project (auto-fallthrough).
+            if raw_parts.len() >= 2 {
+                Ok(ResolvedDbArgs {
+                    database: raw_parts[0].clone(),
+                    server: None,
+                    remaining_args: raw_parts[1..].to_vec(),
+                })
+            } else if raw_parts.len() == 1 && raw_parts[0].contains(' ') {
+                // The single arg contains spaces, so it's almost certainly a SQL query,
+                // not a database name. Give a clearer error than "missing <query>".
+                let targets = config_targets.as_deref().unwrap_or_default();
+                let known: Vec<&str> = targets.iter().map(|t| t.database.as_str()).collect();
+                Err(anyhow::anyhow!(
+                    "Multiple databases found in config: {}. Please specify which database to query:\n  \
+                     spacetime sql <database> \"{}\"",
+                    known.join(", "),
+                    raw_parts[0]
+                ))
+            } else {
+                Err(e)
+            }
+        })?;
+        let query = resolved.remaining_args.join(" ");
         let confirmed = args.get_flag("confirmed");
 
-        let con = parse_req(config, args).await?;
+        let con = parse_req(config, args, &resolved.database, resolved.server.as_deref()).await?;
         let mut api = ClientApi::new(con).sql();
         if confirmed {
             api = api.query(&[("confirmed", "true")]);
         }
 
-        run_sql(api, query, false).await?;
+        run_sql(api, &query, false).await?;
     }
     Ok(())
 }

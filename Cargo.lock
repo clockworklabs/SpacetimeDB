@@ -7497,6 +7497,7 @@ dependencies = [
  "anymap",
  "byte-unit",
  "clap 4.5.50",
+ "convert_case 0.6.0",
  "criterion",
  "foldhash 0.2.0",
  "futures",
@@ -8308,6 +8309,7 @@ name = "spacetimedb-schema"
 version = "2.0.0"
 dependencies = [
  "anyhow",
+ "convert_case 0.6.0",
  "derive_more 0.99.20",
  "enum-as-inner",
  "enum-map",

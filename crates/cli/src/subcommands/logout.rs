@@ -2,6 +2,7 @@ use crate::util::decode_identity;
 use crate::Config;
 use clap::{Arg, ArgMatches, Command};
 use reqwest::Url;
+use std::time::Duration;
 
 pub fn cli() -> Command {
     Command::new("logout").arg(
@@ -27,21 +28,18 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     // Best-effort server-side session invalidation.
     if let Some(web_session_token) = config.web_session_token() {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .build()
-            .unwrap_or_default();
-        match client
+        let client = reqwest::Client::builder().timeout(Duration::from_secs(5)).build()?;
+        let result = client
             .post(host.join("auth/cli/logout")?)
             .header("Authorization", format!("Bearer {web_session_token}"))
             .send()
-            .await
-        {
-            Ok(_) => {}
-            Err(_) => {
-                eprintln!("Warning: could not reach the server to invalidate your session.");
-                eprintln!("Your local credentials have been cleared, but the server-side session may persist.");
-            }
+            .await;
+
+        if let Err(e) = result {
+            eprintln!(
+                "Warning: Could not reach auth server to invalidate session: {e}\n\
+                 Local credentials have been cleared."
+            );
         }
     }
 

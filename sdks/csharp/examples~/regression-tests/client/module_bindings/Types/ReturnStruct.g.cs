@@ -13,9 +13,9 @@ namespace SpacetimeDB.Types
     [DataContract]
     public sealed partial class ReturnStruct
     {
-        [DataMember(Name = "A")]
+        [DataMember(Name = "a")]
         public uint A;
-        [DataMember(Name = "B")]
+        [DataMember(Name = "b")]
         public string B;
 
         public ReturnStruct(

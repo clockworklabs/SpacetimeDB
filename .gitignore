@@ -260,3 +260,7 @@ nul
 # csharp SDK packages
 /sdks/csharp/packages/
 /sdks/csharp/packages.meta
+
+# AI agent config
+.codex
+.claude

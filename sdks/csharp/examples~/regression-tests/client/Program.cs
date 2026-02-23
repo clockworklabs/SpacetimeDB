@@ -66,48 +66,46 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
                 throw err;
             }
         )
-        .AddQuery(qb => qb.From.ExampleData().Build())
-        .AddQuery(qb => qb.From.MyPlayer().Build())
-        .AddQuery(qb => qb.From.MyAccount().Build())
-        .AddQuery(qb => qb.From.MyAccountMissing().Build())
-        .AddQuery(qb => qb.From.PlayersAtLevelOne().Build())
-        .AddQuery(qb => qb.From.MyTable().Build())
-        .AddQuery(qb => qb.From.NullStringNonnullable().Build())
-        .AddQuery(qb => qb.From.NullStringNullable().Build())
-        .AddQuery(qb => qb.From.MyLog().Build())
-        .AddQuery(qb => qb.From.TestEvent().Build())
-        .AddQuery(qb => qb.From.Admins().Build())
-        .AddQuery(qb => qb.From.NullableVecView().Build())
-        .AddQuery(qb => qb.From.WhereTest().Where(c => c.Value.Gt(10)).Build())
+        .AddQuery(qb => qb.From.ExampleData())
+        .AddQuery(qb => qb.From.MyPlayer())
+        .AddQuery(qb => qb.From.MyAccount())
+        .AddQuery(qb => qb.From.MyAccountMissing())
+        .AddQuery(qb => qb.From.PlayersAtLevelOne())
+        .AddQuery(qb => qb.From.MyTable())
+        .AddQuery(qb => qb.From.NullStringNonnullable())
+        .AddQuery(qb => qb.From.NullStringNullable())
+        .AddQuery(qb => qb.From.MyLog())
+        .AddQuery(qb => qb.From.TestEvent())
+        .AddQuery(qb => qb.From.Admins())
+        .AddQuery(qb => qb.From.NullableVecView())
+        .AddQuery(qb => qb.From.WhereTest().Where(c => c.Value.Gt(10)))
         .AddQuery(qb =>
             qb.From.Player()
                 .LeftSemijoin(qb.From.PlayerLevel(), (p, pl) => p.Id.Eq(pl.PlayerId))
-                .Build()
         )
         .AddQuery(qb =>
             qb.From.Player()
                 .Where(c => c.Name.Eq("NewPlayer"))
                 .RightSemijoin(qb.From.PlayerLevel(), (p, pl) => p.Id.Eq(pl.PlayerId))
                 .Where(c => c.Level.Eq(1UL))
-                .Build()
         )
-        .AddQuery(qb => qb.From.UsersNamedAlice().Build())
-        .AddQuery(qb => qb.From.UsersAge1865().Build())
-        .AddQuery(qb => qb.From.UsersAge18Plus().Build())
-        .AddQuery(qb => qb.From.UsersAgeUnder18().Build())
-        .AddQuery(qb => qb.From.ScoresPlayer123().Build())
-        .AddQuery(qb => qb.From.ScoresPlayer123Range().Build())
-        .AddQuery(qb => qb.From.ScoresPlayer123Level5().Build())
+        .AddQuery(qb => qb.From.UsersNamedAlice())
+        .AddQuery(qb => qb.From.UsersAge1865())
+        .AddQuery(qb => qb.From.UsersAge18Plus())
+        .AddQuery(qb => qb.From.UsersAgeUnder18())
+        .AddQuery(qb => qb.From.ScoresPlayer123())
+        .AddQuery(qb => qb.From.ScoresPlayer123Range())
+        .AddQuery(qb => qb.From.ScoresPlayer123Level5())
         .AddQuery(qb =>
             qb.From.User()
                 .Where(c => c.Age.Gte((byte)18).And(c.Age.Lt((byte)65)))
                 .Where(c => c.IsAdmin.Eq(true).Or(c.Name.Eq("Charlie")))
-                .Build()
+                .Filter(c => c.Name.Neq("BOT"))
         )
-        .AddQuery(qb => qb.From.Score().Build())
-        .AddQuery(qb => qb.From.WhereTestView().Build())
-        .AddQuery(qb => qb.From.FindWhereTest().Build())
-        .AddQuery(qb => qb.From.WhereTestQuery().Build())
+        .AddQuery(qb => qb.From.Score())
+        .AddQuery(qb => qb.From.WhereTestView())
+        .AddQuery(qb => qb.From.FindWhereTest())
+        .AddQuery(qb => qb.From.WhereTestQuery())
         .Subscribe();
 
     // If testing against Rust, the indexed parameter will need to be changed to: ulong indexed
@@ -299,14 +297,14 @@ void ValidateBTreeIndexes(IRemoteDbContext conn)
     foreach (var data in conn.Db.ExampleData.Iter())
     {
         Debug.Assert(
-            conn.Db.ExampleData.ExampleDataIndexedIdxBtree.Filter(data.Id).Contains(data)
+            conn.Db.ExampleData.Indexed.Filter(data.Id).Contains(data)
         );
     }
     var outOfIndex = conn.Db.ExampleData.Iter().ToHashSet();
 
     for (uint i = 0; i < MAX_ID; i++)
     {
-        foreach (var data in conn.Db.ExampleData.ExampleDataIndexedIdxBtree.Filter(i))
+        foreach (var data in conn.Db.ExampleData.Indexed.Filter(i))
         {
             Debug.Assert(outOfIndex.Contains(data));
         }

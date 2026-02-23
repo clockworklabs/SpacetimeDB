@@ -28,11 +28,11 @@ impl __sdk::InModule for InsertIntoPkBtreeU32Args {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `insert_into_pk_btree_u32`.
+/// Extension trait for access to the reducer `insert_into_pk_btree_u_32`.
 ///
 /// Implemented for [`super::RemoteReducers`].
 pub trait insert_into_pk_btree_u_32 {
-    /// Request that the remote module invoke the reducer `insert_into_pk_btree_u32` to run as soon as possible.
+    /// Request that the remote module invoke the reducer `insert_into_pk_btree_u_32` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
@@ -42,7 +42,7 @@ pub trait insert_into_pk_btree_u_32 {
         self.insert_into_pk_btree_u_32_then(pk_u_32, bt_u_32, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `insert_into_pk_btree_u32` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `insert_into_pk_btree_u_32` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.

@@ -307,9 +307,9 @@ public static partial class Module
     }
 
     [SpacetimeDB.View(Accessor = "where_test_query", Public = true)]
-    public static Query<WhereTest> WhereTestQuery(ViewContext ctx)
+    public static IQuery<WhereTest> WhereTestQuery(ViewContext ctx)
     {
-        return ctx.From.where_test().Where(cols => cols.Id.Eq(SqlLit.Int(2u))).Build();
+        return ctx.From.where_test().Where(cols => cols.Id.Eq(SqlLit.Int(2u)));
     }
 
     [SpacetimeDB.View(Accessor = "find_where_test", Public = true)]

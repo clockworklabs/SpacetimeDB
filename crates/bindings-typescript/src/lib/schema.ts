@@ -6,6 +6,7 @@ import {
   type AlgebraicTypeVariants,
 } from './algebraic_type';
 import type {
+  CaseConversionPolicy,
   RawModuleDefV10,
   RawModuleDefV10Section,
   RawScopedTypeNameV10,
@@ -30,8 +31,7 @@ import {
   type RowObj,
   type VariantsObj,
 } from './type_builders';
-import type { CamelCase, Values } from './type_util';
-import { toCamelCase } from './util';
+import type { Values } from './type_util';
 
 export type TableNamesOf<S extends UntypedSchemaDef> = Values<
   S['tables']
@@ -58,7 +58,7 @@ export interface TableToSchema<
   AccName extends string,
   T extends UntypedTableSchema,
 > extends UntypedTableDef {
-  accessorName: CamelCase<AccName>;
+  accessorName: AccName;
   columns: T['rowType']['row'];
   rowType: T['rowSpacetimeType'];
   indexes: T['idxs'];
@@ -91,8 +91,8 @@ export function tableToSchema<
 
   type AllowedCol = keyof T['rowType']['row'] & string;
   return {
-    sourceName: schema.tableName ?? accName,
-    accessorName: toCamelCase(accName),
+    sourceName: accName,
+    accessorName: accName,
     columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
     rowType: schema.rowSpacetimeType,
     constraints: tableDef.constraints.map(c => ({
@@ -188,7 +188,27 @@ export class ModuleContext {
         value: module.rowLevelSecurity,
       }
     );
+    push(
+      module.explicitNames && {
+        tag: 'ExplicitNames',
+        value: module.explicitNames,
+      }
+    );
+    push(
+      module.caseConversionPolicy && {
+        tag: 'CaseConversionPolicy',
+        value: module.caseConversionPolicy,
+      }
+    );
     return { sections };
+  }
+
+  /**
+   * Set the case conversion policy for this module.
+   * Called by the settings mechanism.
+   */
+  setCaseConversionPolicy(policy: CaseConversionPolicy) {
+    this.#moduleDef.caseConversionPolicy = policy;
   }
 
   get typespace() {
