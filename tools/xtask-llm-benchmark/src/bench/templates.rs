@@ -52,6 +52,18 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// Relative path from materialized root to a workspace subpath (e.g. "crates/bindings").
+/// Avoids Windows canonical paths (//?/D:/...) which can break Cargo/MSBuild/pnpm.
+fn relative_to_workspace(root: &Path, ws_subpath: &str) -> Result<String> {
+    let ws = workspace_root().canonicalize().with_context(|| "workspace root not found")?;
+    let root_canon = root.canonicalize().with_context(|| format!("materialized root not found: {}", root.display()))?;
+    let root_rel = root_canon
+        .strip_prefix(&ws)
+        .with_context(|| format!("materialized dir {:?} not under workspace {:?}", root_canon, ws))?;
+    let ups = root_rel.components().count();
+    Ok(std::iter::repeat("..").take(ups).collect::<Vec<_>>().join("/") + "/" + ws_subpath)
+}
+
 fn copy_tree_with_templates(src: &Path, dst: &Path) -> Result<()> {
     fn recurse(from: &Path, to: &Path) -> Result<()> {
         fs::create_dir_all(to)?;
@@ -109,20 +121,11 @@ fn inject_rust(root: &Path, llm_code: &str) -> anyhow::Result<()> {
     }
     fs::write(&lib, contents).with_context(|| format!("write {}", lib.display()))?;
 
-    // Use local SDK: replace placeholder with relative path to crates/bindings.
-    // Relative path avoids Windows canonical paths (//?/D:/...) which can break Cargo.
-    let ws = workspace_root().canonicalize().with_context(|| "workspace root not found")?;
-    let sdk_path = ws.join("crates/bindings");
+    let relative = relative_to_workspace(root, "crates/bindings")?;
+    let sdk_path = workspace_root().join("crates/bindings");
     if !sdk_path.is_dir() {
         bail!("local Rust SDK not found at {}", sdk_path.display());
     }
-    let root_canon = root.canonicalize().with_context(|| format!("materialized root not found: {}", root.display()))?;
-    let root_rel = root_canon
-        .strip_prefix(&ws)
-        .with_context(|| format!("materialized dir {:?} not under workspace {:?}", root_canon, ws))?;
-    let ups = root_rel.components().count();
-    let relative = std::iter::repeat("..").take(ups).collect::<Vec<_>>().join("/")
-        + "/crates/bindings";
     let replacement = format!(r#"{{ path = "{}" }}"#, relative);
     let cargo_toml = root.join("Cargo.toml");
     let mut toml = fs::read_to_string(&cargo_toml).with_context(|| format!("read {}", cargo_toml.display()))?;
@@ -148,20 +151,11 @@ fn inject_csharp(root: &Path, llm_code: &str) -> anyhow::Result<()> {
     }
     fs::write(&prog, contents).with_context(|| format!("write {}", prog.display()))?;
 
-    // Use local SDK: replace placeholder with relative path to crates/bindings-csharp/Runtime/Runtime.csproj.
-    // Relative path avoids Windows canonical paths (\\?\D:\...) which break MSBuild.
-    let ws = workspace_root().canonicalize().with_context(|| "workspace root not found")?;
-    let runtime_csproj = ws.join("crates/bindings-csharp/Runtime/Runtime.csproj");
+    let base_rel = relative_to_workspace(root, "crates/bindings-csharp")?;
+    let runtime_csproj = workspace_root().join("crates/bindings-csharp/Runtime/Runtime.csproj");
     if !runtime_csproj.is_file() {
         bail!("local C# Runtime not found at {}", runtime_csproj.display());
     }
-    let root_canon = root.canonicalize().with_context(|| format!("materialized root not found: {}", root.display()))?;
-    let root_rel = root_canon
-        .strip_prefix(&ws)
-        .with_context(|| format!("materialized dir {:?} not under workspace {:?}", root_canon, ws))?;
-    let ups = root_rel.components().count();
-    let base_rel = std::iter::repeat("..").take(ups).collect::<Vec<_>>().join("/")
-        + "/crates/bindings-csharp";
     let runtime_ref = format!("{}/Runtime/Runtime.csproj", base_rel);
     let runtime_dir = format!("{}/Runtime", base_rel);
     let codegen_ref = format!("{}/Codegen/Codegen.csproj", base_rel);
@@ -191,10 +185,8 @@ fn inject_typescript(root: &Path, llm_code: &str) -> anyhow::Result<()> {
     }
     fs::write(&lib, contents).with_context(|| format!("write {}", lib.display()))?;
 
-    // Use local SDK: replace placeholder with file: path to crates/bindings-typescript.
-    // Use a relative path so pnpm on Windows can resolve it (absolute file:D:/... can become /?/D:/... and fail).
-    let ws = workspace_root().canonicalize().with_context(|| "workspace root not found")?;
-    let sdk_path = ws.join("crates/bindings-typescript");
+    let relative = relative_to_workspace(root, "crates/bindings-typescript")?;
+    let sdk_path = workspace_root().join("crates/bindings-typescript");
     if !sdk_path.is_dir() {
         bail!("local TypeScript SDK not found at {}", sdk_path.display());
     }
@@ -205,13 +197,6 @@ fn inject_typescript(root: &Path, llm_code: &str) -> anyhow::Result<()> {
             sdk_path.display()
         );
     }
-    let root_canon = root.canonicalize().with_context(|| format!("materialized root not found: {}", root.display()))?;
-    let root_rel = root_canon
-        .strip_prefix(&ws)
-        .with_context(|| format!("materialized dir {:?} not under workspace {:?}", root_canon, ws))?;
-    let ups = root_rel.components().count();
-    let relative = std::iter::repeat("..").take(ups).collect::<Vec<_>>().join("/")
-        + "/crates/bindings-typescript";
     let replacement = format!("file:{}", relative);
     let package_json = root.join("package.json");
     let mut pkg = fs::read_to_string(&package_json).with_context(|| format!("read {}", package_json.display()))?;

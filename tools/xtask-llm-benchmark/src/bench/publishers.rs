@@ -287,9 +287,6 @@ impl Publisher for TypeScriptPublisher {
                     }
                 }
             });
-        if env::var("NODEJS_DIR").is_err() {
-            eprintln!("[pnpm] NODEJS_DIR not set, using PATH to find pnpm");
-        }
         let mut pnpm_cmd = match &pnpm_exe {
             Some(p) => Command::new(p),
             None => Command::new("pnpm"),
