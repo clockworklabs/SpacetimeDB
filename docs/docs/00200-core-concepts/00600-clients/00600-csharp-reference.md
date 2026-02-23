@@ -382,8 +382,6 @@ For typed query subscriptions, use [`AddQuery`](#method-addquery).
 
 ##### Method `AddQuery`
 
-`AddQuery` takes a builder function that returns an `IQuery<TRow>`. Generated query builders produce a `Query<TRow>` that implements `IQuery<TRow>` so can be passed directly to `AddQuery`.
-
 ```csharp
 class SubscriptionBuilder
 {
@@ -422,8 +420,6 @@ Subscribe to all rows from all public tables. This method is provided as a conve
 | [`Subscribe` method](#method-subscribe-typedsubscriptionbuilder) | Subscribe to all typed queries added so far. |
 
 ##### Method `AddQuery` (TypedSubscriptionBuilder)
-
-Like `SubscriptionBuilder.AddQuery`, this method accepts any `IQuery<TRow>`. Generated query builders produce a `Query<TRow>` that implements `IQuery<TRow>` so can be passed directly to `AddQuery`.
 
 ```csharp
 class TypedSubscriptionBuilder
