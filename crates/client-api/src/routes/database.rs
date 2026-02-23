@@ -491,18 +491,14 @@ pub struct SqlParams {
     pub name_or_identity: NameOrIdentity,
 }
 
-const fn default_true() -> bool {
-    true
-}
-
 #[derive(Deserialize)]
 pub struct SqlQueryParams {
     /// If `true`, return the query result only after its transaction offset
     /// is confirmed to be durable.
     ///
-    /// Defaults to `true` for data integrity.
-    #[serde(default = "default_true")]
-    pub confirmed: bool,
+    /// If not specified, defaults to `true`.
+    #[serde(default)]
+    pub confirmed: Option<bool>,
 }
 
 pub async fn sql_direct<S>(
@@ -524,7 +520,7 @@ where
         .authorize_sql(caller_identity, database.database_identity)
         .await?;
 
-    host.exec_sql(auth, database, confirmed, sql).await
+    host.exec_sql(auth, database, confirmed.unwrap_or(true), sql).await
 }
 
 pub async fn sql<S>(

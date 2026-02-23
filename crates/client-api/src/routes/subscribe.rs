@@ -78,10 +78,6 @@ pub struct SubscribeParams {
     pub name_or_identity: NameOrIdentity,
 }
 
-const fn default_true() -> bool {
-    true
-}
-
 #[derive(Deserialize)]
 pub struct SubscribeQueryParams {
     pub connection_id: Option<ConnectionIdForUrl>,
@@ -96,9 +92,9 @@ pub struct SubscribeQueryParams {
     ///
     /// If `false`, send them immediately.
     ///
-    /// Defaults to `true` for data integrity.
-    #[serde(default = "default_true")]
-    pub confirmed: bool,
+    /// If not specified, defaults to `true`.
+    #[serde(default)]
+    pub confirmed: Option<bool>,
 }
 
 pub fn generate_random_connection_id() -> ConnectionId {
@@ -176,7 +172,7 @@ where
         version: negotiated.version,
         compression,
         tx_update_full: !light,
-        confirmed_reads: confirmed,
+        confirmed_reads: confirmed.unwrap_or(true),
     };
 
     // TODO: Should also maybe refactor the code and the protocol to allow a single websocket
