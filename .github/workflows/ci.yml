@@ -103,8 +103,12 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          # Fail properly if any individual command fails
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           choco install psql -y --no-progress
-          echo "C:\ProgramData\chocolatey\lib\psql\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          # Check for existence, since `choco` doesn't seem to fail the step if it fails to install..
+          Get-Command psql
 
       - name: Update dotnet workloads
         if: runner.os == 'Windows'
