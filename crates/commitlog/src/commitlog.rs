@@ -15,7 +15,7 @@ use crate::{
     error::{self, source_chain},
     index::IndexError,
     payload::Decoder,
-    repo::{self, Repo, TxOffsetIndex},
+    repo::{self, Repo, SegmentLen as _, TxOffsetIndex},
     segment::{self, FileLike, Transaction, Writer},
     Commit, Encode, Options, DEFAULT_LOG_FORMAT_VERSION,
 };
@@ -355,6 +355,51 @@ impl<R: Repo, T> Drop for Generic<R, T> {
     }
 }
 
+/// The most recent non empty segment in repo `R`.
+///
+/// Created by [open_newest_non_empty_segment].
+struct MostRecentNonEmptySegment<R> {
+    /// Number of empty segments that were ignored.
+    empty_segments: usize,
+    /// Offset of the non-empty segment.
+    segment_offset: u64,
+    /// [Repo::SegmentReader] for the non-empty segment.
+    segment_reader: R,
+}
+
+/// Open the most recent segment in `repo` that is larger than
+/// [segment::Header::LEN].
+///
+/// Note that there should be at most one empty segment in the log. We may,
+/// however, want to be lenient on this read-only path, so the number of
+/// empty segments is tracked in the returned type rather than returning an
+/// error.
+fn open_newest_non_empty_segment<R: Repo>(repo: R) -> io::Result<Option<MostRecentNonEmptySegment<R::SegmentReader>>> {
+    let mut segments = repo.existing_offsets()?;
+
+    let mut empty_segments = 0;
+    let mut segment_offset;
+    let mut segment_reader;
+    loop {
+        let Some(last) = segments.pop() else {
+            return Ok(None);
+        };
+        segment_offset = last;
+        segment_reader = repo.open_segment_reader(segment_offset)?;
+        if segment_reader.segment_len()? > segment::Header::LEN as u64 {
+            break;
+        } else {
+            empty_segments += 1;
+        }
+    }
+
+    Ok(Some(MostRecentNonEmptySegment {
+        empty_segments,
+        segment_offset,
+        segment_reader,
+    }))
+}
+
 /// The most recently written [segment::Metadata] for a given [Repo].
 ///
 /// The type preserves the error information in case the most recent segment
@@ -364,6 +409,9 @@ impl<R: Repo, T> Drop for Generic<R, T> {
 pub enum CommittedMeta {
     /// The most recent segment could not be traversed successfully until the
     /// end, i.e. there is trailing garbage in the segment.
+    ///
+    /// This variant is also returned in case [open_newest_non_empty_segment]
+    /// finds more than a single empty segment at the end of the log.
     Prefix {
         /// The metadata of the prefix that could be traversed successfully.
         ///
@@ -388,19 +436,32 @@ impl CommittedMeta {
     }
 
     fn extract(repo: impl Repo) -> io::Result<Option<Self>> {
-        let Some((offset, mut storage)) = repo::open_newest_non_empty_segment(&repo)? else {
+        let Some(MostRecentNonEmptySegment {
+            empty_segments,
+            segment_offset,
+            mut segment_reader,
+        }) = open_newest_non_empty_segment(&repo)?
+        else {
             return Ok(None);
         };
-        let offset_index = repo.get_offset_index(offset).ok();
-        match segment::Metadata::extract(offset, &mut storage, offset_index.as_ref()) {
+        let offset_index = repo.get_offset_index(segment_offset).ok();
+        match segment::Metadata::extract(segment_offset, &mut segment_reader, offset_index.as_ref()) {
             // Segment is intact.
-            Ok(metadata) => {
+            Ok(metadata) if empty_segments <= 1 => {
                 assert!(
                     !metadata.tx_range.is_empty(),
                     "segment was promised to be non-empty but contains zero transactions"
                 );
                 Ok(Some(CommittedMeta::Complete { metadata }))
             }
+            // Segment is good, but there are too many empty segments.
+            Ok(metadata) => Ok(Some(CommittedMeta::Prefix {
+                metadata,
+                error: io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("repo {}: too many empty segments: {}", repo, empty_segments),
+                ),
+            })),
             // Segment is non-empty, but first commit is corrupt.
             Err(error::SegmentMetadata::InvalidCommit { sofar, source }) if sofar.tx_range.is_empty() => {
                 Err(io::Error::new(
