@@ -1320,7 +1320,7 @@ Table and Type definitions in C# should use the `partial` keyword (e.g., `public
 
 Database tables store the application's persistent state. They are defined using C# classes or structs marked with the `[Table]` attribute.
 
-- **Core Attribute:** `[Table(Accessor = "TableName", ...)]` marks a class or struct as a database table definition. For C#, use PascalCase singular (e.g. `User`, `Account`), not plural or snake_case.
+- **Core Attribute:** `[Table(Accessor = "TableName", ...)]` marks a class or struct as a database table definition. `Accessor` controls generated API names, while canonical SQL names are derived unless `Name` is explicitly set.
 - **Partial Modifier:** Use the `partial` keyword (e.g., `public partial class MyTable`) to allow SpacetimeDB's source generators to add necessary methods and logic to your definition.
 - **Public vs. Private:** By default, tables are **private**, accessible only by server-side reducer code. To allow clients to read or subscribe to a table's data, set `Public = true` within the attribute: `[Table(..., Public = true)]`. This is a common source of errors if forgotten.
 - **Primary Keys:** Designate a single **public field** as the primary key using `[PrimaryKey]`. This ensures uniqueness, creates an efficient index, and allows clients to track row updates.
@@ -1651,7 +1651,7 @@ The scheduling information for a reducer is stored in a table. This table links 
 
 1.  **Define the Schedule Table:** Create a table class/struct using `[Table(Accessor = ..., Scheduled = "YourReducerName", ScheduledAt = "ScheduledAt")]`.
     - The `Scheduled` parameter links this table to the static reducer method `YourReducerName`.
-    - The `ScheduledAt` parameter specifies the name of the field within this table that holds the scheduling information. This field **must** be of type `SpacetimeDB.ScheduleAt`. For C#, use PascalCase for the column name (e.g. `ScheduledAt`), not snake_case.
+    - The `ScheduledAt` parameter specifies the name of the field within this table that holds the scheduling information. This field **must** be of type `SpacetimeDB.ScheduleAt`.
     - The table **must** also have a primary key field (often `[AutoInc] ulong Id`).
     - Additional fields can be included to pass arguments to the scheduled reducer.
 2.  **Define the Scheduled Reducer:** Create the `static` reducer method (`YourReducerName`) specified in the table attribute. It takes `ReducerContext` and an instance of the schedule table class/struct as arguments.

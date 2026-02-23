@@ -242,7 +242,7 @@ ctx.db.playerScores.insert({ /* ... */ });
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-The accessor name **exactly matches** the `Accessor` attribute value. When `Name` is not specified, `Accessor` is also used as the SQL table name:
+The accessor name **exactly matches** the `Accessor` attribute value:
 
 ```csharp
 // Table definition
@@ -253,18 +253,18 @@ public partial struct Player { /* columns */ }
 ctx.Db.Player.Insert(new Player { /* ... */ });
 ```
 
-| Accessor | API Accessor | SQL Table Name (when Name omitted) |
-|----------|---------------|-------------------------------------|
-| `"User"` | `ctx.Db.User` | `User` |
-| `"Player"` | `ctx.Db.Player` | `Player` |
-| `"GameSession"` | `ctx.Db.GameSession` | `GameSession` |
+| Accessor | API Accessor |
+|----------|---------------|
+| `"User"` | `ctx.Db.User` |
+| `"Player"` | `ctx.Db.Player` |
+| `"GameSession"` | `ctx.Db.GameSession` |
 
 :::warning Case Sensitivity
 The accessor is case-sensitive and must match the `Accessor` value exactly. `Accessor = "user"` produces `ctx.Db.user`, not `ctx.Db.User`.
 :::
 
 :::tip C# Convention
-Use `Accessor = "TableName"` with PascalCase singular (e.g. `User` not `users`). The Accessor value is used verbatim as the SQL table name and API accessor.
+Pick a stable accessor style for your project and use it consistently (for example, `User`, `user`, or `player_score`). Accessor names are case-sensitive.
 :::
 
 </TabItem>
