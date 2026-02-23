@@ -321,6 +321,7 @@ fn main() -> anyhow::Result<()> {
         // 1) Client SDK csproj
         let client_sdk = "sdks/csharp/SpacetimeDB.ClientSDK.csproj";
         rewrite_xml_tag_value(client_sdk, "Version", &full_version)?;
+        // <AssemblyVersion> doesn't support prerelease or metadata version suffixes like <Version> does.
         rewrite_xml_tag_value(client_sdk, "AssemblyVersion", &numeric_version)?;
         // Update SpacetimeDB.BSATN.Runtime dependency to major.minor.*
         rewrite_csproj_package_ref_version(client_sdk, "SpacetimeDB.BSATN.Runtime", &wildcard_patch)?;
