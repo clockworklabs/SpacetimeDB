@@ -1,5 +1,4 @@
 use crate::detect::{find_executable, has_package_manager};
-use crate::util::UNSTABLE_WARNING;
 use crate::Config;
 use anyhow::anyhow;
 use anyhow::Context;
@@ -157,7 +156,7 @@ impl InitOptions {
 
 pub fn cli() -> clap::Command {
     clap::Command::new("init")
-        .about(format!("Initializes a new spacetime project. {UNSTABLE_WARNING}"))
+        .about("Initializes a new spacetime project.")
         .arg(
             Arg::new("project-path")
                 .long("project-path")
@@ -1612,8 +1611,6 @@ fn check_for_git() -> bool {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathBuf> {
-    println!("{UNSTABLE_WARNING}\n");
-
     let options = InitOptions::from_args(args);
     let is_interactive = !options.non_interactive;
     let template = options.template.as_ref();

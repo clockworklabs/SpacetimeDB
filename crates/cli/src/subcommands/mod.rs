@@ -5,7 +5,6 @@ pub mod delete;
 pub mod describe;
 pub mod dev;
 pub mod dns;
-pub mod energy;
 pub mod generate;
 pub mod init;
 pub mod list;
