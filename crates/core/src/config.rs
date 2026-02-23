@@ -63,6 +63,10 @@ impl MetadataFile {
             previous.edition,
         );
 
+        if previous.version == current.version {
+            return Ok(());
+        }
+
         // Special-case: SpacetimeDB 2.x can run 1.x databases.
         if previous.version.major == 1 && current.version.major == 2 {
             return Ok(());
@@ -72,7 +76,7 @@ impl MetadataFile {
             op: semver::Op::Caret,
             major: previous.version.major,
             minor: Some(previous.version.minor),
-            patch: None,
+            patch: (!previous.version.pre.is_empty()).then_some(previous.version.patch),
             pre: previous.version.pre.clone(),
         };
 
@@ -170,9 +174,27 @@ mod tests {
         semver::Version::new(major, minor, patch)
     }
 
+    fn mkver_pre(major: u64, minor: u64, patch: u64, pre: &str) -> semver::Version {
+        semver::Version {
+            major,
+            minor,
+            patch,
+            pre: semver::Prerelease::new(pre).unwrap(),
+            build: semver::BuildMetadata::EMPTY,
+        }
+    }
+
     fn mkmeta(major: u64, minor: u64, patch: u64) -> MetadataFile {
         MetadataFile {
             version: mkver(major, minor, patch),
+            edition: "standalone".to_owned(),
+            client_connection_id: None,
+        }
+    }
+
+    fn mkmeta_pre(major: u64, minor: u64, patch: u64, pre: &str) -> MetadataFile {
+        MetadataFile {
+            version: mkver_pre(major, minor, patch, pre),
             edition: "standalone".to_owned(),
             client_connection_id: None,
         }
@@ -210,6 +232,29 @@ mod tests {
         );
         mkmeta(2, 0, 0)
             .check_compatibility_and_update(mkmeta(3, 0, 0))
+            .unwrap_err();
+    }
+
+    #[test]
+    fn check_metadata_compatibility_prerelease() {
+        mkmeta(1, 9, 0)
+            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc1"))
+            .unwrap();
+
+        mkmeta_pre(2, 0, 0, "rc1")
+            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc1"))
+            .unwrap();
+
+        mkmeta_pre(2, 0, 0, "rc1")
+            .check_compatibility_and_update(mkmeta(2, 0, 1))
+            .unwrap();
+
+        mkmeta_pre(2, 0, 0, "rc1")
+            .check_compatibility_and_update(mkmeta(2, 0, 0))
+            .unwrap();
+
+        mkmeta_pre(2, 0, 0, "rc1")
+            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc2"))
             .unwrap_err();
     }
 }
