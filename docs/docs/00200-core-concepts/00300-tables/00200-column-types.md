@@ -79,7 +79,7 @@ These optimizations apply across all supported languages.
 | Primitive | `t.u128()` | `bigint` | Unsigned 128-bit integer |
 | Primitive | `t.i256()` | `bigint` | Signed 256-bit integer |
 | Primitive | `t.u256()` | `bigint` | Unsigned 256-bit integer |
-| Composite | `t.object(name, obj)` | `{ [K in keyof Obj]: T<Obj[K]> }` | Product/object type for nested data |
+| Composite | `t.object(name, obj)` | `{ [K in keyof Obj]: T<Obj[K]> }` | Product/object type for nested data. Use `t.object`, not `t.struct` (which does not exist). |
 | Composite | `t.enum(name, variants)` | `{ tag: 'variant' } \| { tag: 'variant', value: T }` | Sum/enum type (tagged union) |
 | Composite | `t.array(element)` | `T<Element>[]` | Array of elements |
 | Composite | `t.option(value)` | `Value \| undefined` | Optional value |
@@ -229,7 +229,7 @@ public static partial class Module
         public double Z;
     }
 
-    // Define an enum for status
+    // Define an enum for status (must be partial record, not partial class)
     [SpacetimeDB.Type]
     public partial record Status : TaggedEnum<(
         Unit Active,
