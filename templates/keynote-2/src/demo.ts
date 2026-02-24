@@ -532,8 +532,6 @@ async function main() {
           results: results.map((r) => ({
             system: r.system,
             tps: r.tps,
-            p50_ms: r.p50_ms,
-            p99_ms: r.p99_ms,
           })),
         },
         null,
