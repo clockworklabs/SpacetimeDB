@@ -1,0 +1,82 @@
+# Fair benchmark configuration
+#
+# Key differences from docker-compose.yml:
+# 1. Postgres uses read_committed isolation (its actual default) instead of serializable
+# 2. synchronous_commit=on for Postgres (matches SpacetimeDB confirmed reads)
+# 3. Stored procedure RPC server (eliminates ORM round-trip overhead)
+#
+# Run with: docker compose -f docker-compose-fair.yml up -d
+
+services:
+  pg-fair:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    command: >
+      -c fsync=on
+      -c synchronous_commit=on
+      -c shared_buffers=8GB
+      -c work_mem=64MB
+      -c max_connections=10000
+      -c default_transaction_isolation=read\ committed
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+    volumes:
+      - pg_fair_data:/var/lib/postgresql/data
+    network_mode: host
+
+  # Original Drizzle ORM RPC server (for comparison)
+  pg-rpc-fair:
+    build:
+      context: .
+      dockerfile: Dockerfile.rpc
+    command: ["pnpm", "tsx", "src/rpc-servers/postgres-rpc-server.ts"]
+    ports:
+      - "4101:4101"
+    environment:
+      PG_URL: ${PG_URL}
+      PG_RPC_PORT: "4101"
+      SEED_ACCOUNTS: ${SEED_ACCOUNTS}
+      SEED_INITIAL_BALANCE: ${SEED_INITIAL_BALANCE}
+    depends_on:
+      pg-fair:
+        condition: service_healthy
+    network_mode: host
+
+  # Stored procedure RPC server (fair comparison)
+  pg-storedproc-rpc-fair:
+    build:
+      context: .
+      dockerfile: Dockerfile.rpc
+    command: ["pnpm", "tsx", "src/rpc-servers/postgres-storedproc-rpc-server.ts"]
+    ports:
+      - "4105:4105"
+    environment:
+      PG_URL: ${PG_URL}
+      PG_STOREDPROC_RPC_PORT: "4105"
+      SEED_ACCOUNTS: ${SEED_ACCOUNTS}
+      SEED_INITIAL_BALANCE: ${SEED_INITIAL_BALANCE}
+    depends_on:
+      pg-fair:
+        condition: service_healthy
+    network_mode: host
+
+  spacetime-fair:
+    image: clockworklabs/spacetime:latest
+    command: start
+    ports:
+      - "3000:3000"
+    volumes:
+      - spacetime_fair_data:/data
+    network_mode: host
+
+volumes:
+  pg_fair_data:
+  spacetime_fair_data:
