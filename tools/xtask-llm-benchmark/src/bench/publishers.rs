@@ -282,7 +282,10 @@ impl Publisher for TypeScriptPublisher {
                         eprintln!("[pnpm] using NODEJS_DIR: {} (pnpm)", dir.display());
                         Some(pnpm)
                     } else {
-                        eprintln!("[pnpm] NODEJS_DIR set to {} but pnpm not found there, using PATH", dir.display());
+                        eprintln!(
+                            "[pnpm] NODEJS_DIR set to {} but pnpm not found there, using PATH",
+                            dir.display()
+                        );
                         None
                     }
                 }

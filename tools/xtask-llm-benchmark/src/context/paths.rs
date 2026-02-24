@@ -45,11 +45,7 @@ pub fn gather_cursor_rules_files(rules_dir: PathBuf, lang: Option<Lang>) -> Resu
     if let Some(l) = lang {
         let tag = l.as_str();
         out.retain(|p| {
-            let name = p
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_lowercase();
+            let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
             let is_general = !name.contains("typescript") && !name.contains("rust") && !name.contains("csharp");
             let is_lang = name.contains(tag);
             is_general || is_lang

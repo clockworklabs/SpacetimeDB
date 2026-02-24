@@ -4,8 +4,7 @@ use serde::{Deserialize, Serialize};
 use super::http::HttpClient;
 use crate::llm::prompt::BuiltPrompt;
 use crate::llm::segmentation::{
-    deepseek_ctx_limit_tokens, deterministic_trim_prefix, estimate_tokens,
-    non_context_reserve_tokens_env, Segment,
+    deepseek_ctx_limit_tokens, deterministic_trim_prefix, estimate_tokens, non_context_reserve_tokens_env, Segment,
 };
 use crate::llm::types::Vendor;
 

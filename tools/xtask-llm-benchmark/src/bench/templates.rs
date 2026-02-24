@@ -55,8 +55,12 @@ fn workspace_root() -> PathBuf {
 /// Relative path from materialized root to a workspace subpath (e.g. "crates/bindings").
 /// Avoids Windows canonical paths (//?/D:/...) which can break Cargo/MSBuild/pnpm.
 fn relative_to_workspace(root: &Path, ws_subpath: &str) -> Result<String> {
-    let ws = workspace_root().canonicalize().with_context(|| "workspace root not found")?;
-    let root_canon = root.canonicalize().with_context(|| format!("materialized root not found: {}", root.display()))?;
+    let ws = workspace_root()
+        .canonicalize()
+        .with_context(|| "workspace root not found")?;
+    let root_canon = root
+        .canonicalize()
+        .with_context(|| format!("materialized root not found: {}", root.display()))?;
     let root_rel = root_canon
         .strip_prefix(&ws)
         .with_context(|| format!("materialized dir {:?} not under workspace {:?}", root_canon, ws))?;
