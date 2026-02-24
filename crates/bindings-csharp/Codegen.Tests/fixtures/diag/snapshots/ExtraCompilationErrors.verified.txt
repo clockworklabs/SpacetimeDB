@@ -116,6 +116,29 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FOU
   },
   {/*
     {
+        return ctx.Db.Player.Iter();
+                             ^^^^
+    }
+*/
+    Message: 'PlayerReadOnly' does not contain a definition for 'Iter' and no accessible extension method 'Iter' accepting a first argument of type 'PlayerReadOnly' could be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS1061,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1061),
+      MessageFormat: '{0}' does not contain a definition for '{1}' and no accessible extension method '{1}' accepting a first argument of type '{0}' could be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    {
         ctx.Db.Player.Iter();
                       ^^^^
         return null;
@@ -127,6 +150,29 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FOU
       Title: ,
       HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1061),
       MessageFormat: '{0}' does not contain a definition for '{1}' and no accessible extension method '{1}' accepting a first argument of type '{0}' could be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    {
+        return ctx.Db.Player.Identity.Filter(ctx.Sender);
+                                      ^^^^^^
+    }
+*/
+    Message: 'ReadOnlyUniqueIndex<PlayerReadOnly, Player, Identity, Identity.BSATN>.Filter(Identity)' is inaccessible due to its protection level,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0122,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0122),
+      MessageFormat: '{0}' is inaccessible due to its protection level,
       Category: Compiler,
       DefaultSeverity: Error,
       IsEnabledByDefault: true,
