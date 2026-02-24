@@ -15,6 +15,8 @@ The demo compares SpacetimeDB and Convex by default, since both are easy for any
 
 **Options:** `--systems a,b,c` | `--seconds N` | `--skip-prep` | `--no-animation`
 
+**Note:** You will need to [install Rust](https://rust-lang.org/tools/install/) to run the spacetimedb benchmark, because we run a [Rust Client](#rust-client).
+
 ## Results Summary
 
 All tests use 50 concurrent connections with a transfer workload (read-modify-write transaction between two accounts).
@@ -150,6 +152,13 @@ SpacetimeDB supports `withConfirmedReads` mode which ensures transactions are du
 ### Cloud vs Local Results
 
 PlanetScale results (~477 TPS) demonstrate the **significant impact of cloud database latency**. When the database is accessed over the network (even within the same cloud region), round-trip latency dominates performance. This is why SpacetimeDB's colocated architecture provides such dramatic improvements.
+
+### Rust client
+
+When running the benchmark for SpacetimeDB on higher-end hardware we found out that we were actually bottlnecked
+on our test TypeScript client. To get the absolute most out of the performance of SpacetimeDB we wrote a custom
+Rust client that allows us to send a much larger number of requests then we could otherwise. We didn't do this
+for the other backends/databases as they maxed out before the client.
 
 ## Systems Tested
 
