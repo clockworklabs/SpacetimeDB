@@ -111,11 +111,10 @@ Clockwork Labs, the developers of SpacetimeDB, offers three products:
 
 | Language | Rules |
 |----------|-------|
-| All Languages | [spacetimedb.mdc](https://spacetimedb.com/ai-rules/spacetimedb.mdc) |
-| TypeScript | [spacetimedb-typescript.mdc](https://spacetimedb.com/ai-rules/spacetimedb-typescript.mdc) |
-| Rust | [spacetimedb-rust.mdc](https://spacetimedb.com/ai-rules/spacetimedb-rust.mdc) |
-| C# | [spacetimedb-csharp.mdc](https://spacetimedb.com/ai-rules/spacetimedb-csharp.mdc) |
-
+| All Languages | [spacetimedb.mdc](https://spacetimedb.com/docs/ai-rules/spacetimedb.mdc) |
+| TypeScript | [spacetimedb-typescript.mdc](https://spacetimedb.com/docs/ai-rules/spacetimedb-typescript.mdc) |
+| Rust | [spacetimedb-rust.mdc](https://spacetimedb.com/docs/ai-rules/spacetimedb-rust.mdc) |
+| C# | [spacetimedb-csharp.mdc](https://spacetimedb.com/docs/ai-rules/spacetimedb-csharp.mdc) |
 ## Basic Project Workflow
 
 Getting started with SpacetimeDB involves a few key steps:
