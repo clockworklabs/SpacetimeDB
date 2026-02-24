@@ -34,7 +34,8 @@ pub fn confirmed() -> Arg {
     Arg::new("confirmed")
         .required(false)
         .long("confirmed")
-        .action(SetTrue)
+        .num_args(1)
+        .value_parser(value_parser!(bool))
         .help("Instruct the server to deliver only updates of confirmed transactions")
 }
 
