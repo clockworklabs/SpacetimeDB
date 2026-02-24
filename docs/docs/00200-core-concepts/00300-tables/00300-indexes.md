@@ -117,6 +117,10 @@ const user = table(
 </TabItem>
 <TabItem value="csharp" label="C#">
 
+:::danger Use full namespace
+Never use bare `Index` — it conflicts with `System.Index`. Always write `SpacetimeDB.Index.BTree`. For table-level indexes, use `Columns = new[] { nameof(Col) }` or `new[] { "Col1", "Col2" }`, not collection expressions like `[nameof(X)]`.
+:::
+
 ```csharp
 [SpacetimeDB.Table(Accessor = "User", Public = true)]
 public partial struct User
@@ -571,5 +575,5 @@ log::info!("Deleted {} minor(s)", deleted);
 
 ## Next Steps
 
-- Learn about [Constraints](/tables/constraints) for primary keys and unique indexes
-- See [Access Permissions](/tables/access-permissions) for querying tables from reducers
+- Learn about [Constraints](./00240-constraints.md) for primary keys and unique indexes
+- See [Access Permissions](./00400-access-permissions.md) for querying tables from reducers

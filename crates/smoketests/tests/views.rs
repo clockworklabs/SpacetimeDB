@@ -17,7 +17,7 @@ export default spacetimedb;
 export const my_player = spacetimedb.view(
   { public: true },
   t.option(playerState.rowType),
-  ctx => ctx.db.playerState.identity.find(ctx.sender)
+  ctx => ctx.db.playerState.identity.find(ctx.sender) ?? undefined
 );
 
 export const all_players = spacetimedb.anonymousView(
@@ -303,6 +303,21 @@ fn test_auto_migration_add_view() {
     let mut test = Smoketest::builder().precompiled_module("views-drop-view").build();
     test.use_precompiled_module("views-auto-migrate");
     test.publish_module_clear(false).unwrap();
+}
+
+#[test]
+fn test_view_accessibility() {
+    let test = Smoketest::builder().precompiled_module("views-callable").build();
+
+    test.new_identity().unwrap();
+    test.call("baz", &[]).unwrap();
+
+    test.assert_sql(
+        "SELECT * FROM items",
+        r#" value
+-------
+ 7"#,
+    );
 }
 
 #[test]

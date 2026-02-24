@@ -113,6 +113,8 @@ public static void Attack(ReducerContext ctx, Identity targetId, uint damage)
 <TabItem value="rust" label="Rust">
 
 ```rust
+use spacetimedb::{ReducerContext, Identity, Table};
+
 #[spacetimedb::reducer]
 fn attack(ctx: &ReducerContext, target_id: Identity, damage: u32) {
     // Game logic...
@@ -183,7 +185,7 @@ Conceptually, every insert into an event table is a **noop**: an insert paired w
 **Wire format.** Event tables require the v2 WebSocket protocol. Clients connected via the v1 protocol that attempt to subscribe to an event table will receive an error message directing them to upgrade.
 
 :::tip Migrating from reducer callbacks
-If you previously used `ctx.reducers.on_<reducer_name>()` callbacks to receive transient data, event tables are the recommended replacement. Define an event table with the fields you want to publish, insert a row in your reducer, and register an `on_insert` callback on the client via `ctx.db.<event_table>().on_insert(...)`. See the [migration guide](/how-to/migrating-to-2-0) for details.
+If you previously used `ctx.reducers.on_<reducer_name>()` callbacks to receive transient data, event tables are the recommended replacement. Define an event table with the fields you want to publish, insert a row in your reducer, and register an `on_insert` callback on the client via `ctx.db.<event_table>().on_insert(...)`. See the [migration guide](../../00300-resources/00100-how-to/00600-migrating-to-2.0.md) for details.
 :::
 
 ## Row-Level Security
@@ -209,6 +211,6 @@ Event tables are well-suited to any situation where the module needs to notify c
 
 ## Next Steps
 
-- Learn about [Tables](/tables) for persistent data storage
-- Explore [Schedule Tables](/tables/schedule-tables) for time-triggered actions
-- See [Row-Level Security](/tables/access-permissions) for controlling data visibility
+- Learn about [Tables](../00300-tables.md) for persistent data storage
+- Explore [Schedule Tables](./00500-schedule-tables.md) for time-triggered actions
+- See [Row-Level Security](./00400-access-permissions.md) for controlling data visibility

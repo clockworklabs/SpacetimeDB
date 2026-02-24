@@ -61,7 +61,11 @@ record SettingsDeclaration
     public readonly string FullName;
     public readonly string? CaseConversionPolicy;
 
-    private const string CaseConversionPolicyTypeName = "SpacetimeDB.Internal.CaseConversionPolicy";
+    private static readonly string[] CaseConversionPolicyTypeNames =
+    [
+        "SpacetimeDB.CaseConversionPolicy",
+        "SpacetimeDB.Internal.CaseConversionPolicy", // backward compat
+    ];
 
     public SettingsDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
@@ -73,7 +77,7 @@ record SettingsDeclaration
             diag.Report(ErrorDescriptor.SettingsMustBeConstCaseConversionPolicy, fieldSymbol);
             return;
         }
-        if (fieldSymbol.Type.ToString() != CaseConversionPolicyTypeName)
+        if (!CaseConversionPolicyTypeNames.Contains(fieldSymbol.Type.ToString()))
         {
             diag.Report(ErrorDescriptor.SettingsMustBeConstCaseConversionPolicy, fieldSymbol);
             return;
@@ -1151,14 +1155,33 @@ record ViewDeclaration
         IsAnonymous = isAnonymousContext;
 
         ReturnsQuery = false;
+        INamedTypeSymbol? iquery = null;
         if (
             method.ReturnType is INamedTypeSymbol
             {
-                Name: "Query",
+                Name: "IQuery",
                 ContainingNamespace: { Name: "SpacetimeDB" },
-                TypeArguments: [var queryRowType]
-            }
+                TypeArguments: [var _]
+            } directIQuery
         )
+        {
+            iquery = directIQuery;
+        }
+        else
+        {
+            iquery = method
+                .ReturnType.AllInterfaces.OfType<INamedTypeSymbol>()
+                .FirstOrDefault(i =>
+                    i
+                        is {
+                            Name: "IQuery",
+                            ContainingNamespace: { Name: "SpacetimeDB" },
+                            TypeArguments.Length: 1
+                        }
+                );
+        }
+
+        if (iquery is { TypeArguments: [var queryRowType] })
         {
             ReturnsQuery = true;
             var rowType = TypeUse.Parse(method, queryRowType, diag);
@@ -1981,7 +2004,7 @@ public class Module : IIncrementalGenerator
                 var settingsRegistration =
                     settings.Array.Length == 1
                     && settings.Array[0].CaseConversionPolicy is { } policyName
-                        ? $"SpacetimeDB.Internal.Module.SetCaseConversionPolicy(SpacetimeDB.Internal.CaseConversionPolicy.{policyName});"
+                        ? $"SpacetimeDB.Internal.Module.SetCaseConversionPolicy(SpacetimeDB.CaseConversionPolicy.{policyName});"
                         : string.Empty;
 
                 var explicitTableRegistrations = string.Join(
