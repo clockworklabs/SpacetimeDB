@@ -1,12 +1,7 @@
-use crate::{
-    blob_store::NullBlobStore,
-    table_index::{IndexCannotSeekRange, IndexKey, IndexKind},
-};
-
 use super::{
-    bflatn_from::serialize_row_from_page,
+    bflatn_from::{serialize_columns_from_page, serialize_row_from_page},
     bflatn_to::{write_row_to_pages, write_row_to_pages_bsatn, Error},
-    blob_store::BlobStore,
+    blob_store::{BlobStore, NullBlobStore},
     eq::eq_row_in_page,
     eq_to_pv::eq_row_in_page_to_pv,
     indexes::{Bytes, PageIndex, PageOffset, RowHash, RowPointer, SquashedOffset, PAGE_DATA_SIZE},
@@ -20,7 +15,7 @@ use super::{
     static_assert_size,
     static_bsatn_validator::{static_bsatn_validator, validate_bsatn, StaticBsatnValidator},
     static_layout::StaticLayout,
-    table_index::{TableIndex, TableIndexPointIter, TableIndexRangeIter},
+    table_index::{IndexCannotSeekRange, IndexKey, IndexKind, TableIndex, TableIndexPointIter, TableIndexRangeIter},
     var_len::VarLenMembers,
 };
 use core::{fmt, ptr};
@@ -1762,6 +1757,21 @@ impl<'a> RowRef<'a> {
         T::read_column(self, col.into().idx())
     }
 
+    /// Serializes the `cols` of `self` using `ser`.
+    ///
+    /// # Safety
+    ///
+    /// Any `col` in `cols` is in-bounds of `self`'s layout.
+    pub unsafe fn serialize_columns_unchecked<S: Serializer>(self, cols: &ColList, ser: S) -> Result<S::Ok, S::Error> {
+        let table = self.table;
+        let (page, offset) = table.page_and_offset(self.pointer);
+        // SAFETY:
+        // - We have a `RowRef`, so `ptr` points to a valid row in this table
+        // so safety requirements 1-3 flow from that.
+        // - Caller promised that any `col` in `cols` is in-bounds of `self`'s layout.
+        unsafe { serialize_columns_from_page(ser, page, self.blob_store, offset, &table.row_layout, cols) }
+    }
+
     /// Construct a projection of the row at `self` by extracting the `cols`.
     ///
     /// If `cols` contains zero or more than one column, the values of the projected columns are wrapped in a [`ProductValue`].
@@ -1771,7 +1781,7 @@ impl<'a> RowRef<'a> {
     ///
     /// - `cols` must not specify any column which is out-of-bounds for the row `self´.
     pub unsafe fn project_unchecked(self, cols: &ColList) -> AlgebraicValue {
-        let col_layouts = &self.row_layout().product().elements;
+        let col_layouts = self.row_layout().product().elements;
 
         if let Some(head) = cols.as_singleton() {
             let head = head.idx();
@@ -1920,7 +1930,8 @@ impl Serialize for RowRef<'_> {
     fn serialize<S: Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
         let table = self.table;
         let (page, offset) = table.page_and_offset(self.pointer);
-        // SAFETY: `ptr` points to a valid row in this table per above check.
+        // SAFETY: We have a `RowRef`, so `ptr` points to a valid row in this table
+        // so safety requirements 1-3 flow from that.
         unsafe { serialize_row_from_page(ser, page, self.blob_store, offset, &table.row_layout) }
     }
 }

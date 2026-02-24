@@ -18,7 +18,7 @@ use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, StateView,
 };
-use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
+use spacetimedb_datastore::locking_tx_datastore::{IndexScanPointOrRange, MutTxId, TxId};
 use spacetimedb_datastore::system_tables::{
     system_tables, StModuleRow, ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID,
 };
@@ -62,7 +62,7 @@ use spacetimedb_vm::errors::{ErrorType, ErrorVm};
 use spacetimedb_vm::ops::parse;
 use std::borrow::Cow;
 use std::io;
-use std::ops::{Bound, RangeBounds};
+use std::ops::RangeBounds;
 use std::sync::Arc;
 use tokio::sync::watch;
 
@@ -1392,23 +1392,15 @@ impl RelationalDB {
         Ok(self.inner.iter_by_col_range_tx(tx, table_id.into(), cols, range)?)
     }
 
-    pub fn index_scan_range<'a>(
+    pub fn index_scan_range<'de, 'a>(
         &'a self,
         tx: &'a MutTx,
         index_id: IndexId,
-        prefix: &[u8],
+        prefix: &'de [u8],
         prefix_elems: ColId,
-        rstart: &[u8],
-        rend: &[u8],
-    ) -> Result<
-        (
-            TableId,
-            Bound<AlgebraicValue>,
-            Bound<AlgebraicValue>,
-            impl Iterator<Item = RowRef<'a>>,
-        ),
-        DBError,
-    > {
+        rstart: &'de [u8],
+        rend: &'de [u8],
+    ) -> Result<(TableId, IndexScanPointOrRange<'de, 'a>), DBError> {
         Ok(tx.index_scan_range(index_id, prefix, prefix_elems, rstart, rend)?)
     }
 

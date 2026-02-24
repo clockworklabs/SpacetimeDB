@@ -524,6 +524,24 @@ pub trait DeserializeSeed<'de> {
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error>;
 }
 
+/// Allows access to `DeserializeSeed` implementations
+/// without actually having a seed value.
+pub struct NoSeed<T>(PhantomData<T>);
+
+impl<T> Default for NoSeed<T> {
+    fn default() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<'de, T: Deserialize<'de>> DeserializeSeed<'de> for NoSeed<T> {
+    type Output = T;
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
+        T::deserialize(deserializer)
+    }
+}
+
 use crate::de::impls::BorrowedSliceVisitor;
 pub use spacetimedb_bindings_macro::Deserialize;
 
