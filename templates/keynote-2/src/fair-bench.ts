@@ -6,7 +6,7 @@
  * 1. Using the TypeScript client for ALL systems (no custom Rust client)
  * 2. Forcing STDB_CONFIRMED_READS=1 (durable commits, like Postgres with fsync)
  * 3. Forcing USE_SPACETIME_METRICS_ENDPOINT=0 (client-side TPS counting for all)
- * 4. Using the same pipeline depth for all systems
+ * 4. Sequential (non-pipelined) operations for all systems
  * 5. Including postgres_storedproc_rpc (stored procedure, eliminates ORM overhead)
  * 6. Using read_committed isolation for Postgres (its actual default)
  *
@@ -59,8 +59,12 @@ function getArg(name: string, defaultValue: number): number {
   );
   if (idx === -1) return defaultValue;
   const arg = args[idx];
-  if (arg.includes('=')) return Number(arg.split('=')[1]);
-  return Number(args[idx + 1] ?? defaultValue);
+  const raw = arg.includes('=') ? arg.split('=')[1] : args[idx + 1];
+  const value = Number(raw ?? defaultValue);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`Invalid value for --${name}: "${raw}" (must be a finite number > 0)`);
+  }
+  return value;
 }
 
 function getStringArg(name: string, defaultValue: string): string {
@@ -86,14 +90,10 @@ const systems = getStringArg(
 )
   .split(',')
   .map((s) => s.trim());
-const pipelineDepth = getArg('pipeline-depth', 8);
 const skipPrep = hasFlag('skip-prep');
 
 const accounts = Number(process.env.SEED_ACCOUNTS ?? 100_000);
 const initialBalance = Number(process.env.SEED_INITIAL_BALANCE ?? 10_000_000);
-
-// Set the same pipeline depth for all systems
-process.env.MAX_INFLIGHT_PER_WORKER = String(pipelineDepth);
 
 // ============================================================================
 // ANSI Colors
@@ -228,10 +228,14 @@ async function runBenchmark(system: string): Promise<BenchResult | null> {
   try {
     const testMod = await import(`./tests/test-1/${system}.ts`);
     scenario = testMod.default.run;
-  } catch {
-    // Fallback to rpc_single_call for RPC-based systems
-    const { rpc_single_call } = await import('./scenario_recipes/rpc_single_call.ts');
-    scenario = rpc_single_call;
+  } catch (err: any) {
+    // Only fall back for missing modules; rethrow genuine errors
+    if (err?.code === 'ERR_MODULE_NOT_FOUND' || err?.code === 'MODULE_NOT_FOUND') {
+      const { rpc_single_call } = await import('./scenario_recipes/rpc_single_call.ts');
+      scenario = rpc_single_call;
+    } else {
+      throw err;
+    }
   }
 
   const result = await runOne({
@@ -276,7 +280,6 @@ async function main() {
   console.log(`    Duration:          ${seconds}s`);
   console.log(`    Concurrency:       ${concurrency} connections`);
   console.log(`    Alpha (contention): ${alpha}`);
-  console.log(`    Pipeline depth:    ${pipelineDepth} per worker (same for all)`);
   console.log(`    Systems:           ${systems.join(', ')}`);
   console.log('');
 
@@ -284,7 +287,7 @@ async function main() {
   console.log(`    ${c('green', '\u2713')} TypeScript client for ALL systems (no custom Rust client)`);
   console.log(`    ${c('green', '\u2713')} STDB_CONFIRMED_READS=1 (durable commits)`);
   console.log(`    ${c('green', '\u2713')} Round-trip-awaited operations for ALL systems`);
-  console.log(`    ${c('green', '\u2713')} Same pipeline depth (${pipelineDepth}) for all`);
+  console.log(`    ${c('green', '\u2713')} Sequential (non-pipelined) operations for all systems`);
   console.log(`    ${c('green', '\u2713')} Postgres: read_committed isolation (actual default)`);
   console.log(`    ${c('green', '\u2713')} Postgres: synchronous_commit=on`);
   console.log('');
@@ -381,11 +384,11 @@ async function main() {
             confirmed_reads: true,
             metrics_endpoint: false,
             client: 'typescript (same for all)',
-            pipeline_depth: pipelineDepth,
+            pipelined: false,
             postgres_isolation: 'read_committed',
             postgres_synchronous_commit: 'on',
           },
-          config: { seconds, concurrency, alpha, accounts, pipelineDepth },
+          config: { seconds, concurrency, alpha, accounts },
           results: results.map((r) => ({
             system: r.system,
             tps: r.tps,

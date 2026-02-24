@@ -64,13 +64,13 @@ export default function postgres_storedproc_rpc(
     async getAccount(id: number) {
       const result = (await httpCall('getAccount', { id })) as {
         id: number;
-        balance: bigint;
+        balance: string;
       } | null;
 
       if (!result) return null;
       return {
         id: result.id,
-        balance: result.balance,
+        balance: BigInt(result.balance),
       };
     },
 

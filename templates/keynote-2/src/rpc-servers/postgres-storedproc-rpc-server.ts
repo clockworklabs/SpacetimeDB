@@ -8,7 +8,7 @@ import { poolMaxFromEnv } from '../helpers.ts';
  * Fair benchmark variant: Postgres RPC server using a stored procedure
  * for the transfer operation instead of Drizzle ORM with multiple round-trips.
  *
- * This eliminates the ORM overhead and reduces the transfer from 4 SQL
+ * This eliminates the ORM overhead and reduces the transfer from 5 SQL
  * round-trips (BEGIN + SELECT FOR UPDATE + UPDATE + UPDATE + COMMIT via Drizzle)
  * to a single SQL call (SELECT do_transfer(...)).
  *
@@ -78,19 +78,25 @@ async function ensureStoredProcedure() {
 async function rpcTransfer(args: Record<string, unknown>) {
   const fromId = Number(args.from_id ?? args.from);
   const toId = Number(args.to_id ?? args.to);
-  const amount = Number(args.amount);
 
-  if (
-    !Number.isInteger(fromId) ||
-    !Number.isInteger(toId) ||
-    !Number.isFinite(amount)
-  ) {
+  if (!Number.isInteger(fromId) || !Number.isInteger(toId)) {
     throw new Error('invalid transfer args');
   }
-  if (fromId === toId || amount <= 0) return;
+
+  // Parse amount directly to BigInt to avoid precision loss for large values.
+  // Accepts string, number, or bigint input from JSON.
+  let amount: bigint;
+  try {
+    const raw = args.amount;
+    amount = typeof raw === 'bigint' ? raw : BigInt(raw as string | number);
+  } catch {
+    throw new Error('invalid transfer args: amount is not a valid integer');
+  }
+
+  if (fromId === toId || amount <= 0n) return;
 
   // Single database call - no ORM, no multiple round-trips
-  await pool.query('SELECT do_transfer($1, $2, $3)', [fromId, toId, BigInt(amount)]);
+  await pool.query('SELECT do_transfer($1, $2, $3)', [fromId, toId, amount]);
 }
 
 async function rpcGetAccount(args: Record<string, unknown>) {

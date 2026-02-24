@@ -9,17 +9,17 @@ This is an alternative benchmark configuration that levels the playing field bet
 | **SpacetimeDB client** | Custom Rust client with 16,384 in-flight ops | Same TypeScript client as everyone else |
 | **TPS counting** | Server-side Prometheus metrics (fire-and-forget) | Client-side round-trip counting for ALL systems |
 | **Durability** | `confirmedReads=false` (no durability guarantee) | `confirmedReads=true` (durable commits, like Postgres fsync) |
-| **Pipeline depth** | 16,384 for SpacetimeDB vs 8 for competitors | Same for all (configurable, default 8) |
+| **Concurrency model** | 16,384 in-flight for SpacetimeDB vs 8 for competitors | Sequential (non-pipelined) for all systems |
 | **Postgres isolation** | `serializable` (non-default, worst-case for contention) | `read_committed` (Postgres actual default) |
 | **Postgres sync commit** | `synchronous_commit=off` | `synchronous_commit=on` (matches SpacetimeDB confirmed reads) |
-| **Postgres transfer** | 4 ORM round-trips via Drizzle | Also tested with stored procedure (single DB call) |
+| **Postgres transfer** | 5 ORM round-trips via Drizzle | Also tested with stored procedure (single DB call) |
 | **Warmup** | 5s warmup for Rust client only | No warmup for any system (equal cold start) |
 
 ## Why These Changes Matter
 
 ### 1. Same Client Language (TypeScript for All)
 
-The original benchmark uses a hand-tuned **Rust client** for SpacetimeDB that sends 16,384 concurrent operations per connection via binary WebSocket, while all competitors use a TypeScript client with HTTP/JSON and 8 in-flight operations. This alone is a ~2000x difference in pipeline depth.
+The original benchmark uses a hand-tuned **Rust client** for SpacetimeDB that sends 16,384 concurrent operations per connection via binary WebSocket, while all competitors use a TypeScript client with HTTP/JSON and 8 in-flight operations. This alone is a ~2000x difference in concurrency per connection.
 
 The README justifies this by saying "we were bottlenecked on our test TypeScript client" — but then no competitor gets the same optimization. A fair comparison uses the same client for all.
 
@@ -79,9 +79,6 @@ npm run fair-bench -- --alpha 1.5
 # Include more systems
 npm run fair-bench -- --systems spacetimedb,postgres_rpc,postgres_storedproc_rpc,sqlite_rpc
 
-# Custom pipeline depth
-npm run fair-bench -- --pipeline-depth 16
-
 # Skip seeding (if already seeded)
 npm run fair-bench -- --skip-prep
 ```
@@ -103,7 +100,7 @@ With a leveled playing field, SpacetimeDB's genuine architectural advantage (col
 
 The factors that are **not** architectural and were removed:
 - Custom Rust client vs shared TypeScript client
-- 16,384 vs 8 pipeline depth
+- 16,384 vs 8 in-flight operations per connection
 - Server-side vs client-side TPS counting
 - Unequal durability guarantees
 - Non-default Postgres isolation level penalizing competitors
