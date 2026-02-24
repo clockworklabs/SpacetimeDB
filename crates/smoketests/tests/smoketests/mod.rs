@@ -32,5 +32,6 @@ mod rls;
 mod schedule_reducer;
 mod servers;
 mod sql;
+mod templates;
 mod timestamp_route;
 mod views;
