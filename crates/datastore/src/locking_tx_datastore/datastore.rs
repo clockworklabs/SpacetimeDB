@@ -42,7 +42,7 @@ use spacetimedb_sats::{memory_usage::MemoryUsage, Deserialize};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_schema::{
     reducer_name::ReducerName,
-    schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema},
+    schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema, TableSchema},
 };
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository};
 use spacetimedb_table::{
@@ -573,6 +573,14 @@ impl MutTxDatastore for Locking {
 
     fn sequence_id_from_name_mut_tx(&self, tx: &Self::MutTx, sequence_name: &str) -> Result<Option<SequenceId>> {
         tx.sequence_id_from_name(sequence_name)
+    }
+
+    fn create_constraint_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        constraint: ConstraintSchema,
+    ) -> Result<ConstraintId> {
+        tx.create_constraint(constraint)
     }
 
     fn drop_constraint_mut_tx(&self, tx: &mut Self::MutTx, constraint_id: ConstraintId) -> Result<()> {

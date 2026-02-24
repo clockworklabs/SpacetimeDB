@@ -15,7 +15,7 @@ use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::reducer_name::ReducerName;
-use spacetimedb_schema::schema::{IndexSchema, SequenceSchema, TableSchema};
+use spacetimedb_schema::schema::{ConstraintSchema, IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::static_assert_size;
 use spacetimedb_table::table::RowRef;
@@ -638,6 +638,11 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn sequence_id_from_name_mut_tx(&self, tx: &Self::MutTx, sequence_name: &str) -> super::Result<Option<SequenceId>>;
 
     // Constraints
+    fn create_constraint_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        constraint: ConstraintSchema,
+    ) -> super::Result<ConstraintId>;
     fn drop_constraint_mut_tx(&self, tx: &mut Self::MutTx, constraint_id: ConstraintId) -> super::Result<()>;
     fn constraint_id_from_name(&self, tx: &Self::MutTx, constraint_name: &str) -> super::Result<Option<ConstraintId>>;
 
