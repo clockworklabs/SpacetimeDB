@@ -92,7 +92,7 @@ pub struct SubscribeQueryParams {
     ///
     /// If `false`, send them immediately.
     #[serde(default)]
-    pub confirmed: bool,
+    pub confirmed: Option<bool>,
 }
 
 pub fn generate_random_connection_id() -> ConnectionId {
@@ -170,7 +170,7 @@ where
         version: negotiated.version,
         compression,
         tx_update_full: !light,
-        confirmed_reads: confirmed,
+        confirmed_reads: confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS),
     };
 
     // TODO: Should also maybe refactor the code and the protocol to allow a single websocket

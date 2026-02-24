@@ -18,6 +18,7 @@ SpacetimeDB 2.0 introduces a new WebSocket protocol (v2) and SDK with several br
 2. **`light_mode` removed** -- no longer necessary since reducer events are no longer broadcast
 3. **`CallReducerFlags` removed** -- `NoSuccessNotify` and `set_reducer_flags()` are gone
 4. **Event tables introduced** -- a new table type for publishing transient events to subscribers
+5. **Confirmed reads enabled by default** -- subscription updates and SQL results are only sent after the transaction is confirmed durable
 
 ## Reducer Callbacks
 
@@ -1303,6 +1304,69 @@ In 2.0, the success notification is lightweight (just `request_id` and `timestam
 </TabItem>
 </Tabs>
 
+## Confirmed Reads Enabled by Default
+
+### What changed
+
+In 1.0, subscription updates and SQL query results were sent to the client immediately, before the underlying transaction was confirmed to be durable. This meant a client could observe a row that was later lost if the server crashed before persisting it.
+
+In 2.0, **confirmed reads are enabled by default**. The server waits until a transaction is confirmed durable before sending updates to clients. This ensures that any data a client receives will survive a server restart.
+
+### Impact
+
+- **Slightly higher latency**: Subscription updates and SQL results may arrive a few milliseconds later, as the server waits for durability confirmation before sending them.
+- **Stronger consistency**: Clients will never observe data that could be lost due to a crash.
+- **No code changes required**: This is a server-side default change. Existing client code works without modification.
+
+### Opting out
+
+If your application prioritizes low latency over durability guarantees (for example, a real-time game where occasional data loss on crash is acceptable), you can opt out by passing `confirmed=false` in the connection URL:
+
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+DbConnection.builder()
+    .withUri("https://maincloud.spacetimedb.com")
+    .withDatabaseName("my-database")
+    .withConfirmedReads(false) // opt out of confirmed reads
+    .build()
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+DbConnection.Builder()
+    .WithUri("https://maincloud.spacetimedb.com")
+    .WithDatabaseName("my-database")
+    .WithConfirmedReads(false) // opt out of confirmed reads
+    .Build();
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+DbConnection::builder()
+    .with_uri("https://maincloud.spacetimedb.com")
+    .with_database_name("my-database")
+    .with_confirmed_reads(false) // opt out of confirmed reads
+    .build()
+    .expect("Failed to connect");
+```
+
+</TabItem>
+</Tabs>
+
+For the CLI:
+
+```bash
+# SQL without confirmed reads
+spacetime sql <database> "SELECT * FROM my_table"
+# The --confirmed flag is no longer needed (it is the default)
+```
+
 ## Quick Migration Checklist
 
 - [ ] Remove all `ctx.reducers.on_<reducer>()` calls
@@ -1329,3 +1393,4 @@ In 2.0, the success notification is lightweight (just `request_id` and `timestam
 - [ ] Remove `with_light_mode()` from `DbConnectionBuilder`
 - [ ] Remove `set_reducer_flags()` calls and `CallReducerFlags` imports
 - [ ] Remove `unstable::CallReducerFlags` from imports
+- [ ] Note that confirmed reads are now enabled by default (no action needed unless you want to opt out with `.withConfirmedReads(false)`)
