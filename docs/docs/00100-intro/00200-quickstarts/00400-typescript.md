@@ -38,18 +38,17 @@ spacetime dev --template basic-ts
     <StepText>
       Your project contains both server and client code.
 
-      Edit `spacetimedb/src/index.ts` to add tables and reducers. Use the generated bindings in `client/src/module_bindings/` to build your client.
+      Edit `spacetimedb/src/index.ts` to add tables and reducers. Use the generated bindings in `src/module_bindings/` to build your client.
     </StepText>
     <StepCode>
 ```
 my-spacetime-app/
-├── spacetimedb/          # Your SpacetimeDB module
+├── spacetimedb/             # Your SpacetimeDB module
 │   └── src/
-│       └── index.ts      # Server-side logic
-├── client/               # Client application
-│   └── src/
-│       ├── index.ts
-│       └── module_bindings/  # Auto-generated types
+│       └── index.ts         # Server-side logic
+├── src/
+│   ├── main.ts              # Client application
+│   └── module_bindings/     # Auto-generated types
 └── package.json
 ```
     </StepCode>
@@ -67,17 +66,20 @@ import { schema, table, t } from 'spacetimedb/server';
 
 const spacetimedb = schema({
   person: table(
-    {},
+    { public: true },
     {
       name: t.string(),
     }
-  )
+  ),
 });
 export default spacetimedb;
 
-export const add = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
-  ctx.db.person.insert({ name });
-});
+export const add = spacetimedb.reducer(
+  { name: t.string() },
+  (ctx, { name }) => {
+    ctx.db.person.insert({ name });
+  }
+);
 
 export const say_hello = spacetimedb.reducer((ctx) => {
   for (const person of ctx.db.person.iter()) {
