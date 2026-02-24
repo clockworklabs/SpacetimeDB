@@ -63,11 +63,21 @@ public static partial class Module
 }
 ```
 
+:::note C# table accessors
+Table accessors use PascalCase: `ctx.Db.User`, `ctx.Db.Player`. The codegen derives these from table names.
+:::
+
 </TabItem>
 <TabItem value="rust" label="Rust">
 
+:::warning Required for Reducers
+Every reducer that uses `ctx.db.*.insert()`, `.iter()`, `.get_by_id()`, etc. **must** include `Table` in its imports:
+`use spacetimedb::{..., Table};`
+Without it you get: `no method named 'insert' found`.
+:::
+
 ```rust
-use spacetimedb::{table, reducer, ReducerContext};
+use spacetimedb::{table, reducer, ReducerContext, Table};
 
 #[table(accessor = user)]
 pub struct User {
@@ -187,7 +197,7 @@ public static partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::{table, reducer, ReducerContext, Identity};
+use spacetimedb::{table, reducer, ReducerContext, Identity, Table};
 
 #[table(accessor = player)]
 pub struct Player {
@@ -266,7 +276,7 @@ Never use external random number generators (like `Math.random()` in TypeScript 
 
 The context provides access to the module's own identity, which is useful for distinguishing between user-initiated and system-initiated reducer calls.
 
-This is particularly important for [scheduled reducers](/functions/reducers) that should only be invoked by the system, not by external clients.
+This is particularly important for [scheduled reducers](./00300-reducers.md) that should only be invoked by the system, not by external clients.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">

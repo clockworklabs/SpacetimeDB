@@ -5,7 +5,7 @@
 
 using System;
 
-namespace SpacetimeDB.Internal
+namespace SpacetimeDB
 {
     [SpacetimeDB.Type]
     public enum CaseConversionPolicy

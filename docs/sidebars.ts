@@ -96,6 +96,11 @@ const sidebars: SidebarsConfig = {
       defaultStyle: false,
     },
     {
+      type: 'ref',
+      label: 'Migrating from 1.0 to 2.0',
+      id: 'resources/how-to/migrating-to-2.0',
+    },
+    {
       type: 'category',
       label: 'How To',
       collapsed: true,

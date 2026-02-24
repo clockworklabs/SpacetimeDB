@@ -6,7 +6,7 @@
   "scripts": {
     "demo": "tsx src/demo.ts",
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc",
     "preview": "vite preview",
     "prep": "tsx src/init/init-all.ts",
     "down": "docker compose down || exit 0",
@@ -36,7 +36,7 @@
     "drizzle-orm": "^0.44.7",
     "express": "^5.1.0",
     "hdr-histogram-js": "^3.0.1",
-    "spacetimedb": "1.11.4",
+    "spacetimedb": "workspace:*",
     "sql.js": "^1.13.0",
     "undici": "^6.19.2"
   }

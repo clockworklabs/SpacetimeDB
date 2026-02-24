@@ -57,10 +57,9 @@ my-spacetime-app/
 ├── spacetimedb/          # Your SpacetimeDB module
 │   ├── StdbModule.csproj
 │   └── Lib.cs            # Server-side logic
-├── client/               # Client application
-│   ├── Client.csproj
-│   └── Program.cs
-│       └── module_bindings/  # Auto-generated types
+├── client.csproj         # Client application
+├── Program.cs
+├── module_bindings/  # Auto-generated types
 └── README.md
 ```
     </StepCode>
@@ -113,7 +112,7 @@ public static partial class Module
 cd my-spacetime-app
 
 # Call the add reducer to insert a person
-spacetime call Add Alice
+spacetime call add Alice
 
 # Query the person table
 spacetime sql "SELECT * FROM Person"
@@ -122,7 +121,7 @@ spacetime sql "SELECT * FROM Person"
  "Alice"
 
 # Call say_hello to greet everyone
-spacetime call SayHello
+spacetime call say_hello
 
 # View the module logs
 spacetime logs
@@ -135,5 +134,5 @@ spacetime logs
 
 ## Next steps
 
-- See the [Chat App Tutorial](/tutorials/chat-app) for a complete example
-- Read the [C# SDK Reference](/clients/c-sharp) for detailed API docs
+- See the [Chat App Tutorial](../00300-tutorials/00100-chat-app.md) for a complete example
+- Read the [C# SDK Reference](../../00200-core-concepts/00600-clients/00600-csharp-reference.md) for detailed API docs

@@ -546,7 +546,7 @@ In order to conform with the best practices for optimizing performance and scala
 
 ```cs
 [SpacetimeDB.Table(Accessor = "Inventory")]
-[SpacetimeDB.Index(Name = "product_name", BTree = ["name"])]
+[SpacetimeDB.Index.BTree(Accessor = "product_name", Columns = new[] { "name" })]
 public partial struct Inventory
 {
     [SpacetimeDB.PrimaryKey]
