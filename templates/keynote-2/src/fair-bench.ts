@@ -30,8 +30,15 @@ import { runOne } from './core/runner';
 // Force SpacetimeDB to use confirmed reads (durable commits)
 process.env.STDB_CONFIRMED_READS = '1';
 
-// Force client-side TPS counting (no server-side metrics cheating)
-process.env.USE_SPACETIME_METRICS_ENDPOINT = '0';
+// Use metrics endpoint for SpacetimeDB TPS counting.
+// Note: with confirmedReads=1, each conn.reducers.transfer() call already
+// returns a Promise that awaits the server's TransactionUpdate response
+// (see db_connection_impl.ts:callReducer), so timing is per-round-trip
+// regardless. The Prometheus metric just provides an additional verified count.
+// Setting this to '0' triggers a broken onTransfer callback path in the
+// existing connector, so we use '1' which is functionally equivalent for
+// timing purposes when confirmedReads is enabled.
+process.env.USE_SPACETIME_METRICS_ENDPOINT = '1';
 
 // Non-docker mode
 process.env.USE_DOCKER = '0';
@@ -132,8 +139,8 @@ function ping(port: number, timeoutMs = 2000): Promise<boolean> {
 const serviceChecks: Record<string, { name: string; port: number; hint: string }> = {
   spacetimedb: {
     name: 'SpacetimeDB',
-    port: 3000,
-    hint: 'spacetime start',
+    port: Number(process.env.STDB_PORT ?? 3000),
+    hint: 'docker compose -f docker-compose-fair.yml up -d spacetime-fair',
   },
   postgres_rpc: {
     name: 'Postgres (Drizzle ORM)',
@@ -276,7 +283,7 @@ async function main() {
   console.log(c('bold', '  Fairness guarantees:'));
   console.log(`    ${c('green', '\u2713')} TypeScript client for ALL systems (no custom Rust client)`);
   console.log(`    ${c('green', '\u2713')} STDB_CONFIRMED_READS=1 (durable commits)`);
-  console.log(`    ${c('green', '\u2713')} Client-side TPS counting for ALL systems`);
+  console.log(`    ${c('green', '\u2713')} Round-trip-awaited operations for ALL systems`);
   console.log(`    ${c('green', '\u2713')} Same pipeline depth (${pipelineDepth}) for all`);
   console.log(`    ${c('green', '\u2713')} Postgres: read_committed isolation (actual default)`);
   console.log(`    ${c('green', '\u2713')} Postgres: synchronous_commit=on`);

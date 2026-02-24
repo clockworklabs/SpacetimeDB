@@ -70,9 +70,9 @@ services:
 
   spacetime-fair:
     image: clockworklabs/spacetime:latest
-    command: start
+    command: start --listen-addr 0.0.0.0:3100
     ports:
-      - "3000:3000"
+      - "3100:3100"
     volumes:
       - spacetime_fair_data:/data
     network_mode: host
