@@ -1012,7 +1012,7 @@ Because scheduled reducers and procedures are now private, it's no longer necess
 
 ```typescript
 // 1.0 -- NO LONGER VALID in 2.0
-const myTimer = table({ name: "my_timer", scheduled: () => runMyTimer }, {
+const myTimer = table({ name: "my_timer", scheduled: 'runMyTimer' }, {
   scheduledId: t.u64().primaryKey().autoInc(),
   scheduledAt: t.scheduleAt(),
 });
