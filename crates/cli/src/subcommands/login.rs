@@ -167,7 +167,7 @@ pub async fn spacetimedb_login_force(
 ) -> anyhow::Result<String> {
     let token = if direct_login {
         let token = spacetimedb_direct_login(host).await?;
-        println!("Logged in directly to your target server.");
+        println!("We have logged in directly to your target server.");
         println!("WARNING: This login will NOT work for any other servers.");
         token
     } else {
