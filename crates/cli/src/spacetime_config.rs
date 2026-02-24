@@ -919,12 +919,46 @@ fn load_json_value(path: &Path) -> anyhow::Result<Option<serde_json::Value>> {
     }
     let content =
         std::fs::read_to_string(path).with_context(|| format!("Failed to read config file: {}", path.display()))?;
+
+    // In one of the releases we mistakenly save _source-config field into the JSON file
+    // Check if the field exists and remove it. We use text-based removal to preserve
+    // comments and formatting since json5 crate doesn't support serialization.
+    remove_source_config_from_text(path, &content);
+
     let value: serde_json::Value = json5::from_str(&content)
         .map_err(|e| anyhow::anyhow!("Failed to parse config file {}: {}", path.display(), e))?;
     Ok(Some(value))
 }
 
 const SOURCE_CONFIG_KEY: &str = "_source-config";
+
+/// Remove _source-config field from JSON text using regex
+/// This preserves comments and formatting in the file
+fn remove_source_config_from_text(path: &Path, content: &str) {
+    if !content.contains(SOURCE_CONFIG_KEY) {
+        return;
+    }
+
+    use regex::Regex;
+
+    // Match "_source-config": "value", or "_source-config": "value"
+    // Handles trailing comma and various whitespace patterns
+    let re = Regex::new(r#"(?m)^\s*"_source-config"\s*:\s*"[^"]*"\s*,?\s*$\n?"#).unwrap();
+    let cleaned = re.replace_all(content, "");
+
+    // Also remove trailing commas that might be left behind before closing braces
+    let re_trailing = Regex::new(r#"(?m),(\s*[\]}])"#).unwrap();
+    let cleaned_content = re_trailing.replace_all(&cleaned, "$1").to_string();
+
+    // Validate that the cleaned content is still valid JSON5
+    // If validation fails, don't save
+    if json5::from_str::<serde_json::Value>(&cleaned_content).is_err() {
+        return;
+    }
+
+    // Write the cleaned content back to the file (best effort, ignore errors)
+    let _ = std::fs::write(path, &cleaned_content);
+}
 
 fn mark_source_config(value: &mut serde_json::Value, source_file_name: &str) {
     if let Some(obj) = value.as_object_mut() {
