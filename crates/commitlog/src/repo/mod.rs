@@ -214,7 +214,7 @@ pub fn create_segment_writer<R: Repo>(
             records: Vec::new(),
             epoch,
         },
-        inner: io::BufWriter::new(storage),
+        inner: io::BufWriter::with_capacity(opts.write_buffer_size, storage),
 
         min_tx_offset: offset,
         bytes_written: Header::LEN as u64,
@@ -256,6 +256,7 @@ pub fn resume_segment_writer<R: Repo>(
         size_in_bytes,
         max_epoch,
         max_commit_offset: _,
+        max_commit: _,
     } = match Metadata::extract(offset, &mut storage, offset_index.as_ref()) {
         Err(error::SegmentMetadata::InvalidCommit { sofar, source }) => {
             warn!("invalid commit in segment {offset}: {source}");

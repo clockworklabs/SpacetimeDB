@@ -5,6 +5,7 @@ slug: /tables/auto-increment
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Auto-increment columns automatically generate unique integer values for new rows. When you insert a row with a zero value in an auto-increment column, SpacetimeDB assigns the next value from an internal sequence.
@@ -23,9 +24,10 @@ const post = table(
   }
 );
 
-const spacetimedb = schema(post);
+const spacetimedb = schema({ post });
+export default spacetimedb;
 
-spacetimedb.reducer('add_post', { title: t.string() }, (ctx, { title }) => {
+export const add_post = spacetimedb.reducer({ title: t.string() }, (ctx, { title }) => {
   // Pass 0 for the auto-increment field
   const inserted = ctx.db.post.insert({ id: 0n, title });
   // inserted.id now contains the assigned value
@@ -33,13 +35,15 @@ spacetimedb.reducer('add_post', { title: t.string() }, (ctx, { title }) => {
 });
 ```
 
-Use the `.autoInc()` method on a column builder.
+Use the `.autoInc()` method on a column builder (not `autoIncrement`, which does not exist).
+
+Auto-increment columns must be integer types: `t.i8()`, `t.u8()`, `t.i16()`, `t.u16()`, `t.i32()`, `t.u32()`, `t.i64()`, `t.u64()`, `t.i128()`, `t.u128()`, `t.i256()`, or `t.u256()`.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "Post", Public = true)]
+[SpacetimeDB.Table(Accessor = "Post", Public = true)]
 public partial struct Post
 {
     [SpacetimeDB.PrimaryKey]
@@ -60,13 +64,15 @@ public static void AddPost(ReducerContext ctx, string title)
 
 Use the `[SpacetimeDB.AutoInc]` attribute.
 
+Auto-increment columns must be integer types: `sbyte`, `byte`, `short`, `ushort`, `int`, `uint`, `long`, `ulong`, `SpacetimeDB.I128`, `SpacetimeDB.U128`, `SpacetimeDB.I256`, or `SpacetimeDB.U256`.
+
 </TabItem>
 <TabItem value="rust" label="Rust">
 
 ```rust
 use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb::table(name = post, public)]
+#[spacetimedb::table(accessor = post, public)]
 pub struct Post {
     #[primary_key]
     #[auto_inc]
@@ -86,10 +92,37 @@ fn add_post(ctx: &ReducerContext, title: String) -> Result<(), String> {
 
 Use the `#[auto_inc]` attribute.
 
+Auto-increment columns must be integer types: `i8`, `i16`, `i32`, `i64`, `i128`, `u8`, `u16`, `u32`, `u64`, or `u128`.
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
+
+```cpp
+struct Post {
+    uint64_t id;
+    std::string title;
+};
+SPACETIMEDB_STRUCT(Post, id, title)
+SPACETIMEDB_TABLE(Post, post, Public)
+FIELD_PrimaryKeyAutoInc(post, id)
+
+SPACETIMEDB_REDUCER(add_post, ReducerContext ctx, std::string title) {
+    // Pass 0 for the auto-increment field
+    auto inserted = ctx.db[post].insert(Post{0, title});
+    // inserted.id now contains the assigned value
+    LOG_INFO("Created post with id: " + std::to_string(inserted.id));
+    return Ok();
+}
+```
+
+Use the `FIELD_PrimaryKeyAutoInc(table, field)` macro after table registration.
+
+Auto-increment columns must be integer types: `int8_t`, `int16_t`, `int32_t`, `int64_t`, `uint8_t`, `uint16_t`, `uint32_t`, `uint64_t`, `SpacetimeDB::i128`, `SpacetimeDB::u128`, `SpacetimeDB::i256`, or `SpacetimeDB::u256`.
+
 </TabItem>
 </Tabs>
-
-Auto-increment columns must be integer types (`u8`, `u16`, `u32`, `u64`, `i8`, `i16`, `i32`, `i64`, etc.).
 
 ## Trigger Value
 
@@ -154,7 +187,7 @@ const user = table(
   }
 );
 
-spacetimedb.reducer('insert_user', { name: t.string() }, (ctx, { name }) => {
+export const insert_user = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
   ctx.db.user.insert({ user_id: 0n, name });
 });
 ```
@@ -165,7 +198,7 @@ spacetimedb.reducer('insert_user', { name: t.string() }, (ctx, { name }) => {
 ```csharp
 public partial class Module
 {
-    [SpacetimeDB.Table(Name = "user", Public = true)]
+    [SpacetimeDB.Table(Accessor = "User", Public = true)]
     public partial struct User
     {
         [SpacetimeDB.AutoInc]
@@ -184,7 +217,9 @@ public partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = user, public)]
+use spacetimedb::{ReducerContext, Table};
+
+#[spacetimedb::table(accessor = user, public)]
 pub struct User {
     #[auto_inc]
     user_id: u64,
@@ -257,14 +292,14 @@ If your application requires strictly sequential numbering without gaps, maintai
 use spacetimedb::{ReducerContext, Table};
 
 #[derive(Clone)]
-#[spacetimedb::table(name = counter, public)]
+#[spacetimedb::table(accessor = counter, public)]
 pub struct Counter {
     #[primary_key]
     name: String,
     value: u64,
 }
 
-#[spacetimedb::table(name = invoice, public)]
+#[spacetimedb::table(accessor = invoice, public)]
 pub struct Invoice {
     #[primary_key]
     invoice_number: u64,
@@ -298,7 +333,7 @@ This pattern guarantees sequential values because the counter update and row ins
 Auto-increment columns are commonly combined with primary keys:
 
 ```rust
-#[spacetimedb::table(name = post, public)]
+#[spacetimedb::table(accessor = post, public)]
 pub struct Post {
     #[primary_key]
     #[auto_inc]
@@ -310,7 +345,7 @@ pub struct Post {
 Auto-increment columns can also be combined with unique constraints:
 
 ```rust
-#[spacetimedb::table(name = item, public)]
+#[spacetimedb::table(accessor = item, public)]
 pub struct Item {
     #[primary_key]
     name: String,

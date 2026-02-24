@@ -2,8 +2,8 @@ use crate::TableNameStr;
 
 use super::{
     expr::{format_expr, BoolExpr},
-    table::{ColumnRef, HasCols, HasIxCols, Table},
-    Query,
+    table::{CanBeLookupTable, ColumnRef, HasCols, HasIxCols, Table},
+    Query, RawQuery,
 };
 use std::marker::PhantomData;
 
@@ -66,7 +66,7 @@ pub struct RightSemiJoin<R, L> {
 }
 
 impl<L: HasIxCols> Table<L> {
-    pub fn left_semijoin<R: HasIxCols, V>(
+    pub fn left_semijoin<R: CanBeLookupTable, V>(
         self,
         right: Table<R>,
         on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
@@ -80,7 +80,7 @@ impl<L: HasIxCols> Table<L> {
         }
     }
 
-    pub fn right_semijoin<R: HasIxCols, V>(
+    pub fn right_semijoin<R: CanBeLookupTable, V>(
         self,
         right: Table<R>,
         on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
@@ -97,7 +97,7 @@ impl<L: HasIxCols> Table<L> {
 }
 
 impl<L: HasIxCols> super::FromWhere<L> {
-    pub fn left_semijoin<R: HasIxCols, V>(
+    pub fn left_semijoin<R: CanBeLookupTable, V>(
         self,
         right: Table<R>,
         on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
@@ -111,7 +111,7 @@ impl<L: HasIxCols> super::FromWhere<L> {
         }
     }
 
-    pub fn right_semijoin<R: HasIxCols, V>(
+    pub fn right_semijoin<R: CanBeLookupTable, V>(
         self,
         right: Table<R>,
         on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
@@ -124,6 +124,18 @@ impl<L: HasIxCols> super::FromWhere<L> {
             right_where_expr: None,
             _left_marker: PhantomData,
         }
+    }
+}
+
+impl<L: HasCols> Query<L> for LeftSemiJoin<L> {
+    fn into_sql(self) -> String {
+        self.build().into_sql()
+    }
+}
+
+impl<R: HasCols, L: HasCols> Query<R> for RightSemiJoin<R, L> {
+    fn into_sql(self) -> String {
+        self.build().into_sql()
     }
 }
 
@@ -154,7 +166,7 @@ impl<L: HasCols> LeftSemiJoin<L> {
         self.r#where(f)
     }
 
-    pub fn build(self) -> Query<L> {
+    pub fn build(self) -> RawQuery<L> {
         let where_clause = self
             .where_expr
             .map(|e| format!(" WHERE {}", format_expr(&e)))
@@ -171,7 +183,7 @@ impl<L: HasCols> LeftSemiJoin<L> {
             self.right_col,
             where_clause
         );
-        Query::new(sql)
+        RawQuery::new(sql)
     }
 }
 
@@ -203,7 +215,7 @@ impl<R: HasCols, L: HasCols> RightSemiJoin<R, L> {
         self.r#where(f)
     }
 
-    pub fn build(self) -> Query<R> {
+    pub fn build(self) -> RawQuery<R> {
         let mut where_parts = Vec::new();
 
         if let Some(left_expr) = self.left_where_expr {
@@ -231,6 +243,6 @@ impl<R: HasCols, L: HasCols> RightSemiJoin<R, L> {
             self.right_col.column_name(),
             where_clause
         );
-        Query::new(sql)
+        RawQuery::new(sql)
     }
 }

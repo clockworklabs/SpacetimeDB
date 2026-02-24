@@ -57,7 +57,7 @@ namespace SpacetimeDB.Types
         [DataContract]
         public sealed partial class InsertWithTxRollbackArgs : Procedure, IProcedureArgs
         {
-            string IProcedureArgs.ProcedureName => "InsertWithTxRollback";
+            string IProcedureArgs.ProcedureName => "insert_with_tx_rollback";
         }
 
     }

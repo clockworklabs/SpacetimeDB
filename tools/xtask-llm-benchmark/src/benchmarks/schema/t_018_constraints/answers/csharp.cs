@@ -2,8 +2,8 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "Account", Public = true)]
-    [SpacetimeDB.Index.BTree(Name = "by_name", Columns = [nameof(Name)])]
+    [SpacetimeDB.Table(Accessor = "Account", Public = true)]
+    [SpacetimeDB.Index.BTree(Accessor = "by_name", Columns = [nameof(Name)])]
     public partial struct Account
     {
         [SpacetimeDB.PrimaryKey] public int Id;

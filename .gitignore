@@ -225,6 +225,9 @@ new.json
 *.pem
 .ok.sql
 
+# Intermediate file generated when updating the external client SDKs' WS format bindings
+crates/client-api-messages/ws_schema.json
+
 # Test data
 !crates/core/testdata/
 
@@ -234,6 +237,10 @@ new.json
 # C++ build data
 modules/benchmarks-cpp/build/
 modules/module-test-cpp/build/
+modules/sdk-test-cpp/build/
+modules/sdk-test-connect-disconnect-cpp/build/
+modules/sdk-test-procedure-cpp/build/
+modules/sdk-test-view-cpp/build/
 
 # Symlinked output from `nix build`
 result
@@ -253,3 +260,7 @@ nul
 # csharp SDK packages
 /sdks/csharp/packages/
 /sdks/csharp/packages.meta
+
+# AI agent config
+.codex
+.claude

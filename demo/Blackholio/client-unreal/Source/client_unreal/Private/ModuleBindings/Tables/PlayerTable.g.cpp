@@ -13,16 +13,6 @@ void UPlayerTable::PostInitialize()
     Data = MakeShared<UClientCache<FPlayerType>>();
 
     TSharedPtr<FTableCache<FPlayerType>> PlayerTable = Data->GetOrAdd(TableName);
-    PlayerTable->AddUniqueConstraint<FSpacetimeDBIdentity>("identity", [](const FPlayerType& Row) -> const FSpacetimeDBIdentity& {
-        return Row.Identity; });
-    PlayerTable->AddUniqueConstraint<int32>("player_id", [](const FPlayerType& Row) -> const int32& {
-        return Row.PlayerId; });
-
-    Identity = NewObject<UPlayerIdentityUniqueIndex>(this);
-    Identity->SetCache(PlayerTable);
-
-    PlayerId = NewObject<UPlayerPlayerIdUniqueIndex>(this);
-    PlayerId->SetCache(PlayerTable);
 
     /***/
 }

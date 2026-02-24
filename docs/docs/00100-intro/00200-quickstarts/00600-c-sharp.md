@@ -40,7 +40,7 @@ dotnet workload install wasi-experimental
     </StepText>
     <StepCode>
 ```bash
-spacetime dev --template basic-cs my-spacetime-app
+spacetime dev --template basic-cs
 ```
     </StepCode>
   </Step>
@@ -57,10 +57,9 @@ my-spacetime-app/
 ├── spacetimedb/          # Your SpacetimeDB module
 │   ├── StdbModule.csproj
 │   └── Lib.cs            # Server-side logic
-├── client/               # Client application
-│   ├── Client.csproj
-│   └── Program.cs
-│       └── module_bindings/  # Auto-generated types
+├── client.csproj         # Client application
+├── Program.cs
+├── module_bindings/  # Auto-generated types
 └── README.md
 ```
     </StepCode>
@@ -78,7 +77,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "Person", Public = true)]
+    [SpacetimeDB.Table(Accessor = "Person", Public = true)]
     public partial struct Person
     {
         public string Name;
@@ -106,24 +105,26 @@ public static partial class Module
 
   <Step title="Test with the CLI">
     <StepText>
-      Use the SpacetimeDB CLI to call reducers and query your data directly.
+      Open a new terminal and navigate to your project directory. Then use the SpacetimeDB CLI to call reducers and query your data directly.
     </StepText>
     <StepCode>
 ```bash
+cd my-spacetime-app
+
 # Call the add reducer to insert a person
-spacetime call <database-name> Add Alice
+spacetime call add Alice
 
 # Query the person table
-spacetime sql <database-name> "SELECT * FROM Person"
+spacetime sql "SELECT * FROM Person"
  name
 ---------
  "Alice"
 
 # Call say_hello to greet everyone
-spacetime call <database-name> SayHello
+spacetime call say_hello
 
 # View the module logs
-spacetime logs <database-name>
+spacetime logs
 2025-01-13T12:00:00.000000Z  INFO: Hello, Alice!
 2025-01-13T12:00:00.000000Z  INFO: Hello, World!
 ```
@@ -133,5 +134,5 @@ spacetime logs <database-name>
 
 ## Next steps
 
-- See the [Chat App Tutorial](/tutorials/chat-app) for a complete example
-- Read the [C# SDK Reference](/sdks/c-sharp) for detailed API docs
+- See the [Chat App Tutorial](../00300-tutorials/00100-chat-app.md) for a complete example
+- Read the [C# SDK Reference](../../00200-core-concepts/00600-clients/00600-csharp-reference.md) for detailed API docs

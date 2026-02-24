@@ -57,7 +57,7 @@ namespace SpacetimeDB.Types
         [DataContract]
         public sealed partial class WillPanicArgs : Procedure, IProcedureArgs
         {
-            string IProcedureArgs.ProcedureName => "WillPanic";
+            string IProcedureArgs.ProcedureName => "will_panic";
         }
 
     }

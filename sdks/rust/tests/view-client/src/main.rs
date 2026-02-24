@@ -2,7 +2,7 @@ mod module_bindings;
 
 use module_bindings::*;
 use spacetimedb_lib::Identity;
-use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Table};
+use spacetimedb_sdk::{error::InternalError, DbConnectionBuilder, DbContext, Table};
 use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";
@@ -56,7 +56,7 @@ fn connect_with_then(
     let connected_result = test_counter.add_test(format!("on_connect_{on_connect_suffix}"));
     let name = db_name_or_panic();
     let builder = DbConnection::builder()
-        .with_module_name(name)
+        .with_database_name(name)
         .with_uri(LOCALHOST)
         .on_connect(|ctx, _, _| {
             callback(ctx);
@@ -92,6 +92,16 @@ fn put_result(result: &mut Option<ResultRecorder>, res: Result<(), anyhow::Error
     (result.take().unwrap())(res);
 }
 
+fn reducer_callback_assert_committed(
+    reducer_name: &'static str,
+) -> impl FnOnce(&ReducerEventContext, Result<Result<(), String>, InternalError>) + Send + 'static {
+    move |_ctx, outcome| match outcome {
+        Ok(Ok(())) => (),
+        Ok(Err(msg)) => panic!("`{reducer_name}` reducer returned error: {msg}"),
+        Err(internal_error) => panic!("`{reducer_name}` reducer panicked: {internal_error:?}"),
+    }
+}
+
 fn exec_anonymous_subscribe() {
     let test_counter = TestCounter::new();
     let mut insert_0 = Some(test_counter.add_test("insert_0"));
@@ -115,19 +125,38 @@ fn exec_anonymous_subscribe() {
                 unreachable!("Unexpected identity on delete: `{}`", player.identity)
             });
             ctx.reducers()
-                .insert_player(Identity::from_byte_array([1; 32]), 1)
+                .insert_player_then(
+                    Identity::from_byte_array([1; 32]),
+                    1,
+                    reducer_callback_assert_committed("insert_player"),
+                )
                 .unwrap();
             ctx.reducers()
-                .insert_player(Identity::from_byte_array([2; 32]), 0)
+                .insert_player_then(
+                    Identity::from_byte_array([2; 32]),
+                    0,
+                    reducer_callback_assert_committed("insert_player"),
+                )
                 .unwrap();
             ctx.reducers()
-                .insert_player(Identity::from_byte_array([3; 32]), 1)
+                .insert_player_then(
+                    Identity::from_byte_array([3; 32]),
+                    1,
+                    reducer_callback_assert_committed("insert_player"),
+                )
                 .unwrap();
             ctx.reducers()
-                .insert_player(Identity::from_byte_array([4; 32]), 0)
+                .insert_player_then(
+                    Identity::from_byte_array([4; 32]),
+                    0,
+                    reducer_callback_assert_committed("insert_player"),
+                )
                 .unwrap();
             ctx.reducers()
-                .delete_player(Identity::from_byte_array([4; 32]))
+                .delete_player_then(
+                    Identity::from_byte_array([4; 32]),
+                    reducer_callback_assert_committed("insert_player"),
+                )
                 .unwrap();
         });
     });
@@ -159,19 +188,38 @@ fn exec_anonymous_subscribe_with_query_builder() {
                     unreachable!("Unexpected identity on delete: `{}`", player.identity)
                 });
                 ctx.reducers()
-                    .insert_player(Identity::from_byte_array([1; 32]), 1)
+                    .insert_player_then(
+                        Identity::from_byte_array([1; 32]),
+                        1,
+                        reducer_callback_assert_committed("insert_player"),
+                    )
                     .unwrap();
                 ctx.reducers()
-                    .insert_player(Identity::from_byte_array([2; 32]), 0)
+                    .insert_player_then(
+                        Identity::from_byte_array([2; 32]),
+                        0,
+                        reducer_callback_assert_committed("insert_player"),
+                    )
                     .unwrap();
                 ctx.reducers()
-                    .insert_player(Identity::from_byte_array([3; 32]), 1)
+                    .insert_player_then(
+                        Identity::from_byte_array([3; 32]),
+                        1,
+                        reducer_callback_assert_committed("insert_player"),
+                    )
                     .unwrap();
                 ctx.reducers()
-                    .insert_player(Identity::from_byte_array([4; 32]), 0)
+                    .insert_player_then(
+                        Identity::from_byte_array([4; 32]),
+                        0,
+                        reducer_callback_assert_committed("insert_player"),
+                    )
                     .unwrap();
                 ctx.reducers()
-                    .delete_player(Identity::from_byte_array([4; 32]))
+                    .delete_player_then(
+                        Identity::from_byte_array([4; 32]),
+                        reducer_callback_assert_committed("delete_player"),
+                    )
                     .unwrap();
             })
             .add_query(|ctx| {
@@ -202,13 +250,24 @@ fn exec_non_anonymous_subscribe() {
                 put_result(&mut delete, Ok(()));
             });
             ctx.reducers()
-                .insert_player(Identity::from_byte_array([1; 32]), 0)
+                .insert_player_then(
+                    Identity::from_byte_array([1; 32]),
+                    0,
+                    reducer_callback_assert_committed("insert_player"),
+                )
                 .unwrap();
-            ctx.reducers().insert_player(my_identity, 0).unwrap();
             ctx.reducers()
-                .delete_player(Identity::from_byte_array([1; 32]))
+                .insert_player_then(my_identity, 0, reducer_callback_assert_committed("insert_player"))
                 .unwrap();
-            ctx.reducers().delete_player(my_identity).unwrap();
+            ctx.reducers()
+                .delete_player_then(
+                    Identity::from_byte_array([1; 32]),
+                    reducer_callback_assert_committed("insert_player"),
+                )
+                .unwrap();
+            ctx.reducers()
+                .delete_player_then(my_identity, reducer_callback_assert_committed("delete_player"))
+                .unwrap();
         });
     });
     test_counter.wait_for_all();
@@ -232,13 +291,24 @@ fn exec_non_table_return() {
                 put_result(&mut delete, Ok(()));
             });
             ctx.reducers()
-                .insert_player(Identity::from_byte_array([1; 32]), 0)
+                .insert_player_then(
+                    Identity::from_byte_array([1; 32]),
+                    0,
+                    reducer_callback_assert_committed("insert_player"),
+                )
                 .unwrap();
-            ctx.reducers().insert_player(my_identity, 1).unwrap();
             ctx.reducers()
-                .delete_player(Identity::from_byte_array([1; 32]))
+                .insert_player_then(my_identity, 1, reducer_callback_assert_committed("insert_player"))
                 .unwrap();
-            ctx.reducers().delete_player(my_identity).unwrap();
+            ctx.reducers()
+                .delete_player_then(
+                    Identity::from_byte_array([1; 32]),
+                    reducer_callback_assert_committed("delete_player"),
+                )
+                .unwrap();
+            ctx.reducers()
+                .delete_player_then(my_identity, reducer_callback_assert_committed("delete_player"))
+                .unwrap();
         });
     });
     test_counter.wait_for_all();
@@ -264,14 +334,25 @@ fn exec_non_table_query_builder_return() {
                     put_result(&mut delete, Ok(()));
                 });
                 ctx.reducers()
-                    .insert_player(Identity::from_byte_array([1; 32]), 0)
+                    .insert_player_then(
+                        Identity::from_byte_array([1; 32]),
+                        0,
+                        reducer_callback_assert_committed("insert_player"),
+                    )
                     .unwrap();
-                ctx.reducers().insert_player(my_identity, 1).unwrap();
+                ctx.reducers()
+                    .insert_player_then(my_identity, 1, reducer_callback_assert_committed("insert_player"))
+                    .unwrap();
 
                 ctx.reducers()
-                    .delete_player(Identity::from_byte_array([1; 32]))
+                    .delete_player_then(
+                        Identity::from_byte_array([1; 32]),
+                        reducer_callback_assert_committed("delete_player"),
+                    )
                     .unwrap();
-                ctx.reducers().delete_player(my_identity).unwrap();
+                ctx.reducers()
+                    .delete_player_then(my_identity, reducer_callback_assert_committed("delete_player"))
+                    .unwrap();
             })
             .add_query(|q_ctx| q_ctx.from.my_player_and_level().filter(|p| p.level.eq(1)).build())
             .subscribe();
@@ -302,7 +383,9 @@ fn exec_subscription_update() {
                     put_result(&mut delete_0, Ok(()));
                 });
                 // Insert player 0 at coords (0, 0)
-                ctx.reducers().move_player(0, 0).unwrap();
+                ctx.reducers()
+                    .move_player_then(0, 0, reducer_callback_assert_committed("move_player"))
+                    .unwrap();
             });
         },
     );
@@ -321,7 +404,9 @@ fn exec_subscription_update() {
                     assert_eq!(loc.y, 0);
                     put_result(&mut insert_1, Ok(()));
                     // Move player 1 outside of visible region
-                    ctx.reducers().move_player(3, 3).unwrap();
+                    ctx.reducers()
+                        .move_player_then(3, 3, reducer_callback_assert_committed("move_player"))
+                        .unwrap();
                 });
                 ctx.db.nearby_players().on_delete(move |_, loc| {
                     assert_eq!(loc.x, 0);
@@ -329,7 +414,9 @@ fn exec_subscription_update() {
                     put_result(&mut delete_1, Ok(()));
                 });
                 // Insert player 1 at coords (2, 2)
-                ctx.reducers().move_player(2, 2).unwrap();
+                ctx.reducers()
+                    .move_player_then(2, 2, reducer_callback_assert_committed("move_player"))
+                    .unwrap();
             });
         },
     );

@@ -5,7 +5,7 @@
 use super::one_u_64_type::OneU64;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `one_u64`.
+/// Table handle for the table `one_u_64`.
 ///
 /// Obtain a handle from the [`OneU64TableAccess::one_u_64`] method on [`super::RemoteTables`],
 /// like `ctx.db.one_u_64()`.
@@ -19,19 +19,19 @@ pub struct OneU64TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `one_u64`.
+/// Extension trait for access to the table `one_u_64`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OneU64TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OneU64TableHandle`], which mediates access to the table `one_u64`.
+    /// Obtain a [`OneU64TableHandle`], which mediates access to the table `one_u_64`.
     fn one_u_64(&self) -> OneU64TableHandle<'_>;
 }
 
 impl OneU64TableAccess for super::RemoteTables {
     fn one_u_64(&self) -> OneU64TableHandle<'_> {
         OneU64TableHandle {
-            imp: self.imp.get_table::<OneU64>("one_u64"),
+            imp: self.imp.get_table::<OneU64>("one_u_64"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,13 +80,11 @@ impl<'ctx> __sdk::Table for OneU64TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<OneU64>("one_u64");
+    let _table = client_cache.get_or_make_table::<OneU64>("one_u_64");
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<OneU64>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<OneU64>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<OneU64>", "TableUpdate")
             .with_cause(e)
@@ -98,14 +96,14 @@ pub(super) fn parse_table_update(
 /// Extension trait for query builder access to the table `OneU64`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait one_u64QueryTableAccess {
+pub trait one_u_64QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `OneU64`.
-    fn one_u64(&self) -> __sdk::__query_builder::Table<OneU64>;
+    fn one_u_64(&self) -> __sdk::__query_builder::Table<OneU64>;
 }
 
-impl one_u64QueryTableAccess for __sdk::QueryTableAccessor {
-    fn one_u64(&self) -> __sdk::__query_builder::Table<OneU64> {
-        __sdk::__query_builder::Table::new("one_u64")
+impl one_u_64QueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_u_64(&self) -> __sdk::__query_builder::Table<OneU64> {
+        __sdk::__query_builder::Table::new("one_u_64")
     }
 }

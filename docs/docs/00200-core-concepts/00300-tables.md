@@ -5,6 +5,7 @@ slug: /tables
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Tables are the way to store data in SpacetimeDB. All data in SpacetimeDB is stored in memory for extremely low latency and high throughput access. SpacetimeDB also automatically persists all data to disk.
@@ -35,7 +36,7 @@ The central principle of data-oriented design holds that **the purpose of any pr
 - **Flexible queries** through relational operations
 - **Real-time synchronization** through subscriptions
 
-For further discussion of this philosophy, see [The Zen of SpacetimeDB](/intro/zen).
+For further discussion of this philosophy, see [The Zen of SpacetimeDB](../00100-intro/00100-getting-started/00250-zen-of-spacetimedb.md).
 
 ### Physical and Logical Independence
 
@@ -105,7 +106,7 @@ Tables are defined in your module code with a name, columns, and optional config
 Use the `table` function to declare a new table:
 
 ```typescript
-import { table, t } from 'spacetimedb/server';
+import { schema, table, t } from 'spacetimedb/server';
 
 const people = table(
   { name: 'people', public: true },
@@ -115,9 +116,12 @@ const people = table(
     email: t.string().unique(),
   }
 );
+
+const spacetimedb = schema({ people });
+export default spacetimedb;
 ```
 
-The first argument defines table options, and the second defines columns.
+The first argument to `table()` defines table options, and the second defines columns. Pass your tables to `schema()` as an object: `schema({ people })` or `schema({ table1, table2 })`. Never use `schema(table)` or `schema(t1, t2, t3)`.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -125,7 +129,7 @@ The first argument defines table options, and the second defines columns.
 Use the `[SpacetimeDB.Table]` attribute on a `partial struct` or `partial class`:
 
 ```csharp
-[SpacetimeDB.Table(Name = "Person", Public = true)]
+[SpacetimeDB.Table(Accessor = "Person", Public = true)]
 public partial struct Person
 {
     [SpacetimeDB.PrimaryKey]
@@ -148,7 +152,7 @@ The `partial` modifier is required to allow code generation.
 Use the `#[spacetimedb::table]` macro on a struct:
 
 ```rust
-#[spacetimedb::table(name = person, public)]
+#[spacetimedb::table(accessor = person, public)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -165,11 +169,51 @@ The `pub` modifier on the struct follows normal Rust visibility rules and has no
 :::
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
+
+Register the struct with `SPACETIMEDB_STRUCT`, the table with `SPACETIMEDB_TABLE`, then add field constraints:
+
+```cpp
+struct Person {
+    uint32_t id;
+    std::string name;
+    std::string email;
+};
+SPACETIMEDB_STRUCT(Person, id, name, email)
+SPACETIMEDB_TABLE(Person, person, Public)
+FIELD_PrimaryKeyAutoInc(person, id)
+FIELD_Index(person, name)
+FIELD_Unique(person, email)
+```
+
+</TabItem>
 </Tabs>
+
+### Creating the schema (TypeScript)
+
+After defining tables, pass them to `schema()` as a single object. The object keys become the accessor names in `ctx.db`:
+
+```typescript
+const people = table({ name: 'people', public: true }, { /* columns */ });
+const products = table({ name: 'products', public: true }, { /* columns */ });
+
+const spacetimedb = schema({ people, products });
+export default spacetimedb;
+```
+
+Use `schema({ table1 })` or `schema({ t1, t2 })`. Never use `schema(table)` or `schema(t1, t2, t3)`.
+
+For a compact list of TypeScript gotchas, see the [cheat sheet](./00100-databases/00500-cheat-sheet.md#common-mistakes).
 
 ## Table Naming and Accessors
 
-The table name you specify determines how you access the table in your code. Understanding this relationship is essential for writing correct SpacetimeDB modules.
+The table name you specify determines how you access the table in your code and in SQL. Understanding this relationship is essential for writing correct SpacetimeDB modules.
+
+:::note Table names in SQL
+The table `name` in your schema is used **verbatim** in SQL queries and subscriptions. There is no automatic pluralization or case conversion. If you define `name: 'position'`, SQL uses `position`; if you define `name: 'positions'`, SQL uses `positions`. Ensure your schema names match what your SQL queries expect.
+:::
 
 ### How Accessor Names Are Derived
 
@@ -198,25 +242,29 @@ ctx.db.playerScores.insert({ /* ... */ });
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-The accessor name **exactly matches** the `Name` attribute value:
+The accessor name **exactly matches** the `Accessor` attribute value:
 
 ```csharp
 // Table definition
-[SpacetimeDB.Table(Name = "Player", Public = true)]
+[SpacetimeDB.Table(Accessor = "Player", Public = true)]
 public partial struct Player { /* columns */ }
 
-// Accessor matches Name exactly
+// Accessor matches Accessor value exactly
 ctx.Db.Player.Insert(new Player { /* ... */ });
 ```
 
-| Name Attribute | Accessor |
-|----------------|----------|
-| `Name = "User"` | `ctx.Db.User` |
-| `Name = "Player"` | `ctx.Db.Player` |
-| `Name = "GameSession"` | `ctx.Db.GameSession` |
+| Accessor | API Accessor | SQL Table Name (when Name omitted) |
+|----------|---------------|-------------------------------------|
+| `"User"` | `ctx.Db.User` | `User` |
+| `"Player"` | `ctx.Db.Player` | `Player` |
+| `"GameSession"` | `ctx.Db.GameSession` | `GameSession` |
 
 :::warning Case Sensitivity
-The accessor is case-sensitive and must match the `Name` value exactly. `Name = "user"` produces `ctx.Db.user`, not `ctx.Db.User`.
+The accessor is case-sensitive and must match the `Accessor` value exactly. `Accessor = "user"` produces `ctx.Db.user`, not `ctx.Db.User`.
+:::
+
+:::tip C# Convention
+Pick a stable accessor style for your project and use it consistently (for example, `User`, `user`, or `player_score`). Accessor names are case-sensitive.
 :::
 
 </TabItem>
@@ -226,7 +274,7 @@ The accessor name **exactly matches** the `name` attribute value:
 
 ```rust
 // Table definition
-#[spacetimedb::table(name = player, public)]
+#[spacetimedb::table(accessor = player, public)]
 pub struct Player { /* columns */ }
 
 // Accessor matches name exactly
@@ -240,6 +288,29 @@ ctx.db.player().insert(Player { /* ... */ });
 | `name = game_session` | `ctx.db.game_session()` |
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+The accessor name matches the table identifier you pass to `SPACETIMEDB_TABLE`:
+
+```cpp
+struct PlayerScores {
+  uint64_t id;
+};
+SPACETIMEDB_STRUCT(PlayerScores, id)
+SPACETIMEDB_TABLE(PlayerScores, player_scores, Public)
+FIELD_PrimaryKeyAutoInc(player_scores, id)
+
+// Accessor matches the table identifier
+ctx.db[player_scores].insert(PlayerScores{ /* ... */ });
+```
+
+| Table Identifier | Accessor |
+|------------------|----------|
+| `user` | `ctx.db[user]` |
+| `player_scores` | `ctx.db[player_scores]` |
+| `game_session` | `ctx.db[game_session]` |
+
+</TabItem>
 </Tabs>
 
 ### Recommended Naming Conventions
@@ -251,6 +322,7 @@ Use idiomatic naming conventions for each language:
 | **TypeScript** | snake_case | `'player_score'` | `ctx.db.playerScore` |
 | **C#** | PascalCase | `Name = "PlayerScore"` | `ctx.Db.PlayerScore` |
 | **Rust** | lower_snake_case | `name = player_score` | `ctx.db.player_score()` |
+| **C++** | lower_snake_case | `player_score` | `ctx.db[player_score]` |
 
 These conventions align with each language's standard style guides and make your code feel natural within its ecosystem.
 
@@ -258,8 +330,8 @@ These conventions align with each language's standard style guides and make your
 
 Tables can be **private** (default) or **public**:
 
-- **Private tables**: Visible only to [reducers](/functions/reducers) and the database owner. Clients cannot access them.
-- **Public tables**: Exposed for client read access through [subscriptions](/subscriptions). Writes still occur only through reducers.
+- **Private tables**: Visible only to [reducers](./00200-functions/00300-reducers/00300-reducers.md) and the database owner. Clients cannot access them.
+- **Public tables**: Exposed for client read access through [subscriptions](./00400-subscriptions.md). Writes still occur only through reducers.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -273,10 +345,10 @@ const privateTable = table({ name: 'secret', public: false }, { /* ... */ });
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "User", Public = true)]
+[SpacetimeDB.Table(Accessor = "User", Public = true)]
 public partial struct User { /* ... */ }
 
-[SpacetimeDB.Table(Name = "Secret", Public = false)]
+[SpacetimeDB.Table(Accessor = "Secret", Public = false)]
 public partial struct Secret { /* ... */ }
 ```
 
@@ -284,19 +356,38 @@ public partial struct Secret { /* ... */ }
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = user, public)]
+#[spacetimedb::table(accessor = user, public)]
 pub struct User { /* ... */ }
 
-#[spacetimedb::table(name = secret)]
+#[spacetimedb::table(accessor = secret)]
 pub struct Secret { /* ... */ }
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct User {
+  uint64_t id;
+};
+SPACETIMEDB_STRUCT(User, id)
+SPACETIMEDB_TABLE(User, user, Public)
+FIELD_PrimaryKeyAutoInc(user, id)
+
+struct Secret {
+  uint64_t id;
+};
+SPACETIMEDB_STRUCT(Secret, id)
+SPACETIMEDB_TABLE(Secret, secret, Private)
+FIELD_PrimaryKeyAutoInc(secret, id)
 ```
 
 </TabItem>
 </Tabs>
 
-For more fine-grained access control, you can use [view functions](/functions/views) to expose computed subsets of your data to clients. Views allow you to filter rows, select specific columns, or join data from multiple tables before exposing it.
+For more fine-grained access control, you can use [view functions](./00200-functions/00500-views.md) to expose computed subsets of your data to clients. Views allow you to filter rows, select specific columns, or join data from multiple tables before exposing it.
 
-See [Access Permissions](/tables/access-permissions) for complete details on table visibility and access patterns.
+See [Access Permissions](./00300-tables/00400-access-permissions.md) for complete details on table visibility and access patterns.
 
 ## Multiple Tables for the Same Type
 
@@ -328,8 +419,8 @@ const LoggedOutPlayer = table({ name: 'LoggedOutPlayer' }, playerColumns);
 Apply multiple `[Table]` attributes to the same struct:
 
 ```csharp
-[SpacetimeDB.Table(Name = "Player", Public = true)]
-[SpacetimeDB.Table(Name = "LoggedOutPlayer")]
+[SpacetimeDB.Table(Accessor = "Player", Public = true)]
+[SpacetimeDB.Table(Accessor = "LoggedOutPlayer")]
 public partial struct Player
 {
     [PrimaryKey]
@@ -362,8 +453,8 @@ if (player != null)
 Apply multiple `#[spacetimedb::table]` attributes to the same struct:
 
 ```rust
-#[spacetimedb::table(name = player, public)]
-#[spacetimedb::table(name = logged_out_player)]
+#[spacetimedb::table(accessor = player, public)]
+#[spacetimedb::table(accessor = logged_out_player)]
 pub struct Player {
     #[primary_key]
     identity: Identity,
@@ -389,6 +480,33 @@ if let Some(player) = ctx.db.logged_out_player().identity().find(&ctx.sender()) 
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+Apply multiple `SPACETIMEDB_TABLE` macros to the same struct:
+
+```cpp
+struct Player {
+  Identity identity;
+  int32_t player_id;
+  std::string name;
+};
+SPACETIMEDB_STRUCT(Player, identity, player_id, name)
+SPACETIMEDB_TABLE(Player, player, Public)
+SPACETIMEDB_TABLE(Player, logged_out_player, Private)
+FIELD_PrimaryKey(player, identity)
+FIELD_PrimaryKey(logged_out_player, identity)
+FIELD_UniqueAutoInc(player, player_id)
+FIELD_UniqueAutoInc(logged_out_player, player_id)
+
+// Move a row between tables
+auto maybe_logged_out = ctx.db[logged_out_player_identity].find(ctx.sender);
+if (maybe_logged_out) {
+  ctx.db[player].insert(*maybe_logged_out);
+  ctx.db[logged_out_player_identity].delete_by_key(ctx.sender);
+}
+```
+
+</TabItem>
 </Tabs>
 
 This pattern is useful for:
@@ -408,27 +526,27 @@ Tables support several constraints to enforce data integrity:
 - **Primary keys** uniquely identify each row and define how updates and deletes work
 - **Unique constraints** ensure no two rows share the same value for a column
 
-See [Constraints](/tables/constraints) for details.
+See [Constraints](./00300-tables/00240-constraints.md) for details.
 
 ## Auto-Increment
 
 Auto-increment columns automatically generate unique integer values for new rows. SpacetimeDB implements auto-increment using sequences, which provide crash-safe value generation with configurable parameters.
 
-See [Auto-Increment](/tables/auto-increment) for details.
+See [Auto-Increment](./00300-tables/00230-auto-increment.md) for details.
 
 ## Schedule Tables
 
 Tables can trigger reducers at specific times by including a scheduling column. This allows you to schedule future actions like sending reminders, expiring content, or running periodic maintenance.
 
-See [Schedule Tables](/tables/schedule-tables) for details.
+See [Schedule Tables](./00300-tables/00500-schedule-tables.md) for details.
 
 ## Next Steps
 
-- [Column Types](/tables/column-types) - Supported column types and performance considerations
-- [Constraints](/tables/constraints) - Primary keys and unique constraints
-- [Auto-Increment](/tables/auto-increment) - Automatic ID generation with sequences
-- [Default Values](/tables/default-values) - Schema evolution with column defaults
-- [Indexes](/tables/indexes) - Speed up queries with single and multi-column indexes
-- [Access Permissions](/tables/access-permissions) - Public vs private tables
-- [Schedule Tables](/tables/schedule-tables) - Time-based reducer execution
-- [Performance](/tables/performance) - Best practices for table design
+- [Column Types](./00300-tables/00200-column-types.md) - Supported column types and performance considerations
+- [Constraints](./00300-tables/00240-constraints.md) - Primary keys and unique constraints
+- [Auto-Increment](./00300-tables/00230-auto-increment.md) - Automatic ID generation with sequences
+- [Default Values](./00300-tables/00250-default-values.md) - Schema evolution with column defaults
+- [Indexes](./00300-tables/00300-indexes.md) - Speed up queries with single and multi-column indexes
+- [Access Permissions](./00300-tables/00400-access-permissions.md) - Public vs private tables
+- [Schedule Tables](./00300-tables/00500-schedule-tables.md) - Time-based reducer execution
+- [Performance](./00300-tables/00600-performance.md) - Best practices for table design

@@ -75,7 +75,7 @@ namespace SpacetimeDB.Types
             {
             }
 
-            string IProcedureArgs.ProcedureName => "ReturnPrimitive";
+            string IProcedureArgs.ProcedureName => "return_primitive";
         }
 
     }

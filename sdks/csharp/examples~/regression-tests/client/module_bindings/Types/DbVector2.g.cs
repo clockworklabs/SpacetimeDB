@@ -13,9 +13,9 @@ namespace SpacetimeDB.Types
     [DataContract]
     public sealed partial class DbVector2
     {
-        [DataMember(Name = "X")]
+        [DataMember(Name = "x")]
         public int X;
-        [DataMember(Name = "Y")]
+        [DataMember(Name = "y")]
         public int Y;
 
         public DbVector2(

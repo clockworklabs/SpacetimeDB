@@ -10,7 +10,7 @@ export const Shape = t.enum('Shape', {
   rectangle: Rect,
 });
 
-export const Drawing = table({
+export const drawing = table({
   name: 'drawing',
 }, {
   id: t.i32().primaryKey(),
@@ -18,9 +18,10 @@ export const Drawing = table({
   b: Shape,
 });
 
-const spacetimedb = schema(Drawing);
+const spacetimedb = schema({ drawing });
+export default spacetimedb;
 
-spacetimedb.reducer('seed', {},
+export const seed = spacetimedb.reducer(
   ctx => {
     ctx.db.drawing.insert({
       id: 1,

@@ -36,7 +36,7 @@ use spacetimedb_lib::{hash_bytes, AlgebraicValue, Identity, Timestamp};
 use spacetimedb_paths::server::{ModuleLogsDir, ServerDataDir};
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_schema::auto_migrate::{ponder_migrate, AutoMigrateError, MigrationPolicy, PrettyPrintStyle};
-use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_schema::def::{ModuleDef, RawModuleDefVersion};
 use spacetimedb_table::page_pool::PagePool;
 use std::future::Future;
 use std::ops::Deref;
@@ -177,7 +177,9 @@ impl From<&EventStatus> for ReducerOutcome {
     fn from(status: &EventStatus) -> Self {
         match &status {
             EventStatus::Committed(_) => ReducerOutcome::Committed,
-            EventStatus::Failed(e) => ReducerOutcome::Failed(Box::new((&**e).into())),
+            EventStatus::FailedUser(e) | EventStatus::FailedInternal(e) => {
+                ReducerOutcome::Failed(Box::new((&**e).into()))
+            }
             EventStatus::OutOfEnergy => ReducerOutcome::BudgetExceeded,
         }
     }
@@ -337,7 +339,7 @@ impl HostController {
     /// This is not necessary during hotswap publishes,
     /// as the automigration planner and executor accomplish the same validity checks.
     pub async fn check_module_validity(&self, database: Database, program: Program) -> anyhow::Result<Arc<ModuleInfo>> {
-        Host::try_init_in_memory_to_check(
+        let (program, launched) = Host::try_init_in_memory_to_check(
             &self.runtimes,
             self.page_pool.clone(),
             database,
@@ -350,7 +352,14 @@ impl HostController {
             self.db_cores.take(),
             self.bsatn_rlb_pool.clone(),
         )
-        .await
+        .await?;
+
+        let call_result = launched.module_host.init_database(program).await?;
+        if let Some(call_result) = call_result {
+            Result::from(call_result)?;
+        }
+
+        Ok(launched.module_host.info)
     }
 
     /// Run a computation on the [`RelationalDB`] of a [`ModuleHost`] managed by
@@ -1010,8 +1019,7 @@ impl Host {
         })
     }
 
-    /// Construct an in-memory instance of `database` running `program`,
-    /// initialize it, then immediately destroy it.
+    /// Construct an in-memory instance of `database` running `program`.
     ///
     /// This is used during an initial, fresh publish operation
     /// in order to check the `program`'s validity as a module,
@@ -1027,7 +1035,7 @@ impl Host {
         program: Program,
         core: AllocatedJobCore,
         bsatn_rlb_pool: BsatnRowListBuilderPool,
-    ) -> anyhow::Result<Arc<ModuleInfo>> {
+    ) -> anyhow::Result<(Program, LaunchedModule)> {
         let (db, _connected_clients) = RelationalDB::open(
             database.database_identity,
             database.owner_identity,
@@ -1037,7 +1045,7 @@ impl Host {
             page_pool,
         )?;
 
-        let (program, launched) = launch_module(
+        launch_module(
             database,
             0,
             program,
@@ -1052,14 +1060,7 @@ impl Host {
             core,
             bsatn_rlb_pool,
         )
-        .await?;
-
-        let call_result = launched.module_host.init_database(program).await?;
-        if let Some(call_result) = call_result {
-            Result::from(call_result)?;
-        }
-
-        Ok(launched.module_host.info)
+        .await
     }
 
     /// Attempt to replace this [`Host`]'s [`ModuleHost`] with a new one running
@@ -1161,6 +1162,13 @@ impl Host {
 
         let module_def =
             extract_schema_with_pools(page_pool, bsatn_rlb_pool, host_runtimes, program.bytes, host_type).await?;
+        let major_version_upgrade = matches!(
+            (
+                old_module.module_def.raw_module_def_version(),
+                module_def.raw_module_def_version()
+            ),
+            (RawModuleDefVersion::V9OrEarlier, RawModuleDefVersion::V10)
+        );
 
         let res = match ponder_migrate(&old_module.module_def, &module_def) {
             Ok(plan) => MigratePlanResult::Success {
@@ -1168,8 +1176,12 @@ impl Host {
                 new_module_hash: program.hash,
                 breaks_client: plan.breaks_client(),
                 plan: plan.pretty_print(style)?.into(),
+                major_version_upgrade,
             },
-            Err(e) => MigratePlanResult::AutoMigrationError(e),
+            Err(e) => MigratePlanResult::AutoMigrationError {
+                error: e,
+                major_version_upgrade,
+            },
         };
 
         Ok(res)
@@ -1194,8 +1206,12 @@ pub enum MigratePlanResult {
         new_module_hash: Hash,
         plan: Box<str>,
         breaks_client: bool,
+        major_version_upgrade: bool,
     },
-    AutoMigrationError(ErrorStream<AutoMigrateError>),
+    AutoMigrationError {
+        error: ErrorStream<AutoMigrateError>,
+        major_version_upgrade: bool,
+    },
 }
 
 const STORAGE_METERING_INTERVAL: Duration = Duration::from_secs(15);
@@ -1261,12 +1277,16 @@ pub(crate) async fn extract_schema_with_pools(
     };
 
     let core = AllocatedJobCore::default();
-    let module_info =
-        Host::try_init_in_memory_to_check(runtimes, page_pool, database, program, core, bsatn_rlb_pool).await?;
+    // Limit the scope of the launched module just to this block.
+    let module_info = {
+        let (_, launched) =
+            Host::try_init_in_memory_to_check(runtimes, page_pool, database, program, core, bsatn_rlb_pool).await?;
+        launched.module_host.info
+    };
     // this should always succeed, but sometimes it doesn't
     let module_def = match Arc::try_unwrap(module_info) {
-        Ok(info) => info.module_def,
-        Err(info) => info.module_def.clone(),
+        Ok(info) => Arc::try_unwrap(info.module_def).unwrap_or_else(|module_def| (*module_def).clone()),
+        Err(info) => (*info.module_def).clone(),
     };
 
     Ok(module_def)

@@ -1,18 +1,19 @@
 import { schema, t } from 'spacetimedb/server';
 
-const spacetimedb = schema();
+const spacetimedb = schema({});
+export default spacetimedb;
 
-spacetimedb.reducer('emptyReducerNoArgs', {}, ctx => {
+export const emptyReducerNoArgs = spacetimedb.reducer({}, ctx => {
 });
 
-spacetimedb.reducer('emptyReducerWithInt', { count: t.i32() }, (ctx, { count }) => {
+export const emptyReducerWithInt = spacetimedb.reducer({ count: t.i32() }, (ctx, { count }) => {
 });
 
-spacetimedb.reducer('emptyReducerWithString', { name: t.string() }, (ctx, { name }) => {
+export const emptyReducerWithString = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
 });
 
-spacetimedb.reducer('emptyReducerWithTwoArgs', { count: t.i32(), name: t.string() }, (ctx, { count, name }) => {
+export const emptyReducerWithTwoArgs = spacetimedb.reducer({ count: t.i32(), name: t.string() }, (ctx, { count, name }) => {
 });
 
-spacetimedb.reducer('emptyReducerWithThreeArgs', { active: t.bool(), ratio: t.f32(), label: t.string() }, (ctx, { active, ratio, label }) => {
+export const emptyReducerWithThreeArgs = spacetimedb.reducer({ active: t.bool(), ratio: t.f32(), label: t.string() }, (ctx, { active, ratio, label }) => {
 });

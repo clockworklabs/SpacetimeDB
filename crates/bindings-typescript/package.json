@@ -1,6 +1,6 @@
 {
   "name": "spacetimedb",
-  "version": "1.12.0",
+  "version": "2.0.1",
   "description": "API and ABI bindings for the SpacetimeDB TypeScript module library",
   "homepage": "https://github.com/clockworklabs/SpacetimeDB#readme",
   "bugs": {
@@ -20,8 +20,7 @@
   "author": "Clockwork Labs",
   "type": "module",
   "sideEffects": [
-    "./src/server/polyfills.ts",
-    "./src/server/register_hooks.ts"
+    "./src/server/polyfills.ts"
   ],
   "scripts": {
     "build:js": "tsup",
@@ -30,6 +29,7 @@
     "format": "prettier . --write --ignore-path ../../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../../.prettierignore",
     "test": "vitest run",
+    "test:typecheck": "vitest typecheck --run",
     "coverage": "vitest run --coverage",
     "brotli-size": "brotli-size dist/index.js",
     "size": "pnpm -s build && size-limit",
@@ -78,11 +78,23 @@
       "require": "./dist/vue/index.cjs",
       "default": "./dist/vue/index.mjs"
     },
+    "./tanstack": {
+      "types": "./dist/tanstack/index.d.ts",
+      "import": "./dist/tanstack/index.mjs",
+      "require": "./dist/tanstack/index.cjs",
+      "default": "./dist/tanstack/index.mjs"
+    },
     "./svelte": {
       "types": "./dist/svelte/index.d.ts",
       "import": "./dist/svelte/index.mjs",
       "require": "./dist/svelte/index.cjs",
       "default": "./dist/svelte/index.mjs"
+    },
+    "./angular": {
+      "types": "./dist/angular/index.d.ts",
+      "import": "./dist/angular/index.mjs",
+      "require": "./dist/angular/index.cjs",
+      "default": "./dist/angular/index.mjs"
     }
   },
   "size-limit": [
@@ -165,20 +177,26 @@
   ],
   "dependencies": {
     "base64-js": "^1.5.1",
-    "fast-text-encoding": "^1.0.0",
     "headers-polyfill": "^4.0.3",
+    "object-inspect": "^1.13.4",
     "prettier": "^3.3.3",
     "pure-rand": "^7.0.1",
+    "safe-stable-stringify": "^2.5.0",
     "statuses": "^2.0.2",
     "url-polyfill": "^1.1.14"
   },
   "peerDependencies": {
+    "@angular/core": ">=17.0.0",
+    "@tanstack/react-query": "^5.0.0",
     "react": "^18.0.0 || ^19.0.0-0 || ^19.0.0",
-    "vue": "^3.3.0",
     "svelte": "^4.0.0 || ^5.0.0",
-    "undici": "^6.19.2"
+    "undici": "^6.19.2",
+    "vue": "^3.3.0"
   },
   "peerDependenciesMeta": {
+    "@tanstack/react-query": {
+      "optional": true
+    },
     "react": {
       "optional": true
     },
@@ -190,13 +208,19 @@
     },
     "vue": {
       "optional": true
+    },
+    "@angular/core": {
+      "optional": true
     }
   },
   "devDependencies": {
+    "@angular/compiler": "^21.1.0",
+    "@angular/core": "^21.1.0",
     "@eslint/js": "^9.17.0",
-    "svelte": "^5.0.0",
     "@size-limit/file": "^11.2.0",
+    "@tanstack/react-query": "^5.90.19",
     "@types/fast-text-encoding": "^1.0.3",
+    "@types/object-inspect": "^1.13.0",
     "@types/react": "^19.1.13",
     "@types/statuses": "^2.0.6",
     "@typescript-eslint/eslint-plugin": "^8.18.2",
@@ -207,6 +231,7 @@
     "eslint-plugin-jsdoc": "^61.5.0",
     "globals": "^15.14.0",
     "size-limit": "^11.2.0",
+    "svelte": "^5.0.0",
     "ts-node": "^10.9.2",
     "tsup": "^8.1.0",
     "typescript": "^5.9.3",

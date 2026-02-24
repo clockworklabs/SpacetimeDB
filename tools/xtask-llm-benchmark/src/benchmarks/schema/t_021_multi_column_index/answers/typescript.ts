@@ -1,6 +1,6 @@
 import { table, schema, t } from 'spacetimedb/server';
 
-export const Log = table({
+export const log = table({
   name: 'log',
   indexes: [{ name: 'byUserDay', algorithm: 'btree', columns: ['userId', 'day'] }],
 }, {
@@ -10,9 +10,10 @@ export const Log = table({
   message: t.string(),
 });
 
-const spacetimedb = schema(Log);
+const spacetimedb = schema({ log });
+export default spacetimedb;
 
-spacetimedb.reducer('seed', {},
+export const seed = spacetimedb.reducer(
   ctx => {
     ctx.db.log.insert({ id: 1, userId: 7, day: 1, message: "a" });
     ctx.db.log.insert({ id: 2, userId: 7, day: 2, message: "b" });

@@ -43,9 +43,9 @@ namespace SpacetimeDB.Types
 
         public ScoreCols(string tableName)
         {
-            PlayerId = new global::SpacetimeDB.Col<Score, uint>(tableName, "PlayerId");
-            Level = new global::SpacetimeDB.Col<Score, uint>(tableName, "Level");
-            Points = new global::SpacetimeDB.Col<Score, long>(tableName, "Points");
+            PlayerId = new global::SpacetimeDB.Col<Score, uint>(tableName, "player_id");
+            Level = new global::SpacetimeDB.Col<Score, uint>(tableName, "level");
+            Points = new global::SpacetimeDB.Col<Score, long>(tableName, "points");
         }
     }
 
@@ -56,8 +56,8 @@ namespace SpacetimeDB.Types
 
         public ScoreIxCols(string tableName)
         {
-            PlayerId = new global::SpacetimeDB.IxCol<Score, uint>(tableName, "PlayerId");
-            Level = new global::SpacetimeDB.IxCol<Score, uint>(tableName, "Level");
+            PlayerId = new global::SpacetimeDB.IxCol<Score, uint>(tableName, "player_id");
+            Level = new global::SpacetimeDB.IxCol<Score, uint>(tableName, "level");
         }
     }
 }

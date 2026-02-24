@@ -20,6 +20,7 @@ mod varint;
 use crate::segment::Committed;
 pub use crate::{
     commit::{Commit, StoredCommit},
+    commitlog::CommittedMeta,
     payload::{Decoder, Encode},
     repo::{fs::SizeOnDisk, TxOffset},
     segment::{Transaction, DEFAULT_LOG_FORMAT_VERSION},
@@ -89,6 +90,12 @@ pub struct Options {
     /// Has no effect if the `fallocate` feature is not enabled.
     #[cfg_attr(feature = "serde", serde(default = "Options::default_preallocate_segments"))]
     pub preallocate_segments: bool,
+    /// Size in bytes of the memory buffer holding commit data before flushing
+    /// to storage.
+    ///
+    /// Default: 8KiB
+    #[cfg_attr(feature = "serde", serde(default = "Options::default_write_buffer_size"))]
+    pub write_buffer_size: usize,
 }
 
 impl Default for Options {
@@ -102,6 +109,7 @@ impl Options {
     pub const DEFAULT_OFFSET_INDEX_INTERVAL_BYTES: NonZeroU64 = NonZeroU64::new(4096).expect("4096 > 0, qed");
     pub const DEFAULT_OFFSET_INDEX_REQUIRE_SEGMENT_FSYNC: bool = false;
     pub const DEFAULT_PREALLOCATE_SEGMENTS: bool = false;
+    pub const DEFAULT_WRITE_BUFFER_SIZE: usize = 8 * 1024;
 
     pub const DEFAULT: Self = Self {
         log_format_version: DEFAULT_LOG_FORMAT_VERSION,
@@ -109,6 +117,7 @@ impl Options {
         offset_index_interval_bytes: Self::default_offset_index_interval_bytes(),
         offset_index_require_segment_fsync: Self::default_offset_index_require_segment_fsync(),
         preallocate_segments: Self::default_preallocate_segments(),
+        write_buffer_size: Self::default_write_buffer_size(),
     };
 
     pub const fn default_log_format_version() -> u8 {
@@ -129,6 +138,10 @@ impl Options {
 
     pub const fn default_preallocate_segments() -> bool {
         Self::DEFAULT_PREALLOCATE_SEGMENTS
+    }
+
+    pub const fn default_write_buffer_size() -> usize {
+        Self::DEFAULT_WRITE_BUFFER_SIZE
     }
 
     /// Compute the length in bytes of an offset index based on the settings in
@@ -535,7 +548,7 @@ impl<T: Encode> Commitlog<T> {
 /// ```
 ///
 /// Unlike `open`, no segment will be created in an empty `repo`.
-pub fn committed_meta(root: CommitLogDir) -> Result<Option<segment::Metadata>, error::SegmentMetadata> {
+pub fn committed_meta(root: CommitLogDir) -> io::Result<Option<CommittedMeta>> {
     commitlog::committed_meta(repo::Fs::new(root, None)?)
 }
 

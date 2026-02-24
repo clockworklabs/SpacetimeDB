@@ -75,7 +75,7 @@ fi
 # Generate new Rust client
 echo "Generating new Rust client from sdk-test module..."
 cd "$RUST_DIR"
-"$CLI_PATH" generate --lang rust --out-dir . --project-path "$SDK_TEST_DIR" >/dev/null 2>&1
+"$CLI_PATH" generate --lang rust --out-dir . --module-path "$SDK_TEST_DIR" >/dev/null 2>&1
 
 if [ $? -eq 0 ]; then
     echo ""

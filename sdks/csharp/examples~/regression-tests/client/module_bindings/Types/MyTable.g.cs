@@ -13,7 +13,7 @@ namespace SpacetimeDB.Types
     [DataContract]
     public sealed partial class MyTable
     {
-        [DataMember(Name = "Field")]
+        [DataMember(Name = "field")]
         public ReturnStruct Field;
 
         public MyTable(ReturnStruct Field)
