@@ -121,7 +121,7 @@ const spacetimedb = schema({ people });
 export default spacetimedb;
 ```
 
-The first argument to `table()` defines table options, and the second defines columns. Pass your tables to `schema()` as an object: `schema({ people })` or `schema({ table1, table2 })`. Never use `schema(table)` or `schema(t1, t2, t3)`.
+The first argument to `table()` defines table options, and the second defines columns. Pass your tables to `schema()` as an object: `schema({ people })` or `schema({ table1, table2 })`. The 1.0 syntax `schema(table)` or `schema(t1, t2, t3)` is no longer valid.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
