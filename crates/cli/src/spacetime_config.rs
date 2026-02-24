@@ -779,20 +779,29 @@ impl<'a> CommandConfig<'a> {
 }
 
 fn normalize_path_lexical(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
+    let mut components: Vec<Component> = Vec::new();
     for component in path.components() {
         match component {
             Component::CurDir => {}
             Component::ParentDir => {
-                normalized.pop();
+                // Only cancel out a preceding normal component.
+                // If the stack is empty or ends with `..` / a root, keep the `..`.
+                match components.last() {
+                    Some(Component::Normal(_)) => {
+                        components.pop();
+                    }
+                    _ => {
+                        components.push(component);
+                    }
+                }
             }
-            other => normalized.push(other.as_os_str()),
+            other => components.push(other),
         }
     }
-    if normalized.as_os_str().is_empty() {
+    if components.is_empty() {
         PathBuf::from(".")
     } else {
-        normalized
+        components.iter().collect()
     }
 }
 
@@ -3182,5 +3191,36 @@ mod tests {
 
         let config: SpacetimeConfig = json5::from_str(json).unwrap();
         assert_eq!(config.count_targets(), 4); // root + child-1 + child-2 + grandchild
+    }
+
+    #[test]
+    fn test_normalize_path_preserves_leading_dotdot() {
+        // Regression test for #4429: `../foo` was normalized to `foo`
+        // because `..` was silently dropped when there was nothing to pop.
+        use std::path::Path;
+
+        assert_eq!(normalize_path_lexical(Path::new("../foo")), PathBuf::from("../foo"));
+        assert_eq!(
+            normalize_path_lexical(Path::new("../../a/b")),
+            PathBuf::from("../../a/b")
+        );
+        assert_eq!(
+            normalize_path_lexical(Path::new("../frontend-ts-src/module-bindings")),
+            PathBuf::from("../frontend-ts-src/module-bindings")
+        );
+        // Inner `..` should still resolve.
+        assert_eq!(normalize_path_lexical(Path::new("a/b/../c")), PathBuf::from("a/c"));
+        // Pure `..` should stay.
+        assert_eq!(normalize_path_lexical(Path::new("..")), PathBuf::from(".."));
+        // Absolute paths: `..` at root stays at root level.
+        assert_eq!(
+            normalize_path_lexical(Path::new("/home/user/project/../foo")),
+            PathBuf::from("/home/user/foo")
+        );
+        // Current dir collapses.
+        assert_eq!(normalize_path_lexical(Path::new("./foo")), PathBuf::from("foo"));
+        // Empty result → "."
+        assert_eq!(normalize_path_lexical(Path::new(".")), PathBuf::from("."));
+        assert_eq!(normalize_path_lexical(Path::new("a/..")), PathBuf::from("."));
     }
 }
