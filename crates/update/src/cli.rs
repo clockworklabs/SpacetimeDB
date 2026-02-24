@@ -6,7 +6,7 @@ use std::process::ExitCode;
 
 use spacetimedb_paths::{RootDir, SpacetimePaths};
 
-mod install;
+pub(crate) mod install;
 mod link;
 mod list;
 mod self_install;

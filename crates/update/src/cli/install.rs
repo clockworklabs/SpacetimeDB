@@ -54,9 +54,41 @@ pub(super) fn make_progress_bar() -> ProgressBar {
     pb
 }
 
-fn releases_url() -> String {
+pub(crate) fn releases_url() -> String {
     std::env::var("SPACETIME_UPDATE_RELEASES_URL")
         .unwrap_or_else(|_| "https://api.github.com/repos/clockworklabs/SpacetimeDB/releases".to_owned())
+}
+
+/// Fetch the latest release version from GitHub, falling back to the mirror.
+///
+/// Returns `None` if both sources are unreachable.
+pub(crate) async fn fetch_latest_release_version(client: &reqwest::Client) -> Option<semver::Version> {
+    // Try GitHub first.
+    let url = format!("{}/latest", releases_url());
+    if let Ok(resp) = client.get(&url).send().await {
+        if resp.status().is_success() {
+            if let Ok(release) = resp.json::<Release>().await {
+                if let Ok(v) = release.version() {
+                    return Some(v);
+                }
+            }
+        }
+    }
+
+    // Fall back to mirror.
+    let mirror_url = format!("{MIRROR_BASE_URL}/latest-version");
+    let tag = client
+        .get(&mirror_url)
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .text()
+        .await
+        .ok()?;
+    let ver_str = tag.trim().strip_prefix('v').unwrap_or(tag.trim());
+    semver::Version::parse(ver_str).ok()
 }
 
 const MIRROR_BASE_URL: &str = "https://spacetimedb-client-binaries.nyc3.digitaloceanspaces.com";
@@ -262,13 +294,13 @@ pub(super) struct ReleaseAsset {
 }
 
 #[derive(Deserialize)]
-pub(super) struct Release {
+pub(crate) struct Release {
     tag_name: String,
     pub(super) assets: Vec<ReleaseAsset>,
 }
 
 impl Release {
-    fn version(&self) -> anyhow::Result<semver::Version> {
+    pub(crate) fn version(&self) -> anyhow::Result<semver::Version> {
         let ver = self.tag_name.strip_prefix('v').unwrap_or(&self.tag_name);
         Ok(semver::Version::parse(ver)?)
     }

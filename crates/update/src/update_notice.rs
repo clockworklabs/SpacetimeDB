@@ -7,6 +7,8 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use crate::cli::install::fetch_latest_release_version;
+
 /// How long to cache the update check result.
 const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
@@ -48,26 +50,13 @@ fn write_cache(path: &Path, cache: &Cache) {
     }
 }
 
-/// Fetch the latest release version tag from GitHub, using the same release URL
-/// infrastructure as `spacetime version upgrade`.
-async fn fetch_latest_version(client: &reqwest::Client) -> Option<String> {
-    let releases_url = std::env::var("SPACETIME_UPDATE_RELEASES_URL")
-        .unwrap_or_else(|_| "https://api.github.com/repos/clockworklabs/SpacetimeDB/releases".to_owned());
-    let url = format!("{releases_url}/latest");
-
-    let resp = client.get(&url).send().await.ok()?;
-    if !resp.status().is_success() {
-        return None;
+/// If `latest` is newer than `current`, print an update notice to stderr.
+fn notify_if_newer(current: &semver::Version, latest_str: &str) {
+    if let Ok(latest) = semver::Version::parse(latest_str) {
+        if latest > *current {
+            print_notice(current, &latest);
+        }
     }
-
-    #[derive(serde::Deserialize)]
-    struct Release {
-        tag_name: String,
-    }
-
-    let release: Release = resp.json().await.ok()?;
-    let version = release.tag_name.strip_prefix('v').unwrap_or(&release.tag_name);
-    Some(version.to_owned())
 }
 
 /// Check for updates and print a notice to stderr if a newer version is available.
@@ -92,17 +81,24 @@ fn check_and_notify(config_dir: &Path) -> Option<()> {
     if now.saturating_sub(cache.last_check_secs) < CHECK_INTERVAL.as_secs() {
         // Cache is fresh — just check the cached version.
         if let Some(ref latest_str) = cache.latest_version {
-            if let Ok(latest) = semver::Version::parse(latest_str) {
-                if latest > current {
-                    print_notice(&current, &latest);
-                }
-            }
+            notify_if_newer(&current, latest_str);
         }
         return Some(());
     }
 
     // Cache is stale — do a quick network check.
-    let latest_str = tokio::runtime::Builder::new_current_thread()
+    let latest_version = fetch_latest_version_cached(&path, now);
+
+    if let Some(ref latest) = latest_version {
+        notify_if_newer(&current, &latest.to_string());
+    }
+
+    Some(())
+}
+
+/// Fetch the latest version (with timeout) and update the cache file.
+fn fetch_latest_version_cached(cache_path: &Path, now: u64) -> Option<semver::Version> {
+    let latest = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .ok()?
@@ -112,25 +108,17 @@ fn check_and_notify(config_dir: &Path) -> Option<()> {
                 .user_agent(format!("SpacetimeDB CLI/{CURRENT_VERSION}"))
                 .build()
                 .ok()?;
-            fetch_latest_version(&client).await
+            fetch_latest_release_version(&client).await
         });
 
     // Update the cache regardless of whether we got a result.
     let new_cache = Cache {
         last_check_secs: now,
-        latest_version: latest_str.clone(),
+        latest_version: latest.as_ref().map(|v| v.to_string()),
     };
-    write_cache(&path, &new_cache);
+    write_cache(cache_path, &new_cache);
 
-    if let Some(ref latest_str) = latest_str {
-        if let Ok(latest) = semver::Version::parse(latest_str) {
-            if latest > current {
-                print_notice(&current, &latest);
-            }
-        }
-    }
-
-    Some(())
+    latest
 }
 
 #[allow(clippy::disallowed_macros)]
