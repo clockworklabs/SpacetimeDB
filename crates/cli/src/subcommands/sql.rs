@@ -22,14 +22,12 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("sql_parts")
                 .num_args(0..)
-                .conflicts_with("interactive")
                 .help("SQL arguments: [DATABASE] <QUERY>"),
         )
         .arg(
             Arg::new("interactive")
                 .long("interactive")
                 .action(ArgAction::SetTrue)
-                .conflicts_with("sql_parts")
                 .help("Instead of using a query, run an interactive command prompt for `SQL` expressions"),
         )
         .arg(common_args::confirmed())

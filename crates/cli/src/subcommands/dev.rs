@@ -1361,6 +1361,7 @@ const ALWAYS_IGNORE_DIRS: &[&str] = &[
     ".hg",
     ".svn",   // VCS
     "target", // Rust
+    "build",  // C++
     "bin",
     "obj", // .NET/C#
     "node_modules",

@@ -965,13 +965,13 @@ Both contexts provide read-only access to tables and indexes through `ctx.db`.
 Views can return:
 - `Option<T>` - For at-most-one row (e.g., looking up a specific player)
 - `Vec<T>` - For multiple rows (e.g., listing all players at a level)
-- `Query<T>` - A typed SQL query that behaves like the deprecated RLS (Row-Level Security) feature
+- `impl Query<T>` - A typed SQL query that behaves like the deprecated RLS (Row-Level Security) feature
 
 Where `T` can be a table type or any custom type derived with `SpacetimeType`.
 
-**Query<T> Return Type**
+**impl Query<T> Return Type**
 
-When a view returns `Query<T>`, SpacetimeDB computes results incrementally as the underlying data changes. This enables efficient table scanning because query results are maintained incrementally rather than recomputed from scratch. Without `Query<T>`, you must use indexed column lookups to access tables inside view functions.
+When a view returns `impl Query<T>`, SpacetimeDB computes results incrementally as the underlying data changes. This enables efficient table scanning because query results are maintained incrementally rather than recomputed from scratch. Without `impl Query<T>`, you must use indexed column lookups to access tables inside view functions.
 
 The query builder provides a fluent API for constructing type-safe SQL queries:
 
@@ -981,11 +981,9 @@ use spacetimedb::{view, ViewContext, Query};
 // This view can scan the whole table efficiently because
 // Query<T> results are computed incrementally
 #[view(accessor = my_messages, public)]
-fn my_messages(ctx: &ViewContext) -> Query<Message> {
-    // Build a typed query using the query builder
-    ctx.db.message()
-        .filter(|cols| cols.sender.eq(ctx.sender()))
-        .build()
+fn my_messages(ctx: &ViewContext) -> impl Query<Message> {
+    // Return a typed query builder directly
+    ctx.db.message().filter(|cols| cols.sender.eq(ctx.sender()))
 }
 
 // Query builder supports various operations:
@@ -1870,25 +1868,23 @@ Both contexts provide read-only access to tables and indexes through `ctx.Db`.
 Views can return:
 - `T?` (nullable) - For at-most-one row (e.g., looking up a specific player)
 - `List<T>` or `T[]` - For multiple rows (e.g., listing all players at a level)
-- `Query<T>` - A typed SQL query that behaves like the deprecated RLS (Row-Level Security) feature
+- `IQuery<T>` - A typed SQL query that behaves like the deprecated RLS (Row-Level Security) feature
 
 Where `T` can be a table type or any custom type marked with `[SpacetimeDB.Type]`.
 
-**Query<T> Return Type**
+**IQuery<T> Return Type**
 
-When a view returns `Query<T>`, SpacetimeDB computes results incrementally as the underlying data changes. This enables efficient table scanning because query results are maintained incrementally rather than recomputed from scratch. Without `Query<T>`, you must use indexed column lookups to access tables inside view functions.
+When a view returns `IQuery<T>`, SpacetimeDB computes results incrementally as the underlying data changes. This enables efficient table scanning because query results are maintained incrementally rather than recomputed from scratch. Without `IQuery<T>`, you must use indexed column lookups to access tables inside view functions.
 
 The query builder provides a fluent API for constructing type-safe SQL queries:
 
 ```csharp
 // This view can scan the whole table efficiently because
-// Query<T> results are computed incrementally
+// IQuery<T> results are computed incrementally
 [SpacetimeDB.View(Accessor = "MyMessages", Public = true)]
-public static Query<Message> MyMessages(ViewContext ctx)
+public static IQuery<Message> MyMessages(ViewContext ctx)
 {
-    return ctx.Db.Message
-        .Filter(msg => msg.Sender == ctx.Sender)
-        .Build();
+    return ctx.Db.Message.Filter(msg => msg.Sender == ctx.Sender);
 }
 
 // Query builder supports various operations:

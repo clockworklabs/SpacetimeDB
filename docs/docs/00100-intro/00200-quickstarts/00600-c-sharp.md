@@ -111,7 +111,7 @@ public static partial class Module
 cd my-spacetime-app
 
 # Call the add reducer to insert a person
-spacetime call Add Alice
+spacetime call add Alice
 
 # Query the person table
 spacetime sql "SELECT * FROM Person"
@@ -120,7 +120,7 @@ spacetime sql "SELECT * FROM Person"
  "Alice"
 
 # Call say_hello to greet everyone
-spacetime call SayHello
+spacetime call say_hello
 
 # View the module logs
 spacetime logs
