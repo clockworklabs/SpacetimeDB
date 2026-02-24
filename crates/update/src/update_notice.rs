@@ -78,27 +78,40 @@ fn check_and_notify(config_dir: &Path) -> Option<()> {
 
     let current = semver::Version::parse(CURRENT_VERSION).ok()?;
 
+    // Cache is fresh and has a known latest version — use it.
     if now.saturating_sub(cache.last_check_secs) < CHECK_INTERVAL.as_secs() {
-        // Cache is fresh — just check the cached version.
         if let Some(ref latest_str) = cache.latest_version {
             notify_if_newer(&current, latest_str);
+            return Some(());
         }
-        return Some(());
+        // Cache is fresh but latest_version is None (previous fetch failed).
+        // Fall through to re-check rather than silently skipping for 24h.
     }
 
-    // Cache is stale — do a quick network check.
-    let latest_version = fetch_latest_version_cached(&path, now);
+    // Cache is stale or empty — do a quick network check.
+    let latest_version = fetch_latest_version_now();
 
-    if let Some(ref latest) = latest_version {
-        notify_if_newer(&current, &latest.to_string());
+    match latest_version {
+        Some(ref latest) => {
+            // Successful fetch — save to cache and compare.
+            let new_cache = Cache {
+                last_check_secs: now,
+                latest_version: Some(latest.to_string()),
+            };
+            write_cache(&path, &new_cache);
+            notify_if_newer(&current, &latest.to_string());
+        }
+        None => {
+            // Fetch failed — don't update the cache so we retry next invocation.
+        }
     }
 
     Some(())
 }
 
-/// Fetch the latest version (with timeout) and update the cache file.
-fn fetch_latest_version_cached(cache_path: &Path, now: u64) -> Option<semver::Version> {
-    let latest = tokio::runtime::Builder::new_current_thread()
+/// Fetch the latest version from GitHub/mirror with a short timeout.
+fn fetch_latest_version_now() -> Option<semver::Version> {
+    tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .ok()?
@@ -109,16 +122,7 @@ fn fetch_latest_version_cached(cache_path: &Path, now: u64) -> Option<semver::Ve
                 .build()
                 .ok()?;
             fetch_latest_release_version(&client).await
-        });
-
-    // Update the cache regardless of whether we got a result.
-    let new_cache = Cache {
-        last_check_secs: now,
-        latest_version: latest.as_ref().map(|v| v.to_string()),
-    };
-    write_cache(cache_path, &new_cache);
-
-    latest
+        })
 }
 
 #[allow(clippy::disallowed_macros)]
