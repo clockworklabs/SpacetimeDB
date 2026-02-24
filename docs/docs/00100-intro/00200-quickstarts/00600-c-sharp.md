@@ -54,14 +54,12 @@ spacetime dev --template basic-cs
     <StepCode>
 ```
 my-spacetime-app/
-├── spacetimedb/          # Your SpacetimeDB module
+├── spacetimedb/             # Your SpacetimeDB module
 │   ├── StdbModule.csproj
-│   └── Lib.cs            # Server-side logic
-├── client/               # Client application
-│   ├── Client.csproj
-│   └── Program.cs
-│       └── module_bindings/  # Auto-generated types
-└── README.md
+│   └── Lib.cs               # Server-side logic
+├── client.csproj
+├── Program.cs               # Client application
+└── module_bindings/         # Auto-generated types
 ```
     </StepCode>
   </Step>
