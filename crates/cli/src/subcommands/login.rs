@@ -286,6 +286,7 @@ async fn web_login(remote: &Url, open_browser: bool) -> Result<String, anyhow::E
             .append_pair("token", web_login_request_token);
         let response: WebLoginSessionResponse = client.get(status_url).send().await?.json().await?;
         if let Some(approved) = response.approved()? {
+            println!("Login successful!");
             return Ok(approved.session_token.clone());
         }
     }
