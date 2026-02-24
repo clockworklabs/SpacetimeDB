@@ -45,6 +45,7 @@ members = [
   "modules/module-test",
   "templates/basic-rs/spacetimedb",
   "templates/chat-console-rs/spacetimedb",
+  "templates/keynote-2/spacetimedb-rust-client",
   "modules/sdk-test",
   "modules/sdk-test-connect-disconnect",
   "modules/sdk-test-procedure",
@@ -210,7 +211,7 @@ home = "0.5"
 hostname = "^0.3"
 http = "1.0"
 http-body-util= "0.1.3"
-humantime = "2.1.0"
+humantime = "2.3"
 hyper = "1.0"
 hyper-util = { version = "0.1", features = ["tokio"] }
 ignore = "0.4"
@@ -219,7 +220,7 @@ indexmap = "2.0.0"
 indicatif = "0.17"
 insta = { version = "1.21.0", features = ["toml", "filters"] }
 is-terminal = "0.4"
-itertools = "0.12"
+itertools = "0.14"
 itoa = "1"
 json5 = "0.4"
 jsonwebtoken = { package = "spacetimedb-jsonwebtoken", version = "9.3.0" }
@@ -254,6 +255,7 @@ quick-xml = "0.31"
 quote = "1.0.8"
 rand08 = { package = "rand", version = "0.8" }
 rand = "0.9"
+rand_distr = "0.5.1"
 rayon = "1.8"
 rayon-core = "1.11.0"
 regex = "1"
