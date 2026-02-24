@@ -5,9 +5,10 @@ import {
 import { provideSpacetimeDB } from 'spacetimedb/angular';
 import { DbConnection, ErrorContext } from '../module_bindings';
 import { Identity } from 'spacetimedb';
+import { environment } from '../environments/environment';
 
-const HOST = import.meta.env.VITE_SPACETIMEDB_HOST ?? 'ws://localhost:3000';
-const DB_NAME = import.meta.env.VITE_SPACETIMEDB_DB_NAME ?? 'angular-ts';
+const HOST = environment.SPACETIMEDB_HOST;
+const DB_NAME = environment.SPACETIMEDB_DB_NAME;
 
 const onConnect = (_conn: DbConnection, identity: Identity, token: string) => {
   localStorage.setItem('auth_token', token);

@@ -359,7 +359,7 @@ async function displayResults(results: BenchResult[]): Promise<void> {
   const fastest = results[0];
   const slowest = results[results.length - 1];
 
-  if (fastest && slowest && fastest.system !== slowest.system) {
+  if (fastest && slowest && fastest.system !== slowest.system && slowest.tps > 0) {
     const multiplier = Math.round(fastest.tps / slowest.tps);
 
     console.log('');
@@ -450,11 +450,11 @@ async function main() {
   for (const system of systems) {
     const spinner = createSpinner(`${system.padEnd(12)} benchmarking`);
     const result = await runBenchmark(system);
-    if (result) {
+    if (result && result.tps > 0) {
       spinner.stop(c('green', `✓ ${result.tps.toLocaleString()} TPS`));
       results.push(result);
     } else {
-      spinner.stop(c('red', '✗ failed'));
+      spinner.stop(c('red', `✗ FAILED (0 completed transactions)`));
     }
   }
 
