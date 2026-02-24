@@ -97,7 +97,7 @@ pub fn gather_docs_files() -> Result<Vec<PathBuf>> {
     if let Some(pos) = out.iter().position(|p| {
         p.file_name()
             .and_then(|n| n.to_str())
-            .map_or(false, |n| n == "00600-migrating-to-2.0.md")
+            .is_some_and(|n| n == "00600-migrating-to-2.0.md")
     }) {
         let migration = out.remove(pos);
         out.insert(0, migration);

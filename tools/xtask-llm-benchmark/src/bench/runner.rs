@@ -702,7 +702,7 @@ fn normalize_task_selector(raw: &str) -> Result<String> {
             return Ok(format!("t_{:03}", n));
         }
         // Full task dir name: t_000_empty_reducers, t_001_basic_tables, etc.
-        if rest.chars().next().map_or(false, |c| c.is_ascii_digit())
+        if rest.chars().next().is_some_and(|c| c.is_ascii_digit())
             && rest.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
         {
             return Ok(s);

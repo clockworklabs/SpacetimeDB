@@ -65,7 +65,7 @@ fn relative_to_workspace(root: &Path, ws_subpath: &str) -> Result<String> {
         .strip_prefix(&ws)
         .with_context(|| format!("materialized dir {:?} not under workspace {:?}", root_canon, ws))?;
     let ups = root_rel.components().count();
-    Ok(std::iter::repeat("..").take(ups).collect::<Vec<_>>().join("/") + "/" + ws_subpath)
+    Ok(std::iter::repeat_n("..", ups).collect::<Vec<_>>().join("/") + "/" + ws_subpath)
 }
 
 fn copy_tree_with_templates(src: &Path, dst: &Path) -> Result<()> {
