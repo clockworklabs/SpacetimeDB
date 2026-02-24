@@ -496,7 +496,7 @@ pub struct SqlQueryParams {
     /// If `true`, return the query result only after its transaction offset
     /// is confirmed to be durable.
     #[serde(default)]
-    pub confirmed: bool,
+    pub confirmed: Option<bool>,
 }
 
 pub async fn sql_direct<S>(
@@ -518,7 +518,8 @@ where
         .authorize_sql(caller_identity, database.database_identity)
         .await?;
 
-    host.exec_sql(auth, database, confirmed, sql).await
+    host.exec_sql(auth, database, confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS), sql)
+        .await
 }
 
 pub async fn sql<S>(

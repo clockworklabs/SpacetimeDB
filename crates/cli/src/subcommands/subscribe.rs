@@ -148,7 +148,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let num = args.get_one::<u32>("num-updates").copied();
     let timeout = args.get_one::<u32>("timeout").copied();
     let print_initial_update = args.get_flag("print_initial_update");
-    let confirmed = args.get_flag("confirmed");
+    let confirmed = args.get_one::<bool>("confirmed").copied();
     let resolved_server = server.or(resolved.server.as_deref());
 
     let mut config = config;
@@ -169,8 +169,9 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         unknown => unreachable!("Invalid URL scheme in `Connection::db_uri`: {unknown}"),
     })
     .unwrap();
-    if confirmed {
-        url.query_pairs_mut().append_pair("confirmed", "true");
+    if let Some(confirmed) = confirmed {
+        url.query_pairs_mut()
+            .append_pair("confirmed", if confirmed { "true" } else { "false" });
     }
 
     // Create the websocket request.
