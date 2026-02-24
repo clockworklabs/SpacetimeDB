@@ -6,7 +6,7 @@ use crate::websocket::{Recv, Send, ServerMessage, WsParams};
 use clap::{Args, Parser, Subcommand};
 use core::sync::atomic::{AtomicU64, Ordering};
 use humantime::{format_duration, parse_duration};
-use rand::{distr::Distribution, rngs::SmallRng, SeedableRng as _};
+use rand::{SeedableRng as _, distr::Distribution, rngs::SmallRng};
 use rand_distr::Zipf;
 use spacetimedb_client_api_messages::websocket::v1::{CallReducer, CallReducerFlags, ClientMessage, Compression};
 use spacetimedb_lib::bsatn;
