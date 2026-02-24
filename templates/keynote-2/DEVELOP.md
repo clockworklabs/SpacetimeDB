@@ -38,7 +38,7 @@ The script will:
 
 ## Prerequisites
 
-- **Node.js** ≥ 20.x
+- **Node.js** ≥ 22.x
 - **pnpm** installed globally
 - **Docker** for local Postgres / Cockroach / Supabase
 - Local/Cloud Convex
@@ -123,9 +123,11 @@ Copy `.env.example` to `.env` and adjust.
 
 ```bash
 cd spacetimedb
-spacetimedb generate --lang typescript --out-dir ../module_bindings
+cargo run -p spacetimedb-cli -- generate --lang typescript --out-dir ../module_bindings --module-path . -y
 cd ..
 ```
+
+(Or use `spacetime generate ...` if the CLI is installed.)
 
 **Convex generated files:**
 
@@ -138,7 +140,7 @@ cd ..
 
 ### Start services
 
-1. Start SpacetimeDB (`spacetimedb start`)
+1. Start SpacetimeDB (`cargo run -p spacetimedb-cli -- start` or `spacetime start`)
 2. Start Convex (inside convex-app run `npx convex dev`)
 3. Init Supabase (run `supabase init`) inside project root.
 4. `npm run prep` to seed the databases.

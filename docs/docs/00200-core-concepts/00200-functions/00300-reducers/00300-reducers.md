@@ -542,7 +542,8 @@ Reducers cannot call procedures directly (procedures may have side effects incom
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-import { schema, t, table, SenderError } from 'spacetimedb/server';
+import { ScheduleAt } from 'spacetimedb';
+import { schema, t, table } from 'spacetimedb/server';
 
 // Define a schedule table for the procedure
 const fetchSchedule = table(
@@ -558,8 +559,7 @@ const spacetimedb = schema({ fetchSchedule });
 export default spacetimedb;
 
 // The procedure to be scheduled
-const fetchExternalData = spacetimedb.procedure(
-  'fetch_external_data',
+export const fetch_external_data = spacetimedb.procedure(
   { arg: fetchSchedule.rowType },
   t.unit(),
   (ctx, { arg }) => {
@@ -570,7 +570,7 @@ const fetchExternalData = spacetimedb.procedure(
 );
 
 // From a reducer, schedule the procedure by inserting into the schedule table
-const queueFetch = spacetimedb.reducer('queue_fetch', { url: t.string() }, (ctx, { url }) => {
+export const queueFetch = spacetimedb.reducer({ url: t.string() }, (ctx, { url }) => {
   ctx.db.fetchSchedule.insert({
     scheduled_id: 0n,
     scheduled_at: ScheduleAt.interval(0n), // Run immediately

@@ -15,7 +15,6 @@ mod describe;
 mod detect_wasm_bindgen;
 mod dml;
 mod domains;
-mod energy;
 mod fail_initial_publish;
 mod filtering;
 mod http_egress;

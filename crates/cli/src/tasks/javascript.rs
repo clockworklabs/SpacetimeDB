@@ -46,7 +46,7 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
 
     let mut tsc_path = cwd.join("node_modules/.bin/tsc");
     if cfg!(windows) {
-        tsc_path.set_extension(".cmd");
+        tsc_path.set_extension("cmd");
     }
     if tsc_path.exists() {
         let status = std::process::Command::new(tsc_path)
