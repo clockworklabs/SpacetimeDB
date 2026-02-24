@@ -95,6 +95,16 @@ pub struct SubscribeQueryParams {
     pub confirmed: Option<bool>,
 }
 
+fn resolve_confirmed_reads_default(version: WsVersion, confirmed: Option<bool>) -> bool {
+    if let Some(confirmed) = confirmed {
+        return confirmed;
+    }
+    match version {
+        WsVersion::V1 => false,
+        WsVersion::V2 => crate::DEFAULT_CONFIRMED_READS,
+    }
+}
+
 pub fn generate_random_connection_id() -> ConnectionId {
     ConnectionId::from_le_byte_array(rand::random())
 }
@@ -170,7 +180,7 @@ where
         version: negotiated.version,
         compression,
         tx_update_full: !light,
-        confirmed_reads: confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS),
+        confirmed_reads: resolve_confirmed_reads_default(negotiated.version, confirmed),
     };
 
     // TODO: Should also maybe refactor the code and the protocol to allow a single websocket
@@ -2286,6 +2296,14 @@ mod tests {
         let options = WebSocketOptions::default();
         let toml = toml::to_string(&options).unwrap();
         assert_eq!(options, toml::from_str::<WebSocketOptions>(&toml).unwrap());
+    }
+
+    #[test]
+    fn confirmed_reads_default_depends_on_ws_version() {
+        assert!(resolve_confirmed_reads_default(WsVersion::V2, None));
+        assert!(!resolve_confirmed_reads_default(WsVersion::V1, None));
+        assert!(resolve_confirmed_reads_default(WsVersion::V1, Some(true)));
+        assert!(!resolve_confirmed_reads_default(WsVersion::V2, Some(false)));
     }
 
     #[test]
