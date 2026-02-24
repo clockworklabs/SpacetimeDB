@@ -163,7 +163,8 @@ const newId = row.id;  // Extract .id from returned row
 ### Schema export (CRITICAL)
 ```typescript
 // At end of schema.ts — schema() takes exactly ONE argument: an object
-export const spacetimedb = schema({ table1, table2, table3 });
+const spacetimedb = schema({ table1, table2, table3 });
+export default spacetimedb;
 
 // ❌ WRONG — never pass tables directly or as multiple args
 schema(myTable);      // WRONG!
@@ -269,7 +270,7 @@ for (const row of ctx.db.scores.by_player.filter(playerId)) {
 **Reducer name comes from the export — NOT from a string argument.** Use `reducer(params, fn)` or `reducer(fn)`.
 
 ```typescript
-import { spacetimedb } from './schema';
+import spacetimedb from './schema';
 import { t, SenderError } from 'spacetimedb/server';
 
 // ✅ CORRECT — export const name = spacetimedb.reducer(params, fn)

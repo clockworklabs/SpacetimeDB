@@ -121,7 +121,7 @@ const spacetimedb = schema({ people });
 export default spacetimedb;
 ```
 
-The first argument to `table()` defines table options, and the second defines columns. Pass your tables to `schema()` as an object: `schema({ people })` or `schema({ table1, table2 })`. The 1.0 syntax `schema(table)` or `schema(t1, t2, t3)` is no longer valid.
+The first argument to `table()` defines table options, and the second defines columns. Pass your tables to `schema()` as an object: `schema({ people })` or `schema({ table1, table2 })`. Never use `schema(table)` or `schema(t1, t2, t3)`.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -205,7 +205,7 @@ export default spacetimedb;
 
 Use `schema({ table1 })` or `schema({ t1, t2 })`. Never use `schema(table)` or `schema(t1, t2, t3)`.
 
-For a compact list of TypeScript gotchas, see the [cheat sheet](../00100-databases/00500-cheat-sheet.md#common-mistakes).
+For a compact list of TypeScript gotchas, see the [cheat sheet](./00100-databases/00500-cheat-sheet.md#common-mistakes).
 
 ## Table Naming and Accessors
 
@@ -242,7 +242,7 @@ ctx.db.playerScores.insert({ /* ... */ });
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-The accessor name **exactly matches** the `Accessor` attribute value. When `Name` is not specified, `Accessor` is also used as the SQL table name:
+The accessor name **exactly matches** the `Accessor` attribute value:
 
 ```csharp
 // Table definition
@@ -264,7 +264,7 @@ The accessor is case-sensitive and must match the `Accessor` value exactly. `Acc
 :::
 
 :::tip C# Convention
-Use `Accessor = "TableName"` with PascalCase singular (e.g. `User` not `users`). The Accessor value is used verbatim as the SQL table name and API accessor.
+Pick a stable accessor style for your project and use it consistently (for example, `User`, `user`, or `player_score`). Accessor names are case-sensitive.
 :::
 
 </TabItem>

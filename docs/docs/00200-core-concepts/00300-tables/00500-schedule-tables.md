@@ -43,7 +43,7 @@ export const send_reminder = spacetimedb.reducer({ arg: reminder.rowType }, (_ct
 <TabItem value="csharp" label="C#">
 
 :::tip C# schedule column
-Use PascalCase for the schedule column (e.g. `ScheduledAt`), not snake_case.
+In `[SpacetimeDB.Table(..., ScheduledAt = "...")]`, the value must exactly match the name of a field on that table whose type is `ScheduleAt` (for example, `"ScheduledAt"` or `"scheduled_at"`).
 :::
 
 ```csharp

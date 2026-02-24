@@ -59,19 +59,18 @@ ScheduledAt = ScheduleAt.Time(timestamp)
 // ✅ CORRECT — use constructor syntax
 ScheduledAt = new ScheduleAt.Time(new Timestamp(microseconds))
 // OR with TimeSpan
-ScheduledAt = ScheduleAt.Time(ctx.Timestamp + TimeSpan.FromSeconds(60))
+ScheduledAt = new ScheduleAt.Time(ctx.Timestamp + TimeSpan.FromSeconds(60))
 ```
 
-### 6. Table Accessor: PascalCase Singular
+### 6. Table Accessor Casing Is Exact
 ```csharp
-// ✅ CORRECT — Accessor is PascalCase singular
-[SpacetimeDB.Table(Accessor = "User", Public = true)]
+// ✅ CORRECT — match the accessor exactly
+[SpacetimeDB.Table(Accessor = "user", Public = true)]
 public partial class User { ... }
-ctx.Db.User.Insert(...);
+ctx.Db.user.Insert(...);
 
-// ❌ WRONG — lowercase or plural
-[SpacetimeDB.Table(Accessor = "users", Public = true)]  // Use "User"
-[SpacetimeDB.Table(Accessor = "accounts", Public = true)]  // Use "Account"
+// ❌ WRONG — incorrect casing
+ctx.Db.User.Insert(...); // Accessor is "user", so property is ctx.Db.user
 ```
 
 ### 7. Client Callback Signature Errors
@@ -164,8 +163,7 @@ public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> {
 | Wrong | Right | Error |
 |-------|-------|-------|
 | Missing `partial` keyword | `public partial struct Table` | Generated code won't compile |
-| `Accessor = "users"` or `"accounts"` | `Accessor = "User"` or `"Account"` | Use PascalCase singular |
-| `ctx.Db.player` (lowercase) | `ctx.Db.Player` (PascalCase) | Property not found |
+| `ctx.Db.User` when `Accessor = "user"` | `ctx.Db.user` | Accessors are case-sensitive |
 | `Optional<string>` | `string?` | Type not found |
 | `ctx.Db.Table.Get(id)` | `ctx.Db.Table.Id.Find(id)` | Method not found |
 | Wrong .csproj name | `StdbModule.csproj` | Publish fails silently |
@@ -585,7 +583,7 @@ _conn.Reducers.OnCreateTask += (ctx) =>
 
 ## 8) Scheduled Tables
 
-For C# scheduled tables, the schedule column must use PascalCase (e.g. `ScheduledAt`), not snake_case (`scheduled_at`).
+For C# scheduled tables, `ScheduledAt = ...` must point to a field of type `ScheduleAt` on the scheduled table.
 
 ```csharp
 using SpacetimeDB;
@@ -619,7 +617,7 @@ public static partial class Module
         {
             Id = 0,
             Message = message,
-            ScheduledAt = ScheduleAt.Time(futureTime)
+            ScheduledAt = new ScheduleAt.Time(futureTime)
         });
     }
 

@@ -101,8 +101,9 @@ const spacetimedb = schema(myTable);
 const spacetimedb = schema(t1, t2, t3);
 
 // ✅ 2.0 — single object argument
-export const spacetimedb = schema({ myTable });
-export const spacetimedb = schema({ t1, t2, t3 });
+const moduleSchema = schema({ myTable });
+export default moduleSchema;
+// or: const moduleSchema = schema({ t1, t2, t3 });
 ```
 
 ### scheduled tables
@@ -148,7 +149,8 @@ scheduled: () => run_cleanup
 
 ```typescript
 // schema({ myTable }) — object keys become accessors
-export const spacetimedb = schema({ myTable });
+const spacetimedb = schema({ myTable });
+export default spacetimedb;
 ```
 
 - `accessor` = API names in module/client code

@@ -139,7 +139,7 @@ If you need *other* clients to observe that something happened (the primary use 
 **Server (module) -- before:**
 ```typescript
 // 1.0 -- NO LONGER VALID in 2.0 (reducer args were automatically broadcast)
-spacetimedb.reducer({ target: t.identity(), amount: t.u32() }, (ctx, { target, amount }) => {
+spacetimedb.reducer('deal_damage', { target: t.identity(), amount: t.u32() }, (ctx, { target, amount }) => {
   // update game state
 });
 ```
@@ -1013,13 +1013,13 @@ Because scheduled reducers and procedures are now private, it's no longer necess
 ```typescript
 // 1.0 -- NO LONGER VALID in 2.0
 const myTimer = table({ name: "my_timer", scheduled: 'runMyTimer' }, {
-  scheduledId: t.u64().primaryKey().autoInc(),
+  scheduledId: t.u64(),
   scheduledAt: t.scheduleAt(),
 });
 const spacetimedb = schema(myTimer);
 
 // 1.0 - SUPERFLUOUS IN 2.0
-const runMyTimer = spacetimedb.reducer({ arg: myTimer.rowType }, (ctx, { arg }) => {
+spacetimedb.reducer('runMyTimer', myTimer.rowType, (ctx, timer) => {
   if (ctx.sender != ctx.identity) {
     throw SenderError(`'runMyTimer' should only be invoked by the database!`);
   }
