@@ -811,7 +811,7 @@ const myTable = table({ name: 'my_table' }, {
 }) 
 
 // 1.0 -- REMOVED in 2.0 
-spacetimedb.reducer(ctx => {
+spacetimedb.reducer('my_reducer', ctx => {
     ctx.db.myTable.id.update({
         id: 1,
         name: "Foobar",
