@@ -570,7 +570,7 @@ const fetchExternalData = spacetimedb.procedure(
 );
 
 // From a reducer, schedule the procedure by inserting into the schedule table
-const queueFetch = spacetimedb.reducer({ url: t.string() }, (ctx, { url }) => {
+export const queueFetch = spacetimedb.reducer({ url: t.string() }, (ctx, { url }) => {
   ctx.db.fetchSchedule.insert({
     scheduled_id: 0n,
     scheduled_at: ScheduleAt.interval(0n), // Run immediately
