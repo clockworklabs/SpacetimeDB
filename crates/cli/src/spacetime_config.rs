@@ -120,7 +120,7 @@ pub struct SpacetimeConfig {
     pub children: Option<Vec<SpacetimeConfig>>,
 
     /// Name of the config file from which this target's `database` value was merged.
-    #[serde(rename = "_source-config", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "_source-config", skip_serializing)]
     pub source_config: Option<String>,
 
     /// All other entity-level fields (database, module-path, server, etc.)
