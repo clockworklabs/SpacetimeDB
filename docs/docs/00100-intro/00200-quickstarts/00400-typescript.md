@@ -56,7 +56,7 @@ my-spacetime-app/
 
   <Step title="Understand tables and reducers">
     <StepText>
-      Open `spacetimedb/src/index.ts` to see the module code. The template includes a `person` table and two reducers: `add` to insert a person, and `say_hello` to greet everyone.
+      Open `spacetimedb/src/index.ts` to see the module code. The template includes a `person` table and two reducers: `add` to insert a person, and `sayHello` to greet everyone.
 
       Tables store your data. Reducers are functions that modify data — they're the only way to write to the database.
     </StepText>
@@ -81,7 +81,7 @@ export const add = spacetimedb.reducer(
   }
 );
 
-export const say_hello = spacetimedb.reducer((ctx) => {
+export const sayHello = spacetimedb.reducer(ctx => {
   for (const person of ctx.db.person.iter()) {
     console.info(`Hello, ${person.name}!`);
   }
@@ -108,7 +108,7 @@ spacetime sql "SELECT * FROM person"
 ---------
  "Alice"
 
-# Call say_hello to greet everyone
+# Call sayHello to greet everyone
 spacetime call say_hello
 
 # View the module logs
