@@ -153,8 +153,8 @@ Use intervals for periodic tasks like game ticks, heartbeats, or recurring maint
 
 ```typescript
 import { ScheduleAt } from 'spacetimedb';
-import { schema, t, table, SenderError } from 'spacetimedb/server';
-const spacetimedb = schema({});
+import { schema } from 'spacetimedb/server';
+const spacetimedb = schema({ reminder }); // reminder table defined above
 export default spacetimedb;
 
 export const schedule_periodic_tasks = spacetimedb.reducer((ctx) => {
@@ -256,8 +256,8 @@ Use specific times for one-shot actions like sending a reminder at a particular 
 
 ```typescript
 import { ScheduleAt } from 'spacetimedb';
-import { schema, t, table, SenderError } from 'spacetimedb/server';
-const spacetimedb = schema({});
+import { schema } from 'spacetimedb/server';
+const spacetimedb = schema({ reminder }); // reminder table defined above
 export default spacetimedb;
 
 export const schedule_timed_tasks = spacetimedb.reducer((ctx) => {

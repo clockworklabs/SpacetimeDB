@@ -965,13 +965,13 @@ Both contexts provide read-only access to tables and indexes through `ctx.db`.
 Views can return:
 - `Option<T>` - For at-most-one row (e.g., looking up a specific player)
 - `Vec<T>` - For multiple rows (e.g., listing all players at a level)
-- `Query<T>` - A typed SQL query that behaves like the deprecated RLS (Row-Level Security) feature
+- `impl Query<T>` - A typed SQL query that behaves like the deprecated RLS (Row-Level Security) feature
 
 Where `T` can be a table type or any custom type derived with `SpacetimeType`.
 
-**Query<T> Return Type**
+**impl Query<T> Return Type**
 
-When a view returns `Query<T>`, SpacetimeDB computes results incrementally as the underlying data changes. This enables efficient table scanning because query results are maintained incrementally rather than recomputed from scratch. Without `Query<T>`, you must use indexed column lookups to access tables inside view functions.
+When a view returns `impl Query<T>`, SpacetimeDB computes results incrementally as the underlying data changes. This enables efficient table scanning because query results are maintained incrementally rather than recomputed from scratch. Without `impl Query<T>`, you must use indexed column lookups to access tables inside view functions.
 
 The query builder provides a fluent API for constructing type-safe SQL queries:
 
@@ -979,13 +979,11 @@ The query builder provides a fluent API for constructing type-safe SQL queries:
 use spacetimedb::{view, ViewContext, Query};
 
 // This view can scan the whole table efficiently because
-// Query<T> results are computed incrementally
+// impl Query<T> results are computed incrementally
 #[view(accessor = my_messages, public)]
-fn my_messages(ctx: &ViewContext) -> Query<Message> {
-    // Build a typed query using the query builder
-    ctx.db.message()
-        .filter(|cols| cols.sender.eq(ctx.sender()))
-        .build()
+fn my_messages(ctx: &ViewContext) -> impl Query<Message> {
+    // Return a typed query builder directly
+    ctx.db.message().filter(|cols| cols.sender.eq(ctx.sender()))
 }
 
 // Query builder supports various operations:
@@ -1870,25 +1868,23 @@ Both contexts provide read-only access to tables and indexes through `ctx.Db`.
 Views can return:
 - `T?` (nullable) - For at-most-one row (e.g., looking up a specific player)
 - `List<T>` or `T[]` - For multiple rows (e.g., listing all players at a level)
-- `Query<T>` - A typed SQL query that behaves like the deprecated RLS (Row-Level Security) feature
+- `IQuery<T>` - A typed SQL query that behaves like the deprecated RLS (Row-Level Security) feature
 
 Where `T` can be a table type or any custom type marked with `[SpacetimeDB.Type]`.
 
-**Query<T> Return Type**
+**IQuery<T> Return Type**
 
-When a view returns `Query<T>`, SpacetimeDB computes results incrementally as the underlying data changes. This enables efficient table scanning because query results are maintained incrementally rather than recomputed from scratch. Without `Query<T>`, you must use indexed column lookups to access tables inside view functions.
+When a view returns `IQuery<T>`, SpacetimeDB computes results incrementally as the underlying data changes. This enables efficient table scanning because query results are maintained incrementally rather than recomputed from scratch. Without `IQuery<T>`, you must use indexed column lookups to access tables inside view functions.
 
 The query builder provides a fluent API for constructing type-safe SQL queries:
 
 ```csharp
 // This view can scan the whole table efficiently because
-// Query<T> results are computed incrementally
+// IQuery<T> results are computed incrementally
 [SpacetimeDB.View(Accessor = "MyMessages", Public = true)]
-public static Query<Message> MyMessages(ViewContext ctx)
+public static IQuery<Message> MyMessages(ViewContext ctx)
 {
-    return ctx.Db.Message
-        .Filter(msg => msg.Sender == ctx.Sender)
-        .Build();
+    return ctx.Db.Message.Filter(msg => msg.Sender == ctx.Sender);
 }
 
 // Query builder supports various operations:
@@ -2321,7 +2317,7 @@ export default spacetimedb;
 
 #### 3. Writing Reducers
 
-Reducers are functions that modify database state. They are defined using `spacetimedb.reducer()` with three arguments: the reducer name, an object defining argument types, and the callback function:
+Reducers are functions that modify database state. In TypeScript, reducer names come from exports (not string arguments): use `export const my_reducer = spacetimedb.reducer({ ... }, (ctx, args) => { ... })` or `spacetimedb.reducer((ctx) => { ... })`.
 
 ```typescript
 import { schema, table, t, SenderError } from 'spacetimedb/server';
@@ -2355,7 +2351,7 @@ function validateName(name: string) {
 }
 
 // Set user's name
-// Arguments: reducer name, argument types object, callback
+// Arguments: argument types object and callback
 export const set_name = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
   validateName(name);
   const user = ctx.db.user.identity.find(ctx.sender);
