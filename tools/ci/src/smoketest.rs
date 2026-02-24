@@ -1,8 +1,13 @@
 #![allow(clippy::disallowed_macros)]
-use anyhow::{ensure, Result};
+use anyhow::{bail, ensure, Result};
 use clap::{Args, Subcommand};
-use std::env;
+use duct::cmd;
+use std::ffi::OsStr;
+use std::path::Path;
 use std::process::{Command, Stdio};
+use std::{env, fs};
+
+use crate::util;
 
 #[derive(Args)]
 /// This command first builds the spacetimedb-cli and spacetimedb-standalone binaries,
@@ -35,6 +40,7 @@ enum SmoketestCmd {
     ///
     /// Use this before running `cargo test --all` to ensure binaries are built.
     Prepare,
+    CheckModList,
 }
 
 pub fn run(args: SmoketestsArgs) -> Result<()> {
@@ -42,6 +48,11 @@ pub fn run(args: SmoketestsArgs) -> Result<()> {
         Some(SmoketestCmd::Prepare) => {
             build_binaries()?;
             eprintln!("Binaries ready. You can now run `cargo test --all`.");
+            Ok(())
+        }
+        Some(SmoketestCmd::CheckModList) => {
+            check_smoketests_mod_rs_complete()?;
+            eprintln!("smoketests/mod.rs is up to date.");
             Ok(())
         }
         None => run_smoketest(args.server, args.dotnet, args.args),
@@ -176,4 +187,65 @@ fn set_env(cmd: &mut Command, server: Option<String>, dotnet: bool) {
         cmd.env("SPACETIME_REMOTE_SERVER", server_url);
     }
     cmd.env("SMOKETESTS_DOTNET", if dotnet { "1" } else { "0" });
+}
+
+fn check_smoketests_mod_rs_complete() -> Result<()> {
+    util::ensure_repo_root()?;
+
+    let expected_dir = Path::new("crates/smoketests/tests/smoketests");
+    let mut expected = std::collections::BTreeSet::<String>::new();
+    for entry in fs::read_dir(expected_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name == "mod.rs" {
+            continue;
+        }
+        if name.starts_with('.') {
+            continue;
+        }
+
+        let ft = entry.file_type()?;
+        if ft.is_dir() {
+            expected.insert(name.to_string());
+        } else if ft.is_file() && path.extension() == Some(OsStr::new("rs")) {
+            if let Some(stem) = path.file_stem() {
+                expected.insert(stem.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    let out = cmd!("cargo", "test", "-p", "spacetimedb-smoketests", "--", "--list",).read()?;
+
+    let mut present = std::collections::BTreeSet::<String>::new();
+    for line in out.lines() {
+        let line = line.trim();
+        let parts: Vec<&str> = line.split("::").collect();
+        if parts.len() < 2 {
+            continue;
+        }
+        if parts[0] != "smoketests" {
+            continue;
+        }
+        present.insert(parts[1].to_string());
+    }
+
+    let missing = expected
+        .into_iter()
+        .filter(|m| !present.contains(m))
+        .collect::<Vec<_>>();
+
+    if !missing.is_empty() {
+        bail!(
+            "crates/smoketests/tests/smoketests/mod.rs appears incomplete; missing modules (not present in `cargo test -- --list`):\n{}",
+            missing
+                .iter()
+                .map(|m| format!("- mod {m};"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+    }
+
+    Ok(())
 }

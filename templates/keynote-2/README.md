@@ -34,6 +34,8 @@ All tests use 50 concurrent connections with a transfer workload (read-modify-wr
 
 **Key Finding:** SpacetimeDB achieves **~14x higher throughput** than the next best option (SQLite RPC) and maintains nearly identical performance under high contention (only ~4% drop), while traditional databases suffer significant degradation (CockroachDB drops 96%).
 
+> **Note:** SpacetimeDB runs on ARM architectures (including Apple M-series Macs), but has not yet been optimized for them.
+
 ### Contention Impact
 
 ![Contention Chart](./contention-chart.png)
