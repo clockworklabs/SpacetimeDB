@@ -13,17 +13,17 @@ const Person3Info = t.object('Person3Info', {
 
 
 const PlayerRow = t.row('PlayerRow', {
-    Player1Id: t.u32().primaryKey().autoInc(),
-    player_name: t.string(),
-    currentLevel2: t.u32(),
-    status3Field: Player2Status,
+  Player1Id: t.u32().primaryKey().autoInc(),
+  player_name: t.string(),
+  currentLevel2: t.u32(),
+  status3Field: Player2Status,
 })
 
 const PersonRow = t.row({
-    Person2Id: t.u32().primaryKey().autoInc(),
-    FirstName: t.string(),
-    playerRef: t.u32().index(),
-    personInfo: Person3Info,
+  Person2Id: t.u32().primaryKey().autoInc(),
+  FirstName: t.string(),
+  playerRef: t.u32().index(),
+  personInfo: Person3Info,
 })
 
 const Player1 = table(
@@ -64,7 +64,7 @@ export const AddPerson2 = spacetimedb.reducer(
 );
 
 export const BanPlayer1 = spacetimedb.reducer(
-  {name: "banPlayer1"},
+  { name: "banPlayer1" },
   { Player1Id: t.u32(), BanUntil6: t.u32() },
   (ctx, { Player1Id, BanUntil6 }) => {
     const player = ctx.db.Player1.Player1Id.find(Player1Id);
@@ -79,10 +79,10 @@ export const BanPlayer1 = spacetimedb.reducer(
 
 
 export const PersonAtLevel2 = spacetimedb.view(
-  { name:"Level2Person", public: true },
-  t.option(Person2.rowType),
+  { name: "Level2Person", public: true },
+  t.array(Person2.rowType),
   (ctx) => {
-    const person =  ctx.from.Player1.where((p) => p.currentLevel2.eq(2)).rightSemijoin(ctx.from.Person2, (player, person) => player.Player1Id.eq(person.playerRef));
+    const person = ctx.from.Player1.where((p) => p.currentLevel2.eq(2)).rightSemijoin(ctx.from.Person2, (player, person) => player.Player1Id.eq(person.playerRef));
     return person
   }
 );
