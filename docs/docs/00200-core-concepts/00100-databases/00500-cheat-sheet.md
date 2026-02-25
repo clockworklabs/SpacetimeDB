@@ -230,9 +230,10 @@ export const update_score = spacetimedb.reducer({ id: t.u64(), points: t.i32() }
 
 // Query examples
 const player = ctx.db.player.id.find(123n);           // Find by primary key
-const players = ctx.db.player.username.filter('Alice'); // Filter by index
-const all = ctx.db.player.iter();                      // Iterate all
-ctx.db.player.id.delete(123n);                         // Delete by primary key
+const players = ctx.db.player.username.find('Alice'); // Find by unique index
+const players = ctx.db.player.score.filter(100);      // Filter by BTree index
+const all = ctx.db.player.iter();                     // Iterate all
+ctx.db.player.id.delete(123n);                        // Delete by primary key
 ```
 
 </TabItem>
@@ -260,7 +261,8 @@ public static void UpdateScore(ReducerContext ctx, ulong id, int points)
 
 // Query examples
 var player = ctx.Db.Player.Id.Find(123);           // Find by primary key
-var players = ctx.Db.Player.Username.Filter("Alice"); // Filter by index
+var player = ctx.Db.Player.Username.Find("Alice"); // Find by unique index
+var players = ctx.Db.Player.Score.Filter(100);     // Filter by BTree index
 var all = ctx.Db.Player.Iter();                    // Iterate all
 ctx.Db.Player.Id.Delete(123);                      // Delete by primary key
 ```
@@ -289,7 +291,8 @@ pub fn update_score(ctx: &ReducerContext, id: u64, points: i32) -> Result<(), St
 
 // Query examples
 let player = ctx.db.player().id().find(123);           // Find by primary key
-let players = ctx.db.player().username().filter("Alice"); // Filter by index
+let player = ctx.db.player().username().find("Alice"); // Find by unique index
+let players = ctx.db.player().score().filter(100)      // Filter by BTree index
 let all = ctx.db.player().iter();                      // Iterate all
 ctx.db.player().id().delete(123);                      // Delete by primary key
 ```
@@ -321,7 +324,8 @@ SPACETIMEDB_REDUCER(update_score, ReducerContext ctx, uint64_t id, int32_t point
 
 // Query examples
 auto player = ctx.db[player_id].find((uint64_t)123);            // Find by primary key
-auto player_by_name = ctx.db[player_username].find(std::string("Alice")); // Filter by unique index
+auto player_by_name = ctx.db[player_username].find(std::string("Alice")); // Find by unique index
+auto players_by_score = ctx.db[player_score].filter((int32_t)100); // Filter by BTree index.
 for (const auto& p : ctx.db[player]) { /* iterate all */ }      // Iterate all
 ctx.db[player_id].delete_by_key((uint64_t)123);                 // Delete by primary key
 ```
