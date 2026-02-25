@@ -54,6 +54,7 @@ fn main() {
         "ban-player" => exec_ban_player(),
         "query-builder-filter" => exec_query_builder_filter(),
         "query-builder-join" => exec_query_builder_join(),
+        "view" => exec_view(),
         _ => panic!("Unknown test: {test}"),
     }
 }
@@ -349,6 +350,53 @@ fn exec_query_builder_join() {
             })
             // Also subscribe to player_1 so reducer callbacks can see inserted players
             .add_query(|q| q.from.player_1().build())
+            .subscribe();
+    });
+
+    test_counter.wait_for_all();
+}
+
+/// Query view named Level2Person
+fn exec_view() {
+    let test_counter = TestCounter::new();
+    let mut view_result = Some(test_counter.add_test("view_query"));
+
+    connect_then(&test_counter, move |ctx| {
+        ctx.subscription_builder()
+            .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
+            .on_applied(move |ctx| {
+                ctx.db.person_at_level_2().on_insert(move |_ctx, row| {
+                    let check = || {
+                        assert_eq_or_bail!("ViewPerson".to_string(), row.first_name);
+                        assert_eq_or_bail!(20u8, row.person_info.age_value_1);
+                        assert_eq_or_bail!(200u32, row.person_info.score_total);
+                        Ok(())
+                    };
+                    put_result(&mut view_result, check());
+                });
+
+                // Insert a player at level 2
+                ctx.reducers()
+                    .create_player_1_then(
+                        "Level2Player".to_string(),
+                        2,
+                        reducer_callback_assert_committed("create_player_1"),
+                    )
+                    .unwrap();
+
+                // Insert a person referencing that player — should appear in the view
+                ctx.reducers()
+                    .add_person_2_then(
+                        "ViewPerson".to_string(),
+                        1, // player_ref of 1 matches the first inserted player
+                        20,
+                        200,
+                        reducer_callback_assert_committed("add_person_2"),
+                    )
+                    .unwrap();
+            })
+            // Subscribe to the view which selects people at level 2
+            .add_query(|q| q.from.person_at_level_2().build())
             .subscribe();
     });
 
