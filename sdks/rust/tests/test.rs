@@ -576,3 +576,60 @@ mod case_conversion_rust {
         make_test("query-builder-join").run();
     }
 }
+
+/// Tests of case conversion using a TypeScript client against the Rust module `sdk-test-case-conversion`.
+///
+/// Uses <../../typescript/case-conversion-test-client> and <../../../modules/sdk-test-case-conversion>.
+/// Verifies that:
+/// - Table accessor names with digits (`player_1`, `person_2`) work correctly from TypeScript
+/// - Field names with digit boundaries (`player1Id`, `currentLevel2`, `status3Field`) are properly accessed
+/// - Nested struct fields (`personInfo.ageValue1`) work from TypeScript
+/// - Enum variants (`Player2Status::Active1`, `Player2Status::BannedUntil`) work from TypeScript
+/// - Reducers with explicit names (`banPlayer1`) work from TypeScript
+/// - TypeScript query builder can interact correctly with case-converted Rust schemas
+mod case_conversion_rust_ts_client {
+    use spacetimedb_testing::sdk::Test;
+
+    const MODULE: &str = "sdk-test-case-conversion";
+    const CLIENT: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../typescript/case-conversion-test-client"
+    );
+
+    fn make_test(subcommand: &str) -> Test {
+        Test::builder()
+            .with_name(subcommand)
+            .with_module(MODULE)
+            .with_client(CLIENT)
+            .with_language("typescript")
+            .with_bindings_dir("src/module_bindings")
+            .with_compile_command("sh -c 'npm install && npm run build'")
+            .with_run_command(format!("node dist/index.js {}", subcommand))
+            .build()
+    }
+
+    #[test]
+    fn insert_player() {
+        make_test("insert-player").run();
+    }
+
+    #[test]
+    fn insert_person() {
+        make_test("insert-person").run();
+    }
+
+    #[test]
+    fn ban_player() {
+        make_test("ban-player").run();
+    }
+
+    #[test]
+    fn query_builder_filter() {
+        make_test("query-builder-filter").run();
+    }
+
+    #[test]
+    fn query_builder_join() {
+        make_test("query-builder-join").run();
+    }
+}
