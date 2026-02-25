@@ -14,7 +14,7 @@ use std::path::PathBuf;
 fn process_license_file(path: &str, version: &str) {
     let file = fs::read_to_string(path).unwrap();
 
-    let version_re = Regex::new(r"(?m)^(Licensed Work:\s+SpacetimeDB )([\d\.]+)\r?$").unwrap();
+    let version_re = Regex::new(r"(?m)^(Licensed Work:\s+SpacetimeDB )([^\s\r\n]+)\r?$").unwrap();
     let file = version_re.replace_all(&file, |caps: &regex::Captures| format!("{}{}", &caps[1], version));
 
     let date_re = Regex::new(r"(?m)^Change Date:\s+\d{4}-\d{2}-\d{2}\r?$").unwrap();
@@ -96,7 +96,7 @@ fn rewrite_cmake_version_inplace(path: impl AsRef<Path>, new_version: &str) -> a
 
     // (?s) enables dotall mode so . matches newlines
     // Matches: project(...VERSION <version>...) across multiple lines
-    let re_project = Regex::new(r"(?s)(project\s*\([^)]*?VERSION\s+)([\d\.]+)").unwrap();
+    let re_project = Regex::new(r"(?s)(project\s*\([^)]*?VERSION\s+)([^\s\)]+)").unwrap();
     let replaced_project = re_project.replacen(&updated, 1, |caps: &regex::Captures| {
         replaced_any = true;
         format!("{}{}", &caps[1], new_version)
@@ -181,7 +181,8 @@ fn main() -> anyhow::Result<()> {
 
     let unparsed_version_arg = matches.get_one::<String>("upgrade_version").unwrap();
     let semver = Version::parse(unparsed_version_arg).expect("Invalid semver provided to upgrade-version");
-    let full_version = format!("{}.{}.{}", semver.major, semver.minor, semver.patch);
+    let numeric_version = format!("{}.{}.{}", semver.major, semver.minor, semver.patch);
+    let full_version = semver.to_string();
     let wildcard_patch = format!("{}.{}.*", semver.major, semver.minor);
 
     if let Some(path) = matches.get_one::<PathBuf>("spacetime-path") {
@@ -320,7 +321,8 @@ fn main() -> anyhow::Result<()> {
         // 1) Client SDK csproj
         let client_sdk = "sdks/csharp/SpacetimeDB.ClientSDK.csproj";
         rewrite_xml_tag_value(client_sdk, "Version", &full_version)?;
-        rewrite_xml_tag_value(client_sdk, "AssemblyVersion", &full_version)?;
+        // <AssemblyVersion> doesn't support prerelease or metadata version suffixes like <Version> does.
+        rewrite_xml_tag_value(client_sdk, "AssemblyVersion", &numeric_version)?;
         // Update SpacetimeDB.BSATN.Runtime dependency to major.minor.*
         rewrite_csproj_package_ref_version(client_sdk, "SpacetimeDB.BSATN.Runtime", &wildcard_patch)?;
 

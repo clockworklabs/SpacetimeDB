@@ -281,9 +281,9 @@ public class Module
     }
 
     [SpacetimeDB.View(Accessor = "public_table_query", Public = true)]
-    public static Query<PublicTable> PublicTableQuery(ViewContext ctx)
+    public static IQuery<PublicTable> PublicTableQuery(ViewContext ctx)
     {
-        return ctx.From.PublicTable().Where(cols => cols.Id.Eq(0)).Build();
+        return ctx.From.PublicTable().Where(cols => cols.Id.Eq(0));
     }
 
     [SpacetimeDB.View(Accessor = "find_public_table__by_identity", Public = true)]
