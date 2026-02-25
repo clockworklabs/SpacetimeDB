@@ -7,6 +7,23 @@ slug: /clients/c-sharp
 
 The SpacetimeDB client for C# contains all the tools you need to build native clients for SpacetimeDB modules using C#.
 
+## Server module quick reference
+
+If you are **writing a SpacetimeDB module** (tables and reducers), use these patterns:
+
+- **Module class**: `public static partial class Module`
+- **Tables**: `[SpacetimeDB.Table(Accessor = "table_name", Public = true)]` on `partial struct` (or `partial class`) — `Accessor` controls generated API names, and canonical SQL names are derived unless `Name` is explicitly set
+- **Primary key**: Define `[SpacetimeDB.PrimaryKey]` on one column when you need key-based lookups or updates
+- **Reducers**: `[SpacetimeDB.Reducer]` on static methods with `ReducerContext ctx` as first parameter
+- **Required**: `using SpacetimeDB;` and `partial` on all table structs and the Module class
+- **Index**: Always use `SpacetimeDB.Index.BTree` (never bare `Index`). Bare `Index` is ambiguous with `System.Index`. For multi-column: `Columns = new[] { nameof(Col1), nameof(Col2) }`, not collection expressions `[nameof(X)]`
+- **Sum types**: Use `TaggedEnum<(VariantA A, VariantB B)>` with `partial record`, not `partial class`
+- **Scheduled tables**: `ScheduledAt` should reference a field of type `ScheduleAt` in the schedule table
+
+See [Tables](/tables), [Reducers](/functions/reducers), and [Column Types](/tables/column-types) for full server-side documentation. The rest of this page covers the **client SDK** (connections, subscriptions, callbacks).
+
+---
+
 Before diving into the reference, you may want to review:
 
 - [Generating Client Bindings](./00200-codegen.md) - How to generate C# bindings from your module
@@ -920,7 +937,7 @@ The `Reducers` property of the context provides access to reducers exposed by th
 
 All [`IDbContext`](#interface-idbcontext) implementors, including [`DbConnection`](#type-dbconnection) and [`EventContext`](#type-eventcontext), have `.Db` properties, which in turn have methods for accessing tables in the client cache.
 
-Each table defined by a module has an accessor method, whose name is the table name converted to `snake_case`, on this `.Db` property. The table accessor methods return table handles which inherit from [`RemoteTableHandle`](#type-remotetablehandle) and have methods for searching by index.
+Each table defined by a module has an accessor method on this `.Db` property, generated from the table accessor name using C# naming conventions (for example, `player_score` becomes `PlayerScore`). The table accessor methods return table handles which inherit from [`RemoteTableHandle`](#type-remotetablehandle) and have methods for searching by index.
 
 | Name                                                              | Description                                                                     |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -1055,7 +1072,7 @@ public partial class Player
     [PrimaryKey]
     public Identity id;
 
-    [Index.BTree(Accessor = "Level")]
+    [SpacetimeDB.Index.BTree(Accessor = "Level")]
     public uint level;
     ..
 }
@@ -1096,5 +1113,5 @@ See the [module docs](../00300-tables/00200-column-types.md) for more details.
 
 ### Type `TaggedEnum`
 
-A [tagged union](https://en.wikipedia.org/wiki/Tagged_union) type.
+A [tagged union](https://en.wikipedia.org/wiki/Tagged_union) type. When defining TaggedEnum types in a module, use `partial record`, not `partial class`.
 See the [module docs](../00300-tables/00200-column-types.md) for more details.

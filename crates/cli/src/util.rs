@@ -12,6 +12,16 @@ use crate::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
 
 pub const UNSTABLE_WARNING: &str = "WARNING: This command is UNSTABLE and subject to breaking changes.";
 
+/// Strip the Windows extended-length path prefix (`\\?\`) if present.
+/// `fs::canonicalize()` on Windows produces these prefixes, which are
+/// correct but ugly in user-facing output.
+pub fn strip_verbatim_prefix(path: &Path) -> &Path {
+    path.to_str()
+        .and_then(|s| s.strip_prefix(r"\\?\"))
+        .map(Path::new)
+        .unwrap_or(path)
+}
+
 /// Determine the identity of the `database`.
 pub async fn database_identity(
     config: &Config,

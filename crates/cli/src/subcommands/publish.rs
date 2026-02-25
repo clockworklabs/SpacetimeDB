@@ -15,7 +15,7 @@ use crate::spacetime_config::{
     find_and_load_with_env, CommandConfig, CommandSchema, CommandSchemaBuilder, FlatTarget, Key, LoadedConfig,
     SpacetimeConfig,
 };
-use crate::util::{add_auth_header_opt, get_auth_header, AuthHeader, ResponseExt};
+use crate::util::{add_auth_header_opt, get_auth_header, strip_verbatim_prefix, AuthHeader, ResponseExt};
 use crate::util::{decode_identity, y_or_n};
 use crate::{build, common_args};
 
@@ -396,7 +396,7 @@ async fn execute_publish_configs<'a>(
             if let Some(path_to_project) = path_to_project.as_ref() {
                 println!(
                     "Publishing module {} to database '{}'",
-                    path_to_project.display(),
+                    strip_verbatim_prefix(path_to_project).display(),
                     name_or_identity.unwrap()
                 );
             } else {
@@ -460,8 +460,7 @@ async fn execute_publish_configs<'a>(
         if server_address != "localhost" && server_address != "127.0.0.1" {
             println!("You are about to publish to a non-local server: {server_address}");
             if !y_or_n(force, "Are you sure you want to proceed?")? {
-                println!("Aborting");
-                return Ok(());
+                anyhow::bail!("Publish aborted by user.");
             }
         }
 
@@ -521,13 +520,6 @@ async fn execute_publish_configs<'a>(
 
         // Set the host type.
         builder = builder.query(&[("host_type", host_type)]);
-
-        // JS/TS is beta quality atm.
-        if host_type == "Js" {
-            println!("JavaScript / TypeScript support is currently in BETA.");
-            println!("There may be bugs. Please file issues if you encounter any.");
-            println!("<https://github.com/clockworklabs/SpacetimeDB/issues/new>");
-        }
 
         let res = builder.body(program_bytes).send().await?;
         let response: PublishResult = res.json_or_error().await?;
