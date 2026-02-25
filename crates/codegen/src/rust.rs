@@ -671,7 +671,7 @@ pub struct {cols_struct} {{"
     )?;
 
     for element in &product_def.elements {
-        let field_name = &element.0.deref().to_case(Case::Snake);
+        let field_name = &element.0;
         let field_type = type_name(module, &element.1);
         writeln!(
             out,
@@ -690,7 +690,7 @@ impl __sdk::__query_builder::HasCols for {struct_name} {{
         {cols_struct} {{"
     )?;
     for element in &product_def.elements {
-        let field_name = &element.0.deref().to_case(Case::Snake);
+        let field_name = &element.0;
         writeln!(
             out,
             "            {field_name}: __sdk::__query_builder::Col::new(table_name, {field_name:?}),"
