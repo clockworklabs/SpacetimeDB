@@ -161,29 +161,6 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FOU
     }
   },
   {/*
-    {
-        return ctx.Db.Player.Identity.Filter(ctx.Sender);
-                                      ^^^^^^
-    }
-*/
-    Message: 'ReadOnlyUniqueIndex<PlayerReadOnly, Player, Identity, Identity.BSATN>.Filter(Identity)' is inaccessible due to its protection level,
-    Severity: Error,
-    Descriptor: {
-      Id: CS0122,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0122),
-      MessageFormat: '{0}' is inaccessible due to its protection level,
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
     // Valid Filter, but [ClientVisibilityFilter] is disabled
     [SpacetimeDB.ClientVisibilityFilter]
      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -311,6 +288,29 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
       Title: ,
       HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1503),
       MessageFormat: Argument {0}: cannot convert from '{1}' to '{2}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    {
+        return ctx.Db.TestIndexIssues.TestUnexpectedColumns.Filter(0);
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
+*/
+    Message: Cannot implicitly convert type 'System.Collections.Generic.IEnumerable<TestIndexIssues>' to 'System.Collections.Generic.IEnumerable<TestScheduleIssues>'. An explicit conversion exists (are you missing a cast?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0266,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0266),
+      MessageFormat: Cannot implicitly convert type '{0}' to '{1}'. An explicit conversion exists (are you missing a cast?),
       Category: Compiler,
       DefaultSeverity: Error,
       IsEnabledByDefault: true,

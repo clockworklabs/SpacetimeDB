@@ -330,7 +330,7 @@ public partial struct TestScheduleIssues
       }
     },
     {/*
-    // Invalid: Wrong return type is not Vec<T> or Option<T>
+    // Invalid: Wrong return type is not List<T> or T?
     [SpacetimeDB.View(Accessor = "view_def_wrong_return", Public = true)]
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     public static Player ViewDefWrongReturn(ViewContext ctx)
@@ -372,7 +372,7 @@ public partial struct TestScheduleIssues
       }
     },
     {/*
-    // Invalid: IEnumerable<T> return type (from Iter()) is not Vec<T> or Option<T>
+    // Invalid: IEnumerable<T> return type (from Iter()) is not List<T> or T?
     [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_iter", Public = true)]
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     public static IEnumerable<Player> ViewDefIEnumerableReturnFromIter(ViewContext ctx)
@@ -398,11 +398,11 @@ public partial struct TestScheduleIssues
     },
     {/*
     [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_filter", Public = true)]
-    public static IEnumerable<Player> ViewDefIEnumerableReturnFromFilter(ViewContext ctx)
-                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public static IEnumerable<TestScheduleIssues> ViewDefIEnumerableReturnFromFilter(ViewContext ctx)
+                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     {
 */
-      Message: BSATN implementation for System.Collections.Generic.IEnumerable<Player> is not found: Unsupported system type System.Collections.Generic.IEnumerable<T>,
+      Message: BSATN implementation for System.Collections.Generic.IEnumerable<TestScheduleIssues> is not found: Unsupported system type System.Collections.Generic.IEnumerable<T>,
       Severity: Error,
       Descriptor: {
         Id: BSATN0001,
@@ -414,15 +414,15 @@ public partial struct TestScheduleIssues
       }
     },
     {/*
-    // Invalid: IEnumerable<T> return type (from Filter()) is not Vec<T> or Option<T>
+    // Invalid: IEnumerable<T> return type (from Filter()) is not List<T> or T?
     [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_filter", Public = true)]
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    public static IEnumerable<Player> ViewDefIEnumerableReturnFromFilter(ViewContext ctx)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public static IEnumerable<TestScheduleIssues> ViewDefIEnumerableReturnFromFilter(ViewContext ctx)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     {
 ^^^^^
-        return ctx.Db.Player.Identity.Filter(ctx.Sender);
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        return ctx.Db.TestIndexIssues.TestUnexpectedColumns.Filter(0);
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     }
 ^^^^^
 
