@@ -185,7 +185,7 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://spacetimedb.com/spacerace',
+          href: 'https://spacetimedb.com/space-race',
           label: 'Spacerace',
           position: 'right',
         },
