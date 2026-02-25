@@ -1334,24 +1334,24 @@ log = "0.4"
         let cli_path = ensure_binaries_built();
         let mut cmd = Command::new(&cli_path);
         let mut args = vec![
-            "--config-path",
-            config_path_str,
-            "subscribe",
-            "--server",
-            &self.server_url,
-            identity,
-            "-t",
-            "30",
-            "-n",
+            "--config-path".to_string(),
+            config_path_str.to_string(),
+            "subscribe".to_string(),
+            "--server".to_string(),
+            self.server_url.to_string(),
+            identity.to_string(),
+            "-t".to_string(),
+            "30".to_string(),
+            "-n".to_string(),
         ];
         let n_str = n.to_string();
-        args.push(&n_str);
-        args.push("--print-initial-update");
+        args.push(n_str);
+        args.push("--print-initial-update".to_string());
         if let Some(confirmed) = confirmed {
             args.push("--confirmed".to_string());
             args.push(confirmed.to_string());
         }
-        args.push("--");
+        args.push("--".to_string());
         cmd.args(&args)
             .args(queries)
             .stdout(Stdio::piped())
