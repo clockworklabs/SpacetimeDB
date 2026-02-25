@@ -91,7 +91,7 @@ export function tableToSchema<
 
   type AllowedCol = keyof T['rowType']['row'] & string;
   return {
-    sourceName: accName,
+    sourceName: schema.tableName ?? accName,
     accessorName: accName,
     columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
     rowType: schema.rowSpacetimeType,

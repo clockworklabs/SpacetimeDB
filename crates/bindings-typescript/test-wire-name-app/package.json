@@ -1,0 +1,10 @@
+{
+  "name": "@clockworklabs/test-wire-name-app",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "files": ["src"],
+  "scripts": {
+    "generate": "cargo run -p gen-bindings -- --replacement ../../../src/index && prettier --write src/module_bindings"
+  }
+}
