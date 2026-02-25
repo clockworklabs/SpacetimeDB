@@ -1,7 +1,7 @@
 use log::info;
 use spacetimedb::{reducer, ReducerContext, Table};
 
-#[spacetimedb::table(name = accounts, public)]
+#[spacetimedb::table(accessor = accounts, public)]
 #[derive(Debug, Clone)]
 pub struct Accounts {
     #[primary_key]

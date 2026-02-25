@@ -104,12 +104,12 @@ const config: Config = {
           sidebarPath: './sidebars.ts',
           sidebarCollapsed: false,
           includeCurrentVersion: true,
-          lastVersion: '1.12.0',
+          lastVersion: 'current',
           versions: {
             current: {
-              label: '2.0.0-rc1',
-              path: '2.0.0-rc1',
-              banner: 'unreleased',
+              label: '2.0.0',
+              path: '',
+              banner: 'none',
             },
             '1.12.0': {
               label: '1.12.0',
@@ -185,7 +185,7 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://spacetimedb.com/spacerace',
+          href: 'https://spacetimedb.com/space-race',
           label: 'Spacerace',
           position: 'right',
         },
