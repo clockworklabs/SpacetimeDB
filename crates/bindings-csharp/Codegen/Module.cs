@@ -853,7 +853,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             yield break;
         }
 
-        foreach (var accessor in TableAccessors)
+        foreach (var accessor in TableAccessors.Where(accessor => !accessor.IsEvent))
         {
             var globalName = $"global::{FullName}";
 
@@ -888,7 +888,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         var vis = SyntaxFacts.GetText(Visibility);
         var globalRowName = $"global::{FullName}";
 
-        foreach (var accessor in TableAccessors)
+        foreach (var accessor in TableAccessors.Where(accessor => !accessor.IsEvent))
         {
             var tableName = accessor.Name;
             var colsTypeName = $"{accessor.Name}Cols";

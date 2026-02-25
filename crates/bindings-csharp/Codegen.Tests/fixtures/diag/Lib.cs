@@ -491,6 +491,13 @@ public partial struct Player
     public Identity Identity;
 }
 
+[SpacetimeDB.Table(Event = true)]
+public partial struct ViewAuditEvent
+{
+    [PrimaryKey]
+    public ulong Id;
+}
+
 public struct NotSpacetimeType { }
 
 public partial class Module
@@ -611,5 +618,31 @@ public partial class Module
     {
         ctx.Db.Player.Identity.Delete(0);
         return null;
+    }
+
+    [SpacetimeDB.View(Accessor = "event_table_view", Public = true)]
+    public static Player? EventTableView(ViewContext ctx)
+    {
+        var _ = ctx.Db.ViewAuditEvent;
+        return null;
+    }
+
+    [SpacetimeDB.View(Accessor = "event_table_view_anon", Public = true)]
+    public static Player? EventTableViewAnon(AnonymousViewContext ctx)
+    {
+        var _ = ctx.Db.ViewAuditEvent;
+        return null;
+    }
+
+    [SpacetimeDB.View(Accessor = "event_table_view_query_builder", Public = true)]
+    public static IQuery<ViewAuditEvent> EventTableViewQueryBuilder(ViewContext ctx)
+    {
+        return ctx.From.ViewAuditEvent();
+    }
+
+    [SpacetimeDB.View(Accessor = "event_table_view_anon_query_builder", Public = true)]
+    public static IQuery<ViewAuditEvent> EventTableViewAnonQueryBuilder(AnonymousViewContext ctx)
+    {
+        return ctx.From.ViewAuditEvent();
     }
 }

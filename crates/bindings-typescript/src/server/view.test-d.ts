@@ -61,9 +61,21 @@ const order = table(
   }
 );
 
+const eventOnly = table(
+  {
+    name: 'eventOnly',
+    event: true,
+  },
+  {
+    id: t.u32().primaryKey(),
+    person_id: t.u32(),
+  }
+);
+
 const spacetime = schema({
   person,
   order,
+  eventOnly,
   personWithExtra,
   personReordered,
   personWithMissing,
@@ -163,4 +175,26 @@ spacetime.anonymousView({ name: 'v5', public: true }, arrayRetValue, ctx => {
     .where(row => row.id.eq(5))
     .leftSemijoin(ctx.from.order, (p, o) => p.id.eq(o.id))
     .build();
+});
+
+spacetime.view({ name: 'v6', public: true }, arrayRetValue, ctx => {
+  // @ts-expect-error event tables should not be exposed in view db context.
+  const _eventRows = ctx.db.eventOnly;
+  return ctx.from.person;
+});
+
+spacetime.anonymousView({ name: 'v7', public: true }, arrayRetValue, ctx => {
+  // @ts-expect-error event tables should not be exposed in view db context.
+  const _eventRows = ctx.db.eventOnly;
+  return ctx.from.person;
+});
+
+spacetime.view({ name: 'v8', public: true }, arrayRetValue, ctx => {
+  // @ts-expect-error event tables should not be exposed in view query builder context.
+  return ctx.from.eventOnly;
+});
+
+spacetime.anonymousView({ name: 'v9', public: true }, arrayRetValue, ctx => {
+  // @ts-expect-error event tables should not be exposed in view query builder context.
+  return ctx.from.eventOnly;
 });
