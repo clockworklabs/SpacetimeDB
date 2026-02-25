@@ -578,7 +578,9 @@ public partial class Module
 
     // Invalid: IEnumerable<T> return type (from Filter()) is not List<T> or T?
     [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_filter", Public = true)]
-    public static IEnumerable<TestScheduleIssues> ViewDefIEnumerableReturnFromFilter(ViewContext ctx)
+    public static IEnumerable<TestScheduleIssues> ViewDefIEnumerableReturnFromFilter(
+        ViewContext ctx
+    )
     {
         return ctx.Db.TestIndexIssues.TestUnexpectedColumns.Filter(0);
     }
