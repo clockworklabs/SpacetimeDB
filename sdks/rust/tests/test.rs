@@ -489,17 +489,6 @@ macro_rules! view_tests {
 view_tests!(rust_view, "");
 //view_tests!(cpp_view, "-cpp");
 
-/// Tests of case conversion for TS modules with mixed-case names containing digit boundaries.
-///
-/// Uses <./case-conversion-client> and <../../../modules/sdk-test-case-conversion-ts>.
-/// Verifies that:
-/// - Table accessor names with digits (`player_1`, `person_2`) work correctly
-/// - Field names with digit boundaries (`player_1_id`, `current_level_2`, `status_3_field`) are converted
-/// - Nested struct fields (`Person3Info.age_value_1`) work
-/// - Enum variants (`Player2Status::Active1`, `Player2Status::BannedUntil`) work
-/// - Reducers with explicit names (`banPlayer1` → accessor `ban_player_1`) work
-/// - Views with explicit names (`Level2Players` → accessor `players_at_level_2`) work
-/// - SQL queries use canonical (wire) names, not accessor names
 mod case_conversion_ts {
     use spacetimedb_testing::sdk::Test;
 
@@ -544,35 +533,21 @@ mod case_conversion_ts {
     }
 }
 
-/// Tests of case conversion for Rust modules with mixed-case names containing digit boundaries.
-///
-/// Uses a TypeScript client and the Rust module `sdk-test-case-conversion`.
-/// Verifies that:
-/// - Table accessor names with digits (`player1`, `person2`) work correctly from TypeScript
-/// - Field names with digit boundaries (`Player1Id`, `currentLevel2`, `status3Field`) are properly accessed
-/// - Nested struct fields (`Person3Info.AgeValue1`) work from TypeScript
-/// - Enum variants (`Player2Status::Active1`, `Player2Status::BannedUntil`) work from TypeScript
-/// - Reducers with explicit names (`banPlayer1` → accessor `banPlayer1`) work from TypeScript
-/// - Views with explicit names (`Level2Person` → accessor `level2Person`) work from TypeScript
-/// - TypeScript query builder can interact correctly with case-converted Rust schemas
 mod case_conversion_rust {
     use spacetimedb_testing::sdk::Test;
 
     const MODULE: &str = "sdk-test-case-conversion";
-    const CLIENT: &str = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../typescript/case-conversion-test-client"
-    );
+    const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/case-conversion-client");
 
     fn make_test(subcommand: &str) -> Test {
         Test::builder()
             .with_name(subcommand)
             .with_module(MODULE)
             .with_client(CLIENT)
-            .with_language("typescript")
+            .with_language("rust")
             .with_bindings_dir("src/module_bindings")
-            .with_compile_command("sh -c 'npm install && npm run build'")
-            .with_run_command(format!("npm run start {}", subcommand))
+            .with_compile_command("cargo build")
+            .with_run_command(format!("cargo run -- {}", subcommand))
             .build()
     }
 

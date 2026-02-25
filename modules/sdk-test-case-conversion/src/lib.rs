@@ -68,7 +68,7 @@ pub fn BanPlayer1(ctx: &ReducerContext, Player1Id: u32, BanUntil6: u32) {
     }
 }
 
-#[view(name = "Level2Person", accessor = level2_person, public)]
+#[view(name = "Level2Person", accessor = person_at_level_2, public)]
 pub fn level2_person(ctx: &AnonymousViewContext) -> impl Query<Person2> {
     ctx.from
         .player1()
