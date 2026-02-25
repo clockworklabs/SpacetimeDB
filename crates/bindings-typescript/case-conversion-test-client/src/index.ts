@@ -2,7 +2,7 @@
  * TypeScript SDK test client for case-conversion with Rust module `sdk-test-case-conversion`.
  *
  * Tests that:
- * - Table accessor names with digits (`player_1`, `person_2`) work correctly
+ * - Table accessor names with digits (`player1`, `person2`) work correctly
  * - Field names with digit boundaries (`player1Id`, `currentLevel2`, `status3Field`) are converted
  * - Nested struct fields (`personInfo.ageValue1`) work
  * - Enum variants (`Player2Status`) work
@@ -23,10 +23,10 @@ const LOCALHOST = 'http://localhost:3000';
 
 function dbNameOrPanic(): string {
   const name = process.env.SPACETIME_SDK_TEST_DB_NAME;
-  // if (!name) {
-  //   throw new Error('Failed to read db name from env');
-  // }
-  return "yo";
+  if (!name) {
+    throw new Error('Failed to read db name from env');
+  }
+  return name;
 }
 
 class TestError extends Error {
@@ -75,11 +75,11 @@ function connectThen(callback: (db: DbConnection) => void): Promise<void> {
 
 /**
  * Test: Insert a player via createPlayer1 reducer.
- * Verifies table accessor `player_1`, field names with digit boundaries
+ * Verifies table accessor `player1`, field names with digit boundaries
  * (`player1Id`, `currentLevel2`, `status3Field`), and enum variant `Active1`.
  */
 async function execInsertPlayer(): Promise<void> {
-  await connectThen((db) => {
+  await connectThen(db => {
     db.db.player1.onInsert((_ctx, row) => {
       try {
         assertEqual('Alice', row.playerName, 'playerName');
@@ -94,10 +94,10 @@ async function execInsertPlayer(): Promise<void> {
     });
 
     db.subscriptionBuilder()
-      .onError((_ctx) => {
+      .onError(_ctx => {
         (db as any).__reject(new Error('Subscription errored'));
       })
-      .onApplied((_ctx) => {
+      .onApplied(_ctx => {
         db.reducers.createPlayer1({
           player1Name: 'Alice',
           start2Level: 5,
@@ -110,10 +110,10 @@ async function execInsertPlayer(): Promise<void> {
 /**
  * Test: Insert a person via addPerson2 reducer.
  * Verifies nested struct `personInfo` with digit-boundary fields
- * (`ageValue1`, `scoreTotal`), and table accessor `person_2`.
+ * (`ageValue1`, `scoreTotal`), and table accessor `person2`.
  */
 async function execInsertPerson(): Promise<void> {
-  await connectThen((db) => {
+  await connectThen(db => {
     db.db.person2.onInsert((_ctx, person) => {
       try {
         assertEqual('Bob', person.firstName, 'firstName');
@@ -137,10 +137,10 @@ async function execInsertPerson(): Promise<void> {
     });
 
     db.subscriptionBuilder()
-      .onError((_ctx) => {
+      .onError(_ctx => {
         (db as any).__reject(new Error('Subscription errored'));
       })
-      .onApplied((_ctx) => {
+      .onApplied(_ctx => {
         db.reducers.createPlayer1({
           player1Name: 'PlayerForPerson',
           start2Level: 1,
@@ -156,7 +156,7 @@ async function execInsertPerson(): Promise<void> {
  * status from `Active1` to `BannedUntil(9999)` is reflected correctly.
  */
 async function execBanPlayer(): Promise<void> {
-  await connectThen((db) => {
+  await connectThen(db => {
     db.db.player1.onUpdate((_ctx, _old, updated) => {
       try {
         assertEqual('BannedUntil', updated.status3Field.tag, 'status tag');
@@ -177,10 +177,10 @@ async function execBanPlayer(): Promise<void> {
     });
 
     db.subscriptionBuilder()
-      .onError((_ctx) => {
+      .onError(_ctx => {
         (db as any).__reject(new Error('Subscription errored'));
       })
-      .onApplied((_ctx) => {
+      .onApplied(_ctx => {
         db.reducers.createPlayer1({
           player1Name: 'ToBan',
           start2Level: 1,
@@ -192,10 +192,10 @@ async function execBanPlayer(): Promise<void> {
 
 /**
  * Test: Query builder with a filter on a digit-boundary column.
- * Subscribes to player_1 rows WHERE currentLevel2 == 5.
+ * Subscribes to player1 rows WHERE currentLevel2 == 5.
  */
 async function execQueryBuilderFilter(): Promise<void> {
-  await connectThen((db) => {
+  await connectThen(db => {
     db.db.player1.onInsert((_ctx, row) => {
       try {
         assertEqual(5, row.currentLevel2, 'currentLevel2');
@@ -209,10 +209,10 @@ async function execQueryBuilderFilter(): Promise<void> {
     });
 
     db.subscriptionBuilder()
-      .onError((_ctx) => {
+      .onError(_ctx => {
         (db as any).__reject(new Error('Subscription errored'));
       })
-      .onApplied((_ctx) => {
+      .onApplied(_ctx => {
         // Insert a player at level 3 (should NOT match filter)
         db.reducers.createPlayer1({
           player1Name: 'NoMatch',
@@ -224,18 +224,18 @@ async function execQueryBuilderFilter(): Promise<void> {
           start2Level: 5,
         });
       })
-      .subscribe(tables.player1.where((p) => p.currentLevel2.eq(5)))
+      .subscribe(tables.player1.where(p => p.currentLevel2.eq(5)));
   });
 }
 
 /**
- * Test: Query builder with a JOIN between player_1 and person_2.
- * Uses a right semijoin: player_1 RIGHT SEMIJOIN person_2 ON player1Id = playerRef.
+ * Test: Query builder with a JOIN between player1 and person2.
+ * Uses a right semijoin: player1 RIGHT SEMIJOIN person2 ON player1Id = playerRef.
  * Verifies digit-boundary column names work in join predicates and
  * joined results are received correctly.
  */
 async function execQueryBuilderJoin(): Promise<void> {
-  await connectThen((db) => {
+  await connectThen(db => {
     db.db.person2.onInsert((_ctx, person) => {
       if (person.firstName === 'JoinPerson') {
         try {
@@ -263,63 +263,61 @@ async function execQueryBuilderJoin(): Promise<void> {
     });
 
     db.subscriptionBuilder()
-      .onError((_ctx) => {
+      .onError(_ctx => {
         (db as any).__reject(new Error('Subscription errored'));
       })
-      .onApplied((_ctx) => {
+      .onApplied(_ctx => {
         db.reducers.createPlayer1({
           player1Name: 'JoinedPlayer',
           start2Level: 7,
         });
       })
       .subscribe([
-        tables.player1
-          .rightSemijoin(tables.person2, (player, person) =>
-            player.player1Id.eq(person.playerRef)
-          ),
+        tables.player1.rightSemijoin(tables.person2, (player, person) =>
+          player.player1Id.eq(person.playerRef)
+        ),
         tables.player1,
       ]);
   });
 }
 
 async function main(): Promise<void> {
-  execInsertPlayer();
-  // const testName = process.argv[2];
-  // if (!testName) {
-  //   throw new Error(
-  //     'Pass a test name as a command-line argument to the test client'
-  //   );
-  // }
+  const testName = process.argv[2];
+  if (!testName) {
+    throw new Error(
+      'Pass a test name as a command-line argument to the test client'
+    );
+  }
 
-  // try {
-  //   switch (testName) {
-  //     case 'insert-player':
-  //       await execInsertPlayer();
-  //       break;
-  //     case 'insert-person':
-  //       await execInsertPerson();
-  //       break;
-  //     case 'ban-player':
-  //       await execBanPlayer();
-  //       break;
-  //     case 'query-builder-filter':
-  //       await execQueryBuilderFilter();
-  //       break;
-  //     case 'query-builder-join':
-  //       await execQueryBuilderJoin();
-  //       break;
-  //     default:
-  //       throw new Error(`Unknown test: ${testName}`);
-  //   }
-  //   console.log(`Test "${testName}" passed`);
-  //   process.exit(0);
-  // } catch (error) {
-  //   console.error(`Test "${testName}" failed:`, error);
-  //   process.exit(1);
-  // }
+  try {
+    switch (testName) {
+      case 'insert-player':
+        await execInsertPlayer();
+        break;
+      case 'insert-person':
+        await execInsertPerson();
+        break;
+      case 'ban-player':
+        await execBanPlayer();
+        break;
+      case 'query-builder-filter':
+        await execQueryBuilderFilter();
+        break;
+      case 'query-builder-join':
+        await execQueryBuilderJoin();
+        break;
+      default:
+        throw new Error(`Unknown test: ${testName}`);
+    }
+    console.log(`Test "${testName}" passed`);
+    process.exit(0);
+  } catch (error) {
+    console.error(`Test "${testName}" failed:`, error);
+    process.exit(1);
+  }
 }
 
-main().catch((error) => {
+main().catch(error => {
   console.error('Fatal error:', error);
   process.exit(1);
 });

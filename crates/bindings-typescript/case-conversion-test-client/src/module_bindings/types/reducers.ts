@@ -3,14 +3,13 @@
 
 /* eslint-disable */
 /* tslint:disable */
-import { type Infer as __Infer } from "spacetimedb";
+import { type Infer as __Infer } from 'spacetimedb';
 
 // Import all reducer arg schemas
-import AddPerson2Reducer from "../add_person_2_reducer";
-import BanPlayer1Reducer from "../ban_player_1_reducer";
-import CreatePlayer1Reducer from "../create_player_1_reducer";
+import AddPerson2Reducer from '../add_person_2_reducer';
+import BanPlayer1Reducer from '../ban_player_1_reducer';
+import CreatePlayer1Reducer from '../create_player_1_reducer';
 
 export type AddPerson2Params = __Infer<typeof AddPerson2Reducer>;
 export type BanPlayer1Params = __Infer<typeof BanPlayer1Reducer>;
 export type CreatePlayer1Params = __Infer<typeof CreatePlayer1Reducer>;
-

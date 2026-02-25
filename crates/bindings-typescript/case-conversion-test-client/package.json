@@ -2,26 +2,23 @@
   "name": "case-conversion-test-client",
   "version": "1.0.0",
   "type": "module",
-"scripts": {
-  "clean": "rm -rf dist",
-  "build": "tsc",
-  "watch": "tsc -w",
-  "start": "node dist/index.js",
-  "dev": "tsc -w & nodemon dist/index.js",
-  "typecheck": "tsc --noEmit",
-
-  "format": "prettier . --write",
-  "format:check": "prettier . --check",
-  "lint": "eslint .",
-  "lint:fix": "eslint . --fix",
-
-  "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path ../../../modules/sdk-test-case-conversion",
-  "spacetime:start": "spacetime start",
-  "spacetime:publish:local": "spacetime publish sdk-test-case-conversion --module-path ../../../modules/sdk-test-case-conversion --server local",
-  "spacetime:publish": "spacetime publish sdk-test-case-conversion --module-path ../../../modules/sdk-test-case-conversion --server maincloud",
-
-  "generate": "npm run spacetime:generate && prettier --write src/module_bindings"
-},
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "tsc",
+    "watch": "tsc -w",
+    "start": "node dist/index.js",
+    "dev": "tsc -w & nodemon dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path ../../../modules/sdk-test-case-conversion",
+    "spacetime:start": "spacetime start",
+    "spacetime:publish:local": "spacetime publish sdk-test-case-conversion --module-path ../../../modules/sdk-test-case-conversion --server local",
+    "spacetime:publish": "spacetime publish sdk-test-case-conversion --module-path ../../../modules/sdk-test-case-conversion --server maincloud",
+    "generate": "npm run spacetime:generate && prettier --write src/module_bindings"
+  },
   "dependencies": {
     "spacetimedb": "workspace:*"
   },
