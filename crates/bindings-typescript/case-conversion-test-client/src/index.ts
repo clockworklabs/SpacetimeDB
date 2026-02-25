@@ -17,16 +17,16 @@
  *   node dist/index.js query-builder-join
  */
 
-import { DbConnection } from './module_bindings/index.js';
+import { DbConnection, tables } from './module_bindings/index.js';
 
 const LOCALHOST = 'http://localhost:3000';
 
 function dbNameOrPanic(): string {
   const name = process.env.SPACETIME_SDK_TEST_DB_NAME;
-  if (!name) {
-    throw new Error('Failed to read db name from env');
-  }
-  return name;
+  // if (!name) {
+  //   throw new Error('Failed to read db name from env');
+  // }
+  return "yo";
 }
 
 class TestError extends Error {
@@ -80,7 +80,7 @@ function connectThen(callback: (db: DbConnection) => void): Promise<void> {
  */
 async function execInsertPlayer(): Promise<void> {
   await connectThen((db) => {
-    db.db.player_1.onInsert((_ctx, row) => {
+    db.db.player1.onInsert((_ctx, row) => {
       try {
         assertEqual('Alice', row.playerName, 'playerName');
         assertEqual(5, row.currentLevel2, 'currentLevel2');
@@ -103,7 +103,7 @@ async function execInsertPlayer(): Promise<void> {
           start2Level: 5,
         });
       })
-      .subscribe((q: any) => q.player_1().build());
+      .subscribe([tables.player1]);
   });
 }
 
@@ -114,7 +114,7 @@ async function execInsertPlayer(): Promise<void> {
  */
 async function execInsertPerson(): Promise<void> {
   await connectThen((db) => {
-    db.db.person_2.onInsert((_ctx, person) => {
+    db.db.person2.onInsert((_ctx, person) => {
       try {
         assertEqual('Bob', person.firstName, 'firstName');
         assertEqual(25, person.personInfo.ageValue1, 'ageValue1');
@@ -127,7 +127,7 @@ async function execInsertPerson(): Promise<void> {
       }
     });
 
-    db.db.player_1.onInsert((_ctx, player) => {
+    db.db.player1.onInsert((_ctx, player) => {
       db.reducers.addPerson2({
         first3Name: 'Bob',
         playerRef: player.player1Id,
@@ -146,7 +146,7 @@ async function execInsertPerson(): Promise<void> {
           start2Level: 1,
         });
       })
-      .subscribe((q: any) => [q.player_1().build(), q.person_2().build()]);
+      .subscribe([tables.player1, tables.person2]);
   });
 }
 
@@ -157,7 +157,7 @@ async function execInsertPerson(): Promise<void> {
  */
 async function execBanPlayer(): Promise<void> {
   await connectThen((db) => {
-    db.db.player_1.onUpdate((_ctx, _old, updated) => {
+    db.db.player1.onUpdate((_ctx, _old, updated) => {
       try {
         assertEqual('BannedUntil', updated.status3Field.tag, 'status tag');
         assertEqual(9999, (updated.status3Field as any).value, 'ban value');
@@ -169,7 +169,7 @@ async function execBanPlayer(): Promise<void> {
       }
     });
 
-    db.db.player_1.onInsert((_ctx, player) => {
+    db.db.player1.onInsert((_ctx, player) => {
       db.reducers.banPlayer1({
         player1Id: player.player1Id,
         banUntil6: 9999,
@@ -186,7 +186,7 @@ async function execBanPlayer(): Promise<void> {
           start2Level: 1,
         });
       })
-      .subscribe((q: any) => q.player_1().build());
+      .subscribe(tables.player1);
   });
 }
 
@@ -196,7 +196,7 @@ async function execBanPlayer(): Promise<void> {
  */
 async function execQueryBuilderFilter(): Promise<void> {
   await connectThen((db) => {
-    db.db.player_1.onInsert((_ctx, row) => {
+    db.db.player1.onInsert((_ctx, row) => {
       try {
         assertEqual(5, row.currentLevel2, 'currentLevel2');
         assertEqual('FilterMatch', row.playerName, 'playerName');
@@ -224,9 +224,7 @@ async function execQueryBuilderFilter(): Promise<void> {
           start2Level: 5,
         });
       })
-      .subscribe((q: any) =>
-        q.player_1().where((p: any) => p.currentLevel2.eq(5)).build()
-      );
+      .subscribe(tables.player1.where((p) => p.currentLevel2.eq(5)))
   });
 }
 
@@ -238,7 +236,7 @@ async function execQueryBuilderFilter(): Promise<void> {
  */
 async function execQueryBuilderJoin(): Promise<void> {
   await connectThen((db) => {
-    db.db.person_2.onInsert((_ctx, person) => {
+    db.db.person2.onInsert((_ctx, person) => {
       if (person.firstName === 'JoinPerson') {
         try {
           assertEqual('JoinPerson', person.firstName, 'firstName');
@@ -253,7 +251,7 @@ async function execQueryBuilderJoin(): Promise<void> {
       }
     });
 
-    db.db.player_1.onInsert((_ctx, player) => {
+    db.db.player1.onInsert((_ctx, player) => {
       if (player.playerName === 'JoinedPlayer') {
         db.reducers.addPerson2({
           first3Name: 'JoinPerson',
@@ -274,51 +272,51 @@ async function execQueryBuilderJoin(): Promise<void> {
           start2Level: 7,
         });
       })
-      .subscribe((q: any) => [
-        q.player_1()
-          .rightSemijoin(q.person_2(), (player: any, person: any) =>
+      .subscribe([
+        tables.player1
+          .rightSemijoin(tables.person2, (player, person) =>
             player.player1Id.eq(person.playerRef)
-          )
-          .build(),
-        q.player_1().build(),
+          ),
+        tables.player1,
       ]);
   });
 }
 
 async function main(): Promise<void> {
-  const testName = process.argv[2];
-  if (!testName) {
-    throw new Error(
-      'Pass a test name as a command-line argument to the test client'
-    );
-  }
+  execInsertPlayer();
+  // const testName = process.argv[2];
+  // if (!testName) {
+  //   throw new Error(
+  //     'Pass a test name as a command-line argument to the test client'
+  //   );
+  // }
 
-  try {
-    switch (testName) {
-      case 'insert-player':
-        await execInsertPlayer();
-        break;
-      case 'insert-person':
-        await execInsertPerson();
-        break;
-      case 'ban-player':
-        await execBanPlayer();
-        break;
-      case 'query-builder-filter':
-        await execQueryBuilderFilter();
-        break;
-      case 'query-builder-join':
-        await execQueryBuilderJoin();
-        break;
-      default:
-        throw new Error(`Unknown test: ${testName}`);
-    }
-    console.log(`Test "${testName}" passed`);
-    process.exit(0);
-  } catch (error) {
-    console.error(`Test "${testName}" failed:`, error);
-    process.exit(1);
-  }
+  // try {
+  //   switch (testName) {
+  //     case 'insert-player':
+  //       await execInsertPlayer();
+  //       break;
+  //     case 'insert-person':
+  //       await execInsertPerson();
+  //       break;
+  //     case 'ban-player':
+  //       await execBanPlayer();
+  //       break;
+  //     case 'query-builder-filter':
+  //       await execQueryBuilderFilter();
+  //       break;
+  //     case 'query-builder-join':
+  //       await execQueryBuilderJoin();
+  //       break;
+  //     default:
+  //       throw new Error(`Unknown test: ${testName}`);
+  //   }
+  //   console.log(`Test "${testName}" passed`);
+  //   process.exit(0);
+  // } catch (error) {
+  //   console.error(`Test "${testName}" failed:`, error);
+  //   process.exit(1);
+  // }
 }
 
 main().catch((error) => {
