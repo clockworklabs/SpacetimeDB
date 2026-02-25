@@ -571,7 +571,7 @@ mod case_conversion_rust {
             .with_client(CLIENT)
             .with_language("typescript")
             .with_bindings_dir("src/module_bindings")
-            .with_compile_command("npm install && npm run build")
+            .with_compile_command("sh -c 'npm install && npm run build'")
             .with_run_command(format!("npm run start {}", subcommand))
             .build()
     }
