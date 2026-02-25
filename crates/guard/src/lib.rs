@@ -169,6 +169,39 @@ impl SpacetimeDbGuard {
     /// This kills the server process but preserves the data directory.
     /// Use `restart()` to start the server again with the same data.
     pub fn stop(&mut self) {
+        let pid = self.child.id();
+        eprintln!("[STOP] Requesting graceful shutdown of process tree for pid={}", pid);
+
+        #[cfg(windows)]
+        {
+            use windows_sys::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_BREAK_EVENT};
+            unsafe {
+                GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, self.child.id());
+            }
+        }
+        #[cfg(unix)]
+        {
+            use nix::{
+                sys::signal::{killpg, Signal},
+                unistd::Pid,
+            };
+            let result = killpg(Pid::from_raw(self.child.id() as _), Some(Signal::SIGINT));
+            eprintln!("[STOP] Result of sending SIGINT to {}: {:?}", self.child.id(), result);
+        }
+
+        // Brief pause to allow the server to shut down gracefully. Then kill it.
+        sleep(Duration::from_millis(100));
+        self.kill_process();
+    }
+
+    /// Forcefully stop the server process without dropping the guard.
+    ///
+    /// This kills the server process but preserves the data directory.
+    ///
+    /// NOTE: Killing the server prevents it from running destructors. Use this
+    /// method to test behavior on unclean shutdown, otherwise prefer
+    /// [Self::stop()].
+    pub fn kill(&mut self) {
         self.kill_process();
     }
 
@@ -331,12 +364,20 @@ impl SpacetimeDbGuard {
     ) -> (Child, Arc<Mutex<String>>, Vec<thread::JoinHandle<()>>) {
         eprintln!("[SPAWN-{:03}] spawn_child: about to spawn", spawn_id);
 
-        let mut child = cmd
-            .args(args)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("failed to spawn spacetimedb-cli");
+        #[allow(unused_mut)]
+        let mut cmd = cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
+        // Start the process with `CREATE_NEW_PROCESS_GROUP` on windows, so
+        // we can later send a signal to the process group (and not orphan any
+        // processes in the tree).
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt as _;
+            use windows_sys::Win32::System::Threading::CREATE_NEW_PROCESS_GROUP;
+
+            cmd = cmd.creation_flags(CREATE_NEW_PROCESS_GROUP);
+        }
+
+        let mut child = cmd.spawn().expect("failed to spawn spacetimedb-cli");
 
         let pid = child.id();
         eprintln!("[SPAWN-{:03}] spawn_child: spawned pid={}", spawn_id, pid);

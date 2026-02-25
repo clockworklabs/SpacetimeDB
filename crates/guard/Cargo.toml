@@ -9,6 +9,12 @@ portpicker = "0.1"
 reqwest = { workspace = true, features = ["blocking", "json"] }
 tempfile.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["process", "signal"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_System_Console", "Win32_System_Threading"] }
+
 [lints]
 workspace = true
 

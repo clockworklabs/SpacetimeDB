@@ -8050,9 +8050,11 @@ dependencies = [
 name = "spacetimedb-guard"
 version = "2.0.1"
 dependencies = [
+ "nix 0.30.1",
  "portpicker",
  "reqwest 0.12.24",
  "tempfile",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
