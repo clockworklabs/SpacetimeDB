@@ -1,0 +1,146 @@
+@file:Suppress("unused")
+
+package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
+
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
+
+data class DurationSample(val duration: Duration, val metadata: String)
+
+data class MinMaxResult(val min: DurationSample, val max: DurationSample)
+
+private class RequestEntry(val startTime: TimeMark, val metadata: String)
+
+class NetworkRequestTracker : SynchronizedObject() {
+    companion object {
+        private const val MAX_TRACKERS = 16
+    }
+
+    var allTimeMin: DurationSample? = null
+        private set
+    var allTimeMax: DurationSample? = null
+        private set
+
+    private val trackers = mutableMapOf<Int, WindowTracker>()
+    private var totalSamples = 0
+    private var nextRequestId = 0u
+    private val requests = mutableMapOf<UInt, RequestEntry>()
+
+    fun getMinMaxTimes(lastSeconds: Int): MinMaxResult? = synchronized(this) {
+        val tracker = trackers.getOrPut(lastSeconds) {
+            check(trackers.size < MAX_TRACKERS) {
+                "Cannot track more than $MAX_TRACKERS distinct window sizes"
+            }
+            WindowTracker(lastSeconds)
+        }
+        tracker.getMinMax()
+    }
+
+    fun getSampleCount(): Int = synchronized(this) { totalSamples }
+
+    fun getRequestsAwaitingResponse(): Int = synchronized(this) { requests.size }
+
+    internal fun startTrackingRequest(metadata: String = ""): UInt {
+        synchronized(this) {
+            val requestId = nextRequestId++
+            requests[requestId] = RequestEntry(
+                startTime = TimeSource.Monotonic.markNow(),
+                metadata = metadata,
+            )
+            return requestId
+        }
+    }
+
+    internal fun finishTrackingRequest(requestId: UInt, metadata: String? = null): Boolean {
+        synchronized(this) {
+            val entry = requests.remove(requestId) ?: return false
+            val duration = entry.startTime.elapsedNow()
+            val resolvedMetadata = metadata ?: entry.metadata
+            insertSampleLocked(duration, resolvedMetadata)
+            return true
+        }
+    }
+
+    internal fun insertSample(duration: Duration, metadata: String = "") {
+        synchronized(this) {
+            insertSampleLocked(duration, metadata)
+        }
+    }
+
+    private fun insertSampleLocked(duration: Duration, metadata: String) {
+        totalSamples++
+        val sample = DurationSample(duration, metadata)
+
+        val currentMin = allTimeMin
+        if (currentMin == null || duration < currentMin.duration) {
+            allTimeMin = sample
+        }
+        val currentMax = allTimeMax
+        if (currentMax == null || duration > currentMax.duration) {
+            allTimeMax = sample
+        }
+
+        for (tracker in trackers.values) {
+            tracker.insertSample(duration, metadata)
+        }
+    }
+
+    private class WindowTracker(windowSeconds: Int) {
+        val window: Duration = windowSeconds.seconds
+        var lastReset: TimeMark = TimeSource.Monotonic.markNow()
+
+        var lastWindowMin: DurationSample? = null
+            private set
+        var lastWindowMax: DurationSample? = null
+            private set
+        var thisWindowMin: DurationSample? = null
+            private set
+        var thisWindowMax: DurationSample? = null
+            private set
+
+        fun insertSample(duration: Duration, metadata: String) {
+            maybeRotate()
+            val sample = DurationSample(duration, metadata)
+
+            val currentMin = thisWindowMin
+            if (currentMin == null || duration < currentMin.duration) {
+                thisWindowMin = sample
+            }
+            val currentMax = thisWindowMax
+            if (currentMax == null || duration > currentMax.duration) {
+                thisWindowMax = sample
+            }
+        }
+
+        fun getMinMax(): MinMaxResult? {
+            maybeRotate()
+            val min = lastWindowMin ?: return null
+            val max = lastWindowMax ?: return null
+            return MinMaxResult(min, max)
+        }
+
+        private fun maybeRotate() {
+            if (lastReset.elapsedNow() >= window) {
+                lastWindowMin = thisWindowMin
+                lastWindowMax = thisWindowMax
+                thisWindowMin = null
+                thisWindowMax = null
+                lastReset = TimeSource.Monotonic.markNow()
+            }
+        }
+    }
+}
+
+class Stats {
+    val reducerRequestTracker = NetworkRequestTracker()
+    val procedureRequestTracker = NetworkRequestTracker()
+    val subscriptionRequestTracker = NetworkRequestTracker()
+    val oneOffRequestTracker = NetworkRequestTracker()
+
+    val parseMessageTracker = NetworkRequestTracker()
+    val applyMessageTracker = NetworkRequestTracker()
+}

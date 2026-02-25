@@ -6,8 +6,8 @@ use clap::Arg;
 use clap::ArgAction::{Set, SetTrue};
 use fs_err as fs;
 use spacetimedb_codegen::{
-    generate, private_table_names, CodegenOptions, CodegenVisibility, Csharp, Lang, OutputFile, Rust, TypeScript,
-    UnrealCpp, AUTO_GENERATED_PREFIX,
+    generate, private_table_names, CodegenOptions, CodegenVisibility, Csharp, Kotlin, Lang, OutputFile, Rust,
+    TypeScript, UnrealCpp, AUTO_GENERATED_PREFIX,
 };
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::{sats, RawModuleDef};
@@ -407,6 +407,7 @@ fn language_cli_name(lang: Language) -> &'static str {
     match lang {
         Language::Rust => "rust",
         Language::Csharp => "csharp",
+        Language::Kotlin => "kotlin",
         Language::TypeScript => "typescript",
         Language::UnrealCpp => "unrealcpp",
     }
@@ -416,6 +417,7 @@ pub fn default_out_dir_for_language(lang: Language) -> Option<PathBuf> {
     match lang {
         Language::Rust | Language::TypeScript => Some(PathBuf::from("src/module_bindings")),
         Language::Csharp => Some(PathBuf::from("module_bindings")),
+        Language::Kotlin => Some(PathBuf::from("module_bindings")),
         Language::UnrealCpp => None,
     }
 }
@@ -508,6 +510,7 @@ pub async fn run_prepared_generate_configs(
                 };
                 &csharp_lang as &dyn Lang
             }
+            Language::Kotlin => &Kotlin,
             Language::UnrealCpp => {
                 unreal_cpp_lang = UnrealCpp {
                     module_name: run.module_name.as_ref().unwrap(),
@@ -675,6 +678,7 @@ pub async fn exec_from_entries(
 #[serde(rename_all = "lowercase")]
 pub enum Language {
     Csharp,
+    Kotlin,
     TypeScript,
     Rust,
     #[serde(alias = "uecpp", alias = "ue5cpp", alias = "unreal")]
@@ -683,11 +687,12 @@ pub enum Language {
 
 impl clap::ValueEnum for Language {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Csharp, Self::TypeScript, Self::Rust, Self::UnrealCpp]
+        &[Self::Csharp, Self::Kotlin, Self::TypeScript, Self::Rust, Self::UnrealCpp]
     }
     fn to_possible_value(&self) -> Option<PossibleValue> {
         Some(match self {
             Self::Csharp => clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs"]),
+            Self::Kotlin => clap::builder::PossibleValue::new("kotlin").aliases(["kt", "KT"]),
             Self::TypeScript => clap::builder::PossibleValue::new("typescript").aliases(["ts", "TS"]),
             Self::Rust => clap::builder::PossibleValue::new("rust").aliases(["rs", "RS"]),
             Self::UnrealCpp => PossibleValue::new("unrealcpp").aliases(["uecpp", "ue5cpp", "unreal"]),
@@ -701,6 +706,7 @@ impl Language {
         match self {
             Language::Rust => "Rust",
             Language::Csharp => "C#",
+            Language::Kotlin => "Kotlin",
             Language::TypeScript => "TypeScript",
             Language::UnrealCpp => "Unreal C++",
         }
@@ -710,6 +716,9 @@ impl Language {
         match self {
             Language::Rust => rustfmt(generated_files)?,
             Language::Csharp => dotnet_format(project_dir, generated_files)?,
+            Language::Kotlin => {
+                // TODO: implement formatting.
+            }
             Language::TypeScript => {
                 // TODO: implement formatting.
             }

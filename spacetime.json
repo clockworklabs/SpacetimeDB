@@ -1,0 +1,7 @@
+{
+  "dev": {
+    "run": "cargo run"
+  },
+  "server": "maincloud",
+  "module-path": "."
+}
