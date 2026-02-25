@@ -1,13 +1,13 @@
 use self::budget::energy_from_elapsed;
 use self::error::{
-    catch_exception, exception_already_thrown, log_traceback, CanContinue, ErrorOrException, ExcResult,
-    ExceptionThrown, PinTryCatch, Throwable,
+    catch_exception, exception_already_thrown, log_traceback, ErrorOrException, ExcResult, ExceptionThrown,
+    PinTryCatch, Throwable,
 };
 use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
 use self::syscall::{
     call_call_procedure, call_call_reducer, call_call_view, call_call_view_anon, call_describe_module, get_hooks,
-    resolve_sys_module, FnRet, HookFunctions,
+    process_thrown_exception, resolve_sys_module, FnRet, HookFunctions,
 };
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{CallProcedureParams, CallReducerParams, ModuleInfo, ModuleWithInstance};
@@ -869,20 +869,20 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
     }
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {
-        common_call(self.scope, budget, op, |scope, op| {
+        common_call(self.scope, self.hooks, budget, op, |scope, op| {
             Ok(call_call_reducer(scope, self.hooks, op, self.reducer_args_buf)?)
         })
         .map_result(|call_result| call_result.and_then(|res| res.map_err(ExecutionError::User)))
     }
 
     fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
-        common_call(self.scope, budget, op, |scope, op| {
+        common_call(self.scope, self.hooks, budget, op, |scope, op| {
             call_call_view(scope, self.hooks, op)
         })
     }
 
     fn call_view_anon(&mut self, op: AnonymousViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
-        common_call(self.scope, budget, op, |scope, op| {
+        common_call(self.scope, self.hooks, budget, op, |scope, op| {
             call_call_view_anon(scope, self.hooks, op)
         })
     }
@@ -896,7 +896,7 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
         op: ProcedureOp,
         budget: FunctionBudget,
     ) -> (ProcedureExecuteResult, Option<TransactionOffset>) {
-        let result = common_call(self.scope, budget, op, |scope, op| {
+        let result = common_call(self.scope, self.hooks, budget, op, |scope, op| {
             call_call_procedure(scope, self.hooks, op)
         })
         .map_result(|call_result| {
@@ -914,6 +914,7 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
 
 fn common_call<'scope, R, O, F>(
     scope: &mut PinScope<'scope, '_>,
+    hooks: &HookFunctions<'_>,
     budget: FunctionBudget,
     op: O,
     call: F,
@@ -929,26 +930,31 @@ where
     // We'd like this tightly around `call`.
     env.start_funcall(op.name().clone(), op.timestamp(), op.call_type());
 
-    // By default, we can continue execution, but an exception might mean that we can't.
-    let mut can_continue = CanContinue::Yes;
-    let call_result = catch_exception(scope, |scope| {
-        let res = call(scope, op);
-        if let Err(ErrorOrException::Exception(_)) = res {
-            can_continue = CanContinue::from_catch(scope);
-        }
-        res
-    })
-    .map_err(|e| {
-        // Convert `can_continue` to whether the isolate has "trapped".
-        // Also cancel execution termination if needed,
-        // that can occur due to terminating long running reducers.
-        match can_continue {
-            CanContinue::No => ExecutionError::Trap(e.into()),
-            CanContinue::Yes => ExecutionError::Recoverable(e.into()),
-            CanContinue::YesCancelTermination => {
-                scope.cancel_terminate_execution();
-                ExecutionError::Recoverable(e.into())
+    v8::tc_scope!(scope, scope);
+    let call_result = call(scope, op).map_err(|mut e| {
+        if let ErrorOrException::Exception(_) = e {
+            // If we're terminating execution, don't try to check `instanceof`.
+            if scope.can_continue() {
+                if let Some(exc) = scope.exception() {
+                    match process_thrown_exception(scope, hooks, exc) {
+                        Ok(Some(err)) => return err,
+                        Ok(None) => {}
+                        Err(exc) => e = ErrorOrException::Exception(exc),
+                    }
+                }
             }
+        }
+        let e = e.map_exception(|exc| exc.into_error(scope)).into();
+        if scope.can_continue() {
+            // We can continue.
+            ExecutionError::Recoverable(e)
+        } else if scope.has_terminated() {
+            // We can continue if we do `Isolate::cancel_terminate_execution`.
+            scope.cancel_terminate_execution();
+            ExecutionError::Recoverable(e)
+        } else {
+            // We cannot continue.
+            ExecutionError::Trap(e)
         }
     });
 
@@ -1044,9 +1050,9 @@ mod test {
             })
         "#,
         );
-        let actual = format!("{}", ret.expect_err("should trap")).replace("\t", "    ");
+        let actual = ret.expect_err("should trap").to_string().replace("\t", "    ");
         let expected = r#"
-js error Uncaught Error: foobar
+Uncaught Error: foobar
     at __call_reducer__ (spacetimedb_module:6:27)
         "#;
         assert_eq!(actual.trim(), expected.trim());

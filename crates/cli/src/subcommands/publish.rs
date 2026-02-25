@@ -15,7 +15,7 @@ use crate::spacetime_config::{
     find_and_load_with_env, CommandConfig, CommandSchema, CommandSchemaBuilder, FlatTarget, Key, LoadedConfig,
     SpacetimeConfig,
 };
-use crate::util::{add_auth_header_opt, get_auth_header, AuthHeader, ResponseExt};
+use crate::util::{add_auth_header_opt, get_auth_header, strip_verbatim_prefix, AuthHeader, ResponseExt};
 use crate::util::{decode_identity, y_or_n};
 use crate::{build, common_args};
 
@@ -326,13 +326,23 @@ pub async fn exec_with_options(
         .copied()
         .unwrap_or(ClearMode::Never);
     let force = args.get_flag("force");
+    let config_dir = loaded_config_ref.map(|lc| lc.config_dir.as_path());
 
-    execute_publish_configs(&mut config, publish_configs, using_config, clear_database, force).await
+    execute_publish_configs(
+        &mut config,
+        publish_configs,
+        using_config,
+        config_dir,
+        clear_database,
+        force,
+    )
+    .await
 }
 
 pub async fn exec_from_entry(
     mut config: Config,
     entry: HashMap<String, serde_json::Value>,
+    config_dir: Option<&std::path::Path>,
     clear_database: ClearMode,
     force: bool,
 ) -> Result<(), anyhow::Error> {
@@ -343,13 +353,22 @@ pub async fn exec_from_entry(
     let command_config = CommandConfig::new(&schema, entry, &matches)?;
     command_config.validate()?;
 
-    execute_publish_configs(&mut config, vec![command_config], true, clear_database, force).await
+    execute_publish_configs(
+        &mut config,
+        vec![command_config],
+        true,
+        config_dir,
+        clear_database,
+        force,
+    )
+    .await
 }
 
 async fn execute_publish_configs<'a>(
     config: &mut Config,
     publish_configs: Vec<CommandConfig<'a>>,
     using_config: bool,
+    config_dir: Option<&std::path::Path>,
     clear_database: ClearMode,
     force: bool,
 ) -> Result<(), anyhow::Error> {
@@ -363,10 +382,11 @@ async fn execute_publish_configs<'a>(
         let anon_identity = command_config.get_one::<bool>("anon_identity")?.unwrap_or(false);
         let wasm_file = command_config.get_one::<PathBuf>("wasm_file")?;
         let js_file = command_config.get_one::<PathBuf>("js_file")?;
+        let resolved_module_path = command_config.get_resolved_path("module_path", config_dir)?;
         let path_to_project = if wasm_file.is_some() || js_file.is_some() {
-            command_config.get_one::<PathBuf>("module_path")?
+            resolved_module_path
         } else {
-            Some(match command_config.get_one::<PathBuf>("module_path")? {
+            Some(match resolved_module_path {
                 Some(path) => path,
                 None => default_publish_module_path(&std::env::current_dir()?),
             })
@@ -376,7 +396,7 @@ async fn execute_publish_configs<'a>(
             if let Some(path_to_project) = path_to_project.as_ref() {
                 println!(
                     "Publishing module {} to database '{}'",
-                    path_to_project.display(),
+                    strip_verbatim_prefix(path_to_project).display(),
                     name_or_identity.unwrap()
                 );
             } else {
@@ -440,8 +460,7 @@ async fn execute_publish_configs<'a>(
         if server_address != "localhost" && server_address != "127.0.0.1" {
             println!("You are about to publish to a non-local server: {server_address}");
             if !y_or_n(force, "Are you sure you want to proceed?")? {
-                println!("Aborting");
-                return Ok(());
+                anyhow::bail!("Publish aborted by user.");
             }
         }
 
@@ -501,13 +520,6 @@ async fn execute_publish_configs<'a>(
 
         // Set the host type.
         builder = builder.query(&[("host_type", host_type)]);
-
-        // JS/TS is beta quality atm.
-        if host_type == "Js" {
-            println!("JavaScript / TypeScript support is currently in BETA.");
-            println!("There may be bugs. Please file issues if you encounter any.");
-            println!("<https://github.com/clockworklabs/SpacetimeDB/issues/new>");
-        }
 
         let res = builder.body(program_bytes).send().await?;
         let response: PublishResult = res.json_or_error().await?;

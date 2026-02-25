@@ -8,9 +8,9 @@ The SpacetimeDB client SDK for TypeScript contains all the tools you need to bui
 
 Before diving into the reference, you may want to review:
 
-- [Generating Client Bindings](/clients/codegen) - How to generate TypeScript bindings from your module
-- [Connecting to SpacetimeDB](/clients/connection) - Establishing and managing connections
-- [SDK API Reference](/clients/api) - Core concepts that apply across all SDKs
+- [Generating Client Bindings](./00200-codegen.md) - How to generate TypeScript bindings from your module
+- [Connecting to SpacetimeDB](./00300-connection.md) - Establishing and managing connections
+- [SDK API Reference](./00400-sdk-api.md) - Core concepts that apply across all SDKs
 
 | Name                                                              | Description                                                                                                                            |
 | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -24,6 +24,7 @@ Before diving into the reference, you may want to review:
 | [`ErrorContext` type](#type-errorcontext)                         | [`DbContext`](#interface-dbcontext) available in error-related callbacks.                                                              |
 | [Access the client cache](#access-the-client-cache)               | Make local queries against subscribed rows, and register [row callbacks](#callback-oninsert) to run when subscribed rows change.       |
 | [Observe and invoke reducers](#observe-and-invoke-reducers)       | Send requests to the database to run reducers, and register callbacks to run when notified of reducers.                                |
+| [React Integration](#react-integration)                           | React hooks and components for SpacetimeDB (`spacetimedb/react`).                                                                      |
 | [Identify a client](#identify-a-client)                           | Types for identifying users and client connections.                                                                                    |
 | [Query Builder API](#query-builder-api)                           | Type-safe query builder for subscriptions using the `tables` export.                                                                   |
 | [Framework Integrations](#framework-integrations)                 | React, Vue, and Svelte hooks for reactive SpacetimeDB data.                                                                            |
@@ -154,7 +155,7 @@ Configure the SpacetimeDB domain name or hex string encoded `Identity` of the re
 
 ```typescript
 class DbConnectionBuilder {
-  public withConfirmedReads(confirmedReads: bool): DbConnectionBuilder;
+  public withConfirmedReads(confirmedReads: boolean): DbConnectionBuilder;
 }
 ```
 
@@ -373,7 +374,7 @@ conn.subscriptionBuilder().subscribe(
 );
 ```
 
-For raw SQL subscription syntax, see [the SpacetimeDB SQL Reference](/reference/sql#subscriptions).
+For raw SQL subscription syntax, see [the SpacetimeDB SQL Reference](../../00300-resources/00200-reference/00400-sql-reference.md#subscriptions).
 
 ##### Method `subscribeToAllTables`
 
@@ -510,7 +511,7 @@ The `SubscriptionHandle` does not contain or provide access to the subscribed ro
 
 ```typescript
 class SubscriptionHandle {
-  public isEnded(): bool;
+  public isEnded(): boolean;
 }
 ```
 
@@ -520,7 +521,7 @@ Returns true if this subscription has been terminated due to an unsubscribe call
 
 ```typescript
 class SubscriptionHandle {
-  public isActive(): bool;
+  public isActive(): boolean;
 }
 ```
 
@@ -558,7 +559,7 @@ Returns an error if the subscription has already ended, either due to a previous
 
 ```typescript
 interface DbContext {
-  isActive: bool;
+  isActive: boolean;
 }
 ```
 
@@ -612,13 +613,13 @@ The `reducers` field of the context provides access to reducers exposed by the r
 
 ### Type `Event`
 
-```rust
+```typescript
 type Event<Reducer> =
   | { tag: 'Reducer'; value: ReducerEvent<Reducer> }
   | { tag: 'SubscribeApplied' }
   | { tag: 'UnsubscribeApplied' }
   | { tag: 'Error'; value: Error }
-  | { tag: 'UnknownTransaction' };
+  | { tag: 'Transaction' };
 ```
 
 | Name                                                        | Description                                                                                                                             |
@@ -627,7 +628,7 @@ type Event<Reducer> =
 | [`SubscribeApplied` variant](#variant-subscribeapplied)     | A new subscription was applied to the client cache.                                                                                     |
 | [`UnsubscribeApplied` variant](#variant-unsubscribeapplied) | A previous subscription was removed from the client cache after a call to [`unsubscribe`](#method-unsubscribe).                         |
 | [`Error` variant](#variant-error)                           | A previous subscription was removed from the client cache due to an error.                                                              |
-| [`UnknownTransaction` variant](#variant-unknowntransaction) | A transaction ran in the remote database, but was not attributed to a known reducer.                                                    |
+| [`Transaction` variant](#variant-transaction)        | A transaction ran in the remote database, but was not attributed to a known reducer.                                                    |
 | [`ReducerEvent` type](#type-reducerevent)                   | Metadata about a reducer run. Contained in [`Event::Reducer`](#variant-reducer) and [`ReducerEventContext`](#type-reducereventcontext). |
 | [`UpdateStatus` type](#type-updatestatus)                   | Completion status of a reducer run.                                                                                                     |
 | [`Reducer` type](#type-reducer)                             | Module-specific generated enum with a variant for each reducer defined by the module.                                                   |
@@ -682,11 +683,11 @@ Event when a subscription ends unexpectedly due to an error.
 
 This event is passed to [row `onDelete` callbacks](#callback-ondelete) resulting from the subscription ending.
 
-#### Variant `UnknownTransaction`
+#### Variant `Transaction`
 
 ```typescript
 {
-  tag: 'UnknownTransaction';
+  tag: 'Transaction';
 }
 ```
 
@@ -787,7 +788,7 @@ The reducer was aborted due to insufficient energy balance of the module owner.
 
 ### Type `Reducer`
 
-```rust
+```typescript
 type Reducer =
   | { name: 'ReducerA'; args: ReducerA }
   | { name: 'ReducerB'; args: ReducerB }
@@ -1013,11 +1014,123 @@ Each reducer defined by the module has three methods on the `.reducers`:
 - A callback registation method, whose name is prefixed with `on`, like `onSetName`. This registers a callback to run whenever we are notified that the reducer ran, including successfully committed runs and runs we requested which failed. This method returns a callback id, which can be passed to the callback remove method.
 - A callback remove method, whose name is prefixed with `removeOn`, like `removeOnSetName`. This cancels a callback previously registered via the callback registration method.
 
+## React Integration
+
+The SpacetimeDB TypeScript SDK includes React bindings under the `spacetimedb/react` subpath. These bindings provide a `SpacetimeDBProvider` component and hooks for easily integrating SpacetimeDB into React applications.
+
+The React integration is fully compatible with React StrictMode and correctly handles the double-mount behavior (only one WebSocket connection is created).
+
+| Name                                                        | Description                                               |
+| ----------------------------------------------------------- | --------------------------------------------------------- |
+| [`SpacetimeDBProvider` component](#component-spacetimedbprovider) | Context provider that manages the database connection.    |
+| [`useSpacetimeDB` hook](#hook-usespacetimedb)               | Access the connection and connection state.               |
+| [`useTable` hook](#hook-usetable)                           | Subscribe to table data with automatic re-renders.        |
+
+### Component `SpacetimeDBProvider`
+
+```tsx
+import { SpacetimeDBProvider } from 'spacetimedb/react';
+```
+
+Wrap your application with `SpacetimeDBProvider` to provide connection context to child components. Pass a configured `DbConnectionBuilder` (without calling `.build()`).
+
+```tsx
+import { DbConnection } from './module_bindings';
+import { SpacetimeDBProvider } from 'spacetimedb/react';
+
+const connectionBuilder = DbConnection.builder()
+  .withUri('ws://localhost:3000')
+  .withDatabaseName('my-module')
+  .onConnect((conn, identity, token) => {
+    console.log('Connected:', identity.toHexString());
+    conn.subscriptionBuilder().subscribe('SELECT * FROM player');
+  })
+  .onDisconnect(() => console.log('Disconnected'));
+
+function App() {
+  return (
+    <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
+      <MyComponent />
+    </SpacetimeDBProvider>
+  );
+}
+```
+
+### Hook `useSpacetimeDB`
+
+```tsx
+import { useSpacetimeDB } from 'spacetimedb/react';
+
+function useSpacetimeDB<DbConnection>(): {
+  isActive: boolean;
+  identity?: Identity;
+  token?: string;
+  connectionId: ConnectionId;
+  connectionError?: Error;
+  getConnection(): DbConnection | null;
+};
+```
+
+Returns the current connection state and a function to access the connection. The hook re-renders the component when the connection state changes.
+
+```tsx
+function MyComponent() {
+  const { isActive, identity, getConnection } = useSpacetimeDB<DbConnection>();
+  const conn = getConnection();
+
+  if (!isActive) {
+    return <div>Connecting...</div>;
+  }
+
+  return (
+    <div>
+      <p>Connected as: {identity?.toHexString()}</p>
+      <button onClick={() => conn?.reducers.createPlayer('Alice')}>
+        Create Player
+      </button>
+    </div>
+  );
+}
+```
+
+### Hook `useTable`
+
+```tsx
+import { useTable } from 'spacetimedb/react';
+
+function useTable<DbConnection, Row>(tableName: string): {
+  rows: Row[];
+  loading: boolean;
+};
+```
+
+Subscribe to a table and receive automatic re-renders when rows change. Returns the current rows and a loading state.
+
+```tsx
+import { Player } from './module_bindings';
+
+function PlayerList() {
+  const { rows: players, loading } = useTable<DbConnection, Player>('player');
+
+  if (loading) {
+    return <div>Loading players...</div>;
+  }
+
+  return (
+    <ul>
+      {players.map(player => (
+        <li key={player.id}>{player.name}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
 ## Identify a client
 
 ### Type `Identity`
 
-```rust
+```typescript
 Identity
 ```
 
@@ -1025,7 +1138,7 @@ A unique public identifier for a client connected to a database.
 
 ### Type `ConnectionId`
 
-```rust
+```typescript
 ConnectionId
 ```
 
@@ -1037,26 +1150,30 @@ The SpacetimeDB TypeScript SDK includes built-in integrations for React, Vue, an
 
 ### React
 
-```bash
+```typescript
 import { SpacetimeDBProvider, useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
 ```
 
 #### `SpacetimeDBProvider`
 
-Wrap your app in `SpacetimeDBProvider` to provide the SpacetimeDB connection to all child components:
+Wrap your app in `SpacetimeDBProvider` to provide the SpacetimeDB connection to all child components. Pass a configured `DbConnectionBuilder` (without calling `.build()`):
 
 ```tsx
 import { SpacetimeDBProvider } from 'spacetimedb/react';
 import { DbConnection } from './module_bindings';
 
+const connectionBuilder = DbConnection.builder()
+  .withUri('wss://maincloud.spacetimedb.com')
+  .withDatabaseName('my_module')
+  .onConnect((conn, identity, token) => {
+    console.log('Connected:', identity.toHexString());
+    conn.subscriptionBuilder().subscribeToAllTables();
+  })
+  .onDisconnect(() => console.log('Disconnected'));
+
 function Root() {
   return (
-    <SpacetimeDBProvider connect={() =>
-      DbConnection.builder()
-        .withUri('wss://maincloud.spacetimedb.com')
-        .withModuleName('my_module')
-        .build()
-    }>
+    <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
       <App />
     </SpacetimeDBProvider>
   );

@@ -162,7 +162,7 @@ bool FSubscribeAndCancelTest::RunTest(const FString &Parameters)
 			FOnSubscriptionApplied AppliedDelegate; BIND_DELEGATE_SAFE(AppliedDelegate, Helper, UTestHelperDelegates, HandleSubscriptionApplied);
 			FOnSubscriptionError ErrorDelegate; BIND_DELEGATE_SAFE(ErrorDelegate, Helper, UTestHelperDelegates, HandleSubscriptionError);
 
-			USubscriptionHandle* Handle = Conn->SubscriptionBuilder()->OnApplied(AppliedDelegate)->OnError(ErrorDelegate)->Subscribe({ TEXT("SELECT * FROM one_u8;") });
+			USubscriptionHandle* Handle = Conn->SubscriptionBuilder()->OnApplied(AppliedDelegate)->OnError(ErrorDelegate)->Subscribe({ TEXT("SELECT * FROM one_u_8;") });
 
 			UTestHelperDelegates* EndHelper = NewObject<UTestHelperDelegates>();
 			EndHelper->AddToRoot();
@@ -262,7 +262,7 @@ bool FSubscribeAndUnsubscribeTest::RunTest(const FString &Parameters)
 			FOnSubscriptionError ErrorDelegate; BIND_DELEGATE_SAFE(ErrorDelegate, State->Helper, UTestHelperDelegates, HandleSubscriptionError);
 
 			// The handle is now stored in the state struct.
-			State->Handle = Conn->SubscriptionBuilder()->OnApplied(AppliedDelegate)->OnError(ErrorDelegate)->Subscribe({ TEXT("SELECT * FROM one_u8;") }); });
+			State->Handle = Conn->SubscriptionBuilder()->OnApplied(AppliedDelegate)->OnError(ErrorDelegate)->Subscribe({ TEXT("SELECT * FROM one_u_8;") }); });
 
 	ADD_LATENT_AUTOMATION_COMMAND(FWaitForTestCounter(*this, TestName, Counter, FPlatformTime::Seconds()));
 	return true;
@@ -1956,8 +1956,8 @@ bool FRowDeduplicationJoinRAndSTest::RunTest(const FString &Parameters)
 			Conn->Db->UniqueU32->OnDelete.AddDynamic(Handler, &URowDeduplicationJoinHandler::OnDeleteUniqueU32);
 
 			TArray<FString> Queries = {
-					TEXT("SELECT * FROM pk_u32;"),
-					TEXT("SELECT unique_u32.* FROM unique_u32 JOIN pk_u32 ON unique_u32.n = pk_u32.n;")
+					TEXT("SELECT * FROM pk_u_32;"),
+					TEXT("SELECT unique_u_32.* FROM unique_u_32 JOIN pk_u_32 ON unique_u_32.n = pk_u_32.n;")
 			};
 
 			SubscribeTheseThen(Conn, Queries, [Handler](FSubscriptionEventContext Ctx)

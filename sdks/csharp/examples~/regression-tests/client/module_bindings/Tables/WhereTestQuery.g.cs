@@ -33,9 +33,9 @@ namespace SpacetimeDB.Types
 
         public WhereTestQueryCols(string tableName)
         {
-            Id = new global::SpacetimeDB.Col<WhereTest, uint>(tableName, "Id");
-            Value = new global::SpacetimeDB.Col<WhereTest, uint>(tableName, "Value");
-            Name = new global::SpacetimeDB.Col<WhereTest, string>(tableName, "Name");
+            Id = new global::SpacetimeDB.Col<WhereTest, uint>(tableName, "id");
+            Value = new global::SpacetimeDB.Col<WhereTest, uint>(tableName, "value");
+            Name = new global::SpacetimeDB.Col<WhereTest, string>(tableName, "name");
         }
     }
 

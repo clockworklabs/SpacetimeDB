@@ -17,28 +17,28 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "where_test";
 
-            public sealed class WhereTestIdIdxBtreeUniqueIndex : UniqueIndexBase<uint>
+            public sealed class IdUniqueIndex : UniqueIndexBase<uint>
             {
                 protected override uint GetKey(WhereTest row) => row.Id;
 
-                public WhereTestIdIdxBtreeUniqueIndex(WhereTestHandle table) : base(table) { }
+                public IdUniqueIndex(WhereTestHandle table) : base(table) { }
             }
 
-            public readonly WhereTestIdIdxBtreeUniqueIndex WhereTestIdIdxBtree;
+            public readonly IdUniqueIndex Id;
 
-            public sealed class WhereTestValueIdxBtreeIndex : BTreeIndexBase<uint>
+            public sealed class ValueIndex : BTreeIndexBase<uint>
             {
                 protected override uint GetKey(WhereTest row) => row.Value;
 
-                public WhereTestValueIdxBtreeIndex(WhereTestHandle table) : base(table) { }
+                public ValueIndex(WhereTestHandle table) : base(table) { }
             }
 
-            public readonly WhereTestValueIdxBtreeIndex WhereTestValueIdxBtree;
+            public readonly ValueIndex Value;
 
             internal WhereTestHandle(DbConnection conn) : base(conn)
             {
-                WhereTestIdIdxBtree = new(this);
-                WhereTestValueIdxBtree = new(this);
+                Id = new(this);
+                Value = new(this);
             }
 
             protected override object GetPrimaryKey(WhereTest row) => row.Id;
@@ -55,9 +55,9 @@ namespace SpacetimeDB.Types
 
         public WhereTestCols(string tableName)
         {
-            Id = new global::SpacetimeDB.Col<WhereTest, uint>(tableName, "Id");
-            Value = new global::SpacetimeDB.Col<WhereTest, uint>(tableName, "Value");
-            Name = new global::SpacetimeDB.Col<WhereTest, string>(tableName, "Name");
+            Id = new global::SpacetimeDB.Col<WhereTest, uint>(tableName, "id");
+            Value = new global::SpacetimeDB.Col<WhereTest, uint>(tableName, "value");
+            Name = new global::SpacetimeDB.Col<WhereTest, string>(tableName, "name");
         }
     }
 
@@ -68,8 +68,8 @@ namespace SpacetimeDB.Types
 
         public WhereTestIxCols(string tableName)
         {
-            Id = new global::SpacetimeDB.IxCol<WhereTest, uint>(tableName, "Id");
-            Value = new global::SpacetimeDB.IxCol<WhereTest, uint>(tableName, "Value");
+            Id = new global::SpacetimeDB.IxCol<WhereTest, uint>(tableName, "id");
+            Value = new global::SpacetimeDB.IxCol<WhereTest, uint>(tableName, "value");
         }
     }
 }

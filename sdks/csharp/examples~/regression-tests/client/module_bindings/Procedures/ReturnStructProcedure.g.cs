@@ -77,7 +77,7 @@ namespace SpacetimeDB.Types
                 this.B = "";
             }
 
-            string IProcedureArgs.ProcedureName => "ReturnStructProcedure";
+            string IProcedureArgs.ProcedureName => "return_struct_procedure";
         }
 
     }

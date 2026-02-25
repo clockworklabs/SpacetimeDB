@@ -17,28 +17,28 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "player";
 
-            public sealed class PlayerIdIdxBtreeUniqueIndex : UniqueIndexBase<ulong>
+            public sealed class IdUniqueIndex : UniqueIndexBase<ulong>
             {
                 protected override ulong GetKey(Player row) => row.Id;
 
-                public PlayerIdIdxBtreeUniqueIndex(PlayerHandle table) : base(table) { }
+                public IdUniqueIndex(PlayerHandle table) : base(table) { }
             }
 
-            public readonly PlayerIdIdxBtreeUniqueIndex PlayerIdIdxBtree;
+            public readonly IdUniqueIndex Id;
 
-            public sealed class PlayerIdentityIdxBtreeUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
+            public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
             {
                 protected override SpacetimeDB.Identity GetKey(Player row) => row.Identity;
 
-                public PlayerIdentityIdxBtreeUniqueIndex(PlayerHandle table) : base(table) { }
+                public IdentityUniqueIndex(PlayerHandle table) : base(table) { }
             }
 
-            public readonly PlayerIdentityIdxBtreeUniqueIndex PlayerIdentityIdxBtree;
+            public readonly IdentityUniqueIndex Identity;
 
             internal PlayerHandle(DbConnection conn) : base(conn)
             {
-                PlayerIdIdxBtree = new(this);
-                PlayerIdentityIdxBtree = new(this);
+                Id = new(this);
+                Identity = new(this);
             }
 
             protected override object GetPrimaryKey(Player row) => row.Id;
@@ -55,9 +55,9 @@ namespace SpacetimeDB.Types
 
         public PlayerCols(string tableName)
         {
-            Id = new global::SpacetimeDB.Col<Player, ulong>(tableName, "Id");
-            Identity = new global::SpacetimeDB.Col<Player, SpacetimeDB.Identity>(tableName, "Identity");
-            Name = new global::SpacetimeDB.Col<Player, string>(tableName, "Name");
+            Id = new global::SpacetimeDB.Col<Player, ulong>(tableName, "id");
+            Identity = new global::SpacetimeDB.Col<Player, SpacetimeDB.Identity>(tableName, "identity");
+            Name = new global::SpacetimeDB.Col<Player, string>(tableName, "name");
         }
     }
 
@@ -68,8 +68,8 @@ namespace SpacetimeDB.Types
 
         public PlayerIxCols(string tableName)
         {
-            Id = new global::SpacetimeDB.IxCol<Player, ulong>(tableName, "Id");
-            Identity = new global::SpacetimeDB.IxCol<Player, SpacetimeDB.Identity>(tableName, "Identity");
+            Id = new global::SpacetimeDB.IxCol<Player, ulong>(tableName, "id");
+            Identity = new global::SpacetimeDB.IxCol<Player, SpacetimeDB.Identity>(tableName, "identity");
         }
     }
 }

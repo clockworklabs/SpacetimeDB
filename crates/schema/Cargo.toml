@@ -33,6 +33,7 @@ enum-as-inner.workspace = true
 enum-map.workspace = true
 insta.workspace = true
 termcolor.workspace = true
+convert_case.workspace = true
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["test"] }

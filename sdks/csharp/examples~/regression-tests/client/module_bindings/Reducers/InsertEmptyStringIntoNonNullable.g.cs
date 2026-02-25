@@ -47,7 +47,7 @@ namespace SpacetimeDB.Types
         [DataContract]
         public sealed partial class InsertEmptyStringIntoNonNullable : Reducer, IReducerArgs
         {
-            string IReducerArgs.ReducerName => "InsertEmptyStringIntoNonNullable";
+            string IReducerArgs.ReducerName => "insert_empty_string_into_non_nullable";
         }
     }
 }

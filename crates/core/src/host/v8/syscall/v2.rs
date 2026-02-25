@@ -25,7 +25,9 @@ use super::{set_registered_hooks, AbiVersion};
 use crate::error::NodesError;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::wasm_common::instrumentation::span;
-use crate::host::wasm_common::module_host_actor::{AnonymousViewOp, ReducerOp, ReducerResult, ViewOp, ViewReturnData};
+use crate::host::wasm_common::module_host_actor::{
+    AnonymousViewOp, ExecutionError, ReducerOp, ReducerResult, ViewOp, ViewReturnData,
+};
 use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx};
 use crate::host::{AbiCall, ArgsTuple};
 use anyhow::Context;
@@ -440,29 +442,30 @@ pub(super) fn call_call_reducer<'scope>(
         Ok(val) if val.is_undefined() => Ok(Ok(None)),
         // TODO(reducer-return-values): replace error with deserialization
         Ok(_) => Err(TypeError("Reducer returned a value other than `undefined`").throw(scope)),
-        Err(e) => {
-            // If any of these operations throw an exception, the try-catch scope will catch it
-            // and overwrite the previously caught exception, which is our desired behavior.
+        Err(e) => Err(e),
+    }
+}
 
-            // If we're terminating execution, don't try to check `instanceof`.
-            if scope.can_continue() {
-                if let Some(exc) = scope.exception().and_then(|exc| exc.try_cast::<Object>().ok()) {
-                    // if (exc instanceof SenderError)
-                    if exc
-                        .instance_of(scope, hooks.sender_error_class.unwrap().into())
-                        .ok_or_else(exception_already_thrown)?
-                    {
-                        // let message = String(exc.message)
-                        let key = str_from_ident!(message).string(scope);
-                        let message = exc.get(scope, key.into()).ok_or_else(exception_already_thrown)?;
-                        let message = message.to_string(scope).ok_or_else(exception_already_thrown)?;
-                        return Ok(Err(message.to_rust_string_lossy(scope).into()));
-                    }
-                }
-            }
-            Err(e)
+/// Process the thrown exception value into an `ExecutionError`.
+pub(super) fn process_thrown_exception(
+    scope: &mut PinScope<'_, '_>,
+    hooks: &HookFunctions<'_>,
+    exc: Local<'_, Value>,
+) -> ExcResult<Option<ExecutionError>> {
+    // if (typeof exc === "object" && exc instanceof SenderError)
+    if let Ok(exc) = exc.try_cast::<Object>() {
+        if exc
+            .instance_of(scope, hooks.sender_error_class.unwrap().into())
+            .ok_or_else(exception_already_thrown)?
+        {
+            // let message = String(exc.message)
+            let key = str_from_ident!(message).string(scope);
+            let message = exc.get(scope, key.into()).ok_or_else(exception_already_thrown)?;
+            let message = message.to_string(scope).ok_or_else(exception_already_thrown)?;
+            return Ok(Some(ExecutionError::User(message.to_rust_string_lossy(scope).into())));
         }
     }
+    Ok(None)
 }
 
 /// Converts `args` into a `Value`.

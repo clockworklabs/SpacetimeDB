@@ -45,7 +45,7 @@ import {
   SubscriptionManager,
   type SubscribeEvent,
 } from './subscription_builder_impl.ts';
-import { stdbLogger } from './logger.ts';
+import { stdbLogger, stringify } from './logger.ts';
 import { fromByteArray } from 'base64-js';
 import type {
   ReducerEventInfo,
@@ -54,7 +54,6 @@ import type {
 } from './reducers.ts';
 import type { ClientDbView } from './db_view.ts';
 import type { RowType, UntypedTableDef } from '../lib/table.ts';
-import { toCamelCase } from '../lib/util.ts';
 import type { ProceduresView } from './procedures.ts';
 import type { Values } from '../lib/type_util.ts';
 import type { TransactionUpdate } from './client_api/types.ts';
@@ -147,6 +146,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #eventId = 0;
   #emitter: EventEmitter<ConnectionEvent>;
   #messageQueue = Promise.resolve();
+  #outboundQueue: ClientMessage[] = [];
   #subscriptionManager = new SubscriptionManager<RemoteModule>();
   #remoteModule: RemoteModule;
   #reducerCallbacks = new Map<
@@ -304,7 +304,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
     for (const reducer of def.reducers) {
       const reducerName = reducer.name;
-      const key = toCamelCase(reducerName);
+      const key = reducer.accessorName;
 
       const { serialize: serializeArgs } =
         this.#reducerArgsSerializers[reducerName];
@@ -325,7 +325,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
     for (const procedure of def.procedures) {
       const procedureName = procedure.name;
-      const key = toCamelCase(procedureName);
+      const key = procedure.accessorName;
 
       const { serializeArgs, deserializeReturn } =
         this.#procedureSerializers[procedureName];
@@ -537,14 +537,40 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     return this.#mergeTableUpdates(updates);
   }
 
+  #sendEncoded(
+    wsResolved: WebsocketDecompressAdapter | WebsocketTestAdapter,
+    message: ClientMessage
+  ): void {
+    stdbLogger(
+      'trace',
+      () => `Sending message to server: ${stringify(message)}`
+    );
+    const writer = new BinaryWriter(1024);
+    ClientMessage.serialize(writer, message);
+    const encoded = writer.getBuffer();
+    wsResolved.send(encoded);
+  }
+
+  #flushOutboundQueue(
+    wsResolved: WebsocketDecompressAdapter | WebsocketTestAdapter
+  ): void {
+    if (!this.isActive || this.#outboundQueue.length === 0) {
+      return;
+    }
+    const pending = this.#outboundQueue.splice(0);
+    for (const message of pending) {
+      this.#sendEncoded(wsResolved, message);
+    }
+  }
+
   #sendMessage(message: ClientMessage): void {
     this.wsPromise.then(wsResolved => {
-      if (wsResolved) {
-        const writer = new BinaryWriter(1024);
-        ClientMessage.serialize(writer, message);
-        const encoded = writer.getBuffer();
-        wsResolved.send(encoded);
+      if (!wsResolved || !this.isActive) {
+        this.#outboundQueue.push(message);
+        return;
       }
+      this.#flushOutboundQueue(wsResolved);
+      this.#sendEncoded(wsResolved, message);
     });
   }
 
@@ -558,6 +584,9 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    */
   #handleOnOpen(): void {
     this.isActive = true;
+    if (this.ws) {
+      this.#flushOutboundQueue(this.ws);
+    }
   }
 
   #applyTableUpdates(
@@ -603,6 +632,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
   async #processMessage(data: Uint8Array): Promise<void> {
     const serverMessage = ServerMessage.deserialize(new BinaryReader(data));
+    stdbLogger(
+      'trace',
+      () => `Processing server message: ${stringify(serverMessage)}`
+    );
     switch (serverMessage.tag) {
       case 'InitialConnection': {
         this.identity = serverMessage.value.identity;
@@ -636,6 +669,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         const callbacks = this.#applyTableUpdates(tableUpdates, eventContext);
         const { event: _, ...subscriptionEventContext } = eventContext;
         subscription.emitter.emit('applied', subscriptionEventContext);
+        stdbLogger(
+          'trace',
+          () => `Calling ${callbacks.length} triggered row callbacks`
+        );
         for (const callback of callbacks) {
           callback.cb();
         }
@@ -664,6 +701,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         const { event: _, ...subscriptionEventContext } = eventContext;
         subscription.emitter.emit('end', subscriptionEventContext);
         this.#subscriptionManager.subscriptions.delete(querySetId);
+        stdbLogger(
+          'trace',
+          () => `Calling ${callbacks.length} triggered row callbacks`
+        );
         for (const callback of callbacks) {
           callback.cb();
         }
@@ -671,6 +712,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       }
       case 'SubscriptionError': {
         const querySetId = serverMessage.value.querySetId.id;
+        const requestId = serverMessage.value.requestId;
         const error = Error(serverMessage.value.error);
         const event: Event<never> = {
           id: this.#nextEventId(),
@@ -682,13 +724,27 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           ...eventContext,
           event: error,
         };
+
+        // If the requestId isn't set, that means we already applied the subscription.
+        // Since we don't know how to remove the relevant rows from our table cache, we need
+        // to kill the connection. Once we have per-query storage, this won't be fatal.
+        if (requestId == null) {
+          stdbLogger(
+            'error',
+            `Disconnecting due to error for a previously applied subscription: ${serverMessage.value.error}`
+          );
+          this.disconnect();
+          break;
+        }
+
         const subscription =
           this.#subscriptionManager.subscriptions.get(querySetId);
         if (subscription) {
           subscription.emitter.emit('error', errorContext, error);
           this.#subscriptionManager.subscriptions.delete(querySetId);
         } else {
-          console.error(
+          stdbLogger(
+            'error',
             `Received SubscriptionError for unknown querySetId ${querySetId}:`,
             error
           );
@@ -698,12 +754,16 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       case 'TransactionUpdate': {
         const event: Event<never> = {
           id: this.#nextEventId(),
-          tag: 'UnknownTransaction',
+          tag: 'Transaction',
         };
         const eventContext = this.#makeEventContext(event);
         const callbacks = this.#applyTransactionUpdates(
           eventContext,
           serverMessage.value
+        );
+        stdbLogger(
+          'trace',
+          () => `Calling ${callbacks.length} triggered row callbacks`
         );
         for (const callback of callbacks) {
           callback.cb();
@@ -731,13 +791,17 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
               }
             : {
                 id: eventId,
-                tag: 'UnknownTransaction',
+                tag: 'Transaction',
               };
           const eventContext = this.#makeEventContext(event as any);
 
           const callbacks = this.#applyTransactionUpdates(
             eventContext,
             result.value.transactionUpdate
+          );
+          stdbLogger(
+            'trace',
+            () => `Calling ${callbacks.length} triggered row callbacks`
           );
           for (const callback of callbacks) {
             callback.cb();
@@ -761,7 +825,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         break;
       }
       case 'OneOffQueryResult': {
-        console.warn(
+        stdbLogger(
+          'warn',
           'Received OneOffQueryResult but SDK does not expose one-off query APIs yet.'
         );
         break;

@@ -16,8 +16,6 @@ This document contains the help content for the `spacetime` command-line program
 * [`spacetime call`↴](#spacetime-call)
 * [`spacetime describe`↴](#spacetime-describe)
 * [`spacetime dev`↴](#spacetime-dev)
-* [`spacetime energy`↴](#spacetime-energy)
-* [`spacetime energy balance`↴](#spacetime-energy-balance)
 * [`spacetime sql`↴](#spacetime-sql)
 * [`spacetime rename`↴](#spacetime-rename)
 * [`spacetime generate`↴](#spacetime-generate)
@@ -52,14 +50,13 @@ This document contains the help content for the `spacetime` command-line program
 * `call` — Invokes a function (reducer or procedure) in a database. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `describe` — Describe the structure of a database or entities within it. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `dev` — Start development mode with auto-regenerate client module bindings, auto-rebuild, and auto-publish on file changes.
-* `energy` — Invokes commands related to database budgets. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `sql` — Runs a SQL query on the database. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `rename` — Rename a database
 * `generate` — Generate client files for a spacetime module.
 * `list` — Lists the databases attached to an identity. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `login` — Manage your login to the SpacetimeDB CLI
 * `logout` — 
-* `init` — Initializes a new spacetime project. WARNING: This command is UNSTABLE and subject to breaking changes.
+* `init` — Initializes a new spacetime project.
 * `build` — Builds a spacetime module.
 * `server` — Manage the connection to the SpacetimeDB server. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `subscribe` — Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and subject to breaking changes.
@@ -121,7 +118,7 @@ Run `spacetime help publish` for more detailed information.
 
 Deletes a SpacetimeDB database
 
-**Usage:** `spacetime delete [OPTIONS] <database>`
+**Usage:** `spacetime delete [OPTIONS] [database]`
 
 Run `spacetime help delete` for more detailed information.
 
@@ -134,6 +131,7 @@ Run `spacetime help delete` for more detailed information.
 
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--no-config` — Ignore spacetime.json configuration
 
 
 
@@ -141,7 +139,7 @@ Run `spacetime help delete` for more detailed information.
 
 Prints logs from a SpacetimeDB database
 
-**Usage:** `spacetime logs [OPTIONS] <database>`
+**Usage:** `spacetime logs [OPTIONS] [database]`
 
 Run `spacetime help logs` for more detailed information.
 
@@ -162,6 +160,7 @@ Run `spacetime help logs` for more detailed information.
   Possible values: `text`, `json`
 
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--no-config` — Ignore spacetime.json configuration
 
 
 
@@ -169,22 +168,21 @@ Run `spacetime help logs` for more detailed information.
 
 Invokes a function (reducer or procedure) in a database. WARNING: This command is UNSTABLE and subject to breaking changes.
 
-**Usage:** `spacetime call [OPTIONS] <database> <function_name> [arguments]...`
+**Usage:** `spacetime call [OPTIONS] [call_parts]...`
 
 Run `spacetime help call` for more detailed information.
 
 
 ###### **Arguments:**
 
-* `<DATABASE>` — The database name or identity to use to invoke the call
-* `<FUNCTION_NAME>` — The name of the function to call
-* `<ARGUMENTS>` — arguments formatted as JSON
+* `<CALL_PARTS>` — Call arguments: [DATABASE] \<FUNCTION_NAME\> [ARGUMENTS...]
 
 ###### **Options:**
 
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
 * `--anonymous` — Perform this action with an anonymous identity
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--no-config` — Ignore spacetime.json configuration
 
 
 
@@ -192,19 +190,14 @@ Run `spacetime help call` for more detailed information.
 
 Describe the structure of a database or entities within it. WARNING: This command is UNSTABLE and subject to breaking changes.
 
-**Usage:** `spacetime describe [OPTIONS] --json <database> [entity_type] [entity_name]`
+**Usage:** `spacetime describe [OPTIONS] --json [describe_parts]...`
 
 Run `spacetime help describe` for more detailed information.
 
 
 ###### **Arguments:**
 
-* `<DATABASE>` — The name or identity of the database to describe
-* `<ENTITY_TYPE>` — Whether to describe a reducer or table
-
-  Possible values: `reducer`, `table`
-
-* `<ENTITY_NAME>` — The name of the entity to describe
+* `<DESCRIBE_PARTS>` — Describe arguments: [DATABASE] [ENTITY_TYPE ENTITY_NAME]
 
 ###### **Options:**
 
@@ -212,6 +205,7 @@ Run `spacetime help describe` for more detailed information.
 * `--anonymous` — Perform this action with an anonymous identity
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--no-config` — Ignore spacetime.json configuration
 
 
 
@@ -254,51 +248,27 @@ Start development mode with auto-regenerate client module bindings, auto-rebuild
 
 
 
-## `spacetime energy`
-
-Invokes commands related to database budgets. WARNING: This command is UNSTABLE and subject to breaking changes.
-
-**Usage:** `spacetime energy
-       energy <COMMAND>`
-
-###### **Subcommands:**
-
-* `balance` — Show current energy balance for an identity
-
-
-
-## `spacetime energy balance`
-
-Show current energy balance for an identity
-
-**Usage:** `spacetime energy balance [OPTIONS]`
-
-###### **Options:**
-
-* `-i`, `--identity <IDENTITY>` — The identity to check the balance for. If no identity is provided, the default one will be used.
-* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server from which to request balance information
-* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
-
-
-
 ## `spacetime sql`
 
 Runs a SQL query on the database. WARNING: This command is UNSTABLE and subject to breaking changes.
 
-**Usage:** `spacetime sql [OPTIONS] <database> <query>`
+**Usage:** `spacetime sql [OPTIONS] [sql_parts]...`
 
 ###### **Arguments:**
 
-* `<DATABASE>` — The name or identity of the database you would like to query
-* `<QUERY>` — The SQL query to execute
+* `<SQL_PARTS>` — SQL arguments: [DATABASE] \<QUERY\>
 
 ###### **Options:**
 
 * `--interactive` — Instead of using a query, run an interactive command prompt for `SQL` expressions
-* `--confirmed` — Instruct the server to deliver only updates of confirmed transactions
+* `--confirmed <CONFIRMED>` — Instruct the server to deliver only updates of confirmed transactions
+
+  Possible values: `true`, `false`
+
 * `--anonymous` — Perform this action with an anonymous identity
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--no-config` — Ignore spacetime.json configuration
 
 
 
@@ -380,7 +350,7 @@ Lists the databases attached to an identity. WARNING: This command is UNSTABLE a
 Manage your login to the SpacetimeDB CLI
 
 **Usage:** `spacetime login [OPTIONS]
-       login <COMMAND>`
+       login \<COMMAND\>`
 
 ###### **Subcommands:**
 
@@ -423,7 +393,7 @@ Show the current login info
 
 ## `spacetime init`
 
-Initializes a new spacetime project. WARNING: This command is UNSTABLE and subject to breaking changes.
+Initializes a new spacetime project.
 
 **Usage:** `spacetime init [OPTIONS] [PROJECT_NAME]`
 
@@ -463,7 +433,7 @@ Builds a spacetime module.
 Manage the connection to the SpacetimeDB server. WARNING: This command is UNSTABLE and subject to breaking changes.
 
 **Usage:** `spacetime server
-       server <COMMAND>`
+       server \<COMMAND\>`
 
 ###### **Subcommands:**
 
@@ -596,12 +566,11 @@ Deletes all data from all local databases
 
 Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and subject to breaking changes.
 
-**Usage:** `spacetime subscribe [OPTIONS] <database> <query>...`
+**Usage:** `spacetime subscribe [OPTIONS] [subscribe_parts]...`
 
 ###### **Arguments:**
 
-* `<DATABASE>` — The name or identity of the database you would like to query
-* `<QUERY>` — The SQL query to execute
+* `<SUBSCRIBE_PARTS>` — Subscribe arguments: [DATABASE] \<QUERY\> [QUERY...]
 
 ###### **Options:**
 
@@ -609,9 +578,13 @@ Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and 
 * `-t`, `--timeout <TIMEOUT>` — The timeout, in seconds, after which to disconnect and stop receiving subscription messages. If `-n` is specified, it will stop after whichever
                      one comes first.
 * `--print-initial-update` — Print the initial update for the queries.
-* `--confirmed` — Instruct the server to deliver only updates of confirmed transactions
+* `--confirmed <CONFIRMED>` — Instruct the server to deliver only updates of confirmed transactions
+
+  Possible values: `true`, `false`
+
 * `--anonymous` — Perform this action with an anonymous identity
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--no-config` — Ignore spacetime.json configuration
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
 
 

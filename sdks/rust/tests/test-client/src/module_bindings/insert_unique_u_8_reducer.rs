@@ -25,11 +25,11 @@ impl __sdk::InModule for InsertUniqueU8Args {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `insert_unique_u8`.
+/// Extension trait for access to the reducer `insert_unique_u_8`.
 ///
 /// Implemented for [`super::RemoteReducers`].
 pub trait insert_unique_u_8 {
-    /// Request that the remote module invoke the reducer `insert_unique_u8` to run as soon as possible.
+    /// Request that the remote module invoke the reducer `insert_unique_u_8` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
@@ -39,7 +39,7 @@ pub trait insert_unique_u_8 {
         self.insert_unique_u_8_then(n, data, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `insert_unique_u8` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `insert_unique_u_8` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.

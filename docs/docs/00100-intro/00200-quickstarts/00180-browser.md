@@ -29,7 +29,7 @@ Get a SpacetimeDB app running in the browser with inline JavaScript.
     </StepText>
     <StepCode>
 ```bash
-spacetime dev --template browser-ts my-spacetime-app
+spacetime dev --template browser-ts
 ```
     </StepCode>
   </Step>
@@ -122,5 +122,5 @@ conn.db.person.onDelete((ctx, person) => {
 
 ## Next steps
 
-- See the [Chat App Tutorial](/tutorials/chat-app) for a complete example
-- Read the [TypeScript SDK Reference](/clients/typescript) for detailed API docs
+- See the [Chat App Tutorial](../00300-tutorials/00100-chat-app.md) for a complete example
+- Read the [TypeScript SDK Reference](../../00200-core-concepts/00600-clients/00700-typescript-reference.md) for detailed API docs

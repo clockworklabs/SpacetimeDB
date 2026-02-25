@@ -29,7 +29,7 @@ Get a SpacetimeDB TypeScript app running in under 5 minutes.
     </StepText>
     <StepCode>
 ```bash
-spacetime dev --template basic-ts my-spacetime-app
+spacetime dev --template basic-ts
 ```
     </StepCode>
   </Step>
@@ -38,18 +38,17 @@ spacetime dev --template basic-ts my-spacetime-app
     <StepText>
       Your project contains both server and client code.
 
-      Edit `spacetimedb/src/index.ts` to add tables and reducers. Use the generated bindings in `client/src/module_bindings/` to build your client.
+      Edit `spacetimedb/src/index.ts` to add tables and reducers. Use the generated bindings in `src/module_bindings/` to build your client.
     </StepText>
     <StepCode>
 ```
 my-spacetime-app/
-├── spacetimedb/          # Your SpacetimeDB module
+├── spacetimedb/             # Your SpacetimeDB module
 │   └── src/
-│       └── index.ts      # Server-side logic
-├── client/               # Client application
-│   └── src/
-│       ├── index.ts
-│       └── module_bindings/  # Auto-generated types
+│       └── index.ts         # Server-side logic
+├── src/
+│   ├── main.ts              # Client application
+│   └── module_bindings/     # Auto-generated types
 └── package.json
 ```
     </StepCode>
@@ -57,7 +56,7 @@ my-spacetime-app/
 
   <Step title="Understand tables and reducers">
     <StepText>
-      Open `spacetimedb/src/index.ts` to see the module code. The template includes a `person` table and two reducers: `add` to insert a person, and `say_hello` to greet everyone.
+      Open `spacetimedb/src/index.ts` to see the module code. The template includes a `person` table and two reducers: `add` to insert a person, and `sayHello` to greet everyone.
 
       Tables store your data. Reducers are functions that modify data — they're the only way to write to the database.
     </StepText>
@@ -67,19 +66,22 @@ import { schema, table, t } from 'spacetimedb/server';
 
 const spacetimedb = schema({
   person: table(
-    {},
+    { public: true },
     {
       name: t.string(),
     }
-  )
+  ),
 });
 export default spacetimedb;
 
-export const add = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
-  ctx.db.person.insert({ name });
-});
+export const add = spacetimedb.reducer(
+  { name: t.string() },
+  (ctx, { name }) => {
+    ctx.db.person.insert({ name });
+  }
+);
 
-export const say_hello = spacetimedb.reducer((ctx) => {
+export const sayHello = spacetimedb.reducer(ctx => {
   for (const person of ctx.db.person.iter()) {
     console.info(`Hello, ${person.name}!`);
   }
@@ -91,24 +93,26 @@ export const say_hello = spacetimedb.reducer((ctx) => {
 
   <Step title="Test with the CLI">
     <StepText>
-      Use the SpacetimeDB CLI to call reducers and query your data directly.
+      Open a new terminal and navigate to your project directory. Then use the SpacetimeDB CLI to call reducers and query your data directly.
     </StepText>
     <StepCode>
 ```bash
+cd my-spacetime-app
+
 # Call the add reducer to insert a person
-spacetime call <database-name> add Alice
+spacetime call add Alice
 
 # Query the person table
-spacetime sql <database-name> "SELECT * FROM person"
+spacetime sql "SELECT * FROM person"
  name
 ---------
  "Alice"
 
-# Call say_hello to greet everyone
-spacetime call <database-name> say_hello
+# Call sayHello to greet everyone
+spacetime call say_hello
 
 # View the module logs
-spacetime logs <database-name>
+spacetime logs
 2025-01-13T12:00:00.000000Z  INFO: Hello, Alice!
 2025-01-13T12:00:00.000000Z  INFO: Hello, World!
 ```
@@ -118,5 +122,5 @@ spacetime logs <database-name>
 
 ## Next steps
 
-- See the [Chat App Tutorial](/tutorials/chat-app) for a complete example
-- Read the [TypeScript SDK Reference](/clients/typescript) for detailed API docs
+- See the [Chat App Tutorial](../00300-tutorials/00100-chat-app.md) for a complete example
+- Read the [TypeScript SDK Reference](../../00200-core-concepts/00600-clients/00700-typescript-reference.md) for detailed API docs
