@@ -17,25 +17,20 @@
 #include "Module.h"
 #include "field_registration.h"
 #include "../table_with_constraints.h"
+#include "../outcome.h"
 #include <spacetimedb/abi/FFI.h>
 #include "bsatn_adapters.h"
 #include <spacetimedb/bsatn/algebraic_type.h>
 #include <spacetimedb/bsatn/traits.h>
 #include <spacetimedb/bsatn/type_extensions.h>
 #include "autogen/Lifecycle.g.h"
-#include "autogen/RawConstraintDefV9.g.h"
-#include "autogen/RawUniqueConstraintDataV9.g.h"
-#include "autogen/RawIndexDefV9.g.h"
-#include "autogen/RawIndexAlgorithm.g.h"
-#include "v9_builder.h"
+#include "v10_builder.h"
 #include <cstring>
 #include <cstdio>
 #include <vector>
 #include <string>
 #include <optional>
 #include <functional>
-#include <unordered_map>
-#include <algorithm>
 #include <utility>
 
 namespace SpacetimeDB {
@@ -157,161 +152,12 @@ inline uint32_t read_u32(uint32_t source) {
 // TABLE REGISTRATION
 // =============================================================================
 
-// Apply constraints to table with optimized field lookup
-inline void apply_table_constraints(RawModuleDef::Table& table, 
-                                   const std::vector<FieldConstraintInfo>& constraints) {
-    if (constraints.empty() || table.fields.empty()) return;
-    
-    // Build field name lookup map
-    std::unordered_map<std::string, uint16_t> field_indices;
-    field_indices.reserve(table.fields.size());
-    for (size_t i = 0; i < table.fields.size(); ++i) {
-        field_indices.emplace(table.fields[i].name, static_cast<uint16_t>(i));
-    }
-    
-    // Pre-allocate constraint vectors
-    std::vector<uint16_t> unique_fields, indexed_fields, autoinc_fields;
-    unique_fields.reserve(constraints.size());
-    indexed_fields.reserve(constraints.size());
-    autoinc_fields.reserve(constraints.size());
-    
-    // Process constraints in single pass
-    for (const auto& constraint : constraints) {
-        if (constraint.field_name == nullptr) continue;
-        
-        auto field_it = field_indices.find(constraint.field_name);
-        if (field_it == field_indices.end()) continue;
-        
-        const uint16_t field_idx = field_it->second;
-        const auto constraint_flags = constraint.constraints;
-        
-        if (constraint_flags == FieldConstraint::PrimaryKey || constraint_flags == FieldConstraint::PrimaryKeyAuto) {
-            table.primary_key = field_idx;
-            unique_fields.push_back(field_idx);
-            indexed_fields.push_back(field_idx);
-        }
-        else if (constraint_flags == FieldConstraint::Unique || constraint_flags == FieldConstraint::Identity) {
-            unique_fields.push_back(field_idx);
-            indexed_fields.push_back(field_idx);
-        }
-        else if (has_constraint(constraint_flags, FieldConstraint::Indexed)) {
-            indexed_fields.push_back(field_idx);
-        }
-        
-        if (has_constraint(constraint_flags, FieldConstraint::AutoInc)) {
-            autoinc_fields.push_back(field_idx);
-        }
-    }
-    
-    // Sort and deduplicate
-    auto sort_and_dedupe = [](std::vector<uint16_t>& vec) {
-        if (!vec.empty()) {
-            std::sort(vec.begin(), vec.end());
-            vec.erase(std::unique(vec.begin(), vec.end()), vec.end());
-        }
-    };
-    
-    sort_and_dedupe(unique_fields);
-    sort_and_dedupe(indexed_fields);
-    sort_and_dedupe(autoinc_fields);
-    
-    // Move into table
-    table.unique_columns = std::move(unique_fields);
-    table.indexed_columns = std::move(indexed_fields);
-    table.autoinc_columns = std::move(autoinc_fields);
-}
-
-// Extract fields from type and populate table structure
-template<typename T>
-void add_fields_for_type(RawModuleDef::Table& table) {
-    auto algebraic_type = bsatn::bsatn_traits<T>::algebraic_type();
-    
-    if (algebraic_type.tag() != bsatn::AlgebraicTypeTag::Product) {
-        return;
-    }
-    
-    const auto& product = algebraic_type.as_product();
-    const size_t field_count = product.elements.size();
-    
-    table.fields.reserve(field_count);
-    
-    // Type-specific storage for field names
-    static std::map<const std::type_info*, std::vector<std::string>> type_field_storage;
-    auto& field_names = type_field_storage[&typeid(T)];
-    field_names.clear();
-    field_names.reserve(field_count);
-    
-    // Update global descriptors
-    auto& global_descriptors = get_table_descriptors();
-    auto& descriptor = global_descriptors[&typeid(T)];
-    descriptor.fields.clear();
-    descriptor.fields.reserve(field_count);
-    
-    // Process fields
-    for (size_t i = 0; i < field_count; ++i) {
-        const auto& element = product.elements[i];
-        
-        std::string field_name = element.name.has_value() ? 
-            element.name.value() : 
-            "field_" + std::to_string(i);
-        field_names.push_back(std::move(field_name));
-        
-        FieldInfo field;
-        field.name = field_names[i].c_str();
-        field.offset = i * sizeof(void*);
-        field.size = sizeof(void*);
-        field.type_id = 0;
-        field.serialize = [](std::vector<uint8_t>&, const void*) {};
-        table.fields.push_back(field);
-        
-        FieldDescriptor global_field;
-        global_field.name = field_names[i];
-        global_field.offset = field.offset;
-        global_field.size = field.size;
-        global_field.write_type = [](std::vector<uint8_t>&) {};
-        global_field.get_algebraic_type = []() { return bsatn::AlgebraicType::U32(); };
-        global_field.serialize = [](std::vector<uint8_t>&, const void*) {};
-        global_field.get_type_name = []() { return std::string(); };
-        descriptor.fields.push_back(std::move(global_field));
-    }
-}
-
 // Unified table registration - single implementation
 template<typename T>
-void Module::RegisterTableInternalImpl(const char* name, bool is_public, 
-                                      const std::vector<FieldConstraintInfo>& constraints) {
-    RawModuleDef::Table table;
-    table.name = name;
-    table.is_public = is_public;
-    table.type = &typeid(T);
-    
-    add_fields_for_type<T>(table);
-    
-    if (!constraints.empty()) {
-        apply_table_constraints(table, constraints);
-    }
-    
-    // V9 registration - always register tables with V9Builder
-    getV9Builder().RegisterTable<T>(name, is_public);
-    
-    table.serialize = [](std::vector<uint8_t>& buf, const void* obj) {
-        auto& module_def = GetModuleDef();
-        auto it = module_def.table_indices.find(&typeid(T));
-        if (it == module_def.table_indices.end()) return;
-        
-        const auto& table = module_def.tables[it->second];
-        for (const auto& field : table.fields) {
-            field.serialize(buf, obj);
-        }
-    };
-    
-    GetModuleDef().AddTable(std::move(table));
-}
-
-// Overload for tables without constraints
-template<typename T>
-void Module::RegisterTableInternalImpl(const char* name, bool is_public) {
-    RegisterTableInternalImpl<T>(name, is_public, {});
+void Module::RegisterTableInternalImpl(const char* name, bool is_public, bool is_event) {
+    // V10 registration entrypoint.
+    SetTableIsEventFlag(name, is_event);
+    getV10Builder().RegisterTable<T>(name, is_public, is_event);
 }
 
 // =============================================================================
@@ -567,105 +413,24 @@ inline std::optional<Lifecycle> get_lifecycle_for_name(const std::string& name) 
     return std::nullopt;
 }
 
-// Unified reducer registration
-template<typename... Args>
-void RegisterReducerUnified(const std::string& name, 
-                           void (*func)(ReducerContext, Args...), 
-                           std::optional<Lifecycle> lifecycle = std::nullopt,
-                           const std::vector<std::string>& param_names = {}) {
-    RawModuleDef::Reducer reducer;
-    reducer.name = name;
-    reducer.lifecycle = lifecycle;
-    
-    reducer.handler = [func](ReducerContext& ctx, uint32_t args) {
-        spacetimedb_reducer_wrapper(func, ctx, args);
-    };
-    
-    if constexpr (sizeof...(Args) == 0) {
-        reducer.write_params = [](std::vector<uint8_t>& buf) {
-            write_u32(buf, 0);
-        };
-        reducer.param_names = {};
+template<typename Func>
+void Module::RegisterReducerInternalImpl(const std::string& name, Func func) {
+    auto lifecycle = get_lifecycle_for_name(name);
+    if (lifecycle.has_value()) {
+        getV10Builder().RegisterLifecycleReducer(name, func, lifecycle.value());
     } else {
-        reducer.param_names = param_names;
+        getV10Builder().RegisterReducer(name, func, std::vector<std::string>{});
     }
-    
-    // V9 registration
-    {
-        auto& v9_builder = getV9Builder();
-        
-        std::vector<bsatn::AlgebraicType> param_types;
-        std::vector<const std::type_info*> param_cpp_types;
-        std::vector<std::string> param_type_names;
-        
-        if constexpr (sizeof...(Args) > 0) {
-            (param_types.push_back(bsatn::bsatn_traits<Args>::algebraic_type()), ...);
-            (param_cpp_types.push_back(&typeid(Args)), ...);
-            param_type_names.resize(sizeof...(Args));
-        }
-        
-        v9_builder.AddV9Reducer(
-            name,
-            param_types,
-            param_names,
-            param_cpp_types,
-            param_type_names,
-            lifecycle
-        );
+}
+
+template<typename Func>
+void Module::RegisterReducerInternalWithNames(const std::string& name, Func func, const std::vector<std::string>& param_names) {
+    auto lifecycle = get_lifecycle_for_name(name);
+    if (lifecycle.has_value()) {
+        getV10Builder().RegisterLifecycleReducer(name, func, lifecycle.value());
+    } else {
+        getV10Builder().RegisterReducer(name, func, param_names);
     }
-    
-    Module::GetModuleDef().AddReducer(std::move(reducer));
-}
-
-// Lifecycle reducer registration
-inline void RegisterLifecycleReducer(const std::string& name, 
-                             std::optional<Lifecycle> lifecycle,
-                             std::function<void(ReducerContext&, uint32_t)> handler) {
-    auto& v9_builder = getV9Builder();
-    
-    v9_builder.AddV9Reducer(
-        name,
-        {},
-        {},
-        {},
-        {},
-        lifecycle
-    );
-    
-    RawModuleDef::Reducer reducer;
-    reducer.name = name;
-    reducer.lifecycle = lifecycle;
-    reducer.handler = handler;
-    reducer.write_params = [](std::vector<uint8_t>& buf) {
-        write_u32(buf, 0);
-    };
-    
-    Module::GetModuleDef().AddReducer(std::move(reducer));
-}
-
-template<typename... Args>
-void Module::RegisterReducerInternalImpl(const std::string& name, void (*func)(ReducerContext, Args...)) {
-    RegisterReducerUnified(name, func, get_lifecycle_for_name(name));
-}
-
-template<typename... Args>
-void Module::RegisterReducerInternalWithNames(const std::string& name, void (*func)(ReducerContext, Args...), const std::vector<std::string>& param_names) {
-    RegisterReducerUnified(name, func, get_lifecycle_for_name(name), param_names);
-}
-
-inline void Module::RegisterInitReducer(void (*func)(ReducerContext)) {
-    RegisterLifecycleReducer("init", Lifecycle::Init, 
-        [func](ReducerContext& ctx, uint32_t) { func(ctx); });
-}
-
-inline void Module::RegisterClientConnectedReducer(void (*func)(ReducerContext, Identity)) {
-    RegisterLifecycleReducer("client_connected", Lifecycle::OnConnect,
-        [func](ReducerContext& ctx, uint32_t) { func(ctx, ctx.sender); });
-}
-
-inline void Module::RegisterClientDisconnectedReducer(void (*func)(ReducerContext, Identity)) {
-    RegisterLifecycleReducer("client_disconnected", Lifecycle::OnDisconnect,
-        [func](ReducerContext& ctx, uint32_t) { func(ctx, ctx.sender); });
 }
 
 // =============================================================================

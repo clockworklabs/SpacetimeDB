@@ -277,7 +277,18 @@ impl<'opts> Cpp<'opts> {
             if let Some(_idx) = duplicate_index {
                 // Found duplicate - create a wrapper struct to make it unique
                 let wrapper_name = format!("{}_{}_Wrapper", type_name, variant_name);
-                writeln!(output, "struct {} {{ {} value; }};", wrapper_name, type_str).unwrap();
+                let wrapper_macro = if self.namespace == "SpacetimeDB::Internal" {
+                    "SPACETIMEDB_INTERNAL_PRODUCT_TYPE"
+                } else {
+                    "SPACETIMEDB_PRODUCT_TYPE"
+                };
+                writeln!(output, "{}({}) {{", wrapper_macro, wrapper_name).unwrap();
+                writeln!(output, "    {} value;", type_str).unwrap();
+                writeln!(output, "    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {{").unwrap();
+                writeln!(output, "        ::SpacetimeDB::bsatn::serialize(writer, value);").unwrap();
+                writeln!(output, "    }}").unwrap();
+                writeln!(output, "    SPACETIMEDB_PRODUCT_TYPE_EQUALITY(value)").unwrap();
+                writeln!(output, "}};").unwrap();
                 variant_types.push(wrapper_name);
             } else {
                 // No duplicate, use the type directly

@@ -21,7 +21,6 @@
 namespace SpacetimeDB {
 namespace Internal {
     class Module;
-    struct RawModuleDef;
 }
 
 // Field constraint flags - must match Rust's ColumnAttribute bits  

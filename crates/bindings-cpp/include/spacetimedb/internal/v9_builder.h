@@ -27,69 +27,37 @@
 #include "../bsatn/bsatn.h"
 #include "../database.h"  // For FieldConstraintInfo
 #include "field_registration.h"  // For get_table_descriptors
-#include "v9_type_registration.h"  // For getV9TypeRegistration
+#include "module_type_registration.h"  // For getModuleTypeRegistration
 #include "../reducer_error.h"  // For Outcome
 #include "buffer_pool.h"  // For IterBuf
+#include "runtime_registration.h"
+#include "template_utils.h"
 
 namespace SpacetimeDB {
-
-// Forward declarations for view context types (defined in view_context.h)
-struct ViewContext;
-struct AnonymousViewContext;
-
-// Forward declaration for procedure context type (defined in procedure_context.h)
-struct ProcedureContext;
 
 // Forward declare fail_reducer from reducer_error.h for use in templates
 void fail_reducer(std::string message);
 
 namespace Internal {
 
-// Forward declare the handler registration function from Module.cpp
-void RegisterReducerHandler(const std::string& name, 
-                           std::function<void(ReducerContext&, BytesSource)> handler,
-                           std::optional<Lifecycle> lifecycle = std::nullopt);
-
-// Forward declare view handler registration functions from Module.cpp
-void RegisterViewHandler(const std::string& name,
-                        std::function<std::vector<uint8_t>(ViewContext&, BytesSource)> handler);
-void RegisterAnonymousViewHandler(const std::string& name,
-                                 std::function<std::vector<uint8_t>(AnonymousViewContext&, BytesSource)> handler);
-
-// Get the number of registered view handlers
-size_t GetViewHandlerCount();
-size_t GetAnonymousViewHandlerCount();
-
-// Forward declare procedure handler registration function from Module.cpp
-void RegisterProcedureHandler(const std::string& name,
-                             std::function<std::vector<uint8_t>(ProcedureContext&, BytesSource)> handler);
-
-// Get the number of registered procedure handlers
-size_t GetProcedureHandlerCount();
-
-// Helper to consume bytes from BytesSource (declared in Module.cpp)
-std::vector<uint8_t> ConsumeBytes(BytesSource source);
-
-// Forward declare the multiple primary key error function from Module.cpp
-void SetMultiplePrimaryKeyError(const std::string& table_name);
-
 // Forward declare the global V9 module accessor (defined in v9_builder.cpp)
 RawModuleDefV9& GetV9Module();
+void ClearV9CompatModuleState();
 
-// External global flags for circular reference detection (defined in v9_type_registration.cpp)
+// External global flags for circular reference detection (defined in module_type_registration.cpp)
 extern bool g_circular_ref_error;
 extern std::string g_circular_ref_type_name;
 
 /**
  * V9Builder - Builds a RawModuleDefV9 structure during module registration
  * 
- * This builder now uses the unified V9TypeRegistration system for all type handling.
+ * This builder now uses the unified ModuleTypeRegistration system for all type handling.
  * It focuses solely on building tables, reducers, and module structure.
  * 
  * Type registration principles:
  * - Only user-defined structs/enums get registered (have entries in types array)
  * - Primitives, arrays, Options, special types are always inlined
- * - Single entry point for types: registerType() -> V9TypeRegistration
+ * - Single entry point for types: registerType() -> ModuleTypeRegistration
  */
 class V9Builder {
 public:
@@ -97,7 +65,7 @@ public:
     
     /**
      * Register a type using the unified type registration system
-     * Delegates to V9TypeRegistration::registerType()
+     * Delegates to ModuleTypeRegistration::registerType()
      * 
      * @param bsatn_type The type to register
      * @param explicit_name Optional explicit name for the type
@@ -412,7 +380,7 @@ void V9Builder::RegisterTable(const std::string& table_name,
                 }
                 //fprintf(stdout, "DEBUG: Registering enum type '%s' for field '%s'\n", 
                 //        field_type_name.c_str(), field_desc.name.c_str());
-                getV9TypeRegistration().registerTypeByName(field_type_name, field_type, nullptr);
+                getModuleTypeRegistration().registerTypeByName(field_type_name, field_type, nullptr);
             }
         }
         
@@ -716,19 +684,6 @@ void V9Builder::AddColumnDefault(const std::string& table_name,
     GetV9Module().misc_exports.push_back(export_entry);
 }
 
-// Helper trait to extract function parameter types
-template<typename T>
-struct function_traits;
-
-template<typename R, typename... Args>
-struct function_traits<R(*)(Args...)> {
-    static constexpr size_t arity = sizeof...(Args);
-    using result_type = R;
-    
-    template<size_t N>
-    using arg_t = typename std::tuple_element<N, std::tuple<Args...>>::type;
-};
-
 // Helper to extract T from Outcome<T>
 template<typename T>
 struct outcome_inner_type;
@@ -871,38 +826,6 @@ void V9Builder::RegisterLifecycleReducer(const std::string& reducer_name, Func f
     RegisterReducerCommon(reducer_name, func, empty_names, lifecycle);
 }
 
-// Helper: Convert view return types to vector format (matching Rust's ViewReturn trait)
-// Vec<T> stays as Vec<T>, Option<T> becomes Vec<T> with 0 or 1 elements
-template<typename T>
-std::vector<T> view_result_to_vec(std::vector<T>&& vec) {
-    return std::move(vec);  // Already a vector
-}
-
-template<typename T>
-std::vector<T> view_result_to_vec(const std::vector<T>& vec) {
-    return vec;  // Already a vector
-}
-
-template<typename T>
-std::vector<T> view_result_to_vec(std::optional<T>&& opt) {
-    // Convert Option to Vec: Some(x) -> [x], None -> []
-    std::vector<T> result;
-    if (opt.has_value()) {
-        result.push_back(std::move(*opt));
-    }
-    return result;
-}
-
-template<typename T>
-std::vector<T> view_result_to_vec(const std::optional<T>& opt) {
-    // Convert Option to Vec: Some(x) -> [x], None -> []
-    std::vector<T> result;
-    if (opt.has_value()) {
-        result.push_back(*opt);
-    }
-    return result;
-}
-
 // Template implementation for RegisterView
 template<typename Func>
 void V9Builder::RegisterView(const std::string& view_name, Func func,
@@ -934,7 +857,7 @@ void V9Builder::RegisterView(const std::string& view_name, Func func,
         using ReturnType = typename traits::result_type;
         
         // Build the AlgebraicType for the return type
-        auto& type_reg = getV9TypeRegistration();
+        auto& type_reg = getModuleTypeRegistration();
         bsatn::AlgebraicType bsatn_return_type = bsatn::algebraic_type_of<ReturnType>::get();
         AlgebraicType return_algebraic_type = type_reg.registerType(bsatn_return_type, "", &typeid(ReturnType));
         
@@ -945,10 +868,10 @@ void V9Builder::RegisterView(const std::string& view_name, Func func,
         //     []<std::size_t... Is>(std::index_sequence<Is...>, 
         //                           std::vector<ProductTypeElement>& elements,
         //                           const std::vector<std::string>& names,
-        //                           V9TypeRegistration& type_reg_inner) {
+        //                           ModuleTypeRegistration& type_reg_inner) {
         //         (([]<std::size_t I>(std::vector<ProductTypeElement>& elems,
         //                             const std::vector<std::string>& n,
-        //                             V9TypeRegistration& tr) {
+        //                             ModuleTypeRegistration& tr) {
         //             if constexpr (I > 0) {  // Skip the first parameter (ViewContext/AnonymousViewContext)
         //                 using param_type = typename traits::template arg_t<I>;
         //                 bsatn::AlgebraicType param_bsatn = bsatn::algebraic_type_of<param_type>::get();
@@ -1089,7 +1012,7 @@ void V9Builder::RegisterProcedure(const std::string& procedure_name,
     using ReturnType = typename traits::result_type;
     
     // Build the AlgebraicType for the return type
-    auto& type_reg = getV9TypeRegistration();
+    auto& type_reg = getModuleTypeRegistration();
     bsatn::AlgebraicType bsatn_return_type = bsatn::algebraic_type_of<ReturnType>::get();
     AlgebraicType return_algebraic_type = type_reg.registerType(bsatn_return_type, "", &typeid(ReturnType));
     
@@ -1099,10 +1022,10 @@ void V9Builder::RegisterProcedure(const std::string& procedure_name,
         []<std::size_t... Is>(std::index_sequence<Is...>, 
                               std::vector<ProductTypeElement>& elements,
                               const std::vector<std::string>& names,
-                              V9TypeRegistration& type_reg_inner) {
+                              ModuleTypeRegistration& type_reg_inner) {
             (([]<std::size_t I>(std::vector<ProductTypeElement>& elems,
                                 const std::vector<std::string>& n,
-                                V9TypeRegistration& tr) {
+                                ModuleTypeRegistration& tr) {
                 if constexpr (I > 0) {  // Skip the first parameter (ProcedureContext)
                     using param_type = typename traits::template arg_t<I>;
                     bsatn::AlgebraicType param_bsatn = bsatn::algebraic_type_of<param_type>::get();

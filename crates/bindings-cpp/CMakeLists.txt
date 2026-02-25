@@ -19,7 +19,8 @@ set(LIBRARY_SOURCES
     src/internal/Module.cpp
     src/internal/AlgebraicType.cpp  # Required for V9 autogen types
     src/internal/v9_builder.cpp  # V9 incremental module builder
-    src/internal/v9_type_registration.cpp  # Unified type registration system
+    src/internal/v10_builder.cpp  # V10 facade over module definition assembly
+    src/internal/module_type_registration.cpp  # Unified type registration system
 )
 
 add_library(spacetimedb_cpp_library STATIC)

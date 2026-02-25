@@ -12,8 +12,8 @@
 #include <memory>
 #include "../autogen_base.h"
 #include "spacetimedb/bsatn/bsatn.h"
-#include "ProductType.g.h"
 #include "Lifecycle.g.h"
+#include "ProductType.g.h"
 
 namespace SpacetimeDB::Internal {
 

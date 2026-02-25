@@ -1,13 +1,24 @@
-#ifndef SPACETIMEDB_V9_TYPE_REGISTRATION_H
-#define SPACETIMEDB_V9_TYPE_REGISTRATION_H
+#ifndef SPACETIMEDB_MODULE_TYPE_REGISTRATION_H
+#define SPACETIMEDB_MODULE_TYPE_REGISTRATION_H
 
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
 #include <string>
 #include <typeinfo>
-#include <cxxabi.h>
+#include <cstdlib>
 #include "../bsatn/bsatn.h"
+
+#if defined(__has_include)
+#if __has_include(<cxxabi.h>) && !defined(_MSC_VER)
+#include <cxxabi.h>
+#define SPACETIMEDB_HAS_CXA_DEMANGLE 1
+#else
+#define SPACETIMEDB_HAS_CXA_DEMANGLE 0
+#endif
+#else
+#define SPACETIMEDB_HAS_CXA_DEMANGLE 0
+#endif
 
 // Forward declarations
 namespace SpacetimeDB {
@@ -23,24 +34,28 @@ namespace detail {
 
 // Helper function to demangle C++ type names - inline implementation for template usage
 inline std::string demangle_cpp_type_name(const char* name) {
+#if SPACETIMEDB_HAS_CXA_DEMANGLE
     int status = 0;
     std::unique_ptr<char, void(*)(void*)> demangled(
         abi::__cxa_demangle(name, nullptr, nullptr, &status),
         std::free
     );
     return (status == 0 && demangled) ? std::string(demangled.get()) : std::string(name);
+#else
+    return std::string(name);
+#endif
 }
 
 namespace SpacetimeDB {
 namespace Internal {
 
 /**
- * V9TypeRegistration - Single unified type registration system for V9 modules
+ * ModuleTypeRegistration - Single unified type registration system for module definitions
  * 
  * Core principles:
  * - Only user-defined structs and enums get registered in the types array
  * - Primitives, arrays, Options, and special types are always inlined
- * - Every registered type gets a name and RawTypeDefV9 export
+ * - Every registered type gets a name and RawTypeDefV10 export
  * - Single entry point: registerType()
  * 
  * Type handling:
@@ -50,9 +65,9 @@ namespace Internal {
  * - Special types (Identity, etc.) → Return inline Product structure
  * - User structs/enums → Register in typespace, return Ref
  */
-class V9TypeRegistration {
+class ModuleTypeRegistration {
 private:
-    // Cache of type name -> typespace index (built from GetV9Module().types)
+    // Cache of type name -> typespace index (built from V10Builder type defs)
     std::unordered_map<std::string, uint32_t> type_name_cache_;
     
     // Track types currently being registered to detect cycles
@@ -249,13 +264,13 @@ private:
 };
 
 // Global V9 type registration instance
-extern std::unique_ptr<V9TypeRegistration> g_v9_type_registration;
+extern std::unique_ptr<ModuleTypeRegistration> g_module_type_registration;
 
 // Initialize the V9 type registration (called once at module startup)
-void initializeV9TypeRegistration();
+void initializeModuleTypeRegistration();
 
 // Get the global V9 type registration
-V9TypeRegistration& getV9TypeRegistration();
+ModuleTypeRegistration& getModuleTypeRegistration();
 
 } // namespace Internal
 
@@ -369,7 +384,7 @@ public:
         }
         
         // Register with V9 system and cache the index using the qualified name
-        type_index_ = getV9TypeRegistration().registerAndGetIndex(
+        type_index_ = getModuleTypeRegistration().registerAndGetIndex(
             algebraic_type, qualified_name, &typeid(T));
         
         return bsatn::AlgebraicType::make_ref(type_index_);
@@ -405,4 +420,4 @@ public:
 } // namespace Internal
 } // namespace SpacetimeDB
 
-#endif // SPACETIMEDB_V9_TYPE_REGISTRATION_H
+#endif // SPACETIMEDB_MODULE_TYPE_REGISTRATION_H
