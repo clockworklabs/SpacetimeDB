@@ -171,7 +171,7 @@ export async function runOne({
   const PIPELINED = process.env.BENCH_PIPELINED === '1';
   const MAX_INFLIGHT_ENV = process.env.MAX_INFLIGHT_PER_WORKER;
   const MAX_INFLIGHT_PER_WORKER =
-    MAX_INFLIGHT_ENV === '0' ? Infinity : Number(MAX_INFLIGHT_ENV ?? '8');
+    MAX_INFLIGHT_ENV === '0' ? Infinity : Number(MAX_INFLIGHT_ENV ?? '16384');
 
   console.log(
     `[${connector.name}] max inflight per worker: ${MAX_INFLIGHT_PER_WORKER}`,
