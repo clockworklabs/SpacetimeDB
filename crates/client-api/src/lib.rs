@@ -27,6 +27,11 @@ pub mod auth;
 pub mod routes;
 pub mod util;
 
+/// The default value for the `confirmed` reads parameter when the client does
+/// not specify it explicitly. When `true`, the server waits for durability
+/// confirmation before sending subscription updates and SQL results.
+pub const DEFAULT_CONFIRMED_READS: bool = true;
+
 /// Defines the state / environment of a SpacetimeDB node from the PoV of the
 /// client API.
 ///

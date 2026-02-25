@@ -1,6 +1,6 @@
 import { createRouter as createTanStackRouter } from '@tanstack/react-router';
 import { QueryClient } from '@tanstack/react-query';
-import { routerWithQueryClient } from '@tanstack/react-router-with-query';
+import { setupRouterSsrQueryIntegration } from '@tanstack/react-router-ssr-query';
 import { Identity } from 'spacetimedb';
 import { routeTree } from './routeTree.gen';
 import {
@@ -59,32 +59,34 @@ const connectionBuilder = DbConnection.builder()
   .onDisconnect(onDisconnect)
   .onConnectError(onConnectError);
 
-export function createRouter() {
-  const router = routerWithQueryClient(
-    createTanStackRouter({
-      routeTree,
-      scrollRestoration: true,
-      defaultNotFoundComponent: () => (
-        <div style={{ padding: '2rem' }}>
-          <h1>404</h1>
-          <p>Page Not Found</p>
-        </div>
-      ),
-      context: { queryClient },
-      Wrap: ({ children }) => (
-        <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
-          {children}
-        </SpacetimeDBProvider>
-      ),
-    }),
-    queryClient
-  );
+export function getRouter() {
+  const router = createTanStackRouter({
+    routeTree,
+    scrollRestoration: true,
+    defaultNotFoundComponent: () => (
+      <div style={{ padding: '2rem' }}>
+        <h1>404</h1>
+        <p>Page Not Found</p>
+      </div>
+    ),
+    context: { queryClient },
+    Wrap: ({ children }) => (
+      <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
+        {children}
+      </SpacetimeDBProvider>
+    ),
+  });
+
+  setupRouterSsrQueryIntegration({
+    router,
+    queryClient,
+  });
 
   return router;
 }
 
 declare module '@tanstack/react-router' {
   interface Register {
-    router: ReturnType<typeof createRouter>;
+    router: ReturnType<typeof getRouter>;
   }
 }
