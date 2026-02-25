@@ -561,7 +561,7 @@ mod case_conversion_rust {
     const MODULE: &str = "sdk-test-case-conversion";
     const CLIENT: &str = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../typescript/case-conversion-test-client"
+        "/../typescript/case-conversion-test-client"
     );
 
     fn make_test(subcommand: &str) -> Test {
@@ -572,7 +572,7 @@ mod case_conversion_rust {
             .with_language("typescript")
             .with_bindings_dir("src/module_bindings")
             .with_compile_command("npm install && npm run build")
-            .with_run_command(format!("npm run test {}", subcommand))
+            .with_run_command(format!("npm run start {}", subcommand))
             .build()
     }
 
