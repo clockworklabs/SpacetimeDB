@@ -97,4 +97,3 @@ fn ensure_same_schema_rust_csharp_benchmarks() {
 fn esure_same_schema_case_conversion() {
     assert_identical_modules("sdk-test-case-conversion", "", "ts");
 }
-

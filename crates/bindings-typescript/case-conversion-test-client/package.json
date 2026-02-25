@@ -1,0 +1,16 @@
+{
+  "name": "case-conversion-test-client",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test": "node dist/index.js"
+  },
+  "dependencies": {
+    "spacetimedb": "file:../../dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  }
+}

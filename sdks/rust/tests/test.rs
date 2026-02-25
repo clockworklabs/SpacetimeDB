@@ -543,3 +543,61 @@ mod case_conversion_ts {
         make_test("query-builder-join").run();
     }
 }
+
+/// Tests of case conversion for Rust modules with mixed-case names containing digit boundaries.
+///
+/// Uses a TypeScript client and the Rust module `sdk-test-case-conversion`.
+/// Verifies that:
+/// - Table accessor names with digits (`player1`, `person2`) work correctly from TypeScript
+/// - Field names with digit boundaries (`Player1Id`, `currentLevel2`, `status3Field`) are properly accessed
+/// - Nested struct fields (`Person3Info.AgeValue1`) work from TypeScript
+/// - Enum variants (`Player2Status::Active1`, `Player2Status::BannedUntil`) work from TypeScript
+/// - Reducers with explicit names (`banPlayer1` → accessor `banPlayer1`) work from TypeScript
+/// - Views with explicit names (`Level2Person` → accessor `level2Person`) work from TypeScript
+/// - TypeScript query builder can interact correctly with case-converted Rust schemas
+mod case_conversion_rust {
+    use spacetimedb_testing::sdk::Test;
+
+    const MODULE: &str = "sdk-test-case-conversion";
+    const CLIENT: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../typescript/case-conversion-test-client"
+    );
+
+    fn make_test(subcommand: &str) -> Test {
+        Test::builder()
+            .with_name(subcommand)
+            .with_module(MODULE)
+            .with_client(CLIENT)
+            .with_language("typescript")
+            .with_bindings_dir("src/module_bindings")
+            .with_compile_command("npm install && npm run build")
+            .with_run_command(format!("npm run test {}", subcommand))
+            .build()
+    }
+
+    #[test]
+    fn insert_player() {
+        make_test("insert-player").run();
+    }
+
+    #[test]
+    fn insert_person() {
+        make_test("insert-person").run();
+    }
+
+    #[test]
+    fn ban_player() {
+        make_test("ban-player").run();
+    }
+
+    #[test]
+    fn query_builder_filter() {
+        make_test("query-builder-filter").run();
+    }
+
+    #[test]
+    fn query_builder_join() {
+        make_test("query-builder-join").run();
+    }
+}
