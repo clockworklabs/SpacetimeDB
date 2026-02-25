@@ -142,7 +142,7 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
   subscribeToAllTables(): void {
     const remoteModule = this.db[INTERNAL_REMOTE_MODULE]();
     const queries = Object.values(remoteModule.tables).map(
-      table => `SELECT * FROM ${table.sourceName}`
+      table => `SELECT * FROM ${table.wireName ?? table.sourceName}`
     );
     this.subscribe(queries);
   }

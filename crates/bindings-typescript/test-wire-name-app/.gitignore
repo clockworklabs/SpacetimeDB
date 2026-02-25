@@ -1,0 +1,3 @@
+node_modules/
+server/target/
+server/Cargo.lock

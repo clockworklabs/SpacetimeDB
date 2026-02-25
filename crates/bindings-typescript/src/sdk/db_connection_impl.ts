@@ -207,10 +207,13 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     this.#rowDeserializers = Object.create(null);
     this.#sourceNameToTableDef = Object.create(null);
     for (const table of Object.values(remoteModule.tables)) {
-      this.#rowDeserializers[table.sourceName] = ProductType.makeDeserializer(
+      // Key by wireName (canonical table name from the server) for wire protocol lookups.
+      // The wire protocol sends canonical names, not accessor names.
+      const wireKey = table.wireName ?? table.sourceName;
+      this.#rowDeserializers[wireKey] = ProductType.makeDeserializer(
         table.rowType
       );
-      this.#sourceNameToTableDef[table.sourceName] = table as Values<
+      this.#sourceNameToTableDef[wireKey] = table as Values<
         RemoteModule['tables']
       >;
     }

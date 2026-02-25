@@ -1,5 +1,5 @@
 [workspace]
-exclude = ["crates/smoketests/modules"]
+exclude = ["crates/smoketests/modules", "crates/bindings-typescript/test-wire-name-app/server"]
 members = [
   "crates/auth",
   "crates/bench",

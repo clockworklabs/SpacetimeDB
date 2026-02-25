@@ -93,6 +93,7 @@ export function tableToSchema<
   return {
     sourceName: accName,
     accessorName: accName,
+    wireName: schema.tableName ?? accName,
     columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
     rowType: schema.rowSpacetimeType,
     constraints: tableDef.constraints.map(c => ({

@@ -113,6 +113,8 @@ type CoerceArray<X extends IndexOpts<any>[]> = X;
 export type UntypedTableDef = {
   sourceName: string;
   accessorName: string;
+  /** The canonical table name as sent by the server in wire protocol messages. */
+  wireName: string;
   columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
   // This is really just a ProductType where all the elements have names.
   rowType: RowBuilder<RowObj>['algebraicType']['value'];
