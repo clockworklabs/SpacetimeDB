@@ -249,13 +249,6 @@ pub fn find_module_path(project_dir: &Path) -> Option<PathBuf> {
 
 pub fn detect_module_language(path_to_project: &Path) -> anyhow::Result<ModuleLanguage> {
     // TODO: Possible add a config file durlng spacetime init with the language
-    if !path_to_project.exists() {
-        anyhow::bail!(
-            "Module directory does not exist: '{}'. \
-             Check your --module-path flag or the module-path setting in spacetime.json.",
-            path_to_project.display()
-        );
-    }
     // check for Cargo.toml
     if path_to_project.join("Cargo.toml").exists() {
         Ok(ModuleLanguage::Rust)
