@@ -65,7 +65,10 @@ const config: Config = {
     locales: ['en'],
   },
 
-  clientModules: [require.resolve('./src/client-modules/fonts')],
+  clientModules: [
+    require.resolve('./src/client-modules/fonts'),
+    require.resolve('./src/client-modules/inkeep-font-override'),
+  ],
 
   headTags: [
     {
@@ -100,6 +103,19 @@ const config: Config = {
           routeBasePath: '/',
           sidebarPath: './sidebars.ts',
           sidebarCollapsed: false,
+          includeCurrentVersion: true,
+          lastVersion: 'current',
+          versions: {
+            current: {
+              label: '2.0.0',
+              path: '',
+              banner: 'none',
+            },
+            '1.12.0': {
+              label: '1.12.0',
+              banner: 'none',
+            },
+          },
           beforeDefaultRehypePlugins: [
             [
               rehypeShiki,
@@ -147,6 +163,7 @@ const config: Config = {
       hideOnScroll: false,
       items: [
         { type: 'search', position: 'left' },
+        { type: 'docsVersionDropdown', position: 'left' },
         {
           href: 'https://spacetimedb.com/install',
           label: 'Install',
@@ -158,11 +175,6 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://spacetimedb.com/maincloud',
-          label: 'Maincloud',
-          position: 'right',
-        },
-        {
           href: 'https://spacetimedb.com/blog',
           label: 'Blog',
           position: 'right',
@@ -170,6 +182,11 @@ const config: Config = {
         {
           href: 'https://spacetimedb.com/community',
           label: 'Community',
+          position: 'right',
+        },
+        {
+          href: 'https://spacetimedb.com/space-race',
+          label: 'Spacerace',
           position: 'right',
         },
         {

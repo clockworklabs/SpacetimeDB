@@ -9,8 +9,8 @@ use std::collections::btree_map;
 use std::collections::BTreeMap;
 use std::fmt;
 
-use itertools::Itertools;
 use spacetimedb_primitives::*;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::typespace::TypespaceBuilder;
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::AlgebraicTypeRef;
@@ -22,9 +22,10 @@ use spacetimedb_sats::Typespace;
 
 use crate::db::auth::StAccess;
 use crate::db::auth::StTableType;
-
-/// A not-yet-validated identifier.
-pub type RawIdentifier = Box<str>;
+use crate::db::raw_def::v10::RawConstraintDefV10;
+use crate::db::raw_def::v10::RawScopedTypeNameV10;
+use crate::db::raw_def::v10::RawSequenceDefV10;
+use crate::db::raw_def::v10::RawTypeDefV10;
 
 /// A not-yet-validated `sql`.
 pub type RawSql = Box<str>;
@@ -257,7 +258,7 @@ pub struct RawSequenceDefV9 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
     /// If `None`, a nicely-formatted unique default will be chosen.
-    pub name: Option<Box<str>>,
+    pub name: Option<RawIdentifier>,
 
     /// The position of the column associated with this sequence.
     /// This refers to a column in the same `RawTableDef` that contains this `RawSequenceDef`.
@@ -289,7 +290,7 @@ pub struct RawSequenceDefV9 {
 pub struct RawIndexDefV9 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
-    pub name: Option<Box<str>>,
+    pub name: Option<RawIdentifier>,
 
     /// Accessor name for the index used in client codegen.
     ///
@@ -321,7 +322,7 @@ pub enum RawIndexAlgorithm {
         /// The columns to index on. These are ordered.
         columns: ColList,
     },
-    /// Currently forbidden.
+    /// Implemented using a hashmap.
     Hash {
         /// The columns to index on. These are ordered.
         columns: ColList,
@@ -340,6 +341,11 @@ pub fn btree(cols: impl Into<ColList>) -> RawIndexAlgorithm {
     RawIndexAlgorithm::BTree { columns: cols.into() }
 }
 
+/// Returns a hash index algorithm for the columns `cols`.
+pub fn hash(cols: impl Into<ColList>) -> RawIndexAlgorithm {
+    RawIndexAlgorithm::Hash { columns: cols.into() }
+}
+
 /// Returns a direct index algorithm for the column `col`.
 pub fn direct(col: impl Into<ColId>) -> RawIndexAlgorithm {
     RawIndexAlgorithm::Direct { column: col.into() }
@@ -356,7 +362,7 @@ pub fn direct(col: impl Into<ColId>) -> RawIndexAlgorithm {
 pub struct RawScheduleDefV9 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
-    pub name: Option<Box<str>>,
+    pub name: Option<RawIdentifier>,
 
     /// The name of the reducer or procedure to call.
     ///
@@ -374,7 +380,7 @@ pub struct RawScheduleDefV9 {
 pub struct RawConstraintDefV9 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
-    pub name: Option<Box<str>>,
+    pub name: Option<RawIdentifier>,
 
     /// The data for the constraint.
     pub data: RawConstraintDataV9,
@@ -698,7 +704,7 @@ impl RawModuleDefV9Builder {
         // Make the type into a ref.
         let name = *name_gen;
         let add_ty = core::mem::replace(ty, AlgebraicType::U8);
-        *ty = AlgebraicType::Ref(self.add_algebraic_type([], format!("gen_{name}"), add_ty, true));
+        *ty = AlgebraicType::Ref(self.add_algebraic_type([], RawIdentifier::new(format!("gen_{name}")), add_ty, true));
         *name_gen += 1;
     }
 
@@ -837,7 +843,11 @@ impl RawModuleDefV9Builder {
 /// TODO(1.0): build namespacing directly into the bindings macros so that we don't need to do this.
 pub fn sats_name_to_scoped_name(sats_name: &str) -> RawScopedTypeNameV9 {
     // We can't use `&[char]: Pattern` for `split` here because "::" is not a char :/
-    let mut scope: Vec<RawIdentifier> = sats_name.split("::").flat_map(|s| s.split('.')).map_into().collect();
+    let mut scope: Vec<RawIdentifier> = sats_name
+        .split("::")
+        .flat_map(|s| s.split('.'))
+        .map(RawIdentifier::new)
+        .collect();
     // Unwrapping to "" will result in a validation error down the line, which is exactly what we want.
     let name = scope.pop().unwrap_or_default();
     RawScopedTypeNameV9 {
@@ -1019,7 +1029,7 @@ impl RawTableDefBuilder<'_> {
         let column = column.as_ref();
         self.columns()?
             .iter()
-            .position(|x| x.name().is_some_and(|s| s == column))
+            .position(|x| x.has_name(column.as_ref()))
             .map(|x| x.into())
     }
 
@@ -1038,5 +1048,46 @@ impl RawTableDefBuilder<'_> {
 impl Drop for RawTableDefBuilder<'_> {
     fn drop(&mut self) {
         self.module_def.tables.push(self.table.clone());
+    }
+}
+
+impl From<RawTypeDefV10> for RawTypeDefV9 {
+    fn from(raw: RawTypeDefV10) -> Self {
+        RawTypeDefV9 {
+            name: raw.source_name.into(),
+            ty: raw.ty,
+            custom_ordering: raw.custom_ordering,
+        }
+    }
+}
+
+impl From<RawScopedTypeNameV10> for RawScopedTypeNameV9 {
+    fn from(raw: RawScopedTypeNameV10) -> Self {
+        RawScopedTypeNameV9 {
+            scope: raw.scope,
+            name: raw.source_name,
+        }
+    }
+}
+
+impl From<RawConstraintDefV10> for RawConstraintDefV9 {
+    fn from(raw: RawConstraintDefV10) -> Self {
+        RawConstraintDefV9 {
+            name: raw.source_name,
+            data: raw.data,
+        }
+    }
+}
+
+impl From<RawSequenceDefV10> for RawSequenceDefV9 {
+    fn from(raw: RawSequenceDefV10) -> Self {
+        RawSequenceDefV9 {
+            name: raw.source_name,
+            column: raw.column,
+            start: raw.start,
+            min_value: raw.min_value,
+            max_value: raw.max_value,
+            increment: raw.increment,
+        }
     }
 }

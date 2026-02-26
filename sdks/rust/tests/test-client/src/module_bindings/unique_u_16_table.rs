@@ -5,7 +5,7 @@
 use super::unique_u_16_type::UniqueU16;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `unique_u16`.
+/// Table handle for the table `unique_u_16`.
 ///
 /// Obtain a handle from the [`UniqueU16TableAccess::unique_u_16`] method on [`super::RemoteTables`],
 /// like `ctx.db.unique_u_16()`.
@@ -19,19 +19,19 @@ pub struct UniqueU16TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `unique_u16`.
+/// Extension trait for access to the table `unique_u_16`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait UniqueU16TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`UniqueU16TableHandle`], which mediates access to the table `unique_u16`.
+    /// Obtain a [`UniqueU16TableHandle`], which mediates access to the table `unique_u_16`.
     fn unique_u_16(&self) -> UniqueU16TableHandle<'_>;
 }
 
 impl UniqueU16TableAccess for super::RemoteTables {
     fn unique_u_16(&self) -> UniqueU16TableHandle<'_> {
         UniqueU16TableHandle {
-            imp: self.imp.get_table::<UniqueU16>("unique_u16"),
+            imp: self.imp.get_table::<UniqueU16>("unique_u_16"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -78,24 +78,7 @@ impl<'ctx> __sdk::Table for UniqueU16TableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<UniqueU16>("unique_u16");
-    _table.add_unique_constraint::<u16>("n", |row| &row.n);
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<UniqueU16>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<UniqueU16>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
-}
-
-/// Access to the `n` unique index on the table `unique_u16`,
+/// Access to the `n` unique index on the table `unique_u_16`,
 /// which allows point queries on the field of the same name
 /// via the [`UniqueU16NUnique::find`] method.
 ///
@@ -108,7 +91,7 @@ pub struct UniqueU16NUnique<'ctx> {
 }
 
 impl<'ctx> UniqueU16TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `unique_u16`.
+    /// Get a handle on the `n` unique index on the table `unique_u_16`.
     pub fn n(&self) -> UniqueU16NUnique<'ctx> {
         UniqueU16NUnique {
             imp: self.imp.get_unique_constraint::<u16>("n"),
@@ -122,5 +105,36 @@ impl<'ctx> UniqueU16NUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &u16) -> Option<UniqueU16> {
         self.imp.find(col_val)
+    }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<UniqueU16>("unique_u_16");
+    _table.add_unique_constraint::<u16>("n", |row| &row.n);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<UniqueU16>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<UniqueU16>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `UniqueU16`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait unique_u_16QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `UniqueU16`.
+    fn unique_u_16(&self) -> __sdk::__query_builder::Table<UniqueU16>;
+}
+
+impl unique_u_16QueryTableAccess for __sdk::QueryTableAccessor {
+    fn unique_u_16(&self) -> __sdk::__query_builder::Table<UniqueU16> {
+        __sdk::__query_builder::Table::new("unique_u_16")
     }
 }

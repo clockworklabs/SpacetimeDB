@@ -1,11 +1,14 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
-use crate::query_builder::Query;
+use crate::query_builder::{FromWhere, HasCols, LeftSemiJoin, RawQuery, RightSemiJoin, Table as QbTable};
 use crate::table::IndexAlgo;
 use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext};
 use spacetimedb_lib::bsatn::EncodeError;
+use spacetimedb_lib::db::raw_def::v10::{
+    CaseConversionPolicy, ExplicitNames as RawExplicitNames, RawModuleDefV10Builder,
+};
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
-use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableType, ViewResultHeader};
+use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableType, ViewResultHeader};
 use spacetimedb_lib::de::{self, Deserialize, DeserializeOwned, Error as _, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement};
@@ -43,30 +46,31 @@ impl<T> IntoVec<T> for Option<T> {
 /// and otherwise the error is written into the fresh one returned.
 pub fn invoke_reducer<'a, A: Args<'a>>(
     reducer: impl Reducer<'a, A>,
-    ctx: ReducerContext,
+    ctx: &ReducerContext,
     args: &'a [u8],
 ) -> Result<(), Box<str>> {
     // Deserialize the arguments from a bsatn encoding.
     let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
 
-    reducer.invoke(&ctx, args)
+    reducer.invoke(ctx, args)
 }
 
 #[cfg(feature = "unstable")]
 pub fn invoke_procedure<'a, A: Args<'a>, Ret: IntoProcedureResult>(
     procedure: impl Procedure<'a, A, Ret>,
-    mut ctx: ProcedureContext,
+    ctx: &mut ProcedureContext,
     args: &'a [u8],
 ) -> ProcedureResult {
     // Deserialize the arguments from a bsatn encoding.
     let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
 
-    let res = procedure.invoke(&mut ctx, args);
+    let res = procedure.invoke(ctx, args);
 
     res.to_result()
 }
 
 /// A trait for types representing the *execution logic* of a reducer.
+#[expect(clippy::duplicated_attributes, reason = "false positive")]
 #[diagnostic::on_unimplemented(
     message = "invalid reducer signature",
     label = "this reducer signature is not valid",
@@ -95,6 +99,7 @@ pub fn invoke_view<'a, A: Args<'a>, T: ViewReturn>(
     std::mem::take(&mut *buf)
 }
 /// A trait for types representing the execution logic of a caller-specific view.
+#[expect(clippy::duplicated_attributes, reason = "false positive")]
 #[diagnostic::on_unimplemented(
     message = "invalid view signature",
     label = "this view signature is not valid",
@@ -123,6 +128,7 @@ pub fn invoke_anonymous_view<'a, A: Args<'a>, T: ViewReturn>(
     std::mem::take(&mut *buf)
 }
 /// A trait for types representing the execution logic of an anonymous view.
+#[expect(clippy::duplicated_attributes, reason = "false positive")]
 #[diagnostic::on_unimplemented(
     message = "invalid anonymous view signature",
     label = "this view signature is not valid",
@@ -137,7 +143,7 @@ pub trait AnonymousView<'de, A: Args<'de>, T: ViewReturn> {
 }
 
 /// A trait for types that can *describe* a callable function such as a reducer or view.
-pub trait FnInfo {
+pub trait FnInfo: ExplicitNames {
     /// The type of function to invoke.
     type Invoke;
 
@@ -325,9 +331,33 @@ impl<T: SpacetimeType + Serialize> ViewReturn for Option<T> {
     }
 }
 
-impl<T: SpacetimeType + Serialize> ViewReturn for Query<T> {
+impl<T: SpacetimeType + Serialize> ViewReturn for RawQuery<T> {
     fn to_writer(self, buf: &mut Vec<u8>) -> Result<(), EncodeError> {
-        bsatn::to_writer(buf, &ViewResultHeader::RawSql(self.sql))
+        bsatn::to_writer(buf, &ViewResultHeader::RawSql(self.sql().to_string()))
+    }
+}
+
+impl<T: HasCols + SpacetimeType + Serialize> ViewReturn for QbTable<T> {
+    fn to_writer(self, buf: &mut Vec<u8>) -> Result<(), EncodeError> {
+        self.build().to_writer(buf)
+    }
+}
+
+impl<T: HasCols + SpacetimeType + Serialize> ViewReturn for FromWhere<T> {
+    fn to_writer(self, buf: &mut Vec<u8>) -> Result<(), EncodeError> {
+        self.build().to_writer(buf)
+    }
+}
+
+impl<L: HasCols + SpacetimeType + Serialize> ViewReturn for LeftSemiJoin<L> {
+    fn to_writer(self, buf: &mut Vec<u8>) -> Result<(), EncodeError> {
+        self.build().to_writer(buf)
+    }
+}
+
+impl<R: HasCols + SpacetimeType + Serialize, L: HasCols> ViewReturn for RightSemiJoin<R, L> {
+    fn to_writer(self, buf: &mut Vec<u8>) -> Result<(), EncodeError> {
+        self.build().to_writer(buf)
     }
 }
 
@@ -700,18 +730,26 @@ pub fn register_reftype<T: SpacetimeType>() {
 pub fn register_table<T: Table>() {
     register_describer(|module| {
         let product_type_ref = *T::Row::make_type(&mut module.inner).as_ref().unwrap();
+        if let Some(schedule) = T::SCHEDULE {
+            module.inner.add_schedule(
+                T::TABLE_NAME,
+                schedule.scheduled_at_column,
+                schedule.reducer_or_procedure_name,
+            );
+        }
 
         let mut table = module
             .inner
             .build_table(T::TABLE_NAME, product_type_ref)
             .with_type(TableType::User)
-            .with_access(T::TABLE_ACCESS);
+            .with_access(T::TABLE_ACCESS)
+            .with_event(T::IS_EVENT);
 
         for &col in T::UNIQUE_COLUMNS {
             table = table.with_unique_constraint(col);
         }
-        for &index in T::INDEXES {
-            table = table.with_index(index.algo.into(), index.accessor_name);
+        for index in T::INDEXES {
+            table = table.with_index(index.algo.into(), index.source_name, index.accessor_name);
         }
         if let Some(primary_key) = T::PRIMARY_KEY {
             table = table.with_primary_key(primary_key);
@@ -719,15 +757,13 @@ pub fn register_table<T: Table>() {
         for &col in T::SEQUENCES {
             table = table.with_column_sequence(col);
         }
-        if let Some(schedule) = T::SCHEDULE {
-            table = table.with_schedule(schedule.reducer_or_procedure_name, schedule.scheduled_at_column);
-        }
-
         for col in T::get_default_col_values().iter_mut() {
             table = table.with_default_column_value(col.col_id, col.value.clone())
         }
 
         table.finish();
+
+        module.inner.add_explicit_names(T::explicit_names());
     })
 }
 
@@ -735,6 +771,9 @@ impl From<IndexAlgo<'_>> for RawIndexAlgorithm {
     fn from(algo: IndexAlgo<'_>) -> RawIndexAlgorithm {
         match algo {
             IndexAlgo::BTree { columns } => RawIndexAlgorithm::BTree {
+                columns: columns.iter().copied().collect(),
+            },
+            IndexAlgo::Hash { columns } => RawIndexAlgorithm::Hash {
                 columns: columns.iter().copied().collect(),
             },
             IndexAlgo::Direct { column } => RawIndexAlgorithm::Direct { column: column.into() },
@@ -746,8 +785,14 @@ impl From<IndexAlgo<'_>> for RawIndexAlgorithm {
 pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl Reducer<'a, A>) {
     register_describer(|module| {
         let params = A::schema::<I>(&mut module.inner);
-        module.inner.add_reducer(I::NAME, params, I::LIFECYCLE);
+        if let Some(lifecycle) = I::LIFECYCLE {
+            module.inner.add_lifecycle_reducer(lifecycle, I::NAME, params);
+        } else {
+            module.inner.add_reducer(I::NAME, params);
+        }
         module.reducers.push(I::INVOKE);
+
+        module.inner.add_explicit_names(I::explicit_names());
     })
 }
 
@@ -763,6 +808,8 @@ where
         let ret_ty = <Ret as SpacetimeType>::make_type(&mut module.inner);
         module.inner.add_procedure(I::NAME, params, ret_ty);
         module.procedures.push(I::INVOKE);
+
+        module.inner.add_explicit_names(I::explicit_names());
     })
 }
 
@@ -780,6 +827,8 @@ where
             .inner
             .add_view(I::NAME, module.views.len(), true, false, params, return_type);
         module.views.push(I::INVOKE);
+
+        module.inner.add_explicit_names(I::explicit_names());
     })
 }
 
@@ -797,6 +846,8 @@ where
             .inner
             .add_view(I::NAME, module.views_anon.len(), true, true, params, return_type);
         module.views_anon.push(I::INVOKE);
+
+        module.inner.add_explicit_names(I::explicit_names());
     })
 }
 
@@ -807,11 +858,27 @@ pub fn register_row_level_security(sql: &'static str) {
     })
 }
 
+/// Set the case conversion policy for this module.
+///
+/// This is called by the `#[spacetimedb::settings]` attribute macro.
+/// Do not call directly; use the attribute instead:
+///
+/// ```ignore
+/// #[spacetimedb::settings]
+/// const CASE_CONVERSION_POLICY: CaseConversionPolicy = CaseConversionPolicy::SnakeCase;
+/// ```
+#[doc(hidden)]
+pub fn register_case_conversion_policy(policy: CaseConversionPolicy) {
+    register_describer(move |module| {
+        module.inner.set_case_conversion_policy(policy);
+    })
+}
+
 /// A builder for a module.
 #[derive(Default)]
 pub struct ModuleBuilder {
     /// The module definition.
-    inner: RawModuleDefV9Builder,
+    inner: RawModuleDefV10Builder,
     /// The reducers of the module.
     reducers: Vec<ReducerFn>,
     /// The procedures of the module.
@@ -828,11 +895,11 @@ static DESCRIBERS: Mutex<Vec<Box<dyn DescriberFn>>> = Mutex::new(Vec::new());
 
 /// A reducer function takes in `(ReducerContext, Args)`
 /// and returns a result with a possible error message.
-pub type ReducerFn = fn(ReducerContext, &[u8]) -> ReducerResult;
+pub type ReducerFn = fn(&ReducerContext, &[u8]) -> ReducerResult;
 static REDUCERS: OnceLock<Vec<ReducerFn>> = OnceLock::new();
 
 #[cfg(feature = "unstable")]
-pub type ProcedureFn = fn(ProcedureContext, &[u8]) -> ProcedureResult;
+pub type ProcedureFn = fn(&mut ProcedureContext, &[u8]) -> ProcedureResult;
 #[cfg(feature = "unstable")]
 static PROCEDURES: OnceLock<Vec<ProcedureFn>> = OnceLock::new();
 
@@ -869,7 +936,7 @@ extern "C" fn __describe_module__(description: BytesSink) {
 
     // Serialize the module to bsatn.
     let module_def = module.inner.finish();
-    let module_def = RawModuleDef::V9(module_def);
+    let module_def = RawModuleDef::V10(module_def);
     let bytes = bsatn::to_vec(&module_def).expect("unable to serialize typespace");
 
     // Write the sets of reducers, procedures and views.
@@ -942,7 +1009,7 @@ extern "C" fn __call_reducer__(
     // Fetch reducer function.
     let reducers = REDUCERS.get().unwrap();
     // Dispatch to it with the arguments read.
-    let res = with_read_args(args, |args| reducers[id](ctx, args));
+    let res = with_read_args(args, |args| reducers[id](&ctx, args));
     // Convert any error message to an error code and writes to the `error` sink.
     convert_err_to_errno(res, error)
 }
@@ -1034,13 +1101,13 @@ extern "C" fn __call_procedure__(
     let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp as i64);
 
     // Assemble the `ProcedureContext`.
-    let ctx = ProcedureContext::new(sender, conn_id, timestamp);
+    let mut ctx = ProcedureContext::new(sender, conn_id, timestamp);
 
     // Grab the list of procedures, which is populated by the preinit functions.
     let procedures = PROCEDURES.get().unwrap();
 
     // Deserialize the args and pass them to the actual procedure.
-    let res = with_read_args(args, |args| procedures[id](ctx, args));
+    let res = with_read_args(args, |args| procedures[id](&mut ctx, args));
 
     // Write the result bytes to the `result_sink`.
     write_to_sink(result_sink, &res);
@@ -1258,4 +1325,10 @@ pub(crate) fn read_bytes_source_as<T: DeserializeOwned + 'static>(source: BytesS
     read_bytes_source_into(source, &mut buf);
     bsatn::from_slice::<T>(&buf)
         .unwrap_or_else(|err| panic!("Failed to BSATN-deserialize `{}`: {err:#?}", std::any::type_name::<T>()))
+}
+
+pub trait ExplicitNames {
+    fn explicit_names() -> RawExplicitNames {
+        RawExplicitNames::default()
+    }
 }

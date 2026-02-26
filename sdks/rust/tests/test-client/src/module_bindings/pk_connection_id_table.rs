@@ -78,11 +78,6 @@ impl<'ctx> __sdk::Table for PkConnectionIdTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<PkConnectionId>("pk_connection_id");
-    _table.add_unique_constraint::<__sdk::ConnectionId>("a", |row| &row.a);
-}
 pub struct PkConnectionIdUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkConnectionIdTableHandle<'ctx> {
@@ -98,17 +93,6 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkConnectionIdTableHandle<'ctx> {
     fn remove_on_update(&self, callback: PkConnectionIdUpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<PkConnectionId>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<PkConnectionId>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
 }
 
 /// Access to the `a` unique index on the table `pk_connection_id`,
@@ -138,5 +122,38 @@ impl<'ctx> PkConnectionIdAUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &__sdk::ConnectionId) -> Option<PkConnectionId> {
         self.imp.find(col_val)
+    }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<PkConnectionId>("pk_connection_id");
+    _table.add_unique_constraint::<__sdk::ConnectionId>("a", |row| &row.a);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(
+    raw_updates: __ws::v2::TableUpdate,
+) -> __sdk::Result<__sdk::TableUpdate<PkConnectionId>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<PkConnectionId>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkConnectionId`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_connection_idQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkConnectionId`.
+    fn pk_connection_id(&self) -> __sdk::__query_builder::Table<PkConnectionId>;
+}
+
+impl pk_connection_idQueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_connection_id(&self) -> __sdk::__query_builder::Table<PkConnectionId> {
+        __sdk::__query_builder::Table::new("pk_connection_id")
     }
 }

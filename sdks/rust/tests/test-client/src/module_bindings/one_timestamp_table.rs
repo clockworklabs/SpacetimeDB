@@ -85,11 +85,27 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
+    raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<OneTimestamp>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<OneTimestamp>", "TableUpdate")
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OneTimestamp`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait one_timestampQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OneTimestamp`.
+    fn one_timestamp(&self) -> __sdk::__query_builder::Table<OneTimestamp>;
+}
+
+impl one_timestampQueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_timestamp(&self) -> __sdk::__query_builder::Table<OneTimestamp> {
+        __sdk::__query_builder::Table::new("one_timestamp")
+    }
 }

@@ -38,6 +38,29 @@ function runCargoAndAppend({ cwd, outFilePath }) {
   });
 }
 
+/**
+ * Escape `<PLACEHOLDER>` patterns that appear outside backtick code spans
+ * so MDX doesn't treat them as JSX tags.
+ *
+ * Splits each line on backtick boundaries, and only escapes in the non-code
+ * segments. E.g. `<FOO>` (inside backticks) is left alone, but bare <FOO>
+ * becomes \<FOO\>.
+ */
+function escapeAngleBracketsOutsideBackticks(content) {
+  return content
+    .split('\n')
+    .map(line => {
+      // Split on backtick-delimited code spans, alternating: text, code, text, code, ...
+      const parts = line.split('`');
+      for (let i = 0; i < parts.length; i += 2) {
+        // Even indices are outside backticks
+        parts[i] = parts[i].replace(/<([A-Z][A-Z0-9_-]*(?:\s+[A-Z][A-Z0-9_-]*)*)>/g, '\\<$1\\>');
+      }
+      return parts.join('`');
+    })
+    .join('\n');
+}
+
 async function main() {
   const repoRoot = getRepoRoot();
 
@@ -45,7 +68,8 @@ async function main() {
     repoRoot,
     'docs',
     'docs',
-    '09000-reference',
+    '00300-resources',
+    '00200-reference',
     '00100-cli-reference',
     '00100-cli-reference.md',
   );
@@ -54,6 +78,10 @@ async function main() {
 
   await fs.writeFile(outFile, header, 'utf8');
   await runCargoAndAppend({ cwd: repoRoot, outFilePath: outFile });
+
+  // Post-process: escape angle-bracket placeholders outside backtick spans for MDX
+  const raw = await fs.readFile(outFile, 'utf8');
+  await fs.writeFile(outFile, escapeAngleBracketsOutsideBackticks(raw), 'utf8');
 }
 
 main().catch(err => {

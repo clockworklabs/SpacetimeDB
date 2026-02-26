@@ -1,4 +1,7 @@
-use crate::blob_store::NullBlobStore;
+use crate::{
+    blob_store::NullBlobStore,
+    table_index::{IndexCannotSeekRange, IndexKind},
+};
 
 use super::{
     bflatn_from::serialize_row_from_page,
@@ -30,7 +33,6 @@ use derive_more::{Add, AddAssign, From, Sub, SubAssign};
 use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId};
-use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
     bsatn::{self, ser::BsatnError, BufReservedFill, DecodeError, ToBsatn},
@@ -46,9 +48,12 @@ use spacetimedb_sats::{
     layout::{AlgebraicTypeLayout, IncompatibleTypeLayoutError, PrimitiveType, RowTypeLayout, Size},
     Typespace,
 };
+use spacetimedb_sats::{memory_usage::MemoryUsage, raw_identifier::RawIdentifier};
 use spacetimedb_schema::{
-    def::IndexAlgorithm,
+    def::{BTreeAlgorithm, IndexAlgorithm},
+    identifier::Identifier,
     schema::{columns_to_row_type, ColumnSchema, IndexSchema, TableSchema},
+    table_name::TableName,
 };
 use std::{
     collections::{btree_map, BTreeMap},
@@ -278,7 +283,7 @@ pub enum ReadViaBsatnError {
 #[error("Cannot change the columns of table `{table_name}` with id {table_id} from `{old:?}` to `{new:?}`: {reason}")]
 pub struct ChangeColumnsError {
     table_id: TableId,
-    table_name: Box<str>,
+    table_name: TableName,
     old: Vec<ColumnSchema>,
     new: Vec<ColumnSchema>,
     reason: ChangeColumnsErrorReason,
@@ -314,7 +319,7 @@ pub enum ChangeColumnsErrorReason {
 #[error("Cannot change the columns of table `{table_name}` with id {table_id} from `{old:?}` to `{new:?}`: {reason}")]
 pub struct AddColumnsError {
     table_id: TableId,
-    table_name: Box<str>,
+    table_name: TableName,
     old: Vec<ColumnSchema>,
     new: Vec<ColumnSchema>,
     default_values: Vec<AlgebraicValue>,
@@ -1389,7 +1394,12 @@ impl Table {
 
     /// Returns a new [`TableIndex`] for `table`.
     pub fn new_index(&self, algo: &IndexAlgorithm, is_unique: bool) -> Result<TableIndex, InvalidFieldError> {
-        TableIndex::new(self.get_schema().get_row_type(), algo, is_unique)
+        TableIndex::new(
+            self.get_schema().get_row_type(),
+            algo.columns().to_owned(),
+            IndexKind::from_algo(algo),
+            is_unique,
+        )
     }
 
     /// Inserts a new `index` into the table.
@@ -1410,7 +1420,26 @@ impl Table {
         // It follows that this applies to any `rows`, as required.
         let violation = unsafe { index.build_from_rows(rows) };
         violation.unwrap_or_else(|ptr| {
-            panic!("adding `index` should cause no unique constraint violations, but {ptr:?} would")
+            let index_schema = &self.schema.indexes.iter().find(|index_schema| index_schema.index_id == index_id).expect("Index should exist");
+            let indexed_column = if let IndexAlgorithm::BTree(BTreeAlgorithm { columns }) = &index_schema.index_algorithm {
+                Some(columns)
+            } else { None };
+            let indexed_column = indexed_column.and_then(|columns| columns.as_singleton());
+            let indexed_column_info = indexed_column.and_then(|column| self.schema.get_column(column.idx()));
+            // SAFETY: `ptr` just came out of `self.scan_rows`, so it is present.
+            let row = unsafe { self.get_row_ref_unchecked(blob_store, ptr) }.to_product_value();
+            panic!(
+                "Adding index `{}` {:?} to table `{}` {:?} on column `{}` {:?} should cause no unique constraint violations.
+
+Found violation at pointer {ptr:?} to row {:?}.",
+                index_schema.index_name,
+                index_schema.index_id,
+                self.schema.table_name,
+                self.schema.table_id,
+                indexed_column_info.map(|column| &column.col_name[..]).unwrap_or("unknown column"),
+                indexed_column,
+                row,
+            );
         });
         // SAFETY: Forward caller requirement.
         unsafe { self.add_index(index_id, index) };
@@ -2068,7 +2097,7 @@ impl<'a> TableAndIndex<'a> {
 
     /// Returns an iterator yielding all rows in this index for `key`.
     ///
-    /// Matching is defined by `Ord for AlgebraicValue`.
+    /// Matching is defined by `Eq for AlgebraicValue`.
     pub fn seek_point(&self, key: &AlgebraicValue) -> IndexScanPointIter<'a> {
         IndexScanPointIter {
             table: self.table,
@@ -2077,15 +2106,19 @@ impl<'a> TableAndIndex<'a> {
         }
     }
 
-    /// Returns an iterator yielding all rows in this index that fall within `range`.
+    /// Returns an iterator yielding all rows in this index that fall within `range`,
+    /// if the index is compatible with range seeks.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
-    pub fn seek_range(&self, range: &impl RangeBounds<AlgebraicValue>) -> IndexScanRangeIter<'a> {
-        IndexScanRangeIter {
+    pub fn seek_range(
+        &self,
+        range: &impl RangeBounds<AlgebraicValue>,
+    ) -> Result<IndexScanRangeIter<'a>, IndexCannotSeekRange> {
+        Ok(IndexScanRangeIter {
             table: self.table,
             blob_store: self.blob_store,
-            btree_index_iter: self.index.seek_range(range),
-        }
+            btree_index_iter: self.index.seek_range(range)?,
+        })
     }
 }
 
@@ -2147,9 +2180,9 @@ impl<'a> Iterator for IndexScanRangeIter<'a> {
 #[derive(Error, Debug, PartialEq, Eq)]
 #[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, cols, value.to_satn())]
 pub struct UniqueConstraintViolation {
-    pub constraint_name: Box<str>,
-    pub table_name: Box<str>,
-    pub cols: Vec<Box<str>>,
+    pub constraint_name: RawIdentifier,
+    pub table_name: TableName,
+    pub cols: Vec<Identifier>,
     pub value: AlgebraicValue,
 }
 
@@ -2339,10 +2372,10 @@ pub(crate) mod test {
     use crate::var_len::VarLenGranule;
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
-    use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder};
-    use spacetimedb_primitives::{col_list, TableId};
+    use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder};
+    use spacetimedb_primitives::TableId;
     use spacetimedb_sats::bsatn::to_vec;
-    use spacetimedb_sats::proptest::{generate_typed_row, generate_typed_row_vec};
+    use spacetimedb_sats::proptest::{generate_typed_row, generate_typed_row_vec, SIZE};
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue};
     use spacetimedb_schema::def::{BTreeAlgorithm, ModuleDef};
     use spacetimedb_schema::schema::Schema as _;
@@ -2367,10 +2400,7 @@ pub(crate) mod test {
                 true,
             )
             .with_unique_constraint(0)
-            .with_index(
-                RawIndexAlgorithm::BTree { columns: col_list![0] },
-                "accessor_name_doesnt_matter",
-            );
+            .with_index(btree(0), "accessor_name_doesnt_matter");
 
         let def: ModuleDef = builder.finish().try_into().expect("Failed to build schema");
 
@@ -2469,6 +2499,7 @@ pub(crate) mod test {
 
         index
             .seek_range(&(..))
+            .unwrap()
             .map(|row_ptr| {
                 let row_ref = table.get_row_ref(blob_store, row_ptr).unwrap();
                 let key = row_ref.project(&index.indexed_columns).unwrap();
@@ -2499,11 +2530,7 @@ pub(crate) mod test {
 
         let index_id = IndexId(0);
 
-        let algo = BTreeAlgorithm {
-            columns: indexed_columns.clone(),
-        }
-        .into();
-        let index = TableIndex::new(&ty, &algo, false).unwrap();
+        let index = TableIndex::new(&ty, indexed_columns.clone(), IndexKind::BTree, false).unwrap();
         // Add an index on column 0.
         // Safety:
         // We're using `ty` as the row type for both `table` and the new index.
@@ -2534,11 +2561,7 @@ pub(crate) mod test {
             .sum();
         prop_assert_eq!(index.num_key_bytes(), key_size_in_pvs);
 
-        let algo = BTreeAlgorithm {
-            columns: indexed_columns,
-        }
-        .into();
-        let index = TableIndex::new(&ty, &algo, false).unwrap();
+        let index = TableIndex::new(&ty, indexed_columns, IndexKind::BTree, false).unwrap();
         // Add a duplicate of the same index, so we can check that all above quantities double.
         // Safety:
         // As above, we're using `ty` as the row type for both `table` and the new index.
@@ -2643,7 +2666,7 @@ pub(crate) mod test {
         }
 
         #[test]
-        fn row_size_reporting_matches_slow_implementations((ty, vals) in generate_typed_row_vec(128, 2048)) {
+        fn row_size_reporting_matches_slow_implementations((ty, vals) in generate_typed_row_vec(0..SIZE, 128, 2048)) {
             let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty.clone());
@@ -2662,16 +2685,12 @@ pub(crate) mod test {
         }
 
         #[test]
-        fn index_size_reporting_matches_slow_implementations_single_column((ty, vals) in generate_typed_row_vec(128, 2048)) {
-            prop_assume!(!ty.elements.is_empty());
-
+        fn index_size_reporting_matches_slow_implementations_single_column((ty, vals) in generate_typed_row_vec(1..SIZE, 128, 2048)) {
             test_index_size_reporting(ty, vals, ColList::from(ColId(0)))?;
         }
 
         #[test]
-        fn index_size_reporting_matches_slow_implementations_two_column((ty, vals) in generate_typed_row_vec(128, 2048)) {
-            prop_assume!(ty.elements.len() >= 2);
-
+        fn index_size_reporting_matches_slow_implementations_two_column((ty, vals) in generate_typed_row_vec(2..SIZE, 128, 2048)) {
             test_index_size_reporting(ty, vals, ColList::from([ColId(0), ColId(1)]))?;
         }
     }

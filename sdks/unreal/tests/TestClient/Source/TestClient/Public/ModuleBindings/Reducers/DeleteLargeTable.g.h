@@ -21,16 +21,16 @@ struct TESTCLIENT_API FDeleteLargeTableArgs
     GENERATED_BODY()
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    uint8 A;
+    uint8 A = 0;
 
     // NOTE: uint16 field not exposed to Blueprint due to non-blueprintable elements
-    uint16 B;
+    uint16 B = 0;
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 C;
+    uint32 C = 0;
 
     // NOTE: uint64 field not exposed to Blueprint due to non-blueprintable elements
-    uint64 D;
+    uint64 D = 0;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
     FSpacetimeDBUInt128 E;
@@ -39,16 +39,16 @@ struct TESTCLIENT_API FDeleteLargeTableArgs
     FSpacetimeDBUInt256 F;
 
     // NOTE: int8 field not exposed to Blueprint due to non-blueprintable elements
-    int8 G;
+    int8 G = 0;
 
     // NOTE: int16 field not exposed to Blueprint due to non-blueprintable elements
-    int16 H;
+    int16 H = 0;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    int32 I;
+    int32 I = 0;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    int64 J;
+    int64 J = 0;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
     FSpacetimeDBInt128 K;
@@ -57,19 +57,19 @@ struct TESTCLIENT_API FDeleteLargeTableArgs
     FSpacetimeDBInt256 L;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    bool M;
+    bool M = false;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    float N;
+    float N = 0.0f;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    double O;
+    double O = 0.0;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
     FString P;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    ESimpleEnumType Q;
+    ESimpleEnumType Q = ESimpleEnumType::Zero;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
     FEnumWithPayloadType R;
@@ -116,39 +116,39 @@ class TESTCLIENT_API UDeleteLargeTableReducer : public UReducerBase
 
 public:
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    uint8 A;
+    uint8 A = 0;
     // NOTE: uint16 field not exposed to Blueprint due to non-blueprintable elements
-    uint16 B;
+    uint16 B = 0;
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 C;
+    uint32 C = 0;
     // NOTE: uint64 field not exposed to Blueprint due to non-blueprintable elements
-    uint64 D;
+    uint64 D = 0;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
     FSpacetimeDBUInt128 E;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
     FSpacetimeDBUInt256 F;
     // NOTE: int8 field not exposed to Blueprint due to non-blueprintable elements
-    int8 G;
+    int8 G = 0;
     // NOTE: int16 field not exposed to Blueprint due to non-blueprintable elements
-    int16 H;
+    int16 H = 0;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    int32 I;
+    int32 I = 0;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    int64 J;
+    int64 J = 0;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
     FSpacetimeDBInt128 K;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
     FSpacetimeDBInt256 L;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    bool M;
+    bool M = false;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    float N;
+    float N = 0.0f;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    double O;
+    double O = 0.0;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
     FString P;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    ESimpleEnumType Q;
+    ESimpleEnumType Q = ESimpleEnumType::Zero;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
     FEnumWithPayloadType R;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")

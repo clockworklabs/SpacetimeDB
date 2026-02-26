@@ -15,6 +15,7 @@ use spacetimedb_lib::{
     TypeAlias as RawTypeAliasV8,
 };
 use spacetimedb_primitives::{ColId, ColList, ConstraintKind, Constraints};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicTypeRef, Typespace, WithTypespace};
 
 const INIT_NAME: &str = "__init__";
@@ -401,6 +402,7 @@ fn convert_all<T, U>(input: impl IntoIterator<Item = T>, f: impl FnMut(T) -> U) 
 mod tests {
     use crate::def::validate::tests::{check_product_type, expect_identifier, expect_type_name};
     use crate::def::validate::v8::{IDENTITY_CONNECTED_NAME, IDENTITY_DISCONNECTED_NAME, INIT_NAME};
+    use crate::def::IndexAlgorithm;
     use crate::def::{validate::Result, ModuleDef};
     use crate::error::*;
     use crate::type_for_generate::ClientCodegenError;
@@ -553,11 +555,11 @@ mod tests {
         assert_eq!(def.types[&deliveries_type_name].ty, delivery_def.product_type_ref);
 
         let init_name = expect_identifier(INIT_NAME);
-        assert_eq!(def.reducers[&init_name].name, init_name);
+        assert_eq!(&*def.reducers[&init_name].name, &*init_name);
         assert_eq!(def.reducers[&init_name].lifecycle, Some(Lifecycle::Init));
 
         let identity_connected_name = expect_identifier(IDENTITY_CONNECTED_NAME);
-        assert_eq!(def.reducers[&identity_connected_name].name, identity_connected_name);
+        assert_eq!(&*def.reducers[&identity_connected_name].name, &*identity_connected_name);
         assert_eq!(
             def.reducers[&identity_connected_name].lifecycle,
             Some(Lifecycle::OnConnect)
@@ -565,8 +567,8 @@ mod tests {
 
         let identity_disconnected_name = expect_identifier(IDENTITY_DISCONNECTED_NAME);
         assert_eq!(
-            def.reducers[&identity_disconnected_name].name,
-            identity_disconnected_name
+            &*def.reducers[&identity_disconnected_name].name,
+            &*identity_disconnected_name
         );
         assert_eq!(
             def.reducers[&identity_disconnected_name].lifecycle,
@@ -574,7 +576,7 @@ mod tests {
         );
 
         let extra_reducer_name = expect_identifier("extra_reducer");
-        assert_eq!(def.reducers[&extra_reducer_name].name, extra_reducer_name);
+        assert_eq!(&*def.reducers[&extra_reducer_name].name, &*extra_reducer_name);
         assert_eq!(def.reducers[&extra_reducer_name].lifecycle, None);
         assert_eq!(
             def.reducers[&extra_reducer_name].params,
@@ -582,7 +584,7 @@ mod tests {
         );
 
         let check_deliveries_name = expect_identifier("check_deliveries");
-        assert_eq!(def.reducers[&check_deliveries_name].name, check_deliveries_name);
+        assert_eq!(&*def.reducers[&check_deliveries_name].name, &*check_deliveries_name);
         assert_eq!(def.reducers[&check_deliveries_name].lifecycle, None);
         assert_eq!(
             def.reducers[&check_deliveries_name].params,
@@ -787,7 +789,7 @@ mod tests {
     }
 
     #[test]
-    fn only_btree_indexes() {
+    fn allows_hash_indexes() {
         let mut builder = RawModuleDefV8Builder::default();
         builder.add_table_for_tests(
             RawTableDefV8::new_for_tests(
@@ -795,17 +797,16 @@ mod tests {
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
             )
             .with_indexes(vec![RawIndexDefV8 {
-                columns: ColList::from_iter([0]),
+                columns: [0].into(),
                 is_unique: false,
                 index_name: "Bananas_index".into(),
                 index_type: IndexType::Hash,
             }]),
         );
-        let result: Result<ModuleDef> = builder.finish().try_into();
-
-        expect_error_matching!(result, ValidationError::HashIndexUnsupported { index } => {
-            &index[..] == "Bananas_index"
-        });
+        let def: ModuleDef = builder.finish().try_into().unwrap();
+        let indexes = def.indexes().collect::<Vec<_>>();
+        assert_eq!(indexes.len(), 1);
+        assert_eq!(indexes[0].algorithm, IndexAlgorithm::Hash(0.into()));
     }
 
     #[test]

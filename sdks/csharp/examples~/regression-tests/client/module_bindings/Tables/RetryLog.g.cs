@@ -36,4 +36,26 @@ namespace SpacetimeDB.Types
 
         public readonly RetryLogHandle RetryLog;
     }
+
+    public sealed class RetryLogCols
+    {
+        public global::SpacetimeDB.Col<RetryLog, uint> Id { get; }
+        public global::SpacetimeDB.Col<RetryLog, uint> Attempts { get; }
+
+        public RetryLogCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.Col<RetryLog, uint>(tableName, "id");
+            Attempts = new global::SpacetimeDB.Col<RetryLog, uint>(tableName, "attempts");
+        }
+    }
+
+    public sealed class RetryLogIxCols
+    {
+        public global::SpacetimeDB.IxCol<RetryLog, uint> Id { get; }
+
+        public RetryLogIxCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.IxCol<RetryLog, uint>(tableName, "id");
+        }
+    }
 }

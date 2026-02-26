@@ -1,5 +1,5 @@
 use crate::module_bindings::*;
-use spacetimedb_sdk::{i256, u256, ConnectionId, Event, Identity, Table};
+use spacetimedb_sdk::{i256, u256, ConnectionId, Event, Identity, Table, Uuid};
 use std::sync::Arc;
 use test_counter::TestCounter;
 
@@ -86,9 +86,9 @@ macro_rules! impl_unique_test_table {
     (__impl $table:ident {
         Key = $key:ty;
         key_field_name = $field_name:ident;
-        insert_reducer = $insert_reducer:ident;
+        insert_then = $insert_reducer_then:ident;
         insert_reducer_event = $insert_reducer_event:ident;
-        delete_reducer = $delete_reducer:ident;
+        delete_then = $delete_reducer_then:ident;
         delete_reducer_event = $delete_reducer_event:ident;
         accessor_method = $accessor_method:ident;
     }) => {
@@ -110,10 +110,22 @@ macro_rules! impl_unique_test_table {
             }
 
             fn insert(ctx: &impl RemoteDbContext, key: Self::Key, value: i32) {
-                ctx.reducers().$insert_reducer(key, value).unwrap();
+                ctx.reducers().$insert_reducer_then(key, value, |ctx, outcome| {
+                    match outcome {
+                        Ok(Ok(())) => assert!(Self::is_insert_reducer_event(&ctx.event.reducer)),
+                        Ok(Err(msg)) => panic!("Insert reducer returned error: {msg}"),
+                        Err(internal_error) => panic!("Insert reducer panicked: {internal_error:?}"),
+                    }
+                }).unwrap();
             }
             fn delete(ctx: &impl RemoteDbContext, key: Self::Key) {
-                ctx.reducers().$delete_reducer(key).unwrap();
+                ctx.reducers().$delete_reducer_then(key, |ctx, outcome| {
+                    match outcome {
+                        Ok(Ok(())) => assert!(Self::is_delete_reducer_event(&ctx.event.reducer)),
+                        Ok(Err(msg)) => panic!("Delete reducer returned error: {msg}"),
+                        Err(internal_error) => panic!("Delete reducer panicked: {internal_error:?}"),
+                    }
+                }).unwrap();
             }
 
             fn on_insert(ctx: &impl RemoteDbContext, callback: impl FnMut(&EventContext, &$table) + Send + 'static) {
@@ -133,54 +145,54 @@ impl_unique_test_table! {
     UniqueU8 {
         Key = u8;
         key_field_name = n;
-        insert_reducer = insert_unique_u_8;
+        insert_then = insert_unique_u_8_then;
         insert_reducer_event = InsertUniqueU8;
-        delete_reducer = delete_unique_u_8;
+        delete_then = delete_unique_u_8_then;
         delete_reducer_event = DeleteUniqueU8;
         accessor_method = unique_u_8;
     }
     UniqueU16 {
         Key = u16;
         key_field_name = n;
-        insert_reducer = insert_unique_u_16;
+        insert_then = insert_unique_u_16_then;
         insert_reducer_event = InsertUniqueU16;
-        delete_reducer = delete_unique_u_16;
+        delete_then = delete_unique_u_16_then;
         delete_reducer_event = DeleteUniqueU16;
         accessor_method = unique_u_16;
     }
     UniqueU32 {
         Key = u32;
         key_field_name = n;
-        insert_reducer = insert_unique_u_32;
+        insert_then = insert_unique_u_32_then;
         insert_reducer_event = InsertUniqueU32;
-        delete_reducer = delete_unique_u_32;
+        delete_then = delete_unique_u_32_then;
         delete_reducer_event = DeleteUniqueU32;
         accessor_method = unique_u_32;
     }
     UniqueU64 {
         Key = u64;
         key_field_name = n;
-        insert_reducer = insert_unique_u_64;
+        insert_then = insert_unique_u_64_then;
         insert_reducer_event = InsertUniqueU64;
-        delete_reducer = delete_unique_u_64;
+        delete_then = delete_unique_u_64_then;
         delete_reducer_event = DeleteUniqueU64;
         accessor_method = unique_u_64;
     }
     UniqueU128 {
         Key = u128;
         key_field_name = n;
-        insert_reducer = insert_unique_u_128;
+        insert_then = insert_unique_u_128_then;
         insert_reducer_event = InsertUniqueU128;
-        delete_reducer = delete_unique_u_128;
+        delete_then = delete_unique_u_128_then;
         delete_reducer_event = DeleteUniqueU128;
         accessor_method = unique_u_128;
     }
     UniqueU256 {
         Key = u256;
         key_field_name = n;
-        insert_reducer = insert_unique_u_256;
+        insert_then = insert_unique_u_256_then;
         insert_reducer_event = InsertUniqueU256;
-        delete_reducer = delete_unique_u_256;
+        delete_then = delete_unique_u_256_then;
         delete_reducer_event = DeleteUniqueU256;
         accessor_method = unique_u_256;
     }
@@ -188,54 +200,54 @@ impl_unique_test_table! {
     UniqueI8 {
         Key = i8;
         key_field_name = n;
-        insert_reducer = insert_unique_i_8;
+        insert_then = insert_unique_i_8_then;
         insert_reducer_event = InsertUniqueI8;
-        delete_reducer = delete_unique_i_8;
+        delete_then = delete_unique_i_8_then;
         delete_reducer_event = DeleteUniqueI8;
         accessor_method = unique_i_8;
     }
     UniqueI16 {
         Key = i16;
         key_field_name = n;
-        insert_reducer = insert_unique_i_16;
+        insert_then = insert_unique_i_16_then;
         insert_reducer_event = InsertUniqueI16;
-        delete_reducer = delete_unique_i_16;
+        delete_then = delete_unique_i_16_then;
         delete_reducer_event = DeleteUniqueI16;
         accessor_method = unique_i_16;
     }
     UniqueI32 {
         Key = i32;
         key_field_name = n;
-        insert_reducer = insert_unique_i_32;
+        insert_then = insert_unique_i_32_then;
         insert_reducer_event = InsertUniqueI32;
-        delete_reducer = delete_unique_i_32;
+        delete_then = delete_unique_i_32_then;
         delete_reducer_event = DeleteUniqueI32;
         accessor_method = unique_i_32;
     }
     UniqueI64 {
         Key = i64;
         key_field_name = n;
-        insert_reducer = insert_unique_i_64;
+        insert_then = insert_unique_i_64_then;
         insert_reducer_event = InsertUniqueI64;
-        delete_reducer = delete_unique_i_64;
+        delete_then = delete_unique_i_64_then;
         delete_reducer_event = DeleteUniqueI64;
         accessor_method = unique_i_64;
     }
     UniqueI128 {
         Key = i128;
         key_field_name = n;
-        insert_reducer = insert_unique_i_128;
+        insert_then = insert_unique_i_128_then;
         insert_reducer_event = InsertUniqueI128;
-        delete_reducer = delete_unique_i_128;
+        delete_then = delete_unique_i_128_then;
         delete_reducer_event = DeleteUniqueI128;
         accessor_method = unique_i_128;
     }
     UniqueI256 {
         Key = i256;
         key_field_name = n;
-        insert_reducer = insert_unique_i_256;
+        insert_then = insert_unique_i_256_then;
         insert_reducer_event = InsertUniqueI256;
-        delete_reducer = delete_unique_i_256;
+        delete_then = delete_unique_i_256_then;
         delete_reducer_event = DeleteUniqueI256;
         accessor_method = unique_i_256;
     }
@@ -243,9 +255,9 @@ impl_unique_test_table! {
     UniqueBool {
         Key = bool;
         key_field_name = b;
-        insert_reducer = insert_unique_bool;
+        insert_then = insert_unique_bool_then;
         insert_reducer_event = InsertUniqueBool;
-        delete_reducer = delete_unique_bool;
+        delete_then = delete_unique_bool_then;
         delete_reducer_event = DeleteUniqueBool;
         accessor_method = unique_bool;
     }
@@ -253,9 +265,9 @@ impl_unique_test_table! {
     UniqueString {
         Key = String;
         key_field_name = s;
-        insert_reducer = insert_unique_string;
+        insert_then = insert_unique_string_then;
         insert_reducer_event = InsertUniqueString;
-        delete_reducer = delete_unique_string;
+        delete_then = delete_unique_string_then;
         delete_reducer_event = DeleteUniqueString;
         accessor_method = unique_string;
     }
@@ -263,9 +275,9 @@ impl_unique_test_table! {
     UniqueIdentity {
         Key = Identity;
         key_field_name = i;
-        insert_reducer = insert_unique_identity;
+        insert_then = insert_unique_identity_then;
         insert_reducer_event = InsertUniqueIdentity;
-        delete_reducer = delete_unique_identity;
+        delete_then = delete_unique_identity_then;
         delete_reducer_event = DeleteUniqueIdentity;
         accessor_method = unique_identity;
     }
@@ -273,10 +285,20 @@ impl_unique_test_table! {
     UniqueConnectionId {
         Key = ConnectionId;
         key_field_name = a;
-        insert_reducer = insert_unique_connection_id;
+        insert_then = insert_unique_connection_id_then;
         insert_reducer_event = InsertUniqueConnectionId;
-        delete_reducer = delete_unique_connection_id;
+        delete_then = delete_unique_connection_id_then;
         delete_reducer_event = DeleteUniqueConnectionId;
         accessor_method = unique_connection_id;
+    }
+
+    UniqueUuid {
+        Key = Uuid;
+        key_field_name = u;
+        insert_then = insert_unique_uuid_then;
+        insert_reducer_event = InsertUniqueUuid;
+        delete_then = delete_unique_uuid_then;
+        delete_reducer_event = DeleteUniqueUuid;
+        accessor_method = unique_uuid;
     }
 }

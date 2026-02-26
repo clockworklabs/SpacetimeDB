@@ -1,6 +1,6 @@
 use spacetimedb::{
     duration, procedure, reducer, table, DbContext, ProcedureContext, ReducerContext, ScheduleAt, SpacetimeType, Table,
-    Timestamp, TxContext,
+    Timestamp, TxContext, Uuid,
 };
 
 #[derive(SpacetimeType)]
@@ -62,7 +62,7 @@ fn invalid_request(ctx: &mut ProcedureContext) -> String {
     }
 }
 
-#[table(public, name = my_table)]
+#[table(public, accessor = my_table)]
 struct MyTable {
     field: ReturnStruct,
 }
@@ -117,7 +117,7 @@ fn schedule_proc(ctx: &ReducerContext) {
     });
 }
 
-#[table(name = scheduled_proc_table, scheduled(scheduled_proc))]
+#[table(accessor = scheduled_proc_table, scheduled(scheduled_proc))]
 struct ScheduledProcTable {
     #[primary_key]
     #[auto_inc]
@@ -143,10 +143,37 @@ fn scheduled_proc(ctx: &mut ProcedureContext, data: ScheduledProcTable) {
     });
 }
 
-#[table(name = proc_inserts_into, public)]
+#[table(accessor = proc_inserts_into, public)]
 struct ProcInsertsInto {
     reducer_ts: Timestamp,
     procedure_ts: Timestamp,
     x: u8,
     y: u8,
+}
+
+#[table(public, accessor = pk_uuid)]
+struct PkUuid {
+    u: Uuid,
+    data: u8,
+}
+
+#[procedure]
+fn sorted_uuids_insert(ctx: &mut ProcedureContext) {
+    ctx.with_tx(|ctx| {
+        for _ in 0..1000 {
+            let uuid = ctx.new_uuid_v7().expect("new uuid");
+            ctx.db.pk_uuid().insert(PkUuid { u: uuid, data: 0 });
+        }
+
+        // Verify UUIDs are sorted
+        let mut last_uuid = None;
+        for row in ctx.db.pk_uuid().iter() {
+            if let Some(last) = last_uuid {
+                if last >= row.u {
+                    panic!("UUIDs are not sorted correctly");
+                }
+            }
+            last_uuid = Some(row.u);
+        }
+    })
 }

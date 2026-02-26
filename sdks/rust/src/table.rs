@@ -10,6 +10,8 @@
 /// Trait implemented by table handles, which mediate access to tables in the client cache.
 ///
 /// Obtain a table handle by calling a method on `ctx.db`, where `ctx` is a `DbConnection` or `EventContext`.
+///
+/// For persistent (non-event) tables only. See [`EventTable`] for transient event tables.
 pub trait Table {
     /// The type of rows stored in this table.
     type Row: 'static;
@@ -74,4 +76,36 @@ pub trait TableWithPrimaryKey: Table {
     ) -> Self::UpdateCallbackId;
     /// Cancel a callback previously registered by [`Self::on_update`], causing it not to run in the future.
     fn remove_on_update(&self, callback: Self::UpdateCallbackId);
+}
+
+/// Trait for event tables, whose rows are transient and never persisted in the client cache.
+///
+/// Event table rows are delivered as inserts but are not stored;
+/// only `on_insert` callbacks fire, and `count`/`iter` always reflect an empty table.
+///
+/// Obtain a table handle by calling a method on `ctx.db`, where `ctx` is a `DbConnection` or `EventContext`.
+pub trait EventTable {
+    /// The type of rows in this table.
+    type Row: 'static;
+
+    /// The `EventContext` type generated for the module which defines this table.
+    type EventContext;
+
+    /// The number of subscribed rows in the client cache (always 0 for event tables).
+    fn count(&self) -> u64;
+
+    /// An iterator over all the subscribed rows in the client cache (always empty for event tables).
+    fn iter(&self) -> impl Iterator<Item = Self::Row> + '_;
+
+    type InsertCallbackId;
+    /// Register a callback to run whenever a row is inserted.
+    ///
+    /// The returned [`Self::InsertCallbackId`] can be passed to [`Self::remove_on_insert`]
+    /// to cancel the callback.
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> Self::InsertCallbackId;
+    /// Cancel a callback previously registered by [`Self::on_insert`], causing it not to run in the future.
+    fn remove_on_insert(&self, callback: Self::InsertCallbackId);
 }

@@ -87,8 +87,8 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
     },
     {/*
 {
-    [SpacetimeDB.Index.BTree(Name = "TestUnexpectedColumns", Columns = ["UnexpectedColumn"])]
-     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    [SpacetimeDB.Index.BTree(Accessor = "TestUnexpectedColumns", Columns = ["UnexpectedColumn"])]
+     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     public int SelfIndexingColumn;
 */
       Message: Index attribute on a field applies directly to that field, so it doesn't accept the Columns parameter.,
@@ -104,9 +104,9 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
     },
     {/*
 [SpacetimeDB.Table]
-[SpacetimeDB.Index.BTree(Name = "TestIndexWithoutColumns")]
- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-[SpacetimeDB.Index.BTree(Name = "TestIndexWithEmptyColumns", Columns = [])]
+[SpacetimeDB.Index.BTree(Accessor = "TestIndexWithoutColumns")]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Index.BTree(Accessor = "TestIndexWithEmptyColumns", Columns = [])]
 */
       Message: Index attribute doesn't specify columns.,
       Severity: Error,
@@ -120,10 +120,10 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
       }
     },
     {/*
-[SpacetimeDB.Index.BTree(Name = "TestIndexWithoutColumns")]
-[SpacetimeDB.Index.BTree(Name = "TestIndexWithEmptyColumns", Columns = [])]
- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-[SpacetimeDB.Index.BTree(Name = "TestUnknownColumns", Columns = ["UnknownColumn"])]
+[SpacetimeDB.Index.BTree(Accessor = "TestIndexWithoutColumns")]
+[SpacetimeDB.Index.BTree(Accessor = "TestIndexWithEmptyColumns", Columns = [])]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Index.BTree(Accessor = "TestUnknownColumns", Columns = ["UnknownColumn"])]
 */
       Message: Index attribute doesn't specify columns.,
       Severity: Error,
@@ -137,9 +137,9 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
       }
     },
     {/*
-[SpacetimeDB.Index.BTree(Name = "TestIndexWithEmptyColumns", Columns = [])]
-[SpacetimeDB.Index.BTree(Name = "TestUnknownColumns", Columns = ["UnknownColumn"])]
- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Index.BTree(Accessor = "TestIndexWithEmptyColumns", Columns = [])]
+[SpacetimeDB.Index.BTree(Accessor = "TestUnknownColumns", Columns = ["UnknownColumn"])]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 public partial struct TestIndexIssues
 */
       Message: Could not find the specified column UnknownColumn in TestIndexIssues.,
@@ -157,8 +157,8 @@ public partial struct TestIndexIssues
 
 [SpacetimeDB.Table(
  ^^^^^^^^^^^^^^^^^^
-    Name = "TestScheduleWithoutPrimaryKey",
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Accessor = "TestScheduleWithoutPrimaryKey",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     Scheduled = "DummyScheduledReducer",
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     ScheduledAt = nameof(ScheduleAtCorrectType)
@@ -182,15 +182,15 @@ public partial struct TestIndexIssues
 )]
 [SpacetimeDB.Table(
  ^^^^^^^^^^^^^^^^^^
-    Name = "TestScheduleWithWrongPrimaryKeyType",
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Accessor = "TestScheduleWithWrongPrimaryKeyType",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     Scheduled = "DummyScheduledReducer",
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     ScheduledAt = nameof(ScheduleAtCorrectType)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 )]
 ^
-[SpacetimeDB.Table(Name = "TestScheduleWithoutScheduleAt", Scheduled = "DummyScheduledReducer")]
+[SpacetimeDB.Table(Accessor = "TestScheduleWithoutScheduleAt", Scheduled = "DummyScheduledReducer")]
 */
       Message: TestScheduleWithWrongPrimaryKeyType is a scheduled table but doesn't have a primary key of type `ulong`.,
       Severity: Error,
@@ -205,8 +205,8 @@ public partial struct TestIndexIssues
     },
     {/*
 )]
-[SpacetimeDB.Table(Name = "TestScheduleWithoutScheduleAt", Scheduled = "DummyScheduledReducer")]
- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Table(Accessor = "TestScheduleWithoutScheduleAt", Scheduled = "DummyScheduledReducer")]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 [SpacetimeDB.Table(
 */
       Message: Could not find the specified column ScheduledAt in TestScheduleIssues.,
@@ -221,11 +221,11 @@ public partial struct TestIndexIssues
       }
     },
     {/*
-[SpacetimeDB.Table(Name = "TestScheduleWithoutScheduleAt", Scheduled = "DummyScheduledReducer")]
+[SpacetimeDB.Table(Accessor = "TestScheduleWithoutScheduleAt", Scheduled = "DummyScheduledReducer")]
 [SpacetimeDB.Table(
  ^^^^^^^^^^^^^^^^^^
-    Name = "TestScheduleWithWrongScheduleAtType",
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Accessor = "TestScheduleWithWrongScheduleAtType",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     Scheduled = "DummyScheduledReducer",
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     ScheduledAt = nameof(ScheduleAtWrongType)
@@ -249,8 +249,8 @@ public partial struct TestIndexIssues
 )]
 [SpacetimeDB.Table(
  ^^^^^^^^^^^^^^^^^^
-    Name = "TestScheduleWithMissingScheduleAtField",
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Accessor = "TestScheduleWithMissingScheduleAtField",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     Scheduled = "DummyScheduledReducer",
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     ScheduledAt = "MissingField"
@@ -272,8 +272,8 @@ public partial struct TestScheduleIssues
     },
     {/*
     // Invalid: View definition missing Public=true
-    [SpacetimeDB.View(Name = "view_def_no_public")]
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    [SpacetimeDB.View(Accessor = "view_def_no_public")]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     public static List<Player> ViewDefNoPublic(ViewContext ctx)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     {
@@ -296,7 +296,7 @@ public partial struct TestScheduleIssues
       }
     },
     {/*
-    [SpacetimeDB.View(Name = "view_def_no_context", Public = true)]
+    [SpacetimeDB.View(Accessor = "view_def_no_context", Public = true)]
     public static List<Player> ViewDefNoContext()
                                                ^^
     {
@@ -313,7 +313,7 @@ public partial struct TestScheduleIssues
       }
     },
     {/*
-    [SpacetimeDB.View(Name = "view_def_wrong_context", Public = true)]
+    [SpacetimeDB.View(Accessor = "view_def_wrong_context", Public = true)]
     public static List<Player> ViewDefWrongContext(ReducerContext ctx)
                                                   ^^^^^^^^^^^^^^^^^^^^
     {
@@ -330,9 +330,9 @@ public partial struct TestScheduleIssues
       }
     },
     {/*
-    // Invalid: Wrong return type is not Vec<T> or Option<T>
-    [SpacetimeDB.View(Name = "view_def_wrong_return", Public = true)]
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    // Invalid: Wrong return type is not List<T> or T?
+    [SpacetimeDB.View(Accessor = "view_def_wrong_return", Public = true)]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     public static Player ViewDefWrongReturn(ViewContext ctx)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     {
@@ -344,6 +344,94 @@ public partial struct TestScheduleIssues
 
 */
       Message: View 'ViewDefWrongReturn' must return Vec<T> or Option<T>.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0024,
+        Title: Views must return Vec<T> or Option<T>,
+        MessageFormat: View '{0}' must return Vec<T> or Option<T>.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_iter", Public = true)]
+    public static IEnumerable<Player> ViewDefIEnumerableReturnFromIter(ViewContext ctx)
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    {
+*/
+      Message: BSATN implementation for System.Collections.Generic.IEnumerable<Player> is not found: Unsupported system type System.Collections.Generic.IEnumerable<T>,
+      Severity: Error,
+      Descriptor: {
+        Id: BSATN0001,
+        Title: Unsupported type,
+        MessageFormat: BSATN implementation for {0} is not found: {1},
+        Category: SpacetimeDB.BSATN,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    // Invalid: IEnumerable<T> return type (from Iter()) is not List<T> or T?
+    [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_iter", Public = true)]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public static IEnumerable<Player> ViewDefIEnumerableReturnFromIter(ViewContext ctx)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    {
+^^^^^
+        return ctx.Db.Player.Iter();
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
+^^^^^
+
+*/
+      Message: View 'ViewDefIEnumerableReturnFromIter' must return Vec<T> or Option<T>.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0024,
+        Title: Views must return Vec<T> or Option<T>,
+        MessageFormat: View '{0}' must return Vec<T> or Option<T>.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_filter", Public = true)]
+    public static IEnumerable<TestScheduleIssues> ViewDefIEnumerableReturnFromFilter(
+                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        ViewContext ctx
+*/
+      Message: BSATN implementation for System.Collections.Generic.IEnumerable<TestScheduleIssues> is not found: Unsupported system type System.Collections.Generic.IEnumerable<T>,
+      Severity: Error,
+      Descriptor: {
+        Id: BSATN0001,
+        Title: Unsupported type,
+        MessageFormat: BSATN implementation for {0} is not found: {1},
+        Category: SpacetimeDB.BSATN,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    // Invalid: IEnumerable<T> return type (from Filter()) is not List<T> or T?
+    [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_filter", Public = true)]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public static IEnumerable<TestScheduleIssues> ViewDefIEnumerableReturnFromFilter(
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        ViewContext ctx
+^^^^^^^^^^^^^^^^^^^^^^^
+    )
+^^^^^
+    {
+^^^^^
+        return ctx.Db.TestIndexIssues.TestUnexpectedColumns.Filter(0);
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
+^^^^^
+
+*/
+      Message: View 'ViewDefIEnumerableReturnFromFilter' must return Vec<T> or Option<T>.,
       Severity: Error,
       Descriptor: {
         Id: STDB0024,

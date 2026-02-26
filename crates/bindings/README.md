@@ -60,7 +60,7 @@ Declaring tables and reducers is straightforward:
 # #[cfg(target_arch = "wasm32")] mod demo {
 use spacetimedb::{table, reducer, ReducerContext, Table};
 
-#[table(name = player)]
+#[table(accessor = player)]
 pub struct Player {
     id: u32,
     name: String
@@ -115,7 +115,7 @@ The project's `lib.rs` will contain the following skeleton:
 # #[cfg(target_arch = "wasm32")] mod demo {
 use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     name: String
 }
@@ -225,7 +225,7 @@ However:
 
 ## Tables
 
-Tables are declared using the [`#[table(name = table_name)]` macro](macro@crate::table).
+Tables are declared using the [`#[table(accessor = table_name)]` macro](macro@crate::table).
 
 This macro is applied to a Rust struct with named fields. All of the fields of the table must implement [`SpacetimeType`].
 
@@ -236,7 +236,7 @@ The resulting type is used to store rows of the table. It is normal struct type.
 use spacetimedb::{table, reducer, ReducerContext, Table, UniqueColumn};
 
 /// A `Person` is a row of the table `person`.
-#[table(name = person, public)]
+#[table(accessor = person, public)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -312,20 +312,20 @@ Tables' [constraints](#unique-and-primary-key-columns) and [indexes](#indexes) g
 
 By default, tables are considered **private**. This means that they are only readable by the database owner and by reducers. Reducers run inside the database, so clients cannot see private tables at all.
 
-Using the [`#[table(name = table_name, public)]`](macro@crate::table) flag makes a table public. **Public** tables are readable by all clients. They can still only be modified by reducers. 
+Using the [`#[table(accessor = table_name, public)]`](macro@crate::table) flag makes a table public. **Public** tables are readable by all clients. They can still only be modified by reducers. 
 
 ```no_run
 # #[cfg(target_arch = "wasm32")] mod demo {
 use spacetimedb::table;
 
 // The `enemies` table can be read by all connected clients.
-#[table(name = enemy, public)]
+#[table(accessor = enemy, public)]
 pub struct Enemy {
     /* ... */
 }
 
 // The `loot_items` table is invisible to clients, but not to reducers.
-#[table(name = loot_item)]
+#[table(accessor = loot_item)]
 pub struct LootItem {
     /* ... */
 }
@@ -347,7 +347,7 @@ use spacetimedb::table;
 type SSN = String;
 type Email = String;
 
-#[table(name = citizen)]
+#[table(accessor = citizen)]
 pub struct Citizen {
     #[primary_key]
     id: u64,
@@ -402,7 +402,7 @@ When inserting into a table with an `#[auto_inc]` column, if the annotated colum
 # #[cfg(target_arch = "wasm32")] mod demo {
 use spacetimedb::{table, reducer, ReducerContext, Table};
 
-#[table(name = example)]
+#[table(accessor = example)]
 struct Example {
     #[auto_inc]
     field: u32
@@ -423,13 +423,40 @@ fn insert_auto_inc_example(ctx: &ReducerContext) {
 
 `auto_inc` is often combined with `unique` or `primary_key` to automatically assign unique integer identifiers to rows.
 
+#### Default Values
+
+Columns can be marked with [`#[default(value)]`](macro@crate::table#default) to specify a default value. This is primarily used for [automatic migrations](#automatic-migrations) when adding new columns to existing tables.
+
+When you republish a module with a new column that has a default value, existing rows are automatically populated with that default. New columns must be added at the **end** of the table definition.
+
+```no_run
+# #[cfg(target_arch = "wasm32")] mod demo {
+use spacetimedb::table;
+
+#[table(accessor = player)]
+struct Player {
+    id: u64,
+    name: String,
+    // New columns added with defaults for migration
+    #[default(0)]
+    score: u32,
+    #[default(true)]
+    is_active: bool,
+}
+# }
+```
+
+The `#[default(value)]` attribute accepts a const-evaluable Rust expression. The value must be usable in a `const` context, which means you cannot use methods like `.to_string()` for `String` defaults. Only primitive types, enums, and other const-constructible types can have defaults.
+
+**Constraints**: `#[default]` cannot be combined with `#[primary_key]`, `#[unique]`, or `#[auto_inc]`, as these constraints require the database to manage column values.
+
 #### Indexes
 
 SpacetimeDB supports both single- and multi-column [B-Tree](https://en.wikipedia.org/wiki/B-tree) indexes.
 
 Indexes are declared using the syntax:
 
-[`#[table(..., index(name = my_index, btree(columns = [a, b, c]))]`](macro@crate::table#index).
+[`#[table(..., index(accessor = my_index, btree(columns = [a, b, c]))]`](macro@crate::table#index).
 
 For example:
 
@@ -437,7 +464,7 @@ For example:
 # #[cfg(target_arch = "wasm32")] mod demo {
 use spacetimedb::table;
 
-#[table(name = paper, index(name = url_and_country, btree(columns = [url, country])))]
+#[table(accessor = paper, index(accessor = url_and_country, btree(columns = [url, country])))]
 struct Paper {
     url: String,
     country: String,
@@ -461,7 +488,7 @@ For example:
 # #[cfg(target_arch = "wasm32")] mod demo {
 use spacetimedb::table;
 
-#[table(name = paper)]
+#[table(accessor = paper)]
 struct Paper {
     url: String,
     country: String,
@@ -552,7 +579,7 @@ Views can return either `Option<T>` or `Vec<T>` where `T` can be a table type or
 use spacetimedb::{table, view, ViewContext, AnonymousViewContext, SpacetimeType};
 use spacetimedb_lib::Identity;
 
-#[table(name = player)]
+#[table(accessor = player)]
 struct Player {
     #[primary_key]
     #[auto_inc]
@@ -562,7 +589,7 @@ struct Player {
     name: String,
 }
 
-#[table(name = player_level)]
+#[table(accessor = player_level)]
 struct PlayerLevel {
     #[unique]
     player_id: u64,
@@ -579,13 +606,13 @@ struct PlayerAndLevel {
 }
 
 // At-most-one row: return Option<T>
-#[view(name = my_player, public)]
+#[view(accessor = my_player, public)]
 fn my_player(ctx: &ViewContext) -> Option<Player> {
-    ctx.db.player().identity().find(ctx.sender)
+    ctx.db.player().identity().find(ctx.sender())
 }
 
 // Multiple rows: return Vec<T>
-#[view(name = players_for_level, public)]
+#[view(accessor = players_for_level, public)]
 fn players_for_level(ctx: &AnonymousViewContext) -> Vec<PlayerAndLevel> {
     ctx.db
         .player_level()
@@ -642,6 +669,7 @@ The following changes are always allowed and never breaking:
 
 The following changes are allowed, but may break clients:
 
+- ⚠️ **Adding new columns to the end of a table with a default value**. The new column must be added at the end of the table definition and must have a default value specified. Non-updated clients will not be aware of the new column.
 - ⚠️ **Changing or removing reducers**. Clients that attempt to call the old version of a changed reducer will receive runtime errors.
 - ⚠️ **Changing tables from public to private**. Clients that are subscribed to a newly-private table will receive runtime errors.
 - ⚠️ **Removing `#[primary_key]` annotations**. Non-updated clients will still use the old `#[primary_key]` as a unique key in their local cache, which can result in non-deterministic behavior when updates are received.
@@ -658,7 +686,9 @@ The following changes are allowed, but may break clients:
 The following changes are forbidden without a manual migration:
 
 - ❌ **Removing tables**.
-- ❌ **Changing the columns of a table**. This includes changing the order of columns of a table.
+- ❌ **Removing or modifying existing columns**. This includes changing the type, renaming, or reordering columns.
+- ❌ **Adding columns without a default value**. New columns must have a default value so existing rows can be populated.
+- ❌ **Adding columns in the middle of a table**. New columns must be added at the end of the table definition.
 - ❌ **Changing whether a table is used for [scheduling](#scheduled-reducers).** <!-- TODO: update this if we ever actually implement it... -->
 - ❌ **Adding `#[unique]` or `#[primary_key]` constraints.** This could result in existing tables being in an invalid state.
 

@@ -1,5 +1,5 @@
 use crate::module_bindings::*;
-use spacetimedb_sdk::{i256, u256, ConnectionId, Event, Identity, Table, TableWithPrimaryKey};
+use spacetimedb_sdk::{i256, u256, ConnectionId, Event, Identity, Table, TableWithPrimaryKey, Uuid};
 use std::sync::Arc;
 use test_counter::TestCounter;
 
@@ -125,11 +125,11 @@ macro_rules! impl_pk_test_table {
     (__impl $table:ident {
         Key = $key:ty;
         key_field_name = $field_name:ident;
-        insert_reducer = $insert_reducer:ident;
+        insert_then = $insert_reducer_then:ident;
         insert_reducer_event = $insert_reducer_event:ident;
-        delete_reducer = $delete_reducer:ident;
+        delete_then = $delete_reducer_then:ident;
         delete_reducer_event = $delete_reducer_event:ident;
-        update_reducer = $update_reducer:ident;
+        update_then= $update_reducer_then:ident;
         update_reducer_event = $update_reducer_event:ident;
         accessor_method = $accessor_method:ident;
     }) => {
@@ -155,13 +155,31 @@ macro_rules! impl_pk_test_table {
             }
 
             fn insert(ctx: &impl RemoteDbContext, key: Self::PrimaryKey, value: i32) {
-                ctx.reducers().$insert_reducer(key, value).unwrap();
+                ctx.reducers().$insert_reducer_then(key, value, |ctx, outcome| {
+                    match outcome {
+                        Ok(Ok(())) => assert!(Self::is_insert_reducer_event(&ctx.event.reducer)),
+                        Ok(Err(msg)) => panic!("Insert reducer returned error: {msg}"),
+                        Err(internal_error) => panic!("Insert reducer panicked: {internal_error:?}"),
+                    }
+                }).unwrap();
             }
             fn delete(ctx: &impl RemoteDbContext, key: Self::PrimaryKey) {
-                ctx.reducers().$delete_reducer(key).unwrap();
+                ctx.reducers().$delete_reducer_then(key, |ctx, outcome| {
+                    match outcome {
+                        Ok(Ok(())) => assert!(Self::is_delete_reducer_event(&ctx.event.reducer)),
+                        Ok(Err(msg)) => panic!("Delete reducer returned error: {msg}"),
+                        Err(internal_error) => panic!("Delete reducer panicked: {internal_error:?}"),
+                    }
+                }).unwrap();
             }
             fn update(ctx: &impl RemoteDbContext, key: Self::PrimaryKey, new_value: i32) {
-                ctx.reducers().$update_reducer(key, new_value).unwrap();
+                ctx.reducers().$update_reducer_then(key, new_value, |ctx, outcome| {
+                    match outcome {
+                        Ok(Ok(())) => assert!(Self::is_update_reducer_event(&ctx.event.reducer)),
+                        Ok(Err(msg)) => panic!("Update reducer returned error: {msg}"),
+                        Err(internal_error) => panic!("Update reducer panicked: {internal_error:?}"),
+                    }
+                }).unwrap();
             }
 
             fn on_insert(ctx: &impl RemoteDbContext, callback: impl FnMut(&EventContext, &Self) + Send + 'static) {
@@ -185,77 +203,77 @@ impl_pk_test_table! {
     PkU8 {
         Key = u8;
         key_field_name = n;
-        insert_reducer = insert_pk_u_8;
+        insert_then = insert_pk_u_8_then;
         insert_reducer_event = InsertPkU8;
-        delete_reducer = delete_pk_u_8;
+        delete_then = delete_pk_u_8_then;
         delete_reducer_event = DeletePkU8;
-        update_reducer = update_pk_u_8;
+        update_then = update_pk_u_8_then;
         update_reducer_event = UpdatePkU8;
         accessor_method = pk_u_8;
     }
     PkU16 {
         Key = u16;
         key_field_name = n;
-        insert_reducer = insert_pk_u_16;
+        insert_then = insert_pk_u_16_then;
         insert_reducer_event = InsertPkU16;
-        delete_reducer = delete_pk_u_16;
+        delete_then = delete_pk_u_16_then;
         delete_reducer_event = DeletePkU16;
-        update_reducer = update_pk_u_16;
+        update_then = update_pk_u_16_then;
         update_reducer_event = UpdatePkU16;
         accessor_method = pk_u_16;
     }
     PkU32 {
         Key = u32;
         key_field_name = n;
-        insert_reducer = insert_pk_u_32;
+        insert_then = insert_pk_u_32_then;
         insert_reducer_event = InsertPkU32;
-        delete_reducer = delete_pk_u_32;
+        delete_then = delete_pk_u_32_then;
         delete_reducer_event = DeletePkU32;
-        update_reducer = update_pk_u_32;
+        update_then = update_pk_u_32_then;
         update_reducer_event = UpdatePkU32;
         accessor_method = pk_u_32;
     }
     PkU32Two {
         Key = u32;
         key_field_name = n;
-        insert_reducer = insert_pk_u_32_two;
+        insert_then = insert_pk_u_32_two_then;
         insert_reducer_event = InsertPkU32Two;
-        delete_reducer = delete_pk_u_32_two;
+        delete_then = delete_pk_u_32_two_then;
         delete_reducer_event = DeletePkU32Two;
-        update_reducer = update_pk_u_32_two;
+        update_then = update_pk_u_32_two_then;
         update_reducer_event = UpdatePkU32Two;
         accessor_method = pk_u_32_two;
     }
     PkU64 {
         Key = u64;
         key_field_name = n;
-        insert_reducer = insert_pk_u_64;
+        insert_then = insert_pk_u_64_then;
         insert_reducer_event = InsertPkU64;
-        delete_reducer = delete_pk_u_64;
+        delete_then = delete_pk_u_64_then;
         delete_reducer_event = DeletePkU64;
-        update_reducer = update_pk_u_64;
+        update_then = update_pk_u_64_then;
         update_reducer_event = UpdatePkU64;
         accessor_method = pk_u_64;
     }
     PkU128 {
         Key = u128;
         key_field_name = n;
-        insert_reducer = insert_pk_u_128;
+        insert_then = insert_pk_u_128_then;
         insert_reducer_event = InsertPkU128;
-        delete_reducer = delete_pk_u_128;
+        delete_then = delete_pk_u_128_then;
         delete_reducer_event = DeletePkU128;
-        update_reducer = update_pk_u_128;
+        update_then = update_pk_u_128_then;
         update_reducer_event = UpdatePkU128;
         accessor_method = pk_u_128;
     }
     PkU256 {
         Key = u256;
         key_field_name = n;
-        insert_reducer = insert_pk_u_256;
+        insert_then = insert_pk_u_256_then;
         insert_reducer_event = InsertPkU256;
-        delete_reducer = delete_pk_u_256;
+        delete_then = delete_pk_u_256_then;
         delete_reducer_event = DeletePkU256;
-        update_reducer = update_pk_u_256;
+        update_then = update_pk_u_256_then;
         update_reducer_event = UpdatePkU256;
         accessor_method = pk_u_256;
     }
@@ -263,66 +281,66 @@ impl_pk_test_table! {
     PkI8 {
         Key = i8;
         key_field_name = n;
-        insert_reducer = insert_pk_i_8;
+        insert_then = insert_pk_i_8_then;
         insert_reducer_event = InsertPkI8;
-        delete_reducer = delete_pk_i_8;
+        delete_then = delete_pk_i_8_then;
         delete_reducer_event = DeletePkI8;
-        update_reducer = update_pk_i_8;
+        update_then = update_pk_i_8_then;
         update_reducer_event = UpdatePkI8;
         accessor_method = pk_i_8;
     }
     PkI16 {
         Key = i16;
         key_field_name = n;
-        insert_reducer = insert_pk_i_16;
+        insert_then = insert_pk_i_16_then;
         insert_reducer_event = InsertPkI16;
-        delete_reducer = delete_pk_i_16;
+        delete_then = delete_pk_i_16_then;
         delete_reducer_event = DeletePkI16;
-        update_reducer = update_pk_i_16;
+        update_then = update_pk_i_16_then;
         update_reducer_event = UpdatePkI16;
         accessor_method = pk_i_16;
     }
     PkI32 {
         Key = i32;
         key_field_name = n;
-        insert_reducer = insert_pk_i_32;
+        insert_then = insert_pk_i_32_then;
         insert_reducer_event = InsertPkI32;
-        delete_reducer = delete_pk_i_32;
+        delete_then = delete_pk_i_32_then;
         delete_reducer_event = DeletePkI32;
-        update_reducer = update_pk_i_32;
+        update_then = update_pk_i_32_then;
         update_reducer_event = UpdatePkI32;
         accessor_method = pk_i_32;
     }
     PkI64 {
         Key = i64;
         key_field_name = n;
-        insert_reducer = insert_pk_i_64;
+        insert_then = insert_pk_i_64_then;
         insert_reducer_event = InsertPkI64;
-        delete_reducer = delete_pk_i_64;
+        delete_then = delete_pk_i_64_then;
         delete_reducer_event = DeletePkI64;
-        update_reducer = update_pk_i_64;
+        update_then = update_pk_i_64_then;
         update_reducer_event = UpdatePkI64;
         accessor_method = pk_i_64;
     }
     PkI128 {
         Key = i128;
         key_field_name = n;
-        insert_reducer = insert_pk_i_128;
+        insert_then = insert_pk_i_128_then;
         insert_reducer_event = InsertPkI128;
-        delete_reducer = delete_pk_i_128;
+        delete_then = delete_pk_i_128_then;
         delete_reducer_event = DeletePkI128;
-        update_reducer = update_pk_i_128;
+        update_then = update_pk_i_128_then;
         update_reducer_event = UpdatePkI128;
         accessor_method = pk_i_128;
     }
     PkI256 {
         Key = i256;
         key_field_name = n;
-        insert_reducer = insert_pk_i_256;
+        insert_then = insert_pk_i_256_then;
         insert_reducer_event = InsertPkI256;
-        delete_reducer = delete_pk_i_256;
+        delete_then = delete_pk_i_256_then;
         delete_reducer_event = DeletePkI256;
-        update_reducer = update_pk_i_256;
+        update_then = update_pk_i_256_then;
         update_reducer_event = UpdatePkI256;
         accessor_method = pk_i_256;
     }
@@ -330,11 +348,11 @@ impl_pk_test_table! {
     PkBool {
         Key = bool;
         key_field_name = b;
-        insert_reducer = insert_pk_bool;
+        insert_then = insert_pk_bool_then;
         insert_reducer_event = InsertPkBool;
-        delete_reducer = delete_pk_bool;
+        delete_then = delete_pk_bool_then;
         delete_reducer_event = DeletePkBool;
-        update_reducer = update_pk_bool;
+        update_then = update_pk_bool_then;
         update_reducer_event = UpdatePkBool;
         accessor_method = pk_bool;
     }
@@ -342,11 +360,11 @@ impl_pk_test_table! {
     PkString {
         Key = String;
         key_field_name = s;
-        insert_reducer = insert_pk_string;
+        insert_then = insert_pk_string_then;
         insert_reducer_event = InsertPkString;
-        delete_reducer = delete_pk_string;
+        delete_then = delete_pk_string_then;
         delete_reducer_event = DeletePkString;
-        update_reducer = update_pk_string;
+        update_then = update_pk_string_then;
         update_reducer_event = UpdatePkString;
         accessor_method = pk_string;
     }
@@ -354,11 +372,11 @@ impl_pk_test_table! {
     PkIdentity {
         Key = Identity;
         key_field_name = i;
-        insert_reducer = insert_pk_identity;
+        insert_then = insert_pk_identity_then;
         insert_reducer_event = InsertPkIdentity;
-        delete_reducer = delete_pk_identity;
+        delete_then = delete_pk_identity_then;
         delete_reducer_event = DeletePkIdentity;
-        update_reducer = update_pk_identity;
+        update_then = update_pk_identity_then;
         update_reducer_event = UpdatePkIdentity;
         accessor_method = pk_identity;
     }
@@ -366,13 +384,24 @@ impl_pk_test_table! {
     PkConnectionId {
         Key = ConnectionId;
         key_field_name = a;
-        insert_reducer = insert_pk_connection_id;
+        insert_then = insert_pk_connection_id_then;
         insert_reducer_event = InsertPkConnectionId;
-        delete_reducer = delete_pk_connection_id;
+        delete_then = delete_pk_connection_id_then;
         delete_reducer_event = DeletePkConnectionId;
-        update_reducer = update_pk_connection_id;
+        update_then = update_pk_connection_id_then;
         update_reducer_event = UpdatePkConnectionId;
         accessor_method = pk_connection_id;
     }
 
+     PkUuid {
+        Key = Uuid;
+        key_field_name = u;
+        insert_then = insert_pk_uuid_then;
+        insert_reducer_event = InsertPkUuid;
+        delete_then = delete_pk_uuid_then;
+        delete_reducer_event = DeletePkUuid;
+        update_then = update_pk_uuid_then;
+        update_reducer_event = UpdatePkUuid;
+        accessor_method = pk_uuid;
+    }
 }

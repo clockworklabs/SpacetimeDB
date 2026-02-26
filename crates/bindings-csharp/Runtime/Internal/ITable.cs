@@ -1,5 +1,6 @@
 namespace SpacetimeDB.Internal;
 
+using System.Buffers;
 using SpacetimeDB.BSATN;
 
 internal abstract class RawTableIterBase<T>
@@ -7,8 +8,9 @@ internal abstract class RawTableIterBase<T>
 {
     public sealed class Enumerator(FFI.RowIter handle) : IDisposable
     {
-        byte[] buffer = new byte[0x20_000];
-        public byte[] Current { get; private set; } = [];
+        private const int InitialBufferSize = 1024;
+        private byte[]? buffer = ArrayPool<byte>.Shared.Rent(InitialBufferSize);
+        public ArraySegment<byte> Current { get; private set; } = ArraySegment<byte>.Empty;
 
         public bool MoveNext()
         {
@@ -17,14 +19,24 @@ internal abstract class RawTableIterBase<T>
                 return false;
             }
 
+            if (buffer is null)
+            {
+                return false;
+            }
+
             uint buffer_len;
             while (true)
             {
-                buffer_len = (uint)buffer.Length;
+                var requested_len = (uint)buffer.Length;
+                buffer_len = requested_len;
                 var ret = FFI.row_iter_bsatn_advance(handle, buffer, ref buffer_len);
                 if (ret == Errno.EXHAUSTED)
                 {
                     handle = FFI.RowIter.INVALID;
+                    if (buffer_len == requested_len)
+                    {
+                        buffer_len = 0;
+                    }
                 }
                 // On success, the only way `buffer_len == 0` is for the iterator to be exhausted.
                 // This happens when the host iterator was empty from the start.
@@ -33,11 +45,10 @@ internal abstract class RawTableIterBase<T>
                 {
                     // Iterator advanced and may also be `EXHAUSTED`.
                     // When `OK`, we'll need to advance the iterator in the next call to `MoveNext`.
-                    // In both cases, copy over the row data to `Current` from the scratch `buffer`.
+                    // In both cases, update `Current` to point at the valid range in the scratch `buffer`.
                     case Errno.EXHAUSTED
                     or Errno.OK:
-                        Current = new byte[buffer_len];
-                        Array.Copy(buffer, 0, Current, 0, buffer_len);
+                        Current = new ArraySegment<byte>(buffer, 0, (int)buffer_len);
                         return buffer_len != 0;
                     // Couldn't find the iterator, error!
                     case Errno.NO_SUCH_ITER:
@@ -46,7 +57,8 @@ internal abstract class RawTableIterBase<T>
                     // Grow `buffer` and try again.
                     // The `buffer_len` will have been updated with the necessary size.
                     case Errno.BUFFER_TOO_SMALL:
-                        buffer = new byte[buffer_len];
+                        ArrayPool<byte>.Shared.Return(buffer);
+                        buffer = ArrayPool<byte>.Shared.Rent((int)buffer_len);
                         continue;
                     default:
                         throw new UnknownException(ret);
@@ -60,6 +72,12 @@ internal abstract class RawTableIterBase<T>
             {
                 FFI.row_iter_bsatn_close(handle);
                 handle = FFI.RowIter.INVALID;
+            }
+
+            if (buffer is not null)
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+                buffer = null;
             }
         }
 
@@ -82,7 +100,13 @@ internal abstract class RawTableIterBase<T>
     {
         foreach (var chunk in this)
         {
-            using var stream = new MemoryStream(chunk);
+            using var stream = new MemoryStream(
+                chunk.Array!,
+                chunk.Offset,
+                chunk.Count,
+                writable: false,
+                publiclyVisible: true
+            );
             using var reader = new BinaryReader(stream);
             while (stream.Position < stream.Length)
             {
@@ -97,7 +121,9 @@ public interface ITableView<View, T>
     where T : IStructuralReadWrite, new()
 {
     // These are the methods that codegen needs to implement.
-    static abstract RawTableDefV9 MakeTableDesc(ITypeRegistrar registrar);
+    static abstract RawTableDefV10 MakeTableDesc(ITypeRegistrar registrar);
+
+    static abstract RawScheduleDefV10? MakeScheduleDesc();
 
     static abstract T ReadGenFields(BinaryReader reader, T row);
 
@@ -174,12 +200,17 @@ public interface ITableView<View, T>
         return out_ > 0;
     }
 
-    protected static RawScheduleDefV9 MakeSchedule(string reducerName, ushort colIndex) =>
-        new(Name: $"{tableName}_sched", ReducerName: reducerName, ScheduledAtColumn: colIndex);
-
-    protected static RawSequenceDefV9 MakeSequence(ushort colIndex) =>
+    protected static RawScheduleDefV10 MakeSchedule(string reducerName, ushort colIndex) =>
         new(
-            Name: null,
+            SourceName: null,
+            TableName: tableName,
+            ScheduleAtCol: colIndex,
+            FunctionName: reducerName
+        );
+
+    protected static RawSequenceDefV10 MakeSequence(ushort colIndex) =>
+        new(
+            SourceName: null,
             Column: colIndex,
             Start: null,
             MinValue: null,
@@ -187,6 +218,6 @@ public interface ITableView<View, T>
             Increment: 1
         );
 
-    protected static RawConstraintDefV9 MakeUniqueConstraint(ushort colIndex) =>
-        new(Name: null, Data: new RawConstraintDataV9.Unique(new([colIndex])));
+    protected static RawConstraintDefV10 MakeUniqueConstraint(ushort colIndex) =>
+        new(SourceName: null, Data: new RawConstraintDataV9.Unique(new([colIndex])));
 }

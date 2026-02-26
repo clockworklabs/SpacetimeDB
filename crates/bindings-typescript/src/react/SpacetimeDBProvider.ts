@@ -1,13 +1,15 @@
 import {
   DbConnectionBuilder,
   type DbConnectionImpl,
-  type ErrorContextInterface,
-  type RemoteModuleOf,
 } from '../sdk/db_connection_impl';
 import * as React from 'react';
 import { SpacetimeDBContext } from './useSpacetimeDB';
 import type { ConnectionState } from './connection_state';
 import { ConnectionId } from '../lib/connection_id';
+import {
+  ConnectionManager,
+  type ConnectionState as ManagerConnectionState,
+} from '../sdk/connection_manager';
 
 export interface SpacetimeDBProviderProps<
   DbConnection extends DbConnectionImpl<any>,
@@ -22,77 +24,61 @@ export function SpacetimeDBProvider<
   connectionBuilder,
   children,
 }: SpacetimeDBProviderProps<DbConnection>): React.JSX.Element {
-  // Holds the imperative connection instance when (and only when) we’re on the client.
-  const connRef = React.useRef<DbConnection | null>(null);
-  const getConnection = React.useCallback(() => connRef.current, []);
+  const uri = connectionBuilder.getUri();
+  const moduleName = connectionBuilder.getModuleName();
+  const key = React.useMemo(
+    () => ConnectionManager.getKey(uri, moduleName),
+    [uri, moduleName]
+  );
 
-  const [state, setState] = React.useState<ConnectionState>({
+  const fallbackStateRef = React.useRef<ManagerConnectionState>({
     isActive: false,
     identity: undefined,
     token: undefined,
     connectionId: ConnectionId.random(),
     connectionError: undefined,
-    getConnection: getConnection as ConnectionState['getConnection'],
   });
 
-  // Build on the client only; useEffect won't run during SSR.
+  const subscribe = React.useCallback(
+    (onStoreChange: () => void) =>
+      ConnectionManager.subscribe(key, onStoreChange),
+    [key]
+  );
+  const getSnapshot = React.useCallback(
+    () => ConnectionManager.getSnapshot(key) ?? fallbackStateRef.current,
+    [key]
+  );
+  const getServerSnapshot = React.useCallback(
+    () => fallbackStateRef.current,
+    []
+  );
+
+  const state = React.useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    getServerSnapshot
+  );
+
+  const getConnection = React.useCallback(
+    () => ConnectionManager.getConnection<DbConnection>(key),
+    [key]
+  );
+
+  const contextValue = React.useMemo<ConnectionState>(
+    () => ({ ...state, getConnection }),
+    [state, getConnection]
+  );
+
   React.useEffect(() => {
-    if (!connRef.current) {
-      connRef.current = connectionBuilder.build();
-    }
-    // Register callback for onConnect to update state
-    const onConnect = (conn: DbConnection) => {
-      setState(s => ({
-        ...s,
-        isActive: conn.isActive,
-        identity: conn.identity,
-        token: conn.token,
-        connectionId: conn.connectionId,
-      }));
-    };
-    const onDisconnect = (
-      ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>
-    ) => {
-      setState(s => ({
-        ...s,
-        isActive: ctx.isActive,
-      }));
-    };
-    const onConnectError = (
-      ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>,
-      err: Error
-    ) => {
-      setState(s => ({
-        ...s,
-        isActive: ctx.isActive,
-        connectionError: err,
-      }));
-    };
-    connectionBuilder.onConnect(onConnect);
-    connectionBuilder.onDisconnect(onDisconnect);
-    connectionBuilder.onConnectError(onConnectError);
-
-    const conn = connRef.current;
-    setState(s => ({
-      ...s,
-      isActive: conn.isActive,
-      identity: conn.identity,
-      token: conn.token,
-      connectionId: conn.connectionId,
-    }));
-
+    ConnectionManager.retain(key, connectionBuilder);
     return () => {
-      connRef.current?.removeOnConnect(onConnect as any);
-      connRef.current?.removeOnDisconnect(onDisconnect as any);
-      connRef.current?.removeOnConnectError(onConnectError as any);
-      connRef.current?.disconnect();
-      connRef.current = null;
+      ConnectionManager.release(key);
     };
-  }, [connectionBuilder]);
+  }, [key, connectionBuilder]);
 
   return React.createElement(
     SpacetimeDBContext.Provider,
-    { value: state },
+    { value: contextValue },
     children
   );
 }

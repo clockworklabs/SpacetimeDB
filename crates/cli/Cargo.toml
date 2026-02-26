@@ -48,7 +48,9 @@ fs-err.workspace = true
 http.workspace = true
 is-terminal.workspace = true
 itertools.workspace = true
+ignore.workspace = true
 indicatif.workspace = true
+json5.workspace = true
 jsonwebtoken.workspace = true
 mimalloc.workspace = true
 percent-encoding.workspace = true
@@ -76,8 +78,11 @@ wasmbin.workspace = true
 webbrowser.workspace = true
 clap-markdown.workspace = true
 git2.workspace = true
+glob.workspace = true
 dialoguer = { workspace = true, features = ["fuzzy-select"] }
 rolldown.workspace = true
+rolldown_common.workspace = true
+rolldown_error.workspace = true
 rolldown_utils.workspace = true
 xmltree.workspace = true
 quick-xml.workspace = true
@@ -87,10 +92,6 @@ notify.workspace = true
 [dev-dependencies]
 pretty_assertions.workspace = true
 fs_extra.workspace = true
-assert_cmd = "2"
-predicates = "3"
-portpicker = "0.1"
-reqwest = { workspace = true, features = ["blocking", "json"] }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true }
@@ -100,6 +101,7 @@ tikv-jemalloc-ctl = { workspace = true }
 windows-sys = { workspace = true, features = ["Win32_System_Console"] }
 
 [build-dependencies]
+serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 toml.workspace = true
 

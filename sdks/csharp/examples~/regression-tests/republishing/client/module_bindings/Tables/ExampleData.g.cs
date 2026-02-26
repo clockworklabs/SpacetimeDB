@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class ExampleDataHandle : RemoteTableHandle<EventContext, ExampleData>
         {
-            protected override string RemoteTableName => "ExampleData";
+            protected override string RemoteTableName => "example_data";
 
             public sealed class PrimaryUniqueIndex : UniqueIndexBase<uint>
             {
@@ -35,5 +35,59 @@ namespace SpacetimeDB.Types
         }
 
         public readonly ExampleDataHandle ExampleData;
+    }
+
+    public sealed class ExampleDataCols
+    {
+        public global::SpacetimeDB.Col<ExampleData, uint> Primary { get; }
+        public global::SpacetimeDB.Col<ExampleData, uint> TestPass { get; }
+        public global::SpacetimeDB.Col<ExampleData, string> DefaultString { get; }
+        public global::SpacetimeDB.Col<ExampleData, bool> DefaultBool { get; }
+        public global::SpacetimeDB.Col<ExampleData, sbyte> DefaultI8 { get; }
+        public global::SpacetimeDB.Col<ExampleData, byte> DefaultU8 { get; }
+        public global::SpacetimeDB.Col<ExampleData, short> DefaultI16 { get; }
+        public global::SpacetimeDB.Col<ExampleData, ushort> DefaultU16 { get; }
+        public global::SpacetimeDB.Col<ExampleData, int> DefaultI32 { get; }
+        public global::SpacetimeDB.Col<ExampleData, uint> DefaultU32 { get; }
+        public global::SpacetimeDB.Col<ExampleData, long> DefaultI64 { get; }
+        public global::SpacetimeDB.Col<ExampleData, ulong> DefaultU64 { get; }
+        public global::SpacetimeDB.Col<ExampleData, int> DefaultHex { get; }
+        public global::SpacetimeDB.Col<ExampleData, int> DefaultBin { get; }
+        public global::SpacetimeDB.Col<ExampleData, float> DefaultF32 { get; }
+        public global::SpacetimeDB.Col<ExampleData, double> DefaultF64 { get; }
+        public global::SpacetimeDB.Col<ExampleData, MyEnum> DefaultEnum { get; }
+        public global::SpacetimeDB.NullableCol<ExampleData, MyStruct> DefaultNull { get; }
+
+        public ExampleDataCols(string tableName)
+        {
+            Primary = new global::SpacetimeDB.Col<ExampleData, uint>(tableName, "primary");
+            TestPass = new global::SpacetimeDB.Col<ExampleData, uint>(tableName, "test_pass");
+            DefaultString = new global::SpacetimeDB.Col<ExampleData, string>(tableName, "default_string");
+            DefaultBool = new global::SpacetimeDB.Col<ExampleData, bool>(tableName, "default_bool");
+            DefaultI8 = new global::SpacetimeDB.Col<ExampleData, sbyte>(tableName, "default_i_8");
+            DefaultU8 = new global::SpacetimeDB.Col<ExampleData, byte>(tableName, "default_u_8");
+            DefaultI16 = new global::SpacetimeDB.Col<ExampleData, short>(tableName, "default_i_16");
+            DefaultU16 = new global::SpacetimeDB.Col<ExampleData, ushort>(tableName, "default_u_16");
+            DefaultI32 = new global::SpacetimeDB.Col<ExampleData, int>(tableName, "default_i_32");
+            DefaultU32 = new global::SpacetimeDB.Col<ExampleData, uint>(tableName, "default_u_32");
+            DefaultI64 = new global::SpacetimeDB.Col<ExampleData, long>(tableName, "default_i_64");
+            DefaultU64 = new global::SpacetimeDB.Col<ExampleData, ulong>(tableName, "default_u_64");
+            DefaultHex = new global::SpacetimeDB.Col<ExampleData, int>(tableName, "default_hex");
+            DefaultBin = new global::SpacetimeDB.Col<ExampleData, int>(tableName, "default_bin");
+            DefaultF32 = new global::SpacetimeDB.Col<ExampleData, float>(tableName, "default_f_32");
+            DefaultF64 = new global::SpacetimeDB.Col<ExampleData, double>(tableName, "default_f_64");
+            DefaultEnum = new global::SpacetimeDB.Col<ExampleData, MyEnum>(tableName, "default_enum");
+            DefaultNull = new global::SpacetimeDB.NullableCol<ExampleData, MyStruct>(tableName, "default_null");
+        }
+    }
+
+    public sealed class ExampleDataIxCols
+    {
+        public global::SpacetimeDB.IxCol<ExampleData, uint> Primary { get; }
+
+        public ExampleDataIxCols(string tableName)
+        {
+            Primary = new global::SpacetimeDB.IxCol<ExampleData, uint>(tableName, "primary");
+        }
     }
 }

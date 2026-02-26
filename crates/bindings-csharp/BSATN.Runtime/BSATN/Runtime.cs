@@ -203,6 +203,12 @@ public readonly struct RefOption<Inner, InnerRW> : IReadWrite<Inner?>
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
         AlgebraicType.MakeOption(innerRW.GetAlgebraicType(registrar));
+
+    // Return a List BSATN serializer that can serialize this option as an array
+    public static List<Inner, InnerRW> GetListSerializer()
+    {
+        return new List<Inner, InnerRW>();
+    }
 }
 
 // This implementation is nearly identical to RefOption. The only difference is the constraint on T.
@@ -542,8 +548,18 @@ public readonly struct String : IReadWrite<string>
     public string Read(BinaryReader reader) =>
         Encoding.UTF8.GetString(ByteArray.Instance.Read(reader));
 
-    public void Write(BinaryWriter writer, string value) =>
+    public void Write(BinaryWriter writer, string value)
+    {
+        if (value is null)
+        {
+            throw new ArgumentNullException(
+                nameof(value),
+                "Cannot serialize a null string as BSATN String. To serialize a null string you must use a nullable string (string?) so it is encoded as a BSATN option."
+            );
+        }
+
         ByteArray.Instance.Write(writer, Encoding.UTF8.GetBytes(value));
+    }
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
         new AlgebraicType.String(default);

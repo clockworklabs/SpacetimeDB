@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // IMPORTS
 // ─────────────────────────────────────────────────────────────────────────────
-import { ScheduleAt } from 'spacetimedb';
+import { ScheduleAt, Uuid } from 'spacetimedb';
 import {
   errors,
   schema,
@@ -26,6 +26,11 @@ const MyTable = table(
   { field: ReturnStruct }
 );
 
+const PkTable = table(
+  { name: 'pk_uuid', public: true },
+  { u: t.uuid().primaryKey(), data: t.i32() }
+);
+
 const ScheduledProcTable = t.row({
   scheduled_id: t.u64().primaryKey().autoInc(),
   scheduled_at: t.scheduleAt(),
@@ -34,7 +39,7 @@ const ScheduledProcTable = t.row({
   y: t.u8(),
 });
 const ScheduledProcTableTable = table(
-  { name: 'scheduled_proc_table', scheduled: 'scheduled_proc' },
+  { name: 'scheduled_proc_table', scheduled: (): any => scheduled_proc },
   ScheduledProcTable
 );
 
@@ -49,41 +54,43 @@ const ProcInsertsIntoTable = table(
   ProcInsertsInto
 );
 
-const spacetimedb = schema(MyTable, ScheduledProcTableTable, ProcInsertsIntoTable);
+const spacetimedb = schema({
+  myTable: MyTable,
+  pkUuid: PkTable,
+  scheduledProcTable: ScheduledProcTableTable,
+  procInsertsInto: ProcInsertsIntoTable,
+});
+export default spacetimedb;
 
-spacetimedb.procedure(
-  'return_primitive',
+export const return_primitive = spacetimedb.procedure(
   { lhs: t.u32(), rhs: t.u32() },
   t.u32(),
   (_ctx, { lhs, rhs }) => lhs + rhs
 );
 
-spacetimedb.procedure(
-  'return_struct',
+export const return_struct = spacetimedb.procedure(
   { a: t.u32(), b: t.string() },
   ReturnStruct,
   (_ctx, { a, b }) => ({ a, b })
 );
 
-spacetimedb.procedure(
-  'return_enum_a',
+export const return_enum_a = spacetimedb.procedure(
   { a: t.u32() },
   ReturnEnum,
   (_ctx, { a }) => ReturnEnum.A(a)
 );
 
-spacetimedb.procedure(
-  'return_enum_b',
+export const return_enum_b = spacetimedb.procedure(
   { b: t.string() },
   ReturnEnum,
   (_ctx, { b }) => ReturnEnum.B(b)
 );
 
-spacetimedb.procedure('will_panic', t.unit(), _ctx => {
+export const will_panic = spacetimedb.procedure(t.unit(), _ctx => {
   throw new Error('This procedure is expected to panic');
 });
 
-spacetimedb.procedure('read_my_schema', t.string(), ctx => {
+export const read_my_schema = spacetimedb.procedure(t.string(), ctx => {
   const module_identity = ctx.identity;
   const response = ctx.http.fetch(
     `http://localhost:3000/v1/database/${module_identity}/schema?version=9`
@@ -91,7 +98,7 @@ spacetimedb.procedure('read_my_schema', t.string(), ctx => {
   return response.text();
 });
 
-spacetimedb.procedure('invalid_request', t.string(), ctx => {
+export const invalid_request = spacetimedb.procedure(t.string(), ctx => {
   try {
     const response = ctx.http.fetch('http://foo.invalid/');
     throw new Error(
@@ -124,13 +131,13 @@ function assertEqual<T>(a: T, b: T) {
   }
 }
 
-spacetimedb.procedure('insert_with_tx_commit', t.unit(), ctx => {
+export const insert_with_tx_commit = spacetimedb.procedure(t.unit(), ctx => {
   ctx.withTx(insertMyTable);
   assertRowCount(ctx, 1);
   return {};
 });
 
-spacetimedb.procedure('insert_with_tx_rollback', t.unit(), ctx => {
+export const insert_with_tx_rollback = spacetimedb.procedure(t.unit(), ctx => {
   const error = {};
   try {
     ctx.withTx(ctx => {
@@ -144,28 +151,52 @@ spacetimedb.procedure('insert_with_tx_rollback', t.unit(), ctx => {
   return {};
 });
 
-spacetimedb.reducer('schedule_proc', {}, ctx => {
+export const schedule_proc = spacetimedb.reducer(ctx => {
   ctx.db.scheduledProcTable.insert({
     scheduled_id: 0n,
     scheduled_at: ScheduleAt.interval(1000000n),
     reducer_ts: ctx.timestamp,
     x: 42,
     y: 24,
-  })
+  });
 });
 
-spacetimedb.procedure('scheduled_proc', { data: ScheduledProcTable }, t.unit(), (ctx, { data }) => {
-  const reducer_ts = data.reducer_ts;
-  const x = data.x;
-  const y = data.y;
-  const procedure_ts = ctx.timestamp;
-  ctx.withTx(ctx => {
-    ctx.db.procInsertsInto.insert({
-      reducer_ts,
-      procedure_ts,
-      x,
-      y
+export const scheduled_proc = spacetimedb.procedure(
+  { data: ScheduledProcTable },
+  t.unit(),
+  (ctx, { data }) => {
+    const reducer_ts = data.reducer_ts;
+    const x = data.x;
+    const y = data.y;
+    const procedure_ts = ctx.timestamp;
+    ctx.withTx(ctx => {
+      ctx.db.procInsertsInto.insert({
+        reducer_ts,
+        procedure_ts,
+        x,
+        y,
+      });
     });
+    return {};
+  }
+);
+
+export const sorted_uuids_insert = spacetimedb.procedure(t.unit(), ctx => {
+  ctx.withTx(ctx => {
+    for (let i = 0; i < 1000; i++) {
+      const uuid = ctx.newUuidV7();
+      ctx.db.pkUuid.insert({ u: uuid, data: 0 });
+    }
+
+    // Verify UUIDs are sorted
+    let lastUuid: Uuid | null = null;
+
+    for (const row of ctx.db.pkUuid.iter()) {
+      if (lastUuid !== null && lastUuid >= row.u) {
+        throw new Error('UUIDs are not sorted correctly');
+      }
+      lastUuid = row.u;
+    }
   });
   return {};
 });

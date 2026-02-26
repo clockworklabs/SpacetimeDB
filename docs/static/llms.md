@@ -57,6 +57,64 @@ Clockwork Labs, the developers of SpacetimeDB, offers three products:
 2. SpacetimeDB Maincloud: a hosted, managed-service, serverless cluster
 3. SpacetimeDB Enterprise: a closed-source, clusterized version of SpacetimeDB which can be licensed for on-prem hosting or dedicated hosting
 
+## Documentation Directory
+
+### Getting Started
+- [What is SpacetimeDB](/intro/what-is-spacetimedb) - Overview and core concepts
+- [Key Architecture](/intro/key-architecture) - How SpacetimeDB works
+- [Language Support](/intro/language-support) - Supported languages and SDKs
+- [FAQ](/intro/faq) - Frequently asked questions
+
+### Quickstarts
+- [React Quickstart](/quickstarts/react) - Get started with React + TypeScript
+- [TypeScript Quickstart](/quickstarts/typescript) - TypeScript server module
+- [Rust Quickstart](/quickstarts/rust) - Rust server module
+- [C# Quickstart](/quickstarts/c-sharp) - C# server module
+
+### Core Concepts
+- [Databases](/databases) - Database modules overview
+- [Tables](/tables) - Defining and working with tables
+  - [Columns](/tables/columns) - Column types and definitions
+  - [Indexes](/tables/indexes) - Creating and using indexes
+  - [Scheduled Tables](/tables/scheduled-tables) - Time-based scheduling
+  - [Access Permissions](/tables/access-permissions) - Table visibility (public/private)
+- [Functions](/functions) - Server-side logic
+  - [Reducers](/functions/reducers) - Transactional RPC functions
+  - [Reducer Context](/functions/reducers/reducer-context) - ctx.db, ctx.sender, etc.
+  - [Lifecycle Reducers](/functions/reducers/lifecycle) - init, client_connected, client_disconnected
+  - [Error Handling](/functions/reducers/error-handling) - Handling errors in reducers
+  - [Procedures](/functions/procedures) - Non-transactional functions with side effects
+  - [Views](/functions/views) - Computed data views
+- [Subscriptions](/subscriptions) - Real-time data synchronization
+  - [Subscription Semantics](/subscriptions/semantics) - How subscriptions work
+- [Client SDKs](/sdks) - Client-side integration
+  - [Code Generation](/sdks/codegen) - Generating type-safe bindings
+
+### Development
+- [spacetime dev](/databases/developing) - Interactive development mode
+- [Building & Publishing](/databases/building-publishing) - Deploying modules
+- [Cheat Sheet](/databases/cheat-sheet) - Quick reference for common operations
+- [Automatic Migrations](/databases/automatic-migrations) - Schema migration handling
+
+### Deployment
+- [Deploy to Maincloud](/how-to/deploy/maincloud) - Hosted deployment
+- [Self-Hosting](/how-to/deploy/self-hosting) - Run your own server
+
+### Reference
+- [CLI Reference](/cli-reference) - Command-line tool documentation
+- [SQL Reference](/reference/sql) - SQL query syntax
+- [HTTP API](/http/database) - REST API reference
+
+### AI Assistant Rules
+
+**IMPORTANT:** Before writing SpacetimeDB code, consult the language-specific rules files. These contain critical information about hallucinated APIs, common mistakes, and correct patterns:
+
+| Language | Rules |
+|----------|-------|
+| All Languages | [spacetimedb.mdc](https://spacetimedb.com/docs/ai-rules/spacetimedb.mdc) |
+| TypeScript | [spacetimedb-typescript.mdc](https://spacetimedb.com/docs/ai-rules/spacetimedb-typescript.mdc) |
+| Rust | [spacetimedb-rust.mdc](https://spacetimedb.com/docs/ai-rules/spacetimedb-rust.mdc) |
+| C# | [spacetimedb-csharp.mdc](https://spacetimedb.com/docs/ai-rules/spacetimedb-csharp.mdc) |
 ## Basic Project Workflow
 
 Getting started with SpacetimeDB involves a few key steps:
@@ -88,11 +146,11 @@ Getting started with SpacetimeDB involves a few key steps:
       ```bash
       # Example: Build a module located in the current directory (.)
       # Mount current dir to /module inside container, set working dir to /module
-      docker run --rm -v "$(pwd):/module" -w /module clockworklabs/spacetime build --project-path .
+      docker run --rm -v "$(pwd):/module" -w /module clockworklabs/spacetime build --module-path .
 
       # Example: Publish the module after building
       # Assumes a local server is running (or use --host for Maincloud/other)
-      docker run --rm -v "$(pwd):/module" -w /module --network host clockworklabs/spacetime publish --project-path . my-database-name
+      docker run --rm -v "$(pwd):/module" -w /module --network host clockworklabs/spacetime publish --module-path . my-database-name
       # Note: `--network host` is often needed to connect to a local server from the container.
       ```
 
@@ -123,14 +181,14 @@ _ Choosing `n` proceeds without a global login for this operation. The CLI will 
 4.  **Build Module:** Compile your module code into WebAssembly using the CLI:
     ```bash
     # Run from the directory containing your module folder
-    spacetime build --project-path my_server_module
+    spacetime build --module-path my_server_module
     ```
     :::note C# Build Prerequisite (.NET SDK)
     Building a **C# module** (on any platform: Windows, macOS, Linux) requires the .NET SDK to be installed. If the build fails with an error mentioning `dotnet workload list` or `No .NET SDKs were found`, you need to install the SDK first. Download and install the **.NET 8 SDK** specifically from the official Microsoft website: [https://dotnet.microsoft.com/download](https://dotnet.microsoft.com/download). Newer versions (like .NET 9) are not currently supported for building SpacetimeDB modules, although they can be installed alongside .NET 8 without conflicting.
     :::
 5.  **Publish Module:** Deploy your compiled module to a SpacetimeDB instance (either a local one started with `spacetime start` or the managed Maincloud). Publishing creates or updates a database associated with your module.
     - Providing a `[name|identity]` for the database is **optional**. If omitted, a nameless database will be created and assigned a unique `Identity` automatically. If providing a _name_, it must match the regex `^[a-z0-9]+(-[a-z0-9]+)*$`.
-    - By default (`--project-path`), it builds the module before publishing. Use `--bin-path <wasm_file>` to publish a pre-compiled WASM instead.
+    - By default (`--module-path`), it builds the module before publishing. Use `--bin-path <wasm_file>` to publish a pre-compiled WASM instead.
     - Use `-s, --server <server>` to specify the target instance (e.g., `maincloud.spacetimedb.com` or the nickname `maincloud`). If omitted, it targets a local instance or uses your configured default (check with `spacetime server list`).
     - Use `-c, --delete-data` when updating an existing database identity to destroy all existing data first.
 
@@ -140,7 +198,7 @@ _ Choosing `n` proceeds without a global login for this operation. The CLI will 
 
     ```bash
     # Build and publish from source to 'my-database-name' on the default server
-    spacetime publish --project-path my_server_module my-database-name
+    spacetime publish --module-path my_server_module my-database-name
 
     # Example: Publish a pre-compiled wasm to Maincloud using its nickname, clearing existing data
     spacetime publish --bin-path ./my_module/target/wasm32-wasi/debug/my_module.wasm -s maincloud -c my-cloud-db-identity
@@ -160,9 +218,9 @@ _ Choosing `n` proceeds without a global login for this operation. The CLI will 
     This command inspects your compiled module's schema (tables, types, reducers) and generates corresponding code (classes, structs, functions) for your target client language. This allows you to interact with your SpacetimeDB module in a type-safe way on the client.
     ```bash
     # For Rust client (output to src/module_bindings)
-    spacetime generate --lang rust --out-dir path/to/client/src/module_bindings --project-path my_server_module
+    spacetime generate --lang rust --out-dir path/to/client/src/module_bindings --module-path my_server_module
     # For C# client (output to module_bindings directory)
-    spacetime generate --lang csharp --out-dir path/to/client/module_bindings --project-path my_server_module
+    spacetime generate --lang csharp --out-dir path/to/client/module_bindings --module-path my_server_module
     ```
 8.  **Develop Client:** Create your client application (e.g., Rust binary, C# console app, Unity game). Use the generated bindings and the appropriate client SDK to:
     - Connect to the database (`my-database-name`).
@@ -280,13 +338,13 @@ The `[lib]` section in your module's `Cargo.toml` must contain `crate-type = ["c
 
 Database tables store the application's persistent state. They are defined using Rust structs annotated with the `#[table]` macro.
 
-- **Core Attribute:** `#[table(name = my_table_name, ...)]` marks a struct as a database table definition. The specified `name` (an identifier, _not_ a string literal) is how the table will be referenced in SQL queries and generated APIs.
+- **Core Attribute:** `#[table(accessor = my_table_name, ...)]` marks a struct as a database table definition. The specified `name` (an identifier, _not_ a string literal) is how the table will be referenced in SQL queries and generated APIs.
 - **Derivations:** The `#[table]` macro automatically handles deriving necessary traits like `SpacetimeType`, `Serialize`, `Deserialize`, and `Debug`. **Do not** manually add `#[derive(SpacetimeType)]` to a `#[table]` struct, as it will cause compilation conflicts.
 - **Public vs. Private:** By default, tables are **private**, accessible only by server-side reducer code. To allow clients to read or subscribe to a table's data, mark it as `public` using `#[table(..., public)]`. This is a common source of errors if forgotten.
 - **Primary Keys:** Designate a single field as the primary key using `#[primary_key]`. This ensures uniqueness, creates an efficient index, and allows clients to track row updates.
 - **Auto-Increment:** Mark an integer-typed primary key field with `#[auto_inc]` to have SpacetimeDB automatically assign unique, sequentially increasing values upon insertion. Provide `0` as the value for this field when inserting a new row to trigger the auto-increment mechanism.
 - **Unique Constraints:** Enforce uniqueness on non-primary key fields using `#[unique]`. Attempts to insert or update rows violating this constraint will fail.
-- **Indexes:** Create B-tree indexes for faster lookups on specific fields or combinations of fields. Use `#[index(btree)]` on a single field for a simple index, or `#[table(index(name = my_index_name, btree(columns = [col_a, col_b])))])` within the `#[table(...)]` attribute for named, multi-column indexes.
+- **Indexes:** Create B-tree indexes for faster lookups on specific fields or combinations of fields. Use `#[index(btree)]` on a single field for a simple index, or `#[table(index(accessor = my_index_name, btree(columns = [col_a, col_b])))])` within the `#[table(...)]` attribute for named, multi-column indexes.
 - **Nullable Fields:** Use standard Rust `Option<T>` for fields that can hold null values.
 - **Instances vs. Database:** Remember that table struct instances (e.g., `let player = PlayerState { ... };`) are just data. Modifying an instance does **not** automatically update the database. Interaction happens through generated handles accessed via the `ReducerContext` (e.g., `ctx.db.player_state().insert(...)`).
 - **Case Sensitivity:** Table names specified via `name = ...` are case-sensitive and must be matched exactly in SQL queries.
@@ -294,7 +352,7 @@ Database tables store the application's persistent state. They are defined using
   - Avoid manually inserting values into `#[auto_inc]` fields that are also `#[unique]`, especially values larger than the current sequence counter, as this can lead to future unique constraint violations when the counter catches up.
   - Ensure `public` is set if clients need access.
   - Do not manually derive `SpacetimeType`.
-  - Define indexes _within_ the main `#[table(name=..., index=...)]` attribute. Each `#[table]` macro invocation defines a _distinct_ table and requires a `name`; separate `#[table]` attributes cannot be used solely to add indexes to a previously named table.
+  - Define indexes _within_ the main `#[table(accessor=..., index=...)]` attribute. Each `#[table]` macro invocation defines a _distinct_ table and requires an `accessor`; separate `#[table]` attributes cannot be used solely to add indexes to a previously named table.
 
 ```rust
 use spacetimedb::{table, Identity, Timestamp, SpacetimeType, Table}; // Added Table import
@@ -303,10 +361,10 @@ use spacetimedb::{table, Identity, Timestamp, SpacetimeType, Table}; // Added Ta
 
 // Example Table Definition
 #[table(
-    name = player_state,
+    accessor = player_state,
     public,
     // Index definition is included here
-    index(name = idx_level_btree, btree(columns = [level]))
+    index(accessor = idx_level_btree, btree(columns = [level]))
 )]
 #[derive(Clone, Debug)] // No SpacetimeType needed here
 pub struct PlayerState {
@@ -322,7 +380,7 @@ pub struct PlayerState {
     last_login: Option<Timestamp>, // Nullable timestamp
 }
 
-#[table(name = inventory_item, public)]
+#[table(accessor = inventory_item, public)]
 #[derive(Clone, Debug)]
 pub struct InventoryItem {
     #[primary_key]
@@ -335,7 +393,7 @@ pub struct InventoryItem {
 }
 
 // Example of a private table
-#[table(name = internal_game_data)] // No `public` flag
+#[table(accessor = internal_game_data)] // No `public` flag
 #[derive(Clone, Debug)]
 struct InternalGameData {
     #[primary_key]
@@ -359,8 +417,8 @@ use spacetimedb::{table, Identity, Timestamp, Table}; // Added Table import
 // Note: #[table] automatically derives SpacetimeType, Serialize, Deserialize
 // Do NOT add #[derive(SpacetimeType)] here.
 #[derive(Clone, Debug)]
-#[table(name = logged_in_players, public)]  // Identifier name
-#[table(name = players_in_lobby, public)]   // Identifier name
+#[table(accessor = logged_in_players, public)]  // Identifier name
+#[table(accessor = players_in_lobby, public)]   // Identifier name
 pub struct PlayerSessionData {
     #[primary_key]
     player_id: Identity,
@@ -375,7 +433,7 @@ pub struct PlayerSessionData {
 fn example_reducer(ctx: &spacetimedb::ReducerContext) {
     // Reducers interact with the specific table handles:
     let session = PlayerSessionData {
-        player_id: ctx.sender, // Example: Use sender identity
+        player_id: ctx.sender(), // Example: Use sender identity
         session_id: 0, // Assuming auto_inc
         last_activity: ctx.timestamp,
     };
@@ -387,12 +445,12 @@ fn example_reducer(ctx: &spacetimedb::ReducerContext) {
     }
 
     // Find a player in the 'players_in_lobby' table by primary key
-    if let Some(lobby_player) = ctx.db.players_in_lobby().player_id().find(&ctx.sender) {
+    if let Some(lobby_player) = ctx.db.players_in_lobby().player_id().find(&ctx.sender()) {
         spacetimedb::log::info!("Player {} found in lobby.", lobby_player.player_id);
     }
 
     // Delete from the 'logged_in_players' table using the PK index
-    ctx.db.logged_in_players().player_id().delete(&ctx.sender);
+    ctx.db.logged_in_players().player_id().delete(&ctx.sender());
 }
 ```
 
@@ -432,15 +490,15 @@ Reducers are the functions within your server module responsible for atomically 
 use spacetimedb::{reducer, ReducerContext, Table, Identity, Timestamp, log};
 
 // Assume User and Message tables are defined as previously
-#[table(name = user, public)]
+#[table(accessor = user, public)]
 #[derive(Clone, Debug)] pub struct User { #[primary_key] identity: Identity, name: Option<String>, online: bool }
-#[table(name = message, public)]
+#[table(accessor = message, public)]
 #[derive(Clone, Debug)] pub struct Message { #[primary_key] #[auto_inc] id: u64, sender: Identity, text: String, sent: Timestamp }
 
 // Example: Basic reducer to set a user's name
 #[reducer]
 pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
-    let sender_id = ctx.sender;
+    let sender_id = ctx.sender();
     let name = validate_name(name)?; // Use helper for validation
 
     // Find the user row by primary key
@@ -460,13 +518,13 @@ pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
 #[reducer]
 pub fn send_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
     let text = validate_message(text)?; // Use helper for validation
-    log::info!("User {} sent message: {}", ctx.sender, text);
+    log::info!("User {} sent message: {}", ctx.sender(), text);
 
     // Insert a new row into the Message table
     // Note: id is auto_inc, so we provide 0. insert() panics on constraint violation.
     let new_message = Message {
         id: 0,
-        sender: ctx.sender,
+        sender: ctx.sender(),
         text,
         sent: ctx.timestamp,
     };
@@ -508,15 +566,15 @@ Reducers can indicate failure either by returning `Err` from a function with a `
 Special reducers handle specific events:
 
 - `#[reducer(init)]`: Runs once when the module is first published **and** any time the database is manually cleared (e.g., via `spacetime publish -c` or `spacetime server clear`). Failure prevents publishing or clearing. Often used for initial data setup.
-- `#[reducer(client_connected)]`: Runs when any distinct client connection (e.g., WebSocket, HTTP call) is established. Failure disconnects the client. `ctx.connection_id` is guaranteed to be `Some(...)` within this reducer.
-- `#[reducer(client_disconnected)]`: Runs when any distinct client connection terminates. Failure is logged but does not prevent disconnection. `ctx.connection_id` is guaranteed to be `Some(...)` within this reducer.
+- `#[reducer(client_connected)]`: Runs when any distinct client connection (e.g., WebSocket, HTTP call) is established. Failure disconnects the client. `ctx.connection_id()` is guaranteed to be `Some(...)` within this reducer.
+- `#[reducer(client_disconnected)]`: Runs when any distinct client connection terminates. Failure is logged but does not prevent disconnection. `ctx.connection_id()` is guaranteed to be `Some(...)` within this reducer.
 
 These reducers cannot take arguments beyond `&ReducerContext`.
 
 ```rust
 use spacetimedb::{reducer, table, ReducerContext, Table, log};
 
-#[table(name = settings)]
+#[table(accessor = settings)]
 #[derive(Clone, Debug)]
 pub struct Settings {
     #[primary_key]
@@ -552,14 +610,14 @@ pub fn initialize_database(ctx: &ReducerContext) {
 // Example client_connected reducer
 #[reducer(client_connected)]
 pub fn handle_connect(ctx: &ReducerContext) {
-    log::info!("Client connected: {}, Connection ID: {:?}", ctx.sender, ctx.connection_id);
+    log::info!("Client connected: {}, Connection ID: {:?}", ctx.sender(), ctx.connection_id());
     // ... setup initial state for ctx.sender ...
 }
 
 // Example client_disconnected reducer
 #[reducer(client_disconnected)]
 pub fn handle_disconnect(ctx: &ReducerContext) {
-    log::info!("Client disconnected: {}, Connection ID: {:?}", ctx.sender, ctx.connection_id);
+    log::info!("Client disconnected: {}, Connection ID: {:?}", ctx.sender(), ctx.connection_id());
     // ... cleanup state for ctx.sender ...
 }
 ```
@@ -581,10 +639,10 @@ SpacetimeDB provides powerful ways to filter and delete table rows using B-tree 
 ```rust
 use spacetimedb::{table, reducer, ReducerContext, Table, log};
 
-#[table(name = points, index(name = idx_xy, btree(columns = [x, y])))]
+#[table(accessor = points, index(accessor = idx_xy, btree(columns = [x, y])))]
 #[derive(Clone, Debug)]
 pub struct Point { #[primary_key] id: u64, x: i64, y: i64 }
-#[table(name = items, index(btree(columns = [name])))]
+#[table(accessor = items, index(btree(columns = [name])))]
 #[derive(Clone, Debug)] // No SpacetimeType derive
 pub struct Item { #[primary_key] item_key: u32, name: String }
 
@@ -640,7 +698,7 @@ The `TryInsertError` enum provides specific variants detailing the cause of fail
 ````rust
 use spacetimedb::{table, reducer, ReducerContext, Table, log, TryInsertError};
 
-#[table(name = items)]
+#[table(accessor = items)]
 #[derive(Clone, Debug)]
 pub struct Item {
     #[primary_key] #[auto_inc] id: u64,
@@ -713,7 +771,7 @@ use spacetimedb::{table, reducer, ReducerContext, Timestamp, TimeDuration, Sched
 use log::debug;
 
 // 1. Declare the table with scheduling information, linking it to `send_message`.
-#[table(name = send_message_schedule, scheduled(send_message))]
+#[table(accessor = send_message_schedule, scheduled(send_message))]
 struct SendMessageSchedule {
     // Mandatory fields:
     // ============================
@@ -741,7 +799,7 @@ struct SendMessageSchedule {
 #[reducer]
 fn send_message(ctx: &ReducerContext, args: SendMessageSchedule) -> Result<(), String> {
     // Security check is important!
-    if ctx.sender != ctx.identity() {
+    if ctx.sender() != ctx.identity() {
         return Err("Reducer `send_message` may not be invoked by clients, only via scheduling.".into());
     }
 
@@ -792,7 +850,7 @@ Refer to the [official Rust Module SDK documentation on docs.rs](https://docs.rs
 
 - **Best-Effort Scheduling:** Scheduled reducers are called on a best-effort basis and may be slightly delayed in their execution when a database is under heavy load.
 
-- **Restricting Access (Security):** Scheduled reducers are normal reducers and _can_ still be called directly by clients. If a scheduled reducer should _only_ be called by the scheduler, it is crucial to begin the reducer with a check comparing the caller's identity (`ctx.sender`) to the module's own identity (`ctx.identity()`).
+- **Restricting Access (Security):** Scheduled reducers are normal reducers and _can_ still be called directly by clients. If a scheduled reducer should _only_ be called by the scheduler, it is crucial to begin the reducer with a check comparing the caller's identity (`ctx.sender()`) to the module's own identity (`ctx.identity()`).
 
   ```rust
   use spacetimedb::{reducer, ReducerContext};
@@ -801,7 +859,7 @@ Refer to the [official Rust Module SDK documentation on docs.rs](https://docs.rs
 
   #[reducer]
   fn my_scheduled_reducer(ctx: &ReducerContext, args: MyScheduleArgs) -> Result<(), String> {
-      if ctx.sender != ctx.identity() {
+      if ctx.sender() != ctx.identity() {
           return Err("Reducer `my_scheduled_reducer` may not be invoked by clients, only via scheduling.".into());
       }
       // ... Reducer body proceeds only if called by scheduler ...
@@ -810,218 +868,152 @@ Refer to the [official Rust Module SDK documentation on docs.rs](https://docs.rs
   ```
 
 :::info Scheduled Reducers and Connections
-Scheduled reducer calls originate from the SpacetimeDB scheduler itself, not from an external client connection. Therefore, within a scheduled reducer, `ctx.sender` will be the module's own identity, and `ctx.connection_id` will be `None`.
+Scheduled reducer calls originate from the SpacetimeDB scheduler itself, not from an external client connection. Therefore, within a scheduled reducer, `ctx.sender()` will be the module's own identity, and `ctx.connection_id()` will be `None`.
 :::
 
-#### Row-Level Security (RLS)
+#### View Functions
 
-Row Level Security (RLS) allows module authors to restrict client access to specific rows
-of tables that are marked as `public`. By default, tables _without_ the `public`
-attribute are private and completely inaccessible to clients. Tables _with_ the `public`
-attribute are, by default, fully visible to any client that subscribes to them. RLS provides
-a mechanism to selectively restrict access to certain rows of these `public` tables based
-on rules evaluated for each client.
+Views are read-only functions that compute and return results from your tables. Unlike reducers, views do not modify database state - they only query and return data. Views are useful for:
 
-Private tables (those _without_ the `public` attribute) are always completely inaccessible
-to clients, and RLS rules do not apply to them. RLS rules are defined for `public` tables
-to filter which rows are visible.
+- **Computing derived data**: Join multiple tables or aggregate data before sending to clients
+- **User-specific queries**: Return data specific to the requesting client (e.g., "my player")
+- **Performance**: Compute results server-side, reducing data sent to clients
+- **Encapsulation**: Hide complex queries behind simple interfaces
 
-These access-granting rules are expressed in SQL and evaluated automatically for queries
-and subscriptions made by clients against private tables with associated RLS rules.
+Views can be subscribed to just like tables and automatically update when underlying data changes.
 
-:::info Version-Specific Status
-Row-Level Security (RLS) was introduced as an **unstable** feature in **SpacetimeDB v1.1.0**.
-It requires explicit opt-in via feature flags or pragmas.
-:::
+**Defining Views**
 
-**Enabling RLS**
-
-RLS is currently **unstable** and must be explicitly enabled in your module.
-
-To enable RLS, activate the `unstable` feature in your project's `Cargo.toml`:
-
-```toml
-spacetimedb = { version = "1.1.0", features = ["unstable"] } # at least version 1.1.0
-```
-
-**How It Works**
-
-RLS rules are attached to `public` tables (tables with `#[table(..., public)]`)
-and are expressed in SQL using constants of type `Filter`.
+Views are defined using the `#[view]` macro and must specify a `name` and `public` attribute:
 
 ```rust
-use spacetimedb::{client_visibility_filter, Filter, table, Identity};
+use spacetimedb::{view, ViewContext, AnonymousViewContext, table, SpacetimeType};
+use spacetimedb_lib::Identity;
 
-// Define a public table for RLS
-#[table(name = account, public)] // Now a public table
-struct Account {
+#[spacetimedb::table(accessor = player, public)]
+pub struct Player {
     #[primary_key]
+    #[auto_inc]
+    id: u64,
+    #[unique]
     identity: Identity,
-    email: String,
-    balance: u32,
+    name: String,
 }
 
-/// RLS Rule: Allow a client to see *only* their own account record.
-#[client_visibility_filter]
-const ACCOUNT_VISIBILITY: Filter = Filter::Sql(
-    // This query is evaluated per client request.
-    // :sender is automatically bound to the requesting client's identity.
-    // Only rows matching this filter are returned to the client from the public 'account' table,
-    // overriding its default full visibility for matching clients.
-    "SELECT * FROM account WHERE identity = :sender"
-);
+#[spacetimedb::table(accessor = player_level, public)]
+pub struct PlayerLevel {
+    #[unique]
+    player_id: u64,
+    #[index(btree)]
+    level: u64,
+}
+
+// Custom type for joined results
+#[derive(SpacetimeType)]
+pub struct PlayerAndLevel {
+    id: u64,
+    identity: Identity,
+    name: String,
+    level: u64,
+}
+
+// View that returns the caller's player (user-specific)
+// Returns Option<T> for at-most-one row
+#[view(accessor = my_player, public)]
+fn my_player(ctx: &ViewContext) -> Option<Player> {
+    ctx.db.player().identity().find(ctx.sender())
+}
+
+// View that returns all players at a specific level (same for all callers)
+// Returns Vec<T> for multiple rows
+#[view(accessor = players_for_level, public)]
+fn players_for_level(ctx: &AnonymousViewContext) -> Vec<PlayerAndLevel> {
+    ctx.db
+        .player_level()
+        .level()
+        .filter(2u64)
+        .flat_map(|player_level| {
+            ctx.db
+                .player()
+                .id()
+                .find(player_level.player_id)
+                .map(|p| PlayerAndLevel {
+                    id: p.id,
+                    identity: p.identity,
+                    name: p.name,
+                    level: player_level.level,
+                })
+        })
+        .collect()
+}
 ```
 
-A module will fail to publish if any of its RLS rules are invalid or malformed.
+**ViewContext vs AnonymousViewContext**
 
-**`:sender`**
+Views use one of two context types:
 
-You can use the special `:sender` parameter in your rules for user-specific access control.
-This parameter is automatically bound to the requesting client's [Identity](#identity).
+- **`ViewContext`**: Provides access to the caller's `Identity` through `ctx.sender()`. Use this when the view depends on who is querying it (e.g., "get my player").
+- **`AnonymousViewContext`**: Does not provide caller information. Use this when the view produces the same results regardless of who queries it (e.g., "get top 10 players").
 
-Note that module owners have unrestricted access to all tables, including all rows of
-`public` tables (bypassing RLS rules) and `private` tables.
+Both contexts provide read-only access to tables and indexes through `ctx.db`.
 
-**Semantic Constraints**
+**Performance Note**: Because `AnonymousViewContext` is guaranteed not to access the caller's identity, SpacetimeDB can share the computed view results across multiple connected clients. This provides significant performance benefits for views that return the same data to all clients. Prefer `AnonymousViewContext` when possible.
 
-RLS rules act as filters defining which rows of a `public` table are visible to a client.
-Like subscriptions, arbitrary column projections are **not** allowed.
-Joins **are** allowed (e.g., to check permissions in another table), but each rule must
-ultimately return rows from the single public table it applies to.
+**Return Types**
 
-**Multiple Rules Per Table**
+Views can return:
+- `Option<T>` - For at-most-one row (e.g., looking up a specific player)
+- `Vec<T>` - For multiple rows (e.g., listing all players at a level)
+- `impl IQuery<T>` - A typed SQL query that behaves like the deprecated RLS (Row-Level Security) feature
 
-Multiple RLS rules may be declared for the same `public` table. They are evaluated as a
-logical `OR`, meaning clients can see any row that matches at least one rule.
+Where `T` can be a table type or any custom type derived with `SpacetimeType`.
 
-**Example (Building on previous Account table)**
+**impl IQuery<T> Return Type**
+
+When a view returns `impl IQuery<T>`, SpacetimeDB computes results incrementally as the underlying data changes. This enables efficient table scanning because query results are maintained incrementally rather than recomputed from scratch. Without `impl IQuery<T>`, you must use indexed column lookups to access tables inside view functions.
+
+The query builder provides a fluent API for constructing type-safe SQL queries:
 
 ```rust
-# use spacetimedb::{client_visibility_filter, Filter, table, Identity};
-# #[table(name = account)] struct Account { #[primary_key] identity: Identity, email: String, balance: u32 }
-// Assume an 'admin' table exists to track administrator identities
-#[table(name = admin)] struct Admin { #[primary_key] identity: Identity }
+use spacetimedb::{view, ViewContext, Query};
 
-/// RLS Rule 1: A client can see their own account.
-#[client_visibility_filter]
-const ACCOUNT_OWNER_VISIBILITY: Filter = Filter::Sql(
-    "SELECT * FROM account WHERE identity = :sender"
-);
+// This view can scan the whole table efficiently because
+// impl IQuery<T> results are computed incrementally
+#[view(accessor = my_messages, public)]
+fn my_messages(ctx: &ViewContext) -> impl Query<Message> {
+    // Return a typed query builder directly
+    ctx.db.message().filter(|cols| cols.sender.eq(ctx.sender()))
+}
 
-/// RLS Rule 2: An admin client can see *all* accounts.
-#[client_visibility_filter]
-const ACCOUNT_ADMIN_VISIBILITY: Filter = Filter::Sql(
-    // This join checks if the requesting client (:sender) exists in the admin table.
-    // If they do, the join succeeds, and all rows from 'account' are potentially visible.
-    "SELECT account.* FROM account JOIN admin WHERE admin.identity = :sender"
-);
-
-// Result: A non-admin client sees only their own account row.
-// An admin client sees all account rows because they match the second rule.
+// Query builder supports various operations:
+// - .filter(|cols| cols.field.eq(value))  - equality
+// - .filter(|cols| cols.field.ne(value))  - not equal
+// - .filter(|cols| cols.field.gt(value))  - greater than
+// - .filter(|cols| cols.field.lt(value))  - less than
+// - .filter(|cols| cols.field.gte(value)) - greater than or equal
+// - .filter(|cols| cols.field.lte(value)) - less than or equal
+// - .filter(|cols| expr1.or(expr2))       - logical OR
+// - .left_semijoin(other_table, |a, b| a.field.eq(b.field)) - joins
 ```
 
-**Recursive Application**
+**Querying Views**
 
-RLS rules can reference other tables that might _also_ have RLS rules. These rules are applied recursively.
-For instance, if Rule A depends on Table B, and Table B has its own RLS rules, a client only gets results
-from Rule A if they also have permission to see the relevant rows in Table B according to Table B's rules.
-This ensures that the intended row visibility on `public` tables is maintained even through indirect access patterns.
+Views can be queried and subscribed to using SQL, just like tables:
 
-**Example (Building on previous Account/Admin tables)**
-
-```rust
-# use spacetimedb::{client_visibility_filter, Filter, table, Identity};
-# #[table(name = account)] struct Account { #[primary_key] identity: Identity, email: String, balance: u32 }
-# #[table(name = admin)] struct Admin { #[primary_key] identity: Identity }
-// Define a private player table linked to account
-#[table(name = player)] // Private table
-struct Player { #[primary_key] id: Identity, level: u32 }
-
-# /// RLS Rule 1: A client can see their own account.
-# #[client_visibility_filter] const ACCOUNT_OWNER_VISIBILITY: Filter = Filter::Sql( "SELECT * FROM account WHERE identity = :sender" );
-# /// RLS Rule 2: An admin client can see *all* accounts.
-# #[client_visibility_filter] const ACCOUNT_ADMIN_VISIBILITY: Filter = Filter::Sql( "SELECT account.* FROM account JOIN admin WHERE admin.identity = :sender" );
-
-/// RLS Rule for Player table: Players are visible if the associated account is visible.
-#[client_visibility_filter]
-const PLAYER_VISIBILITY: Filter = Filter::Sql(
-    // This rule joins Player with Account.
-    // Crucially, the client running this query must *also* satisfy the RLS rules
-    // defined for the `account` table for the specific account row being joined.
-    // Therefore, non-admins see only their own player, admins see all players.
-    "SELECT p.* FROM account a JOIN player p ON a.identity = p.id"
-);
+```sql
+SELECT * FROM my_player;
+SELECT * FROM players_for_level;
 ```
 
-Self-joins are allowed within RLS rules. However, RLS rules cannot be mutually recursive
-(e.g., Rule A depends on Table B, and Rule B depends on Table A), as this would cause
-infinite recursion during evaluation.
-
-**Example: Self-Join (Valid)**
-
-```rust
-# use spacetimedb::{client_visibility_filter, Filter, table, Identity};
-# #[table(name = player)] struct Player { #[primary_key] id: Identity, level: u32 }
-# // Dummy account table for join context
-# #[table(name = account)] struct Account { #[primary_key] identity: Identity }
-
-/// RLS Rule: A client can see other players at the same level as their own player.
-#[client_visibility_filter]
-const PLAYER_SAME_LEVEL_VISIBILITY: Filter = Filter::Sql("
-    SELECT q.*
-    FROM account a -- Find the requester's account
-    JOIN player p ON a.identity = p.id -- Find the requester's player
-    JOIN player q on p.level = q.level -- Find other players (q) at the same level
-    WHERE a.identity = :sender -- Ensure we start with the requester
-");
-```
-
-**Example: Mutually Recursive Rules (Invalid)**
-
-This module would fail to publish because the `ACCOUNT_NEEDS_PLAYER` rule depends on the
-`player` table, while the `PLAYER_NEEDS_ACCOUNT` rule depends on the `account` table.
-
-```rust
-use spacetimedb::{client_visibility_filter, Filter, table, Identity};
-
-#[table(name = account)] struct Account { #[primary_key] id: u64, identity: Identity }
-#[table(name = player)] struct Player { #[primary_key] id: u64 }
-
-/// RLS: An account is visible only if a corresponding player exists.
-#[client_visibility_filter]
-const ACCOUNT_NEEDS_PLAYER: Filter = Filter::Sql(
-    "SELECT a.* FROM account a JOIN player p ON a.id = p.id WHERE a.identity = :sender"
-);
-
-/// RLS: A player is visible only if a corresponding account exists.
-#[client_visibility_filter]
-const PLAYER_NEEDS_ACCOUNT: Filter = Filter::Sql(
-    // This rule requires access to 'account', which itself requires access to 'player' -> recursion!
-    "SELECT p.* FROM account a JOIN player p ON a.id = p.id WHERE a.identity = :sender"
-);
-```
-
-**Usage in Subscriptions**
-
-When a client subscribes to a `public` table that has RLS rules defined,
-the server automatically applies those rules. The subscription results (both initial
-and subsequent updates) will only contain rows that the specific client is allowed to
-see based on the RLS rules evaluating successfully for that client.
-
-While the SQL constraints and limitations outlined in the [SQL reference docs](/docs/sql/index.md#subscriptions)
-(like limitations on complex joins or aggregations) do not apply directly to the definition
-of RLS rules themselves, these constraints _do_ apply to client subscriptions that _use_ those rules.
-For example, an RLS rule might use a complex join not normally supported in subscriptions.
-If a client tries to subscribe directly to the table governed by that complex RLS rule,
-the subscription itself might fail, even if the RLS rule is valid for direct queries.
+When subscribed to, views automatically update when their underlying tables change.
 
 **Best Practices**
 
-1.  Define RLS rules for `public` tables where you need to restrict row visibility for different clients.
-2.  Use `:sender` for client-specific filtering within your rules.
-3.  Keep RLS rules as simple as possible while enforcing desired access.
-4.  Be mindful of potential performance implications of complex joins in RLS rules, especially when combined with subscriptions.
-5.  Follow the general [SQL best practices](/docs/sql/index.md#best-practices-for-performance-and-scalability) for optimizing your RLS rules.
+1. Use `ViewContext` when results depend on the caller's identity.
+2. Use `AnonymousViewContext` when results are the same for all callers.
+3. Keep views simple - complex joins can be expensive to recompute.
+4. Views are recomputed when underlying tables change, so minimize dependencies on frequently-changing tables.
+5. Use indexes on columns you filter or join on for better performance.
 
 ### Client SDK (Rust)
 
@@ -1046,7 +1038,7 @@ Client code relies on generated bindings specific to your server module. Use the
 mkdir -p src/module_bindings
 spacetime generate --lang rust \
     --out-dir src/module_bindings \
-    --project-path ../path/to/your/server_module
+    --module-path ../path/to/your/server_module
 ```
 
 Then, declare the generated module in your `main.rs` or `lib.rs`:
@@ -1062,7 +1054,7 @@ mod module_bindings;
 The core type for managing a connection is `module_bindings::DbConnection`. You configure and establish a connection using a builder pattern.
 
 - **Builder:** Start with `DbConnection::builder()`.
-- **URI & Name:** Specify the SpacetimeDB instance URI (`.with_uri("http://localhost:3000")`) and the database name or identity (`.with_module_name("my_database")`).
+- **URI & Name:** Specify the SpacetimeDB instance URI (`.with_uri("http://localhost:3000")`) and the database name or identity (`.with_database_name("my_database")`).
 - **Authentication:** Provide an identity token using `.with_token(Option<String>)`. If `None` or omitted for the first connection, the server issues a new identity and token (retrieved via the `on_connect` callback).
 - **Callbacks:** Register callbacks for connection lifecycle events:
   - `.on_connect(|conn, identity, token| { ... })`: Runs on successful connection. Often used to store the `token` for future connections.
@@ -1085,7 +1077,7 @@ fn connect_to_db() -> DbConnection {
 
     DbConnection::builder()
         .with_uri(HOST)
-        .with_module_name(DB_NAME)
+        .with_database_name(DB_NAME)
         .with_token(creds_store().load().ok()) // Load token if exists
         .on_connect(|conn, identity, auth_token| {
             println!("Connected. Identity: {}", identity.to_hex());
@@ -1282,7 +1274,7 @@ Custom classes, structs, or records intended for use as fields within database t
 
 - **Basic Usage:** Apply `[Type]` to your classes, structs, or records. Use the `partial` modifier to allow SpacetimeDB's source generators to augment the type definition.
 - **Cross-Language Naming:** Currently, the C# module SDK does **not** provide a direct equivalent to Rust's `#[sats(name = "...")]` attribute for controlling the generated names in _other_ client languages (like TypeScript). The C# type name itself (including its namespace) is typically used. Standard C# namespacing (`namespace MyGame.SharedTypes { ... }`) is the primary way to organize and avoid collisions.
-- **Enums:** Standard C# enums can be marked with `[Type]`. For "tagged unions" or "discriminated unions" (like Rust enums with associated data), use the pattern of an abstract base record/class with the `[Type]` attribute, and derived records/classes for each variant, also marked with `[Type]`. Then, define a final `[Type]` record that inherits from `TaggedEnum<(...)>` listing the variants.
+- **Enums:** Standard C# enums can be marked with `[Type]`. For "tagged unions" or "discriminated unions" (like Rust enums with associated data), use the pattern of an abstract base record with `[Type]`, derived records for each variant, and a final `[Type]` **partial record** that inherits from `TaggedEnum<(...)>`. The TaggedEnum type must be `partial record`, not `partial class`.
 - **Type Aliases:** Use standard C# `using` aliases for clarity (e.g., `using PlayerScore = System.UInt32;`). The underlying primitive type must still be serializable by SpacetimeDB.
 
 ```csharp
@@ -1325,22 +1317,22 @@ Table and Type definitions in C# should use the `partial` keyword (e.g., `public
 
 Database tables store the application's persistent state. They are defined using C# classes or structs marked with the `[Table]` attribute.
 
-- **Core Attribute:** `[Table(Name = "my_table_name", ...)]` marks a class or struct as a database table definition. The specified string `Name` is how the table will be referenced in SQL queries and generated APIs.
+- **Core Attribute:** `[Table(Accessor = "TableName", ...)]` marks a class or struct as a database table definition. `Accessor` controls generated API names, while canonical SQL names are derived unless `Name` is explicitly set.
 - **Partial Modifier:** Use the `partial` keyword (e.g., `public partial class MyTable`) to allow SpacetimeDB's source generators to add necessary methods and logic to your definition.
 - **Public vs. Private:** By default, tables are **private**, accessible only by server-side reducer code. To allow clients to read or subscribe to a table's data, set `Public = true` within the attribute: `[Table(..., Public = true)]`. This is a common source of errors if forgotten.
 - **Primary Keys:** Designate a single **public field** as the primary key using `[PrimaryKey]`. This ensures uniqueness, creates an efficient index, and allows clients to track row updates.
 - **Auto-Increment:** Mark an integer-typed primary key **public field** with `[AutoInc]` to have SpacetimeDB automatically assign unique, sequentially increasing values upon insertion. Provide `0` as the value for this field when inserting a new row to trigger the auto-increment mechanism.
 - **Unique Constraints:** Enforce uniqueness on non-primary key **public fields** using `[Unique]`. Attempts to insert or update rows violating this constraint will fail (throw an exception).
-- **Indexes:** Create B-tree indexes for faster lookups on specific **public fields** or combinations of fields. Use `[Index.BTree]` on a single field for a simple index, or define indexes at the class/struct level using `[Index.BTree(Name = "MyIndexName", Columns = new[] { nameof(ColA), nameof(ColB) })]`.
+- **Indexes:** Create B-tree indexes for faster lookups on specific **public fields** or combinations of fields. Use `[SpacetimeDB.Index.BTree]` on a single field (never bare `Index`), or define indexes at the class/struct level using `[SpacetimeDB.Index.BTree(Accessor = "MyIndexName", Columns = new[] { nameof(ColA), nameof(ColB) })]`.
 - **Nullable Fields:** Use standard C# nullable reference types (`string?`) or nullable value types (`int?`, `Timestamp?`) for fields that can hold null values.
-- **Instances vs. Database:** Remember that table class/struct instances (e.g., `var player = new PlayerState { ... };`) are just data objects. Modifying an instance does **not** automatically update the database. Interaction happens through generated handles accessed via the `ReducerContext` (e.g., `ctx.Db.player_state.Insert(...)`).
-- **Case Sensitivity:** Table names specified via `Name = "..."` are case-sensitive and must be matched exactly in SQL queries.
+- **Instances vs. Database:** Remember that table class/struct instances (e.g., `var player = new PlayerState { ... };`) are just data objects. Modifying an instance does **not** automatically update the database. Interaction happens through generated handles accessed via the `ReducerContext` (e.g., `ctx.Db.PlayerState.Insert(...)`).
+- **Case Sensitivity:** Table names specified via `Accessor = "..."` are case-sensitive and must be matched exactly in SQL queries.
 - **Pitfalls:**
-  - SpacetimeDB attributes (`[PrimaryKey]`, `[AutoInc]`, `[Unique]`, `[Index.BTree]`) **must** be applied to **public fields**, not properties (`{ get; set; }`). Using properties can cause build errors or runtime issues.
+  - SpacetimeDB attributes (`[PrimaryKey]`, `[AutoInc]`, `[Unique]`, `[SpacetimeDB.Index.BTree]`) **must** be applied to **public fields**, not properties (`{ get; set; }`). Using properties can cause build errors or runtime issues.
   - Avoid manually inserting values into `[AutoInc]` fields that are also `[Unique]`, especially values larger than the current sequence counter, as this can lead to future unique constraint violations when the counter catches up.
   - Ensure `Public = true` is set if clients need access.
   - Always use the `partial` keyword on table definitions.
-  - Define indexes _within_ the main `#[table(name=..., index=...)]` attribute. Each `#[table]` macro invocation defines a _distinct_ table and requires a `name`; separate `#[table]` attributes cannot be used solely to add indexes to a previously named table.
+  - Define indexes _within_ the main `#[table(accessor=..., index=...)]` attribute. Each `#[table]` macro invocation defines a _distinct_ table and requires an `accessor`; separate `#[table]` attributes cannot be used solely to add indexes to a previously named table.
 
 ```csharp
 using SpacetimeDB;
@@ -1349,8 +1341,8 @@ using System; // For Nullable types if needed
 // Assume Position, PlayerStatus, ItemType are defined as types
 
 // Example Table Definition
-[Table(Name = "player_state", Public = true)]
-[Index.BTree(Name = "idx_level", Columns = new[] { nameof(Level) })] // Table-level index
+[Table(Accessor = "PlayerState", Public = true)]
+[SpacetimeDB.Index.BTree(Accessor = "idx_level", Columns = new[] { nameof(Level) })] // Table-level index
 public partial class PlayerState
 {
     [PrimaryKey]
@@ -1364,20 +1356,20 @@ public partial class PlayerState
     public Timestamp? LastLogin; // Public field, nullable struct
 }
 
-[Table(Name = "inventory_item", Public = true)]
+[Table(Accessor = "InventoryItem", Public = true)]
 public partial class InventoryItem
 {
     [PrimaryKey]
     [AutoInc] // Automatically generate IDs
     public ulong ItemId; // Public field
     public Identity OwnerId; // Public field
-    [Index.BTree] // Simple index on this field
+    [SpacetimeDB.Index.BTree] // Simple index on this field
     public ItemType ItemType; // Public field
     public uint Quantity; // Public field
 }
 
 // Example of a private table
-[Table(Name = "internal_game_data")] // Public = false is default
+[Table(Accessor = "InternalGameData")] // Public = false is default
 public partial class InternalGameData
 {
     [PrimaryKey]
@@ -1404,20 +1396,20 @@ public partial class CharacterInfo
 }
 
 // Define derived classes, each with its own table attribute
-[Table(Name = "active_characters")]
+[Table(Accessor = "ActiveCharacter")]
 public partial class ActiveCharacter : CharacterInfo {
     // Can add specific public fields if needed
     public bool IsOnline;
 }
 
-[Table(Name = "deleted_characters")]
+[Table(Accessor = "DeletedCharacter")]
 public partial class DeletedCharacter : CharacterInfo {
     // Can add specific public fields if needed
     public Timestamp DeletionTime;
 }
 
 // Reducers would interact with ActiveCharacter or DeletedCharacter tables
-// E.g., ctx.Db.active_characters.Insert(new ActiveCharacter { CharacterId = 1, Name = "Hero", Level = 10, IsOnline = true });
+// E.g., ctx.Db.ActiveCharacter.Insert(new ActiveCharacter { CharacterId = 1, Name = "Hero", Level = 10, IsOnline = true });
 ```
 
 Alternatively, you can define multiple `[Table]` attributes directly on a single class or struct. This maps the same underlying type to multiple distinct tables:
@@ -1428,8 +1420,8 @@ using SpacetimeDB;
 // Define the core data structure once
 // Apply multiple [Table] attributes to map it to different tables
 [Type] // Mark as a type if used elsewhere (e.g., reducer args)
-[Table(Name = "logged_in_players", Public = true)]
-[Table(Name = "players_in_lobby", Public = true)]
+[Table(Accessor = "LoggedInPlayer", Public = true)]
+[Table(Accessor = "PlayerInLobby", Public = true)]
 public partial class PlayerSessionData
 {
     [PrimaryKey]
@@ -1471,11 +1463,11 @@ using System.Linq; // Used in more complex examples later
 public static partial class Module
 {
     // Assume PlayerState and InventoryItem tables are defined as previously
-    [Table(Name = "player_state", Public = true)] public partial class PlayerState {
+    [Table(Accessor = "PlayerState", Public = true)] public partial class PlayerState {
         [PrimaryKey] public Identity PlayerId;
         [Unique] public string Name = "";
         public uint Health; public ushort Level; /* ... other fields */ }
-    [Table(Name = "inventory_item", Public = true)] public partial class InventoryItem {
+    [Table(Accessor = "InventoryItem", Public = true)] public partial class InventoryItem {
         [PrimaryKey] #[AutoInc] public ulong ItemId;
         public Identity OwnerId; /* ... other fields */ }
 
@@ -1588,7 +1580,7 @@ using System;
 
 public static partial class Module
 {
-    [Table(Name = "unique_items")]
+    [Table(Accessor = "UniqueItem")]
     public partial class UniqueItem {
         [PrimaryKey] public string ItemName;
         public int Value;
@@ -1654,7 +1646,7 @@ In addition to lifecycle annotations, reducers can be scheduled. This allows cal
 
 The scheduling information for a reducer is stored in a table. This table links to the reducer function and has specific mandatory fields:
 
-1.  **Define the Schedule Table:** Create a table class/struct using `[Table(Name = ..., Scheduled = nameof(YourReducerName), ScheduledAt = nameof(YourScheduleAtColumnName))]`.
+1.  **Define the Schedule Table:** Create a table class/struct using `[Table(Accessor = ..., Scheduled = "YourReducerName", ScheduledAt = "ScheduledAt")]`.
     - The `Scheduled` parameter links this table to the static reducer method `YourReducerName`.
     - The `ScheduledAt` parameter specifies the name of the field within this table that holds the scheduling information. This field **must** be of type `SpacetimeDB.ScheduleAt`.
     - The table **must** also have a primary key field (often `[AutoInc] ulong Id`).
@@ -1677,7 +1669,7 @@ public static partial class Module
 {
     // 1. Define the table with scheduling information, linking to `SendMessage` reducer.
     // Specifies that the `ScheduledAt` field holds the schedule info.
-    [Table(Name = "send_message_schedule", Scheduled = nameof(SendMessage), ScheduledAt = nameof(ScheduledAt))]
+    [Table(Accessor = "SendMessageSchedule", Scheduled = "SendMessage", ScheduledAt = "ScheduledAt")]
     public partial struct SendMessageSchedule
     {
         // Mandatory fields:
@@ -1711,7 +1703,7 @@ public static partial class Module
     public static void Init(ReducerContext ctx)
     {
         // Avoid rescheduling if Init runs again
-        if (ctx.Db.send_message_schedule.Count > 0) {
+        if (ctx.Db.SendMessageSchedule.Count > 0) {
              return;
         }
 
@@ -1719,7 +1711,7 @@ public static partial class Module
         var futureTimestamp = ctx.Timestamp + tenSeconds;
 
         // Schedule a one-off message
-        ctx.Db.send_message_schedule.Insert(new SendMessageSchedule
+        ctx.Db.SendMessageSchedule.Insert(new SendMessageSchedule
         {
             Id = 0, // Let AutoInc assign ID
             // Use ScheduleAt.Time for one-off execution at a specific Timestamp
@@ -1729,7 +1721,7 @@ public static partial class Module
         Log.Info("Scheduled one-off message.");
 
         // Schedule a periodic message (every 10 seconds)
-        ctx.Db.send_message_schedule.Insert(new SendMessageSchedule
+        ctx.Db.SendMessageSchedule.Insert(new SendMessageSchedule
         {
             Id = 0, // Let AutoInc assign ID
              // Use ScheduleAt.Interval for periodic execution with a TimeDuration
@@ -1757,7 +1749,7 @@ public static partial class Module
       // ... Reducer body proceeds only if called by scheduler ...
       Log.Info("Executing scheduled task...");
   }
-  // Define MyScheduleArgs table elsewhere with [Table(Scheduled=nameof(MyScheduledTask), ...)]
+  // Define MyScheduleArgs table elsewhere with [Table(Scheduled="MyScheduledTask", ...)]
   public partial struct MyScheduleArgs { /* ... fields including ScheduleAt ... */ }
   ```
 
@@ -1774,216 +1766,152 @@ Throwing an unhandled exception within a C# reducer will cause the transaction t
 
 It's generally good practice to validate input and state early in the reducer and `throw` specific exceptions for handled error conditions.
 
-#### Row-Level Security (RLS)
+#### View Functions
 
-Row Level Security (RLS) allows module authors to restrict which rows of a public table each client can access.
-These access rules are expressed in SQL and evaluated automatically for queries and subscriptions.
+Views are read-only functions that compute and return results from your tables. Unlike reducers, views do not modify database state - they only query and return data. Views are useful for:
 
-:::info Version-Specific Status
-Row-Level Security (RLS) was introduced as an **unstable** feature in **SpacetimeDB v1.1.0**.
-It requires explicit opt-in via feature flags or pragmas.
-:::
+- **Computing derived data**: Join multiple tables or aggregate data before sending to clients
+- **User-specific queries**: Return data specific to the requesting client (e.g., "my player")
+- **Performance**: Compute results server-side, reducing data sent to clients
+- **Encapsulation**: Hide complex queries behind simple interfaces
 
-**Enabling RLS**
+Views can be subscribed to just like tables and automatically update when underlying data changes.
 
-RLS is currently **unstable** and must be explicitly enabled in your module.
+**Defining Views**
 
-To enable RLS, include the following preprocessor directive at the top of your module files:
-
-```cs
-#pragma warning disable STDB_UNSTABLE
-```
-
-**How It Works**
-
-RLS rules are attached to `public` tables (tables with `#[table(..., public)]`)
-and are expressed in SQL using public static readonly fields of type `Filter` annotated with
-`[SpacetimeDB.ClientVisibilityFilter]`.
+Views are defined using the `[SpacetimeDB.View]` attribute on static methods:
 
 ```cs
 using SpacetimeDB;
 
-#pragma warning disable STDB_UNSTABLE
-
-// Define a public table for RLS
-[Table(Name = "account", Public = true)] // Ensures correct C# syntax for public table
-public partial class Account
+public static partial class Module
 {
-    [PrimaryKey] public Identity Identity;
-    public string Email = "";
-    public uint Balance;
-}
+    [SpacetimeDB.Table]
+    public partial struct Player
+    {
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong Id;
 
-public partial class Module
-{
-    /// <summary>
-    /// RLS Rule: Allow a client to see *only* their own account record.
-    /// This rule applies to the public 'account' table.
-    /// </summary>
-    [SpacetimeDB.ClientVisibilityFilter]
-    public static readonly Filter ACCOUNT_VISIBILITY = new Filter.Sql(
-        // This query is evaluated per client request.
-        // :sender is automatically bound to the requesting client's identity.
-        // Only rows matching this filter are returned to the client from the public 'account' table,
-        // overriding its default full visibility for matching clients.
-        "SELECT * FROM account WHERE identity = :sender"
-    );
-}
-```
+        [SpacetimeDB.Unique]
+        public Identity Identity;
 
-A module will fail to publish if any of its RLS rules are invalid or malformed.
+        public string Name;
+    }
 
-**`:sender`**
+    [SpacetimeDB.Table]
+    public partial struct PlayerLevel
+    {
+        [SpacetimeDB.Unique]
+        public ulong PlayerId;
 
-You can use the special `:sender` parameter in your rules for user specific access control.
-This parameter is automatically bound to the requesting client's [Identity](#identity).
+        [SpacetimeDB.Index.BTree]
+        public ulong Level;
+    }
 
-Note that module owners have unrestricted access to all tables, including all rows of
-`public` tables (bypassing RLS rules) and `private` tables.
+    // Custom type for joined results
+    [SpacetimeDB.Type]
+    public partial struct PlayerAndLevel
+    {
+        public ulong Id;
+        public Identity Identity;
+        public string Name;
+        public ulong Level;
+    }
 
-**Semantic Constraints**
+    // View that returns the caller's player (user-specific)
+    // Returns T? for at-most-one row
+    [SpacetimeDB.View(Accessor = "MyPlayer", Public = true)]
+    public static Player? MyPlayer(ViewContext ctx)
+    {
+        return ctx.Db.Player.Identity.Find(ctx.Sender);
+    }
 
-RLS rules are similar to subscriptions in that logically they act as filters on a particular table.
-Also like subscriptions, arbitrary column projections are **not** allowed.
-Joins **are** allowed, but each rule must return rows from one and only one table.
-
-**Multiple Rules Per Table**
-
-Multiple rules may be declared for the same `public` table. They are evaluated as a logical `OR`.
-This means clients will be able to see to any row that matches at least one rule.
-
-**Example**
-
-```cs
-using SpacetimeDB;
-
-#pragma warning disable STDB_UNSTABLE
-
-public partial class Module
-{
-    /// <summary>
-    /// A client can only see their account.
-    /// </summary>
-    [SpacetimeDB.ClientVisibilityFilter]
-    public static readonly Filter ACCOUNT_FILTER = new Filter.Sql(
-        "SELECT * FROM account WHERE identity = :sender"
-    );
-
-    /// <summary>
-    /// An admin can see all accounts.
-    /// </summary>
-    [SpacetimeDB.ClientVisibilityFilter]
-    public static readonly Filter ACCOUNT_FILTER_FOR_ADMINS = new Filter.Sql(
-        "SELECT account.* FROM account JOIN admin WHERE admin.identity = :sender"
-    );
+    // View that returns all players at a specific level (same for all callers)
+    // Returns List<T> for multiple rows
+    [SpacetimeDB.View(Accessor = "PlayersForLevel", Public = true)]
+    public static List<PlayerAndLevel> PlayersForLevel(AnonymousViewContext ctx)
+    {
+        var rows = new List<PlayerAndLevel>();
+        foreach (var playerLevel in ctx.Db.PlayerLevel.Level.Filter(2))
+        {
+            if (ctx.Db.Player.Id.Find(playerLevel.PlayerId) is Player p)
+            {
+                rows.Add(new PlayerAndLevel
+                {
+                    Id = p.Id,
+                    Identity = p.Identity,
+                    Name = p.Name,
+                    Level = playerLevel.Level
+                });
+            }
+        }
+        return rows;
+    }
 }
 ```
 
-**Recursive Application**
+**ViewContext vs AnonymousViewContext**
 
-RLS rules can reference other tables with RLS rules, and they will be applied recursively.
-This ensures that data is never leaked through indirect access patterns.
+Views use one of two context types:
 
-**Example**
+- **`ViewContext`**: Provides access to the caller's `Identity` through `ctx.Sender`. Use this when the view depends on who is querying it (e.g., "get my player").
+- **`AnonymousViewContext`**: Does not provide caller information. Use this when the view produces the same results regardless of who queries it (e.g., "get top 10 players").
 
-```cs
-using SpacetimeDB;
+Both contexts provide read-only access to tables and indexes through `ctx.Db`.
 
-public partial class Module
+**Performance Note**: Because `AnonymousViewContext` is guaranteed not to access the caller's identity, SpacetimeDB can share the computed view results across multiple connected clients. This provides significant performance benefits for views that return the same data to all clients. Prefer `AnonymousViewContext` when possible.
+
+**Return Types**
+
+Views can return:
+- `T?` (nullable) - For at-most-one row (e.g., looking up a specific player)
+- `List<T>` or `T[]` - For multiple rows (e.g., listing all players at a level)
+- `IQuery<T>` - A typed SQL query that behaves like the deprecated RLS (Row-Level Security) feature
+
+Where `T` can be a table type or any custom type marked with `[SpacetimeDB.Type]`.
+
+**IQuery<T> Return Type**
+
+When a view returns `IQuery<T>`, SpacetimeDB computes results incrementally as the underlying data changes. This enables efficient table scanning because query results are maintained incrementally rather than recomputed from scratch. Without `IQuery<T>`, you must use indexed column lookups to access tables inside view functions.
+
+The query builder provides a fluent API for constructing type-safe SQL queries:
+
+```csharp
+// This view can scan the whole table efficiently because
+// IQuery<T> results are computed incrementally
+[SpacetimeDB.View(Accessor = "MyMessages", Public = true)]
+public static IQuery<Message> MyMessages(ViewContext ctx)
 {
-    /// <summary>
-    /// A client can only see their account.
-    /// </summary>
-    [SpacetimeDB.ClientVisibilityFilter]
-    public static readonly Filter ACCOUNT_FILTER = new Filter.Sql(
-        "SELECT * FROM account WHERE identity = :sender"
-    );
-
-    /// <summary>
-    /// An admin can see all accounts.
-    /// </summary>
-    [SpacetimeDB.ClientVisibilityFilter]
-    public static readonly Filter ACCOUNT_FILTER_FOR_ADMINS = new Filter.Sql(
-        "SELECT account.* FROM account JOIN admin WHERE admin.identity = :sender"
-    );
-
-    /// <summary>
-    /// Explicitly filtering by client identity in this rule is not necessary,
-    /// since the above RLS rules on `account` will be applied automatically.
-    /// Hence a client can only see their player, but an admin can see all players.
-    /// </summary>
-    [SpacetimeDB.ClientVisibilityFilter]
-    public static readonly Filter PLAYER_FILTER = new Filter.Sql(
-        "SELECT p.* FROM account a JOIN player p ON a.id = p.id"
-    );
+    return ctx.Db.Message.Filter(msg => msg.Sender == ctx.Sender);
 }
+
+// Query builder supports various operations:
+// - .Filter(x => x.Field == value)   - equality
+// - .Filter(x => x.Field != value)   - not equal
+// - .Filter(x => x.Field > value)    - greater than
+// - .Filter(x => x.Field < value)    - less than
+// - .Filter(x => expr1 || expr2)     - logical OR
 ```
 
-And while self-joins are allowed, in general RLS rules cannot be self-referential,
-as this would result in infinite recursion.
+**Querying Views**
 
-**Example: Self-Join**
+Views can be queried and subscribed to using SQL, just like tables:
 
-```cs
-using SpacetimeDB;
-
-public partial class Module
-{
-    /// <summary>
-    /// A client can only see players on their same level.
-    /// </summary>
-    [SpacetimeDB.ClientVisibilityFilter]
-    public static readonly Filter PLAYER_FILTER = new Filter.Sql(@"
-        SELECT q.*
-        FROM account a
-        JOIN player p ON u.id = p.id
-        JOIN player q on p.level = q.level
-        WHERE a.identity = :sender
-    ");
-}
+```sql
+SELECT * FROM MyPlayer;
+SELECT * FROM PlayersForLevel;
 ```
 
-**Example: Recursive Rules**
-
-This module will fail to publish because each rule depends on the other one.
-
-```cs
-using SpacetimeDB;
-
-public partial class Module
-{
-    /// <summary>
-    /// An account must have a corresponding player.
-    /// </summary>
-    [SpacetimeDB.ClientVisibilityFilter]
-    public static readonly Filter ACCOUNT_FILTER = new Filter.Sql(
-        "SELECT a.* FROM account a JOIN player p ON a.id = p.id WHERE a.identity = :sender"
-    );
-
-    /// <summary>
-    /// A player must have a corresponding account.
-    /// </summary>
-    [SpacetimeDB.ClientVisibilityFilter]
-    public static readonly Filter ACCOUNT_FILTER = new Filter.Sql(
-        "SELECT p.* FROM account a JOIN player p ON a.id = p.id WHERE a.identity = :sender"
-    );
-}
-```
-
-**Usage in Subscriptions**
-
-RLS rules automatically apply to subscriptions so that if a client subscribes to a table with RLS filters,
-the subscription will only return rows that the client is allowed to see.
-
-While the constraints and limitations outlined in the [SQL reference docs](/docs/sql/index.md#subscriptions) do not apply to RLS rules,
-they do apply to the subscriptions that use them.
-For example, it is valid for an RLS rule to have more joins than are supported by subscriptions.
-However a client will not be able to subscribe to the table for which that rule is defined.
+When subscribed to, views automatically update when their underlying tables change.
 
 **Best Practices**
 
-1. Use `:sender` for client specific filtering.
-2. Follow the [SQL best practices](/docs/sql/index.md#best-practices-for-performance-and-scalability) for optimizing your RLS rules.
+1. Use `ViewContext` when results depend on the caller's identity.
+2. Use `AnonymousViewContext` when results are the same for all callers.
+3. Keep views simple - complex joins can be expensive to recompute.
+4. Views are recomputed when underlying tables change, so minimize dependencies on frequently-changing tables.
+5. Use indexes on columns you filter or join on for better performance.
 
 ### Client SDK (C#)
 
@@ -2008,7 +1936,7 @@ Client code relies on generated bindings specific to your server module. Use the
 mkdir -p module_bindings # Or your preferred output location
 spacetime generate --lang csharp \
     --out-dir module_bindings \
-    --project-path ../path/to/your/server_module
+    --module-path ../path/to/your/server_module
 ```
 
 Include the generated `.cs` files in your C# project or Unity Assets folder.
@@ -2018,7 +1946,7 @@ Include the generated `.cs` files in your C# project or Unity Assets folder.
 The core type for managing a connection is `SpacetimeDB.Types.DbConnection` (this type name comes from the generated bindings). You configure and establish a connection using a builder pattern.
 
 - **Builder:** Start with `DbConnection.Builder()`.
-- **URI & Name:** Specify the SpacetimeDB instance URI (`.WithUri("http://localhost:3000")`) and the database name or identity (`.WithModuleName("my_database")`).
+- **URI & Name:** Specify the SpacetimeDB instance URI (`.WithUri("http://localhost:3000")`) and the database name or identity (`.WithDatabaseName("my_database")`).
 - **Authentication:** Provide an identity token using `.WithToken(string?)`. The SDK provides a helper `AuthToken.Token` which loads a token from a local file (initialized via `AuthToken.Init(".credentials_filename")`). If `null` or omitted for the first connection, the server issues a new identity and token (retrieved via the `OnConnect` callback).
 - **Callbacks:** Register callbacks (as delegates or lambda expressions) for connection lifecycle events:
   - `.OnConnect((conn, identity, token) => { ... })`: Runs on successful connection. Often used to save the `token` using `AuthToken.SaveToken(token)`.
@@ -2044,7 +1972,7 @@ public class ClientManager // Example class
 
         connection = DbConnection.Builder()
             .WithUri(HOST)
-            .WithModuleName(DB_NAME)
+            .WithDatabaseName(DB_NAME)
             .WithToken(AuthToken.Token) // Load token if exists
             .OnConnect(HandleConnect)
             .OnConnectError(HandleConnectError)
@@ -2277,6 +2205,294 @@ public void SendChatMessage(string message)
 
 ```
 
+### Server Module (TypeScript)
+
+SpacetimeDB supports TypeScript as a first-class language for writing server modules. TypeScript modules run in a WebAssembly environment and have full access to SpacetimeDB's features including tables, reducers, views, and scheduling.
+
+#### 1. Project Setup
+
+Initialize a new SpacetimeDB TypeScript module project:
+
+```bash
+spacetime init --lang typescript my_module
+cd my_module
+npm install
+```
+
+This creates a project with the following structure:
+- `src/lib.ts` - Main module file
+- `package.json` - Node.js package configuration
+- `tsconfig.json` - TypeScript configuration
+
+#### 2. Defining Tables
+
+Tables are defined using the `table()` function. You define the schema using type builders from the `t` object. Tables are then composed into a schema using the `schema()` function, which returns the `spacetimedb` object used for defining reducers.
+
+```typescript
+import { schema, t, table, SenderError } from 'spacetimedb/server';
+
+// Define a User table with columns
+// table() takes two objects: options first, then columns
+const user = table(
+  { name: 'user', public: true },
+  {
+    identity: t.identity().primaryKey(),
+    name: t.string().optional(),
+    online: t.bool(),
+  }
+);
+
+// Define a Message table
+const message = table(
+  { name: 'message', public: true },
+  {
+    sender: t.identity(),
+    sent: t.timestamp(),
+    text: t.string(),
+  }
+);
+
+// Compose the schema - this gives us ctx.db.user and ctx.db.message
+const spacetimedb = schema({ user, message });
+export default spacetimedb;
+```
+
+**Type Builders**
+
+SpacetimeDB TypeScript uses type builders to define column schemas. Note that type builders are called as functions (e.g., `t.string()` not `t.string`):
+
+- **Primitives**: `t.bool()`, `t.u8()`, `t.u16()`, `t.u32()`, `t.u64()`, `t.u128()`, `t.u256()`, `t.i8()`, `t.i16()`, `t.i32()`, `t.i64()`, `t.i128()`, `t.i256()`, `t.f32()`, `t.f64()`, `t.string()`, `t.bytes()`
+- **Identity**: `t.identity()` for SpacetimeDB identity values
+- **ConnectionId**: `t.connectionId()` for connection identifiers
+- **Timestamp**: `t.timestamp()` for timestamps
+- **Product types (structs)**: Use `t.object('TypeName', { ... })` or `t.row({ ... })` for inline row definitions
+- **Sum types (enums)**: Use `t.enum('TypeName', { variant1: type1, variant2: type2 })`
+- **Optional**: Use `.optional()` method on any type
+- **Arrays**: Use `t.array(elementType)`
+
+**Column Modifiers**
+
+- `.primaryKey()` - Marks a column as the primary key
+- `.autoInc()` - Auto-increment for numeric primary keys
+- `.unique()` - Creates a unique constraint and index
+- `.index()` - Creates a non-unique B-tree index
+- `.optional()` - Makes the column nullable
+
+**Custom Types**
+
+For complex nested structures, define reusable types:
+
+```typescript
+import { schema, table, t } from 'spacetimedb/server';
+
+// Product type (struct) using t.object()
+const PlayerStats = t.object('PlayerStats', {
+  health: t.u32(),
+  mana: t.u32(),
+  level: t.u32(),
+});
+
+// Sum type (enum) using t.enum()
+const GameState = t.enum('GameState', {
+  Waiting: t.unit(),
+  Playing: t.object('Playing', { round: t.u32() }),
+  Finished: t.object('Finished', { winner: t.identity() }),
+});
+
+// Use in a table - note table() takes options object first, then columns
+const player = table(
+  { name: 'player', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    identity: t.identity().unique(),
+    stats: PlayerStats,
+    gameState: GameState,
+  }
+);
+
+const spacetimedb = schema({ player });
+export default spacetimedb;
+```
+
+#### 3. Writing Reducers
+
+Reducers are functions that modify database state. In TypeScript, reducer names come from exports (not string arguments): use `export const my_reducer = spacetimedb.reducer({ ... }, (ctx, args) => { ... })` or `spacetimedb.reducer((ctx) => { ... })`.
+
+```typescript
+import { schema, table, t, SenderError } from 'spacetimedb/server';
+
+const user = table(
+  { name: 'user', public: true },
+  {
+    identity: t.identity().primaryKey(),
+    name: t.string().optional(),
+    online: t.bool(),
+  }
+);
+
+const message = table(
+  { name: 'message', public: true },
+  {
+    sender: t.identity(),
+    sent: t.timestamp(),
+    text: t.string(),
+  }
+);
+
+const spacetimedb = schema({ user, message });
+export default spacetimedb;
+
+// Helper function for validation
+function validateName(name: string) {
+  if (!name) {
+    throw new SenderError('Names must not be empty');
+  }
+}
+
+// Set user's name
+// Arguments: argument types object and callback
+export const set_name = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
+  validateName(name);
+  const user = ctx.db.user.identity.find(ctx.sender);
+  if (!user) {
+    throw new SenderError('Cannot set name for unknown user');
+  }
+  ctx.db.user.identity.update({ ...user, name });
+});
+
+// Send a message
+export const send_message = spacetimedb.reducer({ text: t.string() }, (ctx, { text }) => {
+  if (!text) {
+    throw new SenderError('Messages must not be empty');
+  }
+  ctx.db.message.insert({
+    sender: ctx.sender,
+    text,
+    sent: ctx.timestamp,
+  });
+});
+```
+
+**Reducer Context**
+
+The first parameter of every reducer callback is the context (`ctx`), which provides:
+- `ctx.sender` - The `Identity` of the client that called the reducer
+- `ctx.timestamp` - The current timestamp
+- `ctx.db` - Access to database tables (e.g., `ctx.db.user`, `ctx.db.message`)
+
+**SenderError**
+
+Use `SenderError` to throw user-visible errors that will abort the transaction and be reported to the client.
+
+#### 4. Lifecycle Reducers
+
+SpacetimeDB provides special lifecycle methods on the `spacetimedb` object:
+
+```typescript
+// Called once when the module is first published
+export const init = spacetimedb.init(ctx => {
+  console.log('Module initialized');
+  // Seed initial data, set up schedules, etc.
+});
+
+// Called when a client connects
+export const onConnect = spacetimedb.clientConnected(ctx => {
+  const user = ctx.db.user.identity.find(ctx.sender);
+  if (user) {
+    ctx.db.user.identity.update({ ...user, online: true });
+  } else {
+    ctx.db.user.insert({
+      identity: ctx.sender,
+      name: undefined,
+      online: true,
+    });
+  }
+});
+
+// Called when a client disconnects
+export const onDisconnect = spacetimedb.clientDisconnected(ctx => {
+  const user = ctx.db.user.identity.find(ctx.sender);
+  if (user) {
+    ctx.db.user.identity.update({ ...user, online: false });
+  }
+});
+```
+
+#### 5. View Functions
+
+Views are read-only functions that return computed data from tables. Define views using `spacetimedb.view()` or `spacetimedb.anonymousView()`:
+
+```typescript
+// View that returns the caller's user (user-specific)
+// Uses spacetimedb.view() which provides ctx.sender
+export const my_user = spacetimedb.view({ name: 'my_user' }, ctx => {
+  return ctx.db.user.identity.find(ctx.sender);
+});
+
+// View that returns all online users (same for all callers)
+// Uses spacetimedb.anonymousView() - no access to ctx.sender
+export const online_users = spacetimedb.anonymousView({ name: 'online_users' }, ctx => {
+  return ctx.db.user.filter(u => u.online);
+});
+```
+
+**view() vs anonymousView()**
+
+- **`spacetimedb.view()`**: Provides access to the caller's `Identity` through `ctx.sender`. Use when results depend on who is querying.
+- **`spacetimedb.anonymousView()`**: Does not provide caller information. Use when results are the same for all callers.
+
+**Performance Note**: Because anonymous views are guaranteed not to access the caller's identity, SpacetimeDB can share the computed view results across multiple connected clients. This provides significant performance benefits. Prefer `anonymousView()` when possible.
+
+#### 6. Table Operations
+
+All table operations are performed via `ctx.db`:
+
+**Insert**
+```typescript
+ctx.db.user.insert({ identity: ctx.sender, name: 'Alice', online: true });
+```
+
+**Find by unique/primary key**
+```typescript
+const user = ctx.db.user.identity.find(ctx.sender);  // Returns row or undefined
+```
+
+**Filter by indexed column**
+```typescript
+const onlineUsers = ctx.db.user.filter(u => u.online === true);
+```
+
+**Update (for tables with primary key)**
+```typescript
+const user = ctx.db.user.identity.find(ctx.sender);
+if (user) {
+  ctx.db.user.identity.update({ ...user, online: false });
+}
+```
+
+**Delete**
+```typescript
+ctx.db.user.identity.delete(ctx.sender);
+```
+
+#### 7. Building and Publishing
+
+Build the module to WebAssembly:
+
+```bash
+npm run build
+```
+
+Publish to SpacetimeDB:
+
+```bash
+# Local development (from the project root, spacetimedb/ is the module directory)
+spacetime publish --server local --module-path spacetimedb my_module
+
+# Or to SpacetimeDB cloud
+spacetime publish --server maincloud --module-path spacetimedb my_module
+```
+
 ### Client SDK (TypeScript)
 
 This section details how to build TypeScript/JavaScript client applications (for web browsers or Node.js) that interact with a SpacetimeDB module, using a framework-agnostic approach.
@@ -2304,7 +2520,7 @@ Generate the module-specific bindings using the `spacetime generate` command:
 mkdir -p src/module_bindings
 spacetime generate --lang typescript \
     --out-dir src/module_bindings \
-    --project-path ../path/to/your/server_module
+    --module-path ../path/to/your/server_module
 ```
 
 Import the necessary generated types and SDK components:
@@ -2369,7 +2585,7 @@ class ChatClient {
 
     const connectionInstance = DbConnection.builder()
       .withUri(HOST)
-      .withModuleName(DB_NAME)
+      .withDatabaseName(DB_NAME)
       .withToken(token)
       .onConnect(this.handleConnect)
       .onDisconnect(this.handleDisconnect)

@@ -5,7 +5,7 @@
 use super::pk_i_16_type::PkI16;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `pk_i16`.
+/// Table handle for the table `pk_i_16`.
 ///
 /// Obtain a handle from the [`PkI16TableAccess::pk_i_16`] method on [`super::RemoteTables`],
 /// like `ctx.db.pk_i_16()`.
@@ -19,19 +19,19 @@ pub struct PkI16TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `pk_i16`.
+/// Extension trait for access to the table `pk_i_16`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait PkI16TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`PkI16TableHandle`], which mediates access to the table `pk_i16`.
+    /// Obtain a [`PkI16TableHandle`], which mediates access to the table `pk_i_16`.
     fn pk_i_16(&self) -> PkI16TableHandle<'_>;
 }
 
 impl PkI16TableAccess for super::RemoteTables {
     fn pk_i_16(&self) -> PkI16TableHandle<'_> {
         PkI16TableHandle {
-            imp: self.imp.get_table::<PkI16>("pk_i16"),
+            imp: self.imp.get_table::<PkI16>("pk_i_16"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -78,11 +78,6 @@ impl<'ctx> __sdk::Table for PkI16TableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<PkI16>("pk_i16");
-    _table.add_unique_constraint::<i16>("n", |row| &row.n);
-}
 pub struct PkI16UpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkI16TableHandle<'ctx> {
@@ -100,18 +95,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkI16TableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<PkI16>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<PkI16>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
-}
-
-/// Access to the `n` unique index on the table `pk_i16`,
+/// Access to the `n` unique index on the table `pk_i_16`,
 /// which allows point queries on the field of the same name
 /// via the [`PkI16NUnique::find`] method.
 ///
@@ -124,7 +108,7 @@ pub struct PkI16NUnique<'ctx> {
 }
 
 impl<'ctx> PkI16TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `pk_i16`.
+    /// Get a handle on the `n` unique index on the table `pk_i_16`.
     pub fn n(&self) -> PkI16NUnique<'ctx> {
         PkI16NUnique {
             imp: self.imp.get_unique_constraint::<i16>("n"),
@@ -138,5 +122,36 @@ impl<'ctx> PkI16NUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &i16) -> Option<PkI16> {
         self.imp.find(col_val)
+    }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<PkI16>("pk_i_16");
+    _table.add_unique_constraint::<i16>("n", |row| &row.n);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<PkI16>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<PkI16>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkI16`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_i_16QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkI16`.
+    fn pk_i_16(&self) -> __sdk::__query_builder::Table<PkI16>;
+}
+
+impl pk_i_16QueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_i_16(&self) -> __sdk::__query_builder::Table<PkI16> {
+        __sdk::__query_builder::Table::new("pk_i_16")
     }
 }

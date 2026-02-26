@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use enum_map::EnumMap;
+use spacetimedb_schema::reducer_name::ReducerName;
 use tokio::sync::mpsc;
 
 use crate::subscription::ExecutionCounters;
@@ -8,8 +9,6 @@ use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_datastore::{locking_tx_datastore::datastore::TxMetrics, traits::TxData};
 
 mod durability;
-mod lock_file;
-use lock_file::LockFile;
 pub mod persistence;
 pub mod relational_db;
 pub mod snapshot;
@@ -39,7 +38,7 @@ pub struct Config {
 /// We use a separate task to record metrics to avoid blocking transactions.
 pub struct MetricsMessage {
     /// The reducer the produced these metrics.
-    reducer: String,
+    reducer: Option<ReducerName>,
     /// Metrics from a mutable transaction.
     metrics_for_writer: Option<TxMetrics>,
     /// Metrics from a read-only transaction.
@@ -62,7 +61,7 @@ pub struct MetricsRecorderQueue {
 impl MetricsRecorderQueue {
     pub fn send_metrics(
         &self,
-        reducer: String,
+        reducer: Option<ReducerName>,
         metrics_for_writer: Option<TxMetrics>,
         metrics_for_reader: Option<TxMetrics>,
         tx_data: Option<Arc<TxData>>,
@@ -98,7 +97,7 @@ pub fn spawn_tx_metrics_recorder() -> (MetricsRecorderQueue, tokio::task::AbortH
                     // If row updates are present,
                     // they will always belong to the writer transaction.
                     tx_data.as_deref(),
-                    &reducer,
+                    reducer.as_ref(),
                     |wl| &counters[wl],
                 );
             }
@@ -108,7 +107,7 @@ pub fn spawn_tx_metrics_recorder() -> (MetricsRecorderQueue, tokio::task::AbortH
                     // they will never belong to the reader transaction.
                     // Passing row updates here will most likely panic.
                     None,
-                    &reducer,
+                    reducer.as_ref(),
                     |wl| &counters[wl],
                 );
             }

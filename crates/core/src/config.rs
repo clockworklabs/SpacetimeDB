@@ -54,6 +54,53 @@ impl MetadataFile {
         path.write(self.to_string())
     }
 
+    fn check_compatibility(previous: &Self, current: &Self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            previous.edition == current.edition,
+            "metadata.toml indicates that this database is from a different \
+            edition of SpacetimeDB (running {:?}, but this database is {:?})",
+            current.edition,
+            previous.edition,
+        );
+
+        // This is mostly redundant with the caret comparison below, but
+        // pre-releases make it annoying.
+        if previous.version == current.version {
+            return Ok(());
+        }
+
+        // Special-case: SpacetimeDB 2.x can run 1.x databases.
+        if previous.version.major == 1 && current.version.major == 2 {
+            return Ok(());
+        }
+
+        let cmp = semver::Comparator {
+            op: semver::Op::Caret,
+            major: previous.version.major,
+            minor: Some(previous.version.minor),
+            patch: None,
+            // We deal with pre-releases separately above.
+            pre: semver::Prerelease::new("").unwrap(),
+        };
+
+        if cmp.matches(&current.version) {
+            return Ok(());
+        }
+
+        let relation = if previous.version > current.version {
+            "a newer, incompatible"
+        } else if previous.version < current.version {
+            "an older, incompatible"
+        } else {
+            "an incompatible"
+        };
+        anyhow::bail!(
+            "metadata.toml indicates that you are running {relation} database. Your running version is {:?}, but the database on disk is from {:?}.",
+            current.version,
+            previous.version,
+        );
+    }
+
     /// Check if this meta file is compatible with the default meta
     /// file of a just-started database, and if so return the metadata
     /// to write back to the file.
@@ -62,31 +109,8 @@ impl MetadataFile {
     /// the default metadata file that the active database version would
     /// right to a new database.
     pub fn check_compatibility_and_update(mut self, current: Self) -> anyhow::Result<Self> {
-        anyhow::ensure!(
-            self.edition == current.edition,
-            "metadata.toml indicates that this database is from a different \
-             edition of SpacetimeDB (running {:?}, but this database is {:?})",
-            current.edition,
-            self.edition,
-        );
-        let cmp = semver::Comparator {
-            op: semver::Op::Caret,
-            major: self.version.major,
-            minor: Some(self.version.minor),
-            patch: None,
-            pre: self.version.pre.clone(),
-        };
-        anyhow::ensure!(
-            cmp.matches(&current.version),
-            "metadata.toml indicates that this database is from a newer, \
-             incompatible version of SpacetimeDB (running {:?}, but this \
-             database is from {:?})",
-            current.version,
-            self.version,
-        );
-        // bump the version in the file only if it's being run in a newer
-        // database -- this won't do anything until we release v1.1.0, since we
-        // set current.version.patch to 0 in Self::new() due to a bug in v1.0.0
+        Self::check_compatibility(&self, &current)?;
+        // bump the version in the file only if it's being run in a newer database.
         self.version = std::cmp::max(self.version, current.version);
         Ok(self)
     }
@@ -153,9 +177,27 @@ mod tests {
         semver::Version::new(major, minor, patch)
     }
 
+    fn mkver_pre(major: u64, minor: u64, patch: u64, pre: &str) -> semver::Version {
+        semver::Version {
+            major,
+            minor,
+            patch,
+            pre: semver::Prerelease::new(pre).unwrap(),
+            build: semver::BuildMetadata::EMPTY,
+        }
+    }
+
     fn mkmeta(major: u64, minor: u64, patch: u64) -> MetadataFile {
         MetadataFile {
             version: mkver(major, minor, patch),
+            edition: "standalone".to_owned(),
+            client_connection_id: None,
+        }
+    }
+
+    fn mkmeta_pre(major: u64, minor: u64, patch: u64, pre: &str) -> MetadataFile {
+        MetadataFile {
+            version: mkver_pre(major, minor, patch, pre),
             edition: "standalone".to_owned(),
             client_connection_id: None,
         }
@@ -183,6 +225,49 @@ mod tests {
             .unwrap_err();
         mkmeta(2, 0, 0)
             .check_compatibility_and_update(mkmeta(1, 3, 5))
+            .unwrap_err();
+        assert_eq!(
+            mkmeta(1, 12, 0)
+                .check_compatibility_and_update(mkmeta(2, 0, 0))
+                .unwrap()
+                .version,
+            mkver(2, 0, 0)
+        );
+        mkmeta(2, 0, 0)
+            .check_compatibility_and_update(mkmeta(3, 0, 0))
+            .unwrap_err();
+    }
+
+    #[test]
+    fn check_metadata_compatibility_prerelease() {
+        mkmeta(1, 9, 0)
+            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc1"))
+            .unwrap();
+
+        mkmeta_pre(2, 0, 0, "rc1")
+            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc1"))
+            .unwrap();
+
+        mkmeta_pre(2, 0, 0, "rc1")
+            .check_compatibility_and_update(mkmeta(2, 0, 1))
+            .unwrap();
+
+        mkmeta_pre(2, 0, 0, "rc1")
+            .check_compatibility_and_update(mkmeta(2, 0, 0))
+            .unwrap();
+
+        // Now check some failures..
+
+        mkmeta_pre(2, 0, 0, "rc1")
+            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc2"))
+            .unwrap_err();
+
+        mkmeta_pre(2, 0, 0, "rc2")
+            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc1"))
+            .unwrap_err();
+
+        mkmeta(2, 0, 0)
+            .check_compatibility_and_update(mkmeta_pre(2, 1, 0, "rc1"))
             .unwrap_err();
     }
 }

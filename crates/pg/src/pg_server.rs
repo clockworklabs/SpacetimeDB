@@ -161,7 +161,7 @@ where
             database::sql_direct(
                 self.ctx.clone(),
                 db,
-                SqlQueryParams { confirmed: true },
+                SqlQueryParams { confirmed: Some(true) },
                 params.caller_identity,
                 query.to_string(),
             )

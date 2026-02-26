@@ -5,7 +5,7 @@
 use super::unique_i_256_type::UniqueI256;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `unique_i256`.
+/// Table handle for the table `unique_i_256`.
 ///
 /// Obtain a handle from the [`UniqueI256TableAccess::unique_i_256`] method on [`super::RemoteTables`],
 /// like `ctx.db.unique_i_256()`.
@@ -19,19 +19,19 @@ pub struct UniqueI256TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `unique_i256`.
+/// Extension trait for access to the table `unique_i_256`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait UniqueI256TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`UniqueI256TableHandle`], which mediates access to the table `unique_i256`.
+    /// Obtain a [`UniqueI256TableHandle`], which mediates access to the table `unique_i_256`.
     fn unique_i_256(&self) -> UniqueI256TableHandle<'_>;
 }
 
 impl UniqueI256TableAccess for super::RemoteTables {
     fn unique_i_256(&self) -> UniqueI256TableHandle<'_> {
         UniqueI256TableHandle {
-            imp: self.imp.get_table::<UniqueI256>("unique_i256"),
+            imp: self.imp.get_table::<UniqueI256>("unique_i_256"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -78,24 +78,7 @@ impl<'ctx> __sdk::Table for UniqueI256TableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<UniqueI256>("unique_i256");
-    _table.add_unique_constraint::<__sats::i256>("n", |row| &row.n);
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<UniqueI256>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<UniqueI256>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
-}
-
-/// Access to the `n` unique index on the table `unique_i256`,
+/// Access to the `n` unique index on the table `unique_i_256`,
 /// which allows point queries on the field of the same name
 /// via the [`UniqueI256NUnique::find`] method.
 ///
@@ -108,7 +91,7 @@ pub struct UniqueI256NUnique<'ctx> {
 }
 
 impl<'ctx> UniqueI256TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `unique_i256`.
+    /// Get a handle on the `n` unique index on the table `unique_i_256`.
     pub fn n(&self) -> UniqueI256NUnique<'ctx> {
         UniqueI256NUnique {
             imp: self.imp.get_unique_constraint::<__sats::i256>("n"),
@@ -122,5 +105,36 @@ impl<'ctx> UniqueI256NUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &__sats::i256) -> Option<UniqueI256> {
         self.imp.find(col_val)
+    }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<UniqueI256>("unique_i_256");
+    _table.add_unique_constraint::<__sats::i256>("n", |row| &row.n);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<UniqueI256>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<UniqueI256>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `UniqueI256`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait unique_i_256QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `UniqueI256`.
+    fn unique_i_256(&self) -> __sdk::__query_builder::Table<UniqueI256>;
+}
+
+impl unique_i_256QueryTableAccess for __sdk::QueryTableAccessor {
+    fn unique_i_256(&self) -> __sdk::__query_builder::Table<UniqueI256> {
+        __sdk::__query_builder::Table::new("unique_i_256")
     }
 }
