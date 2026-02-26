@@ -50,6 +50,7 @@
 //! }
 //! ```
 
+mod csharp;
 pub mod modules;
 
 use anyhow::{bail, Context, Result};
@@ -812,6 +813,56 @@ impl Smoketest {
             "--clear-database",
             module_name,
         ])?;
+
+        let re = Regex::new(r"identity: ([0-9a-fA-F]+)").unwrap();
+        let identity = re
+            .captures(&publish_output)
+            .and_then(|caps| caps.get(1))
+            .map(|m| m.as_str().to_string())
+            .context("Failed to parse database identity from publish output")?;
+        self.database_identity = Some(identity.clone());
+
+        Ok(identity)
+    }
+
+    /// Initializes, writes, and publishes a C# module from source.
+    ///
+    /// The module is initialized at `<test_project_dir>/<project_dir_name>/spacetimedb`.
+    /// On success this updates `self.database_identity`.
+    pub fn publish_csharp_module_source(
+        &mut self,
+        project_dir_name: &str,
+        module_name: &str,
+        module_source: &str,
+    ) -> Result<String> {
+        let module_root = self.project_dir.path().join(project_dir_name);
+        let module_root_str = module_root.to_str().context("Invalid C# project path")?;
+        self.spacetime(&[
+            "init",
+            "--non-interactive",
+            "--lang",
+            "csharp",
+            "--project-path",
+            module_root_str,
+            module_name,
+        ])?;
+
+        let module_path = module_root.join("spacetimedb");
+        fs::write(module_path.join("Lib.cs"), module_source).context("Failed to write C# module code")?;
+        csharp::prepare_csharp_module(&module_path)?;
+
+        let module_path_str = module_path.to_str().context("Invalid C# module path")?;
+        let publish_output = self.spacetime(&[
+            "publish",
+            "--server",
+            &self.server_url,
+            "--module-path",
+            module_path_str,
+            "--yes",
+            "--clear-database",
+            module_name,
+        ])?;
+        csharp::verify_csharp_module_restore(&module_path)?;
 
         let re = Regex::new(r"identity: ([0-9a-fA-F]+)").unwrap();
         let identity = re
