@@ -34,7 +34,7 @@ pub use spacetimedb_commitlog::repo::{OnNewSegmentFn, SizeOnDisk};
 pub struct Options {
     /// Periodically flush and sync the log this often.
     ///
-    /// Default: 50ms
+    /// Default: 10ms
     pub sync_interval: Duration,
     /// [`Commitlog`] configuration.
     pub commitlog: spacetimedb_commitlog::Options,
@@ -43,7 +43,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            sync_interval: Duration::from_millis(50),
+            sync_interval: Duration::from_millis(10),
             commitlog: Default::default(),
         }
     }
