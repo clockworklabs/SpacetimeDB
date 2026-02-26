@@ -1819,7 +1819,7 @@ sealed class view_def_ienumerable_return_from_filterViewDispatcher
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
-            ReturnType: new SpacetimeDB.BSATN.Unsupported<System.Collections.Generic.IEnumerable<Player>>().GetAlgebraicType(
+            ReturnType: new SpacetimeDB.BSATN.Unsupported<System.Collections.Generic.IEnumerable<TestScheduleIssues>>().GetAlgebraicType(
                 registrar
             )
         );
@@ -1834,7 +1834,7 @@ sealed class view_def_ienumerable_return_from_filterViewDispatcher
             var returnValue = Module.ViewDefIEnumerableReturnFromFilter(
                 (SpacetimeDB.ViewContext)ctx
             );
-            SpacetimeDB.BSATN.Unsupported<System.Collections.Generic.IEnumerable<Player>> returnRW =
+            SpacetimeDB.BSATN.Unsupported<System.Collections.Generic.IEnumerable<TestScheduleIssues>> returnRW =
                 new();
             var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
             var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();

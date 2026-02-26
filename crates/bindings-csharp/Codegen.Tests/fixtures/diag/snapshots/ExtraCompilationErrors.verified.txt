@@ -322,6 +322,29 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
     }
   },
   {/*
+    {
+        return ctx.Db.TestIndexIssues.TestUnexpectedColumns.Filter(0);
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
+*/
+    Message: Cannot implicitly convert type 'System.Collections.Generic.IEnumerable<TestIndexIssues>' to 'System.Collections.Generic.IEnumerable<TestScheduleIssues>'. An explicit conversion exists (are you missing a cast?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0266,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0266),
+      MessageFormat: Cannot implicitly convert type '{0}' to '{1}'. An explicit conversion exists (are you missing a cast?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
             
             var returnValue = Module.ViewDefNoContext((SpacetimeDB.ViewContext)ctx);
                                      ^^^^^^^^^^^^^^^^
