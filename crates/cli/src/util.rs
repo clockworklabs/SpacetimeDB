@@ -247,22 +247,29 @@ pub fn find_module_path(project_dir: &Path) -> Option<PathBuf> {
     None
 }
 
-pub fn detect_module_language(path_to_project: &Path) -> anyhow::Result<ModuleLanguage> {
+pub fn detect_module_language(path_to_module: &Path) -> anyhow::Result<ModuleLanguage> {
     // TODO: Possible add a config file durlng spacetime init with the language
+    if !path_to_module.exists() {
+        anyhow::bail!(
+            "Module directory does not exist: '{}'. \
+             Check your --module-path flag or the module-path setting in spacetime.json.",
+            path_to_module.display()
+        );
+    }
     // check for Cargo.toml
-    if path_to_project.join("Cargo.toml").exists() {
+    if path_to_module.join("Cargo.toml").exists() {
         Ok(ModuleLanguage::Rust)
-    } else if path_to_project.is_dir()
-        && path_to_project
+    } else if path_to_module.is_dir()
+        && path_to_module
             .read_dir()
-            .map_err(|e| anyhow::anyhow!("Failed to read directory {}: {}", path_to_project.display(), e))?
+            .map_err(|e| anyhow::anyhow!("Failed to read directory {}: {}", path_to_module.display(), e))?
             .flatten()
             .any(|entry| entry.path().extension() == Some("csproj".as_ref()))
     {
         Ok(ModuleLanguage::Csharp)
-    } else if path_to_project.join("package.json").exists() {
+    } else if path_to_module.join("package.json").exists() {
         Ok(ModuleLanguage::Javascript)
-    } else if path_to_project.join("CMakeLists.txt").exists() {
+    } else if path_to_module.join("CMakeLists.txt").exists() {
         Ok(ModuleLanguage::Cpp)
     } else {
         anyhow::bail!("Could not detect the language of the module. Are you in a SpacetimeDB project directory?")
