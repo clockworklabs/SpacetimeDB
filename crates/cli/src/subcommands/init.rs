@@ -769,7 +769,7 @@ async fn get_template_config_interactive(
     }
 
     // Fully interactive mode - prompt for template/language selection
-    let (highlights, templates) = fetch_templates_list().await?;
+    let (_highlights, templates) = fetch_templates_list().await?;
 
     // Build a fuzzy-filterable list of all templates, plus special options at the bottom
     let mut menu_items: Vec<String> = templates
@@ -782,16 +782,10 @@ async fn get_template_config_interactive(
     let github_index = menu_items.len() - 2;
     let none_index = menu_items.len() - 1;
 
-    // Find the default index — prefer the first highlighted template (e.g. react-ts)
-    let default_index = highlights
-        .first()
-        .and_then(|h| templates.iter().position(|t| t.id == h.template_id))
-        .unwrap_or(0);
-
     let selection = FuzzySelect::with_theme(&theme)
         .with_prompt("Select a template (type to filter, arrows to navigate)")
         .items(&menu_items)
-        .default(default_index)
+        .default(0)
         .interact()?;
 
     if selection < templates.len() {
