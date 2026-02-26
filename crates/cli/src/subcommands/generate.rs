@@ -337,22 +337,23 @@ fn prepare_generate_run_configs<'a>(
             );
         }
 
+        let raw_out_dir = command_config.get_resolved_path("out_dir", config_dir)?;
+
         let lang = match requested_lang {
             Some(lang) => lang,
             None => {
                 let client_project_dir = config_dir.unwrap_or_else(|| Path::new("."));
-                let detected = detect_default_language(client_project_dir)?;
+                let (detected, detected_from) = detect_default_language(client_project_dir, raw_out_dir.as_deref())?;
                 println!(
                     "Detected client language '{}' from '{}'. If this is not correct, pass --lang or add a generate target in spacetime.json.",
                     language_cli_name(detected),
-                    client_project_dir.display()
+                    detected_from.display()
                 );
                 detected
             }
         };
 
-        let out_dir = command_config
-            .get_resolved_path("out_dir", config_dir)?
+        let out_dir = raw_out_dir
             .or_else(|| {
                 command_config
                     .get_resolved_path("uproject_dir", config_dir)
@@ -380,19 +381,44 @@ fn prepare_generate_run_configs<'a>(
     Ok(runs)
 }
 
-fn detect_default_language(client_project_dir: &Path) -> anyhow::Result<Language> {
-    if client_project_dir.join("package.json").exists() {
-        return Ok(Language::TypeScript);
+fn detect_language_from_dir(dir: &Path) -> Option<Language> {
+    if dir.join("package.json").exists() {
+        return Some(Language::TypeScript);
     }
-    if client_project_dir.join("Cargo.toml").exists() {
-        return Ok(Language::Rust);
+    if dir.join("Cargo.toml").exists() {
+        return Some(Language::Rust);
     }
-    if let Ok(entries) = fs::read_dir(client_project_dir) {
+    if let Ok(entries) = fs::read_dir(dir) {
         if entries
             .flatten()
             .any(|entry| entry.path().extension().is_some_and(|e| e == "csproj"))
         {
-            return Ok(Language::Csharp);
+            return Some(Language::Csharp);
+        }
+    }
+    None
+}
+
+fn detect_default_language<'a>(
+    client_project_dir: &'a Path,
+    out_dir: Option<&'a Path>,
+) -> anyhow::Result<(Language, &'a Path)> {
+    // First, try detecting from the project/config directory (cwd or spacetime.json location).
+    if let Some(lang) = detect_language_from_dir(client_project_dir) {
+        return Ok((lang, client_project_dir));
+    }
+
+    // If that fails and --out-dir was provided, walk up from it to find a client project root.
+    if let Some(out) = out_dir {
+        let mut dir = out;
+        loop {
+            if let Some(lang) = detect_language_from_dir(dir) {
+                return Ok((lang, dir));
+            }
+            match dir.parent() {
+                Some(parent) if !parent.as_os_str().is_empty() => dir = parent,
+                _ => break,
+            }
         }
     }
 
@@ -423,7 +449,7 @@ pub fn default_out_dir_for_language(lang: Language) -> Option<PathBuf> {
 pub fn resolve_language(module_path: &Path, requested: Option<Language>) -> anyhow::Result<Language> {
     match requested {
         Some(lang) => Ok(lang),
-        None => detect_default_language(module_path),
+        None => detect_default_language(module_path, None).map(|(lang, _)| lang),
     }
 }
 
@@ -1142,6 +1168,67 @@ mod tests {
         assert!(msg.contains("Could not auto-detect client language"));
         assert!(msg.contains("--lang"));
         assert!(msg.contains("spacetime.json"));
+    }
+
+    #[test]
+    fn test_detect_language_from_out_dir_when_cwd_has_no_project() {
+        // Simulates: `spacetime generate --module-path <module> --out-dir <client>/src/module_bindings`
+        // from a directory that is NOT a spacetime project.
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+
+        let temp = tempfile::TempDir::new().unwrap();
+        // Module dir exists (server module).
+        let module_dir = temp.path().join("server-module");
+        std::fs::create_dir_all(&module_dir).unwrap();
+        // Client project with package.json (TypeScript).
+        let client_dir = temp.path().join("client-project");
+        std::fs::create_dir_all(client_dir.join("src").join("module_bindings")).unwrap();
+        std::fs::write(client_dir.join("package.json"), "{}").unwrap();
+        // Config dir has no project files (simulates running from ~/foo).
+        let config_dir = temp.path().join("empty-cwd");
+        std::fs::create_dir_all(&config_dir).unwrap();
+
+        let out_dir = client_dir.join("src").join("module_bindings");
+        let matches = cmd.clone().get_matches_from(vec![
+            "generate",
+            "--module-path",
+            module_dir.to_str().unwrap(),
+            "--out-dir",
+            out_dir.to_str().unwrap(),
+        ]);
+        let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
+        let runs = prepare_generate_run_configs(vec![command_config], true, Some(config_dir.as_path())).unwrap();
+        assert_eq!(runs[0].lang, Language::TypeScript);
+        assert_eq!(runs[0].out_dir, out_dir);
+    }
+
+    #[test]
+    fn test_detect_language_from_out_dir_rust_project() {
+        // Same scenario but with a Rust client project.
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+
+        let temp = tempfile::TempDir::new().unwrap();
+        let module_dir = temp.path().join("server-module");
+        std::fs::create_dir_all(&module_dir).unwrap();
+        let client_dir = temp.path().join("rust-client");
+        std::fs::create_dir_all(client_dir.join("src").join("module_bindings")).unwrap();
+        std::fs::write(client_dir.join("Cargo.toml"), "[package]\nname = \"test\"").unwrap();
+        let config_dir = temp.path().join("empty-cwd");
+        std::fs::create_dir_all(&config_dir).unwrap();
+
+        let out_dir = client_dir.join("src").join("module_bindings");
+        let matches = cmd.clone().get_matches_from(vec![
+            "generate",
+            "--module-path",
+            module_dir.to_str().unwrap(),
+            "--out-dir",
+            out_dir.to_str().unwrap(),
+        ]);
+        let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
+        let runs = prepare_generate_run_configs(vec![command_config], true, Some(config_dir.as_path())).unwrap();
+        assert_eq!(runs[0].lang, Language::Rust);
     }
 
     #[tokio::test]
