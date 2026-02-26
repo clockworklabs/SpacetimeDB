@@ -75,7 +75,6 @@ pub(crate) fn to_rows(
 
     let mut encoder = DataRowEncoder::new(header.clone());
     for row in stmt.rows {
-
         for (idx, value) in ty.with_values(&row).enumerate() {
             let ty = satn::PsqlType {
                 client: PsqlClient::Postgres,
