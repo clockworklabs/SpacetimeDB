@@ -1,11 +1,12 @@
 use anyhow::Context;
 use clap::{ArgMatches, Command};
+use path_clean::PathClean;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 /// The filename for configuration
@@ -753,7 +754,7 @@ impl<'a> CommandConfig<'a> {
             } else {
                 p
             };
-            normalize_path_lexical(&resolved)
+            resolved.clean()
         }))
     }
 
@@ -775,24 +776,6 @@ impl<'a> CommandConfig<'a> {
             }
         }
         Ok(())
-    }
-}
-
-fn normalize_path_lexical(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                normalized.pop();
-            }
-            other => normalized.push(other.as_os_str()),
-        }
-    }
-    if normalized.as_os_str().is_empty() {
-        PathBuf::from(".")
-    } else {
-        normalized
     }
 }
 
@@ -3182,5 +3165,47 @@ mod tests {
 
         let config: SpacetimeConfig = json5::from_str(json).unwrap();
         assert_eq!(config.count_targets(), 4); // root + child-1 + child-2 + grandchild
+    }
+
+    #[test]
+    fn test_path_clean_preserves_leading_dotdot() {
+        // Regression test for #4429: leading `..` must be preserved.
+        // All config paths (--out-dir, --module-path, etc.) go through
+        // get_resolved_path which calls PathClean::clean().
+        use path_clean::PathClean;
+        use std::path::Path;
+
+        // --out-dir cases
+        assert_eq!(Path::new("../foo").clean(), PathBuf::from("../foo"));
+        assert_eq!(Path::new("../../a/b").clean(), PathBuf::from("../../a/b"));
+        assert_eq!(
+            Path::new("../frontend-ts-src/module-bindings").clean(),
+            PathBuf::from("../frontend-ts-src/module-bindings")
+        );
+        // Inner `..` should still resolve.
+        assert_eq!(Path::new("a/b/../c").clean(), PathBuf::from("a/c"));
+        // Pure `..` should stay.
+        assert_eq!(Path::new("..").clean(), PathBuf::from(".."));
+        // Absolute paths
+        assert_eq!(
+            Path::new("/home/user/project/../foo").clean(),
+            PathBuf::from("/home/user/foo")
+        );
+        // Current dir collapses.
+        assert_eq!(Path::new("./foo").clean(), PathBuf::from("foo"));
+        // Empty result → "."
+        assert_eq!(Path::new(".").clean(), PathBuf::from("."));
+        assert_eq!(Path::new("a/..").clean(), PathBuf::from("."));
+
+        // --module-path cases (same bug, reported by user on #4431)
+        assert_eq!(Path::new("../server").clean(), PathBuf::from("../server"));
+        assert_eq!(
+            Path::new("../../repos/server").clean(),
+            PathBuf::from("../../repos/server")
+        );
+        assert_eq!(
+            Path::new("../repos/server/spacetimedb").clean(),
+            PathBuf::from("../repos/server/spacetimedb")
+        );
     }
 }
