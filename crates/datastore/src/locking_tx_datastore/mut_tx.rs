@@ -38,10 +38,11 @@ use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
-use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics, Timestamp};
 use spacetimedb_lib::{
+    db::raw_def::v9::RawSql,
     db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
-    ConnectionId, Identity,
+    metrics::ExecutionMetrics,
+    ConnectionId, Identity, Timestamp,
 };
 use spacetimedb_primitives::{
     col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewFnPtr, ViewId,
@@ -324,9 +325,10 @@ impl MutTxId {
             return;
         };
 
-        let cols = idx.index().indexed_columns.clone();
-        let val = point.into_algebraic_value();
-        self.read_sets.insert_index_scan(table_id, cols, val, view.clone());
+        let idx = idx.index();
+        let cols = idx.indexed_columns.clone();
+        let point = point.into_algebraic_value(&idx.key_type);
+        self.read_sets.insert_index_scan(table_id, cols, point, view.clone());
     }
 
     /// Returns the views whose read sets overlaps with this transaction's write set
