@@ -866,8 +866,8 @@ impl SpacetimeConfig {
     pub fn for_client_lang(client_lang: &str, package_manager: Option<PackageManager>) -> Self {
         let run_command = match client_lang.to_lowercase().as_str() {
             "typescript" => package_manager.map(|pm| pm.run_dev_command()).unwrap_or("npm run dev"),
-            "rust" => "cargo run",
-            "csharp" | "c#" => "dotnet run",
+            "rust" => "cargo run --release",
+            "csharp" | "c#" => "dotnet run --configuration Release",
             _ => "npm run dev", // default fallback
         };
         Self {
@@ -1161,14 +1161,14 @@ pub fn detect_client_command(project_dir: &Path) -> Option<(String, Option<Packa
 
     // Rust: Cargo.toml
     if project_dir.join("Cargo.toml").exists() {
-        return Some(("cargo run".to_string(), None));
+        return Some(("cargo run --release".to_string(), None));
     }
 
     // C#: .csproj file
     if let Ok(entries) = fs::read_dir(project_dir) {
         for entry in entries.flatten() {
             if entry.path().extension().is_some_and(|e| e == "csproj") {
-                return Some(("dotnet run".to_string(), None));
+                return Some(("dotnet run --configuration Release".to_string(), None));
             }
         }
     }
