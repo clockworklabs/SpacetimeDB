@@ -290,6 +290,19 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         }
     }
 
+    // If config has a module-path and CLI didn't provide one, resolve spacetimedb_dir from it.
+    // This handles the case where spacetime.json specifies module-path but has no publish targets.
+    if module_path_from_cli.is_none() {
+        if let Some(config_module_path) = loaded_config
+            .as_ref()
+            .and_then(|lc| lc.config.additional_fields.get("module-path"))
+            .and_then(|v| v.as_str())
+        {
+            let p = PathBuf::from(config_module_path);
+            spacetimedb_dir = if p.is_absolute() { p } else { project_dir.join(p) };
+        }
+    }
+
     let spacetime_config = loaded_config.as_ref().map(|lc| &lc.config);
     // A config has publish targets if it has a "database" field or children
     let has_publish_targets_in_config = spacetime_config
@@ -365,6 +378,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         &publish_schema,
         &publish_args,
         resolved_server,
+        &spacetimedb_dir,
     )?;
 
     // Check if we are in a SpacetimeDB project directory, but only if we don't have any
@@ -470,6 +484,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             &publish_schema,
             &publish_args,
             resolved_server,
+            &spacetimedb_dir,
         )?;
     }
 
@@ -846,6 +861,7 @@ fn determine_publish_configs<'a>(
     publish_schema: &'a CommandSchema,
     publish_args: &'a ArgMatches,
     resolved_server: &str,
+    default_module_path: &Path,
 ) -> anyhow::Result<Vec<CommandConfig<'a>>> {
     // Build publish configs. It is easier to work with one type of data,
     // so if we don't have publish configs from the config file, we build a single
@@ -869,7 +885,7 @@ fn determine_publish_configs<'a>(
         let mut config_map = HashMap::new();
         config_map.insert("database".to_string(), json!(db_name));
         config_map.insert("server".to_string(), json!(resolved_server));
-        config_map.insert("module-path".to_string(), json!("spacetimedb"));
+        config_map.insert("module-path".to_string(), json!(default_module_path.to_string_lossy()));
 
         Ok(vec![CommandConfig::new(publish_schema, config_map, publish_args)?])
     } else {
@@ -1728,8 +1744,16 @@ mod tests {
         let publish_schema = publish::build_publish_schema(&publish_cmd).unwrap();
         let publish_args = publish_cmd.clone().get_matches_from(vec!["publish"]);
 
-        let result =
-            determine_publish_configs(None, None, &publish_cmd, &publish_schema, &publish_args, "local").unwrap();
+        let result = determine_publish_configs(
+            None,
+            None,
+            &publish_cmd,
+            &publish_schema,
+            &publish_args,
+            "local",
+            Path::new("spacetimedb"),
+        )
+        .unwrap();
 
         assert!(result.is_empty());
     }
@@ -1748,6 +1772,7 @@ mod tests {
             &publish_schema,
             &publish_args,
             "local",
+            Path::new("spacetimedb"),
         )
         .unwrap();
 
@@ -1783,6 +1808,7 @@ mod tests {
             &publish_schema,
             &publish_args,
             "local",
+            Path::new("spacetimedb"),
         )
         .unwrap();
 
@@ -1814,6 +1840,7 @@ mod tests {
             &publish_schema,
             &publish_args,
             "local",
+            Path::new("spacetimedb"),
         )
         .unwrap();
 
@@ -1822,6 +1849,33 @@ mod tests {
         assert_eq!(
             result[0].get_config_value("database").and_then(|v| v.as_str()),
             Some("cli-db")
+        );
+    }
+
+    #[test]
+    fn test_determine_publish_configs_fallback_uses_provided_module_path() {
+        // When falling through to CLI database, the fallback should use the provided
+        // default_module_path instead of hardcoding "spacetimedb"
+        let publish_cmd = publish::cli();
+        let publish_schema = publish::build_publish_schema(&publish_cmd).unwrap();
+        let publish_args = publish_cmd.clone().get_matches_from(vec!["publish", "my-db"]);
+
+        let custom_path = Path::new("/custom/module/path");
+        let result = determine_publish_configs(
+            Some("my-db".to_string()),
+            None,
+            &publish_cmd,
+            &publish_schema,
+            &publish_args,
+            "local",
+            custom_path,
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result[0].get_config_value("module_path").and_then(|v| v.as_str()),
+            Some("/custom/module/path")
         );
     }
 
