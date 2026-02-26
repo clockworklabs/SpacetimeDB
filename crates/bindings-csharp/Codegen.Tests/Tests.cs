@@ -75,9 +75,7 @@ public static class GeneratorSnapshotTests
             return genResult.GeneratedTrees;
         }
 
-        public GeneratorDriverRunResult RunGeneratorAndGetResult(
-            IIncrementalGenerator generator
-        )
+        public GeneratorDriverRunResult RunGeneratorAndGetResult(IIncrementalGenerator generator)
         {
             var driver = CreateDriver(generator, sampleCompilation.LanguageVersion);
             return driver.RunGenerators(sampleCompilation).GetRunResult();
@@ -285,15 +283,28 @@ public static class GeneratorSnapshotTests
 
         var runResult = fixture.RunGeneratorAndGetResult(new SpacetimeDB.Codegen.Module());
 
-        var method = fixture.SampleCompilation.SyntaxTrees
-            .Select(tree => new { Tree = tree, Root = tree.GetRoot() })
-            .SelectMany(entry => entry.Root.DescendantNodes()
-                .OfType<MethodDeclarationSyntax>()
-                .Select(method => new { entry.Tree, entry.Root, Method = method }))
+        var method = fixture
+            .SampleCompilation.SyntaxTrees.Select(tree => new
+            {
+                Tree = tree,
+                Root = tree.GetRoot(),
+            })
+            .SelectMany(entry =>
+                entry
+                    .Root.DescendantNodes()
+                    .OfType<MethodDeclarationSyntax>()
+                    .Select(method => new
+                    {
+                        entry.Tree,
+                        entry.Root,
+                        Method = method,
+                    })
+            )
             .Single(entry => entry.Method.Identifier.Text == "ViewDefIEnumerableReturnFromIter");
 
         var returnTypeSpan = method.Method.ReturnType.Span;
-        var diagnostics = runResult.Results.SelectMany(result => result.Diagnostics)
+        var diagnostics = runResult
+            .Results.SelectMany(result => result.Diagnostics)
             .Where(d => d.Id == "STDB0024")
             .ToList();
         var diagnostic = diagnostics.FirstOrDefault(d =>
@@ -305,10 +316,9 @@ public static class GeneratorSnapshotTests
 
         Assert.Equal(returnTypeSpan, diagnostic!.Location.SourceSpan);
 
-        var returnTypeText = method.Root.ToFullString().Substring(
-            returnTypeSpan.Start,
-            returnTypeSpan.Length
-        );
+        var returnTypeText = method
+            .Root.ToFullString()
+            .Substring(returnTypeSpan.Start, returnTypeSpan.Length);
         Assert.Contains("IEnumerable", returnTypeText);
     }
 }
