@@ -785,7 +785,7 @@ async fn get_template_config_interactive(
     client_choices.push("Use Template - Choose from a list of built-in template projects or clone an existing SpacetimeDB project from GitHub".to_string());
     client_choices.push("None".to_string());
 
-    let client_selection = Select::with_theme(&theme)
+    let client_selection = FuzzySelect::with_theme(&theme)
         .with_prompt("Select a client type for your project (you can add other clients later)")
         .items(&client_choices)
         .default(0)
