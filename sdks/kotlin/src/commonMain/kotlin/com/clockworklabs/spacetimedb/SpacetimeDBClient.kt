@@ -102,9 +102,8 @@ class DbConnection internal constructor(
     fun callReducer(reducerName: String, args: ByteArray, callback: ((ReducerResult) -> Unit)? = null) {
         val reqId = nextRequestId()
         if (callback != null) {
-            scope.launch {
-                mutex.withLock { reducerCallbacks[reqId] = callback }
-            }
+            // Register synchronously before sending to avoid race with server response
+            reducerCallbacks[reqId] = callback
         }
         transport.send(
             ClientMessage.CallReducer(
@@ -143,12 +142,9 @@ class DbConnection internal constructor(
         val qsId = QuerySetId(reqId)
         handle.querySetId = qsId
         handle.requestId = reqId
-        scope.launch {
-            mutex.withLock {
-                subscriptions[reqId] = handle
-                subscriptionsByQuerySet[qsId] = handle
-            }
-        }
+        // Register synchronously before sending to avoid race with server response
+        subscriptions[reqId] = handle
+        subscriptionsByQuerySet[qsId] = handle
         transport.send(
             ClientMessage.Subscribe(
                 requestId = reqId,
@@ -177,6 +173,7 @@ class DbConnection internal constructor(
         val error = CancellationException("Connection closed")
         pendingOneOffQueries.values.forEach { it.cancel(error) }
         pendingOneOffQueries.clear()
+        reducerCallbacks.clear()
     }
 
     private suspend fun handleMessage(msg: ServerMessage) {

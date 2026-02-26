@@ -47,15 +47,16 @@ class TableHandle(val tableName: String) {
     }
 
     internal fun fireInsert(row: ByteArray) {
-        insertCallbacks.values.forEach { it(row) }
+        // Snapshot to allow callbacks to register/remove other callbacks safely
+        for (cb in insertCallbacks.values.toList()) cb(row)
     }
 
     internal fun fireDelete(row: ByteArray) {
-        deleteCallbacks.values.forEach { it(row) }
+        for (cb in deleteCallbacks.values.toList()) cb(row)
     }
 
     internal fun fireUpdate(oldRow: ByteArray, newRow: ByteArray) {
-        updateCallbacks.values.forEach { it(oldRow, newRow) }
+        for (cb in updateCallbacks.values.toList()) cb(oldRow, newRow)
     }
 }
 

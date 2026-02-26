@@ -33,3 +33,9 @@ kotlin {
         }
     }
 }
+
+tasks.withType<Test> {
+    testLogging {
+        showStandardStreams = true
+    }
+}
