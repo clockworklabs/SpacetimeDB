@@ -347,7 +347,8 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
     de_generics.params.insert(0, de_lt_param.into());
     let (de_impl_generics, _, de_where_clause) = de_generics.split_for_impl();
 
-    let (iter_n, iter_n2, iter_n3, iter_n4) = (0usize.., 0usize.., 0usize.., 0usize..);
+    let (iter_n, iter_n2, iter_n3, iter_n4, iter_n5, iter_n6, iter_n7) =
+        (0usize.., 0usize.., 0usize.., 0usize.., 0usize.., 0usize.., 0usize..);
 
     match &ty.data {
         SatsTypeData::Product(fields) => {
@@ -382,8 +383,10 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
 
             let field_names = fields.iter().map(|f| f.ident.unwrap()).collect::<Vec<_>>();
             let field_strings = fields.iter().map(|f| f.name.as_deref().unwrap()).collect::<Vec<_>>();
-            let field_types = fields.iter().map(|f| &f.ty);
+            let field_types = fields.iter().map(|f| f.ty);
             let field_types2 = field_types.clone();
+            let field_types3 = field_types.clone();
+            let field_types4 = field_types.clone();
             quote! {
                 #[allow(non_camel_case_types)]
                 #[allow(clippy::all)]
@@ -393,6 +396,12 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
 
                         fn deserialize<D: #spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
                             deserializer.deserialize_product(__ProductVisitor {
+                                _marker: std::marker::PhantomData::<fn() -> #name #ty_generics>,
+                            })
+                        }
+
+                        fn validate<D: #spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
+                            deserializer.validate_product(__ProductVisitor {
                                 _marker: std::marker::PhantomData::<fn() -> #name #ty_generics>,
                             })
                         }
@@ -419,6 +428,13 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                                         .ok_or_else(|| #spacetimedb_lib::de::Error::invalid_product_length(#iter_n, &self))?,)*
                             })
                         }
+                        fn validate_seq_product<A: #spacetimedb_lib::de::SeqProductAccess<'de>>(self, mut tup: A) -> Result<(), A::Error> {
+                            #(
+                                tup.validate_next_element::<#field_types2>()?
+                                    .ok_or_else(|| #spacetimedb_lib::de::Error::invalid_product_length(#iter_n2, &self))?;
+                            )*
+                            Ok(())
+                        }
                         fn visit_named_product<A: #spacetimedb_lib::de::NamedProductAccess<'de>>(self, mut __prod: A) -> Result<Self::Output, A::Error> {
                             #(let mut #field_names = None;)*
                             while let Some(__field) = #spacetimedb_lib::de::NamedProductAccess::get_field_ident(&mut __prod, Self {
@@ -427,16 +443,38 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                                 match __field {
                                     #(__ProductFieldIdent::#field_names => {
                                         if #field_names.is_some() {
-                                            return Err(#spacetimedb_lib::de::Error::duplicate_field(#iter_n2, Some(#field_strings), &self))
+                                            return Err(#spacetimedb_lib::de::Error::duplicate_field(#iter_n3, Some(#field_strings), &self))
                                         }
-                                        #field_names = Some(#spacetimedb_lib::de::NamedProductAccess::get_field_value::<#field_types2>(&mut __prod)?)
+                                        #field_names = Some(#spacetimedb_lib::de::NamedProductAccess::get_field_value::<#field_types3>(&mut __prod)?)
                                     })*
                                 }
                             }
                             Ok(#name {
                                 #(#field_names:
-                                    #field_names.ok_or_else(|| #spacetimedb_lib::de::Error::missing_field(#iter_n3, Some(#field_strings), &self))?,)*
+                                    #field_names.ok_or_else(|| #spacetimedb_lib::de::Error::missing_field(#iter_n4, Some(#field_strings), &self))?,)*
                             })
+                        }
+                        fn validate_named_product<A: #spacetimedb_lib::de::NamedProductAccess<'de>>(self, mut __prod: A) -> Result<(), A::Error> {
+                            #(let mut #field_names = false;)*
+                            while let Some(__field) = #spacetimedb_lib::de::NamedProductAccess::get_field_ident(&mut __prod, Self {
+                                _marker: std::marker::PhantomData,
+                            })? {
+                                match __field {
+                                    #(__ProductFieldIdent::#field_names => {
+                                        if #field_names {
+                                            return Err(#spacetimedb_lib::de::Error::duplicate_field(#iter_n5, Some(#field_strings), &self))
+                                        }
+                                        #spacetimedb_lib::de::NamedProductAccess::validate_field_value::<#field_types4>(&mut __prod)?;
+                                        #field_names = true;
+                                    })*
+                                }
+                            }
+                            #(
+                                if !#field_names {
+                                    return Err(#spacetimedb_lib::de::Error::missing_field(#iter_n6, Some(#field_strings), &self));
+                                }
+                            )*
+                            Ok(())
                         }
                     }
 
@@ -456,7 +494,7 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
 
                         fn visit_seq(self, index: usize) -> Self::Output {
                             match index {
-                                #(#iter_n4 => __ProductFieldIdent::#field_names,)*
+                                #(#iter_n7 => __ProductFieldIdent::#field_names,)*
                                 _ => core::unreachable!(),
                             }
                         }
@@ -488,12 +526,30 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                     }
                 }
             });
+            let arms_validate = variants.iter().map(|var| {
+                let ident = var.ident;
+                if let Some(ty) = var.ty {
+                    quote! {
+                        __Variant::#ident => #spacetimedb_lib::de::VariantAccess::validate::<#ty>(__access)?,
+                    }
+                } else {
+                    quote! {
+                        __Variant::#ident => #spacetimedb_lib::de::VariantAccess::validate::<()>(__access)?,
+                    }
+                }
+            });
             quote! {
                 #[allow(clippy::all)]
                 const _: () = {
                     impl #de_impl_generics #spacetimedb_lib::de::Deserialize<'de> for #name #ty_generics #de_where_clause {
                         fn deserialize<D: #spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
                             deserializer.deserialize_sum(__SumVisitor {
+                                _marker: std::marker::PhantomData::<fn() -> #name #ty_generics>,
+                            })
+                        }
+
+                        fn validate<D: #spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
+                            deserializer.validate_sum(__SumVisitor {
                                 _marker: std::marker::PhantomData::<fn() -> #name #ty_generics>,
                             })
                         }
@@ -515,6 +571,14 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                             match __variant {
                                 #(#arms)*
                             }
+                        }
+
+                        fn validate_sum<A: #spacetimedb_lib::de::SumAccess<'de>>(self, __data: A) -> Result<(), A::Error> {
+                            let (__variant, __access) = __data.variant(self)?;
+                            match __variant {
+                                #(#arms_validate)*
+                            }
+                            Ok(())
                         }
                     }
 
