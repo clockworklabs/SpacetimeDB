@@ -38,4 +38,5 @@ tasks.withType<Test> {
     testLogging {
         showStandardStreams = true
     }
+    maxHeapSize = "1g"
 }

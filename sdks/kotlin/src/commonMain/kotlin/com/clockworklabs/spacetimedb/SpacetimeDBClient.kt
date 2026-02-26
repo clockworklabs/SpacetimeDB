@@ -31,6 +31,13 @@ typealias ConnectErrorCallback = (Throwable) -> Unit
  * The connection is opened immediately on [build][DbConnectionBuilder.build]. Use [disconnect]
  * to tear it down, or configure automatic reconnection via [DbConnectionBuilder.withReconnectPolicy].
  */
+/** Compression mode negotiated with the server for host→client messages. */
+enum class CompressionMode(internal val queryValue: String) {
+    NONE("None"),
+    GZIP("Gzip"),
+    BROTLI("Brotli"),
+}
+
 class DbConnection internal constructor(
     private val uri: String,
     private val moduleName: String,
@@ -40,6 +47,7 @@ class DbConnection internal constructor(
     private val connectErrorCallbacks: List<ConnectErrorCallback>,
     private val keepAliveIntervalMs: Long = 30_000L,
     private val reconnectPolicy: ReconnectPolicy? = null,
+    private val compression: CompressionMode = CompressionMode.GZIP,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val requestCounter = atomic(0)
@@ -70,6 +78,7 @@ class DbConnection internal constructor(
         onConnectError = { error -> connectErrorCallbacks.forEach { it(error) } },
         keepAliveIntervalMs = keepAliveIntervalMs,
         reconnectPolicy = reconnectPolicy,
+        compression = compression,
     )
 
     val connectionState: StateFlow<ConnectionState> get() = transport.state
@@ -269,6 +278,7 @@ class DbConnectionBuilder {
     private var token: String? = null
     private var keepAliveIntervalMs: Long = 30_000L
     private var reconnectPolicy: ReconnectPolicy? = null
+    private var compression: CompressionMode = CompressionMode.GZIP
     private val connectCallbacks = mutableListOf<ConnectCallback>()
     private val disconnectCallbacks = mutableListOf<DisconnectCallback>()
     private val connectErrorCallbacks = mutableListOf<ConnectErrorCallback>()
@@ -289,6 +299,8 @@ class DbConnectionBuilder {
 
     fun withReconnectPolicy(policy: ReconnectPolicy) = apply { this.reconnectPolicy = policy }
 
+    fun withCompression(mode: CompressionMode) = apply { this.compression = mode }
+
     fun build(): DbConnection {
         val uri = requireNotNull(uri) { "URI is required. Call withUri() before build()." }
         val module = requireNotNull(moduleName) { "Module name is required. Call withModuleName() before build()." }
@@ -301,6 +313,7 @@ class DbConnectionBuilder {
             connectErrorCallbacks = connectErrorCallbacks.toList(),
             keepAliveIntervalMs = keepAliveIntervalMs,
             reconnectPolicy = reconnectPolicy,
+            compression = compression,
         )
     }
 }

@@ -1,5 +1,6 @@
 package com.clockworklabs.spacetimedb.websocket
 
+import com.clockworklabs.spacetimedb.CompressionMode
 import com.clockworklabs.spacetimedb.ReconnectPolicy
 import com.clockworklabs.spacetimedb.decompressBrotli
 import com.clockworklabs.spacetimedb.decompressGzip
@@ -31,6 +32,7 @@ class WebSocketTransport(
     private val onConnectError: (Throwable) -> Unit,
     private val keepAliveIntervalMs: Long = 30_000L,
     private val reconnectPolicy: ReconnectPolicy? = null,
+    private val compression: CompressionMode = CompressionMode.GZIP,
 ) {
     private val client = HttpClient {
         install(WebSockets)
@@ -257,7 +259,7 @@ class WebSocketTransport(
         val sb = StringBuilder("$wsBase/v1/database/$moduleName/subscribe")
         val params = mutableListOf<String>()
         if (token != null) params.add("token=${urlEncode(token)}")
-        params.add("compression=Gzip")
+        params.add("compression=${compression.queryValue}")
         sb.append("?${params.joinToString("&")}")
         return sb.toString()
     }
