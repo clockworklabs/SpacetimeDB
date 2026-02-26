@@ -5,7 +5,7 @@ use anyhow::Context;
 use clap::{Arg, ArgMatches};
 use colored::Colorize;
 use convert_case::{Case, Casing};
-use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
+use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect, Input, Select};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -771,35 +771,31 @@ async fn get_template_config_interactive(
     // Fully interactive mode - prompt for template/language selection
     let (highlights, templates) = fetch_templates_list().await?;
 
-    let mut client_choices: Vec<String> = highlights
+    // Build a fuzzy-filterable list of all templates, plus special options at the bottom
+    let mut menu_items: Vec<String> = templates
         .iter()
-        .map(|h| {
-            let template = templates.iter().find(|t| t.id == h.template_id);
-            match template {
-                Some(t) => format!("{} - {}", h.name, t.description),
-                None => h.name.clone(),
-            }
-        })
+        .map(|t| format!("{} - {}", t.id, t.description))
         .collect();
-    client_choices.push("Use Template - Choose from a list of built-in template projects or clone an existing SpacetimeDB project from GitHub".to_string());
-    client_choices.push("None".to_string());
+    menu_items.push("Clone from GitHub (owner/repo or git URL)".to_string());
+    menu_items.push("None (server only)".to_string());
 
-    let client_selection = Select::with_theme(&theme)
-        .with_prompt("Select a client type for your project (you can add other clients later)")
-        .items(&client_choices)
-        .default(0)
+    let github_index = menu_items.len() - 2;
+    let none_index = menu_items.len() - 1;
+
+    // Find the default index — prefer the first highlighted template (e.g. react-ts)
+    let default_index = highlights
+        .first()
+        .and_then(|h| templates.iter().position(|t| t.id == h.template_id))
+        .unwrap_or(0);
+
+    let selection = FuzzySelect::with_theme(&theme)
+        .with_prompt("Select a template (type to filter, arrows to navigate)")
+        .items(&menu_items)
+        .default(default_index)
         .interact()?;
 
-    let other_index = highlights.len();
-    let none_index = highlights.len() + 1;
-
-    if client_selection < highlights.len() {
-        let highlight = &highlights[client_selection];
-        let template = templates
-            .iter()
-            .find(|t| t.id == highlight.template_id)
-            .ok_or_else(|| anyhow::anyhow!("Template {} not found", highlight.template_id))?;
-
+    if selection < templates.len() {
+        let template = &templates[selection];
         Ok(TemplateConfig {
             project_name,
             project_path,
@@ -810,46 +806,26 @@ async fn get_template_config_interactive(
             template_def: Some(template.clone()),
             use_local: true,
         })
-    } else if client_selection == other_index {
-        println!("\n{}", "Available built-in templates:".bold());
-        for template in &templates {
-            println!("  {} - {}", template.id, template.description);
-        }
-        println!();
-
+    } else if selection == github_index {
+        // GitHub URL flow
         loop {
-            let template_id = Input::<String>::with_theme(&theme)
-                .with_prompt("Template ID or GitHub repository (owner/repo) or git URL")
+            let repo_input = Input::<String>::with_theme(&theme)
+                .with_prompt("GitHub repository (owner/repo) or git URL")
                 .interact_text()?
                 .trim()
                 .to_string();
-            let template_config = create_template_config_from_template_str(
+            if repo_input.is_empty() {
+                eprintln!("{}", "Please enter a GitHub repository.".bold());
+                continue;
+            }
+            break create_template_config_from_template_str(
                 project_name.clone(),
                 project_path.clone(),
-                &template_id,
+                &repo_input,
                 &templates,
             );
-            // If template_id looks like a builtin template ID (e.g. kebab-case, all lowercase, no slashes, alphanumeric and dashes only)
-            // then ensure that it is a valid builtin template ID, if not reprompt
-            let is_builtin_like = |s: &str| {
-                !s.is_empty()
-                    && !s.contains('/')
-                    && s.chars()
-                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-            };
-            if !is_builtin_like(&template_id) {
-                break template_config;
-            }
-            if templates.iter().any(|t| t.id == template_id) {
-                break template_config;
-            }
-            eprintln!(
-                "{}",
-                "Unrecognized format. Enter a built-in ID (e.g. \"rust-chat\"), a GitHub repo (\"owner/repo\"), or a git URL."
-                    .bold()
-            );
         }
-    } else if client_selection == none_index {
+    } else if selection == none_index {
         // Ask for server language only
         let server_lang_choices = vec!["Rust", "C#", "TypeScript"];
         let server_selection = Select::with_theme(&theme)
