@@ -751,7 +751,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         .and_then(|c| c.get_one::<String>("server").ok().flatten());
     let server_for_client = server_opt_client.as_deref().unwrap_or(resolved_server);
     let server_host_url = config.get_host_url(Some(server_for_client))?;
-    let _client_handle = if let Some(ref cmd) = client_command {
+    let mut client_handle = if let Some(ref cmd) = client_command {
         let mut child = start_client_process(cmd, &project_dir, db_name_for_client, &server_host_url)?;
 
         // Give the process a moment to fail fast (e.g., command not found, missing deps)
@@ -801,8 +801,54 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     let mut debounce_timer;
+    let mut client_exited = false;
     loop {
-        if rx.recv().is_ok() {
+        // Use recv_timeout so we can periodically check if the client process exited
+        let got_event = match rx.recv_timeout(Duration::from_secs(1)) {
+            Ok(()) => true,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => false,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break Ok(()),
+        };
+
+        // Check if the client process has exited
+        if !client_exited {
+            if let Some(ref mut child) = client_handle {
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        client_exited = true;
+                        if status.success() {
+                            println!(
+                                "\n{} {}",
+                                "Client process exited.".yellow(),
+                                "File watcher is still active.".dimmed()
+                            );
+                        } else {
+                            let code = status
+                                .code()
+                                .map(|c| c.to_string())
+                                .unwrap_or_else(|| "unknown".to_string());
+                            eprintln!(
+                                "\n{} Client process exited with code {}. {}",
+                                "Warning:".yellow().bold(),
+                                code,
+                                "File watcher is still active.".dimmed()
+                            );
+                        }
+                    }
+                    Ok(None) => {} // Still running
+                    Err(e) => {
+                        client_exited = true;
+                        eprintln!(
+                            "\n{} Failed to check client process status: {}",
+                            "Warning:".yellow().bold(),
+                            e
+                        );
+                    }
+                }
+            }
+        }
+
+        if got_event {
             debounce_timer = std::time::Instant::now();
             while debounce_timer.elapsed() < Duration::from_millis(300) {
                 if rx.recv_timeout(Duration::from_millis(100)).is_ok() {
