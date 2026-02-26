@@ -801,43 +801,66 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     let mut debounce_timer;
-    let mut client_exited = false;
     loop {
         // Use recv_timeout so we can periodically check if the client process exited
-        let got_event = match rx.recv_timeout(Duration::from_secs(1)) {
-            Ok(()) => true,
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => false,
+        match rx.recv_timeout(Duration::from_secs(1)) {
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break Ok(()),
-        };
-
-        // Check if the client process has exited
-        if !client_exited {
-            if let Some(ref mut child) = client_handle {
-                match child.try_wait() {
-                    Ok(Some(status)) => {
-                        client_exited = true;
-                        if status.success() {
-                            println!(
-                                "\n{} {}",
-                                "Client process exited.".yellow(),
-                                "File watcher is still active.".dimmed()
-                            );
-                        } else {
-                            let code = status
-                                .code()
-                                .map(|c| c.to_string())
-                                .unwrap_or_else(|| "unknown".to_string());
-                            eprintln!(
-                                "\n{} Client process exited with code {}. {}",
-                                "Warning:".yellow().bold(),
-                                code,
-                                "File watcher is still active.".dimmed()
-                            );
-                        }
+            Ok(()) => {
+                debounce_timer = std::time::Instant::now();
+                while debounce_timer.elapsed() < Duration::from_millis(300) {
+                    if rx.recv_timeout(Duration::from_millis(100)).is_ok() {
+                        debounce_timer = std::time::Instant::now();
                     }
-                    Ok(None) => {} // Still running
+                }
+
+                println!("\n{}", "File change detected, rebuilding...".yellow());
+                match generate_build_and_publish(
+                    &config,
+                    &project_dir,
+                    loaded_config_dir.as_deref(),
+                    &spacetimedb_dir,
+                    &module_bindings_dir,
+                    client_language,
+                    clear_database,
+                    &publish_configs,
+                    &generate_configs_from_file,
+                    using_spacetime_config,
+                    server_from_cli,
+                    force,
+                    skip_publish,
+                    skip_generate,
+                )
+                .await
+                {
+                    Ok(_) => {}
                     Err(e) => {
-                        client_exited = true;
+                        eprintln!("{} {}", "Error:".red().bold(), e);
+                        println!("{}", "Waiting for next change...".dimmed());
+                    }
+                }
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                // No rebuild yet. Check if the client process has exited.
+                let Some(ref mut child) = client_handle else {
+                    continue;
+                };
+                match child.try_wait() {
+                    Ok(None) => {}
+                    Ok(Some(status)) => {
+                        client_handle = None;
+                        let code = status
+                            .code()
+                            .map(|c| c.to_string())
+                            .unwrap_or_else(|| "unknown".to_string());
+                        println!(
+                            "\n{} {}. {}",
+                            "Client process exited with code".yellow(),
+                            code,
+                            "File watcher is still active.".dimmed()
+                        );
+                    }
+                    Err(e) => {
+                        client_handle = None;
                         eprintln!(
                             "\n{} Failed to check client process status: {}",
                             "Warning:".yellow().bold(),
@@ -846,42 +869,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                     }
                 }
             }
-        }
-
-        if got_event {
-            debounce_timer = std::time::Instant::now();
-            while debounce_timer.elapsed() < Duration::from_millis(300) {
-                if rx.recv_timeout(Duration::from_millis(100)).is_ok() {
-                    debounce_timer = std::time::Instant::now();
-                }
-            }
-
-            println!("\n{}", "File change detected, rebuilding...".yellow());
-            match generate_build_and_publish(
-                &config,
-                &project_dir,
-                loaded_config_dir.as_deref(),
-                &spacetimedb_dir,
-                &module_bindings_dir,
-                client_language,
-                clear_database,
-                &publish_configs,
-                &generate_configs_from_file,
-                using_spacetime_config,
-                server_from_cli,
-                force,
-                skip_publish,
-                skip_generate,
-            )
-            .await
-            {
-                Ok(_) => {}
-                Err(e) => {
-                    eprintln!("{} {}", "Error:".red().bold(), e);
-                    println!("{}", "Waiting for next change...".dimmed());
-                }
-            }
-        }
+        };
     }
 }
 
