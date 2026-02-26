@@ -57,8 +57,16 @@ impl<'de, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'_, R> {
         visitor.visit_seq_product(self)
     }
 
+    fn validate_product<V: de::ProductVisitor<'de>>(self, visitor: V) -> Result<(), Self::Error> {
+        visitor.validate_seq_product(self)
+    }
+
     fn deserialize_sum<V: de::SumVisitor<'de>>(self, visitor: V) -> Result<V::Output, DecodeError> {
         visitor.visit_sum(self)
+    }
+
+    fn validate_sum<V: de::SumVisitor<'de>>(self, visitor: V) -> Result<(), Self::Error> {
+        visitor.validate_sum(self)
     }
 
     fn deserialize_bool(self) -> Result<bool, Self::Error> {
@@ -132,6 +140,16 @@ impl<'de, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'_, R> {
         let seeds = itertools::repeat_n(seed, len);
         visitor.visit(ArrayAccess { de: self, seeds })
     }
+
+    fn validate_array_seed<V: de::ArrayVisitor<'de, T::Output>, T: de::DeserializeSeed<'de> + Clone>(
+        mut self,
+        visitor: V,
+        seed: T,
+    ) -> Result<(), Self::Error> {
+        let len = self.reborrow().deserialize_len()?;
+        let seeds = itertools::repeat_n(seed, len);
+        visitor.validate(ArrayAccess { de: self, seeds })
+    }
 }
 
 impl<'de, R: BufReader<'de>> SeqProductAccess<'de> for Deserializer<'_, R> {
@@ -139,6 +157,10 @@ impl<'de, R: BufReader<'de>> SeqProductAccess<'de> for Deserializer<'_, R> {
 
     fn next_element_seed<T: de::DeserializeSeed<'de>>(&mut self, seed: T) -> Result<Option<T::Output>, DecodeError> {
         seed.deserialize(self.reborrow()).map(Some)
+    }
+
+    fn validate_next_element_seed<T: de::DeserializeSeed<'de>>(&mut self, seed: T) -> Result<Option<()>, Self::Error> {
+        seed.validate(self.reborrow()).map(Some)
     }
 }
 
@@ -157,6 +179,9 @@ impl<'de, R: BufReader<'de>> VariantAccess<'de> for Deserializer<'_, R> {
     fn deserialize_seed<T: de::DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
         seed.deserialize(self)
     }
+    fn validate_seed<T: de::DeserializeSeed<'de>>(self, seed: T) -> Result<(), Self::Error> {
+        seed.validate(self)
+    }
 }
 
 /// Deserializer for array elements.
@@ -173,6 +198,13 @@ impl<'de, R: BufReader<'de>, T: de::DeserializeSeed<'de> + Clone> de::ArrayAcces
         self.seeds
             .next()
             .map(|seed| seed.deserialize(self.de.reborrow()))
+            .transpose()
+    }
+
+    fn validate_next_element(&mut self) -> Result<Option<()>, Self::Error> {
+        self.seeds
+            .next()
+            .map(|seed| seed.validate(self.de.reborrow()))
             .transpose()
     }
 
