@@ -181,6 +181,14 @@ if is_eraser { ... }
 
 The SpacetimeDB Rust client SDK uses blocking I/O. If mixing with async runtimes (Tokio, async-std), use `spawn_blocking` or run the SDK on a dedicated thread to avoid blocking the async executor.
 
+### 14. Wrong Schedule Syntax
+```rust
+// ❌ WRONG — `schedule` is not a valid table type
+#[table(name = tick_timer, schedule(reducer = tick, column = scheduled_at))]
+
+// ✅ CORRECT — `scheduled` is a valid table type
+#[table(name = tick_timer, scheduled(reducer = tick, column = scheduled_at))]
+```
 ---
 
 ## 1) Common Mistakes Table
