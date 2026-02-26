@@ -1,11 +1,11 @@
 use std::{
     io,
+    num::NonZeroUsize,
     path::PathBuf,
     sync::{
         atomic::{AtomicU64, Ordering::Relaxed},
         Arc,
     },
-    time::Duration,
 };
 
 use futures::{FutureExt as _, TryFutureExt as _};
@@ -19,7 +19,6 @@ use thiserror::Error;
 use tokio::{
     sync::{futures::OwnedNotified, mpsc, oneshot, watch, Notify},
     task::{spawn_blocking, AbortHandle},
-    time::{interval, MissedTickBehavior},
 };
 use tracing::{instrument, Span};
 
@@ -30,14 +29,12 @@ pub use spacetimedb_commitlog::repo::{OnNewSegmentFn, SizeOnDisk};
 /// [`Local`] configuration.
 #[derive(Clone, Copy, Debug)]
 pub struct Options {
-    /// Periodically flush and sync the log this often.
+    /// Pull up to this many transactions from the queue.
     ///
-    /// Default: 50ms
-    pub sync_interval: Duration,
-    /// If `true`, flush (but not sync) each transaction.
+    /// The commitlog is flushed and synced after each batch.
     ///
-    /// Default: false
-    pub flush_each_tx: bool,
+    /// Defaults: 32
+    pub batch_size: NonZeroUsize,
     /// [`Commitlog`] configuration.
     pub commitlog: spacetimedb_commitlog::Options,
 }
@@ -45,8 +42,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            sync_interval: Duration::from_millis(50),
-            flush_each_tx: false,
+            batch_size: NonZeroUsize::new(32).unwrap(),
             commitlog: Default::default(),
         }
     }
@@ -134,8 +130,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
                     durable_offset: durable_tx,
                     queue_depth: queue_depth.clone(),
 
-                    sync_interval: opts.sync_interval,
-                    flush_each_tx: opts.flush_each_tx,
+                    batch_size: opts.batch_size,
 
                     lock,
                 }
@@ -193,8 +188,7 @@ struct Actor<T> {
     durable_offset: watch::Sender<Option<TxOffset>>,
     queue_depth: Arc<AtomicU64>,
 
-    sync_interval: Duration,
-    flush_each_tx: bool,
+    batch_size: NonZeroUsize,
 
     #[allow(unused)]
     lock: Lock,
@@ -209,8 +203,7 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
     ) {
         info!("starting durability actor");
 
-        let mut sync_interval = interval(self.sync_interval);
-        sync_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        let mut tx_buf = Vec::with_capacity(self.batch_size.get());
         // `flush_and_sync` when the loop exits without panicking,
         // or `flush_and_sync` inside the loop failed.
         let mut sync_on_exit = true;
@@ -220,10 +213,6 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                 // Biased towards the shutdown channel,
                 // so that we stop accepting new data promptly after
                 // `Durability::close` was called.
-                //
-                // Note that periodic `flush_and_sync` needs to be polled before
-                // the txdata channel, so that we don't delay `fsync(2)` under
-                // high transaction throughput.
                 biased;
 
                 Some(reply) = shutdown_rx.recv() => {
@@ -231,31 +220,25 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                     let _ = reply.send(self.lock.notified());
                 },
 
-                _ = sync_interval.tick() => {
-                    if self.flush_and_sync().await.is_err() {
-                        sync_on_exit = false;
+                n = transactions_rx.recv_many(&mut tx_buf, self.batch_size.get()) => {
+                    if n == 0 {
                         break;
                     }
-                },
-
-                tx = transactions_rx.recv() => {
-                    let Some(tx) = tx else {
-                        break;
-                    };
-                    self.queue_depth.fetch_sub(1, Relaxed);
+                    self.queue_depth.fetch_sub(n as u64, Relaxed);
                     let clog = self.clog.clone();
-                    let flush = self.flush_each_tx;
-                    spawn_blocking(move || -> io::Result<()> {
-                        clog.commit([tx])?;
-                        if flush {
-                            clog.flush()?;
+                    tx_buf = spawn_blocking(move || -> io::Result<Vec<Transaction<Txdata<T>>>> {
+                        for tx in tx_buf.drain(..) {
+                            clog.commit([tx])?;
                         }
-
-                        Ok(())
+                        Ok(tx_buf)
                     })
                     .await
                     .expect("commitlog write panicked")
                     .expect("commitlog write failed");
+                    if self.flush_and_sync().await.is_err() {
+                        sync_on_exit = false;
+                        break;
+                    }
                 },
             }
         }
