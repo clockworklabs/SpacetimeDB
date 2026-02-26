@@ -2,9 +2,8 @@
 //! without relying on types in third party libraries like `bytes::Bytes`, etc.
 //! Meant to be kept slim and trim for use across both native and WASM.
 
-use bytes::{BufMut, BytesMut};
-
 use crate::{i256, u256};
+use bytes::{BufMut, BytesMut};
 use core::cell::Cell;
 use core::fmt;
 use core::str::Utf8Error;
@@ -29,6 +28,8 @@ pub enum DecodeError {
     /// Custom error not in the other variants of `DecodeError`.
     Other(String),
 }
+
+pub type DecodeResult<T> = Result<T, DecodeError>;
 
 impl fmt::Display for DecodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
