@@ -3223,4 +3223,26 @@ mod tests {
         assert_eq!(normalize_path_lexical(Path::new(".")), PathBuf::from("."));
         assert_eq!(normalize_path_lexical(Path::new("a/..")), PathBuf::from("."));
     }
+
+    #[test]
+    fn test_normalize_path_module_path_with_dotdot() {
+        // Regression test: --module-path with leading `..` was also affected
+        // by the same normalize_path_lexical bug as --out-dir (#4429).
+        // All config paths go through get_resolved_path → normalize_path_lexical.
+        use std::path::Path;
+
+        // Simulate what --module-path ../server would produce
+        assert_eq!(
+            normalize_path_lexical(Path::new("../server")),
+            PathBuf::from("../server")
+        );
+        assert_eq!(
+            normalize_path_lexical(Path::new("../../repos/server")),
+            PathBuf::from("../../repos/server")
+        );
+        assert_eq!(
+            normalize_path_lexical(Path::new("../repos/server/spacetimedb")),
+            PathBuf::from("../repos/server/spacetimedb")
+        );
+    }
 }
