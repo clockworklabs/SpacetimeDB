@@ -786,6 +786,7 @@ async fn get_template_config_interactive(
         .with_prompt("Select a template (type to filter, arrows to navigate)")
         .items(&menu_items)
         .default(0)
+        .max_length(10)
         .interact()?;
 
     if selection < templates.len() {
