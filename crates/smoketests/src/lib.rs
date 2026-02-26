@@ -1317,16 +1317,16 @@ log = "0.4"
     /// Returns the updates as JSON values.
     /// For tests that need to perform actions while subscribed, use `subscribe_background` instead.
     pub fn subscribe(&self, queries: &[&str], n: usize) -> Result<Vec<serde_json::Value>> {
-        self.subscribe_opts(queries, n, false)
+        self.subscribe_opts(queries, n, None)
     }
 
     /// Starts a subscription with --confirmed flag and waits for N updates.
     pub fn subscribe_confirmed(&self, queries: &[&str], n: usize) -> Result<Vec<serde_json::Value>> {
-        self.subscribe_opts(queries, n, true)
+        self.subscribe_opts(queries, n, Some(true))
     }
 
     /// Internal helper for subscribe with options.
-    fn subscribe_opts(&self, queries: &[&str], n: usize, confirmed: bool) -> Result<Vec<serde_json::Value>> {
+    fn subscribe_opts(&self, queries: &[&str], n: usize, confirmed: Option<bool>) -> Result<Vec<serde_json::Value>> {
         let start = Instant::now();
         let identity = self.database_identity.as_ref().context("No database published")?;
         let config_path_str = self.config_path.to_str().unwrap();
@@ -1334,23 +1334,24 @@ log = "0.4"
         let cli_path = ensure_binaries_built();
         let mut cmd = Command::new(&cli_path);
         let mut args = vec![
-            "--config-path",
-            config_path_str,
-            "subscribe",
-            "--server",
-            &self.server_url,
-            identity,
-            "-t",
-            "30",
-            "-n",
+            "--config-path".to_string(),
+            config_path_str.to_string(),
+            "subscribe".to_string(),
+            "--server".to_string(),
+            self.server_url.to_string(),
+            identity.to_string(),
+            "-t".to_string(),
+            "30".to_string(),
+            "-n".to_string(),
         ];
         let n_str = n.to_string();
-        args.push(&n_str);
-        args.push("--print-initial-update");
-        if confirmed {
-            args.push("--confirmed");
+        args.push(n_str);
+        args.push("--print-initial-update".to_string());
+        if let Some(confirmed) = confirmed {
+            args.push("--confirmed".to_string());
+            args.push(confirmed.to_string());
         }
-        args.push("--");
+        args.push("--".to_string());
         cmd.args(&args)
             .args(queries)
             .stdout(Stdio::piped())
