@@ -335,12 +335,12 @@ public partial struct TestScheduleIssues
                   ^^^^^^
     {
 */
-      Message: View 'ViewDefWrongReturn' must return List<T> or T?.,
+      Message: View 'ViewDefWrongReturn' must return T?, List<T>, or IQuery<T>,
       Severity: Error,
       Descriptor: {
         Id: STDB0024,
-        Title: Views must return List<T> or T?,
-        MessageFormat: View '{0}' must return List<T> or T?.,
+        Title: Views must return T?, List<T>, or IQuery<T>,
+        MessageFormat: View '{0}' must return T?, List<T>, or IQuery<T>,
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
@@ -369,12 +369,12 @@ public partial struct TestScheduleIssues
                   ^^^^^^^^^^^^^^^^^^^
     {
 */
-      Message: View 'ViewDefIEnumerableReturnFromIter' must return List<T> or T?.,
+      Message: View 'ViewDefIEnumerableReturnFromIter' must return T?, List<T>, or IQuery<T>,
       Severity: Error,
       Descriptor: {
         Id: STDB0024,
-        Title: Views must return List<T> or T?,
-        MessageFormat: View '{0}' must return List<T> or T?.,
+        Title: Views must return T?, List<T>, or IQuery<T>,
+        MessageFormat: View '{0}' must return T?, List<T>, or IQuery<T>,
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
@@ -403,12 +403,12 @@ public partial struct TestScheduleIssues
                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
         ViewContext ctx
 */
-      Message: View 'ViewDefIEnumerableReturnFromFilter' must return List<T> or T?.,
+      Message: View 'ViewDefIEnumerableReturnFromFilter' must return T?, List<T>, or IQuery<T>,
       Severity: Error,
       Descriptor: {
         Id: STDB0024,
-        Title: Views must return List<T> or T?,
-        MessageFormat: View '{0}' must return List<T> or T?.,
+        Title: Views must return T?, List<T>, or IQuery<T>,
+        MessageFormat: View '{0}' must return T?, List<T>, or IQuery<T>,
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
