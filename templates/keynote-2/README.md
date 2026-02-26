@@ -48,7 +48,7 @@ All systems were tested with **out-of-the-box default settings** - no custom tun
 
 For cloud services, we tested paid tiers to give them their best chance:
 
-- **PlanetScale**: PS-256G (32 cores, 256 GB RAM)
+- **PlanetScale**: PS-2560 (32 vCPUs, 256 GB RAM), single node, us-central1.
 - **Supabase**: Pro tier
 - **Convex**: Pro tier
 
@@ -101,10 +101,12 @@ docker compose run --rm bench --seconds 10 --concurrency 50 --alpha XX --connect
 
 - c4-standard-32-lssd (32 vCPUs, 120 GB Memory) OS: Ubuntu 24.04
 - RAID 0 on 5 Local SSDs
+- Region: us-central1
 
 **Client Machine:**
 
 - c4-standard-32 (32 vCPUs, 120 GB Memory) OS: Ubuntu 24.04
+- Region: us-central1
 - Runs on a **separate machine** from the server
 
 **Note:** All services (databases, web servers, benchmark runner) except Convex local dev backend run in the same Docker environment on the server machine.
