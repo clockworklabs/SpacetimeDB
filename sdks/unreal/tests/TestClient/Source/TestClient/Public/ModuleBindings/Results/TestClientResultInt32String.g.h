@@ -15,10 +15,10 @@ struct TESTCLIENT_API FTestClientResultInt32String
     bool bIsOk = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB", meta = (EditCondition = "bIsOk"))
-    int32 OkValue;
+    int32 OkValue = {};
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB", meta = (EditCondition = "!bIsOk"))
-    FString ErrValue;
+    FString ErrValue = {};
 
     FTestClientResultInt32String() = default;
 

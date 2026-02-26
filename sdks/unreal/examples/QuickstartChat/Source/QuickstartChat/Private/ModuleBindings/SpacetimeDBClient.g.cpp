@@ -4,60 +4,29 @@
 #include "ModuleBindings/SpacetimeDBClient.g.h"
 #include "DBCache/WithBsatn.h"
 #include "BSATN/UEBSATNHelpers.h"
-#include "ModuleBindings/Tables/UserTable.g.h"
 #include "ModuleBindings/Tables/MessageTable.g.h"
-
-static FReducer DecodeReducer(const FReducerEvent& Event)
-{
-    const FString& ReducerName = Event.ReducerCall.ReducerName;
-
-    if (ReducerName == TEXT("ClientConnected"))
-    {
-        FClientConnectedArgs Args = UE::SpacetimeDB::Deserialize<FClientConnectedArgs>(Event.ReducerCall.Args);
-        return FReducer::ClientConnected(Args);
-    }
-
-    if (ReducerName == TEXT("ClientDisconnected"))
-    {
-        FClientDisconnectedArgs Args = UE::SpacetimeDB::Deserialize<FClientDisconnectedArgs>(Event.ReducerCall.Args);
-        return FReducer::ClientDisconnected(Args);
-    }
-
-    if (ReducerName == TEXT("SendMessage"))
-    {
-        FSendMessageArgs Args = UE::SpacetimeDB::Deserialize<FSendMessageArgs>(Event.ReducerCall.Args);
-        return FReducer::SendMessage(Args);
-    }
-
-    if (ReducerName == TEXT("SetName"))
-    {
-        FSetNameArgs Args = UE::SpacetimeDB::Deserialize<FSetNameArgs>(Event.ReducerCall.Args);
-        return FReducer::SetName(Args);
-    }
-
-    return FReducer();
-}
+#include "ModuleBindings/Tables/UserTable.g.h"
 
 UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
-	SetReducerFlags = ObjectInitializer.CreateDefaultSubobject<USetReducerFlags>(this, TEXT("SetReducerFlags"));
-
 	Db = ObjectInitializer.CreateDefaultSubobject<URemoteTables>(this, TEXT("RemoteTables"));
 	Db->Initialize();
 	
 	Reducers = ObjectInitializer.CreateDefaultSubobject<URemoteReducers>(this, TEXT("RemoteReducers"));
-	Reducers->SetCallReducerFlags = SetReducerFlags;
 	Reducers->Conn = this;
 
-	RegisterTable<FUserType, UUserTable, FEventContext>(TEXT("user"), Db->User);
+	Procedures = ObjectInitializer.CreateDefaultSubobject<URemoteProcedures>(this, TEXT("RemoteProcedures"));
+	Procedures->Conn = this;
+
 	RegisterTable<FMessageType, UMessageTable, FEventContext>(TEXT("message"), Db->Message);
+	RegisterTable<FUserType, UUserTable, FEventContext>(TEXT("user"), Db->User);
 }
 
 FContextBase::FContextBase(UDbConnection* InConn)
 {
 	Db = InConn->Db;
 	Reducers = InConn->Reducers;
-	SetReducerFlags = InConn->SetReducerFlags;
+	Procedures = InConn->Procedures;
 	Conn = InConn;
 }
 bool FContextBase::IsActive() const
@@ -85,89 +54,14 @@ void URemoteTables::Initialize()
 {
 
 	/** Creating tables */
-	User = NewObject<UUserTable>(this);
 	Message = NewObject<UMessageTable>(this);
+	User = NewObject<UUserTable>(this);
 	/**/
 
 	/** Initialization */
-	User->PostInitialize();
 	Message->PostInitialize();
+	User->PostInitialize();
 	/**/
-}
-
-void USetReducerFlags::ClientConnected(ECallReducerFlags Flag)
-{
-	FlagMap.Add("ClientConnected", Flag);
-}
-void USetReducerFlags::ClientDisconnected(ECallReducerFlags Flag)
-{
-	FlagMap.Add("ClientDisconnected", Flag);
-}
-void USetReducerFlags::SendMessage(ECallReducerFlags Flag)
-{
-	FlagMap.Add("SendMessage", Flag);
-}
-void USetReducerFlags::SetName(ECallReducerFlags Flag)
-{
-	FlagMap.Add("SetName", Flag);
-}
-
-void URemoteReducers::ClientConnected()
-{
-    if (!Conn)
-    {
-        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
-        return;
-    }
-
-	Conn->CallReducerTyped(TEXT("ClientConnected"), FClientConnectedArgs(), SetCallReducerFlags);
-}
-
-bool URemoteReducers::InvokeClientConnected(const FReducerEventContext& Context, const UClientConnectedReducer* Args)
-{
-    if (!OnClientConnected.IsBound())
-    {
-        // Handle unhandled reducer error
-        if (InternalOnUnhandledReducerError.IsBound())
-        {
-            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
-            // For now, just broadcast any error
-            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for ClientConnected"));
-        }
-        return false;
-    }
-
-    OnClientConnected.Broadcast(Context);
-    return true;
-}
-
-void URemoteReducers::ClientDisconnected()
-{
-    if (!Conn)
-    {
-        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
-        return;
-    }
-
-	Conn->CallReducerTyped(TEXT("ClientDisconnected"), FClientDisconnectedArgs(), SetCallReducerFlags);
-}
-
-bool URemoteReducers::InvokeClientDisconnected(const FReducerEventContext& Context, const UClientDisconnectedReducer* Args)
-{
-    if (!OnClientDisconnected.IsBound())
-    {
-        // Handle unhandled reducer error
-        if (InternalOnUnhandledReducerError.IsBound())
-        {
-            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
-            // For now, just broadcast any error
-            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for ClientDisconnected"));
-        }
-        return false;
-    }
-
-    OnClientDisconnected.Broadcast(Context);
-    return true;
 }
 
 void URemoteReducers::SendMessage(const FString& Text)
@@ -178,7 +72,9 @@ void URemoteReducers::SendMessage(const FString& Text)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("SendMessage"), FSendMessageArgs(Text), SetCallReducerFlags);
+	FSendMessageArgs ReducerArgs(Text);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("send_message"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::SendMessage(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeSendMessage(const FReducerEventContext& Context, const USendMessageReducer* Args)
@@ -199,6 +95,21 @@ bool URemoteReducers::InvokeSendMessage(const FReducerEventContext& Context, con
     return true;
 }
 
+bool URemoteReducers::InvokeSendMessageWithArgs(const FReducerEventContext& Context, const FSendMessageArgs& Args)
+{
+    if (!OnSendMessage.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for SendMessage"));
+        }
+        return false;
+    }
+
+    OnSendMessage.Broadcast(Context, Args.Text);
+    return true;
+}
+
 void URemoteReducers::SetName(const FString& Name)
 {
     if (!Conn)
@@ -207,7 +118,9 @@ void URemoteReducers::SetName(const FString& Name)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("SetName"), FSetNameArgs(Name), SetCallReducerFlags);
+	FSetNameArgs ReducerArgs(Name);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("set_name"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::SetName(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeSetName(const FReducerEventContext& Context, const USetNameReducer* Args)
@@ -228,6 +141,21 @@ bool URemoteReducers::InvokeSetName(const FReducerEventContext& Context, const U
     return true;
 }
 
+bool URemoteReducers::InvokeSetNameWithArgs(const FReducerEventContext& Context, const FSetNameArgs& Args)
+{
+    if (!OnSetName.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for SetName"));
+        }
+        return false;
+    }
+
+    OnSetName.Broadcast(Context, Args.Name);
+    return true;
+}
+
 void UDbConnection::PostInitProperties()
 {
     Super::PostInitProperties();
@@ -236,6 +164,12 @@ void UDbConnection::PostInitProperties()
     if (Reducers)
     {
         Reducers->InternalOnUnhandledReducerError.AddDynamic(this, &UDbConnection::OnUnhandledReducerErrorHandler);
+    }
+
+    // Connect OnUnhandledProcedureError to Procedures.InternalOnUnhandledProcedureError
+    if (Procedures)
+    {
+        Procedures->InternalOnUnhandledProcedureError.AddDynamic(this, &UDbConnection::OnUnhandledProcedureErrorHandler);
     }
 }
 
@@ -248,11 +182,54 @@ void UDbConnection::OnUnhandledReducerErrorHandler(const FReducerEventContext& C
     }
 }
 
+UFUNCTION()
+void UDbConnection::OnUnhandledProcedureErrorHandler(const FProcedureEventContext& Context, const FString& Error)
+{
+    if (OnUnhandledProcedureError.IsBound())
+    {
+        OnUnhandledProcedureError.Broadcast(Context, Error);
+    }
+}
+
+void UDbConnection::RegisterPendingTypedReducer(uint32 RequestId, FReducer Reducer)
+{
+    Reducer.RequestId = RequestId;
+    PendingTypedReducers.Add(RequestId, MoveTemp(Reducer));
+}
+
+bool UDbConnection::TryGetPendingTypedReducer(uint32 RequestId, FReducer& OutReducer) const
+{
+    if (const FReducer* Found = PendingTypedReducers.Find(RequestId))
+    {
+        OutReducer = *Found;
+        return true;
+    }
+    return false;
+}
+
+bool UDbConnection::TryTakePendingTypedReducer(uint32 RequestId, FReducer& OutReducer)
+{
+    if (FReducer* Found = PendingTypedReducers.Find(RequestId))
+    {
+        OutReducer = *Found;
+        PendingTypedReducers.Remove(RequestId);
+        return true;
+    }
+    return false;
+}
+
 void UDbConnection::ReducerEvent(const FReducerEvent& Event)
 {
     if (!Reducers) { return; }
 
-    FReducer DecodedReducer = DecodeReducer(Event);
+    FReducer DecodedReducer;
+    if (!TryTakePendingTypedReducer(Event.RequestId, DecodedReducer))
+    {
+        const FString ErrorMessage = FString::Printf(TEXT("Reducer result for unknown request_id %u"), Event.RequestId);
+        UE_LOG(LogTemp, Error, TEXT("%s"), *ErrorMessage);
+        ReducerEventFailed(Event, ErrorMessage);
+        return;
+    }
 
     FQuickstartChatReducerEvent ReducerEvent;
     ReducerEvent.CallerConnectionId = Event.CallerConnectionId;
@@ -264,37 +241,19 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
 
     FReducerEventContext Context(this, ReducerEvent);
 
-    // Use hardcoded string matching for reducer dispatching
-    const FString& ReducerName = Event.ReducerCall.ReducerName;
+    // Dispatch by typed reducer metadata
+    const FString& ReducerName = ReducerEvent.Reducer.ReducerName;
 
-    if (ReducerName == TEXT("ClientConnected"))
-    {
-        FClientConnectedArgs Args = ReducerEvent.Reducer.GetAsClientConnected();
-        UClientConnectedReducer* Reducer = NewObject<UClientConnectedReducer>();
-        Reducers->InvokeClientConnected(Context, Reducer);
-        return;
-    }
-    if (ReducerName == TEXT("ClientDisconnected"))
-    {
-        FClientDisconnectedArgs Args = ReducerEvent.Reducer.GetAsClientDisconnected();
-        UClientDisconnectedReducer* Reducer = NewObject<UClientDisconnectedReducer>();
-        Reducers->InvokeClientDisconnected(Context, Reducer);
-        return;
-    }
-    if (ReducerName == TEXT("SendMessage"))
+    if (ReducerName == TEXT("send_message"))
     {
         FSendMessageArgs Args = ReducerEvent.Reducer.GetAsSendMessage();
-        USendMessageReducer* Reducer = NewObject<USendMessageReducer>();
-        Reducer->Text = Args.Text;
-        Reducers->InvokeSendMessage(Context, Reducer);
+        Reducers->InvokeSendMessageWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("SetName"))
+    if (ReducerName == TEXT("set_name"))
     {
         FSetNameArgs Args = ReducerEvent.Reducer.GetAsSetName();
-        USetNameReducer* Reducer = NewObject<USetNameReducer>();
-        Reducer->Name = Args.Name;
-        Reducers->InvokeSetName(Context, Reducer);
+        Reducers->InvokeSetNameWithArgs(Context, Args);
         return;
     }
 
@@ -317,6 +276,22 @@ void UDbConnection::ReducerEventFailed(const FReducerEvent& Event, const FString
     if (Reducers->InternalOnUnhandledReducerError.IsBound())
     {
         Reducers->InternalOnUnhandledReducerError.Broadcast(Context, ErrorMessage);
+    }
+}
+
+void UDbConnection::ProcedureEventFailed(const FProcedureEvent& Event, const FString ErrorMessage)
+{
+    if (!Procedures) { return; }
+
+    FQuickstartChatProcedureEvent ProcedureEvent;
+    ProcedureEvent.Status             = FSpacetimeDBProcedureStatus::FromStatus(Event.Status);
+    ProcedureEvent.Timestamp          = Event.Timestamp;
+
+    FProcedureEventContext Context(this, ProcedureEvent);
+
+    if (Procedures->InternalOnUnhandledProcedureError.IsBound())
+    {
+        Procedures->InternalOnUnhandledProcedureError.Broadcast(Context, ErrorMessage);
     }
 }
 
@@ -473,7 +448,13 @@ void UDbConnection::DbUpdate(const FDatabaseUpdateType& Update, const FSpacetime
     case ESpacetimeDBEventTag::Reducer:
     {
         FReducerEvent ReducerEvent = Event.GetAsReducer();
-        FReducer Reducer = DecodeReducer(ReducerEvent);
+        FReducer Reducer;
+        if (!TryGetPendingTypedReducer(ReducerEvent.RequestId, Reducer))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("Missing typed reducer for request_id %u while building table-update event context; using UnknownTransaction event"), ReducerEvent.RequestId);
+            BaseEvent = FQuickstartChatEvent::UnknownTransaction(FSpacetimeDBUnit());
+            break;
+        }
         BaseEvent = FQuickstartChatEvent::Reducer(Reducer);
         break;
     }
@@ -488,6 +469,10 @@ void UDbConnection::DbUpdate(const FDatabaseUpdateType& Update, const FSpacetime
 
     case ESpacetimeDBEventTag::Disconnected:
         BaseEvent = FQuickstartChatEvent::Disconnected(Event.GetAsDisconnected());
+        break;
+
+    case ESpacetimeDBEventTag::Transaction:
+        BaseEvent = FQuickstartChatEvent::Transaction(Event.GetAsTransaction());
         break;
 
     case ESpacetimeDBEventTag::SubscribeError:

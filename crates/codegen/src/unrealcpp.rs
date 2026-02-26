@@ -330,18 +330,20 @@ impl Lang for UnrealCpp<'_> {
         writeln!(output, "        const {row_struct}&, NewRow);");
         writeln!(output);
 
-        writeln!(output, "    DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams( ");
-        writeln!(output, "        FOn{table_pascal}Update,");
-        writeln!(output, "        const FEventContext&, Context,");
-        writeln!(output, "        const {row_struct}&, OldRow,");
-        writeln!(output, "        const {row_struct}&, NewRow);");
-        writeln!(output);
+        if !table.is_event {
+            writeln!(output, "    DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams( ");
+            writeln!(output, "        FOn{table_pascal}Update,");
+            writeln!(output, "        const FEventContext&, Context,");
+            writeln!(output, "        const {row_struct}&, OldRow,");
+            writeln!(output, "        const {row_struct}&, NewRow);");
+            writeln!(output);
 
-        writeln!(output, "    DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams( ");
-        writeln!(output, "        FOn{table_pascal}Delete,");
-        writeln!(output, "        const FEventContext&, Context,");
-        writeln!(output, "        const {row_struct}&, DeletedRow);");
-        writeln!(output);
+            writeln!(output, "    DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams( ");
+            writeln!(output, "        FOn{table_pascal}Delete,");
+            writeln!(output, "        const FEventContext&, Context,");
+            writeln!(output, "        const {row_struct}&, DeletedRow);");
+            writeln!(output);
+        }
 
         writeln!(
             output,
@@ -350,19 +352,21 @@ impl Lang for UnrealCpp<'_> {
         writeln!(output, "    FOn{table_pascal}Insert OnInsert;");
         writeln!(output);
 
-        writeln!(
-            output,
-            "    UPROPERTY(BlueprintAssignable, Category = \"SpacetimeDB Events\")"
-        );
-        writeln!(output, "    FOn{table_pascal}Update OnUpdate;");
-        writeln!(output);
+        if !table.is_event {
+            writeln!(
+                output,
+                "    UPROPERTY(BlueprintAssignable, Category = \"SpacetimeDB Events\")"
+            );
+            writeln!(output, "    FOn{table_pascal}Update OnUpdate;");
+            writeln!(output);
 
-        writeln!(
-            output,
-            "    UPROPERTY(BlueprintAssignable, Category = \"SpacetimeDB Events\")"
-        );
-        writeln!(output, "    FOn{table_pascal}Delete OnDelete;");
-        writeln!(output);
+            writeln!(
+                output,
+                "    UPROPERTY(BlueprintAssignable, Category = \"SpacetimeDB Events\")"
+            );
+            writeln!(output, "    FOn{table_pascal}Delete OnDelete;");
+            writeln!(output);
+        }
 
         writeln!(output, "private:");
         writeln!(output, "    const FString TableName = TEXT(\"{table_name}\");");
@@ -804,7 +808,6 @@ impl Lang for UnrealCpp<'_> {
         includes.insert("Connection/DbConnectionBase.h".to_string());
         includes.insert("Connection/DbConnectionBuilder.h".to_string());
         includes.insert("Connection/Subscription.h".to_string());
-        includes.insert("Connection/SetReducerFlags.h".to_string());
         includes.insert("Connection/Callback.h".to_string());
         includes.insert("ModuleBindings/ReducerBase.g.h".to_string());
         includes.insert("Kismet/BlueprintFunctionLibrary.h".to_string());
@@ -882,28 +885,6 @@ impl Lang for UnrealCpp<'_> {
             &self.get_api_macro(),
             &self.module_name.to_case(Case::Pascal),
         );
-
-        // SetReducerFlags class - inherits from USetReducerFlagsBase
-        writeln!(client_h, "UCLASS(BlueprintType)");
-        writeln!(
-            client_h,
-            "class {} USetReducerFlags : public USetReducerFlagsBase",
-            self.get_api_macro()
-        );
-        writeln!(client_h, "{{");
-        writeln!(client_h, "\tGENERATED_BODY()");
-        writeln!(client_h);
-        writeln!(client_h, "public:");
-
-        for reducer in iter_reducers(module, options.visibility) {
-            let reducer_pascal = reducer.name.deref().to_case(Case::Pascal);
-            writeln!(client_h, "\tUFUNCTION(BlueprintCallable, Category = \"SpacetimeDB\")");
-            writeln!(client_h, "\tvoid {reducer_pascal}(ECallReducerFlags Flag);");
-        }
-
-        writeln!(client_h);
-        writeln!(client_h, "}};");
-        writeln!(client_h);
 
         // RemoteTables class
         generate_remote_tables_class(&mut client_h, module, options.visibility, &self.get_api_macro());
@@ -1172,24 +1153,38 @@ fn generate_table_cpp(module: &ModuleDef, table: &TableDef, module_name: &str, s
         "FTableAppliedDiff<{row_struct}> U{table_pascal}Table::Update(TArray<FWithBsatn<{row_struct}>> InsertsRef, TArray<FWithBsatn<{row_struct}>> DeletesRef)"
     );
     writeln!(output, "{{");
-    writeln!(
-        output,
-        "    FTableAppliedDiff<{row_struct}> Diff = BaseUpdate<{row_struct}>(InsertsRef, DeletesRef, Data, TableName);"
-    );
+    if table.is_event {
+        writeln!(
+            output,
+            "    // Event tables are callback-only: do not persist rows in the local cache."
+        );
+        writeln!(output, "    FTableAppliedDiff<{row_struct}> Diff;");
+        writeln!(output, "    for (const FWithBsatn<{row_struct}>& Insert : InsertsRef)");
+        writeln!(output, "    {{");
+        writeln!(output, "        Diff.Inserts.Add(Insert.Bsatn, Insert.Row);");
+        writeln!(output, "    }}");
+    } else {
+        writeln!(
+            output,
+            "    FTableAppliedDiff<{row_struct}> Diff = BaseUpdate<{row_struct}>(InsertsRef, DeletesRef, Data, TableName);"
+        );
+    }
     writeln!(output);
 
-    // Add DeriveUpdatesByPrimaryKey if table has a primary key
-    if let Some(pk) = schema.pk() {
-        let pk_field_name = pk.col_name.deref().to_case(Case::Pascal);
-        let pk_type = &product_type.unwrap().elements[pk.col_pos.idx()].1;
-        let pk_type_str = cpp_ty_fmt_with_module(module, pk_type, module_name).to_string();
-        writeln!(output, "    Diff.DeriveUpdatesByPrimaryKey<{pk_type_str}>(");
-        writeln!(output, "        [](const {row_struct}& Row) ");
-        writeln!(output, "        {{");
-        writeln!(output, "            return Row.{pk_field_name}; ");
-        writeln!(output, "        }}");
-        writeln!(output, "    );");
-        writeln!(output);
+    // Add DeriveUpdatesByPrimaryKey for persistent tables with a primary key.
+    if !table.is_event {
+        if let Some(pk) = schema.pk() {
+            let pk_field_name = pk.col_name.deref().to_case(Case::Pascal);
+            let pk_type = &product_type.unwrap().elements[pk.col_pos.idx()].1;
+            let pk_type_str = cpp_ty_fmt_with_module(module, pk_type, module_name).to_string();
+            writeln!(output, "    Diff.DeriveUpdatesByPrimaryKey<{pk_type_str}>(");
+            writeln!(output, "        [](const {row_struct}& Row) ");
+            writeln!(output, "        {{");
+            writeln!(output, "            return Row.{pk_field_name}; ");
+            writeln!(output, "        }}");
+            writeln!(output, "    );");
+            writeln!(output);
+        }
     }
 
     // Reset cache for indexes
@@ -1266,7 +1261,7 @@ fn generate_context_structs(
     writeln!(output);
     writeln!(
         output,
-        "\tFContextBase() : Db(nullptr), Reducers(nullptr), SetReducerFlags(nullptr), Procedures(nullptr), Conn(nullptr) {{}};"
+        "\tFContextBase() : Db(nullptr), Reducers(nullptr), Procedures(nullptr), Conn(nullptr) {{}};"
     );
     writeln!(output, "\tFContextBase(UDbConnection* InConn);");
     writeln!(output);
@@ -1275,9 +1270,6 @@ fn generate_context_structs(
     writeln!(output);
     writeln!(output, "\tUPROPERTY(BlueprintReadOnly, Category = \"SpacetimeDB\")");
     writeln!(output, "\tURemoteReducers* Reducers;");
-    writeln!(output);
-    writeln!(output, "\tUPROPERTY(BlueprintReadOnly, Category = \"SpacetimeDB\")");
-    writeln!(output, "\tUSetReducerFlags* SetReducerFlags;");
     writeln!(output);
     writeln!(output, "\tUPROPERTY(BlueprintReadOnly, Category = \"SpacetimeDB\")");
     writeln!(output, "\tURemoteProcedures* Procedures;");
@@ -1319,12 +1311,6 @@ fn generate_context_structs(
     writeln!(
         output,
         "\tstatic URemoteReducers* GetReducers(const FContextBase& Ctx) {{ return Ctx.Reducers; }}"
-    );
-    writeln!(output);
-    writeln!(output, "\tUFUNCTION(BlueprintPure, Category=\"SpacetimeDB\")");
-    writeln!(
-        output,
-        "\tstatic USetReducerFlags* GetSetReducerFlags(const FContextBase& Ctx) {{ return Ctx.SetReducerFlags; }}"
     );
     writeln!(output);
     writeln!(
@@ -1415,6 +1401,18 @@ fn generate_context_structs(
 
     writeln!(
         output,
+        "\tstatic F{module_name}Event Transaction(const FSpacetimeDBUnit& Value)"
+    );
+    writeln!(output, "\t{{");
+    writeln!(output, "\t\tF{module_name}Event Obj;");
+    writeln!(output, "\t\tObj.Tag = ESpacetimeDBEventTag::Transaction;");
+    writeln!(output, "\t\tObj.MessageData.Set<FSpacetimeDBUnit>(Value);");
+    writeln!(output, "\t\treturn Obj;");
+    writeln!(output, "\t}}");
+    writeln!(output);
+
+    writeln!(
+        output,
         "\tstatic F{module_name}Event SubscribeError(const FString& Value)"
     );
     writeln!(output, "\t{{");
@@ -1492,6 +1490,19 @@ fn generate_context_structs(
     writeln!(output);
     writeln!(
         output,
+        "\tFORCEINLINE bool IsTransaction() const {{ return Tag == ESpacetimeDBEventTag::Transaction; }}"
+    );
+    writeln!(output, "\tFORCEINLINE FSpacetimeDBUnit GetAsTransaction() const");
+    writeln!(output, "\t{{");
+    writeln!(
+        output,
+        "\t\tensureMsgf(IsTransaction(), TEXT(\"MessageData does not hold Transaction!\"));"
+    );
+    writeln!(output, "\t\treturn MessageData.Get<FSpacetimeDBUnit>();");
+    writeln!(output, "\t}}");
+    writeln!(output);
+    writeln!(
+        output,
         "\tFORCEINLINE bool IsSubscribeError() const {{ return Tag == ESpacetimeDBEventTag::SubscribeError; }}"
     );
     writeln!(output, "\tFORCEINLINE FString GetAsSubscribeError() const");
@@ -1535,6 +1546,10 @@ fn generate_context_structs(
     writeln!(
         output,
         "\t\tcase ESpacetimeDBEventTag::Disconnected: return GetAsDisconnected() == Other.GetAsDisconnected();"
+    );
+    writeln!(
+        output,
+        "\t\tcase ESpacetimeDBEventTag::Transaction: return GetAsTransaction() == Other.GetAsTransaction();"
     );
     writeln!(
         output,
@@ -1626,6 +1641,20 @@ fn generate_context_structs(
     writeln!(output, "    }}");
     writeln!(output);
 
+    // Transaction
+    writeln!(
+        output,
+        "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{module_name}Event\")"
+    );
+    writeln!(
+        output,
+        "    static F{module_name}Event Transaction(const FSpacetimeDBUnit& InValue)"
+    );
+    writeln!(output, "    {{");
+    writeln!(output, "        return F{module_name}Event::Transaction(InValue);");
+    writeln!(output, "    }}");
+    writeln!(output);
+
     // SubscribeError
     writeln!(
         output,
@@ -1663,6 +1692,7 @@ fn generate_context_structs(
         "SubscribeApplied",
         "UnsubscribeApplied",
         "Disconnected",
+        "Transaction",
         "SubscribeError",
         "UnknownTransaction",
     ] {
@@ -1727,6 +1757,19 @@ fn generate_context_structs(
     );
     writeln!(output, "    {{");
     writeln!(output, "        return Event.GetAsDisconnected();");
+    writeln!(output, "    }}");
+    writeln!(output);
+
+    writeln!(
+        output,
+        "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|{module_name}Event\")"
+    );
+    writeln!(
+        output,
+        "    static FSpacetimeDBUnit GetAsTransaction(const F{module_name}Event& Event)"
+    );
+    writeln!(output, "    {{");
+    writeln!(output, "        return Event.GetAsTransaction();");
     writeln!(output, "    }}");
     writeln!(output);
 
@@ -2591,9 +2634,6 @@ fn generate_remote_reducers_class(
     writeln!(output);
     writeln!(output, "    UPROPERTY()");
     writeln!(output, "    class UDbConnection* Conn;");
-    writeln!(output);
-    writeln!(output, "    UPROPERTY()");
-    writeln!(output, "    USetReducerFlags* SetCallReducerFlags;");
     writeln!(output, "}};");
     writeln!(output);
 }
@@ -2914,9 +2954,6 @@ fn generate_db_connection_class(output: &mut UnrealCppAutogen, _module: &ModuleD
     writeln!(output, "    URemoteReducers* Reducers;");
     writeln!(output);
     writeln!(output, "    UPROPERTY(BlueprintReadOnly, Category=\"SpacetimeDB\")");
-    writeln!(output, "    USetReducerFlags* SetReducerFlags;");
-    writeln!(output);
-    writeln!(output, "    UPROPERTY(BlueprintReadOnly, Category=\"SpacetimeDB\")");
     writeln!(output, "    URemoteProcedures* Procedures;");
     writeln!(output);
     writeln!(
@@ -3000,6 +3037,28 @@ fn generate_db_connection_class(output: &mut UnrealCppAutogen, _module: &ModuleD
         output,
         "    virtual void ProcedureEventFailed(const FProcedureEvent& Event, const FString ErrorMessage) override;"
     );
+    writeln!(output);
+    writeln!(output, "    friend class URemoteReducers;");
+    writeln!(output);
+    writeln!(
+        output,
+        "    // Internal reducer correlation helpers (request_id -> typed reducer)"
+    );
+    writeln!(
+        output,
+        "    void RegisterPendingTypedReducer(uint32 RequestId, FReducer Reducer);"
+    );
+    writeln!(
+        output,
+        "    bool TryGetPendingTypedReducer(uint32 RequestId, FReducer& OutReducer) const;"
+    );
+    writeln!(
+        output,
+        "    bool TryTakePendingTypedReducer(uint32 RequestId, FReducer& OutReducer);"
+    );
+    writeln!(output);
+    writeln!(output, "private:");
+    writeln!(output, "    TMap<uint32, FReducer> PendingTypedReducers;");
     writeln!(output, "}};");
     writeln!(output);
 }
@@ -3010,42 +3069,12 @@ fn generate_client_implementation(
     visibility: CodegenVisibility,
     module_name: &str,
 ) {
-    // Helper: Decode reducer args into FReducer from either event types
-    writeln!(output, "static FReducer DecodeReducer(const FReducerEvent& Event)");
-    writeln!(output, "{{");
-    writeln!(
-        output,
-        "    const FString& ReducerName = Event.ReducerCall.ReducerName;"
-    );
-    writeln!(output);
-
-    for reducer in iter_reducers(module, visibility) {
-        let reducer_name = reducer.name.deref();
-        let reducer_pascal = reducer_name.to_case(Case::Pascal);
-
-        writeln!(output, "    if (ReducerName == TEXT(\"{reducer_name}\"))");
-        writeln!(output, "    {{");
-        writeln!(
-            output,
-            "        F{reducer_pascal}Args Args = UE::SpacetimeDB::Deserialize<F{reducer_pascal}Args>(Event.ReducerCall.Args);"
-        );
-        writeln!(output, "        return FReducer::{reducer_pascal}(Args);");
-        writeln!(output, "    }}");
-        writeln!(output);
-    }
-
-    writeln!(output, "    return FReducer();");
-    writeln!(output, "}}");
-    writeln!(output);
-
     // UDbConnection constructor
     writeln!(
         output,
         "UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)"
     );
     writeln!(output, "{{");
-    writeln!(output, "\tSetReducerFlags = ObjectInitializer.CreateDefaultSubobject<USetReducerFlags>(this, TEXT(\"SetReducerFlags\"));");
-    writeln!(output);
     writeln!(
         output,
         "\tDb = ObjectInitializer.CreateDefaultSubobject<URemoteTables>(this, TEXT(\"RemoteTables\"));"
@@ -3056,7 +3085,6 @@ fn generate_client_implementation(
         output,
         "\tReducers = ObjectInitializer.CreateDefaultSubobject<URemoteReducers>(this, TEXT(\"RemoteReducers\"));"
     );
-    writeln!(output, "\tReducers->SetCallReducerFlags = SetReducerFlags;");
     writeln!(output, "\tReducers->Conn = this;");
     writeln!(output);
     writeln!(
@@ -3086,7 +3114,6 @@ fn generate_client_implementation(
     writeln!(output, "{{");
     writeln!(output, "\tDb = InConn->Db;");
     writeln!(output, "\tReducers = InConn->Reducers;");
-    writeln!(output, "\tSetReducerFlags = InConn->SetReducerFlags;");
     writeln!(output, "\tProcedures = InConn->Procedures;");
     writeln!(output, "\tConn = InConn;");
     writeln!(output, "}}");
@@ -3142,19 +3169,6 @@ fn generate_client_implementation(
     }
     writeln!(output, "\t/**/");
     writeln!(output, "}}");
-    writeln!(output);
-
-    // USetReducerFlags methods
-    for reducer in iter_reducers(module, visibility) {
-        let reducer_pascal = reducer.name.deref().to_case(Case::Pascal);
-        writeln!(
-            output,
-            "void USetReducerFlags::{reducer_pascal}(ECallReducerFlags Flag)"
-        );
-        writeln!(output, "{{");
-        writeln!(output, "\tFlagMap.Add(\"{reducer_pascal}\", Flag);");
-        writeln!(output, "}}");
-    }
     writeln!(output);
 
     generate_remote_reducer_calls(output, module, visibility, module_name);
@@ -3213,14 +3227,69 @@ fn generate_client_implementation(
     writeln!(output, "}}");
     writeln!(output);
 
+    writeln!(
+        output,
+        "void UDbConnection::RegisterPendingTypedReducer(uint32 RequestId, FReducer Reducer)"
+    );
+    writeln!(output, "{{");
+    writeln!(output, "    Reducer.RequestId = RequestId;");
+    writeln!(output, "    PendingTypedReducers.Add(RequestId, MoveTemp(Reducer));");
+    writeln!(output, "}}");
+    writeln!(output);
+    writeln!(
+        output,
+        "bool UDbConnection::TryGetPendingTypedReducer(uint32 RequestId, FReducer& OutReducer) const"
+    );
+    writeln!(output, "{{");
+    writeln!(
+        output,
+        "    if (const FReducer* Found = PendingTypedReducers.Find(RequestId))"
+    );
+    writeln!(output, "    {{");
+    writeln!(output, "        OutReducer = *Found;");
+    writeln!(output, "        return true;");
+    writeln!(output, "    }}");
+    writeln!(output, "    return false;");
+    writeln!(output, "}}");
+    writeln!(output);
+    writeln!(
+        output,
+        "bool UDbConnection::TryTakePendingTypedReducer(uint32 RequestId, FReducer& OutReducer)"
+    );
+    writeln!(output, "{{");
+    writeln!(
+        output,
+        "    if (FReducer* Found = PendingTypedReducers.Find(RequestId))"
+    );
+    writeln!(output, "    {{");
+    writeln!(output, "        OutReducer = *Found;");
+    writeln!(output, "        PendingTypedReducers.Remove(RequestId);");
+    writeln!(output, "        return true;");
+    writeln!(output, "    }}");
+    writeln!(output, "    return false;");
+    writeln!(output, "}}");
+    writeln!(output);
+
     // ReducerEvent method implementation
     writeln!(output, "void UDbConnection::ReducerEvent(const FReducerEvent& Event)");
     writeln!(output, "{{");
     writeln!(output, "    if (!Reducers) {{ return; }}");
     writeln!(output);
 
-    // Decode reducer call args
-    writeln!(output, "    FReducer DecodedReducer = DecodeReducer(Event);");
+    writeln!(output, "    FReducer DecodedReducer;");
+    writeln!(
+        output,
+        "    if (!TryTakePendingTypedReducer(Event.RequestId, DecodedReducer))"
+    );
+    writeln!(output, "    {{");
+    writeln!(
+        output,
+        "        const FString ErrorMessage = FString::Printf(TEXT(\"Reducer result for unknown request_id %u\"), Event.RequestId);"
+    );
+    writeln!(output, "        UE_LOG(LogTemp, Error, TEXT(\"%s\"), *ErrorMessage);");
+    writeln!(output, "        ReducerEventFailed(Event, ErrorMessage);");
+    writeln!(output, "        return;");
+    writeln!(output, "    }}");
     writeln!(output);
 
     let module_name_pascal = module_name.to_case(Case::Pascal);
@@ -3239,10 +3308,10 @@ fn generate_client_implementation(
 
     writeln!(output, "    FReducerEventContext Context(this, ReducerEvent);");
     writeln!(output);
-    writeln!(output, "    // Use hardcoded string matching for reducer dispatching");
+    writeln!(output, "    // Dispatch by typed reducer metadata");
     writeln!(
         output,
-        "    const FString& ReducerName = Event.ReducerCall.ReducerName;"
+        "    const FString& ReducerName = ReducerEvent.Reducer.ReducerName;"
     );
     writeln!(output);
 
@@ -3575,7 +3644,22 @@ fn generate_client_implementation(
     writeln!(output, "    case ESpacetimeDBEventTag::Reducer:");
     writeln!(output, "    {{");
     writeln!(output, "        FReducerEvent ReducerEvent = Event.GetAsReducer();");
-    writeln!(output, "        FReducer Reducer = DecodeReducer(ReducerEvent);");
+    writeln!(output, "        FReducer Reducer;");
+    writeln!(
+        output,
+        "        if (!TryGetPendingTypedReducer(ReducerEvent.RequestId, Reducer))"
+    );
+    writeln!(output, "        {{");
+    writeln!(
+        output,
+        "            UE_LOG(LogTemp, Warning, TEXT(\"Missing typed reducer for request_id %u while building table-update event context; using UnknownTransaction event\"), ReducerEvent.RequestId);"
+    );
+    writeln!(
+        output,
+        "            BaseEvent = F{module_name_pascal}Event::UnknownTransaction(FSpacetimeDBUnit());"
+    );
+    writeln!(output, "            break;");
+    writeln!(output, "        }}");
     writeln!(
         output,
         "        BaseEvent = F{module_name_pascal}Event::Reducer(Reducer);"
@@ -3605,6 +3689,14 @@ fn generate_client_implementation(
     writeln!(
         output,
         "        BaseEvent = F{module_name_pascal}Event::Disconnected(Event.GetAsDisconnected());"
+    );
+    writeln!(output, "        break;");
+    writeln!(output);
+
+    writeln!(output, "    case ESpacetimeDBEventTag::Transaction:");
+    writeln!(
+        output,
+        "        BaseEvent = F{module_name_pascal}Event::Transaction(Event.GetAsTransaction());"
     );
     writeln!(output, "        break;");
     writeln!(output);
@@ -3696,15 +3788,17 @@ fn generate_remote_reducer_calls(
         writeln!(output);
         // Call reducer using typed helper to hide serialization
         if reducer.params_for_generate.elements.is_empty() {
+            writeln!(output, "\tF{reducer_pascal}Args ReducerArgs;");
             writeln!(
                 output,
-                "\tConn->CallReducerTyped(TEXT(\"{reducer_snake}\"), F{reducer_pascal}Args(), SetCallReducerFlags);"
+                "\tconst uint32 RequestId = Conn->CallReducerTyped(TEXT(\"{reducer_snake}\"), ReducerArgs);"
+            );
+            writeln!(
+                output,
+                "\tif (RequestId != 0) {{ Conn->RegisterPendingTypedReducer(RequestId, FReducer::{reducer_pascal}(ReducerArgs)); }}"
             );
         } else {
-            write!(
-                output,
-                "\tConn->CallReducerTyped(TEXT(\"{reducer_snake}\"), F{reducer_pascal}Args("
-            );
+            write!(output, "\tF{reducer_pascal}Args ReducerArgs(");
             let mut first = true;
             for (param_name, _) in &reducer.params_for_generate.elements {
                 if !first {
@@ -3714,7 +3808,15 @@ fn generate_remote_reducer_calls(
                 let param_pascal = param_name.deref().to_case(Case::Pascal);
                 write!(output, "{param_pascal}");
             }
-            writeln!(output, "), SetCallReducerFlags);");
+            writeln!(output, ");");
+            writeln!(
+                output,
+                "\tconst uint32 RequestId = Conn->CallReducerTyped(TEXT(\"{reducer_snake}\"), ReducerArgs);"
+            );
+            writeln!(
+                output,
+                "\tif (RequestId != 0) {{ Conn->RegisterPendingTypedReducer(RequestId, FReducer::{reducer_pascal}(ReducerArgs)); }}"
+            );
         }
         writeln!(output, "}}");
         writeln!(output);
@@ -4417,7 +4519,7 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
             "// NOTE: {cpp_inner_type} field not exposed to Blueprint due to non-blueprintable elements"
         );
     }
-    writeln!(output, "{cpp_inner_type} Value;");
+    writeln!(output, "{cpp_inner_type} Value = {{}};");
     writeln!(output);
 
     // Constructors
@@ -4594,7 +4696,7 @@ fn generate_result_type(
             "// NOTE: {cpp_ok_type} field not exposed to Blueprint due to non-blueprintable type"
         );
     }
-    writeln!(output, "{cpp_ok_type} OkValue;");
+    writeln!(output, "{cpp_ok_type} OkValue = {{}};");
     writeln!(output);
 
     // The err value
@@ -4607,7 +4709,7 @@ fn generate_result_type(
             "// NOTE: {cpp_err_type} field not exposed to Blueprint due to non-blueprintable type"
         );
     }
-    writeln!(output, "{cpp_err_type} ErrValue;");
+    writeln!(output, "{cpp_err_type} ErrValue = {{}};");
     writeln!(output);
 
     // Constructors

@@ -60,7 +60,7 @@ public:
 
     void PostInitialize();
 
-    /** Update function for pk_i8 table*/
+    /** Update function for pk_i_8 table*/
     FTableAppliedDiff<FPkI8Type> Update(TArray<FWithBsatn<FPkI8Type>> InsertsRef, TArray<FWithBsatn<FPkI8Type>> DeletesRef);
 
     /** Number of subscribed rows currently in the cache */
@@ -98,7 +98,7 @@ public:
     FOnPkI8Delete OnDelete;
 
 private:
-    const FString TableName = TEXT("pk_i8");
+    const FString TableName = TEXT("pk_i_8");
 
     TSharedPtr<UClientCache<FPkI8Type>> Data;
 };

@@ -20,7 +20,7 @@ struct QUICKSTARTCHAT_API FUserType
     FQuickstartChatOptionalString Name;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    bool Online;
+    bool Online = false;
 
     FORCEINLINE bool operator==(const FUserType& Other) const
     {

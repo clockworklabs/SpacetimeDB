@@ -15,7 +15,7 @@ struct QUICKSTARTCHAT_API FQuickstartChatOptionalString
     bool bHasValue = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB", meta = (EditCondition = "bHasValue"))
-    FString Value;
+    FString Value = {};
 
     FQuickstartChatOptionalString() = default;
 

@@ -22,9 +22,9 @@ struct SPACETIMEDBSDK_API FRowSizeHintType
 public:
     FRowSizeHintType() = default;
 
-    TVariant<TArray<uint64>, uint16> MessageData;
+    TVariant<uint16, TArray<uint64>> MessageData;
 
-    UPROPERTY(BlueprintReadOnly, Category = "SpacetimeDB")
+    UPROPERTY(BlueprintReadOnly)
     ERowSizeHintTag Tag = static_cast<ERowSizeHintTag>(0);
 
     static FRowSizeHintType FixedSize(const uint16& Value)
