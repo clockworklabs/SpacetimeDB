@@ -104,20 +104,23 @@ export function tableToSchema<
     // by casting it to an `Array<IndexOpts>` as `TableToSchema` expects.
     // This is then used in `TableCacheImpl.constructor` and who knows where else.
     // We should stop lying about our types.
-    indexes: tableDef.indexes.map((idx): UntypedIndex<AllowedCol> => {
-      const columnIds =
-        idx.algorithm.tag === 'Direct'
-          ? [idx.algorithm.value]
-          : idx.algorithm.value;
-      return {
-        name: idx.accessorName!,
-        unique: tableDef.constraints.some(c =>
-          c.data.value.columns.every(col => columnIds.includes(col))
-        ),
-        algorithm: idx.algorithm.tag.toLowerCase() as 'btree',
-        columns: columnIds.map(getColName),
-      };
-    }) as T['idxs'],
+    indexes: tableDef.indexes
+      .map((idx): UntypedIndex<AllowedCol> | undefined => {
+        if (!idx.accessorName) return;
+        const columnIds =
+          idx.algorithm.tag === 'Direct'
+            ? [idx.algorithm.value]
+            : idx.algorithm.value;
+        return {
+          name: idx.accessorName,
+          unique: tableDef.constraints.some(c =>
+            c.data.value.columns.every(col => columnIds.includes(col))
+          ),
+          algorithm: idx.algorithm.tag.toLowerCase() as 'btree',
+          columns: columnIds.map(getColName),
+        };
+      })
+      .filter(x => !!x) as T['idxs'],
     tableDef,
     ...(tableDef.isEvent ? { isEvent: true } : {}),
   };
