@@ -135,6 +135,20 @@ pub enum ValidationError {
     TableNotFound { table: RawIdentifier },
     #[error("Name {name} is used for multiple reducers, procedures and/or views")]
     DuplicateFunctionName { name: Identifier },
+    #[error("reducer accessor `{reducer}` conflicts with type name `{type_name}` in generated client identifiers")]
+    ReducerAccessorTypeNameConflict {
+        reducer: Identifier,
+        type_name: ScopedTypeName,
+    },
+    #[error("procedure accessor `{procedure}` conflicts with type name `{type_name}` in generated client identifiers")]
+    ProcedureAccessorTypeNameConflict {
+        procedure: Identifier,
+        type_name: ScopedTypeName,
+    },
+    #[error(
+        "procedure accessor `{procedure}` conflicts with reducer accessor `{reducer}` in generated client identifiers"
+    )]
+    ProcedureAccessorReducerAccessorNameConflict { procedure: Identifier, reducer: Identifier },
     #[error("lifecycle event {lifecycle:?} without reducer")]
     LifecycleWithoutReducer { lifecycle: Lifecycle },
     #[error("lifecycle event {lifecycle:?} assigned multiple reducers")]
