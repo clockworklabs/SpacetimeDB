@@ -769,28 +769,38 @@ async fn get_template_config_interactive(
     }
 
     // Fully interactive mode - prompt for template/language selection
-    let (_highlights, templates) = fetch_templates_list().await?;
+    let (highlights, templates) = fetch_templates_list().await?;
 
-    // Build a fuzzy-filterable list of all templates, plus special options at the bottom
-    let mut menu_items: Vec<String> = templates
+    // First menu: language/framework highlights + "Use Template" + "None"
+    let mut client_choices: Vec<String> = highlights
         .iter()
-        .map(|t| format!("{} - {}", t.id, t.description))
+        .map(|h| {
+            let template = templates.iter().find(|t| t.id == h.template_id);
+            match template {
+                Some(t) => format!("{} - {}", h.name, t.description),
+                None => h.name.clone(),
+            }
+        })
         .collect();
-    menu_items.push("Clone from GitHub (owner/repo or git URL)".to_string());
-    menu_items.push("None (server only)".to_string());
+    client_choices.push("Use Template - Choose from a list of built-in template projects or clone an existing SpacetimeDB project from GitHub".to_string());
+    client_choices.push("None".to_string());
 
-    let github_index = menu_items.len() - 2;
-    let none_index = menu_items.len() - 1;
-
-    let selection = FuzzySelect::with_theme(&theme)
-        .with_prompt("Select a template (type to filter, arrows to navigate)")
-        .items(&menu_items)
+    let client_selection = Select::with_theme(&theme)
+        .with_prompt("Select a client type for your project (you can add other clients later)")
+        .items(&client_choices)
         .default(0)
-        .max_length(10)
         .interact()?;
 
-    if selection < templates.len() {
-        let template = &templates[selection];
+    let other_index = highlights.len();
+    let none_index = highlights.len() + 1;
+
+    if client_selection < highlights.len() {
+        let highlight = &highlights[client_selection];
+        let template = templates
+            .iter()
+            .find(|t| t.id == highlight.template_id)
+            .ok_or_else(|| anyhow::anyhow!("Template {} not found", highlight.template_id))?;
+
         Ok(TemplateConfig {
             project_name,
             project_path,
@@ -801,26 +811,56 @@ async fn get_template_config_interactive(
             template_def: Some(template.clone()),
             use_local: true,
         })
-    } else if selection == github_index {
-        // GitHub URL flow
-        loop {
-            let repo_input = Input::<String>::with_theme(&theme)
-                .with_prompt("GitHub repository (owner/repo) or git URL")
-                .interact_text()?
-                .trim()
-                .to_string();
-            if repo_input.is_empty() {
-                eprintln!("{}", "Please enter a GitHub repository.".bold());
-                continue;
+    } else if client_selection == other_index {
+        // Second menu: fuzzy-filterable list of all templates + GitHub clone option
+        let mut template_items: Vec<String> = templates
+            .iter()
+            .map(|t| format!("{} - {}", t.id, t.description))
+            .collect();
+        template_items.push("Clone from GitHub (owner/repo or git URL)".to_string());
+
+        let github_clone_index = template_items.len() - 1;
+
+        let selection = FuzzySelect::with_theme(&theme)
+            .with_prompt("Select a template (type to filter)")
+            .items(&template_items)
+            .default(0)
+            .interact()?;
+
+        if selection < templates.len() {
+            let template = &templates[selection];
+            Ok(TemplateConfig {
+                project_name,
+                project_path,
+                template_type: TemplateType::Builtin,
+                server_lang: parse_server_lang(&template.server_lang)?,
+                client_lang: parse_client_lang(&template.client_lang)?,
+                github_repo: None,
+                template_def: Some(template.clone()),
+                use_local: true,
+            })
+        } else if selection == github_clone_index {
+            loop {
+                let repo_input = Input::<String>::with_theme(&theme)
+                    .with_prompt("GitHub repository (owner/repo) or git URL")
+                    .interact_text()?
+                    .trim()
+                    .to_string();
+                if repo_input.is_empty() {
+                    eprintln!("{}", "Please enter a GitHub repository.".bold());
+                    continue;
+                }
+                break create_template_config_from_template_str(
+                    project_name.clone(),
+                    project_path.clone(),
+                    &repo_input,
+                    &templates,
+                );
             }
-            break create_template_config_from_template_str(
-                project_name.clone(),
-                project_path.clone(),
-                &repo_input,
-                &templates,
-            );
+        } else {
+            unreachable!("Invalid template selection index")
         }
-    } else if selection == none_index {
+    } else if client_selection == none_index {
         // Ask for server language only
         let server_lang_choices = vec!["Rust", "C#", "TypeScript"];
         let server_selection = Select::with_theme(&theme)
