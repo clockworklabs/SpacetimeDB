@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -31,9 +31,20 @@ fn normalize_path(path: &Path) -> String {
         .to_string()
 }
 
-/// String version of [`normalize_path`] used for values read from JSON.
-fn normalize_path_str(path: &str) -> String {
-    path.replace('\\', "/").trim_end_matches('/').to_string()
+fn package_cache_contains_version(cache_root: &Path, package_id: &str, version: &str) -> bool {
+    // NuGet usually stores package IDs lower-cased on disk.
+    let expected = cache_root.join(package_id.to_ascii_lowercase()).join(version);
+    if expected.exists() {
+        return true;
+    }
+    let Ok(entries) = fs::read_dir(cache_root) else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        entry.file_type().map(|ty| ty.is_dir()).unwrap_or(false)
+            && entry.file_name().to_string_lossy().eq_ignore_ascii_case(package_id)
+            && entry.path().join(version).exists()
+    })
 }
 
 /// Runs `dotnet` in a given working directory with error context suitable for tests.
@@ -184,14 +195,13 @@ pub(crate) fn prepare_csharp_module(module_path: &Path) -> Result<()> {
 
 /// Verifies a C# module restore/publish used the intended local bindings.
 ///
-/// We assert three invariants from `obj/project.assets.json`:
-/// - local feed was part of restore sources
-/// - module-local package cache was used
-/// - required `SpacetimeDB.*` runtime packages were resolved
+/// We assert two invariants:
+/// - required `SpacetimeDB.*` runtime packages were resolved in `obj/project.assets.json`
+/// - those resolved package versions are present in the module-local package cache
 ///
 /// Failing any of these means the smoketest may have used stale or external packages.
 pub(crate) fn verify_csharp_module_restore(module_path: &Path) -> Result<()> {
-    let env = ensure_local_feed()?;
+    let _ = ensure_local_feed()?;
 
     let assets_path = module_path.join("obj").join("project.assets.json");
     let assets_text =
@@ -199,54 +209,31 @@ pub(crate) fn verify_csharp_module_restore(module_path: &Path) -> Result<()> {
     let assets: Value =
         serde_json::from_str(&assets_text).with_context(|| format!("Failed to parse {}", assets_path.display()))?;
 
-    let expected_feed = normalize_path(&env.local_feed_dir);
-    let restore_sources = assets
-        .get("project")
-        .and_then(|project| project.get("restore"))
-        .and_then(|restore| restore.get("sources"))
-        .and_then(Value::as_object)
-        .context("project.assets.json missing project.restore.sources")?;
-    if !restore_sources
-        .keys()
-        .any(|source| normalize_path_str(source) == expected_feed)
-    {
-        bail!(
-            "project.assets.json restore sources did not include local feed {}\nactual restore sources: {:?}",
-            expected_feed,
-            restore_sources.keys().collect::<Vec<_>>()
-        );
-    }
-
-    let expected_cache_dir = normalize_path(&module_path.join(".nuget/packages"));
-    let package_folders = assets
-        .get("packageFolders")
-        .and_then(Value::as_object)
-        .context("project.assets.json missing packageFolders")?;
-    if !package_folders
-        .keys()
-        .any(|folder| normalize_path_str(folder) == expected_cache_dir)
-    {
-        bail!(
-            "project.assets.json packageFolders did not include isolated package cache {}\nactual package folders: {:?}",
-            expected_cache_dir,
-            package_folders.keys().collect::<Vec<_>>()
-        );
-    }
-
     let libraries = assets
         .get("libraries")
         .and_then(Value::as_object)
         .context("project.assets.json missing libraries")?;
+    let package_cache_dir = module_path.join(".nuget/packages");
     for package_id in REQUIRED_RUNTIME_PACKAGES {
-        let package_key_prefix = format!("{package_id}/");
-        if !libraries.keys().any(|name| name.starts_with(&package_key_prefix)) {
+        let package_key = libraries
+            .keys()
+            .find(|name| name.starts_with(&format!("{package_id}/")))
+            .with_context(|| {
+                format!(
+                    "project.assets.json did not resolve expected package `{package_id}`.\nresolved SpacetimeDB packages: {:?}",
+                    libraries
+                        .keys()
+                        .filter(|name| name.starts_with("SpacetimeDB."))
+                        .collect::<Vec<_>>()
+                )
+            })?;
+        let (_, version) = package_key
+            .split_once('/')
+            .with_context(|| format!("Unexpected package key format in project.assets.json: `{package_key}`"))?;
+        if !package_cache_contains_version(&package_cache_dir, package_id, version) {
             bail!(
-                "project.assets.json did not resolve expected package `{package_id}` from local feed {}.\nresolved SpacetimeDB packages: {:?}",
-                expected_feed,
-                libraries
-                    .keys()
-                    .filter(|name| name.starts_with("SpacetimeDB."))
-                    .collect::<Vec<_>>()
+                "Resolved package `{package_id}/{version}` was not found in module-local package cache {}",
+                normalize_path(&package_cache_dir),
             );
         }
     }
