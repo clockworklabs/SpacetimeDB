@@ -1,11 +1,12 @@
 use anyhow::Context;
 use clap::{ArgMatches, Command};
+use path_clean::PathClean;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 /// The filename for configuration
@@ -753,7 +754,7 @@ impl<'a> CommandConfig<'a> {
             } else {
                 p
             };
-            normalize_path_lexical(&resolved)
+            resolved.clean()
         }))
     }
 
@@ -775,33 +776,6 @@ impl<'a> CommandConfig<'a> {
             }
         }
         Ok(())
-    }
-}
-
-fn normalize_path_lexical(path: &Path) -> PathBuf {
-    let mut components: Vec<Component> = Vec::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                // Only cancel out a preceding normal component.
-                // If the stack is empty or ends with `..` / a root, keep the `..`.
-                match components.last() {
-                    Some(Component::Normal(_)) => {
-                        components.pop();
-                    }
-                    _ => {
-                        components.push(component);
-                    }
-                }
-            }
-            other => components.push(other),
-        }
-    }
-    if components.is_empty() {
-        PathBuf::from(".")
-    } else {
-        components.iter().collect()
     }
 }
 
@@ -3194,54 +3168,43 @@ mod tests {
     }
 
     #[test]
-    fn test_normalize_path_preserves_leading_dotdot() {
-        // Regression test for #4429: `../foo` was normalized to `foo`
-        // because `..` was silently dropped when there was nothing to pop.
+    fn test_path_clean_preserves_leading_dotdot() {
+        // Regression test for #4429: leading `..` must be preserved.
+        // All config paths (--out-dir, --module-path, etc.) go through
+        // get_resolved_path which calls PathClean::clean().
+        use path_clean::PathClean;
         use std::path::Path;
 
-        assert_eq!(normalize_path_lexical(Path::new("../foo")), PathBuf::from("../foo"));
+        // --out-dir cases
+        assert_eq!(Path::new("../foo").clean(), PathBuf::from("../foo"));
+        assert_eq!(Path::new("../../a/b").clean(), PathBuf::from("../../a/b"));
         assert_eq!(
-            normalize_path_lexical(Path::new("../../a/b")),
-            PathBuf::from("../../a/b")
-        );
-        assert_eq!(
-            normalize_path_lexical(Path::new("../frontend-ts-src/module-bindings")),
+            Path::new("../frontend-ts-src/module-bindings").clean(),
             PathBuf::from("../frontend-ts-src/module-bindings")
         );
         // Inner `..` should still resolve.
-        assert_eq!(normalize_path_lexical(Path::new("a/b/../c")), PathBuf::from("a/c"));
+        assert_eq!(Path::new("a/b/../c").clean(), PathBuf::from("a/c"));
         // Pure `..` should stay.
-        assert_eq!(normalize_path_lexical(Path::new("..")), PathBuf::from(".."));
-        // Absolute paths: `..` at root stays at root level.
+        assert_eq!(Path::new("..").clean(), PathBuf::from(".."));
+        // Absolute paths
         assert_eq!(
-            normalize_path_lexical(Path::new("/home/user/project/../foo")),
+            Path::new("/home/user/project/../foo").clean(),
             PathBuf::from("/home/user/foo")
         );
         // Current dir collapses.
-        assert_eq!(normalize_path_lexical(Path::new("./foo")), PathBuf::from("foo"));
+        assert_eq!(Path::new("./foo").clean(), PathBuf::from("foo"));
         // Empty result → "."
-        assert_eq!(normalize_path_lexical(Path::new(".")), PathBuf::from("."));
-        assert_eq!(normalize_path_lexical(Path::new("a/..")), PathBuf::from("."));
-    }
+        assert_eq!(Path::new(".").clean(), PathBuf::from("."));
+        assert_eq!(Path::new("a/..").clean(), PathBuf::from("."));
 
-    #[test]
-    fn test_normalize_path_module_path_with_dotdot() {
-        // Regression test: --module-path with leading `..` was also affected
-        // by the same normalize_path_lexical bug as --out-dir (#4429).
-        // All config paths go through get_resolved_path → normalize_path_lexical.
-        use std::path::Path;
-
-        // Simulate what --module-path ../server would produce
+        // --module-path cases (same bug, reported by user on #4431)
+        assert_eq!(Path::new("../server").clean(), PathBuf::from("../server"));
         assert_eq!(
-            normalize_path_lexical(Path::new("../server")),
-            PathBuf::from("../server")
-        );
-        assert_eq!(
-            normalize_path_lexical(Path::new("../../repos/server")),
+            Path::new("../../repos/server").clean(),
             PathBuf::from("../../repos/server")
         );
         assert_eq!(
-            normalize_path_lexical(Path::new("../repos/server/spacetimedb")),
+            Path::new("../repos/server/spacetimedb").clean(),
             PathBuf::from("../repos/server/spacetimedb")
         );
     }
