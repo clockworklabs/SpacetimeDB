@@ -29,11 +29,11 @@ pub use spacetimedb_commitlog::repo::{OnNewSegmentFn, SizeOnDisk};
 /// [`Local`] configuration.
 #[derive(Clone, Copy, Debug)]
 pub struct Options {
-    /// Pull up to this many transactions from the queue.
+    /// Pop up to this many transactions from the queue at once.
     ///
     /// The commitlog is flushed and synced after each batch.
     ///
-    /// Defaults: 32
+    /// Default: 32
     pub batch_size: NonZeroUsize,
     /// [`Commitlog`] configuration.
     pub commitlog: spacetimedb_commitlog::Options,
