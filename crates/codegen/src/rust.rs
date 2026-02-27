@@ -529,6 +529,7 @@ impl {func_name} for super::RemoteReducers {{
         let procedure_name = procedure.name.deref();
         let func_name = procedure_function_name(procedure);
         let func_name_with_callback = procedure_function_with_callback_name(procedure);
+        let func_name_with_async = procedure_function_with_async_name(procedure);
         let args_type = function_args_type_name(&procedure.accessor_name);
         let res_ty_name = type_name(module, &procedure.return_type_for_generate);
 
@@ -574,6 +575,12 @@ pub trait {func_name} {{
         {arglist_no_delimiters}
         __callback: impl FnOnce(&super::ProcedureEventContext, Result<{res_ty_name}, __sdk::InternalError>) + Send + 'static,
     );
+
+    #[allow(async_fn_in_trait)]
+    async fn {func_name_with_async}(
+        &self,
+        {arglist_no_delimiters}
+    ) -> Result<{res_ty_name}, __sdk::InternalError>;
 }}
 
 impl {func_name} for super::RemoteProcedures {{
@@ -587,6 +594,16 @@ impl {func_name} for super::RemoteProcedures {{
             {args_type} {{ {arg_names} }},
             __callback,
         );
+    }}
+
+    async fn {func_name_with_async}(
+        &self,
+        {arglist_no_delimiters}
+    ) -> Result<{res_ty_name}, __sdk::InternalError> {{
+        self.imp.invoke_procedure_async::<_, {res_ty_name}>(
+            {procedure_name:?},
+            {args_type} {{ {arg_names} }},
+        ).await
     }}
 }}
 "
@@ -1128,6 +1145,10 @@ fn procedure_function_name(procedure: &ProcedureDef) -> String {
 
 fn procedure_function_with_callback_name(procedure: &ProcedureDef) -> String {
     procedure_function_name(procedure) + "_then"
+}
+
+fn procedure_function_with_async_name(procedure: &ProcedureDef) -> String {
+    procedure_function_name(procedure) + "_async"
 }
 
 /// Iterate over all of the Rust `mod`s for types, reducers, views, and tables in the `module`.
