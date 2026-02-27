@@ -195,7 +195,7 @@ docker compose up -d pg crdb
 npm run prep
 
 # Run benchmark
-npm run bench -- --seconds 10 --concurrency 50 --alpha 0 --connectors spacetimedb,postgres_rpc,sqlite_rpc
+npm run bench -- --seconds 10 --concurrency 50 --alpha 1.5 --connectors spacetimedb,postgres_rpc,sqlite_rpc
 ```
 
 ## Output
