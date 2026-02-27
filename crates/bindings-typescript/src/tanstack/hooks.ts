@@ -6,6 +6,7 @@ import type {
   UseSuspenseQueryResult,
 } from '@tanstack/react-query';
 import type { UntypedTableDef, RowType } from '../lib/table';
+import type { Query } from '../lib/query';
 import { spacetimeDBQuery } from './SpacetimeDBQueryClient';
 
 export type UseSpacetimeDBQueryResult<T> = [
@@ -29,7 +30,7 @@ export type UseSpacetimeDBSuspenseQueryResult<T> = [
 //   useSpacetimeDBQuery(tables.user.where(r => r.online.eq(true)))
 //   useSpacetimeDBQuery(condition ? tables.user : 'skip')
 export function useSpacetimeDBQuery<TableDef extends UntypedTableDef>(
-  queryOrSkip: ({ toSql(): string } & Record<string, any>) | 'skip',
+  queryOrSkip: Query<TableDef> | 'skip',
   // any useQuery option (e.g. enabled, refetchInterval, select, placeholderData),
   // except queryKey, queryFn, and meta (managed internally)
   options?: Omit<
@@ -60,7 +61,7 @@ export function useSpacetimeDBQuery<TableDef extends UntypedTableDef>(
 // until data is ready, a parent <Suspense fallback={…}> handles the loading UI.
 // does not support 'skip' because useSuspenseQuery must always resolve
 export function useSpacetimeDBSuspenseQuery<TableDef extends UntypedTableDef>(
-  query: { toSql(): string } & Record<string, any>,
+  query: Query<TableDef>,
   options?: Omit<
     UseSuspenseQueryOptions<
       RowType<TableDef>[],
