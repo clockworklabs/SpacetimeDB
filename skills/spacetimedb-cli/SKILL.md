@@ -38,7 +38,7 @@ spacetime dev
 spacetime dev --client-lang typescript --module-bindings-path ./client/src/module_bindings
 
 # Generate client bindings
-spacetime generate --lang typescript|csharp|rust|unrealcpp --out-dir ./bindings
+spacetime generate --lang typescript|csharp|rust|unrealcpp --out-dir ./bindings --module-path ./server
 ```
 
 ### Publishing & Deployment
@@ -50,13 +50,8 @@ spacetime publish my-database --yes
 # Publish to local server
 spacetime publish my-database --server local --yes
 
-# Publish with data handling
-spacetime publish my-database --delete-data always      # always clear data
-spacetime publish my-database --delete-data on-conflict # clear only if schema conflicts
-spacetime publish my-database --delete-data never       # never clear (default)
-
-# Allow breaking client changes
-spacetime publish my-database --break-clients
+# Clear database and republish
+spacetime publish my-database --clear-database --yes
 ```
 
 ### Database Interaction
@@ -171,7 +166,7 @@ spacetime dev
 spacetime start
 
 # Publish to local
-spacetime publish my-db --server local --delete-data always --yes
+spacetime publish my-db --server local --clear-database --yes
 
 # Query local database
 spacetime sql my-db --server local "SELECT * FROM players"
@@ -182,7 +177,7 @@ spacetime sql my-db --server local "SELECT * FROM players"
 ```bash
 # After building module
 spacetime build
-spacetime generate --lang typescript --out-dir ./client/src/bindings
+spacetime generate --lang typescript --out-dir ./client/src/bindings --module-path .
 
 # Or use dev mode which auto-generates
 spacetime dev --client-lang typescript --module-bindings-path ./client/src/bindings
@@ -196,7 +191,7 @@ spacetime dev --client-lang typescript --module-bindings-path ./client/src/bindi
 | `--yes` | `-y` | Non-interactive mode (skip confirmations) |
 | `--anonymous` | | Use anonymous identity |
 | `--identity` | `-i` | Specify identity to use |
-| `--project-path` | `-p` | Path to module project |
+| `--module-path` | `-p` | Path to module project |
 
 ## Troubleshooting
 
@@ -215,7 +210,7 @@ spacetime server ping <server>
 ### "Schema conflict"
 ```bash
 # Clear data and republish
-spacetime publish my-db --delete-data always --yes
+spacetime publish my-db --clear-database --yes
 ```
 
 ### "Build failed"

@@ -52,7 +52,7 @@ ctx.db.player;  // Field access
 
 // ✅ CORRECT — ctx.db is a field, table names are methods with parentheses
 ctx.db.user().insert(User { ... });
-ctx.db.user().identity().find(ctx.sender);
+ctx.db.user().identity().find(ctx.sender());
 ctx.db.player().id().find(&player_id);
 ```
 
@@ -63,7 +63,7 @@ ctx.db.player().id().find(&player_id);
 ctx.db.user().update(User { name: Some("new".into()), ..Default::default() });
 
 // ✅ CORRECT — find existing, spread it, update via primary key accessor
-if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
+if let Some(user) = ctx.db.user().identity().find(ctx.sender()) {
     ctx.db.user().identity().update(User { name: Some("new".into()), ..user });
 }
 ```
@@ -279,7 +279,7 @@ pub struct Task {
 ```rust
 let row = ctx.db.task().insert(Task {
     id: 0,  // auto-inc placeholder
-    owner_id: ctx.sender,
+    owner_id: ctx.sender(),
     title: "New task".to_string(),
     created_at: ctx.timestamp,
 });
@@ -305,12 +305,12 @@ pub fn send_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
     // Insert returns the inserted row
     let row = ctx.db.message().insert(Message {
         id: 0,  // auto-inc placeholder
-        sender: ctx.sender,
+        sender: ctx.sender(),
         text,
         sent: ctx.timestamp,
     });
     
-    log::info!("Message {} sent by {:?}", row.id, ctx.sender);
+    log::info!("Message {} sent by {:?}", row.id, ctx.sender());
     Ok(())
 }
 ```
@@ -321,7 +321,7 @@ pub fn send_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
 #[reducer]
 pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
     // Find existing row
-    let user = ctx.db.user().identity().find(ctx.sender)
+    let user = ctx.db.user().identity().find(ctx.sender())
         .ok_or("User not found")?;
     
     // ✅ CORRECT — spread existing row, override specific fields
@@ -334,7 +334,7 @@ pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
 }
 
 // ❌ WRONG — partial update nulls out other fields!
-// ctx.db.user().identity().update(User { identity: ctx.sender, name: Some(name), ..Default::default() });
+// ctx.db.user().identity().update(User { identity: ctx.sender(), name: Some(name), ..Default::default() });
 ```
 
 ### Delete Pattern
@@ -357,12 +357,12 @@ pub fn init(ctx: &ReducerContext) {
 
 #[reducer(client_connected)]
 pub fn client_connected(ctx: &ReducerContext) {
-    // ctx.sender is the connecting identity
-    if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
+    // ctx.sender() is the connecting identity
+    if let Some(user) = ctx.db.user().identity().find(ctx.sender()) {
         ctx.db.user().identity().update(User { online: true, ..user });
     } else {
         ctx.db.user().insert(User {
-            identity: ctx.sender,
+            identity: ctx.sender(),
             username: None,
             online: true,
         });
@@ -371,7 +371,7 @@ pub fn client_connected(ctx: &ReducerContext) {
 
 #[reducer(client_disconnected)]
 pub fn client_disconnected(ctx: &ReducerContext) {
-    if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
+    if let Some(user) = ctx.db.user().identity().find(ctx.sender()) {
         ctx.db.user().identity().update(User { online: false, ..user });
     }
 }
@@ -380,7 +380,7 @@ pub fn client_disconnected(ctx: &ReducerContext) {
 ### ReducerContext fields
 
 ```rust
-ctx.sender          // Identity of the caller
+ctx.sender()        // Identity of the caller
 ctx.timestamp       // Current timestamp
 ctx.db              // Database access
 ctx.rng             // Deterministic RNG (use instead of rand)
@@ -394,7 +394,7 @@ ctx.rng             // Deterministic RNG (use instead of rand)
 
 ```rust
 // Primary key lookup
-let user = ctx.db.user().identity().find(ctx.sender);
+let user = ctx.db.user().identity().find(ctx.sender());
 
 // Unique column lookup  
 let user = ctx.db.user().username().find(&"alice".to_string());

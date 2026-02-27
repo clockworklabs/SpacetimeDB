@@ -511,7 +511,7 @@ ctx.Db.Drawing.Insert(new Drawing { Id = 1, ShapeA = circle, ShapeB = rect });
 // Connection pattern
 _conn = DbConnection.Builder()
     .WithUri("http://localhost:3000")  // String, NOT Uri object!
-    .WithModuleName("my-module")
+    .WithDatabaseName("my-module")
     .WithToken(savedToken)  // null for first connection
     .OnConnect(OnConnected)
     .OnDisconnect((conn, err) => { })

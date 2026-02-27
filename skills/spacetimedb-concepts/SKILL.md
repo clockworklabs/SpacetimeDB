@@ -4,7 +4,7 @@ description: Understand SpacetimeDB architecture and core concepts. Use when lea
 license: Apache-2.0
 metadata:
   author: clockworklabs
-  version: "1.1"
+  version: "2.0"
 ---
 
 # SpacetimeDB Core Concepts
@@ -21,7 +21,7 @@ These five rules prevent the most common SpacetimeDB mistakes:
 2. **Reducers must be deterministic** — no filesystem, network, timers, or random. All state must come from tables.
 3. **Read data via tables/subscriptions** — not reducer return values. Clients get data through subscribed queries.
 4. **Auto-increment IDs are not sequential** — gaps are normal, do not use for ordering. Use timestamps or explicit sequence columns.
-5. **`ctx.sender` is the authenticated principal** — never trust identity passed as arguments. Always use `ctx.sender` for authorization.
+5. **`ctx.sender()` is the authenticated principal** — never trust identity passed as arguments. Always use `ctx.sender()` for authorization.
 
 ---
 
@@ -54,19 +54,10 @@ When things are not working:
 ## CLI Commands
 
 ```bash
-# Start local SpacetimeDB
 spacetime start
-
-# Publish module
-spacetime publish <db-name> --project-path <module-path>
-
-# Clear and republish
-spacetime publish <db-name> --clear-database -y --project-path <module-path>
-
-# Generate client bindings
-spacetime generate --lang <lang> --out-dir <out> --project-path <module-path>
-
-# View logs
+spacetime publish <db-name> --module-path <module-path>
+spacetime publish <db-name> --clear-database -y --module-path <module-path>
+spacetime generate --lang <lang> --out-dir <out> --module-path <module-path>
 spacetime logs <db-name>
 ```
 
@@ -83,21 +74,13 @@ Key characteristics:
 - **Real-time synchronization**: Changes are automatically pushed to subscribed clients
 - **Single deployment**: No separate servers, containers, or infrastructure to manage
 
-SpacetimeDB powers BitCraft Online, an MMORPG where the entire game backend (chat, items, resources, terrain, player positions) runs as a single SpacetimeDB module.
-
 ## The Five Zen Principles
 
-SpacetimeDB is built on five core principles that guide both development and usage:
-
-1. **Everything is a Table**: Your entire application state lives in tables. No separate cache layer, no Redis, no in-memory state to synchronize. The database IS your state.
-
-2. **Everything is Persistent**: SpacetimeDB persists everything by default, including full history. Persistence only increases latency, never decreases throughput. Modern SSDs can write 15+ GB/s.
-
-3. **Everything is Real-Time**: Clients are replicas of server state. Subscribe to data and it flows automatically. No polling, no fetching.
-
-4. **Everything is Transactional**: Every reducer runs atomically. Either all changes succeed or all roll back. No partial updates, no corrupted state.
-
-5. **Everything is Programmable**: Modules are real code (Rust, C#, TypeScript) running inside the database. Full Turing-complete power for any logic.
+1. **Everything is a Table**: Your entire application state lives in tables. No separate cache layer, no Redis, no in-memory state to synchronize.
+2. **Everything is Persistent**: SpacetimeDB persists everything by default, including full history.
+3. **Everything is Real-Time**: Clients are replicas of server state. Subscribe to data and it flows automatically.
+4. **Everything is Transactional**: Every reducer runs atomically. Either all changes succeed or all roll back.
+5. **Everything is Programmable**: Modules are real code (Rust, C#, TypeScript) running inside the database.
 
 ## Tables
 
@@ -105,11 +88,11 @@ Tables store all data in SpacetimeDB. They use the relational model and support 
 
 ### Defining Tables
 
-Tables are defined using language-specific attributes:
+Tables are defined using language-specific attributes. In 2.0, use `accessor` (not `name`) for the API name:
 
 **Rust:**
 ```rust
-#[spacetimedb::table(name = player, public)]
+#[spacetimedb::table(accessor = player, public)]
 pub struct Player {
     #[primary_key]
     #[auto_inc]
@@ -123,7 +106,7 @@ pub struct Player {
 
 **C#:**
 ```csharp
-[SpacetimeDB.Table(Name = "Player", Public = true)]
+[SpacetimeDB.Table(Accessor = "Player", Public = true)]
 public partial struct Player
 {
     [SpacetimeDB.PrimaryKey]
@@ -164,14 +147,9 @@ id         <--  player_id           player_id
 name            position_x          total_kills
                 position_y          total_deaths
                 velocity_x          play_time
-                velocity_y
 ```
 
-Benefits:
-- Reduced bandwidth (clients subscribing to positions do not receive settings updates)
-- Cache efficiency (similar update frequencies in contiguous memory)
-- Schema evolution (add columns without affecting other tables)
-- Semantic clarity (each table has single responsibility)
+Benefits: reduced bandwidth, cache efficiency, schema evolution, semantic clarity.
 
 ## Reducers
 
@@ -221,40 +199,39 @@ public static void CreateUser(ReducerContext ctx, string name, string email)
 
 Every reducer receives a `ReducerContext` providing:
 - `ctx.db`: Access to all tables (read and write)
-- `ctx.sender`: The Identity of the caller (use this for authorization, never trust args)
+- `ctx.sender()`: The Identity of the caller (Rust: method; C#/TS: property/field)
 - `ctx.connection_id`: The connection ID of the caller
 - `ctx.timestamp`: The current timestamp
 
+## Event Tables (2.0)
+
+Reducer callbacks are removed in 2.0. Use **event tables** to broadcast reducer-specific data to clients.
+
+```rust
+#[table(accessor = damage_event, public, event)]
+pub struct DamageEvent {
+    pub target: Identity,
+    pub amount: u32,
+}
+
+#[reducer]
+fn deal_damage(ctx: &ReducerContext, target: Identity, amount: u32) {
+    ctx.db.damage_event().insert(DamageEvent { target, amount });
+}
+```
+
+Clients subscribe to event tables and use `on_insert` callbacks. Event tables are excluded from `subscribe_to_all_tables()` and must be subscribed explicitly.
+
 ## Subscriptions
 
-Subscriptions replicate database rows to clients in real-time. When you subscribe to a query, SpacetimeDB sends matching rows immediately and pushes updates whenever those rows change.
+Subscriptions replicate database rows to clients in real-time.
 
 ### How Subscriptions Work
 
 1. **Subscribe**: Register SQL queries describing needed data
 2. **Receive initial data**: All matching rows are sent immediately
 3. **Receive updates**: Real-time updates when subscribed rows change
-4. **React to changes**: Use callbacks (`onInsert`, `onDelete`, `onUpdate`) to handle changes
-
-### Client-Side Usage
-
-**TypeScript:**
-```typescript
-const conn = DbConnection.builder()
-  .withUri('wss://maincloud.spacetimedb.com')
-  .withModuleName('my_module')
-  .onConnect((ctx) => {
-    ctx.subscriptionBuilder()
-      .onApplied(() => console.log('Subscription ready!'))
-      .subscribe(['SELECT * FROM user', 'SELECT * FROM message']);
-  })
-  .build();
-
-// React to changes
-conn.db.user.onInsert((ctx, user) => console.log(`New user: ${user.name}`));
-conn.db.user.onDelete((ctx, user) => console.log(`User left: ${user.name}`));
-conn.db.user.onUpdate((ctx, old, new_) => console.log(`${old.name} -> ${new_.name}`));
-```
+4. **React to changes**: Use callbacks (`onInsert`, `onDelete`, `onUpdate`)
 
 ### Subscription Best Practices
 
@@ -272,14 +249,12 @@ Modules are WebAssembly bundles containing application logic that runs inside th
 - **Tables**: Define the data schema
 - **Reducers**: Define callable functions that modify state
 - **Views**: Define read-only computed queries
+- **Event Tables**: Broadcast reducer-specific data to clients (2.0)
 - **Procedures**: (Beta) Functions that can have side effects (HTTP requests)
 
 ### Module Languages
 
-Server-side modules can be written in:
-- Rust
-- C#
-- TypeScript (beta)
+Server-side modules can be written in: Rust, C#, TypeScript (beta)
 
 ### Module Lifecycle
 
@@ -292,91 +267,20 @@ Server-side modules can be written in:
 
 Identity is SpacetimeDB's authentication system based on OpenID Connect (OIDC).
 
-### Identity Concepts
-
-- **Identity**: A long-lived, globally unique identifier for a user. Derived from OIDC issuer and subject claims.
-- **ConnectionId**: Identifies a specific client connection. A user may have multiple connections.
-
-### Identity in Reducers
+- **Identity**: A long-lived, globally unique identifier for a user.
+- **ConnectionId**: Identifies a specific client connection.
 
 ```rust
 #[spacetimedb::reducer]
 pub fn do_something(ctx: &ReducerContext) {
-    let caller_identity = ctx.sender;  // Who is calling this reducer?
-    // Use identity for authorization checks
+    let caller_identity = ctx.sender();  // Who is calling?
     // NEVER trust identity passed as a reducer argument
 }
 ```
 
 ### Authentication Providers
 
-SpacetimeDB works with any OIDC provider:
-- **SpacetimeAuth**: Built-in managed provider (simple, production-ready)
-- **Third-party**: Auth0, Clerk, Keycloak, Google, GitHub, etc.
-
-## SATS (SpacetimeDB Algebraic Type System)
-
-SATS is the type system and serialization format used throughout SpacetimeDB.
-
-### Core Types
-
-| Category | Types |
-|----------|-------|
-| Primitives | `Bool`, `U8`-`U256`, `I8`-`I256`, `F32`, `F64`, `String` |
-| Composite | `ProductType` (structs), `SumType` (enums/tagged unions) |
-| Collections | `Array`, `Map` |
-| Special | `Identity`, `ConnectionId`, `ScheduleAt` |
-
-### Serialization Formats
-
-- **BSATN**: Binary format for module-host communication and row storage
-- **SATS-JSON**: JSON format for HTTP API and WebSocket text protocol
-
-### Type Compatibility
-
-Types must implement `SpacetimeType` to be used in tables and reducers. This is automatic for primitive types and structs using the appropriate attributes.
-
-## Client-Server Data Flow
-
-### Write Path (Client to Database)
-
-1. Client calls reducer (e.g., `ctx.reducers.createUser("Alice")`)
-2. Request sent over WebSocket to SpacetimeDB host
-3. Host validates identity and executes reducer in transaction
-4. On success, changes are committed; on error, all changes roll back
-5. Subscribed clients receive updates for affected rows
-
-### Read Path (Database to Client)
-
-1. Client subscribes with SQL queries (e.g., `SELECT * FROM user`)
-2. Server evaluates query and sends matching rows
-3. Client maintains local cache of subscribed data
-4. When subscribed data changes, server pushes delta updates
-5. Client cache is automatically updated; callbacks fire
-
-### Data Flow Diagram
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                        CLIENT                           │
-│  ┌─────────────┐     ┌─────────────────────────────┐   │
-│  │  Reducers   │────>│     Local Cache (Read)      │   │
-│  │  (Write)    │     │  - Tables from subscriptions│   │
-│  └─────────────┘     │  - Automatically synced     │   │
-│         │            └─────────────────────────────┘   │
-└─────────│──────────────────────────│───────────────────┘
-          │ WebSocket                │ Updates pushed
-          v                          │
-┌─────────────────────────────────────────────────────────┐
-│                     SpacetimeDB                         │
-│  ┌─────────────────────────────────────────────────┐   │
-│  │                    Module                        │   │
-│  │  - Reducers (transactional logic)               │   │
-│  │  - Tables (in-memory + persisted)               │   │
-│  │  - Subscriptions (real-time queries)            │   │
-│  └─────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────┘
-```
+SpacetimeDB works with any OIDC provider: SpacetimeAuth (built-in), Auth0, Clerk, Keycloak, Google, GitHub, etc.
 
 ## When to Use SpacetimeDB
 
@@ -386,7 +290,6 @@ Types must implement `SpacetimeType` to be used in tables and reducers. This is 
 - **Collaborative applications**: Document editing, whiteboards, design tools
 - **Chat and messaging**: Real-time communication with presence
 - **Live dashboards**: Streaming analytics and monitoring
-- **IoT applications**: Sensor data with real-time updates
 
 ### Key Decision Factors
 
@@ -398,70 +301,9 @@ Choose SpacetimeDB when you need:
 
 ### Less Suitable For
 
-- **Batch analytics**: SpacetimeDB is optimized for OLTP, not OLAP
+- **Batch analytics**: Optimized for OLTP, not OLAP
 - **Large blob storage**: Better suited for structured relational data
 - **Stateless APIs**: Traditional REST APIs do not need real-time sync
-
-## Comparison to Traditional Architectures
-
-### Traditional Stack
-
-```
-Client
-   │
-   v
-Load Balancer
-   │
-   v
-Web/Game Servers (stateless or stateful)
-   │
-   ├──> Cache (Redis)
-   │
-   v
-Database (PostgreSQL, MySQL)
-   │
-   v
-Message Queue (for real-time)
-```
-
-**Pain points:**
-- Multiple systems to deploy and manage
-- Cache invalidation complexity
-- State synchronization between servers
-- Manual real-time implementation
-- Horizontal scaling complexity
-
-### SpacetimeDB Stack
-
-```
-Client
-   │
-   v
-SpacetimeDB Host
-   │
-   v
-Module (your logic + tables)
-```
-
-**Benefits:**
-- Single deployment target
-- No cache layer needed (in-memory by design)
-- Automatic real-time synchronization
-- Built-in horizontal scaling (future)
-- Transactional guarantees everywhere
-
-### Smart Contract Comparison
-
-SpacetimeDB modules are conceptually similar to smart contracts:
-- Application logic runs inside the data layer
-- Transactions are atomic and verified
-- State changes are deterministic
-
-Key differences:
-- SpacetimeDB is orders of magnitude faster (no consensus overhead)
-- Full relational database capabilities
-- No blockchain or cryptocurrency involved
-- Designed for real-time, not eventual consistency
 
 ## Common Patterns
 
@@ -469,28 +311,15 @@ Key differences:
 ```rust
 #[spacetimedb::reducer]
 fn admin_action(ctx: &ReducerContext) -> Result<(), String> {
-    let admin = ctx.db.admin().identity().find(&ctx.sender)
+    let admin = ctx.db.admin().identity().find(&ctx.sender())
         .ok_or("Not an admin")?;
-    // ... perform admin action
-    Ok(())
-}
-```
-
-**Moving between tables (state machine):**
-```rust
-#[spacetimedb::reducer]
-fn login(ctx: &ReducerContext) -> Result<(), String> {
-    let player = ctx.db.logged_out_player().identity().find(&ctx.sender)
-        .ok_or("Not found")?;
-    ctx.db.player().insert(player.clone());
-    ctx.db.logged_out_player().identity().delete(&ctx.sender);
     Ok(())
 }
 ```
 
 **Scheduled reducer:**
 ```rust
-#[spacetimedb::table(name = reminder, scheduled(send_reminder))]
+#[spacetimedb::table(accessor = reminder, scheduled(send_reminder))]
 pub struct Reminder {
     #[primary_key]
     #[auto_inc]
@@ -501,7 +330,6 @@ pub struct Reminder {
 
 #[spacetimedb::reducer]
 fn send_reminder(ctx: &ReducerContext, reminder: Reminder) {
-    // This runs at the scheduled time
     log::info!("Reminder: {}", reminder.message);
 }
 ```
