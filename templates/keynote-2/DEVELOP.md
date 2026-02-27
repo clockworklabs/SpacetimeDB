@@ -102,6 +102,12 @@ Copy `.env.example` to `.env` and adjust.
 - `CLEAR_CONVEX_ON_PREP` – Convex prep flag (clears data when enabled)
 - `CONVEX_USE_SHARDED_COUNTER` – flag for using the sharded-counter implementation
 
+**PlanetScale:**
+
+- `PLANETSCALE_PG_URL` – Postgres connection string
+- `PLANETSCALE_RPC_URL` – PlanetScale RPC server URL (default: `http://127.0.0.1:4104`)
+- `SKIP_PLANETSCALE_PG` – `1` = skip PlanetScale in prep
+
 **Bun / RPC helpers:**
 
 - `BUN_URL` – Bun HTTP benchmark server URL
@@ -112,6 +118,12 @@ Copy `.env.example` to `.env` and adjust.
 - `PG_RPC_URL` – HTTP URL for the Postgres RPC server
 - `CRDB_RPC_URL` – HTTP URL for the CockroachDB RPC server
 - `SQLITE_RPC_URL` – HTTP URL for the SQLite RPC server
+
+---
+
+## PlanetScale configuration
+
+Create a Postgres database on PlanetScale and set `PLANETSCALE_PG_URL` (and `PLANETSCALE_RPC_URL` if the RPC server runs elsewhere) in `.env`. Reported results used PS-2560 (32 vCPUs, 256 GB RAM).
 
 ---
 
