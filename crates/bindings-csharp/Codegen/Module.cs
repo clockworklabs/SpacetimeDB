@@ -1191,7 +1191,7 @@ record ViewDeclaration
                 ? "SpacetimeDB.BSATN.ValueOption"
                 : "SpacetimeDB.BSATN.RefOption";
             var opt = $"{optType}<{rowType.Name}, {rowType.BSATNName}>";
-            // Match Rust semantics: Query<T> is described as Option<T>.
+            // Match Rust semantics: Query<T> is described as a nullable row (T?).
             ReturnType = new ReferenceUse(opt, opt);
         }
         else if (
@@ -1230,7 +1230,7 @@ record ViewDeclaration
             diag.Report(ErrorDescriptor.ViewContextParam, methodSyntax);
         }
 
-        // Validate return type: must be Option<T>, Vec<T>, or IEnumerable<T>
+        // Validate return type: must be List<T>, T?, or IEnumerable<T>
         if (
             !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.ValueOption")
             && !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.RefOption")

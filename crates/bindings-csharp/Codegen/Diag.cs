@@ -215,10 +215,10 @@ internal static class ErrorDescriptor
     public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewInvalidReturn =
         new(
             group,
-            "Views must return Vec<T>, Option<T>, or IEnumerable<T>",
+            "Views must return T?, List<T>, IQuery<T>, or IEnumerable<T>",
             method =>
-                $"View '{method.Identifier}' must return Vec<T>, Option<T>, or IEnumerable<T>.",
-            method => method
+                $"View '{method.Identifier}' must return T?, List<T>, IQuery<T>, or IEnumerable<T>.",
+            method => method.ReturnType
         );
 
     // TODO: Remove once Views support Private: Views must be Public currently
