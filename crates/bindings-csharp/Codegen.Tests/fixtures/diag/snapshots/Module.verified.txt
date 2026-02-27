@@ -330,25 +330,17 @@ public partial struct TestScheduleIssues
       }
     },
     {/*
-    // Invalid: Wrong return type is not List<T> or T?
     [SpacetimeDB.View(Accessor = "view_def_wrong_return", Public = true)]
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     public static Player ViewDefWrongReturn(ViewContext ctx)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                  ^^^^^^
     {
-^^^^^
-        return new Player { Identity = new() };
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    }
-^^^^^
-
 */
-      Message: View 'ViewDefWrongReturn' must return Vec<T> or Option<T>.,
+      Message: View 'ViewDefWrongReturn' must return T?, List<T>, or IQuery<T>,
       Severity: Error,
       Descriptor: {
         Id: STDB0024,
-        Title: Views must return Vec<T> or Option<T>,
-        MessageFormat: View '{0}' must return Vec<T> or Option<T>.,
+        Title: Views must return T?, List<T>, or IQuery<T>,
+        MessageFormat: View '{0}' must return T?, List<T>, or IQuery<T>,
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
@@ -372,25 +364,17 @@ public partial struct TestScheduleIssues
       }
     },
     {/*
-    // Invalid: IEnumerable<T> return type (from Iter()) is not List<T> or T?
     [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_iter", Public = true)]
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     public static IEnumerable<Player> ViewDefIEnumerableReturnFromIter(ViewContext ctx)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                  ^^^^^^^^^^^^^^^^^^^
     {
-^^^^^
-        return ctx.Db.Player.Iter();
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    }
-^^^^^
-
 */
-      Message: View 'ViewDefIEnumerableReturnFromIter' must return Vec<T> or Option<T>.,
+      Message: View 'ViewDefIEnumerableReturnFromIter' must return T?, List<T>, or IQuery<T>,
       Severity: Error,
       Descriptor: {
         Id: STDB0024,
-        Title: Views must return Vec<T> or Option<T>,
-        MessageFormat: View '{0}' must return Vec<T> or Option<T>.,
+        Title: Views must return T?, List<T>, or IQuery<T>,
+        MessageFormat: View '{0}' must return T?, List<T>, or IQuery<T>,
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
@@ -414,29 +398,17 @@ public partial struct TestScheduleIssues
       }
     },
     {/*
-    // Invalid: IEnumerable<T> return type (from Filter()) is not List<T> or T?
     [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_filter", Public = true)]
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     public static IEnumerable<TestScheduleIssues> ViewDefIEnumerableReturnFromFilter(
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
         ViewContext ctx
-^^^^^^^^^^^^^^^^^^^^^^^
-    )
-^^^^^
-    {
-^^^^^
-        return ctx.Db.TestIndexIssues.TestUnexpectedColumns.Filter(0);
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    }
-^^^^^
-
 */
-      Message: View 'ViewDefIEnumerableReturnFromFilter' must return Vec<T> or Option<T>.,
+      Message: View 'ViewDefIEnumerableReturnFromFilter' must return T?, List<T>, or IQuery<T>,
       Severity: Error,
       Descriptor: {
         Id: STDB0024,
-        Title: Views must return Vec<T> or Option<T>,
-        MessageFormat: View '{0}' must return Vec<T> or Option<T>.,
+        Title: Views must return T?, List<T>, or IQuery<T>,
+        MessageFormat: View '{0}' must return T?, List<T>, or IQuery<T>,
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true

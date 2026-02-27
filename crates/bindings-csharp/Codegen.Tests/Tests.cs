@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Text;
 
@@ -15,8 +16,19 @@ public static class GeneratorSnapshotTests
 
     record struct StepOutput(string Key, IncrementalStepRunReason Reason, object Value);
 
-    class Fixture(string projectDir, CSharpCompilation sampleCompilation)
+    class Fixture
     {
+        private readonly string projectDir;
+        private readonly CSharpCompilation sampleCompilation;
+
+        public Fixture(string projectDir, CSharpCompilation sampleCompilation)
+        {
+            this.projectDir = projectDir;
+            this.sampleCompilation = sampleCompilation;
+        }
+
+        public CSharpCompilation SampleCompilation => sampleCompilation;
+
         public static async Task<Fixture> Compile(string name)
         {
             var projectDir = Path.Combine(GetProjectDir(), "fixtures", name);
@@ -61,6 +73,12 @@ public static class GeneratorSnapshotTests
             CheckCacheWorking(sampleCompilation, driverAfterGen);
 
             return genResult.GeneratedTrees;
+        }
+
+        public GeneratorDriverRunResult RunGeneratorAndGetResult(IIncrementalGenerator generator)
+        {
+            var driver = CreateDriver(generator, sampleCompilation.LanguageVersion);
+            return driver.RunGenerators(sampleCompilation).GetRunResult();
         }
 
         public async Task<CSharpCompilation> RunAndCheckGenerators(
@@ -256,5 +274,51 @@ public static class GeneratorSnapshotTests
         AssertPublicBoundIsAvailableInRuntime(compilationAfterGen);
         AssertRuntimeDoesNotDefineLocal(compilationAfterGen);
         AssertGeneratedCodeDoesNotUseInternalBound(compilationAfterGen);
+    }
+
+    [Fact]
+    public static async Task ViewInvalidReturnHighlightsReturnType()
+    {
+        var fixture = await Fixture.Compile("diag");
+
+        var runResult = fixture.RunGeneratorAndGetResult(new SpacetimeDB.Codegen.Module());
+
+        var method = fixture
+            .SampleCompilation.SyntaxTrees.Select(tree => new
+            {
+                Tree = tree,
+                Root = tree.GetRoot(),
+            })
+            .SelectMany(entry =>
+                entry
+                    .Root.DescendantNodes()
+                    .OfType<MethodDeclarationSyntax>()
+                    .Select(method => new
+                    {
+                        entry.Tree,
+                        entry.Root,
+                        Method = method,
+                    })
+            )
+            .Single(entry => entry.Method.Identifier.Text == "ViewDefIEnumerableReturnFromIter");
+
+        var returnTypeSpan = method.Method.ReturnType.Span;
+        var diagnostics = runResult
+            .Results.SelectMany(result => result.Diagnostics)
+            .Where(d => d.Id == "STDB0024")
+            .ToList();
+        var diagnostic = diagnostics.FirstOrDefault(d =>
+            d.GetMessage().Contains("ViewDefIEnumerableReturnFromIter")
+            && d.Location.SourceTree == method.Tree
+        );
+
+        Assert.NotNull(diagnostic);
+
+        Assert.Equal(returnTypeSpan, diagnostic!.Location.SourceSpan);
+
+        var returnTypeText = method
+            .Root.ToFullString()
+            .Substring(returnTypeSpan.Start, returnTypeSpan.Length);
+        Assert.Contains("IEnumerable", returnTypeText);
     }
 }
