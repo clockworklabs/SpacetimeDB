@@ -620,7 +620,19 @@ pub async fn exec_ex(
     let (using_config, generate_configs) = if let Some(loaded) = loaded_config_ref {
         let filtered = get_filtered_generate_configs(&loaded.config, &cmd, &schema, args)?;
         if filtered.is_empty() {
-            (false, vec![CommandConfig::new(&schema, HashMap::new(), args)?])
+            // No generate entries in config, but the config may still have top-level
+            // fields like module-path that should be passed through.
+            let top_level_fields = loaded
+                .config
+                .additional_fields
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect::<HashMap<_, _>>();
+            let has_config_fields = !top_level_fields.is_empty();
+            (
+                has_config_fields,
+                vec![CommandConfig::new(&schema, top_level_fields, args)?],
+            )
         } else {
             (true, filtered)
         }
@@ -1108,6 +1120,26 @@ mod tests {
         let runs = prepare_generate_run_configs(vec![command_config], true, Some(temp.path())).unwrap();
         assert_eq!(runs[0].lang, Language::Csharp);
         assert_eq!(runs[0].out_dir, temp.path().join("module_bindings"));
+    }
+
+    #[test]
+    fn test_module_path_from_config_without_generate_entries() {
+        // Simulates spacetime.json with just: { "module-path": "server-rust" }
+        // (no generate entries). The module-path should still be used.
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+        let matches = cmd.clone().get_matches_from(vec!["generate", "--lang", "typescript"]);
+        let temp = tempfile::TempDir::new().unwrap();
+        let module_dir = temp.path().join("server-rust");
+        std::fs::create_dir_all(&module_dir).unwrap();
+        let mut cfg = HashMap::new();
+        cfg.insert(
+            "module-path".to_string(),
+            serde_json::Value::String("server-rust".to_string()),
+        );
+        let command_config = CommandConfig::new(&schema, cfg, &matches).unwrap();
+        let runs = prepare_generate_run_configs(vec![command_config], true, Some(temp.path())).unwrap();
+        assert_eq!(runs[0].project_path, temp.path().join("server-rust"));
     }
 
     #[test]
