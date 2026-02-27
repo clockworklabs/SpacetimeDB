@@ -719,6 +719,32 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             }),
         });
     }
+
+    pub async fn invoke_procedure_async<
+        Args: Serialize + InModule<Module = M>,
+        RetVal: for<'a> Deserialize<'a> + 'static,
+    >(
+        &self,
+        procedure_name: &'static str,
+        args: Args,
+    ) -> Result<RetVal, InternalError> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        self.queue_mutation(PendingMutation::InvokeProcedureWithCallback {
+            procedure: procedure_name,
+            args: bsatn::to_vec(&args).expect("Failed to BSATN serialize procedure args"),
+            callback: Box::new(move |_, ret| {
+                tx.send(ret).expect("sender channel could not send.");
+            }),
+        });
+
+        let ret = rx
+            .await
+            .expect("The sender chennel dropeed before the final value was received");
+        ret.map(|ret| {
+            bsatn::from_slice::<RetVal>(&ret[..]).expect("Failed to BSATN deserialize procedure return value")
+        })
+    }
 }
 
 type OnConnectCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::DbConnection, Identity, &str) + Send + 'static>;
