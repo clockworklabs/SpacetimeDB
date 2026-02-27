@@ -1120,6 +1120,7 @@ record ViewDeclaration
     public readonly bool IsAnonymous;
     public readonly bool IsPublic;
     public readonly bool ReturnsQuery;
+    public readonly bool ReturnsEnumerable;
     public readonly TypeUse ReturnType;
     public readonly EquatableArray<MemberDeclaration> Parameters;
     public readonly Scope Scope;
@@ -1155,6 +1156,7 @@ record ViewDeclaration
         IsAnonymous = isAnonymousContext;
 
         ReturnsQuery = false;
+        ReturnsEnumerable = false;
         INamedTypeSymbol? iquery = null;
         if (
             method.ReturnType is INamedTypeSymbol
@@ -1192,6 +1194,24 @@ record ViewDeclaration
             // Match Rust semantics: Query<T> is described as Option<T>.
             ReturnType = new ReferenceUse(opt, opt);
         }
+        else if (
+            method.ReturnType
+            is INamedTypeSymbol
+            {
+                OriginalDefinition: var originalDefinition,
+                TypeArguments: [var enumerableElementType]
+            }
+            && originalDefinition.ToString() == "System.Collections.Generic.IEnumerable<T>"
+        )
+        {
+            ReturnsEnumerable = true;
+            var elementType = TypeUse.Parse(method, enumerableElementType, diag);
+            var elementTypeName = SymbolToName(enumerableElementType);
+            var listTypeName = $"System.Collections.Generic.List<{elementTypeName}>";
+            var listTypeInfo =
+                $"SpacetimeDB.BSATN.List<{elementTypeName}, {elementType.BSATNName}>";
+            ReturnType = new ListUse(listTypeName, listTypeInfo, elementType);
+        }
         else
         {
             ReturnType = TypeUse.Parse(method, method.ReturnType, diag);
@@ -1210,11 +1230,12 @@ record ViewDeclaration
             diag.Report(ErrorDescriptor.ViewContextParam, methodSyntax);
         }
 
-        // Validate return type: must be Option<T> or Vec<T>
+        // Validate return type: must be Option<T>, Vec<T>, or IEnumerable<T>
         if (
             !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.ValueOption")
             && !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.RefOption")
             && !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.List")
+            && !ReturnsEnumerable
         )
         {
             diag.Report(ErrorDescriptor.ViewInvalidReturn, methodSyntax);
@@ -1284,6 +1305,18 @@ record ViewDeclaration
                 ? $$$"""
                         var listSerializer = {{{ReturnType.BSATNName}}}.GetListSerializer();
                         var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
+                        var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+                        var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
+                        using var output = new System.IO.MemoryStream();
+                        using var writer = new System.IO.BinaryWriter(output);
+                        headerRW.Write(writer, header);
+                        listSerializer.Write(writer, listValue);
+                        return output.ToArray();
+                    """
+            : ReturnsEnumerable
+                ? $$$"""
+                        var listSerializer = new {{{ReturnType.BSATNName}}}();
+                        var listValue = global::System.Linq.Enumerable.ToList(returnValue);
                         var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
                         var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
                         using var output = new System.IO.MemoryStream();
