@@ -468,8 +468,8 @@ importers:
         specifier: ^3.0.1
         version: 3.0.1
       spacetimedb:
-        specifier: ^2.0
-        version: 2.0.1(@angular/core@21.1.4(@angular/compiler@21.1.4)(rxjs@7.8.2))(@tanstack/react-query@5.90.19(react@19.2.4))(react@19.2.4)(svelte@5.46.4)(undici@6.21.3)(vue@3.5.26(typescript@5.9.3))
+        specifier: workspace:^
+        version: link:../../crates/bindings-typescript
       sql.js:
         specifier: ^1.13.0
         version: 1.14.0
@@ -12871,29 +12871,6 @@ packages:
 
   space-separated-tokens@2.0.2:
     resolution: {integrity: sha512-PEGlAwrG8yXGXRjW32fGbg66JAlOAwbObuqVoJpv/mRgoWDQfgH1wDPvtzWyUSNAXBGSk8h755YDbbcEy3SH2Q==}
-
-  spacetimedb@2.0.1:
-    resolution: {integrity: sha512-19YkLz1P+JQDlYvlegDsn3YF4OsE2Pih31e5Xx/kobTExKwx/AtFWRUSA/EiRWvMV9jaIWzMhnsVfG+1fJ39Aw==}
-    peerDependencies:
-      '@angular/core': '>=17.0.0'
-      '@tanstack/react-query': ^5.0.0
-      react: ^18.0.0 || ^19.0.0-0 || ^19.0.0
-      svelte: ^4.0.0 || ^5.0.0
-      undici: ^6.19.2
-      vue: ^3.3.0
-    peerDependenciesMeta:
-      '@angular/core':
-        optional: true
-      '@tanstack/react-query':
-        optional: true
-      react:
-        optional: true
-      svelte:
-        optional: true
-      undici:
-        optional: true
-      vue:
-        optional: true
 
   spdx-correct@3.2.0:
     resolution: {integrity: sha512-kN9dJbvnySHULIluDHy32WHRUu3Og7B9sbY7tsFLctQkIqnMh3hErYgdMjTYuqmcXX+lK5T1lnUt3G7zNswmZA==}
@@ -30810,24 +30787,6 @@ snapshots:
       whatwg-url: 7.1.0
 
   space-separated-tokens@2.0.2: {}
-
-  spacetimedb@2.0.1(@angular/core@21.1.4(@angular/compiler@21.1.4)(rxjs@7.8.2))(@tanstack/react-query@5.90.19(react@19.2.4))(react@19.2.4)(svelte@5.46.4)(undici@6.21.3)(vue@3.5.26(typescript@5.9.3)):
-    dependencies:
-      base64-js: 1.5.1
-      headers-polyfill: 4.0.3
-      object-inspect: 1.13.4
-      prettier: 3.6.2
-      pure-rand: 7.0.1
-      safe-stable-stringify: 2.5.0
-      statuses: 2.0.2
-      url-polyfill: 1.1.14
-    optionalDependencies:
-      '@angular/core': 21.1.4(@angular/compiler@21.1.4)(rxjs@7.8.2)
-      '@tanstack/react-query': 5.90.19(react@19.2.4)
-      react: 19.2.4
-      svelte: 5.46.4
-      undici: 6.21.3
-      vue: 3.5.26(typescript@5.9.3)
 
   spdx-correct@3.2.0:
     dependencies:
