@@ -1,24 +1,32 @@
 import { table, schema, t } from 'spacetimedb/server';
 
-export const User = table({
-  name: 'user',
-}, {
-  id: t.i32().primaryKey(),
-  name: t.string(),
-  age: t.i32(),
-  active: t.bool(),
-});
+export const user = table(
+  {
+    name: 'user',
+  },
+  {
+    id: t.i32().primaryKey(),
+    name: t.string(),
+    age: t.i32(),
+    active: t.bool(),
+  }
+);
 
-export const Result = table({
-  name: 'result',
-}, {
-  id: t.i32().primaryKey(),
-  name: t.string(),
-});
+export const result = table(
+  {
+    name: 'result',
+  },
+  {
+    id: t.i32().primaryKey(),
+    name: t.string(),
+  }
+);
 
-const spacetimedb = schema(User, Result);
+const spacetimedb = schema({ user, result });
+export default spacetimedb;
 
-spacetimedb.reducer('lookupUserName', { id: t.i32() },
+export const lookupUserName = spacetimedb.reducer(
+  { id: t.i32() },
   (ctx, { id }) => {
     const u = ctx.db.user.id.find(id);
     if (u) {

@@ -8,6 +8,7 @@ use std::{
 use super::code_indenter::Indenter;
 use convert_case::{Case, Casing};
 use itertools::Itertools;
+use spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::version;
 use spacetimedb_lib::{db::raw_def::v9::Lifecycle, sats::AlgebraicTypeRef};
@@ -26,6 +27,12 @@ use spacetimedb_schema::{
     identifier::Identifier,
     type_for_generate::AlgebraicTypeUse,
 };
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CodegenVisibility {
+    IncludePrivate,
+    OnlyPublic,
+}
 
 /// Turns a closure `f: Fn(&mut Formatter) -> Result` into `fmt::Display`.
 pub(super) fn fmt_fn(f: impl Fn(&mut Formatter) -> Result) -> impl Display {
@@ -93,26 +100,63 @@ pub(super) fn is_reducer_invokable(reducer: &ReducerDef) -> bool {
 
 /// Iterate over all the [`ReducerDef`]s defined by the module, in alphabetical order by name.
 ///
-/// The init reducer is skipped because it should never be visible to the clients.
+/// Skipping the `init` reducer and internal [`FunctionVisibiity::Internal`] reducers because
+/// they should not be directly invokable.
 /// Sorting is not necessary for reducers because they are already stored in an IndexMap.
-pub(super) fn iter_reducers(module: &ModuleDef) -> impl Iterator<Item = &ReducerDef> {
+pub(super) fn iter_reducers(module: &ModuleDef, visibility: CodegenVisibility) -> impl Iterator<Item = &ReducerDef> {
     module
         .reducers()
+        // `RawModuleDefV10` already marks all lifecycle reducers as private, but we keep
+        // this filter for backward compatibility with older versions where `init`
+        // reducers were not private.
         .filter(|reducer| reducer.lifecycle != Some(Lifecycle::Init))
+        // Prior to `RawModuleDefV10`, all reducers were public by default. Filtering out
+        // internal reducers here does not break SDKs built against older versions.
+        .filter(move |reducer| match visibility {
+            CodegenVisibility::IncludePrivate => true,
+            CodegenVisibility::OnlyPublic => !reducer.visibility.is_private(),
+        })
 }
 
 /// Iterate over all the [`ProcedureDef`]s defined by the module, in alphabetical order by name.
 ///
+/// Skipping internal [`FunctionVisibiity::Internal`] procedures because they should not be
+/// directly invokable.
 /// Sorting is necessary to have deterministic reproducible codegen.
-pub(super) fn iter_procedures(module: &ModuleDef) -> impl Iterator<Item = &ProcedureDef> {
-    module.procedures().sorted_by_key(|procedure| &procedure.name)
+pub(super) fn iter_procedures(
+    module: &ModuleDef,
+    visibility: CodegenVisibility,
+) -> impl Iterator<Item = &ProcedureDef> {
+    module
+        .procedures()
+        .sorted_by_key(|procedure| &procedure.name)
+        .filter(move |procedure| match visibility {
+            CodegenVisibility::IncludePrivate => true,
+            CodegenVisibility::OnlyPublic => !procedure.visibility.is_private(),
+        })
 }
 
 /// Iterate over all the [`TableDef`]s defined by the module, in alphabetical order by name.
 ///
 /// Sorting is necessary to have deterministic reproducible codegen.
-pub(super) fn iter_tables(module: &ModuleDef) -> impl Iterator<Item = &TableDef> {
-    module.tables().sorted_by_key(|table| &table.name)
+pub(super) fn iter_tables(module: &ModuleDef, visibility: CodegenVisibility) -> impl Iterator<Item = &TableDef> {
+    module
+        .tables()
+        .filter(move |table| match visibility {
+            CodegenVisibility::IncludePrivate => true,
+            CodegenVisibility::OnlyPublic => table.table_access == TableAccess::Public,
+        })
+        .sorted_by_key(|table| &table.name)
+}
+
+/// Return the names of all private tables, in alphabetical order.
+pub fn private_table_names(module: &ModuleDef) -> Vec<String> {
+    module
+        .tables()
+        .filter(|table| table.table_access == TableAccess::Private)
+        .sorted_by_key(|table| &table.name)
+        .map(|table| table.name.to_string())
+        .collect()
 }
 
 /// Iterate over all the [`ViewDef`]s defined by the module, in alphabetical order by name.
@@ -124,13 +168,27 @@ pub(super) fn iter_views(module: &ModuleDef) -> impl Iterator<Item = &ViewDef> {
 
 /// Iterate over the names of all the tables and views defined by the module, in alphabetical order.
 ///
+/// Returns `(name, accessor_name, product_type_ref)` for each table/view.
+/// Use `name` for protocol/wire communication; use `accessor_name` for generated identifiers.
+///
 /// Sorting is necessary to have deterministic reproducible codegen.
-pub(super) fn iter_table_names_and_types(module: &ModuleDef) -> impl Iterator<Item = (&Identifier, AlgebraicTypeRef)> {
+pub(super) fn iter_table_names_and_types(
+    module: &ModuleDef,
+    visibility: CodegenVisibility,
+) -> impl Iterator<Item = (&Identifier, &Identifier, AlgebraicTypeRef)> {
     module
         .tables()
-        .map(|def| (&def.name, def.product_type_ref))
-        .chain(module.views().map(|def| (&def.name, def.product_type_ref)))
-        .sorted_by_key(|(name, _)| *name)
+        .filter(move |table| match visibility {
+            CodegenVisibility::IncludePrivate => true,
+            CodegenVisibility::OnlyPublic => table.table_access == TableAccess::Public,
+        })
+        .map(|def| (&def.name, &def.accessor_name, def.product_type_ref))
+        .chain(
+            module
+                .views()
+                .map(|def| (&def.name, &def.accessor_name, def.product_type_ref)),
+        )
+        .sorted_by_key(|(_, accessor_name, _)| *accessor_name)
 }
 
 pub(super) fn iter_unique_cols<'a>(
@@ -162,5 +220,5 @@ pub(super) fn iter_constraints(table: &TableDef) -> impl Iterator<Item = &Constr
 ///
 /// Sorting is necessary to have deterministic reproducible codegen.
 pub fn iter_types(module: &ModuleDef) -> impl Iterator<Item = &TypeDef> {
-    module.types().sorted_by_key(|table| &table.name)
+    module.types().sorted_by_key(|table| &table.accessor_name)
 }

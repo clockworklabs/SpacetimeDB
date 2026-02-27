@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use spacetimedb_lib::{identity::AuthCtx, st_var::StVarValue, AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, TableId};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::schema::{ColumnSchema, TableOrViewSchema};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_sql_parser::{
@@ -96,16 +97,19 @@ pub fn type_insert(insert: SqlInsert, tx: &impl SchemaView) -> TypingResult<Tabl
         .schema(&table_name)
         .ok_or_else(|| Unresolved::table(&table_name))
         .map_err(TypingError::from)?;
+    let table_name = &schema.table_name;
 
     if schema.is_view() {
-        return Err(TypingError::DmlOnView(DmlOnView { view_name: table_name }));
+        return Err(TypingError::DmlOnView(DmlOnView {
+            view_name: table_name.clone(),
+        }));
     }
 
     // Expect n fields
     let n = schema.public_columns().len();
     if fields.len() != schema.public_columns().len() {
         return Err(TypingError::from(InsertFieldsError {
-            table: table_name.into_string(),
+            table: table_name.clone(),
             nfields: fields.len(),
             ncols: schema.public_columns().len(),
         }));
@@ -116,7 +120,7 @@ pub fn type_insert(insert: SqlInsert, tx: &impl SchemaView) -> TypingResult<Tabl
         // Expect each row to have n values
         if row.len() != n {
             return Err(TypingError::from(InsertValuesError {
-                table: table_name.into_string(),
+                table: table_name.clone(),
                 values: row.len(),
                 fields: n,
             }));
@@ -157,19 +161,26 @@ pub fn type_insert(insert: SqlInsert, tx: &impl SchemaView) -> TypingResult<Tabl
 /// Type check a DELETE statement
 pub fn type_delete(delete: SqlDelete, tx: &impl SchemaView) -> TypingResult<TableDelete> {
     let SqlDelete {
-        table: SqlIdent(table_name),
+        table: SqlIdent(query_table_name),
         filter,
     } = delete;
     let from = tx
-        .schema(&table_name)
-        .ok_or_else(|| Unresolved::table(&table_name))
+        .schema(&query_table_name)
+        .ok_or_else(|| Unresolved::table(&query_table_name))
         .map_err(TypingError::from)?;
+    let table_name = &from.table_name;
 
     if from.is_view() {
-        return Err(TypingError::DmlOnView(DmlOnView { view_name: table_name }));
+        return Err(TypingError::DmlOnView(DmlOnView {
+            view_name: table_name.clone(),
+        }));
     }
     let mut vars = Relvars::default();
-    vars.insert(table_name.clone(), from.clone());
+    vars.insert(query_table_name, from.clone());
+    vars.insert(table_name.clone().into(), from.clone());
+    if let Some(alias) = from.inner().alias.as_ref() {
+        vars.insert(alias.clone().into(), from.clone());
+    }
     let expr = filter
         .map(|expr| type_expr(&vars, expr, Some(&AlgebraicType::Bool)))
         .transpose()?;
@@ -182,17 +193,20 @@ pub fn type_delete(delete: SqlDelete, tx: &impl SchemaView) -> TypingResult<Tabl
 /// Type check an UPDATE statement
 pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<TableUpdate> {
     let SqlUpdate {
-        table: SqlIdent(table_name),
+        table: SqlIdent(query_table_name),
         assignments,
         filter,
     } = update;
     let schema = tx
-        .schema(&table_name)
-        .ok_or_else(|| Unresolved::table(&table_name))
+        .schema(&query_table_name)
+        .ok_or_else(|| Unresolved::table(&query_table_name))
         .map_err(TypingError::from)?;
+    let table_name = &schema.table_name;
 
     if schema.is_view() {
-        return Err(TypingError::DmlOnView(DmlOnView { view_name: table_name }));
+        return Err(TypingError::DmlOnView(DmlOnView {
+            view_name: table_name.clone(),
+        }));
     }
     let mut values = Vec::new();
     for SqlSet(SqlIdent(field), lit) in assignments {
@@ -202,8 +216,8 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
             ..
         } = schema
             .as_ref()
-            .get_column_by_name(&field)
-            .ok_or_else(|| Unresolved::field(&table_name, &field))?;
+            .get_column_by_name_or_alias(&field)
+            .ok_or_else(|| Unresolved::field(table_name.clone(), &field))?;
         match (lit, ty) {
             (SqlLiteral::Bool(v), AlgebraicType::Bool) => {
                 values.push((*col_id, AlgebraicValue::Bool(v)));
@@ -226,7 +240,11 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
         }
     }
     let mut vars = Relvars::default();
-    vars.insert(table_name.clone(), schema.clone());
+    vars.insert(query_table_name, schema.clone());
+    vars.insert(table_name.clone().into(), schema.clone());
+    if let Some(alias) = schema.inner().alias.as_ref() {
+        vars.insert(alias.clone().into(), schema.clone());
+    }
     let values = values.into_boxed_slice();
     let filter = filter
         .map(|expr| type_expr(&vars, expr, Some(&AlgebraicType::Bool)))
@@ -241,7 +259,7 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
 #[derive(Error, Debug)]
 #[error("{name} is not a valid system variable")]
 pub struct InvalidVar {
-    pub name: String,
+    pub name: RawIdentifier,
 }
 
 const VAR_ROW_LIMIT: &str = "row_limit";
@@ -272,10 +290,7 @@ const VALUE_COLUMN: &str = "value";
 pub fn type_and_rewrite_set(set: SqlSet, tx: &impl SchemaView) -> TypingResult<TableInsert> {
     let SqlSet(SqlIdent(var_name), lit) = set;
     if !is_var_valid(&var_name) {
-        return Err(InvalidVar {
-            name: var_name.into_string(),
-        }
-        .into());
+        return Err(InvalidVar { name: var_name }.into());
     }
 
     match lit {
@@ -284,7 +299,7 @@ pub fn type_and_rewrite_set(set: SqlSet, tx: &impl SchemaView) -> TypingResult<T
         SqlLiteral::Hex(_) => Err(UnexpectedType::new(&AlgebraicType::U64, &AlgebraicType::bytes()).into()),
         SqlLiteral::Num(n) => {
             let table = tx.schema(ST_VAR_NAME).ok_or_else(|| Unresolved::table(ST_VAR_NAME))?;
-            let var_name = AlgebraicValue::String(var_name);
+            let var_name = AlgebraicValue::String(var_name.as_ref().into());
             let sum_value = StVarValue::try_from_primitive(
                 parse(&n, &AlgebraicType::U64)
                     .map_err(|_| InvalidLiteral::new(n.clone().into_string(), &AlgebraicType::U64))?,
@@ -315,26 +330,24 @@ pub fn type_and_rewrite_set(set: SqlSet, tx: &impl SchemaView) -> TypingResult<T
 pub fn type_and_rewrite_show(show: SqlShow, tx: &impl SchemaView) -> TypingResult<ProjectList> {
     let SqlShow(SqlIdent(var_name)) = show;
     if !is_var_valid(&var_name) {
-        return Err(InvalidVar {
-            name: var_name.into_string(),
-        }
-        .into());
+        return Err(InvalidVar { name: var_name }.into());
     }
 
     let table_schema = tx.schema(ST_VAR_NAME).ok_or_else(|| Unresolved::table(ST_VAR_NAME))?;
+    let table_name = &table_schema.table_name;
 
     let value_col_ty = table_schema
         .as_ref()
         .get_column_by_name(VALUE_COLUMN)
         .map(|ColumnSchema { col_type, .. }| col_type)
-        .ok_or_else(|| Unresolved::field(ST_VAR_NAME, VALUE_COLUMN))?;
+        .ok_or_else(|| Unresolved::field(table_name.clone(), VALUE_COLUMN))?;
 
     // -------------------------------------------
     // SELECT value FROM st_var WHERE name = 'var'
     //                                ^^^^
     // -------------------------------------------
     let var_name_field = Expr::Field(FieldProject {
-        table: ST_VAR_NAME.into(),
+        table: table_name.clone().into(),
         // TODO: Avoid hard coding the field position.
         // See `StVarFields` for the schema of `st_var`.
         field: 0,
@@ -345,7 +358,7 @@ pub fn type_and_rewrite_show(show: SqlShow, tx: &impl SchemaView) -> TypingResul
     // SELECT value FROM st_var WHERE name = 'var'
     //                                        ^^^
     // -------------------------------------------
-    let var_name_value = Expr::Value(AlgebraicValue::String(var_name), AlgebraicType::String);
+    let var_name_value = Expr::Value(AlgebraicValue::String(var_name.as_ref().into()), AlgebraicType::String);
 
     // -------------------------------------------
     // SELECT value FROM st_var WHERE name = 'var'
@@ -354,7 +367,7 @@ pub fn type_and_rewrite_show(show: SqlShow, tx: &impl SchemaView) -> TypingResul
     let column_list = vec![(
         VALUE_COLUMN.into(),
         FieldProject {
-            table: ST_VAR_NAME.into(),
+            table: table_name.clone().into(),
             // TODO: Avoid hard coding the field position.
             // See `StVarFields` for the schema of `st_var`.
             field: 1,
@@ -367,8 +380,8 @@ pub fn type_and_rewrite_show(show: SqlShow, tx: &impl SchemaView) -> TypingResul
     //                   ^^^^^^
     // -------------------------------------------
     let relvar = RelExpr::RelVar(Relvar {
-        schema: table_schema,
-        alias: ST_VAR_NAME.into(),
+        schema: table_schema.clone(),
+        alias: table_name.clone().into(),
         delta: None,
     });
 
@@ -475,6 +488,7 @@ mod tests {
     use spacetimedb::TableId;
     use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
     use spacetimedb_lib::{identity::AuthCtx, AlgebraicType, ProductType};
+    use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_schema::def::ModuleDef;
     use spacetimedb_schema::schema::{TableOrViewSchema, TableSchema};
     use spacetimedb_sql_parser::ast::{SqlExpr, SqlLiteral};
@@ -603,8 +617,9 @@ mod tests {
             columns: impl Into<ProductType>,
             is_anonymous: bool,
         ) {
+            let name = RawIdentifier::new(name);
             let product_type = AlgebraicType::from(columns.into());
-            let type_ref = builder.add_algebraic_type([], name, product_type, true);
+            let type_ref = builder.add_algebraic_type([], name.clone(), product_type, true);
             let return_type = AlgebraicType::array(AlgebraicType::Ref(type_ref));
             builder.add_view(name, 0, true, is_anonymous, ProductType::unit(), return_type);
         }

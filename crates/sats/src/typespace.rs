@@ -1,11 +1,12 @@
-use std::any::TypeId;
-use std::ops::{Index, IndexMut};
-use std::rc::Rc;
-use std::sync::Arc;
-
 use crate::algebraic_type::AlgebraicType;
 use crate::algebraic_type_ref::AlgebraicTypeRef;
 use crate::WithTypespace;
+use core::any::TypeId;
+use core::ops::{Index, IndexMut};
+use ethnum::{i256, u256};
+use smallvec::SmallVec;
+use std::rc::Rc;
+use std::sync::Arc;
 
 /// An error that occurs when attempting to resolve a type.
 #[derive(thiserror::Error, Debug, PartialOrd, Ord, PartialEq, Eq)]
@@ -316,8 +317,6 @@ pub trait SpacetimeType {
     fn make_type<S: TypespaceBuilder>(typespace: &mut S) -> AlgebraicType;
 }
 
-use ethnum::{i256, u256};
-use smallvec::SmallVec;
 pub use spacetimedb_bindings_macro::SpacetimeType;
 
 /// A trait for types that can build a [`Typespace`].

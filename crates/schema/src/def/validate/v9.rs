@@ -1,16 +1,18 @@
+use crate::def::validate::v10::{ExplicitNamesLookup, ValidationCase};
 use crate::def::*;
 use crate::error::{RawColumnName, ValidationError};
 use crate::type_for_generate::{ClientCodegenError, ProductTypeDef, TypespaceForGenerateBuilder};
 use crate::{def::validate::Result, error::TypeLocation};
+use convert_case::{Case, Casing};
+use lean_string::LeanString;
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors};
-use spacetimedb_data_structures::map::HashSet;
+use spacetimedb_data_structures::map::{HashMap, HashSet};
 use spacetimedb_lib::db::default_element_ordering::{product_type_has_default_ordering, sum_type_has_default_ordering};
 use spacetimedb_lib::db::raw_def::v10::{reducer_default_err_return_type, reducer_default_ok_return_type};
 use spacetimedb_lib::db::raw_def::v9::RawViewDefV9;
 use spacetimedb_lib::ProductType;
 use spacetimedb_primitives::col_list;
 use spacetimedb_sats::{bsatn::de::Deserializer, de::DeserializeSeed, WithTypespace};
-use std::borrow::Cow;
 
 /// Validate a `RawModuleDefV9` and convert it into a `ModuleDef`,
 /// or return a stream of errors if the definition is invalid.
@@ -33,6 +35,8 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
             type_namespace: Default::default(),
             lifecycle_reducers: Default::default(),
             typespace_for_generate: TypespaceForGenerate::builder(&typespace, known_type_definitions),
+            case_policy: ValidationCase::None,
+            explicit_names: ExplicitNamesLookup::default(),
         },
     };
 
@@ -118,8 +122,8 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         .into_iter()
         .map(|ty| {
             validator.core.validate_type_def(ty).map(|type_def| {
-                refmap.insert(type_def.ty, type_def.name.clone());
-                (type_def.name.clone(), type_def)
+                refmap.insert(type_def.ty, type_def.accessor_name.clone());
+                (type_def.accessor_name.clone(), type_def)
             })
         })
         .collect_all_errors::<HashMap<_, _>>();
@@ -196,23 +200,20 @@ impl ModuleValidatorV9<'_> {
                 })
             })?;
 
-        let mut table_in_progress = TableValidator {
-            raw_name: raw_table_name.clone(),
-            product_type_ref,
-            product_type,
-            module_validator: &mut self.core,
-            has_sequence: Default::default(),
-        };
+        let mut table_in_progress =
+            TableValidator::new(raw_table_name.clone(), product_type_ref, product_type, &mut self.core)?;
+
+        let table_ident = table_in_progress.table_ident.clone();
 
         let columns = (0..product_type.elements.len())
-            .map(|id| table_in_progress.validate_column_def(id.into()))
+            .map(|id| table_in_progress.validate_column_def(id.into(), product_type))
             .collect_all_errors();
 
         let indexes = indexes
             .into_iter()
             .map(|index| {
                 table_in_progress
-                    .validate_index_def(index)
+                    .validate_index_def_v9(index)
                     .map(|index| (index.name.clone(), index))
             })
             .collect_all_errors::<StrMap<_>>();
@@ -223,7 +224,9 @@ impl ModuleValidatorV9<'_> {
             .into_iter()
             .map(|constraint| {
                 table_in_progress
-                    .validate_constraint_def(constraint)
+                    .validate_constraint_def(constraint, |name, cols| {
+                        name.unwrap_or_else(|| generate_unique_constraint_name(&table_ident, product_type, cols))
+                    })
                     .map(|constraint| (constraint.name.clone(), constraint))
             })
             .collect_all_errors()
@@ -308,7 +311,7 @@ impl ModuleValidatorV9<'_> {
             .combine_errors()?;
 
         Ok(TableDef {
-            name,
+            name: name.clone(),
             product_type_ref,
             primary_key,
             columns,
@@ -318,6 +321,8 @@ impl ModuleValidatorV9<'_> {
             schedule,
             table_type,
             table_access,
+            is_event: false, // V9 does not support event tables
+            accessor_name: name,
         })
     }
 
@@ -336,14 +341,14 @@ impl ModuleValidatorV9<'_> {
         let params_for_generate: Result<_> =
             self.core
                 .params_for_generate(&params, |position, arg_name| TypeLocation::ReducerArg {
-                    reducer_name: (&*name).into(),
+                    reducer_name: name.clone(),
                     position,
                     arg_name,
                 });
 
         // Reducers share the "function namespace" with procedures.
         // Uniqueness is validated in a later pass, in `check_function_names_are_unique`.
-        let name = identifier(name.clone());
+        let name = identifier(name);
 
         let lifecycle = lifecycle
             .map(|lifecycle| match &mut self.core.lifecycle_reducers[lifecycle] {
@@ -355,9 +360,10 @@ impl ModuleValidatorV9<'_> {
             })
             .transpose();
         let (reducer_name, params_for_generate, lifecycle) = (name, params_for_generate, lifecycle).combine_errors()?;
-        let name = ReducerName::new_from_str(&reducer_name);
+        let name = ReducerName::new(reducer_name.clone());
         let def = ReducerDef {
-            name,
+            name: name.clone(),
+            accessor_name: name.clone(),
             params: params.clone(),
             params_for_generate: ProductTypeDef {
                 elements: params_for_generate,
@@ -381,14 +387,14 @@ impl ModuleValidatorV9<'_> {
         let params_for_generate =
             self.core
                 .params_for_generate(&params, |position, arg_name| TypeLocation::ProcedureArg {
-                    procedure_name: Cow::Borrowed(&name),
+                    procedure_name: name.clone(),
                     position,
                     arg_name,
                 });
 
         let return_type_for_generate = self.core.validate_for_type_use(
-            &TypeLocation::ProcedureReturn {
-                procedure_name: Cow::Borrowed(&name),
+            || TypeLocation::ProcedureReturn {
+                procedure_name: name.clone(),
             },
             &return_type,
         );
@@ -401,7 +407,8 @@ impl ModuleValidatorV9<'_> {
             (name, params_for_generate, return_type_for_generate).combine_errors()?;
 
         Ok(ProcedureDef {
-            name,
+            name: name.clone(),
+            accessor_name: name,
             params,
             params_for_generate: ProductTypeDef {
                 elements: params_for_generate,
@@ -462,14 +469,14 @@ impl ModuleValidatorV9<'_> {
         let params_for_generate =
             self.core
                 .params_for_generate(&params, |position, arg_name| TypeLocation::ViewArg {
-                    view_name: Cow::Borrowed(&name),
+                    view_name: name.clone(),
                     position,
                     arg_name,
                 })?;
 
         let return_type_for_generate = self.core.validate_for_type_use(
-            &TypeLocation::ViewReturn {
-                view_name: Cow::Borrowed(&name),
+            || TypeLocation::ViewReturn {
+                view_name: name.clone(),
             },
             &return_type,
         );
@@ -481,7 +488,7 @@ impl ModuleValidatorV9<'_> {
             &params,
             &params_for_generate,
             &mut self.core,
-        );
+        )?;
 
         // Views have the same interface as tables and therefore must be registered in the global namespace.
         //
@@ -494,7 +501,7 @@ impl ModuleValidatorV9<'_> {
 
         let n = product_type.elements.len();
         let return_columns = (0..n)
-            .map(|id| view_in_progress.validate_view_column_def(id.into()))
+            .map(|id| view_in_progress.validate_view_column_def(id.into(), product_type))
             .collect_all_errors();
 
         let n = params.elements.len();
@@ -506,7 +513,7 @@ impl ModuleValidatorV9<'_> {
             (name, return_type_for_generate, return_columns, param_columns).combine_errors()?;
 
         Ok(ViewDef {
-            name,
+            name: name.clone(),
             is_anonymous,
             is_public,
             params,
@@ -520,6 +527,7 @@ impl ModuleValidatorV9<'_> {
             product_type_ref,
             return_columns,
             param_columns,
+            accessor_name: name,
         })
     }
 
@@ -528,7 +536,7 @@ impl ModuleValidatorV9<'_> {
         tables: &HashMap<Identifier, TableDef>,
         cdv: &RawColumnDefaultValueV9,
     ) -> Result<AlgebraicValue> {
-        let table_name = identifier(cdv.table.clone())?;
+        let table_name = self.core.resolve_identifier_with_case(cdv.table.clone())?;
 
         // Extract the table. We cannot make progress otherwise.
         let table = tables.get(&table_name).ok_or_else(|| ValidationError::TableNotFound {
@@ -584,44 +592,158 @@ pub(crate) struct CoreValidator<'a> {
 
     /// Reducers that play special lifecycle roles.
     pub(crate) lifecycle_reducers: EnumMap<Lifecycle, Option<ReducerId>>,
+
+    pub(crate) case_policy: ValidationCase,
+
+    pub(crate) explicit_names: ExplicitNamesLookup,
+}
+
+pub(crate) fn identifier(raw: RawIdentifier) -> Result<Identifier> {
+    Identifier::new(RawIdentifier::new(LeanString::from_utf8(raw.as_bytes()).unwrap()))
+        .map_err(|error| ValidationError::IdentifierError { error }.into())
 }
 
 impl CoreValidator<'_> {
-    pub(crate) fn params_for_generate<'a>(
+    fn resolve_identifier(
+        &self,
+        source: RawIdentifier,
+        lookup: &HashMap<RawIdentifier, RawIdentifier>,
+    ) -> Result<Identifier> {
+        if let Some(canonical_name) = lookup.get(&source) {
+            Identifier::new(canonical_name.clone()).map_err(|error| ValidationError::IdentifierError { error }.into())
+        } else {
+            self.resolve_identifier_with_case(source)
+        }
+    }
+
+    pub(crate) fn resolve_table_ident(&self, source: RawIdentifier) -> Result<Identifier> {
+        self.resolve_identifier(source, &self.explicit_names.tables)
+    }
+
+    pub(crate) fn resolve_function_ident(&self, source: RawIdentifier) -> Result<Identifier> {
+        self.resolve_identifier(source, &self.explicit_names.functions)
+    }
+
+    pub(crate) fn resolve_index_ident(&self, source: RawIdentifier) -> Result<Identifier> {
+        self.resolve_identifier(source, &self.explicit_names.indexes)
+    }
+
+    /// Apply case conversion to an identifier.
+    pub(crate) fn resolve_identifier_with_case(&self, raw: RawIdentifier) -> Result<Identifier> {
+        let ident = convert(raw, self.case_policy);
+
+        Identifier::new(ident.into()).map_err(|error| ValidationError::IdentifierError { error }.into())
+    }
+
+    /// Convert a raw identifier to a canonical type name.
+    ///
+    /// IMPORTANT: For all policies except `None`, type names are converted to PascalCase,
+    /// unless explicitly specified by the user.
+    pub(crate) fn resolve_type_with_case(&self, raw: RawIdentifier) -> Result<Identifier> {
+        let mut ident = raw.to_string();
+        if !matches!(self.case_policy, ValidationCase::None) {
+            ident = ident.to_case(Case::Pascal);
+        }
+
+        Identifier::new(ident.into()).map_err(|error| ValidationError::IdentifierError { error }.into())
+    }
+
+    // Recursive function to change typenames in the typespace according to the case conversion
+    // policy.
+    pub(crate) fn typespace_case_conversion(case_policy: ValidationCase, typespace: &mut Typespace) {
+        let case_policy_for_enum_variants = if matches!(case_policy, ValidationCase::SnakeCase) {
+            ValidationCase::CamelCase
+        } else {
+            case_policy
+        };
+
+        for ty in &mut typespace.types {
+            Self::convert_algebraic_type(ty, case_policy, case_policy_for_enum_variants);
+        }
+    }
+
+    // Recursively convert names in an AlgebraicType
+    fn convert_algebraic_type(
+        ty: &mut AlgebraicType,
+        case_policy: ValidationCase,
+        case_policy_for_enum_variants: ValidationCase,
+    ) {
+        if ty.is_special() {
+            return;
+        }
+        match ty {
+            AlgebraicType::Product(product) => {
+                for element in &mut product.elements.iter_mut() {
+                    // Convert the element name if it exists
+                    if let Some(name) = element.name() {
+                        let new_name = convert(name.clone(), case_policy);
+                        element.name = Some(new_name.into());
+                    }
+                    // Recursively convert the element's type
+                    Self::convert_algebraic_type(
+                        &mut element.algebraic_type,
+                        case_policy,
+                        case_policy_for_enum_variants,
+                    );
+                }
+            }
+            AlgebraicType::Sum(sum) => {
+                for variant in &mut sum.variants.iter_mut() {
+                    // Convert the variant name if it exists
+                    if let Some(name) = variant.name() {
+                        let new_name = convert(name.clone(), case_policy_for_enum_variants);
+                        variant.name = Some(new_name.into())
+                    }
+                    // Recursively convert the variant's type
+                    Self::convert_algebraic_type(
+                        &mut variant.algebraic_type,
+                        case_policy,
+                        case_policy_for_enum_variants,
+                    );
+                }
+            }
+            AlgebraicType::Array(array) => {
+                // Arrays contain a base type that might need conversion
+                Self::convert_algebraic_type(&mut array.elem_ty, case_policy, case_policy_for_enum_variants);
+            }
+            _ => {}
+        }
+    }
+
+    pub(crate) fn params_for_generate(
         &mut self,
-        params: &'a ProductType,
-        make_type_location: impl Fn(usize, Option<Cow<'a, str>>) -> TypeLocation<'a>,
+        params: &ProductType,
+        make_type_location: impl Fn(usize, Option<RawIdentifier>) -> TypeLocation,
     ) -> Result<Box<[(Identifier, AlgebraicTypeUse)]>> {
         params
             .elements
             .iter()
             .enumerate()
             .map(|(position, param)| {
-                // Note: this does not allocate, since `TypeLocation` is defined using `Cow`.
-                // We only allocate if an error is returned.
-                let location = make_type_location(position, param.name().map(Into::into));
+                let location = || make_type_location(position, param.name().cloned());
                 let param_name = param
                     .name()
+                    .cloned()
                     .ok_or_else(|| {
                         ValidationError::ClientCodegenError {
-                            location: location.clone().make_static(),
+                            location: location(),
                             error: ClientCodegenError::NamelessReducerParam,
                         }
                         .into()
                     })
-                    .and_then(|s| identifier(s.into()));
-                let ty_use = self.validate_for_type_use(&location, &param.algebraic_type);
+                    .and_then(|s| self.resolve_identifier_with_case(s));
+                let ty_use = self.validate_for_type_use(location, &param.algebraic_type);
                 (param_name, ty_use).combine_errors()
             })
             .collect_all_errors()
     }
 
-    /// Add a name to the global namespace.
+    /// Add a `name` to the global namespace.
     ///
     /// If it has already been added, return an error.
     ///
     /// This is not used for all `Def` types.
-    pub(crate) fn add_to_global_namespace(&mut self, name: Box<str>, ident: Identifier) -> Result<Box<str>> {
+    pub(crate) fn add_to_global_namespace(&mut self, name: RawIdentifier, ident: Identifier) -> Result<RawIdentifier> {
         // This may report the table_name as invalid multiple times, but this will be removed
         // when we sort and deduplicate the error stream.
         if self.stored_in_table_def.contains_key(&name) {
@@ -686,8 +808,13 @@ impl CoreValidator<'_> {
             name: unscoped_name,
             scope,
         } = name;
-        let unscoped_name = identifier(unscoped_name);
-        let scope = Vec::from(scope).into_iter().map(identifier).collect_all_errors();
+
+        let unscoped_name = self.resolve_type_with_case(unscoped_name);
+        let scope = Vec::from(scope)
+            .into_iter()
+            .map(|t| self.resolve_type_with_case(t))
+            .collect();
+
         let name = (unscoped_name, scope)
             .combine_errors()
             .and_then(|(unscoped_name, scope)| {
@@ -704,7 +831,7 @@ impl CoreValidator<'_> {
         let (name, (ty, custom_ordering)) = (name, ty_custom_ordering).combine_errors()?;
 
         Ok(TypeDef {
-            name,
+            accessor_name: name,
             ty,
             custom_ordering,
         })
@@ -713,12 +840,12 @@ impl CoreValidator<'_> {
     /// Validates that a type can be used to generate a client type use.
     pub(crate) fn validate_for_type_use(
         &mut self,
-        location: &TypeLocation,
+        mut location: impl FnMut() -> TypeLocation,
         ty: &AlgebraicType,
     ) -> Result<AlgebraicTypeUse> {
         self.typespace_for_generate.parse_use(ty).map_err(|err| {
             ErrorStream::expect_nonempty(err.into_iter().map(|error| ValidationError::ClientCodegenError {
-                location: location.clone().make_static(),
+                location: location(),
                 error,
             }))
         })
@@ -746,9 +873,9 @@ impl CoreValidator<'_> {
 
     pub(crate) fn validate_schedule_def(
         &mut self,
-        table_name: Box<str>,
-        name: Identifier,
-        function_name: Box<str>,
+        table_name: RawIdentifier,
+        name: RawIdentifier,
+        function_name: RawIdentifier,
         product_type: &ProductType,
         schedule_at_col: ColId,
         primary_key: Option<ColId>,
@@ -774,14 +901,14 @@ impl CoreValidator<'_> {
             }
             .into()
         });
-        let table_name = identifier(table_name)?;
-        let name = self.add_to_global_namespace(name.into(), table_name);
-        let function_name = identifier(function_name);
+        let table_name = self.resolve_table_ident(table_name)?;
+        let name_res = self.add_to_global_namespace(name.clone(), table_name);
+        let function_name = self.resolve_function_ident(function_name);
 
-        let (name, (at_column, id_column), function_name) = (name, at_id, function_name).combine_errors()?;
+        let (_, (at_column, id_column), function_name) = (name_res, at_id, function_name).combine_errors()?;
 
         Ok(ScheduleDef {
-            name,
+            name: Identifier::new(name).map_err(|error| ValidationError::IdentifierError { error })?,
             at_column,
             id_column,
             function_name,
@@ -807,24 +934,18 @@ pub(crate) struct ViewValidator<'a, 'b> {
 
 impl<'a, 'b> ViewValidator<'a, 'b> {
     pub(crate) fn new(
-        raw_name: Box<str>,
+        raw_name: RawIdentifier,
         product_type_ref: AlgebraicTypeRef,
         product_type: &'a ProductType,
         params: &'a ProductType,
         params_for_generate: &'a [(Identifier, AlgebraicTypeUse)],
         module_validator: &'a mut CoreValidator<'b>,
-    ) -> Self {
-        Self {
-            inner: TableValidator {
-                raw_name,
-                product_type_ref,
-                product_type,
-                module_validator,
-                has_sequence: Default::default(),
-            },
+    ) -> Result<Self> {
+        Ok(Self {
+            inner: TableValidator::new(raw_name, product_type_ref, product_type, module_validator)?,
             params,
             params_for_generate,
-        }
+        })
     }
 
     pub(crate) fn validate_param_column_def(&mut self, col_id: ColId) -> Result<ViewParamDef> {
@@ -839,11 +960,11 @@ impl<'a, 'b> ViewValidator<'a, 'b> {
             .get(col_id.idx())
             .expect("enumerate is generating an out-of-range index...");
 
-        let name: Result<Identifier> = identifier(
+        let name: Result<Identifier> = self.inner.module_validator.resolve_identifier_with_case(
             column
                 .name()
-                .map(|name| name.into())
-                .unwrap_or_else(|| format!("param_{}", col_id).into_boxed_str()),
+                .cloned()
+                .unwrap_or_else(|| RawIdentifier::new(format!("param_{}", col_id))),
         );
 
         // This error will be created multiple times if the view name is invalid,
@@ -852,7 +973,10 @@ impl<'a, 'b> ViewValidator<'a, 'b> {
         //
         // This is necessary because we require `ErrorStream` to be nonempty.
         // We need to put something in there if the view name is invalid.
-        let view_name = identifier(self.inner.raw_name.clone());
+        let view_name = self
+            .inner
+            .module_validator
+            .resolve_identifier_with_case(self.inner.raw_name.clone());
 
         let (name, view_name) = (name, view_name).combine_errors()?;
 
@@ -865,83 +989,81 @@ impl<'a, 'b> ViewValidator<'a, 'b> {
         })
     }
 
-    pub(crate) fn validate_view_column_def(&mut self, col_id: ColId) -> Result<ViewColumnDef> {
-        self.inner.validate_column_def(col_id).map(ViewColumnDef::from)
+    pub(crate) fn validate_view_column_def(
+        &mut self,
+        col_id: ColId,
+        product_type: &'a ProductType,
+    ) -> Result<ViewColumnDef> {
+        self.inner
+            .validate_column_def(col_id, product_type)
+            .map(ViewColumnDef::from)
     }
 
-    pub(crate) fn add_to_global_namespace(&mut self, name: Box<str>) -> Result<Box<str>> {
+    pub(crate) fn add_to_global_namespace(&mut self, name: RawIdentifier) -> Result<RawIdentifier> {
         self.inner.add_to_global_namespace(name)
     }
 }
 
 /// A partially validated table.
 pub(crate) struct TableValidator<'a, 'b> {
-    module_validator: &'a mut CoreValidator<'b>,
-    raw_name: Box<str>,
+    pub(crate) module_validator: &'a mut CoreValidator<'b>,
+    raw_name: RawIdentifier,
     product_type_ref: AlgebraicTypeRef,
     product_type: &'a ProductType,
     has_sequence: HashSet<ColId>,
+    pub(crate) table_ident: Identifier,
 }
 
 impl<'a, 'b> TableValidator<'a, 'b> {
     pub(crate) fn new(
-        raw_name: Box<str>,
+        raw_name: RawIdentifier,
         product_type_ref: AlgebraicTypeRef,
         product_type: &'a ProductType,
         module_validator: &'a mut CoreValidator<'b>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        let table_ident = module_validator.resolve_table_ident(raw_name.clone())?;
+        Ok(Self {
             raw_name,
             product_type_ref,
             product_type,
             module_validator,
             has_sequence: Default::default(),
-        }
+            table_ident,
+        })
     }
     /// Validate a column.
     ///
     /// Note that this accepts a `ProductTypeElement` rather than a `ColumnDef`,
     /// because all information about columns is stored in the `Typespace` in ABI version 9.
-    pub(crate) fn validate_column_def(&mut self, col_id: ColId) -> Result<ColumnDef> {
-        let column = &self
-            .product_type
+    pub(crate) fn validate_column_def(&mut self, col_id: ColId, product_type: &'a ProductType) -> Result<ColumnDef> {
+        let column = product_type
             .elements
             .get(col_id.idx())
             .expect("enumerate is generating an out-of-range index...");
 
-        let name: Result<Identifier> = column
-            .name()
-            .ok_or_else(|| {
-                ValidationError::UnnamedColumn {
-                    column: self.raw_column_name(col_id),
-                }
-                .into()
-            })
-            .and_then(|name| identifier(name.into()));
+        let accessor_name = column.name().cloned().ok_or_else(|| {
+            ValidationError::UnnamedColumn {
+                column: self.raw_column_name(col_id),
+            }
+            .into()
+        });
 
         let ty_for_generate = self.module_validator.validate_for_type_use(
-            &TypeLocation::InTypespace {
+            || TypeLocation::InTypespace {
                 ref_: self.product_type_ref,
             },
             &column.algebraic_type,
         );
 
-        // This error will be created multiple times if the table name is invalid,
-        // but we sort and deduplicate the error stream afterwards,
-        // so it isn't a huge deal.
-        //
-        // This is necessary because we require `ErrorStream` to be
-        // nonempty. We need to put something in there if the table name is invalid.
-        let table_name = identifier(self.raw_name.clone());
-
-        let (name, ty_for_generate, table_name) = (name, ty_for_generate, table_name).combine_errors()?;
+        let (accessor_name, ty_for_generate) = (accessor_name, ty_for_generate).combine_errors()?;
 
         Ok(ColumnDef {
-            name,
+            accessor_name: identifier(accessor_name.clone())?,
+            name: self.module_validator.resolve_identifier_with_case(accessor_name)?,
             ty: column.algebraic_type.clone(),
             ty_for_generate,
             col_id,
-            table_name,
+            table_name: self.table_ident.clone(),
             default_value: None, // filled in later
         })
     }
@@ -988,7 +1110,7 @@ impl<'a, 'b> TableValidator<'a, 'b> {
             name,
         } = sequence;
 
-        let name = name.unwrap_or_else(|| generate_sequence_name(&self.raw_name, self.product_type, column));
+        let name = name.unwrap_or_else(|| generate_sequence_name(&self.table_ident, self.product_type, column));
 
         // The column for the sequence exists and is an appropriate type.
         let column = self.validate_col_id(&name, column).and_then(|col_id| {
@@ -1047,24 +1169,84 @@ impl<'a, 'b> TableValidator<'a, 'b> {
         })
     }
 
-    /// Validate an index definition.
-    pub(crate) fn validate_index_def(&mut self, index: RawIndexDefV9) -> Result<IndexDef> {
+    /// Validates an index definition for V9 and earlier versions
+    pub(crate) fn validate_index_def_v9(&mut self, index: RawIndexDefV9) -> Result<IndexDef> {
         let RawIndexDefV9 {
             name,
-            algorithm,
+            algorithm: algorithm_raw,
             accessor_name,
         } = index;
 
-        let name = name.unwrap_or_else(|| generate_index_name(&self.raw_name, self.product_type, &algorithm));
+        let name = name.unwrap_or_else(|| generate_index_name(&self.table_ident, self.product_type, &algorithm_raw));
 
-        let algorithm: Result<IndexAlgorithm> = match algorithm {
+        let name = self.add_to_global_namespace(name)?;
+
+        let algorithm = self.validate_algorithm(&name, algorithm_raw)?;
+
+        // In V9, accessor_name is used for codegen
+        let codegen_name = accessor_name
+            .map(|s| self.module_validator.resolve_identifier_with_case(s))
+            .transpose()?;
+
+        Ok(IndexDef {
+            name: name.clone(),
+            accessor_name: codegen_name,
+            source_name: name,
+            algorithm,
+        })
+    }
+
+    /// Validates an index definition for V10 and later versions
+    pub(crate) fn validate_index_def_v10(&mut self, index: RawIndexDefV10) -> Result<IndexDef> {
+        let RawIndexDefV10 {
+            source_name,
+            algorithm: algorithm_raw,
+            accessor_name,
+        } = index;
+
+        //source_name will be used as alias, hence we need to add it to the global namespace as
+        //well.
+        let source_name = source_name.expect("source_name should be provided in V10, accessor_names inside module");
+        let source_name = self.add_to_global_namespace(source_name.clone())?;
+
+        let name = if self.module_validator.explicit_names.indexes.get(&source_name).is_some() {
+            self.module_validator.resolve_index_ident(source_name.clone())?
+        } else {
+            identifier(generate_index_name(
+                &self.table_ident,
+                self.product_type,
+                &algorithm_raw,
+            ))?
+        };
+
+        let name = if *name.as_raw() != source_name {
+            self.add_to_global_namespace(name.as_raw().clone())?
+        } else {
+            name.as_raw().clone()
+        };
+
+        let algorithm = self.validate_algorithm(&name, algorithm_raw.clone())?;
+
+        Ok(IndexDef {
+            name: name.clone(),
+            accessor_name: accessor_name.map(identifier).transpose()?,
+            source_name,
+            algorithm,
+        })
+    }
+
+    /// Common validation logic for index algorithms
+    fn validate_algorithm(&mut self, name: &RawIdentifier, algorithm_raw: RawIndexAlgorithm) -> Result<IndexAlgorithm> {
+        match algorithm_raw {
             RawIndexAlgorithm::BTree { columns } => self
-                .validate_col_ids(&name, columns)
+                .validate_col_ids(name, columns)
                 .map(|columns| BTreeAlgorithm { columns }.into()),
+
             RawIndexAlgorithm::Hash { columns } => self
-                .validate_col_ids(&name, columns)
+                .validate_col_ids(name, columns)
                 .map(|columns| HashAlgorithm { columns }.into()),
-            RawIndexAlgorithm::Direct { column } => self.validate_col_id(&name, column).and_then(|column| {
+
+            RawIndexAlgorithm::Direct { column } => self.validate_col_id(name, column).and_then(|column| {
                 let field = &self.product_type.elements[column.idx()];
                 let ty = &field.algebraic_type;
                 let is_bad_type = match ty {
@@ -1078,34 +1260,35 @@ impl<'a, 'b> TableValidator<'a, 'b> {
                 if is_bad_type {
                     return Err(ValidationError::DirectIndexOnBadType {
                         index: name.clone(),
-                        column: field.name.clone().unwrap_or_else(|| column.idx().to_string().into()),
+                        column: field
+                            .name
+                            .clone()
+                            .unwrap_or_else(|| RawIdentifier::new(format!("{}", column.idx()))),
                         ty: ty.clone().into(),
                     }
                     .into());
                 }
+
                 Ok(DirectAlgorithm { column }.into())
             }),
+
             algo => unreachable!("unknown algorithm {algo:?}"),
-        };
-        let name = self.add_to_global_namespace(name);
-        let accessor_name = accessor_name.map(identifier).transpose();
-
-        let (name, accessor_name, algorithm) = (name, accessor_name, algorithm).combine_errors()?;
-
-        Ok(IndexDef {
-            name,
-            algorithm,
-            accessor_name,
-        })
+        }
     }
 
     /// Validate a unique constraint definition.
-    pub(crate) fn validate_constraint_def(&mut self, constraint: RawConstraintDefV9) -> Result<ConstraintDef> {
+    pub(crate) fn validate_constraint_def<F>(
+        &mut self,
+        constraint: RawConstraintDefV9,
+        make_name: F,
+    ) -> Result<ConstraintDef>
+    where
+        F: FnOnce(Option<RawIdentifier>, &ColList) -> RawIdentifier,
+    {
         let RawConstraintDefV9 { name, data } = constraint;
 
         if let RawConstraintDataV9::Unique(RawUniqueConstraintDataV9 { columns }) = data {
-            let name =
-                name.unwrap_or_else(|| generate_unique_constraint_name(&self.raw_name, self.product_type, &columns));
+            let name = make_name(name, &columns);
 
             let columns: Result<ColList> = self.validate_col_ids(&name, columns);
             let name = self.add_to_global_namespace(name);
@@ -1134,7 +1317,7 @@ impl<'a, 'b> TableValidator<'a, 'b> {
             name,
         } = schedule;
 
-        let name = identifier(name.unwrap_or_else(|| generate_schedule_name(&self.raw_name.clone())))?;
+        let name = name.unwrap_or_else(|| generate_schedule_name(&self.table_ident.clone()));
 
         self.module_validator.validate_schedule_def(
             self.raw_name.clone(),
@@ -1151,23 +1334,23 @@ impl<'a, 'b> TableValidator<'a, 'b> {
     /// If it has already been added, return an error.
     ///
     /// This is not used for all `Def` types.
-    pub(crate) fn add_to_global_namespace(&mut self, name: Box<str>) -> Result<Box<str>> {
-        let table_name = identifier(self.raw_name.clone())?;
+    pub(crate) fn add_to_global_namespace(&mut self, name: RawIdentifier) -> Result<RawIdentifier> {
         // This may report the table_name as invalid multiple times, but this will be removed
         // when we sort and deduplicate the error stream.
-        self.module_validator.add_to_global_namespace(name, table_name)
+        self.module_validator
+            .add_to_global_namespace(name, self.table_ident.clone())
     }
 
     /// Validate a `ColId` for this table, returning it unmodified if valid.
     /// `def_name` is the name of the definition being validated and is used in errors.
-    pub(crate) fn validate_col_id(&self, def_name: &str, col_id: ColId) -> Result<ColId> {
+    pub(crate) fn validate_col_id(&self, def_name: &RawIdentifier, col_id: ColId) -> Result<ColId> {
         if self.product_type.elements.get(col_id.idx()).is_some() {
             Ok(col_id)
         } else {
             Err(ValidationError::ColumnNotFound {
                 column: col_id,
                 table: self.raw_name.clone(),
-                def: def_name.into(),
+                def: def_name.clone(),
             }
             .into())
         }
@@ -1175,7 +1358,7 @@ impl<'a, 'b> TableValidator<'a, 'b> {
 
     /// Validate a `ColList` for this table, returning it unmodified if valid.
     /// `def_name` is the name of the definition being validated and is used in errors.
-    pub(crate) fn validate_col_ids(&self, def_name: &str, ids: ColList) -> Result<ColList> {
+    pub(crate) fn validate_col_ids(&self, def_name: &RawIdentifier, ids: ColList) -> Result<ColList> {
         let mut collected: Vec<ColId> = ids
             .iter()
             .map(|column| self.validate_col_id(def_name, column))
@@ -1187,7 +1370,7 @@ impl<'a, 'b> TableValidator<'a, 'b> {
         if collected.len() != ids.len() as usize {
             Err(ValidationError::DuplicateColumns {
                 columns: ids,
-                def: def_name.into(),
+                def: def_name.clone(),
             }
             .into())
         } else {
@@ -1201,13 +1384,13 @@ impl<'a, 'b> TableValidator<'a, 'b> {
     /// (It's generally preferable to avoid integer names, since types using the default
     /// ordering are implicitly shuffled!)
     pub(crate) fn raw_column_name(&self, col_id: ColId) -> RawColumnName {
-        let column: Box<str> = self
+        let column: RawIdentifier = self
             .product_type
             .elements
             .get(col_id.idx())
             .and_then(|col| col.name())
-            .map(|name| name.into())
-            .unwrap_or_else(|| format!("{col_id}").into());
+            .cloned()
+            .unwrap_or_else(|| RawIdentifier::new(format!("{col_id}")));
 
         RawColumnName {
             table: self.raw_name.clone(),
@@ -1236,7 +1419,13 @@ fn concat_column_names(table_type: &ProductType, selected: &ColList) -> String {
 }
 
 /// All indexes have this name format.
-pub fn generate_index_name(table_name: &str, table_type: &ProductType, algorithm: &RawIndexAlgorithm) -> RawIdentifier {
+///
+/// Generated name should not go through case conversion.
+pub fn generate_index_name(
+    table_name: &Identifier,
+    table_type: &ProductType,
+    algorithm: &RawIndexAlgorithm,
+) -> RawIdentifier {
     let (label, columns) = match algorithm {
         RawIndexAlgorithm::BTree { columns } => ("btree", columns),
         RawIndexAlgorithm::Direct { column } => ("direct", &col_list![*column]),
@@ -1244,34 +1433,49 @@ pub fn generate_index_name(table_name: &str, table_type: &ProductType, algorithm
         _ => unimplemented!("Unknown index algorithm {:?}", algorithm),
     };
     let column_names = concat_column_names(table_type, columns);
-    format!("{table_name}_{column_names}_idx_{label}").into()
+    RawIdentifier::new(format!("{table_name}_{column_names}_idx_{label}"))
 }
 
 /// All sequences have this name format.
-pub fn generate_sequence_name(table_name: &str, table_type: &ProductType, column: ColId) -> RawIdentifier {
+///
+/// Generated name should not go through case conversion.
+pub fn generate_sequence_name(table_name: &Identifier, table_type: &ProductType, column: ColId) -> RawIdentifier {
     let column_name = column_name(table_type, column);
-    format!("{table_name}_{column_name}_seq").into()
+    RawIdentifier::new(format!("{table_name}_{column_name}_seq"))
 }
 
 /// All schedules have this name format.
-pub fn generate_schedule_name(table_name: &str) -> RawIdentifier {
-    format!("{table_name}_sched").into()
+///
+/// Generated name should not go through case conversion.
+pub fn generate_schedule_name(table_name: &Identifier) -> RawIdentifier {
+    RawIdentifier::new(format!("{table_name}_sched"))
 }
 
 /// All unique constraints have this name format.
+///
+/// Generated name should not go through case conversion.
 pub fn generate_unique_constraint_name(
-    table_name: &str,
+    table_name: &Identifier,
     product_type: &ProductType,
     columns: &ColList,
 ) -> RawIdentifier {
     let column_names = concat_column_names(product_type, columns);
-    format!("{table_name}_{column_names}_key").into()
+    RawIdentifier::new(format!("{table_name}_{column_names}_key"))
 }
 
-/// Helper to create an `Identifier` from a `str` with the appropriate error type.
+/// Helper to create an `Identifier` from a `RawIdentifier` with the appropriate error type.
 /// TODO: memoize this.
-pub(crate) fn identifier(name: Box<str>) -> Result<Identifier> {
-    Identifier::new(name).map_err(|error| ValidationError::IdentifierError { error }.into())
+//pub(crate) fn identifier(name: RawIdentifier) -> Result<Identifier> {
+//    Identifier::new(name).map_err(|error| ValidationError::IdentifierError { error }.into())
+//}
+pub(crate) fn convert(identifier: RawIdentifier, policy: ValidationCase) -> String {
+    let identifier = identifier.to_string();
+
+    match policy {
+        ValidationCase::SnakeCase => identifier.to_case(Case::Snake),
+        ValidationCase::CamelCase => identifier.to_case(Case::Camel),
+        ValidationCase::None => identifier,
+    }
 }
 
 /// Check that every [`ScheduleDef`]'s `function_name` refers to a real reducer or procedure
@@ -1283,7 +1487,7 @@ pub(crate) fn check_scheduled_functions_exist(
     procedures: &IndexMap<Identifier, ProcedureDef>,
 ) -> Result<()> {
     let validate_params =
-        |params_from_function: &ProductType, table_row_type_ref: AlgebraicTypeRef, function_name: &str| {
+        |params_from_function: &ProductType, table_row_type_ref: AlgebraicTypeRef, function_name: Identifier| {
             if params_from_function.elements.len() == 1
                 && params_from_function.elements[0].algebraic_type == table_row_type_ref.into()
             {
@@ -1304,10 +1508,12 @@ pub(crate) fn check_scheduled_functions_exist(
             if let Some(schedule) = &mut table.schedule {
                 if let Some(reducer) = reducers.get(&schedule.function_name) {
                     schedule.function_kind = FunctionKind::Reducer;
-                    validate_params(&reducer.params, table.product_type_ref, &reducer.name).map_err(Into::into)
+                    validate_params(&reducer.params, table.product_type_ref, reducer.name.clone().into())
+                        .map_err(Into::into)
                 } else if let Some(procedure) = procedures.get(&schedule.function_name) {
                     schedule.function_kind = FunctionKind::Procedure;
-                    validate_params(&procedure.params, table.product_type_ref, &procedure.name).map_err(Into::into)
+                    validate_params(&procedure.params, table.product_type_ref, procedure.name.clone())
+                        .map_err(Into::into)
                 } else {
                     Err(ValidationError::MissingScheduledFunction {
                         schedule: schedule.name.clone(),
@@ -1395,7 +1601,7 @@ fn process_column_default_value(
     // Validate the default value
     let validated_value = validator.validate_column_default_value(tables, cdv)?;
 
-    let table_name = identifier(cdv.table.clone())?;
+    let table_name = validator.core.resolve_identifier_with_case(cdv.table.clone())?;
     let table = tables
         .get_mut(&table_name)
         .ok_or_else(|| ValidationError::TableNotFound {
@@ -1592,16 +1798,19 @@ mod tests {
                     name: "Apples_count_idx_direct".into(),
                     accessor_name: Some(expect_identifier("Apples_count_direct")),
                     algorithm: DirectAlgorithm { column: 2.into() }.into(),
+                    source_name: "Apples_count_idx_direct".into(),
                 },
                 &IndexDef {
                     name: "Apples_name_count_idx_btree".into(),
                     accessor_name: Some(expect_identifier("apples_id")),
                     algorithm: BTreeAlgorithm { columns: [1, 2].into() }.into(),
+                    source_name: "Apples_name_count_idx_btree".into(),
                 },
                 &IndexDef {
                     name: "Apples_type_idx_btree".into(),
                     accessor_name: Some(expect_identifier("Apples_type_btree")),
                     algorithm: BTreeAlgorithm { columns: 3.into() }.into(),
+                    source_name: "Apples_type_idx_btree".into(),
                 }
             ]
         );
@@ -2178,9 +2387,9 @@ mod tests {
         raw_def.tables[0].sequences[0].name = Some("wacky.sequence()".into());
 
         let def: ModuleDef = raw_def.try_into().unwrap();
-        assert!(def.lookup::<ConstraintDef>("wacky.constraint()").is_some());
-        assert!(def.lookup::<IndexDef>("wacky.index()").is_some());
-        assert!(def.lookup::<SequenceDef>("wacky.sequence()").is_some());
+        assert!(def.lookup::<ConstraintDef>(&"wacky.constraint()".into()).is_some());
+        assert!(def.lookup::<IndexDef>(&"wacky.index()".into()).is_some());
+        assert!(def.lookup::<SequenceDef>(&"wacky.sequence()".into()).is_some());
     }
 
     #[test]

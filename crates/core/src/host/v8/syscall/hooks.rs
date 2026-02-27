@@ -42,6 +42,37 @@ pub(super) fn set_hook_slots(
     Ok(())
 }
 
+/// Registers the hooks for the current module instance so they can be reconstructed later
+/// from procedure syscalls that only have access to the current V8 context.
+pub(in super::super) fn set_registered_hooks(scope: &mut PinScope<'_, '_>, hooks: &HookFunctions<'_>) -> ExcResult<()> {
+    let mut to_register = vec![
+        (ModuleHookKey::DescribeModule, hooks.describe_module),
+        (ModuleHookKey::CallReducer, hooks.call_reducer),
+    ];
+    if let Some(call_view) = hooks.call_view {
+        to_register.push((ModuleHookKey::CallView, call_view));
+    }
+    if let Some(call_view_anon) = hooks.call_view_anon {
+        to_register.push((ModuleHookKey::CallAnonymousView, call_view_anon));
+    }
+    if let Some(call_procedure) = hooks.call_procedure {
+        to_register.push((ModuleHookKey::CallProcedure, call_procedure));
+    }
+    if let Some(get_error_constructor) = hooks.get_error_constructor {
+        to_register.push((ModuleHookKey::GetErrorConstructor, get_error_constructor));
+    }
+    if let Some(sender_error_class) = hooks.sender_error_class {
+        to_register.push((ModuleHookKey::SenderErrorClass, sender_error_class));
+    }
+
+    set_hook_slots(scope, hooks.abi, &to_register)?;
+
+    let ctx = scope.get_current_context();
+    ctx.set_embedder_data(RECV_SLOT_INDEX, hooks.recv);
+
+    Ok(())
+}
+
 #[derive(enum_map::Enum, Copy, Clone)]
 pub(in super::super) enum ModuleHookKey {
     DescribeModule,
@@ -49,6 +80,8 @@ pub(in super::super) enum ModuleHookKey {
     CallView,
     CallAnonymousView,
     CallProcedure,
+    GetErrorConstructor,
+    SenderErrorClass,
 }
 
 impl ModuleHookKey {
@@ -58,6 +91,9 @@ impl ModuleHookKey {
         self as i32
     }
 }
+
+/// Context embedder slot holding the receiver (`this`) value used for hook calls.
+const RECV_SLOT_INDEX: i32 = ModuleHookKey::SenderErrorClass as i32 + 1;
 
 /// Holds the `AbiVersion` used by the module
 /// and the module hooks registered by the module
@@ -97,8 +133,12 @@ impl HooksInfo {
 /// The actual callable module hook functions and their abi version.
 pub(in super::super) struct HookFunctions<'scope> {
     pub abi: AbiVersion,
+    /// The `this` variable to pass to the hook functions.
+    pub recv: Local<'scope, v8::Value>,
     /// describe_module and call_reducer existed in v1.0, but everything else is `Option`al
     pub describe_module: Local<'scope, Function>,
+    pub get_error_constructor: Option<Local<'scope, Function>>,
+    pub sender_error_class: Option<Local<'scope, Function>>,
     pub call_reducer: Local<'scope, Function>,
     pub call_view: Option<Local<'scope, Function>>,
     pub call_view_anon: Option<Local<'scope, Function>>,
@@ -106,7 +146,9 @@ pub(in super::super) struct HookFunctions<'scope> {
 }
 
 /// Returns the hook function previously registered in [`register_hooks`].
-pub(in super::super) fn get_hooks<'scope>(scope: &mut PinScope<'scope, '_>) -> Option<HookFunctions<'scope>> {
+pub(in super::super) fn get_registered_hooks<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+) -> Option<HookFunctions<'scope>> {
     let ctx = scope.get_current_context();
     let hooks = ctx.get_slot::<HooksInfo>()?;
 
@@ -120,7 +162,12 @@ pub(in super::super) fn get_hooks<'scope>(scope: &mut PinScope<'scope, '_>) -> O
 
     Some(HookFunctions {
         abi: hooks.abi,
+        recv: ctx
+            .get_embedder_data(scope, RECV_SLOT_INDEX)
+            .unwrap_or_else(|| v8::undefined(scope).into()),
         describe_module: get(ModuleHookKey::DescribeModule)?,
+        get_error_constructor: get(ModuleHookKey::GetErrorConstructor),
+        sender_error_class: get(ModuleHookKey::SenderErrorClass),
         call_reducer: get(ModuleHookKey::CallReducer)?,
         call_view: get(ModuleHookKey::CallView),
         call_view_anon: get(ModuleHookKey::CallAnonymousView),

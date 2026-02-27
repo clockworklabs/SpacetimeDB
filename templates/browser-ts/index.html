@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SpacetimeDB Browser App</title>
+  </head>
+  <body
+    style="
+      font-family:
+        system-ui,
+        -apple-system,
+        sans-serif;
+      padding: 2rem;
+      max-width: 600px;
+      margin: 0 auto;
+    "
+  >
+    <h1>SpacetimeDB Browser App</h1>
+
+    <div style="margin-bottom: 1rem">
+      Status: <strong id="status" style="color: red">Disconnected</strong>
+    </div>
+
+    <form id="add-form" style="margin-bottom: 2rem">
+      <input
+        type="text"
+        id="name-input"
+        placeholder="Enter name"
+        style="padding: 0.5rem; margin-right: 0.5rem"
+        disabled
+      />
+      <button type="submit" id="add-btn" style="padding: 0.5rem 1rem" disabled>
+        Add Person
+      </button>
+    </form>
+
+    <div>
+      <h2>People (<span id="count">0</span>)</h2>
+      <ul id="people-list">
+        <li style="color: #888">No people yet. Add someone above!</li>
+      </ul>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

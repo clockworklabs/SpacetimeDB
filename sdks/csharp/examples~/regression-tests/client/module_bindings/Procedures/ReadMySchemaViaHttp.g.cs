@@ -58,7 +58,7 @@ namespace SpacetimeDB.Types
         [DataContract]
         public sealed partial class ReadMySchemaViaHttpArgs : Procedure, IProcedureArgs
         {
-            string IProcedureArgs.ProcedureName => "ReadMySchemaViaHttp";
+            string IProcedureArgs.ProcedureName => "read_my_schema_via_http";
         }
 
     }

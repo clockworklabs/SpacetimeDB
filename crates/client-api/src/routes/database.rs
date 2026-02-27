@@ -343,7 +343,7 @@ where
     let module_def = &module.info.module_def;
     let response_json = match version {
         SchemaVersion::V9 => {
-            let raw = RawModuleDefV9::from(module_def.clone());
+            let raw = RawModuleDefV9::from(module_def.as_ref().clone());
             axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
         }
     };
@@ -496,7 +496,7 @@ pub struct SqlQueryParams {
     /// If `true`, return the query result only after its transaction offset
     /// is confirmed to be durable.
     #[serde(default)]
-    pub confirmed: bool,
+    pub confirmed: Option<bool>,
 }
 
 pub async fn sql_direct<S>(
@@ -518,7 +518,8 @@ where
         .authorize_sql(caller_identity, database.database_identity)
         .await?;
 
-    host.exec_sql(auth, database, confirmed, sql).await
+    host.exec_sql(auth, database, confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS), sql)
+        .await
 }
 
 pub async fn sql<S>(
@@ -715,7 +716,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
     };
     let maybe_org_identity = match organization.as_ref() {
         None => None,
-        Some(org) => org.resolve(&ctx).await.map(Some)?,
+        Some(org) => org.resolve_namespace_owner(&ctx).await.map(Some)?,
     };
 
     // Check that the replication factor looks somewhat sane.
@@ -942,6 +943,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
             new_module_hash,
             breaks_client,
             plan,
+            major_version_upgrade,
         } => {
             info!(
                 "planned auto-migration of database {} from {} to {}",
@@ -958,12 +960,17 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
                 token,
                 migrate_plan: plan,
                 break_clients: breaks_client,
+                major_version_upgrade,
             }))
         }
-        MigratePlanResult::AutoMigrationError(e) => {
+        MigratePlanResult::AutoMigrationError {
+            error: e,
+            major_version_upgrade,
+        } => {
             info!("database {database_identity} needs manual migration");
             Ok(PrePublishResult::ManualMigrate(PrePublishManualMigrateResult {
                 reason: e.to_string(),
+                major_version_upgrade,
             }))
         }
     }
@@ -1087,7 +1094,7 @@ pub async fn set_names<S: ControlStateDelegate + Authorization>(
         })?;
 
     for name in &validated_names {
-        if ctx.lookup_identity(name.as_str()).await.unwrap().is_some() {
+        if ctx.lookup_database_identity(name.as_str()).await.unwrap().is_some() {
             return Ok((
                 StatusCode::BAD_REQUEST,
                 axum::Json(name::SetDomainsResult::OtherError(format!(

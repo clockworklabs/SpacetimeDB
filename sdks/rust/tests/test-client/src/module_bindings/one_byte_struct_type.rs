@@ -43,3 +43,5 @@ impl __sdk::__query_builder::HasIxCols for OneByteStruct {
         OneByteStructIxCols {}
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for OneByteStruct {}

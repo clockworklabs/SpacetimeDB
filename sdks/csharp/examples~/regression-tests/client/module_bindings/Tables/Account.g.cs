@@ -55,9 +55,9 @@ namespace SpacetimeDB.Types
 
         public AccountCols(string tableName)
         {
-            Id = new global::SpacetimeDB.Col<Account, ulong>(tableName, "Id");
-            Identity = new global::SpacetimeDB.Col<Account, SpacetimeDB.Identity>(tableName, "Identity");
-            Name = new global::SpacetimeDB.Col<Account, string>(tableName, "Name");
+            Id = new global::SpacetimeDB.Col<Account, ulong>(tableName, "id");
+            Identity = new global::SpacetimeDB.Col<Account, SpacetimeDB.Identity>(tableName, "identity");
+            Name = new global::SpacetimeDB.Col<Account, string>(tableName, "name");
         }
     }
 
@@ -68,8 +68,8 @@ namespace SpacetimeDB.Types
 
         public AccountIxCols(string tableName)
         {
-            Id = new global::SpacetimeDB.IxCol<Account, ulong>(tableName, "Id");
-            Identity = new global::SpacetimeDB.IxCol<Account, SpacetimeDB.Identity>(tableName, "Identity");
+            Id = new global::SpacetimeDB.IxCol<Account, ulong>(tableName, "id");
+            Identity = new global::SpacetimeDB.IxCol<Account, SpacetimeDB.Identity>(tableName, "identity");
         }
     }
 }

@@ -55,9 +55,9 @@ namespace SpacetimeDB.Types
 
         public WhereTestCols(string tableName)
         {
-            Id = new global::SpacetimeDB.Col<WhereTest, uint>(tableName, "Id");
-            Value = new global::SpacetimeDB.Col<WhereTest, uint>(tableName, "Value");
-            Name = new global::SpacetimeDB.Col<WhereTest, string>(tableName, "Name");
+            Id = new global::SpacetimeDB.Col<WhereTest, uint>(tableName, "id");
+            Value = new global::SpacetimeDB.Col<WhereTest, uint>(tableName, "value");
+            Name = new global::SpacetimeDB.Col<WhereTest, string>(tableName, "name");
         }
     }
 
@@ -68,8 +68,8 @@ namespace SpacetimeDB.Types
 
         public WhereTestIxCols(string tableName)
         {
-            Id = new global::SpacetimeDB.IxCol<WhereTest, uint>(tableName, "Id");
-            Value = new global::SpacetimeDB.IxCol<WhereTest, uint>(tableName, "Value");
+            Id = new global::SpacetimeDB.IxCol<WhereTest, uint>(tableName, "id");
+            Value = new global::SpacetimeDB.IxCol<WhereTest, uint>(tableName, "value");
         }
     }
 }

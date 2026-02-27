@@ -21,11 +21,11 @@ You can use the package in the browser, using a bundler like vite/parcel/rsbuild
 In order to connect to a database you have to generate module bindings for your database.
 
 ```ts
-import { DbConnection } from './module_bindings';
+import { DbConnection, tables } from './module_bindings';
 
 const connection = DbConnection.builder()
   .withUri('ws://localhost:3000')
-  .withModuleName('MODULE_NAME')
+  .withDatabaseName('MODULE_NAME')
   .onDisconnect(() => {
     console.log('disconnected');
   })
@@ -38,7 +38,7 @@ const connection = DbConnection.builder()
       identity.toHexString()
     );
 
-    connection.subscriptionBuilder().subscribe('SELECT * FROM player');
+    connection.subscriptionBuilder().subscribe(tables.player);
   })
   .withToken('TOKEN')
   .build();
@@ -66,12 +66,14 @@ connection.reducers.createPlayer();
 
 #### React Usage
 
-This module also include React hooks to subscribe to tables under the `spacetimedb/react` subpath. In order to use SpacetimeDB React hooks in your project, first add a `SpacetimeDBProvider` at the top of your component hierarchy:
+This module also includes React hooks to subscribe to tables under the `spacetimedb/react` subpath. The React integration is fully compatible with React StrictMode and handles the double-mount behavior correctly (only one WebSocket connection is created).
+
+In order to use SpacetimeDB React hooks in your project, first add a `SpacetimeDBProvider` at the top of your component hierarchy:
 
 ```tsx
 const connectionBuilder = DbConnection.builder()
   .withUri('ws://localhost:3000')
-  .withModuleName('MODULE_NAME')
+  .withDatabaseName('MODULE_NAME')
   .withLightMode(true)
   .onDisconnect(() => {
     console.log('disconnected');
@@ -85,7 +87,7 @@ const connectionBuilder = DbConnection.builder()
       identity.toHexString()
     );
 
-    conn.subscriptionBuilder().subscribe('SELECT * FROM player');
+    conn.subscriptionBuilder().subscribe(tables.player);
   })
   .withToken('TOKEN');
 

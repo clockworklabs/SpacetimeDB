@@ -1,4 +1,5 @@
 [workspace]
+exclude = ["crates/smoketests/modules"]
 members = [
   "crates/auth",
   "crates/bench",
@@ -26,6 +27,7 @@ members = [
   "crates/query",
   "crates/sats",
   "crates/schema",
+  "crates/smoketests",
   "sdks/rust",
   "sdks/unreal",
   "crates/snapshot",
@@ -41,16 +43,20 @@ members = [
   "modules/keynote-benchmarks",
   "modules/perf-test",
   "modules/module-test",
+  "templates/basic-rs/spacetimedb",
   "templates/chat-console-rs/spacetimedb",
+  "templates/keynote-2/spacetimedb-rust-client",
   "modules/sdk-test",
   "modules/sdk-test-connect-disconnect",
   "modules/sdk-test-procedure",
   "modules/sdk-test-view",
+  "modules/sdk-test-event-table",
   "sdks/rust/tests/test-client",
   "sdks/rust/tests/test-counter",
   "sdks/rust/tests/connect_disconnect_client",
   "sdks/rust/tests/procedure-client",
   "sdks/rust/tests/view-client",
+  "sdks/rust/tests/event-table-client",
   "tools/ci",
   "tools/upgrade-version",
   "tools/license-check",
@@ -100,46 +106,46 @@ inherits = "release"
 debug = true
 
 [workspace.package]
-version = "1.11.3"
+version = "2.0.2"
 edition = "2021"
 # update rust-toolchain.toml too!
-rust-version = "1.90.0"
+rust-version = "1.93.0"
 
 [workspace.dependencies]
-spacetimedb = { path = "crates/bindings", version = "=1.11.3" }
-spacetimedb-auth = { path = "crates/auth", version = "=1.11.3" }
-spacetimedb-bindings-macro = { path = "crates/bindings-macro", version = "=1.11.3" }
-spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "=1.11.3" }
-spacetimedb-cli = { path = "crates/cli", version = "=1.11.3" }
-spacetimedb-client-api = { path = "crates/client-api", version = "=1.11.3" }
-spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "=1.11.3" }
-spacetimedb-codegen = { path = "crates/codegen", version = "=1.11.3" }
-spacetimedb-commitlog = { path = "crates/commitlog", version = "=1.11.3" }
-spacetimedb-core = { path = "crates/core", version = "=1.11.3" }
-spacetimedb-data-structures = { path = "crates/data-structures", version = "=1.11.3" }
-spacetimedb-datastore = { path = "crates/datastore", version = "=1.11.3" }
-spacetimedb-durability = { path = "crates/durability", version = "=1.11.3" }
-spacetimedb-execution = { path = "crates/execution", version = "=1.11.3" }
-spacetimedb-expr = { path = "crates/expr", version = "=1.11.3" }
-spacetimedb-guard = { path = "crates/guard", version = "=1.11.3" }
-spacetimedb-lib = { path = "crates/lib", default-features = false, version = "=1.11.3" }
-spacetimedb-memory-usage = { path = "crates/memory-usage", version = "=1.11.3", default-features = false }
-spacetimedb-metrics = { path = "crates/metrics", version = "=1.11.3" }
-spacetimedb-paths = { path = "crates/paths", version = "=1.11.3" }
-spacetimedb-pg = { path = "crates/pg", version = "=1.11.3" }
-spacetimedb-physical-plan = { path = "crates/physical-plan", version = "=1.11.3" }
-spacetimedb-primitives = { path = "crates/primitives", version = "=1.11.3" }
-spacetimedb-query = { path = "crates/query", version = "=1.11.3" }
-spacetimedb-sats = { path = "crates/sats", version = "=1.11.3" }
-spacetimedb-schema = { path = "crates/schema", version = "=1.11.3" }
-spacetimedb-standalone = { path = "crates/standalone", version = "=1.11.3" }
-spacetimedb-sql-parser = { path = "crates/sql-parser", version = "=1.11.3" }
-spacetimedb-table = { path = "crates/table", version = "=1.11.3" }
-spacetimedb-vm = { path = "crates/vm", version = "=1.11.3" }
-spacetimedb-fs-utils = { path = "crates/fs-utils", version = "=1.11.3" }
-spacetimedb-snapshot = { path = "crates/snapshot", version = "=1.11.3" }
-spacetimedb-subscription = { path = "crates/subscription", version = "=1.11.3" }
-spacetimedb-query-builder = { path = "crates/query-builder", version = "=1.11.3" }
+spacetimedb = { path = "crates/bindings", version = "=2.0.2" }
+spacetimedb-auth = { path = "crates/auth", version = "=2.0.2" }
+spacetimedb-bindings-macro = { path = "crates/bindings-macro", version = "=2.0.2" }
+spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "=2.0.2" }
+spacetimedb-cli = { path = "crates/cli", version = "=2.0.2" }
+spacetimedb-client-api = { path = "crates/client-api", version = "=2.0.2" }
+spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "=2.0.2" }
+spacetimedb-codegen = { path = "crates/codegen", version = "=2.0.2" }
+spacetimedb-commitlog = { path = "crates/commitlog", version = "=2.0.2" }
+spacetimedb-core = { path = "crates/core", version = "=2.0.2" }
+spacetimedb-data-structures = { path = "crates/data-structures", version = "=2.0.2" }
+spacetimedb-datastore = { path = "crates/datastore", version = "=2.0.2" }
+spacetimedb-durability = { path = "crates/durability", version = "=2.0.2" }
+spacetimedb-execution = { path = "crates/execution", version = "=2.0.2" }
+spacetimedb-expr = { path = "crates/expr", version = "=2.0.2" }
+spacetimedb-guard = { path = "crates/guard", version = "=2.0.2" }
+spacetimedb-lib = { path = "crates/lib", default-features = false, version = "=2.0.2" }
+spacetimedb-memory-usage = { path = "crates/memory-usage", version = "=2.0.2", default-features = false }
+spacetimedb-metrics = { path = "crates/metrics", version = "=2.0.2" }
+spacetimedb-paths = { path = "crates/paths", version = "=2.0.2" }
+spacetimedb-pg = { path = "crates/pg", version = "=2.0.2" }
+spacetimedb-physical-plan = { path = "crates/physical-plan", version = "=2.0.2" }
+spacetimedb-primitives = { path = "crates/primitives", version = "=2.0.2" }
+spacetimedb-query = { path = "crates/query", version = "=2.0.2" }
+spacetimedb-sats = { path = "crates/sats", version = "=2.0.2" }
+spacetimedb-schema = { path = "crates/schema", version = "=2.0.2" }
+spacetimedb-standalone = { path = "crates/standalone", version = "=2.0.2" }
+spacetimedb-sql-parser = { path = "crates/sql-parser", version = "=2.0.2" }
+spacetimedb-table = { path = "crates/table", version = "=2.0.2" }
+spacetimedb-vm = { path = "crates/vm", version = "=2.0.2" }
+spacetimedb-fs-utils = { path = "crates/fs-utils", version = "=2.0.2" }
+spacetimedb-snapshot = { path = "crates/snapshot", version = "=2.0.2" }
+spacetimedb-subscription = { path = "crates/subscription", version = "=2.0.2" }
+spacetimedb-query-builder = { path = "crates/query-builder", version = "=2.0.2" }
 
 # Prevent `ahash` from pulling in `getrandom` by disabling default features.
 # Modules use `getrandom02` and we need to prevent an incompatible version
@@ -179,7 +185,6 @@ derive_more = "0.99"
 dialoguer = { version = "0.11", default-features = false }
 dirs = "5.0.1"
 duct = "0.13.5"
-ecow = "0.2.6"
 either = "1.9"
 email_address = "0.2.4"
 enum-as-inner = "0.6"
@@ -206,9 +211,10 @@ home = "0.5"
 hostname = "^0.3"
 http = "1.0"
 http-body-util= "0.1.3"
-humantime = "2.1.0"
+humantime = "2.3"
 hyper = "1.0"
 hyper-util = { version = "0.1", features = ["tokio"] }
+ignore = "0.4"
 imara-diff = "0.1.3"
 indexmap = "2.0.0"
 indicatif = "0.17"
@@ -216,10 +222,12 @@ insta = { version = "1.21.0", features = ["toml", "filters"] }
 is-terminal = "0.4"
 itertools = "0.12"
 itoa = "1"
+json5 = "0.4"
 jsonwebtoken = { package = "spacetimedb-jsonwebtoken", version = "9.3.0" }
 junction = "1"
 jwks = { package = "spacetimedb-jwks", version = "0.1.3" }
 lazy_static = "1.4.0"
+lean_string = "0.5.1"
 log = "0.4.17"
 memchr = "2"
 mimalloc = "0.1.39"
@@ -247,12 +255,15 @@ quick-xml = "0.31"
 quote = "1.0.8"
 rand08 = { package = "rand", version = "0.8" }
 rand = "0.9"
+rand_distr = "0.5.1"
 rayon = "1.8"
 rayon-core = "1.11.0"
 regex = "1"
 reqwest = { version = "0.12", features = ["stream", "json"] }
-rolldown = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-beta.42" }
-rolldown_utils = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-beta.42" }
+rolldown = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-rc.3" }
+rolldown_common = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-rc.3" }
+rolldown_error = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-rc.3" }
+rolldown_utils = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-rc.3" }
 ron = "0.8"
 rusqlite = { version = "0.29.0", features = ["bundled", "column_decltype"] }
 rust_decimal = { version = "1.29.1", features = ["db-tokio-postgres"] }
@@ -315,7 +326,17 @@ unicode-normalization = "0.1.23"
 url = "2.3.1"
 urlencoding = "2.1.2"
 uuid = { version = "1.18.1", default-features = false }
-v8 = "145"
+
+# Pinned to a specific version rather than allowing SemVer fuzzy resolution
+# because our flake references the specific version of this library.
+# See librusty_v8.nix for more details.
+# When updating the V8 crate, either update the version and hashes in that file,
+# or ping phoebe @gefjon to do so.
+v8 = "=145.0.0"
+# This version is kept in sync with the version of ICU required by v8.
+# When that changes, the `v8::icu::set_common_data_XX()` function is renamed.
+deno_core_icudata = "0.77"
+
 walkdir = "2.2.5"
 wasmbin = "0.6"
 webbrowser = "1.0.2"

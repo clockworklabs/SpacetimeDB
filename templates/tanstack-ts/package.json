@@ -1,0 +1,35 @@
+{
+  "name": "@clockworklabs/tanstack-ts",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "PORT=4000 node .output/server/index.mjs",
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb",
+    "spacetime:publish:local": "spacetime publish --module-path spacetimedb --server local",
+    "spacetime:publish": "spacetime publish --module-path spacetimedb --server maincloud"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.62.0",
+    "@tanstack/react-query-devtools": "^5.62.0",
+    "@tanstack/react-router": "^1.162.0",
+    "@tanstack/react-router-devtools": "^1.162.0",
+    "@tanstack/react-router-ssr-query": "^1.162.0",
+    "@tanstack/react-start": "^1.162.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "spacetimedb": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.4",
+    "@vitejs/plugin-react": "^4.3.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^7.1.5",
+    "vite-tsconfig-paths": "^5.1.4"
+  }
+}

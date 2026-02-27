@@ -45,7 +45,7 @@ DbConnection ConnectToDB()
     DbConnection? conn = null;
     conn = DbConnection.Builder()
         .WithUri(HOST)
-        .WithModuleName(DB_NAME)
+        .WithDatabaseName(DB_NAME)
         .WithToken(AuthToken.Token)
         .OnConnect(OnConnected)
         .OnConnectError(OnConnectError)
@@ -143,7 +143,7 @@ void Message_OnInsert(EventContext ctx, Message insertedValue)
 
 void PrintMessage(RemoteTables tables, Message message)
 {
-    var sender = tables.User.Identity.Find(message.Sender);
+    var sender = tables.User.UserIdentityIdxBtree.Find(message.Sender);
     var senderName = "unknown";
     if (sender != null)
     {

@@ -1,4 +1,4 @@
-import type { RowType, UntypedTableDef } from './table';
+import type { RowType, table, UntypedTableDef } from './table';
 import type { ColumnMetadata, IndexTypes } from './type_builders';
 import type { CollapseTuple, Prettify } from './type_util';
 import { Range } from '../server/range';
@@ -9,9 +9,11 @@ import type { ColumnIsUnique } from './constraints';
  * existing column names are referenced.
  */
 export type IndexOpts<AllowedCol extends string> = {
+  accessor?: string;
   name?: string;
 } & (
   | { algorithm: 'btree'; columns: readonly AllowedCol[] }
+  | { algorithm: 'hash'; columns: readonly AllowedCol[] }
   | { algorithm: 'direct'; column: AllowedCol }
 );
 
@@ -21,7 +23,7 @@ export type IndexOpts<AllowedCol extends string> = {
 export type UntypedIndex<AllowedCol extends string> = {
   name: string;
   unique?: boolean;
-  algorithm: 'btree' | 'direct';
+  algorithm: 'btree' | 'direct' | 'hash';
   columns: readonly AllowedCol[];
 };
 
@@ -47,14 +49,37 @@ export type Indexes<
 };
 
 /**
- * A type representing a database index, which can be either unique or ranged.
+ * Check whether every column in an index is a primary key column.
+ */
+type AllColumnsPrimaryKey<
+  TableDef extends UntypedTableDef,
+  Columns extends readonly string[],
+> = Columns extends readonly [
+  infer Head extends keyof TableDef['columns'] & string,
+  ...infer Tail extends readonly string[],
+]
+  ? TableDef['columns'][Head]['columnMetadata'] extends { isPrimaryKey: true }
+    ? AllColumnsPrimaryKey<TableDef, Tail>
+    : false
+  : true;
+
+/**
+ * A type representing a database index,
+ * which can either be unique or filter for a single value or range of values.
+ * Unique indexes on primary key columns additionally support `update`.
  */
 export type Index<
   TableDef extends UntypedTableDef,
   I extends UntypedIndex<keyof TableDef['columns'] & string>,
 > = I['unique'] extends true
-  ? UniqueIndex<TableDef, I>
-  : RangedIndex<TableDef, I>;
+  ? AllColumnsPrimaryKey<TableDef, I['columns']> extends true
+    ? UniqueIndex<TableDef, I> & {
+        update(row: Prettify<RowType<TableDef>>): Prettify<RowType<TableDef>>;
+      }
+    : UniqueIndex<TableDef, I>
+  : I['algorithm'] extends 'hash'
+    ? PointIndex<TableDef, I>
+    : RangedIndex<TableDef, I>;
 
 /**
  * A type representing a collection of read-only indexes defined on a table.
@@ -67,7 +92,8 @@ export type ReadonlyIndexes<
 };
 
 /**
- * A type representing a read-only database index, which can be either unique or ranged.
+ * A type representing a read-only database index,
+ * which can be either unique, pointed, or ranged.
  * This type only exposes read-only operations.
  */
 export type ReadonlyIndex<
@@ -75,7 +101,9 @@ export type ReadonlyIndex<
   I extends UntypedIndex<keyof TableDef['columns'] & string>,
 > = I['unique'] extends true
   ? ReadonlyUniqueIndex<TableDef, I>
-  : ReadonlyRangedIndex<TableDef, I>;
+  : I['algorithm'] extends 'hash'
+    ? ReadonlyPointIndex<TableDef, I>
+    : ReadonlyRangedIndex<TableDef, I>;
 
 /**
  * A type representing a read-only unique index on a database table.
@@ -96,7 +124,29 @@ export interface UniqueIndex<
   I extends UntypedIndex<keyof TableDef['columns'] & string>,
 > extends ReadonlyUniqueIndex<TableDef, I> {
   delete(colVal: IndexVal<TableDef, I>): boolean;
-  update(colVal: Prettify<RowType<TableDef>>): Prettify<RowType<TableDef>>;
+}
+
+/**
+ * A type representing a read-only point index on a database table.
+ */
+export interface ReadonlyPointIndex<
+  TableDef extends UntypedTableDef,
+  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+> {
+  filter(
+    point: IndexVal<TableDef, I>
+  ): IteratorObject<Prettify<RowType<TableDef>>, undefined>;
+}
+
+/**
+ * A type representing a point index on a database table.
+ * Point indexes allow for exact match queries on the indexed columns.
+ */
+export interface PointIndex<
+  TableDef extends UntypedTableDef,
+  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+> extends ReadonlyPointIndex<TableDef, I> {
+  delete(point: IndexVal<TableDef, I>): number;
 }
 
 /**
@@ -190,7 +240,7 @@ export type ColumnIndex<
     name: Name;
     unique: ColumnIsUnique<M>;
     columns: readonly [Name];
-    algorithm: 'btree' | 'direct';
+    algorithm: 'btree' | 'direct' | 'hash';
   } & (M extends {
     indexType: infer I extends NonNullable<IndexTypes>;
   }

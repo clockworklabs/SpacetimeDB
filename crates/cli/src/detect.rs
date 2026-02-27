@@ -57,6 +57,21 @@ pub(crate) fn has_wasm32_target() -> bool {
     })
 }
 
+/// Check if a given `PackageManager` executable is available on `PATH`.
+///
+/// On Windows, npm/pnpm/yarn are `.cmd` shims while bun is a `.exe`,
+/// so we check the platform-appropriate extension.
+pub(crate) fn has_package_manager(pm: crate::spacetime_config::PackageManager) -> bool {
+    let name = pm.to_string();
+    if cfg!(windows) {
+        // bun ships as bun.exe; npm, pnpm, yarn are .cmd shims
+        let ext = if name == "bun" { "exe" } else { "cmd" };
+        find_executable(format!("{name}.{ext}")).is_some()
+    } else {
+        find_executable(&name).is_some()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

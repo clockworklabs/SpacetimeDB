@@ -1,12 +1,12 @@
 use spacetimedb::{reducer, table, ReducerContext, Table};
 
-#[table(name = entity)]
+#[table(accessor = entity)]
 pub struct Entity {
     #[primary_key]
     pub id: i32,
 }
 
-#[table(name = position)]
+#[table(accessor = position)]
 pub struct Position {
     #[primary_key]
     pub entity_id: i32,
@@ -14,7 +14,7 @@ pub struct Position {
     pub y: i32,
 }
 
-#[table(name = velocity)]
+#[table(accessor = velocity)]
 pub struct Velocity {
     #[primary_key]
     pub entity_id: i32,
@@ -22,7 +22,7 @@ pub struct Velocity {
     pub vy: i32,
 }
 
-#[table(name = next_position)]
+#[table(accessor = next_position)]
 pub struct NextPosition {
     #[primary_key]
     pub entity_id: i32,

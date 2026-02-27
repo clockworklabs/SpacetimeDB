@@ -5,6 +5,7 @@ slug: /functions/reducers/lifecycle
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Special reducers handle system events during the database lifecycle.
@@ -17,7 +18,7 @@ Runs once when the module is first published or when the database is cleared.
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.init((ctx) => {
+export const init = spacetimedb.init((ctx) => {
   console.log('Database initializing...');
   
   // Set up default data
@@ -72,6 +73,38 @@ pub fn init(ctx: &ReducerContext) -> Result<(), String> {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
+
+```cpp
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+struct Settings {
+    std::string key;
+    std::string value;
+};
+SPACETIMEDB_STRUCT(Settings, key, value);
+SPACETIMEDB_TABLE(Settings, settings, Private);
+FIELD_Unique(settings, key);
+
+SPACETIMEDB_INIT(init, ReducerContext ctx) {
+    LOG_INFO("Database initializing...");
+    
+    // Set up default data
+    if (ctx.db[settings].count() == 0) {
+        ctx.db[settings].insert(Settings{
+            "welcome_message",
+            "Hello, SpacetimeDB!"
+        });
+    }
+    
+    return Ok();
+}
+```
+
+</TabItem>
 </Tabs>
 
 The `init` reducer:
@@ -88,7 +121,7 @@ Runs when a client establishes a connection.
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.clientConnected((ctx) => {
+export const onConnect = spacetimedb.clientConnected((ctx) => {
   console.log(`Client connected: ${ctx.sender}`);
   
   // ctx.connectionId is guaranteed to be defined
@@ -131,15 +164,15 @@ public static void OnConnect(ReducerContext ctx)
 ```rust
 #[reducer(client_connected)]
 pub fn on_connect(ctx: &ReducerContext) -> Result<(), String> {
-    log::info!("Client connected: {}", ctx.sender);
+    log::info!("Client connected: {}", ctx.sender());
     
-    // ctx.connection_id is guaranteed to be Some(...)
-    let conn_id = ctx.connection_id.unwrap();
+    // ctx.connection_id() is guaranteed to be Some(...)
+    let conn_id = ctx.connection_id().unwrap();
     
     // Initialize client session
     ctx.db.sessions().try_insert(Session {
         connection_id: conn_id,
-        identity: ctx.sender,
+        identity: ctx.sender(),
         connected_at: ctx.timestamp,
     })?;
     
@@ -148,11 +181,44 @@ pub fn on_connect(ctx: &ReducerContext) -> Result<(), String> {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+struct Session {
+    ConnectionId connection_id;
+    Identity identity;
+    Timestamp connected_at;
+};
+SPACETIMEDB_STRUCT(Session, connection_id, identity, connected_at);
+SPACETIMEDB_TABLE(Session, sessions, Private);
+FIELD_PrimaryKey(sessions, connection_id);
+
+SPACETIMEDB_CLIENT_CONNECTED(on_connect, ReducerContext ctx) {
+    LOG_INFO("Client connected: " + ctx.sender.to_string());
+    
+    // ctx.connection_id is guaranteed to be present
+    auto conn_id = ctx.connection_id.value();
+    
+    // Initialize client session
+    ctx.db[sessions].insert(Session{
+        conn_id,
+        ctx.sender,
+        ctx.timestamp
+    });
+    
+    return Ok();
+}
+```
+
+</TabItem>
 </Tabs>
 
 The `client_connected` reducer:
 - Cannot take arguments beyond `ReducerContext`
-- `ctx.connection_id` is guaranteed to be present
+- `ctx.connection_id()` is guaranteed to be present
 - Failure disconnects the client
 - Runs for each distinct connection (WebSocket, HTTP call)
 
@@ -164,7 +230,7 @@ Runs when a client connection terminates.
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.clientDisconnected((ctx) => {
+export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
   console.log(`Client disconnected: ${ctx.sender}`);
   
   // ctx.connectionId is guaranteed to be defined
@@ -198,10 +264,10 @@ public static void OnDisconnect(ReducerContext ctx)
 ```rust
 #[reducer(client_disconnected)]
 pub fn on_disconnect(ctx: &ReducerContext) -> Result<(), String> {
-    log::info!("Client disconnected: {}", ctx.sender);
+    log::info!("Client disconnected: {}", ctx.sender());
     
-    // ctx.connection_id is guaranteed to be Some(...)
-    let conn_id = ctx.connection_id.unwrap();
+    // ctx.connection_id() is guaranteed to be Some(...)
+    let conn_id = ctx.connection_id().unwrap();
     
     // Clean up client session
     ctx.db.sessions().connection_id().delete(&conn_id);
@@ -211,17 +277,46 @@ pub fn on_disconnect(ctx: &ReducerContext) -> Result<(), String> {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+struct Session {
+    ConnectionId connection_id;
+    Identity identity;
+    Timestamp connected_at;
+};
+SPACETIMEDB_STRUCT(Session, connection_id, identity, connected_at);
+SPACETIMEDB_TABLE(Session, sessions, Private);
+FIELD_PrimaryKey(sessions, connection_id);
+
+SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) {
+    LOG_INFO("Client disconnected: " + ctx.sender.to_string());
+    
+    // ctx.connection_id is guaranteed to be present
+    auto conn_id = ctx.connection_id.value();
+    
+    // Clean up client session
+    ctx.db[sessions_connection_id].delete_by_key(conn_id);
+    
+    return Ok();
+}
+```
+
+</TabItem>
 </Tabs>
 
 The `client_disconnected` reducer:
 - Cannot take arguments beyond `ReducerContext`
-- `ctx.connection_id` is guaranteed to be present
+- `ctx.connection_id()` is guaranteed to be present
 - Failure is logged but doesn't prevent disconnection
 - Runs when connection ends (close, timeout, error)
 
 ## Scheduled Reducers
 
-Reducers can be triggered at specific times using schedule tables. See [Schedule Tables](/tables/schedule-tables) for details on:
+Reducers can be triggered at specific times using schedule tables. See [Schedule Tables](../../00300-tables/00500-schedule-tables.md) for details on:
 
 - Defining schedule tables
 - Triggering reducers at specific timestamps
@@ -230,6 +325,6 @@ Reducers can be triggered at specific times using schedule tables. See [Schedule
 
 :::info Scheduled Reducer Context
 Scheduled reducer calls originate from SpacetimeDB itself, not from a client. Therefore:
-- `ctx.sender` will be the module's own identity
-- `ctx.connection_id` will be `None`/`null`/`undefined`
+- `ctx.sender()` will be the module's own identity
+- `ctx.connection_id()` will be `None`/`null`/`undefined`
 :::

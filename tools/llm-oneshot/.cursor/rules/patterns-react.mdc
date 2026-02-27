@@ -1,0 +1,128 @@
+---
+description: Common React/TypeScript patterns and pitfalls. General web development advice applicable to any React project.
+globs: **/*.tsx,**/*.jsx
+---
+
+# React/TypeScript Pitfalls
+
+---
+
+## ⛔ React.StrictMode Breaks WebSockets (CRITICAL)
+
+**Remove `<React.StrictMode>` from ANY app using WebSockets** — including SpacetimeDB, Socket.io, or raw WebSocket connections.
+
+```tsx
+// ❌ BREAKS WebSocket connections
+createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+
+// ✅ WORKS — remove StrictMode wrapper
+createRoot(document.getElementById('root')!).render(
+  <App />
+);
+```
+
+**Why it breaks:**
+- StrictMode double-invokes effects in development
+- First effect opens WebSocket, second effect closes it immediately
+- Connection never establishes or constantly reconnects
+
+**Symptoms:**
+- WebSocket connects then immediately disconnects
+- `onConnect` callbacks never fire
+- Subscription data never arrives
+- Console shows repeated connection/disconnection
+
+**This affects ALL WebSocket libraries**, not just SpacetimeDB.
+
+---
+
+## Derived state in useEffect dependencies
+
+Computed arrays/objects create new references on every render. If used directly in `useEffect` dependencies, the effect runs every render regardless of whether the underlying data changed.
+
+Use `useMemo` to stabilize derived state used in effect dependencies.
+
+---
+
+## Auto-scroll in chat/feed UIs
+
+Unconditional scroll-to-bottom on data changes interrupts users reading history. Track scroll position and only auto-scroll when user is already near the bottom.
+
+---
+
+## datetime-local inputs and timezones
+
+`datetime-local` inputs expect **local time strings** (e.g., `"2025-12-30T17:30"`), but `Date.toISOString()` returns **UTC**. Build min/max/value strings using local time methods, not `toISOString()`.
+
+---
+
+## Countdown displays don't auto-update
+
+Calculating "time remaining" during render produces a static value — the component won't re-render just because time passes.
+
+**Solution:** Use `setInterval` to trigger periodic re-renders:
+
+```tsx
+function Countdown({ targetMs }: { targetMs: number }) {
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);  // MUST cleanup!
+  }, []);
+
+  const remaining = Math.max(0, Math.ceil((targetMs - now) / 1000));
+  return <span>{remaining}s remaining</span>;
+}
+```
+
+**Key points:**
+- Always return cleanup function to clear interval
+- Use `useState` for `now` to trigger re-renders
+- `Math.max(0, ...)` prevents negative values after expiry
+
+---
+
+## ResizeObserver for Container-Responsive Elements
+
+**Problem:** `window.addEventListener('resize')` only fires on window resize, NOT when:
+- A sibling panel is toggled (hidden/shown)
+- A sidebar collapses
+- Parent container changes size for any reason
+
+**Solution:** Use `ResizeObserver` to watch the container element:
+
+```tsx
+useEffect(() => {
+  const container = containerRef.current;
+  if (!container) return;
+
+  const updateSize = () => {
+    setSize({ width: container.clientWidth, height: container.clientHeight });
+  };
+
+  const resizeObserver = new ResizeObserver(updateSize);
+  resizeObserver.observe(container);
+  updateSize(); // Initial size
+
+  return () => resizeObserver.disconnect();
+}, []);
+```
+
+**Use cases:** Canvas elements, responsive charts, any element that needs to fill available space.
+
+---
+
+## Common Mistakes
+
+| Wrong | Right | Error |
+|-------|-------|-------|
+| `useEffect` after early `return` | All hooks BEFORE early returns | "Rendered more hooks than previous render" |
+| `NodeJS.Timeout` type in browser | `ReturnType<typeof setTimeout>` | "Cannot find namespace 'NodeJS'" |
+| Missing `index.html` in Vite project | Create `index.html` | "Could not auto-determine entry point" |
+| Optimistic UI updates | Let server/subscription drive state | Data desync issues |
+| `window.resize` for container size | `ResizeObserver` on container | Container doesn't resize when siblings change |

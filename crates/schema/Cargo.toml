@@ -19,10 +19,10 @@ spacetimedb-sql-parser.workspace = true
 
 anyhow.workspace = true
 derive_more.workspace = true
-ecow.workspace = true
 indexmap.workspace = true
 itertools.workspace = true
 lazy_static.workspace = true
+lean_string.workspace = true
 thiserror.workspace = true
 unicode-ident.workspace = true
 unicode-normalization.workspace = true
@@ -33,6 +33,7 @@ enum-as-inner.workspace = true
 enum-map.workspace = true
 insta.workspace = true
 termcolor.workspace = true
+convert_case.workspace = true
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["test"] }

@@ -93,13 +93,55 @@ Executes the smoketests suite with some default exclusions.
 
 **Usage:**
 ```bash
-Usage: smoketests [ARGS]...
+Usage: smoketests [OPTIONS] [ARGS]... [COMMAND]
 ```
 
 **Options:**
 
-- `args`: Additional arguments to pass to the smoketests runner. These are usually set by the CI environment, such as `-- --docker`
+- `--server`: Run tests against a remote server instead of spawning local servers.
+
+When specified, tests will connect to the given URL instead of starting local server instances. Tests that require local server control (like restart tests) will be skipped.
+
+- `--dotnet`: 
+- `args`: 
 - `--help`: Print help (see a summary with '-h')
+
+#### `prepare`
+
+Only build binaries without running tests
+
+Use this before running `cargo test --all` to ensure binaries are built.
+
+**Usage:**
+```bash
+Usage: prepare
+```
+
+**Options:**
+
+- `--help`: Print help (see a summary with '-h')
+
+#### `check-mod-list`
+
+**Usage:**
+```bash
+Usage: check-mod-list
+```
+
+**Options:**
+
+- `--help`: 
+
+#### `help`
+
+**Usage:**
+```bash
+Usage: help [COMMAND]...
+```
+
+**Options:**
+
+- `subcommand`: 
 
 ### `update-flow`
 

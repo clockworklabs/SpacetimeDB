@@ -2,17 +2,18 @@ use crate::api::ClientApi;
 use crate::common_args;
 use crate::config::Config;
 use crate::edit_distance::{edit_distance, find_best_match_for_name};
+use crate::subcommands::db_arg_resolution::{load_config_db_targets, resolve_optional_database_parts};
 use crate::util::UNSTABLE_WARNING;
+use crate::util::{database_identity, get_auth_header};
 use anyhow::{bail, Context, Error};
 use clap::{Arg, ArgMatches};
 use convert_case::{Case, Casing};
+use core::ops::Deref;
 use itertools::Itertools;
 use spacetimedb_lib::sats::{self, AlgebraicType, Typespace};
 use spacetimedb_lib::{Identity, ProductTypeElement};
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef};
 use std::fmt::Write;
-
-use super::sql::parse_req;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("call")
@@ -20,19 +21,19 @@ pub fn cli() -> clap::Command {
             "Invokes a function (reducer or procedure) in a database. {UNSTABLE_WARNING}"
         ))
         .arg(
-            Arg::new("database")
-                .required(true)
-                .help("The database name or identity to use to invoke the call"),
+            Arg::new("call_parts")
+                .help("Call arguments: [DATABASE] <FUNCTION_NAME> [ARGUMENTS...]")
+                .num_args(1..),
         )
-        .arg(
-            Arg::new("function_name")
-                .required(true)
-                .help("The name of the function to call"),
-        )
-        .arg(Arg::new("arguments").help("arguments formatted as JSON").num_args(1..))
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .arg(common_args::anonymous())
         .arg(common_args::yes())
+        .arg(
+            Arg::new("no_config")
+                .long("no-config")
+                .action(clap::ArgAction::SetTrue)
+                .help("Ignore spacetime.json configuration"),
+        )
         .after_help("Run `spacetime help call` for more detailed information.\n")
 }
 
@@ -64,10 +65,37 @@ impl<'a> CallDef<'a> {
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
     eprintln!("{UNSTABLE_WARNING}\n");
-    let reducer_procedure_name = args.get_one::<String>("function_name").unwrap();
-    let arguments = args.get_many::<String>("arguments");
+    let server = args.get_one::<String>("server").map(|s| s.as_ref());
+    let force = args.get_flag("force");
+    let anon_identity = args.get_flag("anon_identity");
+    let no_config = args.get_flag("no_config");
 
-    let conn = parse_req(config, args).await?;
+    let raw_parts: Vec<String> = args
+        .get_many::<String>("call_parts")
+        .map(|vals| vals.cloned().collect())
+        .unwrap_or_default();
+
+    let config_targets = load_config_db_targets(no_config)?;
+    let resolved = resolve_optional_database_parts(
+        &raw_parts,
+        config_targets.as_deref(),
+        "function_name",
+        "spacetime call [database] <function_name> <arguments>... (or --no-config for legacy behavior)",
+    )?;
+    let reducer_procedure_name = resolved
+        .remaining_args
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("internal error: function_name should be present after argument resolution"))?;
+    let call_arguments = resolved.remaining_args.iter().skip(1);
+    let resolved_server = server.or(resolved.server.as_deref());
+
+    let mut config = config;
+    let conn = crate::api::Connection {
+        host: config.get_host_url(resolved_server)?,
+        auth_header: get_auth_header(&mut config, anon_identity, resolved_server, !force).await?,
+        database_identity: database_identity(&config, &resolved.database, resolved_server).await?,
+        database: resolved.database.clone(),
+    };
     let api = ClientApi::new(conn);
 
     let database_identity = api.con.database_identity;
@@ -91,8 +119,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
     };
 
     // String quote any arguments that should be quoted
-    let arguments = arguments
-        .unwrap_or_default()
+    let arguments = call_arguments
         .zip(&call_def.params().elements)
         .map(|(argument, element)| match &element.algebraic_type {
             AlgebraicType::String if !argument.starts_with('\"') || !argument.ends_with('\"') => {
@@ -198,7 +225,7 @@ impl std::fmt::Display for CallSignature<'_> {
             }
             comma = true;
             if let Some(name) = arg.name() {
-                write!(f, "{}: ", name.to_case(Case::Snake))?;
+                write!(f, "{}: ", name.deref().to_case(Case::Snake))?;
             }
             write_type::write_type(typespace, f, &arg.algebraic_type)?;
         }
@@ -362,4 +389,9 @@ mod write_type {
 
         Ok(())
     }
+}
+
+#[cfg(test)]
+mod tests {
+    // Resolution tests live in db_arg_resolution.rs
 }

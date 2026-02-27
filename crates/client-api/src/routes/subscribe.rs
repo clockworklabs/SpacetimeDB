@@ -23,12 +23,12 @@ use prometheus::{Histogram, IntGauge};
 use scopeguard::{defer, ScopeGuard};
 use serde::Deserialize;
 use spacetimedb::client::messages::{
-    serialize, IdentityTokenMessage, InUseSerializeBuffer, SerializableMessage, SerializeBuffer, SwitchedServerMessage,
+    serialize, serialize_v2, IdentityTokenMessage, InUseSerializeBuffer, SerializeBuffer, SwitchedServerMessage,
     ToProtocol,
 };
 use spacetimedb::client::{
     ClientActorId, ClientConfig, ClientConnection, ClientConnectionReceiver, DataMessage, MessageExecutionError,
-    MessageHandleError, MeteredReceiver, MeteredSender, Protocol,
+    MessageHandleError, MeteredReceiver, MeteredSender, OutboundMessage, Protocol, WsVersion,
 };
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::NoSuchModule;
@@ -36,7 +36,8 @@ use spacetimedb::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use spacetimedb::util::spawn_rayon;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb::Identity;
-use spacetimedb_client_api_messages::websocket::{self as ws_api, Compression};
+use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
+use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
 use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::connection_id::{ConnectionId, ConnectionIdForUrl};
 use tokio::sync::{mpsc, watch};
@@ -56,9 +57,11 @@ use crate::util::{NameOrIdentity, XForwardedFor};
 use crate::{log_and_500, Authorization, ControlStateDelegate, NodeDelegate};
 
 #[allow(clippy::declare_interior_mutable_const)]
-pub const TEXT_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_api::TEXT_PROTOCOL);
+pub const TEXT_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_v1::TEXT_PROTOCOL);
 #[allow(clippy::declare_interior_mutable_const)]
-pub const BIN_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_api::BIN_PROTOCOL);
+pub const BIN_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_v1::BIN_PROTOCOL);
+#[allow(clippy::declare_interior_mutable_const)]
+pub const V2_BIN_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_v2::BIN_PROTOCOL);
 
 pub trait HasWebSocketOptions {
     fn websocket_options(&self) -> WebSocketOptions;
@@ -79,7 +82,7 @@ pub struct SubscribeParams {
 pub struct SubscribeQueryParams {
     pub connection_id: Option<ConnectionIdForUrl>,
     #[serde(default)]
-    pub compression: Compression,
+    pub compression: ws_v1::Compression,
     /// Whether we want "light" responses, tailored to network bandwidth constrained clients.
     /// This knob works by setting other, more specific, knobs to the value.
     #[serde(default)]
@@ -89,7 +92,17 @@ pub struct SubscribeQueryParams {
     ///
     /// If `false`, send them immediately.
     #[serde(default)]
-    pub confirmed: bool,
+    pub confirmed: Option<bool>,
+}
+
+fn resolve_confirmed_reads_default(version: WsVersion, confirmed: Option<bool>) -> bool {
+    if let Some(confirmed) = confirmed {
+        return confirmed;
+    }
+    match version {
+        WsVersion::V1 => false,
+        WsVersion::V2 => crate::DEFAULT_CONFIRMED_READS,
+    }
 }
 
 pub fn generate_random_connection_id() -> ConnectionId {
@@ -131,15 +144,43 @@ where
     let db_identity = name_or_identity.resolve(&ctx).await?;
     let sql_auth = ctx.authorize_sql(auth.claims.identity, db_identity).await?;
 
-    let (res, ws_upgrade, protocol) =
-        ws.select_protocol([(BIN_PROTOCOL, Protocol::Binary), (TEXT_PROTOCOL, Protocol::Text)]);
+    #[derive(Clone, Copy)]
+    struct NegotiatedProtocol {
+        protocol: Protocol,
+        version: WsVersion,
+    }
 
-    let protocol = protocol.ok_or((StatusCode::BAD_REQUEST, "no valid protocol selected"))?;
+    let (res, ws_upgrade, protocol) = ws.select_protocol([
+        (
+            V2_BIN_PROTOCOL,
+            NegotiatedProtocol {
+                protocol: Protocol::Binary,
+                version: WsVersion::V2,
+            },
+        ),
+        (
+            BIN_PROTOCOL,
+            NegotiatedProtocol {
+                protocol: Protocol::Binary,
+                version: WsVersion::V1,
+            },
+        ),
+        (
+            TEXT_PROTOCOL,
+            NegotiatedProtocol {
+                protocol: Protocol::Text,
+                version: WsVersion::V1,
+            },
+        ),
+    ]);
+
+    let negotiated = protocol.ok_or((StatusCode::BAD_REQUEST, "no valid protocol selected"))?;
     let client_config = ClientConfig {
-        protocol,
+        protocol: negotiated.protocol,
+        version: negotiated.version,
         compression,
         tx_update_full: !light,
-        confirmed_reads: confirmed,
+        confirmed_reads: resolve_confirmed_reads_default(negotiated.version, confirmed),
     };
 
     // TODO: Should also maybe refactor the code and the protocol to allow a single websocket
@@ -234,13 +275,26 @@ where
         // unable to access the http response headers.
         // Clients that receive the token from the response headers should ignore this
         // message.
-        let message = IdentityTokenMessage {
-            identity: client_identity,
-            token: identity_token,
-            connection_id,
+        let send_res = match client.config.version {
+            WsVersion::V1 => {
+                let message = IdentityTokenMessage {
+                    identity: client_identity,
+                    token: identity_token,
+                    connection_id,
+                };
+                client.send_message(None, OutboundMessage::V1(message.into()))
+            }
+            WsVersion::V2 => {
+                let message = ws_v2::ServerMessage::InitialConnection(ws_v2::InitialConnection {
+                    identity: client_identity,
+                    connection_id,
+                    token: identity_token,
+                });
+                client.send_message(None, OutboundMessage::V2(message))
+            }
         };
-        if let Err(e) = client.send_message(None, message) {
-            log::warn!("websocket: Error sending IdentityToken message to {client_log_string}: {e}");
+        if let Err(e) = send_res {
+            log::warn!("websocket: Error sending initial message to {client_log_string}: {e}");
         }
     });
 
@@ -426,6 +480,7 @@ async fn ws_client_actor_inner(
         },
         unordered_tx.clone(),
         ws_recv,
+        client.config.version,
     ));
     let hotswap = {
         let client = client.clone();
@@ -702,6 +757,7 @@ async fn ws_recv_task<MessageHandler>(
     message_handler: impl Fn(DataMessage, Instant) -> MessageHandler,
     unordered_tx: mpsc::UnboundedSender<UnorderedWsMessage>,
     ws: impl Stream<Item = Result<WsMessage, WsError>> + Unpin + Send + 'static,
+    ws_version: WsVersion,
 ) where
     MessageHandler: Future<Output = Result<(), MessageHandleError>>,
 {
@@ -716,13 +772,15 @@ async fn ws_recv_task<MessageHandler>(
     while let Some((data, timer)) = recv_handler.next().await {
         let result = message_handler(data, timer).await;
         if let Err(e) = result {
-            if let MessageHandleError::Execution(err) = e {
-                log::error!("{err:#}");
-                // If the send task has exited, also exit this recv task.
-                if unordered_tx.send(err.into()).is_err() {
-                    break;
+            if ws_version == WsVersion::V1 {
+                if let MessageHandleError::Execution(err) = e {
+                    log::error!("{err:#}");
+                    // If the send task has exited, also exit this recv task.
+                    if unordered_tx.send(err.into()).is_err() {
+                        break;
+                    }
+                    continue;
                 }
-                continue;
             }
             log::debug!("Client caused error: {e}");
             let close = CloseFrame {
@@ -1002,8 +1060,8 @@ trait Receiver<T> {
     fn close(&mut self);
 }
 
-impl Receiver<SerializableMessage> for ClientConnectionReceiver {
-    async fn recv(&mut self) -> Option<SerializableMessage> {
+impl Receiver<OutboundMessage> for ClientConnectionReceiver {
+    async fn recv(&mut self) -> Option<OutboundMessage> {
         ClientConnectionReceiver::recv(self).await
     }
 
@@ -1047,7 +1105,7 @@ async fn ws_send_loop(
     state: Arc<ActorState>,
     config: ClientConfig,
     ws: impl Sink<WsMessage, Error: Display> + Unpin,
-    messages: impl Receiver<SerializableMessage>,
+    messages: impl Receiver<OutboundMessage>,
     unordered: mpsc::UnboundedReceiver<UnorderedWsMessage>,
     bsatn_rlb_pool: BsatnRowListBuilderPool,
 ) {
@@ -1214,12 +1272,12 @@ async fn ws_send_loop_inner<T, U, Encoder>(
 }
 
 #[derive(From)]
-enum OutboundMessage {
+enum OutboundWsMessage {
     Error(MessageExecutionError),
-    Message(SerializableMessage),
+    Message(OutboundMessage),
 }
 
-/// Task that reads [`OutboundMessage`]s from `messages`, encodes them via
+/// Task that reads [`OutboundWsMessage`]s from `messages`, encodes them via
 /// [`ws_encode_message`], and sends the resuling [`Frame`]s to `outgoing_frames`.
 ///
 /// Meant to be [`tokio::spawn`]ed.
@@ -1229,7 +1287,7 @@ enum OutboundMessage {
 async fn ws_encode_task(
     metrics: SendMetrics,
     config: ClientConfig,
-    mut messages: mpsc::UnboundedReceiver<OutboundMessage>,
+    mut messages: mpsc::UnboundedReceiver<OutboundWsMessage>,
     outgoing_frames: mpsc::UnboundedSender<Frame>,
     bsatn_rlb_pool: BsatnRowListBuilderPool,
 ) {
@@ -1249,7 +1307,11 @@ async fn ws_encode_task(
         let buf = buf_pool.pop().unwrap_or_else(|| SerializeBuffer::new(config));
 
         let in_use_buf = match message {
-            OutboundMessage::Error(message) => {
+            OutboundWsMessage::Error(message) => {
+                if config.version == WsVersion::V2 {
+                    log::error!("dropping v1 error message sent to a v2 client: {:?}", message);
+                    continue;
+                }
                 let (stats, in_use, mut frames) = ws_encode_message(config, buf, message, false, &bsatn_rlb_pool).await;
                 metrics.report(None, None, stats);
                 if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
@@ -1258,19 +1320,46 @@ async fn ws_encode_task(
 
                 in_use
             }
-            OutboundMessage::Message(message) => {
+            OutboundWsMessage::Message(message) => {
                 let workload = message.workload();
                 let num_rows = message.num_rows();
-                let is_large = num_rows.is_some_and(|n| n > 1024);
+                match message {
+                    OutboundMessage::V2(server_message) => {
+                        if config.version != WsVersion::V2 {
+                            log::error!("dropping v2 message on v1 connection");
+                            continue;
+                        }
 
-                let (stats, in_use, mut frames) =
-                    ws_encode_message(config, buf, message, is_large, &bsatn_rlb_pool).await;
-                metrics.report(workload, num_rows, stats);
-                if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
-                    break;
+                        let (stats, in_use, mut frames) =
+                            ws_encode_message_v2(config, buf, server_message, false, &bsatn_rlb_pool).await;
+                        metrics.report(workload, num_rows, stats);
+                        if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
+                            break;
+                        }
+
+                        in_use
+                    }
+                    OutboundMessage::V1(message) => {
+                        if config.version == WsVersion::V2 {
+                            log::error!(
+                                "dropping v1 message for v2 connection until v2 serialization is implemented: {:?}",
+                                message
+                            );
+                            continue;
+                        }
+
+                        let is_large = num_rows.is_some_and(|n| n > 1024);
+
+                        let (stats, in_use, mut frames) =
+                            ws_encode_message(config, buf, message, is_large, &bsatn_rlb_pool).await;
+                        metrics.report(workload, num_rows, stats);
+                        if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
+                            break;
+                        }
+
+                        in_use
+                    }
                 }
-
-                in_use
             }
         };
 
@@ -1354,6 +1443,31 @@ async fn ws_encode_message(
     let frames = fragment(data, ty, FRAGMENT_SIZE);
 
     (metrics, msg_alloc, frames)
+}
+
+#[allow(dead_code, unused_variables)]
+async fn ws_encode_message_v2(
+    config: ClientConfig,
+    buf: SerializeBuffer,
+    message: ws_v2::ServerMessage,
+    is_large_message: bool,
+    bsatn_rlb_pool: &BsatnRowListBuilderPool,
+) -> (EncodeMetrics, InUseSerializeBuffer, impl Iterator<Item = Frame>) {
+    let start = Instant::now();
+
+    let (in_use, data) = if is_large_message {
+        let bsatn_rlb_pool = bsatn_rlb_pool.clone();
+        spawn_rayon(move || serialize_v2(&bsatn_rlb_pool, buf, message, config.compression)).await
+    } else {
+        serialize_v2(bsatn_rlb_pool, buf, message, config.compression)
+    };
+
+    let metrics = EncodeMetrics {
+        timing: start.elapsed(),
+        encoded_len: data.len(),
+    };
+    let frames = fragment(data, Data::Binary, 4096);
+    (metrics, in_use, frames)
 }
 
 /// Split payload `data` of type `ty` into `fragment_size`d [`Frame`]s,
@@ -1453,7 +1567,7 @@ mod tests {
     };
     use pretty_assertions::assert_matches;
     use proptest::prelude::*;
-    use spacetimedb::client::{messages::SerializableMessage, ClientName};
+    use spacetimedb::client::{messages::SerializableMessage, ClientName, OutboundMessage};
     use tokio::time::sleep;
 
     use super::*;
@@ -1710,11 +1824,13 @@ mod tests {
             })),
             // TODO: This is the easiest to construct,
             // but maybe we want other variants, too.
-            Either::Right(SerializableMessage::Identity(IdentityTokenMessage {
-                identity: Identity::ZERO,
-                token: "macaron".into(),
-                connection_id: ConnectionId::ZERO,
-            })),
+            Either::Right(OutboundMessage::V1(SerializableMessage::Identity(
+                IdentityTokenMessage {
+                    identity: Identity::ZERO,
+                    token: "macaron".into(),
+                    connection_id: ConnectionId::ZERO,
+                },
+            ))),
         ];
 
         for message in input {
@@ -1757,11 +1873,13 @@ mod tests {
             })),
             // TODO: This is the easiest to construct,
             // but maybe we want other variants, too.
-            Either::Right(SerializableMessage::Identity(IdentityTokenMessage {
-                identity: Identity::ZERO,
-                token: "macaron".into(),
-                connection_id: ConnectionId::ZERO,
-            })),
+            Either::Right(OutboundMessage::V1(SerializableMessage::Identity(
+                IdentityTokenMessage {
+                    identity: Identity::ZERO,
+                    token: "macaron".into(),
+                    connection_id: ConnectionId::ZERO,
+                },
+            ))),
         ];
 
         for message in input {
@@ -2178,6 +2296,14 @@ mod tests {
         let options = WebSocketOptions::default();
         let toml = toml::to_string(&options).unwrap();
         assert_eq!(options, toml::from_str::<WebSocketOptions>(&toml).unwrap());
+    }
+
+    #[test]
+    fn confirmed_reads_default_depends_on_ws_version() {
+        assert!(resolve_confirmed_reads_default(WsVersion::V2, None));
+        assert!(!resolve_confirmed_reads_default(WsVersion::V1, None));
+        assert!(resolve_confirmed_reads_default(WsVersion::V1, Some(true)));
+        assert!(!resolve_confirmed_reads_default(WsVersion::V2, Some(false)));
     }
 
     #[test]

@@ -1,23 +1,23 @@
-import { schema } from '../lib/schema';
+import { schema } from './schema';
 import { table } from '../lib/table';
 import t from '../lib/type_builders';
 
 const person = table(
   {
-    name: 'person',
+    // name: 'person',
     indexes: [
       {
-        name: 'id_name_idx',
+        accessor: 'id_name_idx',
         algorithm: 'btree',
         columns: ['id', 'name'] as const,
       },
       {
-        name: 'id_name2_idx',
+        accessor: 'id_name2_idx',
         algorithm: 'btree',
         columns: ['id', 'name2'] as const,
       },
       {
-        name: 'name_idx',
+        accessor: 'name_idx',
         algorithm: 'btree',
         columns: ['name'] as const,
       },
@@ -34,7 +34,7 @@ const person = table(
   }
 );
 
-const spacetimedb = schema(person);
+const spacetimedb = schema({ person });
 
 spacetimedb.init(ctx => {
   ctx.db.person.id_name_idx.filter(1);
@@ -45,4 +45,18 @@ spacetimedb.init(ctx => {
   const _id2 = ctx.db.person.id2;
 
   ctx.db.person.id.find(2);
+
+  // update() is allowed on primary key indexes
+  ctx.db.person.id.update({
+    id: 1,
+    name: '',
+    name2: '',
+    married: false,
+    id2: '' as any,
+    age: 0,
+    age2: 0,
+  });
+
+  // @ts-expect-error update() is NOT allowed on non-PK unique indexes
+  const _update = ctx.db.person.name2.update;
 });
