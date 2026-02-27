@@ -29,20 +29,29 @@ pub use spacetimedb_commitlog::repo::{OnNewSegmentFn, SizeOnDisk};
 /// [`Local`] configuration.
 #[derive(Clone, Copy, Debug)]
 pub struct Options {
-    /// Pop up to this many transactions from the queue at once.
+    /// The number of elements to reserve for batching transactions.
     ///
-    /// The commitlog is flushed and synced after each batch.
+    /// This puts an upper bound on the buffer capacity, while not preventing
+    /// reallocations when the number of queued transactions exceeds it.
     ///
-    /// Default: 32
-    pub batch_size: NonZeroUsize,
+    /// In other words, the durability actor will attempt to receive all
+    /// transactions that are currently in the queue, but shrink the buffer to
+    /// `batch_capacity` if it had to make additional space during a burst.
+    ///
+    /// Default: 4096
+    pub batch_capacity: NonZeroUsize,
     /// [`Commitlog`] configuration.
     pub commitlog: spacetimedb_commitlog::Options,
+}
+
+impl Options {
+    pub const DEFAULT_BATCH_CAPACITY: NonZeroUsize = NonZeroUsize::new(4096).unwrap();
 }
 
 impl Default for Options {
     fn default() -> Self {
         Self {
-            batch_size: NonZeroUsize::new(32).unwrap(),
+            batch_capacity: Self::DEFAULT_BATCH_CAPACITY,
             commitlog: Default::default(),
         }
     }
@@ -130,7 +139,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
                     durable_offset: durable_tx,
                     queue_depth: queue_depth.clone(),
 
-                    batch_size: opts.batch_size,
+                    batch_capacity: opts.batch_capacity,
 
                     lock,
                 }
@@ -188,7 +197,7 @@ struct Actor<T> {
     durable_offset: watch::Sender<Option<TxOffset>>,
     queue_depth: Arc<AtomicU64>,
 
-    batch_size: NonZeroUsize,
+    batch_capacity: NonZeroUsize,
 
     #[allow(unused)]
     lock: Lock,
@@ -203,7 +212,7 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
     ) {
         info!("starting durability actor");
 
-        let mut tx_buf = Vec::with_capacity(self.batch_size.get());
+        let mut tx_buf = Vec::with_capacity(self.batch_capacity.get());
         // `flush_and_sync` when the loop exits without panicking,
         // or `flush_and_sync` inside the loop failed.
         let mut sync_on_exit = true;
@@ -220,7 +229,11 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                     let _ = reply.send(self.lock.notified());
                 },
 
-                n = transactions_rx.recv_many(&mut tx_buf, self.batch_size.get()) => {
+                // Pop as many elements from the channel as possible,
+                // potentially requiring the `tx_buf` to allocate additional
+                // capacity.
+                // We'll reclaim capacity in excess of `self.batch_size` below.
+                n = transactions_rx.recv_many(&mut tx_buf, usize::MAX) => {
                     if n == 0 {
                         break;
                     }
@@ -239,6 +252,8 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                         sync_on_exit = false;
                         break;
                     }
+                    // Reclaim burst capacity.
+                    tx_buf.shrink_to(self.batch_capacity.get());
                 },
             }
         }
