@@ -1196,11 +1196,11 @@ record ViewDeclaration
         }
         else if (
             method.ReturnType
-            is INamedTypeSymbol
-            {
-                OriginalDefinition: var originalDefinition,
-                TypeArguments: [var enumerableElementType]
-            }
+                is INamedTypeSymbol
+                {
+                    OriginalDefinition: var originalDefinition,
+                    TypeArguments: [var enumerableElementType]
+                }
             && originalDefinition.ToString() == "System.Collections.Generic.IEnumerable<T>"
         )
         {
