@@ -59,23 +59,23 @@ namespace detail {
         const char* canonical_name = nullptr;
     };
 
-    inline TableMacroOptions MakeTableMacroOptions() {
+    constexpr TableMacroOptions MakeTableMacroOptions() {
         return TableMacroOptions{};
     }
 
-    inline TableMacroOptions MakeTableMacroOptions(bool is_event) {
+    constexpr TableMacroOptions MakeTableMacroOptions(bool is_event) {
         TableMacroOptions options;
         options.is_event = is_event;
         return options;
     }
 
-    inline TableMacroOptions MakeTableMacroOptions(const char* canonical_name) {
+    constexpr TableMacroOptions MakeTableMacroOptions(const char* canonical_name) {
         TableMacroOptions options;
         options.canonical_name = canonical_name;
         return options;
     }
 
-    inline TableMacroOptions MakeTableMacroOptions(bool is_event, const char* canonical_name) {
+    constexpr TableMacroOptions MakeTableMacroOptions(bool is_event, const char* canonical_name) {
         TableMacroOptions options;
         options.is_event = is_event;
         options.canonical_name = canonical_name;
@@ -97,6 +97,7 @@ template<typename T>
 struct TableTag {
     using type = T;
     static constexpr const char* name = nullptr;
+    static constexpr bool __is_event_internal = false;
     
     static std::vector<FieldConstraintInfo> get_constraints() {
         return {};
@@ -136,6 +137,7 @@ struct TableTag {
     } \
     struct SPACETIMEDB_PASTE(table_name, _tag_type) : SpacetimeDB::TableTag<type> { \
         static constexpr const char* __table_name_internal = #table_name; \
+        static constexpr bool __is_event_internal = (options_expr).is_event; \
     }; \
     constexpr SPACETIMEDB_PASTE(table_name, _tag_type) table_name{};
 
@@ -165,7 +167,7 @@ struct TableTag {
 // Field Tag System
 // =============================================================================
 
-template<typename TableType, typename FieldType, SpacetimeDB::FieldConstraint Constraint>
+template<typename TableType, typename FieldType, SpacetimeDB::FieldConstraint Constraint, bool IsEventTable = false>
 struct FieldTag {
     const char* field_name;
     const char* table_name;
@@ -179,14 +181,14 @@ struct FieldTag {
         : field_name(field), table_name(table), member_ptr(ptr) {}
 };
 
-template<typename TableType, typename FieldType>
-using PrimaryKeyFieldTag = FieldTag<TableType, FieldType, SpacetimeDB::FieldConstraint::PrimaryKey>;
+template<typename TableType, typename FieldType, bool IsEventTable = false>
+using PrimaryKeyFieldTag = FieldTag<TableType, FieldType, SpacetimeDB::FieldConstraint::PrimaryKey, IsEventTable>;
 
-template<typename TableType, typename FieldType>  
-using UniqueFieldTag = FieldTag<TableType, FieldType, SpacetimeDB::FieldConstraint::Unique>;
+template<typename TableType, typename FieldType, bool IsEventTable = false>  
+using UniqueFieldTag = FieldTag<TableType, FieldType, SpacetimeDB::FieldConstraint::Unique, IsEventTable>;
 
-template<typename TableType, typename FieldType>
-using IndexedFieldTag = FieldTag<TableType, FieldType, SpacetimeDB::FieldConstraint::Indexed>;
+template<typename TableType, typename FieldType, bool IsEventTable = false>
+using IndexedFieldTag = FieldTag<TableType, FieldType, SpacetimeDB::FieldConstraint::Indexed, IsEventTable>;
 
 // =============================================================================
 // Multi-Column Index Tag System
@@ -613,28 +615,17 @@ private:
         if (cached_index_id_) {
             return *cached_index_id_;
         }
-        
-        // Try to resolve index with multiple name patterns
-        auto try_pattern = [this](const std::string& pattern) -> IndexId {
-            IndexId id;
-            if (is_ok(::index_id_from_name(
-                reinterpret_cast<const uint8_t*>(pattern.data()),
-                pattern.length(),
+
+        // Resolve by the deterministic generated source name
+        const std::string canonical_source_name = table_name_ + "_" + column_list_ + "_idx_btree";
+        IndexId id{0};
+        if (!is_ok(::index_id_from_name(
+                reinterpret_cast<const uint8_t*>(canonical_source_name.data()),
+                canonical_source_name.length(),
                 &id))) {
-                return id;
-            }
-            return IndexId{0};
-        };
-        
-        // Try patterns in order of likelihood
-        IndexId id = try_pattern(index_name_);  // User accessor name
-        if (id.inner == 0) {
-            id = try_pattern(table_name_ + "_" + column_list_ + "_idx_btree");  // Database-generated
+            id = IndexId{0};
         }
-        if (id.inner == 0) {
-            id = try_pattern(table_name_ + "_" + index_name_ + "_idx_btree");  // Accessor-based
-        }
-        
+
         cached_index_id_ = id;
         return id;
     }
@@ -716,7 +707,8 @@ public:
 
 #define FIELD_PrimaryKey(table_name, field_name) \
     static constexpr SpacetimeDB::PrimaryKeyFieldTag<typename std::remove_cv_t<decltype(table_name)>::type, \
-                                                      decltype(std::declval<typename std::remove_cv_t<decltype(table_name)>::type>().field_name)> \
+                                                      decltype(std::declval<typename std::remove_cv_t<decltype(table_name)>::type>().field_name), \
+                                                      SPACETIMEDB_PASTE(table_name, _tag_type)::__is_event_internal> \
     table_name##_##field_name { #table_name, #field_name, &std::remove_cv_t<decltype(table_name)>::type::field_name }; \
     extern "C" __attribute__((export_name("__preinit__21_field_constraint_" #table_name "_" #field_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \
     void SPACETIMEDB_PASTE(__preinit__21_field_constraint_, SPACETIMEDB_PASTE(table_name, SPACETIMEDB_PASTE(_, SPACETIMEDB_PASTE(field_name, SPACETIMEDB_PASTE(_line_, __LINE__)))))() { \
@@ -733,7 +725,8 @@ public:
         return true; \
     }(), "Constraint validation for " #table_name "." #field_name); \
     static constexpr SpacetimeDB::UniqueFieldTag<typename std::remove_cv_t<decltype(table_name)>::type, \
-                                                  decltype(std::declval<typename std::remove_cv_t<decltype(table_name)>::type>().field_name)> \
+                                                  decltype(std::declval<typename std::remove_cv_t<decltype(table_name)>::type>().field_name), \
+                                                  SPACETIMEDB_PASTE(table_name, _tag_type)::__is_event_internal> \
     table_name##_##field_name { #table_name, #field_name, &std::remove_cv_t<decltype(table_name)>::type::field_name }; \
     extern "C" __attribute__((export_name("__preinit__21_field_constraint_" #table_name "_" #field_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \
     void SPACETIMEDB_PASTE(__preinit__21_field_constraint_, SPACETIMEDB_PASTE(table_name, SPACETIMEDB_PASTE(_, SPACETIMEDB_PASTE(field_name, SPACETIMEDB_PASTE(_line_, __LINE__)))))() { \
@@ -750,7 +743,8 @@ public:
         return true; \
     }(), "Constraint validation for " #table_name "." #field_name); \
     static constexpr SpacetimeDB::IndexedFieldTag<typename std::remove_cv_t<decltype(table_name)>::type, \
-                                                   decltype(std::declval<typename std::remove_cv_t<decltype(table_name)>::type>().field_name)> \
+                                                   decltype(std::declval<typename std::remove_cv_t<decltype(table_name)>::type>().field_name), \
+                                                   SPACETIMEDB_PASTE(table_name, _tag_type)::__is_event_internal> \
     table_name##_##field_name { #table_name, #field_name, &std::remove_cv_t<decltype(table_name)>::type::field_name }; \
     extern "C" __attribute__((export_name("__preinit__21_field_constraint_" #table_name "_" #field_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \
     void SPACETIMEDB_PASTE(__preinit__21_field_constraint_, SPACETIMEDB_PASTE(table_name, SPACETIMEDB_PASTE(_, SPACETIMEDB_PASTE(field_name, SPACETIMEDB_PASTE(_line_, __LINE__)))))() { \
@@ -767,7 +761,8 @@ public:
         return true; \
     }(), "AutoIncrement validation for " #table_name "." #field_name); \
     static constexpr SpacetimeDB::PrimaryKeyFieldTag<typename std::remove_cv_t<decltype(table_name)>::type, \
-                                                      decltype(std::declval<typename std::remove_cv_t<decltype(table_name)>::type>().field_name)> \
+                                                      decltype(std::declval<typename std::remove_cv_t<decltype(table_name)>::type>().field_name), \
+                                                      SPACETIMEDB_PASTE(table_name, _tag_type)::__is_event_internal> \
     table_name##_##field_name { #table_name, #field_name, &std::remove_cv_t<decltype(table_name)>::type::field_name }; \
     extern "C" __attribute__((export_name("__preinit__21_field_constraint_" #table_name "_" #field_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \
     void SPACETIMEDB_PASTE(__preinit__21_field_constraint_, SPACETIMEDB_PASTE(table_name, SPACETIMEDB_PASTE(_, SPACETIMEDB_PASTE(field_name, SPACETIMEDB_PASTE(_line_, __LINE__)))))() { \
@@ -788,7 +783,8 @@ public:
         return true; \
     }(), "Constraint validation for " #table_name "." #field_name); \
     static constexpr SpacetimeDB::UniqueFieldTag<typename std::remove_cv_t<decltype(table_name)>::type, \
-                                                  decltype(std::declval<typename std::remove_cv_t<decltype(table_name)>::type>().field_name)> \
+                                                  decltype(std::declval<typename std::remove_cv_t<decltype(table_name)>::type>().field_name), \
+                                                  SPACETIMEDB_PASTE(table_name, _tag_type)::__is_event_internal> \
     table_name##_##field_name { #table_name, #field_name, &std::remove_cv_t<decltype(table_name)>::type::field_name }; \
     extern "C" __attribute__((export_name("__preinit__21_field_constraint_" #table_name "_" #field_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \
     void SPACETIMEDB_PASTE(__preinit__21_field_constraint_, SPACETIMEDB_PASTE(table_name, SPACETIMEDB_PASTE(_, SPACETIMEDB_PASTE(field_name, SPACETIMEDB_PASTE(_line_, __LINE__)))))() { \
@@ -809,7 +805,8 @@ public:
         return true; \
     }(), "Constraint validation for " #table_name "." #field_name); \
     static constexpr SpacetimeDB::IndexedFieldTag<typename std::remove_cv_t<decltype(table_name)>::type, \
-                                                   decltype(std::declval<typename std::remove_cv_t<decltype(table_name)>::type>().field_name)> \
+                                                   decltype(std::declval<typename std::remove_cv_t<decltype(table_name)>::type>().field_name), \
+                                                   SPACETIMEDB_PASTE(table_name, _tag_type)::__is_event_internal> \
     table_name##_##field_name { #table_name, #field_name, &std::remove_cv_t<decltype(table_name)>::type::field_name }; \
     extern "C" __attribute__((export_name("__preinit__21_field_constraint_" #table_name "_" #field_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \
     void SPACETIMEDB_PASTE(__preinit__21_field_constraint_, SPACETIMEDB_PASTE(table_name, SPACETIMEDB_PASTE(_, SPACETIMEDB_PASTE(field_name, SPACETIMEDB_PASTE(_line_, __LINE__)))))() { \
