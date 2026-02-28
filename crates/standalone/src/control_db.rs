@@ -394,6 +394,19 @@ impl ControlDb {
         Ok(())
     }
 
+    pub fn is_database_locked(&self, database_identity: &Identity) -> Result<bool> {
+        let tree = self.db.open_tree("database_locks")?;
+        let key = database_identity.to_be_byte_array();
+        Ok(tree.get(key)?.map_or(false, |v| v.as_ref() == [1u8]))
+    }
+
+    pub fn set_database_lock(&self, database_identity: &Identity, locked: bool) -> Result<()> {
+        let tree = self.db.open_tree("database_locks")?;
+        let key = database_identity.to_be_byte_array();
+        tree.insert(key, &[locked as u8])?;
+        Ok(())
+    }
+
     pub fn delete_database(&self, id: u64) -> Result<Option<u64>> {
         let tree = self.db.open_tree("database")?;
         let tree_by_identity = self.db.open_tree("database_by_identity")?;
