@@ -791,6 +791,34 @@ impl Lang for UnrealCpp<'_> {
         let module_prefix = self.module_prefix;
         let mut files: Vec<OutputFile> = vec![];
 
+        let source_dir = self.uproject_dir.join("Source").join(self.module_name);
+        let required_files = [
+            (
+                format!("{}.Build.cs", self.module_name),
+                generate_build_cs_content(self.module_name),
+            ),
+            (
+                format!("{}.cpp", self.module_name),
+                generate_module_cpp_content(self.module_name),
+            ),
+            (
+                format!("{}.h", self.module_name),
+                generate_module_h_content(self.module_name),
+            ),
+        ];
+
+        for (filename, content) in required_files {
+            let file_path = source_dir.join(&filename);
+            if !file_path.exists() {
+                files.push(OutputFile {
+                    filename: format!("Source/{}/{}", self.module_name, filename),
+                    code: content,
+                });
+            }
+        }
+
+        ensure_module_in_uproject(self.uproject_dir, self.module_name).unwrap_or_else(|err| panic!("{err}"));
+
         // First, collect and generate all optional types
         let (optional_types, result_types) = collect_wrapper_types(self.module_prefix, module, options.visibility);
         for optional_name in optional_types {
@@ -5935,4 +5963,125 @@ fn type_ref_name(module_prefix: &str, module: &ModuleDef, typeref: spacetimedb_l
         .map(|id| id.deref().to_string())
         .unwrap_or_else(|| "Unnamed".to_string());
     format!("{module_prefix}{base_name}")
+}
+
+fn ensure_module_in_uproject(uproject_dir: &Path, module_name: &str) -> Result<(), String> {
+    let uproject_file = std::fs::read_dir(uproject_dir)
+        .map_err(|e| format!("Failed to read Unreal project directory '{}': {e}", uproject_dir.display()))?
+        .filter_map(|entry| entry.ok())
+        .find(|entry| {
+            entry
+                .path()
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext == "uproject")
+                .unwrap_or(false)
+        })
+        .ok_or_else(|| {
+            format!(
+                "No .uproject file found in '{}'. Unreal code generation requires a project directory containing a .uproject file.",
+                uproject_dir.display()
+            )
+        })?;
+
+    let uproject_path = uproject_file.path();
+    let content = std::fs::read_to_string(&uproject_path)
+        .map_err(|e| format!("Failed to read .uproject file '{}': {e}", uproject_path.display()))?;
+
+    let mut json: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Invalid JSON in .uproject file '{}': {e}", uproject_path.display()))?;
+
+    if !json.is_object() {
+        return Err(format!(
+            "Invalid .uproject file '{}': top-level JSON must be an object.",
+            uproject_path.display()
+        ));
+    }
+
+    let json_obj = json
+        .as_object_mut()
+        .expect("validated object .uproject JSON should have an object map");
+
+    if !json_obj.contains_key("Modules") {
+        json_obj.insert("Modules".to_string(), serde_json::Value::Array(vec![]));
+    }
+
+    let modules = json_obj
+        .get_mut("Modules")
+        .and_then(|m| m.as_array_mut())
+        .ok_or_else(|| {
+            format!(
+                "Invalid .uproject file '{}': 'Modules' must be an array.",
+                uproject_path.display()
+            )
+        })?;
+
+    let module_exists = modules.iter().any(|module| {
+        module
+            .get("Name")
+            .and_then(|name| name.as_str())
+            .map(|name| name == module_name)
+            .unwrap_or(false)
+    });
+
+    if !module_exists {
+        modules.push(serde_json::json!({
+            "Name": module_name,
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        }));
+
+        let formatted_json = serde_json::to_string_pretty(&json)
+            .map_err(|e| format!("Failed to serialize .uproject file '{}': {e}", uproject_path.display()))?;
+
+        std::fs::write(&uproject_path, formatted_json)
+            .map_err(|e| format!("Failed to write .uproject file '{}': {e}", uproject_path.display()))?;
+    }
+
+    Ok(())
+}
+
+fn generate_build_cs_content(module_name: &str) -> String {
+    format!(
+        r#"using UnrealBuildTool;
+
+public class {module_name} : ModuleRules
+{{
+    public {module_name}(ReadOnlyTargetRules Target) : base(Target)
+    {{
+        PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+
+        PublicDependencyModuleNames.AddRange(new string[] {{
+            "Core",
+            "CoreUObject",
+            "Engine",
+            "SpacetimeDbSdk"
+        }});
+
+        PrivateDependencyModuleNames.AddRange(new string[] {{
+        }});
+    }}
+}}
+"#,
+        module_name = module_name
+    )
+}
+
+fn generate_module_cpp_content(module_name: &str) -> String {
+    format!(
+        r#"#include "{module_name}.h"
+#include "Modules/ModuleManager.h"
+
+IMPLEMENT_PRIMARY_GAME_MODULE(FDefaultGameModuleImpl, {module_name}, "{module_name}");
+"#,
+        module_name = module_name
+    )
+}
+
+fn generate_module_h_content(_module_name: &str) -> String {
+    r#"#pragma once
+
+#include "CoreMinimal.h"
+"#
+    .to_string()
 }

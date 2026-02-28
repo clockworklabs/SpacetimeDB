@@ -49,6 +49,20 @@ void AEntity::ConsumeDespawn(float DeltaTime)
 	}
 }
 
+void AEntity::StartConsumeDespawn(AEntity* InConsumingEntity)
+{
+	if (!InConsumingEntity)
+	{
+		return;
+	}
+
+	ConsumingEntity = InConsumingEntity;
+	bIsDespawning = true;
+	DespawnElapsed = 0.f;
+	ConsumeStartPosition = GetActorLocation();
+	ConsumeStartScale = GetActorScale3D();
+}
+
 void AEntity::Spawn(int32 InEntityId)
 {
 	EntityId = InEntityId;
@@ -72,33 +86,10 @@ void AEntity::OnEntityUpdated(const FEntityType& NewVal)
 
 void AEntity::OnDelete(const FEventContext& Context)
 {
-	if (ConsumeDelete(Context))
+	if (bIsDespawning)
 		return;
 	
 	Destroy();
-}
-
-bool AEntity::ConsumeDelete(const FEventContext& Context)
-{
-	if (!Context.Event.IsReducer())
-		return false;
-
-	const FReducer Reducer = Context.Event.GetAsReducer();
-
-	if (!Reducer.IsConsumeEntity())
-		return false;
-
-	const FConsumeEntityArgs Args = Reducer.GetAsConsumeEntity();
-	const int32 ConsumerId = Args.Request.ConsumerEntityId;
-	ConsumingEntity = AGameManager::Instance->GetEntity(ConsumerId);
-	if (!ConsumingEntity)
-		return false;
-
-	bIsDespawning = true;
-	DespawnElapsed = 0.f;
-	ConsumeStartPosition = GetActorLocation();
-	ConsumeStartScale = GetActorScale3D();
-	return true;
 }
 
 void AEntity::SetColor(const FLinearColor& Color) const

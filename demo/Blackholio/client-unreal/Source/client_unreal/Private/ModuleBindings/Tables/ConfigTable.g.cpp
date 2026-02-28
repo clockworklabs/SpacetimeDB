@@ -13,6 +13,11 @@ void UConfigTable::PostInitialize()
     Data = MakeShared<UClientCache<FConfigType>>();
 
     TSharedPtr<FTableCache<FConfigType>> ConfigTable = Data->GetOrAdd(TableName);
+    ConfigTable->AddUniqueConstraint<int32>("id", [](const FConfigType& Row) -> const int32& {
+        return Row.Id; });
+
+    Id = NewObject<UConfigIdUniqueIndex>(this);
+    Id->SetCache(ConfigTable);
 
     /***/
 }
