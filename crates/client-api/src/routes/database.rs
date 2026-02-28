@@ -612,6 +612,18 @@ pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
     ctx.authorize_action(auth.claims.identity, database.database_identity, Action::ResetDatabase)
         .await?;
 
+    if ctx
+        .is_database_locked(&database_identity)
+        .await
+        .map_err(log_and_500)?
+    {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Database is locked and cannot be reset with --delete-data. Run `spacetime unlock` first.",
+        )
+            .into());
+    }
+
     let num_replicas = num_replicas.map(validate_replication_factor).transpose()?.flatten();
     ctx.reset_database(
         &auth.claims.identity,
