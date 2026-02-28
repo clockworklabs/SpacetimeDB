@@ -330,25 +330,85 @@ public partial struct TestScheduleIssues
       }
     },
     {/*
-    // Invalid: Wrong return type is not Vec<T> or Option<T>
     [SpacetimeDB.View(Accessor = "view_def_wrong_return", Public = true)]
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     public static Player ViewDefWrongReturn(ViewContext ctx)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                  ^^^^^^
     {
-^^^^^
-        return new Player { Identity = new() };
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    }
-^^^^^
-
 */
-      Message: View 'ViewDefWrongReturn' must return Vec<T> or Option<T>.,
+      Message: View 'ViewDefWrongReturn' must return T?, List<T>, or IQuery<T>,
       Severity: Error,
       Descriptor: {
         Id: STDB0024,
-        Title: Views must return Vec<T> or Option<T>,
-        MessageFormat: View '{0}' must return Vec<T> or Option<T>.,
+        Title: Views must return T?, List<T>, or IQuery<T>,
+        MessageFormat: View '{0}' must return T?, List<T>, or IQuery<T>,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_iter", Public = true)]
+    public static IEnumerable<Player> ViewDefIEnumerableReturnFromIter(ViewContext ctx)
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    {
+*/
+      Message: BSATN implementation for System.Collections.Generic.IEnumerable<Player> is not found: Unsupported system type System.Collections.Generic.IEnumerable<T>,
+      Severity: Error,
+      Descriptor: {
+        Id: BSATN0001,
+        Title: Unsupported type,
+        MessageFormat: BSATN implementation for {0} is not found: {1},
+        Category: SpacetimeDB.BSATN,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_iter", Public = true)]
+    public static IEnumerable<Player> ViewDefIEnumerableReturnFromIter(ViewContext ctx)
+                  ^^^^^^^^^^^^^^^^^^^
+    {
+*/
+      Message: View 'ViewDefIEnumerableReturnFromIter' must return T?, List<T>, or IQuery<T>,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0024,
+        Title: Views must return T?, List<T>, or IQuery<T>,
+        MessageFormat: View '{0}' must return T?, List<T>, or IQuery<T>,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_filter", Public = true)]
+    public static IEnumerable<TestScheduleIssues> ViewDefIEnumerableReturnFromFilter(
+                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        ViewContext ctx
+*/
+      Message: BSATN implementation for System.Collections.Generic.IEnumerable<TestScheduleIssues> is not found: Unsupported system type System.Collections.Generic.IEnumerable<T>,
+      Severity: Error,
+      Descriptor: {
+        Id: BSATN0001,
+        Title: Unsupported type,
+        MessageFormat: BSATN implementation for {0} is not found: {1},
+        Category: SpacetimeDB.BSATN,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_filter", Public = true)]
+    public static IEnumerable<TestScheduleIssues> ViewDefIEnumerableReturnFromFilter(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        ViewContext ctx
+*/
+      Message: View 'ViewDefIEnumerableReturnFromFilter' must return T?, List<T>, or IQuery<T>,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0024,
+        Title: Views must return T?, List<T>, or IQuery<T>,
+        MessageFormat: View '{0}' must return T?, List<T>, or IQuery<T>,
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true

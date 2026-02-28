@@ -71,7 +71,7 @@ function hasFlag(name: string): boolean {
 
 const seconds = getArg('seconds', 10);
 const concurrency = getArg('concurrency', 10);
-const alpha = getArg('alpha', 0.5);
+const alpha = getArg('alpha', 1.5);
 const systems = getStringArg('systems', 'convex,spacetimedb')
   .split(',')
   .map((s) => s.trim());
