@@ -28,7 +28,7 @@ pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, an
         .key(Key::new("build_options").module_specific())
         .key(Key::new("wasm_file").module_specific())
         .key(Key::new("js_file").module_specific())
-        .key(Key::new("num_replicas"))
+        .key(Key::new("num_replicas").module_specific())
         .key(Key::new("break_clients"))
         .key(Key::new("anon_identity"))
         .key(Key::new("parent"))

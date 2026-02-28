@@ -103,21 +103,21 @@ The following fields are never inherited:
 
 ```json
 {
-  "database": "region-us",
-  "module-path": "./region-module",
-  "server": "testnet",
+  "database": "world-highlands",
+  "module-path": "./world-module",
+  "server": "maincloud",
   "build-options": "--release",
   "generate": [
     { "language": "typescript", "out-dir": "./client/src/bindings" }
   ],
   "children": [
-    { "database": "region-eu" },
-    { "database": "region-asia" }
+    { "database": "world-midlands" },
+    { "database": "world-coastlands" }
   ]
 }
 ```
 
-All three databases (`region-us`, `region-eu`, `region-asia`) share the same module, server, and build options via inheritance. Because all three databases use the same module and generate config, bindings are generated only once.
+All three databases (`world-highlands`, `world-midlands`, `world-coastlands`) share the same module, server, and build options via inheritance. Because all three databases use the same module and generate config, bindings are generated only once.
 
 ### Different modules
 
@@ -127,17 +127,17 @@ A child can override `module-path` to use a different module:
 {
   "database": "my-game-global",
   "module-path": "./global-module",
-  "server": "testnet",
+  "server": "maincloud",
   "generate": [
     { "language": "typescript", "out-dir": "./web/src/global-bindings" },
     { "language": "csharp", "out-dir": "./unity/Assets/GlobalBindings" }
   ],
   "children": [
     {
-      "database": "my-game-region",
-      "module-path": "./region-module",
+      "database": "my-game-world",
+      "module-path": "./world-module",
       "generate": [
-        { "language": "typescript", "out-dir": "./web/src/region-bindings" }
+        { "language": "typescript", "out-dir": "./web/src/world-bindings" }
       ]
     }
   ]
@@ -162,20 +162,21 @@ The `--run` CLI flag overrides `dev.run`.
 
 When running `spacetime dev`:
 
-1. Build and publish all databases defined in the config.
+1. Build all modules defined in the config.
 2. Generate bindings for all databases.
-3. Run the client dev server specified by `dev.run`.
-4. Watch for changes and repeat steps 1-3.
+3. Publish all databases.
+4. Run the client dev server specified by `dev.run`.
+5. Watch for changes and repeat steps 1-4.
 
-The `--server` flag overrides the server for all databases. The `--skip-publish` flag skips step 1, and `--skip-generate` skips step 2.
+The `--server` flag overrides the server for all databases. The `--skip-publish` flag skips step 3, and `--skip-generate` skips step 2.
 
 ### Config auto-generation
 
-If no config file exists, `spacetime dev` generates a `spacetime.dev.json` with a minimal config. The command prompts for the database name (pre-filled with the directory name as the default) and infers the client language and output directory from the project structure. Values that the CLI already defaults (such as `module-path` to `./spacetimedb`) are omitted.
+If no config file exists, `spacetime dev` generates a `spacetime.json` with the server and module path, and a `spacetime.local.json` with the database name. The command prompts for the database name (pre-filled with the directory name as the default).
 
 ### Safety prompt
 
-`spacetime dev` tracks which config file the publish targets were resolved from. If the publish configuration comes from `spacetime.json` or `spacetime.local.json` (rather than a dev-specific file like `spacetime.dev.json` or `spacetime.dev.local.json`), the command prompts for confirmation before publishing. This prevents accidentally publishing to a shared or production server during development.
+`spacetime dev` tracks which config file the publish targets were resolved from. If the database is defined in `spacetime.json` (which is checked into git and typically defines shared or production databases), the command prompts for confirmation before publishing. Databases defined in dev-specific or local config files (such as `spacetime.dev.json` or `spacetime.local.json`) do not trigger this prompt.
 
 ## Database selection
 
@@ -186,10 +187,10 @@ When `spacetime.json` exists, the database name positional argument selects whic
 spacetime publish
 
 # Operate on a specific database
-spacetime publish region-us
+spacetime publish world-highlands
 
 # Operate on databases matching a pattern
-spacetime publish "region-*"
+spacetime publish "world-*"
 ```
 
 When no database name is provided, all databases are selected. When a filter matches no databases, the CLI reports an error:
@@ -209,7 +210,6 @@ All CLI flags besides the database selector act as overrides. They are classifie
 These apply to all selected databases:
 
 - `--server`: target server
-- `--build-options`: build flags
 - `--break-clients`: allow breaking changes
 - `--delete-data`: clear database data
 - `--yes` / `--force`: skip confirmation prompts
@@ -221,6 +221,7 @@ These produce an error if multiple databases are selected:
 - `--module-path`: module source path
 - `--bin-path`: precompiled WASM path
 - `--js-path`: JS bundle path
+- `--build-options`: build flags
 - `--num-replicas`: replica count
 
 ### Per-generate-entry overrides
@@ -262,8 +263,8 @@ From highest to lowest priority:
 
 1. CLI flags (highest)
 2. `spacetime.{env}.local.json`
-3. `spacetime.local.json`
-4. `spacetime.{env}.json`
+3. `spacetime.{env}.json`
+4. `spacetime.local.json`
 5. `spacetime.json`
 6. Built-in defaults (lowest)
 

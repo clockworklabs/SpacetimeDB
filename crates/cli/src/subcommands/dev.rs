@@ -680,6 +680,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     // Safety prompt: warn if any selected database target is defined in spacetime.json.
+    // spacetime.local.json is gitignored and personal, so it's fine for dev use.
     if let Some(ref lc) = loaded_config {
         let database_sources = resolve_database_sources(&lc.config);
         let databases_from_main_config: Vec<String> = db_names_for_logging
