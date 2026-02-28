@@ -205,7 +205,7 @@ From `src/cli.ts`:
 
 - **`--alpha A`**
   - Zipf α parameter for account selection (hot vs cold distribution)
-  - Default: `0.5`
+  - Default: `1.5`
 
 - **`--connectors list`**
   - Optional, comma-separated list of connector `system` names

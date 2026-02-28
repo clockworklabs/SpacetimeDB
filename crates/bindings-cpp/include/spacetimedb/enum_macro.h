@@ -3,7 +3,7 @@
 #include "spacetimedb/bsatn/traits.h"
 #include "spacetimedb/bsatn/sum_type.h"
 #include "spacetimedb/macros.h"
-#include "spacetimedb/internal/v9_type_registration.h"
+#include "spacetimedb/internal/module_type_registration.h"
 
 /**
  * @file enum_macro.h
@@ -486,5 +486,6 @@ namespace SpacetimeDB::detail {
             static constexpr const char* value = NamespacePrefix; \
         }; \
     }
+
 
 

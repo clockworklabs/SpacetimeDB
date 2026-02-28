@@ -234,7 +234,7 @@ LOG_PANIC("Fatal error message");
 The library uses a sophisticated hybrid compile-time/runtime architecture:
 
 - **Compile-Time Validation** (`table_with_constraints.h`): C++20 concepts and static assertions for constraint validation
-- **V9 Type Registration System** (`internal/v9_type_registration.h`): Unified type registration with error detection and circular reference prevention
+- **Module Type Registration System** (`internal/module_type_registration.h`): Unified type registration with error detection and circular reference prevention
 - **Priority-Ordered Initialization** (`internal/Module.cpp`): __preinit__ functions with numbered priorities ensure correct registration order
 - **Error Detection System** (`internal/Module.cpp`): Multi-layer validation with error module replacement for clear diagnostics
 - **BSATN Serialization** (`bsatn/`): Binary serialization system with algebraic type support for all data types
@@ -274,3 +274,4 @@ See the `modules/*-cpp/src/` directory for example modules:
 ## Contributing
 
 This library is part of the SpacetimeDB project. Please see the main repository for contribution guidelines.
+

@@ -125,9 +125,8 @@ struct bsatn_traits<SumType<Ts...>> {
     using sum_type = SumType<Ts...>;
     
     static AlgebraicType algebraic_type() {
-        // For now, return a string type as placeholder
-        // TODO: Implement proper sum type registration in V9TypeRegistration system
-        return AlgebraicType::String();
+        // Reuse the canonical std::variant sum-shape implementation.
+        return bsatn_traits<std::variant<Ts...>>::algebraic_type();
     }
 };
 

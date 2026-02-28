@@ -315,7 +315,7 @@
     volumes:
       - /mnt/local-ssd/sqlite_data:/data
       - ./runs:/app/runs
-    command: ["--seconds", "5", "--concurrency", "50", "--alpha", "1", "--connectors", "sqlite"]
+    command: ["--seconds", "5", "--concurrency", "50", "--alpha", "1.5", "--connectors", "sqlite"]
     network_mode: host
 
   sqlite-seed:

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <AssemblyName>SpacetimeDB.BSATN.Runtime</AssemblyName>
-    <Version>2.0.2</Version>
+    <Version>2.0.3</Version>
     <Title>SpacetimeDB BSATN Runtime</Title>
     <Description>The SpacetimeDB BSATN Runtime implements APIs for BSATN serialization/deserialization in C#.</Description>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
