@@ -316,6 +316,7 @@ Run `spacetime help generate` for more detailed information.
 
   Default value: `SpacetimeDB.Types`
 * `--unreal-module-name <UNREAL_MODULE_NAME>` — The module name that should be used for DLL export macros (required for lang unrealcpp)
+* `--module-prefix <MODULE_PREFIX>` — The module prefix to use for generated types (only used with --lang unrealcpp)
 * `-l`, `--lang <LANG>` — The language to generate
 
   Possible values: `csharp`, `typescript`, `rust`, `unrealcpp`

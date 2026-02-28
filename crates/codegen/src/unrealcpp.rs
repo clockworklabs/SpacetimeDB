@@ -383,7 +383,7 @@ impl Lang for UnrealCpp<'_> {
             filename: format!(
                 "Source/{}/Public/ModuleBindings/Tables/{}Table.g.h",
                 self.module_name,
-                format!("{module_prefix}{}", table.name.deref().to_case(Case::Pascal))
+                format_args!("{module_prefix}{}", table.name.deref().to_case(Case::Pascal))
             ),
             code: output.into_inner(),
         }
@@ -1037,7 +1037,7 @@ impl Lang for UnrealCpp<'_> {
             .map(|(_, accessor_name, _)| {
                 format!(
                     "ModuleBindings/Tables/{}Table.g.h",
-                    format!("{module_prefix}{}", accessor_name.deref().to_case(Case::Pascal))
+                    format_args!("{module_prefix}{}", accessor_name.deref().to_case(Case::Pascal))
                 )
             })
             .collect();
@@ -1077,7 +1077,7 @@ impl Lang for UnrealCpp<'_> {
             let table_cpp_filename = format!(
                 "Source/{}/Private/ModuleBindings/Tables/{}Table.g.cpp",
                 self.module_name,
-                format!("{module_prefix}{}", table.name.deref().to_case(Case::Pascal))
+                format_args!("{module_prefix}{}", table.name.deref().to_case(Case::Pascal))
             );
             files.push(OutputFile {
                 filename: table_cpp_filename,
@@ -1093,7 +1093,7 @@ impl Lang for UnrealCpp<'_> {
             let view_cpp_filename = format!(
                 "Source/{}/Private/ModuleBindings/Tables/{}Table.g.cpp",
                 self.module_name,
-                format!("{module_prefix}{}", view.name.deref().to_case(Case::Pascal))
+                format_args!("{module_prefix}{}", view.name.deref().to_case(Case::Pascal))
             );
             files.push(OutputFile {
                 filename: view_cpp_filename,
