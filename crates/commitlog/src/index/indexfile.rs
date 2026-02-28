@@ -522,17 +522,14 @@ mod tests {
         index.truncate(1)?;
         assert_eq!(index.num_entries, 0);
 
-
         // first entry will be with key 2
         let mut index = create_and_fill_index(10, 5)?;
         assert_eq!(index.num_entries, 4);
         index.truncate(1)?;
         assert_eq!(index.num_entries, 0);
 
-
         index.truncate(0)?;
         assert_eq!(index.num_entries, 0);
-
 
         Ok(())
     }
