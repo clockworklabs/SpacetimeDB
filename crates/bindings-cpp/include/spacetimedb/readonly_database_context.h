@@ -58,36 +58,46 @@ public:
     // Tag-based accessor using operator[] (SpacetimeDB standard)
     template<typename Tag>
     ReadOnlyTableAccessor<typename Tag::type> operator[](const Tag&) const {
+        static_assert(!Tag::__is_event_internal,
+            "Event tables are not accessible from views.");
         return ReadOnlyTableAccessor<typename Tag::type>(std::string(Tag::__table_name_internal));
     }
     
     // Field tag accessors - read-only versions
     // These return read-only field accessors that only support querying, not mutation
     
-    template<typename TableType, typename FieldType>
+    template<typename TableType, typename FieldType, bool IsEventTable>
     ReadOnlyPrimaryKeyAccessor<TableType, FieldType> operator[](
-        const FieldTag<TableType, FieldType, FieldConstraint::PrimaryKey>& field_tag) const {
+        const FieldTag<TableType, FieldType, FieldConstraint::PrimaryKey, IsEventTable>& field_tag) const {
+        static_assert(!IsEventTable,
+            "Event tables are not accessible from views.");
         return ReadOnlyPrimaryKeyAccessor<TableType, FieldType>(
             field_tag.table_name, field_tag.field_name, field_tag.member_ptr);
     }
     
-    template<typename TableType, typename FieldType>
+    template<typename TableType, typename FieldType, bool IsEventTable>
     ReadOnlyUniqueAccessor<TableType, FieldType> operator[](
-        const FieldTag<TableType, FieldType, FieldConstraint::Unique>& field_tag) const {
+        const FieldTag<TableType, FieldType, FieldConstraint::Unique, IsEventTable>& field_tag) const {
+        static_assert(!IsEventTable,
+            "Event tables are not accessible from views.");
         return ReadOnlyUniqueAccessor<TableType, FieldType>(
             field_tag.table_name, field_tag.field_name, field_tag.member_ptr);
     }
     
-    template<typename TableType, typename FieldType>
+    template<typename TableType, typename FieldType, bool IsEventTable>
     ReadOnlyIndexedAccessor<TableType, FieldType> operator[](
-        const FieldTag<TableType, FieldType, FieldConstraint::Indexed>& field_tag) const {
+        const FieldTag<TableType, FieldType, FieldConstraint::Indexed, IsEventTable>& field_tag) const {
+        static_assert(!IsEventTable,
+            "Event tables are not accessible from views.");
         return ReadOnlyIndexedAccessor<TableType, FieldType>(
             field_tag.table_name, field_tag.field_name, field_tag.member_ptr);
     }
     
-    template<typename TableType, typename FieldType>
+    template<typename TableType, typename FieldType, bool IsEventTable>
     ReadOnlyRegularAccessor<TableType, FieldType> operator[](
-        const FieldTag<TableType, FieldType, FieldConstraint::None>& field_tag) const {
+        const FieldTag<TableType, FieldType, FieldConstraint::None, IsEventTable>& field_tag) const {
+        static_assert(!IsEventTable,
+            "Event tables are not accessible from views.");
         return ReadOnlyRegularAccessor<TableType, FieldType>(
             field_tag.table_name, field_tag.field_name, field_tag.member_ptr);
     }

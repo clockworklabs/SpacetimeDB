@@ -204,7 +204,7 @@ outcome.error()            // const std::string& - get error message (UB if succ
 extern "C" __attribute__((export_name("__preinit__01_clear_global_state")))
 void __preinit__01_clear_global_state() {
     ClearV9Module();  // Reset module definition and handler registries
-    getV9TypeRegistration().clear();  // Reset type registry and error state
+    getModuleTypeRegistration().clear();  // Reset type registry and error state
 }
 ```
 
@@ -308,15 +308,15 @@ if (constraint == FieldConstraint::PrimaryKey) {
 
 ### Phase 3: Type System Registration
 
-**Component**: V9TypeRegistration system (`v9_type_registration.h`)
+**Component**: ModuleTypeRegistration system (`module_type_registration.h`)
 
 **Core Principle**: Only user-defined structs and enums get registered in the typespace. Primitives, arrays, Options, and special types are always inlined.
 
-**Architecture Note**: V9Builder serves as the registration coordinator but delegates all type processing to the V9TypeRegistration system. This separation ensures a single, unified type registration pathway.
+**Architecture Note**: V9Builder serves as the registration coordinator but delegates all type processing to the ModuleTypeRegistration system. This separation ensures a single, unified type registration pathway.
 
 **Registration Flow**:
 ```cpp
-class V9TypeRegistration {
+class ModuleTypeRegistration {
     AlgebraicType registerType(const bsatn::AlgebraicType& bsatn_type,
                               const std::string& explicit_name = "",
                               const std::type_info* cpp_type = nullptr) {
@@ -376,7 +376,7 @@ void __preinit__99_validate_types() {
     }
     
     // 3. Check for type registration errors
-    if (getV9TypeRegistration().hasError()) {
+    if (getModuleTypeRegistration().hasError()) {
         createErrorModule("ERROR_TYPE_REGISTRATION_" + sanitize(error_message));
         return;
     }
@@ -427,7 +427,7 @@ namespace SpacetimeDB::detail {
 ```
 
 #### 2. LazyTypeRegistrar Integration
-**Location**: `v9_type_registration.h` - Compile-time namespace detection
+**Location**: `module_type_registration.h` - Compile-time namespace detection
 
 ```cpp
 template<typename T>
@@ -445,7 +445,7 @@ class LazyTypeRegistrar {
         }
         
         // Register with qualified name
-        type_index_ = getV9TypeRegistration().registerAndGetIndex(
+        type_index_ = getModuleTypeRegistration().registerAndGetIndex(
             algebraic_type, qualified_name, &typeid(T));
     }
 };
