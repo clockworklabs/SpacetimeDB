@@ -107,6 +107,13 @@ export function useTable<TableDef extends UntypedTableDef>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionState, accessorName, querySql, subscribeApplied]);
 
+  // Invalidate the cached snapshot when computeSnapshot changes (e.g. when
+  // subscribeApplied flips to true) so getSnapshot() recomputes on the next
+  // render instead of returning a stale [rows, false] tuple.
+  useEffect(() => {
+    lastSnapshotRef.current = null;
+  }, [computeSnapshot]);
+
   useEffect(() => {
     const connection = connectionState.getConnection()!;
     if (connectionState.isActive && connection) {
