@@ -1,0 +1,14 @@
+[package]
+name = "case-conversion-client"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+
+[dependencies]
+spacetimedb-sdk = { path = "../.." }
+test-counter = { path = "../test-counter" }
+anyhow.workspace = true
+env_logger.workspace = true
+
+[lints]
+workspace = true

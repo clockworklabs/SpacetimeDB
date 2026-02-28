@@ -488,3 +488,153 @@ macro_rules! view_tests {
 
 view_tests!(rust_view, "");
 //view_tests!(cpp_view, "-cpp");
+
+mod case_conversion_ts {
+    use spacetimedb_testing::sdk::Test;
+
+    const MODULE: &str = "sdk-test-case-conversion-ts";
+    const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/case-conversion-client");
+
+    fn make_test(subcommand: &str) -> Test {
+        Test::builder()
+            .with_name(subcommand)
+            .with_module(MODULE)
+            .with_client(CLIENT)
+            .with_language("rust")
+            .with_bindings_dir("src/module_bindings")
+            .with_compile_command("cargo build")
+            .with_run_command(format!("cargo run -- {}", subcommand))
+            .build()
+    }
+
+    #[test]
+    fn insert_player() {
+        make_test("insert-player").run();
+    }
+
+    #[test]
+    fn insert_person() {
+        make_test("insert-person").run();
+    }
+
+    #[test]
+    fn ban_player() {
+        make_test("ban-player").run();
+    }
+
+    #[test]
+    fn query_builder_filter() {
+        make_test("query-builder-filter").run();
+    }
+
+    #[test]
+    fn query_builder_join() {
+        make_test("query-builder-join").run();
+    }
+    
+    #[test]
+    fn query_view() {
+        make_test("view").run();
+    }
+}
+
+mod case_conversion_rust {
+    use spacetimedb_testing::sdk::Test;
+
+    const MODULE: &str = "sdk-test-case-conversion";
+    const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/case-conversion-client");
+
+    fn make_test(subcommand: &str) -> Test {
+        Test::builder()
+            .with_name(subcommand)
+            .with_module(MODULE)
+            .with_client(CLIENT)
+            .with_language("rust")
+            .with_bindings_dir("src/module_bindings")
+            .with_compile_command("cargo build")
+            .with_run_command(format!("cargo run -- {}", subcommand))
+            .build()
+    }
+
+    #[test]
+    fn insert_player() {
+        make_test("insert-player").run();
+    }
+
+    #[test]
+    fn insert_person() {
+        make_test("insert-person").run();
+    }
+
+    #[test]
+    fn ban_player() {
+        make_test("ban-player").run();
+    }
+
+    #[test]
+    fn query_builder_filter() {
+        make_test("query-builder-filter").run();
+    }
+
+    #[test]
+    fn query_builder_join() {
+        make_test("query-builder-join").run();
+    }
+
+    #[test]
+    fn query_view() {
+        make_test("view").run();
+    }
+}
+/// Tests of case conversion using a TypeScript client against the Rust module `sdk-test-case-conversion`.
+///
+/// Uses the TS client at `crates/bindings-typescript/case-conversion-test-client`.
+/// Verifies that the TypeScript SDK correctly handles case-converted names from a Rust module:
+/// - Table accessors, field names with digit boundaries, nested structs, enum variants
+/// - Reducers with explicit names, query builder filters and joins
+mod case_conversion_rust_ts_client {
+    use spacetimedb_testing::sdk::Test;
+
+    const MODULE: &str = "sdk-test-case-conversion";
+    const CLIENT: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../typescript/case-conversion-test-client"
+    );
+
+    fn make_test(subcommand: &str) -> Test {
+        Test::builder()
+            .with_name(subcommand)
+            .with_module(MODULE)
+            .with_client(CLIENT)
+            .with_language("typescript")
+            .with_bindings_dir("src/module_bindings")
+            .with_compile_command("sh -c 'pnpm install && pnpm run build'")
+            .with_run_command(format!("node dist/index.js {}", subcommand))
+            .build()
+    }
+
+    #[test]
+    fn insert_player() {
+        make_test("insert-player").run();
+    }
+
+    #[test]
+    fn insert_person() {
+        make_test("insert-person").run();
+    }
+
+    #[test]
+    fn ban_player() {
+        make_test("ban-player").run();
+    }
+
+    #[test]
+    fn query_builder_filter() {
+        make_test("query-builder-filter").run();
+    }
+
+    #[test]
+    fn query_builder_join() {
+        make_test("query-builder-join").run();
+    }
+}
