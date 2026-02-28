@@ -164,46 +164,56 @@ pub struct LoadedConfig {
 
 impl SpacetimeConfig {
     /// Collect all database targets with parent→child inheritance.
-    /// Children inherit unset `additional_fields` and `generate` from their parent.
-    /// `dev` and `children` are NOT propagated to child targets.
+    /// Children inherit unset `additional_fields` from their parent.
+    /// `dev`, `generate`, and `children` are NOT propagated to child targets.
     /// Returns `Vec<FlatTarget>` with fully resolved fields.
     pub fn collect_all_targets_with_inheritance(&self) -> Vec<FlatTarget> {
-        self.collect_targets_inner(None, None)
+        self.collect_targets_inner(None)
     }
 
     fn collect_targets_inner(
         &self,
         parent_fields: Option<&HashMap<String, Value>>,
-        parent_generate: Option<&Vec<HashMap<String, Value>>>,
     ) -> Vec<FlatTarget> {
+        // module-path, bin-path, and js-path are mutually exclusive module sources.
+        // If a child specifies any one, the other two are not inherited from the parent.
+        const MODULE_SOURCE_KEYS: &[&str] = &["module-path", "bin-path", "js-path"];
+        let child_specifies_source = MODULE_SOURCE_KEYS
+            .iter()
+            .any(|k| self.additional_fields.contains_key(*k));
+
         // Build this node's fields by inheriting from parent
         let mut fields = self.additional_fields.clone();
         if let Some(parent) = parent_fields {
             for (key, value) in parent {
-                if !fields.contains_key(key) {
-                    fields.insert(key.clone(), value.clone());
+                if fields.contains_key(key) {
+                    continue;
                 }
+                // If the child specifies any module source, skip inheriting the others
+                if child_specifies_source && MODULE_SOURCE_KEYS.contains(&key.as_str()) {
+                    continue;
+                }
+                fields.insert(key.clone(), value.clone());
             }
         }
 
-        // Generate: child's generate replaces parent's; if absent, inherit parent's
-        let effective_generate = if self.generate.is_some() {
-            self.generate.clone()
-        } else {
-            parent_generate.cloned()
-        };
+        // Generate is never inherited. It is tied to a specific module and output location:
+        // inheriting is redundant when the child shares the parent's module (deduplication
+        // handles it) and dangerous when the child uses a different module (two modules
+        // would write bindings to the same output directory).
+        let effective_generate = self.generate.clone();
 
         let target = FlatTarget {
             fields: fields.clone(),
             source_config: self.source_config.clone(),
-            generate: effective_generate.clone(),
+            generate: effective_generate,
         };
 
         let mut result = vec![target];
 
         if let Some(children) = &self.children {
             for child in children {
-                let child_targets = child.collect_targets_inner(Some(&fields), effective_generate.as_ref());
+                let child_targets = child.collect_targets_inner(Some(&fields));
                 result.extend(child_targets);
             }
         }
@@ -2600,8 +2610,8 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_inheritance_from_parent() {
-        // Children inherit generate from parent if they don't define their own
+    fn test_generate_not_inherited_from_parent() {
+        // Generate is never inherited. Children must define their own.
         let json = r#"{
             "database": "parent-db",
             "server": "local",
@@ -2632,15 +2642,10 @@ mod tests {
             Some("typescript")
         );
 
-        // Child 1 inherits parent's generate
-        let child1_gen = targets[1].generate.as_ref().unwrap();
-        assert_eq!(child1_gen.len(), 1);
-        assert_eq!(
-            child1_gen[0].get("language").and_then(|v| v.as_str()),
-            Some("typescript")
-        );
+        // Child 1 does not inherit parent's generate
+        assert!(targets[1].generate.is_none());
 
-        // Child 2 overrides with its own generate
+        // Child 2 has its own generate
         let child2_gen = targets[2].generate.as_ref().unwrap();
         assert_eq!(child2_gen.len(), 1);
         assert_eq!(child2_gen[0].get("language").and_then(|v| v.as_str()), Some("csharp"));
@@ -3084,9 +3089,10 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_dedup_with_inherited_generate() {
-        // Two sibling databases sharing parent's generate + same module path
-        // should deduplicate to a single generate entry
+    fn test_generate_not_inherited_for_children_sharing_module() {
+        // Even when children share the parent's module-path, generate is not inherited.
+        // Deduplication in generate.rs handles the common case; inheritance would be
+        // dangerous when a child overrides module-path.
         let json = r#"{
             "module-path": "./server",
             "generate": [
@@ -3101,20 +3107,22 @@ mod tests {
         let config: SpacetimeConfig = json5::from_str(json).unwrap();
         let targets = config.collect_all_targets_with_inheritance();
 
-        // All 3 targets (parent + 2 children) share the same module-path and generate
         assert_eq!(targets.len(), 3);
+
+        // Parent has generate
+        assert!(targets[0].generate.is_some());
+
+        // Children do not inherit generate
+        assert!(targets[1].generate.is_none());
+        assert!(targets[2].generate.is_none());
+
+        // All share the same module-path via field inheritance
         for target in &targets {
             assert_eq!(
                 target.fields.get("module-path").and_then(|v| v.as_str()),
                 Some("./server")
             );
-            let gen = target.generate.as_ref().unwrap();
-            assert_eq!(gen.len(), 1);
-            assert_eq!(gen[0].get("language").and_then(|v| v.as_str()), Some("typescript"));
         }
-
-        // All have the same (module-path, generate) so dedup should reduce to 1
-        // (this is verified in generate.rs tests, but we confirm the data here)
     }
 
     #[test]
