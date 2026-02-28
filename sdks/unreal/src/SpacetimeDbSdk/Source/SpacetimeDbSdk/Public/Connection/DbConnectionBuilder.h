@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "UObject/NoExportTypes.h"
 #include "Connection/DbConnectionBase.h"
-#include "ModuleBindings/Types/CompressableQueryUpdateType.g.h"
 #include "DbConnectionBuilder.generated.h"
 
 UCLASS(BlueprintType)

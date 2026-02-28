@@ -13,6 +13,11 @@ void UFoodTable::PostInitialize()
     Data = MakeShared<UClientCache<FFoodType>>();
 
     TSharedPtr<FTableCache<FFoodType>> FoodTable = Data->GetOrAdd(TableName);
+    FoodTable->AddUniqueConstraint<int32>("entity_id", [](const FFoodType& Row) -> const int32& {
+        return Row.EntityId; });
+
+    EntityId = NewObject<UFoodEntityIdUniqueIndex>(this);
+    EntityId->SetCache(FoodTable);
 
     /***/
 }

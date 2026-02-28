@@ -8,28 +8,12 @@
 #include "ModuleBindings/Tables/PkUuidTable.g.h"
 #include "ModuleBindings/Tables/ProcInsertsIntoTable.g.h"
 
-static FReducer DecodeReducer(const FReducerEvent& Event)
-{
-    const FString& ReducerName = Event.ReducerCall.ReducerName;
-
-    if (ReducerName == TEXT("schedule_proc"))
-    {
-        FScheduleProcArgs Args = UE::SpacetimeDB::Deserialize<FScheduleProcArgs>(Event.ReducerCall.Args);
-        return FReducer::ScheduleProc(Args);
-    }
-
-    return FReducer();
-}
-
 UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
-	SetReducerFlags = ObjectInitializer.CreateDefaultSubobject<USetReducerFlags>(this, TEXT("SetReducerFlags"));
-
 	Db = ObjectInitializer.CreateDefaultSubobject<URemoteTables>(this, TEXT("RemoteTables"));
 	Db->Initialize();
 	
 	Reducers = ObjectInitializer.CreateDefaultSubobject<URemoteReducers>(this, TEXT("RemoteReducers"));
-	Reducers->SetCallReducerFlags = SetReducerFlags;
 	Reducers->Conn = this;
 
 	Procedures = ObjectInitializer.CreateDefaultSubobject<URemoteProcedures>(this, TEXT("RemoteProcedures"));
@@ -44,7 +28,6 @@ FContextBase::FContextBase(UDbConnection* InConn)
 {
 	Db = InConn->Db;
 	Reducers = InConn->Reducers;
-	SetReducerFlags = InConn->SetReducerFlags;
 	Procedures = InConn->Procedures;
 	Conn = InConn;
 }
@@ -85,11 +68,6 @@ void URemoteTables::Initialize()
 	/**/
 }
 
-void USetReducerFlags::ScheduleProc(ECallReducerFlags Flag)
-{
-	FlagMap.Add("ScheduleProc", Flag);
-}
-
 void URemoteReducers::ScheduleProc()
 {
     if (!Conn)
@@ -98,7 +76,9 @@ void URemoteReducers::ScheduleProc()
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("schedule_proc"), FScheduleProcArgs(), SetCallReducerFlags);
+	FScheduleProcArgs ReducerArgs;
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("schedule_proc"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::ScheduleProc(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeScheduleProc(const FReducerEventContext& Context, const UScheduleProcReducer* Args)
@@ -459,11 +439,45 @@ void UDbConnection::OnUnhandledProcedureErrorHandler(const FProcedureEventContex
     }
 }
 
+void UDbConnection::RegisterPendingTypedReducer(uint32 RequestId, FReducer Reducer)
+{
+    Reducer.RequestId = RequestId;
+    PendingTypedReducers.Add(RequestId, MoveTemp(Reducer));
+}
+
+bool UDbConnection::TryGetPendingTypedReducer(uint32 RequestId, FReducer& OutReducer) const
+{
+    if (const FReducer* Found = PendingTypedReducers.Find(RequestId))
+    {
+        OutReducer = *Found;
+        return true;
+    }
+    return false;
+}
+
+bool UDbConnection::TryTakePendingTypedReducer(uint32 RequestId, FReducer& OutReducer)
+{
+    if (FReducer* Found = PendingTypedReducers.Find(RequestId))
+    {
+        OutReducer = *Found;
+        PendingTypedReducers.Remove(RequestId);
+        return true;
+    }
+    return false;
+}
+
 void UDbConnection::ReducerEvent(const FReducerEvent& Event)
 {
     if (!Reducers) { return; }
 
-    FReducer DecodedReducer = DecodeReducer(Event);
+    FReducer DecodedReducer;
+    if (!TryTakePendingTypedReducer(Event.RequestId, DecodedReducer))
+    {
+        const FString ErrorMessage = FString::Printf(TEXT("Reducer result for unknown request_id %u"), Event.RequestId);
+        UE_LOG(LogTemp, Error, TEXT("%s"), *ErrorMessage);
+        ReducerEventFailed(Event, ErrorMessage);
+        return;
+    }
 
     FTestProcClientReducerEvent ReducerEvent;
     ReducerEvent.CallerConnectionId = Event.CallerConnectionId;
@@ -475,8 +489,8 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
 
     FReducerEventContext Context(this, ReducerEvent);
 
-    // Use hardcoded string matching for reducer dispatching
-    const FString& ReducerName = Event.ReducerCall.ReducerName;
+    // Dispatch by typed reducer metadata
+    const FString& ReducerName = ReducerEvent.Reducer.ReducerName;
 
     if (ReducerName == TEXT("schedule_proc"))
     {
@@ -676,7 +690,13 @@ void UDbConnection::DbUpdate(const FDatabaseUpdateType& Update, const FSpacetime
     case ESpacetimeDBEventTag::Reducer:
     {
         FReducerEvent ReducerEvent = Event.GetAsReducer();
-        FReducer Reducer = DecodeReducer(ReducerEvent);
+        FReducer Reducer;
+        if (!TryGetPendingTypedReducer(ReducerEvent.RequestId, Reducer))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("Missing typed reducer for request_id %u while building table-update event context; using UnknownTransaction event"), ReducerEvent.RequestId);
+            BaseEvent = FTestProcClientEvent::UnknownTransaction(FSpacetimeDBUnit());
+            break;
+        }
         BaseEvent = FTestProcClientEvent::Reducer(Reducer);
         break;
     }
@@ -691,6 +711,10 @@ void UDbConnection::DbUpdate(const FDatabaseUpdateType& Update, const FSpacetime
 
     case ESpacetimeDBEventTag::Disconnected:
         BaseEvent = FTestProcClientEvent::Disconnected(Event.GetAsDisconnected());
+        break;
+
+    case ESpacetimeDBEventTag::Transaction:
+        BaseEvent = FTestProcClientEvent::Transaction(Event.GetAsTransaction());
         break;
 
     case ESpacetimeDBEventTag::SubscribeError:

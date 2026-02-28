@@ -4,10 +4,11 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
-#include "SpacetimeDbSdkOptionalString.g.generated.h"
+#include "ModuleBindings/Types/QueryRowsType.g.h"
+#include "SpacetimeDbSdkOptionalQueryRows.g.generated.h"
 
 USTRUCT(BlueprintType)
-struct SPACETIMEDBSDK_API FSpacetimeDbSdkOptionalString
+struct SPACETIMEDBSDK_API FSpacetimeDbSdkOptionalQueryRows
 {
     GENERATED_BODY()
 
@@ -15,35 +16,35 @@ struct SPACETIMEDBSDK_API FSpacetimeDbSdkOptionalString
     bool bHasValue = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB", meta = (EditCondition = "bHasValue"))
-    FString Value;
+    FQueryRowsType Value;
 
-    FSpacetimeDbSdkOptionalString() = default;
+    FSpacetimeDbSdkOptionalQueryRows() = default;
 
-    explicit FSpacetimeDbSdkOptionalString(const FString& InValue)
+    explicit FSpacetimeDbSdkOptionalQueryRows(const FQueryRowsType& InValue)
         : bHasValue(true), Value(InValue) {}
 
     bool IsSet() const { return bHasValue; }
     void Reset() { bHasValue = false; }
 
-    FORCEINLINE bool operator==(const FSpacetimeDbSdkOptionalString& Other) const
+    FORCEINLINE bool operator==(const FSpacetimeDbSdkOptionalQueryRows& Other) const
     {
         if (bHasValue != Other.bHasValue) return false;
         return !bHasValue || Value == Other.Value;
     }
 
-    FORCEINLINE bool operator!=(const FSpacetimeDbSdkOptionalString& Other) const
+    FORCEINLINE bool operator!=(const FSpacetimeDbSdkOptionalQueryRows& Other) const
     {
         return !(*this == Other);
     }
 };
 
 /**
- * Custom hash function for FSpacetimeDbSdkOptionalString.
+ * Custom hash function for FSpacetimeDbSdkOptionalQueryRows.
  * Hashes the HasValue flag and the Value if present.
- * @param Optional The FSpacetimeDbSdkOptionalString instance to hash.
+ * @param Optional The FSpacetimeDbSdkOptionalQueryRows instance to hash.
  * @return The combined hash value.
  */
-FORCEINLINE uint32 GetTypeHash(const FSpacetimeDbSdkOptionalString& Optional)
+FORCEINLINE uint32 GetTypeHash(const FSpacetimeDbSdkOptionalQueryRows& Optional)
 {
     uint32 Hash = GetTypeHash(Optional.bHasValue);
     if (Optional.bHasValue)
@@ -55,7 +56,7 @@ FORCEINLINE uint32 GetTypeHash(const FSpacetimeDbSdkOptionalString& Optional)
 
 namespace UE::SpacetimeDB
 {
-    UE_SPACETIMEDB_ENABLE_TARRAY(FSpacetimeDbSdkOptionalString);
+    UE_SPACETIMEDB_ENABLE_TARRAY(FSpacetimeDbSdkOptionalQueryRows);
 
-    UE_SPACETIMEDB_OPTIONAL(FSpacetimeDbSdkOptionalString, bHasValue, Value);
+    UE_SPACETIMEDB_OPTIONAL(FSpacetimeDbSdkOptionalQueryRows, bHasValue, Value);
 }

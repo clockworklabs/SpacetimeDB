@@ -7767,6 +7767,7 @@ dependencies = [
  "insta",
  "itertools 0.12.1",
  "regex",
+ "serde_json",
  "spacetimedb-data-structures",
  "spacetimedb-lib 2.0.2",
  "spacetimedb-primitives 2.0.2",

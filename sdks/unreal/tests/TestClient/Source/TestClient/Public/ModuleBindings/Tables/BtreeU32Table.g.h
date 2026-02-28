@@ -57,7 +57,7 @@ public:
 
     void PostInitialize();
 
-    /** Update function for btree_u32 table*/
+    /** Update function for btree_u_32 table*/
     FTableAppliedDiff<FBTreeU32Type> Update(TArray<FWithBsatn<FBTreeU32Type>> InsertsRef, TArray<FWithBsatn<FBTreeU32Type>> DeletesRef);
 
     /** Number of subscribed rows currently in the cache */
@@ -95,7 +95,7 @@ public:
     FOnBtreeU32Delete OnDelete;
 
 private:
-    const FString TableName = TEXT("btree_u32");
+    const FString TableName = TEXT("btree_u_32");
 
     TSharedPtr<UClientCache<FBTreeU32Type>> Data;
 };

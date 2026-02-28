@@ -20,7 +20,7 @@ class TESTCLIENT_API UOptionI32Table : public URemoteTable
 public:
     void PostInitialize();
 
-    /** Update function for option_i32 table*/
+    /** Update function for option_i_32 table*/
     FTableAppliedDiff<FOptionI32Type> Update(TArray<FWithBsatn<FOptionI32Type>> InsertsRef, TArray<FWithBsatn<FOptionI32Type>> DeletesRef);
 
     /** Number of subscribed rows currently in the cache */
@@ -58,7 +58,7 @@ public:
     FOnOptionI32Delete OnDelete;
 
 private:
-    const FString TableName = TEXT("option_i32");
+    const FString TableName = TEXT("option_i_32");
 
     TSharedPtr<UClientCache<FOptionI32Type>> Data;
 };

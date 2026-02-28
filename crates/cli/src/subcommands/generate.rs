@@ -48,6 +48,7 @@ fn build_generate_config_schema(command: &clap::Command) -> Result<CommandSchema
         .key(Key::new("js_file").module_specific())
         .key(Key::new("namespace").generate_entry_specific())
         .key(Key::new("unreal_module_name").generate_entry_specific())
+        .key(Key::new("module_prefix").generate_entry_specific())
         .key(Key::new("build_options").module_specific())
         .key(Key::new("include_private"))
         .exclude("json_module")
@@ -235,6 +236,11 @@ pub fn cli() -> clap::Command {
                 .help("The module name that should be used for DLL export macros (required for lang unrealcpp)")
         )
         .arg(
+            Arg::new("module_prefix")
+                .long("module-prefix")
+                .help("The module prefix to use for generated types (only used with --lang unrealcpp)")
+        )
+        .arg(
             Arg::new("lang")
                 .long("lang")
                 .short('l')
@@ -285,6 +291,7 @@ pub struct GenerateRunConfig {
     pub lang: Language,
     pub namespace: String,
     pub module_name: Option<String>,
+    pub module_prefix: Option<String>,
     pub build_options: String,
     pub out_dir: PathBuf,
     pub include_private: bool,
@@ -313,6 +320,7 @@ fn prepare_generate_run_configs<'a>(
             .get_one::<String>("namespace")?
             .unwrap_or_else(|| "SpacetimeDB.Types".to_string());
         let module_name = command_config.get_one::<String>("unreal_module_name")?;
+        let module_prefix = command_config.get_one::<String>("module_prefix")?;
         let build_options = command_config
             .get_one::<String>("build_options")?
             .unwrap_or_else(String::new);
@@ -371,6 +379,7 @@ fn prepare_generate_run_configs<'a>(
             lang,
             namespace,
             module_name,
+            module_prefix,
             build_options,
             out_dir,
             include_private,
@@ -512,6 +521,7 @@ pub async fn run_prepared_generate_configs(
                 unreal_cpp_lang = UnrealCpp {
                     module_name: run.module_name.as_ref().unwrap(),
                     uproject_dir: &run.out_dir,
+                    module_prefix: run.module_prefix.as_deref().unwrap_or(""),
                 };
                 &unreal_cpp_lang as &dyn Lang
             }
