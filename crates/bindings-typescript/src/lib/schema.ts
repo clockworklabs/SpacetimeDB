@@ -63,6 +63,7 @@ export interface TableToSchema<
   rowType: T['rowSpacetimeType'];
   indexes: T['idxs'];
   constraints: T['constraints'];
+  isEvent: T['isEvent'];
 }
 
 export function tablesToSchema<
@@ -122,7 +123,7 @@ export function tableToSchema<
       };
     }) as T['idxs'],
     tableDef,
-    ...(tableDef.isEvent ? { isEvent: true } : {}),
+    isEvent: schema.isEvent,
   };
 }
 
