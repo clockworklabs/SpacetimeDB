@@ -198,7 +198,14 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
         let key = key.into();
         let (found_key, index) = self
             .find_index(Key::from(key))
-            .map(|(found, index)| (found.into(), index))?;
+            .map(|(found, index)| (found.into(), index))
+            .or_else(|e| {
+                match e {
+                    // If key is smaller than first entry, truncate all entries
+                    IndexError::KeyNotFound => Ok((key, 0)),
+                    _ => Err(e),
+                }
+            })?;
 
         // If returned key is smaller than asked key, truncate from next entry
         self.num_entries = if found_key == key {
@@ -501,6 +508,28 @@ mod tests {
         // Truncating from bigger key than already present must be no-op
         index.truncate(9)?;
         assert_eq!(index.num_entries, 4);
+
+        Ok(())
+    }
+
+
+    #[test]
+    fn test_truncate_eddge_cases() -> Result<(), IndexError> {
+        // index file with no entries
+        let mut index = create_and_fill_index(10, 0)?;
+
+        // Truncate from key smaller than first entry should truncate all entries
+        index.truncate(1)?;
+        assert_eq!(index.num_entries, 0);
+
+        // first entry will be with key 2
+        let mut index = create_and_fill_index(10, 5)?;
+        assert_eq!(index.num_entries, 4);
+        index.truncate(1)?;
+        assert_eq!(index.num_entries, 0);
+
+        index.truncate(0)?;
+        assert_eq!(index.num_entries, 0);
 
         Ok(())
     }
