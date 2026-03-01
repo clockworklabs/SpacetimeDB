@@ -1,6 +1,5 @@
 ---
 source: crates/codegen/tests/codegen.rs
-assertion_line: 37
 expression: outfiles
 ---
 "Procedures/GetMySchemaViaHttp.g.cs" = '''
@@ -972,11 +971,11 @@ namespace SpacetimeDB
         {
             [DataMember(Name = "arg")]
             public TestA Arg;
-            [DataMember(Name = "arg2")]
+            [DataMember(Name = "arg_2")]
             public TestB Arg2;
-            [DataMember(Name = "arg3")]
+            [DataMember(Name = "arg_3")]
             public NamespaceTestC Arg3;
-            [DataMember(Name = "arg4")]
+            [DataMember(Name = "arg_4")]
             public NamespaceTestF Arg4;
 
             public Test(
@@ -1720,38 +1719,38 @@ namespace SpacetimeDB
         {
             protected override string RemoteTableName => "logged_out_player";
 
-            public sealed class LoggedOutPlayerIdentityIdxBtreeUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
+            public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
             {
                 protected override SpacetimeDB.Identity GetKey(Player row) => row.Identity;
 
-                public LoggedOutPlayerIdentityIdxBtreeUniqueIndex(LoggedOutPlayerHandle table) : base(table) { }
+                public IdentityUniqueIndex(LoggedOutPlayerHandle table) : base(table) { }
             }
 
-            public readonly LoggedOutPlayerIdentityIdxBtreeUniqueIndex LoggedOutPlayerIdentityIdxBtree;
+            public readonly IdentityUniqueIndex Identity;
 
-            public sealed class LoggedOutPlayerNameIdxBtreeUniqueIndex : UniqueIndexBase<string>
+            public sealed class NameUniqueIndex : UniqueIndexBase<string>
             {
                 protected override string GetKey(Player row) => row.Name;
 
-                public LoggedOutPlayerNameIdxBtreeUniqueIndex(LoggedOutPlayerHandle table) : base(table) { }
+                public NameUniqueIndex(LoggedOutPlayerHandle table) : base(table) { }
             }
 
-            public readonly LoggedOutPlayerNameIdxBtreeUniqueIndex LoggedOutPlayerNameIdxBtree;
+            public readonly NameUniqueIndex Name;
 
-            public sealed class LoggedOutPlayerPlayerIdIdxBtreeUniqueIndex : UniqueIndexBase<ulong>
+            public sealed class PlayerIdUniqueIndex : UniqueIndexBase<ulong>
             {
                 protected override ulong GetKey(Player row) => row.PlayerId;
 
-                public LoggedOutPlayerPlayerIdIdxBtreeUniqueIndex(LoggedOutPlayerHandle table) : base(table) { }
+                public PlayerIdUniqueIndex(LoggedOutPlayerHandle table) : base(table) { }
             }
 
-            public readonly LoggedOutPlayerPlayerIdIdxBtreeUniqueIndex LoggedOutPlayerPlayerIdIdxBtree;
+            public readonly PlayerIdUniqueIndex PlayerId;
 
             internal LoggedOutPlayerHandle(DbConnection conn) : base(conn)
             {
-                LoggedOutPlayerIdentityIdxBtree = new(this);
-                LoggedOutPlayerNameIdxBtree = new(this);
-                LoggedOutPlayerPlayerIdIdxBtree = new(this);
+                Identity = new(this);
+                Name = new(this);
+                PlayerId = new(this);
             }
 
             protected override object GetPrimaryKey(Player row) => row.Identity;
@@ -1860,28 +1859,28 @@ namespace SpacetimeDB
         {
             protected override string RemoteTableName => "person";
 
-            public sealed class PersonAgeIdxBtreeIndex : BTreeIndexBase<byte>
+            public sealed class AgeIndex : BTreeIndexBase<byte>
             {
                 protected override byte GetKey(Person row) => row.Age;
 
-                public PersonAgeIdxBtreeIndex(PersonHandle table) : base(table) { }
+                public AgeIndex(PersonHandle table) : base(table) { }
             }
 
-            public readonly PersonAgeIdxBtreeIndex PersonAgeIdxBtree;
+            public readonly AgeIndex Age;
 
-            public sealed class PersonIdIdxBtreeUniqueIndex : UniqueIndexBase<uint>
+            public sealed class IdUniqueIndex : UniqueIndexBase<uint>
             {
                 protected override uint GetKey(Person row) => row.Id;
 
-                public PersonIdIdxBtreeUniqueIndex(PersonHandle table) : base(table) { }
+                public IdUniqueIndex(PersonHandle table) : base(table) { }
             }
 
-            public readonly PersonIdIdxBtreeUniqueIndex PersonIdIdxBtree;
+            public readonly IdUniqueIndex Id;
 
             internal PersonHandle(DbConnection conn) : base(conn)
             {
-                PersonAgeIdxBtree = new(this);
-                PersonIdIdxBtree = new(this);
+                Age = new(this);
+                Id = new(this);
             }
 
             protected override object GetPrimaryKey(Person row) => row.Id;
@@ -1937,38 +1936,38 @@ namespace SpacetimeDB
         {
             protected override string RemoteTableName => "player";
 
-            public sealed class PlayerIdentityIdxBtreeUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
+            public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
             {
                 protected override SpacetimeDB.Identity GetKey(Player row) => row.Identity;
 
-                public PlayerIdentityIdxBtreeUniqueIndex(PlayerHandle table) : base(table) { }
+                public IdentityUniqueIndex(PlayerHandle table) : base(table) { }
             }
 
-            public readonly PlayerIdentityIdxBtreeUniqueIndex PlayerIdentityIdxBtree;
+            public readonly IdentityUniqueIndex Identity;
 
-            public sealed class PlayerNameIdxBtreeUniqueIndex : UniqueIndexBase<string>
+            public sealed class NameUniqueIndex : UniqueIndexBase<string>
             {
                 protected override string GetKey(Player row) => row.Name;
 
-                public PlayerNameIdxBtreeUniqueIndex(PlayerHandle table) : base(table) { }
+                public NameUniqueIndex(PlayerHandle table) : base(table) { }
             }
 
-            public readonly PlayerNameIdxBtreeUniqueIndex PlayerNameIdxBtree;
+            public readonly NameUniqueIndex Name;
 
-            public sealed class PlayerPlayerIdIdxBtreeUniqueIndex : UniqueIndexBase<ulong>
+            public sealed class PlayerIdUniqueIndex : UniqueIndexBase<ulong>
             {
                 protected override ulong GetKey(Player row) => row.PlayerId;
 
-                public PlayerPlayerIdIdxBtreeUniqueIndex(PlayerHandle table) : base(table) { }
+                public PlayerIdUniqueIndex(PlayerHandle table) : base(table) { }
             }
 
-            public readonly PlayerPlayerIdIdxBtreeUniqueIndex PlayerPlayerIdIdxBtree;
+            public readonly PlayerIdUniqueIndex PlayerId;
 
             internal PlayerHandle(DbConnection conn) : base(conn)
             {
-                PlayerIdentityIdxBtree = new(this);
-                PlayerNameIdxBtree = new(this);
-                PlayerPlayerIdIdxBtree = new(this);
+                Identity = new(this);
+                Name = new(this);
+                PlayerId = new(this);
             }
 
             protected override object GetPrimaryKey(Player row) => row.Identity;

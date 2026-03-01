@@ -1,9 +1,8 @@
 import { AlgebraicType } from '../lib/algebraic_type';
-import FunctionVisibility from '../lib/autogen/function_visibility_type';
-import type Lifecycle from '../lib/autogen/lifecycle_type';
+import { FunctionVisibility, type Lifecycle } from '../lib/autogen/types';
 import type { ParamsObj, Reducer } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
-import { RowBuilder, type Infer, type RowObj } from '../lib/type_builders';
+import { RowBuilder, type RowObj } from '../lib/type_builders';
 import { toPascalCase } from '../lib/util';
 import {
   exportContext,
@@ -30,17 +29,15 @@ export function makeReducerExport<
   opts: ReducerOpts | undefined,
   params: RowObj | RowBuilder<RowObj>,
   fn: Reducer<any, any>,
-  lifecycle?: Infer<typeof Lifecycle>
+  lifecycle?: Lifecycle
 ): ReducerExport<S, Params> {
-  const name = opts?.name;
-
   const reducerExport: ReducerExport<S, Params> = (...args) => fn(...args);
   reducerExport[exportContext] = ctx;
   reducerExport[registerExport] = (ctx, exportName) => {
-    registerReducer(ctx, name ?? exportName, params, fn, lifecycle);
+    registerReducer(ctx, exportName, params, fn, opts, lifecycle);
     ctx.functionExports.set(
       reducerExport as ReducerExport<any, any>,
-      name ?? exportName
+      exportName
     );
   };
 
@@ -57,19 +54,20 @@ export function makeReducerExport<
  */
 export function registerReducer(
   ctx: SchemaInner,
-  name: string,
+  exportName: string,
   params: RowObj | RowBuilder<RowObj>,
   fn: Reducer<any, any>,
-  lifecycle?: Infer<typeof Lifecycle>
+  opts?: ReducerOpts,
+  lifecycle?: Lifecycle
 ): void {
-  ctx.defineFunction(name);
+  ctx.defineFunction(exportName);
 
   if (!(params instanceof RowBuilder)) {
     params = new RowBuilder(params);
   }
 
   if (params.typeName === undefined) {
-    params.typeName = toPascalCase(name);
+    params.typeName = toPascalCase(exportName);
   }
 
   const ref = ctx.registerTypesRecursively(params);
@@ -77,7 +75,7 @@ export function registerReducer(
   const isLifecycle = lifecycle != null;
 
   ctx.moduleDef.reducers.push({
-    sourceName: name,
+    sourceName: exportName,
     params: paramsType,
     //ModuleDef validation code is responsible to mark private reducers
     visibility: FunctionVisibility.ClientCallable,
@@ -86,17 +84,27 @@ export function registerReducer(
     errReturnType: AlgebraicType.String,
   });
 
+  if (opts?.name != null) {
+    ctx.moduleDef.explicitNames.entries.push({
+      tag: 'Function',
+      value: {
+        sourceName: exportName,
+        canonicalName: opts.name,
+      },
+    });
+  }
+
   if (isLifecycle) {
     ctx.moduleDef.lifeCycleReducers.push({
       lifecycleSpec: lifecycle,
-      functionName: name,
+      functionName: exportName,
     });
   }
 
   // If the function isn't named (e.g. `function foobar() {}`), give it the same
   // name as the reducer so that it's clear what it is in in backtraces.
   if (!fn.name) {
-    Object.defineProperty(fn, 'name', { value: name, writable: false });
+    Object.defineProperty(fn, 'name', { value: exportName, writable: false });
   }
 
   ctx.reducers.push(fn);

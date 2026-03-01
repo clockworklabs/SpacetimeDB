@@ -18,7 +18,7 @@ project(spacetime_cpp_module LANGUAGES C CXX)
 #     The directory should contain the bindings' CMakeLists.txt at its root.
 # ------------------------------------------------------------------------------
 
-set(SPACETIMEDB_CPP_VERSION "2.0.0" CACHE STRING "Version selector: MAJOR.MINOR (uses release/MAJOR.MINOR) or MAJOR.MINOR.PATCH (uses tag vMAJOR.MINOR.PATCH)")
+set(SPACETIMEDB_CPP_VERSION "1.12.0" CACHE STRING "Version selector: MAJOR.MINOR (uses release/MAJOR.MINOR) or MAJOR.MINOR.PATCH (uses tag vMAJOR.MINOR.PATCH)")
 set(SPACETIMEDB_CPP_REF "" CACHE STRING "Override Git ref directly (e.g. release/1.0, release/latest, v1.0.0)")  
 set(SPACETIMEDB_CPP_DIR "" CACHE PATH "Path to a local clone of SpacetimeDB C++ bindings (overrides FetchContent)")
 

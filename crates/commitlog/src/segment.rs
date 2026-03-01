@@ -594,6 +594,7 @@ pub struct Metadata {
     /// `max_commit_offset..tx_range.end` is the range of
     /// transactions contained in it.
     pub max_commit_offset: u64,
+    pub max_commit: Option<commit::Metadata>,
 }
 
 impl Metadata {
@@ -627,6 +628,7 @@ impl Metadata {
                 size_in_bytes: Header::LEN as u64,
                 max_epoch: u64::default(),
                 max_commit_offset: min_tx_offset,
+                max_commit: None,
             });
 
         reader.seek(SeekFrom::Start(sofar.size_in_bytes))?;
@@ -663,6 +665,7 @@ impl Metadata {
             // TODO: Should it be an error to encounter an epoch going backwards?
             sofar.max_epoch = commit.epoch.max(sofar.max_epoch);
             sofar.max_commit_offset = commit.tx_range.start;
+            sofar.max_commit = Some(commit);
         }
 
         Ok(sofar)
@@ -695,6 +698,7 @@ impl Metadata {
                         size_in_bytes: byte_offset + commit.size_in_bytes,
                         max_epoch: commit.epoch,
                         max_commit_offset: commit.tx_range.start,
+                        max_commit: Some(commit),
                     });
                 }
 
@@ -833,18 +837,33 @@ mod tests {
         writer.commit().unwrap();
 
         let reader = repo::open_segment_reader(&repo, DEFAULT_LOG_FORMAT_VERSION, 0).unwrap();
-        let metadata = reader.metadata().unwrap();
+        let Metadata {
+            header,
+            tx_range,
+            size_in_bytes,
+            max_epoch,
+            max_commit_offset,
+            max_commit,
+        } = reader.metadata().unwrap();
 
         assert_eq!(
-            metadata,
-            Metadata {
-                header: Header::default(),
-                tx_range: Range { start: 0, end: 5 },
+            (
+                header,
+                tx_range,
+                size_in_bytes,
+                max_epoch,
+                max_commit_offset,
+                max_commit.is_some_and(|meta| meta.tx_range == (3..5))
+            ),
+            (
+                Header::default(),
+                0..5,
                 // header + 5 txs + 3 commits
-                size_in_bytes: (Header::LEN + (5 * 32) + (3 * Commit::FRAMING_LEN)) as u64,
-                max_epoch: Commit::DEFAULT_EPOCH,
-                max_commit_offset: 3
-            }
+                (Header::LEN + (5 * 32) + (3 * Commit::FRAMING_LEN)) as u64,
+                Commit::DEFAULT_EPOCH,
+                3,
+                true
+            )
         );
     }
 

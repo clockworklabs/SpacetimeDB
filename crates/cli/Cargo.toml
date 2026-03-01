@@ -48,6 +48,7 @@ fs-err.workspace = true
 http.workspace = true
 is-terminal.workspace = true
 itertools.workspace = true
+ignore.workspace = true
 indicatif.workspace = true
 json5.workspace = true
 jsonwebtoken.workspace = true
@@ -81,11 +82,13 @@ glob.workspace = true
 dialoguer = { workspace = true, features = ["fuzzy-select"] }
 rolldown.workspace = true
 rolldown_common.workspace = true
+rolldown_error.workspace = true
 rolldown_utils.workspace = true
 xmltree.workspace = true
 quick-xml.workspace = true
 names.workspace = true
 notify.workspace = true
+path-clean = "1.0.1"
 
 [dev-dependencies]
 pretty_assertions.workspace = true

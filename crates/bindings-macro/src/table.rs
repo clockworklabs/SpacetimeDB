@@ -49,22 +49,21 @@ struct ScheduledArg {
 
 struct IndexArg {
     accessor: Ident,
-    //TODO: add canonical name
-    // name: Option<LitStr>,
+    canonical_name: Option<LitStr>,
     is_unique: bool,
     kind: IndexType,
 }
 
 impl IndexArg {
-    fn new(accessor: Ident, kind: IndexType) -> Self {
+    fn new(accessor: Ident, kind: IndexType, canonical_name: Option<LitStr>) -> Self {
         // We don't know if its unique yet.
         // We'll discover this once we have collected constraints.
         let is_unique = false;
         Self {
+            canonical_name,
             accessor,
             is_unique,
             kind,
-            //  name,
         }
     }
 }
@@ -80,7 +79,7 @@ impl TableArgs {
         let mut access = None;
         let mut scheduled = None;
         let mut accessor = None;
-        let mut name = None;
+        let mut name: Option<LitStr> = None;
         let mut indices = Vec::new();
         let mut event = None;
         syn::meta::parser(|meta| {
@@ -101,6 +100,44 @@ impl TableArgs {
                 sym::name => {
                     check_duplicate(&name, &meta)?;
                     let value = meta.value()?;
+                    // `fork` as a way to do lookahead `peek`, so that below when we parse as the `LitStr` we actually want,
+                    // it works.
+                    if let Ok(sym) = value.fork().parse::<Ident>() {
+                        // The update from SpacetimeDB 1.* to 2.* changes `name =` to `accessor =`,
+                        // and uses `name =` for a different thing. Now, only `accessor =` is mandatory,
+                        // and `name =` accepts a string literal rather than an identifier.
+                        // Detect the specific case where the user specifies a 1.*-style `name = ident`,
+                        // and offer a diagnostic with a simple migration path.
+                        // Unfortunately, we can't hook in to rustc's system for providing quick fixes in compiler errors,
+                        // until [this ancient issue](https://github.com/rust-lang/rust/issues/54140) gets stabilized.
+                        return Err(
+                            if accessor.is_some() {
+                                // If we've already encountered an `accessor`,
+                                // then probably the user is actually trying to overwrite the `name`,
+                                // so tell them to use a string literal instead of an ident.
+                                // This is a best-effort check, and we won't hit it if the user specifies `name` first,
+                                // but we're prioritizing the migration UX here.
+                                meta.error(format_args!(
+                                    "Expected a string literal for `name`, but found an identifier.
+
+To overwrite the canonical name of the table, replace `name = {sym}` with `name = \"{sym}\"`."
+                                ))
+                            } else {
+                                // FIXME: Ideally, this error span would point to the full pair `name = my_table`,
+                                // but I (pgoldman 2026-02-18) can only figure out how to get it at either `name` or `my_table`.
+                                // This version points at `name`, which, :shrug:.
+                                // Note that, if the user specifies `name = {ident}` followed by `accessor = {ident}`,
+                                // we'll hit this branch, even though the diagnostic doesn't apply and we'd prefer not to.
+                                // I (pgoldman 2026-02-18) don't see a good way to distinguish this case
+                                // without making our parsing dramatically more complicated,
+                                // and it seems unlikely to occur.
+                                meta.error(format_args!(
+                                    "Expected a string literal for `name`, but found an identifier. Did you mean to specify an `accessor`?
+
+If you're migrating from SpacetimeDB 1.*, replace `name = {sym}` with `accessor = {sym}`."
+                                ))
+                            })
+                    }
                     name = Some(value.parse()?);
                 }
                 sym::index => indices.push(IndexArg::parse_meta(meta)?),
@@ -117,11 +154,32 @@ impl TableArgs {
         })
         .parse2(input)?;
         let accessor = accessor.ok_or_else(|| {
-            let table = struct_ident.to_string().to_snake_case();
-            syn::Error::new(
-                Span::call_site(),
-                format_args!("must specify table name, e.g. `#[spacetimedb::table(accessor = {table})]"),
-            )
+            if let Some(name_str) = &name {
+                // If a user's gotten partway through migrating from 1.* to 2.* in a misguided way,
+                // they may end up with a `table` invocation that specifies `name = "my_table_name"` and no `accessor`.
+                // In this case, they probably intended to change `name =` to `accessor =`,
+                // but were misled into keeping `name =` and changing the name from an ident into a lit string.
+                // Detect that and offer a diagnostic with a simple fix.
+                // Unfortunately, we can't hook in to rustc's system for providing quick fixes in compiler errors,
+                // until [this ancient issue](https://github.com/rust-lang/rust/issues/54140) gets stabilized.
+                let name_str_value = name_str.value();
+                syn::Error::new_spanned(
+                    name_str,
+                    format_args!(
+                        "Expected an `accessor` in table definition, but got only a `name`.
+Did you mean to specify `accessor` instead?
+`accessor` is required, but `name` is optional.
+
+If you're migrating from SpacetimeDB 1.*, replace `name = {name_str_value:?}` with `accessor = {name_str_value}`",
+                    ),
+                )
+            } else {
+                let table = struct_ident.to_string().to_snake_case();
+                syn::Error::new(
+                    Span::call_site(),
+                    format_args!("must specify table accessor, e.g. `#[spacetimedb::table(accessor = {table})]"),
+                )
+            }
         })?;
         Ok(TableArgs {
             access,
@@ -176,6 +234,7 @@ impl ScheduledArg {
 impl IndexArg {
     fn parse_meta(meta: ParseNestedMeta) -> syn::Result<Self> {
         let mut accessor = None;
+        let mut canonical_name = None;
         let mut algo = None;
 
         meta.parse_nested_meta(|meta| {
@@ -184,6 +243,11 @@ impl IndexArg {
                     check_duplicate(&accessor, &meta)?;
                     accessor = Some(meta.value()?.parse()?);
                 }
+                sym::name => {
+                    check_duplicate(&canonical_name, &meta)?;
+                    canonical_name = Some(meta.value()?.parse()?);
+                }
+
                 sym::btree => {
                     check_duplicate_msg(&algo, &meta, "index algorithm specified twice")?;
                     algo = Some(Self::parse_btree(meta)?);
@@ -196,6 +260,44 @@ impl IndexArg {
                     check_duplicate_msg(&algo, &meta, "index algorithm specified twice")?;
                     algo = Some(Self::parse_direct(meta)?);
                 }
+                sym::name => {
+                    // If the user is trying to specify a `name`, do a bit of guessing at what their goal is.
+                    // This is going to be best-effort, and we're not going to try to do lookahead or anything.
+
+                    return Err(if accessor.is_some() {
+                        // If the user's already specified an `accessor`,
+                        // then probably they're trying to specify the canonical name,
+                        // like you can for tables.
+                        // Print an error that says this is unsupported.
+                        meta.error(
+                            "Unexpected argument `name` in index definition.
+
+Overwriting the `name` of an index is currently unsupported.",
+                        )
+                    } else if let Ok(sym) = meta.value().and_then(|val| val.parse::<Ident>()) {
+                        // If we haven't seen an `accessor` yet, and the value is an ident,
+                        // then probably this is 1.* syntax that needs a migration.
+                        // Note that, if the user specifies `name = {ident}` followed by `accessor = {ident}`,
+                        // we'll hit this branch, even though the diagnostic doesn't apply and we'd prefer not to.
+                        // I (pgoldman 2026-02-18) don't see a good way to distinguish this case
+                        // without making our parsing dramatically more complicated,
+                        // and it seems unlikely to occur.
+                        meta.error(format_args!(
+                            "Expected an `accessor` in index definition, but got a `name` instead.
+
+If you're migrating from SpacetimeDB 1.*, replace `name = {sym}` with `accessor = {sym}`."
+                        ))
+                    } else {
+                        // If we haven't seen an `accessor` yet, but the value is not an ident,
+                        // then we're not really sure what's going wrong, so print a more generic error message.
+                        meta.error(format_args!(
+                            "Unexpected argument `name` in index definition.
+
+Overwriting the `name` of an index is currently unsupported.
+Did you mean to specify an `accessor` instead? Do so with `accessor = my_index`, where `my_index` is an unquoted identifier."
+                        ))
+                    });
+                }
             });
             Ok(())
         })?;
@@ -207,7 +309,7 @@ impl IndexArg {
             )
         })?;
 
-        Ok(IndexArg::new(accessor, kind))
+        Ok(IndexArg::new(accessor, kind, canonical_name))
     }
 
     fn parse_columns(meta: &ParseNestedMeta) -> syn::Result<Option<Vec<Ident>>> {
@@ -293,7 +395,7 @@ impl IndexArg {
 
         // Default accessor = field name if not provided
         let accessor = field.clone();
-        Ok(IndexArg::new(accessor, kind))
+        Ok(IndexArg::new(accessor, kind, None))
     }
 
     fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'a>> {
@@ -337,6 +439,7 @@ impl IndexArg {
             index_name: gen_index_name(),
             accessor_name: &self.accessor,
             kind,
+            canonical_name: self.canonical_name.as_ref().map(|s| s.value()),
         })
     }
 }
@@ -395,6 +498,7 @@ struct ValidatedIndex<'a> {
     accessor_name: &'a Ident,
     is_unique: bool,
     kind: ValidatedIndexType<'a>,
+    canonical_name: Option<String>,
 }
 
 enum ValidatedIndexType<'a> {
@@ -442,11 +546,13 @@ impl ValidatedIndex<'_> {
             }
         };
         let source_name = self.index_name.clone();
+        let accessor_name = self.accessor_name.to_string();
         // Note: we do not pass the index_name through here.
         // We trust the schema validation logic to reconstruct the name we've stored in `self.name`.
         //TODO(shub): pass generated index name instead of accessor name as source_name
         quote!(spacetimedb::table::IndexDesc {
             source_name: #source_name,
+            accessor_name: #accessor_name,
             algo: #algo,
         })
     }
@@ -842,6 +948,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             //name: None,
             is_unique: true,
             kind: IndexType::BTree { columns },
+            canonical_name: None,
         })
     }
 
@@ -1033,7 +1140,8 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         }
     };
 
-    let explicit_names_impl = generate_explicit_names_impl(&table_name, &tablehandle_ident, &explicit_table_name);
+    let explicit_names_impl =
+        generate_explicit_names_impl(&table_name, &tablehandle_ident, &explicit_table_name, &indices);
 
     let register_describer_symbol = format!("__preinit__20_register_describer_{table_ident}");
 
@@ -1226,6 +1334,7 @@ fn generate_explicit_names_impl(
     table_name: &str,
     tablehandle_ident: &Ident,
     explicit_table_name: &Option<String>,
+    indexes: &[ValidatedIndex],
 ) -> TokenStream {
     let mut explicit_names_body = Vec::new();
 
@@ -1238,6 +1347,19 @@ fn generate_explicit_names_impl(
             );
         });
     };
+
+    // Index names
+    for index in indexes {
+        if let Some(canonical_name) = &index.canonical_name {
+            let index_name = &index.index_name;
+            explicit_names_body.push(quote! {
+                names.insert_index(
+                    #index_name,
+                    #canonical_name,
+                );
+            });
+        }
+    }
 
     quote! {
 

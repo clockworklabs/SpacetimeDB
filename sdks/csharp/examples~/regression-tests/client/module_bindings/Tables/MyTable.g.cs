@@ -31,7 +31,7 @@ namespace SpacetimeDB.Types
 
         public MyTableCols(string tableName)
         {
-            Field = new global::SpacetimeDB.Col<MyTable, ReturnStruct>(tableName, "Field");
+            Field = new global::SpacetimeDB.Col<MyTable, ReturnStruct>(tableName, "field");
         }
     }
 

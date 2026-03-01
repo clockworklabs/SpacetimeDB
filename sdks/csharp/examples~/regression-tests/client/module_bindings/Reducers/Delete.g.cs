@@ -60,7 +60,7 @@ namespace SpacetimeDB.Types
             {
             }
 
-            string IReducerArgs.ReducerName => "Delete";
+            string IReducerArgs.ReducerName => "delete";
         }
     }
 }

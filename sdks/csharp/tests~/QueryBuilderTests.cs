@@ -141,14 +141,14 @@ public sealed class QueryBuilderTests
     public void All_QuotesTableName()
     {
         var table = MakeTable("My\"Table");
-        Assert.Equal("SELECT * FROM \"My\"\"Table\"", table.Build().Sql);
+        Assert.Equal("SELECT * FROM \"My\"\"Table\"", table.ToSql());
     }
 
     [Fact]
     public void Where_Eq_String_EscapesSingleQuote()
     {
         var table = MakeTable("T");
-        var sql = table.Where(c => c.Name.Eq("O'Reilly")).Build().Sql;
+        var sql = table.Where(c => c.Name.Eq("O'Reilly")).ToSql();
         Assert.Equal("SELECT * FROM \"T\" WHERE (\"T\".\"Name\" = 'O''Reilly')", sql);
     }
 
@@ -156,7 +156,7 @@ public sealed class QueryBuilderTests
     public void Where_Gt_Int_FormatsInvariant()
     {
         var table = MakeTable("T");
-        var sql = table.Where(c => c.Age.Gt(123)).Build().Sql;
+        var sql = table.Where(c => c.Age.Gt(123)).ToSql();
         Assert.Equal("SELECT * FROM \"T\" WHERE (\"T\".\"Age\" > 123)", sql);
     }
 
@@ -166,11 +166,11 @@ public sealed class QueryBuilderTests
         var table = MakeTable("T");
         Assert.Equal(
             "SELECT * FROM \"T\" WHERE (\"T\".\"IsAdmin\" = TRUE)",
-            table.Where(c => c.IsAdmin.Eq(true)).Build().Sql
+            table.Where(c => c.IsAdmin.Eq(true)).ToSql()
         );
         Assert.Equal(
             "SELECT * FROM \"T\" WHERE (\"T\".\"IsAdmin\" = FALSE)",
-            table.Where(c => c.IsAdmin.Eq(false)).Build().Sql
+            table.Where(c => c.IsAdmin.Eq(false)).ToSql()
         );
     }
 
@@ -178,7 +178,7 @@ public sealed class QueryBuilderTests
     public void Where_WithIxColsOverload_FormatsCorrectly()
     {
         var table = MakeTable("T");
-        var sql = table.Where((_, ix) => ix.Name.Eq(SqlLit.String("x"))).Build().Sql;
+        var sql = table.Where((_, ix) => ix.Name.Eq(SqlLit.String("x"))).ToSql();
         Assert.Equal("SELECT * FROM \"T\" WHERE (\"T\".\"Name\" = 'x')", sql);
     }
 
@@ -186,7 +186,7 @@ public sealed class QueryBuilderTests
     public void Where_ChainingWhere_AddsAnd()
     {
         var table = MakeTable("T");
-        var sql = table.Where(c => c.Age.Gt(1)).Where(c => c.IsAdmin.Eq(true)).Build().Sql;
+        var sql = table.Where(c => c.Age.Gt(1)).Where(c => c.IsAdmin.Eq(true)).ToSql();
 
         Assert.Equal(
             "SELECT * FROM \"T\" WHERE ((\"T\".\"Age\" > 1) AND (\"T\".\"IsAdmin\" = TRUE))",
@@ -212,7 +212,7 @@ public sealed class QueryBuilderTests
     public void QuoteIdent_EscapesDoubleQuotesInColumnName()
     {
         var table = MakeTable("T");
-        var sql = table.Where(c => c.Weird.Eq("x")).Build().Sql;
+        var sql = table.Where(c => c.Weird.Eq("x")).ToSql();
         Assert.Equal("SELECT * FROM \"T\" WHERE (\"T\".\"we\"\"ird\" = 'x')", sql);
     }
 
@@ -224,26 +224,26 @@ public sealed class QueryBuilderTests
         var identity = Identity.FromHexString(new string('0', 64));
         Assert.Equal(
             $"SELECT * FROM \"T\" WHERE (\"T\".\"Name\" = 0x{identity})",
-            table.Where(_ => new Col<Row, Identity>("T", "Name").Eq(identity)).Build().Sql
+            table.Where(_ => new Col<Row, Identity>("T", "Name").Eq(identity)).ToSql()
         );
 
         var connId = ConnectionId.FromHexString(new string('0', 31) + "1") ?? throw new InvalidOperationException();
         Assert.Equal(
             $"SELECT * FROM \"T\" WHERE (\"T\".\"Name\" = 0x{connId})",
-            table.Where(_ => new Col<Row, ConnectionId>("T", "Name").Eq(connId)).Build().Sql
+            table.Where(_ => new Col<Row, ConnectionId>("T", "Name").Eq(connId)).ToSql()
         );
 
         var uuid = Uuid.Parse("00000000-0000-0000-0000-000000000000");
         var uuidHex = uuid.ToString().Replace("-", string.Empty);
         Assert.Equal(
             $"SELECT * FROM \"T\" WHERE (\"T\".\"Name\" = 0x{uuidHex})",
-            table.Where(_ => new Col<Row, Uuid>("T", "Name").Eq(uuid)).Build().Sql
+            table.Where(_ => new Col<Row, Uuid>("T", "Name").Eq(uuid)).ToSql()
         );
 
         var u128 = new U128(upper: 0, lower: 5);
         Assert.Equal(
             $"SELECT * FROM \"T\" WHERE (\"T\".\"Name\" = 5)",
-            table.Where(_ => new Col<Row, U128>("T", "Name").Eq(u128)).Build().Sql
+            table.Where(_ => new Col<Row, U128>("T", "Name").Eq(u128)).ToSql()
         );
     }
 
@@ -268,7 +268,7 @@ public sealed class QueryBuilderTests
         var left = MakeLeftTable("users");
         var right = MakeRightTable("other");
 
-        var sql = left.LeftSemijoin(right, (l, r) => l.Id.Eq(r.Uid)).Build().Sql;
+        var sql = left.LeftSemijoin(right, (l, r) => l.Id.Eq(r.Uid)).ToSql();
         Assert.Equal(
             "SELECT \"users\".* FROM \"users\" JOIN \"other\" ON \"users\".\"id\" = \"other\".\"uid\"",
             sql
@@ -279,7 +279,7 @@ public sealed class QueryBuilderTests
     public void Where_NullableCol_Eq_FormatsCorrectly()
     {
         var table = MakeNullableTable("T");
-        var sql = table.Where(c => c.Name.Eq("x")).Build().Sql;
+        var sql = table.Where(c => c.Name.Eq("x")).ToSql();
         Assert.Equal("SELECT * FROM \"T\" WHERE (\"T\".\"Name\" = 'x')", sql);
     }
 
@@ -287,7 +287,7 @@ public sealed class QueryBuilderTests
     public void Where_NullableCol_Gt_FormatsCorrectly()
     {
         var table = MakeNullableTable("T");
-        var sql = table.Where(c => c.Age.Gt(123)).Build().Sql;
+        var sql = table.Where(c => c.Age.Gt(123)).ToSql();
         Assert.Equal("SELECT * FROM \"T\" WHERE (\"T\".\"Age\" > 123)", sql);
     }
 
@@ -301,8 +301,7 @@ public sealed class QueryBuilderTests
             .Where(c => c.Id.Eq(1))
             .RightSemijoin(right, (l, r) => l.Id.Eq(r.Uid))
             .Where(c => c.Uid.Gt(10))
-            .Build()
-            .Sql;
+            .ToSql();
 
         Assert.Equal(
             "SELECT \"other\".* FROM \"users\" JOIN \"other\" ON \"users\".\"id\" = \"other\".\"uid\" WHERE (\"users\".\"id\" = 1) AND (\"other\".\"uid\" > 10)",

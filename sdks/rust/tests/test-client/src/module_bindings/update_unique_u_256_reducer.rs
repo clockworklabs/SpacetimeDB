@@ -25,11 +25,11 @@ impl __sdk::InModule for UpdateUniqueU256Args {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `update_unique_u256`.
+/// Extension trait for access to the reducer `update_unique_u_256`.
 ///
 /// Implemented for [`super::RemoteReducers`].
 pub trait update_unique_u_256 {
-    /// Request that the remote module invoke the reducer `update_unique_u256` to run as soon as possible.
+    /// Request that the remote module invoke the reducer `update_unique_u_256` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
@@ -39,7 +39,7 @@ pub trait update_unique_u_256 {
         self.update_unique_u_256_then(n, data, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `update_unique_u256` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `update_unique_u_256` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.

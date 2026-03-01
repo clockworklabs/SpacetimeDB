@@ -17,18 +17,18 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "score";
 
-            public sealed class ScorePlayerIdLevelIdxBtreeIndex : BTreeIndexBase<(uint PlayerId, uint Level)>
+            public sealed class ByPlayerAndLevelIndex : BTreeIndexBase<(uint PlayerId, uint Level)>
             {
                 protected override (uint PlayerId, uint Level) GetKey(Score row) => (row.PlayerId, row.Level);
 
-                public ScorePlayerIdLevelIdxBtreeIndex(ScoreHandle table) : base(table) { }
+                public ByPlayerAndLevelIndex(ScoreHandle table) : base(table) { }
             }
 
-            public readonly ScorePlayerIdLevelIdxBtreeIndex ScorePlayerIdLevelIdxBtree;
+            public readonly ByPlayerAndLevelIndex ByPlayerAndLevel;
 
             internal ScoreHandle(DbConnection conn) : base(conn)
             {
-                ScorePlayerIdLevelIdxBtree = new(this);
+                ByPlayerAndLevel = new(this);
             }
         }
 
@@ -43,9 +43,9 @@ namespace SpacetimeDB.Types
 
         public ScoreCols(string tableName)
         {
-            PlayerId = new global::SpacetimeDB.Col<Score, uint>(tableName, "PlayerId");
-            Level = new global::SpacetimeDB.Col<Score, uint>(tableName, "Level");
-            Points = new global::SpacetimeDB.Col<Score, long>(tableName, "Points");
+            PlayerId = new global::SpacetimeDB.Col<Score, uint>(tableName, "player_id");
+            Level = new global::SpacetimeDB.Col<Score, uint>(tableName, "level");
+            Points = new global::SpacetimeDB.Col<Score, long>(tableName, "points");
         }
     }
 
@@ -56,8 +56,8 @@ namespace SpacetimeDB.Types
 
         public ScoreIxCols(string tableName)
         {
-            PlayerId = new global::SpacetimeDB.IxCol<Score, uint>(tableName, "PlayerId");
-            Level = new global::SpacetimeDB.IxCol<Score, uint>(tableName, "Level");
+            PlayerId = new global::SpacetimeDB.IxCol<Score, uint>(tableName, "player_id");
+            Level = new global::SpacetimeDB.IxCol<Score, uint>(tableName, "level");
         }
     }
 }

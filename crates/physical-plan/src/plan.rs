@@ -842,7 +842,10 @@ impl PhysicalPlan {
                 Self::IxJoin(IxJoin { lhs, ..join }, Semi::Lhs)
             }
             Self::IxJoin(join, Semi::All) => {
-                let reqs = reqs.into_iter().filter(|label| label != &join.rhs_label).collect();
+                let mut reqs: Vec<_> = reqs.into_iter().filter(|label| label != &join.rhs_label).collect();
+                if !reqs.contains(&join.lhs_field.label) {
+                    reqs.push(join.lhs_field.label);
+                }
                 let lhs = join.lhs.introduce_semijoins(reqs);
                 let lhs = Box::new(lhs);
                 Self::IxJoin(IxJoin { lhs, ..join }, Semi::All)
@@ -1506,6 +1509,7 @@ mod tests {
                     col_name: Identifier::for_test(*name),
                     col_pos: i.into(),
                     col_type: ty.clone(),
+                    alias: None,
                 })
                 .collect(),
             indexes
@@ -1518,6 +1522,7 @@ mod tests {
                     index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
                         columns: ColList::from_iter(cols.iter().copied()),
                     }),
+                    alias: None,
                 })
                 .collect(),
             unique
@@ -1538,6 +1543,7 @@ mod tests {
             None,
             primary_key.map(ColId::from),
             false,
+            None,
         )))
     }
 

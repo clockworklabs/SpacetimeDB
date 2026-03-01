@@ -5,9 +5,10 @@ slug: /databases/transactions-atomicity
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
-SpacetimeDB provides strong transactional guarantees for all database operations. Every [reducer](/functions/reducers) runs inside a database transaction, ensuring your data remains consistent and reliable even under concurrent load.
+SpacetimeDB provides strong transactional guarantees for all database operations. Every [reducer](../00200-functions/00300-reducers/00300-reducers.md) runs inside a database transaction, ensuring your data remains consistent and reliable even under concurrent load.
 
 ## What is a Transaction?
 
@@ -26,7 +27,7 @@ SpacetimeDB transactions provide the following guarantees:
 - It's not possible to keep some changes and discard others from a single reducer execution
 
 :::note
-This atomicity guarantee applies to **reducers**, which run in a single transaction. [Procedures](/functions/procedures) can manually open multiple separate transactions, where each transaction is individually atomic, but the procedure as a whole is not. See [Procedures: Manual Transactions](#procedures-manual-transactions) below.
+This atomicity guarantee applies to **reducers**, which run in a single transaction. [Procedures](../00200-functions/00400-procedures.md) can manually open multiple separate transactions, where each transaction is individually atomic, but the procedure as a whole is not. See [Procedures: Manual Transactions](#procedures-manual-transactions) below.
 :::
 
 ### Consistency
@@ -155,6 +156,8 @@ pub fn child_reducer(ctx: &ReducerContext) -> Result<(), String> {
 </TabItem>
 <TabItem value="cpp" label="C++">
 
+<CppModuleVersionNotice />
+
 ```cpp
 using namespace SpacetimeDB;
 
@@ -192,25 +195,25 @@ SPACETIMEDB_REDUCER(child_reducer, ReducerContext ctx, bool some_condition) {
 </Tabs>
 
 :::important
-SpacetimeDB does **not** support nested transactions. Nested reducer calls execute in the same transaction as their parent. If you need separate transactions, use [scheduled reducers](/tables/schedule-tables) instead.
+SpacetimeDB does **not** support nested transactions. Nested reducer calls execute in the same transaction as their parent. If you need separate transactions, use [scheduled reducers](../00300-tables/00500-schedule-tables.md) instead.
 :::
 
 ### Procedures: Manual Transactions
 
-Unlike reducers, [procedures](/functions/procedures) don't automatically run in transactions. Procedures can run transactions, but must manually open them using `with_tx` (Rust) or `withTx` (TypeScript). This gives procedures more flexibility:
+Unlike reducers, [procedures](../00200-functions/00400-procedures.md) don't automatically run in transactions. Procedures can run transactions, but must manually open them using `with_tx` (Rust) or `withTx` (TypeScript). This gives procedures more flexibility:
 
 - Procedures can perform operations **outside** transactions (like HTTP requests)
 - Procedures can open **multiple separate transactions** if needed
 - Each `with_tx`/`withTx` call creates a new transaction that commits independently
 
-See [Procedures](/functions/procedures) for more details on manual transaction management.
+See [Procedures](../00200-functions/00400-procedures.md) for more details on manual transaction management.
 
 ## Best Practices
 
 ### Keep Transactions Short
 
 - Perform only necessary database operations within reducers
-- Move external I/O (HTTP requests, etc.) to [procedures](/functions/procedures)
+- Move external I/O (HTTP requests, etc.) to [procedures](../00200-functions/00400-procedures.md)
 - Shorter transactions reduce contention and improve throughput
 
 ### Handle Errors Gracefully
@@ -223,18 +226,18 @@ See [Procedures](/functions/procedures) for more details on manual transaction m
 
 ### No Nested Transactions
 
-SpacetimeDB does not support nested transactions. When one reducer calls another, they share the same transaction. If you need separate transactions, use [scheduled reducers](/tables/schedule-tables) to trigger the second reducer asynchronously.
+SpacetimeDB does not support nested transactions. When one reducer calls another, they share the same transaction. If you need separate transactions, use [scheduled reducers](../00300-tables/00500-schedule-tables.md) to trigger the second reducer asynchronously.
 
 ### Auto-Increment is Not Transactional
 
 The `#[auto_inc]` sequence generator is not transactional:
 - Sequence numbers are allocated even if a transaction rolls back
 - This can create gaps in your sequence
-- See [Auto-Increment](/tables/auto-increment#crash-recovery) for details
+- See [Auto-Increment](../00300-tables/00230-auto-increment.md#crash-recovery) for details
 
 ## Related Topics
 
-- **[Reducers](/functions/reducers)** - Functions that modify database state transactionally
-- **[Procedures](/functions/procedures)** - Functions with manual transaction control
-- **[Schedule Tables](/tables/schedule-tables)** - Schedule reducers for separate transactions
-- **[Subscriptions](/subscriptions)** - How clients receive transactional updates
+- **[Reducers](../00200-functions/00300-reducers/00300-reducers.md)** - Functions that modify database state transactionally
+- **[Procedures](../00200-functions/00400-procedures.md)** - Functions with manual transaction control
+- **[Schedule Tables](../00300-tables/00500-schedule-tables.md)** - Schedule reducers for separate transactions
+- **[Subscriptions](../00400-subscriptions.md)** - How clients receive transactional updates

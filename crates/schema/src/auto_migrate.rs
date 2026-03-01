@@ -942,11 +942,11 @@ fn auto_migrate_indexes(plan: &mut AutoMigratePlan<'_>, new_tables: &HashSet<&Id
                     Ok(())
                 }
                 Diff::MaybeChange { old, new } => {
-                    if old.codegen_name != new.codegen_name {
+                    if old.accessor_name != new.accessor_name {
                         Err(AutoMigrateError::ChangeIndexAccessor {
                             index: old.name.clone(),
-                            old_accessor: old.codegen_name.clone(),
-                            new_accessor: new.codegen_name.clone(),
+                            old_accessor: old.accessor_name.clone(),
+                            new_accessor: new.accessor_name.clone(),
                         }
                         .into())
                     } else {
@@ -2362,7 +2362,7 @@ mod tests {
         });
         let new = create_v10_module_def(|builder| {
             builder
-                .build_table_with_new_type("Events", ProductType::from([("id", AlgebraicType::U64)]), true)
+                .build_table_with_new_type("events", ProductType::from([("id", AlgebraicType::U64)]), true)
                 .with_event(true)
                 .finish();
         });
@@ -2370,14 +2370,14 @@ mod tests {
         let result = ponder_auto_migrate(&old, &new);
         expect_error_matching!(
             result,
-            AutoMigrateError::ChangeTableEventFlag { table } => &table[..] == "Events"
+            AutoMigrateError::ChangeTableEventFlag { table } => &table[..] == "events"
         );
 
         // event → non-event (reverse direction)
         let result = ponder_auto_migrate(&new, &old);
         expect_error_matching!(
             result,
-            AutoMigrateError::ChangeTableEventFlag { table } => &table[..] == "Events"
+            AutoMigrateError::ChangeTableEventFlag { table } => &table[..] == "events"
         );
     }
 

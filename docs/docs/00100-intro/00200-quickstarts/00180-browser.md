@@ -29,7 +29,7 @@ Get a SpacetimeDB app running in the browser with inline JavaScript.
     </StepText>
     <StepCode>
 ```bash
-spacetime dev --template browser-ts my-spacetime-app
+spacetime dev --template browser-ts
 ```
     </StepCode>
   </Step>
@@ -54,7 +54,7 @@ npm run build
       The JavaScript code runs inline in a script tag, using the bundled `DbConnection` class.
 
       :::tip
-      When using npm imports with a bundler (e.g. React, Vue, Svelte), you can use type-safe [query builders](/sdks/typescript#query-builder-api) instead of raw SQL strings. The IIFE bundle shown here uses raw SQL.
+      The browser IIFE bundle also exposes the generated `tables` query builders, so you can use query-builder subscriptions here too.
       :::
     </StepText>
     <StepCode>
@@ -82,7 +82,7 @@ npm run build
             console.log(person.name);
           }
         })
-        .subscribe(['SELECT * FROM person']);
+        .subscribe(tables.person);
     })
     .build();
 </script>
@@ -122,5 +122,5 @@ conn.db.person.onDelete((ctx, person) => {
 
 ## Next steps
 
-- See the [Chat App Tutorial](/tutorials/chat-app) for a complete example
-- Read the [TypeScript SDK Reference](/sdks/typescript) for detailed API docs
+- See the [Chat App Tutorial](../00300-tutorials/00100-chat-app.md) for a complete example
+- Read the [TypeScript SDK Reference](../../00200-core-concepts/00600-clients/00700-typescript-reference.md) for detailed API docs

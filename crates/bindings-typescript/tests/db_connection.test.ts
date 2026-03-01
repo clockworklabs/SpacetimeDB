@@ -1,13 +1,21 @@
+import { beforeEach, describe, expect, test } from 'vitest';
+import {
+  BinaryWriter,
+  ConnectionId,
+  Identity,
+  InternalError,
+  SenderError,
+  Timestamp,
+  type Infer,
+} from '../src';
+import { ServerMessage } from '../src/sdk/client_api/types';
+import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
 import { DbConnection } from '../test-app/src/module_bindings';
 import User from '../test-app/src/module_bindings/user_table';
-import { beforeEach, describe, expect, test } from 'vitest';
-import { ConnectionId, type Infer } from '../src';
-import ServerMessage from '../src/sdk/client_api/server_message_type';
-import { Identity } from '../src';
-import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
 import {
   anIdentity,
   bobIdentity,
+  encodePlayer,
   encodeUser,
   makeQuerySetUpdate,
   sallyIdentity,
@@ -55,6 +63,79 @@ class Deferred<T> {
 }
 
 beforeEach(() => {});
+
+function getLastCallReducerRequestId(wsAdapter: WebsocketTestAdapter): number {
+  for (let i = wsAdapter.outgoingMessages.length - 1; i >= 0; i--) {
+    const message = wsAdapter.outgoingMessages[i];
+    if (message.tag === 'CallReducer') {
+      return message.value.requestId;
+    }
+
+    console.log('Message: ', JSON.stringify(message));
+  }
+  console.log('Outgoing messages length: ', wsAdapter.outgoingMessages.length);
+  throw new Error('No CallReducer message found in messageQueue.');
+}
+
+function getLastSubscribeMessageInfo(wsAdapter: WebsocketTestAdapter): {
+  requestId: number;
+  querySetId: number;
+} {
+  for (let i = wsAdapter.outgoingMessages.length - 1; i >= 0; i--) {
+    const message = wsAdapter.outgoingMessages[i];
+    if (message.tag === 'Subscribe') {
+      return {
+        requestId: message.value.requestId,
+        querySetId: message.value.querySetId.id,
+      };
+    }
+  }
+  throw new Error('No Subscribe message found in messageQueue.');
+}
+
+function makeReducerResult(
+  requestId: number,
+  reducerQuerySetUpdate: ReturnType<typeof makeQuerySetUpdate>
+) {
+  return ServerMessage.ReducerResult({
+    requestId,
+    timestamp: new Timestamp(0n),
+    result: {
+      tag: 'Ok',
+      value: {
+        retValue: new Uint8Array(),
+        transactionUpdate: {
+          querySets: [reducerQuerySetUpdate],
+        },
+      },
+    },
+  });
+}
+
+function makeReducerErrorResult(requestId: number, error: string) {
+  const errorWriter = new BinaryWriter(64);
+  errorWriter.writeString(error);
+  const errorPayload = errorWriter.getBuffer();
+  return ServerMessage.ReducerResult({
+    requestId,
+    timestamp: new Timestamp(0n),
+    result: {
+      tag: 'Err',
+      value: errorPayload,
+    },
+  });
+}
+
+function makeReducerInternalErrorResult(requestId: number, error: string) {
+  return ServerMessage.ReducerResult({
+    requestId,
+    timestamp: new Timestamp(0n),
+    result: {
+      tag: 'InternalError',
+      value: error,
+    },
+  });
+}
 
 describe('DbConnection', () => {
   test('call onConnectError callback after websocket connection failed to be established', async () => {
@@ -111,6 +192,226 @@ describe('DbConnection', () => {
     await onConnectPromise.promise;
 
     expect(called).toBeTruthy();
+  });
+
+  test('disconnects when SubscriptionError has no requestId', async () => {
+    const onDisconnectPromise = new Deferred<void>();
+    const wsAdapter = new WebsocketTestAdapter();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .onDisconnect(() => {
+        onDisconnectPromise.resolve();
+      })
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.SubscriptionError({
+        requestId: undefined,
+        querySetId: { id: 9999 },
+        error: 'test subscription error',
+      })
+    );
+
+    await onDisconnectPromise.promise;
+
+    expect(wsAdapter.closed).toBeTruthy();
+  });
+
+  test('handles SubscriptionError with requestId via subscription error callback', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+
+    const onErrorPromise = new Deferred<void>();
+    client
+      .subscriptionBuilder()
+      .onError(ctx => {
+        expect(ctx.event!.message).toEqual('test subscription error');
+        onErrorPromise.resolve();
+      })
+      .subscribe('SELECT * FROM user');
+
+    await Promise.resolve();
+    const { requestId, querySetId } = getLastSubscribeMessageInfo(wsAdapter);
+    wsAdapter.sendToClient(
+      ServerMessage.SubscriptionError({
+        requestId,
+        querySetId: { id: querySetId },
+        error: 'test subscription error',
+      })
+    );
+
+    await onErrorPromise.promise;
+    expect(wsAdapter.closed).toBeFalsy();
+  });
+
+  test('fires row callbacks after reducer resolution in ReducerResult', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const onConnectPromise = new Deferred<void>();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .onConnect(() => {
+        onConnectPromise.resolve();
+      })
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+    await onConnectPromise.promise;
+
+    let reducerResolved = false;
+
+    const rowCallbackPromise = new Deferred<void>();
+    client.db.player.onInsert(ctx => {
+      expect(reducerResolved).toBeFalsy();
+      expect(ctx.event.tag).toEqual('Reducer');
+      if (ctx.event.tag === 'Reducer') {
+        expect(ctx.event.value.reducer.name).toEqual('create_player');
+        expect(ctx.event.value.reducer.args).toEqual({
+          name: 'A Player',
+          location: { x: 1, y: 2 },
+        });
+      }
+      rowCallbackPromise.resolve();
+    });
+
+    const reducerPromise = client.reducers.createPlayer({
+      name: 'A Player',
+      location: { x: 1, y: 2 },
+    });
+    reducerPromise.then(() => {
+      reducerResolved = true;
+    });
+    // Hack to get the request sent from the client.
+    await Promise.resolve();
+    const requestId = getLastCallReducerRequestId(wsAdapter);
+    const reducerQuerySetUpdate = makeQuerySetUpdate(
+      0,
+      'player',
+      encodePlayer({
+        id: 1,
+        userId: anIdentity,
+        name: 'A Player',
+        location: { x: 1, y: 2 },
+      })
+    );
+    wsAdapter.sendToClient(makeReducerResult(requestId, reducerQuerySetUpdate));
+
+    await rowCallbackPromise.promise;
+    await reducerPromise;
+    expect(reducerResolved).toBeTruthy();
+  });
+
+  test('reducer error rejects and does not fire row callbacks', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const onConnectPromise = new Deferred<void>();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .onConnect(() => {
+        onConnectPromise.resolve();
+      })
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+    await onConnectPromise.promise;
+
+    let insertCalled = false;
+    client.db.player.onInsert(() => {
+      insertCalled = true;
+    });
+
+    const reducerPromise = client.reducers.createPlayer({
+      name: 'A Player',
+      location: { x: 1, y: 2 },
+    });
+
+    await Promise.resolve();
+    const requestId = getLastCallReducerRequestId(wsAdapter);
+    wsAdapter.sendToClient(makeReducerErrorResult(requestId, 'test error'));
+
+    await expect(reducerPromise).rejects.toBeInstanceOf(SenderError);
+    await expect(reducerPromise).rejects.toHaveProperty(
+      'message',
+      'test error'
+    );
+    expect(insertCalled).toBeFalsy();
+  });
+
+  test('reducer internal error rejects with InternalError', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const onConnectPromise = new Deferred<void>();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .onConnect(() => {
+        onConnectPromise.resolve();
+      })
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+    await onConnectPromise.promise;
+
+    const reducerPromise = client.reducers.createPlayer({
+      name: 'A Player',
+      location: { x: 1, y: 2 },
+    });
+
+    await Promise.resolve();
+    const requestId = getLastCallReducerRequestId(wsAdapter);
+    wsAdapter.sendToClient(
+      makeReducerInternalErrorResult(requestId, 'internal test error')
+    );
+
+    await expect(reducerPromise).rejects.toBeInstanceOf(InternalError);
+    await expect(reducerPromise).rejects.toHaveProperty(
+      'message',
+      'internal test error'
+    );
   });
 
   /*

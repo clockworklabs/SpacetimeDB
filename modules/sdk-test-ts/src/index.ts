@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // IMPORTS
 // ─────────────────────────────────────────────────────────────────────────────
-import { toCamelCase, Uuid } from 'spacetimedb';
+import { Uuid } from 'spacetimedb';
 import {
   type ModuleExport,
   type RowObj,
@@ -107,8 +107,8 @@ type TableWithReducers<Name extends string, Table extends TableSchema> = {
 type ExportsObj = Record<string, ModuleExport>;
 
 /** Somewhat mimics the `define_tables!` macro in sdk-test/src/lib.rs */
-function tbl<const Name extends string, Row extends RowObj>(
-  name: Name,
+function tbl<const Accessor extends string, Row extends RowObj>(
+  accessor: Accessor,
   ops: {
     insert?: string;
     delete?: string;
@@ -118,38 +118,38 @@ function tbl<const Name extends string, Row extends RowObj>(
     delete_by?: [string, keyof Row];
   },
   row: Row
-): TableWithReducers<Name, ReturnType<typeof table<Row, { name: Name }>>> {
-  const t = table({ name, public: true }, row);
+): TableWithReducers<Accessor, ReturnType<typeof table<Row, { name: Accessor }>>> {
+  const t = table({ public: true }, row);
   return {
     table: t,
     reducers(spacetimedb) {
       const exports: ExportsObj = {};
       if (ops.insert) {
         exports[ops.insert] = spacetimedb.reducer(row, (ctx, args) => {
-          (ctx.db[toCamelCase(name)] as any).insert({ ...args });
+          (ctx.db[accessor] as any).insert({ ...args });
         });
       }
       if (ops.delete) {
         exports[ops.delete] = spacetimedb.reducer(row, (ctx, args) => {
-          (ctx.db[toCamelCase(name)] as any).delete({ ...args });
+          (ctx.db[accessor] as any).delete({ ...args });
         });
       }
       if (ops.insert_or_panic) {
         exports[ops.insert_or_panic] = spacetimedb.reducer(row, (ctx, args) => {
-          (ctx.db[toCamelCase(name)] as any).insert({ ...args });
+          (ctx.db[accessor] as any).insert({ ...args });
         });
       }
       if (ops.update_by) {
         const [reducer, col] = ops.update_by;
         exports[reducer] = spacetimedb.reducer(row, (ctx, args) => {
-          (ctx.db[toCamelCase(name)] as any)[col].update({ ...args });
+          (ctx.db[accessor] as any)[col].update({ ...args });
         });
       }
       if (ops.update_non_pk_by) {
         const [reducer, col] = ops.update_non_pk_by;
         exports[reducer] = spacetimedb.reducer(row, (ctx, args) => {
-          (ctx.db[toCamelCase(name)] as any)[col].delete(args[col as any]);
-          (ctx.db[toCamelCase(name)] as any).insert({ ...args });
+          (ctx.db[accessor] as any)[col].delete(args[col as any]);
+          (ctx.db[accessor] as any).insert({ ...args });
         });
       }
       if (ops.delete_by) {
@@ -157,7 +157,7 @@ function tbl<const Name extends string, Row extends RowObj>(
         exports[reducer] = spacetimedb.reducer(
           { [col]: row[col] },
           (ctx, args) => {
-            (ctx.db[toCamelCase(name)] as any)[col].delete(args[col as any]);
+            (ctx.db[accessor] as any)[col].delete(args[col as any]);
           }
         );
       }
@@ -168,78 +168,78 @@ function tbl<const Name extends string, Row extends RowObj>(
 
 // Tables holding a single value.
 const singleValTables = {
-  one_u8: tbl('one_u8', { insert: 'insert_one_u8' }, { n: t.u8() }),
-  one_u16: tbl('one_u16', { insert: 'insert_one_u16' }, { n: t.u16() }),
-  one_u32: tbl('one_u32', { insert: 'insert_one_u32' }, { n: t.u32() }),
-  one_u64: tbl('one_u64', { insert: 'insert_one_u64' }, { n: t.u64() }),
-  one_u128: tbl('one_u128', { insert: 'insert_one_u128' }, { n: t.u128() }),
-  one_u256: tbl('one_u256', { insert: 'insert_one_u256' }, { n: t.u256() }),
+  oneU8: tbl('oneU8', { insert: 'insert_one_u8' }, { n: t.u8() }),
+  oneU16: tbl('oneU16', { insert: 'insert_one_u16' }, { n: t.u16() }),
+  oneU32: tbl('oneU32', { insert: 'insert_one_u32' }, { n: t.u32() }),
+  oneU64: tbl('oneU64', { insert: 'insert_one_u64' }, { n: t.u64() }),
+  oneU128: tbl('oneU128', { insert: 'insert_one_u128' }, { n: t.u128() }),
+  oneU256: tbl('oneU256', { insert: 'insert_one_u256' }, { n: t.u256() }),
 
-  one_i8: tbl('one_i8', { insert: 'insert_one_i8' }, { n: t.i8() }),
-  one_i16: tbl('one_i16', { insert: 'insert_one_i16' }, { n: t.i16() }),
-  one_i32: tbl('one_i32', { insert: 'insert_one_i32' }, { n: t.i32() }),
-  one_i64: tbl('one_i64', { insert: 'insert_one_i64' }, { n: t.i64() }),
-  one_i128: tbl('one_i128', { insert: 'insert_one_i128' }, { n: t.i128() }),
-  one_i256: tbl('one_i256', { insert: 'insert_one_i256' }, { n: t.i256() }),
+  oneI8: tbl('oneI8', { insert: 'insert_one_i8' }, { n: t.i8() }),
+  oneI16: tbl('oneI16', { insert: 'insert_one_i16' }, { n: t.i16() }),
+  oneI32: tbl('oneI32', { insert: 'insert_one_i32' }, { n: t.i32() }),
+  oneI64: tbl('oneI64', { insert: 'insert_one_i64' }, { n: t.i64() }),
+  oneI128: tbl('oneI128', { insert: 'insert_one_i128' }, { n: t.i128() }),
+  oneI256: tbl('oneI256', { insert: 'insert_one_i256' }, { n: t.i256() }),
 
-  one_bool: tbl('one_bool', { insert: 'insert_one_bool' }, { b: t.bool() }),
+  oneBool: tbl('oneBool', { insert: 'insert_one_bool' }, { b: t.bool() }),
 
-  one_f32: tbl('one_f32', { insert: 'insert_one_f32' }, { f: t.f32() }),
-  one_f64: tbl('one_f64', { insert: 'insert_one_f64' }, { f: t.f64() }),
+  oneF32: tbl('oneF32', { insert: 'insert_one_f32' }, { f: t.f32() }),
+  oneF64: tbl('oneF64', { insert: 'insert_one_f64' }, { f: t.f64() }),
 
-  one_string: tbl(
-    'one_string',
+  oneString: tbl(
+    'oneString',
     { insert: 'insert_one_string' },
     { s: t.string() }
   ),
 
-  one_identity: tbl(
-    'one_identity',
+  oneIdentity: tbl(
+    'oneIdentity',
     { insert: 'insert_one_identity' },
     { i: t.identity() }
   ),
-  one_connection_id: tbl(
-    'one_connection_id',
+  oneConnectionId: tbl(
+    'oneConnectionId',
     { insert: 'insert_one_connection_id' },
     { a: t.connectionId() }
   ),
 
-  one_uuid: tbl('one_uuid', { insert: 'insert_one_uuid' }, { u: t.uuid() }),
+  oneUuid: tbl('oneUuid', { insert: 'insert_one_uuid' }, { u: t.uuid() }),
 
-  one_timestamp: tbl(
-    'one_timestamp',
+  oneTimestamp: tbl(
+    'oneTimestamp',
     { insert: 'insert_one_timestamp' },
     { t: t.timestamp() }
   ),
 
-  one_simple_enum: tbl(
-    'one_simple_enum',
+  oneSimpleEnum: tbl(
+    'oneSimpleEnum',
     { insert: 'insert_one_simple_enum' },
     { e: SimpleEnum }
   ),
-  one_enum_with_payload: tbl(
-    'one_enum_with_payload',
+  oneEnumWithPayload: tbl(
+    'oneEnumWithPayload',
     { insert: 'insert_one_enum_with_payload' },
     { e: EnumWithPayload }
   ),
 
-  one_unit_struct: tbl(
-    'one_unit_struct',
+  oneUnitStruct: tbl(
+    'oneUnitStruct',
     { insert: 'insert_one_unit_struct' },
     { s: UnitStruct }
   ),
-  one_byte_struct: tbl(
-    'one_byte_struct',
+  oneByteStruct: tbl(
+    'oneByteStruct',
     { insert: 'insert_one_byte_struct' },
     { s: ByteStruct }
   ),
-  one_every_primitive_struct: tbl(
-    'one_every_primitive_struct',
+  oneEveryPrimitiveStruct: tbl(
+    'oneEveryPrimitiveStruct',
     { insert: 'insert_one_every_primitive_struct' },
     { s: EveryPrimitiveStruct }
   ),
-  one_every_vec_struct: tbl(
-    'one_every_vec_struct',
+  oneEveryVecStruct: tbl(
+    'oneEveryVecStruct',
     { insert: 'insert_one_every_vec_struct' },
     { s: EveryVecStruct }
   ),
@@ -247,134 +247,134 @@ const singleValTables = {
 
 // Tables holding a Vec of various types.
 const vecTables = {
-  vec_u8: tbl('vec_u8', { insert: 'insert_vec_u8' }, { n: t.array(t.u8()) }),
-  vec_u16: tbl(
-    'vec_u16',
+  vecU8: tbl('vecU8', { insert: 'insert_vec_u8' }, { n: t.array(t.u8()) }),
+  vecU16: tbl(
+    'vecU16',
     { insert: 'insert_vec_u16' },
     { n: t.array(t.u16()) }
   ),
-  vec_u32: tbl(
-    'vec_u32',
+  vecU32: tbl(
+    'vecU32',
     { insert: 'insert_vec_u32' },
     { n: t.array(t.u32()) }
   ),
-  vec_u64: tbl(
-    'vec_u64',
+  vecU64: tbl(
+    'vecU64',
     { insert: 'insert_vec_u64' },
     { n: t.array(t.u64()) }
   ),
-  vec_u128: tbl(
-    'vec_u128',
+  vecU128: tbl(
+    'vecU128',
     { insert: 'insert_vec_u128' },
     { n: t.array(t.u128()) }
   ),
-  vec_u256: tbl(
-    'vec_u256',
+  vecU256: tbl(
+    'vecU256',
     { insert: 'insert_vec_u256' },
     { n: t.array(t.u256()) }
   ),
 
-  vec_i8: tbl('vec_i8', { insert: 'insert_vec_i8' }, { n: t.array(t.i8()) }),
-  vec_i16: tbl(
-    'vec_i16',
+  vecI8: tbl('vecI8', { insert: 'insert_vec_i8' }, { n: t.array(t.i8()) }),
+  vecI16: tbl(
+    'vecI16',
     { insert: 'insert_vec_i16' },
     { n: t.array(t.i16()) }
   ),
-  vec_i32: tbl(
-    'vec_i32',
+  vecI32: tbl(
+    'vecI32',
     { insert: 'insert_vec_i32' },
     { n: t.array(t.i32()) }
   ),
-  vec_i64: tbl(
-    'vec_i64',
+  vecI64: tbl(
+    'vecI64',
     { insert: 'insert_vec_i64' },
     { n: t.array(t.i64()) }
   ),
-  vec_i128: tbl(
-    'vec_i128',
+  vecI128: tbl(
+    'vecI128',
     { insert: 'insert_vec_i128' },
     { n: t.array(t.i128()) }
   ),
-  vec_i256: tbl(
-    'vec_i256',
+  vecI256: tbl(
+    'vecI256',
     { insert: 'insert_vec_i256' },
     { n: t.array(t.i256()) }
   ),
 
-  vec_bool: tbl(
-    'vec_bool',
+  vecBool: tbl(
+    'vecBool',
     { insert: 'insert_vec_bool' },
     { b: t.array(t.bool()) }
   ),
 
-  vec_f32: tbl(
-    'vec_f32',
+  vecF32: tbl(
+    'vecF32',
     { insert: 'insert_vec_f32' },
     { f: t.array(t.f32()) }
   ),
-  vec_f64: tbl(
-    'vec_f64',
+  vecF64: tbl(
+    'vecF64',
     { insert: 'insert_vec_f64' },
     { f: t.array(t.f64()) }
   ),
 
-  vec_string: tbl(
-    'vec_string',
+  vecString: tbl(
+    'vecString',
     { insert: 'insert_vec_string' },
     { s: t.array(t.string()) }
   ),
 
-  vec_identity: tbl(
-    'vec_identity',
+  vecIdentity: tbl(
+    'vecIdentity',
     { insert: 'insert_vec_identity' },
     { i: t.array(t.identity()) }
   ),
-  vec_connection_id: tbl(
-    'vec_connection_id',
+  vecConnectionId: tbl(
+    'vecConnectionId',
     { insert: 'insert_vec_connection_id' },
     { a: t.array(t.connectionId()) }
   ),
 
-  vec_timestamp: tbl(
-    'vec_timestamp',
+  vecTimestamp: tbl(
+    'vecTimestamp',
     { insert: 'insert_vec_timestamp' },
     { t: t.array(t.timestamp()) }
   ),
 
-  vec_uuid: tbl(
-    'vec_uuid',
+  vecUuid: tbl(
+    'vecUuid',
     { insert: 'insert_vec_uuid' },
     { u: t.array(t.uuid()) }
   ),
 
-  vec_simple_enum: tbl(
-    'vec_simple_enum',
+  vecSimpleEnum: tbl(
+    'vecSimpleEnum',
     { insert: 'insert_vec_simple_enum' },
     { e: t.array(SimpleEnum) }
   ),
-  vec_enum_with_payload: tbl(
-    'vec_enum_with_payload',
+  vecEnumWithPayload: tbl(
+    'vecEnumWithPayload',
     { insert: 'insert_vec_enum_with_payload' },
     { e: t.array(EnumWithPayload) }
   ),
 
-  vec_unit_struct: tbl(
-    'vec_unit_struct',
+  vecUnitStruct: tbl(
+    'vecUnitStruct',
     { insert: 'insert_vec_unit_struct' },
     { s: t.array(UnitStruct) }
   ),
-  vec_byte_struct: tbl(
-    'vec_byte_struct',
+  vecByteStruct: tbl(
+    'vecByteStruct',
     { insert: 'insert_vec_byte_struct' },
     { s: t.array(ByteStruct) }
   ),
-  vec_every_primitive_struct: tbl(
-    'vec_every_primitive_struct',
+  vecEveryPrimitiveStruct: tbl(
+    'vecEveryPrimitiveStruct',
     { insert: 'insert_vec_every_primitive_struct' },
     { s: t.array(EveryPrimitiveStruct) }
   ),
-  vec_every_vec_struct: tbl(
-    'vec_every_vec_struct',
+  vecEveryVecStruct: tbl(
+    'vecEveryVecStruct',
     { insert: 'insert_vec_every_vec_struct' },
     { s: t.array(EveryVecStruct) }
   ),
@@ -382,38 +382,38 @@ const vecTables = {
 
 // Tables holding an Option of various types.
 const optionTables = {
-  option_i32: tbl(
-    'option_i32',
+  optionI32: tbl(
+    'optionI32',
     { insert: 'insert_option_i32' },
     { n: t.option(t.i32()) }
   ),
-  option_string: tbl(
-    'option_string',
+  optionString: tbl(
+    'optionString',
     { insert: 'insert_option_string' },
     { s: t.option(t.string()) }
   ),
-  option_identity: tbl(
-    'option_identity',
+  optionIdentity: tbl(
+    'optionIdentity',
     { insert: 'insert_option_identity' },
     { i: t.option(t.identity()) }
   ),
-  option_uuid: tbl(
-    'option_uuid',
+  optionUuid: tbl(
+    'optionUuid',
     { insert: 'insert_option_uuid' },
     { u: t.option(t.uuid()) }
   ),
-  option_simple_enum: tbl(
-    'option_simple_enum',
+  optionSimpleEnum: tbl(
+    'optionSimpleEnum',
     { insert: 'insert_option_simple_enum' },
     { e: t.option(SimpleEnum) }
   ),
-  option_every_primitive_struct: tbl(
-    'option_every_primitive_struct',
+  optionEveryPrimitiveStruct: tbl(
+    'optionEveryPrimitiveStruct',
     { insert: 'insert_option_every_primitive_struct' },
     { s: t.option(EveryPrimitiveStruct) }
   ),
-  option_vec_option_i32: tbl(
-    'option_vec_option_i32',
+  optionVecOptionI32: tbl(
+    'optionVecOptionI32',
     { insert: 'insert_option_vec_option_i32' },
     { v: t.option(t.array(t.option(t.i32()))) }
   ),
@@ -421,33 +421,33 @@ const optionTables = {
 
 // Tables for Result<Ok, Err> values.
 const resultTables = {
-  result_i32_string: tbl(
-    'result_i32_string',
+  resultI32String: tbl(
+    'resultI32String',
     { insert: 'insert_result_i32_string' },
     { r: t.result(t.i32(), t.string()) }
   ),
-  result_string_i32: tbl(
-    'result_string_i32',
+  resultStringI32: tbl(
+    'resultStringI32',
     { insert: 'insert_result_string_i32' },
     { r: t.result(t.string(), t.i32()) }
   ),
-  result_identity_string: tbl(
-    'result_identity_string',
+  resultIdentityString: tbl(
+    'resultIdentityString',
     { insert: 'insert_result_identity_string' },
     { r: t.result(t.identity(), t.string()) }
   ),
-  result_simple_enum_i32: tbl(
-    'result_simple_enum_i32',
+  resultSimpleEnumI32: tbl(
+    'resultSimpleEnumI32',
     { insert: 'insert_result_simple_enum_i32' },
     { r: t.result(SimpleEnum, t.i32()) }
   ),
-  result_every_primitive_struct_string: tbl(
-    'result_every_primitive_struct_string',
+  resultEveryPrimitiveStructString: tbl(
+    'resultEveryPrimitiveStructString',
     { insert: 'insert_result_every_primitive_struct_string' },
     { r: t.result(EveryPrimitiveStruct, t.string()) }
   ),
-  result_vec_i32_string: tbl(
-    'result_vec_i32_string',
+  resultVecI32String: tbl(
+    'resultVecI32String',
     { insert: 'insert_result_vec_i32_string' },
     { r: t.result(t.array(t.i32()), t.string()) }
   ),
@@ -456,8 +456,8 @@ const resultTables = {
 // Tables mapping a unique, but non-pk, key to a boring i32 payload.
 // This allows us to test delete events, and the semantically correct absence of update events.
 const uniqueTables = {
-  unique_u8: tbl(
-    'unique_u8',
+  uniqueU8: tbl(
+    'uniqueU8',
     {
       insert_or_panic: 'insert_unique_u8',
       update_non_pk_by: ['update_unique_u8', 'n'],
@@ -466,8 +466,8 @@ const uniqueTables = {
     { n: t.u8().unique(), data: t.i32() }
   ),
 
-  unique_u16: tbl(
-    'unique_u16',
+  uniqueU16: tbl(
+    'uniqueU16',
     {
       insert_or_panic: 'insert_unique_u16',
       update_non_pk_by: ['update_unique_u16', 'n'],
@@ -476,8 +476,8 @@ const uniqueTables = {
     { n: t.u16().unique(), data: t.i32() }
   ),
 
-  unique_u32: tbl(
-    'unique_u32',
+  uniqueU32: tbl(
+    'uniqueU32',
     {
       insert_or_panic: 'insert_unique_u32',
       update_non_pk_by: ['update_unique_u32', 'n'],
@@ -486,8 +486,8 @@ const uniqueTables = {
     { n: t.u32().unique(), data: t.i32() }
   ),
 
-  unique_u64: tbl(
-    'unique_u64',
+  uniqueU64: tbl(
+    'uniqueU64',
     {
       insert_or_panic: 'insert_unique_u64',
       update_non_pk_by: ['update_unique_u64', 'n'],
@@ -496,8 +496,8 @@ const uniqueTables = {
     { n: t.u64().unique(), data: t.i32() }
   ),
 
-  unique_u128: tbl(
-    'unique_u128',
+  uniqueU128: tbl(
+    'uniqueU128',
     {
       insert_or_panic: 'insert_unique_u128',
       update_non_pk_by: ['update_unique_u128', 'n'],
@@ -506,8 +506,8 @@ const uniqueTables = {
     { n: t.u128().unique(), data: t.i32() }
   ),
 
-  unique_u256: tbl(
-    'unique_u256',
+  uniqueU256: tbl(
+    'uniqueU256',
     {
       insert_or_panic: 'insert_unique_u256',
       update_non_pk_by: ['update_unique_u256', 'n'],
@@ -516,8 +516,8 @@ const uniqueTables = {
     { n: t.u256().unique(), data: t.i32() }
   ),
 
-  unique_i8: tbl(
-    'unique_i8',
+  uniqueI8: tbl(
+    'uniqueI8',
     {
       insert_or_panic: 'insert_unique_i8',
       update_non_pk_by: ['update_unique_i8', 'n'],
@@ -526,8 +526,8 @@ const uniqueTables = {
     { n: t.i8().unique(), data: t.i32() }
   ),
 
-  unique_i16: tbl(
-    'unique_i16',
+  uniqueI16: tbl(
+    'uniqueI16',
     {
       insert_or_panic: 'insert_unique_i16',
       update_non_pk_by: ['update_unique_i16', 'n'],
@@ -536,8 +536,8 @@ const uniqueTables = {
     { n: t.i16().unique(), data: t.i32() }
   ),
 
-  unique_i32: tbl(
-    'unique_i32',
+  uniqueI32: tbl(
+    'uniqueI32',
     {
       insert_or_panic: 'insert_unique_i32',
       update_non_pk_by: ['update_unique_i32', 'n'],
@@ -546,8 +546,8 @@ const uniqueTables = {
     { n: t.i32().unique(), data: t.i32() }
   ),
 
-  unique_i64: tbl(
-    'unique_i64',
+  uniqueI64: tbl(
+    'uniqueI64',
     {
       insert_or_panic: 'insert_unique_i64',
       update_non_pk_by: ['update_unique_i64', 'n'],
@@ -556,8 +556,8 @@ const uniqueTables = {
     { n: t.i64().unique(), data: t.i32() }
   ),
 
-  unique_i128: tbl(
-    'unique_i128',
+  uniqueI128: tbl(
+    'uniqueI128',
     {
       insert_or_panic: 'insert_unique_i128',
       update_non_pk_by: ['update_unique_i128', 'n'],
@@ -566,8 +566,8 @@ const uniqueTables = {
     { n: t.i128().unique(), data: t.i32() }
   ),
 
-  unique_i256: tbl(
-    'unique_i256',
+  uniqueI256: tbl(
+    'uniqueI256',
     {
       insert_or_panic: 'insert_unique_i256',
       update_non_pk_by: ['update_unique_i256', 'n'],
@@ -576,8 +576,8 @@ const uniqueTables = {
     { n: t.i256().unique(), data: t.i32() }
   ),
 
-  unique_bool: tbl(
-    'unique_bool',
+  uniqueBool: tbl(
+    'uniqueBool',
     {
       insert_or_panic: 'insert_unique_bool',
       update_non_pk_by: ['update_unique_bool', 'b'],
@@ -586,8 +586,8 @@ const uniqueTables = {
     { b: t.bool().unique(), data: t.i32() }
   ),
 
-  unique_string: tbl(
-    'unique_string',
+  uniqueString: tbl(
+    'uniqueString',
     {
       insert_or_panic: 'insert_unique_string',
       update_non_pk_by: ['update_unique_string', 's'],
@@ -596,8 +596,8 @@ const uniqueTables = {
     { s: t.string().unique(), data: t.i32() }
   ),
 
-  unique_identity: tbl(
-    'unique_identity',
+  uniqueIdentity: tbl(
+    'uniqueIdentity',
     {
       insert_or_panic: 'insert_unique_identity',
       update_non_pk_by: ['update_unique_identity', 'i'],
@@ -606,8 +606,8 @@ const uniqueTables = {
     { i: t.identity().unique(), data: t.i32() }
   ),
 
-  unique_connection_id: tbl(
-    'unique_connection_id',
+  uniqueConnectionId: tbl(
+    'uniqueConnectionId',
     {
       insert_or_panic: 'insert_unique_connection_id',
       update_non_pk_by: ['update_unique_connection_id', 'a'],
@@ -616,8 +616,8 @@ const uniqueTables = {
     { a: t.connectionId().unique(), data: t.i32() }
   ),
 
-  unique_uuid: tbl(
-    'unique_uuid',
+  uniqueUuid: tbl(
+    'uniqueUuid',
     {
       insert_or_panic: 'insert_unique_uuid',
       update_non_pk_by: ['update_unique_uuid', 'u'],
@@ -630,8 +630,8 @@ const uniqueTables = {
 // Tables mapping a primary key to a boring i32 payload.
 // This allows us to test update and delete events.
 const pkTables = {
-  pk_u8: tbl(
-    'pk_u8',
+  pkU8: tbl(
+    'pkU8',
     {
       insert_or_panic: 'insert_pk_u8',
       update_by: ['update_pk_u8', 'n'],
@@ -640,8 +640,8 @@ const pkTables = {
     { n: t.u8().primaryKey(), data: t.i32() }
   ),
 
-  pk_u16: tbl(
-    'pk_u16',
+  pkU16: tbl(
+    'pkU16',
     {
       insert_or_panic: 'insert_pk_u16',
       update_by: ['update_pk_u16', 'n'],
@@ -650,8 +650,8 @@ const pkTables = {
     { n: t.u16().primaryKey(), data: t.i32() }
   ),
 
-  pk_u32: tbl(
-    'pk_u32',
+  pkU32: tbl(
+    'pkU32',
     {
       insert_or_panic: 'insert_pk_u32',
       update_by: ['update_pk_u32', 'n'],
@@ -660,8 +660,8 @@ const pkTables = {
     { n: t.u32().primaryKey(), data: t.i32() }
   ),
 
-  pk_u32_two: tbl(
-    'pk_u32_two',
+  pkU32Two: tbl(
+    'pkU32Two',
     {
       insert_or_panic: 'insert_pk_u32_two',
       update_by: ['update_pk_u32_two', 'n'],
@@ -670,8 +670,8 @@ const pkTables = {
     { n: t.u32().primaryKey(), data: t.i32() }
   ),
 
-  pk_u64: tbl(
-    'pk_u64',
+  pkU64: tbl(
+    'pkU64',
     {
       insert_or_panic: 'insert_pk_u64',
       update_by: ['update_pk_u64', 'n'],
@@ -680,8 +680,8 @@ const pkTables = {
     { n: t.u64().primaryKey(), data: t.i32() }
   ),
 
-  pk_u128: tbl(
-    'pk_u128',
+  pkU128: tbl(
+    'pkU128',
     {
       insert_or_panic: 'insert_pk_u128',
       update_by: ['update_pk_u128', 'n'],
@@ -690,8 +690,8 @@ const pkTables = {
     { n: t.u128().primaryKey(), data: t.i32() }
   ),
 
-  pk_u256: tbl(
-    'pk_u256',
+  pkU256: tbl(
+    'pkU256',
     {
       insert_or_panic: 'insert_pk_u256',
       update_by: ['update_pk_u256', 'n'],
@@ -700,8 +700,8 @@ const pkTables = {
     { n: t.u256().primaryKey(), data: t.i32() }
   ),
 
-  pk_i8: tbl(
-    'pk_i8',
+  pkI8: tbl(
+    'pkI8',
     {
       insert_or_panic: 'insert_pk_i8',
       update_by: ['update_pk_i8', 'n'],
@@ -710,8 +710,8 @@ const pkTables = {
     { n: t.i8().primaryKey(), data: t.i32() }
   ),
 
-  pk_i16: tbl(
-    'pk_i16',
+  pkI16: tbl(
+    'pkI16',
     {
       insert_or_panic: 'insert_pk_i16',
       update_by: ['update_pk_i16', 'n'],
@@ -720,8 +720,8 @@ const pkTables = {
     { n: t.i16().primaryKey(), data: t.i32() }
   ),
 
-  pk_i32: tbl(
-    'pk_i32',
+  pkI32: tbl(
+    'pkI32',
     {
       insert_or_panic: 'insert_pk_i32',
       update_by: ['update_pk_i32', 'n'],
@@ -730,8 +730,8 @@ const pkTables = {
     { n: t.i32().primaryKey(), data: t.i32() }
   ),
 
-  pk_i64: tbl(
-    'pk_i64',
+  pkI64: tbl(
+    'pkI64',
     {
       insert_or_panic: 'insert_pk_i64',
       update_by: ['update_pk_i64', 'n'],
@@ -740,8 +740,8 @@ const pkTables = {
     { n: t.i64().primaryKey(), data: t.i32() }
   ),
 
-  pk_i128: tbl(
-    'pk_i128',
+  pkI128: tbl(
+    'pkI128',
     {
       insert_or_panic: 'insert_pk_i128',
       update_by: ['update_pk_i128', 'n'],
@@ -750,8 +750,8 @@ const pkTables = {
     { n: t.i128().primaryKey(), data: t.i32() }
   ),
 
-  pk_i256: tbl(
-    'pk_i256',
+  pkI256: tbl(
+    'pkI256',
     {
       insert_or_panic: 'insert_pk_i256',
       update_by: ['update_pk_i256', 'n'],
@@ -760,8 +760,8 @@ const pkTables = {
     { n: t.i256().primaryKey(), data: t.i32() }
   ),
 
-  pk_bool: tbl(
-    'pk_bool',
+  pkBool: tbl(
+    'pkBool',
     {
       insert_or_panic: 'insert_pk_bool',
       update_by: ['update_pk_bool', 'b'],
@@ -770,8 +770,8 @@ const pkTables = {
     { b: t.bool().primaryKey(), data: t.i32() }
   ),
 
-  pk_string: tbl(
-    'pk_string',
+  pkString: tbl(
+    'pkString',
     {
       insert_or_panic: 'insert_pk_string',
       update_by: ['update_pk_string', 's'],
@@ -780,8 +780,8 @@ const pkTables = {
     { s: t.string().primaryKey(), data: t.i32() }
   ),
 
-  pk_identity: tbl(
-    'pk_identity',
+  pkIdentity: tbl(
+    'pkIdentity',
     {
       insert_or_panic: 'insert_pk_identity',
       update_by: ['update_pk_identity', 'i'],
@@ -790,8 +790,8 @@ const pkTables = {
     { i: t.identity().primaryKey(), data: t.i32() }
   ),
 
-  pk_connection_id: tbl(
-    'pk_connection_id',
+  pkConnectionId: tbl(
+    'pkConnectionId',
     {
       insert_or_panic: 'insert_pk_connection_id',
       update_by: ['update_pk_connection_id', 'a'],
@@ -800,8 +800,8 @@ const pkTables = {
     { a: t.connectionId().primaryKey(), data: t.i32() }
   ),
 
-  pk_uuid: tbl(
-    'pk_uuid',
+  pkUuid: tbl(
+    'pkUuid',
     {
       insert_or_panic: 'insert_pk_uuid',
       update_by: ['update_pk_uuid', 'u'],
@@ -810,8 +810,8 @@ const pkTables = {
     { u: t.uuid().primaryKey(), data: t.i32() }
   ),
 
-  pk_simple_enum: tbl(
-    'pk_simple_enum',
+  pkSimpleEnum: tbl(
+    'pkSimpleEnum',
     {
       insert_or_panic: 'insert_pk_simple_enum',
     },
@@ -822,8 +822,8 @@ const pkTables = {
 // Some weird-looking tables.
 const weirdTables = {
   // A table with many fields, of many different types.
-  large_table: tbl(
-    'large_table',
+  largeTable: tbl(
+    'largeTable',
     {
       insert: 'insert_large_table',
       delete: 'delete_large_table',
@@ -856,19 +856,19 @@ const weirdTables = {
 
   // A table which holds instances of other table structs.
   // This tests that we can use tables as types.
-  table_holds_table: tbl(
-    'table_holds_table',
+  tableHoldsTable: tbl(
+    'tableHoldsTable',
     {
       insert: 'insert_table_holds_table',
     },
     {
-      a: singleValTables.one_u8.table.rowType,
-      b: vecTables.vec_u8.table.rowType,
+      a: singleValTables.oneU8.table.rowType,
+      b: vecTables.vecU8.table.rowType,
     }
   ),
 };
 
-const PkU32 = pkTables.pk_u32.table.rowType;
+const PkU32 = pkTables.pkU32.table.rowType;
 
 const allTables = {
   ...singleValTables,
@@ -906,10 +906,9 @@ const IndexedTable = table(
 
 const IndexedTable2 = table(
   {
-    name: 'indexed_table_2',
     indexes: [
       {
-        name: 'player_id_snazz_index',
+        accessor: 'player_id_snazz_index',
         algorithm: 'btree',
         columns: ['player_id', 'player_snazz'],
       },
@@ -922,7 +921,7 @@ const IndexedTable2 = table(
 );
 
 const BTreeU32 = table(
-  { name: 'btree_u32', public: true },
+  { public: true },
   t.row('BTreeU32', {
     n: t.u32().index('btree'),
     data: t.i32(),
@@ -1138,7 +1137,7 @@ export const insert_primitives_as_strings = spacetimedb.reducer(
 export const no_op_succeeds = spacetimedb.reducer(_ctx => {});
 
 export const oneu8Filter = spacetimedb.clientVisibilityFilter.sql(
-  'SELECT * FROM one_u8'
+  'SELECT * FROM one_u_8'
 );
 
 export const send_scheduled_message = spacetimedb.reducer(

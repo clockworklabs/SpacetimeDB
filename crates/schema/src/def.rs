@@ -32,9 +32,9 @@ use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors,
 use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v10::{
-    RawConstraintDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section,
-    RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10,
-    RawSequenceDefV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10,
+    ExplicitNames, RawConstraintDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10,
+    RawModuleDefV10Section, RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10,
+    RawScopedTypeNameV10, RawSequenceDefV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10,
 };
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
@@ -496,6 +496,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
         } = val;
 
         let mut sections = Vec::new();
+        let mut explicit_names = ExplicitNames::default();
 
         sections.push(RawModuleDefV10Section::Typespace(typespace));
 
@@ -518,10 +519,16 @@ impl From<ModuleDef> for RawModuleDefV10 {
         }
 
         // Collect schedules from tables (V10 stores them in a separate section).
+        // Also collect ExplicitNames for tables: accessor_name → source_name, name → canonical_name.
         let mut schedules = Vec::new();
         let raw_tables: Vec<RawTableDefV10> = tables
             .into_values()
             .map(|td| {
+                // Always emit name as ExplicitNames canonical_name.
+                explicit_names.insert_table(
+                    RawIdentifier::from(td.accessor_name.clone()),
+                    RawIdentifier::from(td.name.clone()),
+                );
                 if let Some(sched) = td.schedule.clone() {
                     schedules.push(RawScheduleDefV10 {
                         source_name: Some(sched.name.into()),
@@ -537,17 +544,47 @@ impl From<ModuleDef> for RawModuleDefV10 {
             sections.push(RawModuleDefV10Section::Tables(raw_tables));
         }
 
-        let raw_reducers: Vec<RawReducerDefV10> = reducers.into_values().map(Into::into).collect();
+        // Collect ExplicitNames for reducers: accessor_name → source_name, name → canonical_name.
+        let raw_reducers: Vec<RawReducerDefV10> = reducers
+            .into_values()
+            .map(|rd| {
+                explicit_names.insert_function(
+                    RawIdentifier::from(rd.accessor_name.clone()),
+                    RawIdentifier::from(rd.name.clone()),
+                );
+                rd.into()
+            })
+            .collect();
         if !raw_reducers.is_empty() {
             sections.push(RawModuleDefV10Section::Reducers(raw_reducers));
         }
 
-        let raw_procedures: Vec<RawProcedureDefV10> = procedures.into_values().map(Into::into).collect();
+        // Collect ExplicitNames for procedures: accessor_name → source_name, name → canonical_name.
+        let raw_procedures: Vec<RawProcedureDefV10> = procedures
+            .into_values()
+            .map(|pd| {
+                explicit_names.insert_function(
+                    RawIdentifier::from(pd.accessor_name.clone()),
+                    RawIdentifier::from(pd.name.clone()),
+                );
+                pd.into()
+            })
+            .collect();
         if !raw_procedures.is_empty() {
             sections.push(RawModuleDefV10Section::Procedures(raw_procedures));
         }
 
-        let raw_views: Vec<RawViewDefV10> = views.into_values().map(Into::into).collect();
+        // Collect ExplicitNames for views: accessor_name → source_name, name → canonical_name.
+        let raw_views: Vec<RawViewDefV10> = views
+            .into_values()
+            .map(|vd| {
+                explicit_names.insert_function(
+                    RawIdentifier::from(vd.accessor_name.clone()),
+                    RawIdentifier::from(vd.name.clone()),
+                );
+                vd.into()
+            })
+            .collect();
         if !raw_views.is_empty() {
             sections.push(RawModuleDefV10Section::Views(raw_views));
         }
@@ -564,6 +601,9 @@ impl From<ModuleDef> for RawModuleDefV10 {
         if !raw_rls.is_empty() {
             sections.push(RawModuleDefV10Section::RowLevelSecurity(raw_rls));
         }
+
+        // Always emit ExplicitNames so canonical names survive the round-trip.
+        sections.push(RawModuleDefV10Section::ExplicitNames(explicit_names));
 
         RawModuleDefV10 { sections }
     }
@@ -582,7 +622,6 @@ pub trait ModuleDefLookup: Sized + Debug + 'static {
     /// Look up this entity in the module def.
     fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self>;
 }
-
 /// A data structure representing the validated definition of a database table.
 ///
 /// Cannot be created directly. Construct a [`ModuleDef`] by validating a [`RawModuleDef`] instead,
@@ -604,7 +643,13 @@ pub struct TableDef {
     /// Unique within a module, acts as the table's identifier.
     /// Must be a valid [crate::db::identifier::Identifier].
     pub name: Identifier,
-
+    /// The table identifier as defined in the module source.
+    ///
+    /// All the codegens should use `accessor_name` to derive the table identifier for clients.
+    /// However, the `name` field should still be used when communicating with the
+    /// database over the network, since the database does not necessarily know
+    /// about accessor names.
+    pub accessor_name: Identifier,
     /// A reference to a `ProductType` containing the columns of this table.
     /// This is the single source of truth for the table's columns.
     /// All elements of the `ProductType` must have names.
@@ -674,6 +719,7 @@ impl From<TableDef> for RawTableDefV9 {
             table_type,
             table_access,
             is_event: _, // V9 does not support event tables; ignore when converting back
+            ..
         } = val;
 
         RawTableDefV9 {
@@ -693,7 +739,7 @@ impl From<TableDef> for RawTableDefV9 {
 impl From<TableDef> for RawTableDefV10 {
     fn from(val: TableDef) -> Self {
         let TableDef {
-            name,
+            name: _,
             product_type_ref,
             primary_key,
             columns: _, // will be reconstructed from the product type.
@@ -704,10 +750,11 @@ impl From<TableDef> for RawTableDefV10 {
             table_type,
             table_access,
             is_event,
+            accessor_name,
         } = val;
 
         RawTableDefV10 {
-            source_name: name.into(),
+            source_name: accessor_name.into(),
             product_type_ref,
             primary_key: ColList::from_iter(primary_key),
             indexes: indexes.into_values().map(Into::into).collect(),
@@ -729,6 +776,7 @@ impl From<ViewDef> for TableDef {
             is_public,
             product_type_ref,
             return_columns,
+            accessor_name,
             ..
         } = def;
         Self {
@@ -743,6 +791,7 @@ impl From<ViewDef> for TableDef {
             table_type: TableType::User,
             table_access: if is_public { Public } else { Private },
             is_event: false,
+            accessor_name,
         }
     }
 }
@@ -816,16 +865,22 @@ pub struct IndexDef {
     /// generated by the system using the same algorithm as V9 and earlier.
     pub name: RawIdentifier,
 
-    /// codegen_name is the name of the index to be used for client code generation.
+    /// This will be the same as `name` for [`RawModuleDefV9`].
+    /// For [`RawModuleDefV10`], this is an auto-generated globally unique name
+    /// derived from the module source.
     ///
-    /// In V9 and earlier, this could be passed by the user, as `accessor` macro in bindings.
-    /// In V10, this will be always be `name`.
-    ///
-    /// In V9, this may be set to `None` if this is an auto-generated index for which the user
-    /// has not supplied a name. In this case, no client code generation for this index
-    /// will be performed.
-    pub codegen_name: Option<Identifier>,
+    /// This exists as a hacky workaround to make the `index_name_from_id`
+    /// syscall work without requiring the module to know about the canonical
+    /// index name field. It serves as an alias for `name` in Database.
+    pub source_name: RawIdentifier,
 
+    /// The name of the index to use for client code generation.
+    ///
+    /// In V9 and earlier, this could be supplied by the user via the `accessor`
+    /// macro in bindings. In those versions, this may be `None` if the index
+    /// was auto-generated and no accessor name was provided by the user. In
+    /// that case, no client code will be generated for this index.
+    pub accessor_name: Option<Identifier>,
     /// The algorithm parameters for the index.
     pub algorithm: IndexAlgorithm,
 }
@@ -833,7 +888,7 @@ pub struct IndexDef {
 impl IndexDef {
     /// Whether this index was generated by the system.
     pub fn generated(&self) -> bool {
-        self.codegen_name.is_none()
+        self.accessor_name.is_none()
     }
 }
 
@@ -846,7 +901,7 @@ impl From<IndexDef> for RawIndexDefV9 {
                 IndexAlgorithm::Hash(HashAlgorithm { columns }) => RawIndexAlgorithm::Hash { columns },
                 IndexAlgorithm::Direct(DirectAlgorithm { column }) => RawIndexAlgorithm::Direct { column },
             },
-            accessor_name: val.codegen_name.map(Into::into),
+            accessor_name: val.accessor_name.map(Into::into),
         }
     }
 }
@@ -854,8 +909,8 @@ impl From<IndexDef> for RawIndexDefV9 {
 impl From<IndexDef> for RawIndexDefV10 {
     fn from(val: IndexDef) -> Self {
         RawIndexDefV10 {
-            source_name: Some(val.name),
-            accessor_name: None,
+            source_name: Some(val.source_name),
+            accessor_name: val.accessor_name.map(Into::into),
             algorithm: val.algorithm.into(),
         }
     }
@@ -1000,6 +1055,11 @@ pub struct ColumnDef {
     /// NOT within the containing `ModuleDef`.
     pub name: Identifier,
 
+    /// The name of the column as define in the module source code.
+    ///
+    /// This should be used in client codegens and Not `name` field.
+    pub accessor_name: Identifier,
+
     /// The ID of this column.
     pub col_id: ColId,
 
@@ -1029,6 +1089,7 @@ impl From<ViewColumnDef> for ColumnDef {
             ty,
             ty_for_generate,
             view_name: table_name,
+            accessor_name,
         } = def;
         Self {
             name,
@@ -1037,6 +1098,7 @@ impl From<ViewColumnDef> for ColumnDef {
             ty_for_generate,
             table_name,
             default_value: None,
+            accessor_name,
         }
     }
 }
@@ -1047,6 +1109,8 @@ impl From<ViewColumnDef> for ColumnDef {
 pub struct ViewColumnDef {
     /// The name of the column.
     pub name: Identifier,
+
+    pub accessor_name: Identifier,
 
     /// The position of this column in the view's return type.
     pub col_id: ColId,
@@ -1069,6 +1133,7 @@ impl From<ColumnDef> for ViewColumnDef {
             ty,
             ty_for_generate,
             table_name: view_name,
+            accessor_name,
             ..
         }: ColumnDef,
     ) -> Self {
@@ -1078,6 +1143,7 @@ impl From<ColumnDef> for ViewColumnDef {
             ty,
             ty_for_generate,
             view_name,
+            accessor_name,
         }
     }
 }
@@ -1267,7 +1333,7 @@ impl From<ScheduleDef> for RawScheduleDefV9 {
 #[non_exhaustive]
 pub struct TypeDef {
     /// The (scoped) name of the type.
-    pub name: ScopedTypeName,
+    pub accessor_name: ScopedTypeName,
 
     /// The type to which the alias refers.
     /// Look in `ModuleDef.typespace` for the actual type,
@@ -1280,7 +1346,7 @@ pub struct TypeDef {
 impl From<TypeDef> for RawTypeDefV9 {
     fn from(val: TypeDef) -> Self {
         RawTypeDefV9 {
-            name: val.name.into(),
+            name: val.accessor_name.into(),
             ty: val.ty,
             custom_ordering: val.custom_ordering,
         }
@@ -1290,7 +1356,7 @@ impl From<TypeDef> for RawTypeDefV9 {
 impl From<TypeDef> for RawTypeDefV10 {
     fn from(val: TypeDef) -> Self {
         RawTypeDefV10 {
-            source_name: val.name.into(),
+            source_name: val.accessor_name.into(),
             ty: val.ty,
             custom_ordering: val.custom_ordering,
         }
@@ -1409,6 +1475,11 @@ pub struct ViewDef {
     /// The name of the view. This must be unique within the module.
     pub name: Identifier,
 
+    /// The view identifier as defined in the module source.
+    ///
+    /// Similar to `[TableDef.accessor_name]`.
+    pub accessor_name: Identifier,
+
     /// Is this a public or a private view?
     /// Currently only public views are supported.
     /// Private views may be supported in the future.
@@ -1502,7 +1573,7 @@ impl From<ViewDef> for RawViewDefV9 {
 impl From<ViewDef> for RawViewDefV10 {
     fn from(val: ViewDef) -> Self {
         let ViewDef {
-            name,
+            accessor_name,
             is_anonymous,
             is_public,
             params,
@@ -1511,7 +1582,7 @@ impl From<ViewDef> for RawViewDefV10 {
             ..
         } = val;
         RawViewDefV10 {
-            source_name: name.into(),
+            source_name: accessor_name.into(),
             index: fn_ptr.into(),
             is_public,
             is_anonymous,
@@ -1572,6 +1643,14 @@ pub struct ReducerDef {
     /// The name of the reducer. This must be unique within the module's set of reducers and procedures.
     pub name: ReducerName,
 
+    /// The reducer name as defined in the module source.
+    ///
+    /// All the codegens should use `accessor_name` to generate reducers.
+    /// However, the `name` field should still be used when communicating with the
+    /// database over the network, since the database does not necessarily know
+    /// about accessor names.
+    pub accessor_name: ReducerName,
+
     /// The parameters of the reducer.
     ///
     /// This `ProductType` need not be registered in the module's `Typespace`.
@@ -1608,7 +1687,7 @@ impl From<ReducerDef> for RawReducerDefV9 {
 impl From<ReducerDef> for RawReducerDefV10 {
     fn from(val: ReducerDef) -> Self {
         RawReducerDefV10 {
-            source_name: val.name.into(),
+            source_name: val.accessor_name.into(),
             params: val.params,
             visibility: val.visibility.into(),
             ok_return_type: val.ok_return_type,
@@ -1625,6 +1704,10 @@ pub struct ProcedureDef {
     /// This must be unique within the module's set of reducers and procedures.
     pub name: Identifier,
 
+    /// The procedure name as defined in the module source.
+    ///
+    /// Similar to `[ReducerDef.accessor_name]`.
+    pub accessor_name: Identifier,
     /// The parameters of the procedure.
     ///
     /// This `ProductType` need not be registered in the module's `Typespace`.
@@ -1664,7 +1747,7 @@ impl From<ProcedureDef> for RawProcedureDefV9 {
 impl From<ProcedureDef> for RawProcedureDefV10 {
     fn from(val: ProcedureDef) -> Self {
         RawProcedureDefV10 {
-            source_name: val.name.into(),
+            source_name: val.accessor_name.into(),
             params: val.params,
             return_type: val.return_type,
             visibility: val.visibility.into(),
@@ -1811,7 +1894,7 @@ impl ModuleDefLookup for TypeDef {
     type Key<'a> = &'a ScopedTypeName;
 
     fn key(&self) -> Self::Key<'_> {
-        &self.name
+        &self.accessor_name
     }
 
     fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
@@ -1829,6 +1912,19 @@ impl ModuleDefLookup for ReducerDef {
     fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
         let key = &**key;
         module_def.reducers.get(key)
+    }
+}
+
+impl ModuleDefLookup for ProcedureDef {
+    type Key<'a> = &'a Identifier;
+
+    fn key(&self) -> Self::Key<'_> {
+        &self.name
+    }
+
+    fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
+        let key = &**key;
+        module_def.procedures.get(key)
     }
 }
 
@@ -1868,7 +1964,7 @@ mod tests {
             let mut map = HashMap::new();
             let name = ScopedTypeName::try_new([], "fake_name").unwrap();
             for k in vec {
-                let def = TypeDef { name: name.clone(), ty: AlgebraicTypeRef(k), custom_ordering: false };
+                let def = TypeDef { accessor_name: name.clone(), ty: AlgebraicTypeRef(k), custom_ordering: false };
                 map.insert(k, def);
             }
             let raw: Vec<RawTypeDefV9> = to_raw(map.clone());

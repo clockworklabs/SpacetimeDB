@@ -5,6 +5,7 @@ slug: /tables/indexes
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Indexes accelerate queries by maintaining sorted data structures alongside your tables. Without an index, finding rows that match a condition requires scanning every row. With an index, the database locates matching rows directly.
@@ -73,7 +74,7 @@ const position = table(
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = position, public)]
+#[spacetimedb::table(accessor = position, public)]
 pub struct Position {
     #[primary_key]
     #[index(direct)]
@@ -116,6 +117,10 @@ const user = table(
 </TabItem>
 <TabItem value="csharp" label="C#">
 
+:::danger Use full namespace
+Never use bare `Index` — it conflicts with `System.Index`. Always write `SpacetimeDB.Index.BTree`. For table-level indexes, use `Columns = new[] { nameof(Col) }` or `new[] { "Col1", "Col2" }`, not collection expressions like `[nameof(X)]`.
+:::
+
 ```csharp
 [SpacetimeDB.Table(Accessor = "User", Public = true)]
 public partial struct User
@@ -135,7 +140,7 @@ public partial struct User
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = user, public)]
+#[spacetimedb::table(accessor = user, public)]
 pub struct User {
     #[primary_key]
     id: u32,
@@ -148,6 +153,8 @@ pub struct User {
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 struct User {
@@ -212,7 +219,7 @@ public partial struct User
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = user, public, index(name = idx_age, btree(columns = [age])))]
+#[spacetimedb::table(accessor = user, public, index(accessor = idx_age, btree(columns = [age])))]
 pub struct User {
     #[primary_key]
     id: u32,
@@ -278,7 +285,7 @@ public partial struct Score
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = score, public, index(name = by_player_and_level, btree(columns = [player_id, level])))]
+#[spacetimedb::table(accessor = score, public, index(accessor = by_player_and_level, btree(columns = [player_id, level])))]
 pub struct Score {
     player_id: u32,
     level: u32,
@@ -568,5 +575,5 @@ log::info!("Deleted {} minor(s)", deleted);
 
 ## Next Steps
 
-- Learn about [Constraints](/tables/constraints) for primary keys and unique indexes
-- See [Access Permissions](/tables/access-permissions) for querying tables from reducers
+- Learn about [Constraints](./00240-constraints.md) for primary keys and unique indexes
+- See [Access Permissions](./00400-access-permissions.md) for querying tables from reducers

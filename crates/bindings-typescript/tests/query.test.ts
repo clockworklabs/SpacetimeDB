@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { Identity } from '../src/lib/identity';
-import { makeQueryBuilder, and, or, not, toSql } from '../src/server/query';
+import {
+  makeQueryBuilder,
+  and,
+  or,
+  not,
+  toSql,
+  toComparableValue,
+} from '../src/server/query';
 import { ModuleContext, tablesToSchema } from '../src/lib/schema';
 import { table } from '../src/lib/table';
 import { t } from '../src/lib/type_builders';
+import { Timestamp } from '../src';
 
 const personTable = table(
   {
@@ -46,6 +54,18 @@ const ordersTable = table(
 const schemaDef = tablesToSchema(new ModuleContext(), {
   person: personTable,
   orders: ordersTable,
+});
+
+describe('Timestamp thing', () => {
+  it('Compares them', () => {
+    const d1 = new Date('2024-01-01T00:00:00Z');
+    const d2 = new Date('2024-01-02T00:00:00Z');
+    const t1 = Timestamp.fromDate(d1);
+    const t2 = Timestamp.fromDate(d2);
+
+    expect(toComparableValue(t1) <= toComparableValue(t2)).toBe(true);
+    expect(toComparableValue(t1) >= toComparableValue(t2)).toBe(false);
+  });
 });
 
 describe('TableScan.toSql', () => {

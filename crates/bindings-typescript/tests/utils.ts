@@ -1,11 +1,10 @@
 import BinaryWriter from '../src/lib/binary_writer';
 import { Identity } from '../src/lib/identity';
 import type { Infer } from '../src/lib/type_builders';
+import { RowSizeHint, TableUpdateRows } from '../src/sdk/client_api/types';
 import PlayerRow from '../test-app/src/module_bindings/player_table';
+import { Point } from '../test-app/src/module_bindings/types';
 import UserRow from '../test-app/src/module_bindings/user_table';
-import Point from '../test-app/src/module_bindings/point_type';
-import RowSizeHint from '../src/sdk/client_api/row_size_hint_type';
-import TableUpdateRows from '../src/sdk/client_api/table_update_rows_type';
 
 export const anIdentity = Identity.fromString(
   '0000000000000000000000000000000000000000000000000000000000000069'

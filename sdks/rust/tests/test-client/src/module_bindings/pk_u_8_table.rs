@@ -5,7 +5,7 @@
 use super::pk_u_8_type::PkU8;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `pk_u8`.
+/// Table handle for the table `pk_u_8`.
 ///
 /// Obtain a handle from the [`PkU8TableAccess::pk_u_8`] method on [`super::RemoteTables`],
 /// like `ctx.db.pk_u_8()`.
@@ -19,19 +19,19 @@ pub struct PkU8TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `pk_u8`.
+/// Extension trait for access to the table `pk_u_8`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait PkU8TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`PkU8TableHandle`], which mediates access to the table `pk_u8`.
+    /// Obtain a [`PkU8TableHandle`], which mediates access to the table `pk_u_8`.
     fn pk_u_8(&self) -> PkU8TableHandle<'_>;
 }
 
 impl PkU8TableAccess for super::RemoteTables {
     fn pk_u_8(&self) -> PkU8TableHandle<'_> {
         PkU8TableHandle {
-            imp: self.imp.get_table::<PkU8>("pk_u8"),
+            imp: self.imp.get_table::<PkU8>("pk_u_8"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -95,7 +95,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkU8TableHandle<'ctx> {
     }
 }
 
-/// Access to the `n` unique index on the table `pk_u8`,
+/// Access to the `n` unique index on the table `pk_u_8`,
 /// which allows point queries on the field of the same name
 /// via the [`PkU8NUnique::find`] method.
 ///
@@ -108,7 +108,7 @@ pub struct PkU8NUnique<'ctx> {
 }
 
 impl<'ctx> PkU8TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `pk_u8`.
+    /// Get a handle on the `n` unique index on the table `pk_u_8`.
     pub fn n(&self) -> PkU8NUnique<'ctx> {
         PkU8NUnique {
             imp: self.imp.get_unique_constraint::<u8>("n"),
@@ -127,7 +127,7 @@ impl<'ctx> PkU8NUnique<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<PkU8>("pk_u8");
+    let _table = client_cache.get_or_make_table::<PkU8>("pk_u_8");
     _table.add_unique_constraint::<u8>("n", |row| &row.n);
 }
 
@@ -144,14 +144,14 @@ pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::R
 /// Extension trait for query builder access to the table `PkU8`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait pk_u8QueryTableAccess {
+pub trait pk_u_8QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `PkU8`.
-    fn pk_u8(&self) -> __sdk::__query_builder::Table<PkU8>;
+    fn pk_u_8(&self) -> __sdk::__query_builder::Table<PkU8>;
 }
 
-impl pk_u8QueryTableAccess for __sdk::QueryTableAccessor {
-    fn pk_u8(&self) -> __sdk::__query_builder::Table<PkU8> {
-        __sdk::__query_builder::Table::new("pk_u8")
+impl pk_u_8QueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_u_8(&self) -> __sdk::__query_builder::Table<PkU8> {
+        __sdk::__query_builder::Table::new("pk_u_8")
     }
 }

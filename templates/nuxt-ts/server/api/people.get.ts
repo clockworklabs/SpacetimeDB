@@ -1,4 +1,4 @@
-import { DbConnection, type PersonRow } from '../../module_bindings';
+import { DbConnection, tables, type PersonRow } from '../../module_bindings';
 import type { Infer } from 'spacetimedb';
 
 const HOST = process.env.SPACETIMEDB_HOST ?? 'ws://localhost:3000';
@@ -14,7 +14,7 @@ export default defineEventHandler(async (): Promise<PersonData[]> => {
 
     DbConnection.builder()
       .withUri(HOST)
-      .withModuleName(DB_NAME)
+      .withDatabaseName(DB_NAME)
       .onConnect(conn => {
         conn
           .subscriptionBuilder()
@@ -29,7 +29,7 @@ export default defineEventHandler(async (): Promise<PersonData[]> => {
             conn.disconnect();
             reject(error);
           })
-          .subscribe('SELECT * FROM person');
+          .subscribe(tables.person);
       })
       .onConnectError((_ctx, error) => {
         clearTimeout(timeoutId);

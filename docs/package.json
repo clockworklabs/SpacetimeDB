@@ -11,6 +11,8 @@
     "clear": "docusaurus clear",
     "serve": "docusaurus serve",
     "generate-cli-docs": "node scripts/generate-cli-docs.mjs",
+    "rewrite-links": "node scripts/rewrite-doc-links.mjs",
+    "rewrite-links:write": "node scripts/rewrite-doc-links.mjs --write",
     "write-translations": "docusaurus write-translations",
     "write-heading-ids": "docusaurus write-heading-ids",
     "typecheck": "tsc"

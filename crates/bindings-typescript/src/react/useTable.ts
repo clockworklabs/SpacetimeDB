@@ -84,7 +84,7 @@ export function useTable<TableDef extends UntypedTableDef>(
 
   const querySql = toSql(query);
 
-  const latestTransactionEvent = useRef<any>(null);
+  const latestTransactionEventId = useRef<string | null>(null);
   const lastSnapshotRef = useRef<
     [readonly Prettify<UseTableRowType>[], boolean] | null
   >(null);
@@ -132,11 +132,8 @@ export function useTable<TableDef extends UntypedTableDef>(
           return;
         }
         callbacks?.onInsert?.(row);
-        if (
-          ctx.event !== latestTransactionEvent.current ||
-          !latestTransactionEvent.current
-        ) {
-          latestTransactionEvent.current = ctx.event;
+        if (ctx.event.id !== latestTransactionEventId.current) {
+          latestTransactionEventId.current = ctx.event.id;
           lastSnapshotRef.current = computeSnapshot();
           onStoreChange();
         }
@@ -150,11 +147,8 @@ export function useTable<TableDef extends UntypedTableDef>(
           return;
         }
         callbacks?.onDelete?.(row);
-        if (
-          ctx.event !== latestTransactionEvent.current ||
-          !latestTransactionEvent.current
-        ) {
-          latestTransactionEvent.current = ctx.event;
+        if (ctx.event.id !== latestTransactionEventId.current) {
+          latestTransactionEventId.current = ctx.event.id;
           lastSnapshotRef.current = computeSnapshot();
           onStoreChange();
         }
@@ -181,11 +175,8 @@ export function useTable<TableDef extends UntypedTableDef>(
             return; // no-op
         }
 
-        if (
-          ctx.event !== latestTransactionEvent.current ||
-          !latestTransactionEvent.current
-        ) {
-          latestTransactionEvent.current = ctx.event;
+        if (ctx.event.id !== latestTransactionEventId.current) {
+          latestTransactionEventId.current = ctx.event.id;
           lastSnapshotRef.current = computeSnapshot();
           onStoreChange();
         }

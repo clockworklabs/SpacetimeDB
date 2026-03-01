@@ -338,7 +338,7 @@ impl HostController {
     ///
     /// This is not necessary during hotswap publishes,
     /// as the automigration planner and executor accomplish the same validity checks.
-    pub async fn check_module_validity(&self, database: Database, program: Program) -> anyhow::Result<()> {
+    pub async fn check_module_validity(&self, database: Database, program: Program) -> anyhow::Result<Arc<ModuleInfo>> {
         let (program, launched) = Host::try_init_in_memory_to_check(
             &self.runtimes,
             self.page_pool.clone(),
@@ -359,7 +359,7 @@ impl HostController {
             Result::from(call_result)?;
         }
 
-        Ok(())
+        Ok(launched.module_host.info)
     }
 
     /// Run a computation on the [`RelationalDB`] of a [`ModuleHost`] managed by

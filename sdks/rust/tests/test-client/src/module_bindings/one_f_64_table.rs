@@ -5,7 +5,7 @@
 use super::one_f_64_type::OneF64;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `one_f64`.
+/// Table handle for the table `one_f_64`.
 ///
 /// Obtain a handle from the [`OneF64TableAccess::one_f_64`] method on [`super::RemoteTables`],
 /// like `ctx.db.one_f_64()`.
@@ -19,19 +19,19 @@ pub struct OneF64TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `one_f64`.
+/// Extension trait for access to the table `one_f_64`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OneF64TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OneF64TableHandle`], which mediates access to the table `one_f64`.
+    /// Obtain a [`OneF64TableHandle`], which mediates access to the table `one_f_64`.
     fn one_f_64(&self) -> OneF64TableHandle<'_>;
 }
 
 impl OneF64TableAccess for super::RemoteTables {
     fn one_f_64(&self) -> OneF64TableHandle<'_> {
         OneF64TableHandle {
-            imp: self.imp.get_table::<OneF64>("one_f64"),
+            imp: self.imp.get_table::<OneF64>("one_f_64"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,7 +80,7 @@ impl<'ctx> __sdk::Table for OneF64TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<OneF64>("one_f64");
+    let _table = client_cache.get_or_make_table::<OneF64>("one_f_64");
 }
 
 #[doc(hidden)]
@@ -96,14 +96,14 @@ pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::R
 /// Extension trait for query builder access to the table `OneF64`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait one_f64QueryTableAccess {
+pub trait one_f_64QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `OneF64`.
-    fn one_f64(&self) -> __sdk::__query_builder::Table<OneF64>;
+    fn one_f_64(&self) -> __sdk::__query_builder::Table<OneF64>;
 }
 
-impl one_f64QueryTableAccess for __sdk::QueryTableAccessor {
-    fn one_f64(&self) -> __sdk::__query_builder::Table<OneF64> {
-        __sdk::__query_builder::Table::new("one_f64")
+impl one_f_64QueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_f_64(&self) -> __sdk::__query_builder::Table<OneF64> {
+        __sdk::__query_builder::Table::new("one_f_64")
     }
 }

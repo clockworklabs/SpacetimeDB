@@ -17,18 +17,18 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "nullable_vec";
 
-            public sealed class NullableVecIdIdxBtreeUniqueIndex : UniqueIndexBase<uint>
+            public sealed class IdUniqueIndex : UniqueIndexBase<uint>
             {
                 protected override uint GetKey(NullableVec row) => row.Id;
 
-                public NullableVecIdIdxBtreeUniqueIndex(NullableVecHandle table) : base(table) { }
+                public IdUniqueIndex(NullableVecHandle table) : base(table) { }
             }
 
-            public readonly NullableVecIdIdxBtreeUniqueIndex NullableVecIdIdxBtree;
+            public readonly IdUniqueIndex Id;
 
             internal NullableVecHandle(DbConnection conn) : base(conn)
             {
-                NullableVecIdIdxBtree = new(this);
+                Id = new(this);
             }
 
             protected override object GetPrimaryKey(NullableVec row) => row.Id;
@@ -44,8 +44,8 @@ namespace SpacetimeDB.Types
 
         public NullableVecCols(string tableName)
         {
-            Id = new global::SpacetimeDB.Col<NullableVec, uint>(tableName, "Id");
-            Pos = new global::SpacetimeDB.NullableCol<NullableVec, DbVector2>(tableName, "Pos");
+            Id = new global::SpacetimeDB.Col<NullableVec, uint>(tableName, "id");
+            Pos = new global::SpacetimeDB.NullableCol<NullableVec, DbVector2>(tableName, "pos");
         }
     }
 
@@ -55,7 +55,7 @@ namespace SpacetimeDB.Types
 
         public NullableVecIxCols(string tableName)
         {
-            Id = new global::SpacetimeDB.IxCol<NullableVec, uint>(tableName, "Id");
+            Id = new global::SpacetimeDB.IxCol<NullableVec, uint>(tableName, "id");
         }
     }
 }

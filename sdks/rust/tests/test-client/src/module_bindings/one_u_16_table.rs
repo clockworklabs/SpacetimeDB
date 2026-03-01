@@ -5,7 +5,7 @@
 use super::one_u_16_type::OneU16;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `one_u16`.
+/// Table handle for the table `one_u_16`.
 ///
 /// Obtain a handle from the [`OneU16TableAccess::one_u_16`] method on [`super::RemoteTables`],
 /// like `ctx.db.one_u_16()`.
@@ -19,19 +19,19 @@ pub struct OneU16TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `one_u16`.
+/// Extension trait for access to the table `one_u_16`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OneU16TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OneU16TableHandle`], which mediates access to the table `one_u16`.
+    /// Obtain a [`OneU16TableHandle`], which mediates access to the table `one_u_16`.
     fn one_u_16(&self) -> OneU16TableHandle<'_>;
 }
 
 impl OneU16TableAccess for super::RemoteTables {
     fn one_u_16(&self) -> OneU16TableHandle<'_> {
         OneU16TableHandle {
-            imp: self.imp.get_table::<OneU16>("one_u16"),
+            imp: self.imp.get_table::<OneU16>("one_u_16"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,7 +80,7 @@ impl<'ctx> __sdk::Table for OneU16TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<OneU16>("one_u16");
+    let _table = client_cache.get_or_make_table::<OneU16>("one_u_16");
 }
 
 #[doc(hidden)]
@@ -96,14 +96,14 @@ pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::R
 /// Extension trait for query builder access to the table `OneU16`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait one_u16QueryTableAccess {
+pub trait one_u_16QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `OneU16`.
-    fn one_u16(&self) -> __sdk::__query_builder::Table<OneU16>;
+    fn one_u_16(&self) -> __sdk::__query_builder::Table<OneU16>;
 }
 
-impl one_u16QueryTableAccess for __sdk::QueryTableAccessor {
-    fn one_u16(&self) -> __sdk::__query_builder::Table<OneU16> {
-        __sdk::__query_builder::Table::new("one_u16")
+impl one_u_16QueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_u_16(&self) -> __sdk::__query_builder::Table<OneU16> {
+        __sdk::__query_builder::Table::new("one_u_16")
     }
 }

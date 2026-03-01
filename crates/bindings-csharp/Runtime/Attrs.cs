@@ -41,6 +41,9 @@ namespace SpacetimeDB
     [AttributeUsage(AttributeTargets.Field)]
     public sealed class ClientVisibilityFilterAttribute : Attribute { }
 
+    [AttributeUsage(AttributeTargets.Field)]
+    public sealed class SettingsAttribute : Attribute { }
+
     /// <summary>
     /// Registers a type as the row structure of a SpacetimeDB table, enabling codegen for it.
     ///
@@ -59,6 +62,8 @@ namespace SpacetimeDB
         /// <para>Defaults to the <c>nameof</c> of the target type.</para>
         /// </summary>
         public string? Accessor { get; init; }
+
+        public string? Name { get; init; }
 
         /// <summary>
         /// Set to <c>true</c> to make the table visible to everyone.
@@ -94,6 +99,8 @@ namespace SpacetimeDB
         /// </summary>
         public string? Accessor { get; init; }
 
+        public string? Name { get; init; }
+
         /// <summary>
         /// Marks the view as callable by any client. Leave false to restrict to the module owner.
         /// </summary>
@@ -109,6 +116,8 @@ namespace SpacetimeDB
         public string? Table { get; init; }
 
         public string? Accessor { get; init; }
+
+        public string? Name { get; init; }
 
         public sealed class BTreeAttribute : Index
         {
@@ -185,8 +194,13 @@ namespace SpacetimeDB
     public sealed class ReducerAttribute(ReducerKind kind = ReducerKind.UserDefined) : Attribute
     {
         public ReducerKind Kind => kind;
+
+        public string? Name { get; init; }
     }
 
     [AttributeUsage(AttributeTargets.Method, Inherited = false)]
-    public sealed class ProcedureAttribute() : Attribute { }
+    public sealed class ProcedureAttribute() : Attribute
+    {
+        public string? Name { get; init; }
+    }
 }

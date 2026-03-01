@@ -17,28 +17,28 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "example_data";
 
-            public sealed class ExampleDataIdIdxBtreeUniqueIndex : UniqueIndexBase<uint>
+            public sealed class IdUniqueIndex : UniqueIndexBase<uint>
             {
                 protected override uint GetKey(ExampleData row) => row.Id;
 
-                public ExampleDataIdIdxBtreeUniqueIndex(ExampleDataHandle table) : base(table) { }
+                public IdUniqueIndex(ExampleDataHandle table) : base(table) { }
             }
 
-            public readonly ExampleDataIdIdxBtreeUniqueIndex ExampleDataIdIdxBtree;
+            public readonly IdUniqueIndex Id;
 
-            public sealed class ExampleDataIndexedIdxBtreeIndex : BTreeIndexBase<uint>
+            public sealed class IndexedIndex : BTreeIndexBase<uint>
             {
                 protected override uint GetKey(ExampleData row) => row.Indexed;
 
-                public ExampleDataIndexedIdxBtreeIndex(ExampleDataHandle table) : base(table) { }
+                public IndexedIndex(ExampleDataHandle table) : base(table) { }
             }
 
-            public readonly ExampleDataIndexedIdxBtreeIndex ExampleDataIndexedIdxBtree;
+            public readonly IndexedIndex Indexed;
 
             internal ExampleDataHandle(DbConnection conn) : base(conn)
             {
-                ExampleDataIdIdxBtree = new(this);
-                ExampleDataIndexedIdxBtree = new(this);
+                Id = new(this);
+                Indexed = new(this);
             }
 
             protected override object GetPrimaryKey(ExampleData row) => row.Id;
@@ -54,8 +54,8 @@ namespace SpacetimeDB.Types
 
         public ExampleDataCols(string tableName)
         {
-            Id = new global::SpacetimeDB.Col<ExampleData, uint>(tableName, "Id");
-            Indexed = new global::SpacetimeDB.Col<ExampleData, uint>(tableName, "Indexed");
+            Id = new global::SpacetimeDB.Col<ExampleData, uint>(tableName, "id");
+            Indexed = new global::SpacetimeDB.Col<ExampleData, uint>(tableName, "indexed");
         }
     }
 
@@ -66,8 +66,8 @@ namespace SpacetimeDB.Types
 
         public ExampleDataIxCols(string tableName)
         {
-            Id = new global::SpacetimeDB.IxCol<ExampleData, uint>(tableName, "Id");
-            Indexed = new global::SpacetimeDB.IxCol<ExampleData, uint>(tableName, "Indexed");
+            Id = new global::SpacetimeDB.IxCol<ExampleData, uint>(tableName, "id");
+            Indexed = new global::SpacetimeDB.IxCol<ExampleData, uint>(tableName, "indexed");
         }
     }
 }

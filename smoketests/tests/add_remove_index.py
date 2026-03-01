@@ -45,7 +45,7 @@ pub fn add(ctx: &ReducerContext) {
 }
 """
 
-    JOIN_QUERY = "select t1.* from t1 join t2 on t1.id = t2.id where t2.id = 1001"
+    JOIN_QUERY = "select t_1.* from t_1 join t_2 on t_1.id = t_2.id where t_2.id = 1001"
 
     def between_publishes(self):
         """

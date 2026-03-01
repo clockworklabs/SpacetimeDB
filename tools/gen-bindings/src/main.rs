@@ -2,6 +2,7 @@
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use replace_spacetimedb::{replace_in_tree, ReplaceOptions};
+use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -25,14 +26,19 @@ struct Cli {
     index_replacement: Option<String>,
 }
 
-fn run_inherit(cmd: &str, args: &[&str]) -> Result<()> {
-    let status = Command::new(cmd)
+fn run_inherit(cmd: impl AsRef<OsStr>, args: &[&str], cwd: Option<&Path>) -> Result<()> {
+    let cmd = cmd.as_ref();
+    let mut c = Command::new(cmd);
+    if let Some(cwd) = cwd {
+        c.current_dir(cwd);
+    }
+    let status = c
         .args(args)
         .stdin(Stdio::null())
         .status()
-        .with_context(|| format!("Failed to start {cmd}"))?;
+        .with_context(|| format!("Failed to start {cmd:?}"))?;
     if !status.success() {
-        return Err(anyhow!("Command failed: {cmd} {args:?} (exit {status})"));
+        return Err(anyhow!("Command failed: {cmd:?} {args:?} (exit {status})"));
     }
     Ok(())
 }
@@ -40,8 +46,14 @@ fn run_inherit(cmd: &str, args: &[&str]) -> Result<()> {
 fn main() -> Result<()> {
     let args = Cli::parse();
 
+    let workspace_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap();
+
     // 1) Build prerequisite
-    run_inherit("cargo", &["build", "-p", "spacetimedb-standalone"])?;
+    run_inherit("cargo", &["build"], Some(workspace_dir))?;
 
     // 2) Ensure output directory exists
     if !Path::new(&args.out_dir).exists() {
@@ -50,12 +62,12 @@ fn main() -> Result<()> {
 
     // 3) Generate TS client from project
     run_inherit(
-        "cargo",
+        workspace_dir
+            .join("target/debug/spacetimedb-cli")
+            .with_extension(std::env::consts::EXE_EXTENSION),
         &[
-            "run",
-            "-p",
-            "spacetimedb-cli",
             "generate",
+            "-y",
             "--lang",
             "typescript",
             "--out-dir",
@@ -63,6 +75,7 @@ fn main() -> Result<()> {
             "--module-path",
             &args.module_path,
         ],
+        None,
     )?;
 
     if let Some(other_replacement) = &args.replacement {

@@ -143,7 +143,7 @@ void Message_OnInsert(EventContext ctx, Message insertedValue)
 
 void PrintMessage(RemoteTables tables, Message message)
 {
-    var sender = tables.User.Identity.Find(message.Sender);
+    var sender = tables.User.UserIdentityIdxBtree.Find(message.Sender);
     var senderName = "unknown";
     if (sender != null)
     {

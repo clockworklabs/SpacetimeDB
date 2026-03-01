@@ -32,8 +32,8 @@ namespace SpacetimeDB.Types
 
         public TestEventCols(string tableName)
         {
-            Name = new global::SpacetimeDB.Col<TestEvent, string>(tableName, "Name");
-            Value = new global::SpacetimeDB.Col<TestEvent, ulong>(tableName, "Value");
+            Name = new global::SpacetimeDB.Col<TestEvent, string>(tableName, "name");
+            Value = new global::SpacetimeDB.Col<TestEvent, ulong>(tableName, "value");
         }
     }
 
