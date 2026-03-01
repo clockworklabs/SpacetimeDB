@@ -35,7 +35,7 @@
     &nbsp;
     <a href="https://www.nuget.org/packages/SpacetimeDB.Runtime"><img src="https://img.shields.io/nuget/dt/spacetimedb.runtime?color=0b6cff&label=NuGet%20Package&style=flat-square"></a>
     &nbsp;
-    <a href="https://www.npmjs.com/package/@clockworklabs/spacetimedb-sdk"><img src="https://img.shields.io/npm/dm/@clockworklabs/spacetimedb-sdk?color=cb0000&label=npm&style=flat-square"></a>
+    <a href="https://www.npmjs.com/package/spacetimedb"><img src="https://img.shields.io/npm/dm/spacetimedb?color=cb0000&label=npm&style=flat-square"></a>
 </p>
 <p align="center">
     <a href="https://discord.gg/spacetimedb"><img src="https://img.shields.io/discord/1037340874172014652?label=discord&style=flat-square&color=5a66f6"></a>
@@ -67,11 +67,13 @@
 
 ## What is SpacetimeDB?
 
-SpacetimeDB is a database that is also a server. You upload your application logic directly into the database, and clients connect to it without any server in between.
+SpacetimeDB is a relational database that is also a server. You upload your application logic directly into the database, and clients connect to it without any server in between.
 
 Write your schema and business logic as a **module** in [Rust](https://spacetimedb.com/docs/quickstarts/rust), [C#](https://spacetimedb.com/docs/quickstarts/c-sharp), [TypeScript](https://spacetimedb.com/docs/quickstarts/typescript), or [C++](https://spacetimedb.com/docs/quickstarts/cpp). SpacetimeDB compiles it, runs it inside the database, and automatically synchronizes state to connected clients in real-time.
 
-No separate web server. No REST API. No caching layer. No infrastructure to manage.
+Instead of deploying a web or game server that sits in between your clients and your database, your clients connect directly to the database and execute your application logic in your module. You can write all of your permission and authorization logic right inside your module just as you would in a normal server.
+
+This means that you can write your entire application in a single language and deploy it as a single binary. No more separate webserver, no more containers, no more Kubernetes, no more VMs, no more DevOps, no more caching later. Zero infrastructure to manage.
 
 <figure>
     <img src="./images/basic-architecture-diagram.png" alt="SpacetimeDB Architecture" style="width:100%">
@@ -80,7 +82,7 @@ No separate web server. No REST API. No caching layer. No infrastructure to mana
     </figcaption>
 </figure>
 
-SpacetimeDB is optimized for maximum speed and minimum latency. All application state is held in memory for fast access, while a commit log on disk provides durability and crash recovery. The entire backend of our MMORPG [BitCraft Online](https://bitcraftonline.com) runs as a single SpacetimeDB module: chat, items, terrain, player positions, everything, synchronized to thousands of players in real-time.
+SpacetimeDB is optimized for maximum speed and minimum latency. SpacetimeDB provides all the ACID guarantees of a traditional RDBMS, with all the speed of an optimized web server. All application state is held in memory for fast access, while a commit log on disk provides durability and crash recovery. The entire backend of our MMORPG [BitCraft Online](https://bitcraftonline.com) runs as a single SpacetimeDB module: chat, items, terrain, player positions, everything, synchronized to thousands of players in real-time.
 
 ## Quick Start
 
@@ -262,3 +264,8 @@ Full documentation is available at **[spacetimedb.com/docs](https://spacetimedb.
 ## License
 
 SpacetimeDB is licensed under the [Business Source License 1.1 (BSL)](LICENSE.txt). It converts to the AGPL v3.0 with a linking exception after a few years. The linking exception means you are **not** required to open-source your own code if you use SpacetimeDB. You only need to contribute back changes to SpacetimeDB itself.
+
+**Why did we choose this license?**
+We chose to license SpacetimeDB under the MariaDB Business Source License for 4 years because we can't compete with AWS while also building our products for them.
+
+We chose GPLv3 with linking exception as the open source license because we want contributions merged back into mainline (just like Linux), but we don't want to make anyone else open source their own code (i.e. linking exception). 
