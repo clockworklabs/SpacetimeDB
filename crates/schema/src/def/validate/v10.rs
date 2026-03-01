@@ -12,6 +12,7 @@ use crate::def::*;
 use crate::error::ValidationError;
 use crate::type_for_generate::ProductTypeDef;
 use crate::{def::validate::Result, error::TypeLocation};
+use convert_case::{Case, Casing};
 
 // Utitility struct to look up canonical names for tables, functions, and indexes based on the
 // explicit names provided in the `RawModuleDefV10`.
@@ -235,6 +236,11 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
             |(mut tables, types, reducers, procedures, views, schedules, lifecycles)| {
                 let (mut reducers, mut procedures, views) =
                     check_function_names_are_unique(reducers, procedures, views)?;
+                check_function_accessor_names_are_unique_with_types_and_each_other(
+                    reducers.values(),
+                    procedures.values(),
+                    types.keys(),
+                )?;
                 // Attach lifecycles to their respective reducers
                 attach_lifecycles_to_reducers(&mut reducers, lifecycles)?;
 
@@ -280,6 +286,66 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         procedures,
         raw_module_def_version: RawModuleDefVersion::V10,
     })
+}
+
+fn check_function_accessor_names_are_unique_with_types_and_each_other<'a>(
+    reducers: impl Iterator<Item = &'a ReducerDef>,
+    procedures: impl Iterator<Item = &'a ProcedureDef>,
+    types: impl Iterator<Item = &'a ScopedTypeName>,
+) -> Result<()> {
+    let type_names: Vec<_> = types.cloned().collect();
+    let reducers: Vec<_> = reducers.collect();
+    let mut errors = vec![];
+
+    for reducer in &reducers {
+        let reducer_generated_name = reducer.accessor_name.as_ref().to_case(Case::Pascal);
+
+        for type_name in &type_names {
+            let type_generated_name = type_name
+                .name_segments()
+                .map(|segment| segment.to_string().to_case(Case::Pascal))
+                .collect::<Vec<_>>()
+                .join("");
+
+            if reducer_generated_name == type_generated_name {
+                errors.push(ValidationError::ReducerAccessorTypeNameConflict {
+                    reducer: reducer.accessor_name.as_identifier().clone(),
+                    type_name: type_name.clone(),
+                });
+            }
+        }
+    }
+
+    for procedure in procedures {
+        let procedure_generated_name = procedure.accessor_name.to_string().to_case(Case::Pascal);
+
+        for type_name in &type_names {
+            let type_generated_name = type_name
+                .name_segments()
+                .map(|segment| segment.to_string().to_case(Case::Pascal))
+                .collect::<Vec<_>>()
+                .join("");
+
+            if procedure_generated_name == type_generated_name {
+                errors.push(ValidationError::ProcedureAccessorTypeNameConflict {
+                    procedure: procedure.accessor_name.clone(),
+                    type_name: type_name.clone(),
+                });
+            }
+        }
+
+        for reducer in &reducers {
+            let reducer_generated_name = reducer.accessor_name.as_ref().to_case(Case::Pascal);
+            if procedure_generated_name == reducer_generated_name {
+                errors.push(ValidationError::ProcedureAccessorReducerAccessorNameConflict {
+                    procedure: procedure.accessor_name.clone(),
+                    reducer: reducer.accessor_name.as_identifier().clone(),
+                });
+            }
+        }
+    }
+
+    ValidationErrors::add_extra_errors(Ok(()), errors)
 }
 
 /// Change the visibility of scheduled functions and lifecycle reducers to Internal.
@@ -845,7 +911,7 @@ mod tests {
 
     use itertools::Itertools;
     use spacetimedb_data_structures::expect_error_matching;
-    use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, RawModuleDefV10Builder};
+    use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, ExplicitNames, RawModuleDefV10Builder};
     use spacetimedb_lib::db::raw_def::v9::{btree, direct, hash};
     use spacetimedb_lib::db::raw_def::*;
     use spacetimedb_lib::ScheduleAt;
@@ -1610,6 +1676,63 @@ mod tests {
 
         expect_error_matching!(result, ValidationError::DuplicateFunctionName { name } => {
             &name[..] == "foo"
+        });
+    }
+
+    #[test]
+    fn reducer_accessor_name_conflicts_with_type_name() {
+        let mut builder = RawModuleDefV10Builder::new();
+
+        builder.add_algebraic_type(
+            [],
+            "Conflictor",
+            AlgebraicType::product([("id", AlgebraicType::U64)]),
+            false,
+        );
+        builder.add_reducer("conflictor", [("arg", AlgebraicType::U32)].into());
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::ReducerAccessorTypeNameConflict { reducer, type_name } => {
+            &reducer[..] == "conflictor" && type_name == &expect_type_name("Conflictor")
+        });
+    }
+
+    #[test]
+    fn procedure_accessor_name_conflicts_with_type_name() {
+        let mut builder = RawModuleDefV10Builder::new();
+
+        builder.add_algebraic_type(
+            [],
+            "DoThing",
+            AlgebraicType::product([("id", AlgebraicType::U64)]),
+            false,
+        );
+        builder.add_procedure("do_thing", [("arg", AlgebraicType::U32)].into(), AlgebraicType::unit());
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::ProcedureAccessorTypeNameConflict { procedure, type_name } => {
+            &procedure[..] == "do_thing" && type_name == &expect_type_name("DoThing")
+        });
+    }
+
+    #[test]
+    fn procedure_accessor_name_conflicts_with_reducer_accessor_name() {
+        let mut builder = RawModuleDefV10Builder::new();
+
+        builder.add_reducer("foo_bar", [("i", AlgebraicType::I32)].into());
+        builder.add_procedure("fooBar", [("j", AlgebraicType::I32)].into(), AlgebraicType::unit());
+
+        let mut explicit = ExplicitNames::default();
+        explicit.insert_function("foo_bar", "reducer_distinct");
+        explicit.insert_function("fooBar", "procedure_distinct");
+        builder.add_explicit_names(explicit);
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::ProcedureAccessorReducerAccessorNameConflict { procedure, reducer } => {
+            &procedure[..] == "fooBar" && &reducer[..] == "foo_bar"
         });
     }
 
