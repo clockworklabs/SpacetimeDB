@@ -21,6 +21,7 @@ impl SqlSelect {
                 from: self.from,
             },
             SqlFrom::Join(..) => self,
+            SqlFrom::FuncCall(..) => self,
         }
     }
 
