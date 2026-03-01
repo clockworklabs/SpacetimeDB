@@ -3,12 +3,14 @@ use spacetimedb_schema::schema::{Schema, TableSchema};
 mod code_indenter;
 pub mod cpp;
 pub mod csharp;
+pub mod go;
 pub mod rust;
 pub mod typescript;
 pub mod unrealcpp;
 mod util;
 
 pub use self::csharp::Csharp;
+pub use self::go::Go;
 pub use self::rust::Rust;
 pub use self::typescript::TypeScript;
 pub use self::unrealcpp::UnrealCpp;

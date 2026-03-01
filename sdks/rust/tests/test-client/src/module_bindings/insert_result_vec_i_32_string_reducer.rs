@@ -4,10 +4,12 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::result_vec_i_32_string_value_type::ResultVecI32StringValue;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertResultVecI32StringArgs {
-    pub r: Result<Vec<i32>, String>,
+    pub r: ResultVecI32StringValue,
 }
 
 impl From<InsertResultVecI32StringArgs> for super::Reducer {
@@ -31,7 +33,7 @@ pub trait insert_result_vec_i_32_string {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_result_vec_i_32_string:insert_result_vec_i_32_string_then`] to run a callback after the reducer completes.
-    fn insert_result_vec_i_32_string(&self, r: Result<Vec<i32>, String>) -> __sdk::Result<()> {
+    fn insert_result_vec_i_32_string(&self, r: ResultVecI32StringValue) -> __sdk::Result<()> {
         self.insert_result_vec_i_32_string_then(r, |_, _| {})
     }
 
@@ -43,7 +45,7 @@ pub trait insert_result_vec_i_32_string {
     ///  and its status can be observed with the `callback`.
     fn insert_result_vec_i_32_string_then(
         &self,
-        r: Result<Vec<i32>, String>,
+        r: ResultVecI32StringValue,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -54,7 +56,7 @@ pub trait insert_result_vec_i_32_string {
 impl insert_result_vec_i_32_string for super::RemoteReducers {
     fn insert_result_vec_i_32_string_then(
         &self,
-        r: Result<Vec<i32>, String>,
+        r: ResultVecI32StringValue,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send

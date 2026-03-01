@@ -3,6 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::result_vec_i_32_string_type::ResultVecI32String;
+use super::result_vec_i_32_string_value_type::ResultVecI32StringValue;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `result_vec_i_32_string`.

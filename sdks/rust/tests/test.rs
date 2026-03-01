@@ -315,6 +315,7 @@ declare_tests_with_suffix!(typescript, "-ts");
 // TODO: migrate csharp to snake_case table names
 declare_tests_with_suffix!(csharp, "-cs");
 declare_tests_with_suffix!(cpp, "-cpp");
+declare_tests_with_suffix!(go, "-go");
 
 /// Tests of event table functionality, using <./event-table-client> and <../../../modules/sdk-test>.
 ///

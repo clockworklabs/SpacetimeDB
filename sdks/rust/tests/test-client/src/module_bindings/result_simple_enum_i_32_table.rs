@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::result_simple_enum_i_32_type::ResultSimpleEnumI32;
-use super::simple_enum_type::SimpleEnum;
+use super::result_simple_enum_i_32_value_type::ResultSimpleEnumI32Value;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `result_simple_enum_i_32`.

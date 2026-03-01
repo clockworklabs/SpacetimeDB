@@ -4,10 +4,12 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::result_identity_string_value_type::ResultIdentityStringValue;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertResultIdentityStringArgs {
-    pub r: Result<__sdk::Identity, String>,
+    pub r: ResultIdentityStringValue,
 }
 
 impl From<InsertResultIdentityStringArgs> for super::Reducer {
@@ -31,7 +33,7 @@ pub trait insert_result_identity_string {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_result_identity_string:insert_result_identity_string_then`] to run a callback after the reducer completes.
-    fn insert_result_identity_string(&self, r: Result<__sdk::Identity, String>) -> __sdk::Result<()> {
+    fn insert_result_identity_string(&self, r: ResultIdentityStringValue) -> __sdk::Result<()> {
         self.insert_result_identity_string_then(r, |_, _| {})
     }
 
@@ -43,7 +45,7 @@ pub trait insert_result_identity_string {
     ///  and its status can be observed with the `callback`.
     fn insert_result_identity_string_then(
         &self,
-        r: Result<__sdk::Identity, String>,
+        r: ResultIdentityStringValue,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -54,7 +56,7 @@ pub trait insert_result_identity_string {
 impl insert_result_identity_string for super::RemoteReducers {
     fn insert_result_identity_string_then(
         &self,
-        r: Result<__sdk::Identity, String>,
+        r: ResultIdentityStringValue,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send

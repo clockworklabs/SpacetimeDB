@@ -123,6 +123,22 @@ macro_rules! require_dotnet {
 }
 
 #[macro_export]
+macro_rules! require_go {
+    () => {
+        if !$crate::allow_go() {
+            #[allow(clippy::disallowed_macros)]
+            {
+                eprintln!("Skipping Go test (SMOKETESTS_GO env var is not set)");
+            }
+            return;
+        }
+        if !$crate::have_go() {
+            panic!("go not found in PATH");
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! require_psql {
     () => {
         if !$crate::have_psql() {
@@ -259,6 +275,29 @@ pub fn allow_dotnet() -> bool {
         "" | "0" => false,
         s => s.to_lowercase() != "false",
     }
+}
+
+/// Returns true if go is available on the system.
+pub fn have_go() -> bool {
+    static HAVE_GO: OnceLock<bool> = OnceLock::new();
+    *HAVE_GO.get_or_init(|| {
+        Command::new("go")
+            .args(["version"])
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+    })
+}
+
+/// Returns true if tests are configured to allow Go
+pub fn allow_go() -> bool {
+    static ALLOW_GO: OnceLock<bool> = OnceLock::new();
+    *ALLOW_GO.get_or_init(|| match std::env::var("SMOKETESTS_GO").as_deref() {
+        Err(_) => true,
+        Ok("" | "0") => false,
+        Ok(v) if v.eq_ignore_ascii_case("false") => false,
+        Ok(_) => true,
+    })
 }
 
 /// Returns true if psql (PostgreSQL client) is available on the system.

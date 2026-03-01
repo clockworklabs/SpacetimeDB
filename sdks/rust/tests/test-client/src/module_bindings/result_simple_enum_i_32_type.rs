@@ -4,12 +4,12 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::simple_enum_type::SimpleEnum;
+use super::result_simple_enum_i_32_value_type::ResultSimpleEnumI32Value;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct ResultSimpleEnumI32 {
-    pub r: Result<SimpleEnum, i32>,
+    pub r: ResultSimpleEnumI32Value,
 }
 
 impl __sdk::InModule for ResultSimpleEnumI32 {
@@ -20,7 +20,7 @@ impl __sdk::InModule for ResultSimpleEnumI32 {
 ///
 /// Provides typed access to columns for query building.
 pub struct ResultSimpleEnumI32Cols {
-    pub r: __sdk::__query_builder::Col<ResultSimpleEnumI32, Result<SimpleEnum, i32>>,
+    pub r: __sdk::__query_builder::Col<ResultSimpleEnumI32, ResultSimpleEnumI32Value>,
 }
 
 impl __sdk::__query_builder::HasCols for ResultSimpleEnumI32 {

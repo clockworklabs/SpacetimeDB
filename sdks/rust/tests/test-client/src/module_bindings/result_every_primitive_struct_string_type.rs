@@ -4,12 +4,12 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::every_primitive_struct_type::EveryPrimitiveStruct;
+use super::result_every_primitive_struct_string_value_type::ResultEveryPrimitiveStructStringValue;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct ResultEveryPrimitiveStructString {
-    pub r: Result<EveryPrimitiveStruct, String>,
+    pub r: ResultEveryPrimitiveStructStringValue,
 }
 
 impl __sdk::InModule for ResultEveryPrimitiveStructString {
@@ -20,7 +20,7 @@ impl __sdk::InModule for ResultEveryPrimitiveStructString {
 ///
 /// Provides typed access to columns for query building.
 pub struct ResultEveryPrimitiveStructStringCols {
-    pub r: __sdk::__query_builder::Col<ResultEveryPrimitiveStructString, Result<EveryPrimitiveStruct, String>>,
+    pub r: __sdk::__query_builder::Col<ResultEveryPrimitiveStructString, ResultEveryPrimitiveStructStringValue>,
 }
 
 impl __sdk::__query_builder::HasCols for ResultEveryPrimitiveStructString {

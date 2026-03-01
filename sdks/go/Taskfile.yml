@@ -1,0 +1,119 @@
+version: '3'
+
+vars:
+  GO_MODULE: github.com/clockworklabs/SpacetimeDB/sdks/go
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  test:
+    desc: Run all Go tests
+    cmds:
+      - go test ./...
+
+  test:bsatn:
+    desc: Run BSATN package tests
+    cmds:
+      - go test ./bsatn/...
+
+  test:types:
+    desc: Run types package tests
+    cmds:
+      - go test ./types/...
+
+  test:client:
+    desc: Run client package tests
+    cmds:
+      - go test ./client/...
+
+  test:server:
+    desc: Run server package tests (native stubs)
+    cmds:
+      - go test ./server/...
+
+  test:integration:
+    desc: Run integration tests (requires running SpacetimeDB)
+    cmds:
+      - go test ./tests/integration/... -v -count=1
+
+  test:conformance:
+    desc: Run conformance tests
+    cmds:
+      - go test ./tests/conformance/... -v -count=1
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run ./...
+
+  fmt:
+    desc: Format Go source files
+    cmds:
+      - gofmt -w .
+
+  build:
+    desc: Build all packages
+    cmds:
+      - go build ./...
+
+  build:wasm:
+    desc: Build test WASM module with Go
+    env:
+      GOOS: wasip1
+      GOARCH: wasm
+    cmds:
+      - go build -buildmode=c-shared -o tests/integration/server_module/module.wasm ./tests/integration/server_module/
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  tidy:
+    desc: Run go mod tidy
+    cmds:
+      - go mod tidy
+
+  generate:golden:
+    desc: Generate golden byte files from Rust reference
+    cmds:
+      - go generate ./tests/golden/...
+
+  build:sdk-test-module:
+    desc: Build sdk-test-go WASM module with Go
+    dir: ../../modules/sdk-test-go
+    env:
+      GOOS: wasip1
+      GOARCH: wasm
+    cmds:
+      - mkdir -p target
+      - go build -buildmode=c-shared -ldflags="-s -w" -o target/module.wasm .
+
+  build:benchmark-module:
+    desc: Build benchmarks-go WASM module with Go
+    dir: ../../modules/benchmarks-go
+    env:
+      GOOS: wasip1
+      GOARCH: wasm
+    cmds:
+      - mkdir -p target
+      - go build -buildmode=c-shared -ldflags="-s -w" -o target/module.wasm .
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -f tests/integration/server_module/module.wasm
+      - rm -f ../../modules/sdk-test-go/target/module.wasm
+      - rm -f ../../modules/benchmarks-go/target/module.wasm
+      - go clean -cache
+
+  check:
+    desc: Run all checks (fmt, vet, lint, test)
+    cmds:
+      - task: fmt
+      - task: vet
+      - task: lint
+      - task: test

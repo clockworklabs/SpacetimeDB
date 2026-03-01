@@ -207,10 +207,11 @@ pub enum ModuleLanguage {
     Rust,
     Javascript,
     Cpp,
+    Go,
 }
 impl clap::ValueEnum for ModuleLanguage {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Csharp, Self::Rust, Self::Javascript, Self::Cpp]
+        &[Self::Csharp, Self::Rust, Self::Javascript, Self::Cpp, Self::Go]
     }
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
         match self {
@@ -227,6 +228,7 @@ impl clap::ValueEnum for ModuleLanguage {
                 "es",
             ])),
             Self::Cpp => Some(clap::builder::PossibleValue::new("cpp").aliases(["c++", "cxx", "C++", "Cpp"])),
+            Self::Go => Some(clap::builder::PossibleValue::new("go").aliases(["golang", "Go"])),
         }
     }
 }
@@ -271,6 +273,8 @@ pub fn detect_module_language(path_to_module: &Path) -> anyhow::Result<ModuleLan
         Ok(ModuleLanguage::Javascript)
     } else if path_to_module.join("CMakeLists.txt").exists() {
         Ok(ModuleLanguage::Cpp)
+    } else if path_to_module.join("go.mod").exists() {
+        Ok(ModuleLanguage::Go)
     } else {
         anyhow::bail!("Could not detect the language of the module. Are you in a SpacetimeDB project directory?")
     }

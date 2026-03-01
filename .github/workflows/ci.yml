@@ -80,6 +80,13 @@ jobs:
         with:
           run_install: true
 
+      # Go is required for Go module compilation tests.
+      - name: Set up Go
+        if: runner.os == 'Linux'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
       # Install emscripten for C++ module compilation tests.
       - name: Install emscripten (Linux)
         if: runner.os == 'Linux'

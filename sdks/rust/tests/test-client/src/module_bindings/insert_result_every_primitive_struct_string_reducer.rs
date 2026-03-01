@@ -4,12 +4,12 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::every_primitive_struct_type::EveryPrimitiveStruct;
+use super::result_every_primitive_struct_string_value_type::ResultEveryPrimitiveStructStringValue;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertResultEveryPrimitiveStructStringArgs {
-    pub r: Result<EveryPrimitiveStruct, String>,
+    pub r: ResultEveryPrimitiveStructStringValue,
 }
 
 impl From<InsertResultEveryPrimitiveStructStringArgs> for super::Reducer {
@@ -35,7 +35,7 @@ pub trait insert_result_every_primitive_struct_string {
     /// /// Use [`insert_result_every_primitive_struct_string:insert_result_every_primitive_struct_string_then`] to run a callback after the reducer completes.
     fn insert_result_every_primitive_struct_string(
         &self,
-        r: Result<EveryPrimitiveStruct, String>,
+        r: ResultEveryPrimitiveStructStringValue,
     ) -> __sdk::Result<()> {
         self.insert_result_every_primitive_struct_string_then(r, |_, _| {})
     }
@@ -48,7 +48,7 @@ pub trait insert_result_every_primitive_struct_string {
     ///  and its status can be observed with the `callback`.
     fn insert_result_every_primitive_struct_string_then(
         &self,
-        r: Result<EveryPrimitiveStruct, String>,
+        r: ResultEveryPrimitiveStructStringValue,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -59,7 +59,7 @@ pub trait insert_result_every_primitive_struct_string {
 impl insert_result_every_primitive_struct_string for super::RemoteReducers {
     fn insert_result_every_primitive_struct_string_then(
         &self,
-        r: Result<EveryPrimitiveStruct, String>,
+        r: ResultEveryPrimitiveStructStringValue,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send

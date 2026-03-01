@@ -350,3 +350,31 @@ impl ModuleLanguage for Cpp {
         &MODULE
     }
 }
+
+pub struct Go;
+
+impl ModuleLanguage for Go {
+    const NAME: &'static str = "go";
+
+    fn get_module() -> &'static CompiledModule {
+        lazy_static::lazy_static! {
+            pub static ref MODULE: CompiledModule = CompiledModule::compile("sdk-test-go", COMPILATION_MODE);
+        }
+
+        &MODULE
+    }
+}
+
+pub struct GoBenchmarks;
+
+impl ModuleLanguage for GoBenchmarks {
+    const NAME: &'static str = "go";
+
+    fn get_module() -> &'static CompiledModule {
+        lazy_static::lazy_static! {
+            pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks-go", COMPILATION_MODE);
+        }
+
+        &MODULE
+    }
+}

@@ -4,12 +4,12 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::simple_enum_type::SimpleEnum;
+use super::result_simple_enum_i_32_value_type::ResultSimpleEnumI32Value;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertResultSimpleEnumI32Args {
-    pub r: Result<SimpleEnum, i32>,
+    pub r: ResultSimpleEnumI32Value,
 }
 
 impl From<InsertResultSimpleEnumI32Args> for super::Reducer {
@@ -33,7 +33,7 @@ pub trait insert_result_simple_enum_i_32 {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_result_simple_enum_i_32:insert_result_simple_enum_i_32_then`] to run a callback after the reducer completes.
-    fn insert_result_simple_enum_i_32(&self, r: Result<SimpleEnum, i32>) -> __sdk::Result<()> {
+    fn insert_result_simple_enum_i_32(&self, r: ResultSimpleEnumI32Value) -> __sdk::Result<()> {
         self.insert_result_simple_enum_i_32_then(r, |_, _| {})
     }
 
@@ -45,7 +45,7 @@ pub trait insert_result_simple_enum_i_32 {
     ///  and its status can be observed with the `callback`.
     fn insert_result_simple_enum_i_32_then(
         &self,
-        r: Result<SimpleEnum, i32>,
+        r: ResultSimpleEnumI32Value,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -56,7 +56,7 @@ pub trait insert_result_simple_enum_i_32 {
 impl insert_result_simple_enum_i_32 for super::RemoteReducers {
     fn insert_result_simple_enum_i_32_then(
         &self,
-        r: Result<SimpleEnum, i32>,
+        r: ResultSimpleEnumI32Value,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send

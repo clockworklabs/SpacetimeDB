@@ -2,8 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use super::every_primitive_struct_type::EveryPrimitiveStruct;
 use super::result_every_primitive_struct_string_type::ResultEveryPrimitiveStructString;
+use super::result_every_primitive_struct_string_value_type::ResultEveryPrimitiveStructStringValue;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `result_every_primitive_struct_string`.

@@ -3,6 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::result_identity_string_type::ResultIdentityString;
+use super::result_identity_string_value_type::ResultIdentityStringValue;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `result_identity_string`.

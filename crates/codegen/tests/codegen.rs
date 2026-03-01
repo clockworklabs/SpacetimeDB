@@ -1,4 +1,4 @@
-use spacetimedb_codegen::{generate, CodegenOptions, Csharp, Rust, TypeScript};
+use spacetimedb_codegen::{generate, CodegenOptions, Csharp, Go, Rust, TypeScript};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
@@ -38,4 +38,5 @@ declare_tests! {
     test_codegen_csharp => Csharp { namespace: "SpacetimeDB" },
     test_codegen_typescript => TypeScript,
     test_codegen_rust => Rust,
+    test_codegen_go => Go,
 }

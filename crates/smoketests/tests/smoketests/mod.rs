@@ -17,6 +17,7 @@ mod dml;
 mod domains;
 mod fail_initial_publish;
 mod filtering;
+mod go_module;
 mod http_egress;
 mod module_nested_op;
 mod modules;

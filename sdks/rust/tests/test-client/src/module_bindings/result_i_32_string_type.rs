@@ -4,10 +4,12 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::result_i_32_string_value_type::ResultI32StringValue;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct ResultI32String {
-    pub r: Result<i32, String>,
+    pub r: ResultI32StringValue,
 }
 
 impl __sdk::InModule for ResultI32String {
@@ -18,7 +20,7 @@ impl __sdk::InModule for ResultI32String {
 ///
 /// Provides typed access to columns for query building.
 pub struct ResultI32StringCols {
-    pub r: __sdk::__query_builder::Col<ResultI32String, Result<i32, String>>,
+    pub r: __sdk::__query_builder::Col<ResultI32String, ResultI32StringValue>,
 }
 
 impl __sdk::__query_builder::HasCols for ResultI32String {
