@@ -87,3 +87,11 @@ func (w *writer) PutSumTag(tag uint8) {
 func (w *writer) Bytes() []byte {
 	return w.buf
 }
+
+func (w *writer) Reset() {
+	w.buf = w.buf[:0]
+}
+
+func (w *writer) Len() int {
+	return len(w.buf)
+}

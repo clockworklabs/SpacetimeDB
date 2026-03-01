@@ -197,11 +197,9 @@ func insertBtreeEachColumnU32U64U64(_ server.ReducerContext, id uint32, x uint64
 // ---------- insert bulk ----------
 
 func insertBulkUnique0U32U64Str(_ server.ReducerContext, people []Unique0U32U64Str) {
-	benchLogger.Info(fmt.Sprintf("DEBUG insert_bulk_str: inserting %d rows", len(people)))
 	for _, row := range people {
 		runtime.Insert(row)
 	}
-	benchLogger.Info(fmt.Sprintf("DEBUG insert_bulk_str: done inserting %d rows", len(people)))
 }
 
 func insertBulkNoIndexU32U64Str(_ server.ReducerContext, people []NoIndexU32U64Str) {
@@ -265,13 +263,9 @@ func updateBulkUnique0U32U64U64(_ server.ReducerContext, rowCount uint32) {
 }
 
 func updateBulkUnique0U32U64Str(_ server.ReducerContext, rowCount uint32) {
-	// Debug: count rows in table before scanning
-	tableCount, countErr := runtime.Count[Unique0U32U64Str]()
-	benchLogger.Info(fmt.Sprintf("DEBUG update_bulk_str: rowCount=%d, tableCount=%d, countErr=%v", rowCount, tableCount, countErr))
-
 	iter, err := runtime.Scan[Unique0U32U64Str]()
 	if err != nil {
-		panic(fmt.Sprintf("Scan error: %v", err))
+		panic(err)
 	}
 	defer iter.Close()
 
@@ -291,9 +285,8 @@ func updateBulkUnique0U32U64Str(_ server.ReducerContext, rowCount uint32) {
 			Name: row.Name,
 		})
 	}
-	benchLogger.Info(fmt.Sprintf("DEBUG update_bulk_str: hit=%d, rowCount=%d", hit, rowCount))
 	if hit != rowCount {
-		panic(fmt.Sprintf("not enough rows to perform requested amount of updates (hit=%d, rowCount=%d, tableCount=%d)", hit, rowCount, tableCount))
+		panic("not enough rows to perform requested amount of updates")
 	}
 }
 

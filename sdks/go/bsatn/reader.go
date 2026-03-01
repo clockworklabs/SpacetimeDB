@@ -3,6 +3,7 @@ package bsatn
 import (
 	"encoding/binary"
 	"math"
+	"unsafe"
 )
 
 // NewReader creates a new BSATN reader from the given byte slice.
@@ -154,4 +155,31 @@ func (r *reader) GetSumTag() (uint8, error) {
 
 func (r *reader) Remaining() int {
 	return len(r.data) - r.pos
+}
+
+// NewZeroCopyReader creates a Reader where GetString() returns strings
+// that share the underlying buffer memory (no copy).
+// SAFETY: The data buffer must outlive all strings decoded from it.
+// As long as any decoded string is reachable, the GC keeps data alive.
+func NewZeroCopyReader(data []byte) Reader {
+	return &zeroCopyReader{reader: reader{data: data}}
+}
+
+type zeroCopyReader struct {
+	reader
+}
+
+func (r *zeroCopyReader) GetString() (string, error) {
+	length, err := r.GetU32()
+	if err != nil {
+		return "", err
+	}
+	if length == 0 {
+		return "", nil
+	}
+	b, err := r.GetBytes(int(length))
+	if err != nil {
+		return "", err
+	}
+	return unsafe.String(&b[0], len(b)), nil
 }

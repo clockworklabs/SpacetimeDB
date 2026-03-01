@@ -1,5 +1,16 @@
 package sys
 
+// sysBuf is a reusable buffer for DatastoreInsertBSATN and DatastoreUpdateBSATN.
+// Safe because WASM is single-threaded.
+var sysBuf []byte
+
+func ensureSysBuf(minCap int) {
+	if cap(sysBuf) < minCap {
+		sysBuf = make([]byte, minCap)
+	}
+	sysBuf = sysBuf[:minCap]
+}
+
 // Log level constants
 const (
 	LogLevelError uint8 = 0
@@ -43,27 +54,41 @@ func DatastoreTableScanBSATN(tableId uint32) (*RowIterator, error) {
 
 // DatastoreInsertBSATN inserts a BSATN-encoded row and returns updated sequence values.
 func DatastoreInsertBSATN(tableId uint32, row []byte) ([]byte, error) {
-	// Allocate at least 1 byte so &buf[0] never panics (empty product types encode to 0 bytes).
-	buf := make([]byte, max(len(row), 1), max(len(row), 1)+64)
-	copy(buf, row)
+	// Use reusable buffer. Ensure at least 1 byte so &buf[0] never panics
+	// (empty product types encode to 0 bytes), plus extra for potential auto-inc return.
+	needed := max(len(row), 1) + 64
+	ensureSysBuf(needed)
+	copy(sysBuf, row)
 	bufLen := uint32(len(row))
-	ret := rawDatastoreInsertBSATN(tableId, &buf[0], &bufLen)
+	ret := rawDatastoreInsertBSATN(tableId, &sysBuf[0], &bufLen)
 	if err := errnoFromU16(uint16(ret)); err != nil {
 		return nil, err
 	}
-	return buf[:bufLen], nil
+	if bufLen > 0 {
+		// Host wrote back auto-inc data; copy it out since sysBuf is reused.
+		result := make([]byte, bufLen)
+		copy(result, sysBuf[:bufLen])
+		return result, nil
+	}
+	return nil, nil
 }
 
 // DatastoreUpdateBSATN updates a row by its unique index, returning updated sequence values.
 func DatastoreUpdateBSATN(tableId uint32, indexId uint32, row []byte) ([]byte, error) {
-	buf := make([]byte, max(len(row), 1), max(len(row), 1)+64)
-	copy(buf, row)
+	needed := max(len(row), 1) + 64
+	ensureSysBuf(needed)
+	copy(sysBuf, row)
 	bufLen := uint32(len(row))
-	ret := rawDatastoreUpdateBSATN(tableId, indexId, &buf[0], &bufLen)
+	ret := rawDatastoreUpdateBSATN(tableId, indexId, &sysBuf[0], &bufLen)
 	if err := errnoFromU16(uint16(ret)); err != nil {
 		return nil, err
 	}
-	return buf[:bufLen], nil
+	if bufLen > 0 {
+		result := make([]byte, bufLen)
+		copy(result, sysBuf[:bufLen])
+		return result, nil
+	}
+	return nil, nil
 }
 
 // DatastoreDeleteAllByEqBSATN deletes all rows matching BSATN-encoded relation.

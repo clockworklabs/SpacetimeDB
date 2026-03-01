@@ -19,6 +19,8 @@ type Writer interface {
 	PutMapLen(n uint32)   // write u32 LE length prefix for maps
 	PutSumTag(tag uint8)  // write u8 variant tag for sum types
 	Bytes() []byte        // return the accumulated buffer
+	Reset()               // clear buffer, keep capacity
+	Len() int             // current accumulated length
 }
 
 // Reader reads BSATN-encoded binary data.

@@ -865,6 +865,96 @@ func TestRoundTripF64NaN(t *testing.T) {
 	assert.True(t, math.IsNaN(decoded))
 }
 
+// === ZERO-COPY READER TESTS ===
+
+func TestZeroCopyReaderStringRoundTrip(t *testing.T) {
+	w := bsatn.NewWriter(64)
+	w.PutString("hello")
+	w.PutString("world")
+	data := w.Bytes()
+
+	r := bsatn.NewZeroCopyReader(data)
+	s1, err := r.GetString()
+	require.NoError(t, err)
+	assert.Equal(t, "hello", s1)
+
+	s2, err := r.GetString()
+	require.NoError(t, err)
+	assert.Equal(t, "world", s2)
+
+	assert.Equal(t, 0, r.Remaining())
+}
+
+func TestZeroCopyReaderEmptyString(t *testing.T) {
+	w := bsatn.NewWriter(8)
+	w.PutString("")
+	data := w.Bytes()
+
+	r := bsatn.NewZeroCopyReader(data)
+	s, err := r.GetString()
+	require.NoError(t, err)
+	assert.Equal(t, "", s)
+}
+
+func TestZeroCopyReaderUTF8(t *testing.T) {
+	w := bsatn.NewWriter(16)
+	w.PutString("\u00e9")
+	w.PutString("\U0001F600")
+	data := w.Bytes()
+
+	r := bsatn.NewZeroCopyReader(data)
+	s1, err := r.GetString()
+	require.NoError(t, err)
+	assert.Equal(t, "\u00e9", s1)
+
+	s2, err := r.GetString()
+	require.NoError(t, err)
+	assert.Equal(t, "\U0001F600", s2)
+}
+
+func TestZeroCopyReaderMatchesRegularReader(t *testing.T) {
+	testStrings := []string{"", "hello", "world", "\u00e9", "\U0001F600", "hello world"}
+	w := bsatn.NewWriter(256)
+	for _, s := range testStrings {
+		w.PutString(s)
+	}
+	data := w.Bytes()
+
+	regular := bsatn.NewReader(append([]byte(nil), data...))
+	zeroCopy := bsatn.NewZeroCopyReader(append([]byte(nil), data...))
+
+	for i, expected := range testStrings {
+		s1, err1 := regular.GetString()
+		s2, err2 := zeroCopy.GetString()
+		require.NoError(t, err1, "regular reader failed on string %d", i)
+		require.NoError(t, err2, "zero-copy reader failed on string %d", i)
+		assert.Equal(t, expected, s1)
+		assert.Equal(t, expected, s2)
+		assert.Equal(t, s1, s2, "readers disagree on string %d", i)
+	}
+}
+
+func TestZeroCopyReaderMixedTypes(t *testing.T) {
+	w := bsatn.NewWriter(64)
+	w.PutU32(42)
+	w.PutString("test")
+	w.PutBool(true)
+	data := w.Bytes()
+
+	r := bsatn.NewZeroCopyReader(data)
+	v, err := r.GetU32()
+	require.NoError(t, err)
+	assert.Equal(t, uint32(42), v)
+
+	s, err := r.GetString()
+	require.NoError(t, err)
+	assert.Equal(t, "test", s)
+
+	b, err := r.GetBool()
+	require.NoError(t, err)
+	assert.True(t, b)
+}
+
 // === WRITER CAPACITY ===
 
 func TestWriterGrowsBeyondInitialCapacity(t *testing.T) {

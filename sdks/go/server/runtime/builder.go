@@ -99,11 +99,13 @@ func (b *tableBuilder[T]) Build() TableRegistration {
 	}
 
 	t := b.goType
+	plan := buildStructPlan(t)
 	reg := tableRegistration{
 		name:   b.name,
 		access: b.access,
 		schema: schema,
 		goType: t,
+		plan:   plan,
 		encodeFn: func(v any) []byte {
 			return reflectEncode(v)
 		},

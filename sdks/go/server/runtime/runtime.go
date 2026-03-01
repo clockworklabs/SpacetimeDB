@@ -3,6 +3,7 @@ package runtime
 import (
 	"fmt"
 	"reflect"
+	"unsafe"
 
 	"github.com/clockworklabs/SpacetimeDB/sdks/go/bsatn"
 	"github.com/clockworklabs/SpacetimeDB/sdks/go/server/moduledef"
@@ -43,6 +44,7 @@ type tableRegistration struct {
 	schema          structSchema
 	typeRef         types.TypeRef
 	goType          reflect.Type
+	plan            *structPlan
 	encodeFn        func(v any) []byte
 	decodeFn        func(data []byte) (any, error)
 	decodeReaderFn  func(r bsatn.Reader) (any, error)
@@ -82,12 +84,14 @@ func RegisterTable[T any](name string, access moduledef.TableAccess) TableRegist
 	}
 
 	schema := reflectStructSchema(t)
+	plan := buildStructPlan(t)
 
 	reg := tableRegistration{
 		name:   name,
 		access: access,
 		schema: schema,
 		goType: t,
+		plan:   plan,
 		encodeFn: func(v any) []byte {
 			return reflectEncode(v)
 		},
@@ -113,6 +117,11 @@ func RegisterTable[T any](name string, access moduledef.TableAccess) TableRegist
 // Args are decoded from BSATN bytes based on the function parameter types.
 // Optional paramNames specify names for the reducer parameters (after ReducerContext).
 // If not provided, parameters are named "arg_0", "arg_1", etc.
+//
+// Internally, this builds an optimized dispatch path:
+//   - 0-arg reducers: direct type-assertion call (no reflect.Value.Call)
+//   - N-arg reducers: pre-compiled fieldDecodeFn per param, pre-allocated storage,
+//     zero-copy BSATN reader, reflect.Value.Call with cached arg values
 func RegisterReducer(name string, fn any, paramNames ...string) ReducerRegistration {
 	fnVal := reflect.ValueOf(fn)
 	fnType := fnVal.Type()
@@ -152,27 +161,50 @@ func RegisterReducer(name string, fn any, paramNames ...string) ReducerRegistrat
 
 	hasErrorReturn := fnType.NumOut() > 0 && fnType.Out(0).Implements(errorType)
 
-	// Build dispatch function that decodes BSATN args and calls the original function.
-	dispatchFn := func(ctx reducer.ReducerContext, args []byte) error {
-		r := bsatn.NewReader(args)
+	var dispatchFn reducer.ReducerFunc
 
+	if numParams == 0 {
+		// Fast path: 0-arg reducers — direct type assertion, no reflect.Value.Call.
+		dispatchFn = buildZeroArgDispatch(fn, fnVal, hasErrorReturn)
+	} else {
+		// Optimized N-arg path: pre-compiled decoders + pre-allocated storage.
+		type fastParam struct {
+			decode fieldDecodeFn
+			ptr    unsafe.Pointer // pre-allocated storage (reused, single-threaded)
+		}
+		params := make([]fastParam, numParams)
 		callArgs := make([]reflect.Value, fnType.NumIn())
-		callArgs[0] = reflect.ValueOf(ctx)
 
-		for i := 1; i < fnType.NumIn(); i++ {
-			argVal := reflect.New(fnType.In(i)).Elem()
-			if err := reflectDecodeValue(r, argVal); err != nil {
-				return fmt.Errorf("runtime: failed to decode arg %d for reducer %s: %w", i-1, name, err)
+		for i := 0; i < numParams; i++ {
+			pt := fnType.In(i + 1)
+			params[i].decode = buildParamDecoder(pt)
+
+			// Pre-allocate storage for this parameter. The reflect.Value
+			// wrapping it is cached in callArgs and reused across calls.
+			// Safe because WASM is single-threaded.
+			storage := reflect.New(pt)
+			params[i].ptr = unsafe.Pointer(storage.Pointer())
+			callArgs[i+1] = storage.Elem()
+		}
+
+		dispatchFn = func(ctx reducer.ReducerContext, args []byte) error {
+			r := bsatn.NewZeroCopyReader(args)
+			callArgs[0] = reflect.ValueOf(ctx)
+
+			for i := range params {
+				p := &params[i]
+				if err := p.decode(r, p.ptr); err != nil {
+					return fmt.Errorf("runtime: failed to decode arg %d for reducer %s: %w", i, name, err)
+				}
 			}
-			callArgs[i] = argVal
-		}
 
-		results := fnVal.Call(callArgs)
+			results := fnVal.Call(callArgs)
 
-		if hasErrorReturn && len(results) > 0 && !results[0].IsNil() {
-			return results[0].Interface().(error)
+			if hasErrorReturn && len(results) > 0 && !results[0].IsNil() {
+				return results[0].Interface().(error)
+			}
+			return nil
 		}
-		return nil
 	}
 
 	// Save the explicit names for use in __describe_module__.
@@ -195,12 +227,51 @@ func RegisterReducer(name string, fn any, paramNames ...string) ReducerRegistrat
 	return &registeredReducers[len(registeredReducers)-1]
 }
 
+// buildZeroArgDispatch builds a dispatch function for 0-argument reducers.
+// Uses direct type assertion to avoid reflect.Value.Call entirely.
+func buildZeroArgDispatch(fn any, fnVal reflect.Value, hasErrorReturn bool) reducer.ReducerFunc {
+	switch typedFn := fn.(type) {
+	case func(reducer.ReducerContext):
+		return func(ctx reducer.ReducerContext, _ []byte) error {
+			typedFn(ctx)
+			return nil
+		}
+	case func(reducer.ReducerContext) error:
+		return func(ctx reducer.ReducerContext, _ []byte) error {
+			return typedFn(ctx)
+		}
+	default:
+		// Fallback for unusual 0-arg signatures (e.g., custom ReducerContext subtypes).
+		return func(ctx reducer.ReducerContext, _ []byte) error {
+			results := fnVal.Call([]reflect.Value{reflect.ValueOf(ctx)})
+			if hasErrorReturn && len(results) > 0 && !results[0].IsNil() {
+				return results[0].Interface().(error)
+			}
+			return nil
+		}
+	}
+}
+
 // RegisterLifecycleReducer registers a lifecycle reducer. Called during init().
 // The fn should match the appropriate lifecycle signature:
 //   - LifecycleInit: func(ctx reducer.ReducerContext)
 //   - LifecycleClientConnected: func(ctx reducer.ReducerContext)
 //   - LifecycleClientDisconnected: func(ctx reducer.ReducerContext)
 func RegisterLifecycleReducer(lifecycle reducer.Lifecycle, fn any) {
+	// Fast path: direct type assertion avoids reflect.Value.Call.
+	if typedFn, ok := fn.(func(reducer.ReducerContext)); ok {
+		registeredLifecycle = append(registeredLifecycle, lifecycleRegistration{
+			lifecycle: lifecycle,
+			fn:        fn,
+			dispatchFn: func(ctx reducer.ReducerContext, _ []byte) error {
+				typedFn(ctx)
+				return nil
+			},
+		})
+		return
+	}
+
+	// Fallback: reflect-based dispatch.
 	fnVal := reflect.ValueOf(fn)
 	fnType := fnVal.Type()
 
@@ -208,15 +279,13 @@ func RegisterLifecycleReducer(lifecycle reducer.Lifecycle, fn any) {
 		panic(fmt.Sprintf("runtime.RegisterLifecycleReducer: must be a function, got %v", fnType))
 	}
 
-	dispatchFn := func(ctx reducer.ReducerContext, _ []byte) error {
-		fnVal.Call([]reflect.Value{reflect.ValueOf(ctx)})
-		return nil
-	}
-
 	registeredLifecycle = append(registeredLifecycle, lifecycleRegistration{
-		lifecycle:  lifecycle,
-		fn:         fn,
-		dispatchFn: dispatchFn,
+		lifecycle: lifecycle,
+		fn:        fn,
+		dispatchFn: func(ctx reducer.ReducerContext, _ []byte) error {
+			fnVal.Call([]reflect.Value{reflect.ValueOf(ctx)})
+			return nil
+		},
 	})
 }
 
