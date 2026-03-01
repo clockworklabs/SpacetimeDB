@@ -95,6 +95,12 @@
       "import": "./dist/angular/index.mjs",
       "require": "./dist/angular/index.cjs",
       "default": "./dist/angular/index.mjs"
+    },
+    "./solid-js": {
+      "types": "./dist/solid-js/index.d.ts",
+      "import": "./dist/solid-js/index.mjs",
+      "require": "./dist/solid-js/index.cjs",
+      "default": "./dist/solid-js/index.mjs"
     }
   },
   "size-limit": [
@@ -189,6 +195,7 @@
     "@angular/core": ">=17.0.0",
     "@tanstack/react-query": "^5.0.0",
     "react": "^18.0.0 || ^19.0.0-0 || ^19.0.0",
+    "solid-js": "^1.0.0",
     "svelte": "^4.0.0 || ^5.0.0",
     "undici": "^6.19.2",
     "vue": "^3.3.0"
@@ -198,6 +205,9 @@
       "optional": true
     },
     "react": {
+      "optional": true
+    },
+    "solid-js": {
       "optional": true
     },
     "svelte": {
