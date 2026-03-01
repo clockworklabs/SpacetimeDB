@@ -4,13 +4,15 @@ import type {
   QueryFunction,
 } from '@tanstack/react-query';
 import {
+  type Query,
+  toSql,
   type BooleanExpr,
   evaluateBooleanExpr,
   getQueryAccessorName,
   getQueryWhereClause,
 } from '../lib/query';
 
-type QueryInput = { toSql(): string } & Record<string, any>;
+type QueryInput = Query<any>;
 
 const queryRegistry = new Map<
   string,
@@ -51,7 +53,7 @@ export function spacetimeDBQuery(
   const query = queryOrSkip;
   const accessorName = getQueryAccessorName(query);
   const whereExpr = getQueryWhereClause(query);
-  const querySql = query.toSql();
+  const querySql = toSql(query);
 
   queryRegistry.set(querySql, { accessorName, whereExpr });
 
