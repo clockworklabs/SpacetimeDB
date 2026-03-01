@@ -3,6 +3,7 @@ use std::path::Path;
 
 pub mod compression;
 pub mod dir_trie;
+pub mod direct_io;
 pub mod lockfile;
 
 pub fn create_parent_dir(file: &Path) -> Result<(), std::io::Error> {

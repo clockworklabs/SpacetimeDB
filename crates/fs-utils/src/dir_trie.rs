@@ -187,7 +187,7 @@ impl DirTrie {
     /// It will be decompressed based on the file's magic bytes.
     ///
     /// It will be opened with [`o_rdonly`].
-    pub fn open_entry_reader(&self, file_id: &FileId) -> Result<CompressReader, io::Error> {
+    pub fn open_entry_reader(&self, file_id: &FileId) -> Result<CompressReader<File>, io::Error> {
         let path = self.file_path(file_id);
         Self::create_parent(&path)?;
         CompressReader::new(o_rdonly().open(path)?)

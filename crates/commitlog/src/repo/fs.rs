@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use log::{debug, warn};
 use spacetimedb_fs_utils::compression::{compress_with_zstd, CompressReader};
+use spacetimedb_fs_utils::direct_io;
 use spacetimedb_paths::server::{CommitLogDir, SegmentFile};
 use tempfile::NamedTempFile;
 
@@ -29,7 +30,7 @@ pub type OnNewSegmentFn = dyn Fn() + Send + Sync + 'static;
 /// Size on disk of a [Fs] repo.
 ///
 /// Created by [Fs::size_on_disk].
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct SizeOnDisk {
     /// The total size in bytes of all segments and offset indexes in the repo.
     pub total_bytes: u64,
@@ -156,7 +157,7 @@ impl FileLike for NamedTempFile {
 
 impl Repo for Fs {
     type SegmentWriter = File;
-    type SegmentReader = CompressReader;
+    type SegmentReader = CompressReader<File>;
 
     fn create_segment(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
         File::options()
@@ -213,18 +214,21 @@ impl Repo for Fs {
     }
 
     fn compress_segment(&self, offset: u64) -> io::Result<()> {
-        let src = self.open_segment_reader(offset)?;
+        let segment_path = self.segment_path(offset);
+        let src = direct_io::file_reader(&segment_path).and_then(CompressReader::new)?;
         // if it's already compressed, leave it be
         let CompressReader::None(mut src) = src else {
             return Ok(());
         };
 
-        let mut dst = NamedTempFile::new_in(&self.root)?;
+        let tmp = NamedTempFile::new_in(&self.root)?.into_temp_path();
+        let mut dst = direct_io::file_writer(&tmp)?;
         // bytes per frame. in the future, it might be worth looking into putting
         // every commit into its own frame, to make seeking more efficient.
         let max_frame_size = 0x1000;
         compress_with_zstd(&mut src, &mut dst, Some(max_frame_size))?;
-        dst.persist(self.segment_path(offset))?;
+        dst.get_ref().sync_all()?;
+        tmp.persist(segment_path)?;
 
         Ok(())
     }
@@ -266,7 +270,7 @@ impl Repo for Fs {
     }
 }
 
-impl SegmentLen for CompressReader {}
+impl<R: io::Read + io::Seek> SegmentLen for CompressReader<R> {}
 
 #[cfg(feature = "streaming")]
 impl crate::stream::AsyncRepo for Fs {
