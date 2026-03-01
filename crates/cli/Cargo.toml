@@ -105,6 +105,7 @@ windows-sys = { workspace = true, features = ["Win32_System_Console"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 toml.workspace = true
+git2.workspace = true
 
 [lints]
 workspace = true
