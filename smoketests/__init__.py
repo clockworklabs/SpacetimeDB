@@ -20,9 +20,14 @@ import functools
 TEST_DIR = Path(__file__).parent
 STDB_DIR = TEST_DIR.parent
 exe_suffix = ".exe" if sys.platform == "win32" else ""
-SPACETIME_BIN = STDB_DIR / ("target/debug/spacetime" + exe_suffix)
 TEMPLATE_TARGET_DIR = STDB_DIR / "target/_stdbsmoketests"
 BASE_STDB_CONFIG_PATH = TEST_DIR / "config.toml"
+
+SPACETIME_BIN = None
+def update_spacetime_bin_path(build_dir):
+    global SPACETIME_BIN
+    SPACETIME_BIN = build_dir / ("debug/spacetime" + exe_suffix)
+update_spacetime_bin_path(STDB_DIR / "target")
 
 # the contents of files for the base smoketest project template
 TEMPLATE_LIB_RS = open(STDB_DIR / "templates/basic-rs/spacetimedb/src/lib.rs").read()
@@ -142,7 +147,7 @@ def log_cmd(args):
     logging.debug(f"$ {' '.join(str(arg) for arg in args)}")
 
 
-def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=None, log=True, **kwargs):
+def run_cmd(*args, capture_stdout=True, capture_stderr=True, check=True, full_output=False, cmd_name=None, log=True, **kwargs):
     if log:
         log_cmd(args if cmd_name is None else [cmd_name, *args[1:]])
 
@@ -162,7 +167,7 @@ def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=
         if capture_stderr and output.stderr.strip() != "":
             logging.debug(f"--- stderr ---\n{output.stderr.strip()}")
             needs_close = True
-        if output.stdout.strip() != "":
+        if capture_stdout and output.stdout.strip() != "":
             logging.debug(f"--- stdout ---\n{output.stdout.strip()}")
             needs_close = True
         if needs_close:
