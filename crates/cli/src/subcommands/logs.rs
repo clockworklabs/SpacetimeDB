@@ -48,6 +48,28 @@ pub fn cli() -> clap::Command {
                 .value_parser(clap::value_parser!(Format))
                 .help("Output format for the logs")
         )
+        .arg(
+            Arg::new("level")
+                .long("level")
+                .short('l')
+                .value_parser(clap::value_parser!(LogLevel))
+                .help("Minimum log level to display")
+                .long_help(
+                    "Filter logs by severity level. Only messages at the specified level or higher \
+                     will be shown. Levels from least to most severe: trace, debug, info, warn, error, panic.",
+                ),
+        )
+        .arg(
+            Arg::new("level_exact")
+                .long("level-exact")
+                .requires("level")
+                .action(ArgAction::SetTrue)
+                .help("Show only logs at exactly the specified level")
+                .long_help(
+                    "When combined with --level, show only logs at exactly the specified level \
+                     instead of that level and above.",
+                ),
+        )
         .arg(common_args::yes())
         .arg(
             Arg::new("no_config")
@@ -58,7 +80,7 @@ pub fn cli() -> clap::Command {
         .after_help("Run `spacetime help logs` for more detailed information.\n")
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, Copy, serde::Deserialize)]
 pub enum LogLevel {
     Error,
     Warn,
@@ -66,6 +88,43 @@ pub enum LogLevel {
     Debug,
     Trace,
     Panic,
+}
+
+impl LogLevel {
+    /// Returns a numeric severity value. Higher means more severe.
+    fn severity(self) -> u8 {
+        match self {
+            LogLevel::Trace => 0,
+            LogLevel::Debug => 1,
+            LogLevel::Info => 2,
+            LogLevel::Warn => 3,
+            LogLevel::Error => 4,
+            LogLevel::Panic => 5,
+        }
+    }
+}
+
+impl clap::ValueEnum for LogLevel {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[
+            Self::Trace,
+            Self::Debug,
+            Self::Info,
+            Self::Warn,
+            Self::Error,
+            Self::Panic,
+        ]
+    }
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        match self {
+            Self::Trace => Some(clap::builder::PossibleValue::new("trace")),
+            Self::Debug => Some(clap::builder::PossibleValue::new("debug")),
+            Self::Info => Some(clap::builder::PossibleValue::new("info")),
+            Self::Warn => Some(clap::builder::PossibleValue::new("warn")),
+            Self::Error => Some(clap::builder::PossibleValue::new("error")),
+            Self::Panic => Some(clap::builder::PossibleValue::new("panic")),
+        }
+    }
 }
 
 /// Sentinel value used for injected system logs.
@@ -140,6 +199,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let mut num_lines = args.get_one::<u32>("num_lines").copied();
     let follow = args.get_flag("follow");
     let format = *args.get_one::<Format>("format").unwrap();
+    let min_level = args.get_one::<LogLevel>("level").copied();
+    let level_exact = args.get_flag("level_exact");
 
     let auth_header = get_auth_header(&mut config, false, server, !force).await?;
 
@@ -183,6 +244,19 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let mut line = String::new();
     while rdr.read_line(&mut line).await? != 0 {
         let record = serde_json::from_str::<Record<'_>>(&line)?;
+
+        // Apply log level filtering.
+        if let Some(min) = min_level {
+            if level_exact {
+                if record.level.severity() != min.severity() {
+                    line.clear();
+                    continue;
+                }
+            } else if record.level.severity() < min.severity() {
+                line.clear();
+                continue;
+            }
+        }
 
         if let Some(ts) = record.ts {
             out.set_color(ColorSpec::new().set_dimmed(true))?;
