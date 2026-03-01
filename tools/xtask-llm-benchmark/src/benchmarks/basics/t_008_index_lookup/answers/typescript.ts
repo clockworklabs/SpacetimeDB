@@ -1,6 +1,6 @@
 import { table, schema, t } from 'spacetimedb/server';
 
-export const user = table(
+const user = table(
   {
     name: 'user',
   },
@@ -12,7 +12,7 @@ export const user = table(
   }
 );
 
-export const result = table(
+const result = table(
   {
     name: 'result',
   },

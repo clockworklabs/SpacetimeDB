@@ -89,13 +89,14 @@ pub fn build_anthropic_messages(
 
 // Provider-specific context limits
 pub fn anthropic_ctx_limit_tokens(_model: &str) -> usize {
-    200_000 - 2000 // extra space
+    // Anthropic hard limit is 200k; reserve ~15k for tokenizer variance + system/segments
+    185_000
 }
 
 pub fn openai_ctx_limit_tokens(model: &str) -> usize {
     let m = model.to_ascii_lowercase();
     if m.contains("gpt-5") || m.contains("gpt-4.1") {
-        300_000
+        400_000
     } else {
         128_000
     }
@@ -104,6 +105,7 @@ pub fn openai_ctx_limit_tokens(model: &str) -> usize {
 pub fn deepseek_ctx_limit_tokens(model: &str) -> usize {
     let m = model.to_ascii_lowercase();
 
+    // API limit 128K for deepseek-chat and deepseek-reasoner
     if m.starts_with("deepseek-reasoner") || m.starts_with("deepseek-r1") {
         return 128_000;
     }
@@ -142,14 +144,25 @@ pub fn gemini_ctx_limit_tokens(model: &str) -> usize {
 
 pub fn meta_ctx_limit_tokens(model: &str) -> usize {
     let m = model.to_ascii_lowercase();
-    if m.contains("405b") || m.contains("70b") || m.contains("chat") {
-        return 120_000; //8k headroom
+    // Llama 4: Maverick 1M, Scout 328K context
+    if m.contains("maverick") {
+        return 992_000; // 1M - 8k headroom
     }
-    120_000 //8k headroom
+    if m.contains("scout") {
+        return 320_000; // 328K - 8k headroom
+    }
+    // Llama 3.x
+    if m.contains("405b") || m.contains("70b") || m.contains("8b") || m.contains("chat") {
+        return 120_000; // 8k headroom
+    }
+    120_000 // 8k headroom
 }
 
 pub fn xai_ctx_limit_tokens(model: &str) -> usize {
     let m = model.to_ascii_lowercase();
+    if m.contains("grok-code-fast-1") {
+        return 256_000;
+    }
     if m.contains("grok-4") || m.contains("grok-3") {
         return 128_000;
     }

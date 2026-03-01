@@ -10,7 +10,7 @@ pub fn spec() -> BenchmarkSpec {
 
         let casing = casing_for_lang(lang);
         let sb = SqlBuilder::new(casing);
-        let reducer = ident("ComputeSum", casing);
+        let reducer = ident("ComputeSum", crate::eval::Casing::Snake);
         let result_table = table_name("result", lang);
         let select = sb.select_by_id(&result_table, &["id","sum"], "id", 1);
 
