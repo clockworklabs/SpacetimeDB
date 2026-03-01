@@ -6,6 +6,12 @@ using CsCheck;
 using SpacetimeDB.BSATN;
 using Xunit;
 
+/// <summary>
+/// Unit and randomized tests for the BSATN.Runtime library. Some tests here also test BSATN.Codegen.
+///
+/// Randomized tests use the CsCheck library to generate large numbers of sample inputs and check that these libraries
+/// maintain certain invariants for all of them.
+/// </summary>
 public static partial class BSATNRuntimeTests
 {
     [Fact]
