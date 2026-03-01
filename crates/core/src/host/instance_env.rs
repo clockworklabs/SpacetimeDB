@@ -278,7 +278,7 @@ impl InstanceEnv {
     }
 
     pub(crate) fn relational_db(&self) -> &Arc<RelationalDB> {
-        &self.replica_ctx.relational_db
+        self.replica_ctx.relational_db()
     }
 
     pub(crate) fn get_jwt_payload(&self, connection_id: ConnectionId) -> Result<Option<String>, NodesError> {
@@ -708,9 +708,10 @@ impl InstanceEnv {
             ));
         }
 
-        let stdb = self.replica_ctx.relational_db.clone();
         // TODO(procedure-tx): should we add a new workload, e.g., `AnonTx`?
-        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let tx = self
+            .relational_db()
+            .begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
         self.tx.set_raw(tx);
         self.in_anon_tx = true;
 
@@ -1319,7 +1320,7 @@ mod test {
     /// An `InstanceEnv` requires a `ReplicaContext`.
     /// For our purposes this is just a wrapper for `RelationalDB`.
     fn replica_ctx(relational_db: Arc<RelationalDB>) -> Result<(ReplicaContext, tokio::runtime::Runtime)> {
-        let (subs, runtime) = ModuleSubscriptions::for_test_new_runtime(relational_db.clone());
+        let (subs, runtime) = ModuleSubscriptions::for_test_new_runtime(relational_db);
         let logger = {
             let _rt = runtime.enter();
             Arc::new(temp_logger())
@@ -1336,7 +1337,6 @@ mod test {
                 replica_id: 0,
                 logger,
                 subscriptions: subs,
-                relational_db,
             },
             runtime,
         ))

@@ -593,7 +593,7 @@ impl InstanceCommon {
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
         let replica_ctx = inst.replica_ctx().clone();
         let system_logger = replica_ctx.logger.system_logger();
-        let stdb = &replica_ctx.relational_db;
+        let stdb = &replica_ctx.relational_db();
 
         let plan: MigratePlan = match policy.try_migrate(
             self.info.database_identity,
@@ -862,7 +862,7 @@ impl InstanceCommon {
         let caller_connection_id_opt = (caller_connection_id != ConnectionId::ZERO).then_some(caller_connection_id);
 
         let replica_ctx = inst.replica_ctx();
-        let stdb = &*replica_ctx.relational_db.clone();
+        let stdb = replica_ctx.relational_db();
         let info = self.info.clone();
         let reducer_def = info.module_def.reducer_by_id(reducer_id);
         let reducer_name = &reducer_def.name;
@@ -1267,7 +1267,7 @@ impl InstanceCommon {
                     };
 
                     let replica_ctx = inst.replica_ctx();
-                    let stdb = &*replica_ctx.relational_db.clone();
+                    let stdb = replica_ctx.relational_db();
                     let res = match sender {
                         Some(sender) => stdb.materialize_view(&mut tx, table_id, sender, rows),
                         None => stdb.materialize_anonymous_view(&mut tx, table_id, rows),

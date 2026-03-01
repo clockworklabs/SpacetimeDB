@@ -139,7 +139,7 @@ impl DurableOffsetSupply for watch::Receiver<ModuleHost> {
             self.borrow()
         };
 
-        Ok(module.replica_ctx().relational_db.durable_tx_offset())
+        Ok(module.relational_db().durable_tx_offset())
     }
 }
 

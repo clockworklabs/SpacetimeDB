@@ -461,7 +461,7 @@ fn init_database_inner(
 ) -> anyhow::Result<(Option<ReducerCallResult>, bool)> {
     log::debug!("init database");
     let timestamp = Timestamp::now();
-    let stdb = &*replica_ctx.relational_db;
+    let stdb = replica_ctx.relational_db();
     let logger = replica_ctx.logger.system_logger();
     let owner_identity = replica_ctx.database.owner_identity;
     let host_type = replica_ctx.host_type;
@@ -2096,7 +2096,7 @@ impl ModuleHost {
         into_message: impl FnOnce(OneOffQueryResponseMessage<F>) -> SerializableMessage + Send + 'static,
     ) -> Result<(), anyhow::Error> {
         let replica_ctx = self.replica_ctx();
-        let db = replica_ctx.relational_db.clone();
+        let db = self.relational_db().clone();
         let subscriptions = replica_ctx.subscriptions.clone();
         log::debug!("One-off query: {query}");
         let metrics = self
@@ -2200,8 +2200,7 @@ impl ModuleHost {
 
         if let Some(metrics) = metrics {
             // Record the metrics for the one-off query
-            replica_ctx
-                .relational_db
+            self.relational_db()
                 .exec_counters_for(WorkloadType::Sql)
                 .record(&metrics);
         }
@@ -2224,7 +2223,7 @@ impl ModuleHost {
         rlb_pool: impl 'static + Send + RowListBuilderSource<ws_v1::BsatnFormat>,
     ) -> Result<(), anyhow::Error> {
         let replica_ctx = self.replica_ctx();
-        let db = replica_ctx.relational_db.clone();
+        let db = self.relational_db().clone();
         let subscriptions = replica_ctx.subscriptions.clone();
         log::debug!("One-off query: {query}");
         let metrics = self
@@ -2234,8 +2233,7 @@ impl ModuleHost {
             .await??;
 
         if let Some(metrics) = metrics {
-            replica_ctx
-                .relational_db
+            self.relational_db()
                 .exec_counters_for(WorkloadType::Sql)
                 .record(&metrics);
         }
@@ -2341,7 +2339,7 @@ impl ModuleHost {
     /// for tables without primary keys. It is only used in the benchmarks.
     /// Note: this doesn't drop the table, it just clears it!
     pub fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
-        let db = &*self.replica_ctx().relational_db;
+        let db = self.relational_db();
 
         db.with_auto_commit(Workload::Internal, |tx| {
             let tables = db.get_all_tables_mut(tx)?;
@@ -2371,11 +2369,15 @@ impl ModuleHost {
     }
 
     pub fn durable_tx_offset(&self) -> Option<DurableOffset> {
-        self.replica_ctx().relational_db.durable_tx_offset()
+        self.relational_db().durable_tx_offset()
     }
 
     pub fn database_logger(&self) -> &Arc<DatabaseLogger> {
         &self.replica_ctx().logger
+    }
+
+    pub fn relational_db(&self) -> &Arc<RelationalDB> {
+        self.replica_ctx().relational_db()
     }
 
     pub(crate) fn replica_ctx(&self) -> &ReplicaContext {
