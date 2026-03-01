@@ -1,0 +1,248 @@
+[gd_scene load_steps=19 format=3 uid="uid://dcklym85vmdt3"]
+
+[ext_resource type="Script" uid="uid://y32201k503ps" path="res://addons/SpacetimeDB/ui/ui.gd" id="1_ej8d4"]
+[ext_resource type="Texture2D" uid="uid://bbwidmvngko0a" path="res://addons/SpacetimeDB/ui/icons/Remove.svg" id="1_mgbt2"]
+[ext_resource type="Texture2D" uid="uid://yyihsx4ptqm6" path="res://addons/SpacetimeDB/ui/icons/Add.svg" id="2_3cpcg"]
+[ext_resource type="Texture2D" uid="uid://db1mkfv85i0hu" path="res://addons/SpacetimeDB/ui/icons/ActionCopy.svg" id="4_ej8d4"]
+[ext_resource type="Texture2D" uid="uid://bj322os6s3pwb" path="res://addons/SpacetimeDB/ui/icons/Clear.svg" id="4_raufm"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_e5a4l"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_ej8d4"]
+
+[sub_resource type="SystemFont" id="SystemFont_3cpcg"]
+font_names = PackedStringArray("Consolas", "Monospace")
+subpixel_positioning = 0
+
+[sub_resource type="SystemFont" id="SystemFont_raufm"]
+font_names = PackedStringArray("Consolas", "Monospace")
+font_italic = true
+subpixel_positioning = 0
+
+[sub_resource type="SystemFont" id="SystemFont_ej8d4"]
+font_names = PackedStringArray("Consolas", "Monospace")
+font_italic = true
+font_weight = 600
+subpixel_positioning = 0
+
+[sub_resource type="SystemFont" id="SystemFont_d0lf3"]
+font_names = PackedStringArray("Consolas", "Monospace")
+font_weight = 600
+subpixel_positioning = 0
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_e5a4l"]
+content_margin_left = 4.0
+content_margin_top = 6.0
+content_margin_right = 4.0
+bg_color = Color(0.129412, 0.14902, 0.180392, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+anti_aliasing = false
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_d0lf3"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_k511v"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_raufm"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_43xhi"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_3cpcg"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_qc7xu"]
+
+[node name="Control" type="Control"]
+custom_minimum_size = Vector2(0, 250)
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_ej8d4")
+
+[node name="Prefabs" type="Node" parent="."]
+
+[node name="ModulePrefab" type="HBoxContainer" parent="Prefabs"]
+visible = false
+self_modulate = Color(1, 1, 1, 0)
+custom_minimum_size = Vector2(0, 31)
+offset_left = 902.0
+offset_top = 64.0
+offset_right = 1152.0
+offset_bottom = 102.0
+theme_override_constants/separation = 5
+
+[node name="ModuleNameInput" type="LineEdit" parent="Prefabs/ModulePrefab"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "ModuleName"
+placeholder_text = "Module"
+
+[node name="RemoveButton" type="Button" parent="Prefabs/ModulePrefab"]
+custom_minimum_size = Vector2(26, 27)
+layout_mode = 2
+size_flags_horizontal = 8
+size_flags_vertical = 4
+tooltip_text = "Remove Module"
+theme_override_styles/focus = SubResource("StyleBoxEmpty_e5a4l")
+theme_override_styles/normal = SubResource("StyleBoxEmpty_ej8d4")
+icon = ExtResource("1_mgbt2")
+icon_alignment = 1
+
+[node name="Main" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 4
+
+[node name="Content" type="HBoxContainer" parent="Main"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 4
+
+[node name="Logs" type="RichTextLabel" parent="Main/Content"]
+custom_minimum_size = Vector2(0, 9)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 2
+theme_override_constants/line_separation = 3
+theme_override_fonts/normal_font = SubResource("SystemFont_3cpcg")
+theme_override_fonts/italics_font = SubResource("SystemFont_raufm")
+theme_override_fonts/bold_italics_font = SubResource("SystemFont_ej8d4")
+theme_override_fonts/bold_font = SubResource("SystemFont_d0lf3")
+theme_override_styles/normal = SubResource("StyleBoxFlat_e5a4l")
+bbcode_enabled = true
+text = "SpacetimeDB SDK v0.1.0 (c) 2025-present flametime and contributors
+[img]res://addons/SpacetimeDB/ui/icons/Error.svg[/img] [color=#FF786B][b]ERROR:[/b] Plugin failed to load[/color]
+"
+scroll_following = true
+shortcut_keys_enabled = false
+selection_enabled = true
+deselect_on_focus_loss_enabled = false
+
+[node name="Sidebar" type="VBoxContainer" parent="Main/Content"]
+custom_minimum_size = Vector2(250, 0)
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="ModulesLabel" type="Label" parent="Main/Content/Sidebar"]
+layout_mode = 2
+text = "Modules"
+horizontal_alignment = 1
+
+[node name="Modules" type="Control" parent="Main/Content/Sidebar"]
+self_modulate = Color(1, 1, 1, 0)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="AddModuleHint" type="RichTextLabel" parent="Main/Content/Sidebar/Modules"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/normal = SubResource("StyleBoxEmpty_d0lf3")
+bbcode_enabled = true
+text = "Add a module by entering the name below and clicking [img]res://addons/SpacetimeDB/ui/icons/Add.svg[/img]"
+scroll_active = false
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="ModulesList" type="ScrollContainer" parent="Main/Content/Sidebar/Modules"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_vertical = 3
+
+[node name="VBox" type="VBoxContainer" parent="Main/Content/Sidebar/Modules/ModulesList"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="NewModule" type="HBoxContainer" parent="Main/Content/Sidebar"]
+self_modulate = Color(1, 1, 1, 0)
+custom_minimum_size = Vector2(0, 35)
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="ModuleNameInput" type="LineEdit" parent="Main/Content/Sidebar/NewModule"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Enter module name"
+
+[node name="AddButton" type="Button" parent="Main/Content/Sidebar/NewModule"]
+custom_minimum_size = Vector2(26, 27)
+layout_mode = 2
+size_flags_horizontal = 8
+size_flags_vertical = 4
+tooltip_text = "Add Module"
+theme_override_styles/focus = SubResource("StyleBoxEmpty_k511v")
+theme_override_styles/normal = SubResource("StyleBoxEmpty_raufm")
+icon = ExtResource("2_3cpcg")
+icon_alignment = 1
+
+[node name="GenerateButton" type="Button" parent="Main/Content/Sidebar"]
+custom_minimum_size = Vector2(0, 31)
+layout_mode = 2
+disabled = true
+text = "Generate schema"
+
+[node name="BottomBar" type="HBoxContainer" parent="Main"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="LogsControls" type="BoxContainer" parent="Main/BottomBar"]
+layout_mode = 2
+theme_override_constants/separation = 6
+alignment = 1
+
+[node name="ClearLogsButton" type="Button" parent="Main/BottomBar/LogsControls"]
+custom_minimum_size = Vector2(26, 27)
+layout_mode = 2
+tooltip_text = "Clear Output (Ctrl+Alt+K)"
+theme_override_styles/focus = SubResource("StyleBoxEmpty_43xhi")
+theme_override_styles/normal = SubResource("StyleBoxEmpty_3cpcg")
+icon = ExtResource("4_raufm")
+icon_alignment = 1
+
+[node name="CopyLogsButton" type="Button" parent="Main/BottomBar/LogsControls"]
+custom_minimum_size = Vector2(26, 27)
+layout_mode = 2
+tooltip_text = "Copy Selection (Ctrl+C)"
+theme_override_styles/focus = SubResource("StyleBoxEmpty_qc7xu")
+theme_override_styles/normal = SubResource("StyleBoxEmpty_3cpcg")
+icon = ExtResource("4_ej8d4")
+icon_alignment = 1
+
+[node name="VSeparator" type="VSeparator" parent="Main/BottomBar"]
+layout_mode = 2
+
+[node name="ServerUri" type="HBoxContainer" parent="Main/BottomBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+
+[node name="Label" type="Label" parent="Main/BottomBar/ServerUri"]
+layout_mode = 2
+text = "Server URI:"
+vertical_alignment = 1
+
+[node name="UriInput" type="LineEdit" parent="Main/BottomBar/ServerUri"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "http://127.0.0.1:3000"
+placeholder_text = "Enter the server URI"
+
+[node name="CheckUri" type="Button" parent="Main/BottomBar"]
+layout_mode = 2
+text = "Check URI"

@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://c1sxf4qat647l"]
+
+[ext_resource type="Script" uid="uid://djw43eh16f0tp" path="res://scenes/food_controller.gd" id="1_fcw6m"]
+
+[node name="FoodController" type="Node2D"]
+script = ExtResource("1_fcw6m")
