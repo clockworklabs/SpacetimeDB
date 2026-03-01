@@ -1,4 +1,4 @@
-﻿Write a SpacetimeDB backend module in C# that defines three tables with basic columns.
+Write a SpacetimeDB backend module in C# that defines three tables with basic columns.
 
 TABLES
 - User

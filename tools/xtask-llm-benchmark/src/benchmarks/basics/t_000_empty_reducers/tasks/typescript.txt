@@ -1,4 +1,9 @@
-Write a SpacetimeDB backend module in TypeScript that defines five empty reducers with different argument patterns.
+Write a SpacetimeDB backend module in TypeScript that defines a table and five empty reducers with different argument patterns.
+
+TABLES
+- emptyTable
+  - Fields:
+    - id: number (i32, primary key)
 
 REDUCERS
 - emptyReducerNoArgs: no arguments

@@ -1,4 +1,4 @@
-#![allow(clippy::disallowed_macros)]
+#![allow(clippy::disallowed_macros, clippy::type_complexity, clippy::enum_variant_names)]
 
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
@@ -14,7 +14,7 @@ use xtask_llm_benchmark::bench::bench_route_concurrency;
 use xtask_llm_benchmark::bench::runner::{
     build_goldens_only_for_lang, ensure_goldens_built_once, run_selected_or_all_for_model_async_for_lang,
 };
-use xtask_llm_benchmark::bench::types::{BenchRunContext, RouteRun, RunConfig};
+use xtask_llm_benchmark::bench::types::{BenchRunContext, RouteRun, RunConfig, RunOutcome};
 use xtask_llm_benchmark::context::constants::{
     docs_benchmark_comment, docs_benchmark_details, docs_benchmark_summary, llm_comparison_details,
     llm_comparison_summary, ALL_MODES,
@@ -94,6 +94,12 @@ enum Commands {
 
     /// Analyze benchmark failures and generate a human-readable markdown report.
     Analyze(AnalyzeArgs),
+
+    /// Count failures due to HTTP/API errors (429, 503, timeouts, etc.) and list task IDs to rerun.
+    CountHttpFailures(CountHttpFailuresArgs),
+
+    /// Scan details file for LLM API failures and print rerun commands per (lang, model). Does not run anything.
+    ScanRerunCommands(ScanRerunCommandsArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -158,6 +164,20 @@ struct SummaryArgs {
 }
 
 #[derive(Args, Debug, Clone)]
+struct CountHttpFailuresArgs {
+    /// Input details.json (default: same as run output, llm-comparison-details.json)
+    #[arg(long)]
+    details: Option<PathBuf>,
+}
+
+#[derive(Args, Debug, Clone)]
+struct ScanRerunCommandsArgs {
+    /// Input details.json (default: llm-comparison-details.json)
+    #[arg(long)]
+    details: Option<PathBuf>,
+}
+
+#[derive(Args, Debug, Clone)]
 struct AnalyzeArgs {
     /// Input details.json file (default: docs-benchmark-details.json)
     #[arg(long)]
@@ -197,7 +217,34 @@ impl FromStr for VendorArg {
     }
 }
 
+/// Load `.env` from workspace root (repo) first, then current directory.
+/// Uses from_path_override so .env always wins over existing env vars.
+/// Runs once at startup; each new process loads .env fresh (no in-process reload).
+fn load_dotenv() {
+    let workspace_env = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .map(|p| p.join(".env"))
+        .filter(|p| p.is_file());
+    let cwd_env = std::env::current_dir()
+        .ok()
+        .map(|c| c.join(".env"))
+        .filter(|p| p.is_file());
+    let path = workspace_env.or(cwd_env);
+    if let Some(p) = path {
+        match dotenvy::from_path_override(&p) {
+            Ok(()) => eprintln!("[env] loaded .env from {}", p.display()),
+            Err(e) => eprintln!("[env] failed to load .env from {}: {}", p.display(), e),
+        }
+    } else {
+        eprintln!("[env] no .env found (tried workspace root and cwd)");
+    }
+}
+
 fn main() -> Result<()> {
+    // Load .env from current directory or workspace root so API keys and settings are available.
+    load_dotenv();
+
     let cli = Cli::parse();
 
     match cli.command {
@@ -207,6 +254,8 @@ fn main() -> Result<()> {
         Commands::CiComment(args) => cmd_ci_comment(args),
         Commands::Summary(args) => cmd_summary(args),
         Commands::Analyze(args) => cmd_analyze(args),
+        Commands::CountHttpFailures(args) => cmd_count_http_failures(args),
+        Commands::ScanRerunCommands(args) => cmd_scan_rerun_commands(args),
     }
 }
 
@@ -286,6 +335,17 @@ fn run_benchmarks(args: RunArgs, details_path: &Path, summary_path: &Path) -> Re
         println!("Results written to:");
         println!("  Details: {}", details_path.display());
         println!("  Summary: {}", summary_path.display());
+
+        // Show HTTP/timeout failures for this run's scope (providers/models we ran)
+        if let Some((total, http_list)) = load_details_and_http_failures(
+            details_path,
+            config.providers_filter.as_ref(),
+            config.model_filter.as_ref(),
+        )? {
+            if !http_list.is_empty() {
+                print_http_failures_summary(total, &http_list);
+            }
+        }
     }
 
     Ok(())
@@ -854,19 +914,22 @@ fn run_mode_benchmarks(
     Ok(())
 }
 
+/// Routes to run: when `model_filter` is set (from --models), only routes whose vendor and
+/// model are in that filter are included; vendors not in the filter are excluded.
 fn filter_routes(config: &RunConfig) -> Vec<ModelRoute> {
     default_model_routes()
         .iter()
         .filter(|r| config.providers_filter.as_ref().is_none_or(|f| f.contains(&r.vendor)))
-        .filter(|r| {
-            if let Some(map) = &config.model_filter {
-                if let Some(allowed) = map.get(&r.vendor) {
+        .filter(|r| match &config.model_filter {
+            None => true,
+            Some(allowed_by_vendor) => match allowed_by_vendor.get(&r.vendor) {
+                None => false,
+                Some(allowed) => {
                     let api = r.api_model.to_ascii_lowercase();
                     let dn = r.display_name.to_ascii_lowercase();
-                    return allowed.contains(&api) || allowed.contains(&dn);
+                    allowed.contains(&api) || allowed.contains(&dn)
                 }
-            }
-            true
+            },
         })
         .cloned()
         .collect()
@@ -947,7 +1010,8 @@ fn initialize_runtime_and_provider(hash_only: bool, goldens_only: bool) -> Resul
         });
     }
 
-    let spacetime = SpacetimeDbGuard::spawn_in_temp_data_dir_use_cli();
+    // Use locally built SpacetimeDB so server supports spacetime:sys@2.0 (required by local TypeScript SDK).
+    let spacetime = SpacetimeDbGuard::spawn_in_temp_data_dir();
 
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
 
@@ -1176,6 +1240,325 @@ fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
     println!("Analysis written to: {}", output_path.display());
 
     Ok(())
+}
+
+fn cmd_count_http_failures(args: CountHttpFailuresArgs) -> Result<()> {
+    let details_path = args.details.unwrap_or_else(llm_comparison_details);
+    let Some((total, http_list)) = load_details_and_http_failures(&details_path, None, None)? else {
+        println!("No details file or no failures at {}", details_path.display());
+        return Ok(());
+    };
+    println!("Total failures: {}", total);
+    println!("HTTP/API failures (e.g. 429, 503, timeout): {}", http_list.len());
+    if !http_list.is_empty() {
+        print_http_failures_summary(total, &http_list);
+    }
+    Ok(())
+}
+
+fn cmd_scan_rerun_commands(args: ScanRerunCommandsArgs) -> Result<()> {
+    let details_path = args.details.unwrap_or_else(llm_comparison_details);
+    let failures = collect_http_failures_full(&details_path)?;
+    if failures.is_empty() {
+        println!("No LLM provider API failures found.");
+        return Ok(());
+    }
+
+    let count = failures.len();
+    println!("Scanning {} — {} LLM API failures\n", details_path.display(), count);
+
+    // Group by (lang, mode, vendor, api_model) -> sorted task IDs
+    let mut groups: HashMap<(String, String, String, String), (String, Vec<String>)> = HashMap::new();
+    for (lang, mode, vendor, api_model, model_name, task_id) in failures {
+        let key = (lang.clone(), mode.clone(), vendor.clone(), api_model.clone());
+        let entry = groups.entry(key).or_insert_with(|| (model_name, Vec::new()));
+        if !entry.1.contains(&task_id) {
+            entry.1.push(task_id);
+        }
+    }
+    for (_, (_, tasks)) in groups.iter_mut() {
+        tasks.sort();
+    }
+
+    let mut keys: Vec<_> = groups.keys().collect();
+    keys.sort();
+
+    for (lang, mode, vendor, api_model) in keys {
+        let (model_name, tasks) = groups
+            .get(&(lang.clone(), mode.clone(), vendor.clone(), api_model.clone()))
+            .unwrap();
+        let tasks_arg = tasks.join(",");
+        println!("# {} + {} ({})", model_name, lang, mode);
+        println!(
+            "cargo run --package xtask-llm-benchmark -- run --lang {} --modes {} --models {}:{} --tasks {}",
+            lang, mode, vendor, api_model, tasks_arg
+        );
+        println!();
+    }
+    Ok(())
+}
+
+/// True if (vendor, api_model) matches a route in default_model_routes (model_routes.rs).
+fn is_model_in_routes(vendor_str: &str, api_model: &str) -> bool {
+    let Some(vendor) = Vendor::parse(vendor_str) else {
+        return false;
+    };
+    let api_lower = api_model.to_ascii_lowercase();
+    default_model_routes()
+        .iter()
+        .any(|r| r.vendor == vendor && r.api_model.to_ascii_lowercase() == api_lower)
+}
+
+/// Collect LLM API failures with full (lang, mode, vendor, api_model, model_name, task_id) for building rerun commands.
+/// Only includes models that are in default_model_routes (model_routes.rs).
+fn collect_http_failures_full(details_path: &Path) -> Result<Vec<(String, String, String, String, String, String)>> {
+    use xtask_llm_benchmark::results::schema::Results;
+
+    let content = match fs::read_to_string(details_path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e).with_context(|| format!("read {}", details_path.display())),
+    };
+    let results: Results = serde_json::from_str(&content).with_context(|| "parse details.json")?;
+
+    let mut out: Vec<(String, String, String, String, String, String)> = Vec::new();
+    for lang_entry in &results.languages {
+        for mode_entry in &lang_entry.modes {
+            for model_entry in &mode_entry.models {
+                for (task_id, outcome) in &model_entry.tasks {
+                    if outcome.passed_tests >= outcome.total_tests {
+                        continue;
+                    }
+                    if outcome.llm_output.is_some() {
+                        continue;
+                    }
+                    let Some(err) = get_publish_error_from_outcome(outcome) else {
+                        continue;
+                    };
+                    if !is_http_like_error(&err) {
+                        continue;
+                    }
+                    let vendor = outcome.vendor.clone();
+                    let api_model = outcome
+                        .route_api_model
+                        .clone()
+                        .or_else(|| model_entry.route_api_model.clone())
+                        .or_else(|| {
+                            default_model_routes()
+                                .iter()
+                                .find(|r| r.display_name == model_entry.name)
+                                .map(|r| r.api_model.to_string())
+                        })
+                        .unwrap_or_else(|| model_entry.name.to_ascii_lowercase().replace(' ', "-"));
+                    if !is_model_in_routes(&vendor, &api_model) {
+                        continue;
+                    }
+                    out.push((
+                        lang_entry.lang.clone(),
+                        mode_entry.mode.clone(),
+                        vendor,
+                        api_model,
+                        model_entry.name.clone(),
+                        task_id.clone(),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Load details JSON and return (total_failures, list of (lang, mode, model, task_id, vendor, api_model) for HTTP-like failures).
+/// When providers_filter/model_filter are set (from --providers/--models), only count outcomes
+/// from that run's scope so the summary reflects what we just ran, not the entire file.
+/// Returns Ok(None) if file missing or no failures.
+fn load_details_and_http_failures(
+    details_path: &Path,
+    providers_filter: Option<&HashSet<Vendor>>,
+    model_filter: Option<&HashMap<Vendor, HashSet<String>>>,
+) -> Result<Option<(u32, Vec<(String, String, String, String, String, String)>)>> {
+    use xtask_llm_benchmark::results::schema::Results;
+
+    let content = match fs::read_to_string(details_path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e).with_context(|| format!("read {}", details_path.display())),
+    };
+    let results: Results = serde_json::from_str(&content).with_context(|| "parse details.json")?;
+
+    let mut total_failures = 0u32;
+    let mut http_failures: Vec<(String, String, String, String, String, String)> = Vec::new();
+
+    for lang_entry in &results.languages {
+        for mode_entry in &lang_entry.modes {
+            for model_entry in &mode_entry.models {
+                for (task_id, outcome) in &model_entry.tasks {
+                    if outcome.passed_tests < outcome.total_tests {
+                        if !outcome_matches_run_scope(
+                            &outcome.vendor,
+                            &model_entry.name,
+                            outcome.route_api_model.as_deref(),
+                            providers_filter,
+                            model_filter,
+                        ) {
+                            continue;
+                        }
+                        let vendor = outcome.vendor.clone();
+                        let api_model = outcome
+                            .route_api_model
+                            .clone()
+                            .or_else(|| model_entry.route_api_model.clone())
+                            .or_else(|| {
+                                default_model_routes()
+                                    .iter()
+                                    .find(|r| r.display_name == model_entry.name)
+                                    .map(|r| r.api_model.to_string())
+                            })
+                            .unwrap_or_else(|| model_entry.name.to_ascii_lowercase().replace(' ', "-"));
+                        // Only count/show failures for models in default_model_routes().
+                        if !is_model_in_routes(&vendor, &api_model) {
+                            continue;
+                        }
+                        total_failures += 1;
+                        // Only count LLM API failures (timeout, 429, etc.): we never got a response.
+                        // If llm_output is present, we got a response and the failure was publish/compile.
+                        if outcome.llm_output.is_some() {
+                            continue;
+                        }
+                        if let Some(err) = get_publish_error_from_outcome(outcome) {
+                            if is_http_like_error(&err) {
+                                http_failures.push((
+                                    lang_entry.lang.clone(),
+                                    mode_entry.mode.clone(),
+                                    model_entry.name.clone(),
+                                    task_id.clone(),
+                                    vendor,
+                                    api_model,
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if total_failures == 0 {
+        return Ok(None);
+    }
+    Ok(Some((total_failures, http_failures)))
+}
+
+fn outcome_matches_run_scope(
+    vendor_slug: &str,
+    model_name: &str,
+    route_api_model: Option<&str>,
+    providers_filter: Option<&HashSet<Vendor>>,
+    model_filter: Option<&HashMap<Vendor, HashSet<String>>>,
+) -> bool {
+    let Some(vendor) = Vendor::parse(vendor_slug) else {
+        return true; // unknown vendor, include
+    };
+    if let Some(pf) = providers_filter {
+        if !pf.contains(&vendor) {
+            return false;
+        }
+    }
+    if let Some(mf) = model_filter {
+        if let Some(allowed) = mf.get(&vendor) {
+            let model_lower = model_name.to_ascii_lowercase();
+            let api_lower = route_api_model.map(|s| s.to_ascii_lowercase());
+            let model_norm = model_lower.replace(' ', "-");
+            let matches = allowed.iter().any(|a| {
+                let al = a.to_ascii_lowercase();
+                let a_norm = al.replace(' ', "-");
+                model_norm == a_norm
+                    || model_lower == al
+                    || api_lower
+                        .as_ref()
+                        .is_some_and(|api| api == &al || api.contains(al.as_str()) || al.contains(api.as_str()))
+            });
+            if !matches {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Print a summary of HTTP/timeout failures: grouped by (lang, mode, vendor, api_model) with one rerun command per group.
+fn print_http_failures_summary(
+    total_failures: u32,
+    http_failures: &[(String, String, String, String, String, String)],
+) {
+    // (lang, mode, model, task_id, vendor, api_model)
+    println!();
+    println!("---");
+    println!(
+        "LLM provider API failures (timeout, 429, etc.): {} of {} total failures — rerun these",
+        http_failures.len(),
+        total_failures
+    );
+
+    let mut groups: HashMap<(String, String, String, String), (String, Vec<String>)> = HashMap::new();
+    for (lang, mode, model_name, task_id, vendor, api_model) in http_failures {
+        let key = (lang.clone(), mode.clone(), vendor.clone(), api_model.clone());
+        let entry = groups.entry(key).or_insert_with(|| (model_name.clone(), Vec::new()));
+        if !entry.1.contains(task_id) {
+            entry.1.push(task_id.clone());
+        }
+    }
+    for (_, (_, tasks)) in groups.iter_mut() {
+        tasks.sort();
+    }
+
+    let mut keys: Vec<_> = groups.keys().collect();
+    keys.sort();
+
+    for (lang, mode, vendor, api_model) in keys {
+        let (model_name, tasks) = groups
+            .get(&(lang.clone(), mode.clone(), vendor.clone(), api_model.clone()))
+            .unwrap();
+        let tasks_arg = tasks.join(",");
+        println!("# {} + {} ({})", model_name, lang, mode);
+        println!(
+            "cargo run --package xtask-llm-benchmark -- run --lang {} --modes {} --models {}:{} --tasks {}",
+            lang, mode, vendor, api_model, tasks_arg
+        );
+        println!();
+    }
+    println!("---");
+}
+
+/// True if the error message looks like an HTTP/API failure (rate limit, server error, timeout, etc.).
+fn is_http_like_error(err: &str) -> bool {
+    let lower = err.to_ascii_lowercase();
+    lower.contains("status")
+        || lower.contains("429")
+        || lower.contains("503")
+        || lower.contains("502")
+        || lower.contains("504")
+        || lower.contains("500")
+        || lower.contains("post ")
+        || lower.contains(" get ")
+        || lower.contains("timed out")
+        || lower.contains("timeout")
+        || lower.contains("too many requests")
+        || lower.contains("service unavailable")
+        || lower.contains("bad gateway")
+        || lower.contains("gateway timeout")
+        || lower.contains("connection")
+        || lower.contains("request failed")
+        || lower.contains("reqwest")
+}
+
+/// Get the error from the publish_error scorer only. LLM API failures (429, timeout, etc.)
+/// are recorded there. Scorer-phase errors (schema_parity, call_reducer, sql) are from
+/// SpacetimeDB CLI and can also say "timeout" — we must not count those as HTTP failures.
+fn get_publish_error_from_outcome(outcome: &RunOutcome) -> Option<String> {
+    let details = outcome.scorer_details.as_ref()?;
+    let score = details.get("publish_error")?;
+    score.notes.get("error").and_then(|v| v.as_str()).map(String::from)
 }
 
 #[allow(dead_code)]

@@ -274,7 +274,6 @@ byId('loadPasteBtn').addEventListener('click',()=>{
   const txt=byId('jsonPaste').value.trim(); if(!txt){setStatus('Paste box is empty.',true);return}
   const obj=safeParse(txt); loadJsonObject(obj,'pasted JSON');
 });
-
 function getControls(){
   const lang=byId('langSel').value, mode=byId('modeSel').value;
   const colsSel=byId('colsSel').value||'2', failedOnly=byId('failedOnly').checked, hidePerfectCats=byId('hidePerfectCats').checked;
@@ -374,8 +373,8 @@ function buildView(data,lang,mode){
         work_dir_llm: outcome?.work_dir_llm ?? null,
         llm_output: outcome?.llm_output ?? null,
         scorer_details: outcome?.scorer_details ?? null,
-        golden_answer: goldenAnswers?.[tid]?.answer ?? null,
-        golden_syntax: goldenAnswers?.[tid]?.syntax ?? null
+        golden_answer: (goldenAnswers?.[`${outcome?.category||''}/${tid}`] ?? goldenAnswers?.[tid])?.answer ?? null,
+        golden_syntax: (goldenAnswers?.[`${outcome?.category||''}/${tid}`] ?? goldenAnswers?.[tid])?.syntax ?? null
       };
     }
     modelTaskMap[mname]=tmap; modelOutcomeMap[mname]=omap;
@@ -499,10 +498,9 @@ function matchesSearch(tid,view,q,cols){
   if(!q) return true;
   const needle=q.toLowerCase();
   if(tid.toLowerCase().includes(needle)) return true;
-  const ga=view.goldenAnswers?.[tid]?.answer;
-  if(ga && String(ga).toLowerCase().includes(needle)) return true;
   for(const m of cols){
     const oc=view.modelOutcomeMap[m]?.[tid];
+    if(oc?.golden_answer && String(oc.golden_answer).toLowerCase().includes(needle)) return true;
     if(oc?.llm_output && String(oc.llm_output).toLowerCase().includes(needle)) return true;
   }
   return false;
@@ -618,18 +616,36 @@ function renderMatrices(view){
     blocks.push(header+table);
   }
 
+  const chosenModels=selectedModels() ?? view.modelNames;
   const overall=`
     <h2>Overall totals (all categories)</h2>
     <div class="twrap">
       <table>
-        <thead><tr><th>Model</th><th>Passed / Total</th><th>Rate</th></tr></thead>
+        <thead><tr><th>Model</th><th>Task pass rate</th><th>Rate</th></tr></thead>
         <tbody>
-          ${(selectedModels() ?? view.modelNames).map(m=>{
+          ${chosenModels.map(m=>{
             let p=0,t=0; for(const tids of Object.values(view.categories)){t+=tids.length; for(const tid of tids){const rec=view.modelTaskMap[m]?.[tid]; if(rec?.pass) p++;}}
             const rate=t?Math.round(100*p/t):0; const cls=rate===100?'ok':(rate===0?'bad':'muted');
             return `<tr>
               <td>${esc(m)}</td>
-              <td class="cell-tight"><div><span class="mono ${cls}">${p}/${t}</span></div><div class="mini">${rate}%</div></td>
+              <td class="cell-tight"><div><span class="mono ${cls}">${p}/${t}</span> tasks</div><div class="mini">${rate}%</div></td>
+              <td class="${cls} cell-tight">${rate}%</td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+    <h2 style="margin-top:24px;">Point pass rate (individual test assertions)</h2>
+    <div class="twrap">
+      <table>
+        <thead><tr><th>Model</th><th>Points passed / total</th><th>Rate</th></tr></thead>
+        <tbody>
+          ${chosenModels.map(m=>{
+            let pt=0,tt=0; for(const tids of Object.values(view.categories)){for(const tid of tids){const rec=view.modelTaskMap[m]?.[tid]; if(rec){pt+=rec.pt||0; tt+=rec.tt||0}}}
+            const rate=tt?Math.round(100*pt/tt):0; const cls=rate===100?'ok':(rate===0?'bad':'muted');
+            return `<tr>
+              <td>${esc(m)}</td>
+              <td class="cell-tight"><div><span class="mono ${cls}">${pt}/${tt}</span> points</div><div class="mini">${rate}%</div></td>
               <td class="${cls} cell-tight">${rate}%</td>
             </tr>`;
           }).join("")}
@@ -712,9 +728,12 @@ function buildCsv(view){
     const totals=["Category totals"]; for(const m of cols){const total=view.categories[cat].length; let p=0; for(const tid of view.categories[cat]){const rec=view.modelTaskMap[m]?.[tid]; if(rec?.pass) p++} totals.push(`${p}/${total}`)}
     lines.push(totals.map(qcsv).join(",")); lines.push("");
   }
-  lines.push("Overall totals"); lines.push(["Model","Passed/Total","Rate"].map(qcsv).join(","));
+  lines.push("Overall totals (task pass rate)"); lines.push(["Model","Tasks passed/Total","Rate"].map(qcsv).join(","));
   for(const m of cols){let p=0,t=0; for(const tids of Object.values(view.categories)){t+=tids.length; for(const tid of tids){const rec=view.modelTaskMap[m]?.[tid]; if(rec?.pass) p++}}
     const rate=t?Math.round(100*p/t):0; lines.push([m,`${p}/${t}`,`${rate}%`].map(qcsv).join(","))}
+  lines.push(""); lines.push("Point pass rate (individual test assertions)"); lines.push(["Model","Points passed/Total","Rate"].map(qcsv).join(","));
+  for(const m of cols){let pt=0,tt=0; for(const tids of Object.values(view.categories)){for(const tid of tids){const rec=view.modelTaskMap[m]?.[tid]; if(rec){pt+=rec.pt||0; tt+=rec.tt||0}}}
+    const rate=tt?Math.round(100*pt/tt):0; lines.push([m,`${pt}/${tt}`,`${rate}%`].map(qcsv).join(","))}
   return lines.join("\n")+"\n";
 }
 

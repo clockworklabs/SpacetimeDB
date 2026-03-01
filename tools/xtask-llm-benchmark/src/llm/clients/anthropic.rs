@@ -2,7 +2,7 @@ use crate::bench::utils::debug_llm_verbose;
 use crate::llm::prompt::BuiltPrompt;
 use crate::llm::segmentation::{
     anthropic_ctx_limit_tokens, build_anthropic_messages, desired_output_tokens, deterministic_trim_prefix,
-    non_context_reserve_tokens_env,
+    estimate_tokens, headroom_tokens_env, non_context_reserve_tokens_env,
 };
 use crate::llm::types::Vendor;
 use anyhow::{anyhow, bail, Context, Result};
@@ -37,8 +37,15 @@ impl AnthropicClient {
         let model_norm = normalize_anthropic_model(model);
 
         let ctx_limit = anthropic_ctx_limit_tokens(model_norm);
+        let headroom = headroom_tokens_env(Vendor::Anthropic);
         let reserve = non_context_reserve_tokens_env(Vendor::Anthropic);
-        let allowance = ctx_limit.saturating_sub(reserve);
+        let system_tok = system.as_deref().map(estimate_tokens).unwrap_or(0);
+        let segs_tok: usize = segs.iter().map(|s| estimate_tokens(&s.text)).sum();
+        let allowance = ctx_limit
+            .saturating_sub(reserve)
+            .saturating_sub(headroom)
+            .saturating_sub(system_tok)
+            .saturating_sub(segs_tok);
         static_prefix = deterministic_trim_prefix(&static_prefix, allowance);
 
         // Build messages, putting the context first for cache wins

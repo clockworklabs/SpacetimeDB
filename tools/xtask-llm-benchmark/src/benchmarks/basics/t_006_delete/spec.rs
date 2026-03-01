@@ -16,7 +16,7 @@ pub fn spec() -> BenchmarkSpec {
         let user_table = table_name("user", lang);
         let seed = sb.insert_values(&user_table, &["id","name","age","active"], &["1","'Alice'","30","true"]);
         let count = sb.count_by_id(&user_table, "id", 1);
-        let reducer_name = ident("DeleteUser", casing);
+        let reducer_name = ident("DeleteUser", crate::eval::Casing::Snake);
 
         v.push(make_sql_exec_both_scorer(
             host_url,

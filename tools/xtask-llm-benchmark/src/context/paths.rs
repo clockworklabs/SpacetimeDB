@@ -1,6 +1,7 @@
 use crate::context::constants::docs_dir;
 use crate::context::hashing::gather_docs_files;
 use crate::context::{rustdoc_crate_root, rustdoc_readme_path};
+use crate::eval::lang::Lang;
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -15,19 +16,52 @@ const PINNED_NIGHTLY: &str = "nightly-2026-01-15";
 pub fn resolve_mode_paths(mode: &str) -> Result<Vec<PathBuf>> {
     match mode {
         "docs" => gather_docs_files(),
-        "llms.md" => Ok(vec![docs_dir().join("llms.md")]),
-        "cursor_rules" => Ok(vec![docs_dir().join(".cursor/rules/spacetimedb.md")]),
+        "llms.md" => Ok(vec![docs_dir().join("static/llms.md")]),
+        "cursor_rules" => gather_cursor_rules_files(docs_dir().join("static/ai-rules"), None),
         "rustdoc_json" => resolve_rustdoc_json_paths_always(),
-        other => bail!("unknown mode `{other}` (expected: docs | llms.md | cursor_rules | rustdoc_json)"),
+        "none" => Ok(Vec::new()),
+        other => bail!("unknown mode `{other}` (expected: docs | llms.md | cursor_rules | rustdoc_json | none)"),
     }
+}
+
+/// Cursor rules under docs: include general rules + rules for the given language.
+/// General = filename (lowercase) does not contain "typescript", "rust", or "csharp".
+/// Lang-specific = filename contains lang (e.g. "typescript" for TypeScript).
+pub fn gather_cursor_rules_files(rules_dir: PathBuf, lang: Option<Lang>) -> Result<Vec<PathBuf>> {
+    if !rules_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut out: Vec<PathBuf> = fs::read_dir(&rules_dir)
+        .with_context(|| format!("read cursor rules dir {}", rules_dir.display()))?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e == "md" || e == "mdc")
+                .unwrap_or(false)
+        })
+        .collect();
+    if let Some(l) = lang {
+        let tag = l.as_str();
+        out.retain(|p| {
+            let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+            let is_general = !name.contains("typescript") && !name.contains("rust") && !name.contains("csharp");
+            let is_lang = name.contains(tag);
+            is_general || is_lang
+        });
+    }
+    out.sort();
+    Ok(out)
 }
 
 // --- hashing resolver stays as you wrote it ---
 pub fn resolve_mode_paths_hashing(mode: &str) -> Result<Vec<PathBuf>> {
     match mode {
         "docs" => gather_docs_files(),
-        "llms.md" => Ok(vec![docs_dir().join("llms.md")]),
-        "cursor_rules" => Ok(vec![docs_dir().join(".cursor/rules/spacetimedb.md")]),
+        "llms.md" => Ok(vec![docs_dir().join("static/llms.md")]),
+        "cursor_rules" => gather_cursor_rules_files(docs_dir().join("static/ai-rules"), None),
+        "none" => Ok(Vec::new()),
         "rustdoc_json" => {
             if let Some(p) = rustdoc_readme_path() {
                 Ok(vec![p])
@@ -35,7 +69,7 @@ pub fn resolve_mode_paths_hashing(mode: &str) -> Result<Vec<PathBuf>> {
                 bail!("README not found under {}", rustdoc_crate_root().display())
             }
         }
-        other => bail!("unknown mode `{other}` (expected: docs | llms.md | cursor_rules | rustdoc_json)"),
+        other => bail!("unknown mode `{other}` (expected: docs | llms.md | cursor_rules | rustdoc_json | none)"),
     }
 }
 

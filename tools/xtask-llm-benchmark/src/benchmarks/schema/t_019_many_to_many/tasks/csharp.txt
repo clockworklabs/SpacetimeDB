@@ -1,4 +1,4 @@
-﻿Write a SpacetimeDB backend module in C# that defines three tables modeling a many-to-many relationship and seeds rows.
+Write a SpacetimeDB backend module in C# that defines three tables modeling a many-to-many relationship and seeds rows.
 
 TABLES
 - User

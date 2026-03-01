@@ -12,7 +12,7 @@ pub fn spec() -> BenchmarkSpec {
 
         let casing = casing_for_lang(lang);
         let sb = SqlBuilder::new(casing);
-        let reducer = ident("Seed", casing);
+        let reducer = ident("Seed", crate::eval::Casing::Snake);
         let account_table = table_name("account", lang);
 
         let select = sb.select_by_id(&account_table, &["id","email","name"], "id", 1);

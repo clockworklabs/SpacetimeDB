@@ -2,6 +2,12 @@ using SpacetimeDB;
 
 public static partial class Module
 {
+    [Table(Accessor = "EmptyTable")]
+    public partial struct EmptyTable
+    {
+        [PrimaryKey] public int Id;
+    }
+
     [Reducer]
     public static void EmptyReducer_NoArgs(ReducerContext ctx) { }
 
