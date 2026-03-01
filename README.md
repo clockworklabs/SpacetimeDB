@@ -110,15 +110,7 @@ This opens a browser to authenticate with GitHub. Your identity is linked to you
 spacetime dev --template chat-react-ts
 ```
 
-This publishes your module, watches for file changes, and automatically rebuilds and republishes on save.
-
-### 4. Publish to the cloud
-
-```bash
-spacetime publish my-database
-```
-
-This deploys your module to [Maincloud](https://spacetimedb.com/docs/how-to/deploy/maincloud), the fully managed SpacetimeDB cloud. It scales to zero when idle and you only pay for what you use. See [pricing](https://spacetimedb.com/pricing) for details.
+That is it. This creates a project from a template, publishes it to [Maincloud](https://spacetimedb.com/docs/how-to/deploy/maincloud), and watches for file changes, automatically rebuilding and republishing on save. See [pricing](https://spacetimedb.com/pricing) for details.
 
 ## How It Works
 
