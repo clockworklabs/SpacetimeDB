@@ -63,16 +63,36 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let open_browser = !args.get_flag("no-browser");
 
     if let Some(token) = spacetimedb_token {
+        // If already logged in, log out first.
+        if config.spacetimedb_token().is_some() {
+            log_out_quietly(&mut config, &host).await;
+            println!("Logged out of previous session.");
+        }
         config.set_spacetimedb_token(token.clone());
         config.save();
+        match decode_identity(token) {
+            Ok(identity) => println!("Logged in with identity {identity}"),
+            Err(_) => println!("Token saved."),
+        }
         return Ok(());
+    }
+
+    // If already logged in, log out first and then proceed with a fresh login.
+    if config.spacetimedb_token().is_some() {
+        let old_identity = config.spacetimedb_token().and_then(|t| decode_identity(t).ok());
+        log_out_quietly(&mut config, &host).await;
+        if let Some(id) = old_identity {
+            println!("Logged out of previous session (identity {id}).");
+        } else {
+            println!("Logged out of previous session.");
+        }
     }
 
     if let Some(server) = server_issued_login {
         let host = Url::parse(&config.get_host_url(Some(server))?)?;
-        spacetimedb_token_cached(&mut config, &host, true, open_browser).await?;
+        spacetimedb_login_and_save(&mut config, &host, true, open_browser).await?;
     } else {
-        spacetimedb_token_cached(&mut config, &host, false, open_browser).await?;
+        spacetimedb_login_and_save(&mut config, &host, false, open_browser).await?;
     }
 
     Ok(())
@@ -105,21 +125,38 @@ async fn exec_show(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
     Ok(())
 }
 
-async fn spacetimedb_token_cached(
+/// Log out without printing errors on failure (best-effort server-side invalidation).
+async fn log_out_quietly(config: &mut Config, host: &Url) {
+    if let Some(web_session_token) = config.web_session_token() {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap_or_default();
+        // Best-effort: ignore errors (might be offline).
+        let _ = client
+            .post(host.join("auth/cli/logout").unwrap_or_else(|_| host.clone()))
+            .header("Authorization", format!("Bearer {web_session_token}"))
+            .send()
+            .await;
+    }
+    config.clear_login_tokens();
+    config.save();
+}
+
+async fn spacetimedb_login_and_save(
     config: &mut Config,
     host: &Url,
     direct_login: bool,
     open_browser: bool,
 ) -> anyhow::Result<String> {
-    // Currently, this token does not expire. However, it will at some point in the future. When that happens,
-    // this code will need to happen before any request to a spacetimedb server, rather than at the end of the login flow here.
-    if let Some(token) = config.spacetimedb_token() {
-        println!("You are already logged in.");
-        println!("If you want to log out, use spacetime logout.");
-        Ok(token.clone())
-    } else {
-        spacetimedb_login_force(config, host, direct_login, open_browser).await
+    let token = spacetimedb_login_force(config, host, direct_login, open_browser).await?;
+
+    match decode_identity(&token) {
+        Ok(identity) => println!("Logged in with identity {identity}"),
+        Err(_) => println!("Login successful!"),
     }
+
+    Ok(token)
 }
 
 pub async fn spacetimedb_login_force(
