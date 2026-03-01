@@ -291,8 +291,12 @@ fn run_inner<I: WasmInstance>(
                 return Err(anyhow!("Caller {} is not authorized to run SQL DML statements", auth.caller()).into());
             }
 
+            stmt.for_each_return_field(|col_name, col_type| {
+                head.push((col_name.into(), col_type.clone()));
+            });
+
             // Evaluate the mutation
-            let (mut tx, _) = db.with_auto_rollback(tx, |tx| execute_dml_stmt(&auth, stmt, tx, &mut metrics))?;
+            let (mut tx, rows) = db.with_auto_rollback(tx, |tx| execute_dml_stmt(&auth, stmt, tx, &mut metrics))?;
 
             // Update transaction metrics
             tx.metrics.merge(metrics);
@@ -357,7 +361,7 @@ fn run_inner<I: WasmInstance>(
             Ok((
                 SqlResult {
                     tx_offset: res.tx_offset,
-                    rows: vec![],
+                    rows,
                     metrics,
                 },
                 trapped,
