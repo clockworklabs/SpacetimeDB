@@ -213,7 +213,7 @@ On your local machine, add this new server to your CLI config. Make sure to repl
 spacetime server add self-hosted --url https://example.com
 ```
 
-If you have uncommented the `/v1/publish` restriction in Step 3 then you won't be able to publish to this instance unless you copy your module to the host first and then publish. We recommend something like this:
+If you have kept the `location /` restriction enabled in Step 3 then you won't be able to publish to this instance unless you copy your module to the host first and then publish. We recommend something like this:
 
 ```bash
 spacetime build
