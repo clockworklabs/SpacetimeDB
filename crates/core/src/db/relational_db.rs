@@ -3,7 +3,7 @@ use crate::db::MetricsRecorderQueue;
 use crate::error::{DBError, RestoreSnapshotError};
 use crate::messages::control_db::HostType;
 use crate::subscription::ExecutionCounters;
-use crate::util::{asyncify, spawn_rayon};
+use crate::util::asyncify;
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, Context};
 use enum_map::EnumMap;
@@ -1741,7 +1741,6 @@ pub async fn local_durability(
     snapshot_worker: Option<&SnapshotWorker>,
 ) -> Result<(LocalDurability, DiskSizeFn), DBError> {
     let rt = tokio::runtime::Handle::current();
-    // TODO: Should this better be spawn_blocking?
     let on_new_segment = snapshot_worker.map(|snapshot_worker| {
         let snapshot_worker = snapshot_worker.clone();
         Arc::new(move || {
@@ -1750,17 +1749,11 @@ pub async fn local_durability(
             snapshot_worker.request_snapshot_ignore_closed();
         }) as Arc<OnNewSegmentFn>
     });
-    let local = spawn_rayon(move || {
+    let local = asyncify(move || {
         durability::Local::open(
             replica_dir.clone(),
             rt,
-            durability::local::Options {
-                commitlog: commitlog::Options {
-                    max_records_in_commit: 1.try_into().unwrap(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
+            <_>::default(),
             // Give the durability a handle to request a new snapshot run,
             // which it will send down whenever we rotate commitlog segments.
             on_new_segment,

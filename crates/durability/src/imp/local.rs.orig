@@ -29,6 +29,8 @@ pub use spacetimedb_commitlog::repo::{OnNewSegmentFn, SizeOnDisk};
 /// [`Local`] configuration.
 #[derive(Clone, Copy, Debug)]
 pub struct Options {
+<<<<<<< conflict 1 of 2
++++++++ ssmwmsoq d6e2ba51 "durability: Flush batches (#4478)"
     /// The number of elements to reserve for batching transactions.
     ///
     /// This puts an upper bound on the buffer capacity, while not preventing
@@ -40,6 +42,14 @@ pub struct Options {
     ///
     /// Default: 4096
     pub batch_capacity: NonZeroUsize,
+%%%%%%% diff from: ttnusruw 6fea15f7 "[C#] Update RawTableIterBase.Enumerator to use `ArrayPool` for buffer (#4385)"
+\\\\\\\        to: ppnmwost abbcec4a "keynote-2: alpha -> 1.5, withConfirmedReads(true), remove warmup (#4492)"
+     /// Periodically flush and sync the log this often.
+     ///
+-    /// Default: 50ms
++    /// Default: 10ms
+     pub sync_interval: Duration,
+>>>>>>> conflict 1 of 2 ends
     /// [`Commitlog`] configuration.
     pub commitlog: spacetimedb_commitlog::Options,
 }
@@ -51,7 +61,14 @@ impl Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
+<<<<<<< conflict 2 of 2
++++++++ ssmwmsoq d6e2ba51 "durability: Flush batches (#4478)"
             batch_capacity: Self::DEFAULT_BATCH_CAPACITY,
+%%%%%%% diff from: ttnusruw 6fea15f7 "[C#] Update RawTableIterBase.Enumerator to use `ArrayPool` for buffer (#4385)"
+\\\\\\\        to: ppnmwost abbcec4a "keynote-2: alpha -> 1.5, withConfirmedReads(true), remove warmup (#4492)"
+-            sync_interval: Duration::from_millis(50),
++            sync_interval: Duration::from_millis(10),
+>>>>>>> conflict 2 of 2 ends
             commitlog: Default::default(),
         }
     }
