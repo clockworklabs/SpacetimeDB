@@ -620,7 +620,25 @@ pub async fn exec_ex(
     let (using_config, generate_configs) = if let Some(loaded) = loaded_config_ref {
         let filtered = get_filtered_generate_configs(&loaded.config, &cmd, &schema, args)?;
         if filtered.is_empty() {
-            (false, vec![CommandConfig::new(&schema, HashMap::new(), args)?])
+            // Even without generate entries, the root entity may have module-specific
+            // fields like module-path that should be forwarded. Filter to only keys
+            // the generate schema knows about, since additional_fields may also
+            // contain entity-level keys like `database` or `server` that are not
+            // valid for the generate command.
+            let valid_keys: std::collections::HashSet<String> =
+                schema.keys.iter().map(|k| k.config_name().to_string()).collect();
+            let root_fields: HashMap<String, serde_json::Value> = loaded
+                .config
+                .additional_fields
+                .iter()
+                .filter(|(k, _)| {
+                    // Normalize kebab-case to snake_case before checking
+                    let normalized = k.replace('-', "_");
+                    valid_keys.contains(&normalized)
+                })
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            (false, vec![CommandConfig::new(&schema, root_fields, args)?])
         } else {
             (true, filtered)
         }
@@ -1385,5 +1403,98 @@ mod tests {
 
         // Invalid language should error
         assert!(serde_json::from_value::<Language>(serde_json::Value::String("java".into())).is_err());
+    }
+
+    /// Regression test for https://github.com/clockworklabs/SpacetimeDB/issues/4475
+    /// When spacetime.json has module-path at the root level but no generate entries,
+    /// the module-path should still be forwarded to the CommandConfig.
+    #[test]
+    fn test_root_module_path_without_generate_entries_is_forwarded() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+
+        let temp = tempfile::TempDir::new().unwrap();
+        let custom_module_dir = temp.path().join("server-rust");
+        std::fs::create_dir_all(&custom_module_dir).unwrap();
+        std::fs::write(
+            custom_module_dir.join("Cargo.toml"),
+            "[package]\nname = \"m\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        // Simulate a config with module-path but no generate entries (the bug scenario)
+        let mut root_fields = HashMap::new();
+        root_fields.insert(
+            "module-path".to_string(),
+            serde_json::Value::String(custom_module_dir.display().to_string()),
+        );
+
+        let matches = cmd
+            .clone()
+            .get_matches_from(vec!["generate", "--lang", "rust", "--bin-path", "dummy.wasm"]);
+
+        // This is the fallback path: config exists but has no generate entries,
+        // so root additional_fields should be used instead of an empty HashMap.
+        let command_config = CommandConfig::new(&schema, root_fields, &matches).unwrap();
+        let runs = prepare_generate_run_configs(vec![command_config], false, Some(temp.path())).unwrap();
+
+        assert_eq!(runs.len(), 1);
+        assert_eq!(
+            runs[0].project_path, custom_module_dir,
+            "module-path from root config should be used, not the default 'spacetimedb'"
+        );
+    }
+    /// Regression test for https://github.com/clockworklabs/SpacetimeDB/issues/4475
+    /// When spacetime.json has entity-level keys at the root (like `database`) alongside
+    /// module-path, only the generate-schema-valid keys should be forwarded.
+    /// `database` and similar keys should be silently dropped, not cause an error.
+    #[test]
+    fn test_root_fields_with_unsupported_keys_are_filtered() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+
+        let temp = tempfile::TempDir::new().unwrap();
+        let custom_module_dir = temp.path().join("server-rust");
+        std::fs::create_dir_all(&custom_module_dir).unwrap();
+        std::fs::write(
+            custom_module_dir.join("Cargo.toml"),
+            "[package]\nname = \"m\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        // Simulate a config with mix of valid and invalid (for generate) keys
+        let valid_keys: std::collections::HashSet<String> =
+            schema.keys.iter().map(|k| k.config_name().to_string()).collect();
+        let mut root_fields = HashMap::new();
+        root_fields.insert(
+            "module-path".to_string(),
+            serde_json::Value::String(custom_module_dir.display().to_string()),
+        );
+        // `database` is an entity-level key not supported by the generate schema
+        root_fields.insert("database".to_string(), serde_json::Value::String("my-db".to_string()));
+
+        // Filter as the fixed exec_ex() does, to only include schema-valid keys
+        let filtered_fields: HashMap<String, serde_json::Value> = root_fields
+            .iter()
+            .filter(|(k, _)| {
+                let normalized = k.replace('-', "_");
+                valid_keys.contains(&normalized)
+            })
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+
+        let matches = cmd
+            .clone()
+            .get_matches_from(vec!["generate", "--lang", "rust", "--bin-path", "dummy.wasm"]);
+
+        // Should not error even though the original root_fields contained `database`
+        let command_config = CommandConfig::new(&schema, filtered_fields, &matches).unwrap();
+        let runs = prepare_generate_run_configs(vec![command_config], false, Some(temp.path())).unwrap();
+
+        assert_eq!(runs.len(), 1);
+        assert_eq!(
+            runs[0].project_path, custom_module_dir,
+            "module-path from root config should be used despite `database` key also being present"
+        );
     }
 }
