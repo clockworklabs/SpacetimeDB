@@ -413,7 +413,8 @@ impl ToProtocol for TransactionUpdateMessage {
         let TransactionUpdateMessage { event, database_update } = self;
         let update = database_update.database_update;
         protocol.assert_matches_format_switch(&update);
-        let request_id = database_update.request_id.unwrap_or(0);
+        let mut request_id = database_update.request_id.unwrap_or(0);
+        request_id = event.clone().map_or(request_id, |e| e.request_id.unwrap_or(request_id));
         match update {
             ws_v1::FormatSwitch::Bsatn(update) => {
                 ws_v1::FormatSwitch::Bsatn(convert(event, request_id, update, |args| {
