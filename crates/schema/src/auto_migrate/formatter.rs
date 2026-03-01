@@ -58,6 +58,10 @@ fn format_step<F: MigrationFormatter>(
             let constraint_info = extract_constraint_info(*constraint, plan.old)?;
             f.format_constraint(&constraint_info, Action::Removed)
         }
+        AutoMigrateStep::AddConstraint(constraint) => {
+            let constraint_info = extract_constraint_info(*constraint, plan.new)?;
+            f.format_constraint(&constraint_info, Action::Created)
+        }
         AutoMigrateStep::AddSequence(sequence) => {
             let sequence_info = extract_sequence_info(*sequence, plan.new)?;
             f.format_sequence(&sequence_info, Action::Created)

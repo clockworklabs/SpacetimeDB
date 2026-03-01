@@ -5,7 +5,8 @@ use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
-use spacetimedb_primitives::{ColSet, TableId};
+use spacetimedb_primitives::{ColList, ColSet, TableId};
+use spacetimedb_schema::schema::ConstraintSchema;
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
 use spacetimedb_schema::def::{TableDef, ViewDef};
 use spacetimedb_schema::schema::{column_schemas_from_defs, IndexSchema, Schema, SequenceSchema, TableSchema};
@@ -133,6 +134,53 @@ fn auto_migrate_database(
                     anyhow::bail!("Precheck failed: added sequence {sequence_name} already has values in range",);
                 }
             }
+            spacetimedb_schema::auto_migrate::AutoMigratePrecheck::CheckAddUniqueConstraintValid(
+                constraint_name,
+            ) => {
+                let table_def = plan.new.stored_in_table_def(constraint_name).unwrap();
+                let constraint_def = &table_def.constraints[constraint_name];
+                let cols = constraint_def.data.unique_columns().unwrap();
+                let col_list: ColList = cols.clone().into();
+                let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
+
+                // Scan all rows, count occurrences of each projected value
+                let mut value_counts: std::collections::HashMap<AlgebraicValue, usize> =
+                    std::collections::HashMap::new();
+                for row in stdb.iter_mut(tx, table_id)? {
+                    let val = row.project(&col_list)?;
+                    *value_counts.entry(val).or_insert(0) += 1;
+                }
+
+                // Collect duplicates (count > 1)
+                let duplicates: Vec<_> = value_counts
+                    .into_iter()
+                    .filter(|(_, count)| *count > 1)
+                    .collect();
+
+                if !duplicates.is_empty() {
+                    let total_groups = duplicates.len();
+                    let examples: String = duplicates
+                        .iter()
+                        .take(10)
+                        .map(|(val, count)| format!("  - {val:?} appears {count} times"))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    let col_names: Vec<_> = cols
+                        .iter()
+                        .filter_map(|col_id| table_def.get_column(col_id).map(|c| c.name.to_string()))
+                        .collect();
+                    anyhow::bail!(
+                        "Precheck failed: cannot add unique constraint '{}' on table '{}' column(s) [{}]:\n\
+                         {} duplicate group(s) found.\n{}{}",
+                        constraint_name,
+                        table_def.name,
+                        col_names.join(", "),
+                        total_groups,
+                        examples,
+                        if total_groups > 10 { "\n  ... and more" } else { "" }
+                    );
+                }
+            }
         }
     }
 
@@ -219,6 +267,24 @@ fn auto_migrate_database(
                     table_def.name
                 );
                 stdb.drop_constraint(tx, constraint_schema.constraint_id)?;
+            }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddConstraint(constraint_name) => {
+                let table_def = plan.new.stored_in_table_def(constraint_name).unwrap();
+                let constraint_def = &table_def.constraints[constraint_name];
+                let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
+                let constraint_schema = ConstraintSchema::from_module_def(
+                    plan.new,
+                    constraint_def,
+                    table_id,
+                    spacetimedb_primitives::ConstraintId::SENTINEL,
+                );
+                log!(
+                    logger,
+                    "Adding constraint `{}` on table `{}`",
+                    constraint_name,
+                    table_def.name
+                );
+                stdb.create_constraint(tx, constraint_schema)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddSequence(sequence_name) => {
                 let table_def = plan.new.stored_in_table_def(sequence_name).unwrap();

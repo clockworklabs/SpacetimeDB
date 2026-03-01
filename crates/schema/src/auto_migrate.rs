@@ -220,6 +220,9 @@ pub enum AutoMigratePrecheck<'def> {
     /// Perform a check that adding a sequence is valid (the relevant column contains no values
     /// greater than the sequence's start value).
     CheckAddSequenceRangeValid(<SequenceDef as ModuleDefLookup>::Key<'def>),
+    /// Perform a check that adding a unique constraint is valid (no duplicate values exist
+    /// in the relevant columns).
+    CheckAddUniqueConstraintValid(<ConstraintDef as ModuleDefLookup>::Key<'def>),
 }
 
 /// A step in an automatic migration.
@@ -277,6 +280,8 @@ pub enum AutoMigrateStep<'def> {
     AddTable(<TableDef as ModuleDefLookup>::Key<'def>),
     /// Add an index.
     AddIndex(<IndexDef as ModuleDefLookup>::Key<'def>),
+    /// Add a constraint to an existing table (with data validation precheck).
+    AddConstraint(<ConstraintDef as ModuleDefLookup>::Key<'def>),
     /// Add a sequence.
     AddSequence(<SequenceDef as ModuleDefLookup>::Key<'def>),
     /// Add a schedule annotation to a table.
@@ -1002,11 +1007,11 @@ fn auto_migrate_constraints(plan: &mut AutoMigratePlan, new_tables: &HashSet<&Id
                         // it's okay to add a constraint in a new table.
                         Ok(())
                     } else {
-                        // it's not okay to add a new constraint to an existing table.
-                        Err(AutoMigrateError::AddUniqueConstraint {
-                            constraint: new.name.clone(),
-                        }
-                        .into())
+                        // existing table — validate data for duplicates, then add constraint
+                        plan.prechecks
+                            .push(AutoMigratePrecheck::CheckAddUniqueConstraintValid(new.key()));
+                        plan.steps.push(AutoMigrateStep::AddConstraint(new.key()));
+                        Ok(())
                     }
                 }
                 Diff::Remove { old } => {
@@ -1505,8 +1510,6 @@ mod tests {
         let apples = expect_identifier("Apples");
         let bananas = expect_identifier("Bananas");
 
-        let apples_name_unique_constraint = "Apples_name_key";
-
         let weight = expect_identifier("weight");
         let count = expect_identifier("count");
         let name = expect_identifier("name");
@@ -1701,10 +1704,8 @@ mod tests {
             && type1.0 == prod1_ty && type2.0 == new_prod1_ty
         );
 
-        expect_error_matching!(
-            result,
-            AutoMigrateError::AddUniqueConstraint { constraint } => &constraint[..] == apples_name_unique_constraint
-        );
+        // Note: AddUniqueConstraint is no longer an error - adding unique constraints
+        // to existing tables is now allowed with a data validation precheck.
 
         expect_error_matching!(
             result,
