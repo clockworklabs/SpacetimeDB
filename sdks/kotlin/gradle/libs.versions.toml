@@ -9,6 +9,7 @@ kotlinxAtomicfu = "0.31.0"
 kotlinxCollectionsImmutable = "0.4.0"
 ktor = "3.4.0"
 brotli = "0.1.2"
+bignum = "0.3.10"
 
 [libraries]
 kotlinx-coroutines-swing = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
@@ -21,6 +22,9 @@ ktor-client-darwin = { module = "io.ktor:ktor-client-darwin", version.ref = "kto
 ktor-client-websockets = { module = "io.ktor:ktor-client-websockets", version.ref = "ktor" }
 
 brotli-dec = { module = "org.brotli:dec", version.ref = "brotli" }
+bignum = { module = "com.ionspin.kotlin:bignum", version.ref = "bignum" }
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
 
 [plugins]
 kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

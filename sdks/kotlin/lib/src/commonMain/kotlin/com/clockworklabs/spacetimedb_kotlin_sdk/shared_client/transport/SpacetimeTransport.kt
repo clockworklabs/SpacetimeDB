@@ -1,5 +1,3 @@
-@file:Suppress("unused")
-
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.transport
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.CompressionMode
@@ -19,15 +17,28 @@ import io.ktor.websocket.Frame
 import io.ktor.websocket.WebSocketSession
 import io.ktor.websocket.close
 import io.ktor.websocket.readBytes
+import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
 /**
+ * Transport abstraction for SpacetimeDB connections.
+ * Allows injecting a fake transport in tests.
+ */
+public interface Transport {
+    public val isConnected: Boolean
+    public suspend fun connect()
+    public suspend fun send(message: ClientMessage)
+    public fun incoming(): Flow<ServerMessage>
+    public suspend fun disconnect()
+}
+
+/**
  * WebSocket transport for SpacetimeDB.
  * Handles connection, message encoding/decoding, and compression.
  */
-class SpacetimeTransport(
+public class SpacetimeTransport(
     private val client: HttpClient,
     private val baseUrl: String,
     private val nameOrAddress: String,
@@ -36,24 +47,24 @@ class SpacetimeTransport(
     private val compression: CompressionMode = CompressionMode.GZIP,
     private val lightMode: Boolean = false,
     private val confirmedReads: Boolean? = null,
-) {
-    private var session: WebSocketSession? = null
+) : Transport {
+    private val _session = atomic<WebSocketSession?>(null)
 
-    companion object {
-        const val WS_PROTOCOL = "v2.bsatn.spacetimedb"
+    public companion object {
+        public const val WS_PROTOCOL: String = "v2.bsatn.spacetimedb"
     }
 
-    val isConnected: Boolean get() = session != null
+    override val isConnected: Boolean get() = _session.value != null
 
     /**
      * Connects to the SpacetimeDB WebSocket endpoint.
      * Passes the auth token as a Bearer Authorization header directly
      * on the WebSocket connection (matching C# SDK).
      */
-    suspend fun connect() {
+    override suspend fun connect() {
         val wsUrl = buildWsUrl()
 
-        session = client.webSocketSession(wsUrl) {
+        _session.value = client.webSocketSession(wsUrl) {
             header("Sec-WebSocket-Protocol", WS_PROTOCOL)
             if (authToken != null) {
                 header("Authorization", "Bearer $authToken")
@@ -65,20 +76,20 @@ class SpacetimeTransport(
      * Sends a ClientMessage over the WebSocket.
      * Matches TS SDK's #sendEncoded: serialize to BSATN then send as binary frame.
      */
-    suspend fun send(message: ClientMessage) {
+    override suspend fun send(message: ClientMessage) {
         val writer = BsatnWriter()
         message.encode(writer)
         val encoded = writer.toByteArray()
-        session?.send(Frame.Binary(true, encoded))
-            ?: error("Not connected")
+        val ws = _session.value ?: error("Not connected")
+        ws.send(Frame.Binary(true, encoded))
     }
 
     /**
      * Returns a Flow of ServerMessages received from the WebSocket.
      * Handles decompression (prefix byte) then BSATN decoding.
      */
-    fun incoming(): Flow<ServerMessage> = flow {
-        val ws = session ?: error("Not connected")
+    override fun incoming(): Flow<ServerMessage> = flow {
+        val ws = _session.value ?: error("Not connected")
         try {
             for (frame in ws.incoming) {
                 if (frame is Frame.Binary) {
@@ -93,9 +104,9 @@ class SpacetimeTransport(
         }
     }
 
-    suspend fun disconnect() {
-        session?.close()
-        session = null
+    override suspend fun disconnect() {
+        val ws = _session.getAndSet(null)
+        ws?.close()
     }
 
     private fun buildWsUrl(): String {

@@ -1,56 +1,60 @@
-@file:Suppress("MemberVisibilityCanBePrivate", "unused")
-
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn
 
-import java.math.BigInteger
+import com.ionspin.kotlin.bignum.integer.BigInteger
 
 /**
  * Binary reader for BSATN decoding. All multi-byte values are little-endian.
  */
-class BsatnReader(private var data: ByteArray, offset: Int = 0, private var limit: Int = data.size) {
-    companion object {
-        private val UNSIGNED_LONG_MASK = BigInteger.ONE.shiftLeft(64).subtract(BigInteger.ONE)
+public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private var limit: Int = data.size) {
+    public companion object {
+        /** Convert a signed Long to an unsigned BigInteger (0..2^64-1). */
+        private fun unsignedBigInt(v: Long): BigInteger = BigInteger.fromULong(v.toULong())
     }
 
-    var offset: Int = offset
+    public var offset: Int = offset
         private set
 
-    val remaining: Int get() = limit - offset
+    public val remaining: Int get() = limit - offset
 
-    fun reset(newData: ByteArray) {
+    public fun reset(newData: ByteArray) {
         data = newData
         offset = 0
         limit = newData.size
+    }
+
+    public fun skip(n: Int) {
+        ensure(n)
+        offset += n
     }
 
     private fun ensure(n: Int) {
         check(remaining >= n) { "BsatnReader: need $n bytes but only $remaining remain" }
     }
 
-    fun readBool(): Boolean {
+    public fun readBool(): Boolean {
         ensure(1)
         val b = data[offset].toInt() and 0xFF
         offset += 1
         return b != 0
     }
 
-    fun readByte(): Byte {
+    public fun readByte(): Byte {
         ensure(1)
         val b = data[offset]
         offset += 1
         return b
     }
 
-    fun readI8(): Byte = readByte()
+    public fun readI8(): Byte = readByte()
 
-    fun readU8(): UByte {
+    public fun readU8(): UByte {
         ensure(1)
         val b = data[offset].toUByte()
         offset += 1
         return b
     }
 
-    fun readI16(): Short {
+    public fun readI16(): Short {
         ensure(2)
         val b0 = data[offset].toInt() and 0xFF
         val b1 = data[offset + 1].toInt() and 0xFF
@@ -58,9 +62,9 @@ class BsatnReader(private var data: ByteArray, offset: Int = 0, private var limi
         return (b0 or (b1 shl 8)).toShort()
     }
 
-    fun readU16(): UShort = readI16().toUShort()
+    public fun readU16(): UShort = readI16().toUShort()
 
-    fun readI32(): Int {
+    public fun readI32(): Int {
         ensure(4)
         val b0 = data[offset].toLong() and 0xFF
         val b1 = data[offset + 1].toLong() and 0xFF
@@ -70,9 +74,9 @@ class BsatnReader(private var data: ByteArray, offset: Int = 0, private var limi
         return (b0 or (b1 shl 8) or (b2 shl 16) or (b3 shl 24)).toInt()
     }
 
-    fun readU32(): UInt = readI32().toUInt()
+    public fun readU32(): UInt = readI32().toUInt()
 
-    fun readI64(): Long {
+    public fun readI64(): Long {
         ensure(8)
         var result = 0L
         for (i in 0 until 8) {
@@ -82,63 +86,63 @@ class BsatnReader(private var data: ByteArray, offset: Int = 0, private var limi
         return result
     }
 
-    fun readU64(): ULong = readI64().toULong()
+    public fun readU64(): ULong = readI64().toULong()
 
-    fun readF32(): Float = Float.fromBits(readI32())
+    public fun readF32(): Float = Float.fromBits(readI32())
 
-    fun readF64(): Double = Double.fromBits(readI64())
+    public fun readF64(): Double = Double.fromBits(readI64())
 
-    fun readI128(): BigInteger {
+    public fun readI128(): BigInteger {
         val p0 = readI64()
         val p1 = readI64() // signed top chunk
 
-        return BigInteger.valueOf(p1).shiftLeft(64 * 1)
-            .add(BigInteger.valueOf(p0).and(UNSIGNED_LONG_MASK))
+        return BigInteger(p1).shl(64)
+            .add(unsignedBigInt(p0))
     }
 
-    fun readU128(): BigInteger {
+    public fun readU128(): BigInteger {
         val p0 = readI64()
         val p1 = readI64()
 
-        return BigInteger.valueOf(p1).and(UNSIGNED_LONG_MASK).shiftLeft(64 * 1)
-            .add(BigInteger.valueOf(p0).and(UNSIGNED_LONG_MASK))
+        return unsignedBigInt(p1).shl(64)
+            .add(unsignedBigInt(p0))
     }
 
-    fun readI256(): BigInteger {
+    public fun readI256(): BigInteger {
         val p0 = readI64()
         val p1 = readI64()
         val p2 = readI64()
         val p3 = readI64() // signed top chunk
 
-        return BigInteger.valueOf(p3).shiftLeft(64 * 3)
-            .add(BigInteger.valueOf(p2).and(UNSIGNED_LONG_MASK).shiftLeft(64 * 2))
-            .add(BigInteger.valueOf(p1).and(UNSIGNED_LONG_MASK).shiftLeft(64 * 1))
-            .add(BigInteger.valueOf(p0).and(UNSIGNED_LONG_MASK))
+        return BigInteger(p3).shl(64 * 3)
+            .add(unsignedBigInt(p2).shl(64 * 2))
+            .add(unsignedBigInt(p1).shl(64))
+            .add(unsignedBigInt(p0))
     }
 
-    fun readU256(): BigInteger {
+    public fun readU256(): BigInteger {
         val p0 = readI64()
         val p1 = readI64()
         val p2 = readI64()
         val p3 = readI64()
 
-        return BigInteger.valueOf(p3).and(UNSIGNED_LONG_MASK).shiftLeft(64 * 3)
-            .add(BigInteger.valueOf(p2).and(UNSIGNED_LONG_MASK).shiftLeft(64 * 2))
-            .add(BigInteger.valueOf(p1).and(UNSIGNED_LONG_MASK).shiftLeft(64 * 1))
-            .add(BigInteger.valueOf(p0).and(UNSIGNED_LONG_MASK))
+        return unsignedBigInt(p3).shl(64 * 3)
+            .add(unsignedBigInt(p2).shl(64 * 2))
+            .add(unsignedBigInt(p1).shl(64))
+            .add(unsignedBigInt(p0))
     }
 
-    fun readString(): String {
-        val len = readU32().toInt()
-        check(len >= 0) { "Negative string length: $len" }
-        val bytes = readRawBytes(len)
+    public fun readString(): String {
+        val len = readU32()
+        check(len <= Int.MAX_VALUE.toUInt()) { "String length $len exceeds maximum supported size" }
+        val bytes = readRawBytes(len.toInt())
         return bytes.decodeToString()
     }
 
-    fun readByteArray(): ByteArray {
-        val len = readU32().toInt()
-        check(len >= 0) { "Negative byte array length: $len" }
-        return readRawBytes(len)
+    public fun readByteArray(): ByteArray {
+        val len = readU32()
+        check(len <= Int.MAX_VALUE.toUInt()) { "Byte array length $len exceeds maximum supported size" }
+        return readRawBytes(len.toInt())
     }
 
     private fun readRawBytes(length: Int): ByteArray {
@@ -152,7 +156,7 @@ class BsatnReader(private var data: ByteArray, offset: Int = 0, private var limi
      * Returns a zero-copy view of the underlying buffer.
      * The returned BsatnReader shares the same backing array — no allocation.
      */
-    fun readRawBytesView(length: Int): BsatnReader {
+    public fun readRawBytesView(length: Int): BsatnReader {
         ensure(length)
         val view = BsatnReader(data, offset, offset + length)
         offset += length
@@ -163,15 +167,20 @@ class BsatnReader(private var data: ByteArray, offset: Int = 0, private var limi
      * Returns a copy of the underlying buffer between [from] and [to].
      * Used when a materialized ByteArray is needed (e.g. for content-based keying).
      */
-    fun sliceArray(from: Int, to: Int): ByteArray = data.copyOfRange(from, to)
+    public fun sliceArray(from: Int, to: Int): ByteArray {
+        check(from <= to && to <= limit) {
+            "sliceArray($from, $to) out of view bounds (limit=$limit)"
+        }
+        return data.copyOfRange(from, to)
+    }
 
     // Sum type tag byte
-    fun readSumTag(): UByte = readU8()
+    public fun readSumTag(): UByte = readU8()
 
     // Array length prefix (U32, returned as Int for indexing)
-    fun readArrayLen(): Int {
-        val len = readI32()
-        check(len >= 0) { "Negative array length: $len" }
-        return len
+    public fun readArrayLen(): Int {
+        val len = readU32()
+        check(len <= Int.MAX_VALUE.toUInt()) { "Array length $len exceeds maximum supported size" }
+        return len.toInt()
     }
 }

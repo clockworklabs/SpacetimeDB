@@ -15,7 +15,7 @@ use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_lib::version::spacetimedb_lib_version;
 use spacetimedb_primitives::ColId;
-use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef, TypeDef};
+use spacetimedb_schema::def::{IndexAlgorithm, ModuleDef, ReducerDef, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse};
@@ -50,22 +50,50 @@ impl Lang for Kotlin {
         let type_name = type_ref_name(module, type_ref);
         let table_name_pascal = table.accessor_name.deref().to_case(Case::Pascal);
 
-        // Check if this table has user-defined indexes
-        let has_unique_index = iter_indexes(table).any(|idx| {
+        let is_event = table.is_event;
+
+        // Check if this table has user-defined indexes (event tables never have indexes)
+        let has_unique_index = !is_event && iter_indexes(table).any(|idx| {
             idx.accessor_name.is_some() && schema.is_unique(&idx.algorithm.columns())
         });
-        let has_btree_index = iter_indexes(table).any(|idx| {
+        let has_btree_index = !is_event && iter_indexes(table).any(|idx| {
             idx.accessor_name.is_some() && !schema.is_unique(&idx.algorithm.columns())
         });
+
+        // Collect indexed column positions for IxCols generation
+        let mut ix_col_positions: BTreeSet<usize> = BTreeSet::new();
+        if !is_event {
+            for idx in iter_indexes(table) {
+                if let IndexAlgorithm::BTree(btree) = &idx.algorithm {
+                    for col_pos in btree.columns.iter() {
+                        ix_col_positions.insert(col_pos.idx());
+                    }
+                }
+            }
+        }
+        let has_ix_cols = !ix_col_positions.is_empty();
 
         // Imports
         if has_btree_index {
             writeln!(out, "import {SDK_PKG}.BTreeIndex");
         }
         writeln!(out, "import {SDK_PKG}.ClientCache");
+        writeln!(out, "import {SDK_PKG}.Col");
         writeln!(out, "import {SDK_PKG}.DbConnection");
         writeln!(out, "import {SDK_PKG}.EventContext");
+        if has_ix_cols {
+            writeln!(out, "import {SDK_PKG}.IxCol");
+        }
+        writeln!(out, "import {SDK_PKG}.NullableCol");
+        if has_ix_cols {
+            writeln!(out, "import {SDK_PKG}.NullableIxCol");
+        }
         writeln!(out, "import {SDK_PKG}.protocol.QueryResult");
+        if is_event {
+            writeln!(out, "import {SDK_PKG}.RemoteEventTable");
+        } else {
+            writeln!(out, "import {SDK_PKG}.RemotePersistentTable");
+        }
         writeln!(out, "import {SDK_PKG}.TableCache");
         if has_unique_index {
             writeln!(out, "import {SDK_PKG}.UniqueIndex");
@@ -76,12 +104,13 @@ impl Lang for Kotlin {
         writeln!(out);
 
         // Table handle class
+        let table_marker = if is_event { "RemoteEventTable" } else { "RemotePersistentTable" };
         writeln!(out, "class {table_name_pascal}TableHandle internal constructor(");
         out.indent(1);
         writeln!(out, "private val conn: DbConnection,");
         writeln!(out, "private val tableCache: TableCache<{type_name}, *>,");
         out.dedent(1);
-        writeln!(out, ") {{");
+        writeln!(out, ") : {table_marker} {{");
         out.indent(1);
 
         // Constants
@@ -117,26 +146,35 @@ impl Lang for Kotlin {
         writeln!(out, "}}");
         writeln!(out);
 
-        // Accessors
-        writeln!(out, "fun count(): Int = tableCache.count()");
-        writeln!(out, "fun all(): List<{type_name}> = tableCache.all()");
-        writeln!(out, "fun iter(): Iterator<{type_name}> = tableCache.iter()");
-        writeln!(out);
+        // Accessors (event tables don't store rows)
+        if !is_event {
+            writeln!(out, "fun count(): Int = tableCache.count()");
+            writeln!(out, "fun all(): List<{type_name}> = tableCache.all()");
+            writeln!(out, "fun iter(): Iterator<{type_name}> = tableCache.iter()");
+            writeln!(out);
+        }
 
         // Callbacks
         writeln!(out, "fun onInsert(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.onInsert(cb) }}");
-        writeln!(out, "fun onDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.onDelete(cb) }}");
-        writeln!(out, "fun onUpdate(cb: (EventContext, {type_name}, {type_name}) -> Unit) {{ tableCache.onUpdate(cb) }}");
-        writeln!(out, "fun onBeforeDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.onBeforeDelete(cb) }}");
-        writeln!(out);
         writeln!(out, "fun removeOnInsert(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.removeOnInsert(cb) }}");
-        writeln!(out, "fun removeOnDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.removeOnDelete(cb) }}");
-        writeln!(out, "fun removeOnUpdate(cb: (EventContext, {type_name}, {type_name}) -> Unit) {{ tableCache.removeOnUpdate(cb) }}");
-        writeln!(out, "fun removeOnBeforeDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.removeOnBeforeDelete(cb) }}");
+        if !is_event {
+            writeln!(out, "fun onDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.onDelete(cb) }}");
+            if table.primary_key.is_some() {
+                writeln!(out, "fun onUpdate(cb: (EventContext, {type_name}, {type_name}) -> Unit) {{ tableCache.onUpdate(cb) }}");
+            }
+            writeln!(out, "fun onBeforeDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.onBeforeDelete(cb) }}");
+            writeln!(out);
+            writeln!(out, "fun removeOnDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.removeOnDelete(cb) }}");
+            if table.primary_key.is_some() {
+                writeln!(out, "fun removeOnUpdate(cb: (EventContext, {type_name}, {type_name}) -> Unit) {{ tableCache.removeOnUpdate(cb) }}");
+            }
+            writeln!(out, "fun removeOnBeforeDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.removeOnBeforeDelete(cb) }}");
+        }
         writeln!(out);
 
-        // Remote query
-        let table_raw_name = table.name.deref();
+        // Remote query and indexes (not applicable for event tables)
+        if !is_event {
+        // Remote query (callback-based)
         writeln!(out, "fun remoteQuery(query: String = \"\", callback: (List<{type_name}>) -> Unit) {{");
         out.indent(1);
         writeln!(out, "val sql = \"SELECT $TABLE_NAME.* FROM $TABLE_NAME $query\"");
@@ -161,6 +199,30 @@ impl Lang for Kotlin {
         out.dedent(1);
         writeln!(out, "}}");
         writeln!(out);
+
+        // Remote query (suspend)
+        writeln!(out, "suspend fun remoteQuery(query: String = \"\"): List<{type_name}> {{");
+        out.indent(1);
+        writeln!(out, "val sql = \"SELECT $TABLE_NAME.* FROM $TABLE_NAME $query\"");
+        writeln!(out, "val msg = conn.oneOffQuery(sql)");
+        writeln!(out, "return when (val result = msg.result) {{");
+        out.indent(1);
+        writeln!(out, "is QueryResult.Err -> throw IllegalStateException(\"RemoteQuery error: ${{result.error}}\")");
+        writeln!(out, "is QueryResult.Ok -> {{");
+        out.indent(1);
+        writeln!(out, "val table = result.rows.tables.firstOrNull {{ it.table == TABLE_NAME }}");
+        out.indent(1);
+        writeln!(out, "?: throw IllegalStateException(\"Table '$TABLE_NAME' not found in result\")");
+        out.dedent(1);
+        writeln!(out, "tableCache.decodeRowList(table.rows)");
+        out.dedent(1);
+        writeln!(out, "}}");
+        out.dedent(1);
+        writeln!(out, "}}");
+        out.dedent(1);
+        writeln!(out, "}}");
+        writeln!(out);
+        } // !is_event
 
         // Index properties
         let get_field_name_and_type = |col_pos: ColId| -> (String, String) {
@@ -219,10 +281,15 @@ impl Lang for Kotlin {
                                 "val {index_name_camel} = {index_class}<{type_name}, Triple<{col_types}>>(tableCache) {{ {key_expr} }}"
                             );
                         }
-                        n => {
+                        _ => {
+                            let key_expr_fields = col_fields
+                                .iter()
+                                .map(|(name, _)| format!("it.{name}"))
+                                .collect::<Vec<_>>()
+                                .join(", ");
                             writeln!(
                                 out,
-                                "// TODO: {n}-column index {index_name_camel} not yet supported in Kotlin codegen"
+                                "val {index_name_camel} = {index_class}<{type_name}, List<Any?>>(tableCache) {{ listOf({key_expr_fields}) }}"
                             );
                         }
                     }
@@ -233,6 +300,52 @@ impl Lang for Kotlin {
 
         out.dedent(1);
         writeln!(out, "}}");
+        writeln!(out);
+
+        // --- {Table}Cols class: typed column references for all fields ---
+        writeln!(out, "class {table_name_pascal}Cols(tableName: String) {{");
+        out.indent(1);
+        for (ident, field_type) in product_def.elements.iter() {
+            let field_camel = ident.deref().to_case(Case::Camel);
+            let col_name = ident.deref();
+            let (col_class, value_type) = match field_type {
+                AlgebraicTypeUse::Option(inner) => ("NullableCol", kotlin_type(module, inner)),
+                _ => ("Col", kotlin_type(module, field_type)),
+            };
+            writeln!(
+                out,
+                "val {field_camel} = {col_class}<{type_name}, {value_type}>(tableName, \"{col_name}\")"
+            );
+        }
+        out.dedent(1);
+        writeln!(out, "}}");
+        writeln!(out);
+
+        // --- {Table}IxCols class: typed column references for indexed fields only ---
+        if has_ix_cols {
+            writeln!(out, "class {table_name_pascal}IxCols(tableName: String) {{");
+            out.indent(1);
+            for (i, (ident, field_type)) in product_def.elements.iter().enumerate() {
+                if !ix_col_positions.contains(&i) {
+                    continue;
+                }
+                let field_camel = ident.deref().to_case(Case::Camel);
+                let col_name = ident.deref();
+                let (col_class, value_type) = match field_type {
+                    AlgebraicTypeUse::Option(inner) => ("NullableIxCol", kotlin_type(module, inner)),
+                    _ => ("IxCol", kotlin_type(module, field_type)),
+                };
+                writeln!(
+                    out,
+                    "val {field_camel} = {col_class}<{type_name}, {value_type}>(tableName, \"{col_name}\")"
+                );
+            }
+            out.dedent(1);
+            writeln!(out, "}}");
+        } else {
+            // No indexed columns — emit a simple empty class
+            writeln!(out, "class {table_name_pascal}IxCols");
+        }
 
         OutputFile {
             filename: format!("{table_name_pascal}TableHandle.kt"),
@@ -671,7 +784,7 @@ fn write_decode_field(module: &ModuleDef, out: &mut Indenter, var_name: &str, ty
                 writeln!(out, "val {var_name} = List(reader.readArrayLen()) {{ {elem_expr} }}");
             } else {
                 writeln!(out, "val __{var_name}Len = reader.readArrayLen()");
-                writeln!(out, "val {var_name} = buildList({var_name}Len) {{");
+                writeln!(out, "val {var_name} = buildList(__{var_name}Len) {{");
                 out.indent(1);
                 writeln!(out, "repeat(__{var_name}Len) {{");
                 out.indent(1);
@@ -1050,7 +1163,7 @@ fn define_plain_enum(out: &mut Indenter, name: &str, variants: &[Identifier]) {
     writeln!(out);
     writeln!(out, "fun encode(writer: BsatnWriter) {{");
     out.indent(1);
-    writeln!(out, "writer.writeU8(ordinal.toUByte())");
+    writeln!(out, "writer.writeSumTag(ordinal.toUByte())");
     out.dedent(1);
     writeln!(out, "}}");
     writeln!(out);
@@ -1058,7 +1171,7 @@ fn define_plain_enum(out: &mut Indenter, name: &str, variants: &[Identifier]) {
     out.indent(1);
     writeln!(out, "fun decode(reader: BsatnReader): {name} {{");
     out.indent(1);
-    writeln!(out, "val tag = reader.readU8().toInt()");
+    writeln!(out, "val tag = reader.readSumTag().toInt()");
     writeln!(out, "return entries.getOrElse(tag) {{ error(\"Unknown {name} tag: $tag\") }}");
     out.dedent(1);
     writeln!(out, "}}");
@@ -1276,7 +1389,7 @@ fn generate_remote_reducers_file(module: &ModuleDef, options: &CodegenOptions) -
         if reducer.params_for_generate.elements.is_empty() {
             writeln!(out, "@Suppress(\"UNCHECKED_CAST\")");
             writeln!(out, "val typedCtx = ctx as EventContext.Reducer<Unit>");
-            writeln!(out, "for (cb in on{reducer_name_pascal}Callbacks) cb(typedCtx)");
+            writeln!(out, "for (cb in on{reducer_name_pascal}Callbacks.toList()) cb(typedCtx)");
         } else {
             writeln!(out, "@Suppress(\"UNCHECKED_CAST\")");
             writeln!(out, "val typedCtx = ctx as EventContext.Reducer<{reducer_name_pascal}Args>");
@@ -1294,7 +1407,7 @@ fn generate_remote_reducers_file(module: &ModuleDef, options: &CodegenOptions) -
                 )
                 .collect();
             let call_args_str = call_args.join(", ");
-            writeln!(out, "for (cb in on{reducer_name_pascal}Callbacks) cb({call_args_str})");
+            writeln!(out, "for (cb in on{reducer_name_pascal}Callbacks.toList()) cb({call_args_str})");
         }
 
         out.dedent(1);
@@ -1334,6 +1447,7 @@ fn generate_remote_procedures_file(module: &ModuleDef, options: &CodegenOptions)
     imports.insert(format!("{SDK_PKG}.bsatn.BsatnWriter"));
     imports.insert(format!("{SDK_PKG}.bsatn.BsatnReader"));
     imports.insert(format!("{SDK_PKG}.protocol.ServerMessage"));
+    imports.insert(format!("{SDK_PKG}.protocol.ProcedureStatus"));
 
     for procedure in iter_procedures(module, options.visibility) {
         for (_, ty) in procedure.params_for_generate.elements.iter() {
@@ -1357,50 +1471,85 @@ fn generate_remote_procedures_file(module: &ModuleDef, options: &CodegenOptions)
     for procedure in iter_procedures(module, options.visibility) {
         let procedure_name_camel = procedure.accessor_name.deref().to_case(Case::Camel);
         let procedure_name_pascal = procedure.accessor_name.deref().to_case(Case::Pascal);
+        let return_ty = &procedure.return_type_for_generate;
+        let return_ty_str = kotlin_type(module, return_ty);
+        let is_unit_return = matches!(return_ty, AlgebraicTypeUse::Unit);
 
-        if procedure.params_for_generate.elements.is_empty() {
-            // No-arg procedure
-            writeln!(
-                out,
-                "fun {procedure_name_camel}(callback: ((EventContext.Procedure, ServerMessage.ProcedureResultMsg) -> Unit)? = null) {{"
-            );
-            out.indent(1);
-            writeln!(
-                out,
-                "conn.callProcedure({procedure_name_pascal}Procedure.PROCEDURE_NAME, ByteArray(0), callback)"
-            );
-            out.dedent(1);
-            writeln!(out, "}}");
+        // Build parameter list
+        let params: Vec<String> = procedure
+            .params_for_generate
+            .elements
+            .iter()
+            .map(|(ident, ty)| {
+                let name = ident.deref().to_case(Case::Camel);
+                let kotlin_ty = kotlin_type(module, ty);
+                format!("{name}: {kotlin_ty}")
+            })
+            .collect();
+
+        // Callback type uses the decoded return type
+        let callback_type = if is_unit_return {
+            "((EventContext.Procedure) -> Unit)?".to_string()
         } else {
-            // Procedure with args
-            let params: Vec<String> = procedure
-                .params_for_generate
-                .elements
-                .iter()
-                .map(|(ident, ty)| {
-                    let name = ident.deref().to_case(Case::Camel);
-                    let kotlin_ty = kotlin_type(module, ty);
-                    format!("{name}: {kotlin_ty}")
-                })
-                .collect();
+            format!("((EventContext.Procedure, {return_ty_str}) -> Unit)?")
+        };
+
+        if params.is_empty() {
+            writeln!(out, "fun {procedure_name_camel}(callback: {callback_type} = null) {{");
+        } else {
             let params_str = params.join(", ");
-            writeln!(
-                out,
-                "fun {procedure_name_camel}({params_str}, callback: ((EventContext.Procedure, ServerMessage.ProcedureResultMsg) -> Unit)? = null) {{"
-            );
-            out.indent(1);
+            writeln!(out, "fun {procedure_name_camel}({params_str}, callback: {callback_type} = null) {{");
+        }
+        out.indent(1);
+
+        // Encode args
+        if !procedure.params_for_generate.elements.is_empty() {
             writeln!(out, "val writer = BsatnWriter()");
             for (ident, ty) in procedure.params_for_generate.elements.iter() {
                 let field_name = ident.deref().to_case(Case::Camel);
                 write_encode_field(module, out, &field_name, ty);
             }
-            writeln!(
-                out,
-                "conn.callProcedure({procedure_name_pascal}Procedure.PROCEDURE_NAME, writer.toByteArray(), callback)"
-            );
-            out.dedent(1);
-            writeln!(out, "}}");
         }
+
+        let args_expr = if procedure.params_for_generate.elements.is_empty() {
+            "ByteArray(0)"
+        } else {
+            "writer.toByteArray()"
+        };
+
+        // Generate wrapper callback that decodes the return value
+        writeln!(out, "val wrappedCallback = callback?.let {{ userCb ->") ;
+        out.indent(1);
+        writeln!(out, "{{ ctx: EventContext.Procedure, msg: ServerMessage.ProcedureResultMsg ->") ;
+        out.indent(1);
+        writeln!(out, "val status = msg.status");
+        writeln!(out, "if (status is ProcedureStatus.Returned) {{");
+        out.indent(1);
+        if is_unit_return {
+            writeln!(out, "userCb(ctx)");
+        } else if is_simple_decode(return_ty) {
+            writeln!(out, "val reader = BsatnReader(status.value)");
+            let decode_expr = write_decode_expr(module, return_ty);
+            writeln!(out, "userCb(ctx, {decode_expr})");
+        } else {
+            writeln!(out, "val reader = BsatnReader(status.value)");
+            write_decode_field(module, out, "__retVal", return_ty);
+            writeln!(out, "userCb(ctx, __retVal)");
+        }
+        out.dedent(1);
+        writeln!(out, "}}");
+        out.dedent(1);
+        writeln!(out, "}}");
+        out.dedent(1);
+        writeln!(out, "}}");
+
+        writeln!(
+            out,
+            "conn.callProcedure({procedure_name_pascal}Procedure.PROCEDURE_NAME, {args_expr}, wrappedCallback)"
+        );
+
+        out.dedent(1);
+        writeln!(out, "}}");
         writeln!(out);
     }
 
@@ -1428,8 +1577,9 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     writeln!(out, "import {SDK_PKG}.EventContext");
     writeln!(out, "import {SDK_PKG}.ModuleAccessors");
     writeln!(out, "import {SDK_PKG}.ModuleDescriptor");
+    writeln!(out, "import {SDK_PKG}.Query");
     writeln!(out, "import {SDK_PKG}.SubscriptionBuilder");
-    writeln!(out, "import {SDK_PKG}.TableQuery");
+    writeln!(out, "import {SDK_PKG}.Table");
     writeln!(out);
 
     // RemoteModule object with version info and table/reducer/procedure names
@@ -1636,17 +1786,32 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     // QueryBuilder — typed per-table query builder
     writeln!(out, "/**");
     writeln!(out, " * Type-safe query builder for this module's tables.");
+    writeln!(out, " * Supports WHERE predicates and semi-joins.");
     writeln!(out, " */");
     writeln!(out, "class QueryBuilder {{");
     out.indent(1);
     for table in iter_tables(module, options.visibility) {
         let table_name = table.name.deref();
         let type_name = type_ref_name(module, table.product_type_ref);
+        let table_name_pascal = table.accessor_name.deref().to_case(Case::Pascal);
         let method_name = table.accessor_name.deref().to_case(Case::Camel);
-        writeln!(
-            out,
-            "fun {method_name}(): TableQuery<{type_name}> = TableQuery(\"{table_name}\")"
-        );
+
+        // Check if this table has indexed columns
+        let has_ix = iter_indexes(table).any(|idx| {
+            matches!(&idx.algorithm, IndexAlgorithm::BTree(_))
+        });
+
+        if has_ix {
+            writeln!(
+                out,
+                "fun {method_name}(): Table<{type_name}, {table_name_pascal}Cols, {table_name_pascal}IxCols> = Table(\"{table_name}\", {table_name_pascal}Cols(\"{table_name}\"), {table_name_pascal}IxCols(\"{table_name}\"))"
+            );
+        } else {
+            writeln!(
+                out,
+                "fun {method_name}(): Table<{type_name}, {table_name_pascal}Cols, {table_name_pascal}IxCols> = Table(\"{table_name}\", {table_name_pascal}Cols(\"{table_name}\"), {table_name_pascal}IxCols())"
+            );
+        }
     }
     out.dedent(1);
     writeln!(out, "}}");
@@ -1663,10 +1828,14 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     writeln!(out, " * ```kotlin");
     writeln!(out, " * conn.subscriptionBuilder()");
     writeln!(out, " *     .addQuery {{ qb -> qb.player() }}");
+    writeln!(
+        out,
+        " *     .addQuery {{ qb -> qb.player().where {{ c -> c.health.gt(50) }} }}"
+    );
     writeln!(out, " *     .subscribe()");
     writeln!(out, " * ```");
     writeln!(out, " */");
-    writeln!(out, "fun SubscriptionBuilder.addQuery(build: (QueryBuilder) -> TableQuery<*>): SubscriptionBuilder {{");
+    writeln!(out, "fun SubscriptionBuilder.addQuery(build: (QueryBuilder) -> Query<*>): SubscriptionBuilder {{");
     out.indent(1);
     writeln!(out, "return addQuery(build(QueryBuilder()).toSql())");
     out.dedent(1);

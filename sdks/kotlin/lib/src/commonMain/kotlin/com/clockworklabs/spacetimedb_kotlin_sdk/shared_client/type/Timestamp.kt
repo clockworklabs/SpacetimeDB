@@ -8,56 +8,54 @@ import kotlin.time.Clock
 import kotlin.time.Duration.Companion.microseconds
 import kotlin.time.Instant
 
-data class Timestamp(val instant: Instant) {
-    companion object {
-        private const val MICROS_PER_MILLIS = 1_000L
+public data class Timestamp(val instant: Instant) : Comparable<Timestamp> {
+    public companion object {
+        public val UNIX_EPOCH: Timestamp = Timestamp(Instant.fromEpochMilliseconds(0))
 
-        val UNIX_EPOCH: Timestamp = Timestamp(Instant.fromEpochMilliseconds(0))
+        public fun now(): Timestamp = Timestamp(Clock.System.now())
 
-        fun now(): Timestamp = Timestamp(Clock.System.now())
-
-        fun decode(reader: BsatnReader): Timestamp =
+        public fun decode(reader: BsatnReader): Timestamp =
             Timestamp(Instant.fromEpochMicroseconds(reader.readI64()))
 
-        fun fromEpochMicroseconds(micros: Long): Timestamp =
+        public fun fromEpochMicroseconds(micros: Long): Timestamp =
             Timestamp(Instant.fromEpochMicroseconds(micros))
 
-        fun fromMillis(millis: Long): Timestamp =
+        public fun fromMillis(millis: Long): Timestamp =
             Timestamp(Instant.fromEpochMilliseconds(millis))
     }
 
-    fun encode(writer: BsatnWriter) {
+    public fun encode(writer: BsatnWriter) {
         writer.writeI64(instant.toEpochMicroseconds())
     }
 
     /** Microseconds since Unix epoch */
-    val microsSinceUnixEpoch: Long
+    public val microsSinceUnixEpoch: Long
         get() = instant.toEpochMicroseconds()
 
     /** Milliseconds since Unix epoch */
-    val millisSinceUnixEpoch: Long
+    public val millisSinceUnixEpoch: Long
         get() = instant.toEpochMilliseconds()
 
     /** Duration since another Timestamp */
-    fun since(other: Timestamp): TimeDuration =
+    public fun since(other: Timestamp): TimeDuration =
         TimeDuration((microsSinceUnixEpoch - other.microsSinceUnixEpoch).microseconds)
 
-    operator fun plus(duration: TimeDuration): Timestamp =
+    public operator fun plus(duration: TimeDuration): Timestamp =
         fromEpochMicroseconds(microsSinceUnixEpoch + duration.micros)
 
-    operator fun minus(duration: TimeDuration): Timestamp =
+    public operator fun minus(duration: TimeDuration): Timestamp =
         fromEpochMicroseconds(microsSinceUnixEpoch - duration.micros)
 
-    operator fun minus(other: Timestamp): TimeDuration =
+    public operator fun minus(other: Timestamp): TimeDuration =
         TimeDuration((microsSinceUnixEpoch - other.microsSinceUnixEpoch).microseconds)
 
-    operator fun compareTo(other: Timestamp): Int =
+    override operator fun compareTo(other: Timestamp): Int =
         microsSinceUnixEpoch.compareTo(other.microsSinceUnixEpoch)
 
-    fun toISOString(): String {
+    public fun toISOString(): String {
         val micros = microsSinceUnixEpoch
-        val seconds = micros / 1_000_000
-        val microFraction = (micros % 1_000_000).toInt()
+        val seconds = micros.floorDiv(1_000_000L)
+        val microFraction = micros.mod(1_000_000L).toInt()
         val base = Instant.fromEpochSeconds(seconds).toString().removeSuffix("Z")
         return "$base.${microFraction.toString().padStart(6, '0')}Z"
     }

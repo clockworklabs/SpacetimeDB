@@ -1,5 +1,3 @@
-@file:Suppress("unused")
-
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
@@ -11,12 +9,12 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 // --- RowSizeHint ---
 // Sum type: tag 0 = FixedSize(U16), tag 1 = RowOffsets(Array<U64>)
 
-sealed interface RowSizeHint {
-    data class FixedSize(val size: UShort) : RowSizeHint
-    data class RowOffsets(val offsets: List<ULong>) : RowSizeHint
+public sealed interface RowSizeHint {
+    public data class FixedSize(val size: UShort) : RowSizeHint
+    public data class RowOffsets(val offsets: List<ULong>) : RowSizeHint
 
-    companion object {
-        fun decode(reader: BsatnReader): RowSizeHint {
+    public companion object {
+        public fun decode(reader: BsatnReader): RowSizeHint {
             return when (val tag = reader.readSumTag().toInt()) {
                 0 -> FixedSize(reader.readU16())
                 1 -> {
@@ -32,30 +30,37 @@ sealed interface RowSizeHint {
 
 // --- BsatnRowList ---
 
-data class BsatnRowList(
-    val sizeHint: RowSizeHint,
-    val rowsReader: BsatnReader,
+public class BsatnRowList(
+    public val sizeHint: RowSizeHint,
+    private val rowsData: ByteArray,
+    private val rowsOffset: Int = 0,
+    private val rowsLimit: Int = rowsData.size,
 ) {
-    val rowsSize: Int get() = rowsReader.remaining
+    public val rowsSize: Int get() = rowsLimit - rowsOffset
 
-    companion object {
-        fun decode(reader: BsatnReader): BsatnRowList {
+    /** Creates a fresh [BsatnReader] over the row data. Safe to call multiple times. */
+    public val rowsReader: BsatnReader get() = BsatnReader(rowsData, rowsOffset, rowsLimit)
+
+    public companion object {
+        public fun decode(reader: BsatnReader): BsatnRowList {
             val sizeHint = RowSizeHint.decode(reader)
             val len = reader.readU32().toInt()
-            val rowsReader = reader.readRawBytesView(len)
-            return BsatnRowList(sizeHint, rowsReader)
+            val data = reader.data
+            val offset = reader.offset
+            reader.skip(len)
+            return BsatnRowList(sizeHint, data, offset, offset + len)
         }
     }
 }
 
 // --- SingleTableRows ---
 
-data class SingleTableRows(
+public data class SingleTableRows(
     val table: String,
     val rows: BsatnRowList,
 ) {
-    companion object {
-        fun decode(reader: BsatnReader): SingleTableRows {
+    public companion object {
+        public fun decode(reader: BsatnReader): SingleTableRows {
             val table = reader.readString()
             val rows = BsatnRowList.decode(reader)
             return SingleTableRows(table, rows)
@@ -65,11 +70,11 @@ data class SingleTableRows(
 
 // --- QueryRows ---
 
-data class QueryRows(
+public data class QueryRows(
     val tables: List<SingleTableRows>,
 ) {
-    companion object {
-        fun decode(reader: BsatnReader): QueryRows {
+    public companion object {
+        public fun decode(reader: BsatnReader): QueryRows {
             val len = reader.readArrayLen()
             val tables = List(len) { SingleTableRows.decode(reader) }
             return QueryRows(tables)
@@ -79,26 +84,26 @@ data class QueryRows(
 
 // --- QueryResult ---
 
-sealed interface QueryResult {
-    data class Ok(val rows: QueryRows) : QueryResult
-    data class Err(val error: String) : QueryResult
+public sealed interface QueryResult {
+    public data class Ok(val rows: QueryRows) : QueryResult
+    public data class Err(val error: String) : QueryResult
 }
 
 // --- TableUpdateRows ---
 // Sum type: tag 0 = PersistentTable(inserts, deletes), tag 1 = EventTable(events)
 
-sealed interface TableUpdateRows {
-    data class PersistentTable(
+public sealed interface TableUpdateRows {
+    public data class PersistentTable(
         val inserts: BsatnRowList,
         val deletes: BsatnRowList,
     ) : TableUpdateRows
 
-    data class EventTable(
+    public data class EventTable(
         val events: BsatnRowList,
     ) : TableUpdateRows
 
-    companion object {
-        fun decode(reader: BsatnReader): TableUpdateRows {
+    public companion object {
+        public fun decode(reader: BsatnReader): TableUpdateRows {
             return when (val tag = reader.readSumTag().toInt()) {
                 0 -> PersistentTable(
                     inserts = BsatnRowList.decode(reader),
@@ -113,12 +118,12 @@ sealed interface TableUpdateRows {
 
 // --- TableUpdate ---
 
-data class TableUpdate(
+public data class TableUpdate(
     val tableName: String,
     val rows: List<TableUpdateRows>,
 ) {
-    companion object {
-        fun decode(reader: BsatnReader): TableUpdate {
+    public companion object {
+        public fun decode(reader: BsatnReader): TableUpdate {
             val tableName = reader.readString()
             val len = reader.readArrayLen()
             val rows = List(len) { TableUpdateRows.decode(reader) }
@@ -129,12 +134,12 @@ data class TableUpdate(
 
 // --- QuerySetUpdate ---
 
-data class QuerySetUpdate(
+public data class QuerySetUpdate(
     val querySetId: QuerySetId,
     val tables: List<TableUpdate>,
 ) {
-    companion object {
-        fun decode(reader: BsatnReader): QuerySetUpdate {
+    public companion object {
+        public fun decode(reader: BsatnReader): QuerySetUpdate {
             val querySetId = QuerySetId(reader.readU32())
             val len = reader.readArrayLen()
             val tables = List(len) { TableUpdate.decode(reader) }
@@ -145,11 +150,11 @@ data class QuerySetUpdate(
 
 // --- TransactionUpdate ---
 
-data class TransactionUpdate(
+public data class TransactionUpdate(
     val querySets: List<QuerySetUpdate>,
 ) {
-    companion object {
-        fun decode(reader: BsatnReader): TransactionUpdate {
+    public companion object {
+        public fun decode(reader: BsatnReader): TransactionUpdate {
             val len = reader.readArrayLen()
             val querySets = List(len) { QuerySetUpdate.decode(reader) }
             return TransactionUpdate(querySets)
@@ -160,8 +165,8 @@ data class TransactionUpdate(
 // --- ReducerOutcome ---
 // Sum type: tag 0 = Ok(ReducerOk), tag 1 = OkEmpty, tag 2 = Err(ByteArray), tag 3 = InternalError(String)
 
-sealed interface ReducerOutcome {
-    data class Ok(
+public sealed interface ReducerOutcome {
+    public data class Ok(
         val retValue: ByteArray,
         val transactionUpdate: TransactionUpdate,
     ) : ReducerOutcome {
@@ -177,19 +182,19 @@ sealed interface ReducerOutcome {
         }
     }
 
-    data object OkEmpty : ReducerOutcome
+    public data object OkEmpty : ReducerOutcome
 
-    data class Err(val error: ByteArray) : ReducerOutcome {
+    public data class Err(val error: ByteArray) : ReducerOutcome {
         override fun equals(other: Any?): Boolean =
             other is Err && error.contentEquals(other.error)
 
         override fun hashCode(): Int = error.contentHashCode()
     }
 
-    data class InternalError(val message: String) : ReducerOutcome
+    public data class InternalError(val message: String) : ReducerOutcome
 
-    companion object {
-        fun decode(reader: BsatnReader): ReducerOutcome {
+    public companion object {
+        public fun decode(reader: BsatnReader): ReducerOutcome {
             return when (val tag = reader.readSumTag().toInt()) {
                 0 -> Ok(
                     retValue = reader.readByteArray(),
@@ -207,18 +212,18 @@ sealed interface ReducerOutcome {
 // --- ProcedureStatus ---
 // Sum type: tag 0 = Returned(ByteArray), tag 1 = InternalError(String)
 
-sealed interface ProcedureStatus {
-    data class Returned(val value: ByteArray) : ProcedureStatus {
+public sealed interface ProcedureStatus {
+    public data class Returned(val value: ByteArray) : ProcedureStatus {
         override fun equals(other: Any?): Boolean =
             other is Returned && value.contentEquals(other.value)
 
         override fun hashCode(): Int = value.contentHashCode()
     }
 
-    data class InternalError(val message: String) : ProcedureStatus
+    public data class InternalError(val message: String) : ProcedureStatus
 
-    companion object {
-        fun decode(reader: BsatnReader): ProcedureStatus {
+    public companion object {
+        public fun decode(reader: BsatnReader): ProcedureStatus {
             return when (val tag = reader.readSumTag().toInt()) {
                 0 -> Returned(reader.readByteArray())
                 1 -> InternalError(reader.readString())
@@ -239,56 +244,56 @@ sealed interface ProcedureStatus {
 //   tag 6 = ReducerResult
 //   tag 7 = ProcedureResult
 
-sealed interface ServerMessage {
+public sealed interface ServerMessage {
 
-    data class InitialConnection(
+    public data class InitialConnection(
         val identity: Identity,
         val connectionId: ConnectionId,
         val token: String,
     ) : ServerMessage
 
-    data class SubscribeApplied(
+    public data class SubscribeApplied(
         val requestId: UInt,
         val querySetId: QuerySetId,
         val rows: QueryRows,
     ) : ServerMessage
 
-    data class UnsubscribeApplied(
+    public data class UnsubscribeApplied(
         val requestId: UInt,
         val querySetId: QuerySetId,
         val rows: QueryRows?,
     ) : ServerMessage
 
-    data class SubscriptionError(
+    public data class SubscriptionError(
         val requestId: UInt?,
         val querySetId: QuerySetId,
         val error: String,
     ) : ServerMessage
 
-    data class TransactionUpdateMsg(
+    public data class TransactionUpdateMsg(
         val update: TransactionUpdate,
     ) : ServerMessage
 
-    data class OneOffQueryResult(
+    public data class OneOffQueryResult(
         val requestId: UInt,
         val result: QueryResult,
     ) : ServerMessage
 
-    data class ReducerResultMsg(
+    public data class ReducerResultMsg(
         val requestId: UInt,
         val timestamp: Timestamp,
         val result: ReducerOutcome,
     ) : ServerMessage
 
-    data class ProcedureResultMsg(
+    public data class ProcedureResultMsg(
         val status: ProcedureStatus,
         val timestamp: Timestamp,
         val totalHostExecutionDuration: TimeDuration,
         val requestId: UInt,
     ) : ServerMessage
 
-    companion object {
-        fun decode(reader: BsatnReader): ServerMessage {
+    public companion object {
+        public fun decode(reader: BsatnReader): ServerMessage {
             return when (val tag = reader.readSumTag().toInt()) {
                 0 -> InitialConnection(
                     identity = Identity.decode(reader),
@@ -348,7 +353,7 @@ sealed interface ServerMessage {
             }
         }
 
-        fun decodeFromBytes(data: ByteArray): ServerMessage {
+        public fun decodeFromBytes(data: ByteArray): ServerMessage {
             val reader = BsatnReader(data)
             return decode(reader)
         }

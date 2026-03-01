@@ -1,11 +1,12 @@
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol
 
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.CompressionMode
 import org.brotli.dec.BrotliInputStream
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.zip.GZIPInputStream
 
-actual fun decompressMessage(data: ByteArray): ByteArray {
+public actual fun decompressMessage(data: ByteArray): ByteArray {
     require(data.isNotEmpty()) { "Empty message" }
 
     val tag = data[0]
@@ -28,3 +29,8 @@ actual fun decompressMessage(data: ByteArray): ByteArray {
         else -> error("Unknown compression tag: $tag")
     }
 }
+
+public actual val defaultCompressionMode: CompressionMode = CompressionMode.BROTLI
+
+public actual val availableCompressionModes: Set<CompressionMode> =
+    setOf(CompressionMode.NONE, CompressionMode.GZIP, CompressionMode.BROTLI)

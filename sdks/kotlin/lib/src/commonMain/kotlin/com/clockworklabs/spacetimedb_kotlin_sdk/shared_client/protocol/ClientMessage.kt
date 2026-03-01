@@ -1,23 +1,21 @@
-@file:Suppress("unused")
-
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 
 // --- QuerySetId ---
 
-data class QuerySetId(val id: UInt) {
-    fun encode(writer: BsatnWriter) = writer.writeU32(id)
+public data class QuerySetId(val id: UInt) {
+    public fun encode(writer: BsatnWriter): Unit = writer.writeU32(id)
 }
 
 // --- UnsubscribeFlags ---
 // Sum type: tag 0 = Default (unit), tag 1 = SendDroppedRows (unit)
 
-sealed interface UnsubscribeFlags {
-    data object Default : UnsubscribeFlags
-    data object SendDroppedRows : UnsubscribeFlags
+public sealed interface UnsubscribeFlags {
+    public data object Default : UnsubscribeFlags
+    public data object SendDroppedRows : UnsubscribeFlags
 
-    fun encode(writer: BsatnWriter) {
+    public fun encode(writer: BsatnWriter) {
         when (this) {
             is Default -> writer.writeSumTag(0u)
             is SendDroppedRows -> writer.writeSumTag(1u)
@@ -33,11 +31,11 @@ sealed interface UnsubscribeFlags {
 //   tag 3 = CallReducer
 //   tag 4 = CallProcedure
 
-sealed interface ClientMessage {
+public sealed interface ClientMessage {
 
-    fun encode(writer: BsatnWriter)
+    public fun encode(writer: BsatnWriter)
 
-    data class Subscribe(
+    public data class Subscribe(
         val requestId: UInt,
         val querySetId: QuerySetId,
         val queryStrings: List<String>,
@@ -51,7 +49,7 @@ sealed interface ClientMessage {
         }
     }
 
-    data class Unsubscribe(
+    public data class Unsubscribe(
         val requestId: UInt,
         val querySetId: QuerySetId,
         val flags: UnsubscribeFlags,
@@ -64,7 +62,7 @@ sealed interface ClientMessage {
         }
     }
 
-    data class OneOffQuery(
+    public data class OneOffQuery(
         val requestId: UInt,
         val queryString: String,
     ) : ClientMessage {
@@ -75,7 +73,7 @@ sealed interface ClientMessage {
         }
     }
 
-    data class CallReducer(
+    public data class CallReducer(
         val requestId: UInt,
         val flags: UByte,
         val reducer: String,
@@ -105,7 +103,7 @@ sealed interface ClientMessage {
         }
     }
 
-    data class CallProcedure(
+    public data class CallProcedure(
         val requestId: UInt,
         val flags: UByte,
         val procedure: String,
@@ -135,8 +133,8 @@ sealed interface ClientMessage {
         }
     }
 
-    companion object {
-        fun encodeToBytes(message: ClientMessage): ByteArray {
+    public companion object {
+        public fun encodeToBytes(message: ClientMessage): ByteArray {
             val writer = BsatnWriter()
             message.encode(writer)
             return writer.toByteArray()

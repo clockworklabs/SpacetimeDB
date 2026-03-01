@@ -1,15 +1,16 @@
-@file:Suppress("unused")
-
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QuerySetId
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.UnsubscribeFlags
+import kotlinx.atomicfu.atomic
 
 /**
  * Subscription lifecycle state.
  */
-enum class SubscriptionState {
+public enum class SubscriptionState {
     PENDING,
     ACTIVE,
+    UNSUBSCRIBING,
     ENDED,
 }
 
@@ -20,57 +21,64 @@ enum class SubscriptionState {
  * - Active after SubscribeApplied received
  * - Ended after UnsubscribeApplied or SubscriptionError received
  */
-class SubscriptionHandle internal constructor(
-    val querySetId: QuerySetId,
-    val queries: List<String>,
+public class SubscriptionHandle internal constructor(
+    public val querySetId: QuerySetId,
+    public val queries: List<String>,
     private val connection: DbConnection,
     private val onAppliedCallbacks: List<(EventContext.SubscribeApplied) -> Unit> = emptyList(),
     private val onErrorCallbacks: List<(EventContext.Error, Throwable) -> Unit> = emptyList(),
 ) {
-    var state: SubscriptionState = SubscriptionState.PENDING
-        private set
+    private val _state = atomic(SubscriptionState.PENDING)
+    public val state: SubscriptionState get() = _state.value
+    public val isPending: Boolean get() = _state.value == SubscriptionState.PENDING
+    public val isActive: Boolean get() = _state.value == SubscriptionState.ACTIVE
+    public val isUnsubscribing: Boolean get() = _state.value == SubscriptionState.UNSUBSCRIBING
+    public val isEnded: Boolean get() = _state.value == SubscriptionState.ENDED
 
-    private var onEndCallback: ((EventContext.UnsubscribeApplied) -> Unit)? = null
-    private var unsubscribeCalled = false
-
-    val isActive: Boolean get() = state == SubscriptionState.ACTIVE
-    val isEnded: Boolean get() = state == SubscriptionState.ENDED
+    private val _onEndCallback = atomic<((EventContext.UnsubscribeApplied) -> Unit)?>(null)
 
     /**
      * Unsubscribe from this subscription.
      * The onEnd callback will fire when the server confirms.
      */
-    fun unsubscribe() {
-        doUnsubscribe()
+    public fun unsubscribe(flags: UnsubscribeFlags = UnsubscribeFlags.Default) {
+        doUnsubscribe(flags)
     }
 
     /**
      * Unsubscribe and register a callback for when it completes.
      */
-    fun unsubscribeThen(onEnd: (EventContext.UnsubscribeApplied) -> Unit) {
-        onEndCallback = onEnd
-        doUnsubscribe()
+    public fun unsubscribeThen(
+        flags: UnsubscribeFlags = UnsubscribeFlags.Default,
+        onEnd: (EventContext.UnsubscribeApplied) -> Unit,
+    ) {
+        _onEndCallback.value = onEnd
+        doUnsubscribe(flags)
     }
 
-    private fun doUnsubscribe() {
-        check(state == SubscriptionState.ACTIVE) { "Cannot unsubscribe: subscription is $state" }
-        check(!unsubscribeCalled) { "Cannot unsubscribe: already unsubscribed" }
-        unsubscribeCalled = true
-        connection.unsubscribe(this)
+    private fun doUnsubscribe(flags: UnsubscribeFlags) {
+        check(_state.compareAndSet(SubscriptionState.ACTIVE, SubscriptionState.UNSUBSCRIBING)) {
+            "Cannot unsubscribe: subscription is ${_state.value}"
+        }
+        connection.unsubscribe(this, flags)
     }
 
-    internal fun handleApplied(ctx: EventContext.SubscribeApplied) {
-        state = SubscriptionState.ACTIVE
-        for (cb in onAppliedCallbacks) cb(ctx)
+    internal suspend fun handleApplied(ctx: EventContext.SubscribeApplied) {
+        _state.value = SubscriptionState.ACTIVE
+        for (cb in onAppliedCallbacks) connection.runUserCallback { cb(ctx) }
     }
 
-    internal fun handleError(ctx: EventContext.Error, error: Throwable) {
-        state = SubscriptionState.ENDED
-        for (cb in onErrorCallbacks) cb(ctx, error)
+    internal suspend fun handleError(ctx: EventContext.Error, error: Throwable) {
+        _state.value = SubscriptionState.ENDED
+        for (cb in onErrorCallbacks) connection.runUserCallback { cb(ctx, error) }
     }
 
-    internal fun handleEnd(ctx: EventContext.UnsubscribeApplied) {
-        state = SubscriptionState.ENDED
-        onEndCallback?.invoke(ctx)
+    internal suspend fun handleEnd(ctx: EventContext.UnsubscribeApplied) {
+        _state.value = SubscriptionState.ENDED
+        _onEndCallback.value?.let { connection.runUserCallback { it.invoke(ctx) } }
+    }
+
+    internal fun markEnded() {
+        _state.value = SubscriptionState.ENDED
     }
 }

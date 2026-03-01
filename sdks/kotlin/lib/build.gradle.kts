@@ -7,6 +7,8 @@ group = "com.clockworklabs"
 version = "0.1.0"
 
 kotlin {
+    explicitApi()
+
     androidLibrary {
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
@@ -37,13 +39,18 @@ kotlin {
         commonMain.dependencies {
             implementation(libs.kotlinx.collections.immutable)
             implementation(libs.kotlinx.atomicfu)
+            implementation(libs.bignum)
 
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.websockets)
         }
 
+        commonTest.dependencies {
+            implementation(libs.kotlin.test)
+            implementation(libs.kotlinx.coroutines.test)
+        }
+
         jvmMain.dependencies {
-            implementation(libs.kotlinx.coroutines.swing)
             implementation(libs.ktor.client.okhttp)
             implementation(libs.brotli.dec)
         }

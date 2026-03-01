@@ -1,5 +1,3 @@
-@file:Suppress("unused")
-
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
 import kotlinx.atomicfu.locks.SynchronizedObject
@@ -9,20 +7,22 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 
-data class DurationSample(val duration: Duration, val metadata: String)
+public data class DurationSample(val duration: Duration, val metadata: String)
 
-data class MinMaxResult(val min: DurationSample, val max: DurationSample)
+public data class MinMaxResult(val min: DurationSample, val max: DurationSample)
 
 private class RequestEntry(val startTime: TimeMark, val metadata: String)
 
-class NetworkRequestTracker : SynchronizedObject() {
-    companion object {
+public class NetworkRequestTracker : SynchronizedObject() {
+    public companion object {
         private const val MAX_TRACKERS = 16
     }
 
-    var allTimeMin: DurationSample? = null
+    public var allTimeMin: DurationSample? = null
+        get() = synchronized(this) { field }
         private set
-    var allTimeMax: DurationSample? = null
+    public var allTimeMax: DurationSample? = null
+        get() = synchronized(this) { field }
         private set
 
     private val trackers = mutableMapOf<Int, WindowTracker>()
@@ -30,7 +30,7 @@ class NetworkRequestTracker : SynchronizedObject() {
     private var nextRequestId = 0u
     private val requests = mutableMapOf<UInt, RequestEntry>()
 
-    fun getMinMaxTimes(lastSeconds: Int): MinMaxResult? = synchronized(this) {
+    public fun getMinMaxTimes(lastSeconds: Int): MinMaxResult? = synchronized(this) {
         val tracker = trackers.getOrPut(lastSeconds) {
             check(trackers.size < MAX_TRACKERS) {
                 "Cannot track more than $MAX_TRACKERS distinct window sizes"
@@ -40,9 +40,9 @@ class NetworkRequestTracker : SynchronizedObject() {
         tracker.getMinMax()
     }
 
-    fun getSampleCount(): Int = synchronized(this) { totalSamples }
+    public fun getSampleCount(): Int = synchronized(this) { totalSamples }
 
-    fun getRequestsAwaitingResponse(): Int = synchronized(this) { requests.size }
+    public fun getRequestsAwaitingResponse(): Int = synchronized(this) { requests.size }
 
     internal fun startTrackingRequest(metadata: String = ""): UInt {
         synchronized(this) {
@@ -124,9 +124,17 @@ class NetworkRequestTracker : SynchronizedObject() {
         }
 
         private fun maybeRotate() {
-            if (lastReset.elapsedNow() >= window) {
-                lastWindowMin = thisWindowMin
-                lastWindowMax = thisWindowMax
+            val elapsed = lastReset.elapsedNow()
+            if (elapsed >= window) {
+                if (elapsed >= window * 2) {
+                    // More than one full window passed — no data in the immediately
+                    // preceding window, so lastWindow should be empty.
+                    lastWindowMin = null
+                    lastWindowMax = null
+                } else {
+                    lastWindowMin = thisWindowMin
+                    lastWindowMax = thisWindowMax
+                }
                 thisWindowMin = null
                 thisWindowMax = null
                 lastReset = TimeSource.Monotonic.markNow()
@@ -135,12 +143,11 @@ class NetworkRequestTracker : SynchronizedObject() {
     }
 }
 
-class Stats {
-    val reducerRequestTracker = NetworkRequestTracker()
-    val procedureRequestTracker = NetworkRequestTracker()
-    val subscriptionRequestTracker = NetworkRequestTracker()
-    val oneOffRequestTracker = NetworkRequestTracker()
+public class Stats {
+    public val reducerRequestTracker: NetworkRequestTracker = NetworkRequestTracker()
+    public val procedureRequestTracker: NetworkRequestTracker = NetworkRequestTracker()
+    public val subscriptionRequestTracker: NetworkRequestTracker = NetworkRequestTracker()
+    public val oneOffRequestTracker: NetworkRequestTracker = NetworkRequestTracker()
 
-    val parseMessageTracker = NetworkRequestTracker()
-    val applyMessageTracker = NetworkRequestTracker()
+    public val applyMessageTracker: NetworkRequestTracker = NetworkRequestTracker()
 }

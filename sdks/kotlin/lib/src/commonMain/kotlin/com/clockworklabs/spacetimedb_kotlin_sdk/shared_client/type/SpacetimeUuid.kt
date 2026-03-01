@@ -3,15 +3,22 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.toEpochMicroseconds
-import java.math.BigInteger
+import com.ionspin.kotlin.bignum.integer.BigInteger
+import com.ionspin.kotlin.bignum.integer.Sign
+import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.getAndUpdate
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
-class Counter(var value: Int = 0)
+public class Counter(value: Int = 0) {
+    private val _value = atomic(value)
+    internal fun getAndIncrement(): Int =
+        _value.getAndUpdate { (it + 1) and 0x7FFF_FFFF }
+}
 
-enum class UuidVersion { Nil, V4, V7, Max, Unknown }
+public enum class UuidVersion { Nil, V4, V7, Max, Unknown }
 
-data class SpacetimeUuid(val data: Uuid) : Comparable<SpacetimeUuid> {
+public data class SpacetimeUuid(val data: Uuid) : Comparable<SpacetimeUuid> {
     override fun compareTo(other: SpacetimeUuid): Int {
         val a = data.toByteArray()
         val b = other.data.toByteArray()
@@ -21,18 +28,18 @@ data class SpacetimeUuid(val data: Uuid) : Comparable<SpacetimeUuid> {
         }
         return 0
     }
-    fun encode(writer: BsatnWriter) {
-        val value = BigInteger(1, data.toByteArray())
+    public fun encode(writer: BsatnWriter) {
+        val value = BigInteger.fromByteArray(data.toByteArray(), Sign.POSITIVE)
         writer.writeU128(value)
     }
 
     override fun toString(): String = data.toString()
 
-    fun toHexString(): String = data.toHexString()
+    public fun toHexString(): String = data.toHexString()
 
-    fun toByteArray(): ByteArray = data.toByteArray()
+    public fun toByteArray(): ByteArray = data.toByteArray()
 
-    fun getCounter(): Int {
+    public fun getCounter(): Int {
         val b = data.toByteArray()
         return ((b[7].toInt() and 0xFF) shl 23) or
             ((b[9].toInt() and 0xFF) shl 15) or
@@ -40,7 +47,7 @@ data class SpacetimeUuid(val data: Uuid) : Comparable<SpacetimeUuid> {
             ((b[11].toInt() and 0xFF) shr 1)
     }
 
-    fun getVersion(): UuidVersion {
+    public fun getVersion(): UuidVersion {
         if (data == Uuid.NIL) return UuidVersion.Nil
         val bytes = data.toByteArray()
         if (bytes.all { it == 0xFF.toByte() }) return UuidVersion.Max
@@ -51,21 +58,21 @@ data class SpacetimeUuid(val data: Uuid) : Comparable<SpacetimeUuid> {
         }
     }
 
-    companion object {
-        val NIL = SpacetimeUuid(Uuid.NIL)
-        val MAX = SpacetimeUuid(Uuid.fromByteArray(ByteArray(16) { 0xFF.toByte() }))
+    public companion object {
+        public val NIL: SpacetimeUuid = SpacetimeUuid(Uuid.NIL)
+        public val MAX: SpacetimeUuid = SpacetimeUuid(Uuid.fromByteArray(ByteArray(16) { 0xFF.toByte() }))
 
-        fun decode(reader: BsatnReader): SpacetimeUuid {
+        public fun decode(reader: BsatnReader): SpacetimeUuid {
             val value = reader.readU128()
             val bytes = value.toByteArray()
-            val unsigned = if (bytes.size > 1 && bytes[0] == 0.toByte()) bytes.copyOfRange(1, bytes.size) else bytes
-            val padded = ByteArray(16 - unsigned.size) + unsigned
+            val padded = if (bytes.size >= 16) bytes.copyOfRange(bytes.size - 16, bytes.size)
+            else ByteArray(16 - bytes.size) + bytes
             return SpacetimeUuid(Uuid.fromByteArray(padded))
         }
 
-        fun random(): SpacetimeUuid = SpacetimeUuid(Uuid.random())
+        public fun random(): SpacetimeUuid = SpacetimeUuid(Uuid.random())
 
-        fun fromRandomBytesV4(bytes: ByteArray): SpacetimeUuid {
+        public fun fromRandomBytesV4(bytes: ByteArray): SpacetimeUuid {
             require(bytes.size == 16) { "UUID v4 requires exactly 16 bytes, got ${bytes.size}" }
             val b = bytes.copyOf()
             b[6] = ((b[6].toInt() and 0x0F) or 0x40).toByte() // version 4
@@ -73,10 +80,9 @@ data class SpacetimeUuid(val data: Uuid) : Comparable<SpacetimeUuid> {
             return SpacetimeUuid(Uuid.fromByteArray(b))
         }
 
-        fun fromCounterV7(counter: Counter, now: Timestamp, randomBytes: ByteArray): SpacetimeUuid {
+        public fun fromCounterV7(counter: Counter, now: Timestamp, randomBytes: ByteArray): SpacetimeUuid {
             require(randomBytes.size >= 4) { "V7 UUID requires at least 4 random bytes, got ${randomBytes.size}" }
-            val counterVal = counter.value
-            counter.value = (counterVal + 1) and 0x7FFF_FFFF
+            val counterVal = counter.getAndIncrement()
 
             val tsMs = now.instant.toEpochMicroseconds() / 1_000
 
@@ -99,7 +105,7 @@ data class SpacetimeUuid(val data: Uuid) : Comparable<SpacetimeUuid> {
             b[10] = ((counterVal shr 7) and 0xFF).toByte()
             b[11] = ((counterVal and 0x7F) shl 1).toByte()
             // Bytes 12-15: random bytes
-            b[12] = (b[12].toInt() or (randomBytes[0].toInt() and 0x7F)).toByte()
+            b[12] = (randomBytes[0].toInt() and 0x7F).toByte()
             b[13] = randomBytes[1]
             b[14] = randomBytes[2]
             b[15] = randomBytes[3]
@@ -107,6 +113,6 @@ data class SpacetimeUuid(val data: Uuid) : Comparable<SpacetimeUuid> {
             return SpacetimeUuid(Uuid.fromByteArray(b))
         }
 
-        fun parse(str: String): SpacetimeUuid = SpacetimeUuid(Uuid.parse(str))
+        public fun parse(str: String): SpacetimeUuid = SpacetimeUuid(Uuid.parse(str))
     }
 }

@@ -1,5 +1,3 @@
-@file:Suppress("unused")
-
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ProcedureStatus
@@ -11,17 +9,17 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Timestamp
 /**
  * Reducer call status.
  */
-sealed interface Status {
-    data object Committed : Status
-    data class Failed(val message: String) : Status
-    data object OutOfEnergy : Status
+public sealed interface Status {
+    public data object Committed : Status
+    public data class Failed(val message: String) : Status
+    public data object OutOfEnergy : Status
 }
 
 /**
  * Procedure event data for procedure-specific callbacks.
  * Matches C#'s ProcedureEvent record.
  */
-data class ProcedureEvent(
+public data class ProcedureEvent(
     val timestamp: Timestamp,
     val status: ProcedureStatus,
     val callerIdentity: Identity,
@@ -36,47 +34,50 @@ data class ProcedureEvent(
  *
  * Mirrors TS SDK's EventContextInterface / ReducerEventContextInterface /
  * SubscriptionEventContextInterface / ErrorContextInterface.
+ *
+ * Subtypes are plain classes (not data classes) because [connection] is a
+ * mutable handle, not value data — it should not participate in equals/hashCode.
  */
-sealed interface EventContext {
-    val id: String
-    val connection: DbConnection
+public sealed interface EventContext {
+    public val id: String
+    public val connection: DbConnection
 
-    data class SubscribeApplied(
+    public class SubscribeApplied(
         override val id: String,
         override val connection: DbConnection,
     ) : EventContext
 
-    data class UnsubscribeApplied(
+    public class UnsubscribeApplied(
         override val id: String,
         override val connection: DbConnection,
     ) : EventContext
 
-    data class Transaction(
+    public class Transaction(
         override val id: String,
         override val connection: DbConnection,
     ) : EventContext
 
-    data class Reducer<A>(
+    public class Reducer<A>(
         override val id: String,
         override val connection: DbConnection,
-        val timestamp: Timestamp,
-        val reducerName: String,
-        val args: A,
-        val status: Status,
-        val callerIdentity: Identity,
-        val callerConnectionId: ConnectionId?,
+        public val timestamp: Timestamp,
+        public val reducerName: String,
+        public val args: A,
+        public val status: Status,
+        public val callerIdentity: Identity,
+        public val callerConnectionId: ConnectionId?,
     ) : EventContext
 
-    data class Procedure(
+    public class Procedure(
         override val id: String,
         override val connection: DbConnection,
-        val event: ProcedureEvent,
+        public val event: ProcedureEvent,
     ) : EventContext
 
-    data class Error(
+    public class Error(
         override val id: String,
         override val connection: DbConnection,
-        val error: Throwable,
+        public val error: Throwable,
     ) : EventContext
 
     /**
@@ -84,8 +85,14 @@ sealed interface EventContext {
      * This is defensive — it can happen if the reducer was called from another client
      * or if the call info was lost (e.g. reconnect).
      */
-    data class UnknownTransaction(
+    public class UnknownTransaction(
         override val id: String,
         override val connection: DbConnection,
     ) : EventContext
+}
+
+/** Test-only [EventContext] stub. Not part of the public API. */
+internal class StubEventContext(override val id: String = "test") : EventContext {
+    override val connection: DbConnection
+        get() = error("StubEventContext.connection should not be accessed in unit tests")
 }

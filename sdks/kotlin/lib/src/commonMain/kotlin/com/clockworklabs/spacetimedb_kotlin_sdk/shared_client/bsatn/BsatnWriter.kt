@@ -1,14 +1,15 @@
-@file:Suppress("MemberVisibilityCanBePrivate", "unused")
-
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn
 
-import java.math.BigInteger
-import java.util.Base64
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Logger
+import com.ionspin.kotlin.bignum.integer.BigInteger
+import com.ionspin.kotlin.bignum.integer.util.toTwosComplementByteArray
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
  * Resizable buffer for BSATN writing. Doubles capacity on overflow.
  */
-class ResizableBuffer(initialCapacity: Int) {
+internal class ResizableBuffer(initialCapacity: Int) {
     var buffer: ByteArray = ByteArray(initialCapacity)
         private set
 
@@ -25,9 +26,9 @@ class ResizableBuffer(initialCapacity: Int) {
  * Binary writer for BSATN encoding. Mirrors TypeScript BinaryWriter.
  * Little-endian, length-prefixed strings/byte arrays, auto-growing buffer.
  */
-class BsatnWriter(initialCapacity: Int = 256) {
+public class BsatnWriter(initialCapacity: Int = 256) {
     private var buffer = ResizableBuffer(initialCapacity)
-    var offset: Int = 0
+    public var offset: Int = 0
         private set
 
     private fun expandBuffer(additionalCapacity: Int) {
@@ -37,26 +38,26 @@ class BsatnWriter(initialCapacity: Int = 256) {
 
     // ---------- Primitive Writes ----------
 
-    fun writeBool(value: Boolean) {
+    public fun writeBool(value: Boolean) {
         expandBuffer(1)
         buffer.buffer[offset] = if (value) 1 else 0
         offset += 1
     }
 
-    fun writeByte(value: Byte) {
+    public fun writeByte(value: Byte) {
         expandBuffer(1)
         buffer.buffer[offset] = value
         offset += 1
     }
 
-    fun writeUByte(value: UByte) {
+    public fun writeUByte(value: UByte) {
         writeByte(value.toByte())
     }
 
-    fun writeI8(value: Byte) = writeByte(value)
-    fun writeU8(value: UByte) = writeUByte(value)
+    public fun writeI8(value: Byte): Unit = writeByte(value)
+    public fun writeU8(value: UByte): Unit = writeUByte(value)
 
-    fun writeI16(value: Short) {
+    public fun writeI16(value: Short) {
         expandBuffer(2)
         val v = value.toInt()
         buffer.buffer[offset] = (v and 0xFF).toByte()
@@ -64,9 +65,9 @@ class BsatnWriter(initialCapacity: Int = 256) {
         offset += 2
     }
 
-    fun writeU16(value: UShort) = writeI16(value.toShort())
+    public fun writeU16(value: UShort): Unit = writeI16(value.toShort())
 
-    fun writeI32(value: Int) {
+    public fun writeI32(value: Int) {
         expandBuffer(4)
         buffer.buffer[offset] = (value and 0xFF).toByte()
         buffer.buffer[offset + 1] = ((value shr 8) and 0xFF).toByte()
@@ -75,9 +76,9 @@ class BsatnWriter(initialCapacity: Int = 256) {
         offset += 4
     }
 
-    fun writeU32(value: UInt) = writeI32(value.toInt())
+    public fun writeU32(value: UInt): Unit = writeI32(value.toInt())
 
-    fun writeI64(value: Long) {
+    public fun writeI64(value: Long) {
         expandBuffer(8)
         for (i in 0 until 8) {
             buffer.buffer[offset + i] = ((value shr (i * 8)) and 0xFF).toByte()
@@ -85,26 +86,36 @@ class BsatnWriter(initialCapacity: Int = 256) {
         offset += 8
     }
 
-    fun writeU64(value: ULong) = writeI64(value.toLong())
+    public fun writeU64(value: ULong): Unit = writeI64(value.toLong())
 
-    fun writeF32(value: Float) = writeI32(value.toRawBits())
+    public fun writeF32(value: Float): Unit = writeI32(value.toRawBits())
 
-    fun writeF64(value: Double) = writeI64(value.toRawBits())
+    public fun writeF64(value: Double): Unit = writeI64(value.toRawBits())
 
     // ---------- Big Integer Writes ----------
 
-    fun writeI128(value: BigInteger) = writeBigIntLE(value, 16, signed = true)
+    public fun writeI128(value: BigInteger): Unit = writeBigIntLE(value, 16)
 
-    fun writeU128(value: BigInteger) = writeBigIntLE(value, 16, signed = false)
+    public fun writeU128(value: BigInteger): Unit = writeBigIntLE(value, 16)
 
-    fun writeI256(value: BigInteger) = writeBigIntLE(value, 32, signed = true)
+    public fun writeI256(value: BigInteger): Unit = writeBigIntLE(value, 32)
 
-    fun writeU256(value: BigInteger) = writeBigIntLE(value, 32, signed = false)
+    public fun writeU256(value: BigInteger): Unit = writeBigIntLE(value, 32)
 
-    private fun writeBigIntLE(value: BigInteger, byteSize: Int, signed: Boolean) {
+    // Oversized values are silently truncated to byteSize, matching the behavior
+    // of the C# SDK (cast truncation) and TypeScript SDK (bitmask truncation).
+    private fun writeBigIntLE(value: BigInteger, byteSize: Int) {
         expandBuffer(byteSize)
-        val beBytes = value.toByteArray() // big-endian, sign-magnitude
+        // Two's complement big-endian bytes (sign-aware, like java.math.BigInteger)
+        val beBytes = value.toTwosComplementByteArray()
         val padByte: Byte = if (value.signum() < 0) 0xFF.toByte() else 0
+        // Warn if the value doesn't fit — high bytes beyond byteSize will be truncated
+        if (beBytes.size > byteSize) {
+            val isSignExtensionOnly = (0 until beBytes.size - byteSize).all { beBytes[it] == padByte }
+            if (!isSignExtensionOnly) {
+                Logger.warn { "BigInteger value truncated from ${beBytes.size} to $byteSize bytes: $value" }
+            }
+        }
         val padded = ByteArray(byteSize) { padByte }
         // Copy big-endian bytes right-aligned into padded, then reverse for LE
         val srcStart = maxOf(0, beBytes.size - byteSize)
@@ -117,20 +128,20 @@ class BsatnWriter(initialCapacity: Int = 256) {
     // ---------- Strings / Byte Arrays ----------
 
     /** Length-prefixed string (U32 length + UTF-8 bytes) */
-    fun writeString(value: String) {
+    public fun writeString(value: String) {
         val bytes = value.encodeToByteArray()
         writeU32(bytes.size.toUInt())
         writeRawBytes(bytes)
     }
 
     /** Length-prefixed byte array (U32 length + raw bytes) */
-    fun writeByteArray(value: ByteArray) {
+    public fun writeByteArray(value: ByteArray) {
         writeU32(value.size.toUInt())
         writeRawBytes(value)
     }
 
     /** Raw bytes, no length prefix */
-    fun writeRawBytes(bytes: ByteArray) {
+    public fun writeRawBytes(bytes: ByteArray) {
         expandBuffer(bytes.size)
         bytes.copyInto(buffer.buffer, offset)
         offset += bytes.size
@@ -138,16 +149,17 @@ class BsatnWriter(initialCapacity: Int = 256) {
 
     // ---------- Utilities ----------
 
-    fun writeSumTag(tag: UByte) = writeU8(tag)
+    public fun writeSumTag(tag: UByte): Unit = writeU8(tag)
 
-    fun writeArrayLen(length: Int) = writeU32(length.toUInt())
+    public fun writeArrayLen(length: Int): Unit = writeU32(length.toUInt())
 
     /** Return the written buffer up to current offset */
-    fun toByteArray(): ByteArray = buffer.buffer.copyOf(offset)
+    public fun toByteArray(): ByteArray = buffer.buffer.copyOf(offset)
 
-    fun toBase64(): String = Base64.getEncoder().encodeToString(toByteArray())
+    @OptIn(ExperimentalEncodingApi::class)
+    public fun toBase64(): String = Base64.Default.encode(toByteArray())
 
-    fun reset(initialCapacity: Int = 256) {
+    public fun reset(initialCapacity: Int = 256) {
         buffer = ResizableBuffer(initialCapacity)
         offset = 0
     }

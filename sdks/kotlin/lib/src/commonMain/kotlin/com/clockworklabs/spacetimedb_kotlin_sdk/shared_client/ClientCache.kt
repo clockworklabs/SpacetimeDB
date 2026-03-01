@@ -1,11 +1,16 @@
-@file:Suppress("unused")
-
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.BsatnRowList
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.RowSizeHint
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.TableUpdateRows
+import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.getAndUpdate
+import kotlinx.atomicfu.update
+import kotlinx.collections.immutable.PersistentMap
+import kotlinx.collections.immutable.persistentHashMapOf
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toPersistentList
 
 /**
  * Wrapper for ByteArray that provides structural equality/hashCode.
@@ -19,20 +24,42 @@ internal class BsatnRowKey(val bytes: ByteArray) {
 }
 
 /**
- * Operation representing a row change, used in callbacks.
+ * Callback that fires after table operations are applied.
  */
-sealed interface Operation<out Row> {
-    data class Insert<Row>(val row: Row) : Operation<Row>
-    data class Delete<Row>(val row: Row) : Operation<Row>
-    data class Update<Row>(val oldRow: Row, val newRow: Row) : Operation<Row>
+public fun interface PendingCallback {
+    public fun invoke()
 }
 
 /**
- * Callback that fires after table operations are applied.
+ * A decoded row paired with its raw BSATN bytes (used for content-based keying).
  */
-fun interface PendingCallback {
-    fun invoke()
+internal data class DecodedRow<Row>(val row: Row, val rawBytes: ByteArray) {
+    override fun equals(other: Any?): Boolean =
+        other is DecodedRow<*> && row == other.row && rawBytes.contentEquals(other.rawBytes)
+
+    override fun hashCode(): Int = 31 * row.hashCode() + rawBytes.contentHashCode()
 }
+
+/**
+ * Type-erased marker for pre-decoded row data.
+ * Produced by [TableCache.parseUpdate] / [TableCache.parseDeletes],
+ * consumed by preApply/apply methods. Matches C# SDK's IParsedTableUpdate pattern:
+ * rows are decoded once and the parsed result is passed to all phases.
+ */
+public interface ParsedTableData
+
+internal class ParsedPersistentUpdate<Row>(
+    val deletes: List<DecodedRow<Row>>,
+    val inserts: List<DecodedRow<Row>>,
+) : ParsedTableData
+
+internal class ParsedEventUpdate<Row>(
+    val events: List<Row>,
+) : ParsedTableData
+
+internal class ParsedDeletesOnly<Row>(
+    val rows: List<DecodedRow<Row>>,
+) : ParsedTableData
 
 /**
  * Per-table cache entry. Stores rows with reference counting
@@ -43,53 +70,51 @@ fun interface PendingCallback {
  * @param Row the row type stored in this cache
  * @param Key the key type used to identify rows (typed PK or BsatnRowKey)
  */
-class TableCache<Row, Key : Any> private constructor(
+public class TableCache<Row, Key : Any> private constructor(
     private val decode: (BsatnReader) -> Row,
     private val keyExtractor: (Row, ByteArray) -> Key,
 ) {
-    companion object {
-        fun <Row, Key : Any> withPrimaryKey(
+    public companion object {
+        public fun <Row, Key : Any> withPrimaryKey(
             decode: (BsatnReader) -> Row,
             primaryKey: (Row) -> Key,
         ): TableCache<Row, Key> = TableCache(decode) { row, _ -> primaryKey(row) }
 
         @Suppress("UNCHECKED_CAST")
-        fun <Row> withContentKey(
+        public fun <Row> withContentKey(
             decode: (BsatnReader) -> Row,
         ): TableCache<Row, *> = TableCache<Row, BsatnRowKey>(decode) { _, bytes -> BsatnRowKey(bytes) }
     }
 
-    // Map<key, Pair<Row, refCount>>
-    private val rows = mutableMapOf<Key, Pair<Row, Int>>()
+    // Map<key, Pair<Row, refCount>> — atomic persistent map for thread-safe reads
+    private val _rows = atomic(persistentHashMapOf<Key, Pair<Row, Int>>())
 
-    private val onInsertCallbacks = mutableListOf<(EventContext, Row) -> Unit>()
-    private val onDeleteCallbacks = mutableListOf<(EventContext, Row) -> Unit>()
-    private val onUpdateCallbacks = mutableListOf<(EventContext, Row, Row) -> Unit>()
-    private val onBeforeDeleteCallbacks = mutableListOf<(EventContext, Row) -> Unit>()
+    private val _onInsertCallbacks = atomic(persistentListOf<(EventContext, Row) -> Unit>())
+    private val _onDeleteCallbacks = atomic(persistentListOf<(EventContext, Row) -> Unit>())
+    private val _onUpdateCallbacks = atomic(persistentListOf<(EventContext, Row, Row) -> Unit>())
+    private val _onBeforeDeleteCallbacks = atomic(persistentListOf<(EventContext, Row) -> Unit>())
 
-    internal val internalInsertListeners = mutableListOf<(Row) -> Unit>()
-    internal val internalDeleteListeners = mutableListOf<(Row) -> Unit>()
+    private val _internalInsertListeners = atomic(persistentListOf<(Row) -> Unit>())
+    private val _internalDeleteListeners = atomic(persistentListOf<(Row) -> Unit>())
 
-    fun onInsert(cb: (EventContext, Row) -> Unit) { onInsertCallbacks.add(cb) }
-    fun onDelete(cb: (EventContext, Row) -> Unit) { onDeleteCallbacks.add(cb) }
-    fun onUpdate(cb: (EventContext, Row, Row) -> Unit) { onUpdateCallbacks.add(cb) }
-    fun onBeforeDelete(cb: (EventContext, Row) -> Unit) { onBeforeDeleteCallbacks.add(cb) }
+    internal fun addInternalInsertListener(cb: (Row) -> Unit) { _internalInsertListeners.update { it.add(cb) } }
+    internal fun addInternalDeleteListener(cb: (Row) -> Unit) { _internalDeleteListeners.update { it.add(cb) } }
 
-    fun removeOnInsert(cb: (EventContext, Row) -> Unit) { onInsertCallbacks.remove(cb) }
-    fun removeOnDelete(cb: (EventContext, Row) -> Unit) { onDeleteCallbacks.remove(cb) }
-    fun removeOnUpdate(cb: (EventContext, Row, Row) -> Unit) { onUpdateCallbacks.remove(cb) }
-    fun removeOnBeforeDelete(cb: (EventContext, Row) -> Unit) { onBeforeDeleteCallbacks.remove(cb) }
+    public fun onInsert(cb: (EventContext, Row) -> Unit) { _onInsertCallbacks.update { it.add(cb) } }
+    public fun onDelete(cb: (EventContext, Row) -> Unit) { _onDeleteCallbacks.update { it.add(cb) } }
+    public fun onUpdate(cb: (EventContext, Row, Row) -> Unit) { _onUpdateCallbacks.update { it.add(cb) } }
+    public fun onBeforeDelete(cb: (EventContext, Row) -> Unit) { _onBeforeDeleteCallbacks.update { it.add(cb) } }
 
-    fun count(): Int = rows.size
+    public fun removeOnInsert(cb: (EventContext, Row) -> Unit) { _onInsertCallbacks.update { it.remove(cb) } }
+    public fun removeOnDelete(cb: (EventContext, Row) -> Unit) { _onDeleteCallbacks.update { it.remove(cb) } }
+    public fun removeOnUpdate(cb: (EventContext, Row, Row) -> Unit) { _onUpdateCallbacks.update { it.remove(cb) } }
+    public fun removeOnBeforeDelete(cb: (EventContext, Row) -> Unit) { _onBeforeDeleteCallbacks.update { it.remove(cb) } }
 
-    fun iter(): Iterator<Row> = rows.values.map { it.first }.iterator()
+    public fun count(): Int = _rows.value.size
 
-    fun all(): List<Row> = rows.values.map { it.first }
+    public fun iter(): Iterator<Row> = _rows.value.values.map { it.first }.iterator()
 
-    /**
-     * A decoded row paired with its raw BSATN bytes (used for content-based keying).
-     */
-    private data class DecodedRow<Row>(val row: Row, val rawBytes: ByteArray)
+    public fun all(): List<Row> = _rows.value.values.map { it.first }
 
     /**
      * Decode rows from a BsatnRowList, capturing raw BSATN bytes per row.
@@ -114,206 +139,278 @@ class TableCache<Row, Key : Any> private constructor(
         return result
     }
 
-    fun decodeRowList(rowList: BsatnRowList): List<Row> =
+    public fun decodeRowList(rowList: BsatnRowList): List<Row> =
         decodeRowListWithBytes(rowList).map { it.row }
+
+    // --- Parse phase: decode once, reuse across preApply/apply ---
+
+    /**
+     * Decode a [TableUpdateRows] into a [ParsedTableData] that can be passed
+     * to [preApplyUpdate] and [applyUpdate]. Rows are decoded exactly once.
+     */
+    public fun parseUpdate(update: TableUpdateRows): ParsedTableData = when (update) {
+        is TableUpdateRows.PersistentTable -> ParsedPersistentUpdate(
+            deletes = decodeRowListWithBytes(update.deletes),
+            inserts = decodeRowListWithBytes(update.inserts),
+        )
+        is TableUpdateRows.EventTable -> ParsedEventUpdate(
+            events = decodeRowListWithBytes(update.events).map { it.row },
+        )
+    }
+
+    /**
+     * Decode a [BsatnRowList] of deletes into a [ParsedTableData] that can be
+     * passed to [preApplyDeletes] and [applyDeletes]. Rows are decoded exactly once.
+     */
+    public fun parseDeletes(rowList: BsatnRowList): ParsedTableData =
+        ParsedDeletesOnly(rows = decodeRowListWithBytes(rowList))
+
+    // --- Insert (single-phase, no pre-apply needed) ---
 
     /**
      * Apply insert operations from a BsatnRowList.
      * Returns pending callbacks to execute after all tables are updated.
      */
-    fun applyInserts(ctx: EventContext, rowList: BsatnRowList): List<PendingCallback> {
+    public fun applyInserts(ctx: EventContext, rowList: BsatnRowList): List<PendingCallback> {
         val decoded = decodeRowListWithBytes(rowList)
         val callbacks = mutableListOf<PendingCallback>()
-        for ((row, rawBytes) in decoded) {
-            val id = keyExtractor(row, rawBytes)
-            val existing = rows[id]
-            if (existing != null) {
-                // Increment ref count
-                rows[id] = Pair(existing.first, existing.second + 1)
-            } else {
-                rows[id] = Pair(row, 1)
-                for (listener in internalInsertListeners) listener(row)
-                if (onInsertCallbacks.isNotEmpty()) {
-                    callbacks.add(PendingCallback {
-                        for (cb in onInsertCallbacks) cb(ctx, row)
-                    })
+        val newInserts = mutableListOf<Row>()
+        _rows.update { current ->
+            callbacks.clear()
+            newInserts.clear()
+            var snapshot = current
+            for ((row, rawBytes) in decoded) {
+                val id = keyExtractor(row, rawBytes)
+                val existing = snapshot[id]
+                if (existing != null) {
+                    snapshot = snapshot.put(id, Pair(existing.first, existing.second + 1))
+                } else {
+                    snapshot = snapshot.put(id, Pair(row, 1))
+                    newInserts.add(row)
+                    if (_onInsertCallbacks.value.isNotEmpty()) {
+                        callbacks.add(PendingCallback {
+                            for (cb in _onInsertCallbacks.value) cb(ctx, row)
+                        })
+                    }
                 }
             }
+            snapshot
+        }
+        for (row in newInserts) {
+            for (listener in _internalInsertListeners.value) listener(row)
         }
         return callbacks
     }
+
+    // --- Unsubscribe deletes (two-phase) ---
 
     /**
      * Phase 1 for unsubscribe deletes: fires onBeforeDelete callbacks
      * BEFORE any mutations happen, enabling cross-table consistency.
+     * Accepts pre-decoded data from [parseDeletes].
      */
-    fun preApplyDeletes(ctx: EventContext, rowList: BsatnRowList) {
-        if (onBeforeDeleteCallbacks.isEmpty()) return
-        val decoded = decodeRowListWithBytes(rowList)
-        for ((row, rawBytes) in decoded) {
+    @Suppress("UNCHECKED_CAST")
+    public fun preApplyDeletes(ctx: EventContext, parsed: ParsedTableData) {
+        if (_onBeforeDeleteCallbacks.value.isEmpty()) return
+        val data = parsed as ParsedDeletesOnly<Row>
+        val snapshot = _rows.value
+        for ((row, rawBytes) in data.rows) {
             val id = keyExtractor(row, rawBytes)
-            val existing = rows[id] ?: continue
+            val existing = snapshot[id] ?: continue
             if (existing.second <= 1) {
-                for (cb in onBeforeDeleteCallbacks) cb(ctx, existing.first)
+                for (cb in _onBeforeDeleteCallbacks.value) cb(ctx, existing.first)
             }
         }
     }
 
     /**
-     * Apply delete operations from a BsatnRowList.
-     * Returns pending callbacks to execute after all tables are updated.
-     * Note: onBeforeDelete must be called via preApplyDeletes() before this.
+     * Phase 2 for unsubscribe deletes: mutates rows and returns post-mutation callbacks.
+     * onBeforeDelete must be called via [preApplyDeletes] before this.
+     * Accepts pre-decoded data from [parseDeletes].
      */
-    fun applyDeletes(ctx: EventContext, rowList: BsatnRowList): List<PendingCallback> {
-        val decoded = decodeRowListWithBytes(rowList)
+    @Suppress("UNCHECKED_CAST")
+    public fun applyDeletes(ctx: EventContext, parsed: ParsedTableData): List<PendingCallback> {
+        val data = parsed as ParsedDeletesOnly<Row>
         val callbacks = mutableListOf<PendingCallback>()
-        for ((row, rawBytes) in decoded) {
-            val id = keyExtractor(row, rawBytes)
-            val existing = rows[id] ?: continue
-            if (existing.second <= 1) {
-                val capturedRow = existing.first
-                rows.remove(id)
-                for (listener in internalDeleteListeners) listener(capturedRow)
-                if (onDeleteCallbacks.isNotEmpty()) {
-                    callbacks.add(PendingCallback {
-                        for (cb in onDeleteCallbacks) cb(ctx, capturedRow)
-                    })
+        val removedRows = mutableListOf<Row>()
+        _rows.update { current ->
+            callbacks.clear()
+            removedRows.clear()
+            var snapshot = current
+            for ((row, rawBytes) in data.rows) {
+                val id = keyExtractor(row, rawBytes)
+                val existing = snapshot[id] ?: continue
+                if (existing.second <= 1) {
+                    val capturedRow = existing.first
+                    snapshot = snapshot.remove(id)
+                    removedRows.add(capturedRow)
+                    if (_onDeleteCallbacks.value.isNotEmpty()) {
+                        callbacks.add(PendingCallback {
+                            for (cb in _onDeleteCallbacks.value) cb(ctx, capturedRow)
+                        })
+                    }
+                } else {
+                    snapshot = snapshot.put(id, Pair(existing.first, existing.second - 1))
                 }
-            } else {
-                rows[id] = Pair(existing.first, existing.second - 1)
             }
+            snapshot
+        }
+        for (row in removedRows) {
+            for (listener in _internalDeleteListeners.value) listener(row)
         }
         return callbacks
     }
 
+    // --- Transaction updates (two-phase) ---
+
     /**
      * Phase 1 for transaction updates: fires onBeforeDelete callbacks
      * for rows that will be deleted (not updated), BEFORE any mutations happen.
+     * Accepts pre-decoded data from [parseUpdate].
      */
-    fun preApplyUpdate(ctx: EventContext, update: TableUpdateRows) {
-        if (onBeforeDeleteCallbacks.isEmpty()) return
-        when (update) {
-            is TableUpdateRows.PersistentTable -> {
-                val deleteDecoded = decodeRowListWithBytes(update.deletes)
-                val insertDecoded = decodeRowListWithBytes(update.inserts)
+    @Suppress("UNCHECKED_CAST")
+    public fun preApplyUpdate(ctx: EventContext, parsed: ParsedTableData) {
+        if (_onBeforeDeleteCallbacks.value.isEmpty()) return
+        val update = parsed as? ParsedPersistentUpdate<Row> ?: return
 
-                // Build insert key set for update detection
-                val insertKeys = mutableSetOf<Key>()
-                for ((row, rawBytes) in insertDecoded) insertKeys.add(keyExtractor(row, rawBytes))
+        // Build insert key set for update detection
+        val insertKeys = mutableSetOf<Key>()
+        for ((row, rawBytes) in update.inserts) insertKeys.add(keyExtractor(row, rawBytes))
 
-                // Fire onBeforeDelete for pure deletes only (not updates)
-                for ((row, rawBytes) in deleteDecoded) {
-                    val id = keyExtractor(row, rawBytes)
-                    if (id in insertKeys) continue // This is an update, not a delete
-                    val existing = rows[id] ?: continue
-                    if (existing.second <= 1) {
-                        for (cb in onBeforeDeleteCallbacks) cb(ctx, existing.first)
-                    }
-                }
-            }
-            is TableUpdateRows.EventTable -> {
-                // Event tables have no deletes
+        // Fire onBeforeDelete for pure deletes only (not updates)
+        val snapshot = _rows.value
+        for ((row, rawBytes) in update.deletes) {
+            val id = keyExtractor(row, rawBytes)
+            if (id in insertKeys) continue // This is an update, not a delete
+            val existing = snapshot[id] ?: continue
+            if (existing.second <= 1) {
+                for (cb in _onBeforeDeleteCallbacks.value) cb(ctx, existing.first)
             }
         }
     }
 
     /**
      * Phase 2 for transaction updates: mutates rows and returns post-mutation callbacks.
-     * onBeforeDelete must be called via preApplyUpdate() before this.
-     *
-     * Matches TS SDK pattern: iterate inserts, consume matching deletes inline,
-     * then process remaining deletes.
+     * onBeforeDelete must be called via [preApplyUpdate] before this.
+     * Accepts pre-decoded data from [parseUpdate].
      */
-    fun applyUpdate(ctx: EventContext, update: TableUpdateRows): List<PendingCallback> {
-        return when (update) {
-            is TableUpdateRows.PersistentTable -> {
-                val deleteDecoded = decodeRowListWithBytes(update.deletes)
-                val insertDecoded = decodeRowListWithBytes(update.inserts)
+    @Suppress("UNCHECKED_CAST")
+    public fun applyUpdate(ctx: EventContext, parsed: ParsedTableData): List<PendingCallback> {
+        return when (parsed) {
+            is ParsedPersistentUpdate<*> -> {
+                val update = parsed as ParsedPersistentUpdate<Row>
 
                 // Build delete map for pairing with inserts
                 val deleteMap = mutableMapOf<Key, Row>()
-                for ((row, rawBytes) in deleteDecoded) deleteMap[keyExtractor(row, rawBytes)] = row
+                for ((row, rawBytes) in update.deletes) deleteMap[keyExtractor(row, rawBytes)] = row
 
                 val callbacks = mutableListOf<PendingCallback>()
+                val updatedRows = mutableListOf<Pair<Row, Row>>()
+                val newInserts = mutableListOf<Row>()
+                val removedRows = mutableListOf<Row>()
 
-                // Process inserts — check for matching delete (= update)
-                for ((row, rawBytes) in insertDecoded) {
-                    val id = keyExtractor(row, rawBytes)
-                    val deletedRow = deleteMap.remove(id)
-                    if (deletedRow != null) {
-                        // Update: same key in both insert and delete
-                        val oldRow = rows[id]?.first ?: deletedRow
-                        rows[id] = Pair(row, rows[id]?.second ?: 1)
-                        for (listener in internalDeleteListeners) listener(oldRow)
-                        for (listener in internalInsertListeners) listener(row)
-                        if (onUpdateCallbacks.isNotEmpty()) {
-                            callbacks.add(PendingCallback {
-                                for (cb in onUpdateCallbacks) cb(ctx, oldRow, row)
-                            })
-                        }
-                    } else {
-                        // Pure insert
-                        val existing = rows[id]
-                        if (existing != null) {
-                            rows[id] = Pair(existing.first, existing.second + 1)
-                        } else {
-                            rows[id] = Pair(row, 1)
-                            for (listener in internalInsertListeners) listener(row)
-                            if (onInsertCallbacks.isNotEmpty()) {
+                _rows.update { current ->
+                    callbacks.clear()
+                    updatedRows.clear()
+                    newInserts.clear()
+                    removedRows.clear()
+                    val localDeleteMap = deleteMap.toMutableMap()
+                    var snapshot = current
+
+                    // Process inserts — check for matching delete (= update)
+                    for ((row, rawBytes) in update.inserts) {
+                        val id = keyExtractor(row, rawBytes)
+                        val deletedRow = localDeleteMap.remove(id)
+                        if (deletedRow != null) {
+                            // Update: same key in both insert and delete
+                            val oldRow = snapshot[id]?.first ?: deletedRow
+                            snapshot = snapshot.put(id, Pair(row, snapshot[id]?.second ?: 1))
+                            updatedRows.add(oldRow to row)
+                            if (_onUpdateCallbacks.value.isNotEmpty()) {
                                 callbacks.add(PendingCallback {
-                                    for (cb in onInsertCallbacks) cb(ctx, row)
+                                    for (cb in _onUpdateCallbacks.value) cb(ctx, oldRow, row)
                                 })
+                            }
+                        } else {
+                            // Pure insert
+                            val existing = snapshot[id]
+                            if (existing != null) {
+                                snapshot = snapshot.put(id, Pair(existing.first, existing.second + 1))
+                            } else {
+                                snapshot = snapshot.put(id, Pair(row, 1))
+                                newInserts.add(row)
+                                if (_onInsertCallbacks.value.isNotEmpty()) {
+                                    callbacks.add(PendingCallback {
+                                        for (cb in _onInsertCallbacks.value) cb(ctx, row)
+                                    })
+                                }
                             }
                         }
                     }
+
+                    // Remaining deletes: pure deletes (onBeforeDelete already fired in preApplyUpdate)
+                    for ((id, _) in localDeleteMap) {
+                        val existing = snapshot[id] ?: continue
+                        if (existing.second <= 1) {
+                            val capturedRow = existing.first
+                            snapshot = snapshot.remove(id)
+                            removedRows.add(capturedRow)
+                            if (_onDeleteCallbacks.value.isNotEmpty()) {
+                                callbacks.add(PendingCallback {
+                                    for (cb in _onDeleteCallbacks.value) cb(ctx, capturedRow)
+                                })
+                            }
+                        } else {
+                            snapshot = snapshot.put(id, Pair(existing.first, existing.second - 1))
+                        }
+                    }
+
+                    snapshot
                 }
 
-                // Remaining deletes: pure deletes (onBeforeDelete already fired in preApplyUpdate)
-                for ((id, _) in deleteMap) {
-                    val existing = rows[id] ?: continue
-                    if (existing.second <= 1) {
-                        val capturedRow = existing.first
-                        rows.remove(id)
-                        for (listener in internalDeleteListeners) listener(capturedRow)
-                        if (onDeleteCallbacks.isNotEmpty()) {
-                            callbacks.add(PendingCallback {
-                                for (cb in onDeleteCallbacks) cb(ctx, capturedRow)
-                            })
-                        }
-                    } else {
-                        rows[id] = Pair(existing.first, existing.second - 1)
-                    }
+                // Fire internal listeners after CAS succeeds
+                for ((oldRow, newRow) in updatedRows) {
+                    for (listener in _internalDeleteListeners.value) listener(oldRow)
+                    for (listener in _internalInsertListeners.value) listener(newRow)
+                }
+                for (row in newInserts) {
+                    for (listener in _internalInsertListeners.value) listener(row)
+                }
+                for (row in removedRows) {
+                    for (listener in _internalDeleteListeners.value) listener(row)
                 }
 
                 callbacks
             }
-            is TableUpdateRows.EventTable -> {
-                // Event table: decode and fire insert callbacks, but don't store
-                val decoded = decodeRowListWithBytes(update.events).map { it.row }
+            is ParsedEventUpdate<*> -> {
+                // Event table: fire insert callbacks, but don't store
+                val events = (parsed as ParsedEventUpdate<Row>).events
                 val callbacks = mutableListOf<PendingCallback>()
-                for (row in decoded) {
-                    if (onInsertCallbacks.isNotEmpty()) {
+                for (row in events) {
+                    if (_onInsertCallbacks.value.isNotEmpty()) {
                         val capturedRow = row
                         callbacks.add(PendingCallback {
-                            for (cb in onInsertCallbacks) cb(ctx, capturedRow)
+                            for (cb in _onInsertCallbacks.value) cb(ctx, capturedRow)
                         })
                     }
                 }
                 callbacks
             }
+            else -> emptyList()
         }
     }
 
     /**
      * Clear all rows (used on disconnect).
      */
-    fun clear() {
-        if (internalDeleteListeners.isNotEmpty()) {
-            for ((_, pair) in rows) {
-                for (listener in internalDeleteListeners) listener(pair.first)
+    public fun clear() {
+        val oldRows = _rows.getAndSet(persistentHashMapOf())
+        val listeners = _internalDeleteListeners.value
+        if (listeners.isNotEmpty()) {
+            for ((_, pair) in oldRows) {
+                for (listener in listeners) listener(pair.first)
             }
         }
-        rows.clear()
     }
 }
 
@@ -321,33 +418,45 @@ class TableCache<Row, Key : Any> private constructor(
  * Client-side cache holding all table caches.
  * Mirrors TS SDK's ClientCache — registry of TableCache instances by table name.
  */
-class ClientCache {
-    private val tables = mutableMapOf<String, TableCache<*, *>>()
+public class ClientCache {
+    private val _tables = atomic(persistentHashMapOf<String, TableCache<*, *>>())
 
-    fun <Row, Key : Any> register(tableName: String, cache: TableCache<Row, Key>) {
-        tables[tableName] = cache
+    public fun <Row, Key : Any> register(tableName: String, cache: TableCache<Row, Key>) {
+        _tables.update { it.put(tableName, cache) }
     }
 
     @Suppress("UNCHECKED_CAST")
-    fun <Row> getTable(tableName: String): TableCache<Row, *> =
-        tables[tableName] as? TableCache<Row, *>
+    public fun <Row> getTable(tableName: String): TableCache<Row, *> =
+        _tables.value[tableName] as? TableCache<Row, *>
             ?: error("Table '$tableName' not found in client cache")
 
     @Suppress("UNCHECKED_CAST")
-    fun <Row> getTableOrNull(tableName: String): TableCache<Row, *>? =
-        tables[tableName] as? TableCache<Row, *>
+    public fun <Row> getTableOrNull(tableName: String): TableCache<Row, *>? =
+        _tables.value[tableName] as? TableCache<Row, *>
 
     @Suppress("UNCHECKED_CAST")
-    fun <Row> getOrCreateTable(tableName: String, factory: () -> TableCache<Row, *>): TableCache<Row, *> {
-        return tables.getOrPut(tableName) { factory() } as TableCache<Row, *>
+    public fun <Row> getOrCreateTable(tableName: String, factory: () -> TableCache<Row, *>): TableCache<Row, *> {
+        var result: TableCache<Row, *>? = null
+        _tables.update { map ->
+            val existing = map[tableName]
+            if (existing != null) {
+                result = existing as TableCache<Row, *>
+                map
+            } else {
+                val created = factory()
+                result = created
+                map.put(tableName, created)
+            }
+        }
+        return result!!
     }
 
-    fun getUntypedTable(tableName: String): TableCache<*, *>? =
-        tables[tableName]
+    public fun getUntypedTable(tableName: String): TableCache<*, *>? =
+        _tables.value[tableName]
 
-    fun tableNames(): Set<String> = tables.keys
+    public fun tableNames(): Set<String> = _tables.value.keys
 
-    fun clear() {
-        for (table in tables.values) table.clear()
+    public fun clear() {
+        for ((_, table) in _tables.value) table.clear()
     }
 }

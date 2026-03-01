@@ -4,22 +4,29 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.parseHexString
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.toHexString
-import java.math.BigInteger
+import com.ionspin.kotlin.bignum.integer.BigInteger
 
-data class Identity(val data: BigInteger) : Comparable<Identity> {
+public data class Identity(val data: BigInteger) : Comparable<Identity> {
     override fun compareTo(other: Identity): Int = data.compareTo(other.data)
-    fun encode(writer: BsatnWriter) = writer.writeU256(data)
-    fun toHexString(): String = data.toHexString(32) // U256 = 32 bytes = 64 hex chars
-    fun toByteArray(): ByteArray {
-        val bytes = data.toByteArray()
-        val unsigned = if (bytes.size > 1 && bytes[0] == 0.toByte()) bytes.copyOfRange(1, bytes.size) else bytes
-        return ByteArray(32 - unsigned.size) + unsigned
+    public fun encode(writer: BsatnWriter): Unit = writer.writeU256(data)
+    public fun toHexString(): String = data.toHexString(32) // U256 = 32 bytes = 64 hex chars
+    /**
+     * Returns the 32-byte little-endian representation, matching BSATN wire format.
+     */
+    public fun toByteArray(): ByteArray {
+        val beBytes = data.toByteArray()
+        val padded = ByteArray(32)
+        val srcStart = maxOf(0, beBytes.size - 32)
+        val dstStart = maxOf(0, 32 - beBytes.size)
+        beBytes.copyInto(padded, dstStart, srcStart, beBytes.size)
+        padded.reverse()
+        return padded
     }
     override fun toString(): String = toHexString()
 
-    companion object {
-        fun decode(reader: BsatnReader): Identity = Identity(reader.readU256())
-        fun fromHexString(hex: String): Identity = Identity(parseHexString(hex))
-        fun zero(): Identity = Identity(BigInteger.ZERO)
+    public companion object {
+        public fun decode(reader: BsatnReader): Identity = Identity(reader.readU256())
+        public fun fromHexString(hex: String): Identity = Identity(parseHexString(hex))
+        public fun zero(): Identity = Identity(BigInteger.ZERO)
     }
 }
