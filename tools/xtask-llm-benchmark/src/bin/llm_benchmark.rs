@@ -1,4 +1,4 @@
-#![allow(clippy::disallowed_macros)]
+#![allow(clippy::disallowed_macros, clippy::type_complexity, clippy::enum_variant_names)]
 
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
@@ -1474,9 +1474,9 @@ fn outcome_matches_run_scope(
                 let a_norm = al.replace(' ', "-");
                 model_norm == a_norm
                     || model_lower == al
-                    || api_lower.as_ref().map_or(false, |api| {
-                        api == &al || api.contains(al.as_str()) || al.contains(api.as_str())
-                    })
+                    || api_lower
+                        .as_ref()
+                        .is_some_and(|api| api == &al || api.contains(al.as_str()) || al.contains(api.as_str()))
             });
             if !matches {
                 return false;
