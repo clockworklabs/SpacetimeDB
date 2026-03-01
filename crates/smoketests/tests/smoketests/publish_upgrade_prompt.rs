@@ -33,7 +33,7 @@ fn upgrade_prompt_on_publish() {
     // Switch back to source-built module, which uses current bindings.
     test.write_module_code(MODULE_CODE).unwrap();
 
-    let deny_err = test.publish_module_named_no_yes(&db_name).unwrap_err().to_string();
+    let deny_err = test.publish_module_named_no_force(&db_name).unwrap_err().to_string();
     assert!(deny_err.contains("major version upgrade from 1.0 to 2.0"));
     assert!(deny_err.contains("Please type 'upgrade' to accept this change:"));
 

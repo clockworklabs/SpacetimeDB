@@ -1015,7 +1015,7 @@ log = "0.4"
     }
 
     /// Publishes the module without passing `--yes`, so interactive prompts are not suppressed.
-    pub fn publish_module_named_no_yes(&mut self, name: &str) -> Result<String> {
+    pub fn publish_module_named_no_force(&mut self, name: &str) -> Result<String> {
         self.publish_module_internal(Some(name), false, false, false, None)
     }
 
