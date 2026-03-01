@@ -631,9 +631,9 @@ public static Player? MyPlayer(ViewContext ctx)
 
 // Return potentially multiple rows
 [SpacetimeDB.View(Accessor = "TopPlayers", Public = true)]
-public static List<Player> TopPlayers(ViewContext ctx)
+public static IEnumerable<Player> TopPlayers(ViewContext ctx)
 {
-    return ctx.Db.Player.Score.Filter(1000).ToList();
+    return ctx.Db.Player.Score.Filter(1000);
 }
 
 // Perform a generic filter using the query builder.

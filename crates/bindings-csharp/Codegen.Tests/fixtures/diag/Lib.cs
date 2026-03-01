@@ -569,14 +569,14 @@ public partial class Module
         return new Player { Identity = new() };
     }
 
-    // Invalid: IEnumerable<T> return type (from Iter()) is not List<T> or T?
+    // Valid: IEnumerable<T> return type (from Iter()) is supported
     [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_iter", Public = true)]
     public static IEnumerable<Player> ViewDefIEnumerableReturnFromIter(ViewContext ctx)
     {
         return ctx.Db.Player.Iter();
     }
 
-    // Invalid: IEnumerable<T> return type (from Filter()) is not List<T> or T?
+    // Valid: IEnumerable<T> return type (from Filter()) is supported
     [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_filter", Public = true)]
     public static IEnumerable<TestScheduleIssues> ViewDefIEnumerableReturnFromFilter(
         ViewContext ctx
