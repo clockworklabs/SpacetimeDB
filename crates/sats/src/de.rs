@@ -36,6 +36,11 @@ pub trait Deserializer<'de>: Sized {
     /// Deserializes a product value from the input.
     fn deserialize_product<V: ProductVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error>;
 
+    /// Validates a product value from the input.
+    fn validate_product<V: ProductVisitor<'de>>(self, visitor: V) -> Result<(), Self::Error> {
+        self.deserialize_product(visitor).map(|_| ())
+    }
+
     /// Deserializes a sum value from the input.
     ///
     /// The entire process of deserializing a sum, starting from `deserialize(args...)`, is roughly:
@@ -68,6 +73,40 @@ pub trait Deserializer<'de>: Sized {
     /// The data format will also return an object ([`VariantAccess`])
     /// that can deserialize the contents of the variant.
     fn deserialize_sum<V: SumVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error>;
+
+    /// Validates a sum value from the input.
+    ///
+    /// The entire process of validating a sum, starting from `validate(args...)`, is roughly:
+    ///
+    /// - [`validate`][Deserialize::validate] calls this method,
+    ///   [`validate_sum(sum_visitor)`](Deserializer::validate_sum),
+    ///   providing us with a [`sum_visitor`](SumVisitor).
+    ///
+    /// - This method calls [`sum_visitor.validate_sum(sum_access)`](SumVisitor::validate_sum),
+    ///   where [`sum_access`](SumAccess) deals with extracting the tag and the variant data,
+    ///   with the latter provided as [`VariantAccess`]).
+    ///   The `SumVisitor` will then assemble these into the representation of a sum value
+    ///   that the [`Deserialize`] implementation wants.
+    ///
+    /// - [`validate_sum`](SumVisitor::validate_sum) then calls
+    ///   [`sum_access.variant(variant_visitor)`](SumAccess::variant),
+    ///   and uses the provided `variant_visitor` to translate extracted variant names / tags
+    ///   into something that is meaningful for `validate_sum`, e.g., an index.
+    ///
+    ///   The call to `variant` will also return [`variant_access`](VariantAccess)
+    ///   that can validate the contents of the variant.
+    ///
+    /// - Finally, after `variant` returns,
+    ///   `validate_sum` validates the variant data using
+    ///   [`variant_access.validate_seed(seed)`](VariantAccess::validate_seed)
+    ///   or [`variant_access.validate()`](VariantAccess::validate).
+    ///   This part may require some conditional logic depending on the identified variant.
+    ///
+    /// The data format will also return an object ([`VariantAccess`])
+    /// that can validate the contents of the variant.
+    fn validate_sum<V: SumVisitor<'de>>(self, visitor: V) -> Result<(), Self::Error> {
+        self.deserialize_sum(visitor).map(|_| ())
+    }
 
     /// Deserializes a `bool` value from the input.
     fn deserialize_bool(self) -> Result<bool, Self::Error>;
@@ -144,6 +183,17 @@ pub trait Deserializer<'de>: Sized {
         visitor: V,
         seed: T,
     ) -> Result<V::Output, Self::Error>;
+
+    /// Validates an array value.
+    ///
+    /// The validation is provided with a `seed` value.
+    fn validate_array_seed<V: ArrayVisitor<'de, T::Output>, T: DeserializeSeed<'de> + Clone>(
+        self,
+        visitor: V,
+        seed: T,
+    ) -> Result<(), Self::Error> {
+        self.deserialize_array_seed(visitor, seed).map(|_| ())
+    }
 }
 
 /// The `Error` trait allows [`Deserialize`] implementations to create descriptive error messages
@@ -268,7 +318,7 @@ fn fmt_invalid_len<'de>(
 }
 
 /// A visitor walking through a [`Deserializer`] for products.
-pub trait ProductVisitor<'de> {
+pub trait ProductVisitor<'de>: Sized {
     /// The resulting product.
     type Output;
 
@@ -288,6 +338,16 @@ pub trait ProductVisitor<'de> {
 
     /// The input contains a named product.
     fn visit_named_product<A: NamedProductAccess<'de>>(self, prod: A) -> Result<Self::Output, A::Error>;
+
+    /// The input contains an unnamed product.
+    fn validate_seq_product<A: SeqProductAccess<'de>>(self, prod: A) -> Result<(), A::Error> {
+        self.visit_seq_product(prod).map(|_| ())
+    }
+
+    /// The input contains a named product.
+    fn validate_named_product<A: NamedProductAccess<'de>>(self, prod: A) -> Result<(), A::Error> {
+        self.visit_named_product(prod).map(|_| ())
+    }
 }
 
 /// What kind of product is this?
@@ -317,6 +377,14 @@ pub trait SeqProductAccess<'de> {
         self.next_element_seed(PhantomData)
     }
 
+    /// Statefully validates `T::Output` from the input provided a `seed` value.
+    ///
+    /// Returns `Ok(Some(()))` for the next element in the unnamed product,
+    /// or `Ok(None)` if there are no more remaining items.
+    fn validate_next_element<T: Deserialize<'de>>(&mut self) -> Result<Option<()>, Self::Error> {
+        self.validate_next_element_seed(PhantomData::<T>)
+    }
+
     /// Statefully deserializes `T::Output` from the input provided a `seed` value.
     ///
     /// Returns `Ok(Some(value))` for the next element in the unnamed product,
@@ -325,6 +393,14 @@ pub trait SeqProductAccess<'de> {
     /// [`Deserialize`] implementations should typically use
     /// [`next_element`](SeqProductAccess::next_element) instead.
     fn next_element_seed<T: DeserializeSeed<'de>>(&mut self, seed: T) -> Result<Option<T::Output>, Self::Error>;
+
+    /// Statefully validates `T::Output` from the input provided a `seed` value.
+    ///
+    /// Returns `Ok(Some(()))` for the next element in the unnamed product,
+    /// or `Ok(None)` if there are no more remaining items.
+    fn validate_next_element_seed<T: DeserializeSeed<'de>>(&mut self, seed: T) -> Result<Option<()>, Self::Error> {
+        self.next_element_seed(seed).map(|opt| opt.map(|_| ()))
+    }
 }
 
 /// Provides a [`ProductVisitor`] with access to each element of the named product in the input.
@@ -346,11 +422,24 @@ pub trait NamedProductAccess<'de> {
         self.get_field_value_seed(PhantomData)
     }
 
+    /// Deserializes field value of type `T` from the input.
+    ///
+    /// This method exists as a convenience for [`Deserialize`] implementations.
+    /// [`NamedProductAccess`] implementations should not override the default behavior.
+    fn validate_field_value<T: Deserialize<'de>>(&mut self) -> Result<(), Self::Error> {
+        self.validate_field_value_seed(PhantomData::<T>)
+    }
+
     /// Statefully deserializes the field value `T::Output` from the input provided a `seed` value.
     ///
     /// [`Deserialize`] implementations should typically use
     /// [`next_element`](NamedProductAccess::get_field_value) instead.
     fn get_field_value_seed<T: DeserializeSeed<'de>>(&mut self, seed: T) -> Result<T::Output, Self::Error>;
+
+    /// Statefully validates the field value `T::Output` from the input provided a `seed` value.
+    fn validate_field_value_seed<T: DeserializeSeed<'de>>(&mut self, seed: T) -> Result<(), Self::Error> {
+        self.get_field_value_seed(seed).map(|_| ())
+    }
 }
 
 /// Visitor used to deserialize the name of a field.
@@ -406,6 +495,17 @@ pub trait SumVisitor<'de> {
     /// The data format will also return an object ([`VariantAccess`])
     /// that can deserialize the contents of the variant.
     fn visit_sum<A: SumAccess<'de>>(self, data: A) -> Result<Self::Output, A::Error>;
+
+    /// Drives the validation of a sum value.
+    ///
+    /// This method will ask the data format ([`A: SumAccess`][SumAccess])
+    /// which variant of the sum to select in terms of a variant name / tag.
+    /// `A` will use a [`VariantVisitor`], that `SumVisitor` has provided,
+    /// to translate into something that is meaningful for `visit_sum`, e.g., an index.
+    ///
+    /// The data format will also return an object ([`VariantAccess`])
+    /// that can validate the contents of the variant.
+    fn validate_sum<A: SumAccess<'de>>(self, data: A) -> Result<(), A::Error>;
 }
 
 /// Provides a [`SumVisitor`] access to the data of a sum in the input.
@@ -460,6 +560,18 @@ pub trait VariantAccess<'de>: Sized {
 
     /// Called when deserializing the contents of a sum variant, and provided with a `seed` value.
     fn deserialize_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error>;
+
+    /// Called when validating the contents of a sum variant.
+    ///
+    /// This method exists as a convenience for [`Deserialize`] implementations.
+    fn validate<T: Deserialize<'de>>(self) -> Result<(), Self::Error> {
+        self.validate_seed(PhantomData::<T>)
+    }
+
+    /// Called when validating the contents of a sum variant, and provided with a `seed` value.
+    fn validate_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<(), Self::Error> {
+        self.deserialize_seed(seed).map(|_| ())
+    }
 }
 
 /// A `SliceVisitor` is provided a slice `T` of some elements by a [`Deserializer`]
@@ -486,12 +598,18 @@ pub trait SliceVisitor<'de, T: ToOwned + ?Sized>: Sized {
 }
 
 /// A visitor walking through a [`Deserializer`] for arrays.
-pub trait ArrayVisitor<'de, T> {
+pub trait ArrayVisitor<'de, T>: Sized {
     /// The output produced by this visitor.
     type Output;
 
-    /// The input contains an array.
+    /// The input contains an array, deserialize it.
     fn visit<A: ArrayAccess<'de, Element = T>>(self, vec: A) -> Result<Self::Output, A::Error>;
+
+    /// The input contains an array, but just validate it, don't deserialize.
+    fn validate<A: ArrayAccess<'de, Element = T>>(self, vec: A) -> Result<(), A::Error> {
+        let _ = self.visit(vec)?;
+        Ok(())
+    }
 }
 
 /// Provides an [`ArrayVisitor`] with access to each element of the array in the input.
@@ -508,6 +626,13 @@ pub trait ArrayAccess<'de> {
     /// or `Ok(None)` if there are no more remaining elements.
     fn next_element(&mut self) -> Result<Option<Self::Element>, Self::Error>;
 
+    /// This returns `Ok(Some(()))` for the next element in the array,
+    /// or `Ok(None)` if there are no more remaining elements.
+    fn validate_next_element(&mut self) -> Result<Option<()>, Self::Error> {
+        let opt = self.next_element()?;
+        Ok(opt.map(|_| ()))
+    }
+
     /// Returns the number of elements remaining in the array, if known.
     fn size_hint(&self) -> Option<usize> {
         None
@@ -515,13 +640,23 @@ pub trait ArrayAccess<'de> {
 }
 
 /// `DeserializeSeed` is the stateful form of the [`Deserialize`] trait.
-pub trait DeserializeSeed<'de> {
+pub trait DeserializeSeed<'de>: Sized {
     /// The type produced by using this seed.
     type Output;
 
     /// Equivalent to the more common [`Deserialize::deserialize`] associated function,
     /// except with some initial piece of data (the seed `self`) passed in.
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error>;
+
+    /// Validate that the input is of the correct form for this seed.
+    ///
+    /// The default implementation simply deserializes the input and discards the result,
+    /// but implementations can override this to perform more efficient validation
+    /// without fully deserializing the input.
+    fn validate<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        let _ = self.deserialize(deserializer)?;
+        Ok(())
+    }
 }
 
 use crate::de::impls::BorrowedSliceVisitor;
@@ -564,6 +699,18 @@ pub trait Deserialize<'de>: Sized {
     #[inline(always)]
     fn __deserialize_array<D: Deserializer<'de>, const N: usize>(deserializer: D) -> Result<[Self; N], D::Error> {
         deserializer.deserialize_array(BasicArrayVisitor)
+    }
+
+    #[doc(hidden)]
+    #[inline(always)]
+    /// Validate that the input is of the correct form for this type.
+    ///
+    /// The default implementation simply deserializes the input and discards the result,
+    /// but implementations can override this to perform more efficient validation
+    /// without fully deserializing the input.
+    fn validate<D: Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
+        let _ = Self::deserialize(deserializer)?;
+        Ok(())
     }
 }
 
@@ -616,6 +763,12 @@ pub fn array_visit<'de, A: ArrayAccess<'de>, V: GrowingVec<A::Element>>(mut acce
     Ok(v)
 }
 
+/// A basic implementation of `ArrayVisitor::validate`.
+pub fn array_validate<'de, A: ArrayAccess<'de>>(mut access: A) -> Result<(), A::Error> {
+    while access.next_element()?.is_some() {}
+    Ok(())
+}
+
 /// An implementation of [`ArrayVisitor<'de, T>`] where the output is a `Vec<T>`.
 pub struct BasicVecVisitor;
 
@@ -624,6 +777,10 @@ impl<'de, T> ArrayVisitor<'de, T> for BasicVecVisitor {
 
     fn visit<A: ArrayAccess<'de, Element = T>>(self, vec: A) -> Result<Self::Output, A::Error> {
         array_visit(vec)
+    }
+
+    fn validate<A: ArrayAccess<'de, Element = T>>(self, vec: A) -> Result<(), A::Error> {
+        array_validate(vec)
     }
 }
 
@@ -635,6 +792,10 @@ impl<'de, T, const N: usize> ArrayVisitor<'de, T> for BasicSmallVecVisitor<N> {
 
     fn visit<A: ArrayAccess<'de, Element = T>>(self, vec: A) -> Result<Self::Output, A::Error> {
         array_visit(vec)
+    }
+
+    fn validate<A: ArrayAccess<'de, Element = T>>(self, vec: A) -> Result<(), A::Error> {
+        array_validate(vec)
     }
 }
 
@@ -651,6 +812,23 @@ impl<'de, T, const N: usize> ArrayVisitor<'de, T> for BasicArrayVisitor<N> {
                 .map_err(|_| Error::custom("too many elements for array"))?
         }
         v.into_inner().map_err(|_| Error::custom("too few elements for array"))
+    }
+
+    fn validate<A: ArrayAccess<'de, Element = T>>(self, mut vec: A) -> Result<(), A::Error> {
+        // Validate each element and count.
+        let mut count = 0;
+        while vec.next_element()?.is_some() {
+            count += 1;
+        }
+        // Don't do this in the loop,
+        // as we bias towards there not being any errors.
+        if count > N {
+            return Err(Error::custom("too many elements for array"));
+        }
+        if count < N {
+            return Err(Error::custom("too few elements for array"));
+        }
+        Ok(())
     }
 }
 
@@ -746,6 +924,9 @@ impl<'de, D: Deserializer<'de>> VariantAccess<'de> for SomeAccess<D> {
     type Error = D::Error;
     fn deserialize_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
         seed.deserialize(self.0)
+    }
+    fn validate_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<(), Self::Error> {
+        seed.validate(self.0)
     }
 }
 
