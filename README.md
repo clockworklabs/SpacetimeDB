@@ -104,24 +104,15 @@ spacetime login
 
 This opens a browser to authenticate with GitHub. Your identity is linked to your account so you can publish databases.
 
-### 3. Create a project
+### 3. Start developing
 
 ```bash
-spacetime init --lang rust my-project
-cd my-project
+spacetime dev --template chat-react-ts
 ```
 
-Supported module languages: `rust`, `csharp`, `typescript`, `cpp`
+This publishes your module, watches for file changes, and automatically rebuilds and republishes on save.
 
-### 4. Develop locally
-
-```bash
-spacetime dev
-```
-
-This starts a local SpacetimeDB instance, publishes your module, watches for file changes, and automatically rebuilds and republishes on save.
-
-### 5. Publish to the cloud
+### 4. Publish to the cloud
 
 ```bash
 spacetime publish my-database
