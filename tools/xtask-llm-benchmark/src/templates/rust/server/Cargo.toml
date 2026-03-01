@@ -1,4 +1,4 @@
-﻿[workspace]
+[workspace]
 
 [package]
 name = "spacetime-module"
@@ -9,5 +9,5 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-spacetimedb = "=1.11.1"
+spacetimedb = {SPACETIME_RUST_SDK_PATH}
 log = "0.4"
