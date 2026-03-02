@@ -215,7 +215,13 @@ async fn root_domain_middleware(State(config): State<RootDomainRouteConfig>, req
         .unwrap_or(RootDomainHostMatch::NoMatch);
 
     match host_match {
-        RootDomainHostMatch::Module(module_name) => module_index_response(&config, &module_name).await,
+        RootDomainHostMatch::Module(module_name) => {
+            let procedure_name = match procedure_name_from_path(req.uri().path()) {
+                Ok(name) => name,
+                Err(message) => return (StatusCode::NOT_FOUND, message).into_response(),
+            };
+            module_procedure_response(&config, &module_name, &procedure_name).await
+        }
         RootDomainHostMatch::InvalidSubdomain => (
             StatusCode::NOT_FOUND,
             "Only single-label subdomains are supported for root-domain routing.",
@@ -225,7 +231,24 @@ async fn root_domain_middleware(State(config): State<RootDomainRouteConfig>, req
     }
 }
 
-async fn module_index_response(config: &RootDomainRouteConfig, module_name: &str) -> Response {
+fn procedure_name_from_path(path: &str) -> Result<String, &'static str> {
+    println!("path: {}", path);
+    let procedure_name = path.trim_matches('/');
+    if procedure_name.is_empty() {
+        return Ok(INDEX_PROCEDURE.to_string());
+    }
+    if procedure_name.contains('/') {
+        return Err("Only single-segment paths are supported for procedure routing.");
+    }
+    println!("procedure_name: {}", procedure_name);
+    Ok(procedure_name.to_string())
+}
+
+async fn module_procedure_response(
+    config: &RootDomainRouteConfig,
+    module_name: &str,
+    procedure_name: &str,
+) -> Response {
     let Some(ctx) = config.ctx.as_ref() else {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -287,22 +310,22 @@ async fn module_index_response(config: &RootDomainRouteConfig, module_name: &str
         }
     };
 
-    if module.info().module_def.procedure(INDEX_PROCEDURE).is_none() {
+    if module.info().module_def.procedure(procedure_name).is_none() {
         return (
             StatusCode::NOT_FOUND,
-            format!("Procedure `{INDEX_PROCEDURE}` not found in module `{module_name}`."),
+            format!("Procedure `{procedure_name}` not found in module `{module_name}`."),
         )
             .into_response();
     }
 
     let caller_identity = Identity::from_claims(spacetimedb_client_api::auth::LOCALHOST, SUBDOMAIN_CALLER_SUBJECT);
     match module
-        .call_procedure(caller_identity, None, None, INDEX_PROCEDURE, FunctionArgs::Nullary)
+        .call_procedure(caller_identity, None, None, procedure_name, FunctionArgs::Nullary)
         .await
         .result
     {
         Ok(result) => procedure_result_response(result.return_val),
-        Err(err) => procedure_error_response(module_name, err),
+        Err(err) => procedure_error_response(module_name, procedure_name, err),
     }
 }
 
@@ -313,11 +336,11 @@ fn procedure_result_response(return_val: AlgebraicValue) -> Response {
     }
 }
 
-fn procedure_error_response(module_name: &str, err: ProcedureCallError) -> Response {
+fn procedure_error_response(module_name: &str, procedure_name: &str, err: ProcedureCallError) -> Response {
     match err {
         ProcedureCallError::NoSuchProcedure => (
             StatusCode::NOT_FOUND,
-            format!("Procedure `{INDEX_PROCEDURE}` not found in module `{module_name}`."),
+            format!("Procedure `{procedure_name}` not found in module `{module_name}`."),
         )
             .into_response(),
         ProcedureCallError::NoSuchModule(_) => {
@@ -807,5 +830,21 @@ mod tests {
         let config = RootDomainRouteConfig::for_tests("example.com".to_string());
         let host = normalize_host_header_value("localhost:3000").unwrap();
         assert_eq!(config.classify_host(&host), RootDomainHostMatch::NoMatch);
+    }
+
+    #[test]
+    fn procedure_name_from_path_root_maps_to_index() {
+        assert_eq!(procedure_name_from_path("/").unwrap(), INDEX_PROCEDURE);
+    }
+
+    #[test]
+    fn procedure_name_from_path_single_segment_maps_to_procedure() {
+        assert_eq!(procedure_name_from_path("/foo").unwrap(), "foo");
+        assert_eq!(procedure_name_from_path("/foo/").unwrap(), "foo");
+    }
+
+    #[test]
+    fn procedure_name_from_path_rejects_nested_paths() {
+        assert!(procedure_name_from_path("/foo/bar").is_err());
     }
 }
