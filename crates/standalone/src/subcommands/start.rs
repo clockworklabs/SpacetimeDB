@@ -17,12 +17,16 @@ use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use spacetimedb::config::{parse_config, CertificateAuthority};
 use spacetimedb::db::{self, Storage};
+use spacetimedb::host::{FunctionArgs, ProcedureCallError};
+use spacetimedb::identity::Identity;
 use spacetimedb::startup::{self, TracingOptions};
 use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics;
 use spacetimedb_client_api::routes::database::DatabaseRoutes;
 use spacetimedb_client_api::routes::router;
 use spacetimedb_client_api::routes::subscribe::WebSocketOptions;
+use spacetimedb_client_api::{ControlStateReadAccess, NodeDelegate};
+use spacetimedb_lib::{sats, AlgebraicValue};
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::{ConfigToml, ServerDataDir};
 use tokio::net::TcpListener;
@@ -119,47 +123,63 @@ impl ConfigFile {
     }
 }
 
-const MODULE_HELLO_HTML: &str = "<html><body>hello</body></html>";
-const MODULE_SUBDOMAIN: &str = "my-module";
+const INDEX_PROCEDURE: &str = "index";
+const SUBDOMAIN_CALLER_SUBJECT: &str = "subdomain-index";
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct RootDomainRouteConfig {
-    module_host: String,
+    root_domain: String,
     subdomain_suffix: String,
+    ctx: Option<Arc<StandaloneEnv>>,
 }
 
 impl RootDomainRouteConfig {
-    fn new(root_domain: String) -> Self {
-        let module_host = format!("{MODULE_SUBDOMAIN}.{root_domain}");
+    fn new(root_domain: String, ctx: Arc<StandaloneEnv>) -> Self {
         let subdomain_suffix = format!(".{root_domain}");
         Self {
-            module_host,
+            root_domain,
             subdomain_suffix,
+            ctx: Some(ctx),
+        }
+    }
+
+    #[cfg(test)]
+    fn for_tests(root_domain: String) -> Self {
+        let subdomain_suffix = format!(".{root_domain}");
+        Self {
+            root_domain,
+            subdomain_suffix,
+            ctx: None,
         }
     }
 
     fn classify_host(&self, host: &str) -> RootDomainHostMatch {
-        println!("Matching {:?}", host);
-        if host == self.module_host {
-            RootDomainHostMatch::ModulePage
-        } else if host.ends_with(&self.subdomain_suffix) {
-            RootDomainHostMatch::SubdomainNotFound
-        } else {
-            RootDomainHostMatch::NoMatch
+        if host == self.root_domain {
+            return RootDomainHostMatch::NoMatch;
         }
+
+        let Some(module_name) = host.strip_suffix(&self.subdomain_suffix) else {
+            return RootDomainHostMatch::NoMatch;
+        };
+
+        if module_name.is_empty() || module_name.contains('.') {
+            return RootDomainHostMatch::InvalidSubdomain;
+        }
+
+        RootDomainHostMatch::Module(module_name.to_owned())
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum RootDomainHostMatch {
-    ModulePage,
-    SubdomainNotFound,
+    Module(String),
+    InvalidSubdomain,
     NoMatch,
 }
 
 impl fmt::Display for RootDomainRouteConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.subdomain_suffix[1..])
+        f.write_str(&self.root_domain)
     }
 }
 
@@ -195,12 +215,123 @@ async fn root_domain_middleware(State(config): State<RootDomainRouteConfig>, req
         .unwrap_or(RootDomainHostMatch::NoMatch);
 
     match host_match {
-        RootDomainHostMatch::ModulePage => Html(MODULE_HELLO_HTML).into_response(),
-        RootDomainHostMatch::SubdomainNotFound => StatusCode::NOT_FOUND.into_response(),
-        RootDomainHostMatch::NoMatch => {
-            println!("No match for host {}", req.headers().get(http::header::HOST).unwrap().to_str().unwrap());
-            return next.run(req).await
+        RootDomainHostMatch::Module(module_name) => module_index_response(&config, &module_name).await,
+        RootDomainHostMatch::InvalidSubdomain => (
+            StatusCode::NOT_FOUND,
+            "Only single-label subdomains are supported for root-domain routing.",
+        )
+            .into_response(),
+        RootDomainHostMatch::NoMatch => next.run(req).await,
+    }
+}
+
+async fn module_index_response(config: &RootDomainRouteConfig, module_name: &str) -> Response {
+    let Some(ctx) = config.ctx.as_ref() else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Root-domain module routing context is unavailable.",
+        )
+            .into_response();
+    };
+
+    let database_identity = match ctx.lookup_database_identity(module_name).await {
+        Ok(Some(identity)) => identity,
+        Ok(None) => {
+            return (StatusCode::NOT_FOUND, format!("Module `{module_name}` not found.")).into_response();
         }
+        Err(err) => {
+            log::error!("Failed to resolve module `{module_name}`: {err:#}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to resolve module for root-domain routing.",
+            )
+                .into_response();
+        }
+    };
+
+    let database = match ctx.get_database_by_identity(&database_identity).await {
+        Ok(Some(database)) => database,
+        Ok(None) => {
+            return (StatusCode::NOT_FOUND, format!("Module `{module_name}` not found.")).into_response();
+        }
+        Err(err) => {
+            log::error!("Failed to load database for module `{module_name}`: {err:#}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to load database for root-domain routing.",
+            )
+                .into_response();
+        }
+    };
+
+    let leader = match ctx.leader(database.id).await {
+        Ok(leader) => leader,
+        Err(err) => {
+            let status = match err {
+                crate::GetLeaderHostError::NoSuchDatabase | crate::GetLeaderHostError::NoSuchReplica => {
+                    StatusCode::NOT_FOUND
+                }
+                crate::GetLeaderHostError::LaunchError { .. } | crate::GetLeaderHostError::Control { .. } => {
+                    StatusCode::INTERNAL_SERVER_ERROR
+                }
+            };
+            return (status, err.to_string()).into_response();
+        }
+    };
+
+    let module = match leader.module().await {
+        Ok(module) => module,
+        Err(err) => {
+            log::error!("Failed to load module host for `{module_name}`: {err:#}");
+            return (StatusCode::NOT_FOUND, format!("Module `{module_name}` not found.")).into_response();
+        }
+    };
+
+    if module.info().module_def.procedure(INDEX_PROCEDURE).is_none() {
+        return (
+            StatusCode::NOT_FOUND,
+            format!("Procedure `{INDEX_PROCEDURE}` not found in module `{module_name}`."),
+        )
+            .into_response();
+    }
+
+    let caller_identity = Identity::from_claims(spacetimedb_client_api::auth::LOCALHOST, SUBDOMAIN_CALLER_SUBJECT);
+    match module
+        .call_procedure(caller_identity, None, None, INDEX_PROCEDURE, FunctionArgs::Nullary)
+        .await
+        .result
+    {
+        Ok(result) => procedure_result_response(result.return_val),
+        Err(err) => procedure_error_response(module_name, err),
+    }
+}
+
+fn procedure_result_response(return_val: AlgebraicValue) -> Response {
+    match return_val {
+        AlgebraicValue::String(body) => Html(body.to_string()).into_response(),
+        value => (StatusCode::OK, axum::Json(sats::serde::SerdeWrapper(value))).into_response(),
+    }
+}
+
+fn procedure_error_response(module_name: &str, err: ProcedureCallError) -> Response {
+    match err {
+        ProcedureCallError::NoSuchProcedure => (
+            StatusCode::NOT_FOUND,
+            format!("Procedure `{INDEX_PROCEDURE}` not found in module `{module_name}`."),
+        )
+            .into_response(),
+        ProcedureCallError::NoSuchModule(_) => {
+            (StatusCode::NOT_FOUND, format!("Module `{module_name}` not found.")).into_response()
+        }
+        ProcedureCallError::Args(err) => {
+            (StatusCode::BAD_REQUEST, format!("{:#}", anyhow::anyhow!(err))).into_response()
+        }
+        ProcedureCallError::OutOfEnergy => (
+            StatusCode::PAYMENT_REQUIRED,
+            "Procedure terminated due to insufficient budget.",
+        )
+            .into_response(),
+        ProcedureCallError::InternalError(err) => (StatusCode::INTERNAL_SERVER_ERROR, err).into_response(),
     }
 }
 
@@ -299,11 +430,10 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
     let mut service = router(&ctx, db_routes, IdentityRoutes::default(), extra).with_state(ctx.clone());
     if let Some(root_domain) = root_domain {
-        let config = RootDomainRouteConfig::new(root_domain);
+        let config = RootDomainRouteConfig::new(root_domain, ctx.clone());
         log::info!(
-            "Enabled root domain routing for {} ({} returns the hello page)",
+            "Enabled root domain routing for {} (subdomains map to module `index` procedures)",
             config,
-            config.module_host
         );
         service = service.layer(axum::middleware::from_fn_with_state(config, root_domain_middleware));
     }
@@ -647,21 +777,34 @@ mod tests {
 
     #[test]
     fn root_domain_matching_supports_host_ports() {
-        let config = RootDomainRouteConfig::new("example.com".to_string());
+        let config = RootDomainRouteConfig::for_tests("example.com".to_string());
         let host = normalize_host_header_value("my-module.example.com:3000").unwrap();
-        assert_eq!(config.classify_host(&host), RootDomainHostMatch::ModulePage);
+        assert_eq!(
+            config.classify_host(&host),
+            RootDomainHostMatch::Module("my-module".to_string())
+        );
     }
 
     #[test]
-    fn root_domain_matching_returns_404_for_other_subdomains() {
-        let config = RootDomainRouteConfig::new("example.com".to_string());
+    fn root_domain_matching_extracts_any_single_subdomain_as_module() {
+        let config = RootDomainRouteConfig::for_tests("example.com".to_string());
         let host = normalize_host_header_value("another-module.example.com").unwrap();
-        assert_eq!(config.classify_host(&host), RootDomainHostMatch::SubdomainNotFound);
+        assert_eq!(
+            config.classify_host(&host),
+            RootDomainHostMatch::Module("another-module".to_string())
+        );
+    }
+
+    #[test]
+    fn root_domain_matching_rejects_nested_subdomains() {
+        let config = RootDomainRouteConfig::for_tests("example.com".to_string());
+        let host = normalize_host_header_value("a.b.example.com").unwrap();
+        assert_eq!(config.classify_host(&host), RootDomainHostMatch::InvalidSubdomain);
     }
 
     #[test]
     fn root_domain_matching_ignores_non_subdomain_hosts() {
-        let config = RootDomainRouteConfig::new("example.com".to_string());
+        let config = RootDomainRouteConfig::for_tests("example.com".to_string());
         let host = normalize_host_header_value("localhost:3000").unwrap();
         assert_eq!(config.classify_host(&host), RootDomainHostMatch::NoMatch);
     }
