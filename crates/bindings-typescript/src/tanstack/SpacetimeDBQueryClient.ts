@@ -94,6 +94,7 @@ export class SpacetimeDBQueryClient {
   setConnection(connection: SpacetimeConnection): void {
     this.connection = connection;
     this.processPendingQueries();
+    this.hydrateSubscriptions();
   }
 
   connect(queryClient: QueryClient): void {
@@ -284,6 +285,29 @@ export class SpacetimeDBQueryClient {
             }
           });
       }
+    }
+  }
+
+  // subscribe to queries with SSR cached data but no active subscription
+  private hydrateSubscriptions(): void {
+    if (!this.connection || !this.queryClient) {
+      return;
+    }
+
+    for (const [querySql, { accessorName, whereExpr }] of queryRegistry) {
+      const queryKey = ['spacetimedb', accessorName, querySql] as const;
+      const keyStr = JSON.stringify(queryKey);
+
+      if (this.subscriptions.has(keyStr)) {
+        continue;
+      }
+      if (this.queryClient.getQueryData(queryKey) === undefined) {
+        continue;
+      }
+
+      this.setupSubscription(queryKey, accessorName, querySql, whereExpr).catch(
+        () => {}
+      );
     }
   }
 
