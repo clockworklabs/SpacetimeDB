@@ -33,9 +33,9 @@ namespace SpacetimeDB.Types
 
         public MyPlayerCols(string tableName)
         {
-            Id = new global::SpacetimeDB.Col<Player, ulong>(tableName, "Id");
-            Identity = new global::SpacetimeDB.Col<Player, SpacetimeDB.Identity>(tableName, "Identity");
-            Name = new global::SpacetimeDB.Col<Player, string>(tableName, "Name");
+            Id = new global::SpacetimeDB.Col<Player, ulong>(tableName, "id");
+            Identity = new global::SpacetimeDB.Col<Player, SpacetimeDB.Identity>(tableName, "identity");
+            Name = new global::SpacetimeDB.Col<Player, string>(tableName, "name");
         }
     }
 

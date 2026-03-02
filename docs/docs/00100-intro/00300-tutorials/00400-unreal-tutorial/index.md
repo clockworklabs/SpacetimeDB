@@ -32,10 +32,10 @@ Please file an issue [here](https://github.com/clockworklabs/SpacetimeDB/issues)
 
 First you'll get started with the core client/server setup. For part 2, you'll be able to choose between **Rust** or **C#** for your server module language:
 
-- [Part 1 - Setup](/docs/tutorials/unreal/part-1)
-- [Part 2 - Connecting to SpacetimeDB](/docs/tutorials/unreal/part-2)
-- [Part 3 - Gameplay](/docs/tutorials/unreal/part-3)
-- [Part 4 - Moving and Colliding](/docs/tutorials/unreal/part-4)
+- [Part 1 - Setup](./00200-part-1.md)
+- [Part 2 - Connecting to SpacetimeDB](./00300-part-2.md)
+- [Part 3 - Gameplay](./00400-part-3.md)
+- [Part 4 - Moving and Colliding](./00500-part-4.md)
 
 ## Blackhol.io Tutorial - Advanced
 

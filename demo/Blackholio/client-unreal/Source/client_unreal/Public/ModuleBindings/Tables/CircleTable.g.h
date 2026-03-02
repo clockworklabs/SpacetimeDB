@@ -12,89 +12,12 @@
 #include "DBCache/TableCache.h"
 #include "CircleTable.g.generated.h"
 
-UCLASS(Blueprintable)
-class CLIENT_UNREAL_API UCircleCircleEntityIdIdxBtreeUniqueIndex : public UObject
-{
-    GENERATED_BODY()
-
-private:
-    // Declare an instance of your templated helper.
-    // It's private because the UObject wrapper will expose its functionality.
-    FUniqueIndexHelper<FCircleType, int32, FTableCache<FCircleType>> CircleEntityIdIdxBtreeIndexHelper;
-
-public:
-    UCircleCircleEntityIdIdxBtreeUniqueIndex()
-        // Initialize the helper with the specific unique index name
-        : CircleEntityIdIdxBtreeIndexHelper("entity_id") {
-    }
-
-    /**
-     * Finds a Circle by their unique entityid.
-     * @param Key The entityid to search for.
-     * @return The found FCircleType, or a default-constructed FCircleType if not found.
-     */
-    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|CircleIndex")
-    FCircleType Find(int32 Key)
-    {
-        // Simply delegate the call to the internal helper
-        return CircleEntityIdIdxBtreeIndexHelper.FindUniqueIndex(Key);
-    }
-
-    // A public setter to provide the cache to the helper after construction
-    // This is a common pattern when the cache might be created or provided by another system.
-    void SetCache(TSharedPtr<const FTableCache<FCircleType>> InCircleCache)
-    {
-        CircleEntityIdIdxBtreeIndexHelper.Cache = InCircleCache;
-    }
-};
-/***/
-
-UCLASS(Blueprintable)
-class UCircleCirclePlayerIdIdxBtreeIndex : public UObject
-{
-    GENERATED_BODY()
-
-public:
-    TArray<FCircleType> Filter(const int32& PlayerId) const
-    {
-        TArray<FCircleType> OutResults;
-
-        LocalCache->FindByMultiKeyBTreeIndex<TTuple<int32>>(
-            OutResults,
-            TEXT("circle_player_id_idx_btree"),
-            MakeTuple(PlayerId)
-        );
-
-        return OutResults;
-    }
-
-    void SetCache(TSharedPtr<FTableCache<FCircleType>> InCache)
-    {
-        LocalCache = InCache;
-    }
-
-private:
-    UFUNCTION(BlueprintCallable)
-    void FilterPlayerId(TArray<FCircleType>& OutResults, const int32& PlayerId)
-    {
-        OutResults = Filter(PlayerId);
-    }
-
-    TSharedPtr<FTableCache<FCircleType>> LocalCache;
-};
-
 UCLASS(BlueprintType)
 class CLIENT_UNREAL_API UCircleTable : public URemoteTable
 {
     GENERATED_BODY()
 
 public:
-    UPROPERTY(BlueprintReadOnly)
-    UCircleCircleEntityIdIdxBtreeUniqueIndex* CircleEntityIdIdxBtree;
-
-    UPROPERTY(BlueprintReadOnly)
-    UCircleCirclePlayerIdIdxBtreeIndex* CirclePlayerIdIdxBtree;
-
     void PostInitialize();
 
     /** Update function for circle table*/

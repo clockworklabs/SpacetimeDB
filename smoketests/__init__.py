@@ -267,7 +267,7 @@ class Smoketest(unittest.TestCase):
     def new_identity(self):
         new_identity(self.__class__.config_path)
 
-    def subscribe(self, *queries, n, confirmed = False, database = None):
+    def subscribe(self, *queries, n, confirmed = None, database = None):
         self._check_published()
         assert isinstance(n, int)
 
@@ -280,8 +280,8 @@ class Smoketest(unittest.TestCase):
             "-n", str(n),
             "--print-initial-update",
         ]
-        if confirmed:
-            args.append("--confirmed")
+        if confirmed is not None:
+            args.append(f"--confirmed={str(confirmed).lower()}")
         args.extend(["--", *queries])
 
         fake_args = ["spacetime", *args[1:]]

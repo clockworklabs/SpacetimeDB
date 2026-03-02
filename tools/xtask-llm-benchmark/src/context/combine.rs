@@ -1,5 +1,5 @@
 use crate::context::constants::docs_dir;
-use crate::context::paths::resolve_mode_paths;
+use crate::context::paths::{gather_cursor_rules_files, resolve_mode_paths};
 use crate::eval::lang::Lang;
 use anyhow::{anyhow, bail, Context, Result};
 use regex::Regex;
@@ -11,7 +11,7 @@ use std::sync::LazyLock;
 /// Get the base directory for a given mode (used for stripping prefixes to get relative paths).
 fn base_for_mode(mode: &str) -> Result<PathBuf> {
     Ok(match mode {
-        "docs" | "llms.md" | "cursor_rules" => docs_dir(),
+        "docs" | "llms.md" | "cursor_rules" | "none" => docs_dir(),
         // rustdoc_json is handled separately in build_context_from_rustdoc_json
         _ => bail!("unknown mode `{mode}` for base_for_mode"),
     })
@@ -31,23 +31,38 @@ fn stable_rel_path(base: &Path, p: &Path) -> String {
 
 /// Build context for the given mode, optionally filtering tabs for a specific language.
 pub fn build_context(mode: &str, lang: Option<Lang>) -> Result<String> {
+    if mode == "none" {
+        return Ok(String::new());
+    }
     if mode == "rustdoc_json" {
         return build_context_from_rustdoc_json();
     }
 
     let base = base_for_mode(mode)?;
-    let files = resolve_mode_paths(mode)?;
+    let files = if mode == "cursor_rules" {
+        gather_cursor_rules_files(base.join("static/ai-rules"), lang)?
+    } else {
+        resolve_mode_paths(mode)?
+    };
     let mut out = String::with_capacity(1024 * 1024);
     for p in files {
         let rel = stable_rel_path(&base, &p);
         let contents = fs::read_to_string(&p).with_context(|| format!("read {}", rel))?;
 
-        // Filter tabs if a language is specified
-        let contents = if let Some(lang) = lang {
+        // For cursor_rules we don't filter tabs; for other modes filter by lang if specified
+        let contents = if mode == "cursor_rules" {
+            contents
+        } else if let Some(lang) = lang {
             filter_tabs_for_lang(&contents, lang)
         } else {
             contents
         };
+
+        // When building for a specific language, skip files that have no content for it
+        // (e.g. Rust-only pages with no TypeScript tab). Not used for cursor_rules.
+        if mode != "cursor_rules" && lang.is_some() && contents.trim().is_empty() {
+            continue;
+        }
 
         out.push_str("\n\n---\n");
         out.push_str(&format!("// file: {}\n\n", rel));

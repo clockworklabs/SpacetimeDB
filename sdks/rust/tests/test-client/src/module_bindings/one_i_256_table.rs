@@ -5,7 +5,7 @@
 use super::one_i_256_type::OneI256;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `one_i256`.
+/// Table handle for the table `one_i_256`.
 ///
 /// Obtain a handle from the [`OneI256TableAccess::one_i_256`] method on [`super::RemoteTables`],
 /// like `ctx.db.one_i_256()`.
@@ -19,19 +19,19 @@ pub struct OneI256TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `one_i256`.
+/// Extension trait for access to the table `one_i_256`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OneI256TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OneI256TableHandle`], which mediates access to the table `one_i256`.
+    /// Obtain a [`OneI256TableHandle`], which mediates access to the table `one_i_256`.
     fn one_i_256(&self) -> OneI256TableHandle<'_>;
 }
 
 impl OneI256TableAccess for super::RemoteTables {
     fn one_i_256(&self) -> OneI256TableHandle<'_> {
         OneI256TableHandle {
-            imp: self.imp.get_table::<OneI256>("one_i256"),
+            imp: self.imp.get_table::<OneI256>("one_i_256"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,7 +80,7 @@ impl<'ctx> __sdk::Table for OneI256TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<OneI256>("one_i256");
+    let _table = client_cache.get_or_make_table::<OneI256>("one_i_256");
 }
 
 #[doc(hidden)]
@@ -96,14 +96,14 @@ pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::R
 /// Extension trait for query builder access to the table `OneI256`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait one_i256QueryTableAccess {
+pub trait one_i_256QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `OneI256`.
-    fn one_i256(&self) -> __sdk::__query_builder::Table<OneI256>;
+    fn one_i_256(&self) -> __sdk::__query_builder::Table<OneI256>;
 }
 
-impl one_i256QueryTableAccess for __sdk::QueryTableAccessor {
-    fn one_i256(&self) -> __sdk::__query_builder::Table<OneI256> {
-        __sdk::__query_builder::Table::new("one_i256")
+impl one_i_256QueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_i_256(&self) -> __sdk::__query_builder::Table<OneI256> {
+        __sdk::__query_builder::Table::new("one_i_256")
     }
 }

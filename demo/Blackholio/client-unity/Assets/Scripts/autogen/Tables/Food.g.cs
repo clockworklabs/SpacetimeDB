@@ -17,18 +17,18 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "food";
 
-            public sealed class FoodEntityIdIdxBtreeUniqueIndex : UniqueIndexBase<int>
+            public sealed class EntityIdUniqueIndex : UniqueIndexBase<int>
             {
                 protected override int GetKey(Food row) => row.EntityId;
 
-                public FoodEntityIdIdxBtreeUniqueIndex(FoodHandle table) : base(table) { }
+                public EntityIdUniqueIndex(FoodHandle table) : base(table) { }
             }
 
-            public readonly FoodEntityIdIdxBtreeUniqueIndex FoodEntityIdIdxBtree;
+            public readonly EntityIdUniqueIndex EntityId;
 
             internal FoodHandle(DbConnection conn) : base(conn)
             {
-                FoodEntityIdIdxBtree = new(this);
+                EntityId = new(this);
             }
 
             protected override object GetPrimaryKey(Food row) => row.EntityId;

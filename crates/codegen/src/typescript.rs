@@ -80,7 +80,7 @@ impl Lang for TypeScript {
         out.dedent(1);
         writeln!(out, "}});");
         OutputFile {
-            filename: table_module_name(&table.name) + ".ts",
+            filename: table_module_name(&table.accessor_name) + ".ts",
             code: output.into_inner(),
         }
     }
@@ -104,7 +104,7 @@ impl Lang for TypeScript {
         define_body_for_reducer(module, out, &reducer.params_for_generate.elements);
 
         OutputFile {
-            filename: reducer_module_name(&reducer.name) + ".ts",
+            filename: reducer_module_name(&reducer.accessor_name) + ".ts",
             code: output.into_inner(),
         }
     }
@@ -143,7 +143,7 @@ impl Lang for TypeScript {
         write_type_builder(module, out, &procedure.return_type_for_generate).unwrap();
 
         OutputFile {
-            filename: procedure_module_name(&procedure.name) + ".ts",
+            filename: procedure_module_name(&procedure.accessor_name) + ".ts",
             code: output.into_inner(),
         }
     }
@@ -161,26 +161,24 @@ impl Lang for TypeScript {
                 // Skip system-defined reducers
                 continue;
             }
-            let reducer_name = &reducer.name;
-            let reducer_module_name = reducer_module_name(reducer_name);
-            let args_type = reducer_args_type_name(reducer_name);
+            let reducer_module_name = reducer_module_name(&reducer.accessor_name);
+            let args_type = reducer_args_type_name(&reducer.accessor_name);
             writeln!(out, "import {args_type} from \"./{reducer_module_name}\";");
         }
 
         writeln!(out);
         writeln!(out, "// Import all procedure arg schemas");
         for procedure in iter_procedures(module, options.visibility) {
-            let procedure_name = &procedure.name;
-            let procedure_module_name = procedure_module_name(procedure_name);
-            let args_type = procedure_args_type_name(&procedure.name);
+            let procedure_module_name = procedure_module_name(&procedure.accessor_name);
+            let args_type = procedure_args_type_name(&procedure.accessor_name);
             writeln!(out, "import * as {args_type} from \"./{procedure_module_name}\";");
         }
 
         writeln!(out);
         writeln!(out, "// Import all table schema definitions");
-        for (table_name, _) in iter_table_names_and_types(module, options.visibility) {
-            let table_module_name = table_module_name(table_name);
-            let table_name_pascalcase = table_name.deref().to_case(Case::Pascal);
+        for (_, accessor_name, _) in iter_table_names_and_types(module, options.visibility) {
+            let table_module_name = table_module_name(accessor_name);
+            let table_name_pascalcase = accessor_name.deref().to_case(Case::Pascal);
             // TODO: This really shouldn't be necessary. We could also have `table()` accept
             // `__t.object(...)`s.
             writeln!(out, "import {table_name_pascalcase}Row from \"./{table_module_name}\";");
@@ -195,8 +193,8 @@ impl Lang for TypeScript {
         out.indent(1);
         for table in iter_tables(module, options.visibility) {
             let type_ref = table.product_type_ref;
-            let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
-            writeln!(out, "{}: __table({{", table.name);
+            let table_name_pascalcase = table.accessor_name.deref().to_case(Case::Pascal);
+            writeln!(out, "{}: __table({{", table.accessor_name);
             out.indent(1);
             write_table_opts(
                 module,
@@ -212,8 +210,8 @@ impl Lang for TypeScript {
         }
         for view in iter_views(module) {
             let type_ref = view.product_type_ref;
-            let view_name_pascalcase = view.name.deref().to_case(Case::Pascal);
-            writeln!(out, "{}: __table({{", view.name);
+            let view_name_pascalcase = view.accessor_name.deref().to_case(Case::Pascal);
+            writeln!(out, "{}: __table({{", view.accessor_name);
             out.indent(1);
             write_table_opts(module, out, type_ref, &view.name, iter::empty(), iter::empty(), false);
             out.dedent(1);
@@ -231,9 +229,8 @@ impl Lang for TypeScript {
                 // Skip system-defined reducers
                 continue;
             }
-            let reducer_name = &reducer.name;
-            let args_type = reducer_args_type_name(&reducer.name);
-            writeln!(out, "__reducerSchema(\"{}\", {}),", reducer_name, args_type);
+            let args_type = reducer_args_type_name(&reducer.accessor_name);
+            writeln!(out, "__reducerSchema(\"{}\", {}),", reducer.name, args_type);
         }
         out.dedent(1);
         writeln!(out, ");");
@@ -246,11 +243,11 @@ impl Lang for TypeScript {
         writeln!(out, "const proceduresSchema = __procedures(");
         out.indent(1);
         for procedure in iter_procedures(module, options.visibility) {
-            let procedure_name = &procedure.name;
-            let args_type = procedure_args_type_name(&procedure.name);
+            let args_type = procedure_args_type_name(&procedure.accessor_name);
             writeln!(
                 out,
-                "__procedureSchema(\"{procedure_name}\", {args_type}.params, {args_type}.returnType),",
+                "__procedureSchema(\"{}\", {args_type}.params, {args_type}.returnType),",
+                procedure.name,
             );
         }
         out.dedent(1);
@@ -405,16 +402,15 @@ fn generate_reducers_file(module: &ModuleDef, options: &CodegenOptions) -> Outpu
     writeln!(out);
     writeln!(out, "// Import all reducer arg schemas");
     for reducer in iter_reducers(module, options.visibility) {
-        let reducer_name = &reducer.name;
-        let reducer_module_name = reducer_module_name(reducer_name);
-        let args_type = reducer_args_type_name(&reducer.name);
+        let reducer_module_name = reducer_module_name(&reducer.accessor_name);
+        let args_type = reducer_args_type_name(&reducer.accessor_name);
         writeln!(out, "import {args_type} from \"../{reducer_module_name}\";");
     }
 
     writeln!(out);
     for reducer in iter_reducers(module, options.visibility) {
-        let reducer_name_pascalcase = reducer.name.deref().to_case(Case::Pascal);
-        let args_type = reducer_args_type_name(&reducer.name);
+        let reducer_name_pascalcase = reducer.accessor_name.deref().to_case(Case::Pascal);
+        let args_type = reducer_args_type_name(&reducer.accessor_name);
         writeln!(
             out,
             "export type {reducer_name_pascalcase}Params = __Infer<typeof {args_type}>;"
@@ -439,16 +435,15 @@ fn generate_procedures_file(module: &ModuleDef, options: &CodegenOptions) -> Out
     writeln!(out);
     writeln!(out, "// Import all procedure arg schemas");
     for procedure in iter_procedures(module, options.visibility) {
-        let procedure_name = &procedure.name;
-        let procedure_module_name = procedure_module_name(procedure_name);
-        let args_type = procedure_args_type_name(&procedure.name);
+        let procedure_module_name = procedure_module_name(&procedure.accessor_name);
+        let args_type = procedure_args_type_name(&procedure.accessor_name);
         writeln!(out, "import * as {args_type} from \"../{procedure_module_name}\";");
     }
 
     writeln!(out);
     for procedure in iter_procedures(module, options.visibility) {
-        let procedure_name_pascalcase = procedure.name.deref().to_case(Case::Pascal);
-        let args_type = procedure_args_type_name(&procedure.name);
+        let procedure_name_pascalcase = procedure.accessor_name.deref().to_case(Case::Pascal);
+        let args_type = procedure_args_type_name(&procedure.accessor_name);
         writeln!(
             out,
             "export type {procedure_name_pascalcase}Args = __Infer<typeof {args_type}.params>;"
@@ -475,7 +470,7 @@ fn generate_types_file(module: &ModuleDef) -> OutputFile {
 
     let reducer_type_names = module
         .reducers()
-        .map(|reducer| reducer.name.deref().to_case(Case::Pascal))
+        .map(|reducer| reducer.accessor_name.deref().to_case(Case::Pascal))
         .collect::<BTreeSet<_>>();
 
     for ty in iter_types(module) {
@@ -861,7 +856,15 @@ fn define_body_for_sum(
         write!(out, ": __TypeBuilder<__AlgebraicTypeType, __AlgebraicTypeType>");
     }
     writeln!(out, " = __t.enum(\"{name}\", {{");
-    out.with_indent(|out| write_object_type_builder_fields(module, out, variants, None, false, false).unwrap());
+    // Convert variant names to PascalCase
+    let pascal_variants: Vec<(Identifier, AlgebraicTypeUse)> = variants
+        .iter()
+        .map(|(ident, ty)| {
+            let pascal = ident.deref().to_case(Case::Pascal);
+            (Identifier::for_test(pascal), ty.clone())
+        })
+        .collect();
+    out.with_indent(|out| write_object_type_builder_fields(module, out, &pascal_variants, None, false, false).unwrap());
     writeln!(out, "}});");
     writeln!(out, "export type {name} = __Infer<typeof {name}>;");
     out.newline();

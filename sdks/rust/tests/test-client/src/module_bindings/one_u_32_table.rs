@@ -5,7 +5,7 @@
 use super::one_u_32_type::OneU32;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `one_u32`.
+/// Table handle for the table `one_u_32`.
 ///
 /// Obtain a handle from the [`OneU32TableAccess::one_u_32`] method on [`super::RemoteTables`],
 /// like `ctx.db.one_u_32()`.
@@ -19,19 +19,19 @@ pub struct OneU32TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `one_u32`.
+/// Extension trait for access to the table `one_u_32`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OneU32TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OneU32TableHandle`], which mediates access to the table `one_u32`.
+    /// Obtain a [`OneU32TableHandle`], which mediates access to the table `one_u_32`.
     fn one_u_32(&self) -> OneU32TableHandle<'_>;
 }
 
 impl OneU32TableAccess for super::RemoteTables {
     fn one_u_32(&self) -> OneU32TableHandle<'_> {
         OneU32TableHandle {
-            imp: self.imp.get_table::<OneU32>("one_u32"),
+            imp: self.imp.get_table::<OneU32>("one_u_32"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,7 +80,7 @@ impl<'ctx> __sdk::Table for OneU32TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<OneU32>("one_u32");
+    let _table = client_cache.get_or_make_table::<OneU32>("one_u_32");
 }
 
 #[doc(hidden)]
@@ -96,14 +96,14 @@ pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::R
 /// Extension trait for query builder access to the table `OneU32`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait one_u32QueryTableAccess {
+pub trait one_u_32QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `OneU32`.
-    fn one_u32(&self) -> __sdk::__query_builder::Table<OneU32>;
+    fn one_u_32(&self) -> __sdk::__query_builder::Table<OneU32>;
 }
 
-impl one_u32QueryTableAccess for __sdk::QueryTableAccessor {
-    fn one_u32(&self) -> __sdk::__query_builder::Table<OneU32> {
-        __sdk::__query_builder::Table::new("one_u32")
+impl one_u_32QueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_u_32(&self) -> __sdk::__query_builder::Table<OneU32> {
+        __sdk::__query_builder::Table::new("one_u_32")
     }
 }

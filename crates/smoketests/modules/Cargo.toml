@@ -24,6 +24,7 @@ members = [
     "views-recovered",
     "views-subscribe",
     "views-query",
+    "views-callable",
 
     # Security and permissions
     "rls",

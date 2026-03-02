@@ -32,9 +32,9 @@ use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors,
 use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v10::{
-    RawConstraintDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section,
-    RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10,
-    RawSequenceDefV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10,
+    ExplicitNames, RawConstraintDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10,
+    RawModuleDefV10Section, RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10,
+    RawScopedTypeNameV10, RawSequenceDefV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10,
 };
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
@@ -496,6 +496,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
         } = val;
 
         let mut sections = Vec::new();
+        let mut explicit_names = ExplicitNames::default();
 
         sections.push(RawModuleDefV10Section::Typespace(typespace));
 
@@ -518,10 +519,16 @@ impl From<ModuleDef> for RawModuleDefV10 {
         }
 
         // Collect schedules from tables (V10 stores them in a separate section).
+        // Also collect ExplicitNames for tables: accessor_name → source_name, name → canonical_name.
         let mut schedules = Vec::new();
         let raw_tables: Vec<RawTableDefV10> = tables
             .into_values()
             .map(|td| {
+                // Always emit name as ExplicitNames canonical_name.
+                explicit_names.insert_table(
+                    RawIdentifier::from(td.accessor_name.clone()),
+                    RawIdentifier::from(td.name.clone()),
+                );
                 if let Some(sched) = td.schedule.clone() {
                     schedules.push(RawScheduleDefV10 {
                         source_name: Some(sched.name.into()),
@@ -537,17 +544,47 @@ impl From<ModuleDef> for RawModuleDefV10 {
             sections.push(RawModuleDefV10Section::Tables(raw_tables));
         }
 
-        let raw_reducers: Vec<RawReducerDefV10> = reducers.into_values().map(Into::into).collect();
+        // Collect ExplicitNames for reducers: accessor_name → source_name, name → canonical_name.
+        let raw_reducers: Vec<RawReducerDefV10> = reducers
+            .into_values()
+            .map(|rd| {
+                explicit_names.insert_function(
+                    RawIdentifier::from(rd.accessor_name.clone()),
+                    RawIdentifier::from(rd.name.clone()),
+                );
+                rd.into()
+            })
+            .collect();
         if !raw_reducers.is_empty() {
             sections.push(RawModuleDefV10Section::Reducers(raw_reducers));
         }
 
-        let raw_procedures: Vec<RawProcedureDefV10> = procedures.into_values().map(Into::into).collect();
+        // Collect ExplicitNames for procedures: accessor_name → source_name, name → canonical_name.
+        let raw_procedures: Vec<RawProcedureDefV10> = procedures
+            .into_values()
+            .map(|pd| {
+                explicit_names.insert_function(
+                    RawIdentifier::from(pd.accessor_name.clone()),
+                    RawIdentifier::from(pd.name.clone()),
+                );
+                pd.into()
+            })
+            .collect();
         if !raw_procedures.is_empty() {
             sections.push(RawModuleDefV10Section::Procedures(raw_procedures));
         }
 
-        let raw_views: Vec<RawViewDefV10> = views.into_values().map(Into::into).collect();
+        // Collect ExplicitNames for views: accessor_name → source_name, name → canonical_name.
+        let raw_views: Vec<RawViewDefV10> = views
+            .into_values()
+            .map(|vd| {
+                explicit_names.insert_function(
+                    RawIdentifier::from(vd.accessor_name.clone()),
+                    RawIdentifier::from(vd.name.clone()),
+                );
+                vd.into()
+            })
+            .collect();
         if !raw_views.is_empty() {
             sections.push(RawModuleDefV10Section::Views(raw_views));
         }
@@ -564,6 +601,9 @@ impl From<ModuleDef> for RawModuleDefV10 {
         if !raw_rls.is_empty() {
             sections.push(RawModuleDefV10Section::RowLevelSecurity(raw_rls));
         }
+
+        // Always emit ExplicitNames so canonical names survive the round-trip.
+        sections.push(RawModuleDefV10Section::ExplicitNames(explicit_names));
 
         RawModuleDefV10 { sections }
     }
@@ -869,8 +909,8 @@ impl From<IndexDef> for RawIndexDefV9 {
 impl From<IndexDef> for RawIndexDefV10 {
     fn from(val: IndexDef) -> Self {
         RawIndexDefV10 {
-            source_name: Some(val.name),
-            accessor_name: None,
+            source_name: Some(val.source_name),
+            accessor_name: val.accessor_name.map(Into::into),
             algorithm: val.algorithm.into(),
         }
     }
@@ -1533,7 +1573,7 @@ impl From<ViewDef> for RawViewDefV9 {
 impl From<ViewDef> for RawViewDefV10 {
     fn from(val: ViewDef) -> Self {
         let ViewDef {
-            name,
+            accessor_name,
             is_anonymous,
             is_public,
             params,
@@ -1542,7 +1582,7 @@ impl From<ViewDef> for RawViewDefV10 {
             ..
         } = val;
         RawViewDefV10 {
-            source_name: name.into(),
+            source_name: accessor_name.into(),
             index: fn_ptr.into(),
             is_public,
             is_anonymous,
@@ -1647,7 +1687,7 @@ impl From<ReducerDef> for RawReducerDefV9 {
 impl From<ReducerDef> for RawReducerDefV10 {
     fn from(val: ReducerDef) -> Self {
         RawReducerDefV10 {
-            source_name: val.name.into(),
+            source_name: val.accessor_name.into(),
             params: val.params,
             visibility: val.visibility.into(),
             ok_return_type: val.ok_return_type,
@@ -1707,7 +1747,7 @@ impl From<ProcedureDef> for RawProcedureDefV9 {
 impl From<ProcedureDef> for RawProcedureDefV10 {
     fn from(val: ProcedureDef) -> Self {
         RawProcedureDefV10 {
-            source_name: val.name.into(),
+            source_name: val.accessor_name.into(),
             params: val.params,
             return_type: val.return_type,
             visibility: val.visibility.into(),

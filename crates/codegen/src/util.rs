@@ -168,20 +168,27 @@ pub(super) fn iter_views(module: &ModuleDef) -> impl Iterator<Item = &ViewDef> {
 
 /// Iterate over the names of all the tables and views defined by the module, in alphabetical order.
 ///
+/// Returns `(name, accessor_name, product_type_ref)` for each table/view.
+/// Use `name` for protocol/wire communication; use `accessor_name` for generated identifiers.
+///
 /// Sorting is necessary to have deterministic reproducible codegen.
 pub(super) fn iter_table_names_and_types(
     module: &ModuleDef,
     visibility: CodegenVisibility,
-) -> impl Iterator<Item = (&Identifier, AlgebraicTypeRef)> {
+) -> impl Iterator<Item = (&Identifier, &Identifier, AlgebraicTypeRef)> {
     module
         .tables()
         .filter(move |table| match visibility {
             CodegenVisibility::IncludePrivate => true,
             CodegenVisibility::OnlyPublic => table.table_access == TableAccess::Public,
         })
-        .map(|def| (&def.name, def.product_type_ref))
-        .chain(module.views().map(|def| (&def.name, def.product_type_ref)))
-        .sorted_by_key(|(name, _)| *name)
+        .map(|def| (&def.name, &def.accessor_name, def.product_type_ref))
+        .chain(
+            module
+                .views()
+                .map(|def| (&def.name, &def.accessor_name, def.product_type_ref)),
+        )
+        .sorted_by_key(|(_, accessor_name, _)| *accessor_name)
 }
 
 pub(super) fn iter_unique_cols<'a>(

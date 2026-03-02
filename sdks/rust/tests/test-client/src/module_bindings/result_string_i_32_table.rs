@@ -5,7 +5,7 @@
 use super::result_string_i_32_type::ResultStringI32;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `result_string_i32`.
+/// Table handle for the table `result_string_i_32`.
 ///
 /// Obtain a handle from the [`ResultStringI32TableAccess::result_string_i_32`] method on [`super::RemoteTables`],
 /// like `ctx.db.result_string_i_32()`.
@@ -19,19 +19,19 @@ pub struct ResultStringI32TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `result_string_i32`.
+/// Extension trait for access to the table `result_string_i_32`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait ResultStringI32TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`ResultStringI32TableHandle`], which mediates access to the table `result_string_i32`.
+    /// Obtain a [`ResultStringI32TableHandle`], which mediates access to the table `result_string_i_32`.
     fn result_string_i_32(&self) -> ResultStringI32TableHandle<'_>;
 }
 
 impl ResultStringI32TableAccess for super::RemoteTables {
     fn result_string_i_32(&self) -> ResultStringI32TableHandle<'_> {
         ResultStringI32TableHandle {
-            imp: self.imp.get_table::<ResultStringI32>("result_string_i32"),
+            imp: self.imp.get_table::<ResultStringI32>("result_string_i_32"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,7 +80,7 @@ impl<'ctx> __sdk::Table for ResultStringI32TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<ResultStringI32>("result_string_i32");
+    let _table = client_cache.get_or_make_table::<ResultStringI32>("result_string_i_32");
 }
 
 #[doc(hidden)]
@@ -98,14 +98,14 @@ pub(super) fn parse_table_update(
 /// Extension trait for query builder access to the table `ResultStringI32`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait result_string_i32QueryTableAccess {
+pub trait result_string_i_32QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `ResultStringI32`.
-    fn result_string_i32(&self) -> __sdk::__query_builder::Table<ResultStringI32>;
+    fn result_string_i_32(&self) -> __sdk::__query_builder::Table<ResultStringI32>;
 }
 
-impl result_string_i32QueryTableAccess for __sdk::QueryTableAccessor {
-    fn result_string_i32(&self) -> __sdk::__query_builder::Table<ResultStringI32> {
-        __sdk::__query_builder::Table::new("result_string_i32")
+impl result_string_i_32QueryTableAccess for __sdk::QueryTableAccessor {
+    fn result_string_i_32(&self) -> __sdk::__query_builder::Table<ResultStringI32> {
+        __sdk::__query_builder::Table::new("result_string_i_32")
     }
 }

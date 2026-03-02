@@ -10,6 +10,9 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "spacetimedb": "1.*"
+    "spacetimedb": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "~5.6.2"
   }
 }

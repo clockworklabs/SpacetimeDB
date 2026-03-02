@@ -13,9 +13,9 @@ namespace SpacetimeDB.Types
     [DataContract]
     public sealed partial class TestEvent
     {
-        [DataMember(Name = "Name")]
+        [DataMember(Name = "name")]
         public string Name;
-        [DataMember(Name = "Value")]
+        [DataMember(Name = "value")]
         public ulong Value;
 
         public TestEvent(

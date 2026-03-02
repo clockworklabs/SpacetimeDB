@@ -55,6 +55,7 @@ spacetimedb-testing = { path = "../testing" }
 
 ahash.workspace = true
 anyhow.workspace = true
+convert_case.workspace = true
 anymap.workspace = true
 byte-unit.workspace = true
 clap.workspace = true

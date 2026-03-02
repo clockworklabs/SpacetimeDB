@@ -38,7 +38,7 @@ The script will:
 
 ## Prerequisites
 
-- **Node.js** ≥ 20.x
+- **Node.js** ≥ 22.x
 - **pnpm** installed globally
 - **Docker** for local Postgres / Cockroach / Supabase
 - Local/Cloud Convex
@@ -102,6 +102,12 @@ Copy `.env.example` to `.env` and adjust.
 - `CLEAR_CONVEX_ON_PREP` – Convex prep flag (clears data when enabled)
 - `CONVEX_USE_SHARDED_COUNTER` – flag for using the sharded-counter implementation
 
+**PlanetScale:**
+
+- `PLANETSCALE_PG_URL` – Postgres connection string
+- `PLANETSCALE_RPC_URL` – PlanetScale RPC server URL (default: `http://127.0.0.1:4104`)
+- `SKIP_PLANETSCALE_PG` – `1` = skip PlanetScale in prep
+
 **Bun / RPC helpers:**
 
 - `BUN_URL` – Bun HTTP benchmark server URL
@@ -115,6 +121,12 @@ Copy `.env.example` to `.env` and adjust.
 
 ---
 
+## PlanetScale configuration
+
+Create a Postgres database on PlanetScale and set `PLANETSCALE_PG_URL` (and `PLANETSCALE_RPC_URL` if the RPC server runs elsewhere) in `.env`. Reported results used PS-2560 (32 vCPUs, 256 GB RAM).
+
+---
+
 ## Setup
 
 ### Generate bindings (first time after clone)
@@ -123,9 +135,11 @@ Copy `.env.example` to `.env` and adjust.
 
 ```bash
 cd spacetimedb
-spacetimedb generate --lang typescript --out-dir ../module_bindings
+cargo run -p spacetimedb-cli -- generate --lang typescript --out-dir ../module_bindings --module-path . -y
 cd ..
 ```
+
+(Or use `spacetime generate ...` if the CLI is installed.)
 
 **Convex generated files:**
 
@@ -138,7 +152,7 @@ cd ..
 
 ### Start services
 
-1. Start SpacetimeDB (`spacetimedb start`)
+1. Start SpacetimeDB (`cargo run -p spacetimedb-cli -- start` or `spacetime start`)
 2. Start Convex (inside convex-app run `npx convex dev`)
 3. Init Supabase (run `supabase init`) inside project root.
 4. `npm run prep` to seed the databases.
@@ -191,7 +205,7 @@ From `src/cli.ts`:
 
 - **`--alpha A`**
   - Zipf α parameter for account selection (hot vs cold distribution)
-  - Default: `0.5`
+  - Default: `1.5`
 
 - **`--connectors list`**
   - Optional, comma-separated list of connector `system` names

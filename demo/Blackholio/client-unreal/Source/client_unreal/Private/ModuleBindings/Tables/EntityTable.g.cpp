@@ -13,11 +13,6 @@ void UEntityTable::PostInitialize()
     Data = MakeShared<UClientCache<FEntityType>>();
 
     TSharedPtr<FTableCache<FEntityType>> EntityTable = Data->GetOrAdd(TableName);
-    EntityTable->AddUniqueConstraint<int32>("entity_id", [](const FEntityType& Row) -> const int32& {
-        return Row.EntityId; });
-
-    EntityEntityIdIdxBtree = NewObject<UEntityEntityEntityIdIdxBtreeUniqueIndex>(this);
-    EntityEntityIdIdxBtree->SetCache(EntityTable);
 
     /***/
 }

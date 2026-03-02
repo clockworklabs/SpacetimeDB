@@ -17,28 +17,28 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "player_level";
 
-            public sealed class PlayerLevelLevelIdxBtreeIndex : BTreeIndexBase<ulong>
+            public sealed class LevelIndex : BTreeIndexBase<ulong>
             {
                 protected override ulong GetKey(PlayerLevel row) => row.Level;
 
-                public PlayerLevelLevelIdxBtreeIndex(PlayerLevelHandle table) : base(table) { }
+                public LevelIndex(PlayerLevelHandle table) : base(table) { }
             }
 
-            public readonly PlayerLevelLevelIdxBtreeIndex PlayerLevelLevelIdxBtree;
+            public readonly LevelIndex Level;
 
-            public sealed class PlayerLevelPlayerIdIdxBtreeUniqueIndex : UniqueIndexBase<ulong>
+            public sealed class PlayerIdUniqueIndex : UniqueIndexBase<ulong>
             {
                 protected override ulong GetKey(PlayerLevel row) => row.PlayerId;
 
-                public PlayerLevelPlayerIdIdxBtreeUniqueIndex(PlayerLevelHandle table) : base(table) { }
+                public PlayerIdUniqueIndex(PlayerLevelHandle table) : base(table) { }
             }
 
-            public readonly PlayerLevelPlayerIdIdxBtreeUniqueIndex PlayerLevelPlayerIdIdxBtree;
+            public readonly PlayerIdUniqueIndex PlayerId;
 
             internal PlayerLevelHandle(DbConnection conn) : base(conn)
             {
-                PlayerLevelLevelIdxBtree = new(this);
-                PlayerLevelPlayerIdIdxBtree = new(this);
+                Level = new(this);
+                PlayerId = new(this);
             }
         }
 
@@ -52,8 +52,8 @@ namespace SpacetimeDB.Types
 
         public PlayerLevelCols(string tableName)
         {
-            PlayerId = new global::SpacetimeDB.Col<PlayerLevel, ulong>(tableName, "PlayerId");
-            Level = new global::SpacetimeDB.Col<PlayerLevel, ulong>(tableName, "Level");
+            PlayerId = new global::SpacetimeDB.Col<PlayerLevel, ulong>(tableName, "player_id");
+            Level = new global::SpacetimeDB.Col<PlayerLevel, ulong>(tableName, "level");
         }
     }
 
@@ -64,8 +64,8 @@ namespace SpacetimeDB.Types
 
         public PlayerLevelIxCols(string tableName)
         {
-            PlayerId = new global::SpacetimeDB.IxCol<PlayerLevel, ulong>(tableName, "PlayerId");
-            Level = new global::SpacetimeDB.IxCol<PlayerLevel, ulong>(tableName, "Level");
+            PlayerId = new global::SpacetimeDB.IxCol<PlayerLevel, ulong>(tableName, "player_id");
+            Level = new global::SpacetimeDB.IxCol<PlayerLevel, ulong>(tableName, "level");
         }
     }
 }
