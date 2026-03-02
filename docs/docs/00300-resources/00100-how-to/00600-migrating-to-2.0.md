@@ -651,6 +651,23 @@ Alternatively, manually specify the correct canonical name of each table:
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
+```typescript
+import { table, schema, t } from 'spacetimedb/server';
+
+const myTable = table(
+  {
+    name: 'MyTable',
+    public: true,
+    indexes: [{ accessor: 'position', columns: ['x', 'y'] }],
+  },
+  {
+    id: t.u32().primaryKey().autoInc(),
+    x: t.u32(),
+    y: t.u32(),
+  }
+);
+```
+
 </TabItem>
 <TabItem value="csharp" label="C#">
 

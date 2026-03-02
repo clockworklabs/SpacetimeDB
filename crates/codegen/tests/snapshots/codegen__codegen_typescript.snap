@@ -289,7 +289,7 @@ const proceduresSchema = __procedures(
 /** The remote SpacetimeDB module schema, both runtime and type information. */
 const REMOTE_MODULE = {
   versionInfo: {
-    cliVersion: "2.0.2" as const,
+    cliVersion: "2.0.3" as const,
   },
   tables: tablesSchema.schemaType.tables,
   reducers: reducersSchema.reducersType.reducers,
