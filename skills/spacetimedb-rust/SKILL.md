@@ -38,7 +38,7 @@ ctx.db.player                   // Should be ctx.db.player()
 ctx.db.player.find(id)          // Should be ctx.db.player().id().find(&id)
 
 // WRONG — old 1.0 patterns
-#[table(name = my_table)]       // Use accessor, not name (2.0)
+#[table(name = "my_table")]     // Optional canonical name (accessor is still required)
 ctx.sender                      // Use ctx.sender() — method, not field (2.0)
 .with_module_name("db")         // Use .with_database_name() (2.0)
 ctx.db.user().name().update(..) // Update only via primary key (2.0)
@@ -97,7 +97,7 @@ let caller = ctx.sender();
 3. **Use `&ReducerContext`** — not `&mut ReducerContext`
 4. **Tables are methods** — `ctx.db.table()` not `ctx.db.table`
 5. **Use `ctx.sender()`** — method call, not field access (2.0)
-6. **Use `accessor =`** — not `name =` in table/index attributes (2.0)
+6. **Use `accessor =` for API handles** — `name = "..."` is optional canonical naming in table/index attributes
 7. **Reducers must be deterministic** — no filesystem, network, timers, or external RNG
 8. **Use `ctx.rng()`** — not `rand` crate for random numbers
 9. **Add `public` flag** — if clients need to subscribe to a table
@@ -147,7 +147,7 @@ pub struct Player {
 |-----------|-------------|
 | `accessor = identifier` | Required. The API name used in `ctx.db.{accessor}()` |
 | `public` | Makes table visible to clients via subscriptions |
-| `scheduled(reducer_name)` | Creates a schedule table that triggers the named reducer |
+| `scheduled(function_name)` | Creates a schedule table that triggers the named reducer or procedure |
 | `index(accessor = idx, btree(columns = [a, b]))` | Multi-column index |
 
 ### Column Attributes

@@ -153,7 +153,7 @@ Benefits: reduced bandwidth, cache efficiency, schema evolution, semantic clarit
 
 ## Reducers
 
-Reducers are transactional functions that modify database state. They are the ONLY way to mutate tables in SpacetimeDB.
+Reducers are transactional functions that modify database state. They are the primary client-invoked mutation path; procedures can also mutate tables by running explicit transactions.
 
 ### Key Properties
 

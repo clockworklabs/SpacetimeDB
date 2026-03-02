@@ -26,7 +26,7 @@ Use this skill when the user needs help with the `spacetime` CLI tool - initiali
 
 ```bash
 # Initialize new project
-spacetime init my-project --lang rust|csharp|typescript
+spacetime init my-project --lang rust|csharp|typescript|cpp
 spacetime init my-project --template <template-id>
 
 # Build module
@@ -133,7 +133,7 @@ spacetime logout
 
 | Name | URL | Description |
 |------|-----|-------------|
-| `maincloud` | `https://spacetimedb.com` | Production cloud (default) |
+| `maincloud` | `https://maincloud.spacetimedb.com` | Production cloud (default) |
 | `local` | `http://127.0.0.1:3000` | Local development server |
 
 ## Common Workflows
@@ -215,8 +215,9 @@ rustup target add wasm32-unknown-unknown
 
 ## Module Languages
 
-**Server-side (modules):** Rust, C#, TypeScript
+**Server-side (modules):** Rust, C#, TypeScript, C++
 **Client SDKs:** TypeScript, C#, Rust, Python, Unreal Engine
+**CLI `generate` targets:** TypeScript, C#, Rust, Unreal C++
 
 ## Notes
 

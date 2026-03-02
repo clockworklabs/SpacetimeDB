@@ -43,7 +43,8 @@ setReducerFlags.x('NoSuccessNotify')  // Removed in 2.0
 ```typescript
 // CORRECT IMPORTS
 import { DbConnection, tables } from './module_bindings';  // Generated!
-import { SpacetimeDBProvider, useTable, Identity } from 'spacetimedb/react';
+import { SpacetimeDBProvider, useTable } from 'spacetimedb/react';
+import { Identity } from 'spacetimedb';
 
 // CORRECT REDUCER CALLS — object syntax, not positional!
 conn.reducers.doSomething({ value: 'test' });
@@ -76,7 +77,7 @@ const [items, isReady] = useTable(tables.item);
 | `const id = table.insert(...)` | `const row = table.insert(...)` | `.insert()` returns ROW, not ID |
 | `.unique()` + explicit index | Just use `.unique()` | "name is used for multiple entities" |
 | Import spacetimedb from index.ts | Import from schema.ts | "Cannot access before initialization" |
-| Multi-column index `.filter()` | Use single-column index | PANIC or silent empty results |
+| Incorrect multi-column `.filter()` range shape | Match index prefix/tuple shape | Empty results or range/type errors |
 | `.iter()` in views | Use index lookups only | Views can't scan tables |
 | `ctx.db` in procedures | `ctx.withTx(tx => tx.db...)` | Procedures need explicit transactions |
 
@@ -93,7 +94,7 @@ const [items, isReady] = useTable(tables.item);
 
 ## Hard Requirements
 
-1. **`schema({ table })`** — takes exactly one object; never `schema(table)` or `schema(t1, t2, t3)`
+1. **`schema({ table })`** — use a single tables object; optional module settings are allowed as a second argument
 2. **Reducer/procedure names from exports** — `export const name = spacetimedb.reducer(params, fn)`; never `reducer('name', ...)`
 3. **Reducer calls use object syntax** — `{ param: 'value' }` not positional args
 4. **Import `DbConnection` from `./module_bindings`** — not from `spacetimedb`
@@ -194,11 +195,6 @@ connection.db.player.onUpdate((ctx, old, new_) => console.log(`${old.score} -> $
 
 ```typescript
 connection.reducers.createPlayer({ name: 'Alice', location: { x: 0, y: 0 } });
-
-connection.reducers.onCreatePlayer((ctx, args) => {
-  if (ctx.event.status.tag === 'Committed') console.log('Success');
-  else if (ctx.event.status.tag === 'Failed') console.error(ctx.event.status.value);
-});
 ```
 
 ### Snake_case to camelCase conversion
@@ -224,15 +220,8 @@ Connection-level errors (`.onConnectError`, `.onDisconnect`) are shown in the Cl
 // Subscription error
 connection.subscriptionBuilder()
   .onApplied(() => console.log('Subscribed'))
-  .onError((ctx, error) => console.error('Subscription error:', error))
+  .onError((ctx) => console.error('Subscription error:', ctx.event))
   .subscribe('SELECT * FROM player');
-
-// Reducer error handling (also shown in Calling Reducers above)
-connection.reducers.onCreatePlayer((ctx, args) => {
-  if (ctx.event.status.tag === 'Failed') {
-    console.error('Reducer failed:', ctx.event.status.value);
-  }
-});
 ```
 
 ---
@@ -338,7 +327,7 @@ conn.db.damageEvent.onInsert((ctx, evt) => {
 });
 ```
 
-Event tables must be subscribed explicitly — they are excluded from `subscribeToAllTables()`.
+Event tables can be subscribed explicitly, and they are also included by `subscribeToAllTables()`.
 
 ---
 

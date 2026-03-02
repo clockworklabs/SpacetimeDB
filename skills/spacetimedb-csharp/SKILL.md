@@ -19,8 +19,7 @@ This skill provides guidance for building C# server-side modules and C# clients 
 **These APIs DO NOT EXIST. LLMs frequently hallucinate them.**
 
 ```csharp
-// WRONG — these do not exist
-[SpacetimeDB.Procedure]             // C# does NOT support procedures yet!
+// WRONG — these table access patterns do not exist
 ctx.db.tableName                    // Wrong casing — use ctx.Db
 ctx.Db.tableName                    // Wrong casing — accessor must match exactly
 ctx.Db.TableName.Get(id)            // Use Find, not Get
@@ -43,7 +42,7 @@ public partial class Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> { 
 
 // WRONG — Index attribute without full qualification
 [Index.BTree(Accessor = "idx", Columns = new[] { "Col" })]    // Ambiguous with System.Index!
-[SpacetimeDB.Index.BTree(Accessor = "idx", Columns = ["Col"])]  // Collection expressions don't work!
+[SpacetimeDB.Index.BTree(Accessor = "idx", Columns = ["Col"])]  // Valid with modern C# collection expressions
 
 // WRONG — old 1.0 patterns
 [SpacetimeDB.Table(Name = "Player")]        // Use Accessor, not Name (2.0)
@@ -127,7 +126,7 @@ _conn.Reducers.ProcessItems(new List<int> { 1, 2, 3 });
 3. **Project file MUST be named `StdbModule.csproj`** — CLI requirement
 4. **Requires .NET 8 SDK** — .NET 9 and newer not yet supported
 5. **Install WASI workload** — `dotnet workload install wasi-experimental`
-6. **C# does NOT support procedures** — use reducers only
+6. **Procedures are supported** — use `[SpacetimeDB.Procedure]` with `ProcedureContext` when needed
 7. **Reducers must be deterministic** — no filesystem, network, timers, or `Random`
 8. **Add `Public = true`** — if clients need to subscribe to a table
 9. **Use `T?` for nullable fields** — not `Optional<T>`
@@ -291,7 +290,7 @@ public static partial class Module
 
 ### Event Tables (2.0)
 
-Reducer callbacks are removed in 2.0. Use event tables + `OnInsert` instead.
+Reducer callbacks are available in generated client bindings. Event tables + `OnInsert` are also useful for explicit domain events.
 
 ```csharp
 [SpacetimeDB.Table(Accessor = "DamageEvent", Public = true, Event = true)]
@@ -315,7 +314,7 @@ conn.Db.DamageEvent.OnInsert += (ctx, evt) => {
 };
 ```
 
-Event tables must be subscribed explicitly — they are excluded from `SubscribeToAllTables()`.
+Event tables can be subscribed explicitly, and they are also included by `SubscribeToAllTables()`.
 
 ### Database Access
 
