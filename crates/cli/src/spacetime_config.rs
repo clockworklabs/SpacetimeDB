@@ -171,10 +171,7 @@ impl SpacetimeConfig {
         self.collect_targets_inner(None)
     }
 
-    fn collect_targets_inner(
-        &self,
-        parent_fields: Option<&HashMap<String, Value>>,
-    ) -> Vec<FlatTarget> {
+    fn collect_targets_inner(&self, parent_fields: Option<&HashMap<String, Value>>) -> Vec<FlatTarget> {
         // module-path, bin-path, and js-path are mutually exclusive module sources.
         // If a child specifies any one, the other two are not inherited from the parent.
         const MODULE_SOURCE_KEYS: &[&str] = &["module-path", "bin-path", "js-path"];
