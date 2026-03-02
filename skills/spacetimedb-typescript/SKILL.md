@@ -35,7 +35,6 @@ schema(myTable);          // Use schema({ myTable })
 schema(t1, t2, t3);      // Use schema({ t1, t2, t3 })
 scheduled: 'run_cleanup'  // Use scheduled: () => run_cleanup
 .withModuleName('db')     // Use .withDatabaseName('db') (2.0)
-.withLightMode(true)      // Removed in 2.0
 setReducerFlags.x('NoSuccessNotify')  // Removed in 2.0
 ```
 

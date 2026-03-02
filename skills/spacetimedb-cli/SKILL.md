@@ -97,8 +97,8 @@ spacetime rename <database-identity> --to new-name
 spacetime server list
 
 # Add server
-spacetime server add local http://localhost:3000 --default
-spacetime server add myserver https://my-spacetime.example.com
+spacetime server add local --url http://localhost:3000 --default
+spacetime server add myserver --url https://my-spacetime.example.com
 
 # Set default server
 spacetime server set-default local
@@ -127,13 +127,6 @@ spacetime login show
 
 # Logout
 spacetime logout
-```
-
-### Energy/Billing
-
-```bash
-spacetime energy balance
-spacetime energy balance --identity <identity>
 ```
 
 ## Default Servers
@@ -190,7 +183,6 @@ spacetime dev --client-lang typescript --module-bindings-path ./client/src/bindi
 | `--server` | `-s` | Target server (nickname, hostname, or URL) |
 | `--yes` | `-y` | Non-interactive mode (skip confirmations) |
 | `--anonymous` | | Use anonymous identity |
-| `--identity` | `-i` | Specify identity to use |
 | `--module-path` | `-p` | Path to module project |
 
 ## Troubleshooting

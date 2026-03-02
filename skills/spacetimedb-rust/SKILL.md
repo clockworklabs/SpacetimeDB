@@ -17,12 +17,11 @@ SpacetimeDB modules are WebAssembly applications that run inside the database. T
 
 ## HALLUCINATED APIs — DO NOT USE
 
-**These APIs DO NOT EXIST. LLMs frequently hallucinate them.**
+**These APIs/patterns are incorrect. LLMs frequently hallucinate them.**
+
+Both macro forms are valid in 2.0: `#[spacetimedb::table(...)]` / `#[table(...)]` and `#[spacetimedb::reducer]` / `#[reducer]`.
 
 ```rust
-// WRONG — these macros/attributes don't exist
-#[spacetimedb::table]           // Use #[table] after importing
-#[spacetimedb::reducer]         // Use #[reducer] after importing
 #[derive(Table)]                // Tables use #[table] attribute, not derive
 #[derive(Reducer)]              // Reducers use #[reducer] attribute
 
@@ -220,6 +219,11 @@ log::info!("Created player with id: {}", player.id);
 ```rust
 // Find by unique/primary key — returns Option
 if let Some(player) = ctx.db.player().id().find(&123) {
+    log::info!("Found: {}", player.name);
+}
+
+// Optional clarity: typed literals can avoid inference ambiguity
+if let Some(player) = ctx.db.player().id().find(&123u64) {
     log::info!("Found: {}", player.name);
 }
 
@@ -483,6 +487,9 @@ Prefer `Result<(), String>` for all expected failure cases. Panics destroy and r
 ---
 
 ## Procedures (Beta)
+
+> Procedures are behind the `unstable` feature in `spacetimedb`.
+> In `Cargo.toml`: `spacetimedb = { version = "...", features = ["unstable"] }`
 
 ```rust
 use spacetimedb::{procedure, ProcedureContext};
