@@ -1,46 +1,332 @@
 # SpacetimeDB Swift SDK
 
-Native Swift package for SpacetimeDB client connectivity, BSATN encoding/decoding, and local replica cache integration.
+Native Swift SDK for connecting to SpacetimeDB over `v2.bsatn.spacetimedb`, decoding realtime updates, and maintaining a typed local cache.
 
-## Location
+## Contents
 
-This SDK now lives at:
+- [Requirements](#requirements)
+- [Package Layout](#package-layout)
+- [Add The SDK To A Swift Package](#add-the-sdk-to-a-swift-package)
+- [Quick Start](#quick-start)
+- [Core API](#core-api)
+- [Auth Token Persistence (Keychain)](#auth-token-persistence-keychain)
+- [Network Awareness And Reconnect Behavior](#network-awareness-and-reconnect-behavior)
+- [Distribution Hardening](#distribution-hardening)
+- [DocC and Swift Package Index](#docc-and-swift-package-index)
+- [Apple CI Matrix](#apple-ci-matrix)
+- [Logging](#logging)
+- [Benchmarks](#benchmarks)
+- [Validation Matrix](#validation-matrix)
+- [Examples](#examples)
 
-`sdks/swift`
+## Requirements
 
-## Build And Test
+- Swift tools `6.2`
+- Apple platforms:
+  - macOS `15+`
+  - iOS `17+`
 
-From repo root:
+## Package Layout
 
-```bash
-swift test --package-path sdks/swift
+```text
+sdks/swift
+├── Package.swift
+├── Benchmarks/SpacetimeDBBenchmarks
+├── Sources/SpacetimeDB
+│   ├── Auth/KeychainTokenStore.swift
+│   ├── BSATN/
+│   ├── Cache/
+│   ├── Network/
+│   ├── Log.swift
+│   ├── RuntimeTypes.swift
+│   └── SpacetimeDB.swift
+└── Tests/SpacetimeDBTests
 ```
 
-## Use In A Local Swift Package
+## Add The SDK To A Swift Package
+
+From a local checkout:
 
 ```swift
 dependencies: [
-    .package(name: "SpacetimeDB", path: "../../../sdks/swift")
+    .package(name: "SpacetimeDB", path: "../../../sdks/swift"),
+],
+targets: [
+    .executableTarget(
+        name: "MyClient",
+        dependencies: [
+            .product(name: "SpacetimeDB", package: "SpacetimeDB"),
+        ]
+    ),
 ]
 ```
 
-Then add the product dependency:
+Then import in code:
 
 ```swift
-.product(name: "SpacetimeDB", package: "SpacetimeDB")
+import SpacetimeDB
 ```
 
-## Quick Validation Matrix
+## Quick Start
+
+```swift
+import Foundation
+import SpacetimeDB
+
+@MainActor
+final class AppModel: SpacetimeClientDelegate {
+    private var client: SpacetimeClient?
+
+    func start() {
+        SpacetimeModule.registerTables()
+
+        let client = SpacetimeClient(
+            serverUrl: URL(string: "http://127.0.0.1:3000")!,
+            moduleName: "my-module"
+        )
+        client.delegate = self
+        client.connect()
+        self.client = client
+    }
+
+    func stop() {
+        client?.disconnect()
+        client = nil
+    }
+
+    // MARK: SpacetimeClientDelegate
+    func onConnect() {}
+    func onDisconnect(error: Error?) {}
+    func onIdentityReceived(identity: [UInt8], token: String) {}
+    func onTransactionUpdate(message: Data?) {}
+    func onReducerError(reducer: String, message: String, isInternal: Bool) {}
+}
+```
+
+## Core API
+
+### Connect/Disconnect
+
+```swift
+let client = SpacetimeClient(serverUrl: url, moduleName: "my-module")
+client.delegate = delegate
+client.connect(token: optionalBearerToken)
+client.disconnect()
+```
+
+### Reducers
+
+```swift
+client.send("add_person", argsData)
+```
+
+### Procedures
+
+Typed callback:
+
+```swift
+client.sendProcedure("hello", argsData, responseType: String.self) { result in
+    // Result<String, Error>
+}
+```
+
+Raw callback:
+
+```swift
+client.sendProcedure("hello", argsData) { result in
+    // Result<Data, Error>
+}
+```
+
+`async/await`:
+
+```swift
+let rawData = try await client.sendProcedure("hello", argsData)
+let value = try await client.sendProcedure("hello", argsData, responseType: String.self)
+```
+
+### One-Off Queries
+
+Callback:
+
+```swift
+client.oneOffQuery("SELECT * FROM person") { result in
+    // Result<QueryRows, Error>
+}
+```
+
+`async/await`:
+
+```swift
+let rows = try await client.oneOffQuery("SELECT * FROM person")
+```
+
+### Subscriptions
+
+```swift
+let handle = client.subscribe(
+    queries: ["SELECT * FROM person"],
+    onApplied: { /* initial snapshot applied */ },
+    onError: { message in /* subscription failed */ }
+)
+
+handle.unsubscribe()
+```
+
+### Client Cache
+
+Register tables once, then read typed rows from generated caches:
+
+```swift
+SpacetimeModule.registerTables()
+let people = PersonTable.cache.rows
+```
+
+The SDK applies transaction updates into `SpacetimeClient.clientCache` and table caches are updated on the main actor.
+
+## Auth Token Persistence (Keychain)
+
+`KeychainTokenStore` provides opt-in token persistence per module:
+
+```swift
+let tokenStore = KeychainTokenStore(service: "com.example.myapp.spacetimedb")
+
+// Load on app start.
+let savedToken = tokenStore.load(forModule: "my-module")
+client.connect(token: savedToken)
+
+// Save when identity/token arrives.
+func onIdentityReceived(identity: [UInt8], token: String) {
+    tokenStore.save(token: token, forModule: "my-module")
+}
+```
+
+## Network Awareness And Reconnect Behavior
+
+`SpacetimeClient` supports reconnect backoff through `ReconnectPolicy`:
+
+```swift
+let policy = ReconnectPolicy(
+    maxRetries: nil,
+    initialDelaySeconds: 1.0,
+    maxDelaySeconds: 30.0,
+    multiplier: 2.0,
+    jitterRatio: 0.2
+)
+```
+
+Network path changes are monitored internally. When the device is offline, reconnect attempts are deferred; when connectivity returns, reconnect is retriggered automatically.
+
+Compression mode can be set at client construction:
+
+```swift
+let client = SpacetimeClient(
+    serverUrl: url,
+    moduleName: "my-module",
+    reconnectPolicy: policy,
+    compressionMode: .gzip // .none | .gzip | .brotli
+)
+```
+
+## Distribution Hardening
+
+The Swift package is validated in CI for reproducibility and packaging health:
+
+- `swift test --package-path sdks/swift`
+- `swift package --package-path sdks/swift resolve --force-resolved-versions`
+- demo package builds
+- benchmark smoke run
+
+Dependency versions are pinned in `sdks/swift/Package.resolved` to avoid accidental drift.
+
+## DocC and Swift Package Index
+
+DocC bundle and tutorials live in:
+
+- `sdks/swift/Sources/SpacetimeDB/SpacetimeDB.docc`
+
+DocC build command:
+
+```bash
+cd sdks/swift
+xcodebuild docbuild \
+  -scheme SpacetimeDB-Package \
+  -destination 'generic/platform=macOS' \
+  -derivedDataPath .build/docc \
+  -skipPackagePluginValidation
+```
+
+Swift Package Index builder config is in:
+
+- `sdks/swift/.spi.yml`
+
+Detailed publishing runbook:
+
+- `sdks/swift/PUBLISHING.md`
+
+## Apple CI Matrix
+
+Swift CI runs as a platform matrix in `.github/workflows/swift-sdk.yml`:
+
+- `macOS`: tests, lockfile validation, demos, benchmark smoke, DocC build
+- `iOS simulator`: cross-build of `SpacetimeDB` target
+- `visionOS simulator`: auto-runs when `.visionOS(...)` appears in `Package.swift`
+
+## Logging
+
+The SDK uses `os.Logger` categories:
+
+- `Client`
+- `Cache`
+- `Network`
+
+Logs are visible in Console.app and device logs using subsystem `com.clockworklabs.SpacetimeDB`.
+
+## Benchmarks
+
+Benchmark target: `SpacetimeDBBenchmarks`
+
+Includes suites for:
+
+- BSATN encode/decode
+- protocol message encode/decode
+- cache insert/delete throughput
+
+Run from repo root:
+
+```bash
+swift package --package-path sdks/swift benchmark --target SpacetimeDBBenchmarks
+```
+
+List available benchmarks:
+
+```bash
+swift package --package-path sdks/swift benchmark list
+```
+
+Run fast smoke benchmarks (used by CI):
+
+```bash
+tools/swift-benchmark-smoke.sh
+```
+
+## Validation Matrix
 
 From repo root:
 
 ```bash
 swift test --package-path sdks/swift
+swift build --package-path sdks/swift
 swift build --package-path demo/simple-module/client-swift
 swift build --package-path demo/ninja-game/client-swift
+swift package --package-path sdks/swift resolve --force-resolved-versions
+swift package --package-path sdks/swift benchmark list
+swift package --package-path sdks/swift benchmark --target SpacetimeDBBenchmarks
+tools/swift-benchmark-smoke.sh
+cd sdks/swift && xcodebuild docbuild -scheme SpacetimeDB-Package -destination 'generic/platform=macOS' -derivedDataPath .build/docc -skipPackagePluginValidation
 ```
 
-## Notes
+## Examples
 
-- `tools/swift-procedure-e2e.sh` runs a procedure callback E2E integration scenario.
-- CI workflow for this package and Swift demos: `.github/workflows/swift-sdk.yml`.
+- `demo/simple-module/client-swift`
+- `demo/ninja-game/client-swift`

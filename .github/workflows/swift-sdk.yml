@@ -7,6 +7,7 @@ on:
       - demo/ninja-game/client-swift/**
       - demo/simple-module/client-swift/**
       - tools/swift-procedure-e2e.sh
+      - tools/swift-benchmark-smoke.sh
       - .github/workflows/swift-sdk.yml
   push:
     branches:
@@ -16,6 +17,7 @@ on:
       - demo/ninja-game/client-swift/**
       - demo/simple-module/client-swift/**
       - tools/swift-procedure-e2e.sh
+      - tools/swift-benchmark-smoke.sh
       - .github/workflows/swift-sdk.yml
   workflow_dispatch:
 
@@ -25,9 +27,19 @@ concurrency:
 
 jobs:
   swift-sdk:
-    name: Swift SDK (macOS)
-    runs-on: macos-latest
-    timeout-minutes: 30
+    name: Swift SDK (${{ matrix.platform.name }})
+    runs-on: ${{ matrix.platform.runs_on }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: macOS
+            id: macos
+            runs_on: macos-latest
+          - name: iOS Simulator
+            id: ios-simulator
+            runs_on: macos-latest
 
     steps:
       - name: Checkout sources
@@ -45,10 +57,59 @@ jobs:
           fi
 
       - name: Test Swift SDK package
+        if: matrix.platform.id == 'macos'
         run: swift test --package-path sdks/swift
 
+      - name: Validate Swift package lockfile
+        if: matrix.platform.id == 'macos'
+        run: swift package --package-path sdks/swift resolve --force-resolved-versions
+
       - name: Build simple Swift demo client
+        if: matrix.platform.id == 'macos'
         run: swift build --package-path demo/simple-module/client-swift
 
       - name: Build ninja Swift demo client
+        if: matrix.platform.id == 'macos'
         run: swift build --package-path demo/ninja-game/client-swift
+
+      - name: Run Swift benchmark smoke suite
+        if: matrix.platform.id == 'macos'
+        run: tools/swift-benchmark-smoke.sh
+
+      - name: Build Swift SDK target for iOS simulator
+        if: matrix.platform.id == 'ios-simulator'
+        shell: bash
+        run: |
+          IOS_SDK_PATH="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          swift build \
+            --package-path sdks/swift \
+            --target SpacetimeDB \
+            --triple arm64-apple-ios17.0-simulator \
+            --sdk "$IOS_SDK_PATH"
+
+      - name: Build Swift SDK target for visionOS simulator (if targeted)
+        if: matrix.platform.id == 'macos'
+        shell: bash
+        run: |
+          if rg -q '\.visionOS\(' sdks/swift/Package.swift; then
+            XR_SDK_PATH="$(xcrun --sdk xrsimulator --show-sdk-path)"
+            swift build \
+              --package-path sdks/swift \
+              --target SpacetimeDB \
+              --triple arm64-apple-xros1.0-simulator \
+              --sdk "$XR_SDK_PATH"
+          else
+            echo "visionOS platform not declared in Package.swift; skipping."
+          fi
+
+      - name: Build DocC archive
+        if: matrix.platform.id == 'macos'
+        shell: bash
+        run: |
+          cd sdks/swift
+          xcodebuild docbuild \
+            -scheme SpacetimeDB-Package \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath .build/docc \
+            -skipPackagePluginValidation \
+            -quiet
