@@ -512,7 +512,6 @@ mod tests {
         Ok(())
     }
 
-
     #[test]
     fn test_truncate_eddge_cases() -> Result<(), IndexError> {
         // index file with no entries
