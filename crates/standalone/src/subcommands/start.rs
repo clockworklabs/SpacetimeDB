@@ -1,13 +1,18 @@
 use netstat2::{get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSocketInfo, TcpState};
 use spacetimedb_client_api::routes::identity::IdentityRoutes;
 use spacetimedb_pg::pg_server;
+use std::fmt;
 use std::io::{self, Write};
 use std::net::IpAddr;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::{StandaloneEnv, StandaloneOptions};
 use anyhow::Context;
-use axum::extract::DefaultBodyLimit;
+use axum::extract::{DefaultBodyLimit, Request, State};
+use axum::http::{self, StatusCode};
+use axum::middleware::Next;
+use axum::response::{Html, IntoResponse, Response};
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use spacetimedb::config::{parse_config, CertificateAuthority};
@@ -91,6 +96,12 @@ pub fn cli() -> clap::Command {
                 .action(SetTrue)
                 .help("Run in non-interactive mode (fail immediately if port is in use)"),
         )
+        .arg(
+            Arg::new("root_domain")
+                .long("root-domain")
+                .help("Root domain for web subdomain routing (for example: example.com)")
+                .value_parser(clap::builder::NonEmptyStringValueParser::new()),
+        )
     // .after_help("Run `spacetime help start` for more detailed information.")
 }
 
@@ -108,10 +119,99 @@ impl ConfigFile {
     }
 }
 
+const MODULE_HELLO_HTML: &str = "<html><body>hello</body></html>";
+const MODULE_SUBDOMAIN: &str = "my-module";
+
+#[derive(Clone, Debug)]
+struct RootDomainRouteConfig {
+    module_host: String,
+    subdomain_suffix: String,
+}
+
+impl RootDomainRouteConfig {
+    fn new(root_domain: String) -> Self {
+        let module_host = format!("{MODULE_SUBDOMAIN}.{root_domain}");
+        let subdomain_suffix = format!(".{root_domain}");
+        Self {
+            module_host,
+            subdomain_suffix,
+        }
+    }
+
+    fn classify_host(&self, host: &str) -> RootDomainHostMatch {
+        println!("Matching {:?}", host);
+        if host == self.module_host {
+            RootDomainHostMatch::ModulePage
+        } else if host.ends_with(&self.subdomain_suffix) {
+            RootDomainHostMatch::SubdomainNotFound
+        } else {
+            RootDomainHostMatch::NoMatch
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RootDomainHostMatch {
+    ModulePage,
+    SubdomainNotFound,
+    NoMatch,
+}
+
+impl fmt::Display for RootDomainRouteConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.subdomain_suffix[1..])
+    }
+}
+
+fn normalize_root_domain(raw: &str) -> anyhow::Result<String> {
+    let root_domain = raw.trim().trim_end_matches('.').to_ascii_lowercase();
+    anyhow::ensure!(!root_domain.is_empty(), "`--root-domain` cannot be empty");
+    Ok(root_domain)
+}
+
+fn normalize_host_header_value(raw: &str) -> Option<String> {
+    let host = raw.trim().trim_end_matches('.');
+    if host.is_empty() {
+        return None;
+    }
+
+    let host = http::uri::Authority::from_str(host)
+        .map(|authority| authority.host().to_ascii_lowercase())
+        .unwrap_or_else(|_| host.to_ascii_lowercase());
+    if host.is_empty() {
+        None
+    } else {
+        Some(host)
+    }
+}
+
+async fn root_domain_middleware(State(config): State<RootDomainRouteConfig>, req: Request, next: Next) -> Response {
+    let host_match = req
+        .headers()
+        .get(http::header::HOST)
+        .and_then(|host| host.to_str().ok())
+        .and_then(normalize_host_header_value)
+        .map(|host| config.classify_host(&host))
+        .unwrap_or(RootDomainHostMatch::NoMatch);
+
+    match host_match {
+        RootDomainHostMatch::ModulePage => Html(MODULE_HELLO_HTML).into_response(),
+        RootDomainHostMatch::SubdomainNotFound => StatusCode::NOT_FOUND.into_response(),
+        RootDomainHostMatch::NoMatch => {
+            println!("No match for host {}", req.headers().get(http::header::HOST).unwrap().to_str().unwrap());
+            return next.run(req).await
+        }
+    }
+}
+
 pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     let listen_addr = args.get_one::<String>("listen_addr").unwrap();
     let pg_port = args.get_one::<u16>("pg_port");
     let non_interactive = args.get_flag("non_interactive");
+    let root_domain = args
+        .get_one::<String>("root_domain")
+        .map(|domain| normalize_root_domain(domain))
+        .transpose()?;
     let cert_dir = args.get_one::<spacetimedb_paths::cli::ConfigDir>("jwt_key_dir");
     let certs = Option::zip(
         args.get_one::<PubKeyPath>("jwt_pub_key_path").cloned(),
@@ -197,7 +297,16 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());
     db_routes.pre_publish = db_routes.pre_publish.layer(DefaultBodyLimit::disable());
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
-    let service = router(&ctx, db_routes, IdentityRoutes::default(), extra).with_state(ctx.clone());
+    let mut service = router(&ctx, db_routes, IdentityRoutes::default(), extra).with_state(ctx.clone());
+    if let Some(root_domain) = root_domain {
+        let config = RootDomainRouteConfig::new(root_domain);
+        log::info!(
+            "Enabled root domain routing for {} ({} returns the hello page)",
+            config,
+            config.module_host
+        );
+        service = service.layer(axum::middleware::from_fn_with_state(config, root_domain_middleware));
+    }
 
     // Check if the requested port is available on both IPv4 and IPv6.
     // If not, offer to find an available port by incrementing (unless non-interactive).
@@ -523,5 +632,37 @@ mod tests {
                 ..<_>::default()
             }
         );
+    }
+
+    #[test]
+    fn normalize_root_domain_trims_and_lowercases() {
+        let root_domain = normalize_root_domain("  ExAmPle.Com. ").unwrap();
+        assert_eq!(root_domain, "example.com");
+    }
+
+    #[test]
+    fn normalize_root_domain_rejects_empty() {
+        assert!(normalize_root_domain(" . ").is_err());
+    }
+
+    #[test]
+    fn root_domain_matching_supports_host_ports() {
+        let config = RootDomainRouteConfig::new("example.com".to_string());
+        let host = normalize_host_header_value("my-module.example.com:3000").unwrap();
+        assert_eq!(config.classify_host(&host), RootDomainHostMatch::ModulePage);
+    }
+
+    #[test]
+    fn root_domain_matching_returns_404_for_other_subdomains() {
+        let config = RootDomainRouteConfig::new("example.com".to_string());
+        let host = normalize_host_header_value("another-module.example.com").unwrap();
+        assert_eq!(config.classify_host(&host), RootDomainHostMatch::SubdomainNotFound);
+    }
+
+    #[test]
+    fn root_domain_matching_ignores_non_subdomain_hosts() {
+        let config = RootDomainRouteConfig::new("example.com".to_string());
+        let host = normalize_host_header_value("localhost:3000").unwrap();
+        assert_eq!(config.classify_host(&host), RootDomainHostMatch::NoMatch);
     }
 }
