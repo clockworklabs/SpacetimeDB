@@ -1073,13 +1073,7 @@ log = "0.4"
 
         // Now publish with --bin-path to skip rebuild
         let publish_start = Instant::now();
-        let mut args = vec![
-            "publish",
-            "--server",
-            &self.server_url,
-            "--bin-path",
-            &wasm_path_str,
-        ];
+        let mut args = vec!["publish", "--server", &self.server_url, "--bin-path", &wasm_path_str];
 
         if force {
             args.push("--yes");
