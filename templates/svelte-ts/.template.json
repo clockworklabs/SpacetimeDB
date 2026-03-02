@@ -1,5 +1,5 @@
 {
   "description": "Svelte web app with TypeScript server",
-  "client_lang": "typescript",
+  "client_lang": "Svelte",
   "server_lang": "typescript"
 }

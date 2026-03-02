@@ -1,5 +1,5 @@
 {
   "description": "React web app with TypeScript server",
-  "client_lang": "typescript",
+  "client_lang": "React",
   "server_lang": "typescript"
 }

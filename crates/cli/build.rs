@@ -276,18 +276,7 @@ fn discover_templates(templates_dir: &Path) -> Vec<TemplateInfo> {
 }
 
 fn generate_templates_json(templates: &[TemplateInfo]) -> String {
-    let mut json = String::from("{\n  \"highlights\": [\n");
-
-    for template in templates {
-        if template.id.contains("react") {
-            json.push_str("    { \"name\": \"React\", \"template_id\": \"");
-            json.push_str(&template.id);
-            json.push_str("\" }\n");
-            break;
-        }
-    }
-
-    json.push_str("  ],\n  \"templates\": [\n");
+    let mut json = String::from("{\n  \"templates\": [\n");
 
     for (i, template) in templates.iter().enumerate() {
         json.push_str("    {\n");
