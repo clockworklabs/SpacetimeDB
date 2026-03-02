@@ -26,7 +26,7 @@ Use this skill when the user needs help with the `spacetime` CLI tool - initiali
 
 ```bash
 # Initialize new project
-spacetime init my-project --lang rust|csharp|typescript
+spacetime init my-project --lang rust|csharp|typescript|cpp
 spacetime init my-project --template <template-id>
 
 # Build module
@@ -38,7 +38,7 @@ spacetime dev
 spacetime dev --client-lang typescript --module-bindings-path ./client/src/module_bindings
 
 # Generate client bindings
-spacetime generate --lang typescript|csharp|rust|unrealcpp --out-dir ./bindings
+spacetime generate --lang typescript|csharp|rust|unrealcpp --out-dir ./bindings --module-path ./server
 ```
 
 ### Publishing & Deployment
@@ -50,13 +50,8 @@ spacetime publish my-database --yes
 # Publish to local server
 spacetime publish my-database --server local --yes
 
-# Publish with data handling
-spacetime publish my-database --delete-data always      # always clear data
-spacetime publish my-database --delete-data on-conflict # clear only if schema conflicts
-spacetime publish my-database --delete-data never       # never clear (default)
-
-# Allow breaking client changes
-spacetime publish my-database --break-clients
+# Clear database and republish
+spacetime publish my-database --clear-database --yes
 ```
 
 ### Database Interaction
@@ -74,7 +69,7 @@ spacetime subscribe my-database "SELECT * FROM users" --num-updates 10
 
 # View logs
 spacetime logs my-database -f              # follow logs
-spacetime logs my-database -n 100          # last 100 lines
+spacetime logs my-database -n 100          # up to 100 log lines
 
 # Describe schema
 spacetime describe my-database --json
@@ -102,8 +97,8 @@ spacetime rename <database-identity> --to new-name
 spacetime server list
 
 # Add server
-spacetime server add local http://localhost:3000 --default
-spacetime server add myserver https://my-spacetime.example.com
+spacetime server add local --url http://localhost:3000 --default
+spacetime server add myserver --url https://my-spacetime.example.com
 
 # Set default server
 spacetime server set-default local
@@ -134,18 +129,11 @@ spacetime login show
 spacetime logout
 ```
 
-### Energy/Billing
-
-```bash
-spacetime energy balance
-spacetime energy balance --identity <identity>
-```
-
 ## Default Servers
 
 | Name | URL | Description |
 |------|-----|-------------|
-| `maincloud` | `https://spacetimedb.com` | Production cloud (default) |
+| `maincloud` | `https://maincloud.spacetimedb.com` | Production cloud (default) |
 | `local` | `http://127.0.0.1:3000` | Local development server |
 
 ## Common Workflows
@@ -171,7 +159,7 @@ spacetime dev
 spacetime start
 
 # Publish to local
-spacetime publish my-db --server local --delete-data always --yes
+spacetime publish my-db --server local --clear-database --yes
 
 # Query local database
 spacetime sql my-db --server local "SELECT * FROM players"
@@ -182,7 +170,7 @@ spacetime sql my-db --server local "SELECT * FROM players"
 ```bash
 # After building module
 spacetime build
-spacetime generate --lang typescript --out-dir ./client/src/bindings
+spacetime generate --lang typescript --out-dir ./client/src/bindings --module-path .
 
 # Or use dev mode which auto-generates
 spacetime dev --client-lang typescript --module-bindings-path ./client/src/bindings
@@ -195,8 +183,7 @@ spacetime dev --client-lang typescript --module-bindings-path ./client/src/bindi
 | `--server` | `-s` | Target server (nickname, hostname, or URL) |
 | `--yes` | `-y` | Non-interactive mode (skip confirmations) |
 | `--anonymous` | | Use anonymous identity |
-| `--identity` | `-i` | Specify identity to use |
-| `--project-path` | `-p` | Path to module project |
+| `--module-path` | `-p` | Path to module project |
 
 ## Troubleshooting
 
@@ -215,7 +202,7 @@ spacetime server ping <server>
 ### "Schema conflict"
 ```bash
 # Clear data and republish
-spacetime publish my-db --delete-data always --yes
+spacetime publish my-db --clear-database --yes
 ```
 
 ### "Build failed"
@@ -228,8 +215,9 @@ rustup target add wasm32-unknown-unknown
 
 ## Module Languages
 
-**Server-side (modules):** Rust, C#, TypeScript
+**Server-side (modules):** Rust, C#, TypeScript, C++
 **Client SDKs:** TypeScript, C#, Rust, Python, Unreal Engine
+**CLI `generate` targets:** TypeScript, C#, Rust, Unreal C++
 
 ## Notes
 
