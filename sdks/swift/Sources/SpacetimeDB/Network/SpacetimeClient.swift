@@ -171,7 +171,7 @@ public final class SpacetimeClient: @unchecked Sendable {
         }
         managedSubscriptions.removeAll()
         setConnectionState(.disconnected)
-        delegate?.onDisconnect(error: nil)
+        invokeDelegateCallback(named: "delegate.on_disconnect") { $0.onDisconnect(error: nil) }
     }
 
     // MARK: - Serialized send queue
@@ -243,7 +243,7 @@ public final class SpacetimeClient: @unchecked Sendable {
         completion: @escaping (Result<R, Error>) -> Void
     ) {
         let requestId = allocateRequestId()
-        pendingProcedureCallbacks[requestId] = { result in
+        pendingProcedureCallbacks[requestId] = makeTimedCallback(named: "procedure.completion") { result in
             switch result {
             case .success(let data):
                 do {
@@ -312,7 +312,7 @@ public final class SpacetimeClient: @unchecked Sendable {
 
     public func oneOffQuery(_ query: String, completion: @escaping (Result<QueryRows, Error>) -> Void) {
         let requestId = allocateRequestId()
-        pendingOneOffQueryCallbacks[requestId] = completion
+        pendingOneOffQueryCallbacks[requestId] = makeTimedCallback(named: "one_off_query.completion", completion)
         send(ClientMessage.oneOffQuery(OneOffQuery(requestId: requestId, queryString: query)))
     }
 
@@ -334,7 +334,13 @@ public final class SpacetimeClient: @unchecked Sendable {
         onApplied: (() -> Void)? = nil,
         onError: ((String) -> Void)? = nil
     ) -> SubscriptionHandle {
-        let handle = SubscriptionHandle(queries: queries, client: self, onApplied: onApplied, onError: onError)
+        let timedOnApplied = onApplied.map { callback in
+            makeTimedVoidCallback(named: "subscription.on_applied", callback)
+        }
+        let timedOnError = onError.map { callback in
+            makeTimedCallback(named: "subscription.on_error", callback)
+        }
+        let handle = SubscriptionHandle(queries: queries, client: self, onApplied: timedOnApplied, onError: timedOnError)
         managedSubscriptions[ObjectIdentifier(handle)] = handle
         startSubscription(handle)
         return handle
@@ -446,18 +452,20 @@ public final class SpacetimeClient: @unchecked Sendable {
                 savedToken = connection.token
                 setConnectionState(.connected)
                 startKeepAliveLoop()
-                delegate?.onIdentityReceived(identity: Array(connection.identity), token: connection.token)
+                invokeDelegateCallback(named: "delegate.on_identity_received") {
+                    $0.onIdentityReceived(identity: Array(connection.identity), token: connection.token)
+                }
                 subscribeAll(tables: Array(Self.clientCache.registeredTableNames))
                 resubscribeManagedSubscriptions()
-                delegate?.onConnect()
+                invokeDelegateCallback(named: "delegate.on_connect") { $0.onConnect() }
             case .transactionUpdate(let update):
                 Self.clientCache.applyTransactionUpdate(update)
-                delegate?.onTransactionUpdate(message: nil)
+                invokeDelegateCallback(named: "delegate.on_transaction_update") { $0.onTransactionUpdate(message: nil) }
             case .subscribeApplied(let applied):
                 handleSubscribeApplied(applied)
                 let initial = applied.asTransactionUpdate()
                 Self.clientCache.applyTransactionUpdate(initial)
-                delegate?.onTransactionUpdate(message: nil)
+                invokeDelegateCallback(named: "delegate.on_transaction_update") { $0.onTransactionUpdate(message: nil) }
             case .reducerResult(let reducerResult):
                 handleReducerResult(reducerResult)
             case .other:
@@ -493,10 +501,14 @@ public final class SpacetimeClient: @unchecked Sendable {
                 message = "non-text payload (\(errData.count) bytes)"
             }
             Log.client.warning("Reducer request_id=\(reducerResult.requestId) returned error: \(message)")
-            delegate?.onReducerError(reducer: reducerName, message: message, isInternal: false)
+            invokeDelegateCallback(named: "delegate.on_reducer_error") {
+                $0.onReducerError(reducer: reducerName, message: message, isInternal: false)
+            }
         case .internalError(let message):
             Log.client.error("Reducer request_id=\(reducerResult.requestId) internal error: \(message)")
-            delegate?.onReducerError(reducer: reducerName, message: message, isInternal: true)
+            invokeDelegateCallback(named: "delegate.on_reducer_error") {
+                $0.onReducerError(reducer: reducerName, message: message, isInternal: true)
+            }
             break
         }
     }
@@ -549,7 +561,7 @@ public final class SpacetimeClient: @unchecked Sendable {
         if let rows = applied.rows {
             let update = queryRowsToTransactionUpdate(rows, querySetId: applied.querySetId, asInserts: false)
             Self.clientCache.applyTransactionUpdate(update)
-            delegate?.onTransactionUpdate(message: nil)
+            invokeDelegateCallback(named: "delegate.on_transaction_update") { $0.onTransactionUpdate(message: nil) }
         }
     }
 
@@ -637,7 +649,9 @@ public final class SpacetimeClient: @unchecked Sendable {
             value: stateMetricValue(state),
             tags: ["state": stateMetricName(state)]
         )
-        delegate?.onConnectionStateChange(state: state)
+        invokeDelegateCallback(named: "delegate.on_connection_state_change") {
+            $0.onConnectionStateChange(state: state)
+        }
     }
 
     private func handleConnectionFailure(_ error: Error) {
@@ -658,9 +672,9 @@ public final class SpacetimeClient: @unchecked Sendable {
         failPendingOneOffQueryCallbacks(with: error)
 
         if connectionState == .connecting {
-            delegate?.onConnectError(error: error)
+            invokeDelegateCallback(named: "delegate.on_connect_error") { $0.onConnectError(error: error) }
         }
-        delegate?.onDisconnect(error: error)
+        invokeDelegateCallback(named: "delegate.on_disconnect") { $0.onDisconnect(error: error) }
 
         guard let reconnectDelay = nextReconnectDelay() else {
             shouldStayConnected = false
@@ -755,6 +769,63 @@ public final class SpacetimeClient: @unchecked Sendable {
 
     private func emitGauge(_ name: String, value: Double, tags: [String: String] = [:]) {
         SpacetimeObservability.metrics.recordGauge(name, value: value, tags: tags)
+    }
+
+    private func emitTiming(_ name: String, milliseconds: Double, tags: [String: String] = [:]) {
+        SpacetimeObservability.metrics.recordTiming(name, milliseconds: milliseconds, tags: tags)
+    }
+
+    private func invokeDelegateCallback(
+        named callbackName: String,
+        _ callback: (SpacetimeClientDelegate) -> Void
+    ) {
+        guard let delegate else { return }
+        emitTimedCallbackMetric(named: callbackName) {
+            callback(delegate)
+        }
+    }
+
+    private func makeTimedVoidCallback(
+        named callbackName: String,
+        _ callback: @escaping () -> Void
+    ) -> (() -> Void) {
+        { [weak self] in
+            guard let self else {
+                callback()
+                return
+            }
+            self.emitTimedCallbackMetric(named: callbackName, callback)
+        }
+    }
+
+    private func makeTimedCallback<T>(
+        named callbackName: String,
+        _ callback: @escaping (T) -> Void
+    ) -> ((T) -> Void) {
+        { [weak self] value in
+            guard let self else {
+                callback(value)
+                return
+            }
+            self.emitTimedCallbackMetric(named: callbackName) {
+                callback(value)
+            }
+        }
+    }
+
+    private func emitTimedCallbackMetric(named callbackName: String, _ callback: () -> Void) {
+        let start = ContinuousClock.now
+        callback()
+        let elapsed = start.duration(to: ContinuousClock.now)
+        let components = elapsed.components
+        let milliseconds =
+            (Double(components.seconds) * 1000)
+            + (Double(components.attoseconds) / 1_000_000_000_000_000)
+        emitTiming(
+            "spacetimedb.callback.latency",
+            milliseconds: milliseconds,
+            tags: ["callback": callbackName]
+        )
     }
 
     private func stateMetricName(_ state: ConnectionState) -> String {

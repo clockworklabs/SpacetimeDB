@@ -33,9 +33,16 @@ final class ObservabilityTests: XCTestCase {
             let tags: [String: String]
         }
 
+        struct Timing: Sendable {
+            let name: String
+            let milliseconds: Double
+            let tags: [String: String]
+        }
+
         private let lock = NSLock()
         private var counters: [String: Int64] = [:]
         private var gauges: [Gauge] = []
+        private var timings: [Timing] = []
 
         func incrementCounter(_ name: String, by value: Int64, tags: [String: String]) {
             lock.lock()
@@ -49,7 +56,11 @@ final class ObservabilityTests: XCTestCase {
             lock.unlock()
         }
 
-        func recordTiming(_ name: String, milliseconds: Double, tags: [String: String]) {}
+        func recordTiming(_ name: String, milliseconds: Double, tags: [String: String]) {
+            lock.lock()
+            timings.append(Timing(name: name, milliseconds: milliseconds, tags: tags))
+            lock.unlock()
+        }
 
         func counterValue(_ name: String) -> Int64 {
             lock.lock()
@@ -62,6 +73,12 @@ final class ObservabilityTests: XCTestCase {
             defer { lock.unlock() }
             return gauges.contains(where: { $0.name == name })
         }
+
+        func hasTiming(named name: String, callback: String) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return timings.contains(where: { $0.name == name && $0.tags["callback"] == callback })
+        }
     }
 
     private struct Person: Codable, Sendable {
@@ -71,6 +88,17 @@ final class ObservabilityTests: XCTestCase {
 
     private enum TestError: Error {
         case simulated
+    }
+
+    @MainActor
+    private final class DelegateProbe: SpacetimeClientDelegate {
+        func onConnect() {}
+        func onDisconnect(error: Error?) {}
+        func onConnectError(error: Error) {}
+        func onConnectionStateChange(state: ConnectionState) {}
+        func onIdentityReceived(identity: [UInt8], token: String) {}
+        func onTransactionUpdate(message: Data?) {}
+        func onReducerError(reducer: String, message: String, isInternal: Bool) {}
     }
 
     @MainActor
@@ -108,10 +136,28 @@ final class ObservabilityTests: XCTestCase {
             moduleName: "test-module",
             reconnectPolicy: policy
         )
+        let delegate = DelegateProbe()
+        client.delegate = delegate
+
+        client.sendProcedure("bench_proc", Data()) { _ in }
+        client._test_deliverServerMessage(
+            .procedureResult(
+                ProcedureResult(
+                    status: .returned(Data([0x01])),
+                    timestamp: 0,
+                    totalHostExecutionDuration: 0,
+                    requestId: 1
+                )
+            )
+        )
         client._test_setConnectionState(.connecting)
         client._test_simulateConnectionFailure(TestError.simulated)
 
         XCTAssertGreaterThanOrEqual(metrics.counterValue("spacetimedb.connection.failures"), 1)
         XCTAssertTrue(metrics.hasGauge(named: "spacetimedb.connection.state"))
+        XCTAssertTrue(metrics.hasTiming(named: "spacetimedb.callback.latency", callback: "procedure.completion"))
+        XCTAssertTrue(metrics.hasTiming(named: "spacetimedb.callback.latency", callback: "delegate.on_connection_state_change"))
+        XCTAssertTrue(metrics.hasTiming(named: "spacetimedb.callback.latency", callback: "delegate.on_connect_error"))
+        XCTAssertTrue(metrics.hasTiming(named: "spacetimedb.callback.latency", callback: "delegate.on_disconnect"))
     }
 }
