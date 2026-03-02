@@ -1,6 +1,6 @@
 ---
 name: spacetimedb-csharp
-description: Build C# modules and Unity clients for SpacetimeDB. Covers server-side module development and client SDK integration.
+description: Build C# modules and clients for SpacetimeDB. Covers server-side module development and client SDK integration.
 license: Apache-2.0
 metadata:
   author: clockworklabs
@@ -10,7 +10,7 @@ metadata:
 
 # SpacetimeDB C# SDK
 
-This skill provides guidance for building C# server-side modules and Unity/C# clients that connect to SpacetimeDB 2.0.
+This skill provides guidance for building C# server-side modules and C# clients that connect to SpacetimeDB 2.0.
 
 ---
 
@@ -54,6 +54,15 @@ ScheduleAt.Time(futureTime)                 // Use new ScheduleAt.Time(futureTim
 // WRONG — lifecycle hooks starting with "On"
 [SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
 public static void OnClientConnected(ReducerContext ctx) { }  // STDB0010 error!
+
+// WRONG — non-deterministic code in reducers
+var random = new Random();          // Use ctx.Rng
+var guid = Guid.NewGuid();          // Not allowed
+var now = DateTime.Now;             // Use ctx.Timestamp
+
+// WRONG — collection parameters
+int[] itemIds = { 1, 2, 3 };
+_conn.Reducers.ProcessItems(itemIds);  // Generated code expects List<T>!
 ```
 
 ### CORRECT PATTERNS
@@ -89,42 +98,22 @@ var player = ctx.Db.Player.OwnerId.Find(ctx.Sender);
 // CORRECT SUM TYPE — partial record with named tuple elements
 [SpacetimeDB.Type]
 public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> { }
+
+// CORRECT — collection parameters use List<T>
+_conn.Reducers.ProcessItems(new List<int> { 1, 2, 3 });
 ```
 
 ---
 
 ## Common Mistakes Table
 
-### Server-side errors
-
 | Wrong | Right | Error |
 |-------|-------|-------|
-| Missing `partial` keyword | `public partial struct Table` | Generated code won't compile |
-| `[Table(Name = "x")]` | `[Table(Accessor = "x")]` | 2.0 uses Accessor, not Name |
-| `ctx.Db.player` (lowercase) | `ctx.Db.Player` (PascalCase) | Property not found |
-| `Optional<string>` | `string?` | Type not found |
-| `ctx.Db.Table.Get(id)` | `ctx.Db.Table.Id.Find(id)` | Method not found |
 | Wrong .csproj name | `StdbModule.csproj` | Publish fails silently |
 | .NET 9 SDK | .NET 8 SDK only | WASI compilation fails |
 | Missing WASI workload | `dotnet workload install wasi-experimental` | Build fails |
-| `[Procedure]` attribute | Reducers only | Procedures not supported in C# |
-| Missing `Public = true` | Add to `[Table]` attribute | Clients can't subscribe |
-| Using `Random` | Avoid non-deterministic code | Sandbox violation |
 | async/await in reducers | Synchronous only | Not supported |
-| `[Index.BTree(...)]` | `[SpacetimeDB.Index.BTree(...)]` | Ambiguous with System.Index |
-| `Columns = ["A", "B"]` | `Columns = new[] { "A", "B" }` | Collection expressions invalid in attributes |
-| `partial struct : TaggedEnum` | `partial record : TaggedEnum` | Sum types must be record |
-| `TaggedEnum<(A, B)>` | `TaggedEnum<(A A, B B)>` | Tuple must include variant names |
-| `SpacetimeDB.ServerSdk` | `SpacetimeDB.Runtime` | Wrong package name |
-| `OnClientConnected` hook name | `ClientConnected` | STDB0010 error |
 | `table.Name.Update(...)` | `table.Id.Update(...)` | Update only via primary key (2.0) |
-
-### Client-side errors
-
-| Wrong | Right | Error |
-|-------|-------|-------|
-| `.WithModuleName()` | `.WithDatabaseName()` | 2.0 renamed method |
-| `ScheduleAt.Time(x)` | `new ScheduleAt.Time(x)` | Must use constructor |
 | Not calling `FrameTick()` | `conn.FrameTick()` in Update loop | No callbacks fire |
 | Accessing `conn.Db` from background thread | Copy data in callback | Data races |
 
@@ -146,6 +135,8 @@ public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> {
 12. **Fully qualify Index attribute** — `[SpacetimeDB.Index.BTree]` to avoid System.Index ambiguity
 13. **Update only via primary key** — use delete+insert for non-PK changes (2.0)
 14. **Use `SpacetimeDB.Runtime` package** — not `ServerSdk` (2.0)
+15. **Use `List<T>` for collection parameters** — not arrays
+16. **`Identity` is in `SpacetimeDB` namespace** — not `SpacetimeDB.Types`
 
 ---
 
@@ -192,6 +183,31 @@ public partial struct Score
 [SpacetimeDB.Unique]         // Unique constraint
 [SpacetimeDB.Index.BTree]    // Single-column B-tree index
 [SpacetimeDB.Default(value)] // Default value for new columns
+```
+
+### SpacetimeDB Column Types
+
+```csharp
+Identity                     // User identity (SpacetimeDB namespace, not SpacetimeDB.Types)
+Timestamp                    // Timestamp (use ctx.Timestamp server-side, never DateTime.Now)
+ScheduleAt                   // For scheduled tables
+T?                           // Nullable (e.g., string?)
+List<T>                      // Collections (use List, not arrays)
+```
+
+Standard C# primitives (`bool`, `byte`..`ulong`, `float`, `double`, `string`) are all supported.
+
+### Insert with Auto-Increment
+
+```csharp
+var player = ctx.Db.Player.Insert(new Player
+{
+    Id = 0,  // Pass 0 to trigger auto-increment
+    OwnerId = ctx.Sender,
+    Name = name,
+    CreatedAt = ctx.Timestamp
+});
+ulong newId = player.Id;  // Insert returns the row with generated ID
 ```
 
 ### Module and Reducers
@@ -246,16 +262,28 @@ public static partial class Module
         Log.Info("Module initialized");
     }
 
+    // CRITICAL: no "On" prefix!
     [SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
     public static void ClientConnected(ReducerContext ctx)
     {
         Log.Info($"Client connected: {ctx.Sender}");
+        if (ctx.Db.User.Identity.Find(ctx.Sender) is User user)
+        {
+            ctx.Db.User.Identity.Update(user with { Online = true });
+        }
+        else
+        {
+            ctx.Db.User.Insert(new User { Identity = ctx.Sender, Online = true });
+        }
     }
 
     [SpacetimeDB.Reducer(ReducerKind.ClientDisconnected)]
     public static void ClientDisconnected(ReducerContext ctx)
     {
-        Log.Info($"Client disconnected: {ctx.Sender}");
+        if (ctx.Db.User.Identity.Find(ctx.Sender) is User user)
+        {
+            ctx.Db.User.Identity.Update(user with { Online = false });
+        }
     }
 }
 ```
@@ -300,11 +328,15 @@ ctx.Db.Task.Id.Update(task with { Title = newTitle });
 // Delete by primary key
 ctx.Db.Task.Id.Delete(taskId);
 
+// Find by unique index — returns nullable
+if (ctx.Db.Player.Username.Find("alice") is Player player) { }
+
 // Filter by B-tree index — returns iterator
 foreach (var task in ctx.Db.Task.OwnerId.Filter(ctx.Sender)) { }
 
-// Full table scan
+// Full table scan — avoid for large tables
 foreach (var task in ctx.Db.Task.Iter()) { }
+var count = ctx.Db.Task.Count();
 ```
 
 ### Custom Types and Sum Types
@@ -359,6 +391,16 @@ public static partial class Module
 }
 ```
 
+### Logging
+
+```csharp
+Log.Debug("Debug message");
+Log.Info("Information");
+Log.Warn("Warning");
+Log.Error("Error occurred");
+Log.Panic("Critical failure");  // Terminates execution
+```
+
 ### ReducerContext API
 
 ```csharp
@@ -367,6 +409,29 @@ ctx.Timestamp       // Current timestamp
 ctx.Db              // Database access
 ctx.Identity        // Module's own identity
 ctx.ConnectionId    // Connection ID (nullable)
+ctx.SenderAuth      // Authorization context (JWT claims, internal call detection)
+ctx.Rng             // Deterministic random number generator
+```
+
+### Error Handling
+
+Throwing an exception in a reducer rolls back the entire transaction:
+
+```csharp
+[SpacetimeDB.Reducer]
+public static void TransferCredits(ReducerContext ctx, Identity toUser, uint amount)
+{
+    if (ctx.Db.User.Identity.Find(ctx.Sender) is not User sender)
+        throw new Exception("Sender not found");
+
+    if (sender.Credits < amount)
+        throw new Exception("Insufficient credits");
+
+    ctx.Db.User.Identity.Update(sender with { Credits = sender.Credits - amount });
+
+    if (ctx.Db.User.Identity.Find(toUser) is User receiver)
+        ctx.Db.User.Identity.Update(receiver with { Credits = receiver.Credits + amount });
+}
 ```
 
 ---
@@ -402,13 +467,27 @@ dotnet workload install wasi-experimental
 
 ## Client SDK
 
+### Installation
+
+```bash
+dotnet add package SpacetimeDB.ClientSDK
+```
+
+### Generate Module Bindings
+
+```bash
+spacetime generate --lang csharp --out-dir module_bindings --module-path PATH_TO_MODULE
+```
+
+This creates `SpacetimeDBClient.g.cs`, `Tables/*.g.cs`, `Reducers/*.g.cs`, and `Types/*.g.cs`.
+
 ### Connection Setup
 
 ```csharp
 using SpacetimeDB;
 using SpacetimeDB.Types;
 
-conn = DbConnection.Builder()
+var conn = DbConnection.Builder()
     .WithUri("http://localhost:3000")
     .WithDatabaseName("my-database")
     .WithToken(savedToken)
@@ -419,6 +498,7 @@ conn = DbConnection.Builder()
 
 void OnConnected(DbConnection conn, Identity identity, string authToken)
 {
+    // Save authToken to persistent storage for reconnection
     Console.WriteLine($"Connected: {identity}");
     conn.SubscriptionBuilder()
         .OnApplied(OnSubscriptionApplied)
@@ -428,24 +508,129 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
 
 ### Critical: FrameTick
 
+**The SDK does NOT automatically process messages.** You must call `FrameTick()` regularly.
+
 ```csharp
+// Console application
 while (running) { conn.FrameTick(); Thread.Sleep(16); }
+
 // Unity: call conn?.FrameTick() in Update()
 ```
 
-### Row Callbacks and Reducers
+**Warning**: Do NOT call `FrameTick()` from a background thread. It modifies `conn.Db` and can cause data races.
+
+### Subscribing to Tables
 
 ```csharp
-conn.Db.Player.OnInsert += (EventContext ctx, Player p) => { };
-conn.Db.Player.OnUpdate += (EventContext ctx, Player old, Player new_) => { };
-conn.Db.Player.OnDelete += (EventContext ctx, Player p) => { };
+// SQL queries
+conn.SubscriptionBuilder()
+    .OnApplied(OnSubscriptionApplied)
+    .OnError((ctx, err) => Console.Error.WriteLine($"Subscription failed: {err}"))
+    .Subscribe(new[] {
+        "SELECT * FROM player",
+        "SELECT * FROM message WHERE sender = :sender"
+    });
 
-conn.Reducers.CreatePlayer("Alice");
+// Subscribe to all tables (development only)
+conn.SubscriptionBuilder()
+    .OnApplied(OnSubscriptionApplied)
+    .SubscribeToAllTables();
 
-conn.Reducers.OnCreatePlayer += (ctx) => {
-    if (ctx.Event.Status is Status.Committed) { /* success */ }
-    else if (ctx.Event.Status is Status.Failed failed) { /* error */ }
+// Subscription handle for later unsubscribe
+SubscriptionHandle handle = conn.SubscriptionBuilder()
+    .OnApplied(ctx => Console.WriteLine("Applied"))
+    .Subscribe(new[] { "SELECT * FROM player" });
+
+handle.UnsubscribeThen(ctx => Console.WriteLine("Unsubscribed"));
+```
+
+**Warning**: `SubscribeToAllTables()` cannot be mixed with `Subscribe()` on the same connection.
+
+### Accessing the Client Cache
+
+```csharp
+// Iterate all rows
+foreach (var player in ctx.Db.Player.Iter()) { Console.WriteLine(player.Name); }
+
+// Count rows
+int playerCount = ctx.Db.Player.Count;
+
+// Find by unique/primary key — returns nullable
+Player? player = ctx.Db.Player.Identity.Find(someIdentity);
+if (player != null) { Console.WriteLine(player.Name); }
+
+// Filter by BTree index — returns IEnumerable
+foreach (var p in ctx.Db.Player.Level.Filter(1)) { }
+```
+
+### Row Event Callbacks
+
+```csharp
+ctx.Db.Player.OnInsert += (EventContext ctx, Player player) => {
+    Console.WriteLine($"Player joined: {player.Name}");
 };
+
+ctx.Db.Player.OnDelete += (EventContext ctx, Player player) => {
+    Console.WriteLine($"Player left: {player.Name}");
+};
+
+ctx.Db.Player.OnUpdate += (EventContext ctx, Player oldRow, Player newRow) => {
+    Console.WriteLine($"Player {oldRow.Name} renamed to {newRow.Name}");
+};
+
+// Checking event source
+ctx.Db.Player.OnInsert += (EventContext ctx, Player player) => {
+    switch (ctx.Event)
+    {
+        case Event<Reducer>.SubscribeApplied:
+            break;  // Initial subscription data
+        case Event<Reducer>.Reducer(var reducerEvent):
+            Console.WriteLine($"Reducer: {reducerEvent.Reducer}");
+            break;
+    }
+};
+```
+
+### Calling Reducers
+
+```csharp
+ctx.Reducers.SendMessage("Hello, world!");
+ctx.Reducers.CreatePlayer("NewPlayer");
+
+// Reducer completion callbacks
+conn.Reducers.OnSendMessage += (ReducerEventContext ctx, string text) => {
+    if (ctx.Event.Status is Status.Committed)
+        Console.WriteLine($"Message sent: {text}");
+    else if (ctx.Event.Status is Status.Failed(var reason))
+        Console.Error.WriteLine($"Send failed: {reason}");
+};
+
+// Unhandled reducer errors
+conn.OnUnhandledReducerError += (ReducerEventContext ctx, Exception ex) => {
+    Console.Error.WriteLine($"Reducer error: {ex.Message}");
+};
+```
+
+### Identity and Authentication
+
+```csharp
+// In OnConnect callback — save token for reconnection
+void OnConnected(DbConnection conn, Identity identity, string authToken)
+{
+    // Save authToken to persistent storage (file, config, PlayerPrefs, etc.)
+    SaveToken(authToken);
+}
+
+// Reconnect with saved token
+string savedToken = LoadToken();
+DbConnection.Builder()
+    .WithUri("http://localhost:3000")
+    .WithDatabaseName("my-database")
+    .WithToken(savedToken)
+    .OnConnect(OnConnected)
+    .Build();
+
+// Pass null or omit WithToken for anonymous connection
 ```
 
 ---

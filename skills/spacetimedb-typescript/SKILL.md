@@ -69,7 +69,7 @@ const [items, isLoading] = useTable(tables.item);
 | Missing `package.json` | Create `package.json` | "could not detect language" |
 | Missing `tsconfig.json` | Create `tsconfig.json` | "TsconfigNotFound" |
 | Entrypoint not at `src/index.ts` | Use `src/index.ts` | Module won't bundle |
-| `indexes` in COLUMNS (2nd arg) | `indexes` in OPTIONS (1st arg) | "reading 'tag'" error |
+| `indexes` in COLUMNS (2nd arg) | `indexes` in OPTIONS (1st arg) of `table()` | "reading 'tag'" error |
 | Index without `algorithm` | `algorithm: 'btree'` | "reading 'tag'" error |
 | `filter({ ownerId })` | `filter(ownerId)` | "does not exist in type 'Range'" |
 | `.filter()` on unique column | `.find()` on unique column | TypeError |
@@ -80,20 +80,15 @@ const [items, isLoading] = useTable(tables.item);
 | Multi-column index `.filter()` | Use single-column index | PANIC or silent empty results |
 | `.iter()` in views | Use index lookups only | Views can't scan tables |
 | `ctx.db` in procedures | `ctx.withTx(tx => tx.db...)` | Procedures need explicit transactions |
-| `reducer('name', params, fn)` | `export const name = spacetimedb.reducer(params, fn)` | 2.0: name from export |
-| `schema(myTable)` | `schema({ myTable })` | 2.0: object argument only |
 
 ### Client-side errors
 
 | Wrong | Right | Error |
 |-------|-------|-------|
-| `@spacetimedb/sdk` | `spacetimedb` | 404 / missing subpath |
-| `conn.reducers.foo("val")` | `conn.reducers.foo({ param: "val" })` | Wrong reducer syntax |
 | Inline `connectionBuilder` | `useMemo(() => ..., [])` | Reconnects every render |
 | `const rows = useTable(table)` | `const [rows, isLoading] = useTable(table)` | Tuple destructuring |
 | Optimistic UI updates | Let subscriptions drive state | Desync issues |
 | `<SpacetimeDBProvider builder={...}>` | `connectionBuilder={...}` | Wrong prop name |
-| `.withModuleName()` | `.withDatabaseName()` | 2.0 renamed method |
 
 ---
 
@@ -129,7 +124,7 @@ For Node.js 18-21, also install `undici`. Node.js 22+ and browsers work out of t
 spacetime generate --lang typescript --out-dir ./src/module_bindings --module-path ./server
 ```
 
-## Basic Connection Setup
+## Client Connection
 
 ```typescript
 import { DbConnection } from './module_bindings';
@@ -143,7 +138,7 @@ const connection = DbConnection.builder()
     conn.subscriptionBuilder().subscribe('SELECT * FROM player');
   })
   .onDisconnect((ctx) => console.log('Disconnected'))
-  .onConnectError((ctx, error) => console.error('Error:', error))
+  .onConnectError((ctx, error) => console.error('Connection error:', error))
   .build();
 ```
 
@@ -159,8 +154,15 @@ connection.subscriptionBuilder()
 connection.subscriptionBuilder()
   .subscribe(['SELECT * FROM player', 'SELECT * FROM game_state']);
 
-// Subscribe to all tables (development only)
+// Subscribe to all tables (development only — cannot mix with Subscribe)
 connection.subscriptionBuilder().subscribeToAllTables();
+
+// Subscription handle for later unsubscribe
+const handle = connection.subscriptionBuilder()
+  .onApplied(() => console.log('Subscribed'))
+  .subscribe('SELECT * FROM player');
+
+handle.unsubscribeThen(() => console.log('Unsubscribed'));
 ```
 
 ## Accessing Table Data
@@ -196,6 +198,63 @@ connection.reducers.onCreatePlayer((ctx, args) => {
 ### Snake_case to camelCase conversion
 - Server: `export const do_something = spacetimedb.reducer(...)`
 - Client: `conn.reducers.doSomething({ ... })`
+
+---
+
+## Identity and Authentication
+
+```typescript
+// Identity is available in onConnect
+const connection = DbConnection.builder()
+  .withUri('ws://localhost:3000')
+  .withDatabaseName('my_database')
+  .withToken(localStorage.getItem('auth_token') ?? undefined)
+  .onConnect((conn, identity, token) => {
+    // identity: your unique Identity for this database
+    console.log('My identity:', identity.toHexString());
+
+    // token: save for reconnection (preserves identity across sessions)
+    localStorage.setItem('auth_token', token);
+
+    conn.subscriptionBuilder().subscribeToAllTables();
+  })
+  .build();
+
+// Omit withToken for anonymous connection (server assigns new identity)
+// Pass stale/invalid token: server issues a new one in onConnect
+```
+
+---
+
+## Error Handling
+
+```typescript
+const connection = DbConnection.builder()
+  .withUri('ws://localhost:3000')
+  .withDatabaseName('my_database')
+  .onConnect((conn, identity, token) => {
+    conn.subscriptionBuilder()
+      .onApplied(() => console.log('Subscribed'))
+      .onError((ctx, error) => {
+        console.error('Subscription error:', error);
+      })
+      .subscribe('SELECT * FROM player');
+  })
+  .onConnectError((ctx, error) => {
+    console.error('Connection failed:', error);
+  })
+  .onDisconnect((ctx) => {
+    console.log('Disconnected');
+  })
+  .build();
+
+// Reducer error handling
+connection.reducers.onCreatePlayer((ctx, args) => {
+  if (ctx.event.status.tag === 'Failed') {
+    console.error('Reducer failed:', ctx.event.status.value);
+  }
+});
+```
 
 ---
 
@@ -350,6 +409,17 @@ ctx.db.cleanupJob.insert({
 });
 ```
 
+### ScheduleAt on Client
+
+```typescript
+// ScheduleAt is a tagged union on the client
+// { tag: 'Time', value: Timestamp } or { tag: 'Interval', value: TimeDuration }
+const schedule = row.scheduledAt;
+if (schedule.tag === 'Time') {
+  const date = new Date(Number(schedule.value.microsSinceUnixEpoch / 1000n));
+}
+```
+
 ---
 
 ## Timestamps
@@ -360,9 +430,9 @@ ctx.db.item.insert({ id: 0n, createdAt: ctx.timestamp });
 const future = ctx.timestamp.microsSinceUnixEpoch + 300_000_000n;
 ```
 
-### Client-side (CRITICAL)
+### Client-side
 ```typescript
-// Timestamps are objects, not numbers
+// Timestamps are objects with BigInt, not numbers
 const date = new Date(Number(row.createdAt.microsSinceUnixEpoch / 1000n));
 ```
 

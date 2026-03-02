@@ -84,18 +84,10 @@ let caller = ctx.sender();
 
 | Wrong | Right | Error |
 |-------|-------|-------|
-| `#[derive(SpacetimeType)]` on `#[table]` | Remove it — macro handles this | Conflicting derive macros |
-| `ctx.db.player` (field access) | `ctx.db.player()` (method) | "no field `player` on type" |
-| `ctx.db.player().find(id)` | `ctx.db.player().id().find(&id)` | Must access via index |
-| `&mut ReducerContext` | `&ReducerContext` | Wrong context type |
-| Missing `use spacetimedb::Table;` | Add import | "no method named `insert`" |
 | `#[table(accessor = "my_table")]` | `#[table(accessor = my_table)]` | String literals not allowed |
-| `#[table(name = my_table)]` | `#[table(accessor = my_table)]` | 2.0 uses `accessor` |
-| `ctx.sender` | `ctx.sender()` | 2.0: method, not field |
 | Missing `public` on table | Add `public` flag | Clients can't subscribe |
 | Network/filesystem in reducer | Use procedures instead | Sandbox violation |
 | Panic for expected errors | Return `Result<(), String>` | WASM instance destroyed |
-| `.name().update(row)` | `.id().update(row)` | Update only via primary key (2.0) |
 
 ---
 
@@ -215,28 +207,60 @@ ctx.rng             // Deterministic RNG
 
 ## Table Operations
 
+### Insert
+
 ```rust
-// Insert — returns the row with auto_inc values populated
+// Insert returns the row with auto_inc values populated
 let player = ctx.db.player().insert(Player { id: 0, name: "Alice".into(), score: 100 });
 log::info!("Created player with id: {}", player.id);
+```
 
+### Find and Filter
+
+```rust
 // Find by unique/primary key — returns Option
-if let Some(player) = ctx.db.player().id().find(123) { }
+if let Some(player) = ctx.db.player().id().find(&123) {
+    log::info!("Found: {}", player.name);
+}
 
 // Filter by indexed column — returns iterator
-for player in ctx.db.player().name().filter("Alice") { }
+for player in ctx.db.player().name().filter(&"Alice".to_string()) {
+    log::info!("Player: {}", player.name);
+}
 
+// Full table scan
+for player in ctx.db.player().iter() { }
+let total = ctx.db.player().count();
+```
+
+### Update
+
+```rust
 // Update via primary key (2.0: only primary key has update)
-if let Some(player) = ctx.db.player().id().find(123) {
+if let Some(player) = ctx.db.player().id().find(&123) {
     ctx.db.player().id().update(Player { score: player.score + 10, ..player });
 }
 
-// Delete
+// For non-PK changes: delete + insert
+if let Some(old) = ctx.db.player().id().find(&id) {
+    ctx.db.player().id().delete(&id);
+    ctx.db.player().insert(Player { name: new_name, ..old });
+}
+```
+
+### Delete
+
+```rust
+// Delete by primary key
 ctx.db.player().id().delete(&123);
 
-// Iterate all rows
-for player in ctx.db.player().iter() { }
-let total = ctx.db.player().count();
+// Delete by indexed column (collect first to avoid iterator invalidation)
+let to_remove: Vec<u64> = ctx.db.player().name().filter(&"Alice".to_string())
+    .map(|p| p.id)
+    .collect();
+for id in to_remove {
+    ctx.db.player().id().delete(&id);
+}
 ```
 
 ---
@@ -263,6 +287,16 @@ pub struct Score {
     player_id: u32,
     level: u32,
     points: i64,
+}
+
+// Multi-column index querying: prefix match (first column only)
+for s in ctx.db.score().by_player_level().filter(&(42,)) {
+    log::info!("Player 42, any level: {} pts", s.points);
+}
+
+// Full match (both columns)
+for s in ctx.db.score().by_player_level().filter(&(42, 5)) {
+    log::info!("Player 42, level 5: {} pts", s.points);
 }
 ```
 
@@ -302,18 +336,37 @@ Event tables must be subscribed explicitly — they are excluded from `subscribe
 #[spacetimedb::reducer(init)]
 pub fn init(ctx: &ReducerContext) -> Result<(), String> {
     log::info!("Database initializing...");
+    ctx.db.config().insert(Config {
+        id: 0,
+        max_players: 100,
+        game_mode: "default".to_string(),
+    });
     Ok(())
 }
 
 #[spacetimedb::reducer(client_connected)]
 pub fn on_connect(ctx: &ReducerContext) -> Result<(), String> {
-    log::info!("Client connected: {}", ctx.sender());
+    let caller = ctx.sender();
+    log::info!("Client connected: {}", caller);
+
+    if let Some(user) = ctx.db.user().identity().find(&caller) {
+        ctx.db.user().identity().update(User { online: true, ..user });
+    } else {
+        ctx.db.user().insert(User {
+            identity: caller,
+            name: format!("User-{}", &caller.to_hex()[..8]),
+            online: true,
+        });
+    }
     Ok(())
 }
 
 #[spacetimedb::reducer(client_disconnected)]
 pub fn on_disconnect(ctx: &ReducerContext) -> Result<(), String> {
-    log::info!("Client disconnected: {}", ctx.sender());
+    let caller = ctx.sender();
+    if let Some(user) = ctx.db.user().identity().find(&caller) {
+        ctx.db.user().identity().update(User { online: false, ..user });
+    }
     Ok(())
 }
 ```
@@ -340,7 +393,7 @@ fn game_tick(ctx: &ReducerContext, schedule: GameTickSchedule) {
     log::info!("Game tick at {:?}", ctx.timestamp);
 }
 
-// Schedule at interval
+// Schedule at interval (e.g., in init reducer)
 ctx.db.game_tick_schedule().insert(GameTickSchedule {
     scheduled_id: 0,
     scheduled_at: ScheduleAt::Interval(Duration::from_millis(100).into()),
@@ -353,6 +406,79 @@ ctx.db.reminder_schedule().insert(ReminderSchedule {
     scheduled_at: ScheduleAt::Time(run_at),
 });
 ```
+
+---
+
+## Identity and Authentication
+
+```rust
+#[spacetimedb::table(accessor = user, public)]
+pub struct User {
+    #[primary_key]
+    identity: Identity,
+    name: String,
+    online: bool,
+}
+
+#[spacetimedb::reducer]
+pub fn set_name(ctx: &ReducerContext, new_name: String) -> Result<(), String> {
+    let caller = ctx.sender();
+    let user = ctx.db.user().identity().find(&caller)
+        .ok_or("User not found — connect first")?;
+    ctx.db.user().identity().update(User { name: new_name, ..user });
+    Ok(())
+}
+```
+
+### Owner-Only Reducer Pattern
+
+```rust
+fn require_owner(ctx: &ReducerContext, entity_owner: &Identity) -> Result<(), String> {
+    if ctx.sender() != *entity_owner {
+        Err("Not authorized: you don't own this entity".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+#[spacetimedb::reducer]
+pub fn rename_character(ctx: &ReducerContext, char_id: u64, new_name: String) -> Result<(), String> {
+    let character = ctx.db.character().id().find(&char_id)
+        .ok_or("Character not found")?;
+    require_owner(ctx, &character.owner)?;
+    ctx.db.character().id().update(Character { name: new_name, ..character });
+    Ok(())
+}
+```
+
+---
+
+## Error Handling
+
+```rust
+// Sender error — return Err (user sees message, transaction rolls back cleanly)
+#[spacetimedb::reducer]
+pub fn transfer(ctx: &ReducerContext, to: Identity, amount: u64) -> Result<(), String> {
+    let sender = ctx.db.wallet().identity().find(&ctx.sender())
+        .ok_or("Wallet not found")?;
+    if sender.balance < amount {
+        return Err("Insufficient balance".to_string());
+    }
+    // ... proceed with transfer
+    Ok(())
+}
+
+// Programmer error — panic (destroys the WASM instance, expensive!)
+// Only use for truly impossible states
+#[spacetimedb::reducer]
+pub fn process(ctx: &ReducerContext, id: u64) {
+    let item = ctx.db.item().id().find(&id)
+        .expect("BUG: item should exist at this point");
+    // ...
+}
+```
+
+Prefer `Result<(), String>` for all expected failure cases. Panics destroy and recreate the WASM instance.
 
 ---
 
