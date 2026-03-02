@@ -1,0 +1,54 @@
+name: Swift SDK
+
+on:
+  pull_request:
+    paths:
+      - sdks/swift/**
+      - demo/ninja-game/client-swift/**
+      - demo/simple-module/client-swift/**
+      - tools/swift-procedure-e2e.sh
+      - .github/workflows/swift-sdk.yml
+  push:
+    branches:
+      - master
+    paths:
+      - sdks/swift/**
+      - demo/ninja-game/client-swift/**
+      - demo/simple-module/client-swift/**
+      - tools/swift-procedure-e2e.sh
+      - .github/workflows/swift-sdk.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || format('sha-{0}', github.sha) }}
+  cancel-in-progress: true
+
+jobs:
+  swift-sdk:
+    name: Swift SDK (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Show Swift toolchain version
+        run: swift --version
+
+      - name: Assert legacy Swift SDK path is removed
+        shell: bash
+        run: |
+          if git grep -n "crates/swift-sdk" -- . ':(exclude).github/workflows/swift-sdk.yml'; then
+            echo "Found legacy path references to crates/swift-sdk; expected sdks/swift."
+            exit 1
+          fi
+
+      - name: Test Swift SDK package
+        run: swift test --package-path sdks/swift
+
+      - name: Build simple Swift demo client
+        run: swift build --package-path demo/simple-module/client-swift
+
+      - name: Build ninja Swift demo client
+        run: swift build --package-path demo/ninja-game/client-swift
