@@ -134,11 +134,18 @@ const connection = DbConnection.builder()
   .withDatabaseName('my_database')
   .withToken(localStorage.getItem('spacetimedb_token') ?? undefined)
   .onConnect((conn, identity, token) => {
+    // identity: your unique Identity for this database
+    console.log('Connected as:', identity.toHexString());
+
+    // Save token for reconnection (preserves identity across sessions)
     localStorage.setItem('spacetimedb_token', token);
-    conn.subscriptionBuilder().subscribe('SELECT * FROM player');
+
+    conn.subscriptionBuilder()
+      .onApplied(() => console.log('Cache ready'))
+      .subscribe('SELECT * FROM player');
   })
   .onDisconnect((ctx) => console.log('Disconnected'))
-  .onConnectError((ctx, error) => console.error('Connection error:', error))
+  .onConnectError((ctx, error) => console.error('Connection failed:', error))
   .build();
 ```
 
@@ -203,52 +210,25 @@ connection.reducers.onCreatePlayer((ctx, args) => {
 
 ## Identity and Authentication
 
-```typescript
-// Identity is available in onConnect
-const connection = DbConnection.builder()
-  .withUri('ws://localhost:3000')
-  .withDatabaseName('my_database')
-  .withToken(localStorage.getItem('auth_token') ?? undefined)
-  .onConnect((conn, identity, token) => {
-    // identity: your unique Identity for this database
-    console.log('My identity:', identity.toHexString());
-
-    // token: save for reconnection (preserves identity across sessions)
-    localStorage.setItem('auth_token', token);
-
-    conn.subscriptionBuilder().subscribeToAllTables();
-  })
-  .build();
-
-// Omit withToken for anonymous connection (server assigns new identity)
-// Pass stale/invalid token: server issues a new one in onConnect
-```
+- `identity` and `token` are provided in the `onConnect` callback (see Client Connection above)
+- `identity.toHexString()` for display or logging
+- Omit `.withToken()` for anonymous connection — server assigns a new identity
+- Pass a stale/invalid token: server issues a new identity and token in `onConnect`
 
 ---
 
 ## Error Handling
 
-```typescript
-const connection = DbConnection.builder()
-  .withUri('ws://localhost:3000')
-  .withDatabaseName('my_database')
-  .onConnect((conn, identity, token) => {
-    conn.subscriptionBuilder()
-      .onApplied(() => console.log('Subscribed'))
-      .onError((ctx, error) => {
-        console.error('Subscription error:', error);
-      })
-      .subscribe('SELECT * FROM player');
-  })
-  .onConnectError((ctx, error) => {
-    console.error('Connection failed:', error);
-  })
-  .onDisconnect((ctx) => {
-    console.log('Disconnected');
-  })
-  .build();
+Connection-level errors (`.onConnectError`, `.onDisconnect`) are shown in the Client Connection example above.
 
-// Reducer error handling
+```typescript
+// Subscription error
+connection.subscriptionBuilder()
+  .onApplied(() => console.log('Subscribed'))
+  .onError((ctx, error) => console.error('Subscription error:', error))
+  .subscribe('SELECT * FROM player');
+
+// Reducer error handling (also shown in Calling Reducers above)
 connection.reducers.onCreatePlayer((ctx, args) => {
   if (ctx.event.status.tag === 'Failed') {
     console.error('Reducer failed:', ctx.event.status.value);
@@ -459,8 +439,8 @@ Procedures don't have `ctx.db` — use `ctx.withTx(tx => tx.db...)`.
 
 ```tsx
 import { useMemo } from 'react';
-import { SpacetimeDBProvider, useTable, useReducer } from 'spacetimedb/react';
-import { DbConnection, tables, reducers, query } from './module_bindings';
+import { SpacetimeDBProvider, useTable } from 'spacetimedb/react';
+import { DbConnection, tables } from './module_bindings';
 
 function Root() {
   const connectionBuilder = useMemo(() =>
@@ -470,7 +450,7 @@ function Root() {
       .withToken(localStorage.getItem('auth_token') || undefined)
       .onConnect((conn, identity, token) => {
         localStorage.setItem('auth_token', token);
-        conn.subscriptionBuilder().subscribe(query.player.build());
+        conn.subscriptionBuilder().subscribe(tables.player);
       }),
     []
   );

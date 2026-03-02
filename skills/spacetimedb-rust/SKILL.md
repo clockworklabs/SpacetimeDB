@@ -197,7 +197,7 @@ pub fn create_player(ctx: &ReducerContext, name: String) -> Result<(), String> {
 ```rust
 ctx.db              // Database access
 ctx.sender()        // Identity of the caller (method, not field!)
-ctx.connection_id   // Connection ID (None for scheduled/system reducers)
+ctx.connection_id() // Option<ConnectionId> (None for scheduled/system reducers)
 ctx.timestamp       // Invocation timestamp
 ctx.identity()      // Module's own identity
 ctx.rng             // Deterministic RNG

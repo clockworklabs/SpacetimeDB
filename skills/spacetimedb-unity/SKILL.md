@@ -277,18 +277,7 @@ The SpacetimeDB SDK uses code generation. If you encounter issues with IL2CPP bu
 - Check that `link.xml` preserves SpacetimeDB types if you use assembly stripping
 
 ### Token Persistence
-Use `PlayerPrefs` to save the auth token. This preserves the player's identity across sessions:
-
-```csharp
-// Save on connect
-PlayerPrefs.SetString("SpacetimeAuthToken", authToken);
-PlayerPrefs.Save();
-
-// Load on next session
-string token = PlayerPrefs.GetString("SpacetimeAuthToken", null);
-```
-
-If the token is stale or invalid, the server issues a new identity and token in the `OnConnect` callback.
+Token save/load via `PlayerPrefs` is demonstrated in the SpacetimeManager singleton above. If the token is stale or invalid, the server issues a new identity and token in the `OnConnect` callback.
 
 ---
 
