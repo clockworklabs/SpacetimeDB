@@ -13,7 +13,11 @@ public data class MinMaxResult(val min: DurationSample, val max: DurationSample)
 
 private class RequestEntry(val startTime: TimeMark, val metadata: String)
 
-public class NetworkRequestTracker : SynchronizedObject() {
+public class NetworkRequestTracker internal constructor(
+    private val timeSource: TimeSource = TimeSource.Monotonic,
+) : SynchronizedObject() {
+    public constructor() : this(TimeSource.Monotonic)
+
     public companion object {
         private const val MAX_TRACKERS = 16
     }
@@ -35,7 +39,7 @@ public class NetworkRequestTracker : SynchronizedObject() {
             check(trackers.size < MAX_TRACKERS) {
                 "Cannot track more than $MAX_TRACKERS distinct window sizes"
             }
-            WindowTracker(lastSeconds)
+            WindowTracker(lastSeconds, timeSource)
         }
         tracker.getMinMax()
     }
@@ -48,7 +52,7 @@ public class NetworkRequestTracker : SynchronizedObject() {
         synchronized(this) {
             val requestId = nextRequestId++
             requests[requestId] = RequestEntry(
-                startTime = TimeSource.Monotonic.markNow(),
+                startTime = timeSource.markNow(),
                 metadata = metadata,
             )
             return requestId
@@ -89,9 +93,9 @@ public class NetworkRequestTracker : SynchronizedObject() {
         }
     }
 
-    private class WindowTracker(windowSeconds: Int) {
+    private class WindowTracker(windowSeconds: Int, private val timeSource: TimeSource) {
         val window: Duration = windowSeconds.seconds
-        var lastReset: TimeMark = TimeSource.Monotonic.markNow()
+        var lastReset: TimeMark = timeSource.markNow()
 
         var lastWindowMin: DurationSample? = null
             private set
@@ -137,7 +141,7 @@ public class NetworkRequestTracker : SynchronizedObject() {
                 }
                 thisWindowMin = null
                 thisWindowMax = null
-                lastReset = TimeSource.Monotonic.markNow()
+                lastReset = timeSource.markNow()
             }
         }
     }

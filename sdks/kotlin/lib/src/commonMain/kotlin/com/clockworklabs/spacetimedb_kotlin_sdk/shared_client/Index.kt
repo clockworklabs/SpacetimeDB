@@ -31,7 +31,7 @@ public class UniqueIndex<Row, Col>(
             _cache.update { it.remove(keyExtractor(row)) }
         }
         _cache.update {
-            var snapshot = persistentHashMapOf<Col, Row>()
+            var snapshot = it
             for (row in tableCache.iter()) {
                 snapshot = snapshot.put(keyExtractor(row), row)
             }
@@ -72,7 +72,7 @@ public class BTreeIndex<Row, Col>(
             }
         }
         _cache.update {
-            var snapshot = persistentHashMapOf<Col, PersistentList<Row>>()
+            var snapshot = it
             for (row in tableCache.iter()) {
                 val key = keyExtractor(row)
                 snapshot = snapshot.put(key, (snapshot[key] ?: persistentListOf()).add(row))

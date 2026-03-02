@@ -1,7 +1,6 @@
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.CompressionMode
-import org.brotli.dec.BrotliInputStream
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.zip.GZIPInputStream
@@ -14,12 +13,7 @@ public actual fun decompressMessage(data: ByteArray): ByteArray {
 
     return when (tag) {
         Compression.NONE -> payload
-        Compression.BROTLI -> {
-            val input = BrotliInputStream(ByteArrayInputStream(payload))
-            val output = ByteArrayOutputStream()
-            input.use { it.copyTo(output) }
-            output.toByteArray()
-        }
+        Compression.BROTLI -> error("Brotli compression is not supported. Use gzip or none.")
         Compression.GZIP -> {
             val input = GZIPInputStream(ByteArrayInputStream(payload))
             val output = ByteArrayOutputStream()
@@ -30,7 +24,7 @@ public actual fun decompressMessage(data: ByteArray): ByteArray {
     }
 }
 
-public actual val defaultCompressionMode: CompressionMode = CompressionMode.BROTLI
+public actual val defaultCompressionMode: CompressionMode = CompressionMode.GZIP
 
 public actual val availableCompressionModes: Set<CompressionMode> =
-    setOf(CompressionMode.NONE, CompressionMode.GZIP, CompressionMode.BROTLI)
+    setOf(CompressionMode.NONE, CompressionMode.GZIP)

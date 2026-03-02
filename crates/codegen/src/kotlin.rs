@@ -1487,11 +1487,11 @@ fn generate_remote_procedures_file(module: &ModuleDef, options: &CodegenOptions)
             })
             .collect();
 
-        // Callback type uses the decoded return type
+        // Callback type uses Result to surface both success and InternalError (matches Rust SDK pattern)
         let callback_type = if is_unit_return {
-            "((EventContext.Procedure) -> Unit)?".to_string()
+            "((EventContext.Procedure, Result<Unit>) -> Unit)?".to_string()
         } else {
-            format!("((EventContext.Procedure, {return_ty_str}) -> Unit)?")
+            format!("((EventContext.Procedure, Result<{return_ty_str}>) -> Unit)?")
         };
 
         if params.is_empty() {
@@ -1517,25 +1517,33 @@ fn generate_remote_procedures_file(module: &ModuleDef, options: &CodegenOptions)
             "writer.toByteArray()"
         };
 
-        // Generate wrapper callback that decodes the return value
+        // Generate wrapper callback that decodes the return value into a Result
         writeln!(out, "val wrappedCallback = callback?.let {{ userCb ->") ;
         out.indent(1);
         writeln!(out, "{{ ctx: EventContext.Procedure, msg: ServerMessage.ProcedureResultMsg ->") ;
         out.indent(1);
-        writeln!(out, "val status = msg.status");
-        writeln!(out, "if (status is ProcedureStatus.Returned) {{");
+        writeln!(out, "when (val status = msg.status) {{");
+        out.indent(1);
+        writeln!(out, "is ProcedureStatus.Returned -> {{");
         out.indent(1);
         if is_unit_return {
-            writeln!(out, "userCb(ctx)");
+            writeln!(out, "userCb(ctx, Result.success(Unit))");
         } else if is_simple_decode(return_ty) {
             writeln!(out, "val reader = BsatnReader(status.value)");
             let decode_expr = write_decode_expr(module, return_ty);
-            writeln!(out, "userCb(ctx, {decode_expr})");
+            writeln!(out, "userCb(ctx, Result.success({decode_expr}))");
         } else {
             writeln!(out, "val reader = BsatnReader(status.value)");
             write_decode_field(module, out, "__retVal", return_ty);
-            writeln!(out, "userCb(ctx, __retVal)");
+            writeln!(out, "userCb(ctx, Result.success(__retVal))");
         }
+        out.dedent(1);
+        writeln!(out, "}}");
+        writeln!(out, "is ProcedureStatus.InternalError -> {{");
+        out.indent(1);
+        writeln!(out, "userCb(ctx, Result.failure(Exception(status.message)))");
+        out.dedent(1);
+        writeln!(out, "}}");
         out.dedent(1);
         writeln!(out, "}}");
         out.dedent(1);

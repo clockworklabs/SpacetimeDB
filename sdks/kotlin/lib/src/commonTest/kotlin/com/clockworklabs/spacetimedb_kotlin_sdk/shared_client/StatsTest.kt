@@ -9,6 +9,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TestTimeSource
 
 class StatsTest {
 
@@ -124,6 +125,127 @@ class StatsTest {
         assertNull(tracker.getMinMaxTimes(5))
         assertNull(tracker.getMinMaxTimes(10))
         assertNull(tracker.getMinMaxTimes(30))
+    }
+
+    @Test
+    fun windowRotationReturnsMinMaxAfterWindowElapses() {
+        val ts = TestTimeSource()
+        val tracker = NetworkRequestTracker(ts)
+
+        // Register a 1-second window tracker
+        assertNull(tracker.getMinMaxTimes(1))
+
+        // Insert samples in the first window
+        tracker.insertSample(100.milliseconds, "fast")
+        tracker.insertSample(500.milliseconds, "slow")
+        tracker.insertSample(250.milliseconds, "mid")
+
+        // Still within the first window — lastWindow has no data yet
+        assertNull(tracker.getMinMaxTimes(1))
+
+        // Advance past the 1-second window boundary
+        ts += 1.seconds
+
+        // Now the previous window's data should be available
+        val result = assertNotNull(tracker.getMinMaxTimes(1))
+        assertEquals(100.milliseconds, result.min.duration)
+        assertEquals("fast", result.min.metadata)
+        assertEquals(500.milliseconds, result.max.duration)
+        assertEquals("slow", result.max.metadata)
+    }
+
+    @Test
+    fun windowRotationReplacesWithNewWindowData() {
+        val ts = TestTimeSource()
+        val tracker = NetworkRequestTracker(ts)
+
+        // First window: samples 100ms and 500ms
+        tracker.getMinMaxTimes(1) // create tracker
+        tracker.insertSample(100.milliseconds, "w1-fast")
+        tracker.insertSample(500.milliseconds, "w1-slow")
+
+        // Advance to second window
+        ts += 1.seconds
+
+        // Insert new samples in the second window
+        tracker.insertSample(200.milliseconds, "w2-fast")
+        tracker.insertSample(300.milliseconds, "w2-slow")
+
+        // getMinMax should return first window's data (100ms, 500ms)
+        val result1 = assertNotNull(tracker.getMinMaxTimes(1))
+        assertEquals(100.milliseconds, result1.min.duration)
+        assertEquals(500.milliseconds, result1.max.duration)
+
+        // Advance to third window — now second window becomes lastWindow
+        ts += 1.seconds
+
+        val result2 = assertNotNull(tracker.getMinMaxTimes(1))
+        assertEquals(200.milliseconds, result2.min.duration)
+        assertEquals("w2-fast", result2.min.metadata)
+        assertEquals(300.milliseconds, result2.max.duration)
+        assertEquals("w2-slow", result2.max.metadata)
+    }
+
+    @Test
+    fun windowRotationReturnsNullAfterTwoWindowsWithNoData() {
+        val ts = TestTimeSource()
+        val tracker = NetworkRequestTracker(ts)
+
+        // Insert samples in the first window
+        tracker.getMinMaxTimes(1)
+        tracker.insertSample(100.milliseconds, "data")
+
+        // Advance past one window — data visible
+        ts += 1.seconds
+        assertNotNull(tracker.getMinMaxTimes(1))
+
+        // Advance past two full windows with no new data —
+        // the immediately preceding window is empty
+        ts += 2.seconds
+        assertNull(tracker.getMinMaxTimes(1))
+    }
+
+    @Test
+    fun windowRotationEmptyWindowPreservesNullMinMax() {
+        val ts = TestTimeSource()
+        val tracker = NetworkRequestTracker(ts)
+
+        // First window: insert data
+        tracker.getMinMaxTimes(1)
+        tracker.insertSample(100.milliseconds)
+
+        // Advance to second window, insert nothing
+        ts += 1.seconds
+
+        // First window data is available
+        assertNotNull(tracker.getMinMaxTimes(1))
+
+        // Advance to third window — second window had no data
+        ts += 1.seconds
+
+        // lastWindow should be null since second window was empty
+        assertNull(tracker.getMinMaxTimes(1))
+    }
+
+    @Test
+    fun windowMinMaxTracksExtremesWithinWindow() {
+        val ts = TestTimeSource()
+        val tracker = NetworkRequestTracker(ts)
+        tracker.getMinMaxTimes(1)
+
+        // Insert samples that get progressively larger and smaller
+        tracker.insertSample(300.milliseconds, "mid")
+        tracker.insertSample(100.milliseconds, "smallest")
+        tracker.insertSample(900.milliseconds, "largest")
+        tracker.insertSample(200.milliseconds, "small")
+
+        ts += 1.seconds
+
+        val result = assertNotNull(tracker.getMinMaxTimes(1))
+        assertEquals(100.milliseconds, result.min.duration)
+        assertEquals("smallest", result.min.metadata)
+        assertEquals(900.milliseconds, result.max.duration)
+        assertEquals("largest", result.max.metadata)
     }
 
     @Test

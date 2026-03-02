@@ -42,6 +42,13 @@ class CompressionTest {
     }
 
     @Test
+    fun brotliTagThrows() {
+        assertFailsWith<IllegalStateException> {
+            decompressMessage(byteArrayOf(Compression.BROTLI, 1, 2, 3))
+        }
+    }
+
+    @Test
     fun unknownTagThrows() {
         assertFailsWith<IllegalStateException> {
             decompressMessage(byteArrayOf(0x7F, 1, 2, 3))

@@ -18,7 +18,7 @@ public expect fun decompressMessage(data: ByteArray): ByteArray
 
 /**
  * Default compression mode for this platform.
- * Native targets default to NONE (no decompression support); JVM/Android default to BROTLI.
+ * Native targets default to NONE (no decompression support); JVM/Android default to GZIP.
  */
 public expect val defaultCompressionMode: com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.CompressionMode
 

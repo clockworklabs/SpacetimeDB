@@ -33,7 +33,6 @@ kotlin {
     sourceSets {
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)
-            implementation(libs.brotli.dec)
         }
 
         commonMain.dependencies {
@@ -52,7 +51,6 @@ kotlin {
 
         jvmMain.dependencies {
             implementation(libs.ktor.client.okhttp)
-            implementation(libs.brotli.dec)
         }
 
         if (org.gradle.internal.os.OperatingSystem.current().isMacOsX) {

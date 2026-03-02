@@ -52,8 +52,8 @@ public class SubscriptionHandle internal constructor(
         flags: UnsubscribeFlags = UnsubscribeFlags.Default,
         onEnd: (EventContext.UnsubscribeApplied) -> Unit,
     ) {
-        _onEndCallback.value = onEnd
         doUnsubscribe(flags)
+        _onEndCallback.value = onEnd
     }
 
     private fun doUnsubscribe(flags: UnsubscribeFlags) {

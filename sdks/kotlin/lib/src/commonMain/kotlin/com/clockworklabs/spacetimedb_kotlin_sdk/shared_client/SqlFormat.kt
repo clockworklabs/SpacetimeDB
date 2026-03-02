@@ -29,6 +29,7 @@ public object SqlFormat {
             cleaned = cleaned.substring(2)
         }
         cleaned = cleaned.replace("-", "")
+        require(cleaned.isNotEmpty()) { "Empty hex string: $hex" }
         require(cleaned.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) {
             "Invalid hex string: $hex"
         }

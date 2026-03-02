@@ -155,6 +155,38 @@ class TypeRoundTripTest {
         assertTrue(later > earlier)
     }
 
+    @Test
+    fun timestampToISOStringEpoch() {
+        assertEquals("1970-01-01T00:00:00.000000Z", Timestamp.UNIX_EPOCH.toISOString())
+    }
+
+    @Test
+    fun timestampToISOStringKnownDate() {
+        // 2023-11-14T22:13:20.000000Z = 1_700_000_000_000_000 micros
+        val ts = Timestamp.fromEpochMicroseconds(1_700_000_000_000_000L)
+        assertEquals("2023-11-14T22:13:20.000000Z", ts.toISOString())
+    }
+
+    @Test
+    fun timestampToISOStringMicrosecondPrecision() {
+        // 1 second + 123456 microseconds
+        val ts = Timestamp.fromEpochMicroseconds(1_123_456L)
+        assertEquals("1970-01-01T00:00:01.123456Z", ts.toISOString())
+    }
+
+    @Test
+    fun timestampToISOStringPadsLeadingZeros() {
+        // 1 second + 7 microseconds — should pad to 6 digits
+        val ts = Timestamp.fromEpochMicroseconds(1_000_007L)
+        assertEquals("1970-01-01T00:00:01.000007Z", ts.toISOString())
+    }
+
+    @Test
+    fun timestampToStringMatchesToISOString() {
+        val ts = Timestamp.fromEpochMicroseconds(1_700_000_000_123_456L)
+        assertEquals(ts.toISOString(), ts.toString())
+    }
+
     // ---- TimeDuration ----
 
     @Test

@@ -10,10 +10,11 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.consumeAsFlow
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class, kotlinx.coroutines.DelicateCoroutinesApi::class)
 class FakeTransport(
     private val connectError: Throwable? = null,
 ) : Transport {
-    private val _incoming = Channel<ServerMessage>(Channel.UNLIMITED)
+    private var _incoming = Channel<ServerMessage>(Channel.UNLIMITED)
     private val _sent = atomic(persistentListOf<ClientMessage>())
     private val _sendError = atomic<Throwable?>(null)
     private var _connected = false
@@ -22,6 +23,10 @@ class FakeTransport(
 
     override suspend fun connect() {
         connectError?.let { throw it }
+        // Recreate channel on reconnect (closed channels can't be reused)
+        if (_incoming.isClosedForSend) {
+            _incoming = Channel(Channel.UNLIMITED)
+        }
         _connected = true
     }
 
@@ -38,6 +43,10 @@ class FakeTransport(
     }
 
     val sentMessages: List<ClientMessage> get() = _sent.value
+
+    fun clearSentMessages() {
+        _sent.value = persistentListOf()
+    }
 
     suspend fun sendToClient(message: ServerMessage) {
         _incoming.send(message)

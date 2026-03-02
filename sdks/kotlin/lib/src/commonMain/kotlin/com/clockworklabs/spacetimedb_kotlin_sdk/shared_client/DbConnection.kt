@@ -62,7 +62,6 @@ private fun decodeReducerError(bytes: ByteArray): String {
  */
 public enum class CompressionMode(internal val wireValue: String) {
     GZIP("Gzip"),
-    BROTLI("Brotli"),
     NONE("None"),
 }
 
@@ -71,6 +70,7 @@ public enum class CompressionMode(internal val wireValue: String) {
  */
 public enum class ConnectionState {
     DISCONNECTED,
+    CONNECTING,
     CONNECTED,
     CLOSED,
 }
@@ -135,6 +135,7 @@ public open class DbConnection internal constructor(
 
     private val sendChannel = Channel<ClientMessage>(Channel.UNLIMITED)
     private val _sendJob = atomic<Job?>(null)
+    private val _disconnectJob = atomic<Job?>(null)
     private val _nextQuerySetId = atomic(0)
     private val subscriptions = atomic(persistentHashMapOf<UInt, SubscriptionHandle>())
     private val reducerCallbacks =
@@ -221,10 +222,11 @@ public open class DbConnection internal constructor(
     /**
      * Reset connection state for a fresh connect cycle (matches C# SDK's Connect() reset).
      */
-    private fun resetState() {
+    private suspend fun resetState() {
         _receiveJob.getAndSet(null)?.cancel()
         _sendJob.getAndSet(null)?.cancel()
-        _state.value = ConnectionState.DISCONNECTED
+        // Wait for any in-flight transport disconnect to finish before reconnecting
+        _disconnectJob.getAndSet(null)?.join()
         identity = null
         connectionId = null
         token = null
@@ -238,11 +240,15 @@ public open class DbConnection internal constructor(
      * Can be called after disconnect() to reconnect (matches C# SDK).
      */
     public suspend fun connect() {
+        check(_state.compareAndSet(ConnectionState.DISCONNECTED, ConnectionState.CONNECTING)) {
+            "connect() called in invalid state: ${_state.value}"
+        }
         resetState()
         Logger.info { "Connecting to SpacetimeDB..." }
         try {
             transport.connect()
         } catch (e: Exception) {
+            _state.value = ConnectionState.DISCONNECTED
             for (cb in _onConnectErrorCallbacks.value) runUserCallback { cb(this, e) }
             throw e
         }
@@ -278,24 +284,32 @@ public open class DbConnection internal constructor(
         }
     }
 
-    public fun disconnect() {
+    public suspend fun disconnect() {
         if (!_state.compareAndSet(expect = ConnectionState.CONNECTED, update = ConnectionState.DISCONNECTED)) return
-        performDisconnect()
+        tearDown()
+        launchTransportDisconnect()
     }
 
     /**
      * Permanently release all resources (HttpClient, CoroutineScope).
      * The connection cannot be used after this call.
      */
-    public fun close() {
+    public suspend fun close() {
         val prev = _state.getAndSet(ConnectionState.CLOSED)
         when (prev) {
-            ConnectionState.CONNECTED -> {
-                performDisconnect()
+            ConnectionState.CONNECTING, ConnectionState.CONNECTED -> {
+                tearDown()
+                sendChannel.close()
+                launchTransportDisconnect()
+                // Wait for transport disconnect to complete before killing the scope
+                _disconnectJob.value?.join()
                 httpClient.close()
                 scope.cancel()
             }
             ConnectionState.DISCONNECTED -> {
+                sendChannel.close()
+                // If a previous disconnect() launched a transport close, wait for it
+                _disconnectJob.value?.join()
                 httpClient.close()
                 scope.cancel()
             }
@@ -303,28 +317,27 @@ public open class DbConnection internal constructor(
         }
     }
 
-    private fun performDisconnect() {
-        Logger.info { "Disconnecting from SpacetimeDB" }
-        _receiveJob.getAndSet(null)?.cancel()
-        _sendJob.getAndSet(null)?.cancel()
-        sendChannel.close()
-        failPendingOperations()
-        clientCache.clear()
-        for (cb in _onDisconnectCallbacks.value) {
-            try {
-                cb(this@DbConnection, null)
-            } catch (e: Exception) {
-                Logger.exception(e)
-            }
-        }
-        // Fire-and-forget transport close — don't block the caller
-        scope.launch {
+    private fun launchTransportDisconnect() {
+        _disconnectJob.value = scope.launch {
             try {
                 transport.disconnect()
             } catch (e: Exception) {
                 Logger.warn { "Error during transport disconnect: ${e.message}" }
             }
         }
+    }
+
+    /**
+     * Shared teardown: cancel jobs, fail pending ops, clear cache, fire onDisconnect callbacks.
+     * Does NOT close the transport — callers handle that based on their lifecycle needs.
+     */
+    private suspend fun tearDown() {
+        Logger.info { "Disconnecting from SpacetimeDB" }
+        _receiveJob.getAndSet(null)?.cancel()
+        _sendJob.getAndSet(null)?.cancel()
+        failPendingOperations()
+        clientCache.clear()
+        for (cb in _onDisconnectCallbacks.value) runUserCallback { cb(this@DbConnection, null) }
     }
 
     /**
