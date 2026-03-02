@@ -4,6 +4,7 @@ import {
   onCleanup,
   createMemo,
 } from 'solid-js';
+import { createStore, reconcile } from 'solid-js/store';
 import { useSpacetimeDB } from './useSpacetimeDB';
 import { type EventContextInterface } from '../sdk/db_connection_impl';
 import type { ConnectionState } from './connection_state';
@@ -55,9 +56,7 @@ export function useTable<TableDef extends UntypedTableDef>(
 
   const connectionState: ConnectionState = useSpacetimeDB();
 
-  const [rows, setRows] = createSignal<
-    readonly Prettify<UseTableRowType>[]
-  >([]);
+  const [rows, setRows] = createStore<Prettify<UseTableRowType>[]>([]);
 
   const [isReady, setIsReady] = createSignal(false);
 
@@ -66,7 +65,7 @@ export function useTable<TableDef extends UntypedTableDef>(
   const computeSnapshot = () => {
     const connection = connectionState.getConnection();
     if (!connection) {
-      setRows([]);
+      setRows(reconcile([]));
       setIsReady(false);
       return;
     }
@@ -79,7 +78,7 @@ export function useTable<TableDef extends UntypedTableDef>(
         )
       : Array.from(table.iter());
 
-    setRows(result as Prettify<UseTableRowType>[]);
+    setRows(reconcile(result as Prettify<UseTableRowType>[]));
     setIsReady(true);
   };
 
@@ -175,5 +174,5 @@ export function useTable<TableDef extends UntypedTableDef>(
     });
   });
 
-  return createMemo(() => [rows(), isReady()] as const);
+  return createMemo(() => [rows, isReady()] as const);
 }

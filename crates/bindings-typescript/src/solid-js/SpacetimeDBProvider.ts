@@ -2,7 +2,8 @@ import {
   DbConnectionBuilder,
   type DbConnectionImpl,
 } from '../sdk/db_connection_impl';
-import { createSignal, createEffect, onCleanup, createMemo } from 'solid-js';
+import { createEffect, onCleanup, createMemo } from 'solid-js';
+import { createStore } from 'solid-js/store';
 import { SpacetimeDBContext } from './useSpacetimeDB';
 import type { ConnectionState } from './connection_state';
 import { ConnectionId } from '../lib/connection_id';
@@ -36,8 +37,7 @@ export function SpacetimeDBProvider<
     connectionError: undefined,
   };
 
-  const [state, setState] =
-    createSignal<ManagerConnectionState>(fallbackState);
+  const [state, setState] = createStore<ManagerConnectionState>(fallbackState);
 
   // Subscription to ConnectionManager
   createEffect(() => {
@@ -60,10 +60,14 @@ export function SpacetimeDBProvider<
   const getConnection = () =>
     ConnectionManager.getConnection<DbConnection>(key());
 
-  const contextValue = createMemo<ConnectionState>(() => ({
-    ...state(),
+  const contextValue: ConnectionState = {
+    get isActive() { return state.isActive; },
+    get identity() { return state.identity; },
+    get token() { return state.token; },
+    get connectionId() { return state.connectionId; },
+    get connectionError() { return state.connectionError; },
     getConnection,
-  }));
+  };
 
   // retain / release lifecycle
   createEffect(() => {
@@ -76,7 +80,7 @@ export function SpacetimeDBProvider<
 
 
   return SpacetimeDBContext.Provider({
-      value: contextValue(),
+      value: contextValue,
       children: props.children,
     });
 }
