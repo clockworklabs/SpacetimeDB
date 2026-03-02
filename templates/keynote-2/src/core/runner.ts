@@ -8,6 +8,25 @@ import { RunResult } from './types.ts';
 const OP_TIMEOUT_MS = Number(process.env.BENCH_OP_TIMEOUT_MS ?? '15000');
 const MIN_OP_TIMEOUT_MS = Number(process.env.MIN_OP_TIMEOUT_MS ?? '250');
 const TAIL_SLACK_MS = Number(process.env.TAIL_SLACK_MS ?? '1000');
+const DEFAULT_PRECOMPUTED_TRANSFER_PAIRS = 10_000_000;
+
+function precomputeZipfTransferPairs(
+  accounts: number,
+  alpha: number,
+  count: number,
+): { from: Uint32Array; to: Uint32Array; count: number } {
+  const pick = zipfSampler(accounts, alpha);
+  const from = new Uint32Array(count);
+  const to = new Uint32Array(count);
+
+  for (let i = 0; i < count; i++) {
+    const [a, b] = pickTwoDistinct(pick);
+    from[i] = a;
+    to[i] = b;
+  }
+
+  return { from, to, count };
+}
 
 async function withOpTimeout<T>(
   promise: Promise<T>,
@@ -121,7 +140,28 @@ export async function runOne({
     }
   }
 
-  const pick = zipfSampler(accounts, alpha);
+  const precomputedPairsRaw = Number(
+    process.env.BENCH_PRECOMPUTED_TRANSFER_PAIRS ??
+      DEFAULT_PRECOMPUTED_TRANSFER_PAIRS,
+  );
+  const precomputedPairs = Number.isFinite(precomputedPairsRaw)
+    ? Math.max(1, Math.floor(precomputedPairsRaw))
+    : DEFAULT_PRECOMPUTED_TRANSFER_PAIRS;
+
+  console.log(
+    `[${connector.name}] precomputing ${precomputedPairs} Zipf transfer pairs...`,
+  );
+  const precomputeStart = performance.now();
+  const transferPairs = precomputeZipfTransferPairs(
+    accounts,
+    alpha,
+    precomputedPairs,
+  );
+  const precomputeElapsedMs = performance.now() - precomputeStart;
+  console.log(
+    `[${connector.name}] precomputed ${transferPairs.count} pairs in ${(precomputeElapsedMs / 1000).toFixed(2)}s`,
+  );
+
   const start = performance.now();
   const endAt = start + seconds * 1000;
 
@@ -153,6 +193,22 @@ export async function runOne({
 
   async function worker(workerIndex: number) {
     const conn = workers[workerIndex];
+    const pairsPerWorker = Math.max(
+      1,
+      Math.floor(transferPairs.count / concurrency),
+    );
+    let pairIndex = workerIndex * pairsPerWorker;
+
+    const nextTransferPair = (): [number, number] => {
+      if (pairIndex >= transferPairs.count) {
+        pairIndex = 0;
+      }
+
+      const from = transferPairs.from[pairIndex]!;
+      const to = transferPairs.to[pairIndex]!;
+      pairIndex++;
+      return [from, to];
+    };
 
     // non-pipelined
     if (!PIPELINED) {
@@ -166,7 +222,7 @@ export async function runOne({
           Math.min(OP_TIMEOUT_MS, timeLeft + TAIL_SLACK_MS),
         );
 
-        const [from, to] = pickTwoDistinct(pick);
+        const [from, to] = nextTransferPair();
 
         collisionTracker.begin(from);
         collisionTracker.begin(to);
@@ -213,7 +269,7 @@ export async function runOne({
     const unlimitedInflight = !Number.isFinite(MAX_INFLIGHT_PER_WORKER);
 
     const launchOp = (dynamicTimeout: number) => {
-      const [from, to] = pickTwoDistinct(pick);
+      const [from, to] = nextTransferPair();
 
       collisionTracker.begin(from);
       collisionTracker.begin(to);

@@ -3,7 +3,7 @@
 #include "spacetimedb/bsatn/types.h"
 #include "spacetimedb/reducer_context.h"
 #include "spacetimedb/internal/Module.h"
-#include "spacetimedb/internal/v9_builder.h"
+#include "spacetimedb/internal/v10_builder.h"
 #include "spacetimedb/macros.h"
 
 #include <string>
@@ -68,10 +68,22 @@
         std::vector<std::string> param_names = \
             SpacetimeDB::Internal::parseParameterNames(param_list); \
         /* Register the reducer with the unified V9Builder system */ \
-        SpacetimeDB::Internal::getV9Builder().RegisterReducer(#name, name, param_names); \
+        SpacetimeDB::Internal::getV10Builder().RegisterReducer(#name, name, param_names); \
     } \
     \
     /* The actual reducer function definition - returns ReducerResult */ \
+    SpacetimeDB::ReducerResult name(ctx_param __VA_OPT__(,) __VA_ARGS__)
+
+#define SPACETIMEDB_REDUCER_NAMED(name, canonical_name, ctx_param, ...) \
+    SpacetimeDB::ReducerResult name(ctx_param __VA_OPT__(,) __VA_ARGS__); \
+    __attribute__((export_name("__preinit__30_reducer_" #name))) \
+    extern "C" void CONCAT(_spacetimedb_preinit_register_, name)() { \
+        std::string param_list = #__VA_ARGS__; \
+        std::vector<std::string> param_names = \
+            SpacetimeDB::Internal::parseParameterNames(param_list); \
+        SpacetimeDB::Internal::getV10Builder().RegisterReducer(#name, name, param_names); \
+        SpacetimeDB::Module::RegisterExplicitFunctionName(#name, canonical_name); \
+    } \
     SpacetimeDB::ReducerResult name(ctx_param __VA_OPT__(,) __VA_ARGS__)
 
 // -----------------------------------------------------------------------------
@@ -101,7 +113,7 @@
     SpacetimeDB::ReducerResult function_name(ctx_param); \
     __attribute__((export_name("__preinit__20_reducer_init"))) \
     extern "C" void CONCAT(_preinit_register_init_reducer_, function_name)() { \
-        ::SpacetimeDB::Internal::getV9Builder().RegisterLifecycleReducer(#function_name, function_name, ::SpacetimeDB::Internal::Lifecycle::Init); \
+        ::SpacetimeDB::Internal::getV10Builder().RegisterLifecycleReducer(#function_name, function_name, ::SpacetimeDB::Internal::Lifecycle::Init); \
     } \
     SpacetimeDB::ReducerResult function_name(ctx_param)
 
@@ -125,7 +137,7 @@
     SpacetimeDB::ReducerResult function_name(ctx_param); \
     __attribute__((export_name("__preinit__20_reducer_client_connected"))) \
     extern "C" void CONCAT(_preinit_register_client_connected_, function_name)() { \
-        ::SpacetimeDB::Internal::getV9Builder().RegisterLifecycleReducer(#function_name, function_name, ::SpacetimeDB::Internal::Lifecycle::OnConnect); \
+        ::SpacetimeDB::Internal::getV10Builder().RegisterLifecycleReducer(#function_name, function_name, ::SpacetimeDB::Internal::Lifecycle::OnConnect); \
     } \
     SpacetimeDB::ReducerResult function_name(ctx_param)
 
@@ -149,6 +161,6 @@
     SpacetimeDB::ReducerResult function_name(ctx_param); \
     __attribute__((export_name("__preinit__20_reducer_client_disconnected"))) \
     extern "C" void CONCAT(_preinit_register_client_disconnected_, function_name)() { \
-        ::SpacetimeDB::Internal::getV9Builder().RegisterLifecycleReducer(#function_name, function_name, ::SpacetimeDB::Internal::Lifecycle::OnDisconnect); \
+        ::SpacetimeDB::Internal::getV10Builder().RegisterLifecycleReducer(#function_name, function_name, ::SpacetimeDB::Internal::Lifecycle::OnDisconnect); \
     } \
     SpacetimeDB::ReducerResult function_name(ctx_param)

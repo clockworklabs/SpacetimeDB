@@ -15,13 +15,6 @@ pub fn server() -> Arg {
         .help("The nickname, host name or URL of the server")
 }
 
-pub fn identity() -> Arg {
-    Arg::new("identity")
-        .long("identity")
-        .short('i')
-        .help("The identity to use")
-}
-
 pub fn anonymous() -> Arg {
     Arg::new("anon_identity")
         .long("anonymous")
