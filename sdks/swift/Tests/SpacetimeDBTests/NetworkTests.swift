@@ -350,6 +350,52 @@ final class NetworkTests: XCTestCase {
     }
 
     @MainActor
+    func testProcedureAsyncRawReturn() async throws {
+        let client = SpacetimeClient(serverUrl: URL(string: "http://localhost:3000")!, moduleName: "test-module")
+        let expectedData = Data([0x01, 0x02, 0x03])
+
+        let task = Task {
+            try await client.sendProcedure("raw_echo", Data())
+        }
+
+        await Task.yield()
+        client.handleProcedureResult(
+            ProcedureResult(
+                status: .returned(expectedData),
+                timestamp: 0,
+                totalHostExecutionDuration: 0,
+                requestId: 1
+            )
+        )
+
+        let returned = try await task.value
+        XCTAssertEqual(returned, expectedData)
+    }
+
+    @MainActor
+    func testProcedureAsyncDecodedReturn() async throws {
+        let client = SpacetimeClient(serverUrl: URL(string: "http://localhost:3000")!, moduleName: "test-module")
+        let encoded = try BSATNEncoder().encode("hello")
+
+        let task = Task {
+            try await client.sendProcedure("say_hello", Data(), responseType: String.self)
+        }
+
+        await Task.yield()
+        client.handleProcedureResult(
+            ProcedureResult(
+                status: .returned(encoded),
+                timestamp: 0,
+                totalHostExecutionDuration: 0,
+                requestId: 1
+            )
+        )
+
+        let value = try await task.value
+        XCTAssertEqual(value, "hello")
+    }
+
+    @MainActor
     func testProcedureCallbackInternalError() throws {
         let client = SpacetimeClient(serverUrl: URL(string: "http://localhost:3000")!, moduleName: "test-module")
         let expectation = XCTestExpectation(description: "Procedure callback receives internal error")

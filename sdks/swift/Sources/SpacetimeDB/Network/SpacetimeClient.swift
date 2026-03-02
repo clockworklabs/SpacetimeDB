@@ -51,6 +51,7 @@ public final class SpacetimeClient: @unchecked Sendable {
     // Send queue — URLSessionWebSocketTask only supports one pending send at a time.
     private var sendQueue: [URLSessionWebSocketTask.Message] = []
     private var isSending = false
+    private var networkMonitor: NetworkMonitor?
 
     public init(
         serverUrl: URL,
@@ -75,6 +76,7 @@ public final class SpacetimeClient: @unchecked Sendable {
         if let token {
             self.savedToken = token
         }
+        startNetworkMonitor()
         performConnect(authToken: token ?? self.savedToken)
     }
 
@@ -108,6 +110,7 @@ public final class SpacetimeClient: @unchecked Sendable {
 
     public func disconnect() {
         shouldStayConnected = false
+        stopNetworkMonitor()
         sendQueue.removeAll()
         isSending = false
         if let task = webSocketTask {
@@ -149,7 +152,7 @@ public final class SpacetimeClient: @unchecked Sendable {
             Task { @MainActor [weak self] in
                 self?.isSending = false
                 if let error = error {
-                    print("[SpacetimeClient] Send error: \(error)")
+                    Log.network.error("Send error: \(error.localizedDescription)")
                 }
                 self?.flushQueue()
             }
@@ -161,7 +164,7 @@ public final class SpacetimeClient: @unchecked Sendable {
             let data = try encoder.encode(message)
             enqueue(.data(data))
         } catch {
-            print("[SpacetimeClient] Failed to encode message: \(error)")
+            Log.network.error("Failed to encode message: \(error.localizedDescription)")
         }
     }
 
@@ -177,6 +180,14 @@ public final class SpacetimeClient: @unchecked Sendable {
         let call = CallProcedure(requestId: allocateRequestId(), flags: 0, procedure: procedureName, args: args)
         let message = ClientMessage.callProcedure(call)
         send(message)
+    }
+
+    public func sendProcedure(
+        _ procedureName: String,
+        _ args: Data,
+        completion: @escaping (Result<Data, Error>) -> Void
+    ) {
+        sendProcedure(procedureName, args, decodeReturn: { $0 }, completion: completion)
     }
 
     public func sendProcedure<R>(
@@ -218,6 +229,39 @@ public final class SpacetimeClient: @unchecked Sendable {
             },
             completion: completion
         )
+    }
+
+    public func sendProcedure(
+        _ procedureName: String,
+        _ args: Data
+    ) async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            sendProcedure(procedureName, args) { result in
+                switch result {
+                case .success(let value):
+                    continuation.resume(returning: value)
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    public func sendProcedure<R: Decodable & Sendable>(
+        _ procedureName: String,
+        _ args: Data,
+        responseType: R.Type
+    ) async throws -> R {
+        try await withCheckedThrowingContinuation { continuation in
+            sendProcedure(procedureName, args, responseType: responseType) { result in
+                switch result {
+                case .success(let value):
+                    continuation.resume(returning: value)
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
     }
 
     public func oneOffQuery(_ query: String, completion: @escaping (Result<QueryRows, Error>) -> Void) {
@@ -310,12 +354,18 @@ public final class SpacetimeClient: @unchecked Sendable {
                 switch result {
                 case .failure(let error):
                     guard self.shouldStayConnected else { return }
-                    print("[SpacetimeClient] WebSocket error: \(error)")
+                    Log.network.error("WebSocket error: \(error.localizedDescription)")
                     self.failPendingProcedureCallbacks(with: error)
                     self.failPendingOneOffQueryCallbacks(with: error)
                     self.delegate?.onDisconnect(error: error)
 
                     guard let reconnectDelay = self.nextReconnectDelay() else {
+                        return
+                    }
+
+                    // If network is unavailable, defer reconnection until path restores
+                    guard self.networkMonitor?.isConnected ?? true else {
+                        Log.network.info("Network unavailable, deferring reconnect until path restores")
                         return
                     }
 
@@ -358,7 +408,7 @@ public final class SpacetimeClient: @unchecked Sendable {
     private func handleDecodedServerMessage(_ decoded: Result<ServerMessage, Error>) {
         switch decoded {
         case .failure(let error):
-            print("[SpacetimeClient] Failed to decode server message: \(error)")
+            Log.network.error("Failed to decode server message: \(error.localizedDescription)")
         case .success(let serverMsg):
             switch serverMsg {
             case .initialConnection(let connection):
@@ -381,7 +431,7 @@ public final class SpacetimeClient: @unchecked Sendable {
             case .other:
                 break
             case .subscriptionError(let error):
-                print("[SpacetimeClient] Subscription error for query_set_id=\(error.querySetId): \(error.error)")
+                Log.client.warning("Subscription error for query_set_id=\(error.querySetId): \(error.error)")
                 handleSubscriptionError(error)
             case .procedureResult(let result):
                 handleProcedureResult(result)
@@ -410,10 +460,10 @@ public final class SpacetimeClient: @unchecked Sendable {
             } else {
                 message = "non-text payload (\(errData.count) bytes)"
             }
-            print("[SpacetimeClient] Reducer request_id=\(reducerResult.requestId) returned error: \(message)")
+            Log.client.warning("Reducer request_id=\(reducerResult.requestId) returned error: \(message)")
             delegate?.onReducerError(reducer: reducerName, message: message, isInternal: false)
         case .internalError(let message):
-            print("[SpacetimeClient] Reducer request_id=\(reducerResult.requestId) internal error: \(message)")
+            Log.client.error("Reducer request_id=\(reducerResult.requestId) internal error: \(message)")
             delegate?.onReducerError(reducer: reducerName, message: message, isInternal: true)
             break
         }
@@ -421,7 +471,7 @@ public final class SpacetimeClient: @unchecked Sendable {
 
     func handleProcedureResult(_ result: ProcedureResult) {
         guard let callback = pendingProcedureCallbacks.removeValue(forKey: result.requestId) else {
-            print("[SpacetimeClient] Received ProcedureResult for unknown request_id: \(result.requestId)")
+            Log.client.warning("Received ProcedureResult for unknown request_id: \(result.requestId)")
             return
         }
 
@@ -435,7 +485,7 @@ public final class SpacetimeClient: @unchecked Sendable {
 
     func handleOneOffQueryResult(_ result: OneOffQueryResult) {
         guard let callback = pendingOneOffQueryCallbacks.removeValue(forKey: result.requestId) else {
-            print("[SpacetimeClient] Received OneOffQueryResult for unknown request_id: \(result.requestId)")
+            Log.client.warning("Received OneOffQueryResult for unknown request_id: \(result.requestId)")
             return
         }
 
@@ -520,6 +570,28 @@ public final class SpacetimeClient: @unchecked Sendable {
         }
 
         return TransactionUpdate(querySets: [QuerySetUpdate(querySetId: querySetId, tables: updates)])
+    }
+
+    // MARK: - Network monitoring
+
+    private func startNetworkMonitor() {
+        guard networkMonitor == nil else { return }
+        let monitor = NetworkMonitor()
+        monitor.onPathChange = { [weak self] isConnected in
+            guard let self, self.shouldStayConnected else { return }
+            if isConnected {
+                Log.network.info("Network restored, attempting reconnect")
+                self.reconnectAttempt = 0
+                self.performConnect(authToken: self.savedToken)
+            }
+        }
+        monitor.start()
+        networkMonitor = monitor
+    }
+
+    private func stopNetworkMonitor() {
+        networkMonitor?.stop()
+        networkMonitor = nil
     }
 
     private func nextReconnectDelay() -> Duration? {

@@ -33,8 +33,8 @@ public final class TableCache<T: Decodable & Sendable>: SpacetimeTableCacheProto
             rowCountsByBytes[rowBytes, default: 0] += 1
             updatePublishedRows()
         } catch {
-            print("[TableCache] Failed to decode row for table '\(tableName)': \(error)")
-            print("[TableCache] Raw bytes (\(rowBytes.count)): \(rowBytes.map { String(format: "%02x", $0) }.joined())")
+            Log.cache.error("Failed to decode row for table '\(self.tableName)': \(error.localizedDescription)")
+            Log.cache.debug("Raw bytes (\(rowBytes.count)): \(rowBytes.map { String(format: "%02x", $0) }.joined())")
             throw error
         }
     }

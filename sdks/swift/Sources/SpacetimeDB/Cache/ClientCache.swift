@@ -101,7 +101,7 @@ public final class ClientCache: @unchecked Sendable {
                 try tableCache.handleDelete(rowBytes: data)
             }
         } catch {
-            print("[ClientCache] Failed to decode row for table '\(tableCache.tableName)': \(error)")
+            Log.cache.error("Failed to decode row for table '\(tableCache.tableName)': \(error.localizedDescription)")
         }
     }
 }
