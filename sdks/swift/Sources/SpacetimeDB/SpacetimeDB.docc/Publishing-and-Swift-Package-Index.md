@@ -22,11 +22,7 @@ This monorepo places the Swift package under `sdks/swift`, so public distributio
 From package root:
 
 ```bash
-xcodebuild docbuild \
-  -scheme SpacetimeDB-Package \
-  -destination 'generic/platform=macOS' \
-  -derivedDataPath .build/docc \
-  -skipPackagePluginValidation
+tools/swift-docc-smoke.sh
 ```
 
 ## 4. Validate package and docs

@@ -1,12 +1,90 @@
 import Foundation
 
-public enum SpacetimeClientProcedureError: Error {
+public enum SpacetimeClientProcedureError: Error, Equatable {
     case internalError(String)
     case disconnected
+    case timeout
 }
 
 public enum SpacetimeClientConnectionError: Error, Equatable {
     case keepAliveTimeout
+}
+
+private final class AsyncResponseContinuation<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Value, Error>?
+    private var timeoutTask: Task<Void, Never>?
+    private var completionResult: Result<Value, Error>?
+    private var isCompleted = false
+
+    func install(_ continuation: CheckedContinuation<Value, Error>) {
+        var resultToResume: Result<Value, Error>?
+
+        lock.lock()
+        if isCompleted {
+            resultToResume = completionResult
+            completionResult = nil
+        } else {
+            self.continuation = continuation
+        }
+        lock.unlock()
+
+        if let resultToResume {
+            resume(continuation, with: resultToResume)
+        }
+    }
+
+    func setTimeoutTask(_ task: Task<Void, Never>) {
+        var shouldCancelTask = false
+
+        lock.lock()
+        if isCompleted {
+            shouldCancelTask = true
+        } else {
+            timeoutTask = task
+        }
+        lock.unlock()
+
+        if shouldCancelTask {
+            task.cancel()
+        }
+    }
+
+    func resolve(_ result: Result<Value, Error>) {
+        var continuationToResume: CheckedContinuation<Value, Error>?
+        var timeoutTaskToCancel: Task<Void, Never>?
+
+        lock.lock()
+        if isCompleted {
+            lock.unlock()
+            return
+        }
+        isCompleted = true
+        timeoutTaskToCancel = timeoutTask
+        timeoutTask = nil
+
+        if let continuation {
+            continuationToResume = continuation
+            self.continuation = nil
+        } else {
+            completionResult = result
+        }
+        lock.unlock()
+
+        timeoutTaskToCancel?.cancel()
+        if let continuationToResume {
+            resume(continuationToResume, with: result)
+        }
+    }
+
+    private func resume(_ continuation: CheckedContinuation<Value, Error>, with result: Result<Value, Error>) {
+        switch result {
+        case .success(let value):
+            continuation.resume(returning: value)
+        case .failure(let error):
+            continuation.resume(throwing: error)
+        }
+    }
 }
 
 @MainActor
@@ -281,14 +359,52 @@ public final class SpacetimeClient: @unchecked Sendable {
         _ procedureName: String,
         _ args: Data
     ) async throws -> Data {
-        try await withCheckedThrowingContinuation { continuation in
-            sendProcedure(procedureName, args) { result in
-                switch result {
-                case .success(let value):
-                    continuation.resume(returning: value)
-                case .failure(let error):
-                    continuation.resume(throwing: error)
+        try await sendProcedure(procedureName, args, timeout: nil)
+    }
+
+    public func sendProcedure(
+        _ procedureName: String,
+        _ args: Data,
+        timeout: Duration?
+    ) async throws -> Data {
+        try Task.checkCancellation()
+        let requestId = allocateRequestId()
+        let asyncResponse = AsyncResponseContinuation<Data>()
+
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                asyncResponse.install(continuation)
+                guard !Task.isCancelled else {
+                    asyncResponse.resolve(.failure(CancellationError()))
+                    return
                 }
+
+                pendingProcedureCallbacks[requestId] = makeTimedCallback(named: "procedure.completion") { result in
+                    asyncResponse.resolve(result)
+                }
+
+                if let timeout {
+                    asyncResponse.setTimeoutTask(
+                        Task { [weak self] in
+                            try? await Task.sleep(for: timeout)
+                            await MainActor.run {
+                                guard let self else { return }
+                                guard self.pendingProcedureCallbacks.removeValue(forKey: requestId) != nil else { return }
+                                asyncResponse.resolve(.failure(SpacetimeClientProcedureError.timeout))
+                            }
+                        }
+                    )
+                }
+
+                let call = CallProcedure(requestId: requestId, flags: 0, procedure: procedureName, args: args)
+                let message = ClientMessage.callProcedure(call)
+                send(message)
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                _ = self.pendingProcedureCallbacks.removeValue(forKey: requestId)
+                asyncResponse.resolve(.failure(CancellationError()))
             }
         }
     }
@@ -298,16 +414,17 @@ public final class SpacetimeClient: @unchecked Sendable {
         _ args: Data,
         responseType: R.Type
     ) async throws -> R {
-        try await withCheckedThrowingContinuation { continuation in
-            sendProcedure(procedureName, args, responseType: responseType) { result in
-                switch result {
-                case .success(let value):
-                    continuation.resume(returning: value)
-                case .failure(let error):
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
+        try await sendProcedure(procedureName, args, responseType: responseType, timeout: nil)
+    }
+
+    public func sendProcedure<R: Decodable & Sendable>(
+        _ procedureName: String,
+        _ args: Data,
+        responseType: R.Type,
+        timeout: Duration?
+    ) async throws -> R {
+        let raw = try await sendProcedure(procedureName, args, timeout: timeout)
+        return try decoder.decode(responseType, from: raw)
     }
 
     public func oneOffQuery(_ query: String, completion: @escaping (Result<QueryRows, Error>) -> Void) {
@@ -317,14 +434,46 @@ public final class SpacetimeClient: @unchecked Sendable {
     }
 
     public func oneOffQuery(_ query: String) async throws -> QueryRows {
-        try await withCheckedThrowingContinuation { continuation in
-            oneOffQuery(query) { result in
-                switch result {
-                case .success(let rows):
-                    continuation.resume(returning: rows)
-                case .failure(let error):
-                    continuation.resume(throwing: error)
+        try await oneOffQuery(query, timeout: nil)
+    }
+
+    public func oneOffQuery(_ query: String, timeout: Duration?) async throws -> QueryRows {
+        try Task.checkCancellation()
+        let requestId = allocateRequestId()
+        let asyncResponse = AsyncResponseContinuation<QueryRows>()
+
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                asyncResponse.install(continuation)
+                guard !Task.isCancelled else {
+                    asyncResponse.resolve(.failure(CancellationError()))
+                    return
                 }
+
+                pendingOneOffQueryCallbacks[requestId] = makeTimedCallback(named: "one_off_query.completion") { result in
+                    asyncResponse.resolve(result)
+                }
+
+                if let timeout {
+                    asyncResponse.setTimeoutTask(
+                        Task { [weak self] in
+                            try? await Task.sleep(for: timeout)
+                            await MainActor.run {
+                                guard let self else { return }
+                                guard self.pendingOneOffQueryCallbacks.removeValue(forKey: requestId) != nil else { return }
+                                asyncResponse.resolve(.failure(SpacetimeClientQueryError.timeout))
+                            }
+                        }
+                    )
+                }
+
+                send(ClientMessage.oneOffQuery(OneOffQuery(requestId: requestId, queryString: query)))
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                _ = self.pendingOneOffQueryCallbacks.removeValue(forKey: requestId)
+                asyncResponse.resolve(.failure(CancellationError()))
             }
         }
     }
@@ -868,6 +1017,14 @@ extension SpacetimeClient {
 
     func _test_setConnectionState(_ state: ConnectionState) {
         setConnectionState(state)
+    }
+
+    func _test_pendingProcedureCallbackCount() -> Int {
+        pendingProcedureCallbacks.count
+    }
+
+    func _test_pendingOneOffQueryCallbackCount() -> Int {
+        pendingOneOffQueryCallbacks.count
     }
 }
 #endif

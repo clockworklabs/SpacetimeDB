@@ -1,10 +1,10 @@
-# Apple CI Matrix (macOS, iOS Simulator, visionOS-if-targeted)
+# Apple CI Matrix (macOS, iOS Simulator)
 
 ## Goals
 
 - Keep package quality visible to Apple app teams.
 - Verify host and simulator compatibility in every PR.
-- Automatically include visionOS validation if the package targets it.
+- Keep platform posture explicit: visionOS is not targeted yet.
 
 ## Recommended matrix
 
@@ -16,8 +16,9 @@
   - DocC build smoke
 - `iOS Simulator`:
   - cross-compile SDK target using iOS simulator SDK
-- `visionOS Simulator`:
-  - run only when `.visionOS(...)` is present in `Package.swift`
+- `visionOS`:
+  - intentionally unsupported in this package right now
+  - CI fails if `.visionOS(...)` is added without a coordinated posture update
 
 ## iOS simulator build command
 
@@ -30,26 +31,17 @@ swift build \
   --sdk "$IOS_SDK_PATH"
 ```
 
-## Conditional visionOS command
+## visionOS posture guard
 
 ```bash
 if rg -q '\.visionOS\(' sdks/swift/Package.swift; then
-  XR_SDK_PATH="$(xcrun --sdk xrsimulator --show-sdk-path)"
-  swift build \
-    --package-path sdks/swift \
-    --target SpacetimeDB \
-    --triple arm64-apple-xros1.0-simulator \
-    --sdk "$XR_SDK_PATH"
+  echo "visionOS currently unsupported; update CI/docs posture before enabling."
+  exit 1
 fi
 ```
 
 ## DocC smoke command
 
 ```bash
-cd sdks/swift
-xcodebuild docbuild \
-  -scheme SpacetimeDB-Package \
-  -destination 'generic/platform=macOS' \
-  -derivedDataPath .build/docc \
-  -skipPackagePluginValidation
+tools/swift-docc-smoke.sh
 ```

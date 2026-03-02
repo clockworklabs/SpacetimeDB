@@ -398,6 +398,41 @@ final class NetworkTests: XCTestCase {
     }
 
     @MainActor
+    func testOneOffQueryAsyncTimeout() async {
+        let client = SpacetimeClient(serverUrl: URL(string: "http://localhost:3000")!, moduleName: "test-module")
+
+        do {
+            _ = try await client.oneOffQuery("SELECT * FROM player", timeout: .milliseconds(10))
+            XCTFail("Expected async one-off query timeout.")
+        } catch {
+            XCTAssertEqual(error as? SpacetimeClientQueryError, .timeout)
+        }
+    }
+
+    @MainActor
+    func testOneOffQueryAsyncCancellationClearsPendingCallback() async {
+        let client = SpacetimeClient(serverUrl: URL(string: "http://localhost:3000")!, moduleName: "test-module")
+
+        let task = Task {
+            try await client.oneOffQuery("SELECT * FROM player", timeout: .seconds(5))
+        }
+
+        await Task.yield()
+        task.cancel()
+
+        do {
+            _ = try await task.value
+            XCTFail("Expected cancellation to throw.")
+        } catch is CancellationError {
+            // expected
+        } catch {
+            XCTFail("Expected CancellationError, got: \(error)")
+        }
+
+        XCTAssertEqual(client._test_pendingOneOffQueryCallbackCount(), 0)
+    }
+
+    @MainActor
     func testProcedureCallbackSuccess() throws {
         let client = SpacetimeClient(serverUrl: URL(string: "http://localhost:3000")!, moduleName: "test-module")
         let expectation = XCTestExpectation(description: "Procedure callback receives decoded return value")
@@ -448,12 +483,75 @@ final class NetworkTests: XCTestCase {
     }
 
     @MainActor
+    func testProcedureAsyncTimeout() async {
+        let client = SpacetimeClient(serverUrl: URL(string: "http://localhost:3000")!, moduleName: "test-module")
+
+        do {
+            _ = try await client.sendProcedure("slow", Data(), timeout: .milliseconds(10))
+            XCTFail("Expected async procedure timeout.")
+        } catch {
+            XCTAssertEqual(error as? SpacetimeClientProcedureError, .timeout)
+        }
+    }
+
+    @MainActor
+    func testProcedureAsyncCancellationClearsPendingCallback() async {
+        let client = SpacetimeClient(serverUrl: URL(string: "http://localhost:3000")!, moduleName: "test-module")
+
+        let task = Task {
+            try await client.sendProcedure("slow", Data(), timeout: .seconds(5))
+        }
+
+        await Task.yield()
+        task.cancel()
+
+        do {
+            _ = try await task.value
+            XCTFail("Expected cancellation to throw.")
+        } catch is CancellationError {
+            // expected
+        } catch {
+            XCTFail("Expected CancellationError, got: \(error)")
+        }
+
+        XCTAssertEqual(client._test_pendingProcedureCallbackCount(), 0)
+    }
+
+    @MainActor
     func testProcedureAsyncDecodedReturn() async throws {
         let client = SpacetimeClient(serverUrl: URL(string: "http://localhost:3000")!, moduleName: "test-module")
         let encoded = try BSATNEncoder().encode("hello")
 
         let task = Task {
             try await client.sendProcedure("say_hello", Data(), responseType: String.self)
+        }
+
+        await Task.yield()
+        client.handleProcedureResult(
+            ProcedureResult(
+                status: .returned(encoded),
+                timestamp: 0,
+                totalHostExecutionDuration: 0,
+                requestId: 1
+            )
+        )
+
+        let value = try await task.value
+        XCTAssertEqual(value, "hello")
+    }
+
+    @MainActor
+    func testProcedureAsyncDecodedReturnWithTimeoutParameter() async throws {
+        let client = SpacetimeClient(serverUrl: URL(string: "http://localhost:3000")!, moduleName: "test-module")
+        let encoded = try BSATNEncoder().encode("hello")
+
+        let task = Task {
+            try await client.sendProcedure(
+                "say_hello",
+                Data(),
+                responseType: String.self,
+                timeout: .seconds(2)
+            )
         }
 
         await Task.yield()

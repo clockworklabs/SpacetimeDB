@@ -25,6 +25,7 @@ Native Swift SDK for connecting to SpacetimeDB over `v2.bsatn.spacetimedb`, deco
 - Apple platforms:
   - macOS `15+`
   - iOS `17+`
+  - visionOS: not supported yet
 
 ## Package Layout
 
@@ -143,6 +144,8 @@ client.sendProcedure("hello", argsData) { result in
 ```swift
 let rawData = try await client.sendProcedure("hello", argsData)
 let value = try await client.sendProcedure("hello", argsData, responseType: String.self)
+let timed = try await client.sendProcedure("hello", argsData, timeout: .seconds(5))
+let typedTimed = try await client.sendProcedure("hello", argsData, responseType: String.self, timeout: .seconds(5))
 ```
 
 ### One-Off Queries
@@ -159,7 +162,10 @@ client.oneOffQuery("SELECT * FROM person") { result in
 
 ```swift
 let rows = try await client.oneOffQuery("SELECT * FROM person")
+let timedRows = try await client.oneOffQuery("SELECT * FROM person", timeout: .seconds(3))
 ```
+
+Cancellation: cancel the task calling an async procedure/query API, and it throws `CancellationError` while removing the pending callback state.
 
 ### Subscriptions
 
@@ -253,12 +259,7 @@ DocC bundle and tutorials live in:
 DocC build command:
 
 ```bash
-cd sdks/swift
-xcodebuild docbuild \
-  -scheme SpacetimeDB-Package \
-  -destination 'generic/platform=macOS' \
-  -derivedDataPath .build/docc \
-  -skipPackagePluginValidation
+tools/swift-docc-smoke.sh
 ```
 
 Swift Package Index builder config is in:
@@ -284,7 +285,7 @@ Swift CI runs as a platform matrix in `.github/workflows/swift-sdk.yml`:
 
 - `macOS`: tests, lockfile validation, demos, benchmark smoke, DocC build
 - `iOS simulator`: cross-build of `SpacetimeDB` target
-- `visionOS simulator`: auto-runs when `.visionOS(...)` appears in `Package.swift`
+- `visionOS`: intentionally not targeted yet; CI asserts `.visionOS(...)` is absent in `Package.swift`
 
 ## Logging
 
@@ -351,7 +352,7 @@ swift package --package-path sdks/swift resolve --force-resolved-versions
 swift package --package-path sdks/swift benchmark list
 swift package --package-path sdks/swift benchmark --target SpacetimeDBBenchmarks
 tools/swift-benchmark-smoke.sh
-cd sdks/swift && xcodebuild docbuild -scheme SpacetimeDB-Package -destination 'generic/platform=macOS' -derivedDataPath .build/docc -skipPackagePluginValidation
+tools/swift-docc-smoke.sh
 ```
 
 ## Examples

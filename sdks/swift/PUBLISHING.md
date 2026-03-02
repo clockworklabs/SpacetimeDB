@@ -6,7 +6,7 @@ This guide prepares the Swift SDK for public Apple ecosystem consumption.
 
 - DocC documentation and tutorials
 - Swift Package Index submission
-- Apple platform CI confidence (macOS + iOS simulator, visionOS when targeted)
+- Apple platform CI confidence (macOS + iOS simulator; visionOS not targeted yet)
 - mirror repository release process for public SPM consumption
 
 ## Important Packaging Constraint
@@ -30,12 +30,7 @@ DocC bundle location:
 Build docs locally:
 
 ```bash
-cd sdks/swift
-xcodebuild docbuild \
-  -scheme SpacetimeDB-Package \
-  -destination 'generic/platform=macOS' \
-  -derivedDataPath .build/docc \
-  -skipPackagePluginValidation
+tools/swift-docc-smoke.sh
 ```
 
 ## Swift Package Index Submission
@@ -53,7 +48,7 @@ The Swift SDK workflow should include:
 
 - macOS quality run: tests, lockfile validation, docs smoke, demos, benchmark smoke
 - iOS simulator compile run for `SpacetimeDB` target
-- conditional visionOS simulator compile when `.visionOS(...)` appears in `Package.swift`
+- explicit guard that visionOS is not targeted yet (`.visionOS(...)` absent in `Package.swift`)
 
 Current workflow file:
 
@@ -65,7 +60,7 @@ Current workflow file:
 - `swift package --package-path sdks/swift resolve --force-resolved-versions`
 - `tools/swift-benchmark-smoke.sh`
 - `tools/swift-benchmark-baseline.sh <machine-profile-baseline-name>`
-- DocC build command above
+- `tools/swift-docc-smoke.sh`
 - CI matrix green on PR and default branch
 - `tools/swift-package-mirror.sh sync --mirror <mirror-repo-path>`
 - `tools/swift-package-mirror.sh release --mirror <mirror-repo-path> --version <X.Y.Z> --push`

@@ -127,4 +127,5 @@ public final class SubscriptionHandle: @unchecked Sendable {
 public enum SpacetimeClientQueryError: Error, Equatable {
     case serverError(String)
     case disconnected
+    case timeout
 }
