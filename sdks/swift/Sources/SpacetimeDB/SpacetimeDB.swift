@@ -66,6 +66,13 @@ public enum SubscriptionState: Sendable {
     case ended
 }
 
+public enum ConnectionState: Sendable, Equatable {
+    case disconnected
+    case connecting
+    case connected
+    case reconnecting
+}
+
 @MainActor
 public final class SubscriptionHandle: @unchecked Sendable {
     public let queries: [String]

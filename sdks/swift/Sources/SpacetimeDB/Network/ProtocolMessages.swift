@@ -65,6 +65,12 @@ public struct InitialConnection: BSATNSpecialDecodable {
     public var connectionId: Data  // 16 bytes
     public var token: String
 
+    public init(identity: Data, connectionId: Data, token: String) {
+        self.identity = identity
+        self.connectionId = connectionId
+        self.token = token
+    }
+
     init(fromBSATN decoder: _BSATNDecoder) throws {
         self.identity = try decoder.storage.readBytes(count: 32)
         self.connectionId = try decoder.storage.readBytes(count: 16)

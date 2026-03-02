@@ -56,8 +56,26 @@ public final class ClientCache: @unchecked Sendable {
                 for rowUpdate in tableUpdate.rows {
                     switch rowUpdate {
                     case .persistentTable(let persistent):
-                        self.processRowList(persistent.deletes, tableCache: tableCache, isInsert: false)
-                        self.processRowList(persistent.inserts, tableCache: tableCache, isInsert: true)
+                        let deleteRows = self.extractRows(from: persistent.deletes)
+                        let insertRows = self.extractRows(from: persistent.inserts)
+                        let pairedCount = min(deleteRows.count, insertRows.count)
+
+                        if pairedCount > 0 {
+                            for idx in 0..<pairedCount {
+                                self.applyRowUpdate(
+                                    oldData: deleteRows[idx],
+                                    newData: insertRows[idx],
+                                    tableCache: tableCache
+                                )
+                            }
+                        }
+
+                        if deleteRows.count > pairedCount {
+                            self.processRows(deleteRows[pairedCount...], tableCache: tableCache, isInsert: false)
+                        }
+                        if insertRows.count > pairedCount {
+                            self.processRows(insertRows[pairedCount...], tableCache: tableCache, isInsert: true)
+                        }
                     case .eventTable:
                         break
                     }
@@ -66,20 +84,20 @@ public final class ClientCache: @unchecked Sendable {
         }
     }
 
-    private func processRowList(_ rowList: BsatnRowList, tableCache: any SpacetimeTableCacheProtocol, isInsert: Bool) {
+    private func extractRows(from rowList: BsatnRowList) -> [Data] {
         let sizeHint = rowList.sizeHint
         let data = rowList.rowsData
+        var rows: [Data] = []
 
         switch sizeHint {
         case .fixedSize(let size):
             let rowSize = Int(size)
-            if rowSize == 0 { return }
+            if rowSize == 0 { return rows }
 
             var offset = 0
             while offset < data.count {
                 let end = min(offset + rowSize, data.count)
-                let rowData = data.subdata(in: offset..<end)
-                self.applyRow(data: rowData, tableCache: tableCache, isInsert: isInsert)
+                rows.append(data.subdata(in: offset..<end))
                 offset += rowSize
             }
 
@@ -87,9 +105,17 @@ public final class ClientCache: @unchecked Sendable {
             for i in 0..<offsets.count {
                 let start = Int(offsets[i])
                 let end = (i + 1 < offsets.count) ? Int(offsets[i + 1]) : data.count
-                let rowData = data.subdata(in: start..<end)
-                self.applyRow(data: rowData, tableCache: tableCache, isInsert: isInsert)
+                rows.append(data.subdata(in: start..<end))
             }
+        }
+
+        return rows
+    }
+
+    private func processRows<S: Sequence>(_ rows: S, tableCache: any SpacetimeTableCacheProtocol, isInsert: Bool)
+    where S.Element == Data {
+        for rowData in rows {
+            self.applyRow(data: rowData, tableCache: tableCache, isInsert: isInsert)
         }
     }
 
@@ -102,6 +128,14 @@ public final class ClientCache: @unchecked Sendable {
             }
         } catch {
             Log.cache.error("Failed to decode row for table '\(tableCache.tableName)': \(error.localizedDescription)")
+        }
+    }
+
+    private func applyRowUpdate(oldData: Data, newData: Data, tableCache: any SpacetimeTableCacheProtocol) {
+        do {
+            try tableCache.handleUpdate(oldRowBytes: oldData, newRowBytes: newData)
+        } catch {
+            Log.cache.error("Failed to decode updated row for table '\(tableCache.tableName)': \(error.localizedDescription)")
         }
     }
 }

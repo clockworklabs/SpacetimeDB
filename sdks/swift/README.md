@@ -239,6 +239,11 @@ The Swift package is validated in CI for reproducibility and packaging health:
 
 Dependency versions are pinned in `sdks/swift/Package.resolved` to avoid accidental drift.
 
+For public SPM/SPI distribution from this monorepo, use the mirror runbook and automation:
+
+- `sdks/swift/DISTRIBUTION.md`
+- `tools/swift-package-mirror.sh`
+
 ## DocC and Swift Package Index
 
 DocC bundle and tutorials live in:
@@ -263,6 +268,15 @@ Swift Package Index builder config is in:
 Detailed publishing runbook:
 
 - `sdks/swift/PUBLISHING.md`
+- `sdks/swift/DISTRIBUTION.md`
+
+Swift Package Index link and badge templates (replace `<owner>/<repo>` with mirror coordinates):
+
+```text
+Package: https://swiftpackageindex.com/<owner>/<repo>
+Swift versions badge: https://img.shields.io/endpoint?url=https://swiftpackageindex.com/api/packages/<owner>/<repo>/badge?type=swift-versions
+Platforms badge: https://img.shields.io/endpoint?url=https://swiftpackageindex.com/api/packages/<owner>/<repo>/badge?type=platforms
+```
 
 ## Apple CI Matrix
 
@@ -290,6 +304,7 @@ Includes suites for:
 
 - BSATN encode/decode
 - protocol message encode/decode
+- reducer/procedure request+response round-trip encode/decode
 - cache insert/delete throughput
 
 Run from repo root:
@@ -308,6 +323,19 @@ Run fast smoke benchmarks (used by CI):
 
 ```bash
 tools/swift-benchmark-smoke.sh
+```
+
+Capture a named reproducible baseline (raw + summary + machine metadata):
+
+```bash
+tools/swift-benchmark-baseline.sh macos-arm64-14.4-swift6.2
+```
+
+Compare two captured baselines:
+
+```bash
+cd sdks/swift
+swift package benchmark baseline compare <baseline-a> <baseline-b> --target SpacetimeDBBenchmarks --no-progress
 ```
 
 ## Validation Matrix

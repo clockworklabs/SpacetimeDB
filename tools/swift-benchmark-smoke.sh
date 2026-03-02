@@ -11,6 +11,6 @@ swift package \
   --package-path "$SDK_PACKAGE_PATH" \
   benchmark \
   --target SpacetimeDBBenchmarks \
-  --filter "^(BSATN Encode Point3D|Message Encode Subscribe)$" \
+  --filter "^(BSATN Encode Point3D|Message Encode Subscribe|RoundTrip Reducer.*)$" \
   --no-progress \
   --quiet

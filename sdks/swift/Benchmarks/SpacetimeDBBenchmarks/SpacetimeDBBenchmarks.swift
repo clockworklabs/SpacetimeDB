@@ -55,10 +55,16 @@ private let sampleGameState = GameState(
 private let encodedPoint: Data = try! BSATNEncoder().encode(samplePoint)
 private let encodedPlayer: Data = try! BSATNEncoder().encode(samplePlayer)
 private let encodedGameState: Data = try! BSATNEncoder().encode(sampleGameState)
+private let reducerArgsPayload = Data(repeating: 0x2A, count: 128)
+private let procedureArgsPayload = Data(repeating: 0x7F, count: 128)
+private let reducerReturnPayload: Data = try! BSATNEncoder().encode(samplePoint)
+private let procedureReturnPayload: Data = try! BSATNEncoder().encode(samplePlayer)
 
 private let encodedServerInitialConnection = makeInitialConnectionMessage()
 private let encodedServerSubscriptionError = makeSubscriptionErrorMessage()
 private let encodedServerTransactionUpdate = makeTransactionUpdateMessage()
+private let encodedServerReducerResult = makeReducerResultMessage()
+private let encodedServerProcedureResult = makeProcedureResultMessage()
 
 private func appendLE<T: FixedWidthInteger>(_ value: T, to data: inout Data) {
     var littleEndian = value.littleEndian
@@ -117,11 +123,33 @@ private func makeSubscribeMessage() -> ClientMessage {
 }
 
 private func makeReducerMessage() -> ClientMessage {
-    .callReducer(CallReducer(requestId: 2, flags: 0, reducer: "move", args: Data(repeating: 0x2A, count: 128)))
+    .callReducer(CallReducer(requestId: 44, flags: 0, reducer: "move", args: reducerArgsPayload))
 }
 
 private func makeProcedureMessage() -> ClientMessage {
-    .callProcedure(CallProcedure(requestId: 3, flags: 0, procedure: "spawn", args: Data(repeating: 0x7F, count: 128)))
+    .callProcedure(CallProcedure(requestId: 45, flags: 0, procedure: "spawn", args: procedureArgsPayload))
+}
+
+private func makeReducerResultMessage() -> Data {
+    var frame = Data([6]) // ServerMessage::ReducerResult
+    appendLE(UInt32(44), to: &frame) // request_id
+    appendLE(Int64(1_700_000_000), to: &frame) // timestamp
+    appendLE(UInt8(0), to: &frame) // ReducerOutcome::Ok
+    appendLE(UInt32(reducerReturnPayload.count), to: &frame) // ret_value length
+    frame.append(reducerReturnPayload) // ret_value payload
+    appendLE(UInt32(0), to: &frame) // transaction_update.query_sets count
+    return frame
+}
+
+private func makeProcedureResultMessage() -> Data {
+    var frame = Data([7]) // ServerMessage::ProcedureResult
+    appendLE(UInt8(0), to: &frame) // ProcedureStatus::Returned
+    appendLE(UInt32(procedureReturnPayload.count), to: &frame) // returned bytes length
+    frame.append(procedureReturnPayload)
+    appendLE(Int64(1_700_000_000), to: &frame) // timestamp
+    appendLE(Int64(2_000), to: &frame) // total_host_execution_duration
+    appendLE(UInt32(45), to: &frame) // request_id
+    return frame
 }
 
 let benchmarks: @Sendable () -> Void = {
@@ -221,6 +249,42 @@ let benchmarks: @Sendable () -> Void = {
         let decoder = BSATNDecoder()
         for _ in benchmark.scaledIterations {
             blackHole(try decoder.decode(ServerMessage.self, from: encodedServerTransactionUpdate))
+        }
+    }
+
+    Benchmark("RoundTrip Reducer (encode request + decode result)") { benchmark in
+        let encoder = BSATNEncoder()
+        let decoder = BSATNDecoder()
+        let payloadDecoder = BSATNDecoder()
+        let request = makeReducerMessage()
+        for _ in benchmark.scaledIterations {
+            blackHole(try encoder.encode(request))
+            let serverMessage = try decoder.decode(ServerMessage.self, from: encodedServerReducerResult)
+            guard case .reducerResult(let reducerResult) = serverMessage else {
+                fatalError("Expected reducer result")
+            }
+            guard case .ok(let ok) = reducerResult.result else {
+                fatalError("Expected reducer ok")
+            }
+            blackHole(try payloadDecoder.decode(Point3D.self, from: ok.retValue))
+        }
+    }
+
+    Benchmark("RoundTrip Procedure (encode request + decode result)") { benchmark in
+        let encoder = BSATNEncoder()
+        let decoder = BSATNDecoder()
+        let payloadDecoder = BSATNDecoder()
+        let request = makeProcedureMessage()
+        for _ in benchmark.scaledIterations {
+            blackHole(try encoder.encode(request))
+            let serverMessage = try decoder.decode(ServerMessage.self, from: encodedServerProcedureResult)
+            guard case .procedureResult(let procedureResult) = serverMessage else {
+                fatalError("Expected procedure result")
+            }
+            guard case .returned(let returnedData) = procedureResult.status else {
+                fatalError("Expected procedure return payload")
+            }
+            blackHole(try payloadDecoder.decode(PlayerRow.self, from: returnedData))
         }
     }
 

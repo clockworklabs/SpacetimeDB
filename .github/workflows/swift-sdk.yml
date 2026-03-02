@@ -30,6 +30,11 @@ jobs:
     name: Swift SDK (${{ matrix.platform.name }})
     runs-on: ${{ matrix.platform.runs_on }}
     timeout-minutes: 45
+    env:
+      SPACETIMEDB_SWIFT_LIVE_TESTS: ${{ vars.SPACETIMEDB_SWIFT_LIVE_TESTS }}
+      SPACETIMEDB_LIVE_TEST_SERVER_URL: ${{ vars.SPACETIMEDB_LIVE_TEST_SERVER_URL }}
+      SPACETIMEDB_LIVE_TEST_DB_NAME: ${{ vars.SPACETIMEDB_LIVE_TEST_DB_NAME }}
+      SPACETIMEDB_LIVE_TEST_TOKEN: ${{ secrets.SPACETIMEDB_LIVE_TEST_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
@@ -75,6 +80,10 @@ jobs:
       - name: Run Swift benchmark smoke suite
         if: matrix.platform.id == 'macos'
         run: tools/swift-benchmark-smoke.sh
+
+      - name: Run Swift SDK live integration tests (env-gated)
+        if: matrix.platform.id == 'macos' && env.SPACETIMEDB_SWIFT_LIVE_TESTS == '1' && env.SPACETIMEDB_LIVE_TEST_DB_NAME != ''
+        run: swift test --package-path sdks/swift --filter LiveIntegrationTests
 
       - name: Build Swift SDK target for iOS simulator
         if: matrix.platform.id == 'ios-simulator'

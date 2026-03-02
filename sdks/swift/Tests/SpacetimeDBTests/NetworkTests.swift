@@ -4,11 +4,16 @@ import zlib
 @testable import SpacetimeDB // This allows us to test internal types
 
 final class NetworkTests: XCTestCase {
+    private enum TestError: Error {
+        case simulated
+    }
     
     // We mock the delegate to ensure the client is calling back properly
     class MockDelegate: SpacetimeClientDelegate {
         var didConnect = false
         var didDisconnect = false
+        var connectErrors: [Error] = []
+        var stateChanges: [ConnectionState] = []
         var receivedTransaction = false
         var reducerErrorReducer = ""
         var reducerErrorMessage = ""
@@ -23,6 +28,14 @@ final class NetworkTests: XCTestCase {
         func onDisconnect(error: Error?) {
             didDisconnect = true
             expectation?.fulfill()
+        }
+
+        func onConnectError(error: Error) {
+            connectErrors.append(error)
+        }
+
+        func onConnectionStateChange(state: ConnectionState) {
+            stateChanges.append(state)
         }
         
         func onIdentityReceived(identity: [UInt8], token: String) {}
@@ -46,6 +59,68 @@ final class NetworkTests: XCTestCase {
         let client = SpacetimeClient(serverUrl: url, moduleName: "test-module")
         XCTAssertEqual(client.serverUrl, url)
         XCTAssertEqual(client.moduleName, "test-module")
+        XCTAssertEqual(client.connectionState, .disconnected)
+    }
+
+    @MainActor
+    func testInitialConnectionTransitionsToConnectedAndNotifiesState() {
+        let client = SpacetimeClient(serverUrl: URL(string: "http://localhost:3000")!, moduleName: "test-module")
+        let delegate = MockDelegate()
+        client.delegate = delegate
+
+        let initial = InitialConnection(
+            identity: Data(repeating: 0xAB, count: 32),
+            connectionId: Data(repeating: 0xCD, count: 16),
+            token: "token"
+        )
+        client._test_deliverServerMessage(.initialConnection(initial))
+
+        XCTAssertEqual(client.connectionState, .connected)
+        XCTAssertTrue(delegate.didConnect)
+        XCTAssertEqual(delegate.stateChanges, [.connected])
+    }
+
+    @MainActor
+    func testConnectingFailureTriggersConnectErrorCallback() {
+        let policy = ReconnectPolicy(maxRetries: 0, initialDelaySeconds: 0.1, maxDelaySeconds: 0.1, multiplier: 1, jitterRatio: 0)
+        let client = SpacetimeClient(
+            serverUrl: URL(string: "http://localhost:3000")!,
+            moduleName: "test-module",
+            reconnectPolicy: policy
+        )
+        let delegate = MockDelegate()
+        client.delegate = delegate
+
+        client._test_setConnectionState(.connecting)
+        client._test_simulateConnectionFailure(TestError.simulated)
+
+        XCTAssertEqual(client.connectionState, .disconnected)
+        XCTAssertEqual(delegate.connectErrors.count, 1)
+        XCTAssertTrue(delegate.didDisconnect)
+    }
+
+    @MainActor
+    func testConnectedFailureDoesNotTriggerConnectErrorCallback() {
+        let policy = ReconnectPolicy(maxRetries: 0, initialDelaySeconds: 0.1, maxDelaySeconds: 0.1, multiplier: 1, jitterRatio: 0)
+        let client = SpacetimeClient(
+            serverUrl: URL(string: "http://localhost:3000")!,
+            moduleName: "test-module",
+            reconnectPolicy: policy
+        )
+        let delegate = MockDelegate()
+        client.delegate = delegate
+
+        let initial = InitialConnection(
+            identity: Data(repeating: 0xAB, count: 32),
+            connectionId: Data(repeating: 0xCD, count: 16),
+            token: "token"
+        )
+        client._test_deliverServerMessage(.initialConnection(initial))
+        client._test_simulateConnectionFailure(TestError.simulated)
+
+        XCTAssertEqual(client.connectionState, .disconnected)
+        XCTAssertEqual(delegate.connectErrors.count, 0)
+        XCTAssertTrue(delegate.didDisconnect)
     }
 
     func testCompressionModeQueryValues() {

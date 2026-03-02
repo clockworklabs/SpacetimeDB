@@ -5,16 +5,24 @@ public enum SpacetimeClientProcedureError: Error {
     case disconnected
 }
 
+public enum SpacetimeClientConnectionError: Error, Equatable {
+    case keepAliveTimeout
+}
+
 @MainActor
 public protocol SpacetimeClientDelegate: AnyObject {
     func onConnect()
     func onDisconnect(error: Error?)
+    func onConnectError(error: Error)
+    func onConnectionStateChange(state: ConnectionState)
     func onIdentityReceived(identity: [UInt8], token: String)
     func onTransactionUpdate(message: Data?)
     func onReducerError(reducer: String, message: String, isInternal: Bool)
 }
 
 public extension SpacetimeClientDelegate {
+    func onConnectError(error: Error) {}
+    func onConnectionStateChange(state: ConnectionState) {}
     func onReducerError(reducer: String, message: String, isInternal: Bool) {}
 }
 
@@ -23,6 +31,7 @@ public final class SpacetimeClient: @unchecked Sendable {
     public let serverUrl: URL
     public let moduleName: String
     public weak var delegate: SpacetimeClientDelegate?
+    public private(set) var connectionState: ConnectionState = .disconnected
 
     public static var shared: SpacetimeClient?
     public static var clientCache = ClientCache()
@@ -52,17 +61,30 @@ public final class SpacetimeClient: @unchecked Sendable {
     private var sendQueue: [URLSessionWebSocketTask.Message] = []
     private var isSending = false
     private var networkMonitor: NetworkMonitor?
+    private let keepAlivePingInterval: Duration
+    private let keepAlivePongTimeout: Duration
+    private var keepAliveTask: Task<Void, Never>?
+    private var keepAliveTimeoutTask: Task<Void, Never>?
+    private var awaitingKeepAlivePong = false
+    private var reconnectTask: Task<Void, Never>?
+    private var isHandlingConnectionFailure = false
 
     public init(
         serverUrl: URL,
         moduleName: String,
         reconnectPolicy: ReconnectPolicy? = ReconnectPolicy(),
-        compressionMode: CompressionMode = .gzip
+        compressionMode: CompressionMode = .gzip,
+        keepAlivePingIntervalSeconds: TimeInterval = 30.0,
+        keepAlivePongTimeoutSeconds: TimeInterval = 10.0
     ) {
         self.serverUrl = serverUrl
         self.moduleName = moduleName
         self.reconnectPolicy = reconnectPolicy
         self.compressionMode = compressionMode
+        let boundedPingInterval = max(1.0, keepAlivePingIntervalSeconds)
+        let boundedPongTimeout = max(1.0, min(keepAlivePongTimeoutSeconds, boundedPingInterval))
+        self.keepAlivePingInterval = .milliseconds(Int64((boundedPingInterval * 1000).rounded()))
+        self.keepAlivePongTimeout = .milliseconds(Int64((boundedPongTimeout * 1000).rounded()))
         let config = URLSessionConfiguration.ephemeral
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
@@ -76,11 +98,21 @@ public final class SpacetimeClient: @unchecked Sendable {
         if let token {
             self.savedToken = token
         }
+        reconnectTask?.cancel()
+        reconnectTask = nil
         startNetworkMonitor()
-        performConnect(authToken: token ?? self.savedToken)
+        performConnect(authToken: token ?? self.savedToken, isReconnect: false)
     }
 
-    private func performConnect(authToken: String?) {
+    private func performConnect(authToken: String?, isReconnect: Bool) {
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        isHandlingConnectionFailure = false
+        stopKeepAliveLoop()
+        emitCounter(
+            "spacetimedb.connection.attempts",
+            tags: ["reconnect": isReconnect ? "true" : "false"]
+        )
         var components = URLComponents(url: serverUrl, resolvingAgainstBaseURL: false)!
         components.path = "/v1/database/\(moduleName)/subscribe"
         components.queryItems = [URLQueryItem(name: "compression", value: compressionMode.queryValue)]
@@ -103,6 +135,7 @@ public final class SpacetimeClient: @unchecked Sendable {
         pendingSubscriptionByRequestId.removeAll()
         pendingUnsubscribeByRequestId.removeAll()
         activeSubscriptionByQuerySetId.removeAll()
+        setConnectionState(isReconnect ? .reconnecting : .connecting)
         webSocketTask = urlSession.webSocketTask(with: request)
         webSocketTask?.resume()
         receiveMessage()
@@ -110,7 +143,10 @@ public final class SpacetimeClient: @unchecked Sendable {
 
     public func disconnect() {
         shouldStayConnected = false
+        reconnectTask?.cancel()
+        reconnectTask = nil
         stopNetworkMonitor()
+        stopKeepAliveLoop()
         sendQueue.removeAll()
         isSending = false
         if let task = webSocketTask {
@@ -134,6 +170,7 @@ public final class SpacetimeClient: @unchecked Sendable {
             handle.markEnded()
         }
         managedSubscriptions.removeAll()
+        setConnectionState(.disconnected)
         delegate?.onDisconnect(error: nil)
     }
 
@@ -147,6 +184,15 @@ public final class SpacetimeClient: @unchecked Sendable {
     private func flushQueue() {
         guard !isSending, !sendQueue.isEmpty, let task = webSocketTask else { return }
         let msg = sendQueue.removeFirst()
+        emitCounter("spacetimedb.messages.out.count")
+        switch msg {
+        case .data(let data):
+            emitCounter("spacetimedb.messages.out.bytes", by: Int64(data.count))
+        case .string(let text):
+            emitCounter("spacetimedb.messages.out.bytes", by: Int64(text.utf8.count))
+        @unknown default:
+            break
+        }
         isSending = true
         task.send(msg) { [weak self] error in
             Task { @MainActor [weak self] in
@@ -353,28 +399,12 @@ public final class SpacetimeClient: @unchecked Sendable {
             Task { @MainActor in
                 switch result {
                 case .failure(let error):
-                    guard self.shouldStayConnected else { return }
-                    Log.network.error("WebSocket error: \(error.localizedDescription)")
-                    self.failPendingProcedureCallbacks(with: error)
-                    self.failPendingOneOffQueryCallbacks(with: error)
-                    self.delegate?.onDisconnect(error: error)
-
-                    guard let reconnectDelay = self.nextReconnectDelay() else {
-                        return
-                    }
-
-                    // If network is unavailable, defer reconnection until path restores
-                    guard self.networkMonitor?.isConnected ?? true else {
-                        Log.network.info("Network unavailable, deferring reconnect until path restores")
-                        return
-                    }
-
-                    try? await Task.sleep(for: reconnectDelay)
-                    guard self.shouldStayConnected else { return }
-                    self.performConnect(authToken: self.savedToken)
+                    self.handleConnectionFailure(error)
                 case .success(let message):
                     switch message {
                     case .data(let data):
+                        self.emitCounter("spacetimedb.messages.in.count")
+                        self.emitCounter("spacetimedb.messages.in.bytes", by: Int64(data.count))
                         self.decodeQueue.async { [weak self] in
                             guard let self else { return }
                             let decoded = Self.decodeServerMessage(from: data)
@@ -414,6 +444,8 @@ public final class SpacetimeClient: @unchecked Sendable {
             case .initialConnection(let connection):
                 reconnectAttempt = 0
                 savedToken = connection.token
+                setConnectionState(.connected)
+                startKeepAliveLoop()
                 delegate?.onIdentityReceived(identity: Array(connection.identity), token: connection.token)
                 subscribeAll(tables: Array(Self.clientCache.registeredTableNames))
                 resubscribeManagedSubscriptions()
@@ -582,7 +614,8 @@ public final class SpacetimeClient: @unchecked Sendable {
             if isConnected {
                 Log.network.info("Network restored, attempting reconnect")
                 self.reconnectAttempt = 0
-                self.performConnect(authToken: self.savedToken)
+                guard self.connectionState != .connected else { return }
+                self.performConnect(authToken: self.savedToken, isReconnect: true)
             }
         }
         monitor.start()
@@ -594,9 +627,176 @@ public final class SpacetimeClient: @unchecked Sendable {
         networkMonitor = nil
     }
 
+    // MARK: - Connection lifecycle
+
+    private func setConnectionState(_ state: ConnectionState) {
+        guard connectionState != state else { return }
+        connectionState = state
+        emitGauge(
+            "spacetimedb.connection.state",
+            value: stateMetricValue(state),
+            tags: ["state": stateMetricName(state)]
+        )
+        delegate?.onConnectionStateChange(state: state)
+    }
+
+    private func handleConnectionFailure(_ error: Error) {
+        guard shouldStayConnected else { return }
+        guard !isHandlingConnectionFailure else { return }
+        isHandlingConnectionFailure = true
+
+        Log.network.error("WebSocket error: \(error.localizedDescription)")
+        emitCounter(
+            "spacetimedb.connection.failures",
+            tags: ["state": stateMetricName(connectionState)]
+        )
+        stopKeepAliveLoop()
+        webSocketTask?.cancel(with: .goingAway, reason: nil)
+        webSocketTask = nil
+
+        failPendingProcedureCallbacks(with: error)
+        failPendingOneOffQueryCallbacks(with: error)
+
+        if connectionState == .connecting {
+            delegate?.onConnectError(error: error)
+        }
+        delegate?.onDisconnect(error: error)
+
+        guard let reconnectDelay = nextReconnectDelay() else {
+            shouldStayConnected = false
+            setConnectionState(.disconnected)
+            isHandlingConnectionFailure = false
+            return
+        }
+
+        setConnectionState(.reconnecting)
+
+        // If network is unavailable, defer reconnection until path restores.
+        guard networkMonitor?.isConnected ?? true else {
+            Log.network.info("Network unavailable, deferring reconnect until path restores")
+            isHandlingConnectionFailure = false
+            return
+        }
+
+        reconnectTask?.cancel()
+        reconnectTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(for: reconnectDelay)
+            guard self.shouldStayConnected else {
+                self.isHandlingConnectionFailure = false
+                return
+            }
+            self.isHandlingConnectionFailure = false
+            self.performConnect(authToken: self.savedToken, isReconnect: true)
+        }
+    }
+
+    // MARK: - Keepalive
+
+    private func startKeepAliveLoop() {
+        stopKeepAliveLoop()
+        keepAliveTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: self.keepAlivePingInterval)
+                guard !Task.isCancelled else { return }
+                self.sendKeepAlivePing()
+            }
+        }
+    }
+
+    private func stopKeepAliveLoop() {
+        keepAliveTask?.cancel()
+        keepAliveTask = nil
+        keepAliveTimeoutTask?.cancel()
+        keepAliveTimeoutTask = nil
+        awaitingKeepAlivePong = false
+    }
+
+    private func sendKeepAlivePing() {
+        guard shouldStayConnected, connectionState == .connected, let webSocketTask else { return }
+        guard !awaitingKeepAlivePong else {
+            handleConnectionFailure(SpacetimeClientConnectionError.keepAliveTimeout)
+            return
+        }
+
+        awaitingKeepAlivePong = true
+        keepAliveTimeoutTask?.cancel()
+        keepAliveTimeoutTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(for: self.keepAlivePongTimeout)
+            guard self.awaitingKeepAlivePong else { return }
+            self.awaitingKeepAlivePong = false
+            self.handleConnectionFailure(SpacetimeClientConnectionError.keepAliveTimeout)
+        }
+
+        webSocketTask.sendPing { [weak self] error in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.awaitingKeepAlivePong = false
+                self.keepAliveTimeoutTask?.cancel()
+                self.keepAliveTimeoutTask = nil
+                if let error {
+                    self.handleConnectionFailure(error)
+                }
+            }
+        }
+    }
+
     private func nextReconnectDelay() -> Duration? {
         guard let reconnectPolicy else { return nil }
         reconnectAttempt += 1
         return reconnectPolicy.delay(forAttempt: reconnectAttempt)
     }
+
+    private func emitCounter(_ name: String, by value: Int64 = 1, tags: [String: String] = [:]) {
+        SpacetimeObservability.metrics.incrementCounter(name, by: value, tags: tags)
+    }
+
+    private func emitGauge(_ name: String, value: Double, tags: [String: String] = [:]) {
+        SpacetimeObservability.metrics.recordGauge(name, value: value, tags: tags)
+    }
+
+    private func stateMetricName(_ state: ConnectionState) -> String {
+        switch state {
+        case .disconnected:
+            return "disconnected"
+        case .connecting:
+            return "connecting"
+        case .connected:
+            return "connected"
+        case .reconnecting:
+            return "reconnecting"
+        }
+    }
+
+    private func stateMetricValue(_ state: ConnectionState) -> Double {
+        switch state {
+        case .disconnected:
+            return 0
+        case .connecting:
+            return 1
+        case .connected:
+            return 2
+        case .reconnecting:
+            return 3
+        }
+    }
 }
+
+#if DEBUG
+extension SpacetimeClient {
+    func _test_simulateConnectionFailure(_ error: Error, shouldStayConnected: Bool = true) {
+        self.shouldStayConnected = shouldStayConnected
+        handleConnectionFailure(error)
+    }
+
+    func _test_deliverServerMessage(_ message: ServerMessage) {
+        handleDecodedServerMessage(.success(message))
+    }
+
+    func _test_setConnectionState(_ state: ConnectionState) {
+        setConnectionState(state)
+    }
+}
+#endif
