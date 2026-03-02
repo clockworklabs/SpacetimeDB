@@ -1003,19 +1003,25 @@ log = "0.4"
 
     /// Publishes the module with name, clear, and break_clients options.
     pub fn publish_module_with_options(&mut self, name: &str, clear: bool, break_clients: bool) -> Result<String> {
-        self.publish_module_internal(Some(name), clear, break_clients, None)
+        self.publish_module_internal(Some(name), clear, break_clients, true, None)
     }
 
     /// Publishes the module and allows supplying stdin input to the CLI.
     ///
     /// Useful for interactive publish prompts which require typed acknowledgements.
+    /// Note: does NOT pass `--yes` so that interactive prompts are not suppressed.
     pub fn publish_module_with_stdin(&mut self, name: &str, stdin_input: &str) -> Result<String> {
-        self.publish_module_internal(Some(name), false, false, Some(stdin_input))
+        self.publish_module_internal(Some(name), false, false, false, Some(stdin_input))
+    }
+
+    /// Publishes the module without passing `--yes`, so interactive prompts are not suppressed.
+    pub fn publish_module_named_no_force(&mut self, name: &str) -> Result<String> {
+        self.publish_module_internal(Some(name), false, false, false, None)
     }
 
     /// Internal helper for publishing with options.
     fn publish_module_opts(&mut self, name: Option<&str>, clear: bool) -> Result<String> {
-        self.publish_module_internal(name, clear, false, None)
+        self.publish_module_internal(name, clear, false, true, None)
     }
 
     /// Internal helper for publishing with all options.
@@ -1024,6 +1030,7 @@ log = "0.4"
         name: Option<&str>,
         clear: bool,
         break_clients: bool,
+        force: bool,
         stdin_input: Option<&str>,
     ) -> Result<String> {
         let start = Instant::now();
@@ -1066,14 +1073,11 @@ log = "0.4"
 
         // Now publish with --bin-path to skip rebuild
         let publish_start = Instant::now();
-        let mut args = vec![
-            "publish",
-            "--server",
-            &self.server_url,
-            "--bin-path",
-            &wasm_path_str,
-            "--yes",
-        ];
+        let mut args = vec!["publish", "--server", &self.server_url, "--bin-path", &wasm_path_str];
+
+        if force {
+            args.push("--yes");
+        }
 
         if clear {
             args.push("--clear-database");
