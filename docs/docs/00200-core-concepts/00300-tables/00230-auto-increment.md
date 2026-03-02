@@ -35,7 +35,7 @@ export const add_post = spacetimedb.reducer({ title: t.string() }, (ctx, { title
 });
 ```
 
-Use the `.autoInc()` method on a column builder.
+Use the `.autoInc()` method on a column builder (not `autoIncrement`, which does not exist).
 
 Auto-increment columns must be integer types: `t.i8()`, `t.u8()`, `t.i16()`, `t.u16()`, `t.i32()`, `t.u32()`, `t.i64()`, `t.u64()`, `t.i128()`, `t.u128()`, `t.i256()`, or `t.u256()`.
 
@@ -198,7 +198,7 @@ export const insert_user = spacetimedb.reducer({ name: t.string() }, (ctx, { nam
 ```csharp
 public partial class Module
 {
-    [SpacetimeDB.Table(Accessor = "user", Public = true)]
+    [SpacetimeDB.Table(Accessor = "User", Public = true)]
     public partial struct User
     {
         [SpacetimeDB.AutoInc]
@@ -217,6 +217,8 @@ public partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
+use spacetimedb::{ReducerContext, Table};
+
 #[spacetimedb::table(accessor = user, public)]
 pub struct User {
     #[auto_inc]

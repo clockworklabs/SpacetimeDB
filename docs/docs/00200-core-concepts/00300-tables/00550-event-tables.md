@@ -113,6 +113,8 @@ public static void Attack(ReducerContext ctx, Identity targetId, uint damage)
 <TabItem value="rust" label="Rust">
 
 ```rust
+use spacetimedb::{ReducerContext, Identity, Table};
+
 #[spacetimedb::reducer]
 fn attack(ctx: &ReducerContext, target_id: Identity, damage: u32) {
     // Game logic...

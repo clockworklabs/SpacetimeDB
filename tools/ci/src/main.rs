@@ -12,6 +12,9 @@ const README_PATH: &str = "tools/ci/README.md";
 
 mod ci_docs;
 mod smoketest;
+mod util;
+
+use util::ensure_repo_root;
 
 /// SpacetimeDB CI tasks
 ///
@@ -33,13 +36,6 @@ struct Cli {
     /// subcommand, use `--skip unreal-tests`.
     #[arg(long)]
     skip: Vec<String>,
-}
-
-fn ensure_repo_root() -> Result<()> {
-    if !Path::new("Cargo.toml").exists() {
-        bail!("You must execute this command from the SpacetimeDB repository root (where Cargo.toml is located)");
-    }
-    Ok(())
 }
 
 fn check_global_json_policy() -> Result<()> {

@@ -191,6 +191,8 @@ public static void Example(ReducerContext ctx)
 <TabItem value="rust" label="Rust">
 
 ```rust
+use spacetimedb::{ReducerContext, Table};
+
 #[spacetimedb::reducer]
 fn example(ctx: &ReducerContext) -> Result<(), String> {
     // Insert

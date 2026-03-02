@@ -547,6 +547,8 @@ public static void SpawnEnemies(ReducerContext ctx, uint count)
 <TabItem value="rust" label="Rust">
 
 ```rust
+use spacetimedb::{ReducerContext, Table};
+
 #[spacetimedb::reducer]
 fn spawn_enemies(ctx: &ReducerContext, count: u32) {
     for i in 0..count {

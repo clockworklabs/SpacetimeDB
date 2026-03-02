@@ -1,5 +1,5 @@
+use crate::detect::{find_executable, has_package_manager};
 use crate::Config;
-use crate::{detect::find_executable, util::UNSTABLE_WARNING};
 use anyhow::anyhow;
 use anyhow::Context;
 use clap::{Arg, ArgMatches};
@@ -156,7 +156,7 @@ impl InitOptions {
 
 pub fn cli() -> clap::Command {
     clap::Command::new("init")
-        .about(format!("Initializes a new spacetime project. {UNSTABLE_WARNING}"))
+        .about("Initializes a new spacetime project.")
         .arg(
             Arg::new("project-path")
                 .long("project-path")
@@ -391,22 +391,38 @@ pub fn prompt_for_typescript_package_manager() -> anyhow::Result<Option<PackageM
         "TypeScript server requires dependencies to be installed before publishing.".yellow()
     );
 
-    // Prompt for package manager
     let theme = ColorfulTheme::default();
     let choices = vec!["npm", "pnpm", "yarn", "bun", "none"];
-    let selection = Select::with_theme(&theme)
-        .with_prompt("Which package manager would you like to use?")
-        .items(&choices)
-        .default(0)
-        .interact()?;
 
-    Ok(match selection {
-        0 => Some(PackageManager::Npm),
-        1 => Some(PackageManager::Pnpm),
-        2 => Some(PackageManager::Yarn),
-        3 => Some(PackageManager::Bun),
-        _ => None,
-    })
+    loop {
+        let selection = Select::with_theme(&theme)
+            .with_prompt("Which package manager would you like to use?")
+            .items(&choices)
+            .default(0)
+            .interact()?;
+
+        let pm = match selection {
+            0 => Some(PackageManager::Npm),
+            1 => Some(PackageManager::Pnpm),
+            2 => Some(PackageManager::Yarn),
+            3 => Some(PackageManager::Bun),
+            _ => None,
+        };
+
+        match pm {
+            Some(pm) if !has_package_manager(pm) => {
+                println!(
+                    "{}",
+                    format!(
+                        "'{}' was not found on PATH. Please install it or choose a different package manager.",
+                        pm
+                    )
+                    .yellow()
+                );
+            }
+            _ => return Ok(pm),
+        }
+    }
 }
 
 pub fn install_typescript_dependencies(
@@ -1595,8 +1611,6 @@ fn check_for_git() -> bool {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathBuf> {
-    println!("{UNSTABLE_WARNING}\n");
-
     let options = InitOptions::from_args(args);
     let is_interactive = !options.non_interactive;
     let template = options.template.as_ref();

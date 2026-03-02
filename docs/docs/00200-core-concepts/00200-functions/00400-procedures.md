@@ -891,7 +891,7 @@ Procedures can call reducers by invoking them within a transaction block. The re
 
 ```typescript
 // Define a reducer and save the reference
-const processItem = spacetimedb.reducer('process_item', { itemId: t.u64() }, (ctx, { itemId }) => {
+export const processItem = spacetimedb.reducer({ itemId: t.u64() }, (ctx, { itemId }) => {
   // ... reducer logic
 });
 
