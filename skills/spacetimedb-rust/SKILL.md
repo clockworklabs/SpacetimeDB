@@ -11,7 +11,7 @@ metadata:
 
 SpacetimeDB modules are WebAssembly applications that run inside the database. They define tables to store data and reducers to modify data. Clients connect directly to the database and execute application logic inside it.
 
-> **Tested with:** SpacetimeDB 2.0, `spacetimedb` crate 1.1.x
+> **Tested with:** SpacetimeDB 2.0+ APIs
 
 ---
 
@@ -38,7 +38,6 @@ ctx.db.player                   // Should be ctx.db.player()
 ctx.db.player.find(id)          // Should be ctx.db.player().id().find(&id)
 
 // WRONG — old 1.0 patterns
-#[table(name = "my_table")]     // Optional canonical name (accessor is still required)
 ctx.sender                      // Use ctx.sender() — method, not field (2.0)
 .with_module_name("db")         // Use .with_database_name() (2.0)
 ctx.db.user().name().update(..) // Update only via primary key (2.0)
@@ -75,7 +74,6 @@ let caller = ctx.sender();
 - **Forget `Table` trait import** — required for table operations
 - **Use field access for tables** — `ctx.db.player()` not `ctx.db.player`
 - **Use `ctx.sender`** — it's `ctx.sender()` (method) in 2.0
-- **Use `name =` in table/index attributes** — use `accessor =` in 2.0
 
 ---
 
@@ -117,7 +115,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-spacetimedb = "1.0"
+spacetimedb = { workspace = true }
 log = "0.4"
 ```
 

@@ -465,7 +465,7 @@ function PlayerList() {
 ```
 src/schema.ts   -> Tables, export spacetimedb
 src/index.ts    -> Reducers, lifecycle, import schema
-package.json    -> { "type": "module", "dependencies": { "spacetimedb": "^1.11.0" } }
+package.json    -> { "type": "module", "dependencies": { "spacetimedb": "^2.0.0" } }
 tsconfig.json   -> Standard config
 ```
 
