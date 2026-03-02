@@ -1,0 +1,5 @@
+{
+  "description": "Remix with TypeScript server",
+  "client_lang": "typescript",
+  "server_lang": "typescript"
+}

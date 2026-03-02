@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "generate": "pnpm --dir spacetimedb install --ignore-workspace && cargo run -p gen-bindings -- --out-dir src/module_bindings --project-path spacetimedb && prettier --write src/module_bindings",
+    "generate": "pnpm --dir spacetimedb install && cargo run -p gen-bindings -- --out-dir src/module_bindings --project-path spacetimedb && prettier --write src/module_bindings",
     "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb",
     "spacetime:publish:local": "spacetime publish --project-path spacetimedb --server local",
     "spacetime:publish": "spacetime publish --project-path spacetimedb --server maincloud"

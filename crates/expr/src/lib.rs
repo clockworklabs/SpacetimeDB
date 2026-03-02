@@ -68,7 +68,7 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
 
             for ProjectElem(expr, SqlIdent(alias)) in elems {
                 if !names.insert(alias.clone()) {
-                    return Err(DuplicateName(alias.into_string()).into());
+                    return Err(DuplicateName(alias.clone()).into());
                 }
 
                 if let Expr::Field(p) = type_expr(vars, expr.into(), None)? {
@@ -84,7 +84,7 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
 // These types determine the size of each stack frame during type checking.
 // Changing their sizes will require updating the recursion limit to avoid stack overflows.
 const _: () = assert!(size_of::<TypingResult<Expr>>() == 64);
-const _: () = assert!(size_of::<SqlExpr>() == 40);
+const _: () = assert!(size_of::<SqlExpr>() == 32);
 
 fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, depth: usize) -> TypingResult<Expr> {
     recursion::guard(depth, recursion::MAX_RECURSION_TYP_EXPR, "expr::type_expr")?;
@@ -99,26 +99,19 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
             parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?,
             ty.clone(),
         )),
-        (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), None) => {
-            let table_type = vars.deref().get(&table).ok_or_else(|| Unresolved::var(&table))?;
-            let ColumnSchema { col_pos, col_type, .. } = table_type
-                .get_column_by_name(&field)
-                .ok_or_else(|| Unresolved::var(&field))?;
-            Ok(Expr::Field(FieldProject {
-                table,
-                field: col_pos.idx(),
-                ty: col_type.clone(),
-            }))
-        }
-        (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), Some(ty)) => {
-            let table_type = vars.deref().get(&table).ok_or_else(|| Unresolved::var(&table))?;
+        (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), expected) => {
+            let table_type = vars.deref().get(&*table).ok_or_else(|| Unresolved::var(&table))?;
             let ColumnSchema { col_pos, col_type, .. } = table_type
                 .as_ref()
-                .get_column_by_name(&field)
+                .get_column_by_name_or_alias(&field)
                 .ok_or_else(|| Unresolved::var(&field))?;
-            if col_type != ty {
-                return Err(UnexpectedType::new(col_type, ty).into());
+
+            if let Some(ty) = expected {
+                if col_type != ty {
+                    return Err(UnexpectedType::new(col_type, ty).into());
+                }
             }
+
             Ok(Expr::Field(FieldProject {
                 table,
                 field: col_pos.idx(),

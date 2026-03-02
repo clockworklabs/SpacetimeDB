@@ -41,3 +41,5 @@ impl __sdk::__query_builder::HasIxCols for VecString {
         VecStringIxCols {}
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for VecString {}

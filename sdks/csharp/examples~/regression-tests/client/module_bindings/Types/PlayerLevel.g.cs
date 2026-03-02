@@ -13,9 +13,9 @@ namespace SpacetimeDB.Types
     [DataContract]
     public sealed partial class PlayerLevel
     {
-        [DataMember(Name = "PlayerId")]
+        [DataMember(Name = "player_id")]
         public ulong PlayerId;
-        [DataMember(Name = "Level")]
+        [DataMember(Name = "level")]
         public ulong Level;
 
         public PlayerLevel(

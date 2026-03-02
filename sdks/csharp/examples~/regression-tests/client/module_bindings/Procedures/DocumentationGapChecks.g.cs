@@ -58,9 +58,9 @@ namespace SpacetimeDB.Types
         [DataContract]
         public sealed partial class DocumentationGapChecksArgs : Procedure, IProcedureArgs
         {
-            [DataMember(Name = "inputValue")]
+            [DataMember(Name = "input_value")]
             public uint InputValue;
-            [DataMember(Name = "inputText")]
+            [DataMember(Name = "input_text")]
             public string InputText;
 
             public DocumentationGapChecksArgs(
@@ -77,7 +77,7 @@ namespace SpacetimeDB.Types
                 this.InputText = "";
             }
 
-            string IProcedureArgs.ProcedureName => "DocumentationGapChecks";
+            string IProcedureArgs.ProcedureName => "documentation_gap_checks";
         }
 
     }

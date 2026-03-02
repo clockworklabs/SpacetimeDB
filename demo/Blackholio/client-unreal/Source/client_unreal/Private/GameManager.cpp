@@ -65,7 +65,7 @@ void AGameManager::BeginPlay()
 
 	UDbConnectionBuilder* Builder = UDbConnection::Builder()
 	                                            ->WithUri(ServerUri)
-	                                            ->WithModuleName(ModuleName)
+	                                            ->WithDatabaseName(ModuleName)
 	                                            ->OnConnect(ConnectDelegate)
 	                                            ->OnDisconnect(DisconnectDelegate)
 	                                            ->OnConnectError(ConnectErrorDelegate);

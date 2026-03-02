@@ -1,4 +1,4 @@
-import { schema } from '../lib/schema';
+import { schema } from './schema';
 import { table } from '../lib/table';
 import t from '../lib/type_builders';
 
@@ -61,13 +61,13 @@ const order = table(
   }
 );
 
-const spacetime = schema(
+const spacetime = schema({
   person,
   order,
   personWithExtra,
   personReordered,
-  personWithMissing
-);
+  personWithMissing,
+});
 
 const arrayRetValue = t.array(person.rowType);
 const optionalPerson = t.option(person.rowType);

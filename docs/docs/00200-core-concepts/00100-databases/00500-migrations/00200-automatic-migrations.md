@@ -10,6 +10,10 @@ When you republish a module to an existing database using `spacetime publish {da
 The "schema" refers to the collection of tables, reducers, procedures, views, and the types they depend on that are declared in your module code.
 :::
 
+:::warning
+If you are upgrading an existing 1.x database to 2.0, review [1.x to 2.0 Upgrade Notes](../../../00300-resources/00100-how-to/00600-migrating-to-2.0.md) before publishing.
+:::
+
 ## ✅ Safe Changes (Always Allowed)
 
 The following changes are always allowed and will not break existing clients:
@@ -31,10 +35,11 @@ These changes are allowed by automatic migration, but may cause runtime errors f
 - **Removing `Primary Key` annotations.** Non-updated clients will still use the old primary key as a unique key in their local cache, which can result in non-deterministic behavior when updates are received.
 - **Removing indexes.** This is only breaking in specific situations. The main issue occurs with subscription queries involving semijoins, such as:
 
-  ```sql
-  SELECT Employee.*
-  FROM Employee JOIN Dept
-  ON Employee.DeptName = Dept.DeptName
+  ```typescript
+  tables.employee.leftSemijoin(
+    tables.dept,
+    (employee, dept) => employee.deptName.eq(dept.deptName)
+  )
   ```
 
   For performance reasons, SpacetimeDB will only allow this kind of subscription query if there are indexes on both join columns (`Employee.DeptName` and `Dept.DeptName`). Removing either index will invalidate this subscription query, resulting in client-side runtime errors.
@@ -52,7 +57,7 @@ The following changes cannot be performed with automatic migration and will caus
 
 ## Working with Forbidden Changes
 
-If you need to make changes that aren't supported by automatic migration, see [Incremental Migrations](/databases/incremental-migrations) for a production-ready pattern that allows complex schema changes without downtime or data loss.
+If you need to make changes that aren't supported by automatic migration, see [Incremental Migrations](./00300-incremental-migrations.md) for a production-ready pattern that allows complex schema changes without downtime or data loss.
 
 For development and testing, you can use `spacetime publish --delete-data` to completely reset your database, but this should **not** be used in production as it permanently deletes all data.
 

@@ -526,6 +526,7 @@ fn commit_and_broadcast_deletion_event(tx: MutTxId, module_info: &ModuleInfo) {
         caller_connection_id: None,
         function_call: ModuleFunctionCall::default(),
         status: EventStatus::Committed(DatabaseUpdate::default()),
+        reducer_return_value: None,
         //Keeping them 0 as it is internal transaction, not by reducer
         energy_quanta_used: EnergyQuanta { quanta: 0 },
         host_execution_duration: Duration::from_millis(0),

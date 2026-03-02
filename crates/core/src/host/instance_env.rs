@@ -10,6 +10,7 @@ use crate::subscription::module_subscription_manager::{from_tx_offset, Transacti
 use crate::util::prometheus_handle::IntGaugeExt;
 use chrono::{DateTime, Utc};
 use core::mem;
+use futures::TryFutureExt;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
 use spacetimedb_client_api_messages::energy::EnergyQuanta;
@@ -25,10 +26,12 @@ use spacetimedb_sats::{
     buffer::{CountWriter, TeeWriter},
     AlgebraicValue, ProductValue,
 };
+use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::RowRef;
 use std::fmt::Display;
 use std::future::Future;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -45,7 +48,7 @@ pub struct InstanceEnv {
     /// The type of the last, including current, function to be executed by this environment.
     pub func_type: FuncCallType,
     /// The name of the last, including current, function to be executed by this environment.
-    pub func_name: String,
+    pub func_name: Option<Identifier>,
     /// Are we in an anonymous tx context?
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
@@ -231,7 +234,7 @@ impl InstanceEnv {
             // arbitrary - change if we need to recognize that an `InstanceEnv` has never
             // run a function
             func_type: FuncCallType::Reducer,
-            func_name: String::from("<initializing>"),
+            func_name: None,
             in_anon_tx: false,
             procedure_last_tx_offset: None,
         }
@@ -243,11 +246,22 @@ impl InstanceEnv {
     }
 
     /// Signal to this `InstanceEnv` that a function call is beginning.
-    pub fn start_funcall(&mut self, name: &str, ts: Timestamp, func_type: FuncCallType) {
+    pub fn start_funcall(&mut self, name: Identifier, ts: Timestamp, func_type: FuncCallType) {
         self.start_time = ts;
         self.start_instant = Instant::now();
         self.func_type = func_type;
-        name.clone_into(&mut self.func_name);
+        self.func_name = Some(name);
+    }
+
+    /// Returns the name of the most recent reducer to be run in this environment,
+    /// or `None` if no reducer is actively being invoked.
+    pub fn log_record_function(&self) -> Option<&str> {
+        self.func_name.as_deref()
+    }
+
+    /// Swap in a temporary function type, returning the previous one.
+    pub fn swap_func_type(&mut self, func_type: FuncCallType) -> FuncCallType {
+        mem::replace(&mut self.func_type, func_type)
     }
 
     fn get_tx(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
@@ -724,10 +738,19 @@ impl InstanceEnv {
     // on `tokio::runtime::Handle::try_current()` before being able to run the `get_tx()` check.
 
     pub fn commit_mutable_tx(&mut self) -> Result<(), NodesError> {
-        self.finish_anon_tx()?;
+        let tx = self.take_mutable_tx_for_commit()?;
+        self.commit_procedure_tx(tx)
+    }
 
+    /// Extract an anonymous mutable tx so callers can perform extra work before commit.
+    pub fn take_mutable_tx_for_commit(&mut self) -> Result<MutTxId, NodesError> {
+        self.finish_anon_tx()?;
+        Ok(self.take_tx()?)
+    }
+
+    /// Commit an anonymous procedure tx and broadcast resulting updates.
+    pub fn commit_procedure_tx(&mut self, tx: MutTxId) -> Result<(), NodesError> {
         let stdb = self.relational_db().clone();
-        let tx = self.take_tx()?;
         let subs = self.replica_ctx.subscriptions.clone();
 
         let event = ModuleEvent {
@@ -736,6 +759,7 @@ impl InstanceEnv {
             caller_connection_id: None,
             function_call: ModuleFunctionCall::default(),
             status: EventStatus::Committed(DatabaseUpdate::default()),
+            reducer_return_value: None,
             request_id: None,
             timer: None,
             // The procedure will pick up the tab for the energy.
@@ -751,13 +775,16 @@ impl InstanceEnv {
 
     pub fn abort_mutable_tx(&mut self) -> Result<(), NodesError> {
         self.finish_anon_tx()?;
-        let stdb = self.relational_db().clone();
         let tx = self.take_tx()?;
+        self.rollback_procedure_tx(tx);
+        Ok(())
+    }
 
-        // Roll back the tx.
+    /// Roll back an anonymous procedure tx and record the resulting offset.
+    pub fn rollback_procedure_tx(&mut self, tx: MutTxId) {
+        let stdb = self.relational_db().clone();
         let offset = ModuleSubscriptions::rollback_mut_tx(&stdb, tx);
         self.procedure_last_tx_offset = Some(from_tx_offset(offset));
-        Ok(())
     }
 
     /// In-case there is a anonymous tx at the end of a procedure,
@@ -774,7 +801,7 @@ impl InstanceEnv {
             Ok(()) => {
                 let message = format!(
                     "aborting dangling anonymous transaction in procedure {}",
-                    self.func_name
+                    self.func_name.as_deref().unwrap_or("<unknown>")
                 );
                 self.console_log_simple_message(LogLevel::Error, None, &message);
             }
@@ -851,7 +878,7 @@ impl InstanceEnv {
 
         // If the user requested a timeout using our extension, slot it in to reqwest's timeout.
         // Clamp to the range `0..HTTP_DEFAULT_TIMEOUT`.
-        let timeout = timeout.unwrap_or(HTTP_DEFAULT_TIMEOUT).min(HTTP_DEFAULT_TIMEOUT);
+        let timeout = timeout.unwrap_or(HTTP_DEFAULT_TIMEOUT).min(HTTP_MAX_TIMEOUT);
 
         // reqwest's timeout covers from the start of the request to the end of reading the body,
         // so there's no need to do our own timeout operation.
@@ -859,13 +886,32 @@ impl InstanceEnv {
 
         let reqwest = reqwest;
 
+        // Check if we have a blocked IP address, since IP literals bypass DNS resolution.
+        if is_blocked_ip_literal(reqwest.url()) {
+            return Err(http_error(BLOCKED_HTTP_ADDRESS_ERROR));
+        }
+
+        let redirect_policy = reqwest::redirect::Policy::custom(|attempt| {
+            if is_blocked_ip_literal(attempt.url()) {
+                attempt.error(BLOCKED_HTTP_ADDRESS_ERROR)
+            } else {
+                reqwest::redirect::Policy::default().redirect(attempt)
+            }
+        });
+
         // TODO(procedure-metrics): record size in bytes of response, time spent awaiting response.
 
         // Actually execute the HTTP request!
         // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
-        let execute_fut = reqwest::Client::new().execute(reqwest);
+        let execute_fut = reqwest::Client::builder()
+            .dns_resolver(Arc::new(FilteredDnsResolver))
+            .redirect(redirect_policy)
+            .build()
+            .map_err(http_error)?
+            .execute(reqwest);
 
-        let response_fut = async {
+        // Run the future that does IO work on a tokio worker thread, where it's more efficent.
+        let response_fut = tokio::spawn(async {
             // `reqwest::Error` may contain sensitive info, namely the full URL with query params.
             // We'll strip those with `strip_query_params_from_eqwest_error`
             // after `await`ing `response_fut` below.
@@ -880,7 +926,8 @@ impl InstanceEnv {
             let body = http_body_util::BodyExt::collect(body).await?.to_bytes();
 
             Ok((response, body))
-        };
+        })
+        .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()));
 
         let database_identity = *self.database_identity();
 
@@ -921,12 +968,183 @@ impl InstanceEnv {
     }
 }
 
-/// Default / maximum timeout for HTTP requests performed by [`InstanceEnv::http_request`].
-///
-/// If the user requests a timeout longer than this, we will clamp to this value.
+/// Default timeout for HTTP requests performed by [`InstanceEnv::http_request`].
 ///
 /// Value chosen arbitrarily by pgoldman 2025-11-18, based on little more than a vague guess.
 const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
+/// Maximum timeout for HTTP requests performed by [`InstanceEnv::http_request`].
+///
+/// If the user requests a timeout longer than this, we will clamp to this value.
+const HTTP_MAX_TIMEOUT: Duration = Duration::from_secs(10);
+const BLOCKED_HTTP_ADDRESS_ERROR: &str = "refusing to connect to private or special-purpose addresses";
+
+struct FilteredDnsResolver;
+
+impl reqwest::dns::Resolve for FilteredDnsResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        let host = name.as_str().to_owned();
+        Box::pin(async move {
+            let addrs = tokio::net::lookup_host((host.as_str(), 0)).await?;
+            let filtered_addrs: Vec<SocketAddr> = addrs.filter(|addr| !is_blocked_ip(addr.ip())).collect();
+
+            if filtered_addrs.is_empty() {
+                return Err(
+                    std::io::Error::new(std::io::ErrorKind::PermissionDenied, BLOCKED_HTTP_ADDRESS_ERROR).into(),
+                );
+            }
+
+            Ok(Box::new(filtered_addrs.into_iter()) as reqwest::dns::Addrs)
+        })
+    }
+}
+
+fn is_blocked_ip_literal(url: &reqwest::Url) -> bool {
+    match url.host() {
+        Some(url::Host::Ipv4(ip)) => is_blocked_ip(IpAddr::V4(ip)),
+        Some(url::Host::Ipv6(ip)) => is_blocked_ip(IpAddr::V6(ip)),
+        Some(url::Host::Domain(_)) | None => false,
+    }
+}
+
+fn is_blocked_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => is_blocked_ipv4(ip),
+        IpAddr::V6(ip) => is_blocked_ipv6(ip),
+    }
+}
+
+fn is_blocked_ipv4(ip: Ipv4Addr) -> bool {
+    let [a, b, c, d] = ip.octets();
+    let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+    // RFC 6890 Section 2.2.2, Table 1: "This host on this network" (0.0.0.0/8).
+    let is_this_host_on_this_network = a == 0;
+    // RFC 6890 Section 2.2.2, Table 2: "Private-Use" (10.0.0.0/8).
+    let is_private_use_10 = a == 10;
+    // RFC 6890 Section 2.2.2, Table 3: "Shared Address Space" (100.64.0.0/10).
+    let is_shared_address_space = a == 100 && (b & 0b1100_0000) == 0b0100_0000;
+    // RFC 6890 Section 2.2.2, Table 4: "Loopback" (127.0.0.0/8).
+    let is_loopback = block_loopback && a == 127;
+    // RFC 6890 Section 2.2.2, Table 5: "Link Local" (169.254.0.0/16).
+    let is_link_local = a == 169 && b == 254;
+    // RFC 6890 Section 2.2.2, Table 6: "Private-Use" (172.16.0.0/12).
+    let is_private_use_172 = a == 172 && (b & 0b1111_0000) == 16;
+    // RFC 6890 Section 2.2.2, Table 7: "IETF Protocol Assignments" (192.0.0.0/24).
+    let is_ietf_protocol_assignments = a == 192 && b == 0 && c == 0;
+    // RFC 6890 Section 2.2.2, Table 8: "Documentation (TEST-NET-1)" (192.0.2.0/24).
+    let is_test_net_1 = a == 192 && b == 0 && c == 2;
+    // RFC 6890 Section 2.2.2, Table 9: "AS112-v4" (192.31.196.0/24).
+    let is_as112_v4 = a == 192 && b == 31 && c == 196;
+    // RFC 6890 Section 2.2.2, Table 10: "AMT" (192.52.193.0/24).
+    let is_amt = a == 192 && b == 52 && c == 193;
+    // RFC 6890 Section 2.2.2, Table 11: "6to4 Relay Anycast" (192.88.99.0/24).
+    let is_6to4_relay_anycast = a == 192 && b == 88 && c == 99;
+    // RFC 6890 Section 2.2.2, Table 12: "Private-Use" (192.168.0.0/16).
+    let is_private_use_192 = a == 192 && b == 168;
+    // RFC 6890 Section 2.2.2, Table 13: "Direct Delegation AS112 Service" (192.175.48.0/24).
+    let is_direct_delegation_as112_service = a == 192 && b == 175 && c == 48;
+    // RFC 6890 Section 2.2.2, Table 14: "Benchmarking" (198.18.0.0/15).
+    let is_benchmarking = a == 198 && (b & 0b1111_1110) == 18;
+    // RFC 6890 Section 2.2.2, Table 15: "Documentation (TEST-NET-2)" (198.51.100.0/24).
+    let is_test_net_2 = a == 198 && b == 51 && c == 100;
+    // RFC 6890 Section 2.2.2, Table 16: "Documentation (TEST-NET-3)" (203.0.113.0/24).
+    let is_test_net_3 = a == 203 && b == 0 && c == 113;
+    // RFC 6890 Section 2.2.2, Table 17: "Reserved" (240.0.0.0/4).
+    let is_reserved = (a & 0b1111_0000) == 0b1111_0000;
+    // RFC 6890 Section 2.2.2, Table 18: "Limited Broadcast" (255.255.255.255/32).
+    let is_limited_broadcast = a == 255 && b == 255 && c == 255 && d == 255;
+
+    is_this_host_on_this_network
+        || is_private_use_10
+        || is_shared_address_space
+        || is_loopback
+        || is_link_local
+        || is_private_use_172
+        || is_ietf_protocol_assignments
+        || is_test_net_1
+        || is_as112_v4
+        || is_amt
+        || is_6to4_relay_anycast
+        || is_private_use_192
+        || is_direct_delegation_as112_service
+        || is_benchmarking
+        || is_test_net_2
+        || is_test_net_3
+        || is_reserved
+        || is_limited_broadcast
+}
+
+fn is_blocked_ipv6(ip: Ipv6Addr) -> bool {
+    let segments = ip.segments();
+    let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+    // RFC 6890 Section 2.2.3, Table 17: "Loopback Address" (::1/128).
+    let is_loopback_address = block_loopback && ip == Ipv6Addr::LOCALHOST;
+    // RFC 6890 Section 2.2.3, Table 18: "Unspecified Address" (::/128).
+    let is_unspecified_address = ip.is_unspecified();
+    // RFC 6890 Section 2.2.3, Table 19: "IPv4-IPv6 Translat." (64:ff9b::/96).
+    let is_ipv4_ipv6_translation = segments[0] == 0x0064
+        && segments[1] == 0xff9b
+        && segments[2] == 0
+        && segments[3] == 0
+        && segments[4] == 0
+        && segments[5] == 0;
+    // IANA IPv6 Special-Purpose Address Space: "IPv4-IPv6 Translat." (64:ff9b:1::/48), RFC 8215.
+    let is_ipv4_ipv6_translation_local_use = segments[0] == 0x0064 && segments[1] == 0xff9b && segments[2] == 0x0001;
+    // RFC 6890 Section 2.2.3, Table 20: "IPv4-mapped Address" (::ffff:0:0/96).
+    let is_ipv4_mapped = segments[0] == 0
+        && segments[1] == 0
+        && segments[2] == 0
+        && segments[3] == 0
+        && segments[4] == 0
+        && segments[5] == 0xffff;
+    // RFC 6890 Section 2.2.3, Table 21: "Discard-Only Address Block" (100::/64).
+    let is_discard_only_prefix = segments[0] == 0x0100 && segments[1] == 0 && segments[2] == 0 && segments[3] == 0;
+    // IANA IPv6 Special-Purpose Address Space: "Dummy IPv6 Prefix" (100:0:0:1::/64), RFC 9780.
+    let is_dummy_ipv6_prefix = segments[0] == 0x0100 && segments[1] == 0 && segments[2] == 0 && segments[3] == 1;
+    // RFC 6890 Section 2.2.3, Table 22: "IETF Protocol Assignments" (2001::/23).
+    // This broader prefix also covers newer IANA entries including:
+    // `2001:1::1/128`, `2001:1::2/128`, `2001:1::3/128`, `2001:3::/32`,
+    // `2001:4:112::/48`, `2001:20::/28`, and `2001:30::/28`.
+    let is_ietf_protocol_assignments = segments[0] == 0x2001 && (segments[1] & 0xfe00) == 0;
+    // RFC 6890 Section 2.2.3, Table 23: "TEREDO" (2001::/32).
+    let is_teredo = segments[0] == 0x2001 && segments[1] == 0;
+    // RFC 6890 Section 2.2.3, Table 24: "Benchmarking" (2001:2::/48).
+    let is_benchmarking = segments[0] == 0x2001 && segments[1] == 0x0002 && segments[2] == 0;
+    // RFC 6890 Section 2.2.3, Table 25: "Documentation" (2001:db8::/32).
+    let is_documentation = segments[0] == 0x2001 && segments[1] == 0x0db8;
+    // RFC 6890 Section 2.2.3, Table 26: "ORCHID" (2001:10::/28).
+    let is_orchid = segments[0] == 0x2001 && (segments[1] & 0xfff0) == 0x0010;
+    // RFC 6890 Section 2.2.3, Table 27: "6to4" (2002::/16).
+    let is_6to4 = segments[0] == 0x2002;
+    // IANA IPv6 Special-Purpose Address Space: "Direct Delegation AS112 Service" (2620:4f:8000::/48), RFC 7534.
+    let is_direct_delegation_as112_service = segments[0] == 0x2620 && segments[1] == 0x004f && segments[2] == 0x8000;
+    // IANA IPv6 Special-Purpose Address Space: "Documentation" (3fff::/20), RFC 9637.
+    let is_documentation_3fff = segments[0] == 0x3fff && (segments[1] & 0xf000) == 0;
+    // IANA IPv6 Special-Purpose Address Space: "Segment Routing (SRv6) SIDs" (5f00::/16), RFC 9602.
+    let is_segment_routing_srv6_sids = segments[0] == 0x5f00;
+    // RFC 6890 Section 2.2.3, Table 28: "Unique-Local" (fc00::/7).
+    let is_unique_local = (segments[0] & 0xfe00) == 0xfc00;
+    // RFC 6890 Section 2.2.3, Table 29: "Linked-Scoped Unicast" (fe80::/10).
+    let is_link_scoped_unicast = (segments[0] & 0xffc0) == 0xfe80;
+
+    is_loopback_address
+        || is_unspecified_address
+        || is_ipv4_ipv6_translation
+        || is_ipv4_ipv6_translation_local_use
+        || is_ipv4_mapped
+        || is_discard_only_prefix
+        || is_dummy_ipv6_prefix
+        || is_ietf_protocol_assignments
+        || is_teredo
+        || is_benchmarking
+        || is_documentation
+        || is_orchid
+        || is_6to4
+        || is_direct_delegation_as112_service
+        || is_documentation_3fff
+        || is_segment_routing_srv6_sids
+        || is_unique_local
+        || is_link_scoped_unicast
+}
 
 /// Unpack `request` and convert it into an [`http::request::Parts`],
 /// and a [`Duration`] from its `timeout` if supplied.
@@ -1222,6 +1440,524 @@ mod test {
             Ok(())
         })?;
         Ok((table_id, index_id))
+    }
+
+    #[test]
+    fn blocks_each_rfc6890_ipv4_range() {
+        // RFC 6890 §2.2.2 tables 1-18.
+        let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+        let cases = [
+            // Table 1: This host on this network (0.0.0.0/8).
+            (Ipv4Addr::new(0, 0, 0, 1), true),
+            // Table 2: Private-Use (10.0.0.0/8).
+            (Ipv4Addr::new(10, 255, 255, 255), true),
+            // Table 3: Shared Address Space (100.64.0.0/10).
+            (Ipv4Addr::new(100, 127, 255, 255), true),
+            // Table 4: Loopback (127.0.0.0/8).
+            (Ipv4Addr::new(127, 0, 0, 1), block_loopback),
+            // Table 5: Link Local (169.254.0.0/16).
+            (Ipv4Addr::new(169, 254, 255, 255), true),
+            // Table 6: Private-Use (172.16.0.0/12).
+            (Ipv4Addr::new(172, 31, 255, 255), true),
+            // Table 7: IETF Protocol Assignments (192.0.0.0/24).
+            (Ipv4Addr::new(192, 0, 0, 255), true),
+            // Table 8: Documentation (TEST-NET-1) (192.0.2.0/24).
+            (Ipv4Addr::new(192, 0, 2, 1), true),
+            // Table 9: AS112-v4 (192.31.196.0/24).
+            (Ipv4Addr::new(192, 31, 196, 1), true),
+            // Table 10: AMT (192.52.193.0/24).
+            (Ipv4Addr::new(192, 52, 193, 1), true),
+            // Table 11: 6to4 Relay Anycast (192.88.99.0/24).
+            (Ipv4Addr::new(192, 88, 99, 1), true),
+            // Table 12: Private-Use (192.168.0.0/16).
+            (Ipv4Addr::new(192, 168, 255, 255), true),
+            // Table 13: Direct Delegation AS112 Service (192.175.48.0/24).
+            (Ipv4Addr::new(192, 175, 48, 1), true),
+            // Table 14: Benchmarking (198.18.0.0/15).
+            (Ipv4Addr::new(198, 19, 255, 255), true),
+            // Table 15: Documentation (TEST-NET-2) (198.51.100.0/24).
+            (Ipv4Addr::new(198, 51, 100, 1), true),
+            // Table 16: Documentation (TEST-NET-3) (203.0.113.0/24).
+            (Ipv4Addr::new(203, 0, 113, 1), true),
+            // Table 17: Reserved (240.0.0.0/4).
+            (Ipv4Addr::new(240, 0, 0, 1), true),
+            // Table 18: Limited Broadcast (255.255.255.255/32).
+            (Ipv4Addr::new(255, 255, 255, 255), true),
+        ];
+
+        for (addr, expected_blocked) in cases {
+            assert_eq!(
+                is_blocked_ip(IpAddr::V4(addr)),
+                expected_blocked,
+                "unexpected block decision for {addr}"
+            );
+        }
+    }
+
+    #[test]
+    fn blocks_ip_literal_hosts_in_urls() {
+        let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+        assert_eq!(
+            is_blocked_ip_literal(&reqwest::Url::parse("http://127.0.0.1:80/").unwrap()),
+            block_loopback
+        );
+        assert_eq!(
+            is_blocked_ip_literal(&reqwest::Url::parse("http://[::1]:80/").unwrap()),
+            block_loopback
+        );
+        assert!(is_blocked_ip_literal(
+            &reqwest::Url::parse("http://10.0.0.1:80/").unwrap()
+        ));
+        assert!(is_blocked_ip_literal(
+            &reqwest::Url::parse("http://[fc00::1]:80/").unwrap()
+        ));
+        assert!(!is_blocked_ip_literal(
+            &reqwest::Url::parse("http://8.8.8.8:80/").unwrap()
+        ));
+        assert!(!is_blocked_ip_literal(
+            &reqwest::Url::parse("http://example.com:80/").unwrap()
+        ));
+    }
+
+    #[test]
+    fn blocks_rfc6890_ipv4_range_endpoints() {
+        // RFC 6890 §2.2.2 tables 1-18, checked at each range's low/high endpoints.
+        let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+        let ranges = [
+            // Table 1: This host on this network (0.0.0.0/8).
+            (
+                "this-host-on-this-network",
+                Ipv4Addr::new(0, 0, 0, 0),
+                Ipv4Addr::new(0, 255, 255, 255),
+                true,
+            ),
+            // Table 2: Private-Use (10.0.0.0/8).
+            (
+                "private-use-10",
+                Ipv4Addr::new(10, 0, 0, 0),
+                Ipv4Addr::new(10, 255, 255, 255),
+                true,
+            ),
+            // Table 3: Shared Address Space (100.64.0.0/10).
+            (
+                "shared-address-space",
+                Ipv4Addr::new(100, 64, 0, 0),
+                Ipv4Addr::new(100, 127, 255, 255),
+                true,
+            ),
+            // Table 4: Loopback (127.0.0.0/8).
+            (
+                "loopback",
+                Ipv4Addr::new(127, 0, 0, 0),
+                Ipv4Addr::new(127, 255, 255, 255),
+                block_loopback,
+            ),
+            // Table 5: Link Local (169.254.0.0/16).
+            (
+                "link-local",
+                Ipv4Addr::new(169, 254, 0, 0),
+                Ipv4Addr::new(169, 254, 255, 255),
+                true,
+            ),
+            // Table 6: Private-Use (172.16.0.0/12).
+            (
+                "private-use-172",
+                Ipv4Addr::new(172, 16, 0, 0),
+                Ipv4Addr::new(172, 31, 255, 255),
+                true,
+            ),
+            // Table 7: IETF Protocol Assignments (192.0.0.0/24).
+            (
+                "ietf-protocol-assignments",
+                Ipv4Addr::new(192, 0, 0, 0),
+                Ipv4Addr::new(192, 0, 0, 255),
+                true,
+            ),
+            // Table 8: Documentation (TEST-NET-1) (192.0.2.0/24).
+            (
+                "test-net-1",
+                Ipv4Addr::new(192, 0, 2, 0),
+                Ipv4Addr::new(192, 0, 2, 255),
+                true,
+            ),
+            // Table 9: AS112-v4 (192.31.196.0/24).
+            (
+                "as112-v4",
+                Ipv4Addr::new(192, 31, 196, 0),
+                Ipv4Addr::new(192, 31, 196, 255),
+                true,
+            ),
+            // Table 10: AMT (192.52.193.0/24).
+            (
+                "amt",
+                Ipv4Addr::new(192, 52, 193, 0),
+                Ipv4Addr::new(192, 52, 193, 255),
+                true,
+            ),
+            // Table 11: 6to4 Relay Anycast (192.88.99.0/24).
+            (
+                "6to4-relay-anycast",
+                Ipv4Addr::new(192, 88, 99, 0),
+                Ipv4Addr::new(192, 88, 99, 255),
+                true,
+            ),
+            // Table 12: Private-Use (192.168.0.0/16).
+            (
+                "private-use-192",
+                Ipv4Addr::new(192, 168, 0, 0),
+                Ipv4Addr::new(192, 168, 255, 255),
+                true,
+            ),
+            // Table 13: Direct Delegation AS112 Service (192.175.48.0/24).
+            (
+                "direct-delegation-as112-service",
+                Ipv4Addr::new(192, 175, 48, 0),
+                Ipv4Addr::new(192, 175, 48, 255),
+                true,
+            ),
+            // Table 14: Benchmarking (198.18.0.0/15).
+            (
+                "benchmarking",
+                Ipv4Addr::new(198, 18, 0, 0),
+                Ipv4Addr::new(198, 19, 255, 255),
+                true,
+            ),
+            // Table 15: Documentation (TEST-NET-2) (198.51.100.0/24).
+            (
+                "test-net-2",
+                Ipv4Addr::new(198, 51, 100, 0),
+                Ipv4Addr::new(198, 51, 100, 255),
+                true,
+            ),
+            // Table 16: Documentation (TEST-NET-3) (203.0.113.0/24).
+            (
+                "test-net-3",
+                Ipv4Addr::new(203, 0, 113, 0),
+                Ipv4Addr::new(203, 0, 113, 255),
+                true,
+            ),
+            // Table 17: Reserved (240.0.0.0/4).
+            (
+                "reserved",
+                Ipv4Addr::new(240, 0, 0, 0),
+                Ipv4Addr::new(255, 255, 255, 255),
+                true,
+            ),
+            // Table 18: Limited Broadcast (255.255.255.255/32).
+            (
+                "limited-broadcast",
+                Ipv4Addr::new(255, 255, 255, 255),
+                Ipv4Addr::new(255, 255, 255, 255),
+                true,
+            ),
+        ];
+
+        for (name, low, high, expected_blocked) in ranges {
+            assert_eq!(
+                is_blocked_ip(IpAddr::V4(low)),
+                expected_blocked,
+                "{name}: unexpected decision for low endpoint {low}"
+            );
+            assert_eq!(
+                is_blocked_ip(IpAddr::V4(high)),
+                expected_blocked,
+                "{name}: unexpected decision for high endpoint {high}"
+            );
+        }
+    }
+
+    #[test]
+    fn blocks_each_rfc6890_ipv6_range() {
+        // RFC 6890 §2.2.3 tables 17-29.
+        let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+        let cases = [
+            // Table 17: Loopback Address (::1/128).
+            (Ipv6Addr::LOCALHOST, block_loopback),
+            // Table 18: Unspecified Address (::/128).
+            (Ipv6Addr::UNSPECIFIED, true),
+            // Table 19: IPv4-IPv6 Translat. (64:ff9b::/96).
+            (Ipv6Addr::new(0x0064, 0xff9b, 0, 0, 0, 0, 0xc000, 0x0201), true),
+            // Table 20: IPv4-mapped Address (::ffff:0:0/96).
+            (Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0x0808, 0x0808), true),
+            // Table 21: Discard-Only Address Block (100::/64).
+            (Ipv6Addr::new(0x0100, 0, 0, 0, 0, 0, 0, 1), true),
+            // Table 22: IETF Protocol Assignments (2001::/23).
+            (Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 1), true),
+            // Table 23: TEREDO (2001::/32).
+            (Ipv6Addr::new(0x2001, 0x0000, 0, 0, 0, 0, 0, 1), true),
+            // Table 24: Benchmarking (2001:2::/48).
+            (Ipv6Addr::new(0x2001, 0x0002, 0x0000, 0, 0, 0, 0, 1), true),
+            // Table 25: Documentation (2001:db8::/32).
+            (Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 1), true),
+            // Table 26: ORCHID (2001:10::/28).
+            (Ipv6Addr::new(0x2001, 0x0010, 0, 0, 0, 0, 0, 1), true),
+            // Table 27: 6to4 (2002::/16).
+            (Ipv6Addr::new(0x2002, 0, 0, 0, 0, 0, 0, 1), true),
+            // Table 28: Unique-Local (fc00::/7).
+            (Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1), true),
+            // Table 29: Linked-Scoped Unicast (fe80::/10).
+            (Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1), true),
+        ];
+
+        for (addr, expected_blocked) in cases {
+            assert_eq!(
+                is_blocked_ip(IpAddr::V6(addr)),
+                expected_blocked,
+                "unexpected block decision for {addr}"
+            );
+        }
+        // A normal global IPv6 address should remain allowed.
+        assert!(!is_blocked_ip(IpAddr::V6(Ipv6Addr::new(
+            0x2606, 0x4700, 0x4700, 0, 0, 0, 0, 0x1111
+        ))));
+    }
+
+    #[test]
+    fn blocks_rfc6890_ipv6_range_endpoints() {
+        // RFC 6890 §2.2.3 tables 17-29, checked at each range's low/high endpoints.
+        let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+        let ranges = [
+            // Table 17: Loopback Address (::1/128).
+            (
+                "loopback-address",
+                Ipv6Addr::LOCALHOST,
+                Ipv6Addr::LOCALHOST,
+                block_loopback,
+            ),
+            // Table 18: Unspecified Address (::/128).
+            (
+                "unspecified-address",
+                Ipv6Addr::UNSPECIFIED,
+                Ipv6Addr::UNSPECIFIED,
+                true,
+            ),
+            // Table 19: IPv4-IPv6 Translat. (64:ff9b::/96).
+            (
+                "ipv4-ipv6-translation",
+                Ipv6Addr::new(0x0064, 0xff9b, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x0064, 0xff9b, 0, 0, 0, 0, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 20: IPv4-mapped Address (::ffff:0:0/96).
+            (
+                "ipv4-mapped-address",
+                Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0, 0),
+                Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 21: Discard-Only Address Block (100::/64).
+            (
+                "discard-only-address-block",
+                Ipv6Addr::new(0x0100, 0, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x0100, 0, 0, 0, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 22: IETF Protocol Assignments (2001::/23).
+            (
+                "ietf-protocol-assignments",
+                Ipv6Addr::new(0x2001, 0x0000, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x01ff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 23: TEREDO (2001::/32).
+            (
+                "teredo",
+                Ipv6Addr::new(0x2001, 0x0000, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x0000, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 24: Benchmarking (2001:2::/48).
+            (
+                "benchmarking",
+                Ipv6Addr::new(0x2001, 0x0002, 0x0000, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x0002, 0x0000, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 25: Documentation (2001:db8::/32).
+            (
+                "documentation",
+                Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x0db8, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 26: ORCHID (2001:10::/28).
+            (
+                "orchid",
+                Ipv6Addr::new(0x2001, 0x0010, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x001f, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 27: 6to4 (2002::/16).
+            (
+                "6to4",
+                Ipv6Addr::new(0x2002, 0, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2002, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 28: Unique-Local (fc00::/7).
+            (
+                "unique-local",
+                Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0xfdff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+            // Table 29: Linked-Scoped Unicast (fe80::/10).
+            (
+                "linked-scoped-unicast",
+                Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0xfebf, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+                true,
+            ),
+        ];
+
+        for (name, low, high, expected_blocked) in ranges {
+            assert_eq!(
+                is_blocked_ip(IpAddr::V6(low)),
+                expected_blocked,
+                "{name}: unexpected decision for low endpoint {low}"
+            );
+            assert_eq!(
+                is_blocked_ip(IpAddr::V6(high)),
+                expected_blocked,
+                "{name}: unexpected decision for high endpoint {high}"
+            );
+        }
+    }
+
+    #[test]
+    fn blocks_additional_iana_ipv6_range() {
+        // Additional ranges listed in the IANA IPv6 Special-Purpose Address Space registry.
+        // Some are transitively covered by the broader `2001::/23` block, and are kept
+        // here intentionally as explicit regression checks.
+        let cases = [
+            // IPv4-IPv6 Translat. local-use prefix (`64:ff9b:1::/48`).
+            Ipv6Addr::new(0x0064, 0xff9b, 0x0001, 0, 0, 0, 0, 1),
+            // Dummy IPv6 Prefix (`100:0:0:1::/64`).
+            Ipv6Addr::new(0x0100, 0, 0, 1, 0, 0, 0, 1),
+            // Port Control Protocol Anycast (`2001:1::1/128`).
+            Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 1),
+            // Traversal Using Relays around NAT Anycast (`2001:1::2/128`).
+            Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 2),
+            // DNS-SD Service Registration Protocol Anycast (`2001:1::3/128`).
+            Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 3),
+            // AMT (`2001:3::/32`).
+            Ipv6Addr::new(0x2001, 0x0003, 0, 0, 0, 0, 0, 1),
+            // AS112-v6 (`2001:4:112::/48`).
+            Ipv6Addr::new(0x2001, 0x0004, 0x0112, 0, 0, 0, 0, 1),
+            // ORCHIDv2 (`2001:20::/28`).
+            Ipv6Addr::new(0x2001, 0x0020, 0, 0, 0, 0, 0, 1),
+            // Drone Remote ID Protocol Entity Tags (DETs) Prefix (`2001:30::/28`).
+            Ipv6Addr::new(0x2001, 0x0030, 0, 0, 0, 0, 0, 1),
+            // Direct Delegation AS112 Service (`2620:4f:8000::/48`).
+            Ipv6Addr::new(0x2620, 0x004f, 0x8000, 0, 0, 0, 0, 1),
+            // Documentation (`3fff::/20`).
+            Ipv6Addr::new(0x3fff, 0x0001, 0, 0, 0, 0, 0, 1),
+            // Segment Routing (SRv6) SIDs (`5f00::/16`).
+            Ipv6Addr::new(0x5f00, 0, 0, 0, 0, 0, 0, 1),
+        ];
+
+        for addr in cases {
+            assert!(
+                is_blocked_ip(IpAddr::V6(addr)),
+                "expected additional IANA IPv6 range to be blocked: {addr}"
+            );
+        }
+    }
+
+    #[test]
+    fn blocks_additional_iana_ipv6_range_endpoints() {
+        // Additional ranges listed in the IANA IPv6 Special-Purpose Address Space registry.
+        // Some are transitively covered by the broader `2001::/23` block, and are kept
+        // here intentionally as explicit regression checks.
+        let ranges = [
+            (
+                "ipv4-ipv6-translation-local-use",
+                Ipv6Addr::new(0x0064, 0xff9b, 0x0001, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x0064, 0xff9b, 0x0001, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "dummy-ipv6-prefix",
+                Ipv6Addr::new(0x0100, 0, 0, 1, 0, 0, 0, 0),
+                Ipv6Addr::new(0x0100, 0, 0, 1, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "pcp-anycast",
+                Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 1),
+                Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 1),
+            ),
+            (
+                "turn-anycast",
+                Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 2),
+                Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 2),
+            ),
+            (
+                "dns-sd-srp-anycast",
+                Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 3),
+                Ipv6Addr::new(0x2001, 0x0001, 0, 0, 0, 0, 0, 3),
+            ),
+            (
+                "amt",
+                Ipv6Addr::new(0x2001, 0x0003, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x0003, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "as112-v6",
+                Ipv6Addr::new(0x2001, 0x0004, 0x0112, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x0004, 0x0112, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "orchidv2",
+                Ipv6Addr::new(0x2001, 0x0020, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x002f, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "drone-remote-id-dets-prefix",
+                Ipv6Addr::new(0x2001, 0x0030, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2001, 0x003f, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "direct-delegation-as112-service",
+                Ipv6Addr::new(0x2620, 0x004f, 0x8000, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x2620, 0x004f, 0x8000, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "documentation-3fff",
+                Ipv6Addr::new(0x3fff, 0x0000, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x3fff, 0x0fff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+            (
+                "segment-routing-srv6-sids",
+                Ipv6Addr::new(0x5f00, 0x0000, 0, 0, 0, 0, 0, 0),
+                Ipv6Addr::new(0x5f00, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff),
+            ),
+        ];
+
+        for (name, low, high) in ranges {
+            assert!(
+                is_blocked_ip(IpAddr::V6(low)),
+                "{name}: unexpected decision for low endpoint {low}"
+            );
+            assert!(
+                is_blocked_ip(IpAddr::V6(high)),
+                "{name}: unexpected decision for high endpoint {high}"
+            );
+        }
+    }
+
+    #[test]
+    fn blocks_ipv6_encodings_of_private_ipv4() {
+        // IPv4-mapped form of `10.0.0.1`: `::ffff:10.0.0.1`.
+        assert!(is_blocked_ip(IpAddr::V6(Ipv6Addr::new(
+            0, 0, 0, 0, 0, 0xffff, 0x0a00, 0x0001
+        ))));
+        // 6to4 form carrying `10.0.0.1`: `2002:0a00:0001::1`.
+        assert!(is_blocked_ip(IpAddr::V6(Ipv6Addr::new(
+            0x2002, 0x0a00, 0x0001, 0, 0, 0, 0, 1
+        ))));
+        // IPv4/IPv6 translation prefix carrying `10.0.0.1`: `64:ff9b::a00:1`.
+        assert!(is_blocked_ip(IpAddr::V6(Ipv6Addr::new(
+            0x0064, 0xff9b, 0, 0, 0, 0, 0x0a00, 0x0001
+        ))));
     }
 
     #[test]

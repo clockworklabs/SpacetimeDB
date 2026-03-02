@@ -1,3 +1,4 @@
+use crate::util::find_module_path;
 use crate::Config;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
@@ -8,12 +9,11 @@ pub fn cli() -> clap::Command {
     clap::Command::new("build")
         .about("Builds a spacetime module.")
         .arg(
-            Arg::new("project_path")
-                .long("project-path")
+            Arg::new("module_path")
+                .long("module-path")
                 .short('p')
                 .value_parser(clap::value_parser!(PathBuf))
-                .default_value(".")
-                .help("The system path (absolute or relative) to the project you would like to build")
+                .help("The system path (absolute or relative) to the module project. Defaults to spacetimedb/ subdirectory, then current directory.")
         )
         .arg(
             Arg::new("lint_dir")
@@ -42,7 +42,15 @@ pub fn cli() -> clap::Command {
 }
 
 pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(PathBuf, &'static str), anyhow::Error> {
-    let project_path = args.get_one::<PathBuf>("project_path").unwrap();
+    let module_path = match args.get_one::<PathBuf>("module_path").cloned() {
+        Some(path) => path,
+        None => find_module_path(&std::env::current_dir()?).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Could not find a SpacetimeDB module in spacetimedb/ or the current directory. \
+                 Use --module-path to specify the module location."
+            )
+        })?,
+    };
     let features = args.get_one::<OsString>("features");
     let lint_dir = args.get_one::<OsString>("lint_dir").unwrap();
     let lint_dir = if lint_dir.is_empty() {
@@ -51,36 +59,89 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(PathBuf, &'stat
         Some(PathBuf::from(lint_dir))
     };
     let build_debug = args.get_flag("debug");
+    let features = features.cloned();
 
+    run_build(module_path, lint_dir, build_debug, features)
+}
+
+pub fn run_build(
+    module_path: PathBuf,
+    lint_dir: Option<PathBuf>,
+    build_debug: bool,
+    features: Option<OsString>,
+) -> Result<(PathBuf, &'static str), anyhow::Error> {
     // Create the project path, or make sure the target project path is empty.
-    if project_path.exists() {
-        if !project_path.is_dir() {
+    if module_path.exists() {
+        if !module_path.is_dir() {
             return Err(anyhow::anyhow!(
                 "Fatal Error: path {} exists but is not a directory.",
-                project_path.display()
+                module_path.display()
             ));
         }
     } else {
         return Err(anyhow::anyhow!(
             "Fatal Error: path {} does not exist.",
-            project_path.display()
+            module_path.display()
         ));
     }
 
-    let result = crate::tasks::build(project_path, lint_dir.as_deref(), build_debug, features)?;
+    let result = crate::tasks::build(&module_path, lint_dir.as_deref(), build_debug, features.as_ref())?;
     println!("Build finished successfully.");
 
     Ok(result)
 }
 
 pub async fn exec_with_argstring(
-    config: Config,
     project_path: &Path,
     arg_string: &str,
 ) -> Result<(PathBuf, &'static str), anyhow::Error> {
-    // Note: "build" must be the start of the string, because `build::cli()` is the entire build subcommand.
-    // If we don't include this, the args will be misinterpreted (e.g. as commands).
-    let arg_string = format!("build {} --project-path {}", arg_string, project_path.display());
-    let arg_matches = cli().get_matches_from(arg_string.split_whitespace());
-    exec(config.clone(), &arg_matches).await
+    let argv = exec_with_argstring_argv(project_path, arg_string);
+    let arg_matches = cli().get_matches_from(argv);
+
+    let module_path = arg_matches
+        .get_one::<PathBuf>("module_path")
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("module_path is required"))?;
+    let features = arg_matches.get_one::<OsString>("features").cloned();
+    let lint_dir = arg_matches.get_one::<OsString>("lint_dir").unwrap();
+    let lint_dir = if lint_dir.is_empty() {
+        None
+    } else {
+        Some(PathBuf::from(lint_dir))
+    };
+    let build_debug = arg_matches.get_flag("debug");
+
+    run_build(module_path, lint_dir, build_debug, features)
+}
+
+fn exec_with_argstring_argv(project_path: &Path, arg_string: &str) -> Vec<OsString> {
+    // Note: "build" must be the first argv token because `build::cli()` is the entire build subcommand.
+    // Keep module-path as its own argv item so paths containing spaces are not split.
+    let mut argv: Vec<OsString> = vec!["build".into()];
+    argv.extend(arg_string.split_whitespace().map(OsString::from));
+    argv.push("--module-path".into());
+    argv.push(project_path.as_os_str().to_os_string());
+    argv
+}
+
+#[cfg(test)]
+mod tests {
+    use super::exec_with_argstring_argv;
+    use std::path::Path;
+
+    #[test]
+    fn exec_with_argstring_keeps_module_path_with_spaces_as_single_argv_item() {
+        let project_path = Path::new("SpacetimeDB Projects/My SpacetimeDB App/spacetimedb");
+        let argv = exec_with_argstring_argv(project_path, "--debug --lint-dir src");
+
+        assert_eq!(argv[0].to_string_lossy(), "build");
+        assert_eq!(argv[1].to_string_lossy(), "--debug");
+        assert_eq!(argv[2].to_string_lossy(), "--lint-dir");
+        assert_eq!(argv[3].to_string_lossy(), "src");
+        assert_eq!(argv[4].to_string_lossy(), "--module-path");
+        assert_eq!(
+            argv[5].to_string_lossy(),
+            "SpacetimeDB Projects/My SpacetimeDB App/spacetimedb"
+        );
+    }
 }

@@ -41,3 +41,5 @@ impl __sdk::__query_builder::HasIxCols for OptionIdentity {
         OptionIdentityIxCols {}
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for OptionIdentity {}

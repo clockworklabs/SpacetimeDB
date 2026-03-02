@@ -29,8 +29,10 @@ use crate::{
 use crate::{
     locking_tx_datastore::ViewCallInfo,
     system_tables::{
-        ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID,
-        ST_VIEW_IDX, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX, ST_VIEW_SUB_ID, ST_VIEW_SUB_IDX,
+        ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ACCESSOR_IDX, ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX,
+        ST_EVENT_TABLE_ID, ST_EVENT_TABLE_IDX, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_IDX, ST_TABLE_ACCESSOR_ID,
+        ST_TABLE_ACCESSOR_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID, ST_VIEW_IDX, ST_VIEW_PARAM_ID,
+        ST_VIEW_PARAM_IDX, ST_VIEW_SUB_ID, ST_VIEW_SUB_IDX,
     },
 };
 use anyhow::anyhow;
@@ -471,6 +473,11 @@ impl CommittedState {
         self.create_table(ST_VIEW_SUB_ID, schemas[ST_VIEW_SUB_IDX].clone());
         self.create_table(ST_VIEW_ARG_ID, schemas[ST_VIEW_ARG_IDX].clone());
 
+        self.create_table(ST_EVENT_TABLE_ID, schemas[ST_EVENT_TABLE_IDX].clone());
+        self.create_table(ST_TABLE_ACCESSOR_ID, schemas[ST_TABLE_ACCESSOR_IDX].clone());
+        self.create_table(ST_INDEX_ACCESSOR_ID, schemas[ST_INDEX_ACCESSOR_IDX].clone());
+        self.create_table(ST_COLUMN_ACCESSOR_ID, schemas[ST_COLUMN_ACCESSOR_IDX].clone());
+
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store, pool) =
             self.get_table_and_blob_store_or_create(ST_SEQUENCE_ID, &schemas[ST_SEQUENCE_IDX]);
@@ -617,6 +624,12 @@ impl CommittedState {
         schema: &Arc<TableSchema>,
         row: &ProductValue,
     ) -> Result<()> {
+        // Event table rows in the commitlog are preserved for future replay features
+        // but don't rebuild state — event tables have no committed state.
+        if schema.is_event {
+            return Ok(());
+        }
+
         let (table, blob_store, pool) = self.get_table_and_blob_store_or_create(table_id, schema);
 
         let (_, row_ref) = match table.insert(pool, blob_store, row) {
@@ -754,6 +767,8 @@ impl CommittedState {
     ///
     /// The `row_ptr` is a pointer to `row`.
     fn st_column_changed(&mut self, table_id: TableId) -> Result<()> {
+        let table_name = self.find_st_table_row(table_id)?.table_name;
+
         // We're replaying and we don't have unique constraints yet.
         // Due to replay handling all inserts first and deletes after,
         // when processing `st_column` insert/deletes,
@@ -764,7 +779,15 @@ impl CommittedState {
         // so filter only the non-ignored columns.
         let mut columns = iter_st_column_for_table(self, &table_id.into())?
             .filter(|row_ref| !self.replay_columns_to_ignore.contains(&row_ref.pointer()))
-            .map(|row_ref| StColumnRow::try_from(row_ref).map(Into::into))
+            .map(|row_ref| {
+                let row = StColumnRow::try_from(row_ref)?;
+                let mut column_schema = ColumnSchema::from(row);
+                let alias = self
+                    .find_st_column_accessor_row(table_name.as_ref(), &column_schema.col_name)?
+                    .map(|row| row.accessor_name);
+                column_schema.alias = alias;
+                Ok(column_schema)
+            })
             .collect::<Result<Vec<_>>>()?;
 
         // Columns in `st_column` are not in general sorted by their `col_pos`,
@@ -1037,7 +1060,7 @@ impl CommittedState {
         // Note that this may change in the future: some analytics and/or
         // timetravel queries may benefit from seeing all inputs, even if
         // the database state did not change.
-        tx_data.has_rows_or_connect_disconnect(ctx.reducer_context().map(|rcx| &*rcx.name))
+        tx_data.has_rows_or_connect_disconnect(ctx.reducer_context().map(|rcx| &rcx.name))
     }
 
     pub(super) fn drop_view_from_read_sets(&mut self, view_id: ViewId, sender: Option<Identity>) {
@@ -1187,37 +1210,36 @@ impl CommittedState {
         //             and the fullness of the page.
 
         for (table_id, tx_table) in insert_tables {
-            let (commit_table, commit_blob_store, page_pool) =
-                self.get_table_and_blob_store_or_create(table_id, tx_table.get_schema());
-
-            // For each newly-inserted row, insert it into the committed state.
+            // For each newly-inserted row, serialize to a product value.
             let mut inserts = Vec::with_capacity(tx_table.row_count as usize);
-            for row_ref in tx_table.scan_rows(&tx_blob_store) {
-                let pv = row_ref.to_product_value();
-                commit_table
-                    .insert(page_pool, commit_blob_store, &pv)
-                    .expect("Failed to insert when merging commit");
+            inserts.extend(tx_table.scan_rows(&tx_blob_store).map(|row| row.to_product_value()));
 
-                inserts.push(pv);
+            // For each newly-inserted row, serialize to a product value.
+            // This doesn't apply to event tables,
+            // which are only recorded in `TxData`,
+            // but never the committed state.
+            let schema = tx_table.get_schema();
+            if !schema.is_event {
+                let (commit_table, commit_blob_store, page_pool) =
+                    self.get_table_and_blob_store_or_create(table_id, tx_table.get_schema());
+                for row in &inserts {
+                    commit_table
+                        .insert(page_pool, commit_blob_store, row)
+                        .expect("Failed to insert when merging commit");
+                }
             }
 
             // Add the table to `TxData` if there were insertions.
             if !inserts.is_empty() {
-                let table_name = &commit_table.get_schema().table_name;
-                tx_data.set_inserts_for_table(table_id, table_name, inserts.into());
+                tx_data.set_inserts_for_table(table_id, &schema.table_name, inserts.into());
 
-                // if table has inserted rows, it cannot be truncated
+                // If table has inserted rows, it cannot be truncated.
                 if truncates.contains(&table_id) {
                     truncates.remove(&table_id);
                 }
             }
 
-            let (schema, _indexes, pages) = tx_table.consume_for_merge();
-
-            // The schema may have been modified in the transaction.
-            // Update this last to placate borrowck and avoid a clone.
-            // None of the above operations will inspect the schema.
-            commit_table.schema = schema;
+            let (.., pages) = tx_table.consume_for_merge();
 
             // Put all the pages in the table back into the pool.
             self.page_pool.put_many(pages);

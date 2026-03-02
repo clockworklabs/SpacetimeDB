@@ -2,7 +2,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [Table(Name = "User")]
+    [Table(Accessor = "User")]
     public partial struct User
     {
         [PrimaryKey] public int Id;
@@ -11,7 +11,7 @@ public static partial class Module
         public bool Active;
     }
 
-    [Table(Name = "Result")]
+    [Table(Accessor = "Result")]
     public partial struct Result
     {
         [PrimaryKey] public int Id;

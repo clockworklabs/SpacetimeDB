@@ -17,7 +17,7 @@ void Main()
     // Build and connect to the database
     var conn = DbConnection.Builder()
         .WithUri(HOST)
-        .WithModuleName(DB_NAME)
+        .WithDatabaseName(DB_NAME)
         .WithToken(AuthToken.Token)
         .OnConnect(OnConnected)
         .OnConnectError(OnConnectError)

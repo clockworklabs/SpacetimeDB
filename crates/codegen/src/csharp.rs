@@ -11,7 +11,7 @@ use crate::util::{
     collect_case, is_reducer_invokable, iter_indexes, iter_reducers, iter_table_names_and_types,
     print_auto_generated_file_comment, print_auto_generated_version_comment, type_ref_name,
 };
-use crate::{indent_scope, OutputFile};
+use crate::{indent_scope, CodegenOptions, OutputFile};
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_primitives::ColId;
@@ -25,7 +25,7 @@ use spacetimedb_schema::type_for_generate::{
 const INDENT: &str = "    ";
 
 const REDUCER_EVENTS: &str = r#"
-    public interface IRemoteDbContext : IDbContext<RemoteTables, RemoteReducers, SetReducerFlags, SubscriptionBuilder, RemoteProcedures> {
+    public interface IRemoteDbContext : IDbContext<RemoteTables, RemoteReducers, SubscriptionBuilder, RemoteProcedures> {
         public event Action<ReducerEventContext, Exception>? OnUnhandledReducerError;
     }
 
@@ -51,14 +51,6 @@ const REDUCER_EVENTS: &str = r#"
         /// plus methods for adding and removing callbacks on each of those reducers.
         /// </summary>
         public RemoteReducers Reducers => conn.Reducers;
-        /// <summary>
-        /// Access to setters for per-reducer flags.
-        ///
-        /// The returned <c>SetReducerFlags</c> will have a method to invoke,
-        /// for each reducer defined by the module,
-        /// which call-flags for the reducer can be set.
-        /// </summary>
-        public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
         /// <summary>
         /// Access to procedures defined by the module.
         ///
@@ -131,14 +123,6 @@ const REDUCER_EVENTS: &str = r#"
         /// plus methods for adding and removing callbacks on each of those reducers.
         /// </summary>
         public RemoteReducers Reducers => conn.Reducers;
-        /// <summary>
-        /// Access to setters for per-reducer flags.
-        ///
-        /// The returned <c>SetReducerFlags</c> will have a method to invoke,
-        /// for each reducer defined by the module,
-        /// which call-flags for the reducer can be set.
-        /// </summary>
-        public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
         /// <summary>
         /// Access to procedures defined by the module.
         ///
@@ -217,14 +201,6 @@ const REDUCER_EVENTS: &str = r#"
         /// </summary>
         public RemoteReducers Reducers => conn.Reducers;
         /// <summary>
-        /// Access to setters for per-reducer flags.
-        ///
-        /// The returned <c>SetReducerFlags</c> will have a method to invoke,
-        /// for each reducer defined by the module,
-        /// which call-flags for the reducer can be set.
-        /// </summary>
-        public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
-        /// <summary>
         /// Access to procedures defined by the module.
         ///
         /// The returned <c>RemoteProcedures</c> will have a method to invoke each procedure defined by the module,
@@ -292,14 +268,6 @@ const REDUCER_EVENTS: &str = r#"
         /// plus methods for adding and removing callbacks on each of those reducers.
         /// </summary>
         public RemoteReducers Reducers => conn.Reducers;
-        /// <summary>
-        /// Access to setters for per-reducer flags.
-        ///
-        /// The returned <c>SetReducerFlags</c> will have a method to invoke,
-        /// for each reducer defined by the module,
-        /// which call-flags for the reducer can be set.
-        /// </summary>
-        public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
         /// <summary>
         /// Access to procedures defined by the module.
         ///
@@ -371,14 +339,6 @@ const REDUCER_EVENTS: &str = r#"
         /// plus methods for adding and removing callbacks on each of those reducers.
         /// </summary>
         public RemoteReducers Reducers => conn.Reducers;
-        /// <summary>
-        /// Access to setters for per-reducer flags.
-        ///
-        /// The returned <c>SetReducerFlags</c> will have a method to invoke,
-        /// for each reducer defined by the module,
-        /// which call-flags for the reducer can be set.
-        /// </summary>
-        public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
         /// <summary>
         /// Access to procedures defined by the module.
         ///
@@ -482,7 +442,7 @@ const REDUCER_EVENTS: &str = r#"
         /// Once a typed query is added, only typed queries may follow (SQL and typed queries cannot be mixed).
         /// </summary>
         public TypedSubscriptionBuilder AddQuery<TRow>(
-            Func<QueryBuilder, global::SpacetimeDB.Query<TRow>> build
+            Func<QueryBuilder, global::SpacetimeDB.IQuery<TRow>> build
         )
         {
             var typed = new TypedSubscriptionBuilder(conn, Applied, Error);
@@ -520,25 +480,11 @@ const REDUCER_EVENTS: &str = r#"
         /// or vice versa, may misbehave in any number of ways,
         /// including dropping subscriptions, corrupting the client cache, or panicking.
         /// </summary>
-        public void SubscribeToAllTables()
-        {
-            // Make sure we use the legacy handle constructor here, even though there's only 1 query.
-            // We drop the error handler, since it can't be called for legacy subscriptions.
-            new SubscriptionHandle(
-                conn,
-                Applied,
-                new string[] { "SELECT * FROM *" }
-            );
-        }
+        public SubscriptionHandle SubscribeToAllTables() =>
+            new(conn, Applied, Error, QueryBuilder.AllTablesSqlQueries());
     }
 
     public sealed class SubscriptionHandle : SubscriptionHandleBase<SubscriptionEventContext, ErrorContext> {
-        /// <summary>
-        /// Internal API. Construct <c>SubscriptionHandle</c>s using <c>conn.SubscriptionBuilder</c>.
-        /// </summary>
-        public SubscriptionHandle(IDbConnection conn, Action<SubscriptionEventContext>? onApplied, string[] querySqls) : base(conn, onApplied, querySqls)
-        { }
-
         /// <summary>
         /// Internal API. Construct <c>SubscriptionHandle</c>s using <c>conn.SubscriptionBuilder</c>.
         /// </summary>
@@ -571,13 +517,18 @@ impl Lang for Csharp<'_> {
 
         writeln!(output, "public sealed partial class RemoteTables");
         indented_block(&mut output, |output| {
-            let csharp_table_name = table.name.deref().to_case(Case::Pascal);
+            let csharp_table_name = table.accessor_name.deref().to_case(Case::Pascal);
             let csharp_table_class_name = csharp_table_name.clone() + "Handle";
             let table_type = type_ref_name(module, table.product_type_ref);
 
+            let base_class = if table.is_event {
+                "RemoteEventTableHandle"
+            } else {
+                "RemoteTableHandle"
+            };
             writeln!(
                 output,
-                "public sealed class {csharp_table_class_name} : RemoteTableHandle<EventContext, {table_type}>"
+                "public sealed class {csharp_table_class_name} : {base_class}<EventContext, {table_type}>"
             );
             indented_block(output, |output| {
                 writeln!(
@@ -688,7 +639,7 @@ impl Lang for Csharp<'_> {
         // Emit top-level Cols/IxCols helpers for the typed query builder.
         writeln!(output);
 
-        let cols_owner_name = table.name.deref().to_case(Case::Pascal);
+        let cols_owner_name = table.accessor_name.deref().to_case(Case::Pascal);
         let row_type = type_ref_name(module, table.product_type_ref);
         let product_type = module.typespace_for_generate()[table.product_type_ref]
             .as_product()
@@ -773,13 +724,13 @@ impl Lang for Csharp<'_> {
         });
 
         OutputFile {
-            filename: format!("Tables/{}.g.cs", table.name.deref().to_case(Case::Pascal)),
+            filename: format!("Tables/{}.g.cs", table.accessor_name.deref().to_case(Case::Pascal)),
             code: output.into_inner(),
         }
     }
 
     fn generate_type_files(&self, module: &ModuleDef, typ: &TypeDef) -> Vec<OutputFile> {
-        let name = collect_case(Case::Pascal, typ.name.name_segments());
+        let name = collect_case(Case::Pascal, typ.accessor_name.name_segments());
         let filename = format!("Types/{name}.g.cs");
         let code = match &module.typespace_for_generate()[typ.ty] {
             AlgebraicTypeDef::Sum(sum) => autogen_csharp_sum(module, name.clone(), sum, self.namespace),
@@ -805,7 +756,7 @@ impl Lang for Csharp<'_> {
 
         writeln!(output, "public sealed partial class RemoteReducers : RemoteBase");
         indented_block(&mut output, |output| {
-            let func_name_pascal_case = reducer.name.deref().to_case(Case::Pascal);
+            let func_name_pascal_case = reducer.accessor_name.deref().to_case(Case::Pascal);
             let delegate_separator = if reducer.params_for_generate.elements.is_empty() {
                 ""
             } else {
@@ -830,7 +781,7 @@ impl Lang for Csharp<'_> {
                 indented_block(output, |output| {
                     writeln!(
                         output,
-                        "conn.InternalCallReducer(new Reducer.{func_name_pascal_case}({func_args}), this.SetCallReducerFlags.{func_name_pascal_case}Flags);"
+                        "conn.InternalCallReducer(new Reducer.{func_name_pascal_case}({func_args}));"
                     );
                 });
                 writeln!(output);
@@ -878,7 +829,7 @@ impl Lang for Csharp<'_> {
             autogen_csharp_product_common(
                 module,
                 output,
-                reducer.name.deref().to_case(Case::Pascal),
+                reducer.accessor_name.deref().to_case(Case::Pascal),
                 &reducer.params_for_generate,
                 "Reducer, IReducerArgs",
                 |output| {
@@ -890,18 +841,8 @@ impl Lang for Csharp<'_> {
             );
         });
 
-        if is_reducer_invokable(reducer) {
-            writeln!(output);
-            writeln!(output, "public sealed partial class SetReducerFlags");
-            indented_block(&mut output, |output| {
-                let func_name_pascal_case = reducer.name.deref().to_case(Case::Pascal);
-                writeln!(output, "internal CallReducerFlags {func_name_pascal_case}Flags;");
-                writeln!(output, "public void {func_name_pascal_case}(CallReducerFlags flags) => {func_name_pascal_case}Flags = flags;");
-            });
-        }
-
         OutputFile {
-            filename: format!("Reducers/{}.g.cs", reducer.name.deref().to_case(Case::Pascal)),
+            filename: format!("Reducers/{}.g.cs", reducer.accessor_name.deref().to_case(Case::Pascal)),
             code: output.into_inner(),
         }
     }
@@ -923,7 +864,7 @@ impl Lang for Csharp<'_> {
 
         writeln!(output, "public sealed partial class RemoteProcedures : RemoteBase");
         indented_block(&mut output, |output| {
-            let func_name_pascal_case = procedure.name.deref().to_case(Case::Pascal);
+            let func_name_pascal_case = procedure.accessor_name.deref().to_case(Case::Pascal);
             let delegate_separator = if procedure.params_for_generate.elements.is_empty() {
                 ""
             } else {
@@ -984,14 +925,14 @@ impl Lang for Csharp<'_> {
             autogen_csharp_proc_return(
                 module,
                 output,
-                procedure.name.deref().to_case(Case::Pascal).to_string(),
+                procedure.accessor_name.deref().to_case(Case::Pascal).to_string(),
                 &procedure.return_type_for_generate,
                 self.namespace,
             );
             autogen_csharp_product_common(
                 module,
                 output,
-                format!("{}Args", procedure.name.deref().to_case(Case::Pascal)),
+                format!("{}Args", procedure.accessor_name.deref().to_case(Case::Pascal)),
                 &procedure.params_for_generate,
                 "Procedure, IProcedureArgs",
                 |output| {
@@ -1005,12 +946,15 @@ impl Lang for Csharp<'_> {
         });
 
         OutputFile {
-            filename: format!("Procedures/{}.g.cs", procedure.name.deref().to_case(Case::Pascal)),
+            filename: format!(
+                "Procedures/{}.g.cs",
+                procedure.accessor_name.deref().to_case(Case::Pascal)
+            ),
             code: output.into_inner(),
         }
     }
 
-    fn generate_global_files(&self, module: &ModuleDef) -> Vec<OutputFile> {
+    fn generate_global_files(&self, module: &ModuleDef, options: &CodegenOptions) -> Vec<OutputFile> {
         let mut output = CsharpAutogen::new(
             self.namespace,
             &[
@@ -1023,11 +967,7 @@ impl Lang for Csharp<'_> {
 
         writeln!(output, "public sealed partial class RemoteReducers : RemoteBase");
         indented_block(&mut output, |output| {
-            writeln!(
-                output,
-                "internal RemoteReducers(DbConnection conn, SetReducerFlags flags) : base(conn) => SetCallReducerFlags = flags;"
-            );
-            writeln!(output, "internal readonly SetReducerFlags SetCallReducerFlags;");
+            writeln!(output, "internal RemoteReducers(DbConnection conn) : base(conn) {{ }}");
             writeln!(
                 output,
                 "internal event Action<ReducerEventContext, Exception>? InternalOnUnhandledReducerError;"
@@ -1048,33 +988,40 @@ impl Lang for Csharp<'_> {
         indented_block(&mut output, |output| {
             writeln!(output, "public RemoteTables(DbConnection conn)");
             indented_block(output, |output| {
-                for (table_name, _) in iter_table_names_and_types(module) {
+                for (_, accessor_name, _) in iter_table_names_and_types(module, options.visibility) {
                     writeln!(
                         output,
                         "AddTable({} = new(conn));",
-                        table_name.deref().to_case(Case::Pascal)
+                        accessor_name.deref().to_case(Case::Pascal)
                     );
                 }
             });
         });
         writeln!(output);
 
-        writeln!(output, "public sealed partial class SetReducerFlags {{ }}");
-
         writeln!(output, "{REDUCER_EVENTS}");
 
         writeln!(output, "public sealed class QueryBuilder");
         indented_block(&mut output, |output| {
             writeln!(output, "public From From {{ get; }} = new();");
+            writeln!(output);
+            writeln!(output, "internal static string[] AllTablesSqlQueries() => new string[]");
+            indented_block(output, |output| {
+                for (_, accessor_name, _) in iter_table_names_and_types(module, options.visibility) {
+                    let method_name = accessor_name.deref().to_case(Case::Pascal);
+                    writeln!(output, "new QueryBuilder().From.{method_name}().ToSql(),");
+                }
+            });
+            writeln!(output, ";");
         });
         writeln!(output);
 
         writeln!(output, "public sealed class From");
         indented_block(&mut output, |output| {
-            for (table_name, product_type_ref) in iter_table_names_and_types(module) {
-                let method_name = table_name.deref().to_case(Case::Pascal);
+            for (name, accessor_name, product_type_ref) in iter_table_names_and_types(module, options.visibility) {
+                let method_name = accessor_name.deref().to_case(Case::Pascal);
                 let row_type = type_ref_name(module, product_type_ref);
-                let table_name_lit = format!("{:?}", table_name.deref());
+                let table_name_lit = format!("{:?}", name.deref());
                 writeln!(
                     output,
                     "public global::SpacetimeDB.Table<{row_type}, {method_name}Cols, {method_name}IxCols> {method_name}() => new({table_name_lit}, new {method_name}Cols({table_name_lit}), new {method_name}IxCols({table_name_lit}));"
@@ -1122,7 +1069,7 @@ impl Lang for Csharp<'_> {
             });
             writeln!(output);
 
-            writeln!(output, "public TypedSubscriptionBuilder AddQuery<TRow>(Func<QueryBuilder, global::SpacetimeDB.Query<TRow>> build)");
+            writeln!(output, "public TypedSubscriptionBuilder AddQuery<TRow>(Func<QueryBuilder, global::SpacetimeDB.IQuery<TRow>> build)");
             indented_block(output, |output| {
                 writeln!(output, "var qb = new QueryBuilder();");
                 writeln!(output, "querySqls.Add(build(qb).ToSql());");
@@ -1158,42 +1105,14 @@ impl Lang for Csharp<'_> {
         indented_block(&mut output, |output: &mut CodeIndenter<String>| {
             writeln!(output, "public override RemoteTables Db {{ get; }}");
             writeln!(output, "public readonly RemoteReducers Reducers;");
-            writeln!(output, "public readonly SetReducerFlags SetReducerFlags = new();");
             writeln!(output, "public readonly RemoteProcedures Procedures;");
             writeln!(output);
 
             writeln!(output, "public DbConnection()");
             indented_block(output, |output| {
                 writeln!(output, "Db = new(this);");
-                writeln!(output, "Reducers = new(this, SetReducerFlags);");
+                writeln!(output, "Reducers = new(this);");
                 writeln!(output, "Procedures = new(this);");
-            });
-            writeln!(output);
-
-            writeln!(output, "protected override Reducer ToReducer(TransactionUpdate update)");
-            indented_block(output, |output| {
-                writeln!(output, "var encodedArgs = update.ReducerCall.Args;");
-                writeln!(output, "return update.ReducerCall.ReducerName switch {{");
-                {
-                    indent_scope!(output);
-                    for reducer in iter_reducers(module) {
-                        let reducer_str_name = &reducer.name;
-                        let reducer_name = reducer.name.deref().to_case(Case::Pascal);
-                        writeln!(
-                            output,
-                            "\"{reducer_str_name}\" => BSATNHelpers.Decode<Reducer.{reducer_name}>(encodedArgs),"
-                        );
-                    }
-                    writeln!(
-                        output,
-                        r#""" => throw new SpacetimeDBEmptyReducerNameException("Reducer name is empty"),"#
-                    );
-                    writeln!(
-                        output,
-                        r#"var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {{reducer}}")"#
-                    );
-                }
-                writeln!(output, "}};");
             });
             writeln!(output);
 
@@ -1241,7 +1160,9 @@ impl Lang for Csharp<'_> {
                 writeln!(output, "return reducer switch {{");
                 {
                     indent_scope!(output);
-                    for reducer_name in iter_reducers(module).map(|r| r.name.deref().to_case(Case::Pascal)) {
+                    for reducer_name in
+                        iter_reducers(module, options.visibility).map(|r| r.accessor_name.deref().to_case(Case::Pascal))
+                    {
                         writeln!(
                             output,
                             "Reducer.{reducer_name} args => Reducers.Invoke{reducer_name}(eventContext, args),"
@@ -1465,6 +1386,7 @@ fn autogen_csharp_sum(module: &ModuleDef, sum_type_name: String, sum_type: &SumT
                 write!(output, ",");
             }
             writeln!(output);
+            let variant_name = variant_name.deref().to_case(Case::Pascal);
             write!(output, "{} {variant_name}", ty_fmt(module, variant_ty));
         }
         // If we have fewer than 2 variants, we need to add some dummy variants to make the tuple work.
@@ -1494,6 +1416,7 @@ fn autogen_csharp_plain_enum(enum_type_name: String, enum_type: &PlainEnumTypeDe
     writeln!(output, "public enum {enum_type_name}");
     indented_block(&mut output, |output| {
         for variant in &*enum_type.variants {
+            let variant = variant.deref().to_case(Case::Pascal);
             writeln!(output, "{variant},");
         }
     });

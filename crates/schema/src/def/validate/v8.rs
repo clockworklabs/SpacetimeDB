@@ -15,6 +15,7 @@ use spacetimedb_lib::{
     TypeAlias as RawTypeAliasV8,
 };
 use spacetimedb_primitives::{ColId, ColList, ConstraintKind, Constraints};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicTypeRef, Typespace, WithTypespace};
 
 const INIT_NAME: &str = "__init__";

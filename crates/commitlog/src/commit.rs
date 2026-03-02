@@ -342,30 +342,39 @@ impl StoredCommit {
     }
 }
 
-/// Numbers needed to compute [`crate::segment::Header`].
+/// A [`StoredCommit`] sans the records payload.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Metadata {
     pub tx_range: Range<u64>,
     pub size_in_bytes: u64,
     pub epoch: u64,
+    pub checksum: u32,
 }
 
 impl Metadata {
-    /// Extract the [`Metadata`] of a single [`Commit`] from the given reader.
+    /// Extract the [`Metadata`] of a single [`StoredCommit`] from the given
+    /// reader.
     ///
     /// Note that this decodes the commit due to checksum verification.
-    /// Like [`Commit::decode`], returns `None` if the reader is at EOF already.
+    /// Like [`StoredCommit::decode`], this method returns `None` if the reader
+    /// is at EOF already.
     pub fn extract<R: io::Read>(reader: R) -> io::Result<Option<Self>> {
-        Commit::decode(reader).map(|maybe_commit| maybe_commit.map(Self::from))
+        StoredCommit::decode(reader).map(|maybe_commit| maybe_commit.map(Self::from))
     }
 }
 
-impl From<Commit> for Metadata {
-    fn from(commit: Commit) -> Self {
+impl From<StoredCommit> for Metadata {
+    fn from(commit: StoredCommit) -> Self {
+        let tx_range = commit.tx_range();
+        let epoch = commit.epoch;
+        let checksum = commit.checksum;
+        let size_in_bytes = Commit::from(commit).encoded_len() as u64;
+
         Self {
-            tx_range: commit.tx_range(),
-            size_in_bytes: commit.encoded_len() as u64,
-            epoch: commit.epoch,
+            tx_range,
+            size_in_bytes,
+            epoch,
+            checksum,
         }
     }
 }

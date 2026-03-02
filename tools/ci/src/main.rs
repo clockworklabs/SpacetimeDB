@@ -11,6 +11,10 @@ use std::{env, fs};
 const README_PATH: &str = "tools/ci/README.md";
 
 mod ci_docs;
+mod smoketest;
+mod util;
+
+use util::ensure_repo_root;
 
 /// SpacetimeDB CI tasks
 ///
@@ -34,18 +38,11 @@ struct Cli {
     skip: Vec<String>,
 }
 
-fn ensure_repo_root() -> Result<()> {
-    if !Path::new("Cargo.toml").exists() {
-        bail!("You must execute this command from the SpacetimeDB repository root (where Cargo.toml is located)");
-    }
-    Ok(())
-}
-
 fn check_global_json_policy() -> Result<()> {
     ensure_repo_root()?;
 
     let root_json = Path::new("global.json");
-    let root_real = fs::canonicalize(root_json)?;
+    let root_contents = fs::read_to_string(root_json)?;
 
     fn find_all_global_json(dir: &Path) -> Result<Vec<PathBuf>> {
         let mut out = Vec::new();
@@ -66,25 +63,24 @@ fn check_global_json_policy() -> Result<()> {
 
     let mut ok = true;
     for p in globals {
-        let resolved = fs::canonicalize(&p)?;
-
-        // The root global.json itself is allowed.
-        if resolved == root_real {
-            println!("OK: {}", p.display());
-            continue;
-        }
-
         let meta = fs::symlink_metadata(&p)?;
-        if !meta.file_type().is_symlink() {
-            eprintln!("Error: {} is not a symlink to root global.json", p.display());
+        let is_symlink = meta.file_type().is_symlink();
+        let is_template_global_json = p.strip_prefix(".").unwrap_or(&p).starts_with(Path::new("templates"));
+        if is_template_global_json && is_symlink {
+            eprintln!(
+                "Error: {} is a symlink. Template files must not be symlinks; they are copied literally and this will break if the CLI is built under Windows where symlinks are not supported.",
+                p.display()
+            );
             ok = false;
-            continue;
         }
 
-        eprintln!("Error: {} does not resolve to root global.json", p.display());
-        eprintln!("  resolved: {}", resolved.display());
-        eprintln!("  expected: {}", root_real.display());
-        ok = false;
+        let contents = fs::read_to_string(&p)?;
+        if contents != root_contents {
+            eprintln!("Error: {} does not match the root global.json contents", p.display());
+            ok = false;
+        } else if !is_template_global_json || !is_symlink {
+            println!("OK: {}", p.display());
+        }
     }
 
     if !ok {
@@ -95,7 +91,8 @@ fn check_global_json_policy() -> Result<()> {
 }
 
 fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
-    let skeleton_root = Path::new("sdks/csharp/unity-meta-skeleton~").join(pkg_id);
+    let skeleton_base = Path::new("sdks/csharp/unity-meta-skeleton~");
+    let skeleton_root = skeleton_base.join(pkg_id);
     if !skeleton_root.exists() {
         return Ok(());
     }
@@ -105,6 +102,15 @@ fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
         return Ok(());
     }
 
+    // Copy spacetimedb.<pkg>.meta
+    let pkg_root_meta = skeleton_base.join(format!("{pkg_id}.meta"));
+    if pkg_root_meta.exists() {
+        if let Some(parent) = pkg_root.parent() {
+            let pkg_meta_dst = parent.join(format!("{pkg_id}.meta"));
+            fs::copy(&pkg_root_meta, &pkg_meta_dst)?;
+        }
+    }
+
     let versioned_dir = match find_only_subdir(&pkg_root) {
         Ok(dir) => dir,
         Err(err) => {
@@ -112,6 +118,18 @@ fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
             return Ok(());
         }
     };
+
+    // If version.meta exists under the skeleton package, rename it to match the restored version dir.
+    let version_meta_template = skeleton_root.join("version.meta");
+    if version_meta_template.exists() {
+        if let Some(parent) = versioned_dir.parent() {
+            let version_name = versioned_dir
+                .file_name()
+                .expect("versioned directory should have a file name");
+            let version_meta_dst = parent.join(format!("{}.meta", version_name.to_string_lossy()));
+            fs::copy(&version_meta_template, &version_meta_dst)?;
+        }
+    }
 
     copy_overlay_dir(&skeleton_root, &versioned_dir)
 }
@@ -214,13 +232,7 @@ enum CiCmd {
     /// Runs smoketests
     ///
     /// Executes the smoketests suite with some default exclusions.
-    Smoketests {
-        #[arg(
-            trailing_var_arg = true,
-            long_help = "Additional arguments to pass to the smoketests runner. These are usually set by the CI environment, such as `-- --docker`"
-        )]
-        args: Vec<String>,
-    },
+    Smoketests(smoketest::SmoketestsArgs),
     /// Tests the update flow
     ///
     /// Tests the self-update flow by building the spacetimedb-update binary for the specified
@@ -277,15 +289,6 @@ fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn infer_python() -> String {
-    let py3_available = cmd!("python3", "--version").run().is_ok();
-    if py3_available {
-        "python3".to_string()
-    } else {
-        "python".to_string()
-    }
-}
-
 fn main() -> Result<()> {
     env_logger::init();
 
@@ -295,8 +298,36 @@ fn main() -> Result<()> {
         Some(CiCmd::Test) => {
             // TODO: This doesn't work on at least user Linux machines, because something here apparently uses `sudo`?
 
-            // cmd!("cargo", "test", "--all", "--", "--skip", "unreal").run()?;
-            cmd!("cargo", "test", "--all", "--", "--test-threads=2", "--skip", "unreal").run()?;
+            // Exclude smoketests from `cargo test --all` since they require pre-built binaries.
+            // Smoketests have their own dedicated command: `cargo ci smoketests`
+            cmd!(
+                "cargo",
+                "test",
+                "--all",
+                "--exclude",
+                "spacetimedb-smoketests",
+                "--exclude",
+                "spacetimedb-sdk",
+                "--",
+                "--test-threads=2",
+                "--skip",
+                "unreal"
+            )
+            .run()?;
+            // SDK procedure tests intentionally make localhost HTTP requests.
+            cmd!(
+                "cargo",
+                "test",
+                "-p",
+                "spacetimedb-sdk",
+                "--features",
+                "allow_loopback_http_for_tests",
+                "--",
+                "--test-threads=2",
+                "--skip",
+                "unreal"
+            )
+            .run()?;
             // TODO: This should check for a diff at the start. If there is one, we should alert the user
             // that we're disabling diff checks because they have a dirty git repo, and to re-run in a clean one
             // if they want those checks.
@@ -360,6 +391,8 @@ fn main() -> Result<()> {
 
         Some(CiCmd::WasmBindings) => {
             cmd!("cargo", "test", "-p", "spacetimedb-codegen").run()?;
+            // Pre-build the CLI so that it _doesn't_ get `cargo update`d, since that may break the build.
+            cmd!("cargo", "build", "-p", "spacetimedb-cli").run()?;
             // Make sure the `Cargo.lock` file reflects the latest available versions.
             // This is what users would end up with on a fresh module, so we want to
             // catch any compile errors arising from a different transitive closure
@@ -367,17 +400,13 @@ fn main() -> Result<()> {
             //
             // For context see also: https://github.com/clockworklabs/SpacetimeDB/pull/2714
             cmd!("cargo", "update").run()?;
-            cmd!(
-                "cargo",
-                "run",
-                "-p",
-                "spacetimedb-cli",
-                "--",
-                "build",
-                "--project-path",
-                "modules/module-test",
-            )
-            .run()?;
+            let cli_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .ancestors()
+                .nth(2)
+                .unwrap()
+                .join("target/debug/spacetimedb-cli")
+                .with_extension(std::env::consts::EXE_EXTENSION);
+            cmd!(cli_path, "build", "--module-path", "modules/module-test",).run()?;
         }
 
         Some(CiCmd::Dlls) => {
@@ -456,16 +485,8 @@ fn main() -> Result<()> {
             .run()?;
         }
 
-        Some(CiCmd::Smoketests { args: smoketest_args }) => {
-            let python = infer_python();
-            cmd(
-                python,
-                ["-m", "smoketests"]
-                    .into_iter()
-                    .map(|s| s.to_string())
-                    .chain(smoketest_args),
-            )
-            .run()?;
+        Some(CiCmd::Smoketests(args)) => {
+            smoketest::run(args)?;
         }
 
         Some(CiCmd::UpdateFlow {

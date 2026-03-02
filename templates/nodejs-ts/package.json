@@ -1,0 +1,22 @@
+{
+  "name": "@clockworklabs/nodejs-ts",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "esbuild src/main.ts --bundle --platform=node --outfile=dist/main.js --format=esm && node dist/main.js",
+    "start": "node dist/main.js",
+    "build": "esbuild src/main.ts --bundle --platform=node --outfile=dist/main.js --format=esm",
+    "typecheck": "tsc --noEmit",
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb"
+  },
+  "dependencies": {
+    "spacetimedb": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.24.0",
+    "typescript": "~5.6.2",
+    "undici": "^6.19.2"
+  }
+}

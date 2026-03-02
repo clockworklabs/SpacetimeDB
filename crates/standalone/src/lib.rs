@@ -23,7 +23,9 @@ use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api::auth::{self, LOCALHOST};
 use spacetimedb_client_api::routes::subscribe::{HasWebSocketOptions, WebSocketOptions};
 use spacetimedb_client_api::{ControlStateReadAccess, DatabaseResetDef, Host, NodeDelegate};
-use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
+use spacetimedb_client_api_messages::name::{
+    DatabaseName, DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld,
+};
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::traits::Program;
@@ -240,12 +242,17 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
     }
 
     // DNS
-    async fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
+    async fn lookup_database_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
         Ok(self.control_db.spacetime_dns(domain)?)
     }
 
     async fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
         Ok(self.control_db.spacetime_reverse_dns(database_identity)?)
+    }
+
+    async fn lookup_namespace_owner(&self, name: &str) -> anyhow::Result<Option<Identity>> {
+        let name: DatabaseName = name.parse()?;
+        Ok(self.control_db.spacetime_lookup_tld(Tld::from(name))?)
     }
 }
 
@@ -267,7 +274,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             None => {
                 let program = Program::from_bytes(&spec.program_bytes[..]);
 
-                let mut database = Database {
+                let database = Database {
                     id: 0,
                     database_identity: spec.database_identity,
                     owner_identity: *publisher,
@@ -287,8 +294,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
 
                 debug_assert_eq!(_hash_for_assert, program_hash);
 
-                let database_id = self.control_db.insert_database(database.clone())?;
-                database.id = database_id;
+                let database_id = self.control_db.insert_database(database)?;
 
                 self.schedule_replicas(database_id, num_replicas).await?;
 
@@ -604,7 +610,7 @@ pub async fn start_server(data_dir: &ServerDataDir, cert_dir: Option<&std::path:
         args.extend(["--jwt-key-dir".as_ref(), cert_dir.as_os_str()])
     }
     let args = start::cli().try_get_matches_from(args)?;
-    start::exec(&args, JobCores::without_pinned_cores(tokio::runtime::Handle::current())).await
+    start::exec(&args, JobCores::without_pinned_cores()).await
 }
 
 #[cfg(test)]
@@ -644,22 +650,13 @@ mod tests {
             websocket: WebSocketOptions::default(),
         };
 
-        let _env = StandaloneEnv::init(
-            config,
-            &ca,
-            data_dir.clone(),
-            JobCores::without_pinned_cores(tokio::runtime::Handle::current()),
-        )
-        .await?;
+        let _env = StandaloneEnv::init(config, &ca, data_dir.clone(), JobCores::without_pinned_cores()).await?;
         // Ensure that we have a lock.
-        assert!(StandaloneEnv::init(
-            config,
-            &ca,
-            data_dir.clone(),
-            JobCores::without_pinned_cores(tokio::runtime::Handle::current())
-        )
-        .await
-        .is_err());
+        assert!(
+            StandaloneEnv::init(config, &ca, data_dir.clone(), JobCores::without_pinned_cores())
+                .await
+                .is_err()
+        );
 
         Ok(())
     }

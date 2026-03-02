@@ -79,11 +79,6 @@ impl<'ctx> __sdk::Table for PkSimpleEnumTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<PkSimpleEnum>("pk_simple_enum");
-    _table.add_unique_constraint::<SimpleEnum>("a", |row| &row.a);
-}
 pub struct PkSimpleEnumUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkSimpleEnumTableHandle<'ctx> {
@@ -99,17 +94,6 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkSimpleEnumTableHandle<'ctx> {
     fn remove_on_update(&self, callback: PkSimpleEnumUpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<PkSimpleEnum>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<PkSimpleEnum>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
 }
 
 /// Access to the `a` unique index on the table `pk_simple_enum`,
@@ -140,6 +124,23 @@ impl<'ctx> PkSimpleEnumAUnique<'ctx> {
     pub fn find(&self, col_val: &SimpleEnum) -> Option<PkSimpleEnum> {
         self.imp.find(col_val)
     }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<PkSimpleEnum>("pk_simple_enum");
+    _table.add_unique_constraint::<SimpleEnum>("a", |row| &row.a);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(
+    raw_updates: __ws::v2::TableUpdate,
+) -> __sdk::Result<__sdk::TableUpdate<PkSimpleEnum>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<PkSimpleEnum>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
 }
 
 #[allow(non_camel_case_types)]
