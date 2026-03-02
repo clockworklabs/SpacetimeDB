@@ -1,0 +1,279 @@
+import Benchmark
+import Foundation
+import SpacetimeDB
+
+// MARK: - Test Data Structures
+
+struct Point3D: Codable, Sendable {
+    var x: Float
+    var y: Float
+    var z: Float
+}
+
+struct PlayerRow: Codable, Sendable {
+    var id: UInt64
+    var name: String
+    var x: Float
+    var y: Float
+    var health: UInt32
+    var weaponCount: UInt32
+    var kills: UInt32
+    var respawnAtMicros: Int64
+    var isReady: Bool
+}
+
+struct GameState: Codable, Sendable {
+    var tick: UInt64
+    var players: [PlayerRow]
+    var mapName: String
+    var timeLimit: UInt32
+}
+
+// MARK: - Pre-built Test Data
+
+private let samplePoint = Point3D(x: 1.0, y: 2.0, z: 3.0)
+
+private let samplePlayer = PlayerRow(
+    id: 12345, name: "BenchmarkPlayer", x: 150.5, y: 200.3,
+    health: 100, weaponCount: 3, kills: 42,
+    respawnAtMicros: 1_700_000_000_000, isReady: true
+)
+
+private let sampleGameState = GameState(
+    tick: 99999,
+    players: (0..<20).map { i in
+        PlayerRow(
+            id: UInt64(i), name: "Player \(i)", x: Float(i) * 10, y: Float(i) * 20,
+            health: 100, weaponCount: 1, kills: 0,
+            respawnAtMicros: 0, isReady: true
+        )
+    },
+    mapName: "benchmark_arena",
+    timeLimit: 300
+)
+
+private let encodedPoint: Data = try! BSATNEncoder().encode(samplePoint)
+private let encodedPlayer: Data = try! BSATNEncoder().encode(samplePlayer)
+private let encodedGameState: Data = try! BSATNEncoder().encode(sampleGameState)
+
+private let encodedServerInitialConnection = makeInitialConnectionMessage()
+private let encodedServerSubscriptionError = makeSubscriptionErrorMessage()
+private let encodedServerTransactionUpdate = makeTransactionUpdateMessage()
+
+private func appendLE<T: FixedWidthInteger>(_ value: T, to data: inout Data) {
+    var littleEndian = value.littleEndian
+    withUnsafeBytes(of: &littleEndian) { bytes in
+        data.append(contentsOf: bytes)
+    }
+}
+
+private func appendBSATNString(_ value: String, to data: inout Data) {
+    data.append(try! BSATNEncoder().encode(value))
+}
+
+private func appendEmptyRowList(to data: inout Data) {
+    // RowSizeHint::RowOffsets([])
+    appendLE(UInt8(1), to: &data)
+    appendLE(UInt32(0), to: &data)
+    appendLE(UInt32(0), to: &data)
+}
+
+private func makeInitialConnectionMessage() -> Data {
+    var frame = Data([0]) // ServerMessage::InitialConnection
+    frame.append(Data(repeating: 0xAB, count: 32)) // identity
+    frame.append(Data(repeating: 0xCD, count: 16)) // connection_id
+    appendBSATNString("benchmark-token", to: &frame)
+    return frame
+}
+
+private func makeSubscriptionErrorMessage() -> Data {
+    var frame = Data([3]) // ServerMessage::SubscriptionError
+    appendLE(UInt8(0), to: &frame) // request_id: Some
+    appendLE(UInt32(44), to: &frame) // request_id value
+    appendLE(UInt32(9), to: &frame) // query_set_id
+    appendBSATNString("bad query", to: &frame)
+    return frame
+}
+
+private func makeTransactionUpdateMessage() -> Data {
+    var frame = Data([4]) // ServerMessage::TransactionUpdate
+    appendLE(UInt32(1), to: &frame) // query_sets count
+
+    appendLE(UInt32(7), to: &frame) // query_set_id
+    appendLE(UInt32(1), to: &frame) // table updates count
+
+    appendBSATNString("player", to: &frame)
+    appendLE(UInt32(1), to: &frame) // row updates count
+    appendLE(UInt8(0), to: &frame) // TableUpdateRows::PersistentTable
+
+    // inserts + deletes row lists
+    appendEmptyRowList(to: &frame)
+    appendEmptyRowList(to: &frame)
+    return frame
+}
+
+private func makeSubscribeMessage() -> ClientMessage {
+    .subscribe(Subscribe(queryStrings: ["SELECT * FROM player"], requestId: 1, querySetId: 7))
+}
+
+private func makeReducerMessage() -> ClientMessage {
+    .callReducer(CallReducer(requestId: 2, flags: 0, reducer: "move", args: Data(repeating: 0x2A, count: 128)))
+}
+
+private func makeProcedureMessage() -> ClientMessage {
+    .callProcedure(CallProcedure(requestId: 3, flags: 0, procedure: "spawn", args: Data(repeating: 0x7F, count: 128)))
+}
+
+let benchmarks: @Sendable () -> Void = {
+    Benchmark.defaultConfiguration = .init(
+        metrics: [.wallClock, .throughput],
+        maxDuration: .seconds(3),
+        maxIterations: 1_000_000
+    )
+
+    // MARK: - BSATN Encode
+
+    Benchmark("BSATN Encode Point3D") { benchmark in
+        let encoder = BSATNEncoder()
+        for _ in benchmark.scaledIterations {
+            blackHole(try encoder.encode(samplePoint))
+        }
+    }
+
+    Benchmark("BSATN Encode PlayerRow") { benchmark in
+        let encoder = BSATNEncoder()
+        for _ in benchmark.scaledIterations {
+            blackHole(try encoder.encode(samplePlayer))
+        }
+    }
+
+    Benchmark("BSATN Encode GameState (20 players)") { benchmark in
+        let encoder = BSATNEncoder()
+        for _ in benchmark.scaledIterations {
+            blackHole(try encoder.encode(sampleGameState))
+        }
+    }
+
+    // MARK: - BSATN Decode
+
+    Benchmark("BSATN Decode Point3D") { benchmark in
+        let decoder = BSATNDecoder()
+        for _ in benchmark.scaledIterations {
+            blackHole(try decoder.decode(Point3D.self, from: encodedPoint))
+        }
+    }
+
+    Benchmark("BSATN Decode PlayerRow") { benchmark in
+        let decoder = BSATNDecoder()
+        for _ in benchmark.scaledIterations {
+            blackHole(try decoder.decode(PlayerRow.self, from: encodedPlayer))
+        }
+    }
+
+    Benchmark("BSATN Decode GameState (20 players)") { benchmark in
+        let decoder = BSATNDecoder()
+        for _ in benchmark.scaledIterations {
+            blackHole(try decoder.decode(GameState.self, from: encodedGameState))
+        }
+    }
+
+    // MARK: - Message Encode/Decode
+
+    Benchmark("Message Encode Subscribe") { benchmark in
+        let encoder = BSATNEncoder()
+        let message = makeSubscribeMessage()
+        for _ in benchmark.scaledIterations {
+            blackHole(try encoder.encode(message))
+        }
+    }
+
+    Benchmark("Message Encode CallReducer (128-byte args)") { benchmark in
+        let encoder = BSATNEncoder()
+        let message = makeReducerMessage()
+        for _ in benchmark.scaledIterations {
+            blackHole(try encoder.encode(message))
+        }
+    }
+
+    Benchmark("Message Encode CallProcedure (128-byte args)") { benchmark in
+        let encoder = BSATNEncoder()
+        let message = makeProcedureMessage()
+        for _ in benchmark.scaledIterations {
+            blackHole(try encoder.encode(message))
+        }
+    }
+
+    Benchmark("Message Decode InitialConnection") { benchmark in
+        let decoder = BSATNDecoder()
+        for _ in benchmark.scaledIterations {
+            blackHole(try decoder.decode(ServerMessage.self, from: encodedServerInitialConnection))
+        }
+    }
+
+    Benchmark("Message Decode SubscriptionError") { benchmark in
+        let decoder = BSATNDecoder()
+        for _ in benchmark.scaledIterations {
+            blackHole(try decoder.decode(ServerMessage.self, from: encodedServerSubscriptionError))
+        }
+    }
+
+    Benchmark("Message Decode TransactionUpdate (single table)") { benchmark in
+        let decoder = BSATNDecoder()
+        for _ in benchmark.scaledIterations {
+            blackHole(try decoder.decode(ServerMessage.self, from: encodedServerTransactionUpdate))
+        }
+    }
+
+    // MARK: - Cache Operations
+
+    Benchmark("Cache Insert 100 rows") { benchmark in
+        let encoder = BSATNEncoder()
+        let rows = (0..<100).map { i in
+            try! encoder.encode(Point3D(x: Float(i), y: Float(i), z: Float(i)))
+        }
+        for _ in benchmark.scaledIterations {
+            await MainActor.run {
+                let cache = TableCache<Point3D>(tableName: "bench")
+                for rowBytes in rows {
+                    try! cache.handleInsert(rowBytes: rowBytes)
+                }
+                blackHole(cache.rows)
+            }
+        }
+    }
+
+    Benchmark("Cache Insert 1000 rows") { benchmark in
+        let encoder = BSATNEncoder()
+        let rows = (0..<1000).map { i in
+            try! encoder.encode(Point3D(x: Float(i), y: Float(i), z: Float(i)))
+        }
+        for _ in benchmark.scaledIterations {
+            await MainActor.run {
+                let cache = TableCache<Point3D>(tableName: "bench")
+                for rowBytes in rows {
+                    try! cache.handleInsert(rowBytes: rowBytes)
+                }
+                blackHole(cache.rows)
+            }
+        }
+    }
+
+    Benchmark("Cache Delete 500 rows from full") { benchmark in
+        let encoder = BSATNEncoder()
+        let rows = (0..<500).map { i in
+            try! encoder.encode(Point3D(x: Float(i), y: Float(i), z: Float(i)))
+        }
+        for _ in benchmark.scaledIterations {
+            await MainActor.run {
+                let cache = TableCache<Point3D>(tableName: "bench")
+                for rowBytes in rows {
+                    try! cache.handleInsert(rowBytes: rowBytes)
+                }
+                for rowBytes in rows {
+                    try! cache.handleDelete(rowBytes: rowBytes)
+                }
+                blackHole(cache.rows)
+            }
+        }
+    }
+}

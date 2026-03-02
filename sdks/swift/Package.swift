@@ -1,5 +1,4 @@
 // swift-tools-version: 6.2
-// The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
 
@@ -10,10 +9,16 @@ let package = Package(
         .iOS(.v17)
     ],
     products: [
-        // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
             name: "SpacetimeDB",
             targets: ["SpacetimeDB"]
+        ),
+    ],
+    dependencies: [
+        .package(
+            url: "https://github.com/ordo-one/package-benchmark",
+            from: "1.30.0",
+            traits: []
         ),
     ],
     targets: [
@@ -23,6 +28,17 @@ let package = Package(
         .testTarget(
             name: "SpacetimeDBTests",
             dependencies: ["SpacetimeDB"]
+        ),
+        .executableTarget(
+            name: "SpacetimeDBBenchmarks",
+            dependencies: [
+                "SpacetimeDB",
+                .product(name: "Benchmark", package: "package-benchmark"),
+            ],
+            path: "Benchmarks/SpacetimeDBBenchmarks",
+            plugins: [
+                .plugin(name: "BenchmarkPlugin", package: "package-benchmark"),
+            ]
         ),
     ]
 )
