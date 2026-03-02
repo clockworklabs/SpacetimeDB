@@ -77,7 +77,7 @@ public partial struct Player
     [SpacetimeDB.PrimaryKey]
     [SpacetimeDB.AutoInc]
     public ulong Id;
-    [SpacetimeDB.Unique]
+    [SpacetimeDB.Index.BTree]
     public Identity OwnerId;
     public string Name;
 }
@@ -93,8 +93,8 @@ public static partial class Module
 }
 
 // CORRECT DATABASE ACCESS — PascalCase, index-based lookups
-var player = ctx.Db.Player.Id.Find(playerId);
-var player = ctx.Db.Player.OwnerId.Find(ctx.Sender);
+var player = ctx.Db.Player.Id.Find(playerId);           // Unique/PK: returns nullable
+foreach (var p in ctx.Db.Player.OwnerId.Filter(ctx.Sender)) { }  // BTree: returns IEnumerable
 
 // CORRECT SUM TYPE — partial record with named tuple elements
 [SpacetimeDB.Type]
@@ -155,7 +155,7 @@ public partial struct Player
     [SpacetimeDB.AutoInc]
     public ulong Id;
 
-    [SpacetimeDB.Unique]
+    [SpacetimeDB.Index.BTree]
     public Identity OwnerId;
 
     public string Name;
