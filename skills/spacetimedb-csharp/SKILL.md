@@ -290,7 +290,7 @@ public static partial class Module
 
 ### Event Tables (2.0)
 
-Reducer callbacks are available in generated client bindings. Event tables + `OnInsert` are also useful for explicit domain events.
+Reducer callbacks are removed in 2.0. Use event tables + `OnInsert` instead.
 
 ```csharp
 [SpacetimeDB.Table(Accessor = "DamageEvent", Public = true, Event = true)]
@@ -314,7 +314,7 @@ conn.Db.DamageEvent.OnInsert += (ctx, evt) => {
 };
 ```
 
-Event tables can be subscribed explicitly, and they are also included by `SubscribeToAllTables()`.
+Event tables must be subscribed explicitly — they are excluded from `SubscribeToAllTables()`.
 
 ### Database Access
 

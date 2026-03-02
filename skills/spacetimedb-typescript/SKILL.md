@@ -116,7 +116,7 @@ const [items, isReady] = useTable(tables.item);
 npm install spacetimedb
 ```
 
-For Node.js 18-21, also install `undici`. Node.js 22+ and browsers work out of the box.
+For Node.js environments without native fetch/WebSocket support, install `undici`.
 
 ## Generating Type Bindings
 
@@ -327,7 +327,7 @@ conn.db.damageEvent.onInsert((ctx, evt) => {
 });
 ```
 
-Event tables can be subscribed explicitly, and they are also included by `subscribeToAllTables()`.
+Event tables must be subscribed explicitly — they are excluded from `subscribeToAllTables()`.
 
 ---
 

@@ -69,7 +69,7 @@ SpacetimeDB combines a database and application server into a single deployable 
 
 Key characteristics:
 
-- **In-memory execution**: All application state lives in memory for sub-millisecond access
+- **In-memory execution**: Application state is served from memory for very low-latency access
 - **Persistent storage**: Data is automatically persisted to a write-ahead log (WAL) for durability
 - **Real-time synchronization**: Changes are automatically pushed to subscribed clients
 - **Single deployment**: No separate servers, containers, or infrastructure to manage
@@ -77,7 +77,7 @@ Key characteristics:
 ## The Five Zen Principles
 
 1. **Everything is a Table**: Your entire application state lives in tables. No separate cache layer, no Redis, no in-memory state to synchronize.
-2. **Everything is Persistent**: SpacetimeDB persists everything by default, including full history.
+2. **Everything is Persistent**: SpacetimeDB persists state by default (for example via WAL-backed durability).
 3. **Everything is Real-Time**: Clients are replicas of server state. Subscribe to data and it flows automatically.
 4. **Everything is Transactional**: Every reducer runs atomically. Either all changes succeed or all roll back.
 5. **Everything is Programmable**: Modules are real code (Rust, C#, TypeScript) running inside the database.
@@ -205,7 +205,7 @@ Every reducer receives a `ReducerContext` providing:
 
 ## Event Tables (2.0)
 
-Reducer callbacks are removed in 2.0. Use **event tables** to broadcast reducer-specific data to clients.
+Event tables are the preferred way to broadcast reducer-specific data to clients.
 
 ```rust
 #[table(accessor = damage_event, public, event)]
@@ -220,7 +220,7 @@ fn deal_damage(ctx: &ReducerContext, target: Identity, amount: u32) {
 }
 ```
 
-Clients subscribe to event tables and use `on_insert` callbacks. Event tables are excluded from `subscribe_to_all_tables()` and must be subscribed explicitly.
+Clients subscribe to event tables and use `on_insert` callbacks. Event tables must be subscribed explicitly and are excluded from `subscribe_to_all_tables()`.
 
 ## Subscriptions
 
@@ -280,7 +280,7 @@ pub fn do_something(ctx: &ReducerContext) {
 
 ### Authentication Providers
 
-SpacetimeDB works with any OIDC provider: SpacetimeAuth (built-in), Auth0, Clerk, Keycloak, Google, GitHub, etc.
+SpacetimeDB works with many OIDC providers, including SpacetimeAuth (built-in), Auth0, Clerk, Keycloak, Google, and GitHub.
 
 ## When to Use SpacetimeDB
 

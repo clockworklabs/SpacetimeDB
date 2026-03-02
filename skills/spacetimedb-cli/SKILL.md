@@ -69,7 +69,7 @@ spacetime subscribe my-database "SELECT * FROM users" --num-updates 10
 
 # View logs
 spacetime logs my-database -f              # follow logs
-spacetime logs my-database -n 100          # last 100 lines
+spacetime logs my-database -n 100          # up to 100 log lines
 
 # Describe schema
 spacetime describe my-database --json
