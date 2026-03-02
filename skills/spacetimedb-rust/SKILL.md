@@ -100,7 +100,7 @@ let caller = ctx.sender();
 5. **Use `ctx.sender()`** — method call, not field access (2.0)
 6. **Use `accessor =`** — not `name =` in table/index attributes (2.0)
 7. **Reducers must be deterministic** — no filesystem, network, timers, or external RNG
-8. **Use `ctx.rng`** — not `rand` crate for random numbers
+8. **Use `ctx.rng()`** — not `rand` crate for random numbers
 9. **Add `public` flag** — if clients need to subscribe to a table
 10. **Update only via primary key** — use delete+insert for non-PK changes (2.0)
 
@@ -200,7 +200,7 @@ ctx.sender()        // Identity of the caller (method, not field!)
 ctx.connection_id() // Option<ConnectionId> (None for scheduled/system reducers)
 ctx.timestamp       // Invocation timestamp
 ctx.identity()      // Module's own identity
-ctx.rng             // Deterministic RNG
+ctx.rng()            // Deterministic RNG (method, not field!)
 ```
 
 ---
@@ -546,6 +546,6 @@ spacetime generate --lang rust --out-dir <client>/src/module_bindings --module-p
 
 1. **No Global State**: Static/global variables are undefined behavior across reducer calls
 2. **No Side Effects**: Reducers cannot make network requests or file I/O
-3. **Deterministic Execution**: Use `ctx.rng` and `ctx.new_uuid_*()` for randomness
+3. **Deterministic Execution**: Use `ctx.rng()` and `ctx.new_uuid_*()` for randomness
 4. **Transactional**: All reducer changes roll back on failure
 5. **Isolated**: Reducers don't see concurrent changes until commit

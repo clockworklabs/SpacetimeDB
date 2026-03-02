@@ -77,6 +77,7 @@ public partial struct Player
     [SpacetimeDB.PrimaryKey]
     [SpacetimeDB.AutoInc]
     public ulong Id;
+    [SpacetimeDB.Unique]
     public Identity OwnerId;
     public string Name;
 }
@@ -154,7 +155,7 @@ public partial struct Player
     [SpacetimeDB.AutoInc]
     public ulong Id;
 
-    [SpacetimeDB.Index.BTree]
+    [SpacetimeDB.Unique]
     public Identity OwnerId;
 
     public string Name;
@@ -336,7 +337,7 @@ foreach (var task in ctx.Db.Task.OwnerId.Filter(ctx.Sender)) { }
 
 // Full table scan — avoid for large tables
 foreach (var task in ctx.Db.Task.Iter()) { }
-var count = ctx.Db.Task.Count();
+var count = ctx.Db.Task.Count;
 ```
 
 ### Custom Types and Sum Types
@@ -398,7 +399,7 @@ Log.Debug("Debug message");
 Log.Info("Information");
 Log.Warn("Warning");
 Log.Error("Error occurred");
-Log.Panic("Critical failure");  // Terminates execution
+Log.Exception("Critical failure");  // Logs at error level
 ```
 
 ### ReducerContext API

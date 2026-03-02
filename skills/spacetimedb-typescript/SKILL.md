@@ -50,8 +50,8 @@ import { SpacetimeDBProvider, useTable, Identity } from 'spacetimedb/react';
 conn.reducers.doSomething({ value: 'test' });
 conn.reducers.updateItem({ itemId: 1n, newValue: 42 });
 
-// CORRECT DATA ACCESS — useTable returns [rows, isLoading]
-const [items, isLoading] = useTable(tables.item);
+// CORRECT DATA ACCESS — useTable returns [rows, isReady]
+const [items, isReady] = useTable(tables.item);
 ```
 
 ### DO NOT:
@@ -86,7 +86,7 @@ const [items, isLoading] = useTable(tables.item);
 | Wrong | Right | Error |
 |-------|-------|-------|
 | Inline `connectionBuilder` | `useMemo(() => ..., [])` | Reconnects every render |
-| `const rows = useTable(table)` | `const [rows, isLoading] = useTable(table)` | Tuple destructuring |
+| `const rows = useTable(table)` | `const [rows, isReady] = useTable(table)` | Tuple destructuring |
 | Optimistic UI updates | Let subscriptions drive state | Desync issues |
 | `<SpacetimeDBProvider builder={...}>` | `connectionBuilder={...}` | Wrong prop name |
 
@@ -178,7 +178,7 @@ handle.unsubscribeThen(() => console.log('Unsubscribed'));
 for (const player of connection.db.player.iter()) { console.log(player.name); }
 const players = Array.from(connection.db.player.iter());
 const count = connection.db.player.count();
-const player = connection.db.player.id.find(42);
+const player = connection.db.player.id.find(42n);
 ```
 
 ## Table Event Callbacks
@@ -463,8 +463,8 @@ function Root() {
 }
 
 function PlayerList() {
-  const [players, isLoading] = useTable(tables.player);
-  if (isLoading) return <div>Loading...</div>;
+  const [players, isReady] = useTable(tables.player);
+  if (!isReady) return <div>Loading...</div>;
   return <ul>{players.map(p => <li key={p.id}>{p.name}</li>)}</ul>;
 }
 ```
