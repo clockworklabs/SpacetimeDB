@@ -995,6 +995,12 @@ jobs:
               exit 1
           }
 
+      - name: Smoketest C# AOT build (NativeAOT-LLVM)
+        run: |
+          cd modules/sdk-test-cs
+          EXPERIMENTAL_WASM_AOT=1 dotnet publish -c Release
+          test -f bin/Release/net8.0/wasi-wasm/publish/StdbModule.wasm
+
   internal-tests:
     name: Internal Tests
     needs: [lints]
