@@ -198,10 +198,10 @@ public static void CreateUser(ReducerContext ctx, string name, string email)
 ### ReducerContext
 
 Every reducer receives a `ReducerContext` providing:
-- `ctx.db`: Access to all tables (read and write)
-- `ctx.sender()`: The Identity of the caller (Rust: method; C#/TS: property/field)
-- `ctx.connection_id`: The connection ID of the caller
-- `ctx.timestamp`: The current timestamp
+- **Database**: `ctx.db` (Rust field, TS property) / `ctx.Db` (C# property)
+- **Sender**: `ctx.sender()` (Rust method) / `ctx.Sender` (C# property) / `ctx.sender` (TS property)
+- **Connection ID**: `ctx.connection_id()` (Rust method) / `ctx.ConnectionId` (C# property) / `ctx.connectionId` (TS property)
+- **Timestamp**: `ctx.timestamp` (Rust field, TS property) / `ctx.Timestamp` (C# property)
 
 ## Event Tables (2.0)
 
