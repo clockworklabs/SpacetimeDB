@@ -253,7 +253,9 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                         break;
                     }
                     // Reclaim burst capacity.
-                    tx_buf.shrink_to(self.batch_capacity.get());
+                    if n < self.batch_capacity.get() {
+                        tx_buf.shrink_to(self.batch_capacity.get());
+                    }
                 },
             }
         }
