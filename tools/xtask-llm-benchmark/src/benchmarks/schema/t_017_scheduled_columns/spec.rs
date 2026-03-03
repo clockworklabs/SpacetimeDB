@@ -2,7 +2,7 @@ use crate::eval::defaults::{
     default_schema_parity_scorers,
     make_sql_count_only_scorer,
 };
-use crate::eval::{casing_for_lang, ident, BenchmarkSpec, SqlBuilder};
+use crate::eval::{casing_for_lang, ident, table_name, BenchmarkSpec, SqlBuilder};
 use std::time::Duration;
 
 pub fn spec() -> BenchmarkSpec {
@@ -12,8 +12,9 @@ pub fn spec() -> BenchmarkSpec {
 
         // After publish (Init ran), exactly one scheduled row should exist.
         let sb = SqlBuilder::new(casing_for_lang(lang));
+        let tick_timer_table = table_name("tick_timer", lang);
         let idcol = ident("scheduled_id", sb.case);
-        let q = format!("SELECT COUNT(*) AS n FROM tick_timer WHERE {idcol}>=0");
+        let q = format!("SELECT COUNT(*) AS n FROM {tick_timer_table} WHERE {idcol}>=0");
 
         v.push(make_sql_count_only_scorer(
             host_url,

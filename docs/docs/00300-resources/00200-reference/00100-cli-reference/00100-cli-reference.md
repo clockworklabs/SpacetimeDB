@@ -159,6 +159,11 @@ Run `spacetime help logs` for more detailed information.
 
   Possible values: `text`, `json`
 
+* `-l`, `--level <LEVEL>` — Filter logs by severity level. Only messages at the specified level or higher will be shown. Levels from least to most severe: trace, debug, info, warn, error, panic.
+
+  Possible values: `trace`, `debug`, `info`, `warn`, `error`, `panic`
+
+* `--level-exact` — When combined with --level, show only logs at exactly the specified level instead of that level and above.
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
 * `--no-config` — Ignore spacetime.json configuration
 

@@ -23,6 +23,25 @@ detect_emcmake_command() {
 EMCMAKE_CMD=$(detect_emcmake_command)
 echo "Using emcmake command: $EMCMAKE_CMD"
 
+# Parse arguments
+MAX_PARALLEL=16
+TEST_MODE="v10-regression"
+for arg in "$@"; do
+    case "$arg" in
+        --v10-regression)
+            TEST_MODE="v10-regression"
+            ;;
+        --v9)
+            TEST_MODE="v9"
+            ;;
+        ''|*[!0-9]*)
+            ;;
+        *)
+            MAX_PARALLEL="$arg"
+            ;;
+    esac
+done
+
 # Clear previous state
 echo "Starting fresh test run..."
 rm -f test_log.txt test_summary_live.txt
@@ -62,13 +81,28 @@ for cpp_file in test_modules/*.cpp; do
     fi
 done
 
+# Optional focused regression selection for V10 behavior checks
+if [ "$TEST_MODE" = "v10-regression" ]; then
+    declare -a FILTERED_MODULES=()
+    for module in "${MODULES[@]}"; do
+        case "$module" in
+            test_multicolumn_index_valid|error_multicolumn_missing_field|error_default_missing_field|error_circular_ref)
+                FILTERED_MODULES+=("$module")
+                ;;
+        esac
+    done
+    MODULES=("${FILTERED_MODULES[@]}")
+fi
+
 # Sort modules
 IFS=$'\n' MODULES=($(sort <<<"${MODULES[*]}"))
 unset IFS
 
 echo "========================================="
 echo "Testing ${#MODULES[@]} modules"
-echo "Parallelism: ${1:-16} (use ./run_type_isolation_test.sh <num> to change)"
+echo "Mode: ${TEST_MODE}"
+echo "Parallelism: ${MAX_PARALLEL} (use ./run_type_isolation_test.sh <num> to change)"
+echo "Use --v9 to run the broader legacy/full module suite."
 echo "========================================="
 echo "Monitor table with: watch -n 1 cat test_summary_live.txt"
 echo "Monitor log with: tail -f test_log.txt"
@@ -180,6 +214,24 @@ echo "========================================="
 export SPACETIMEDB_LIBRARY_DIR="$(pwd)/$LIBRARY_BUILD_DIR/spacetimedb_lib"
 export SPACETIMEDB_INCLUDE_DIR="$(pwd)/../../include"
 
+get_expected_failure_marker() {
+    local module=$1
+    case "$module" in
+        error_multicolumn_missing_field)
+            echo "ERROR_CONSTRAINT_REGISTRATION_FIELD_NOT_FOUND"
+            ;;
+        error_default_missing_field)
+            echo "ERROR_CONSTRAINT_REGISTRATION_FIELD_NOT_FOUND"
+            ;;
+        error_circular_ref)
+            echo "ERROR_CIRCULAR_REFERENCE_"
+            ;;
+        *)
+            echo ""
+            ;;
+    esac
+}
+
 # Function to publish module in background
 publish_module() {
     local module=$1
@@ -201,7 +253,47 @@ publish_module() {
     local db_name=$(echo "testmod-${module}" | sed 's/_/-/g')
     echo "  📤 Publishing $module as $db_name..."
     local PUBLISH_ERROR_FILE="$TMP_DIR/publish_error_${module}.txt"
-    if timeout 60 spacetime publish --bin-path "$wasm" -c "$db_name" -y > /dev/null 2>"$PUBLISH_ERROR_FILE"; then
+    timeout 60 spacetime publish --bin-path "$wasm" -c "$db_name" -y >"$PUBLISH_ERROR_FILE" 2>&1
+    local publish_exit=$?
+
+    local expected_marker
+    expected_marker=$(get_expected_failure_marker "$module")
+
+    local has_publish_error=0
+    if grep -q "Error: Errors occurred:" "$PUBLISH_ERROR_FILE" 2>/dev/null || \
+       grep -q "HTTP status server error" "$PUBLISH_ERROR_FILE" 2>/dev/null || \
+       grep -q "invalid ref:" "$PUBLISH_ERROR_FILE" 2>/dev/null; then
+        has_publish_error=1
+    fi
+
+    local publish_success=0
+    if [ $publish_exit -eq 0 ] && [ $has_publish_error -eq 0 ]; then
+        publish_success=1
+    fi
+
+    if [ -n "$expected_marker" ]; then
+        if [ $publish_success -eq 0 ] && grep -q "$expected_marker" "$PUBLISH_ERROR_FILE" 2>/dev/null; then
+            write_log "$module" "publish" "pass"
+            write_log "$module" "error" "Expected publish failure validated: $expected_marker"
+            echo "  ✅ Expected publish failure validated: $module ($expected_marker)"
+            rm -f "$PUBLISH_ERROR_FILE"
+            return
+        fi
+
+        write_log "$module" "publish" "fail"
+        local EXPECTED_MSG="Expected publish failure with marker '$expected_marker'"
+        ERROR_MSG=$(sed -n '/Error:/,+10p' "$PUBLISH_ERROR_FILE" 2>/dev/null | tr '\n' ' ')
+        if [ -z "$ERROR_MSG" ]; then
+            ERROR_MSG=$(tail -n 15 "$PUBLISH_ERROR_FILE" 2>/dev/null | tr '\n' ' ')
+        fi
+        ERROR_MSG="$EXPECTED_MSG | Actual: ${ERROR_MSG:0:400}"
+        write_log "$module" "error" "$ERROR_MSG"
+        echo "  ❌ Expected failure marker missing for $module"
+        rm -f "$PUBLISH_ERROR_FILE"
+        return
+    fi
+
+    if [ $publish_success -eq 1 ]; then
         write_log "$module" "publish" "pass"
         echo "  ✅ Published $module"
         rm -f "$PUBLISH_ERROR_FILE"
@@ -284,7 +376,6 @@ build_module() {
 }
 
 # Parallel build management with configurable parallelism
-MAX_PARALLEL=16  # Default to 16, or use first argument
 echo "Building modules with parallelism of $MAX_PARALLEL..."
 
 # Build modules maintaining constant parallelism
