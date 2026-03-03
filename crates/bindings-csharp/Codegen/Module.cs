@@ -1231,12 +1231,11 @@ record ViewDeclaration
         }
 
         // Validate return type: must be List<T>, T?, or IEnumerable<T>
-        if (
-            !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.ValueOption")
-            && !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.RefOption")
-            && !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.List")
-            && !ReturnsEnumerable
-        )
+        var isOption =
+            ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.ValueOption")
+            || ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.RefOption");
+
+        if (!ReturnsQuery && !ReturnsEnumerable && !isOption)
         {
             diag.Report(ErrorDescriptor.ViewInvalidReturn, methodSyntax);
         }
