@@ -519,7 +519,7 @@ function makeTableView(
     const accessorName = indexDef.accessorName;
     if (typeof accessorName !== 'string' || accessorName.length === 0) {
       throw new TypeError(
-        `Index '${indexDef.sourceName ?? '<unknown>'}' on table '${table.accessorName}' is missing accessor name`
+        `Index '${indexDef.sourceName ?? '<unknown>'}' on table '${table.sourceName}' is missing accessor name`
       );
     }
     const index_id = sys.index_id_from_name(indexDef.sourceName!);
@@ -803,7 +803,7 @@ function makeTableView(
 
     if (Object.hasOwn(tableView, accessorName)) {
       throw new TypeError(
-        `Duplicate index accessor '${accessorName}' on table '${table.accessorName}'`
+        `Duplicate index accessor '${accessorName}' on table '${table.sourceName}'`
       );
     } else {
       tableView[accessorName] = freeze(index) as any;
