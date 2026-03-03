@@ -74,16 +74,17 @@ fn compile_select(table: From, project: Box<[Column]>, selection: Option<Selecti
                 Err(PlanError::UnknownField { field, tables: _ }) => not_found.push(field),
                 Err(err) => return Err(err),
             },
-            Column::QualifiedWildcard { table: name } => {
-                if let Some(t) = table.iter_tables().find(|x| *x.table_name == name) {
+            Column::QualifiedWildcard { table: name } => match table.iter_tables().find(|x| *x.table_name == name) {
+                Some(t) => {
                     for c in t.columns().iter() {
                         col_ids.push(FieldName::new(t.table_id, c.col_pos).into());
                     }
                     qualified_wildcards.push(t.table_id);
-                } else {
+                }
+                _ => {
                     return Err(PlanError::TableNotFoundQualified { expect: name });
                 }
-            }
+            },
             Column::Wildcard => {}
         }
     }

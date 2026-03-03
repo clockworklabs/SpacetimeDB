@@ -9,11 +9,80 @@
 // (private documentation for the macro authors is totally fine here and you SHOULD write that!)
 
 mod procedure;
+
+#[proc_macro_attribute]
+pub fn procedure(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    cvt_attr::<ItemFn>(args, item, quote!(), |args, original_function| {
+        let args = procedure::ProcedureArgs::parse(args)?;
+        procedure::procedure_impl(args, original_function)
+    })
+}
 mod reducer;
+
+#[proc_macro_attribute]
+pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    cvt_attr::<ItemFn>(args, item, quote!(), |args, original_function| {
+        let args = reducer::ReducerArgs::parse(args)?;
+        reducer::reducer_impl(args, original_function)
+    })
+}
 mod sats;
 mod table;
+
+#[proc_macro_attribute]
+pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    // put this on the struct so we don't get unknown attribute errors
+    let derive_table_helper: syn::Attribute = derive_table_helper_attr();
+
+    ok_or_compile_error(|| {
+        let item = TokenStream::from(item);
+        let mut derive_input: syn::DeriveInput = syn::parse2(item.clone())?;
+
+        // Add `derive(__TableHelper)` only if it's not already in the attributes of the `derive_input.`
+        // If multiple `#[table]` attributes are applied to the same `struct` item,
+        // this will ensure that we don't emit multiple conflicting implementations
+        // for traits like `SpacetimeType`, `Serialize` and `Deserialize`.
+        //
+        // We need to push at the end, rather than the beginning,
+        // because rustc expands attribute macros (including derives) top-to-bottom,
+        // and we need *all* `#[table]` attributes *before* the `derive(__TableHelper)`.
+        // This way, the first `table` will insert a `derive(__TableHelper)`,
+        // and all subsequent `#[table]`s on the same `struct` will see it,
+        // and not add another.
+        //
+        // Note, thank goodness, that `syn`'s `PartialEq` impls (provided with the `extra-traits` feature)
+        // skip any [`Span`]s contained in the items,
+        // thereby comparing for syntactic rather than structural equality. This shouldn't matter,
+        // since we expect that the `derive_table_helper` will always have the same [`Span`]s,
+        // but it's nice to know.
+        if !derive_input.attrs.contains(&derive_table_helper) {
+            derive_input.attrs.push(derive_table_helper);
+        }
+
+        let args = table::TableArgs::parse(args.into(), &derive_input.ident)?;
+        let generated = table::table_impl(args, &derive_input)?;
+        Ok(TokenStream::from_iter([quote!(#derive_input), generated]))
+    })
+}
 mod util;
 mod view;
+
+#[proc_macro_attribute]
+pub fn view(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    let item_ts: TokenStream = item.into();
+    let original_function = match syn::parse2::<ItemFn>(item_ts.clone()) {
+        Ok(f) => f,
+        Err(e) => return TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
+    };
+    let args = match view::ViewArgs::parse(args.into(), &original_function.sig.ident) {
+        Ok(a) => a,
+        Err(e) => return TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
+    };
+    match view::view_impl(args, &original_function) {
+        Ok(ts) => ts.into(),
+        Err(e) => TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
+    }
+}
 
 use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::TokenStream;
@@ -109,39 +178,6 @@ mod sym {
     }
 }
 
-#[proc_macro_attribute]
-pub fn procedure(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
-    cvt_attr::<ItemFn>(args, item, quote!(), |args, original_function| {
-        let args = procedure::ProcedureArgs::parse(args)?;
-        procedure::procedure_impl(args, original_function)
-    })
-}
-
-#[proc_macro_attribute]
-pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
-    cvt_attr::<ItemFn>(args, item, quote!(), |args, original_function| {
-        let args = reducer::ReducerArgs::parse(args)?;
-        reducer::reducer_impl(args, original_function)
-    })
-}
-
-#[proc_macro_attribute]
-pub fn view(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
-    let item_ts: TokenStream = item.into();
-    let original_function = match syn::parse2::<ItemFn>(item_ts.clone()) {
-        Ok(f) => f,
-        Err(e) => return TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
-    };
-    let args = match view::ViewArgs::parse(args.into(), &original_function.sig.ident) {
-        Ok(a) => a,
-        Err(e) => return TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
-    };
-    match view::view_impl(args, &original_function) {
-        Ok(ts) => ts.into(),
-        Err(e) => TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
-    }
-}
-
 /// It turns out to be shockingly difficult to construct an [`Attribute`].
 /// That type is not [`Parse`], instead having two distinct methods
 /// for parsing "inner" vs "outer" attributes.
@@ -156,42 +192,6 @@ fn derive_table_helper_attr() -> Attribute {
         .into_iter()
         .next()
         .unwrap()
-}
-
-#[proc_macro_attribute]
-pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
-    // put this on the struct so we don't get unknown attribute errors
-    let derive_table_helper: syn::Attribute = derive_table_helper_attr();
-
-    ok_or_compile_error(|| {
-        let item = TokenStream::from(item);
-        let mut derive_input: syn::DeriveInput = syn::parse2(item.clone())?;
-
-        // Add `derive(__TableHelper)` only if it's not already in the attributes of the `derive_input.`
-        // If multiple `#[table]` attributes are applied to the same `struct` item,
-        // this will ensure that we don't emit multiple conflicting implementations
-        // for traits like `SpacetimeType`, `Serialize` and `Deserialize`.
-        //
-        // We need to push at the end, rather than the beginning,
-        // because rustc expands attribute macros (including derives) top-to-bottom,
-        // and we need *all* `#[table]` attributes *before* the `derive(__TableHelper)`.
-        // This way, the first `table` will insert a `derive(__TableHelper)`,
-        // and all subsequent `#[table]`s on the same `struct` will see it,
-        // and not add another.
-        //
-        // Note, thank goodness, that `syn`'s `PartialEq` impls (provided with the `extra-traits` feature)
-        // skip any [`Span`]s contained in the items,
-        // thereby comparing for syntactic rather than structural equality. This shouldn't matter,
-        // since we expect that the `derive_table_helper` will always have the same [`Span`]s,
-        // but it's nice to know.
-        if !derive_input.attrs.contains(&derive_table_helper) {
-            derive_input.attrs.push(derive_table_helper);
-        }
-
-        let args = table::TableArgs::parse(args.into(), &derive_input.ident)?;
-        let generated = table::table_impl(args, &derive_input)?;
-        Ok(TokenStream::from_iter([quote!(#derive_input), generated]))
-    })
 }
 
 /// Special alias for `derive(SpacetimeType)`, aka [`schema_type`], for use by [`table`].
@@ -291,7 +291,7 @@ pub fn client_visibility_filter(args: StdTokenStream, item: StdTokenStream) -> S
             #item
 
             const _: () = {
-                #[export_name = #register_rls_symbol]
+                #[unsafe(export_name = #register_rls_symbol)]
                 extern "C" fn __register_client_visibility_filter() {
                     spacetimedb::rt::register_row_level_security(#rls_ident.sql_text())
                 }
