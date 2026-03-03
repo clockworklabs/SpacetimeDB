@@ -119,7 +119,9 @@ export function tableToSchema<
       }
 
       const columnIds =
-        idx.algorithm.tag === 'Direct' ? [idx.algorithm.value] : idx.algorithm.value;
+        idx.algorithm.tag === 'Direct'
+          ? [idx.algorithm.value]
+          : idx.algorithm.value;
 
       const unique = tableDef.constraints.some(
         c =>
