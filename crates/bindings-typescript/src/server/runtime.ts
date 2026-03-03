@@ -516,6 +516,12 @@ function makeTableView(
   ) as Table<any>;
 
   for (const indexDef of table.indexes) {
+    const accessorName = indexDef.accessorName;
+    if (typeof accessorName !== 'string' || accessorName.length === 0) {
+      throw new TypeError(
+        `Index '${indexDef.sourceName ?? '<unknown>'}' on table '${table.accessorName}' is missing accessor name`
+      );
+    }
     const index_id = sys.index_id_from_name(indexDef.sourceName!);
 
     let column_ids: number[];
@@ -795,10 +801,12 @@ function makeTableView(
       } as RangedIndex<any, any>;
     }
 
-    if (Object.hasOwn(tableView, indexDef.accessorName!)) {
-      freeze(Object.assign(tableView[indexDef.accessorName!], index));
+    if (Object.hasOwn(tableView, accessorName)) {
+      throw new TypeError(
+        `Duplicate index accessor '${accessorName}' on table '${table.accessorName}'`
+      );
     } else {
-      tableView[indexDef.accessorName!] = freeze(index) as any;
+      tableView[accessorName] = freeze(index) as any;
     }
   }
 

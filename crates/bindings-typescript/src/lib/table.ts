@@ -399,7 +399,28 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   }
 
   // convert explicit multi‑column indexes coming from options.indexes
+  const takenIndexAccessors = new Set(
+    indexes
+      .map(index => index.accessorName)
+      .filter((accessor): accessor is string => accessor !== undefined)
+  );
   for (const indexOpts of userIndexes ?? []) {
+    const accessor = indexOpts.accessor;
+    if (typeof accessor !== 'string' || accessor.length === 0) {
+      const tableLabel = name ?? '<unnamed>';
+      const indexLabel = indexOpts.name ?? '<unnamed>';
+      throw new TypeError(
+        `Index '${indexLabel}' on table '${tableLabel}' must define a non-empty 'accessor'`
+      );
+    }
+    if (takenIndexAccessors.has(accessor)) {
+      const tableLabel = name ?? '<unnamed>';
+      throw new TypeError(
+        `Duplicate index accessor '${accessor}' on table '${tableLabel}'`
+      );
+    }
+    takenIndexAccessors.add(accessor);
+
     let algorithm: RawIndexAlgorithm;
     switch (indexOpts.algorithm) {
       case 'btree':
@@ -418,16 +439,12 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         algorithm = { tag: 'Direct', value: colIds.get(indexOpts.column)! };
         break;
     }
-    // unnamed indexes will be assigned a globally unique name
-    // The name users supply is actually the accessor name which will be used
-    // in TypeScript to access the index. This will be used verbatim.
-    // This is confusing because it is not the index name and there is
-    // no actual way for the user to set the actual index name.
-    // I think we should standardize: name and accessorName as the way to set
-    // the name and accessor name of an index across all SDKs.
+    // Unnamed indexes are assigned a globally unique source name.
+    // `accessor` controls the TypeScript property used to access the index.
+    // `name` (if present) is preserved as the canonical schema name.
     indexes.push({
       sourceName: undefined,
-      accessorName: indexOpts.accessor,
+      accessorName: accessor,
       algorithm,
       canonicalName: indexOpts.name,
     });
