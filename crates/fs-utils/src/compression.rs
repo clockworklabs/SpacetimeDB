@@ -47,18 +47,18 @@ impl CompressType {
 }
 
 /// A reader that can read compressed files
-pub enum CompressReader {
-    None(BufReader<File>),
-    Zstd(Box<ZstdReader<'static, BufReader<File>>>),
+pub enum CompressReader<R> {
+    None(BufReader<R>),
+    Zstd(Box<ZstdReader<'static, BufReader<R>>>),
 }
 
-impl CompressReader {
+impl<R: Read + Seek> CompressReader<R> {
     /// Create a new CompressReader from a File
     ///
     /// It will detect the compression type using `magic bytes` and return the appropriate reader.
     ///
     /// **Note**: The reader will be return to the original position after detecting the compression type.
-    pub fn new(mut inner: File) -> io::Result<Self> {
+    pub fn new(mut inner: R) -> io::Result<Self> {
         let current_pos = inner.stream_position()?;
 
         let mut magic_bytes = [0u8; 4];
@@ -85,14 +85,6 @@ impl CompressReader {
         })
     }
 
-    pub fn file_size(&self) -> io::Result<usize> {
-        Ok(match self {
-            Self::None(inner) => inner.get_ref().metadata()?.len() as usize,
-            //TODO: Can't see how to get the file size from ZstdReader
-            Self::Zstd(_inner) => 0,
-        })
-    }
-
     pub fn compress_type(&self) -> CompressType {
         match self {
             CompressReader::None(_) => CompressType::None,
@@ -105,7 +97,17 @@ impl CompressReader {
     }
 }
 
-impl Read for CompressReader {
+impl CompressReader<File> {
+    pub fn file_size(&self) -> io::Result<usize> {
+        Ok(match self {
+            Self::None(inner) => inner.get_ref().metadata()?.len() as usize,
+            //TODO: Can't see how to get the file size from ZstdReader
+            Self::Zstd(_inner) => 0,
+        })
+    }
+}
+
+impl<R: Read> Read for CompressReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             CompressReader::None(inner) => inner.read(buf),
@@ -114,7 +116,7 @@ impl Read for CompressReader {
     }
 }
 
-impl io::BufRead for CompressReader {
+impl<R: Read> io::BufRead for CompressReader<R> {
     fn fill_buf(&mut self) -> io::Result<&[u8]> {
         match self {
             CompressReader::None(inner) => inner.fill_buf(),
@@ -130,7 +132,7 @@ impl io::BufRead for CompressReader {
     }
 }
 
-impl Seek for CompressReader {
+impl<R: Read + Seek> Seek for CompressReader<R> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         match self {
             CompressReader::None(inner) => inner.seek(pos),
