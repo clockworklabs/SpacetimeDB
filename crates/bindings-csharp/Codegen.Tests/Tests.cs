@@ -257,6 +257,60 @@ public static class GeneratorSnapshotTests
     }
 
     [Fact]
+    public static async Task CSharpKeywordIdentifiersAreEscapedInGeneratedCode()
+    {
+        var fixture = await Fixture.Compile("server");
+
+        const string source =
+            """
+            using SpacetimeDB;
+
+            [SpacetimeDB.Table]
+            public partial struct KeywordTable
+            {
+                [SpacetimeDB.PrimaryKey]
+                public ulong @class;
+
+                public int @params;
+            }
+
+            public static partial class KeywordApis
+            {
+                [SpacetimeDB.Reducer]
+                public static void KeywordReducer(ReducerContext ctx, int @params, string @class)
+                {
+                    _ = @params;
+                    _ = @class;
+                }
+
+                [SpacetimeDB.Procedure]
+                public static int KeywordProcedure(ProcedureContext ctx, int @params, int @class)
+                {
+                    return @params + @class;
+                }
+            }
+            """;
+
+        var parseOptions = new CSharpParseOptions(fixture.SampleCompilation.LanguageVersion);
+        var tree = CSharpSyntaxTree.ParseText(source, parseOptions, path: "KeywordNames.cs");
+        var compilation = fixture.SampleCompilation.AddSyntaxTrees(tree);
+
+        var driver = CSharpGeneratorDriver.Create(
+            [new SpacetimeDB.Codegen.Type().AsSourceGenerator(), new SpacetimeDB.Codegen.Module().AsSourceGenerator()],
+            driverOptions: new(
+                disabledOutputs: IncrementalGeneratorOutputKind.None,
+                trackIncrementalGeneratorSteps: true
+            ),
+            parseOptions: parseOptions
+        );
+
+        var runResult = driver.RunGenerators(compilation).GetRunResult();
+        var compilationAfterGen = compilation.AddSyntaxTrees(runResult.GeneratedTrees);
+
+        Assert.Empty(GetCompilationErrors(compilationAfterGen));
+    }
+
+    [Fact]
     public static async Task TestDiagnostics()
     {
         var fixture = await Fixture.Compile("diag");
