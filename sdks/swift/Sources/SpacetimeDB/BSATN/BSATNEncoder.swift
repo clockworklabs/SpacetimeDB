@@ -374,12 +374,80 @@ extension Array: BSATNSpecialEncodable where Element: Encodable {
         guard self.count <= Int(UInt32.max) else {
             throw BSATNEncodingError.lengthOutOfRange
         }
-        storage.append(UInt32(self.count))
+        storage.appendU32(UInt32(self.count))
+        if self.isEmpty { return }
+
+        #if _endian(little)
+        if let arr = self as? [UInt8] {
+            arr.withUnsafeBytes { raw in
+                if let base = raw.baseAddress {
+                    storage.data.append(base.assumingMemoryBound(to: UInt8.self), count: raw.count)
+                }
+            }
+            return
+        }
+        if let arr = self as? [Int32] {
+            arr.withUnsafeBytes { raw in
+                if let base = raw.baseAddress {
+                    storage.data.append(base.assumingMemoryBound(to: UInt8.self), count: raw.count)
+                }
+            }
+            return
+        }
+        if let arr = self as? [UInt32] {
+            arr.withUnsafeBytes { raw in
+                if let base = raw.baseAddress {
+                    storage.data.append(base.assumingMemoryBound(to: UInt8.self), count: raw.count)
+                }
+            }
+            return
+        }
+        if let arr = self as? [Float] {
+            arr.withUnsafeBytes { raw in
+                if let base = raw.baseAddress {
+                    storage.data.append(base.assumingMemoryBound(to: UInt8.self), count: raw.count)
+                }
+            }
+            return
+        }
+        if let arr = self as? [Int64] {
+            arr.withUnsafeBytes { raw in
+                if let base = raw.baseAddress {
+                    storage.data.append(base.assumingMemoryBound(to: UInt8.self), count: raw.count)
+                }
+            }
+            return
+        }
+        if let arr = self as? [UInt64] {
+            arr.withUnsafeBytes { raw in
+                if let base = raw.baseAddress {
+                    storage.data.append(base.assumingMemoryBound(to: UInt8.self), count: raw.count)
+                }
+            }
+            return
+        }
+        if let arr = self as? [Double] {
+            arr.withUnsafeBytes { raw in
+                if let base = raw.baseAddress {
+                    storage.data.append(base.assumingMemoryBound(to: UInt8.self), count: raw.count)
+                }
+            }
+            return
+        }
+        #endif
+
+        if Element.self is BSATNSpecialEncodable.Type {
+            for element in self {
+                try (element as! BSATNSpecialEncodable).encodeBSATN(to: storage)
+            }
+            return
+        }
+
+        let encoder = _BSATNEncoder(storage: storage, codingPath: [])
         for element in self {
             if let bsatnSpecial = element as? BSATNSpecialEncodable {
                 try bsatnSpecial.encodeBSATN(to: storage)
             } else {
-                let encoder = _BSATNEncoder(storage: storage, codingPath: [])
                 try element.encode(to: encoder)
             }
         }
