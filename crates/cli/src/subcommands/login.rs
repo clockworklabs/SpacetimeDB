@@ -63,15 +63,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let open_browser = !args.get_flag("no-browser");
 
     // If already logged in, log out first
-    if let Some(token) = config.spacetimedb_token() {
-        let old_identity = decode_identity(token).ok();
-        do_logout(&mut config, &host).await;
-        if let Some(id) = old_identity {
-            println!("Logged out of previous session (identity {id}).");
-        } else {
-            println!("Logged out of previous session.");
-        }
-    }
+    let _ = do_logout(&mut config, &host).await;
 
     if let Some(token) = spacetimedb_token {
         config.set_spacetimedb_token(token.clone());
