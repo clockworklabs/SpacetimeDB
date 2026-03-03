@@ -1,0 +1,27 @@
+{
+    "images": [
+        {
+            "idiom": "universal",
+            "filename": "logo-light.svg",
+            "scale": "1x"
+        },
+        {
+            "idiom": "universal",
+            "filename": "logo-dark.svg",
+            "scale": "1x",
+            "appearances": [
+                {
+                    "appearance": "luminosity",
+                    "value": "dark"
+                }
+            ]
+        }
+    ],
+    "info": {
+        "version": 1,
+        "author": "xcode"
+    },
+    "properties": {
+        "preserves-vector-representation": true
+    }
+}

@@ -1,0 +1,82 @@
+name: Swift Procedure E2E
+
+on:
+  pull_request:
+    paths:
+      - sdks/swift/**
+      - crates/codegen/src/swift.rs
+      - crates/codegen/src/lib.rs
+      - crates/cli/src/subcommands/generate.rs
+      - modules/module-test/**
+      - tools/swift-procedure-e2e.sh
+      - tools/check-swift-demo-bindings.sh
+      - .github/workflows/swift-procedure-e2e.yml
+  push:
+    branches:
+      - master
+    paths:
+      - sdks/swift/**
+      - crates/codegen/src/swift.rs
+      - crates/codegen/src/lib.rs
+      - crates/cli/src/subcommands/generate.rs
+      - modules/module-test/**
+      - tools/swift-procedure-e2e.sh
+      - tools/check-swift-demo-bindings.sh
+      - .github/workflows/swift-procedure-e2e.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || format('sha-{0}', github.sha) }}
+  cancel-in-progress: true
+
+jobs:
+  swift-procedure-e2e:
+    name: Swift Procedure E2E (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dsherret/rust-toolchain-file@v1
+
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          save-if: false
+          prefix-key: v1
+
+      - name: Install SpacetimeDB CLI from local checkout
+        run: |
+          export CARGO_HOME="$HOME/.cargo"
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+          cargo install --force --path crates/cli --locked --message-format=short
+          cargo install --force --path crates/standalone --features allow_loopback_http_for_tests --locked --message-format=short
+          ln -sf "$CARGO_HOME/bin/spacetimedb-cli" "$CARGO_HOME/bin/spacetime"
+
+      - name: Show toolchain versions
+        run: |
+          rustc --version
+          cargo --version
+          swiftc --version
+          spacetime --version
+
+      - name: Verify generated Swift demo bindings are in sync
+        run: tools/check-swift-demo-bindings.sh
+
+      - name: Start local SpacetimeDB server
+        run: |
+          spacetime start &
+          disown
+          sleep 5
+
+      - name: Run Swift procedure callback E2E
+        run: tools/swift-procedure-e2e.sh

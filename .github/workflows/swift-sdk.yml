@@ -1,0 +1,114 @@
+name: Swift SDK
+
+on:
+  pull_request:
+    paths:
+      - sdks/swift/**
+      - demo/ninja-game/client-swift/**
+      - demo/simple-module/client-swift/**
+      - tools/swift-procedure-e2e.sh
+      - tools/swift-benchmark-smoke.sh
+      - tools/swift-docc-smoke.sh
+      - .github/workflows/swift-sdk.yml
+  push:
+    branches:
+      - master
+    paths:
+      - sdks/swift/**
+      - demo/ninja-game/client-swift/**
+      - demo/simple-module/client-swift/**
+      - tools/swift-procedure-e2e.sh
+      - tools/swift-benchmark-smoke.sh
+      - tools/swift-docc-smoke.sh
+      - .github/workflows/swift-sdk.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || format('sha-{0}', github.sha) }}
+  cancel-in-progress: true
+
+jobs:
+  swift-sdk:
+    name: Swift SDK (${{ matrix.platform.name }})
+    runs-on: ${{ matrix.platform.runs_on }}
+    timeout-minutes: 45
+    env:
+      SPACETIMEDB_SWIFT_LIVE_TESTS: ${{ vars.SPACETIMEDB_SWIFT_LIVE_TESTS }}
+      SPACETIMEDB_LIVE_TEST_SERVER_URL: ${{ vars.SPACETIMEDB_LIVE_TEST_SERVER_URL }}
+      SPACETIMEDB_LIVE_TEST_DB_NAME: ${{ vars.SPACETIMEDB_LIVE_TEST_DB_NAME }}
+      SPACETIMEDB_LIVE_TEST_TOKEN: ${{ secrets.SPACETIMEDB_LIVE_TEST_TOKEN }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: macOS
+            id: macos
+            runs_on: macos-latest
+          - name: iOS Simulator
+            id: ios-simulator
+            runs_on: macos-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Show Swift toolchain version
+        run: swift --version
+
+      - name: Assert legacy Swift SDK path is removed
+        shell: bash
+        run: |
+          if git grep -n "crates/swift-sdk" -- . ':(exclude).github/workflows/swift-sdk.yml'; then
+            echo "Found legacy path references to crates/swift-sdk; expected sdks/swift."
+            exit 1
+          fi
+
+      - name: Test Swift SDK package
+        if: matrix.platform.id == 'macos'
+        run: swift test --package-path sdks/swift
+
+      - name: Validate Swift package lockfile
+        if: matrix.platform.id == 'macos'
+        run: swift package --package-path sdks/swift resolve --force-resolved-versions
+
+      - name: Build simple Swift demo client
+        if: matrix.platform.id == 'macos'
+        run: swift build --package-path demo/simple-module/client-swift
+
+      - name: Build ninja Swift demo client
+        if: matrix.platform.id == 'macos'
+        run: swift build --package-path demo/ninja-game/client-swift
+
+      - name: Run Swift benchmark smoke suite
+        if: matrix.platform.id == 'macos'
+        run: tools/swift-benchmark-smoke.sh
+
+      - name: Run Swift SDK live integration tests (env-gated)
+        if: matrix.platform.id == 'macos' && env.SPACETIMEDB_SWIFT_LIVE_TESTS == '1' && env.SPACETIMEDB_LIVE_TEST_DB_NAME != ''
+        run: swift test --package-path sdks/swift --filter LiveIntegrationTests
+
+      - name: Build Swift SDK target for iOS simulator
+        if: matrix.platform.id == 'ios-simulator'
+        shell: bash
+        run: |
+          IOS_SDK_PATH="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          swift build \
+            --package-path sdks/swift \
+            --target SpacetimeDB \
+            --triple arm64-apple-ios17.0-simulator \
+            --sdk "$IOS_SDK_PATH"
+
+      - name: Assert visionOS is not targeted yet
+        if: matrix.platform.id == 'macos'
+        shell: bash
+        run: |
+          if rg -q '\.visionOS\(' sdks/swift/Package.swift; then
+            echo "visionOS platform is currently not supported for this SDK."
+            echo "If enabling visionOS, update README/DocC/PUBLISHING docs and CI posture in the same change."
+            exit 1
+          fi
+          echo "visionOS platform not declared in Package.swift (expected posture)."
+
+      - name: Build DocC archive
+        if: matrix.platform.id == 'macos'
+        run: tools/swift-docc-smoke.sh

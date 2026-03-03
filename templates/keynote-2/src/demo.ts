@@ -157,6 +157,11 @@ const serviceConfigs: Record<string, ServiceConfig> = {
     healthCheck: async () => spacetimePing(),
     startCmd: 'spacetime start',
   },
+  spacetimedb_swift: {
+    name: 'SpacetimeDB',
+    healthCheck: async () => spacetimePing(),
+    startCmd: 'spacetime start',
+  },
   convex: {
     name: 'Convex',
     healthCheck: () => ping(3210),
@@ -224,8 +229,10 @@ async function checkService(system: string): Promise<boolean> {
 // ============================================================================
 
 async function prepSystem(system: string): Promise<void> {
+  const isSpacetimeBenchmarkClient =
+    system === 'spacetimedb' || system === 'spacetimedb_swift';
   const connector = (CONNECTORS as any)[system];
-  if (!connector) {
+  if (!isSpacetimeBenchmarkClient && !connector) {
     console.log(`  ${system.padEnd(15)} ${c('yellow', '⚠ SKIPPED')}`);
     return;
   }
@@ -233,7 +240,7 @@ async function prepSystem(system: string): Promise<void> {
   const spinner = createSpinner(system.padEnd(15));
 
   try {
-    if (system === 'spacetimedb') {
+    if (system === 'spacetimedb' || system === 'spacetimedb_swift') {
       const moduleName = process.env.STDB_MODULE || 'test-1';
       const server = process.env.STDB_SERVER || 'local';
       const server2 = process.env.STDB_SERVER || 'http://localhost:3000';
@@ -248,23 +255,43 @@ async function prepSystem(system: string): Promise<void> {
         '--module-path',
         modulePath,
       ]);
-      await sh('cargo', [
-        'run',
-        //"--quiet",
-        "--manifest-path",
-        "spacetimedb-rust-client/Cargo.toml",
-        "--",
-        "seed",
-        //"--quiet",
-        '--server',
-        server2,
-        "--module",
-        moduleName,
-        "--accounts",
-        String(accounts),
-        "--initial-balance",
-        String(initialBalance),
-      ]);
+      if (system === 'spacetimedb') {
+        await sh('cargo', [
+          'run',
+          //"--quiet",
+          "--manifest-path",
+          "spacetimedb-rust-client/Cargo.toml",
+          "--",
+          "seed",
+          //"--quiet",
+          '--server',
+          server2,
+          "--module",
+          moduleName,
+          "--accounts",
+          String(accounts),
+          "--initial-balance",
+          String(initialBalance),
+        ]);
+      } else {
+        await sh('swift', [
+          'run',
+          '--package-path',
+          'spacetimedb-swift-client',
+          '--configuration',
+          'release',
+          'SpacetimeDBSwiftTransferSim',
+          'seed',
+          '--server',
+          server2,
+          '--module',
+          moduleName,
+          '--accounts',
+          String(accounts),
+          '--initial-balance',
+          String(initialBalance),
+        ]);
+      }
       console.log('[spacetimedb] seed complete.');
     } else if (system === 'convex') {
       await initConvex();
@@ -354,9 +381,52 @@ async function runBenchmarkStdb(): Promise<BenchResult | null> {
   };
 }
 
+async function runBenchmarkStdbSwift(): Promise<BenchResult | null> {
+  const moduleName = process.env.STDB_MODULE || 'test-1';
+  const server2 = process.env.STDB_SERVER || 'http://localhost:3000';
+
+  await sh('swift', [
+    'run',
+    '--package-path',
+    'spacetimedb-swift-client',
+    '--configuration',
+    'release',
+    'SpacetimeDBSwiftTransferSim',
+    'bench',
+    '--server',
+    server2,
+    '--module',
+    moduleName,
+    '--duration',
+    `${seconds}s`,
+    '--connections',
+    String(concurrency),
+    '--alpha',
+    String(alpha),
+    '--max-inflight-reducers',
+    '16384',
+    '--tps-write-path',
+    'spacetimedb-swift-tps.tmp.log',
+  ]);
+
+  const tpsStr = fs.readFileSync('spacetimedb-swift-tps.tmp.log', 'utf-8').trim();
+  const tps = Number(tpsStr);
+  if (isNaN(tps)) {
+    console.warn(`[spacetimedb_swift] Failed to parse TPS from file: ${tpsStr}`);
+    return null;
+  }
+
+  return {
+    system: 'spacetimedb_swift',
+    tps: Math.round(tps),
+  };
+}
+
 async function runBenchmark(system: string): Promise<BenchResult | null> {
   if (system === 'spacetimedb') {
     return await runBenchmarkStdb();
+  } else if (system === 'spacetimedb_swift') {
+    return await runBenchmarkStdbSwift();
   } else {
     return await runBenchmarkOther(system);
   }

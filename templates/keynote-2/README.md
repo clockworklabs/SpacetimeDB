@@ -15,7 +15,15 @@ The demo compares SpacetimeDB and Convex by default, since both are easy for any
 
 **Options:** `--systems a,b,c` | `--seconds N` | `--skip-prep` | `--no-animation`
 
-**Note:** You will need to [install Rust](https://rust-lang.org/tools/install/) to run the spacetimedb benchmark, because we run a [Rust Client](#rust-client).
+You can benchmark SpacetimeDB with either:
+
+- `spacetimedb` (Rust benchmark client)
+- `spacetimedb_swift` (Swift benchmark client, requires Xcode/Swift toolchain)
+
+Use the corresponding toolchain for the selected client:
+
+- Rust toolchain for `spacetimedb`
+- Swift/Xcode toolchain for `spacetimedb_swift`
 
 ## Results Summary
 

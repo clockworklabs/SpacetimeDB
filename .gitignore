@@ -264,3 +264,11 @@ nul
 # AI agent config
 .codex
 .claude
+
+# Local PR/planning notes
+changes.md
+swift_sdk_followup_backlog.md
+
+# Swift benchmark local artifacts
+sdks/swift/.benchmarkBaselines/
+sdks/swift/Benchmarks/Baselines/captures/

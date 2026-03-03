@@ -6,8 +6,8 @@ use clap::Arg;
 use clap::ArgAction::{Set, SetTrue};
 use fs_err as fs;
 use spacetimedb_codegen::{
-    generate, private_table_names, CodegenOptions, CodegenVisibility, Csharp, Lang, OutputFile, Rust, TypeScript,
-    UnrealCpp, AUTO_GENERATED_PREFIX,
+    generate, private_table_names, CodegenOptions, CodegenVisibility, Csharp, Lang, OutputFile, Rust, Swift,
+    TypeScript, UnrealCpp, AUTO_GENERATED_PREFIX,
 };
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::{sats, RawModuleDef};
@@ -387,6 +387,9 @@ fn detect_default_language(client_project_dir: &Path) -> anyhow::Result<Language
     if client_project_dir.join("Cargo.toml").exists() {
         return Ok(Language::Rust);
     }
+    if client_project_dir.join("Package.swift").exists() {
+        return Ok(Language::Swift);
+    }
     if let Ok(entries) = fs::read_dir(client_project_dir) {
         if entries
             .flatten()
@@ -409,6 +412,7 @@ fn language_cli_name(lang: Language) -> &'static str {
         Language::Csharp => "csharp",
         Language::TypeScript => "typescript",
         Language::UnrealCpp => "unrealcpp",
+        Language::Swift => "swift",
     }
 }
 
@@ -417,6 +421,7 @@ pub fn default_out_dir_for_language(lang: Language) -> Option<PathBuf> {
         Language::Rust | Language::TypeScript => Some(PathBuf::from("src/module_bindings")),
         Language::Csharp => Some(PathBuf::from("module_bindings")),
         Language::UnrealCpp => None,
+        Language::Swift => Some(PathBuf::from("Sources/module_bindings")),
     }
 }
 
@@ -424,6 +429,16 @@ pub fn resolve_language(module_path: &Path, requested: Option<Language>) -> anyh
     match requested {
         Some(lang) => Ok(lang),
         None => detect_default_language(module_path),
+    }
+}
+
+fn file_starts_with_auto_generated_prefix(path: &Path) -> anyhow::Result<bool> {
+    let mut auto_generated_buf = [0_u8; AUTO_GENERATED_PREFIX.len()];
+    let mut file = fs::File::open(path)?;
+    match file.read_exact(&mut auto_generated_buf) {
+        Ok(()) => Ok(auto_generated_buf == AUTO_GENERATED_PREFIX.as_bytes()),
+        Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
+        Err(err) => Err(err.into()),
     }
 }
 
@@ -501,6 +516,7 @@ pub async fn run_prepared_generate_configs(
 
         let csharp_lang;
         let unreal_cpp_lang;
+        let swift_lang;
         let gen_lang = match run.lang {
             Language::Csharp => {
                 csharp_lang = Csharp {
@@ -514,6 +530,10 @@ pub async fn run_prepared_generate_configs(
                     uproject_dir: &run.out_dir,
                 };
                 &unreal_cpp_lang as &dyn Lang
+            }
+            Language::Swift => {
+                swift_lang = Swift;
+                &swift_lang as &dyn Lang
             }
             Language::Rust => &Rust,
             Language::TypeScript => &TypeScript,
@@ -538,7 +558,6 @@ pub async fn run_prepared_generate_configs(
             _ => run.out_dir.clone(),
         };
 
-        let mut auto_generated_buf: [u8; AUTO_GENERATED_PREFIX.len()] = [0; AUTO_GENERATED_PREFIX.len()];
         let files_to_delete = walkdir::WalkDir::new(&cleanup_root)
             .into_iter()
             .map(|entry_result| {
@@ -550,12 +569,7 @@ pub async fn run_prepared_generate_configs(
                 if paths.contains(&path) {
                     return Ok(None);
                 }
-                let mut file = fs::File::open(&path)?;
-                Ok(match file.read_exact(&mut auto_generated_buf) {
-                    Ok(()) => (auto_generated_buf == AUTO_GENERATED_PREFIX.as_bytes()).then_some(path),
-                    Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => None,
-                    Err(err) => return Err(err.into()),
-                })
+                Ok(file_starts_with_auto_generated_prefix(&path)?.then_some(path))
             })
             .filter_map(Result::transpose)
             .collect::<anyhow::Result<Vec<_>>>()?;
@@ -679,11 +693,12 @@ pub enum Language {
     Rust,
     #[serde(alias = "uecpp", alias = "ue5cpp", alias = "unreal")]
     UnrealCpp,
+    Swift,
 }
 
 impl clap::ValueEnum for Language {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Csharp, Self::TypeScript, Self::Rust, Self::UnrealCpp]
+        &[Self::Csharp, Self::TypeScript, Self::Rust, Self::UnrealCpp, Self::Swift]
     }
     fn to_possible_value(&self) -> Option<PossibleValue> {
         Some(match self {
@@ -691,6 +706,7 @@ impl clap::ValueEnum for Language {
             Self::TypeScript => clap::builder::PossibleValue::new("typescript").aliases(["ts", "TS"]),
             Self::Rust => clap::builder::PossibleValue::new("rust").aliases(["rs", "RS"]),
             Self::UnrealCpp => PossibleValue::new("unrealcpp").aliases(["uecpp", "ue5cpp", "unreal"]),
+            Self::Swift => PossibleValue::new("swift"),
         })
     }
 }
@@ -703,6 +719,7 @@ impl Language {
             Language::Csharp => "C#",
             Language::TypeScript => "TypeScript",
             Language::UnrealCpp => "Unreal C++",
+            Language::Swift => "Swift",
         }
     }
 
@@ -716,10 +733,72 @@ impl Language {
             Language::UnrealCpp => {
                 // TODO: implement formatting.
             }
+            Language::Swift => swift_format(project_dir, generated_files)?,
         }
 
         Ok(())
     }
+}
+
+fn swift_format(project_dir: &Path, files: impl IntoIterator<Item = PathBuf>) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir().context("Failed to retrieve current directory")?;
+    let files: Vec<PathBuf> = files
+        .into_iter()
+        .filter(|file| file.extension().is_some_and(|ext| ext == "swift"))
+        .map(|file| {
+            let file = if file.is_absolute() { file } else { cwd.join(file) };
+            file.canonicalize()
+                .with_context(|| format!("Failed to canonicalize generated file path: {}", file.display()))
+        })
+        .collect::<Result<_, _>>()?;
+
+    if files.is_empty() {
+        return Ok(());
+    }
+
+    let swift_supports_format = Command::new("swift")
+        .args(["format", "format", "--help"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success());
+
+    if swift_supports_format {
+        let status = Command::new("swift")
+            .current_dir(project_dir)
+            .args(["format", "format", "--in-place", "--parallel"])
+            .args(files.iter())
+            .status()
+            .context("Failed to run `swift format format`")?;
+        if status.success() {
+            return Ok(());
+        }
+        anyhow::bail!("`swift format format` failed with status: {status}");
+    }
+
+    let swift_format_supports_format = Command::new("swift-format")
+        .args(["format", "--help"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success());
+
+    if swift_format_supports_format {
+        let status = Command::new("swift-format")
+            .current_dir(project_dir)
+            .args(["format", "--in-place", "--parallel"])
+            .args(files.iter())
+            .status()
+            .context("Failed to run `swift-format format`")?;
+        if status.success() {
+            return Ok(());
+        }
+        anyhow::bail!("`swift-format format` failed with status: {status}");
+    }
+
+    anyhow::bail!(
+        "No Swift formatter found. Install a Swift toolchain with `swift format` support, or install `swift-format`."
+    )
 }
 
 pub type ExtractDescriptions = fn(&Path) -> anyhow::Result<ModuleDef>;
@@ -835,7 +914,7 @@ mod tests {
         let mut child_fields = HashMap::new();
         child_fields.insert("database".to_string(), serde_json::json!("my-db"));
 
-        let gen = {
+        let generate_entry = {
             let mut m = HashMap::new();
             m.insert("language".to_string(), serde_json::json!("rust"));
             m.insert("out_dir".to_string(), serde_json::json!("/tmp/out"));
@@ -844,7 +923,7 @@ mod tests {
 
         let spacetime_config = SpacetimeConfig {
             additional_fields: parent_fields,
-            children: Some(vec![make_gen_config(child_fields, vec![gen])]),
+            children: Some(vec![make_gen_config(child_fields, vec![generate_entry])]),
             ..Default::default()
         };
 
@@ -864,7 +943,7 @@ mod tests {
         let cmd = cli();
         let schema = build_generate_config_schema(&cmd).unwrap();
 
-        let gen = {
+        let generate_entry = {
             let mut m = HashMap::new();
             m.insert("language".to_string(), serde_json::json!("typescript"));
             m.insert("out_dir".to_string(), serde_json::json!("/tmp/out"));
@@ -876,7 +955,7 @@ mod tests {
 
         let spacetime_config = SpacetimeConfig {
             additional_fields: parent_fields,
-            generate: Some(vec![gen]),
+            generate: Some(vec![generate_entry]),
             children: Some(vec![
                 {
                     let mut f = HashMap::new();
@@ -1071,6 +1150,24 @@ mod tests {
     }
 
     #[test]
+    fn test_swift_defaults_out_dir() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+        let matches = cmd.clone().get_matches_from(vec!["generate", "--lang", "swift"]);
+        let temp = tempfile::TempDir::new().unwrap();
+        let module_dir = temp.path().join("spacetimedb");
+        std::fs::create_dir_all(&module_dir).unwrap();
+        let mut cfg = HashMap::new();
+        cfg.insert(
+            "module-path".to_string(),
+            serde_json::Value::String(module_dir.display().to_string()),
+        );
+        let command_config = CommandConfig::new(&schema, cfg, &matches).unwrap();
+        let runs = prepare_generate_run_configs(vec![command_config], false, None).unwrap();
+        assert_eq!(runs[0].out_dir, PathBuf::from("Sources/module_bindings"));
+    }
+
+    #[test]
     fn test_detect_typescript_language_from_client_project() {
         let cmd = cli();
         let schema = build_generate_config_schema(&cmd).unwrap();
@@ -1108,6 +1205,50 @@ mod tests {
         let runs = prepare_generate_run_configs(vec![command_config], true, Some(temp.path())).unwrap();
         assert_eq!(runs[0].lang, Language::Csharp);
         assert_eq!(runs[0].out_dir, temp.path().join("module_bindings"));
+    }
+
+    #[test]
+    fn test_detect_swift_language_from_client_project() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+        let matches = cmd.clone().get_matches_from(vec!["generate"]);
+        let temp = tempfile::TempDir::new().unwrap();
+        let module_dir = temp.path().join("spacetimedb");
+        std::fs::create_dir_all(&module_dir).unwrap();
+        std::fs::write(
+            temp.path().join("Package.swift"),
+            "import PackageDescription\nlet package = Package(name: \"Client\")\n",
+        )
+        .unwrap();
+        let mut cfg = HashMap::new();
+        cfg.insert(
+            "module-path".to_string(),
+            serde_json::Value::String(module_dir.display().to_string()),
+        );
+        let command_config = CommandConfig::new(&schema, cfg, &matches).unwrap();
+        let runs = prepare_generate_run_configs(vec![command_config], true, Some(temp.path())).unwrap();
+        assert_eq!(runs[0].lang, Language::Swift);
+        assert_eq!(runs[0].out_dir, temp.path().join("Sources/module_bindings"));
+    }
+
+    #[test]
+    fn test_file_starts_with_auto_generated_prefix() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let generated = temp.path().join("generated.swift");
+        let manual = temp.path().join("manual.swift");
+        let short = temp.path().join("short.swift");
+
+        std::fs::write(
+            &generated,
+            format!("{AUTO_GENERATED_PREFIX}. EDITS TO THIS FILE\n// WILL NOT BE SAVED.\nimport Foundation\n"),
+        )
+        .unwrap();
+        std::fs::write(&manual, "import Foundation\n").unwrap();
+        std::fs::write(&short, "// THIS\n").unwrap();
+
+        assert!(file_starts_with_auto_generated_prefix(&generated).unwrap());
+        assert!(!file_starts_with_auto_generated_prefix(&manual).unwrap());
+        assert!(!file_starts_with_auto_generated_prefix(&short).unwrap());
     }
 
     #[test]
@@ -1217,7 +1358,7 @@ mod tests {
         let cmd = cli();
         let schema = build_generate_config_schema(&cmd).unwrap();
 
-        let gen = {
+        let generate_entry = {
             let mut m = HashMap::new();
             m.insert("language".to_string(), serde_json::json!("typescript"));
             m.insert("out_dir".to_string(), serde_json::json!("/tmp/bindings"));
@@ -1229,7 +1370,7 @@ mod tests {
 
         let spacetime_config = SpacetimeConfig {
             additional_fields: parent_fields,
-            generate: Some(vec![gen]),
+            generate: Some(vec![generate_entry]),
             children: Some(vec![
                 {
                     let mut f = HashMap::new();
@@ -1268,7 +1409,7 @@ mod tests {
         let cmd = cli();
         let schema = build_generate_config_schema(&cmd).unwrap();
 
-        let gen = {
+        let generate_entry = {
             let mut m = HashMap::new();
             m.insert("language".to_string(), serde_json::json!("rust"));
             m.insert("out_dir".to_string(), serde_json::json!("/tmp/out"));
@@ -1284,7 +1425,7 @@ mod tests {
                         m.insert("module-path".to_string(), serde_json::json!("./m1"));
                         m
                     },
-                    vec![gen.clone()],
+                    vec![generate_entry.clone()],
                 ),
                 make_gen_config(
                     {
@@ -1293,7 +1434,7 @@ mod tests {
                         m.insert("module-path".to_string(), serde_json::json!("./m2"));
                         m
                     },
-                    vec![gen.clone()],
+                    vec![generate_entry.clone()],
                 ),
                 make_gen_config(
                     {
@@ -1302,7 +1443,7 @@ mod tests {
                         m.insert("module-path".to_string(), serde_json::json!("./m3"));
                         m
                     },
-                    vec![gen],
+                    vec![generate_entry],
                 ),
             ]),
             ..Default::default()
@@ -1321,7 +1462,7 @@ mod tests {
         let cmd = cli();
         let schema = build_generate_config_schema(&cmd).unwrap();
 
-        let gen = {
+        let generate_entry = {
             let mut m = HashMap::new();
             m.insert("language".to_string(), serde_json::json!("rust"));
             m.insert("out_dir".to_string(), serde_json::json!("/tmp/out"));
@@ -1335,7 +1476,7 @@ mod tests {
                 m.insert("module-path".to_string(), serde_json::json!("./server"));
                 m
             },
-            vec![gen],
+            vec![generate_entry],
         );
 
         let matches = cmd.clone().get_matches_from(vec!["generate", "nonexistent-*"]);
