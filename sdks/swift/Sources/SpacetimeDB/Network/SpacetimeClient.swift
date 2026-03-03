@@ -687,8 +687,11 @@ public final class SpacetimeClient: @unchecked Sendable {
                     self.emitCounter("spacetimedb.messages.in.count")
                     self.emitCounter("spacetimedb.messages.in.bytes", by: Int64(data.count))
                     
-                    let decoded = Self.decodeServerMessage(from: data)
-                    self.handleDecodedServerMessage(decoded)
+                    self.decodeQueue.async { [weak self] in
+                        guard let self = self else { return }
+                        let decoded = Self.decodeServerMessage(from: data)
+                        self.handleDecodedServerMessage(decoded)
+                    }
                 case .string:
                     break
                 @unknown default:

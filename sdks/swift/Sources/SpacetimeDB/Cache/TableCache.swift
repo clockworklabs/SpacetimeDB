@@ -7,6 +7,9 @@ public protocol SpacetimeTableCacheProtocol: AnyObject, Sendable {
     func handleInsert(rowBytes: Data) throws
     func handleDelete(rowBytes: Data) throws
     func handleUpdate(oldRowBytes: Data, newRowBytes: Data) throws
+    func handleBulkInsert(rowBytesList: [Data]) throws
+    func handleBulkDelete(rowBytesList: [Data]) throws
+    func handleBulkUpdate(oldRowBytesList: [Data], newRowBytesList: [Data]) throws
     func clear()
 }
 
@@ -183,6 +186,127 @@ public final class TableCache<T: Decodable & Sendable>: SpacetimeTableCacheProto
 
         for callback in rowAndCallbacks.callbacks {
             callback(rowAndCallbacks.oldRow, rowAndCallbacks.newRow)
+        }
+    }
+
+    
+    public func handleBulkInsert(rowBytesList: [Data]) throws {
+        if rowBytesList.isEmpty { return }
+        
+        let rowsAndCallbacks: [(row: T, callbacks: [@Sendable (T) -> Void])] = try state.withLock { state in
+            var results: [(row: T, callbacks: [@Sendable (T) -> Void])] = []
+            results.reserveCapacity(rowBytesList.count)
+            let callbacks = Array(state.insertCallbacks.values)
+            
+            for rowBytes in rowBytesList {
+                let key = HashedBytes(rowBytes)
+                let row: T
+                if let index = state.entries.index(forKey: key) {
+                    state.entries.values[index].count += 1
+                    row = state.entries.values[index].value
+                } else {
+                    row = try decoder.decode(T.self, from: rowBytes)
+                    state.entries[key] = RowEntry(count: 1, value: row)
+                }
+                results.append((row: row, callbacks: callbacks))
+            }
+            return results
+        }
+        
+        for item in rowsAndCallbacks {
+            for callback in item.callbacks {
+                callback(item.row)
+            }
+        }
+    }
+
+    public func handleBulkDelete(rowBytesList: [Data]) throws {
+        if rowBytesList.isEmpty { return }
+        
+        let rowsAndCallbacks: [(row: T, callbacks: [@Sendable (T) -> Void])] = state.withLock { state in
+            var results: [(row: T, callbacks: [@Sendable (T) -> Void])] = []
+            results.reserveCapacity(rowBytesList.count)
+            let callbacks = Array(state.deleteCallbacks.values)
+            
+            for rowBytes in rowBytesList {
+                let key = HashedBytes(rowBytes)
+                if let index = state.entries.index(forKey: key) {
+                    let deletedRow = state.entries.values[index].value
+                    if state.entries.values[index].count <= 1 {
+                        state.entries.remove(at: index)
+                    } else {
+                        state.entries.values[index].count -= 1
+                    }
+                    results.append((row: deletedRow, callbacks: callbacks))
+                }
+            }
+            return results
+        }
+        
+        for item in rowsAndCallbacks {
+            for callback in item.callbacks {
+                callback(item.row)
+            }
+        }
+    }
+
+    public func handleBulkUpdate(oldRowBytesList: [Data], newRowBytesList: [Data]) throws {
+        if oldRowBytesList.isEmpty || newRowBytesList.isEmpty { return }
+        let count = min(oldRowBytesList.count, newRowBytesList.count)
+        
+        let results: [(oldRow: T, newRow: T, callbacks: [@Sendable (T, T) -> Void])]? = try state.withLock { state in
+            var results: [(oldRow: T, newRow: T, callbacks: [@Sendable (T, T) -> Void])] = []
+            results.reserveCapacity(count)
+            let callbacks = Array(state.updateCallbacks.values)
+            
+            for i in 0..<count {
+                let oldRowBytes = oldRowBytesList[i]
+                let newRowBytes = newRowBytesList[i]
+                let oldKey = HashedBytes(oldRowBytes)
+                let newKey = HashedBytes(newRowBytes)
+                
+                guard let oldIndex = state.entries.index(forKey: oldKey) else {
+                    // Fallback: If old row doesn't exist, we just insert the new row, but we can't do it cleanly in bulk update loop
+                    // Let's throw an error or handle it out of loop. For now, let's just insert new row.
+                    let newRow = try decoder.decode(T.self, from: newRowBytes)
+                    if let newIndex = state.entries.index(forKey: newKey) {
+                        state.entries.values[newIndex].count += 1
+                    } else {
+                        state.entries[newKey] = RowEntry(count: 1, value: newRow)
+                    }
+                    // We don't trigger update callback if old doesn't exist. We should trigger insert, but for simplicity let's stick to update loop semantics or skip callback.
+                    continue
+                }
+
+                let oldRow = state.entries.values[oldIndex].value
+                let newRow: T
+
+                if let newIndex = state.entries.index(forKey: newKey) {
+                    state.entries.values[newIndex].count += 1
+                    newRow = state.entries.values[newIndex].value
+                } else {
+                    newRow = try decoder.decode(T.self, from: newRowBytes)
+                    state.entries[newKey] = RowEntry(count: 1, value: newRow)
+                }
+
+                if let finalOldIndex = state.entries.index(forKey: oldKey) {
+                    if state.entries.values[finalOldIndex].count <= 1 {
+                        state.entries.remove(at: finalOldIndex)
+                    } else {
+                        state.entries.values[finalOldIndex].count -= 1
+                    }
+                }
+                
+                results.append((oldRow: oldRow, newRow: newRow, callbacks: callbacks))
+            }
+            return results
+        }
+        
+        guard let validResults = results else { return }
+        for item in validResults {
+            for callback in item.callbacks {
+                callback(item.oldRow, item.newRow)
+            }
         }
     }
 

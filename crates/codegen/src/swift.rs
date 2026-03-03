@@ -45,7 +45,16 @@ fn get_swift_type_for_primitive(prim: PrimitiveType) -> &'static str {
 fn get_swift_type_use(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
     match ty {
         AlgebraicTypeUse::Primitive(prim) => get_swift_type_for_primitive(*prim).to_string(),
-        AlgebraicTypeUse::Ref(type_ref) => type_ref_name(module, *type_ref),
+        AlgebraicTypeUse::Ref(type_ref) => {
+            let name = type_ref_name(module, *type_ref);
+            match name.as_str() {
+                "SpacetimeDB.Math.Vector2" | "Vector2" => "simd_float2".to_string(),
+                "SpacetimeDB.Math.Vector3" | "Vector3" => "simd_float3".to_string(),
+                "SpacetimeDB.Math.Vector4" | "Vector4" => "simd_float4".to_string(),
+                "SpacetimeDB.Math.Quaternion" | "Quaternion" => "simd_quatf".to_string(),
+                _ => name,
+            }
+        },
         AlgebraicTypeUse::Identity => "Identity".to_string(), // Requires Identity SDK struct
         AlgebraicTypeUse::String => "String".to_string(),
         AlgebraicTypeUse::Array(inner) => format!("[{}]", get_swift_type_use(module, inner)),
@@ -143,6 +152,7 @@ impl Lang for Swift {
         let mut code = String::new();
         write_generated_file_preamble(&mut code);
         writeln!(&mut code, "import Foundation").unwrap();
+        writeln!(&mut code, "import simd").unwrap();
         writeln!(&mut code, "import SpacetimeDB\n").unwrap();
         writeln!(&mut code, "public struct {}Table {{", table_name_pascal).unwrap();
 
@@ -188,6 +198,7 @@ impl Lang for Swift {
 
         write_generated_file_preamble(&mut code);
         writeln!(&mut code, "import Foundation").unwrap();
+        writeln!(&mut code, "import simd").unwrap();
         writeln!(&mut code, "import SpacetimeDB\n").unwrap();
 
         match &module.typespace_for_generate()[typ.ty] {
@@ -411,6 +422,7 @@ impl Lang for Swift {
         let mut code = String::new();
         write_generated_file_preamble(&mut code);
         writeln!(&mut code, "import Foundation").unwrap();
+        writeln!(&mut code, "import simd").unwrap();
         writeln!(&mut code, "import SpacetimeDB\n").unwrap();
 
         writeln!(&mut code, "public enum {} {{", reducer_name_pascal).unwrap();
@@ -512,6 +524,7 @@ impl Lang for Swift {
         let mut code = String::new();
         write_generated_file_preamble(&mut code);
         writeln!(&mut code, "import Foundation").unwrap();
+        writeln!(&mut code, "import simd").unwrap();
         writeln!(&mut code, "import SpacetimeDB\n").unwrap();
 
         writeln!(&mut code, "public enum {}Procedure {{", procedure_name_pascal).unwrap();
@@ -624,6 +637,7 @@ impl Lang for Swift {
         let mut code = String::new();
         write_generated_file_preamble(&mut code);
         writeln!(&mut code, "import Foundation").unwrap();
+        writeln!(&mut code, "import simd").unwrap();
         writeln!(&mut code, "import SpacetimeDB\n").unwrap();
 
         writeln!(&mut code, "public enum SpacetimeModule {{").unwrap();

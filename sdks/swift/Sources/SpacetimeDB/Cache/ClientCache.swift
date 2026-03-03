@@ -83,21 +83,31 @@ public final class ClientCache: Sendable {
                         let insertRows = self.extractRows(from: persistent.inserts)
                         let pairedCount = min(deleteRows.count, insertRows.count)
 
+                        
                         if pairedCount > 0 {
-                            for idx in 0..<pairedCount {
-                                self.applyRowUpdate(
-                                    oldData: deleteRows[idx],
-                                    newData: insertRows[idx],
-                                    tableCache: tableCache
+                            do {
+                                try tableCache.handleBulkUpdate(
+                                    oldRowBytesList: Array(deleteRows[..<pairedCount]),
+                                    newRowBytesList: Array(insertRows[..<pairedCount])
                                 )
+                            } catch {
+                                Log.cache.error("Failed to bulk update rows for table '\(tableName)': \(error.localizedDescription)")
                             }
                         }
 
                         if deleteRows.count > pairedCount {
-                            self.processRows(deleteRows[pairedCount...], tableCache: tableCache, isInsert: false)
+                            do {
+                                try tableCache.handleBulkDelete(rowBytesList: Array(deleteRows[pairedCount...]))
+                            } catch {
+                                Log.cache.error("Failed to bulk delete rows for table '\(tableName)': \(error.localizedDescription)")
+                            }
                         }
                         if insertRows.count > pairedCount {
-                            self.processRows(insertRows[pairedCount...], tableCache: tableCache, isInsert: true)
+                            do {
+                                try tableCache.handleBulkInsert(rowBytesList: Array(insertRows[pairedCount...]))
+                            } catch {
+                                Log.cache.error("Failed to bulk insert rows for table '\(tableName)': \(error.localizedDescription)")
+                            }
                         }
                     case .eventTable:
                         break
