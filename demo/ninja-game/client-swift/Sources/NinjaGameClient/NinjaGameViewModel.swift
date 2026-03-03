@@ -4,6 +4,7 @@ import SpacetimeDB
 #if canImport(AppKit)
 import AppKit
 #endif
+import Darwin
 
 // MARK: - View Model
 
@@ -36,6 +37,7 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
     
     /// Tracks previous player states to detect drops in health or increases in kills.
     private var lastPlayerStates: [UInt64: (health: UInt32, kills: UInt32, weaponCount: UInt32)] = [:]
+    private var hitFlashUntilByPlayerId: [UInt64: TimeInterval] = [:]
     
     /// Tracks which way each player is currently facing for animation.
     var playerDirections: [UInt64: NinjaDirection] = [:]
@@ -97,7 +99,7 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
 
     // Keyboard state
     private var pressedKeys: Set<UInt16> = []
-    private var weaponSpawnTimer: Timer?
+    private var weaponSpawnLoopTask: Task<Void, Never>?
     private var isStarted = false
     // Don't send movement until the player has joined
     var hasJoined = false
@@ -136,10 +138,13 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
         let swordOffsets: [SwordOffset]
         let targets: [CollisionTargetSnapshot]
     }
-    private let collisionComputeQueue = DispatchQueue(
-        label: "ninjagame.sword-collision.compute",
-        qos: .utility
-    )
+    private actor SwordCollisionWorker {
+        func compute(snapshot: SwordCollisionSnapshot, maxHits: Int) -> [UInt64] {
+            NinjaGameViewModel.computeSwordCollisionHits(snapshot: snapshot, maxHits: maxHits)
+        }
+    }
+    private let collisionWorker = SwordCollisionWorker()
+    private var collisionComputeTask: Task<Void, Never>?
     private var collisionComputeInFlight = false
     private let maxSwordAttacksPerSweep = max(
         1,
@@ -153,8 +158,8 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
     private let joystickDeadzone: CGFloat = 5
     private let playerClampPadding: Float = playerEdgePadding
     private let networkSendRate: TimeInterval = 1.0 / 20.0  // Send position to server at 20Hz
-    private var lastNetworkSend: Date = .distantPast
-    private var movementTimer: Timer?
+    private var lastNetworkSendTime: TimeInterval = 0
+    private var movementLoopTask: Task<Void, Never>?
     private var lastMovementTick: TimeInterval = Date.timeIntervalSinceReferenceDate
     private var localPositionDirty = false  // Track if we need to send a network update
     private enum PendingLobbyAction {
@@ -181,6 +186,20 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
     private let renderOrderUpdateInterval: TimeInterval = 1.0 / 15.0
     private var renderPlayersDirty = false
     private var renderSortScratch: [(y: Float, player: Player)] = []
+    private var seenPlayerIdsScratch: Set<UInt64> = []
+    private var stalePlayerIdsScratch: [UInt64] = []
+
+    private static var collisionTaskPriority: TaskPriority {
+        if let override = ProcessInfo.processInfo.environment["NINJA_COLLISION_PRIORITY"]?.lowercased() {
+            switch override {
+            case "high": return .high
+            case "low": return .low
+            case "background": return .background
+            default: return .medium
+            }
+        }
+        return AppleSiliconCoreProfile.current.recommendedCollisionPriority
+    }
     private enum HotPathSection: Int, CaseIterable {
         case onTransactionTotal
         case onTransactionRebuildCaches
@@ -323,10 +342,13 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
         let shouldSendLeave = hasJoined
         perf.flushIfNeeded(reason: "stop")
         isConnected = false
-        movementTimer?.invalidate()
-        movementTimer = nil
-        weaponSpawnTimer?.invalidate()
-        weaponSpawnTimer = nil
+        movementLoopTask?.cancel()
+        movementLoopTask = nil
+        weaponSpawnLoopTask?.cancel()
+        weaponSpawnLoopTask = nil
+        collisionComputeTask?.cancel()
+        collisionComputeTask = nil
+        collisionComputeInFlight = false
         #if canImport(AppKit)
         removeKeyboardMonitors()
         #endif
@@ -385,6 +407,7 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
         previousHealth = 100
         lastSwordHitTime.removeAll()
         lastSwordCollisionSweepTime = 0
+        hitFlashUntilByPlayerId.removeAll()
         playerDirections.removeAll()
         playerIsMoving.removeAll()
         smoothedPositions.removeAll()
@@ -395,11 +418,13 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
         localX = 500
         localY = 500
         localPositionDirty = false
-        lastNetworkSend = .distantPast
+        lastNetworkSendTime = 0
         isQuickJoinActive = false
         recentEvents = []
         eventSequence = 0
         lastPlayerStates.removeAll()
+        seenPlayerIdsScratch.removeAll(keepingCapacity: true)
+        stalePlayerIdsScratch.removeAll(keepingCapacity: true)
         renderPlayers = []
         lastRenderOrderUpdateTime = 0
         renderPlayersDirty = false
@@ -572,12 +597,12 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
             playersInActiveLobbySnapshot = scopedPlayers
 
             if let lobbyId {
-                var filteredWeapons: [WeaponDrop] = []
-                filteredWeapons.reserveCapacity(WeaponDropTable.cache.rows.count)
-                for w in WeaponDropTable.cache.rows where w.lobbyId == lobbyId {
-                    filteredWeapons.append(w)
+                let allWeapons = WeaponDropTable.cache.rows
+                weapons.removeAll(keepingCapacity: true)
+                weapons.reserveCapacity(allWeapons.count)
+                for weapon in allWeapons where weapon.lobbyId == lobbyId {
+                    weapons.append(weapon)
                 }
-                weapons = filteredWeapons
             } else {
                 weapons = WeaponDropTable.cache.rows
             }
@@ -586,11 +611,11 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
             refreshRenderPlayersIfNeeded(now: now)
 
             perf.measure(.onTransactionEffects) {
-                var seenIds = Set<UInt64>()
-                seenIds.reserveCapacity(pTable.count)
+                seenPlayerIdsScratch.removeAll(keepingCapacity: true)
+                seenPlayerIdsScratch.reserveCapacity(pTable.count)
 
                 for p in pTable {
-                    seenIds.insert(p.id)
+                    seenPlayerIdsScratch.insert(p.id)
                     guard let last = lastPlayerStates[p.id] else {
                         lastPlayerStates[p.id] = (p.health, p.kills, p.weaponCount)
                         continue
@@ -598,6 +623,7 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
 
                     if p.health < last.health && p.health > 0 {
                         EffectManager.shared.spawnHit(x: p.x, y: p.y, value: "-\(last.health - p.health)")
+                        hitFlashUntilByPlayerId[p.id] = now + 0.15
                     }
 
                     if p.health == 0 && last.health > 0 {
@@ -615,14 +641,27 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
                     lastPlayerStates[p.id] = (p.health, p.kills, p.weaponCount)
                 }
 
-                if lastPlayerStates.count > seenIds.count {
-                    let staleIds = lastPlayerStates.keys.filter { !seenIds.contains($0) }
-                    for id in staleIds {
+                if lastPlayerStates.count > seenPlayerIdsScratch.count {
+                    stalePlayerIdsScratch.removeAll(keepingCapacity: true)
+                    stalePlayerIdsScratch.reserveCapacity(lastPlayerStates.count - seenPlayerIdsScratch.count)
+                    for id in lastPlayerStates.keys where !seenPlayerIdsScratch.contains(id) {
+                        stalePlayerIdsScratch.append(id)
+                    }
+                    for id in stalePlayerIdsScratch {
                         lastPlayerStates.removeValue(forKey: id)
+                        hitFlashUntilByPlayerId.removeValue(forKey: id)
                     }
                 }
             }
         }
+    }
+
+    func playerIsHitFlashing(_ playerId: UInt64, at now: TimeInterval) -> Bool {
+        (hitFlashUntilByPlayerId[playerId] ?? 0) > now
+    }
+
+    var isCollisionComputeInFlight: Bool {
+        collisionComputeInFlight
     }
 
     public func onReducerError(reducer: String, message: String, isInternal: Bool) {
@@ -985,11 +1024,10 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
     }
 
     /// Send position to server at a throttled rate (20Hz)
-    private func flushPositionIfNeeded() {
+    private func flushPositionIfNeeded(now: TimeInterval) {
         guard localPositionDirty else { return }
-        let now = Date()
-        guard now.timeIntervalSince(lastNetworkSend) >= networkSendRate else { return }
-        lastNetworkSend = now
+        guard now - lastNetworkSendTime >= networkSendRate else { return }
+        lastNetworkSendTime = now
         localPositionDirty = false
         MovePlayer.invoke(x: localX, y: localY)
     }
@@ -1014,15 +1052,20 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
     }
 
     private func startMovementTimer() {
-        movementTimer?.invalidate()
+        movementLoopTask?.cancel()
         lastMovementTick = Date.timeIntervalSinceReferenceDate
-        let timer = Timer(timeInterval: movementTickInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.tickMovement(now: Date.timeIntervalSinceReferenceDate)
+        let tickNanos = UInt64(max(1.0, movementTickInterval * 1_000_000_000.0))
+        movementLoopTask = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                self.tickMovement(now: Date.timeIntervalSinceReferenceDate)
+                do {
+                    try await Task.sleep(nanoseconds: tickNanos)
+                } catch {
+                    break
+                }
             }
         }
-        movementTimer = timer
-        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func tickMovement(now: TimeInterval = Date.timeIntervalSinceReferenceDate) {
@@ -1037,20 +1080,20 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
         var hasRemoteSmoothingUpdate = false
         let movingThresholdSq: Float = 0.05 * 0.05
         for p in players where p.id != userId {
-            let current = smoothedPositions[p.id] ?? (p.x, p.y)
-            let nextX = current.x + (p.x - current.x) * remoteSmoothingFactor
-            let nextY = current.y + (p.y - current.y) * remoteSmoothingFactor
-            smoothedPositions[p.id] = (nextX, nextY)
+            let currentTuple = smoothedPositions[p.id] ?? (p.x, p.y)
+            let current = SIMD2<Float>(currentTuple.x, currentTuple.y)
+            let target = SIMD2<Float>(p.x, p.y)
+            let next = current + (target - current) * remoteSmoothingFactor
+            smoothedPositions[p.id] = (next.x, next.y)
 
-            let dx = nextX - current.x
-            let dy = nextY - current.y
-            let distSq = dx * dx + dy * dy
+            let delta = next - current
+            let distSq = delta.x * delta.x + delta.y * delta.y
             if distSq > movingThresholdSq {
                 playerIsMoving[p.id] = true
-                if abs(dx) > abs(dy) {
-                    playerDirections[p.id] = dx > 0 ? .east : .west
+                if abs(delta.x) > abs(delta.y) {
+                    playerDirections[p.id] = delta.x > 0 ? .east : .west
                 } else {
-                    playerDirections[p.id] = dy > 0 ? .south : .north
+                    playerDirections[p.id] = delta.y > 0 ? .south : .north
                 }
                 hasRemoteSmoothingUpdate = true
             } else {
@@ -1066,42 +1109,41 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
         // This will be handled by the UI listening to the VM's effectEvents array
 
         guard dt > 0 else {
-            flushPositionIfNeeded()
+            flushPositionIfNeeded(now: now)
             return
         }
 
-        var inputX: Float = 0
-        var inputY: Float = 0
+        var input = SIMD2<Float>(repeating: 0)
 
         if jsActive && jsVector != .zero {
             let dist = sqrt(jsVector.dx * jsVector.dx + jsVector.dy * jsVector.dy)
             if dist > joystickDeadzone {
-                inputX = Float(jsVector.dx / joystickRadius)
-                inputY = Float(jsVector.dy / joystickRadius)
+                input.x = Float(jsVector.dx / joystickRadius)
+                input.y = Float(jsVector.dy / joystickRadius)
             }
         } else {
             // Keyboard: W=13, A=0, S=1, D=2, ←=123, →=124, ↓=125, ↑=126
-            if pressedKeys.contains(13) || pressedKeys.contains(126) { inputY -= 1 }
-            if pressedKeys.contains(1)  || pressedKeys.contains(125) { inputY += 1 }
-            if pressedKeys.contains(0)  || pressedKeys.contains(123) { inputX -= 1 }
-            if pressedKeys.contains(2)  || pressedKeys.contains(124) { inputX += 1 }
+            if pressedKeys.contains(13) || pressedKeys.contains(126) { input.y -= 1 }
+            if pressedKeys.contains(1)  || pressedKeys.contains(125) { input.y += 1 }
+            if pressedKeys.contains(0)  || pressedKeys.contains(123) { input.x -= 1 }
+            if pressedKeys.contains(2)  || pressedKeys.contains(124) { input.x += 1 }
         }
 
-        if inputX != 0 || inputY != 0 {
-            let len = sqrt(inputX * inputX + inputY * inputY)
-            let nx = inputX / max(1, len)
-            let ny = inputY / max(1, len)
+        if input.x != 0 || input.y != 0 {
+            let lenSq = input.x * input.x + input.y * input.y
+            let invLen = 1.0 / max(1.0, sqrt(lenSq))
+            let direction = input * invLen
             let step = movementSpeedPerSecond * dt
-            moveBy(dx: nx * step, dy: ny * step)
+            moveBy(dx: direction.x * step, dy: direction.y * step)
             renderPlayersDirty = true
             
             // Set my facing direction
             if let myId = userId {
                 playerIsMoving[myId] = true
-                if abs(inputX) > abs(inputY) {
-                    playerDirections[myId] = inputX > 0 ? .east : .west
+                if abs(direction.x) > abs(direction.y) {
+                    playerDirections[myId] = direction.x > 0 ? .east : .west
                 } else {
-                    playerDirections[myId] = inputY > 0 ? .south : .north
+                    playerDirections[myId] = direction.y > 0 ? .south : .north
                 }
             }
         } else if let myId = userId {
@@ -1114,7 +1156,7 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
         }
 
         // Throttled network send so we don't flood the server
-        flushPositionIfNeeded()
+        flushPositionIfNeeded(now: now)
     }
 
     /// Checks whether any of my orbiting swords are touching another player.
@@ -1168,10 +1210,13 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
             targets: targets
         )
         let maxAttacksPerSweep = maxSwordAttacksPerSweep
-        collisionComputeQueue.async { [snapshot, maxAttacksPerSweep] in
-            let hits = Self.computeSwordCollisionHits(snapshot: snapshot, maxHits: maxAttacksPerSweep)
-            Task { @MainActor [weak self] in
+        collisionComputeTask = Task(priority: Self.collisionTaskPriority) { [weak self] in
+            guard let self else { return }
+            let hits = await self.collisionWorker.compute(snapshot: snapshot, maxHits: maxAttacksPerSweep)
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
                 guard let self else { return }
+                self.collisionComputeTask = nil
                 self.collisionComputeInFlight = false
                 guard self.hasJoined, !self.isMenuOpen else { return }
                 guard !hits.isEmpty else { return }
@@ -1213,6 +1258,7 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
         let ninjaHalfH: Float = 21.0
         let swordHalfW: Float = 7.5
         let swordHalfH: Float = 19.5
+        let myPosition = SIMD2<Float>(snapshot.myX, snapshot.myY)
 
         var swordBounds: [SwordBounds] = []
         swordBounds.reserveCapacity(snapshot.swordOffsets.count)
@@ -1224,13 +1270,13 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
         var swordsMaxBottom = -Float.greatestFiniteMagnitude
 
         for offset in snapshot.swordOffsets {
-            let sx = snapshot.myX + offset.x
-            let sy = snapshot.myY + offset.y
+            let offsetVec = SIMD2<Float>(offset.x, offset.y)
+            let swordPos = myPosition + offsetVec
             let bounds = SwordBounds(
-                left: sx - swordHalfW,
-                right: sx + swordHalfW,
-                top: sy - swordHalfH,
-                bottom: sy + swordHalfH
+                left: swordPos.x - swordHalfW,
+                right: swordPos.x + swordHalfW,
+                top: swordPos.y - swordHalfH,
+                bottom: swordPos.y + swordHalfH
             )
             swordBounds.append(bounds)
 
@@ -1239,7 +1285,7 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
             if bounds.top < swordsMinTop { swordsMinTop = bounds.top }
             if bounds.bottom > swordsMaxBottom { swordsMaxBottom = bounds.bottom }
 
-            let radiusSq = offset.x * offset.x + offset.y * offset.y
+            let radiusSq = offsetVec.x * offsetVec.x + offsetVec.y * offsetVec.y
             if radiusSq > maxSwordRadiusSq { maxSwordRadiusSq = radiusSq }
         }
 
@@ -1259,9 +1305,8 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
         for target in snapshot.targets {
             guard snapshot.now - target.lastHitTime >= snapshot.cooldown else { continue }
 
-            let dxCenter = target.x - snapshot.myX
-            let dyCenter = target.y - snapshot.myY
-            let centerDistSq = dxCenter * dxCenter + dyCenter * dyCenter
+            let targetCenterDelta = SIMD2<Float>(target.x, target.y) - myPosition
+            let centerDistSq = targetCenterDelta.x * targetCenterDelta.x + targetCenterDelta.y * targetCenterDelta.y
             guard centerDistSq <= targetCullRadiusSq else { continue }
 
             // Target bounds
@@ -1322,19 +1367,24 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
     }
 
     private func startWeaponSpawner() {
-        weaponSpawnTimer = Timer.scheduledTimer(withTimeInterval: weaponSpawnInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self = self, self.hasJoined, self.isConnected else { return }
-                
+        weaponSpawnLoopTask?.cancel()
+        let tickNanos = UInt64(max(1.0, weaponSpawnInterval * 1_000_000_000.0))
+        weaponSpawnLoopTask = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: tickNanos)
+                } catch {
+                    break
+                }
+                guard self.hasJoined, self.isConnected else { continue }
+
                 // Limit weapons on the ground to avoid clutter.
                 if self.weapons.count < maxGroundWeapons {
                     let spawn = self.randomWeaponSpawn()
                     SpawnWeapon.invoke(x: spawn.x, y: spawn.y)
                 }
             }
-        }
-        if let weaponSpawnTimer = weaponSpawnTimer {
-            RunLoop.main.add(weaponSpawnTimer, forMode: .common)
         }
     }
 
@@ -1426,3 +1476,35 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
         #endif
     }
 }
+    private struct AppleSiliconCoreProfile {
+        let performanceCores: Int
+        let efficiencyCores: Int
+        let activeCores: Int
+
+        static let current = detect()
+
+        var recommendedCollisionPriority: TaskPriority {
+            performanceCores >= 4 ? .high : .medium
+        }
+
+        private static func detect() -> AppleSiliconCoreProfile {
+            let perf = sysctlInt("hw.perflevel0.physicalcpu")
+            let eff = sysctlInt("hw.perflevel1.physicalcpu")
+            let active = ProcessInfo.processInfo.activeProcessorCount
+            return AppleSiliconCoreProfile(
+                performanceCores: max(0, perf),
+                efficiencyCores: max(0, eff),
+                activeCores: max(1, active)
+            )
+        }
+
+        private static func sysctlInt(_ name: String) -> Int {
+            var value: Int32 = 0
+            var size = MemoryLayout<Int32>.size
+            let result = name.withCString {
+                sysctlbyname($0, &value, &size, nil, 0)
+            }
+            guard result == 0 else { return 0 }
+            return Int(value)
+        }
+    }

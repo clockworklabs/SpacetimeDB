@@ -134,28 +134,37 @@ struct EffectOverlayView: View {
     let camX: CGFloat
     let camY: CGFloat
     let zoom: CGFloat
+    let viewportSize: CGSize
     
     var body: some View {
         ZStack {
             ForEach(effects) { effect in
-                Group {
-                    switch effect.kind {
-                    case .particle(let color, _):
-                        Rectangle()
-                            .fill(color)
-                            .frame(width: 4 * zoom * effect.scale, height: 4 * zoom * effect.scale)
-                    case .floatingText(let text, let color):
-                        Text(text.uppercased())
-                            .font(.system(size: 10 * zoom, weight: .heavy, design: .rounded))
-                            .foregroundStyle(color)
-                            .shadow(color: .black, radius: 2, x: 1, y: 1)
+                let screenX = (effect.x - camX) * zoom
+                let screenY = (effect.y - camY) * zoom
+                let screenMargin: CGFloat = 42
+                if screenX >= -screenMargin &&
+                    screenX <= viewportSize.width + screenMargin &&
+                    screenY >= -screenMargin &&
+                    screenY <= viewportSize.height + screenMargin {
+                    Group {
+                        switch effect.kind {
+                        case .particle(let color, _):
+                            Rectangle()
+                                .fill(color)
+                                .frame(width: 4 * zoom * effect.scale, height: 4 * zoom * effect.scale)
+                        case .floatingText(let text, let color):
+                            Text(text.uppercased())
+                                .font(.system(size: 10 * zoom, weight: .heavy, design: .rounded))
+                                .foregroundStyle(color)
+                                .shadow(color: .black, radius: 2, x: 1, y: 1)
+                        }
                     }
+                    .opacity(effect.opacity)
+                    .position(
+                        x: screenX,
+                        y: screenY
+                    )
                 }
-                .opacity(effect.opacity)
-                .position(
-                    x: (effect.x - camX) * zoom,
-                    y: (effect.y - camY) * zoom
-                )
             }
         }
         .allowsHitTesting(false)

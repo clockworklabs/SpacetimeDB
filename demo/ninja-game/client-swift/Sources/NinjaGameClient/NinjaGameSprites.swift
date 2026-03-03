@@ -6,6 +6,18 @@ import AppKit
 #endif
 
 private let gameplayZoom: CGFloat = 1.9
+private let baseEntitySpriteSize: CGFloat = 58
+
+fileprivate struct VisiblePlayerSnapshot: Identifiable {
+    let id: UInt64
+    let player: Player
+    let worldX: Float
+    let worldY: Float
+    let direction: NinjaGameViewModel.NinjaDirection
+    let isMoving: Bool
+    let isFlashing: Bool
+    let color: Color
+}
 
 // MARK: - Sword orbit layout
 
@@ -63,11 +75,16 @@ func swordPositions(count: Int, t: TimeInterval) -> [CGPoint] {
 
 struct SwiftUIGameViewport: View {
     let vm: NinjaGameViewModel
+    @State private var lastFrameTimestamp: TimeInterval?
+    @State private var frameMs: Double = 0
+    private static let showPerfHUD = ProcessInfo.processInfo.environment["NINJA_PERF_HUD"] == "1"
+    private static let renderInterval: TimeInterval = 1.0 / 120.0
 
     var body: some View {
         GeometryReader { geo in
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { timeline in
+            TimelineView(.animation(minimumInterval: Self.renderInterval, paused: false)) { timeline in
                 let t = timeline.date.timeIntervalSinceReferenceDate
+                let showPerfHUD = Self.showPerfHUD
                 let worldViewportSize = CGSize(
                     width: geo.size.width / gameplayZoom,
                     height: geo.size.height / gameplayZoom
@@ -75,6 +92,56 @@ struct SwiftUIGameViewport: View {
                 let camera = cameraOrigin(viewportSize: worldViewportSize)
                 let camX = camera.x
                 let camY = camera.y
+                let activeEffects = EffectManager.shared.activeEffects
+                let visibleWeapons = vm.weapons.filter { weapon in
+                    isWorldPointVisible(
+                        x: CGFloat(weapon.x),
+                        y: CGFloat(weapon.y),
+                        camX: camX,
+                        camY: camY,
+                        viewportWorldSize: worldViewportSize,
+                        padding: 42
+                    )
+                }
+                let visiblePlayers = vm.renderPlayers.compactMap { player -> VisiblePlayerSnapshot? in
+                    let worldX: Float = {
+                        if player.id == vm.userId && vm.hasJoined { return vm.localX }
+                        return vm.smoothedPositions[player.id]?.x ?? player.x
+                    }()
+                    let worldY: Float = {
+                        if player.id == vm.userId && vm.hasJoined { return vm.localY }
+                        return vm.smoothedPositions[player.id]?.y ?? player.y
+                    }()
+                    guard isWorldPointVisible(
+                        x: CGFloat(worldX),
+                        y: CGFloat(worldY),
+                        camX: camX,
+                        camY: camY,
+                        viewportWorldSize: worldViewportSize,
+                        padding: 86
+                    ) else {
+                        return nil
+                    }
+                    return VisiblePlayerSnapshot(
+                        id: player.id,
+                        player: player,
+                        worldX: worldX,
+                        worldY: worldY,
+                        direction: vm.playerDirections[player.id] ?? .south,
+                        isMoving: vm.playerIsMoving[player.id] ?? false,
+                        isFlashing: vm.playerIsHitFlashing(player.id, at: t),
+                        color: Color.fromId(player.id)
+                    )
+                }
+                let visibleEffectsCount = showPerfHUD
+                    ? countVisibleEffects(
+                        effects: activeEffects,
+                        camX: camX,
+                        camY: camY,
+                        zoom: gameplayZoom,
+                        viewportSize: geo.size
+                    )
+                    : 0
 
                 ZStack {
                     ProceduralWorldBackdrop(
@@ -83,36 +150,57 @@ struct SwiftUIGameViewport: View {
                         zoom: gameplayZoom
                     )
 
-                    ForEach(vm.weapons, id: \.id) { weapon in
-                        WeaponEntityView(
-                            weapon: weapon,
-                            camX: camX,
-                            camY: camY,
-                            zoom: gameplayZoom
-                        )
-                    }
-
-                    ForEach(vm.renderPlayers, id: \.id) { player in
-                        PlayerEntityView(
-                            player: player,
-                            vm: vm,
-                            t: t,
-                            camX: camX,
-                            camY: camY,
-                            zoom: gameplayZoom
-                        )
-                    }
-
-                    EffectOverlayView(
-                        effects: EffectManager.shared.activeEffects,
+                    GameEntitiesCanvas(
+                        players: visiblePlayers,
+                        weapons: visibleWeapons,
+                        t: t,
                         camX: camX,
                         camY: camY,
                         zoom: gameplayZoom
                     )
+
+                    ForEach(visiblePlayers) { snapshot in
+                        PlayerLabelsView(player: snapshot.player)
+                            .position(
+                                x: (CGFloat(snapshot.worldX) - camX) * gameplayZoom,
+                                y: (CGFloat(snapshot.worldY) - camY) * gameplayZoom - 46 * gameplayZoom
+                            )
+                    }
+
+                    EffectOverlayView(
+                        effects: activeEffects,
+                        camX: camX,
+                        camY: camY,
+                        zoom: gameplayZoom,
+                        viewportSize: geo.size
+                    )
+
+                    if showPerfHUD {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(String(format: "frame %.1f ms", frameMs))
+                            Text("players vis \(visiblePlayers.count) / total \(vm.players.count)")
+                            Text("weapons vis \(visibleWeapons.count) / total \(vm.weapons.count)")
+                            Text("effects vis \(visibleEffectsCount) / total \(activeEffects.count)")
+                            Text("collision \(vm.isCollisionComputeInFlight ? "busy" : "idle")")
+                        }
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Color(red: 0.66, green: 0.96, blue: 0.90))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(Color.black.opacity(0.62))
+                        .overlay(Rectangle().strokeBorder(Color(red: 0.25, green: 0.80, blue: 0.78).opacity(0.9), lineWidth: 1))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                        .padding(.top, 72)
+                        .padding(.trailing, 10)
+                    }
                 }
                 .onChange(of: t) { _, _ in
-                    let now = Date.timeIntervalSinceReferenceDate
-                    EffectManager.shared.update(dt: 1.0 / 30.0, now: now)
+                    let dt = max(0, min(0.05, t - (lastFrameTimestamp ?? t)))
+                    EffectManager.shared.update(dt: dt, now: t)
+                    if let last = lastFrameTimestamp {
+                        frameMs = max(0, (t - last) * 1000.0)
+                    }
+                    lastFrameTimestamp = t
                 }
                 .frame(
                     width: geo.size.width,
@@ -120,6 +208,7 @@ struct SwiftUIGameViewport: View {
                     alignment: .topLeading
                 )
                 .clipped()
+                .allowsHitTesting(false)
             }
         }
     }
@@ -142,6 +231,42 @@ struct SwiftUIGameViewport: View {
         let camX = clamp(anchorX - viewHalfW, min: minCamX, max: maxCamX)
         let camY = clamp(anchorY - viewHalfH, min: minCamY, max: maxCamY)
         return CGPoint(x: camX, y: camY)
+    }
+
+    private func isWorldPointVisible(
+        x: CGFloat,
+        y: CGFloat,
+        camX: CGFloat,
+        camY: CGFloat,
+        viewportWorldSize: CGSize,
+        padding: CGFloat
+    ) -> Bool {
+        x >= camX - padding &&
+        x <= camX + viewportWorldSize.width + padding &&
+        y >= camY - padding &&
+        y <= camY + viewportWorldSize.height + padding
+    }
+
+    private func countVisibleEffects(
+        effects: [EffectManager.ActiveEffect],
+        camX: CGFloat,
+        camY: CGFloat,
+        zoom: CGFloat,
+        viewportSize: CGSize
+    ) -> Int {
+        let screenMargin: CGFloat = 42
+        var count = 0
+        for effect in effects {
+            let screenX = (effect.x - camX) * zoom
+            let screenY = (effect.y - camY) * zoom
+            if screenX >= -screenMargin &&
+                screenX <= viewportSize.width + screenMargin &&
+                screenY >= -screenMargin &&
+                screenY <= viewportSize.height + screenMargin {
+                count += 1
+            }
+        }
+        return count
     }
 }
 
@@ -260,6 +385,195 @@ private func clamp(_ value: CGFloat, min minValue: CGFloat, max maxValue: CGFloa
 
 
 // MARK: - Subviews for rendering entities
+
+private struct GameEntitiesCanvas: View {
+    let players: [VisiblePlayerSnapshot]
+    let weapons: [WeaponDrop]
+    let t: TimeInterval
+    let camX: CGFloat
+    let camY: CGFloat
+    let zoom: CGFloat
+
+    var body: some View {
+        Canvas(rendersAsynchronously: true) { ctx, _ in
+            for weapon in weapons {
+                let center = CGPoint(
+                    x: (CGFloat(weapon.x) - camX) * zoom,
+                    y: (CGFloat(weapon.y) - camY) * zoom
+                )
+                drawSword(in: &ctx, center: center, scale: zoom * 0.72, rotationDegrees: 12, glow: true)
+            }
+
+            for snapshot in players {
+                let center = CGPoint(
+                    x: (CGFloat(snapshot.worldX) - camX) * zoom,
+                    y: (CGFloat(snapshot.worldY) - camY) * zoom
+                )
+                drawNinja(
+                    in: &ctx,
+                    center: center,
+                    direction: snapshot.direction,
+                    isMoving: snapshot.isMoving,
+                    hitFlash: snapshot.isFlashing,
+                    t: t,
+                    scale: zoom,
+                    baseColor: snapshot.color,
+                    lowHealth: snapshot.player.health < 33
+                )
+                if snapshot.player.weaponCount > 0 {
+                    forEachSwordPosition(count: Int(snapshot.player.weaponCount), t: t) { offset in
+                        let orbitCenter = CGPoint(
+                            x: center.x + offset.x * zoom,
+                            y: center.y + offset.y * zoom
+                        )
+                        drawSword(
+                            in: &ctx,
+                            center: orbitCenter,
+                            scale: zoom * 0.72,
+                            rotationDegrees: -35,
+                            glow: false
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private func drawNinja(
+        in ctx: inout GraphicsContext,
+        center: CGPoint,
+        direction: NinjaGameViewModel.NinjaDirection,
+        isMoving: Bool,
+        hitFlash: Bool,
+        t: TimeInterval,
+        scale: CGFloat,
+        baseColor: Color,
+        lowHealth: Bool
+    ) {
+        let sprite = baseEntitySpriteSize * scale
+        let w = sprite
+        let h = sprite
+        let origin = CGPoint(x: center.x - w * 0.5, y: center.y - h * 0.5)
+        let tAdjusted = t * 1.5
+        let bob = isMoving ? CGFloat(sin(tAdjusted * 4.0)) * 1.2 * scale : CGFloat(sin(tAdjusted * 1.6)) * 0.9 * scale
+        let swing = isMoving ? CGFloat(sin(tAdjusted * 8.0)) * 3.5 * scale : CGFloat(sin(tAdjusted * 1.8)) * 0.8 * scale
+        let legSwing = isMoving ? CGFloat(sin(tAdjusted * 8.0 + .pi / 2.0)) * 2.8 * scale : 0
+        let top = origin.y + h * 0.10 + bob
+
+        let primary = hitFlash ? Color.white : baseColor.opacity(lowHealth ? 0.92 : 1.0)
+        let dark = hitFlash ? Color.white : Color(red: 0.04, green: 0.05, blue: 0.10)
+        let hood = hitFlash ? Color.white : Color(red: 0.06, green: 0.08, blue: 0.14)
+        let accent = hitFlash ? Color.white : Color(red: 0.85, green: 0.12, blue: 0.18)
+        let skin = hitFlash ? Color.white : Color(red: 0.98, green: 0.82, blue: 0.72)
+        let eye = hitFlash ? Color.white : Color(red: 0.60, green: 0.85, blue: 1.0)
+        let facingEast = direction != .west
+
+        func x(_ ratio: CGFloat) -> CGFloat { origin.x + ratio * w }
+        func y(_ ratio: CGFloat) -> CGFloat { top + ratio * h }
+
+        func tint(_ color: Color) -> Color {
+            if hitFlash {
+                return Color.white
+            }
+            return lowHealth ? color.opacity(0.85) : color
+        }
+
+        func fill(_ rect: CGRect, _ color: Color) {
+            ctx.fill(Path(rect), with: .color(tint(color)))
+        }
+
+        let shadow = CGRect(x: x(0.22), y: y(0.75), width: w * 0.56, height: h * 0.10)
+        ctx.fill(Path(ellipseIn: shadow), with: .color(Color.black.opacity(0.35)))
+
+        // Head + mask
+        fill(CGRect(x: x(0.30), y: y(-0.10), width: w * 0.40, height: h * 0.23), hood)
+        fill(CGRect(x: x(0.28), y: y(-0.02), width: w * 0.44, height: h * 0.06), accent)
+        fill(CGRect(x: x(0.30), y: y(0.03), width: w * 0.40, height: h * 0.10), hood)
+        if direction == .north {
+            fill(CGRect(x: x(0.35), y: y(0.05), width: w * 0.30, height: h * 0.02), eye.opacity(0.35))
+        } else if facingEast {
+            fill(CGRect(x: x(0.50), y: y(0.04), width: w * 0.18, height: h * 0.04), skin)
+            fill(CGRect(x: x(0.60), y: y(0.032), width: w * 0.09, height: h * 0.046), eye.opacity(0.40))
+        } else {
+            fill(CGRect(x: x(0.34), y: y(0.04), width: w * 0.32, height: h * 0.05), skin)
+            fill(CGRect(x: x(0.36), y: y(0.032), width: w * 0.10, height: h * 0.046), eye.opacity(0.38))
+            fill(CGRect(x: x(0.54), y: y(0.032), width: w * 0.10, height: h * 0.046), eye.opacity(0.38))
+        }
+
+        // Torso + belt
+        fill(CGRect(x: x(0.28), y: y(0.13), width: w * 0.44, height: h * 0.38), primary)
+        fill(CGRect(x: x(0.27), y: y(0.44), width: w * 0.46, height: h * 0.07), dark)
+        fill(CGRect(x: x(0.38), y: y(0.44), width: w * 0.15, height: h * 0.07), accent)
+
+        // Arms
+        fill(CGRect(x: x(0.16) - swing, y: y(0.15), width: w * 0.13, height: h * 0.28), primary)
+        fill(CGRect(x: x(0.71) + swing - w * 0.13, y: y(0.15), width: w * 0.13, height: h * 0.28), primary)
+        fill(CGRect(x: x(0.16) - swing, y: y(0.43), width: w * 0.10, height: h * 0.06), skin)
+        fill(CGRect(x: x(0.74) + swing - w * 0.10, y: y(0.43), width: w * 0.10, height: h * 0.06), skin)
+
+        // Legs + boots
+        fill(CGRect(x: x(0.31) - legSwing, y: y(0.51), width: w * 0.15, height: h * 0.25), primary)
+        fill(CGRect(x: x(0.54) + legSwing, y: y(0.51), width: w * 0.15, height: h * 0.25), primary)
+        fill(CGRect(x: x(0.28) - legSwing, y: y(0.74), width: w * 0.20, height: h * 0.07), dark)
+        fill(CGRect(x: x(0.52) + legSwing, y: y(0.74), width: w * 0.20, height: h * 0.07), dark)
+    }
+
+    private func drawSword(
+        in ctx: inout GraphicsContext,
+        center: CGPoint,
+        scale: CGFloat,
+        rotationDegrees: Double,
+        glow: Bool
+    ) {
+        let size = 56 * scale
+        let w = size
+        let h = size
+        let origin = CGPoint(x: center.x - w * 0.5, y: center.y - h * 0.5)
+        let angle = CGFloat(rotationDegrees * .pi / 180.0)
+        let c = cos(angle)
+        let s = sin(angle)
+
+        func rotatePoint(_ point: CGPoint) -> CGPoint {
+            let dx = point.x - center.x
+            let dy = point.y - center.y
+            return CGPoint(
+                x: center.x + dx * c - dy * s,
+                y: center.y + dx * s + dy * c
+            )
+        }
+
+        func rotatedRectPath(_ rect: CGRect) -> Path {
+            var p = Path()
+            let a = rotatePoint(CGPoint(x: rect.minX, y: rect.minY))
+            let b = rotatePoint(CGPoint(x: rect.maxX, y: rect.minY))
+            let c = rotatePoint(CGPoint(x: rect.maxX, y: rect.maxY))
+            let d = rotatePoint(CGPoint(x: rect.minX, y: rect.maxY))
+            p.move(to: a)
+            p.addLine(to: b)
+            p.addLine(to: c)
+            p.addLine(to: d)
+            p.closeSubpath()
+            return p
+        }
+
+        let blade = CGRect(x: origin.x + w * 0.47, y: origin.y + h * 0.14, width: w * 0.08, height: h * 0.56)
+        let edge = CGRect(x: origin.x + w * 0.52, y: origin.y + h * 0.16, width: w * 0.02, height: h * 0.52)
+        let guardRect = CGRect(x: origin.x + w * 0.40, y: origin.y + h * 0.66, width: w * 0.22, height: h * 0.06)
+        let grip = CGRect(x: origin.x + w * 0.46, y: origin.y + h * 0.71, width: w * 0.10, height: h * 0.15)
+        let pommel = CGRect(x: origin.x + w * 0.44, y: origin.y + h * 0.85, width: w * 0.14, height: h * 0.06)
+
+        if glow {
+            let glowRect = CGRect(x: origin.x + w * 0.26, y: origin.y + h * 0.78, width: w * 0.48, height: h * 0.12)
+            ctx.fill(Path(ellipseIn: glowRect), with: .color(Color(red: 0.45, green: 0.82, blue: 1.0).opacity(0.25)))
+        }
+
+        ctx.fill(rotatedRectPath(blade), with: .color(Color(red: 0.82, green: 0.90, blue: 1.0)))
+        ctx.fill(rotatedRectPath(edge), with: .color(.white))
+        ctx.fill(rotatedRectPath(guardRect), with: .color(Color(red: 0.90, green: 0.72, blue: 0.22)))
+        ctx.fill(rotatedRectPath(grip), with: .color(Color(red: 0.25, green: 0.13, blue: 0.06)))
+        ctx.fill(rotatedRectPath(pommel), with: .color(Color(red: 0.76, green: 0.58, blue: 0.15)))
+    }
+}
 
 struct PlayerEntityView: View {
     let player: Player
@@ -548,7 +862,6 @@ struct ProceduralNinjaSpriteView: View {
             fillRect(w * 0.55 + legSwing, top + h * 0.84, w * 0.08, h * 0.020, highlight.opacity(0.14))
             }
             .frame(width: spriteSize.width, height: spriteSize.height)
-            .drawingGroup()
         }
         .frame(width: spriteSize.width, height: spriteSize.height)
         .accessibilityLabel("Procedural ninja sprite")
@@ -589,7 +902,6 @@ struct ProceduralSwordSpriteView: View {
         }
         .frame(width: spriteSize.width, height: spriteSize.height)
         .rotationEffect(style == .orbit ? .degrees(-35) : .degrees(12))
-        .drawingGroup()
         .accessibilityLabel("Procedural sword sprite")
     }
 }
