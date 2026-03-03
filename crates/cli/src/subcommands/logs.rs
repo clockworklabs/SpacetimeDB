@@ -226,8 +226,22 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     if format == Format::Json {
         let mut stdout = tokio::io::stdout();
-        while let Some(chunk) = res.chunk().await? {
-            stdout.write_all(&chunk).await?;
+        if min_level.is_none() {
+            // Fast path: no filtering, stream raw bytes.
+            while let Some(chunk) = res.chunk().await? {
+                stdout.write_all(&chunk).await?;
+            }
+        } else {
+            // Parse each line to apply level filtering, then re-emit as JSON.
+            let mut rdr = res.bytes_stream().map_err(io::Error::other).into_async_read();
+            let mut line = String::new();
+            while rdr.read_line(&mut line).await? != 0 {
+                let record = serde_json::from_str::<Record<'_>>(&line)?;
+                if should_display(record.level, min_level, level_exact) {
+                    stdout.write_all(line.as_bytes()).await?;
+                }
+                line.clear();
+            }
         }
         return Ok(());
     }
