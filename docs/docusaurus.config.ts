@@ -186,7 +186,7 @@ const config: Config = {
         },
         {
           href: 'https://spacetimedb.com/space-race',
-          label: 'Spacerace',
+          label: 'Referrals',
           position: 'right',
         },
         {

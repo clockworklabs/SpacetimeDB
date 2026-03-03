@@ -1,6 +1,6 @@
 import { table, schema, t } from 'spacetimedb/server';
 
-export const event = table(
+const event = table(
   {
     name: 'event',
   },

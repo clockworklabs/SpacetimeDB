@@ -654,7 +654,7 @@ struct IndexedTable2 {
 };
 SPACETIMEDB_STRUCT(IndexedTable2, player_id, player_snazz)
 SPACETIMEDB_TABLE(IndexedTable2, indexed_table_2, Private)  // Remove constraint from table macro
-// FIELD_NamedMultiColumnIndex(indexed_table_2, player_id_snazz_index, player_id, player_snazz);
+FIELD_MultiColumnIndex(indexed_table_2, player_id_snazz_index, player_id, player_snazz);
 
 struct BTreeU32 {
     uint32_t n;
@@ -2072,7 +2072,7 @@ SPACETIMEDB_REDUCER(send_scheduled_message, ReducerContext ctx, ScheduledTable a
 
 SPACETIMEDB_CLIENT_VISIBILITY_FILTER(
     one_u8_visible,
-    "SELECT * FROM one_u8"
+    "SELECT * FROM one_u_8"
 )
 
 SPACETIMEDB_CLIENT_VISIBILITY_FILTER(

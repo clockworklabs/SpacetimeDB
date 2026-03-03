@@ -1,5 +1,5 @@
 use serde_json::json;
-use spacetimedb_smoketests::{require_pnpm, Smoketest};
+use spacetimedb_smoketests::{require_dotnet, require_pnpm, Smoketest};
 
 const TS_VIEWS_SUBSCRIBE_MODULE: &str = r#"import { schema, t, table } from "spacetimedb/server";
 
@@ -37,6 +37,36 @@ export const insert_player_proc = spacetimedb.procedure(
     return {};
   }
 );
+"#;
+
+const CS_VIEWS_QUERY_BUILDER_MODULE: &str = r#"using SpacetimeDB;
+
+public static partial class Module
+{
+    [Table(Accessor = "Table", Public = true)]
+    public partial struct Table
+    {
+        public uint Value;
+    }
+
+    [Reducer]
+    public static void InsertValue(ReducerContext ctx, uint value)
+    {
+        ctx.Db.Table.Insert(new Table { Value = value });
+    }
+
+    [View(Accessor = "all", Public = true)]
+    public static IQuery<Table> All(ViewContext ctx)
+    {
+        return ctx.From.Table();
+    }
+
+    [View(Accessor = "some", Public = true)]
+    public static IQuery<Table> Some(ViewContext ctx)
+    {
+        return ctx.From.Table().Where(Row => Row.Value.Eq(1));
+    }
+}
 "#;
 
 /// Tests that views populate the st_view_* system tables
@@ -550,5 +580,33 @@ fn test_typescript_query_builder_view_query() {
         r#" name
 ---------
  "Alice""#,
+    );
+}
+
+#[test]
+fn test_csharp_query_builder_view_query() {
+    require_dotnet!();
+    let mut test = Smoketest::builder().autopublish(false).build();
+    test.publish_csharp_module_source("views-csharp", "views-csharp", CS_VIEWS_QUERY_BUILDER_MODULE)
+        .unwrap();
+
+    test.call("insert_value", &["0"]).unwrap();
+    test.call("insert_value", &["1"]).unwrap();
+    test.call("insert_value", &["2"]).unwrap();
+
+    test.assert_sql(
+        "SELECT * FROM all",
+        r#" value
+-------
+ 0
+ 1
+ 2"#,
+    );
+
+    test.assert_sql(
+        "SELECT * FROM some",
+        r#" value
+-------
+ 1"#,
     );
 }

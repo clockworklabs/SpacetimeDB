@@ -6,10 +6,9 @@ use std::time::Duration;
 pub fn spec() -> BenchmarkSpec {
     BenchmarkSpec::from_tasks_auto(file!(), |lang, route_tag, host_url| {
         let mut v = default_schema_parity_scorers(host_url, file!(), route_tag);
-        let casing = casing_for_lang(lang);
         let sb = SqlBuilder::new(casing_for_lang(lang));
         let result_table = table_name("result", lang);
-        let reducer = ident("SetCircle", casing);
+        let reducer = ident("SetCircle", crate::eval::Casing::Snake);
 
         let select = sb.select_by_id(&result_table, &["id","value"], "id", 1);
         v.push(make_reducer_data_parity_scorer(host_url, ReducerDataParityConfig {

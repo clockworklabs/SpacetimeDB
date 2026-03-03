@@ -220,6 +220,13 @@ fn main() -> anyhow::Result<()> {
         println!("$> cargo check");
         cmd!("cargo", "check").run().expect("Cargo check failed!");
 
+        // Update the lockfile in crates/smoketests/modules..
+        println!("$> cd crates/smoketests/modules && cargo check");
+        cmd!("cargo", "check")
+            .dir("crates/smoketests/modules")
+            .run()
+            .expect("cargo check in crates/smoketests/modules failed!");
+
         println!("$> pnpm install");
         cmd!("pnpm", "install").run().expect("pnpm run build failed!");
 
