@@ -38,8 +38,7 @@ async fn server_logout(config: &mut Config, host: &Url) -> Result<(), anyhow::Er
         .post(host.join("auth/cli/logout")?)
         .header("Authorization", format!("Bearer {web_session_token}"))
         .send()
-        .await
-        .map_err(|e| anyhow::anyhow!("Could not reach auth server to invalidate session: {e}"))?;
+        .await?;
     Ok(())
 }
 
