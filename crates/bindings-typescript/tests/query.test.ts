@@ -19,6 +19,7 @@ const personTable = table(
 
     indexes: [
       {
+        accessor: 'id_name_idx',
         name: 'id_name_idx',
         algorithm: 'btree',
         columns: ['id', 'name'] as const,
@@ -37,6 +38,7 @@ const ordersTable = table(
     name: 'orders',
     indexes: [
       {
+        accessor: 'orders_person_id_idx',
         name: 'orders_person_id_idx',
         algorithm: 'btree',
         columns: ['person_id'],
