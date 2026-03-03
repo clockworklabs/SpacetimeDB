@@ -60,3 +60,40 @@ spacetimedb.init(ctx => {
   // @ts-expect-error update() is NOT allowed on non-PK unique indexes
   const _update = ctx.db.person.name2.update;
 });
+
+/**
+ * Regression coverage for the declared-vs-resolved index split:
+ * - declared table-level indexes must still produce typed accessors
+ * - field-level indexes must still produce typed accessors
+ * - non-indexed fields must not accidentally become index accessors
+ */
+const account = table(
+  {
+    indexes: [
+      {
+        accessor: 'byEmailAndOrg',
+        algorithm: 'btree',
+        columns: ['email', 'orgId'] as const,
+      },
+    ] as const,
+  },
+  {
+    accountId: t.u32(),
+    email: t.string().index('hash'),
+    orgId: t.u32(),
+    nickname: t.string(),
+  }
+);
+
+const spacetimedbIndexSplit = schema({ account });
+
+spacetimedbIndexSplit.init(ctx => {
+  // Explicit table-level index accessor from `table({ indexes: [...] })`.
+  ctx.db.account.byEmailAndOrg.filter(['a@example.com', 1]);
+
+  // Field-level index accessor derived from column metadata.
+  ctx.db.account.email.filter('a@example.com');
+
+  // @ts-expect-error `nickname` is not indexed, so no index accessor should exist.
+  const _nickname = ctx.db.account.nickname;
+});

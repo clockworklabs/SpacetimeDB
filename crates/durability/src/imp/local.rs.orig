@@ -29,6 +29,8 @@ pub use spacetimedb_commitlog::repo::{OnNewSegmentFn, SizeOnDisk};
 /// [`Local`] configuration.
 #[derive(Clone, Copy, Debug)]
 pub struct Options {
+<<<<<<< conflict 1 of 2
++++++++ ssmwmsoq d6e2ba51 "durability: Flush batches (#4478)"
     /// The number of elements to reserve for batching transactions.
     ///
     /// This puts an upper bound on the buffer capacity, while not preventing
@@ -40,6 +42,14 @@ pub struct Options {
     ///
     /// Default: 4096
     pub batch_capacity: NonZeroUsize,
+%%%%%%% diff from: ttnusruw 6fea15f7 "[C#] Update RawTableIterBase.Enumerator to use `ArrayPool` for buffer (#4385)"
+\\\\\\\        to: ppnmwost abbcec4a "keynote-2: alpha -> 1.5, withConfirmedReads(true), remove warmup (#4492)"
+     /// Periodically flush and sync the log this often.
+     ///
+-    /// Default: 50ms
++    /// Default: 10ms
+     pub sync_interval: Duration,
+>>>>>>> conflict 1 of 2 ends
     /// [`Commitlog`] configuration.
     pub commitlog: spacetimedb_commitlog::Options,
 }
@@ -51,7 +61,14 @@ impl Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
+<<<<<<< conflict 2 of 2
++++++++ ssmwmsoq d6e2ba51 "durability: Flush batches (#4478)"
             batch_capacity: Self::DEFAULT_BATCH_CAPACITY,
+%%%%%%% diff from: ttnusruw 6fea15f7 "[C#] Update RawTableIterBase.Enumerator to use `ArrayPool` for buffer (#4385)"
+\\\\\\\        to: ppnmwost abbcec4a "keynote-2: alpha -> 1.5, withConfirmedReads(true), remove warmup (#4492)"
+-            sync_interval: Duration::from_millis(50),
++            sync_interval: Duration::from_millis(10),
+>>>>>>> conflict 2 of 2 ends
             commitlog: Default::default(),
         }
     }
@@ -158,7 +175,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
     }
 
     /// Obtain a read-only copy of the durable state that implements [History].
-    pub fn as_history(&self) -> impl History<TxData = Txdata<T>> + use<T> {
+    pub fn as_history(&self) -> impl History<TxData = Txdata<T>> {
         self.clog.clone()
     }
 }
@@ -171,7 +188,7 @@ impl<T: Send + Sync + 'static> Local<T> {
     }
 
     /// Obtain an iterator over the [`Commit`]s in the underlying log.
-    pub fn commits_from(&self, offset: TxOffset) -> impl Iterator<Item = Result<Commit, error::Traversal>> + use<T> {
+    pub fn commits_from(&self, offset: TxOffset) -> impl Iterator<Item = Result<Commit, error::Traversal>> {
         self.clog.commits_from(offset).map_ok(Commit::from)
     }
 
@@ -253,9 +270,7 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                         break;
                     }
                     // Reclaim burst capacity.
-                    if n < self.batch_capacity.get() {
-                        tx_buf.shrink_to(self.batch_capacity.get());
-                    }
+                    tx_buf.shrink_to(self.batch_capacity.get());
                 },
             }
         }
@@ -270,10 +285,10 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
     #[instrument(skip_all)]
     async fn flush_and_sync(&self) -> io::Result<Option<TxOffset>> {
         // Skip if nothing changed.
-        if let Some((committed, durable)) = self.clog.max_committed_offset().zip(*self.durable_offset.borrow())
-            && committed == durable
-        {
-            return Ok(None);
+        if let Some((committed, durable)) = self.clog.max_committed_offset().zip(*self.durable_offset.borrow()) {
+            if committed == durable {
+                return Ok(None);
+            }
         }
 
         let clog = self.clog.clone();
