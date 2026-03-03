@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/clockworklabs/SpacetimeDB/sdks/go/server"
 	"github.com/clockworklabs/SpacetimeDB/sdks/go/server/log"
-	"github.com/clockworklabs/SpacetimeDB/sdks/go/server/runtime"
+	"github.com/clockworklabs/SpacetimeDB/sdks/go/server/reducer"
 	"github.com/clockworklabs/SpacetimeDB/sdks/go/types"
 )
 
@@ -19,12 +18,14 @@ type Vector2 struct {
 
 // ---------- table schemas ----------
 
+//stdb:table name=entity access=public
 type Entity struct {
 	Id       uint32 `stdb:"primarykey,autoinc"`
 	Position Vector2
 	Mass     uint32
 }
 
+//stdb:table name=circle access=public
 type Circle struct {
 	EntityId      uint32          `stdb:"primarykey"`
 	PlayerId      uint32          `stdb:"index=btree"`
@@ -33,6 +34,7 @@ type Circle struct {
 	LastSplitTime types.Timestamp
 }
 
+//stdb:table name=food access=public
 type Food struct {
 	EntityId uint32 `stdb:"primarykey"`
 }
@@ -56,24 +58,20 @@ func isOverlapping(entity1, entity2 Entity) bool {
 	return distance < maxRadius
 }
 
-// ---------- index names ----------
-
-const (
-	entityIdIdxBtree       = "entity_id_idx_btree"
-	circleEntityIdIdxBtree = "circle_entity_id_idx_btree"
-	circlePlayerIdIdxBtree = "circle_player_id_idx_btree"
-	foodEntityIdIdxBtree   = "food_entity_id_idx_btree"
-)
-
 // ---------- logger ----------
 
 var circlesLogger log.Logger
 
+func init() {
+	circlesLogger = log.NewLogger("circles")
+}
+
 // ---------- bulk insert functions ----------
 
-func insertBulkEntity(ctx server.ReducerContext, count uint32) {
+//stdb:reducer name=insert_bulk_entity
+func insertBulkEntity(ctx reducer.ReducerContext, count uint32) {
 	for i := uint32(0); i < count; i++ {
-		runtime.Insert(Entity{
+		EntityTable.Insert(Entity{
 			Id:       0,
 			Position: Vector2{X: 0, Y: 0},
 			Mass:     0,
@@ -82,9 +80,10 @@ func insertBulkEntity(ctx server.ReducerContext, count uint32) {
 	circlesLogger.Info(fmt.Sprintf("INSERT ENTITY: %d", count))
 }
 
-func insertBulkCircle(ctx server.ReducerContext, count uint32) {
+//stdb:reducer name=insert_bulk_circle
+func insertBulkCircle(ctx reducer.ReducerContext, count uint32) {
 	for i := uint32(0); i < count; i++ {
-		runtime.Insert(Circle{
+		CircleTable.Insert(Circle{
 			EntityId:      i,
 			PlayerId:      i,
 			Direction:     Vector2{X: 0, Y: 0},
@@ -95,9 +94,10 @@ func insertBulkCircle(ctx server.ReducerContext, count uint32) {
 	circlesLogger.Info(fmt.Sprintf("INSERT CIRCLE: %d", count))
 }
 
-func insertBulkFood(ctx server.ReducerContext, count uint32) {
-	for i := uint32(0); i < count; i++ {
-		runtime.Insert(Food{
+//stdb:reducer name=insert_bulk_food
+func insertBulkFood(ctx reducer.ReducerContext, count uint32) {
+	for i := uint32(1); i <= count; i++ {
+		FoodTable.Insert(Food{
 			EntityId: i,
 		})
 	}
@@ -107,10 +107,12 @@ func insertBulkFood(ctx server.ReducerContext, count uint32) {
 // ---------- join query functions ----------
 
 // crossJoinAll simulates: SELECT * FROM Circle, Entity, Food
-func crossJoinAll(ctx server.ReducerContext, expected uint32) {
+//
+//stdb:reducer name=cross_join_all
+func crossJoinAll(ctx reducer.ReducerContext, expected uint32) {
 	var count uint32
 
-	circleIter, err := runtime.Scan[Circle]()
+	circleIter, err := CircleTable.Scan()
 	if err != nil {
 		circlesLogger.Error(fmt.Sprintf("failed to scan circles: %v", err))
 		return
@@ -120,7 +122,7 @@ func crossJoinAll(ctx server.ReducerContext, expected uint32) {
 	for circle, ok := circleIter.Next(); ok; circle, ok = circleIter.Next() {
 		_ = circle
 
-		entityIter, err := runtime.Scan[Entity]()
+		entityIter, err := EntityTable.Scan()
 		if err != nil {
 			circlesLogger.Error(fmt.Sprintf("failed to scan entities: %v", err))
 			return
@@ -129,7 +131,7 @@ func crossJoinAll(ctx server.ReducerContext, expected uint32) {
 		for entity, ok := entityIter.Next(); ok; entity, ok = entityIter.Next() {
 			_ = entity
 
-			foodIter, err := runtime.Scan[Food]()
+			foodIter, err := FoodTable.Scan()
 			if err != nil {
 				circlesLogger.Error(fmt.Sprintf("failed to scan foods: %v", err))
 				entityIter.Close()
@@ -150,10 +152,12 @@ func crossJoinAll(ctx server.ReducerContext, expected uint32) {
 
 // crossJoinCircleFood simulates:
 // SELECT * FROM Circle JOIN Entity USING(entity_id), Food JOIN Entity USING(entity_id)
-func crossJoinCircleFood(ctx server.ReducerContext, expected uint32) {
+//
+//stdb:reducer name=cross_join_circle_food
+func crossJoinCircleFood(ctx reducer.ReducerContext, expected uint32) {
 	var count uint32
 
-	circleIter, err := runtime.Scan[Circle]()
+	circleIter, err := CircleTable.Scan()
 	if err != nil {
 		circlesLogger.Error(fmt.Sprintf("failed to scan circles: %v", err))
 		return
@@ -161,7 +165,7 @@ func crossJoinCircleFood(ctx server.ReducerContext, expected uint32) {
 	defer circleIter.Close()
 
 	for circle, ok := circleIter.Next(); ok; circle, ok = circleIter.Next() {
-		circleEntity, found, err := runtime.FindBy[Entity, uint32](entityIdIdxBtree, circle.EntityId)
+		circleEntity, found, err := EntityTable.FindById(circle.EntityId)
 		if err != nil {
 			circlesLogger.Error(fmt.Sprintf("failed to find entity: %v", err))
 			return
@@ -170,7 +174,7 @@ func crossJoinCircleFood(ctx server.ReducerContext, expected uint32) {
 			continue
 		}
 
-		foodIter, err := runtime.Scan[Food]()
+		foodIter, err := FoodTable.Scan()
 		if err != nil {
 			circlesLogger.Error(fmt.Sprintf("failed to scan foods: %v", err))
 			return
@@ -178,7 +182,7 @@ func crossJoinCircleFood(ctx server.ReducerContext, expected uint32) {
 
 		for food, ok := foodIter.Next(); ok; food, ok = foodIter.Next() {
 			count++
-			foodEntity, found, err := runtime.FindBy[Entity, uint32](entityIdIdxBtree, food.EntityId)
+			foodEntity, found, err := EntityTable.FindById(food.EntityId)
 			if err != nil {
 				circlesLogger.Error(fmt.Sprintf("failed to find food entity: %v", err))
 				foodIter.Close()
@@ -199,7 +203,8 @@ func crossJoinCircleFood(ctx server.ReducerContext, expected uint32) {
 
 // ---------- game init/run functions ----------
 
-func initGameCircles(ctx server.ReducerContext, initialLoad uint32) {
+//stdb:reducer name=init_game_circles
+func initGameCircles(ctx reducer.ReducerContext, initialLoad uint32) {
 	biggestTable := initialLoad * 100
 	bigTable := initialLoad * 50
 	smallTable := initialLoad
@@ -209,29 +214,10 @@ func initGameCircles(ctx server.ReducerContext, initialLoad uint32) {
 	insertBulkCircle(ctx, smallTable)
 }
 
-func runGameCircles(ctx server.ReducerContext, initialLoad uint32) {
+//stdb:reducer name=run_game_circles
+func runGameCircles(ctx reducer.ReducerContext, initialLoad uint32) {
 	smallTable := initialLoad
 
 	crossJoinCircleFood(ctx, smallTable)
 	crossJoinAll(ctx, smallTable)
-}
-
-// ---------- registration ----------
-
-func init() {
-	circlesLogger = log.NewLogger("circles")
-
-	// Register tables
-	server.RegisterTable[Entity]("entity", server.TableAccessPublic)
-	server.RegisterTable[Circle]("circle", server.TableAccessPublic)
-	server.RegisterTable[Food]("food", server.TableAccessPublic)
-
-	// Register reducers
-	server.RegisterReducer("insert_bulk_entity", insertBulkEntity)
-	server.RegisterReducer("insert_bulk_circle", insertBulkCircle)
-	server.RegisterReducer("insert_bulk_food", insertBulkFood)
-	server.RegisterReducer("cross_join_all", crossJoinAll)
-	server.RegisterReducer("cross_join_circle_food", crossJoinCircleFood)
-	server.RegisterReducer("init_game_circles", initGameCircles)
-	server.RegisterReducer("run_game_circles", runGameCircles)
 }

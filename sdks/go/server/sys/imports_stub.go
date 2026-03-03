@@ -77,6 +77,26 @@ func rawBytesSourceRemainingLength(source uint32, out *uint32) int32 {
 	panic("rawBytesSourceRemainingLength: not available outside WASM")
 }
 
+func rawProcedureStartMutTx(out *int64) uint32 {
+	panic("rawProcedureStartMutTx: not available outside WASM")
+}
+
+func rawProcedureCommitMutTx() uint32 {
+	panic("rawProcedureCommitMutTx: not available outside WASM")
+}
+
+func rawProcedureAbortMutTx() uint32 {
+	panic("rawProcedureAbortMutTx: not available outside WASM")
+}
+
+func rawProcedureSleepUntil(wakeAtMicrosSinceUnixEpoch int64) int64 {
+	panic("rawProcedureSleepUntil: not available outside WASM")
+}
+
+func rawProcedureHttpRequest(requestPtr *byte, requestLen uint32, bodyPtr *byte, bodyLen uint32, out *uint32) uint32 {
+	panic("rawProcedureHttpRequest: not available outside WASM")
+}
+
 func rawDatastoreIndexScanPointBSATN(indexId uint32, pointPtr *byte, pointLen uint32, out *uint32) uint32 {
 	panic("rawDatastoreIndexScanPointBSATN: not available outside WASM")
 }

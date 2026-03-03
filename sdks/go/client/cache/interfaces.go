@@ -25,3 +25,14 @@ type InsertCallback func(row any)
 
 // DeleteCallback is called when a row is deleted.
 type DeleteCallback func(row any)
+
+// UpdateCallback is called when a row is updated (old, new).
+type UpdateCallback func(oldRow any, newRow any)
+
+// TableDefWithPK extends TableDef for tables that have a primary key.
+// Tables implementing this interface support OnUpdate callbacks by
+// matching deletes and inserts by primary key within a single transaction.
+type TableDefWithPK interface {
+	TableDef
+	PrimaryKey(row any) any
+}

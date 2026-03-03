@@ -1,8 +1,8 @@
 use serial_test::serial;
 use spacetimedb_lib::sats::{product, AlgebraicValue};
 use spacetimedb_testing::modules::{
-    CompilationMode, CompiledModule, Cpp, Csharp, LogLevel, LoggerRecord, ModuleHandle, ModuleLanguage, Rust,
-    TypeScript, DEFAULT_CONFIG, IN_MEMORY_CONFIG,
+    CompilationMode, CompiledModule, Cpp, Csharp, GoBenchmarks, LogLevel, LoggerRecord, ModuleHandle,
+    ModuleLanguage, Rust, TypeScript, DEFAULT_CONFIG, IN_MEMORY_CONFIG,
 };
 use std::{
     future::Future,
@@ -113,10 +113,14 @@ fn test_calling_a_reducer_cpp() {
 
 #[test]
 #[serial]
-fn test_calling_a_reducer_with_private_table() {
+fn test_calling_a_reducer_go() {
+    test_calling_a_reducer_in_module("module-test-go");
+}
+
+fn test_calling_a_reducer_with_private_table_in_module(module_name: &'static str) {
     init();
 
-    CompiledModule::compile("module-test", CompilationMode::Debug).with_module_async(
+    CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
             module
@@ -136,13 +140,25 @@ fn test_calling_a_reducer_with_private_table() {
     );
 }
 
+#[test]
+#[serial]
+fn test_calling_a_reducer_with_private_table() {
+    test_calling_a_reducer_with_private_table_in_module("module-test");
+}
+
+#[test]
+#[serial]
+fn test_calling_a_reducer_with_private_table_go() {
+    test_calling_a_reducer_with_private_table_in_module("module-test-go");
+}
+
 async fn read_log_skip_repeating(module: &ModuleHandle) -> String {
     let logs = read_logs(module).await;
     let mut logs = logs
         .into_iter()
         // Filter out log lines from the `repeating_test` reducer,
         // which runs frequently enough to appear in our logs after we've slept a second.
-        .filter(|line| !line.starts_with("Timestamp: Timestamp { __timestamp_micros_since_unix_epoch__: "))
+        .filter(|line| !line.starts_with("Timestamp: "))
         .collect::<Vec<_>>();
 
     if logs.len() != 1 {
@@ -187,6 +203,12 @@ fn test_calling_a_procedure() {
     test_calling_a_procedure_in_module("module-test");
 }
 
+#[test]
+#[serial]
+fn test_calling_a_procedure_go() {
+    test_calling_a_procedure_in_module("module-test-go");
+}
+
 fn test_calling_with_tx_in_module(module_name: &'static str) {
     init();
 
@@ -221,6 +243,12 @@ fn test_calling_with_tx() {
     test_calling_with_tx_in_module("module-test");
 }
 
+#[test]
+#[serial]
+fn test_calling_with_tx_go() {
+    test_calling_with_tx_in_module("module-test-go");
+}
+
 /// Invoke the `module-test` module,
 /// use `caller` to invoke its `test` reducer,
 /// and assert that its logs look right.
@@ -240,8 +268,11 @@ fn test_calling_with_tx() {
 ///     TestF::Baz("buzz".to_string()),
 /// ]
 /// ```
-fn test_call_query_macro_with_caller<F: Future<Output = ()>>(caller: impl FnOnce(ModuleHandle) -> F) {
-    CompiledModule::compile("module-test", CompilationMode::Debug).with_module_async(
+fn test_call_query_macro_with_caller_in_module<F: Future<Output = ()>>(
+    module_name: &str,
+    caller: impl FnOnce(ModuleHandle) -> F,
+) {
+    CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
             caller(module.clone()).await;
@@ -273,12 +304,10 @@ fn test_call_query_macro_with_caller<F: Future<Output = ()>>(caller: impl FnOnce
     );
 }
 
-/// Call the `module-test` module's `test` reducer with a variety of ways of passing arguments.
-#[test]
-#[serial]
-fn test_call_query_macro() {
+/// Call a module-test's `test` reducer with a variety of ways of passing arguments.
+fn test_call_query_macro_in_module(module_name: &str) {
     // Hand-written JSON. This will fail if the JSON encoding of `ClientMessage` changes.
-    test_call_query_macro_with_caller(|module| async move {
+    test_call_query_macro_with_caller_in_module(module_name, |module| async move {
         // Note that JSON doesn't allow multiline strings, so the encoded args string must be on one line!
         let json = r#"
 { "CallReducer": {
@@ -300,24 +329,34 @@ fn test_call_query_macro() {
     ];
 
     // JSON via the `Serialize` path.
-    test_call_query_macro_with_caller(|module| async move {
+    test_call_query_macro_with_caller_in_module(module_name, |module| async move {
         module.call_reducer_json("test", args_pv).await.unwrap();
     });
 
     // BSATN via the `Serialize` path.
-    test_call_query_macro_with_caller(|module| async move {
+    test_call_query_macro_with_caller_in_module(module_name, |module| async move {
         module.call_reducer_binary("test", args_pv).await.unwrap();
     });
 }
 
 #[test]
 #[serial]
-/// This test runs the index scan workloads in the `perf-test` module.
+fn test_call_query_macro() {
+    test_call_query_macro_in_module("module-test");
+}
+
+#[test]
+#[serial]
+fn test_call_query_macro_go() {
+    test_call_query_macro_in_module("module-test-go");
+}
+
+/// Run the index scan workloads in a perf-test module.
 /// Timing spans should be < 1ms if the correct index was used.
 /// Otherwise these workloads will degenerate into full table scans.
-fn test_index_scans() {
+fn test_index_scans_in_module(module_name: &'static str) {
     init();
-    CompiledModule::compile("perf-test", CompilationMode::Release).with_module_async(
+    CompiledModule::compile(module_name, CompilationMode::Release).with_module_async(
         IN_MEMORY_CONFIG,
         |module| async move {
             let no_args = &product![];
@@ -360,6 +399,18 @@ fn test_index_scans() {
             assert!(timing(&logs[3]));
         },
     );
+}
+
+#[test]
+#[serial]
+fn test_index_scans() {
+    test_index_scans_in_module("perf-test");
+}
+
+#[test]
+#[serial]
+fn test_index_scans_go() {
+    test_index_scans_in_module("perf-test-go");
 }
 
 async fn bench_call(module: &ModuleHandle, call: &str, count: &u32) -> Duration {
@@ -425,6 +476,12 @@ fn test_calling_bench_db_circles_cpp() {
     test_calling_bench_db_circles::<Cpp>();
 }
 
+#[test]
+#[serial]
+fn test_calling_bench_db_circles_go() {
+    test_calling_bench_db_circles::<GoBenchmarks>();
+}
+
 fn test_calling_bench_db_ia_loop<L: ModuleLanguage>() {
     L::get_module().with_module_async(DEFAULT_CONFIG, |module| async move {
         #[rustfmt::skip]
@@ -464,4 +521,10 @@ fn test_calling_bench_db_ia_loop_typescript() {
 #[serial]
 fn test_calling_bench_db_ia_loop_cpp() {
     test_calling_bench_db_ia_loop::<Cpp>();
+}
+
+#[test]
+#[serial]
+fn test_calling_bench_db_ia_loop_go() {
+    test_calling_bench_db_ia_loop::<GoBenchmarks>();
 }

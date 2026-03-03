@@ -6,6 +6,8 @@ import (
 
 // SimpleEnum mirrors the Rust SimpleEnum enum.
 // In BSATN it is a sum type with unit variants, encoded as u8 tag.
+//
+//stdb:enum variants=Zero,One,Two
 type SimpleEnum uint8
 
 const (
@@ -73,36 +75,82 @@ type EveryVecStruct struct {
 }
 
 // EnumWithPayload is a sum type with many variant types.
-// NOTE: This is represented as an interface in Go since the Go SDK
-// uses reflection-based serialization. Each variant is a concrete type.
-// The tag order must match the Rust definition exactly.
+//
+//stdb:sumtype
 type EnumWithPayload interface {
 	enumWithPayloadTag() uint8
 }
 
+//stdb:variant of=EnumWithPayload name=U8
 type EnumWithPayloadU8 struct{ Value uint8 }
+
+//stdb:variant of=EnumWithPayload name=U16
 type EnumWithPayloadU16 struct{ Value uint16 }
+
+//stdb:variant of=EnumWithPayload name=U32
 type EnumWithPayloadU32 struct{ Value uint32 }
+
+//stdb:variant of=EnumWithPayload name=U64
 type EnumWithPayloadU64 struct{ Value uint64 }
+
+//stdb:variant of=EnumWithPayload name=U128
 type EnumWithPayloadU128 struct{ Value types.Uint128 }
+
+//stdb:variant of=EnumWithPayload name=U256
 type EnumWithPayloadU256 struct{ Value types.Uint256 }
+
+//stdb:variant of=EnumWithPayload name=I8
 type EnumWithPayloadI8 struct{ Value int8 }
+
+//stdb:variant of=EnumWithPayload name=I16
 type EnumWithPayloadI16 struct{ Value int16 }
+
+//stdb:variant of=EnumWithPayload name=I32
 type EnumWithPayloadI32 struct{ Value int32 }
+
+//stdb:variant of=EnumWithPayload name=I64
 type EnumWithPayloadI64 struct{ Value int64 }
+
+//stdb:variant of=EnumWithPayload name=I128
 type EnumWithPayloadI128 struct{ Value types.Int128 }
+
+//stdb:variant of=EnumWithPayload name=I256
 type EnumWithPayloadI256 struct{ Value types.Int256 }
+
+//stdb:variant of=EnumWithPayload name=Bool
 type EnumWithPayloadBool struct{ Value bool }
+
+//stdb:variant of=EnumWithPayload name=F32
 type EnumWithPayloadF32 struct{ Value float32 }
+
+//stdb:variant of=EnumWithPayload name=F64
 type EnumWithPayloadF64 struct{ Value float64 }
+
+//stdb:variant of=EnumWithPayload name=Str
 type EnumWithPayloadStr struct{ Value string }
+
+//stdb:variant of=EnumWithPayload name=Identity
 type EnumWithPayloadIdentity struct{ Value types.Identity }
+
+//stdb:variant of=EnumWithPayload name=ConnectionId
 type EnumWithPayloadConnectionId struct{ Value types.ConnectionId }
+
+//stdb:variant of=EnumWithPayload name=Timestamp
 type EnumWithPayloadTimestamp struct{ Value types.Timestamp }
+
+//stdb:variant of=EnumWithPayload name=Uuid
 type EnumWithPayloadUuid struct{ Value types.Uuid }
+
+//stdb:variant of=EnumWithPayload name=Bytes
 type EnumWithPayloadBytes struct{ Value []uint8 }
+
+//stdb:variant of=EnumWithPayload name=Ints
 type EnumWithPayloadInts struct{ Value []int32 }
+
+//stdb:variant of=EnumWithPayload name=Strings
 type EnumWithPayloadStrings struct{ Value []string }
+
+//stdb:variant of=EnumWithPayload name=SimpleEnums
 type EnumWithPayloadSimpleEnums struct{ Value []SimpleEnum }
 
 func (EnumWithPayloadU8) enumWithPayloadTag() uint8           { return 0 }
@@ -131,60 +179,80 @@ func (EnumWithPayloadStrings) enumWithPayloadTag() uint8      { return 22 }
 func (EnumWithPayloadSimpleEnums) enumWithPayloadTag() uint8  { return 23 }
 
 // ResultI32StringValue is a Result<i32, String> sum type.
-// Ok variant (tag 0) holds int32, Err variant (tag 1) holds string.
+//
+//stdb:sumtype
 type ResultI32StringValue interface {
 	resultI32StringValueTag() uint8
 }
 
+//stdb:variant of=ResultI32StringValue name=ok
 type ResultI32StringOk struct{ Value int32 }
+
+//stdb:variant of=ResultI32StringValue name=err
 type ResultI32StringErr struct{ Value string }
 
 func (ResultI32StringOk) resultI32StringValueTag() uint8  { return 0 }
 func (ResultI32StringErr) resultI32StringValueTag() uint8 { return 1 }
 
 // ResultStringI32Value is a Result<String, i32> sum type.
-// Ok variant (tag 0) holds string, Err variant (tag 1) holds int32.
+//
+//stdb:sumtype
 type ResultStringI32Value interface {
 	resultStringI32ValueTag() uint8
 }
 
+//stdb:variant of=ResultStringI32Value name=ok
 type ResultStringI32Ok struct{ Value string }
+
+//stdb:variant of=ResultStringI32Value name=err
 type ResultStringI32Err struct{ Value int32 }
 
 func (ResultStringI32Ok) resultStringI32ValueTag() uint8  { return 0 }
 func (ResultStringI32Err) resultStringI32ValueTag() uint8 { return 1 }
 
 // ResultIdentityStringValue is a Result<Identity, String> sum type.
-// Ok variant (tag 0) holds types.Identity, Err variant (tag 1) holds string.
+//
+//stdb:sumtype
 type ResultIdentityStringValue interface {
 	resultIdentityStringValueTag() uint8
 }
 
+//stdb:variant of=ResultIdentityStringValue name=ok
 type ResultIdentityStringOk struct{ Value types.Identity }
+
+//stdb:variant of=ResultIdentityStringValue name=err
 type ResultIdentityStringErr struct{ Value string }
 
 func (ResultIdentityStringOk) resultIdentityStringValueTag() uint8  { return 0 }
 func (ResultIdentityStringErr) resultIdentityStringValueTag() uint8 { return 1 }
 
 // ResultSimpleEnumI32Value is a Result<SimpleEnum, i32> sum type.
-// Ok variant (tag 0) holds SimpleEnum, Err variant (tag 1) holds int32.
+//
+//stdb:sumtype
 type ResultSimpleEnumI32Value interface {
 	resultSimpleEnumI32ValueTag() uint8
 }
 
+//stdb:variant of=ResultSimpleEnumI32Value name=ok
 type ResultSimpleEnumI32Ok struct{ Value SimpleEnum }
+
+//stdb:variant of=ResultSimpleEnumI32Value name=err
 type ResultSimpleEnumI32Err struct{ Value int32 }
 
 func (ResultSimpleEnumI32Ok) resultSimpleEnumI32ValueTag() uint8  { return 0 }
 func (ResultSimpleEnumI32Err) resultSimpleEnumI32ValueTag() uint8 { return 1 }
 
 // ResultEveryPrimitiveStructStringValue is a Result<EveryPrimitiveStruct, String> sum type.
-// Ok variant (tag 0) holds EveryPrimitiveStruct, Err variant (tag 1) holds string.
+//
+//stdb:sumtype
 type ResultEveryPrimitiveStructStringValue interface {
 	resultEveryPrimitiveStructStringValueTag() uint8
 }
 
+//stdb:variant of=ResultEveryPrimitiveStructStringValue name=ok
 type ResultEveryPrimitiveStructStringOk struct{ Value EveryPrimitiveStruct }
+
+//stdb:variant of=ResultEveryPrimitiveStructStringValue name=err
 type ResultEveryPrimitiveStructStringErr struct{ Value string }
 
 func (ResultEveryPrimitiveStructStringOk) resultEveryPrimitiveStructStringValueTag() uint8 {
@@ -195,12 +263,16 @@ func (ResultEveryPrimitiveStructStringErr) resultEveryPrimitiveStructStringValue
 }
 
 // ResultVecI32StringValue is a Result<Vec<i32>, String> sum type.
-// Ok variant (tag 0) holds []int32, Err variant (tag 1) holds string.
+//
+//stdb:sumtype
 type ResultVecI32StringValue interface {
 	resultVecI32StringValueTag() uint8
 }
 
+//stdb:variant of=ResultVecI32StringValue name=ok
 type ResultVecI32StringOk struct{ Value []int32 }
+
+//stdb:variant of=ResultVecI32StringValue name=err
 type ResultVecI32StringErr struct{ Value string }
 
 func (ResultVecI32StringOk) resultVecI32StringValueTag() uint8  { return 0 }

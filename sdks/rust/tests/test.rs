@@ -317,43 +317,50 @@ declare_tests_with_suffix!(csharp, "-cs");
 declare_tests_with_suffix!(cpp, "-cpp");
 declare_tests_with_suffix!(go, "-go");
 
-/// Tests of event table functionality, using <./event-table-client> and <../../../modules/sdk-test>.
+/// Tests of event table functionality, using <./event-table-client> and <../../../modules/sdk-test-event-table>.
 ///
 /// These are separate from the existing client because as of writing (2026-02-07),
 /// we do not have event table support in all of the module languages we have tested.
-mod event_table_tests {
-    use spacetimedb_testing::sdk::Test;
+macro_rules! event_table_tests {
+    ($mod_name:ident, $suffix:literal) => {
+        mod $mod_name {
+            use spacetimedb_testing::sdk::Test;
 
-    const MODULE: &str = "sdk-test-event-table";
-    const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/event-table-client");
+            const MODULE: &str = concat!("sdk-test-event-table", $suffix);
+            const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/event-table-client");
 
-    fn make_test(subcommand: &str) -> Test {
-        Test::builder()
-            .with_name(subcommand)
-            .with_module(MODULE)
-            .with_client(CLIENT)
-            .with_language("rust")
-            .with_bindings_dir("src/module_bindings")
-            .with_compile_command("cargo build")
-            .with_run_command(format!("cargo run -- {}", subcommand))
-            .build()
-    }
+            fn make_test(subcommand: &str) -> Test {
+                Test::builder()
+                    .with_name(subcommand)
+                    .with_module(MODULE)
+                    .with_client(CLIENT)
+                    .with_language("rust")
+                    .with_bindings_dir("src/module_bindings")
+                    .with_compile_command("cargo build")
+                    .with_run_command(format!("cargo run -- {}", subcommand))
+                    .build()
+            }
 
-    #[test]
-    fn event_table() {
-        make_test("event-table").run();
-    }
+            #[test]
+            fn event_table() {
+                make_test("event-table").run();
+            }
 
-    #[test]
-    fn multiple_events() {
-        make_test("multiple-events").run();
-    }
+            #[test]
+            fn multiple_events() {
+                make_test("multiple-events").run();
+            }
 
-    #[test]
-    fn events_dont_persist() {
-        make_test("events-dont-persist").run();
-    }
+            #[test]
+            fn events_dont_persist() {
+                make_test("events-dont-persist").run();
+            }
+        }
+    };
 }
+
+event_table_tests!(event_table_tests, "");
+event_table_tests!(go_event_table_tests, "-go");
 
 macro_rules! procedure_tests {
     ($mod_name:ident, $suffix:literal) => {
@@ -427,6 +434,7 @@ macro_rules! procedure_tests {
 procedure_tests!(rust_procedures, "");
 procedure_tests!(typescript_procedures, "-ts");
 procedure_tests!(cpp_procedures, "-cpp");
+procedure_tests!(go_procedures, "-go");
 
 macro_rules! view_tests {
     ($mod_name:ident, $suffix:literal) => {
@@ -489,3 +497,4 @@ macro_rules! view_tests {
 
 view_tests!(rust_view, "");
 view_tests!(cpp_view, "-cpp");
+view_tests!(go_view, "-go");

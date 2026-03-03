@@ -3,21 +3,22 @@ package main
 import (
 	"fmt"
 
-	"github.com/clockworklabs/SpacetimeDB/sdks/go/server"
 	"github.com/clockworklabs/SpacetimeDB/sdks/go/server/log"
-	"github.com/clockworklabs/SpacetimeDB/sdks/go/server/runtime"
+	"github.com/clockworklabs/SpacetimeDB/sdks/go/server/reducer"
 )
 
-// AgentAction is a sum-type enum for enemy AI agent actions.
+// AgentAction is a simple enum for enemy AI agent actions.
+//
+//stdb:enum variants=Inactive,Idle,Evading,Investigating,Retreating,Fighting
 type AgentAction uint8
 
 const (
-	AgentActionInactive      AgentAction = 0
-	AgentActionIdle          AgentAction = 1
-	AgentActionEvading       AgentAction = 2
-	AgentActionInvestigating AgentAction = 3
-	AgentActionRetreating    AgentAction = 4
-	AgentActionFighting      AgentAction = 5
+	AgentActionInactive      AgentAction = iota
+	AgentActionIdle
+	AgentActionEvading
+	AgentActionInvestigating
+	AgentActionRetreating
+	AgentActionFighting
 )
 
 // SmallHexTile is a helper struct for herd cache locations.
@@ -27,7 +28,7 @@ type SmallHexTile struct {
 	Dimension uint32
 }
 
-// Velocity table
+//stdb:table name=velocity access=public
 type Velocity struct {
 	EntityId uint32 `stdb:"primarykey"`
 	X        float32
@@ -35,7 +36,7 @@ type Velocity struct {
 	Z        float32
 }
 
-// Position table
+//stdb:table name=position access=public
 type Position struct {
 	EntityId uint32 `stdb:"primarykey"`
 	X        float32
@@ -46,7 +47,7 @@ type Position struct {
 	Vz       float32
 }
 
-// GameEnemyAiAgentState table
+//stdb:table name=game_enemy_ai_agent_state access=public
 type GameEnemyAiAgentState struct {
 	EntityId            uint64 `stdb:"primarykey"`
 	LastMoveTimestamps  []uint64
@@ -54,19 +55,19 @@ type GameEnemyAiAgentState struct {
 	Action              AgentAction
 }
 
-// GameTargetableState table
+//stdb:table name=game_targetable_state access=public
 type GameTargetableState struct {
 	EntityId uint64 `stdb:"primarykey"`
 	Quad     int64
 }
 
-// GameLiveTargetableState table
+//stdb:table name=game_live_targetable_state access=public
 type GameLiveTargetableState struct {
 	EntityId uint64 `stdb:"unique"`
 	Quad     int64  `stdb:"index=btree"`
 }
 
-// GameMobileEntityState table
+//stdb:table name=game_mobile_entity_state access=public
 type GameMobileEntityState struct {
 	EntityId  uint64 `stdb:"primarykey"`
 	LocationX int32  `stdb:"index=btree"`
@@ -74,13 +75,13 @@ type GameMobileEntityState struct {
 	Timestamp uint64
 }
 
-// GameEnemyState table
+//stdb:table name=game_enemy_state access=public
 type GameEnemyState struct {
 	EntityId uint64 `stdb:"primarykey"`
 	HerdId   int32
 }
 
-// GameHerdCache table
+//stdb:table name=game_herd_cache access=public
 type GameHerdCache struct {
 	Id                int32 `stdb:"primarykey"`
 	DimensionId       uint32
@@ -88,51 +89,19 @@ type GameHerdCache struct {
 	Location          SmallHexTile
 	MaxPopulation     int32
 	SpawnEagerness    float32
-	RoamingDistance   int32
+	RoamingDistance    int32
 }
-
-// Index name constants for FindBy/UpdateBy/DeleteBy operations.
-const (
-	velocityEntityIdIdx                = "velocity_entity_id_idx_btree"
-	positionEntityIdIdx                = "position_entity_id_idx_btree"
-	gameEnemyAiAgentStateEntityIdIdx   = "game_enemy_ai_agent_state_entity_id_idx_btree"
-	gameTargetableStateEntityIdIdx     = "game_targetable_state_entity_id_idx_btree"
-	gameLiveTargetableStateEntityIdIdx = "game_live_targetable_state_entity_id_idx_btree"
-	gameMobileEntityStateEntityIdIdx   = "game_mobile_entity_state_entity_id_idx_btree"
-	gameMobileEntityStateLocationXIdx  = "game_mobile_entity_state_location_x_idx_btree"
-	gameEnemyStateEntityIdIdx          = "game_enemy_state_entity_id_idx_btree"
-	gameHerdCacheIdIdx                 = "game_herd_cache_id_idx_btree"
-)
 
 var iaLogger log.Logger
 
 func init() {
 	iaLogger = log.NewLogger("ia_loop")
-
-	// Register tables
-	server.RegisterTable[Velocity]("velocity", server.TableAccessPublic)
-	server.RegisterTable[Position]("position", server.TableAccessPublic)
-	server.RegisterTable[GameEnemyAiAgentState]("game_enemy_ai_agent_state", server.TableAccessPublic)
-	server.RegisterTable[GameTargetableState]("game_targetable_state", server.TableAccessPublic)
-	server.RegisterTable[GameLiveTargetableState]("game_live_targetable_state", server.TableAccessPublic)
-	server.RegisterTable[GameMobileEntityState]("game_mobile_entity_state", server.TableAccessPublic)
-	server.RegisterTable[GameEnemyState]("game_enemy_state", server.TableAccessPublic)
-	server.RegisterTable[GameHerdCache]("game_herd_cache", server.TableAccessPublic)
-
-	// Register reducers
-	server.RegisterReducer("insert_bulk_position", insertBulkPosition)
-	server.RegisterReducer("insert_bulk_velocity", insertBulkVelocity)
-	server.RegisterReducer("insert_world", insertWorld)
-	server.RegisterReducer("update_position_all", updatePositionAll)
-	server.RegisterReducer("update_position_with_velocity", updatePositionWithVelocity)
-	server.RegisterReducer("game_loop_enemy_ia", gameLoopEnemyIA)
-	server.RegisterReducer("init_game_ia_loop", initGameIALoop)
-	server.RegisterReducer("run_game_ia_loop", runGameIALoop)
 }
 
-func insertBulkPosition(ctx server.ReducerContext, count uint32) {
+//stdb:reducer name=insert_bulk_position
+func insertBulkPosition(ctx reducer.ReducerContext, count uint32) {
 	for i := uint32(0); i < count; i++ {
-		runtime.Insert(Position{
+		PositionTable.Insert(Position{
 			EntityId: i,
 			X:        float32(i),
 			Y:        float32(i + 10),
@@ -145,9 +114,10 @@ func insertBulkPosition(ctx server.ReducerContext, count uint32) {
 	iaLogger.Info(fmt.Sprintf("INSERT POSITION: %d", count))
 }
 
-func insertBulkVelocity(ctx server.ReducerContext, count uint32) {
+//stdb:reducer name=insert_bulk_velocity
+func insertBulkVelocity(ctx reducer.ReducerContext, count uint32) {
 	for i := uint32(0); i < count; i++ {
-		runtime.Insert(Velocity{
+		VelocityTable.Insert(Velocity{
 			EntityId: i,
 			X:        0.1,
 			Y:        0.2,
@@ -157,33 +127,34 @@ func insertBulkVelocity(ctx server.ReducerContext, count uint32) {
 	iaLogger.Info(fmt.Sprintf("INSERT VELOCITY: %d", count))
 }
 
-func insertWorld(ctx server.ReducerContext, players uint64) {
+//stdb:reducer name=insert_world
+func insertWorld(ctx reducer.ReducerContext, players uint64) {
 	for i := uint64(0); i < players; i++ {
-		runtime.Insert(GameEnemyAiAgentState{
+		GameEnemyAiAgentStateTable.Insert(GameEnemyAiAgentState{
 			EntityId:            i,
 			LastMoveTimestamps:  []uint64{0, 0, 0, 0, 0},
 			NextActionTimestamp: 100 + i,
 			Action:              AgentActionIdle,
 		})
 
-		runtime.Insert(GameLiveTargetableState{
+		GameLiveTargetableStateTable.Insert(GameLiveTargetableState{
 			EntityId: i,
 			Quad:     int64(i) % 4,
 		})
 
-		runtime.Insert(GameTargetableState{
+		GameTargetableStateTable.Insert(GameTargetableState{
 			EntityId: i,
 			Quad:     int64(i) % 4,
 		})
 
-		runtime.Insert(GameMobileEntityState{
+		GameMobileEntityStateTable.Insert(GameMobileEntityState{
 			EntityId:  i,
 			LocationX: int32(i),
 			LocationY: int32(i * 2),
 			Timestamp: 1000,
 		})
 
-		runtime.Insert(GameEnemyState{
+		GameEnemyStateTable.Insert(GameEnemyState{
 			EntityId: i,
 			HerdId:   int32(i) % 10,
 		})
@@ -191,7 +162,7 @@ func insertWorld(ctx server.ReducerContext, players uint64) {
 
 	// Insert 10 herds
 	for h := int32(0); h < 10; h++ {
-		runtime.Insert(GameHerdCache{
+		GameHerdCacheTable.Insert(GameHerdCache{
 			Id:                h,
 			DimensionId:       0,
 			CurrentPopulation: int32(players / 10),
@@ -200,8 +171,8 @@ func insertWorld(ctx server.ReducerContext, players uint64) {
 				Z:         h * 20,
 				Dimension: 0,
 			},
-			MaxPopulation:   100,
-			SpawnEagerness:  0.5,
+			MaxPopulation:  100,
+			SpawnEagerness: 0.5,
 			RoamingDistance: 10,
 		})
 	}
@@ -209,9 +180,10 @@ func insertWorld(ctx server.ReducerContext, players uint64) {
 	iaLogger.Info(fmt.Sprintf("INSERT WORLD PLAYERS: %d", players))
 }
 
-func updatePositionAll(ctx server.ReducerContext, expected uint32) {
+//stdb:reducer name=update_position_all
+func updatePositionAll(ctx reducer.ReducerContext, expected uint32) {
 	count := uint32(0)
-	iter, err := runtime.Scan[Position]()
+	iter, err := PositionTable.Scan()
 	if err != nil {
 		return
 	}
@@ -225,15 +197,16 @@ func updatePositionAll(ctx server.ReducerContext, expected uint32) {
 		pos.X += pos.Vx
 		pos.Y += pos.Vy
 		pos.Z += pos.Vz
-		runtime.UpdateBy[Position](positionEntityIdIdx, pos)
+		PositionTable.UpdateByEntityId(pos)
 		count++
 	}
 	iaLogger.Info(fmt.Sprintf("UPDATE POSITION ALL: %d, processed: %d", expected, count))
 }
 
-func updatePositionWithVelocity(ctx server.ReducerContext, expected uint32) {
+//stdb:reducer name=update_position_with_velocity
+func updatePositionWithVelocity(ctx reducer.ReducerContext, expected uint32) {
 	count := uint32(0)
-	iter, err := runtime.Scan[Position]()
+	iter, err := PositionTable.Scan()
 	if err != nil {
 		return
 	}
@@ -244,22 +217,23 @@ func updatePositionWithVelocity(ctx server.ReducerContext, expected uint32) {
 		if !ok {
 			break
 		}
-		vel, found, err := runtime.FindBy[Velocity, uint32](velocityEntityIdIdx, pos.EntityId)
+		vel, found, err := VelocityTable.FindByEntityId(pos.EntityId)
 		if err != nil || !found {
 			continue
 		}
 		pos.X += vel.X
 		pos.Y += vel.Y
 		pos.Z += vel.Z
-		runtime.UpdateBy[Position](positionEntityIdIdx, pos)
+		PositionTable.UpdateByEntityId(pos)
 		count++
 	}
 	iaLogger.Info(fmt.Sprintf("UPDATE POSITION BY VELOCITY: %d, processed: %d", expected, count))
 }
 
-func gameLoopEnemyIA(ctx server.ReducerContext, players uint64) {
+//stdb:reducer name=game_loop_enemy_ia
+func gameLoopEnemyIA(ctx reducer.ReducerContext, players uint64) {
 	count := uint64(0)
-	iter, err := runtime.Scan[GameEnemyAiAgentState]()
+	iter, err := GameEnemyAiAgentStateTable.Scan()
 	if err != nil {
 		return
 	}
@@ -272,30 +246,30 @@ func gameLoopEnemyIA(ctx server.ReducerContext, players uint64) {
 		}
 		_ = agent
 
-		targetable, found, err := runtime.FindBy[GameTargetableState, uint64](gameTargetableStateEntityIdIdx, agent.EntityId)
+		targetable, found, err := GameTargetableStateTable.FindByEntityId(agent.EntityId)
 		if err != nil || !found {
 			continue
 		}
 		_ = targetable
 
-		liveTargetable, found, err := runtime.FindBy[GameLiveTargetableState, uint64](gameLiveTargetableStateEntityIdIdx, agent.EntityId)
+		liveTargetable, found, err := GameLiveTargetableStateTable.FindByEntityId(agent.EntityId)
 		if err != nil || !found {
 			continue
 		}
 		_ = liveTargetable
 
-		mobile, found, err := runtime.FindBy[GameMobileEntityState, uint64](gameMobileEntityStateEntityIdIdx, agent.EntityId)
+		mobile, found, err := GameMobileEntityStateTable.FindByEntityId(agent.EntityId)
 		if err != nil || !found {
 			continue
 		}
 		_ = mobile
 
-		enemy, found, err := runtime.FindBy[GameEnemyState, uint64](gameEnemyStateEntityIdIdx, agent.EntityId)
+		enemy, found, err := GameEnemyStateTable.FindByEntityId(agent.EntityId)
 		if err != nil || !found {
 			continue
 		}
 
-		herd, found, err := runtime.FindBy[GameHerdCache, int32](gameHerdCacheIdIdx, enemy.HerdId)
+		herd, found, err := GameHerdCacheTable.FindById(enemy.HerdId)
 		if err != nil || !found {
 			continue
 		}
@@ -306,7 +280,8 @@ func gameLoopEnemyIA(ctx server.ReducerContext, players uint64) {
 	iaLogger.Info(fmt.Sprintf("ENEMY IA LOOP PLAYERS: %d, processed: %d", players, count))
 }
 
-func initGameIALoop(ctx server.ReducerContext, initialLoad uint32) {
+//stdb:reducer name=init_game_ia_loop
+func initGameIALoop(ctx reducer.ReducerContext, initialLoad uint32) {
 	bigTable := initialLoad * 50
 	smallTable := uint64(initialLoad)
 
@@ -317,6 +292,7 @@ func initGameIALoop(ctx server.ReducerContext, initialLoad uint32) {
 	insertWorld(ctx, smallTable)
 }
 
-func runGameIALoop(ctx server.ReducerContext, initialLoad uint32) {
+//stdb:reducer name=run_game_ia_loop
+func runGameIALoop(ctx reducer.ReducerContext, initialLoad uint32) {
 	gameLoopEnemyIA(ctx, uint64(initialLoad))
 }

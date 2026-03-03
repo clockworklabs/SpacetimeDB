@@ -58,5 +58,11 @@ func (id *identity) IsZero() bool {
 }
 
 func (id *identity) String() string {
-	return hex.EncodeToString(id.data[:])
+	// Internal storage is little-endian (matching BSATN/WASM ABI).
+	// Display format is big-endian hex (matching Rust Identity::to_hex).
+	var be [32]byte
+	for i := 0; i < 32; i++ {
+		be[i] = id.data[31-i]
+	}
+	return hex.EncodeToString(be[:])
 }

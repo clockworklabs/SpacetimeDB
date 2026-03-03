@@ -4,927 +4,1030 @@ import (
 	"fmt"
 
 	"github.com/clockworklabs/SpacetimeDB/sdks/go/server"
-	"github.com/clockworklabs/SpacetimeDB/sdks/go/server/runtime"
 	"github.com/clockworklabs/SpacetimeDB/sdks/go/types"
 )
-
-// Reducer registrations are in init.go to ensure correct ordering.
 
 // ---------------------------------------------------------------------------
 // One* insert reducers -- each inserts a single-field row.
 // ---------------------------------------------------------------------------
 
+//stdb:reducer
 func insertOneU8(_ server.ReducerContext, n uint8) {
-	runtime.Insert(OneU8{N: n})
+	OneU8Table.Insert(OneU8{N: n})
 }
 
+//stdb:reducer
 func insertOneU16(_ server.ReducerContext, n uint16) {
-	runtime.Insert(OneU16{N: n})
+	OneU16Table.Insert(OneU16{N: n})
 }
 
+//stdb:reducer
 func insertOneU32(_ server.ReducerContext, n uint32) {
-	runtime.Insert(OneU32{N: n})
+	OneU32Table.Insert(OneU32{N: n})
 }
 
+//stdb:reducer
 func insertOneU64(_ server.ReducerContext, n uint64) {
-	runtime.Insert(OneU64{N: n})
+	OneU64Table.Insert(OneU64{N: n})
 }
 
+//stdb:reducer
 func insertOneU128(_ server.ReducerContext, n types.Uint128) {
-	runtime.Insert(OneU128{N: n})
+	OneU128Table.Insert(OneU128{N: n})
 }
 
+//stdb:reducer
 func insertOneU256(_ server.ReducerContext, n types.Uint256) {
-	runtime.Insert(OneU256{N: n})
+	OneU256Table.Insert(OneU256{N: n})
 }
 
+//stdb:reducer
 func insertOneI8(_ server.ReducerContext, n int8) {
-	runtime.Insert(OneI8{N: n})
+	OneI8Table.Insert(OneI8{N: n})
 }
 
+//stdb:reducer
 func insertOneI16(_ server.ReducerContext, n int16) {
-	runtime.Insert(OneI16{N: n})
+	OneI16Table.Insert(OneI16{N: n})
 }
 
+//stdb:reducer
 func insertOneI32(_ server.ReducerContext, n int32) {
-	runtime.Insert(OneI32{N: n})
+	OneI32Table.Insert(OneI32{N: n})
 }
 
+//stdb:reducer
 func insertOneI64(_ server.ReducerContext, n int64) {
-	runtime.Insert(OneI64{N: n})
+	OneI64Table.Insert(OneI64{N: n})
 }
 
+//stdb:reducer
 func insertOneI128(_ server.ReducerContext, n types.Int128) {
-	runtime.Insert(OneI128{N: n})
+	OneI128Table.Insert(OneI128{N: n})
 }
 
+//stdb:reducer
 func insertOneI256(_ server.ReducerContext, n types.Int256) {
-	runtime.Insert(OneI256{N: n})
+	OneI256Table.Insert(OneI256{N: n})
 }
 
+//stdb:reducer
 func insertOneBool(_ server.ReducerContext, b bool) {
-	runtime.Insert(OneBool{B: b})
+	OneBoolTable.Insert(OneBool{B: b})
 }
 
+//stdb:reducer
 func insertOneF32(_ server.ReducerContext, f float32) {
-	runtime.Insert(OneF32{F: f})
+	OneF32Table.Insert(OneF32{F: f})
 }
 
+//stdb:reducer
 func insertOneF64(_ server.ReducerContext, f float64) {
-	runtime.Insert(OneF64{F: f})
+	OneF64Table.Insert(OneF64{F: f})
 }
 
+//stdb:reducer
 func insertOneString(_ server.ReducerContext, s string) {
-	runtime.Insert(OneString{S: s})
+	OneStringTable.Insert(OneString{S: s})
 }
 
+//stdb:reducer
 func insertOneIdentity(_ server.ReducerContext, i types.Identity) {
-	runtime.Insert(OneIdentity{I: i})
+	OneIdentityTable.Insert(OneIdentity{I: i})
 }
 
+//stdb:reducer
 func insertOneConnectionId(_ server.ReducerContext, a types.ConnectionId) {
-	runtime.Insert(OneConnectionId{A: a})
+	OneConnectionIdTable.Insert(OneConnectionId{A: a})
 }
 
+//stdb:reducer
 func insertOneUuid(_ server.ReducerContext, u types.Uuid) {
-	runtime.Insert(OneUuid{U: u})
+	OneUuidTable.Insert(OneUuid{U: u})
 }
 
+//stdb:reducer
 func insertOneTimestamp(_ server.ReducerContext, t types.Timestamp) {
-	runtime.Insert(OneTimestamp{T: t})
+	OneTimestampTable.Insert(OneTimestamp{T: t})
 }
 
+//stdb:reducer
 func insertOneSimpleEnum(_ server.ReducerContext, e SimpleEnum) {
-	runtime.Insert(OneSimpleEnum{E: e})
+	OneSimpleEnumTable.Insert(OneSimpleEnum{E: e})
 }
 
+//stdb:reducer
 func insertOneEnumWithPayload(_ server.ReducerContext, e EnumWithPayload) {
-	runtime.Insert(OneEnumWithPayload{E: e})
+	OneEnumWithPayloadTable.Insert(OneEnumWithPayload{E: e})
 }
 
+//stdb:reducer
 func insertOneUnitStruct(_ server.ReducerContext, s UnitStruct) {
-	runtime.Insert(OneUnitStruct{S: s})
+	OneUnitStructTable.Insert(OneUnitStruct{S: s})
 }
 
+//stdb:reducer
 func insertOneByteStruct(_ server.ReducerContext, s ByteStruct) {
-	runtime.Insert(OneByteStruct{S: s})
+	OneByteStructTable.Insert(OneByteStruct{S: s})
 }
 
+//stdb:reducer
 func insertOneEveryPrimitiveStruct(_ server.ReducerContext, s EveryPrimitiveStruct) {
-	runtime.Insert(OneEveryPrimitiveStruct{S: s})
+	OneEveryPrimitiveStructTable.Insert(OneEveryPrimitiveStruct{S: s})
 }
 
+//stdb:reducer
 func insertOneEveryVecStruct(_ server.ReducerContext, s EveryVecStruct) {
-	runtime.Insert(OneEveryVecStruct{S: s})
+	OneEveryVecStructTable.Insert(OneEveryVecStruct{S: s})
 }
 
 // ---------------------------------------------------------------------------
 // Vec* insert reducers -- each inserts a row containing a slice.
 // ---------------------------------------------------------------------------
 
+//stdb:reducer
 func insertVecU8(_ server.ReducerContext, n []uint8) {
-	runtime.Insert(VecU8{N: n})
+	VecU8Table.Insert(VecU8{N: n})
 }
 
+//stdb:reducer
 func insertVecU16(_ server.ReducerContext, n []uint16) {
-	runtime.Insert(VecU16{N: n})
+	VecU16Table.Insert(VecU16{N: n})
 }
 
+//stdb:reducer
 func insertVecU32(_ server.ReducerContext, n []uint32) {
-	runtime.Insert(VecU32{N: n})
+	VecU32Table.Insert(VecU32{N: n})
 }
 
+//stdb:reducer
 func insertVecU64(_ server.ReducerContext, n []uint64) {
-	runtime.Insert(VecU64{N: n})
+	VecU64Table.Insert(VecU64{N: n})
 }
 
+//stdb:reducer
 func insertVecU128(_ server.ReducerContext, n []types.Uint128) {
-	runtime.Insert(VecU128{N: n})
+	VecU128Table.Insert(VecU128{N: n})
 }
 
+//stdb:reducer
 func insertVecU256(_ server.ReducerContext, n []types.Uint256) {
-	runtime.Insert(VecU256{N: n})
+	VecU256Table.Insert(VecU256{N: n})
 }
 
+//stdb:reducer
 func insertVecI8(_ server.ReducerContext, n []int8) {
-	runtime.Insert(VecI8{N: n})
+	VecI8Table.Insert(VecI8{N: n})
 }
 
+//stdb:reducer
 func insertVecI16(_ server.ReducerContext, n []int16) {
-	runtime.Insert(VecI16{N: n})
+	VecI16Table.Insert(VecI16{N: n})
 }
 
+//stdb:reducer
 func insertVecI32(_ server.ReducerContext, n []int32) {
-	runtime.Insert(VecI32{N: n})
+	VecI32Table.Insert(VecI32{N: n})
 }
 
+//stdb:reducer
 func insertVecI64(_ server.ReducerContext, n []int64) {
-	runtime.Insert(VecI64{N: n})
+	VecI64Table.Insert(VecI64{N: n})
 }
 
+//stdb:reducer
 func insertVecI128(_ server.ReducerContext, n []types.Int128) {
-	runtime.Insert(VecI128{N: n})
+	VecI128Table.Insert(VecI128{N: n})
 }
 
+//stdb:reducer
 func insertVecI256(_ server.ReducerContext, n []types.Int256) {
-	runtime.Insert(VecI256{N: n})
+	VecI256Table.Insert(VecI256{N: n})
 }
 
+//stdb:reducer
 func insertVecBool(_ server.ReducerContext, b []bool) {
-	runtime.Insert(VecBool{B: b})
+	VecBoolTable.Insert(VecBool{B: b})
 }
 
+//stdb:reducer
 func insertVecF32(_ server.ReducerContext, f []float32) {
-	runtime.Insert(VecF32{F: f})
+	VecF32Table.Insert(VecF32{F: f})
 }
 
+//stdb:reducer
 func insertVecF64(_ server.ReducerContext, f []float64) {
-	runtime.Insert(VecF64{F: f})
+	VecF64Table.Insert(VecF64{F: f})
 }
 
+//stdb:reducer
 func insertVecString(_ server.ReducerContext, s []string) {
-	runtime.Insert(VecString{S: s})
+	VecStringTable.Insert(VecString{S: s})
 }
 
+//stdb:reducer
 func insertVecIdentity(_ server.ReducerContext, i []types.Identity) {
-	runtime.Insert(VecIdentity{I: i})
+	VecIdentityTable.Insert(VecIdentity{I: i})
 }
 
+//stdb:reducer
 func insertVecConnectionId(_ server.ReducerContext, a []types.ConnectionId) {
-	runtime.Insert(VecConnectionId{A: a})
+	VecConnectionIdTable.Insert(VecConnectionId{A: a})
 }
 
+//stdb:reducer
 func insertVecUuid(_ server.ReducerContext, u []types.Uuid) {
-	runtime.Insert(VecUuid{U: u})
+	VecUuidTable.Insert(VecUuid{U: u})
 }
 
+//stdb:reducer
 func insertVecTimestamp(_ server.ReducerContext, t []types.Timestamp) {
-	runtime.Insert(VecTimestamp{T: t})
+	VecTimestampTable.Insert(VecTimestamp{T: t})
 }
 
+//stdb:reducer
 func insertVecSimpleEnum(_ server.ReducerContext, e []SimpleEnum) {
-	runtime.Insert(VecSimpleEnum{E: e})
+	VecSimpleEnumTable.Insert(VecSimpleEnum{E: e})
 }
 
+//stdb:reducer
 func insertVecEnumWithPayload(_ server.ReducerContext, e []EnumWithPayload) {
-	runtime.Insert(VecEnumWithPayload{E: e})
+	VecEnumWithPayloadTable.Insert(VecEnumWithPayload{E: e})
 }
 
+//stdb:reducer
 func insertVecUnitStruct(_ server.ReducerContext, s []UnitStruct) {
-	runtime.Insert(VecUnitStruct{S: s})
+	VecUnitStructTable.Insert(VecUnitStruct{S: s})
 }
 
+//stdb:reducer
 func insertVecByteStruct(_ server.ReducerContext, s []ByteStruct) {
-	runtime.Insert(VecByteStruct{S: s})
+	VecByteStructTable.Insert(VecByteStruct{S: s})
 }
 
+//stdb:reducer
 func insertVecEveryPrimitiveStruct(_ server.ReducerContext, s []EveryPrimitiveStruct) {
-	runtime.Insert(VecEveryPrimitiveStruct{S: s})
+	VecEveryPrimitiveStructTable.Insert(VecEveryPrimitiveStruct{S: s})
 }
 
+//stdb:reducer
 func insertVecEveryVecStruct(_ server.ReducerContext, s []EveryVecStruct) {
-	runtime.Insert(VecEveryVecStruct{S: s})
+	VecEveryVecStructTable.Insert(VecEveryVecStruct{S: s})
 }
 
 // ---------------------------------------------------------------------------
 // Option* insert reducers -- each inserts a row with an optional value.
 // ---------------------------------------------------------------------------
 
+//stdb:reducer
 func insertOptionI32(_ server.ReducerContext, n *int32) {
-	runtime.Insert(OptionI32{N: n})
+	OptionI32Table.Insert(OptionI32{N: n})
 }
 
+//stdb:reducer
 func insertOptionString(_ server.ReducerContext, s *string) {
-	runtime.Insert(OptionString{S: s})
+	OptionStringTable.Insert(OptionString{S: s})
 }
 
+//stdb:reducer
 func insertOptionIdentity(_ server.ReducerContext, i *types.Identity) {
-	runtime.Insert(OptionIdentity{I: i})
+	OptionIdentityTable.Insert(OptionIdentity{I: i})
 }
 
+//stdb:reducer
 func insertOptionUuid(_ server.ReducerContext, u *types.Uuid) {
-	runtime.Insert(OptionUuid{U: u})
+	OptionUuidTable.Insert(OptionUuid{U: u})
 }
 
+//stdb:reducer
 func insertOptionSimpleEnum(_ server.ReducerContext, e *SimpleEnum) {
-	runtime.Insert(OptionSimpleEnum{E: e})
+	OptionSimpleEnumTable.Insert(OptionSimpleEnum{E: e})
 }
 
+//stdb:reducer
 func insertOptionEveryPrimitiveStruct(_ server.ReducerContext, s *EveryPrimitiveStruct) {
-	runtime.Insert(OptionEveryPrimitiveStruct{S: s})
+	OptionEveryPrimitiveStructTable.Insert(OptionEveryPrimitiveStruct{S: s})
 }
 
-func insertOptionVecOptionI32(_ server.ReducerContext, v *[](*int32)) {
-	runtime.Insert(OptionVecOptionI32{V: v})
+//stdb:reducer
+func insertOptionVecOptionI32(_ server.ReducerContext, v *[]*int32) {
+	OptionVecOptionI32Table.Insert(OptionVecOptionI32{V: v})
 }
 
 // ---------------------------------------------------------------------------
 // Result* insert reducers
 // ---------------------------------------------------------------------------
 
+//stdb:reducer
 func insertResultI32String(_ server.ReducerContext, r ResultI32StringValue) {
-	runtime.Insert(ResultI32String{R: r})
+	ResultI32StringTable.Insert(ResultI32String{R: r})
 }
 
+//stdb:reducer
 func insertResultStringI32(_ server.ReducerContext, r ResultStringI32Value) {
-	runtime.Insert(ResultStringI32{R: r})
+	ResultStringI32Table.Insert(ResultStringI32{R: r})
 }
 
+//stdb:reducer
 func insertResultIdentityString(_ server.ReducerContext, r ResultIdentityStringValue) {
-	runtime.Insert(ResultIdentityString{R: r})
+	ResultIdentityStringTable.Insert(ResultIdentityString{R: r})
 }
 
+//stdb:reducer
 func insertResultSimpleEnumI32(_ server.ReducerContext, r ResultSimpleEnumI32Value) {
-	runtime.Insert(ResultSimpleEnumI32{R: r})
+	ResultSimpleEnumI32Table.Insert(ResultSimpleEnumI32{R: r})
 }
 
+//stdb:reducer
 func insertResultEveryPrimitiveStructString(_ server.ReducerContext, r ResultEveryPrimitiveStructStringValue) {
-	runtime.Insert(ResultEveryPrimitiveStructString{R: r})
+	ResultEveryPrimitiveStructStringTable.Insert(ResultEveryPrimitiveStructString{R: r})
 }
 
+//stdb:reducer
 func insertResultVecI32String(_ server.ReducerContext, r ResultVecI32StringValue) {
-	runtime.Insert(ResultVecI32String{R: r})
+	ResultVecI32StringTable.Insert(ResultVecI32String{R: r})
 }
 
 // ---------------------------------------------------------------------------
 // Unique* CRUD reducers -- insert, update (delete+insert), delete by unique field.
 // ---------------------------------------------------------------------------
 
-// --- UniqueU8 ---
-
+//stdb:reducer
 func insertUniqueU8(_ server.ReducerContext, n uint8, data int32) {
-	runtime.Insert(UniqueU8{N: n, Data: data})
+	UniqueU8Table.Insert(UniqueU8{N: n, Data: data})
 }
 
+//stdb:reducer
 func updateUniqueU8(_ server.ReducerContext, n uint8, data int32) {
-	runtime.DeleteBy[UniqueU8, uint8]("unique_u_8_n_idx_btree", n)
-	runtime.Insert(UniqueU8{N: n, Data: data})
+	UniqueU8Table.DeleteByN(n)
+	UniqueU8Table.Insert(UniqueU8{N: n, Data: data})
 }
 
+//stdb:reducer
 func deleteUniqueU8(_ server.ReducerContext, n uint8) {
-	runtime.DeleteBy[UniqueU8, uint8]("unique_u_8_n_idx_btree", n)
+	UniqueU8Table.DeleteByN(n)
 }
 
-// --- UniqueU16 ---
-
+//stdb:reducer
 func insertUniqueU16(_ server.ReducerContext, n uint16, data int32) {
-	runtime.Insert(UniqueU16{N: n, Data: data})
+	UniqueU16Table.Insert(UniqueU16{N: n, Data: data})
 }
 
+//stdb:reducer
 func updateUniqueU16(_ server.ReducerContext, n uint16, data int32) {
-	runtime.DeleteBy[UniqueU16, uint16]("unique_u_16_n_idx_btree", n)
-	runtime.Insert(UniqueU16{N: n, Data: data})
+	UniqueU16Table.DeleteByN(n)
+	UniqueU16Table.Insert(UniqueU16{N: n, Data: data})
 }
 
+//stdb:reducer
 func deleteUniqueU16(_ server.ReducerContext, n uint16) {
-	runtime.DeleteBy[UniqueU16, uint16]("unique_u_16_n_idx_btree", n)
+	UniqueU16Table.DeleteByN(n)
 }
 
-// --- UniqueU32 ---
-
+//stdb:reducer
 func insertUniqueU32(_ server.ReducerContext, n uint32, data int32) {
-	runtime.Insert(UniqueU32{N: n, Data: data})
+	UniqueU32Table.Insert(UniqueU32{N: n, Data: data})
 }
 
+//stdb:reducer
 func updateUniqueU32(_ server.ReducerContext, n uint32, data int32) {
-	runtime.DeleteBy[UniqueU32, uint32]("unique_u_32_n_idx_btree", n)
-	runtime.Insert(UniqueU32{N: n, Data: data})
+	UniqueU32Table.DeleteByN(n)
+	UniqueU32Table.Insert(UniqueU32{N: n, Data: data})
 }
 
+//stdb:reducer
 func deleteUniqueU32(_ server.ReducerContext, n uint32) {
-	runtime.DeleteBy[UniqueU32, uint32]("unique_u_32_n_idx_btree", n)
+	UniqueU32Table.DeleteByN(n)
 }
 
-// --- UniqueU64 ---
-
+//stdb:reducer
 func insertUniqueU64(_ server.ReducerContext, n uint64, data int32) {
-	runtime.Insert(UniqueU64{N: n, Data: data})
+	UniqueU64Table.Insert(UniqueU64{N: n, Data: data})
 }
 
+//stdb:reducer
 func updateUniqueU64(_ server.ReducerContext, n uint64, data int32) {
-	runtime.DeleteBy[UniqueU64, uint64]("unique_u_64_n_idx_btree", n)
-	runtime.Insert(UniqueU64{N: n, Data: data})
+	UniqueU64Table.DeleteByN(n)
+	UniqueU64Table.Insert(UniqueU64{N: n, Data: data})
 }
 
+//stdb:reducer
 func deleteUniqueU64(_ server.ReducerContext, n uint64) {
-	runtime.DeleteBy[UniqueU64, uint64]("unique_u_64_n_idx_btree", n)
+	UniqueU64Table.DeleteByN(n)
 }
 
-// --- UniqueU128 ---
-
+//stdb:reducer
 func insertUniqueU128(_ server.ReducerContext, n types.Uint128, data int32) {
-	runtime.Insert(UniqueU128{N: n, Data: data})
+	UniqueU128Table.Insert(UniqueU128{N: n, Data: data})
 }
 
+//stdb:reducer
 func updateUniqueU128(_ server.ReducerContext, n types.Uint128, data int32) {
-	runtime.DeleteBy[UniqueU128, types.Uint128]("unique_u_128_n_idx_btree", n)
-	runtime.Insert(UniqueU128{N: n, Data: data})
+	UniqueU128Table.DeleteByN(n)
+	UniqueU128Table.Insert(UniqueU128{N: n, Data: data})
 }
 
+//stdb:reducer
 func deleteUniqueU128(_ server.ReducerContext, n types.Uint128) {
-	runtime.DeleteBy[UniqueU128, types.Uint128]("unique_u_128_n_idx_btree", n)
+	UniqueU128Table.DeleteByN(n)
 }
 
-// --- UniqueU256 ---
-
+//stdb:reducer
 func insertUniqueU256(_ server.ReducerContext, n types.Uint256, data int32) {
-	runtime.Insert(UniqueU256{N: n, Data: data})
+	UniqueU256Table.Insert(UniqueU256{N: n, Data: data})
 }
 
+//stdb:reducer
 func updateUniqueU256(_ server.ReducerContext, n types.Uint256, data int32) {
-	runtime.DeleteBy[UniqueU256, types.Uint256]("unique_u_256_n_idx_btree", n)
-	runtime.Insert(UniqueU256{N: n, Data: data})
+	UniqueU256Table.DeleteByN(n)
+	UniqueU256Table.Insert(UniqueU256{N: n, Data: data})
 }
 
+//stdb:reducer
 func deleteUniqueU256(_ server.ReducerContext, n types.Uint256) {
-	runtime.DeleteBy[UniqueU256, types.Uint256]("unique_u_256_n_idx_btree", n)
+	UniqueU256Table.DeleteByN(n)
 }
 
-// --- UniqueI8 ---
-
+//stdb:reducer
 func insertUniqueI8(_ server.ReducerContext, n int8, data int32) {
-	runtime.Insert(UniqueI8{N: n, Data: data})
+	UniqueI8Table.Insert(UniqueI8{N: n, Data: data})
 }
 
+//stdb:reducer
 func updateUniqueI8(_ server.ReducerContext, n int8, data int32) {
-	runtime.DeleteBy[UniqueI8, int8]("unique_i_8_n_idx_btree", n)
-	runtime.Insert(UniqueI8{N: n, Data: data})
+	UniqueI8Table.DeleteByN(n)
+	UniqueI8Table.Insert(UniqueI8{N: n, Data: data})
 }
 
+//stdb:reducer
 func deleteUniqueI8(_ server.ReducerContext, n int8) {
-	runtime.DeleteBy[UniqueI8, int8]("unique_i_8_n_idx_btree", n)
+	UniqueI8Table.DeleteByN(n)
 }
 
-// --- UniqueI16 ---
-
+//stdb:reducer
 func insertUniqueI16(_ server.ReducerContext, n int16, data int32) {
-	runtime.Insert(UniqueI16{N: n, Data: data})
+	UniqueI16Table.Insert(UniqueI16{N: n, Data: data})
 }
 
+//stdb:reducer
 func updateUniqueI16(_ server.ReducerContext, n int16, data int32) {
-	runtime.DeleteBy[UniqueI16, int16]("unique_i_16_n_idx_btree", n)
-	runtime.Insert(UniqueI16{N: n, Data: data})
+	UniqueI16Table.DeleteByN(n)
+	UniqueI16Table.Insert(UniqueI16{N: n, Data: data})
 }
 
+//stdb:reducer
 func deleteUniqueI16(_ server.ReducerContext, n int16) {
-	runtime.DeleteBy[UniqueI16, int16]("unique_i_16_n_idx_btree", n)
+	UniqueI16Table.DeleteByN(n)
 }
 
-// --- UniqueI32 ---
-
+//stdb:reducer
 func insertUniqueI32(_ server.ReducerContext, n int32, data int32) {
-	runtime.Insert(UniqueI32{N: n, Data: data})
+	UniqueI32Table.Insert(UniqueI32{N: n, Data: data})
 }
 
+//stdb:reducer
 func updateUniqueI32(_ server.ReducerContext, n int32, data int32) {
-	runtime.DeleteBy[UniqueI32, int32]("unique_i_32_n_idx_btree", n)
-	runtime.Insert(UniqueI32{N: n, Data: data})
+	UniqueI32Table.DeleteByN(n)
+	UniqueI32Table.Insert(UniqueI32{N: n, Data: data})
 }
 
+//stdb:reducer
 func deleteUniqueI32(_ server.ReducerContext, n int32) {
-	runtime.DeleteBy[UniqueI32, int32]("unique_i_32_n_idx_btree", n)
+	UniqueI32Table.DeleteByN(n)
 }
 
-// --- UniqueI64 ---
-
+//stdb:reducer
 func insertUniqueI64(_ server.ReducerContext, n int64, data int32) {
-	runtime.Insert(UniqueI64{N: n, Data: data})
+	UniqueI64Table.Insert(UniqueI64{N: n, Data: data})
 }
 
+//stdb:reducer
 func updateUniqueI64(_ server.ReducerContext, n int64, data int32) {
-	runtime.DeleteBy[UniqueI64, int64]("unique_i_64_n_idx_btree", n)
-	runtime.Insert(UniqueI64{N: n, Data: data})
+	UniqueI64Table.DeleteByN(n)
+	UniqueI64Table.Insert(UniqueI64{N: n, Data: data})
 }
 
+//stdb:reducer
 func deleteUniqueI64(_ server.ReducerContext, n int64) {
-	runtime.DeleteBy[UniqueI64, int64]("unique_i_64_n_idx_btree", n)
+	UniqueI64Table.DeleteByN(n)
 }
 
-// --- UniqueI128 ---
-
+//stdb:reducer
 func insertUniqueI128(_ server.ReducerContext, n types.Int128, data int32) {
-	runtime.Insert(UniqueI128{N: n, Data: data})
+	UniqueI128Table.Insert(UniqueI128{N: n, Data: data})
 }
 
+//stdb:reducer
 func updateUniqueI128(_ server.ReducerContext, n types.Int128, data int32) {
-	runtime.DeleteBy[UniqueI128, types.Int128]("unique_i_128_n_idx_btree", n)
-	runtime.Insert(UniqueI128{N: n, Data: data})
+	UniqueI128Table.DeleteByN(n)
+	UniqueI128Table.Insert(UniqueI128{N: n, Data: data})
 }
 
+//stdb:reducer
 func deleteUniqueI128(_ server.ReducerContext, n types.Int128) {
-	runtime.DeleteBy[UniqueI128, types.Int128]("unique_i_128_n_idx_btree", n)
+	UniqueI128Table.DeleteByN(n)
 }
 
-// --- UniqueI256 ---
-
+//stdb:reducer
 func insertUniqueI256(_ server.ReducerContext, n types.Int256, data int32) {
-	runtime.Insert(UniqueI256{N: n, Data: data})
+	UniqueI256Table.Insert(UniqueI256{N: n, Data: data})
 }
 
+//stdb:reducer
 func updateUniqueI256(_ server.ReducerContext, n types.Int256, data int32) {
-	runtime.DeleteBy[UniqueI256, types.Int256]("unique_i_256_n_idx_btree", n)
-	runtime.Insert(UniqueI256{N: n, Data: data})
+	UniqueI256Table.DeleteByN(n)
+	UniqueI256Table.Insert(UniqueI256{N: n, Data: data})
 }
 
+//stdb:reducer
 func deleteUniqueI256(_ server.ReducerContext, n types.Int256) {
-	runtime.DeleteBy[UniqueI256, types.Int256]("unique_i_256_n_idx_btree", n)
+	UniqueI256Table.DeleteByN(n)
 }
 
-// --- UniqueBool ---
-
+//stdb:reducer
 func insertUniqueBool(_ server.ReducerContext, b bool, data int32) {
-	runtime.Insert(UniqueBool{B: b, Data: data})
+	UniqueBoolTable.Insert(UniqueBool{B: b, Data: data})
 }
 
+//stdb:reducer
 func updateUniqueBool(_ server.ReducerContext, b bool, data int32) {
-	runtime.DeleteBy[UniqueBool, bool]("unique_bool_b_idx_btree", b)
-	runtime.Insert(UniqueBool{B: b, Data: data})
+	UniqueBoolTable.DeleteByB(b)
+	UniqueBoolTable.Insert(UniqueBool{B: b, Data: data})
 }
 
+//stdb:reducer
 func deleteUniqueBool(_ server.ReducerContext, b bool) {
-	runtime.DeleteBy[UniqueBool, bool]("unique_bool_b_idx_btree", b)
+	UniqueBoolTable.DeleteByB(b)
 }
 
-// --- UniqueString ---
-
+//stdb:reducer
 func insertUniqueString(_ server.ReducerContext, s string, data int32) {
-	runtime.Insert(UniqueString{S: s, Data: data})
+	UniqueStringTable.Insert(UniqueString{S: s, Data: data})
 }
 
+//stdb:reducer
 func updateUniqueString(_ server.ReducerContext, s string, data int32) {
-	runtime.DeleteBy[UniqueString, string]("unique_string_s_idx_btree", s)
-	runtime.Insert(UniqueString{S: s, Data: data})
+	UniqueStringTable.DeleteByS(s)
+	UniqueStringTable.Insert(UniqueString{S: s, Data: data})
 }
 
+//stdb:reducer
 func deleteUniqueString(_ server.ReducerContext, s string) {
-	runtime.DeleteBy[UniqueString, string]("unique_string_s_idx_btree", s)
+	UniqueStringTable.DeleteByS(s)
 }
 
-// --- UniqueIdentity ---
-
+//stdb:reducer
 func insertUniqueIdentity(_ server.ReducerContext, i types.Identity, data int32) {
-	runtime.Insert(UniqueIdentity{I: i, Data: data})
+	UniqueIdentityTable.Insert(UniqueIdentity{I: i, Data: data})
 }
 
+//stdb:reducer
 func updateUniqueIdentity(_ server.ReducerContext, i types.Identity, data int32) {
-	runtime.DeleteBy[UniqueIdentity, types.Identity]("unique_identity_i_idx_btree", i)
-	runtime.Insert(UniqueIdentity{I: i, Data: data})
+	UniqueIdentityTable.DeleteByI(i)
+	UniqueIdentityTable.Insert(UniqueIdentity{I: i, Data: data})
 }
 
+//stdb:reducer
 func deleteUniqueIdentity(_ server.ReducerContext, i types.Identity) {
-	runtime.DeleteBy[UniqueIdentity, types.Identity]("unique_identity_i_idx_btree", i)
+	UniqueIdentityTable.DeleteByI(i)
 }
 
-// --- UniqueConnectionId ---
-
+//stdb:reducer
 func insertUniqueConnectionId(_ server.ReducerContext, a types.ConnectionId, data int32) {
-	runtime.Insert(UniqueConnectionId{A: a, Data: data})
+	UniqueConnectionIdTable.Insert(UniqueConnectionId{A: a, Data: data})
 }
 
+//stdb:reducer
 func updateUniqueConnectionId(_ server.ReducerContext, a types.ConnectionId, data int32) {
-	runtime.DeleteBy[UniqueConnectionId, types.ConnectionId]("unique_connection_id_a_idx_btree", a)
-	runtime.Insert(UniqueConnectionId{A: a, Data: data})
+	UniqueConnectionIdTable.DeleteByA(a)
+	UniqueConnectionIdTable.Insert(UniqueConnectionId{A: a, Data: data})
 }
 
+//stdb:reducer
 func deleteUniqueConnectionId(_ server.ReducerContext, a types.ConnectionId) {
-	runtime.DeleteBy[UniqueConnectionId, types.ConnectionId]("unique_connection_id_a_idx_btree", a)
+	UniqueConnectionIdTable.DeleteByA(a)
 }
 
-// --- UniqueUuid ---
-
+//stdb:reducer
 func insertUniqueUuid(_ server.ReducerContext, u types.Uuid, data int32) {
-	runtime.Insert(UniqueUuid{U: u, Data: data})
+	UniqueUuidTable.Insert(UniqueUuid{U: u, Data: data})
 }
 
+//stdb:reducer
 func updateUniqueUuid(_ server.ReducerContext, u types.Uuid, data int32) {
-	runtime.DeleteBy[UniqueUuid, types.Uuid]("unique_uuid_u_idx_btree", u)
-	runtime.Insert(UniqueUuid{U: u, Data: data})
+	UniqueUuidTable.DeleteByU(u)
+	UniqueUuidTable.Insert(UniqueUuid{U: u, Data: data})
 }
 
+//stdb:reducer
 func deleteUniqueUuid(_ server.ReducerContext, u types.Uuid) {
-	runtime.DeleteBy[UniqueUuid, types.Uuid]("unique_uuid_u_idx_btree", u)
+	UniqueUuidTable.DeleteByU(u)
 }
 
 // ---------------------------------------------------------------------------
 // Pk* CRUD reducers -- insert, update (UpdateBy), delete (DeleteBy) by PK.
 // ---------------------------------------------------------------------------
 
-// --- PkU8 ---
-
+//stdb:reducer
 func insertPkU8(_ server.ReducerContext, n uint8, data int32) {
-	runtime.Insert(PkU8{N: n, Data: data})
+	PkU8Table.Insert(PkU8{N: n, Data: data})
 }
 
+//stdb:reducer
 func updatePkU8(_ server.ReducerContext, n uint8, data int32) {
-	runtime.UpdateBy[PkU8]("pk_u_8_n_idx_btree", PkU8{N: n, Data: data})
+	PkU8Table.UpdateByN(PkU8{N: n, Data: data})
 }
 
+//stdb:reducer
 func deletePkU8(_ server.ReducerContext, n uint8) {
-	runtime.DeleteBy[PkU8, uint8]("pk_u_8_n_idx_btree", n)
+	PkU8Table.DeleteByN(n)
 }
 
-// --- PkU16 ---
-
+//stdb:reducer
 func insertPkU16(_ server.ReducerContext, n uint16, data int32) {
-	runtime.Insert(PkU16{N: n, Data: data})
+	PkU16Table.Insert(PkU16{N: n, Data: data})
 }
 
+//stdb:reducer
 func updatePkU16(_ server.ReducerContext, n uint16, data int32) {
-	runtime.UpdateBy[PkU16]("pk_u_16_n_idx_btree", PkU16{N: n, Data: data})
+	PkU16Table.UpdateByN(PkU16{N: n, Data: data})
 }
 
+//stdb:reducer
 func deletePkU16(_ server.ReducerContext, n uint16) {
-	runtime.DeleteBy[PkU16, uint16]("pk_u_16_n_idx_btree", n)
+	PkU16Table.DeleteByN(n)
 }
 
-// --- PkU32 ---
-
+//stdb:reducer
 func insertPkU32(_ server.ReducerContext, n uint32, data int32) {
-	runtime.Insert(PkU32{N: n, Data: data})
+	PkU32Table.Insert(PkU32{N: n, Data: data})
 }
 
+//stdb:reducer
 func updatePkU32(_ server.ReducerContext, n uint32, data int32) {
-	runtime.UpdateBy[PkU32]("pk_u_32_n_idx_btree", PkU32{N: n, Data: data})
+	PkU32Table.UpdateByN(PkU32{N: n, Data: data})
 }
 
+//stdb:reducer
 func deletePkU32(_ server.ReducerContext, n uint32) {
-	runtime.DeleteBy[PkU32, uint32]("pk_u_32_n_idx_btree", n)
+	PkU32Table.DeleteByN(n)
 }
 
-// --- PkU64 ---
-
+//stdb:reducer
 func insertPkU64(_ server.ReducerContext, n uint64, data int32) {
-	runtime.Insert(PkU64{N: n, Data: data})
+	PkU64Table.Insert(PkU64{N: n, Data: data})
 }
 
+//stdb:reducer
 func updatePkU64(_ server.ReducerContext, n uint64, data int32) {
-	runtime.UpdateBy[PkU64]("pk_u_64_n_idx_btree", PkU64{N: n, Data: data})
+	PkU64Table.UpdateByN(PkU64{N: n, Data: data})
 }
 
+//stdb:reducer
 func deletePkU64(_ server.ReducerContext, n uint64) {
-	runtime.DeleteBy[PkU64, uint64]("pk_u_64_n_idx_btree", n)
+	PkU64Table.DeleteByN(n)
 }
 
-// --- PkU128 ---
-
+//stdb:reducer
 func insertPkU128(_ server.ReducerContext, n types.Uint128, data int32) {
-	runtime.Insert(PkU128{N: n, Data: data})
+	PkU128Table.Insert(PkU128{N: n, Data: data})
 }
 
+//stdb:reducer
 func updatePkU128(_ server.ReducerContext, n types.Uint128, data int32) {
-	runtime.UpdateBy[PkU128]("pk_u_128_n_idx_btree", PkU128{N: n, Data: data})
+	PkU128Table.UpdateByN(PkU128{N: n, Data: data})
 }
 
+//stdb:reducer
 func deletePkU128(_ server.ReducerContext, n types.Uint128) {
-	runtime.DeleteBy[PkU128, types.Uint128]("pk_u_128_n_idx_btree", n)
+	PkU128Table.DeleteByN(n)
 }
 
-// --- PkU256 ---
-
+//stdb:reducer
 func insertPkU256(_ server.ReducerContext, n types.Uint256, data int32) {
-	runtime.Insert(PkU256{N: n, Data: data})
+	PkU256Table.Insert(PkU256{N: n, Data: data})
 }
 
+//stdb:reducer
 func updatePkU256(_ server.ReducerContext, n types.Uint256, data int32) {
-	runtime.UpdateBy[PkU256]("pk_u_256_n_idx_btree", PkU256{N: n, Data: data})
+	PkU256Table.UpdateByN(PkU256{N: n, Data: data})
 }
 
+//stdb:reducer
 func deletePkU256(_ server.ReducerContext, n types.Uint256) {
-	runtime.DeleteBy[PkU256, types.Uint256]("pk_u_256_n_idx_btree", n)
+	PkU256Table.DeleteByN(n)
 }
 
-// --- PkI8 ---
-
+//stdb:reducer
 func insertPkI8(_ server.ReducerContext, n int8, data int32) {
-	runtime.Insert(PkI8{N: n, Data: data})
+	PkI8Table.Insert(PkI8{N: n, Data: data})
 }
 
+//stdb:reducer
 func updatePkI8(_ server.ReducerContext, n int8, data int32) {
-	runtime.UpdateBy[PkI8]("pk_i_8_n_idx_btree", PkI8{N: n, Data: data})
+	PkI8Table.UpdateByN(PkI8{N: n, Data: data})
 }
 
+//stdb:reducer
 func deletePkI8(_ server.ReducerContext, n int8) {
-	runtime.DeleteBy[PkI8, int8]("pk_i_8_n_idx_btree", n)
+	PkI8Table.DeleteByN(n)
 }
 
-// --- PkI16 ---
-
+//stdb:reducer
 func insertPkI16(_ server.ReducerContext, n int16, data int32) {
-	runtime.Insert(PkI16{N: n, Data: data})
+	PkI16Table.Insert(PkI16{N: n, Data: data})
 }
 
+//stdb:reducer
 func updatePkI16(_ server.ReducerContext, n int16, data int32) {
-	runtime.UpdateBy[PkI16]("pk_i_16_n_idx_btree", PkI16{N: n, Data: data})
+	PkI16Table.UpdateByN(PkI16{N: n, Data: data})
 }
 
+//stdb:reducer
 func deletePkI16(_ server.ReducerContext, n int16) {
-	runtime.DeleteBy[PkI16, int16]("pk_i_16_n_idx_btree", n)
+	PkI16Table.DeleteByN(n)
 }
 
-// --- PkI32 ---
-
+//stdb:reducer
 func insertPkI32(_ server.ReducerContext, n int32, data int32) {
-	runtime.Insert(PkI32{N: n, Data: data})
+	PkI32Table.Insert(PkI32{N: n, Data: data})
 }
 
+//stdb:reducer
 func updatePkI32(_ server.ReducerContext, n int32, data int32) {
-	runtime.UpdateBy[PkI32]("pk_i_32_n_idx_btree", PkI32{N: n, Data: data})
+	PkI32Table.UpdateByN(PkI32{N: n, Data: data})
 }
 
+//stdb:reducer
 func deletePkI32(_ server.ReducerContext, n int32) {
-	runtime.DeleteBy[PkI32, int32]("pk_i_32_n_idx_btree", n)
+	PkI32Table.DeleteByN(n)
 }
 
-// --- PkI64 ---
-
+//stdb:reducer
 func insertPkI64(_ server.ReducerContext, n int64, data int32) {
-	runtime.Insert(PkI64{N: n, Data: data})
+	PkI64Table.Insert(PkI64{N: n, Data: data})
 }
 
+//stdb:reducer
 func updatePkI64(_ server.ReducerContext, n int64, data int32) {
-	runtime.UpdateBy[PkI64]("pk_i_64_n_idx_btree", PkI64{N: n, Data: data})
+	PkI64Table.UpdateByN(PkI64{N: n, Data: data})
 }
 
+//stdb:reducer
 func deletePkI64(_ server.ReducerContext, n int64) {
-	runtime.DeleteBy[PkI64, int64]("pk_i_64_n_idx_btree", n)
+	PkI64Table.DeleteByN(n)
 }
 
-// --- PkI128 ---
-
+//stdb:reducer
 func insertPkI128(_ server.ReducerContext, n types.Int128, data int32) {
-	runtime.Insert(PkI128{N: n, Data: data})
+	PkI128Table.Insert(PkI128{N: n, Data: data})
 }
 
+//stdb:reducer
 func updatePkI128(_ server.ReducerContext, n types.Int128, data int32) {
-	runtime.UpdateBy[PkI128]("pk_i_128_n_idx_btree", PkI128{N: n, Data: data})
+	PkI128Table.UpdateByN(PkI128{N: n, Data: data})
 }
 
+//stdb:reducer
 func deletePkI128(_ server.ReducerContext, n types.Int128) {
-	runtime.DeleteBy[PkI128, types.Int128]("pk_i_128_n_idx_btree", n)
+	PkI128Table.DeleteByN(n)
 }
 
-// --- PkI256 ---
-
+//stdb:reducer
 func insertPkI256(_ server.ReducerContext, n types.Int256, data int32) {
-	runtime.Insert(PkI256{N: n, Data: data})
+	PkI256Table.Insert(PkI256{N: n, Data: data})
 }
 
+//stdb:reducer
 func updatePkI256(_ server.ReducerContext, n types.Int256, data int32) {
-	runtime.UpdateBy[PkI256]("pk_i_256_n_idx_btree", PkI256{N: n, Data: data})
+	PkI256Table.UpdateByN(PkI256{N: n, Data: data})
 }
 
+//stdb:reducer
 func deletePkI256(_ server.ReducerContext, n types.Int256) {
-	runtime.DeleteBy[PkI256, types.Int256]("pk_i_256_n_idx_btree", n)
+	PkI256Table.DeleteByN(n)
 }
 
-// --- PkBool ---
-
+//stdb:reducer
 func insertPkBool(_ server.ReducerContext, b bool, data int32) {
-	runtime.Insert(PkBool{B: b, Data: data})
+	PkBoolTable.Insert(PkBool{B: b, Data: data})
 }
 
+//stdb:reducer
 func updatePkBool(_ server.ReducerContext, b bool, data int32) {
-	runtime.UpdateBy[PkBool]("pk_bool_b_idx_btree", PkBool{B: b, Data: data})
+	PkBoolTable.UpdateByB(PkBool{B: b, Data: data})
 }
 
+//stdb:reducer
 func deletePkBool(_ server.ReducerContext, b bool) {
-	runtime.DeleteBy[PkBool, bool]("pk_bool_b_idx_btree", b)
+	PkBoolTable.DeleteByB(b)
 }
 
-// --- PkString ---
-
+//stdb:reducer
 func insertPkString(_ server.ReducerContext, s string, data int32) {
-	runtime.Insert(PkString{S: s, Data: data})
+	PkStringTable.Insert(PkString{S: s, Data: data})
 }
 
+//stdb:reducer
 func updatePkString(_ server.ReducerContext, s string, data int32) {
-	runtime.UpdateBy[PkString]("pk_string_s_idx_btree", PkString{S: s, Data: data})
+	PkStringTable.UpdateByS(PkString{S: s, Data: data})
 }
 
+//stdb:reducer
 func deletePkString(_ server.ReducerContext, s string) {
-	runtime.DeleteBy[PkString, string]("pk_string_s_idx_btree", s)
+	PkStringTable.DeleteByS(s)
 }
 
-// --- PkIdentity ---
-
+//stdb:reducer
 func insertPkIdentity(_ server.ReducerContext, i types.Identity, data int32) {
-	runtime.Insert(PkIdentity{I: i, Data: data})
+	PkIdentityTable.Insert(PkIdentity{I: i, Data: data})
 }
 
+//stdb:reducer
 func updatePkIdentity(_ server.ReducerContext, i types.Identity, data int32) {
-	runtime.UpdateBy[PkIdentity]("pk_identity_i_idx_btree", PkIdentity{I: i, Data: data})
+	PkIdentityTable.UpdateByI(PkIdentity{I: i, Data: data})
 }
 
+//stdb:reducer
 func deletePkIdentity(_ server.ReducerContext, i types.Identity) {
-	runtime.DeleteBy[PkIdentity, types.Identity]("pk_identity_i_idx_btree", i)
+	PkIdentityTable.DeleteByI(i)
 }
 
-// --- PkConnectionId ---
-
+//stdb:reducer
 func insertPkConnectionId(_ server.ReducerContext, a types.ConnectionId, data int32) {
-	runtime.Insert(PkConnectionId{A: a, Data: data})
+	PkConnectionIdTable.Insert(PkConnectionId{A: a, Data: data})
 }
 
+//stdb:reducer
 func updatePkConnectionId(_ server.ReducerContext, a types.ConnectionId, data int32) {
-	runtime.UpdateBy[PkConnectionId]("pk_connection_id_a_idx_btree", PkConnectionId{A: a, Data: data})
+	PkConnectionIdTable.UpdateByA(PkConnectionId{A: a, Data: data})
 }
 
+//stdb:reducer
 func deletePkConnectionId(_ server.ReducerContext, a types.ConnectionId) {
-	runtime.DeleteBy[PkConnectionId, types.ConnectionId]("pk_connection_id_a_idx_btree", a)
+	PkConnectionIdTable.DeleteByA(a)
 }
 
-// --- PkUuid ---
-
+//stdb:reducer
 func insertPkUuid(_ server.ReducerContext, u types.Uuid, data int32) {
-	runtime.Insert(PkUuid{U: u, Data: data})
+	PkUuidTable.Insert(PkUuid{U: u, Data: data})
 }
 
+//stdb:reducer
 func updatePkUuid(_ server.ReducerContext, u types.Uuid, data int32) {
-	runtime.UpdateBy[PkUuid]("pk_uuid_u_idx_btree", PkUuid{U: u, Data: data})
+	PkUuidTable.UpdateByU(PkUuid{U: u, Data: data})
 }
 
+//stdb:reducer
 func deletePkUuid(_ server.ReducerContext, u types.Uuid) {
-	runtime.DeleteBy[PkUuid, types.Uuid]("pk_uuid_u_idx_btree", u)
+	PkUuidTable.DeleteByU(u)
 }
 
-// --- PkSimpleEnum (insert only) ---
-
+//stdb:reducer
 func insertPkSimpleEnum(_ server.ReducerContext, a SimpleEnum, data int32) {
-	runtime.Insert(PkSimpleEnum{A: a, Data: data})
+	PkSimpleEnumTable.Insert(PkSimpleEnum{A: a, Data: data})
 }
 
-// --- PkU32Two ---
-
+//stdb:reducer
 func insertPkU32Two(_ server.ReducerContext, n uint32, data int32) {
-	runtime.Insert(PkU32Two{N: n, Data: data})
+	PkU32TwoTable.Insert(PkU32Two{N: n, Data: data})
 }
 
+//stdb:reducer
 func updatePkU32Two(_ server.ReducerContext, n uint32, data int32) {
-	runtime.UpdateBy[PkU32Two]("pk_u_32_two_n_idx_btree", PkU32Two{N: n, Data: data})
+	PkU32TwoTable.UpdateByN(PkU32Two{N: n, Data: data})
 }
 
+//stdb:reducer
 func deletePkU32Two(_ server.ReducerContext, n uint32) {
-	runtime.DeleteBy[PkU32Two, uint32]("pk_u_32_two_n_idx_btree", n)
+	PkU32TwoTable.DeleteByN(n)
 }
 
 // ---------------------------------------------------------------------------
 // Special reducers
 // ---------------------------------------------------------------------------
 
-// updatePkSimpleEnum finds an existing row by pk, then updates it.
+//stdb:reducer
 func updatePkSimpleEnum(_ server.ReducerContext, a SimpleEnum, data int32) error {
-	_, found, err := runtime.FindBy[PkSimpleEnum, SimpleEnum]("pk_simple_enum_a_idx_btree", a)
+	_, found, err := PkSimpleEnumTable.FindByA(a)
 	if err != nil {
 		return err
 	}
 	if !found {
 		return fmt.Errorf("row not found")
 	}
-	runtime.UpdateBy[PkSimpleEnum]("pk_simple_enum_a_idx_btree", PkSimpleEnum{A: a, Data: data})
+	PkSimpleEnumTable.UpdateByA(PkSimpleEnum{A: a, Data: data})
 	return nil
 }
 
+//stdb:reducer
 func insertLargeTable(_ server.ReducerContext, a uint8, b uint16, c uint32, d uint64, e types.Uint128, f types.Uint256, g int8, h int16, i int32, j int64, k types.Int128, l types.Int256, m bool, n float32, o float64, p string, q SimpleEnum, r EnumWithPayload, s UnitStruct, t ByteStruct, u EveryPrimitiveStruct, v EveryVecStruct) {
-	runtime.Insert(LargeTable{A: a, B: b, C: c, D: d, E: e, F: f, G: g, H: h, I: i, J: j, K: k, L: l, M: m, N: n, O: o, P: p, Q: q, R: r, S: s, T: t, U: u, V: v})
+	LargeTableTable.Insert(LargeTable{A: a, B: b, C: c, D: d, E: e, F: f, G: g, H: h, I: i, J: j, K: k, L: l, M: m, N: n, O: o, P: p, Q: q, R: r, S: s, T: t, U: u, V: v})
 }
 
+//stdb:reducer
 func deleteLargeTable(_ server.ReducerContext, a uint8, b uint16, c uint32, d uint64, e types.Uint128, f types.Uint256, g int8, h int16, i int32, j int64, k types.Int128, l types.Int256, m bool, n float32, o float64, p string, q SimpleEnum, r EnumWithPayload, s UnitStruct, t ByteStruct, u EveryPrimitiveStruct, v EveryVecStruct) {
-	runtime.Delete(LargeTable{A: a, B: b, C: c, D: d, E: e, F: f, G: g, H: h, I: i, J: j, K: k, L: l, M: m, N: n, O: o, P: p, Q: q, R: r, S: s, T: t, U: u, V: v})
+	LargeTableTable.Delete(LargeTable{A: a, B: b, C: c, D: d, E: e, F: f, G: g, H: h, I: i, J: j, K: k, L: l, M: m, N: n, O: o, P: p, Q: q, R: r, S: s, T: t, U: u, V: v})
 }
 
-// insertTableHoldsTable inserts a row that holds instances of other table structs.
+//stdb:reducer
 func insertTableHoldsTable(_ server.ReducerContext, a OneU8, b VecU8) {
-	runtime.Insert(TableHoldsTable{A: a, B: b})
+	TableHoldsTableTable.Insert(TableHoldsTable{A: a, B: b})
 }
 
-// insertIntoBtreeU32 batch-inserts rows into the BTreeU32 table.
+//stdb:reducer
 func insertIntoBtreeU32(_ server.ReducerContext, rows []BTreeU32) {
 	for _, row := range rows {
-		runtime.Insert(row)
+		BtreeU32Table.Insert(row)
 	}
 }
 
-// deleteFromBtreeU32 batch-deletes rows from the BTreeU32 table.
+//stdb:reducer
 func deleteFromBtreeU32(_ server.ReducerContext, rows []BTreeU32) {
 	for _, row := range rows {
-		runtime.Delete(row)
+		BtreeU32Table.Delete(row)
 	}
 }
 
-// insertIntoPkBtreeU32 inserts into both pk_u32 and btree_u32 tables.
+//stdb:reducer
 func insertIntoPkBtreeU32(_ server.ReducerContext, pkU32 []PkU32, btU32 []BTreeU32) {
 	for _, row := range pkU32 {
-		runtime.Insert(row)
+		PkU32Table.Insert(row)
 	}
 	for _, row := range btU32 {
-		runtime.Insert(row)
+		BtreeU32Table.Insert(row)
 	}
 }
 
-// insertUniqueU32UpdatePkU32 inserts a UniqueU32 row and updates a PkU32 row.
+//stdb:reducer
 func insertUniqueU32UpdatePkU32(_ server.ReducerContext, n uint32, dUnique int32, dPk int32) {
-	runtime.Insert(UniqueU32{N: n, Data: dUnique})
-	runtime.UpdateBy[PkU32]("pk_u_32_n_idx_btree", PkU32{N: n, Data: dPk})
+	UniqueU32Table.Insert(UniqueU32{N: n, Data: dUnique})
+	PkU32Table.UpdateByN(PkU32{N: n, Data: dPk})
 }
 
-// deletePkU32InsertPkU32Two inserts a PkU32Two row and deletes a PkU32 row.
+//stdb:reducer
 func deletePkU32InsertPkU32Two(_ server.ReducerContext, n uint32, data int32) {
-	runtime.Insert(PkU32Two{N: n, Data: data})
-	runtime.Delete(PkU32{N: n, Data: data})
+	PkU32TwoTable.Insert(PkU32Two{N: n, Data: data})
+	PkU32Table.Delete(PkU32{N: n, Data: data})
 }
 
 // ---------------------------------------------------------------------------
 // Caller identity/connection reducers -- use ctx.Sender() and ctx.ConnectionId().
 // ---------------------------------------------------------------------------
 
+//stdb:reducer
 func insertCallerOneIdentity(ctx server.ReducerContext) {
-	runtime.Insert(OneIdentity{I: ctx.Sender()})
+	OneIdentityTable.Insert(OneIdentity{I: ctx.Sender()})
 }
 
+//stdb:reducer
 func insertCallerVecIdentity(ctx server.ReducerContext) {
-	runtime.Insert(VecIdentity{I: []types.Identity{ctx.Sender()}})
+	VecIdentityTable.Insert(VecIdentity{I: []types.Identity{ctx.Sender()}})
 }
 
+//stdb:reducer
 func insertCallerUniqueIdentity(ctx server.ReducerContext, data int32) {
-	runtime.Insert(UniqueIdentity{I: ctx.Sender(), Data: data})
+	UniqueIdentityTable.Insert(UniqueIdentity{I: ctx.Sender(), Data: data})
 }
 
+//stdb:reducer
 func insertCallerPkIdentity(ctx server.ReducerContext, data int32) {
-	runtime.Insert(PkIdentity{I: ctx.Sender(), Data: data})
+	PkIdentityTable.Insert(PkIdentity{I: ctx.Sender(), Data: data})
 }
 
+//stdb:reducer
 func insertCallerOneConnectionId(ctx server.ReducerContext) {
-	runtime.Insert(OneConnectionId{A: ctx.ConnectionId()})
+	OneConnectionIdTable.Insert(OneConnectionId{A: ctx.ConnectionId()})
 }
 
+//stdb:reducer
 func insertCallerVecConnectionId(ctx server.ReducerContext) {
-	runtime.Insert(VecConnectionId{A: []types.ConnectionId{ctx.ConnectionId()}})
+	VecConnectionIdTable.Insert(VecConnectionId{A: []types.ConnectionId{ctx.ConnectionId()}})
 }
 
+//stdb:reducer
 func insertCallerUniqueConnectionId(ctx server.ReducerContext, data int32) {
-	runtime.Insert(UniqueConnectionId{A: ctx.ConnectionId(), Data: data})
+	UniqueConnectionIdTable.Insert(UniqueConnectionId{A: ctx.ConnectionId(), Data: data})
 }
 
+//stdb:reducer
 func insertCallerPkConnectionId(ctx server.ReducerContext, data int32) {
-	runtime.Insert(PkConnectionId{A: ctx.ConnectionId(), Data: data})
+	PkConnectionIdTable.Insert(PkConnectionId{A: ctx.ConnectionId(), Data: data})
 }
 
 // ---------------------------------------------------------------------------
 // Timestamp and UUID reducers
 // ---------------------------------------------------------------------------
 
+//stdb:reducer
 func insertCallTimestamp(ctx server.ReducerContext) {
-	runtime.Insert(OneTimestamp{T: ctx.Timestamp()})
+	OneTimestampTable.Insert(OneTimestamp{T: ctx.Timestamp()})
 }
 
-// insertCallUuidV4 generates a v4 UUID from the reducer context timestamp
-// and inserts it into the one_uuid table.
-// NOTE: The Go SDK ReducerContext does not yet expose NewUuidV4(). As a
-// workaround we derive a deterministic UUID from the timestamp bytes.
+//stdb:reducer
 func insertCallUuidV4(ctx server.ReducerContext) {
 	ts := ctx.Timestamp()
 	var b [16]byte
-	// Use timestamp microseconds to seed the UUID bytes.
 	usec := ts.Microseconds()
 	b[0] = byte(usec)
 	b[1] = byte(usec >> 8)
@@ -934,21 +1037,15 @@ func insertCallUuidV4(ctx server.ReducerContext) {
 	b[5] = byte(usec >> 40)
 	b[6] = byte(usec >> 48)
 	b[7] = byte(usec >> 56)
-	// Set version 4 bits
 	b[6] = (b[6] & 0x0f) | 0x40
-	// Set variant bits
 	b[8] = (b[8] & 0x3f) | 0x80
-	runtime.Insert(OneUuid{U: types.NewUuid(b)})
+	OneUuidTable.Insert(OneUuid{U: types.NewUuid(b)})
 }
 
-// insertCallUuidV7 generates a v7 UUID from the reducer context timestamp
-// and inserts it into the one_uuid table.
-// NOTE: The Go SDK ReducerContext does not yet expose NewUuidV7(). As a
-// workaround we derive a deterministic UUID from the timestamp bytes.
+//stdb:reducer
 func insertCallUuidV7(ctx server.ReducerContext) {
 	ts := ctx.Timestamp()
 	var b [16]byte
-	// Use timestamp microseconds as the time component.
 	usec := ts.Microseconds()
 	msec := usec / 1000
 	b[0] = byte(msec >> 40)
@@ -957,11 +1054,9 @@ func insertCallUuidV7(ctx server.ReducerContext) {
 	b[3] = byte(msec >> 16)
 	b[4] = byte(msec >> 8)
 	b[5] = byte(msec)
-	// Set version 7 bits
 	b[6] = (b[6] & 0x0f) | 0x70
-	// Set variant bits
 	b[8] = (b[8] & 0x3f) | 0x80
-	runtime.Insert(OneUuid{U: types.NewUuid(b)})
+	OneUuidTable.Insert(OneUuid{U: types.NewUuid(b)})
 }
 
 // ---------------------------------------------------------------------------
@@ -969,8 +1064,9 @@ func insertCallUuidV7(ctx server.ReducerContext) {
 // string and inserts the result into VecString.
 // ---------------------------------------------------------------------------
 
+//stdb:reducer
 func insertPrimitivesAsStrings(_ server.ReducerContext, s EveryPrimitiveStruct) {
-	runtime.Insert(VecString{S: []string{
+	VecStringTable.Insert(VecString{S: []string{
 		fmt.Sprintf("%d", s.A),
 		fmt.Sprintf("%d", s.B),
 		fmt.Sprintf("%d", s.C),
@@ -999,25 +1095,29 @@ func insertPrimitivesAsStrings(_ server.ReducerContext, s EveryPrimitiveStruct) 
 // Misc reducers
 // ---------------------------------------------------------------------------
 
+//stdb:reducer
 func noOpSucceeds(_ server.ReducerContext) {}
 
+//stdb:reducer
 func sendScheduledMessage(_ server.ReducerContext, arg ScheduledTable) {
-	// No-op: the test just checks the reducer exists.
 	_ = arg.Text
 	_ = arg.ScheduledAt
 	_ = arg.ScheduledId
 }
 
+//stdb:reducer
 func insertUser(_ server.ReducerContext, name string, identity types.Identity) {
-	runtime.Insert(Users{Identity: identity, Name: name})
+	UsersTable.Insert(Users{Identity: identity, Name: name})
 }
 
+//stdb:reducer
 func insertIntoIndexedSimpleEnum(_ server.ReducerContext, n SimpleEnum) {
-	runtime.Insert(IndexedSimpleEnum{N: n})
+	IndexedSimpleEnumTable.Insert(IndexedSimpleEnum{N: n})
 }
 
+//stdb:reducer
 func updateIndexedSimpleEnum(_ server.ReducerContext, a SimpleEnum, b SimpleEnum) error {
-	iter, err := runtime.Scan[IndexedSimpleEnum]()
+	iter, err := IndexedSimpleEnumTable.Scan()
 	if err != nil {
 		return err
 	}
@@ -1029,21 +1129,18 @@ func updateIndexedSimpleEnum(_ server.ReducerContext, a SimpleEnum, b SimpleEnum
 			break
 		}
 		if row.N == a {
-			runtime.Delete(row)
+			IndexedSimpleEnumTable.Delete(row)
 			found = true
 			break
 		}
 	}
 	if found {
-		runtime.Insert(IndexedSimpleEnum{N: b})
+		IndexedSimpleEnumTable.Insert(IndexedSimpleEnum{N: b})
 	}
 	return nil
 }
 
-// sortedUuidsInsert generates 1000 v7 UUIDs from the context timestamp and
-// inserts them into pk_uuid, then verifies they are sorted.
-// NOTE: The Go SDK ReducerContext does not yet expose NewUuidV7(). As a
-// workaround we derive deterministic UUIDs from the timestamp + counter.
+//stdb:reducer
 func sortedUuidsInsert(ctx server.ReducerContext) error {
 	ts := ctx.Timestamp()
 	usec := ts.Microseconds()
@@ -1051,26 +1148,23 @@ func sortedUuidsInsert(ctx server.ReducerContext) error {
 
 	for i := 0; i < 1000; i++ {
 		var b [16]byte
-		// Encode milliseconds in big-endian (bytes 0-5)
 		b[0] = byte(msec >> 40)
 		b[1] = byte(msec >> 32)
 		b[2] = byte(msec >> 24)
 		b[3] = byte(msec >> 16)
 		b[4] = byte(msec >> 8)
 		b[5] = byte(msec)
-		// Use counter in sub-millisecond portion for ordering
 		counter := uint16(i)
-		b[6] = byte(counter>>8) | 0x70 // version 7
+		b[6] = byte(counter>>8) | 0x70
 		b[7] = byte(counter)
-		b[8] = 0x80 // variant
+		b[8] = 0x80
 		b[9] = byte(i)
 
 		uuid := types.NewUuid(b)
-		runtime.Insert(PkUuid{U: uuid, Data: 0})
+		PkUuidTable.Insert(PkUuid{U: uuid, Data: 0})
 	}
 
-	// Verify UUIDs are sorted.
-	iter, err := runtime.Scan[PkUuid]()
+	iter, err := PkUuidTable.Scan()
 	if err != nil {
 		return err
 	}

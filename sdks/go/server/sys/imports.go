@@ -64,6 +64,23 @@ func rawIdentity(outPtr *byte)
 //go:wasmimport spacetime_10.1 bytes_source_remaining_length
 func rawBytesSourceRemainingLength(source uint32, out *uint32) int32
 
+// spacetime_10.3
+
+//go:wasmimport spacetime_10.3 procedure_start_mut_tx
+func rawProcedureStartMutTx(out *int64) uint32
+
+//go:wasmimport spacetime_10.3 procedure_commit_mut_tx
+func rawProcedureCommitMutTx() uint32
+
+//go:wasmimport spacetime_10.3 procedure_abort_mut_tx
+func rawProcedureAbortMutTx() uint32
+
+//go:wasmimport spacetime_10.3 procedure_sleep_until
+func rawProcedureSleepUntil(wakeAtMicrosSinceUnixEpoch int64) int64
+
+//go:wasmimport spacetime_10.3 procedure_http_request
+func rawProcedureHttpRequest(requestPtr *byte, requestLen uint32, bodyPtr *byte, bodyLen uint32, out *uint32) uint32
+
 // spacetime_10.4
 
 //go:wasmimport spacetime_10.4 datastore_index_scan_point_bsatn

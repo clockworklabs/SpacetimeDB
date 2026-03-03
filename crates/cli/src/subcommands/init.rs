@@ -62,6 +62,7 @@ pub enum ServerLanguage {
     Csharp,
     TypeScript,
     Cpp,
+    Go,
 }
 
 impl ServerLanguage {
@@ -71,6 +72,7 @@ impl ServerLanguage {
             ServerLanguage::Csharp => "csharp",
             ServerLanguage::TypeScript => "typescript",
             ServerLanguage::Cpp => "cpp",
+            ServerLanguage::Go => "go",
         }
     }
 
@@ -80,6 +82,7 @@ impl ServerLanguage {
             "csharp" | "c#" => Ok(Some(ServerLanguage::Csharp)),
             "typescript" => Ok(Some(ServerLanguage::TypeScript)),
             "cpp" | "c++" | "cxx" => Ok(Some(ServerLanguage::Cpp)),
+            "go" | "golang" => Ok(Some(ServerLanguage::Go)),
             _ => Err(anyhow!("Unknown server language: {}", s)),
         }
     }
@@ -90,6 +93,7 @@ pub enum ClientLanguage {
     Rust,
     Csharp,
     TypeScript,
+    Go,
 }
 
 impl ClientLanguage {
@@ -98,6 +102,7 @@ impl ClientLanguage {
             ClientLanguage::Rust => "rust",
             ClientLanguage::Csharp => "csharp",
             ClientLanguage::TypeScript => "typescript",
+            ClientLanguage::Go => "go",
         }
     }
 
@@ -106,6 +111,7 @@ impl ClientLanguage {
             "rust" => Ok(Some(ClientLanguage::Rust)),
             "csharp" | "c#" => Ok(Some(ClientLanguage::Csharp)),
             "typescript" => Ok(Some(ClientLanguage::TypeScript)),
+            "go" | "golang" => Ok(Some(ClientLanguage::Go)),
             _ => Err(anyhow!("Unknown client language: {}", s)),
         }
     }
@@ -172,7 +178,7 @@ pub fn cli() -> clap::Command {
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(Arg::new("lang").long("lang").value_name("LANG").help(
-            "Server language: rust, csharp, typescript, cpp (it can only be used when --template is not specified)",
+            "Server language: rust, csharp, typescript, cpp, go (it can only be used when --template is not specified)",
         ))
         .arg(
             Arg::new("template")
@@ -851,7 +857,7 @@ async fn get_template_config_interactive(
         }
     } else if client_selection == none_index {
         // Ask for server language only
-        let server_lang_choices = vec!["Rust", "C#", "TypeScript"];
+        let server_lang_choices = vec!["Rust", "C#", "TypeScript", "Go"];
         let server_selection = Select::with_theme(&theme)
             .with_prompt("Select server language")
             .items(&server_lang_choices)
@@ -862,6 +868,7 @@ async fn get_template_config_interactive(
             0 => Some(ServerLanguage::Rust),
             1 => Some(ServerLanguage::Csharp),
             2 => Some(ServerLanguage::TypeScript),
+            3 => Some(ServerLanguage::Go),
             _ => unreachable!("Invalid server language selection"),
         };
 
@@ -1050,6 +1057,23 @@ fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> 
     let updated = doc.to_string();
     if updated != original {
         fs::write(cargo_path, updated)?;
+    }
+    Ok(())
+}
+
+fn update_go_mod(dir: &Path, project_name: &str) -> anyhow::Result<()> {
+    let go_mod_path = dir.join("go.mod");
+    if go_mod_path.exists() {
+        let content = fs::read_to_string(&go_mod_path)?;
+        let updated = content.replace(
+            "example.com/my-spacetimedb-module",
+            &format!("example.com/{}", project_name),
+        );
+        let updated = updated.replace(
+            "example.com/my-spacetimedb-client",
+            &format!("example.com/{}", project_name),
+        );
+        fs::write(&go_mod_path, updated)?;
     }
     Ok(())
 }
@@ -1327,6 +1351,9 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path, is_server_only: bo
             Some(ClientLanguage::Csharp) => {
                 update_csproj_client_to_nuget(project_path)?;
             }
+            Some(ClientLanguage::Go) => {
+                update_go_mod(project_path, &config.project_name)?;
+            }
             None => {}
         }
     }
@@ -1356,6 +1383,9 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path, is_server_only: bo
         }
         Some(ServerLanguage::Cpp) => {
             // No name update needed for C++ at the moment
+        }
+        Some(ServerLanguage::Go) => {
+            update_go_mod(&server_dir, &config.project_name)?;
         }
         None => {}
     }
@@ -1419,6 +1449,11 @@ fn init_empty(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()
             let server_dir = project_path.join("spacetimedb");
             init_empty_cpp_server(&server_dir, &config.project_name)?;
         }
+        Some(ServerLanguage::Go) => {
+            println!("Setting up Go server...");
+            let server_dir = project_path.join("spacetimedb");
+            init_empty_go_server(&server_dir, &config.project_name)?;
+        }
         None => {}
     }
 
@@ -1443,6 +1478,12 @@ fn init_empty_typescript_server(server_dir: &Path, project_name: &str) -> anyhow
 
 fn init_empty_cpp_server(server_dir: &Path, _project_name: &str) -> anyhow::Result<()> {
     init_cpp_project(server_dir)
+}
+
+fn init_empty_go_server(server_dir: &Path, project_name: &str) -> anyhow::Result<()> {
+    init_go_project(server_dir)?;
+    update_go_mod(server_dir, project_name)?;
+    Ok(())
 }
 
 fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Result<()> {
@@ -1510,6 +1551,24 @@ fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Re
                 println!("  spacetime generate --lang rust --out-dir src/module_bindings --module-path spacetimedb");
             }
             println!("  cargo run");
+        }
+        (TemplateType::Builtin, Some(ServerLanguage::Go), Some(ClientLanguage::Go)) => {
+            println!(
+                "  spacetime publish --module-path spacetimedb {}{}",
+                if config.use_local { "--server local " } else { "" },
+                config.project_name
+            );
+            println!("  go run .");
+        }
+        (TemplateType::Empty, _, Some(ClientLanguage::Go)) => {
+            if config.server_lang.is_some() {
+                println!(
+                    "  spacetime publish --module-path spacetimedb {}{}",
+                    if config.use_local { "--server local " } else { "" },
+                    config.project_name
+                );
+            }
+            println!("  go run .");
         }
         (_, _, _) => {
             println!("  # Follow the template's README for setup instructions");
@@ -1607,6 +1666,23 @@ fn check_for_git() -> bool {
             println!("{}", format!("This OS may be unsupported: {unsupported_os}").yellow());
         }
     }
+    false
+}
+
+fn check_for_go() -> bool {
+    let exe_name = if std::env::consts::OS == "windows" {
+        "go.exe"
+    } else {
+        "go"
+    };
+    if find_executable(exe_name).is_some() {
+        return true;
+    }
+    println!(
+        "{}",
+        "Warning: You have created a Go project, but Go is not installed. Visit https://go.dev/dl/ for installation instructions.\n"
+            .yellow()
+    );
     false
 }
 
@@ -1742,6 +1818,42 @@ pub fn init_cpp_project(project_path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub fn init_go_project(project_path: &Path) -> anyhow::Result<()> {
+    let export_files = vec![
+        (
+            include_str!("../../../../templates/basic-go/spacetimedb/go.mod"),
+            "go.mod",
+        ),
+        (
+            include_str!("../../../../templates/basic-go/spacetimedb/main.go"),
+            "main.go",
+        ),
+        (
+            include_str!("../../../../templates/basic-go/spacetimedb/types.go"),
+            "types.go",
+        ),
+        (
+            include_str!("../../../../templates/basic-go/spacetimedb/reducers.go"),
+            "reducers.go",
+        ),
+        (
+            include_str!("../../../../templates/basic-go/spacetimedb/stdb_generated.go"),
+            "stdb_generated.go",
+        ),
+    ];
+
+    for data_file in export_files {
+        let path = project_path.join(data_file.1);
+        create_directory(path.parent().unwrap())?;
+        std::fs::write(path, data_file.0)?;
+    }
+
+    check_for_go();
+    check_for_git();
+
+    Ok(())
+}
+
 pub async fn exec_init_rust(args: &ArgMatches) -> anyhow::Result<()> {
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
     init_rust_project(project_path)?;
@@ -1757,6 +1869,18 @@ pub async fn exec_init_rust(args: &ArgMatches) -> anyhow::Result<()> {
 pub async fn exec_init_csharp(args: &ArgMatches) -> anyhow::Result<()> {
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
     init_csharp_project(project_path)?;
+
+    println!(
+        "{}",
+        format!("Project successfully created at path: {}", project_path.display()).green()
+    );
+
+    Ok(())
+}
+
+pub async fn exec_init_go(args: &ArgMatches) -> anyhow::Result<()> {
+    let project_path = args.get_one::<PathBuf>("project-path").unwrap();
+    init_go_project(project_path)?;
 
     println!(
         "{}",

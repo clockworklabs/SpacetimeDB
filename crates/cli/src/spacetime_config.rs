@@ -851,6 +851,7 @@ impl SpacetimeConfig {
             "typescript" => package_manager.map(|pm| pm.run_dev_command()).unwrap_or("npm run dev"),
             "rust" => "cargo run",
             "csharp" | "c#" => "dotnet run",
+            "go" | "golang" => "go run .",
             _ => "npm run dev", // default fallback
         };
         Self {
@@ -1154,6 +1155,11 @@ pub fn detect_client_command(project_dir: &Path) -> Option<(String, Option<Packa
                 return Some(("dotnet run".to_string(), None));
             }
         }
+    }
+
+    // Go: go.mod file
+    if project_dir.join("go.mod").exists() {
+        return Some(("go run .".to_string(), None));
     }
 
     None

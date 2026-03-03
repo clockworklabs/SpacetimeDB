@@ -11,6 +11,8 @@ type ModuleDefBuilder interface {
 	AddTypeDef(def TypeDef) ModuleDefBuilder
 	AddTable(def TableDef) ModuleDefBuilder
 	AddReducer(def ReducerDef) ModuleDefBuilder
+	AddProcedure(def ProcedureDef) ModuleDefBuilder
+	AddView(def ViewDef) ModuleDefBuilder
 	AddSchedule(def ScheduleDef) ModuleDefBuilder
 	AddLifecycleReducer(def LifecycleReducerDef) ModuleDefBuilder
 	AddRowLevelSecurity(sql string) ModuleDefBuilder

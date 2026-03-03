@@ -24,27 +24,29 @@ package main
 import (
 	"fmt"
 
-	"github.com/clockworklabs/SpacetimeDB/sdks/go/server"
 	"github.com/clockworklabs/SpacetimeDB/sdks/go/server/log"
-	"github.com/clockworklabs/SpacetimeDB/sdks/go/server/runtime"
+	"github.com/clockworklabs/SpacetimeDB/sdks/go/server/reducer"
 )
 
 // ---------- schemas ----------
 
 // u32_u64_str schema: (id u32, age u64, name string)
 
+//stdb:table name=unique_0_u32_u64_str access=public
 type Unique0U32U64Str struct {
 	Id   uint32 `stdb:"primarykey"`
 	Age  uint64
 	Name string
 }
 
+//stdb:table name=no_index_u32_u64_str access=public
 type NoIndexU32U64Str struct {
 	Id   uint32
 	Age  uint64
 	Name string
 }
 
+//stdb:table name=btree_each_column_u32_u64_str access=public
 type BtreeEachColumnU32U64Str struct {
 	Id   uint32 `stdb:"index=btree"`
 	Age  uint64 `stdb:"index=btree"`
@@ -53,18 +55,21 @@ type BtreeEachColumnU32U64Str struct {
 
 // u32_u64_u64 schema: (id u32, x u64, y u64)
 
+//stdb:table name=unique_0_u32_u64_u64 access=public
 type Unique0U32U64U64 struct {
 	Id uint32 `stdb:"primarykey"`
 	X  uint64
 	Y  uint64
 }
 
+//stdb:table name=no_index_u32_u64_u64 access=public
 type NoIndexU32U64U64 struct {
 	Id uint32
 	X  uint64
 	Y  uint64
 }
 
+//stdb:table name=btree_each_column_u32_u64_u64 access=public
 type BtreeEachColumnU32U64U64 struct {
 	Id uint32 `stdb:"index=btree"`
 	X  uint64 `stdb:"index=btree"`
@@ -75,167 +80,96 @@ type BtreeEachColumnU32U64U64 struct {
 
 var benchLogger log.Logger
 
-// ---------- init ----------
-
 func init() {
 	benchLogger = log.NewLogger("benchmarks")
-
-	// Table registrations (all public)
-	server.RegisterTable[Unique0U32U64Str]("unique_0_u32_u64_str", server.TableAccessPublic)
-	server.RegisterTable[NoIndexU32U64Str]("no_index_u32_u64_str", server.TableAccessPublic)
-	server.RegisterTable[BtreeEachColumnU32U64Str]("btree_each_column_u32_u64_str", server.TableAccessPublic)
-	server.RegisterTable[Unique0U32U64U64]("unique_0_u32_u64_u64", server.TableAccessPublic)
-	server.RegisterTable[NoIndexU32U64U64]("no_index_u32_u64_u64", server.TableAccessPublic)
-	server.RegisterTable[BtreeEachColumnU32U64U64]("btree_each_column_u32_u64_u64", server.TableAccessPublic)
-
-	// ---------- empty ----------
-	server.RegisterReducer("empty", empty)
-
-	// ---------- insert ----------
-	server.RegisterReducer("insert_unique_0_u32_u64_str", insertUnique0U32U64Str)
-	server.RegisterReducer("insert_no_index_u32_u64_str", insertNoIndexU32U64Str)
-	server.RegisterReducer("insert_btree_each_column_u32_u64_str", insertBtreeEachColumnU32U64Str)
-	server.RegisterReducer("insert_unique_0_u32_u64_u64", insertUnique0U32U64U64)
-	server.RegisterReducer("insert_no_index_u32_u64_u64", insertNoIndexU32U64U64)
-	server.RegisterReducer("insert_btree_each_column_u32_u64_u64", insertBtreeEachColumnU32U64U64)
-
-	// ---------- insert bulk ----------
-	server.RegisterReducer("insert_bulk_unique_0_u32_u64_str", insertBulkUnique0U32U64Str)
-	server.RegisterReducer("insert_bulk_no_index_u32_u64_str", insertBulkNoIndexU32U64Str)
-	server.RegisterReducer("insert_bulk_btree_each_column_u32_u64_str", insertBulkBtreeEachColumnU32U64Str)
-	server.RegisterReducer("insert_bulk_unique_0_u32_u64_u64", insertBulkUnique0U32U64U64)
-	server.RegisterReducer("insert_bulk_no_index_u32_u64_u64", insertBulkNoIndexU32U64U64)
-	server.RegisterReducer("insert_bulk_btree_each_column_u32_u64_u64", insertBulkBtreeEachColumnU32U64U64)
-
-	// ---------- update ----------
-	server.RegisterReducer("update_bulk_unique_0_u32_u64_u64", updateBulkUnique0U32U64U64)
-	server.RegisterReducer("update_bulk_unique_0_u32_u64_str", updateBulkUnique0U32U64Str)
-
-	// ---------- iterate ----------
-	server.RegisterReducer("iterate_unique_0_u32_u64_str", iterateUnique0U32U64Str)
-	server.RegisterReducer("iterate_unique_0_u32_u64_u64", iterateUnique0U32U64U64)
-
-	// ---------- filter by id ----------
-	server.RegisterReducer("filter_unique_0_u32_u64_str_by_id", filterUnique0U32U64StrById)
-	server.RegisterReducer("filter_no_index_u32_u64_str_by_id", filterNoIndexU32U64StrById)
-	server.RegisterReducer("filter_btree_each_column_u32_u64_str_by_id", filterBtreeEachColumnU32U64StrById)
-	server.RegisterReducer("filter_unique_0_u32_u64_u64_by_id", filterUnique0U32U64U64ById)
-	server.RegisterReducer("filter_no_index_u32_u64_u64_by_id", filterNoIndexU32U64U64ById)
-	server.RegisterReducer("filter_btree_each_column_u32_u64_u64_by_id", filterBtreeEachColumnU32U64U64ById)
-
-	// ---------- filter by name ----------
-	server.RegisterReducer("filter_unique_0_u32_u64_str_by_name", filterUnique0U32U64StrByName)
-	server.RegisterReducer("filter_no_index_u32_u64_str_by_name", filterNoIndexU32U64StrByName)
-	server.RegisterReducer("filter_btree_each_column_u32_u64_str_by_name", filterBtreeEachColumnU32U64StrByName)
-
-	// ---------- filter by x ----------
-	server.RegisterReducer("filter_unique_0_u32_u64_u64_by_x", filterUnique0U32U64U64ByX)
-	server.RegisterReducer("filter_no_index_u32_u64_u64_by_x", filterNoIndexU32U64U64ByX)
-	server.RegisterReducer("filter_btree_each_column_u32_u64_u64_by_x", filterBtreeEachColumnU32U64U64ByX)
-
-	// ---------- filter by y ----------
-	server.RegisterReducer("filter_unique_0_u32_u64_u64_by_y", filterUnique0U32U64U64ByY)
-	server.RegisterReducer("filter_no_index_u32_u64_u64_by_y", filterNoIndexU32U64U64ByY)
-	server.RegisterReducer("filter_btree_each_column_u32_u64_u64_by_y", filterBtreeEachColumnU32U64U64ByY)
-
-	// ---------- delete ----------
-	server.RegisterReducer("delete_unique_0_u32_u64_str_by_id", deleteUnique0U32U64StrById)
-	server.RegisterReducer("delete_unique_0_u32_u64_u64_by_id", deleteUnique0U32U64U64ById)
-
-	// ---------- clear table ----------
-	server.RegisterReducer("clear_table_unique_0_u32_u64_str", clearTableUnique0U32U64Str)
-	server.RegisterReducer("clear_table_no_index_u32_u64_str", clearTableNoIndexU32U64Str)
-	server.RegisterReducer("clear_table_btree_each_column_u32_u64_str", clearTableBtreeEachColumnU32U64Str)
-	server.RegisterReducer("clear_table_unique_0_u32_u64_u64", clearTableUnique0U32U64U64)
-	server.RegisterReducer("clear_table_no_index_u32_u64_u64", clearTableNoIndexU32U64U64)
-	server.RegisterReducer("clear_table_btree_each_column_u32_u64_u64", clearTableBtreeEachColumnU32U64U64)
-
-	// ---------- count ----------
-	server.RegisterReducer("count_unique_0_u32_u64_str", countUnique0U32U64Str)
-	server.RegisterReducer("count_no_index_u32_u64_str", countNoIndexU32U64Str)
-	server.RegisterReducer("count_btree_each_column_u32_u64_str", countBtreeEachColumnU32U64Str)
-	server.RegisterReducer("count_unique_0_u32_u64_u64", countUnique0U32U64U64)
-	server.RegisterReducer("count_no_index_u32_u64_u64", countNoIndexU32U64U64)
-	server.RegisterReducer("count_btree_each_column_u32_u64_u64", countBtreeEachColumnU32U64U64)
-
-	// ---------- module-specific ----------
-	server.RegisterReducer("fn_with_1_args", fnWith1Args)
-	server.RegisterReducer("fn_with_32_args", fnWith32Args)
-	server.RegisterReducer("print_many_things", printManyThings)
 }
 
 // ---------- empty ----------
 
-func empty(_ server.ReducerContext) {}
+//stdb:reducer name=empty
+func empty(_ reducer.ReducerContext) {}
 
 // ---------- insert ----------
 
-func insertUnique0U32U64Str(_ server.ReducerContext, id uint32, age uint64, name string) {
-	runtime.Insert(Unique0U32U64Str{Id: id, Age: age, Name: name})
+//stdb:reducer name=insert_unique_0_u32_u64_str
+func insertUnique0U32U64Str(_ reducer.ReducerContext, id uint32, age uint64, name string) {
+	Unique0U32U64StrTable.Insert(Unique0U32U64Str{Id: id, Age: age, Name: name})
 }
 
-func insertNoIndexU32U64Str(_ server.ReducerContext, id uint32, age uint64, name string) {
-	runtime.Insert(NoIndexU32U64Str{Id: id, Age: age, Name: name})
+//stdb:reducer name=insert_no_index_u32_u64_str
+func insertNoIndexU32U64Str(_ reducer.ReducerContext, id uint32, age uint64, name string) {
+	NoIndexU32U64StrTable.Insert(NoIndexU32U64Str{Id: id, Age: age, Name: name})
 }
 
-func insertBtreeEachColumnU32U64Str(_ server.ReducerContext, id uint32, age uint64, name string) {
-	runtime.Insert(BtreeEachColumnU32U64Str{Id: id, Age: age, Name: name})
+//stdb:reducer name=insert_btree_each_column_u32_u64_str
+func insertBtreeEachColumnU32U64Str(_ reducer.ReducerContext, id uint32, age uint64, name string) {
+	BtreeEachColumnU32U64StrTable.Insert(BtreeEachColumnU32U64Str{Id: id, Age: age, Name: name})
 }
 
-func insertUnique0U32U64U64(_ server.ReducerContext, id uint32, x uint64, y uint64) {
-	runtime.Insert(Unique0U32U64U64{Id: id, X: x, Y: y})
+//stdb:reducer name=insert_unique_0_u32_u64_u64
+func insertUnique0U32U64U64(_ reducer.ReducerContext, id uint32, x uint64, y uint64) {
+	Unique0U32U64U64Table.Insert(Unique0U32U64U64{Id: id, X: x, Y: y})
 }
 
-func insertNoIndexU32U64U64(_ server.ReducerContext, id uint32, x uint64, y uint64) {
-	runtime.Insert(NoIndexU32U64U64{Id: id, X: x, Y: y})
+//stdb:reducer name=insert_no_index_u32_u64_u64
+func insertNoIndexU32U64U64(_ reducer.ReducerContext, id uint32, x uint64, y uint64) {
+	NoIndexU32U64U64Table.Insert(NoIndexU32U64U64{Id: id, X: x, Y: y})
 }
 
-func insertBtreeEachColumnU32U64U64(_ server.ReducerContext, id uint32, x uint64, y uint64) {
-	runtime.Insert(BtreeEachColumnU32U64U64{Id: id, X: x, Y: y})
+//stdb:reducer name=insert_btree_each_column_u32_u64_u64
+func insertBtreeEachColumnU32U64U64(_ reducer.ReducerContext, id uint32, x uint64, y uint64) {
+	BtreeEachColumnU32U64U64Table.Insert(BtreeEachColumnU32U64U64{Id: id, X: x, Y: y})
 }
 
 // ---------- insert bulk ----------
 
-func insertBulkUnique0U32U64Str(_ server.ReducerContext, people []Unique0U32U64Str) {
+//stdb:reducer name=insert_bulk_unique_0_u32_u64_str
+func insertBulkUnique0U32U64Str(_ reducer.ReducerContext, people []Unique0U32U64Str) {
 	for _, row := range people {
-		runtime.Insert(row)
+		Unique0U32U64StrTable.Insert(row)
 	}
 }
 
-func insertBulkNoIndexU32U64Str(_ server.ReducerContext, people []NoIndexU32U64Str) {
+//stdb:reducer name=insert_bulk_no_index_u32_u64_str
+func insertBulkNoIndexU32U64Str(_ reducer.ReducerContext, people []NoIndexU32U64Str) {
 	for _, row := range people {
-		runtime.Insert(row)
+		NoIndexU32U64StrTable.Insert(row)
 	}
 }
 
-func insertBulkBtreeEachColumnU32U64Str(_ server.ReducerContext, people []BtreeEachColumnU32U64Str) {
+//stdb:reducer name=insert_bulk_btree_each_column_u32_u64_str
+func insertBulkBtreeEachColumnU32U64Str(_ reducer.ReducerContext, people []BtreeEachColumnU32U64Str) {
 	for _, row := range people {
-		runtime.Insert(row)
+		BtreeEachColumnU32U64StrTable.Insert(row)
 	}
 }
 
-func insertBulkUnique0U32U64U64(_ server.ReducerContext, locs []Unique0U32U64U64) {
+//stdb:reducer name=insert_bulk_unique_0_u32_u64_u64
+func insertBulkUnique0U32U64U64(_ reducer.ReducerContext, locs []Unique0U32U64U64) {
 	for _, row := range locs {
-		runtime.Insert(row)
+		Unique0U32U64U64Table.Insert(row)
 	}
 }
 
-func insertBulkNoIndexU32U64U64(_ server.ReducerContext, locs []NoIndexU32U64U64) {
+//stdb:reducer name=insert_bulk_no_index_u32_u64_u64
+func insertBulkNoIndexU32U64U64(_ reducer.ReducerContext, locs []NoIndexU32U64U64) {
 	for _, row := range locs {
-		runtime.Insert(row)
+		NoIndexU32U64U64Table.Insert(row)
 	}
 }
 
-func insertBulkBtreeEachColumnU32U64U64(_ server.ReducerContext, locs []BtreeEachColumnU32U64U64) {
+//stdb:reducer name=insert_bulk_btree_each_column_u32_u64_u64
+func insertBulkBtreeEachColumnU32U64U64(_ reducer.ReducerContext, locs []BtreeEachColumnU32U64U64) {
 	for _, row := range locs {
-		runtime.Insert(row)
+		BtreeEachColumnU32U64U64Table.Insert(row)
 	}
 }
 
 // ---------- update ----------
 
-func updateBulkUnique0U32U64U64(_ server.ReducerContext, rowCount uint32) {
-	iter, err := runtime.Scan[Unique0U32U64U64]()
+//stdb:reducer name=update_bulk_unique_0_u32_u64_u64
+func updateBulkUnique0U32U64U64(_ reducer.ReducerContext, rowCount uint32) {
+	iter, err := Unique0U32U64U64Table.Scan()
 	if err != nil {
 		panic(err)
 	}
@@ -251,7 +185,7 @@ func updateBulkUnique0U32U64U64(_ server.ReducerContext, rowCount uint32) {
 			break
 		}
 		hit++
-		runtime.UpdateBy[Unique0U32U64U64]("unique_0_u32_u64_u64_id_idx_btree", Unique0U32U64U64{
+		Unique0U32U64U64Table.UpdateById(Unique0U32U64U64{
 			Id: row.Id,
 			X:  row.X + 1, // wrapping add
 			Y:  row.Y,
@@ -262,8 +196,9 @@ func updateBulkUnique0U32U64U64(_ server.ReducerContext, rowCount uint32) {
 	}
 }
 
-func updateBulkUnique0U32U64Str(_ server.ReducerContext, rowCount uint32) {
-	iter, err := runtime.Scan[Unique0U32U64Str]()
+//stdb:reducer name=update_bulk_unique_0_u32_u64_str
+func updateBulkUnique0U32U64Str(_ reducer.ReducerContext, rowCount uint32) {
+	iter, err := Unique0U32U64StrTable.Scan()
 	if err != nil {
 		panic(err)
 	}
@@ -279,7 +214,7 @@ func updateBulkUnique0U32U64Str(_ server.ReducerContext, rowCount uint32) {
 			break
 		}
 		hit++
-		runtime.UpdateBy[Unique0U32U64Str]("unique_0_u32_u64_str_id_idx_btree", Unique0U32U64Str{
+		Unique0U32U64StrTable.UpdateById(Unique0U32U64Str{
 			Id:   row.Id,
 			Age:  row.Age + 1, // wrapping add
 			Name: row.Name,
@@ -292,8 +227,9 @@ func updateBulkUnique0U32U64Str(_ server.ReducerContext, rowCount uint32) {
 
 // ---------- iterate ----------
 
-func iterateUnique0U32U64Str(_ server.ReducerContext) {
-	iter, err := runtime.Scan[Unique0U32U64Str]()
+//stdb:reducer name=iterate_unique_0_u32_u64_str
+func iterateUnique0U32U64Str(_ reducer.ReducerContext) {
+	iter, err := Unique0U32U64StrTable.Scan()
 	if err != nil {
 		panic(err)
 	}
@@ -311,8 +247,9 @@ func iterateUnique0U32U64Str(_ server.ReducerContext) {
 	}
 }
 
-func iterateUnique0U32U64U64(_ server.ReducerContext) {
-	iter, err := runtime.Scan[Unique0U32U64U64]()
+//stdb:reducer name=iterate_unique_0_u32_u64_u64
+func iterateUnique0U32U64U64(_ reducer.ReducerContext) {
+	iter, err := Unique0U32U64U64Table.Scan()
 	if err != nil {
 		panic(err)
 	}
@@ -332,8 +269,9 @@ func iterateUnique0U32U64U64(_ server.ReducerContext) {
 
 // ---------- filter by id ----------
 
-func filterUnique0U32U64StrById(_ server.ReducerContext, id uint32) {
-	row, found, err := runtime.FindBy[Unique0U32U64Str, uint32]("unique_0_u32_u64_str_id_idx_btree", id)
+//stdb:reducer name=filter_unique_0_u32_u64_str_by_id
+func filterUnique0U32U64StrById(_ reducer.ReducerContext, id uint32) {
+	row, found, err := Unique0U32U64StrTable.FindById(id)
 	if err != nil {
 		panic(err)
 	}
@@ -342,8 +280,9 @@ func filterUnique0U32U64StrById(_ server.ReducerContext, id uint32) {
 	}
 }
 
-func filterNoIndexU32U64StrById(_ server.ReducerContext, id uint32) {
-	iter, err := runtime.Scan[NoIndexU32U64Str]()
+//stdb:reducer name=filter_no_index_u32_u64_str_by_id
+func filterNoIndexU32U64StrById(_ reducer.ReducerContext, id uint32) {
+	iter, err := NoIndexU32U64StrTable.Scan()
 	if err != nil {
 		panic(err)
 	}
@@ -360,8 +299,26 @@ func filterNoIndexU32U64StrById(_ server.ReducerContext, id uint32) {
 	}
 }
 
-func filterBtreeEachColumnU32U64StrById(_ server.ReducerContext, id uint32) {
-	row, found, err := runtime.FindBy[BtreeEachColumnU32U64Str, uint32]("btree_each_column_u32_u64_str_id_idx_btree", id)
+//stdb:reducer name=filter_btree_each_column_u32_u64_str_by_id
+func filterBtreeEachColumnU32U64StrById(_ reducer.ReducerContext, id uint32) {
+	iter, err := BtreeEachColumnU32U64StrTable.FilterById(id)
+	if err != nil {
+		panic(err)
+	}
+	defer iter.Close()
+
+	for {
+		row, ok := iter.Next()
+		if !ok {
+			break
+		}
+		_ = row
+	}
+}
+
+//stdb:reducer name=filter_unique_0_u32_u64_u64_by_id
+func filterUnique0U32U64U64ById(_ reducer.ReducerContext, id uint32) {
+	row, found, err := Unique0U32U64U64Table.FindById(id)
 	if err != nil {
 		panic(err)
 	}
@@ -370,18 +327,9 @@ func filterBtreeEachColumnU32U64StrById(_ server.ReducerContext, id uint32) {
 	}
 }
 
-func filterUnique0U32U64U64ById(_ server.ReducerContext, id uint32) {
-	row, found, err := runtime.FindBy[Unique0U32U64U64, uint32]("unique_0_u32_u64_u64_id_idx_btree", id)
-	if err != nil {
-		panic(err)
-	}
-	if found {
-		_ = row
-	}
-}
-
-func filterNoIndexU32U64U64ById(_ server.ReducerContext, id uint32) {
-	iter, err := runtime.Scan[NoIndexU32U64U64]()
+//stdb:reducer name=filter_no_index_u32_u64_u64_by_id
+func filterNoIndexU32U64U64ById(_ reducer.ReducerContext, id uint32) {
+	iter, err := NoIndexU32U64U64Table.Scan()
 	if err != nil {
 		panic(err)
 	}
@@ -398,20 +346,28 @@ func filterNoIndexU32U64U64ById(_ server.ReducerContext, id uint32) {
 	}
 }
 
-func filterBtreeEachColumnU32U64U64ById(_ server.ReducerContext, id uint32) {
-	row, found, err := runtime.FindBy[BtreeEachColumnU32U64U64, uint32]("btree_each_column_u32_u64_u64_id_idx_btree", id)
+//stdb:reducer name=filter_btree_each_column_u32_u64_u64_by_id
+func filterBtreeEachColumnU32U64U64ById(_ reducer.ReducerContext, id uint32) {
+	iter, err := BtreeEachColumnU32U64U64Table.FilterById(id)
 	if err != nil {
 		panic(err)
 	}
-	if found {
+	defer iter.Close()
+
+	for {
+		row, ok := iter.Next()
+		if !ok {
+			break
+		}
 		_ = row
 	}
 }
 
 // ---------- filter by name ----------
 
-func filterUnique0U32U64StrByName(_ server.ReducerContext, name string) {
-	iter, err := runtime.Scan[Unique0U32U64Str]()
+//stdb:reducer name=filter_unique_0_u32_u64_str_by_name
+func filterUnique0U32U64StrByName(_ reducer.ReducerContext, name string) {
+	iter, err := Unique0U32U64StrTable.Scan()
 	if err != nil {
 		panic(err)
 	}
@@ -428,8 +384,9 @@ func filterUnique0U32U64StrByName(_ server.ReducerContext, name string) {
 	}
 }
 
-func filterNoIndexU32U64StrByName(_ server.ReducerContext, name string) {
-	iter, err := runtime.Scan[NoIndexU32U64Str]()
+//stdb:reducer name=filter_no_index_u32_u64_str_by_name
+func filterNoIndexU32U64StrByName(_ reducer.ReducerContext, name string) {
+	iter, err := NoIndexU32U64StrTable.Scan()
 	if err != nil {
 		panic(err)
 	}
@@ -446,20 +403,28 @@ func filterNoIndexU32U64StrByName(_ server.ReducerContext, name string) {
 	}
 }
 
-func filterBtreeEachColumnU32U64StrByName(_ server.ReducerContext, name string) {
-	row, found, err := runtime.FindBy[BtreeEachColumnU32U64Str, string]("btree_each_column_u32_u64_str_name_idx_btree", name)
+//stdb:reducer name=filter_btree_each_column_u32_u64_str_by_name
+func filterBtreeEachColumnU32U64StrByName(_ reducer.ReducerContext, name string) {
+	iter, err := BtreeEachColumnU32U64StrTable.FilterByName(name)
 	if err != nil {
 		panic(err)
 	}
-	if found {
+	defer iter.Close()
+
+	for {
+		row, ok := iter.Next()
+		if !ok {
+			break
+		}
 		_ = row
 	}
 }
 
 // ---------- filter by x ----------
 
-func filterUnique0U32U64U64ByX(_ server.ReducerContext, x uint64) {
-	iter, err := runtime.Scan[Unique0U32U64U64]()
+//stdb:reducer name=filter_unique_0_u32_u64_u64_by_x
+func filterUnique0U32U64U64ByX(_ reducer.ReducerContext, x uint64) {
+	iter, err := Unique0U32U64U64Table.Scan()
 	if err != nil {
 		panic(err)
 	}
@@ -476,8 +441,9 @@ func filterUnique0U32U64U64ByX(_ server.ReducerContext, x uint64) {
 	}
 }
 
-func filterNoIndexU32U64U64ByX(_ server.ReducerContext, x uint64) {
-	iter, err := runtime.Scan[NoIndexU32U64U64]()
+//stdb:reducer name=filter_no_index_u32_u64_u64_by_x
+func filterNoIndexU32U64U64ByX(_ reducer.ReducerContext, x uint64) {
+	iter, err := NoIndexU32U64U64Table.Scan()
 	if err != nil {
 		panic(err)
 	}
@@ -494,20 +460,28 @@ func filterNoIndexU32U64U64ByX(_ server.ReducerContext, x uint64) {
 	}
 }
 
-func filterBtreeEachColumnU32U64U64ByX(_ server.ReducerContext, x uint64) {
-	row, found, err := runtime.FindBy[BtreeEachColumnU32U64U64, uint64]("btree_each_column_u32_u64_u64_x_idx_btree", x)
+//stdb:reducer name=filter_btree_each_column_u32_u64_u64_by_x
+func filterBtreeEachColumnU32U64U64ByX(_ reducer.ReducerContext, x uint64) {
+	iter, err := BtreeEachColumnU32U64U64Table.FilterByX(x)
 	if err != nil {
 		panic(err)
 	}
-	if found {
+	defer iter.Close()
+
+	for {
+		row, ok := iter.Next()
+		if !ok {
+			break
+		}
 		_ = row
 	}
 }
 
 // ---------- filter by y ----------
 
-func filterUnique0U32U64U64ByY(_ server.ReducerContext, y uint64) {
-	iter, err := runtime.Scan[Unique0U32U64U64]()
+//stdb:reducer name=filter_unique_0_u32_u64_u64_by_y
+func filterUnique0U32U64U64ByY(_ reducer.ReducerContext, y uint64) {
+	iter, err := Unique0U32U64U64Table.Scan()
 	if err != nil {
 		panic(err)
 	}
@@ -524,8 +498,9 @@ func filterUnique0U32U64U64ByY(_ server.ReducerContext, y uint64) {
 	}
 }
 
-func filterNoIndexU32U64U64ByY(_ server.ReducerContext, y uint64) {
-	iter, err := runtime.Scan[NoIndexU32U64U64]()
+//stdb:reducer name=filter_no_index_u32_u64_u64_by_y
+func filterNoIndexU32U64U64ByY(_ reducer.ReducerContext, y uint64) {
+	iter, err := NoIndexU32U64U64Table.Scan()
 	if err != nil {
 		panic(err)
 	}
@@ -542,96 +517,117 @@ func filterNoIndexU32U64U64ByY(_ server.ReducerContext, y uint64) {
 	}
 }
 
-func filterBtreeEachColumnU32U64U64ByY(_ server.ReducerContext, y uint64) {
-	row, found, err := runtime.FindBy[BtreeEachColumnU32U64U64, uint64]("btree_each_column_u32_u64_u64_y_idx_btree", y)
+//stdb:reducer name=filter_btree_each_column_u32_u64_u64_by_y
+func filterBtreeEachColumnU32U64U64ByY(_ reducer.ReducerContext, y uint64) {
+	iter, err := BtreeEachColumnU32U64U64Table.FilterByY(y)
 	if err != nil {
 		panic(err)
 	}
-	if found {
+	defer iter.Close()
+
+	for {
+		row, ok := iter.Next()
+		if !ok {
+			break
+		}
 		_ = row
 	}
 }
 
 // ---------- delete ----------
 
-func deleteUnique0U32U64StrById(_ server.ReducerContext, id uint32) {
-	runtime.DeleteBy[Unique0U32U64Str, uint32]("unique_0_u32_u64_str_id_idx_btree", id)
+//stdb:reducer name=delete_unique_0_u32_u64_str_by_id
+func deleteUnique0U32U64StrById(_ reducer.ReducerContext, id uint32) {
+	Unique0U32U64StrTable.DeleteById(id)
 }
 
-func deleteUnique0U32U64U64ById(_ server.ReducerContext, id uint32) {
-	runtime.DeleteBy[Unique0U32U64U64, uint32]("unique_0_u32_u64_u64_id_idx_btree", id)
+//stdb:reducer name=delete_unique_0_u32_u64_u64_by_id
+func deleteUnique0U32U64U64ById(_ reducer.ReducerContext, id uint32) {
+	Unique0U32U64U64Table.DeleteById(id)
 }
 
 // ---------- clear table ----------
 
-func clearTableUnique0U32U64Str(_ server.ReducerContext) {
+//stdb:reducer name=clear_table_unique_0_u32_u64_str
+func clearTableUnique0U32U64Str(_ reducer.ReducerContext) {
 	panic("unimplemented")
 }
 
-func clearTableNoIndexU32U64Str(_ server.ReducerContext) {
+//stdb:reducer name=clear_table_no_index_u32_u64_str
+func clearTableNoIndexU32U64Str(_ reducer.ReducerContext) {
 	panic("unimplemented")
 }
 
-func clearTableBtreeEachColumnU32U64Str(_ server.ReducerContext) {
+//stdb:reducer name=clear_table_btree_each_column_u32_u64_str
+func clearTableBtreeEachColumnU32U64Str(_ reducer.ReducerContext) {
 	panic("unimplemented")
 }
 
-func clearTableUnique0U32U64U64(_ server.ReducerContext) {
+//stdb:reducer name=clear_table_unique_0_u32_u64_u64
+func clearTableUnique0U32U64U64(_ reducer.ReducerContext) {
 	panic("unimplemented")
 }
 
-func clearTableNoIndexU32U64U64(_ server.ReducerContext) {
+//stdb:reducer name=clear_table_no_index_u32_u64_u64
+func clearTableNoIndexU32U64U64(_ reducer.ReducerContext) {
 	panic("unimplemented")
 }
 
-func clearTableBtreeEachColumnU32U64U64(_ server.ReducerContext) {
+//stdb:reducer name=clear_table_btree_each_column_u32_u64_u64
+func clearTableBtreeEachColumnU32U64U64(_ reducer.ReducerContext) {
 	panic("unimplemented")
 }
 
 // ---------- count ----------
 
-func countUnique0U32U64Str(_ server.ReducerContext) {
-	n, err := runtime.Count[Unique0U32U64Str]()
+//stdb:reducer name=count_unique_0_u32_u64_str
+func countUnique0U32U64Str(_ reducer.ReducerContext) {
+	n, err := Unique0U32U64StrTable.Count()
 	if err != nil {
 		panic(err)
 	}
 	benchLogger.Info(fmt.Sprintf("COUNT: %d", n))
 }
 
-func countNoIndexU32U64Str(_ server.ReducerContext) {
-	n, err := runtime.Count[NoIndexU32U64Str]()
+//stdb:reducer name=count_no_index_u32_u64_str
+func countNoIndexU32U64Str(_ reducer.ReducerContext) {
+	n, err := NoIndexU32U64StrTable.Count()
 	if err != nil {
 		panic(err)
 	}
 	benchLogger.Info(fmt.Sprintf("COUNT: %d", n))
 }
 
-func countBtreeEachColumnU32U64Str(_ server.ReducerContext) {
-	n, err := runtime.Count[BtreeEachColumnU32U64Str]()
+//stdb:reducer name=count_btree_each_column_u32_u64_str
+func countBtreeEachColumnU32U64Str(_ reducer.ReducerContext) {
+	n, err := BtreeEachColumnU32U64StrTable.Count()
 	if err != nil {
 		panic(err)
 	}
 	benchLogger.Info(fmt.Sprintf("COUNT: %d", n))
 }
 
-func countUnique0U32U64U64(_ server.ReducerContext) {
-	n, err := runtime.Count[Unique0U32U64U64]()
+//stdb:reducer name=count_unique_0_u32_u64_u64
+func countUnique0U32U64U64(_ reducer.ReducerContext) {
+	n, err := Unique0U32U64U64Table.Count()
 	if err != nil {
 		panic(err)
 	}
 	benchLogger.Info(fmt.Sprintf("COUNT: %d", n))
 }
 
-func countNoIndexU32U64U64(_ server.ReducerContext) {
-	n, err := runtime.Count[NoIndexU32U64U64]()
+//stdb:reducer name=count_no_index_u32_u64_u64
+func countNoIndexU32U64U64(_ reducer.ReducerContext) {
+	n, err := NoIndexU32U64U64Table.Count()
 	if err != nil {
 		panic(err)
 	}
 	benchLogger.Info(fmt.Sprintf("COUNT: %d", n))
 }
 
-func countBtreeEachColumnU32U64U64(_ server.ReducerContext) {
-	n, err := runtime.Count[BtreeEachColumnU32U64U64]()
+//stdb:reducer name=count_btree_each_column_u32_u64_u64
+func countBtreeEachColumnU32U64U64(_ reducer.ReducerContext) {
+	n, err := BtreeEachColumnU32U64U64Table.Count()
 	if err != nil {
 		panic(err)
 	}
@@ -640,10 +636,12 @@ func countBtreeEachColumnU32U64U64(_ server.ReducerContext) {
 
 // ---------- module-specific ----------
 
-func fnWith1Args(_ server.ReducerContext, _ string) {}
+//stdb:reducer name=fn_with_1_args
+func fnWith1Args(_ reducer.ReducerContext, _ string) {}
 
+//stdb:reducer name=fn_with_32_args
 func fnWith32Args(
-	_ server.ReducerContext,
+	_ reducer.ReducerContext,
 	_, _, _, _, _, _, _, _ string,
 	_, _, _, _, _, _, _, _ string,
 	_, _, _, _, _, _, _, _ string,
@@ -651,7 +649,8 @@ func fnWith32Args(
 ) {
 }
 
-func printManyThings(_ server.ReducerContext, n uint32) {
+//stdb:reducer name=print_many_things
+func printManyThings(_ reducer.ReducerContext, n uint32) {
 	for i := uint32(0); i < n; i++ {
 		benchLogger.Info("hello again!")
 	}

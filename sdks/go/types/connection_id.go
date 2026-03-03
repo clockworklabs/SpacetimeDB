@@ -56,5 +56,11 @@ func (c *connectionId) IsZero() bool {
 }
 
 func (c *connectionId) String() string {
-	return hex.EncodeToString(c.data[:])
+	// Internal storage is little-endian (matching BSATN/WASM ABI).
+	// Display format is big-endian hex (matching Rust ConnectionId::to_hex).
+	var be [16]byte
+	for i := 0; i < 16; i++ {
+		be[i] = c.data[15-i]
+	}
+	return hex.EncodeToString(be[:])
 }

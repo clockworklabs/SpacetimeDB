@@ -337,14 +337,15 @@ func TestIdentityZero(t *testing.T) {
 
 func TestIdentityString(t *testing.T) {
 	var b [32]byte
+	// Internal storage is little-endian, so b[0]-b[1] are least significant.
 	b[0] = 0xAB
 	b[1] = 0xCD
 	id := types.NewIdentity(b)
 	s := id.String()
-	// hex encoding of 32 raw bytes = 64 hex chars
-	assert.Equal(t, "abcd"+
+	// Display is big-endian hex, so LE bytes [0xAB, 0xCD, 0...] become "0000...00cdab"
+	assert.Equal(t,
 		"000000000000000000000000000000"+
-		"000000000000000000000000000000", s)
+		"000000000000000000000000000000"+"cdab", s)
 }
 
 func TestIdentityFromU64s(t *testing.T) {
@@ -430,13 +431,15 @@ func TestConnectionIdFromU64s(t *testing.T) {
 
 func TestConnectionIdString(t *testing.T) {
 	var b [16]byte
+	// Internal storage is little-endian, so b[0]-b[1] are least significant.
 	b[0] = 0xAB
 	b[1] = 0xCD
 	cid := types.NewConnectionId(b)
 	s := cid.String()
-	assert.Equal(t, "abcd"+
+	// Display is big-endian hex, so LE bytes [0xAB, 0xCD, 0...] become "0000...cdab"
+	assert.Equal(t,
 		"0000000000000000"+
-		"000000000000", s)
+		"000000000000"+"cdab", s)
 }
 
 func TestConnectionIdReadBufferTooShort(t *testing.T) {

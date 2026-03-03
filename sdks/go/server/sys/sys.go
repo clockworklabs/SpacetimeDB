@@ -94,7 +94,10 @@ func DatastoreUpdateBSATN(tableId uint32, indexId uint32, row []byte) ([]byte, e
 // DatastoreDeleteAllByEqBSATN deletes all rows matching BSATN-encoded relation.
 func DatastoreDeleteAllByEqBSATN(tableId uint32, rel []byte) (uint32, error) {
 	var deleted uint32
-	var relPtr *byte
+	// The host traps on NULL pointers (even with length 0), so we must
+	// always pass valid non-null pointers. Use a sentinel byte for empty slices.
+	var sentinel [1]byte
+	relPtr := &sentinel[0]
 	if len(rel) > 0 {
 		relPtr = &rel[0]
 	}
@@ -119,7 +122,14 @@ func IndexIdFromName(name string) (uint32, error) {
 // DatastoreIndexScanPointBSATN starts a point scan on an index.
 func DatastoreIndexScanPointBSATN(indexId uint32, point []byte) (*RowIterator, error) {
 	var iterHandle uint32
-	ret := rawDatastoreIndexScanPointBSATN(indexId, &point[0], uint32(len(point)), &iterHandle)
+	// The host traps on NULL pointers (even with length 0), so we must
+	// always pass valid non-null pointers. Use a sentinel byte for empty slices.
+	var sentinel [1]byte
+	pointPtr := &sentinel[0]
+	if len(point) > 0 {
+		pointPtr = &point[0]
+	}
+	ret := rawDatastoreIndexScanPointBSATN(indexId, pointPtr, uint32(len(point)), &iterHandle)
 	if err := errnoFromU16(uint16(ret)); err != nil {
 		return nil, err
 	}
@@ -129,13 +139,18 @@ func DatastoreIndexScanPointBSATN(indexId uint32, point []byte) (*RowIterator, e
 // DatastoreIndexScanRangeBSATN starts a range scan on an index.
 func DatastoreIndexScanRangeBSATN(indexId uint32, prefix []byte, prefixElems uint32, rstart []byte, rend []byte) (*RowIterator, error) {
 	var iterHandle uint32
-	var prefixPtr, rstartPtr, rendPtr *byte
+	// The host traps on NULL pointers (even with length 0), so we must
+	// always pass valid non-null pointers. Use a sentinel byte for empty slices.
+	var sentinel [1]byte
+	prefixPtr := &sentinel[0]
 	if len(prefix) > 0 {
 		prefixPtr = &prefix[0]
 	}
+	rstartPtr := &sentinel[0]
 	if len(rstart) > 0 {
 		rstartPtr = &rstart[0]
 	}
+	rendPtr := &sentinel[0]
 	if len(rend) > 0 {
 		rendPtr = &rend[0]
 	}
@@ -149,7 +164,14 @@ func DatastoreIndexScanRangeBSATN(indexId uint32, prefix []byte, prefixElems uin
 // DatastoreDeleteByIndexScanPointBSATN deletes rows matching a point scan on an index.
 func DatastoreDeleteByIndexScanPointBSATN(indexId uint32, point []byte) (uint32, error) {
 	var deleted uint32
-	ret := rawDatastoreDeleteByIndexScanPointBSATN(indexId, &point[0], uint32(len(point)), &deleted)
+	// The host traps on NULL pointers (even with length 0), so we must
+	// always pass valid non-null pointers. Use a sentinel byte for empty slices.
+	var sentinel [1]byte
+	pointPtr := &sentinel[0]
+	if len(point) > 0 {
+		pointPtr = &point[0]
+	}
+	ret := rawDatastoreDeleteByIndexScanPointBSATN(indexId, pointPtr, uint32(len(point)), &deleted)
 	if err := errnoFromU16(uint16(ret)); err != nil {
 		return 0, err
 	}
@@ -159,13 +181,18 @@ func DatastoreDeleteByIndexScanPointBSATN(indexId uint32, point []byte) (uint32,
 // DatastoreDeleteByIndexScanRangeBSATN deletes rows matching a range scan on an index.
 func DatastoreDeleteByIndexScanRangeBSATN(indexId uint32, prefix []byte, prefixElems uint32, rstart []byte, rend []byte) (uint32, error) {
 	var deleted uint32
-	var prefixPtr, rstartPtr, rendPtr *byte
+	// The host traps on NULL pointers (even with length 0), so we must
+	// always pass valid non-null pointers. Use a sentinel byte for empty slices.
+	var sentinel [1]byte
+	prefixPtr := &sentinel[0]
 	if len(prefix) > 0 {
 		prefixPtr = &prefix[0]
 	}
+	rstartPtr := &sentinel[0]
 	if len(rstart) > 0 {
 		rstartPtr = &rstart[0]
 	}
+	rendPtr := &sentinel[0]
 	if len(rend) > 0 {
 		rendPtr = &rend[0]
 	}
@@ -208,9 +235,63 @@ func ConsoleTimerEnd(timerId uint32) error {
 	return errnoFromU16(uint16(ret))
 }
 
+// ProcedureStartMutTx starts a mutable transaction for a procedure.
+// Returns the current timestamp in microseconds since the Unix epoch.
+func ProcedureStartMutTx() (int64, error) {
+	var timestamp int64
+	ret := rawProcedureStartMutTx(&timestamp)
+	if err := errnoFromU16(uint16(ret)); err != nil {
+		return 0, err
+	}
+	return timestamp, nil
+}
+
+// ProcedureCommitMutTx commits the current mutable transaction.
+func ProcedureCommitMutTx() error {
+	ret := rawProcedureCommitMutTx()
+	return errnoFromU16(uint16(ret))
+}
+
+// ProcedureAbortMutTx aborts the current mutable transaction.
+func ProcedureAbortMutTx() error {
+	ret := rawProcedureAbortMutTx()
+	return errnoFromU16(uint16(ret))
+}
+
+// ProcedureSleepUntil suspends execution until the specified timestamp.
+// Returns the current timestamp when execution resumes.
+func ProcedureSleepUntil(wakeAtMicros int64) int64 {
+	return rawProcedureSleepUntil(wakeAtMicros)
+}
+
 // GetIdentity returns the module's identity as a 32-byte array.
 func GetIdentity() [32]byte {
 	var out [32]byte
 	rawIdentity(&out[0])
 	return out
+}
+
+// ProcedureHttpRequest sends an HTTP request from a procedure.
+// requestBsatn is the BSATN-encoded HttpRequest.
+// body is the raw request body bytes.
+// Returns two BytesSource handles: responseSrc (BSATN-encoded HttpResponse or error string) and bodySrc (response body).
+func ProcedureHttpRequest(requestBsatn []byte, body []byte) (responseSrc uint32, bodySrc uint32, err error) {
+	var out [2]uint32
+	// The host traps on NULL pointers (even with length 0), so we must
+	// always pass valid non-null pointers. Use a sentinel byte for empty slices.
+	var sentinel [1]byte
+	reqPtr := &sentinel[0]
+	if len(requestBsatn) > 0 {
+		reqPtr = &requestBsatn[0]
+	}
+	bodyPtr := &sentinel[0]
+	if len(body) > 0 {
+		bodyPtr = &body[0]
+	}
+	ret := rawProcedureHttpRequest(reqPtr, uint32(len(requestBsatn)), bodyPtr, uint32(len(body)), &out[0])
+	if err := errnoFromU16(uint16(ret)); err != nil {
+		// On HTTP_ERROR, out[0] has the BSATN-encoded error string.
+		return out[0], 0, err
+	}
+	return out[0], out[1], nil
 }

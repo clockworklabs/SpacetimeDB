@@ -9,6 +9,7 @@ type ReducerContext interface {
 	Sender() types.Identity
 	ConnectionId() types.ConnectionId
 	Timestamp() types.Timestamp
+	Identity() types.Identity // Module identity (owner)
 	Db() any
 }
 

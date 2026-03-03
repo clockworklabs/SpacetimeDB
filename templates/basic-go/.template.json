@@ -1,0 +1,5 @@
+{
+  "description": "A basic Go client and server template with only stubs for code",
+  "client_lang": "go",
+  "server_lang": "go"
+}

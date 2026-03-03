@@ -38,27 +38,55 @@ pub(crate) fn build_go(project_path: &Path, build_debug: bool) -> anyhow::Result
 
     let output_path = target_dir.join("module.wasm");
 
+    // Verify stdb-gen is available
+    let stdb_gen_found = find_executable("stdb-gen").is_some();
+    if !stdb_gen_found {
+        return Err(anyhow!(
+            "`stdb-gen` not found in PATH. \
+             Install it with: go install go.digitalxero.dev/stdb-gen@latest"
+        ));
+    }
+
+    // Run stdb-gen upgrade to ensure latest codegen templates
+    eprintln!("Running stdb-gen upgrade...");
+    duct::cmd!("stdb-gen", "upgrade")
+        .dir(project_path)
+        .run()
+        .with_context(|| "Failed to run stdb-gen upgrade.")?;
+
+    // Run go generate to produce stdb_generated.go (code generation step)
+    eprintln!("Running go generate...");
+    duct::cmd!("go", "generate", "./...")
+        .dir(project_path)
+        .run()
+        .with_context(|| "Failed to run go generate. Ensure stdb-gen is available.")?;
+
     // Build with standard Go compiler
     // GOOS=wasip1 GOARCH=wasm produces WASI Preview 1 compatible WASM
     // -buildmode=c-shared produces a reactor module (exports _initialize, keeps runtime alive)
     // For release: strip debug info with -ldflags "-s -w"
     eprintln!("Building Go module...");
 
-    let mut cmd = duct::cmd!(
-        "go",
-        "build",
-        "-buildmode=c-shared",
-        "-o",
-        output_path.to_str().unwrap(),
-        "."
-    )
-    .env("GOOS", "wasip1")
-    .env("GOARCH", "wasm")
-    .dir(project_path);
+    let mut build_args = vec![
+        "build".to_string(),
+        "-trimpath".to_string(),
+        "-tags=netgo,osusergo".to_string(),
+        "-buildmode=c-shared".to_string(),
+    ];
 
     if !build_debug {
-        cmd = cmd.env("GOFLAGS", "-ldflags=-s -w");
+        build_args.push("-ldflags=-s -w -extldflags -static".to_string());
     }
+
+    build_args.push("-o".to_string());
+    build_args.push(output_path.to_str().unwrap().to_string());
+    build_args.push(".".to_string());
+
+    let mut cmd = duct::cmd("go", &build_args)
+        .env("GOOS", "wasip1")
+        .env("GOARCH", "wasm")
+        .env("GODEBUG", "asyncpreemptoff=1")
+        .dir(project_path);
 
     cmd.run()
         .with_context(|| "Failed to build Go module")?;

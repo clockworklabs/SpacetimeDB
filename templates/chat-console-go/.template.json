@@ -1,0 +1,5 @@
+{
+  "description": "Go server/client implementing quickstart chat",
+  "client_lang": "go",
+  "server_lang": "go"
+}

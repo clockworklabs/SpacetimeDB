@@ -10,6 +10,8 @@ type moduleDefBuilder struct {
 	typeDefs          []TypeDef
 	tables            []TableDef
 	reducers          []ReducerDef
+	procedures        []ProcedureDef
+	views             []ViewDef
 	schedules         []ScheduleDef
 	lifecycleReducers []LifecycleReducerDef
 	rlsFilters        []string
@@ -35,6 +37,16 @@ func (b *moduleDefBuilder) AddReducer(def ReducerDef) ModuleDefBuilder {
 	return b
 }
 
+func (b *moduleDefBuilder) AddProcedure(def ProcedureDef) ModuleDefBuilder {
+	b.procedures = append(b.procedures, def)
+	return b
+}
+
+func (b *moduleDefBuilder) AddView(def ViewDef) ModuleDefBuilder {
+	b.views = append(b.views, def)
+	return b
+}
+
 func (b *moduleDefBuilder) AddSchedule(def ScheduleDef) ModuleDefBuilder {
 	b.schedules = append(b.schedules, def)
 	return b
@@ -56,6 +68,8 @@ func (b *moduleDefBuilder) Build() ModuleDef {
 		typeDefs:          b.typeDefs,
 		tables:            b.tables,
 		reducers:          b.reducers,
+		procedures:        b.procedures,
+		views:             b.views,
 		schedules:         b.schedules,
 		lifecycleReducers: b.lifecycleReducers,
 		rlsFilters:        b.rlsFilters,
@@ -67,6 +81,8 @@ type moduleDef struct {
 	typeDefs          []TypeDef
 	tables            []TableDef
 	reducers          []ReducerDef
+	procedures        []ProcedureDef
+	views             []ViewDef
 	schedules         []ScheduleDef
 	lifecycleReducers []LifecycleReducerDef
 	rlsFilters        []string
@@ -94,6 +110,12 @@ func (m *moduleDef) WriteBsatn(w bsatn.Writer) {
 		sectionCount++
 	}
 	if len(m.reducers) > 0 {
+		sectionCount++
+	}
+	if len(m.procedures) > 0 {
+		sectionCount++
+	}
+	if len(m.views) > 0 {
 		sectionCount++
 	}
 	if len(m.schedules) > 0 {
@@ -138,6 +160,24 @@ func (m *moduleDef) WriteBsatn(w bsatn.Writer) {
 		w.PutArrayLen(uint32(len(m.reducers)))
 		for _, r := range m.reducers {
 			r.WriteBsatn(w)
+		}
+	}
+
+	// Section tag 4: Procedures
+	if len(m.procedures) > 0 {
+		w.PutSumTag(sectionTagProcedures)
+		w.PutArrayLen(uint32(len(m.procedures)))
+		for _, p := range m.procedures {
+			p.WriteBsatn(w)
+		}
+	}
+
+	// Section tag 5: Views
+	if len(m.views) > 0 {
+		w.PutSumTag(sectionTagViews)
+		w.PutArrayLen(uint32(len(m.views)))
+		for _, v := range m.views {
+			v.WriteBsatn(w)
 		}
 	}
 

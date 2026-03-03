@@ -72,26 +72,65 @@ func (cc *clientCache) ApplyTransactionUpdate(update *protocol.TransactionUpdate
 			for _, rows := range tableUpdate.Rows {
 				switch r := rows.(type) {
 				case *protocol.PersistentTableRows:
-					// Process deletes first
-					if r.Deletes != nil {
+					// Check if this table supports PK-based update detection
+					pkDef, hasPK := tc.def.(TableDefWithPK)
+
+					if hasPK && r.Deletes != nil && r.Inserts != nil {
+						// Build map of deleted rows by PK
+						type deleteEntry struct {
+							rowBytes []byte
+							row      any
+						}
+						deletedByPK := map[any]deleteEntry{}
 						for _, rowData := range r.Deletes.Rows() {
 							reader := bsatn.NewReader(rowData)
 							row, err := tc.def.DecodeRow(reader)
 							if err != nil {
 								continue
 							}
-							tc.applyDelete(rowData, row)
+							pk := pkDef.PrimaryKey(row)
+							deletedByPK[pk] = deleteEntry{rowData, row}
 						}
-					}
-					// Then inserts
-					if r.Inserts != nil {
+						// Process inserts, detecting updates
 						for _, rowData := range r.Inserts.Rows() {
 							reader := bsatn.NewReader(rowData)
 							row, err := tc.def.DecodeRow(reader)
 							if err != nil {
 								continue
 							}
-							tc.applyInsert(rowData, row)
+							pk := pkDef.PrimaryKey(row)
+							if old, isUpdate := deletedByPK[pk]; isUpdate {
+								tc.applyUpdate(old.rowBytes, old.row, rowData, row)
+								delete(deletedByPK, pk)
+							} else {
+								tc.applyInsert(rowData, row)
+							}
+						}
+						// Remaining deletes are pure deletes
+						for _, old := range deletedByPK {
+							tc.applyDelete(old.rowBytes, old.row)
+						}
+					} else {
+						// No PK — fall through to existing delete-then-insert logic
+						if r.Deletes != nil {
+							for _, rowData := range r.Deletes.Rows() {
+								reader := bsatn.NewReader(rowData)
+								row, err := tc.def.DecodeRow(reader)
+								if err != nil {
+									continue
+								}
+								tc.applyDelete(rowData, row)
+							}
+						}
+						if r.Inserts != nil {
+							for _, rowData := range r.Inserts.Rows() {
+								reader := bsatn.NewReader(rowData)
+								row, err := tc.def.DecodeRow(reader)
+								if err != nil {
+									continue
+								}
+								tc.applyInsert(rowData, row)
+							}
 						}
 					}
 				case *protocol.EventTableRows:

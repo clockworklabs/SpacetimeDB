@@ -85,22 +85,148 @@ tasks:
   build:sdk-test-module:
     desc: Build sdk-test-go WASM module with Go
     dir: ../../modules/sdk-test-go
-    env:
-      GOOS: wasip1
-      GOARCH: wasm
     cmds:
+      - go generate ./...
       - mkdir -p target
-      - go build -buildmode=c-shared -ldflags="-s -w" -o target/module.wasm .
+      - cmd: go build -buildmode=c-shared -ldflags="-s -w" -o target/module.wasm .
+        env:
+          GOOS: wasip1
+          GOARCH: wasm
 
   build:benchmark-module:
     desc: Build benchmarks-go WASM module with Go
     dir: ../../modules/benchmarks-go
-    env:
-      GOOS: wasip1
-      GOARCH: wasm
     cmds:
+      - go generate ./...
       - mkdir -p target
-      - go build -buildmode=c-shared -ldflags="-s -w" -o target/module.wasm .
+      - cmd: go build -buildmode=c-shared -ldflags="-s -w" -o target/module.wasm .
+        env:
+          GOOS: wasip1
+          GOARCH: wasm
+
+  build:connect-disconnect-module:
+    desc: Build sdk-test-connect-disconnect-go WASM module
+    dir: ../../modules/sdk-test-connect-disconnect-go
+    cmds:
+      - go generate ./...
+      - mkdir -p target
+      - cmd: go build -buildmode=c-shared -ldflags="-s -w" -o target/module.wasm .
+        env:
+          GOOS: wasip1
+          GOARCH: wasm
+
+  build:event-table-module:
+    desc: Build sdk-test-event-table-go WASM module
+    dir: ../../modules/sdk-test-event-table-go
+    cmds:
+      - go generate ./...
+      - mkdir -p target
+      - cmd: go build -buildmode=c-shared -ldflags="-s -w" -o target/module.wasm .
+        env:
+          GOOS: wasip1
+          GOARCH: wasm
+
+  build:perf-test-module:
+    desc: Build perf-test-go WASM module
+    dir: ../../modules/perf-test-go
+    cmds:
+      - go generate ./...
+      - mkdir -p target
+      - cmd: go build -buildmode=c-shared -ldflags="-s -w" -o target/module.wasm .
+        env:
+          GOOS: wasip1
+          GOARCH: wasm
+
+  build:keynote-benchmarks-module:
+    desc: Build keynote-benchmarks-go WASM module
+    dir: ../../modules/keynote-benchmarks-go
+    cmds:
+      - go generate ./...
+      - mkdir -p target
+      - cmd: go build -buildmode=c-shared -ldflags="-s -w" -o target/module.wasm .
+        env:
+          GOOS: wasip1
+          GOARCH: wasm
+
+  build:view-module:
+    desc: Build sdk-test-view-go WASM module
+    dir: ../../modules/sdk-test-view-go
+    cmds:
+      - go generate ./...
+      - mkdir -p target
+      - cmd: go build -buildmode=c-shared -ldflags="-s -w" -o target/module.wasm .
+        env:
+          GOOS: wasip1
+          GOARCH: wasm
+
+  build:procedure-module:
+    desc: Build sdk-test-procedure-go WASM module
+    dir: ../../modules/sdk-test-procedure-go
+    cmds:
+      - go generate ./...
+      - mkdir -p target
+      - cmd: go build -buildmode=c-shared -ldflags="-s -w" -o target/module.wasm .
+        env:
+          GOOS: wasip1
+          GOARCH: wasm
+
+  build:module-test-module:
+    desc: Build module-test-go WASM module
+    dir: ../../modules/module-test-go
+    cmds:
+      - go generate ./...
+      - mkdir -p target
+      - cmd: go build -buildmode=c-shared -ldflags="-s -w" -o target/module.wasm .
+        env:
+          GOOS: wasip1
+          GOARCH: wasm
+
+  build:basic-go-server:
+    desc: Build basic-go server WASM module
+    dir: ../../templates/basic-go/spacetimedb
+    cmds:
+      - go generate ./...
+      - cmd: go build -buildmode=c-shared -ldflags="-s -w" -o module.wasm .
+        env:
+          GOOS: wasip1
+          GOARCH: wasm
+
+  build:basic-go-client:
+    desc: Build basic-go client
+    dir: ../../templates/basic-go
+    cmds:
+      - go build -o basic-go-client .
+
+  build:chat-console-go-server:
+    desc: Build chat-console-go server WASM module
+    dir: ../../templates/chat-console-go/spacetimedb
+    cmds:
+      - go generate ./...
+      - cmd: go build -buildmode=c-shared -ldflags="-s -w" -o module.wasm .
+        env:
+          GOOS: wasip1
+          GOARCH: wasm
+
+  build:chat-console-go-client:
+    desc: Build chat-console-go client
+    dir: ../../templates/chat-console-go
+    cmds:
+      - go build -o chat-console-go-client .
+
+  build:all-modules:
+    desc: Build all Go WASM modules
+    cmds:
+      - task: build:sdk-test-module
+      - task: build:benchmark-module
+      - task: build:connect-disconnect-module
+      - task: build:event-table-module
+      - task: build:perf-test-module
+      - task: build:keynote-benchmarks-module
+      - task: build:view-module
+      - task: build:procedure-module
+      - task: build:module-test-module
+      - task: build:basic-go-server
+      - task: build:chat-console-go-server
 
   clean:
     desc: Clean build artifacts
@@ -108,6 +234,17 @@ tasks:
       - rm -f tests/integration/server_module/module.wasm
       - rm -f ../../modules/sdk-test-go/target/module.wasm
       - rm -f ../../modules/benchmarks-go/target/module.wasm
+      - rm -f ../../modules/sdk-test-connect-disconnect-go/target/module.wasm
+      - rm -f ../../modules/sdk-test-event-table-go/target/module.wasm
+      - rm -f ../../modules/perf-test-go/target/module.wasm
+      - rm -f ../../modules/keynote-benchmarks-go/target/module.wasm
+      - rm -f ../../modules/sdk-test-view-go/target/module.wasm
+      - rm -f ../../modules/sdk-test-procedure-go/target/module.wasm
+      - rm -f ../../modules/module-test-go/target/module.wasm
+      - rm -f ../../templates/basic-go/spacetimedb/module.wasm
+      - rm -f ../../templates/basic-go/basic-go-client
+      - rm -f ../../templates/chat-console-go/spacetimedb/module.wasm
+      - rm -f ../../templates/chat-console-go/chat-console-go-client
       - go clean -cache
 
   check:
