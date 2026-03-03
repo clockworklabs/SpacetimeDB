@@ -91,6 +91,9 @@ export class TableCacheImpl<
     //   field-level and explicit table-level indexes.
     for (const idxDef of this.tableDef.resolvedIndexes) {
       const index = this.#makeReadonlyIndex(this.tableDef, idxDef);
+      // IMPORTANT: for duplicate accessor names, client cache uses assignment
+      // semantics and later entries overwrite earlier ones. This matches prior
+      // behavior and is intentionally different from server runtime merge logic.
       (this as any)[idxDef.name] = index;
     }
   }

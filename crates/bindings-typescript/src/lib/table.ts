@@ -418,11 +418,6 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   }
 
   // convert explicit multi‑column indexes coming from options.indexes
-  const takenIndexAccessors = new Set(
-    indexes
-      .map(index => index.accessorName)
-      .filter((accessor): accessor is string => accessor !== undefined)
-  );
   for (const indexOpts of userIndexes ?? []) {
     const accessor = indexOpts.accessor;
     if (typeof accessor !== 'string' || accessor.length === 0) {
@@ -432,14 +427,6 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         `Index '${indexLabel}' on table '${tableLabel}' must define a non-empty 'accessor'`
       );
     }
-    if (takenIndexAccessors.has(accessor)) {
-      const tableLabel = name ?? '<unnamed>';
-      throw new TypeError(
-        `Duplicate index accessor '${accessor}' on table '${tableLabel}'`
-      );
-    }
-    takenIndexAccessors.add(accessor);
-
     let algorithm: RawIndexAlgorithm;
     switch (indexOpts.algorithm) {
       case 'btree':
@@ -458,9 +445,16 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         algorithm = { tag: 'Direct', value: colIds.get(indexOpts.column)! };
         break;
     }
+
     // Unnamed indexes are assigned a globally unique source name.
     // `accessor` controls the TypeScript property used to access the index.
     // `name` (if present) is preserved as the canonical schema name.
+    //
+    // IMPORTANT: we intentionally do not reject duplicate accessor names here.
+    // This preserves existing behavior for raw table definitions. Downstream
+    // runtime consumers decide how duplicates are resolved:
+    // - server runtime merges duplicate accessors onto one accessor object
+    // - client cache assignment is last-write-wins for duplicate accessors
     indexes.push({
       sourceName: undefined,
       accessorName: accessor,
