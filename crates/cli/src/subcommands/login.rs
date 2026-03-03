@@ -1,5 +1,5 @@
-use crate::util::decode_identity;
 use crate::Config;
+use crate::{logout::do_logout, util::decode_identity};
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command};
 use reqwest::Url;
 use serde::Deserialize;
@@ -62,12 +62,18 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let server_issued_login: Option<&String> = args.get_one("server");
     let open_browser = !args.get_flag("no-browser");
 
-    if let Some(token) = spacetimedb_token {
-        // If already logged in, log out first.
-        if config.spacetimedb_token().is_some() {
-            log_out_quietly(&mut config, &host).await;
+    // If already logged in, log out first
+    if let Some(token) = config.spacetimedb_token() {
+        let old_identity = decode_identity(token).ok();
+        do_logout(&mut config, &host).await;
+        if let Some(id) = old_identity {
+            println!("Logged out of previous session (identity {id}).");
+        } else {
             println!("Logged out of previous session.");
         }
+    }
+
+    if let Some(token) = spacetimedb_token {
         config.set_spacetimedb_token(token.clone());
         config.save();
         match decode_identity(token) {
@@ -75,17 +81,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             Err(_) => println!("Token saved."),
         }
         return Ok(());
-    }
-
-    // If already logged in, log out first and then proceed with a fresh login.
-    if config.spacetimedb_token().is_some() {
-        let old_identity = config.spacetimedb_token().and_then(|t| decode_identity(t).ok());
-        log_out_quietly(&mut config, &host).await;
-        if let Some(id) = old_identity {
-            println!("Logged out of previous session (identity {id}).");
-        } else {
-            println!("Logged out of previous session.");
-        }
     }
 
     if let Some(server) = server_issued_login {
@@ -123,24 +118,6 @@ async fn exec_show(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
     }
 
     Ok(())
-}
-
-/// Log out without printing errors on failure (best-effort server-side invalidation).
-async fn log_out_quietly(config: &mut Config, host: &Url) {
-    if let Some(web_session_token) = config.web_session_token() {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .build()
-            .unwrap_or_default();
-        // Best-effort: ignore errors (might be offline).
-        let _ = client
-            .post(host.join("auth/cli/logout").unwrap_or_else(|_| host.clone()))
-            .header("Authorization", format!("Bearer {web_session_token}"))
-            .send()
-            .await;
-    }
-    config.clear_login_tokens();
-    config.save();
 }
 
 async fn spacetimedb_login_and_save(
