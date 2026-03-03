@@ -53,7 +53,7 @@ pub async fn ensure_logged_out(config: &mut Config, host: &Url) -> bool {
 
     // Best-effort server-side session invalidation.
     if let Err(e) = server_logout(config, host).await {
-        eprintln!("Failed to logout from server: {e}\nLocal credentials have been cleared.");
+        eprintln!("Warning: Failed to logout from auth server: {e}\nLocal credentials have been cleared.");
     }
     config.clear_login_tokens();
     config.save();
