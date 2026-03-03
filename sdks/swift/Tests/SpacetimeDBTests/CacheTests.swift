@@ -40,6 +40,7 @@ final class CacheTests: XCTestCase {
         let transactionUpdate = try decoder.decode(TransactionUpdate.self, from: rawPayload)
 
         clientCache.applyTransactionUpdate(transactionUpdate)
+        personCache.sync()
 
         XCTAssertEqual(personCache.rows.count, 1)
         XCTAssertEqual(personCache.rows[0].id, 42)
@@ -60,6 +61,7 @@ final class CacheTests: XCTestCase {
 
         let secondCache: TableCache<Person> = clientCache.getTableCache(tableName: "Person")
         XCTAssertTrue(firstCache === secondCache)
+        secondCache.sync()
         XCTAssertEqual(secondCache.rows.count, 1)
         XCTAssertEqual(secondCache.rows[0].id, 7)
         XCTAssertEqual(secondCache.rows[0].name, "Bob")
@@ -144,6 +146,7 @@ final class CacheTests: XCTestCase {
         ])
 
         clientCache.applyTransactionUpdate(update)
+        personCache.sync()
 
         XCTAssertEqual(personCache.rows, [newRow])
         XCTAssertEqual(updates.count, 1)

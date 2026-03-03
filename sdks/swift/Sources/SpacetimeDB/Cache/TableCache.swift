@@ -1,7 +1,6 @@
 import Foundation
 import Observation
 
-@MainActor
 public protocol SpacetimeTableCacheProtocol: AnyObject, Sendable {
     var tableName: String { get }
     func handleInsert(rowBytes: Data) throws
@@ -10,9 +9,9 @@ public protocol SpacetimeTableCacheProtocol: AnyObject, Sendable {
     func clear()
 }
 
-@MainActor
 public final class TableDeltaHandle: @unchecked Sendable {
     private let cancelAction: () -> Void
+    private let lock = NSLock()
     private var isCancelled = false
 
     init(cancelAction: @escaping () -> Void) {
@@ -20,138 +19,238 @@ public final class TableDeltaHandle: @unchecked Sendable {
     }
 
     public func cancel() {
+        lock.lock()
+        defer { lock.unlock() }
         guard !isCancelled else { return }
         isCancelled = true
         cancelAction()
     }
 }
 
+// MARK: - HashedBytes
+
+/// A Data wrapper that pre-computes its hash on construction.
+/// Dictionary lookups hash 8 bytes (the cached Int) instead of N row bytes.
+struct HashedBytes: Hashable, Sendable {
+    let data: Data
+    private let _hash: Int
+
+    init(_ data: Data) {
+        self.data = data
+        self._hash = data.hashValue // Native SipHash, much faster
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(_hash)
+    }
+
+    static func == (lhs: HashedBytes, rhs: HashedBytes) -> Bool {
+        lhs._hash == rhs._hash && lhs.data == rhs.data
+    }
+}
+
+// MARK: - RowEntry
+
+/// Merged storage: count + decoded value in a single dictionary entry.
+/// Eliminates the second dictionary lookup per insert/delete.
+struct RowEntry<T> {
+    var count: Int
+    var value: T
+}
+
+// MARK: - TableCache
+
 /// A reactive, thread-safe cache containing the local replica array of persistent rows for a given SpacetimeDB table
-@MainActor
 @Observable
-public final class TableCache<T: Decodable & Sendable>: SpacetimeTableCacheProtocol {
+public final class TableCache<T: Decodable & Sendable>: SpacetimeTableCacheProtocol, @unchecked Sendable {
     public let tableName: String
-    
+
     // For SwiftUI observability via @Observable
+    // This is only updated on the MainActor when requested or via sync()
+    @MainActor
     public private(set) var rows: [T] = []
-    
-    private let decoder = BSATNDecoder()
-    private var rowCountsByBytes: [Data: Int] = [:]
-    private var rowValueByBytes: [Data: T] = [:]
-    private var insertCallbacks: [UUID: (T) -> Void] = [:]
-    private var deleteCallbacks: [UUID: (T) -> Void] = [:]
-    private var updateCallbacks: [UUID: (T, T) -> Void] = [:]
-    
+
+    // All internal state is @ObservationIgnored to prevent the @Observable macro
+    // from intercepting every dictionary mutation with willSet/didSet tracking.
+    // Only `rows` is observed for SwiftUI reactivity.
+    @ObservationIgnored private let lock = NSLock()
+    @ObservationIgnored private let decoder = BSATNDecoder()
+    @ObservationIgnored private var entries: [HashedBytes: RowEntry<T>] = [:]
+    @ObservationIgnored private var insertCallbacks: [UUID: (T) -> Void] = [:]
+    @ObservationIgnored private var deleteCallbacks: [UUID: (T) -> Void] = [:]
+    @ObservationIgnored private var updateCallbacks: [UUID: (T, T) -> Void] = [:]
+
     public init(tableName: String) {
         self.tableName = tableName
     }
-    
+
     public func handleInsert(rowBytes: Data) throws {
-        do {
-            let row = try decoder.decode(T.self, from: rowBytes)
-            rowValueByBytes[rowBytes] = row
-            rowCountsByBytes[rowBytes, default: 0] += 1
-            updatePublishedRows()
-            for callback in insertCallbacks.values {
-                callback(row)
+        let key = HashedBytes(rowBytes)
+        let row: T
+        lock.lock()
+        if let index = entries.index(forKey: key) {
+            entries.values[index].count += 1
+            row = entries.values[index].value
+        } else {
+            do {
+                row = try decoder.decode(T.self, from: rowBytes)
+                entries[key] = RowEntry(count: 1, value: row)
+            } catch {
+                lock.unlock()
+                Log.cache.error("Failed to decode row for table '\(self.tableName)': \(error.localizedDescription)")
+                throw error
             }
-        } catch {
-            Log.cache.error("Failed to decode row for table '\(self.tableName)': \(error.localizedDescription)")
-            Log.cache.debug("Raw bytes (\(rowBytes.count)): \(rowBytes.map { String(format: "%02x", $0) }.joined())")
-            throw error
+        }
+        let callbacks = Array(insertCallbacks.values)
+        lock.unlock()
+
+        for callback in callbacks {
+            callback(row)
         }
     }
-    
+
     public func handleDelete(rowBytes: Data) throws {
-        let deletedRow = rowValueByBytes[rowBytes]
-        guard let existing = rowCountsByBytes[rowBytes] else {
+        let key = HashedBytes(rowBytes)
+        lock.lock()
+        guard let index = entries.index(forKey: key) else {
+            lock.unlock()
             return
         }
-        if existing <= 1 {
-            rowCountsByBytes.removeValue(forKey: rowBytes)
-            rowValueByBytes.removeValue(forKey: rowBytes)
+        let deletedRow = entries.values[index].value
+        if entries.values[index].count <= 1 {
+            entries.remove(at: index)
         } else {
-            rowCountsByBytes[rowBytes] = existing - 1
+            entries.values[index].count -= 1
         }
-        updatePublishedRows()
-        if let deletedRow {
-            for callback in deleteCallbacks.values {
-                callback(deletedRow)
-            }
+        let callbacks = Array(deleteCallbacks.values)
+        lock.unlock()
+
+        for callback in callbacks {
+            callback(deletedRow)
         }
     }
 
     public func handleUpdate(oldRowBytes: Data, newRowBytes: Data) throws {
-        guard let existing = rowCountsByBytes[oldRowBytes], existing > 0, let oldRow = rowValueByBytes[oldRowBytes] else {
+        let oldKey = HashedBytes(oldRowBytes)
+        let newKey = HashedBytes(newRowBytes)
+        lock.lock()
+        
+        guard let oldIndex = entries.index(forKey: oldKey) else {
+            lock.unlock()
             try handleInsert(rowBytes: newRowBytes)
             return
         }
 
-        let newRow = try decoder.decode(T.self, from: newRowBytes)
-
-        if existing <= 1 {
-            rowCountsByBytes.removeValue(forKey: oldRowBytes)
-            rowValueByBytes.removeValue(forKey: oldRowBytes)
+        let oldRow = entries.values[oldIndex].value
+        let newRow: T
+        
+        if let newIndex = entries.index(forKey: newKey) {
+            entries.values[newIndex].count += 1
+            newRow = entries.values[newIndex].value
         } else {
-            rowCountsByBytes[oldRowBytes] = existing - 1
+            do {
+                newRow = try decoder.decode(T.self, from: newRowBytes)
+                entries[newKey] = RowEntry(count: 1, value: newRow)
+            } catch {
+                lock.unlock()
+                Log.cache.error("Failed to decode row for table '\(self.tableName)': \(error.localizedDescription)")
+                throw error
+            }
         }
 
-        rowValueByBytes[newRowBytes] = newRow
-        rowCountsByBytes[newRowBytes, default: 0] += 1
-        updatePublishedRows()
+        // Re-fetch old index strictly speaking because newKey insertion might have rehashed.
+        // However, we can just remove/decrement now.
+        if let finalOldIndex = entries.index(forKey: oldKey) {
+            if entries.values[finalOldIndex].count <= 1 {
+                entries.remove(at: finalOldIndex)
+            } else {
+                entries.values[finalOldIndex].count -= 1
+            }
+        }
 
-        for callback in updateCallbacks.values {
+        let callbacks = Array(updateCallbacks.values)
+        lock.unlock()
+
+        for callback in callbacks {
             callback(oldRow, newRow)
         }
     }
-    
+
     public func clear() {
-        rowCountsByBytes.removeAll()
-        rowValueByBytes.removeAll()
-        updatePublishedRows()
+        lock.lock()
+        entries.removeAll()
+        lock.unlock()
     }
 
     @discardableResult
     public func onInsert(_ callback: @escaping (T) -> Void) -> TableDeltaHandle {
         let id = UUID()
+        lock.lock()
         insertCallbacks[id] = callback
+        lock.unlock()
         return TableDeltaHandle { [weak self] in
-            self?.insertCallbacks.removeValue(forKey: id)
+            guard let self else { return }
+            self.lock.lock()
+            self.insertCallbacks.removeValue(forKey: id)
+            self.lock.unlock()
         }
     }
 
     @discardableResult
     public func onDelete(_ callback: @escaping (T) -> Void) -> TableDeltaHandle {
         let id = UUID()
+        lock.lock()
         deleteCallbacks[id] = callback
+        lock.unlock()
         return TableDeltaHandle { [weak self] in
-            self?.deleteCallbacks.removeValue(forKey: id)
+            guard let self else { return }
+            self.lock.lock()
+            self.deleteCallbacks.removeValue(forKey: id)
+            self.lock.unlock()
         }
     }
 
     @discardableResult
     public func onUpdate(_ callback: @escaping (T, T) -> Void) -> TableDeltaHandle {
         let id = UUID()
+        lock.lock()
         updateCallbacks[id] = callback
+        lock.unlock()
         return TableDeltaHandle { [weak self] in
-            self?.updateCallbacks.removeValue(forKey: id)
+            guard let self else { return }
+            self.lock.lock()
+            self.updateCallbacks.removeValue(forKey: id)
+            self.lock.unlock()
         }
     }
-    
-    private func updatePublishedRows() {
-        let sortedKeys = rowCountsByBytes.keys.sorted { lhs, rhs in
-            lhs.lexicographicallyPrecedes(rhs)
-        }
+
+    /// Synchronizes the observable `rows` array with the internal background storage.
+    /// This should be called on the MainActor, typically after a transaction update or when the UI needs refreshing.
+    @MainActor
+    public func sync() {
+        self.rows = snapshot()
+    }
+
+    /// Internal method to generate a flattened snapshot of all rows in deterministic order.
+    private func snapshot() -> [T] {
+        lock.lock()
+        defer { lock.unlock() }
+
         var flattened: [T] = []
-        for key in sortedKeys {
-            guard let count = rowCountsByBytes[key], let row = rowValueByBytes[key], count > 0 else {
-                continue
-            }
-            flattened.reserveCapacity(flattened.count + count)
-            for _ in 0..<count {
-                flattened.append(row)
+        flattened.reserveCapacity(entries.count) // Baseline capacity
+        for entry in entries.values {
+            if entry.count > 0 {
+                flattened.reserveCapacity(flattened.count + entry.count)
+                for _ in 0..<entry.count {
+                    flattened.append(entry.value)
+                }
             }
         }
-        self.rows = flattened
+        return flattened
+    }
+}
+extension TableCache: Decodable where T: Decodable {
+    public convenience init(from decoder: Decoder) throws {
+        fatalError("TableCache cannot be decoded; it is a managed container.")
     }
 }

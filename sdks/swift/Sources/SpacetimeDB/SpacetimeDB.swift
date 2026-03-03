@@ -73,16 +73,28 @@ public enum ConnectionState: Sendable, Equatable {
     case reconnecting
 }
 
-@MainActor
 public final class SubscriptionHandle: @unchecked Sendable {
     public let queries: [String]
-    public private(set) var state: SubscriptionState = .pending
+    private let lock = NSLock()
+    
+    private var _state: SubscriptionState = .pending
+    public var state: SubscriptionState {
+        lock.lock(); defer { lock.unlock() }; return _state
+    }
 
-    var querySetId: QuerySetId?
-    var requestId: RequestId?
+    private var _querySetId: QuerySetId?
+    var querySetId: QuerySetId? {
+        lock.lock(); defer { lock.unlock() }; return _querySetId
+    }
+    
+    var requestId: RequestId? {
+        lock.lock(); defer { lock.unlock() }; return _requestId
+    }
+    private var _requestId: RequestId?
+    
     weak var client: SpacetimeClient?
-    var onApplied: (() -> Void)?
-    var onError: ((String) -> Void)?
+    private var onApplied: (() -> Void)?
+    private var onError: ((String) -> Void)?
 
     init(queries: [String], client: SpacetimeClient, onApplied: (() -> Void)?, onError: ((String) -> Void)?) {
         self.queries = queries
@@ -96,31 +108,51 @@ public final class SubscriptionHandle: @unchecked Sendable {
     }
 
     func markPending(requestId: RequestId, querySetId: QuerySetId) {
-        self.requestId = requestId
-        self.querySetId = querySetId
-        self.state = .pending
+        lock.lock()
+        self._requestId = requestId
+        self._querySetId = querySetId
+        self._state = .pending
+        lock.unlock()
     }
 
     func markApplied(querySetId: QuerySetId) {
-        self.requestId = nil
-        self.querySetId = querySetId
-        self.state = .active
-        onApplied?()
+        lock.lock()
+        self._requestId = nil
+        self._querySetId = querySetId
+        self._state = .active
+        let applied = onApplied
+        lock.unlock()
+        
+        if let applied {
+            Task { @MainActor in
+                applied()
+            }
+        }
     }
 
     func markError(_ message: String) {
-        self.state = .ended
-        onError?(message)
+        lock.lock()
+        self._state = .ended
+        let error = onError
         onApplied = nil
         onError = nil
+        lock.unlock()
+        
+        if let error {
+            Task { @MainActor in
+                error(message)
+            }
+        }
     }
 
     func markEnded() {
-        self.state = .ended
-        self.requestId = nil
-        self.querySetId = nil
+        lock.lock()
+        self._state = .ended
+        self._requestId = nil
+        self._querySetId = nil
         onApplied = nil
         onError = nil
+        lock.unlock()
     }
 }
 

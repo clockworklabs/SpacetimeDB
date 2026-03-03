@@ -11,38 +11,37 @@ public class BSATNDecoder {
     public init() {}
     
     public func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
-        let storage = BSATNReader(data: data)
-        let decoder = _BSATNDecoder(storage: storage, codingPath: [])
+        let reader = BSATNReader(data: data)
         if let specialType = type as? BSATNSpecialDecodable.Type {
-            return try specialType.init(fromBSATN: decoder) as! T
+            return try specialType.decodeBSATN(from: reader) as! T
         }
+        let decoder = _BSATNDecoder(storage: reader, codingPath: [])
         return try T(from: decoder)
     }
     
     public func decode(_ type: String.Type, from data: Data) throws -> String {
-        let storage = BSATNReader(data: data)
-        let decoder = _BSATNDecoder(storage: storage, codingPath: [])
-        return try decoder.singleValueContainer().decode(String.self)
+        let reader = BSATNReader(data: data)
+        return try reader.readString()
     }
 }
 
-class BSATNReader {
-    let data: Data
-    var offset: Int = 0
+public class BSATNReader {
+    public let data: Data
+    public var offset: Int = 0
     
-    init(data: Data) {
+    public init(data: Data) {
         self.data = data
     }
     
-    var isAtEnd: Bool {
+    public var isAtEnd: Bool {
         return offset >= data.count
     }
     
-    var remaining: Int {
+    public var remaining: Int {
         return max(0, data.count - offset)
     }
     
-    func readBytes(count: Int) throws -> Data {
+    public func readBytes(count: Int) throws -> Data {
         guard offset + count <= data.count else {
             throw BSATNDecodingError.unexpectedEndOfData
         }
@@ -51,24 +50,123 @@ class BSATNReader {
         return bytes
     }
     
-    func read<T: FixedWidthInteger>(_ type: T.Type) throws -> T {
+    public func read<T: FixedWidthInteger>(_ type: T.Type) throws -> T {
         let size = MemoryLayout<T>.size
-        let bytes = try readBytes(count: size)
-        let value = bytes.withUnsafeBytes { $0.loadUnaligned(as: T.self) }
+        guard offset + size <= data.count else {
+            throw BSATNDecodingError.unexpectedEndOfData
+        }
+        let value = data.withUnsafeBytes { buffer in
+            buffer.loadUnaligned(fromByteOffset: offset, as: T.self)
+        }
+        offset += size
         return T(littleEndian: value)
     }
-    
-    func readDouble() throws -> Double {
-        let bitPattern = try read(UInt64.self)
-        return Double(bitPattern: bitPattern)
-    }
-    
-    func readFloat() throws -> Float {
-        let bitPattern = try read(UInt32.self)
-        return Float(bitPattern: bitPattern)
+
+    public func readU8() throws -> UInt8 {
+        guard offset + 1 <= data.count else { throw BSATNDecodingError.unexpectedEndOfData }
+        let val = data[offset]
+        offset += 1
+        return val
     }
 
-    func readArray<T>(_ block: () throws -> T) throws -> [T] {
+    public func readU16() throws -> UInt16 {
+        guard offset + 2 <= data.count else { throw BSATNDecodingError.unexpectedEndOfData }
+        let val = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: UInt16.self) }
+        offset += 2
+        return UInt16(littleEndian: val)
+    }
+
+    public func readU32() throws -> UInt32 {
+        guard offset + 4 <= data.count else { throw BSATNDecodingError.unexpectedEndOfData }
+        let val = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: UInt32.self) }
+        offset += 4
+        return UInt32(littleEndian: val)
+    }
+
+    public func readU64() throws -> UInt64 {
+        guard offset + 8 <= data.count else { throw BSATNDecodingError.unexpectedEndOfData }
+        let val = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: UInt64.self) }
+        offset += 8
+        return UInt64(littleEndian: val)
+    }
+
+    public func readI8() throws -> Int8 {
+        guard offset + 1 <= data.count else { throw BSATNDecodingError.unexpectedEndOfData }
+        let val = Int8(bitPattern: data[offset])
+        offset += 1
+        return val
+    }
+
+    public func readI16() throws -> Int16 {
+        guard offset + 2 <= data.count else { throw BSATNDecodingError.unexpectedEndOfData }
+        let val = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: Int16.self) }
+        offset += 2
+        return Int16(littleEndian: val)
+    }
+
+    public func readI32() throws -> Int32 {
+        guard offset + 4 <= data.count else { throw BSATNDecodingError.unexpectedEndOfData }
+        let val = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: Int32.self) }
+        offset += 4
+        return Int32(littleEndian: val)
+    }
+
+    public func readI64() throws -> Int64 {
+        guard offset + 8 <= data.count else { throw BSATNDecodingError.unexpectedEndOfData }
+        let val = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: Int64.self) }
+        offset += 8
+        return Int64(littleEndian: val)
+    }
+    
+    public func readDouble() throws -> Double {
+        guard offset + 8 <= data.count else {
+            throw BSATNDecodingError.unexpectedEndOfData
+        }
+        let bits = data.withUnsafeBytes { buffer in
+            buffer.loadUnaligned(fromByteOffset: offset, as: UInt64.self)
+        }
+        offset += 8
+        return Double(bitPattern: UInt64(littleEndian: bits))
+    }
+
+    public func readFloat() throws -> Float {
+        guard offset + 4 <= data.count else {
+            throw BSATNDecodingError.unexpectedEndOfData
+        }
+        let bits = data.withUnsafeBytes { buffer in
+            buffer.loadUnaligned(fromByteOffset: offset, as: UInt32.self)
+        }
+        offset += 4
+        return Float(bitPattern: UInt32(littleEndian: bits))
+    }
+
+    public func readString() throws -> String {
+        let length = Int(try read(UInt32.self))
+        guard offset + length <= data.count else {
+            throw BSATNDecodingError.unexpectedEndOfData
+        }
+        let string = data.withUnsafeBytes { buffer in
+            let ptr = buffer.baseAddress!.advanced(by: offset).assumingMemoryBound(to: UInt8.self)
+            return String(unsafeUninitializedCapacity: length) { dest in
+                _ = UnsafeMutableBufferPointer(start: dest.baseAddress!, count: length)
+                    .initialize(from: UnsafeBufferPointer(start: ptr, count: length))
+                return length
+            }
+        }
+        offset += length
+        return string
+    }
+
+    public func readBool() throws -> Bool {
+        let byte = try read(UInt8.self)
+        switch byte {
+        case 0: return false
+        case 1: return true
+        default: throw BSATNDecodingError.invalidType
+        }
+    }
+
+    public func readArray<T>(_ block: () throws -> T) throws -> [T] {
         let count = try read(UInt32.self)
         var elements: [T] = []
         elements.reserveCapacity(Int(count))
@@ -78,7 +176,7 @@ class BSATNReader {
         return elements
     }
 
-    func readTaggedEnum<T>(_ block: (UInt8) throws -> T) throws -> T {
+    public func readTaggedEnum<T>(_ block: (UInt8) throws -> T) throws -> T {
         let tag = try read(UInt8.self)
         return try block(tag)
     }
@@ -112,53 +210,131 @@ struct KeyedBSATNDecodingContainer<Key: CodingKey>: KeyedDecodingContainerProtoc
     }
     
     func decodeNil(forKey key: Key) throws -> Bool {
-        // SpacetimeDB Option encoding: 0 = Some, 1 = None.
         let tag = try decoder.storage.read(UInt8.self)
         switch tag {
-        case 0:
-            return false
-        case 1:
-            return true
-        default:
-            throw BSATNDecodingError.invalidType
+        case 0: return false
+        case 1: return true
+        default: throw BSATNDecodingError.invalidType
         }
     }
     
     func decode<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T {
-        let childDecoder = _BSATNDecoder(storage: decoder.storage, codingPath: codingPath + [key])
         if let specialType = type as? BSATNSpecialDecodable.Type {
-            return try specialType.init(fromBSATN: childDecoder) as! T
+            return try specialType.decodeBSATN(from: decoder.storage) as! T
         }
+        let childDecoder = _BSATNDecoder(storage: decoder.storage, codingPath: codingPath + [key])
         return try T(from: childDecoder)
     }
     
     func decodeIfPresent<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T? {
         let tag = try decoder.storage.read(UInt8.self)
-        if tag == 1 {
-            return nil
-        }
-        guard tag == 0 else {
-            throw BSATNDecodingError.invalidType
+        if tag == 1 { return nil }
+        guard tag == 0 else { throw BSATNDecodingError.invalidType }
+        if let specialType = type as? BSATNSpecialDecodable.Type {
+            return try specialType.decodeBSATN(from: decoder.storage) as? T
         }
         let childDecoder = _BSATNDecoder(storage: decoder.storage, codingPath: codingPath + [key])
-        if let specialType = type as? BSATNSpecialDecodable.Type {
-            return try specialType.init(fromBSATN: childDecoder) as? T
-        }
         return try T(from: childDecoder)
     }
     
+    func decodeIfPresent(_ type: Bool.Type, forKey key: Key) throws -> Bool? {
+        let tag = try decoder.storage.read(UInt8.self)
+        if tag == 1 { return nil }
+        guard tag == 0 else { throw BSATNDecodingError.invalidType }
+        return try decoder.storage.readBool()
+    }
+
+    func decodeIfPresent(_ type: String.Type, forKey key: Key) throws -> String? {
+        let tag = try decoder.storage.read(UInt8.self)
+        if tag == 1 { return nil }
+        guard tag == 0 else { throw BSATNDecodingError.invalidType }
+        return try decoder.storage.readString()
+    }
+
+    func decodeIfPresent(_ type: Float.Type, forKey key: Key) throws -> Float? {
+        let tag = try decoder.storage.read(UInt8.self)
+        if tag == 1 { return nil }
+        guard tag == 0 else { throw BSATNDecodingError.invalidType }
+        return try decoder.storage.readFloat()
+    }
+
     func decodeIfPresent(_ type: Double.Type, forKey key: Key) throws -> Double? {
         let tag = try decoder.storage.read(UInt8.self)
-        if tag == 1 {
-            return nil
-        }
-        guard tag == 0 else {
-            throw BSATNDecodingError.invalidType
-        }
-        let childDecoder = _BSATNDecoder(storage: decoder.storage, codingPath: codingPath + [key])
-        return try Double(from: childDecoder)
+        if tag == 1 { return nil }
+        guard tag == 0 else { throw BSATNDecodingError.invalidType }
+        return try decoder.storage.readDouble()
     }
-    
+
+    func decodeIfPresent(_ type: Int.Type, forKey key: Key) throws -> Int? {
+        let tag = try decoder.storage.read(UInt8.self)
+        if tag == 1 { return nil }
+        guard tag == 0 else { throw BSATNDecodingError.invalidType }
+        return Int(try decoder.storage.read(Int64.self))
+    }
+
+    func decodeIfPresent(_ type: Int8.Type, forKey key: Key) throws -> Int8? {
+        let tag = try decoder.storage.read(UInt8.self)
+        if tag == 1 { return nil }
+        guard tag == 0 else { throw BSATNDecodingError.invalidType }
+        return try decoder.storage.read(Int8.self)
+    }
+
+    func decodeIfPresent(_ type: Int16.Type, forKey key: Key) throws -> Int16? {
+        let tag = try decoder.storage.read(UInt8.self)
+        if tag == 1 { return nil }
+        guard tag == 0 else { throw BSATNDecodingError.invalidType }
+        return try decoder.storage.read(Int16.self)
+    }
+
+    func decodeIfPresent(_ type: Int32.Type, forKey key: Key) throws -> Int32? {
+        let tag = try decoder.storage.read(UInt8.self)
+        if tag == 1 { return nil }
+        guard tag == 0 else { throw BSATNDecodingError.invalidType }
+        return try decoder.storage.read(Int32.self)
+    }
+
+    func decodeIfPresent(_ type: Int64.Type, forKey key: Key) throws -> Int64? {
+        let tag = try decoder.storage.read(UInt8.self)
+        if tag == 1 { return nil }
+        guard tag == 0 else { throw BSATNDecodingError.invalidType }
+        return try decoder.storage.read(Int64.self)
+    }
+
+    func decodeIfPresent(_ type: UInt.Type, forKey key: Key) throws -> UInt? {
+        let tag = try decoder.storage.read(UInt8.self)
+        if tag == 1 { return nil }
+        guard tag == 0 else { throw BSATNDecodingError.invalidType }
+        return UInt(try decoder.storage.read(UInt64.self))
+    }
+
+    func decodeIfPresent(_ type: UInt8.Type, forKey key: Key) throws -> UInt8? {
+        let tag = try decoder.storage.read(UInt8.self)
+        if tag == 1 { return nil }
+        guard tag == 0 else { throw BSATNDecodingError.invalidType }
+        return try decoder.storage.read(UInt8.self)
+    }
+
+    func decodeIfPresent(_ type: UInt16.Type, forKey key: Key) throws -> UInt16? {
+        let tag = try decoder.storage.read(UInt8.self)
+        if tag == 1 { return nil }
+        guard tag == 0 else { throw BSATNDecodingError.invalidType }
+        return try decoder.storage.read(UInt16.self)
+    }
+
+    func decodeIfPresent(_ type: UInt32.Type, forKey key: Key) throws -> UInt32? {
+        let tag = try decoder.storage.read(UInt8.self)
+        if tag == 1 { return nil }
+        guard tag == 0 else { throw BSATNDecodingError.invalidType }
+        return try decoder.storage.read(UInt32.self)
+    }
+
+    func decodeIfPresent(_ type: UInt64.Type, forKey key: Key) throws -> UInt64? {
+        let tag = try decoder.storage.read(UInt8.self)
+        if tag == 1 { return nil }
+        guard tag == 0 else { throw BSATNDecodingError.invalidType }
+        return try decoder.storage.read(UInt64.self)
+    }
+
     func nestedContainer<NestedKey>(keyedBy type: NestedKey.Type, forKey key: Key) throws -> KeyedDecodingContainer<NestedKey> where NestedKey : CodingKey {
         let childDecoder = _BSATNDecoder(storage: decoder.storage, codingPath: codingPath + [key])
         return try childDecoder.container(keyedBy: type)
@@ -189,24 +365,21 @@ struct UnkeyedBSATNDecodingContainer: UnkeyedDecodingContainer {
     var currentIndex: Int = 0
     
     mutating func decodeNil() throws -> Bool {
-        // SpacetimeDB Option encoding: 0 = Some, 1 = None.
         let tag = try decoder.storage.read(UInt8.self)
         if tag == 1 {
             currentIndex += 1
             return true
         }
-        guard tag == 0 else {
-            throw BSATNDecodingError.invalidType
-        }
+        guard tag == 0 else { throw BSATNDecodingError.invalidType }
         return false
     }
     
     mutating func decode<T: Decodable>(_ type: T.Type) throws -> T {
-        let childDecoder = _BSATNDecoder(storage: decoder.storage, codingPath: codingPath)
         let value: T
         if let specialType = type as? BSATNSpecialDecodable.Type {
-            value = try specialType.init(fromBSATN: childDecoder) as! T
+            value = try specialType.decodeBSATN(from: decoder.storage) as! T
         } else {
+            let childDecoder = _BSATNDecoder(storage: decoder.storage, codingPath: codingPath)
             value = try T(from: childDecoder)
         }
         currentIndex += 1
@@ -233,34 +406,12 @@ struct SingleValueBSATNDecodingContainer: SingleValueDecodingContainer {
     var codingPath: [CodingKey] { decoder.codingPath }
     
     func decodeNil() -> Bool {
-        // SpacetimeDB Option encoding: 0 = Some, 1 = None.
-        guard let tag = try? decoder.storage.read(UInt8.self) else {
-            return false
-        }
+        guard let tag = try? decoder.storage.read(UInt8.self) else { return false }
         return tag == 1
     }
     
-    func decode(_ type: Bool.Type) throws -> Bool {
-        let byte = try decoder.storage.read(UInt8.self)
-        switch byte {
-        case 0:
-            return false
-        case 1:
-            return true
-        default:
-            throw BSATNDecodingError.invalidType
-        }
-    }
-    
-    func decode(_ type: String.Type) throws -> String {
-        let length = try decoder.storage.read(UInt32.self)
-        let bytes = try decoder.storage.readBytes(count: Int(length))
-        guard let string = String(data: bytes, encoding: .utf8) else {
-            throw BSATNDecodingError.invalidStringEncoding
-        }
-        return string
-    }
-    
+    func decode(_ type: Bool.Type) throws -> Bool { return try decoder.storage.readBool() }
+    func decode(_ type: String.Type) throws -> String { return try decoder.storage.readString() }
     func decode(_ type: Double.Type) throws -> Double { return try decoder.storage.readDouble() }
     func decode(_ type: Float.Type) throws -> Float { return try decoder.storage.readFloat() }
     func decode(_ type: Int.Type) throws -> Int { return Int(try decoder.storage.read(Int64.self)) }
@@ -276,39 +427,40 @@ struct SingleValueBSATNDecodingContainer: SingleValueDecodingContainer {
     
     func decode<T: Decodable>(_ type: T.Type) throws -> T {
         if let specialType = type as? BSATNSpecialDecodable.Type {
-            return try specialType.init(fromBSATN: decoder) as! T
+            return try specialType.decodeBSATN(from: decoder.storage) as! T
         }
         let childDecoder = _BSATNDecoder(storage: decoder.storage, codingPath: codingPath)
         return try T(from: childDecoder)
     }
 }
 
-protocol BSATNSpecialDecodable {
-    init(fromBSATN decoder: _BSATNDecoder) throws
+public protocol BSATNSpecialDecodable {
+    static func decodeBSATN(from reader: BSATNReader) throws -> Self
 }
 
 extension Array: BSATNSpecialDecodable where Element: Decodable {
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        self = try decoder.storage.readArray {
+    public static func decodeBSATN(from reader: BSATNReader) throws -> Array {
+        return try reader.readArray {
             if let specialType = Element.self as? BSATNSpecialDecodable.Type {
-                return try specialType.init(fromBSATN: decoder) as! Element
+                return try specialType.decodeBSATN(from: reader) as! Element
             }
+            let decoder = _BSATNDecoder(storage: reader, codingPath: [])
             return try Element(from: decoder)
         }
     }
 }
 
 extension Optional: BSATNSpecialDecodable where Wrapped: Decodable {
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        let tag = try decoder.storage.read(UInt8.self)
+    public static func decodeBSATN(from reader: BSATNReader) throws -> Optional {
+        let tag = try reader.read(UInt8.self)
         if tag == 1 {
-            self = .none
+            return .none
         } else if tag == 0 {
             if let specialType = Wrapped.self as? BSATNSpecialDecodable.Type {
-                self = .some(try specialType.init(fromBSATN: decoder) as! Wrapped)
-            } else {
-                self = .some(try Wrapped(from: decoder))
+                return .some(try specialType.decodeBSATN(from: reader) as! Wrapped)
             }
+            let decoder = _BSATNDecoder(storage: reader, codingPath: [])
+            return .some(try Wrapped(from: decoder))
         } else {
             throw BSATNDecodingError.invalidType
         }

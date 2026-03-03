@@ -1,18 +1,22 @@
 import Foundation
 
 /// Holds the local state of all SpacetimeDB tables, routing updates from the WebSocket down to each table.
-@MainActor
 public final class ClientCache: @unchecked Sendable {
+    private let lock = NSLock()
     private var tables: [String: any SpacetimeTableCacheProtocol] = [:]
 
-    public var registeredTableNames: Dictionary<String, any SpacetimeTableCacheProtocol>.Keys {
-        tables.keys
+    public var registeredTableNames: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return Array(tables.keys)
     }
 
     public init() {}
 
     /// Registers a new table cache for a given table name.
     public func registerTable<T: Decodable & Sendable>(tableName: String, rowType: T.Type) {
+        lock.lock()
+        defer { lock.unlock() }
         if let existing = self.tables[tableName] {
             if existing is TableCache<T> {
                 // Idempotent re-registration: keep the existing cache instance so
@@ -27,6 +31,8 @@ public final class ClientCache: @unchecked Sendable {
 
     /// Registers a new table cache for a given table name.
     public func registerTable<T>(name: String, cache: TableCache<T>) {
+        lock.lock()
+        defer { lock.unlock() }
         if self.tables[name] != nil {
             // Preserve the first registration to avoid replacing a live cache.
             return
@@ -35,10 +41,14 @@ public final class ClientCache: @unchecked Sendable {
     }
 
     public func getTable(name: String) -> (any SpacetimeTableCacheProtocol)? {
+        lock.lock()
+        defer { lock.unlock() }
         return self.tables[name]
     }
 
     public func getTableCache<T: Decodable & Sendable>(tableName: String) -> TableCache<T> {
+        lock.lock()
+        defer { lock.unlock() }
         guard let table = self.tables[tableName] as? TableCache<T> else {
             fatalError("Table \(tableName) not registered or of wrong type.")
         }
@@ -47,11 +57,20 @@ public final class ClientCache: @unchecked Sendable {
 
     /// Processes a TransactionUpdate payload from the network.
     public func applyTransactionUpdate(_ update: TransactionUpdate) {
+        var modifiedTables = Set<String>()
+        
+        lock.lock()
+        let tablesSnapshot = tables
+        lock.unlock()
+
         for querySet in update.querySets {
             for tableUpdate in querySet.tables {
-                guard let tableCache = self.tables[tableUpdate.tableName.rawValue] else {
+                let tableName = tableUpdate.tableName.rawValue
+                guard let tableCache = tablesSnapshot[tableName] else {
                     continue
                 }
+                
+                modifiedTables.insert(tableName)
 
                 for rowUpdate in tableUpdate.rows {
                     switch rowUpdate {
@@ -82,6 +101,17 @@ public final class ClientCache: @unchecked Sendable {
                 }
             }
         }
+        
+        // After all background processing is done, sync modified tables to MainActor for UI observers
+        if !modifiedTables.isEmpty {
+            Task { @MainActor in
+                for tableName in modifiedTables {
+                    if let table = tablesSnapshot[tableName] as? (any ThreadSafeSyncable) {
+                        table.sync()
+                    }
+                }
+            }
+        }
     }
 
     private func extractRows(from rowList: BsatnRowList) -> [Data] {
@@ -97,7 +127,7 @@ public final class ClientCache: @unchecked Sendable {
             var offset = 0
             while offset < data.count {
                 let end = min(offset + rowSize, data.count)
-                rows.append(data.subdata(in: offset..<end))
+                rows.append(data[offset..<end])
                 offset += rowSize
             }
 
@@ -105,7 +135,7 @@ public final class ClientCache: @unchecked Sendable {
             for i in 0..<offsets.count {
                 let start = Int(offsets[i])
                 let end = (i + 1 < offsets.count) ? Int(offsets[i + 1]) : data.count
-                rows.append(data.subdata(in: start..<end))
+                rows.append(data[start..<end])
             }
         }
 
@@ -139,3 +169,10 @@ public final class ClientCache: @unchecked Sendable {
         }
     }
 }
+
+/// Helper protocol to allow ClientCache to call sync() without knowing the concrete type T
+private protocol ThreadSafeSyncable {
+    @MainActor func sync()
+}
+
+extension TableCache: ThreadSafeSyncable {}

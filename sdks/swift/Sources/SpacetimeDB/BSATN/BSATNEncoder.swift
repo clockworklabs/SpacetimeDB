@@ -9,27 +9,89 @@ public class BSATNEncoder {
     
     public func encode<T: Encodable>(_ value: T) throws -> Data {
         let storage = BSATNStorage()
-        let encoder = _BSATNEncoder(storage: storage, codingPath: [])
         if let bsatnSpecial = value as? BSATNSpecialEncodable {
-            try bsatnSpecial.encodeBSATN(to: encoder)
+            try bsatnSpecial.encodeBSATN(to: storage)
         } else {
+            let encoder = _BSATNEncoder(storage: storage, codingPath: [])
             try value.encode(to: encoder)
         }
         return storage.data
     }
 }
 
-class BSATNStorage {
-    var data = Data()
+public class BSATNStorage {
+    public var data = Data()
     
-    func append(_ newBytes: Data) {
+    public init() {}
+
+    public func append(_ newBytes: Data) {
         data.append(newBytes)
     }
     
-    func append<T: FixedWidthInteger>(_ value: T) {
+    public func append<T: FixedWidthInteger>(_ value: T) {
         var littleEndian = value.littleEndian
-        let bytes = withUnsafeBytes(of: &littleEndian) { Data($0) }
-        data.append(bytes)
+        withUnsafeBytes(of: &littleEndian) { buffer in
+            data.append(buffer.bindMemory(to: UInt8.self))
+        }
+    }
+
+    public func appendU8(_ value: UInt8) {
+        data.append(value)
+    }
+
+    public func appendU16(_ value: UInt16) {
+        var val = value.littleEndian
+        withUnsafeBytes(of: &val) { data.append($0.bindMemory(to: UInt8.self)) }
+    }
+
+    public func appendU32(_ value: UInt32) {
+        var val = value.littleEndian
+        withUnsafeBytes(of: &val) { data.append($0.bindMemory(to: UInt8.self)) }
+    }
+
+    public func appendU64(_ value: UInt64) {
+        var val = value.littleEndian
+        withUnsafeBytes(of: &val) { data.append($0.bindMemory(to: UInt8.self)) }
+    }
+
+    public func appendI8(_ value: Int8) {
+        data.append(UInt8(bitPattern: value))
+    }
+
+    public func appendI16(_ value: Int16) {
+        var val = value.littleEndian
+        withUnsafeBytes(of: &val) { data.append($0.bindMemory(to: UInt8.self)) }
+    }
+
+    public func appendI32(_ value: Int32) {
+        var val = value.littleEndian
+        withUnsafeBytes(of: &val) { data.append($0.bindMemory(to: UInt8.self)) }
+    }
+
+    public func appendI64(_ value: Int64) {
+        var val = value.littleEndian
+        withUnsafeBytes(of: &val) { data.append($0.bindMemory(to: UInt8.self)) }
+    }
+
+    public func appendString(_ value: String) throws {
+        let utf8 = Data(value.utf8)
+        guard utf8.count <= Int(UInt32.max) else {
+            throw BSATNEncodingError.lengthOutOfRange
+        }
+        append(UInt32(utf8.count))
+        append(utf8)
+    }
+
+    public func appendBool(_ value: Bool) {
+        append(value ? 1 as UInt8 : 0 as UInt8)
+    }
+
+    public func appendFloat(_ value: Float) {
+        append(value.bitPattern)
+    }
+
+    public func appendDouble(_ value: Double) {
+        append(value.bitPattern)
     }
 }
 
@@ -67,12 +129,12 @@ struct KeyedBSATNEncodingContainer<Key: CodingKey>: KeyedEncodingContainerProtoc
     }
     
     mutating func encodeIfPresent<T: Encodable>(_ value: T?, forKey key: Key) throws {
-        let childEncoder = _BSATNEncoder(storage: encoder.storage, codingPath: codingPath + [key])
         if let value = value {
             encoder.storage.append(0 as UInt8)
             if let bsatnSpecial = value as? BSATNSpecialEncodable {
-                try bsatnSpecial.encodeBSATN(to: childEncoder)
+                try bsatnSpecial.encodeBSATN(to: encoder.storage)
             } else {
+                let childEncoder = _BSATNEncoder(storage: encoder.storage, codingPath: codingPath + [key])
                 try value.encode(to: childEncoder)
             }
         } else {
@@ -80,21 +142,137 @@ struct KeyedBSATNEncodingContainer<Key: CodingKey>: KeyedEncodingContainerProtoc
         }
     }
     
-    mutating func encodeIfPresent(_ value: Double?, forKey key: Key) throws {
-        let childEncoder = _BSATNEncoder(storage: encoder.storage, codingPath: codingPath + [key])
+    mutating func encodeIfPresent(_ value: Bool?, forKey key: Key) throws {
         if let value = value {
             encoder.storage.append(0 as UInt8)
-            try value.encode(to: childEncoder)
+            encoder.storage.appendBool(value)
         } else {
             encoder.storage.append(1 as UInt8)
         }
     }
-    
-    public func encode<T: Encodable>(_ value: T, forKey key: Key) throws {
-        let childEncoder = _BSATNEncoder(storage: encoder.storage, codingPath: codingPath + [key])
-        if let bsatnSpecial = value as? BSATNSpecialEncodable {
-            try bsatnSpecial.encodeBSATN(to: childEncoder)
+
+    mutating func encodeIfPresent(_ value: String?, forKey key: Key) throws {
+        if let value = value {
+            encoder.storage.append(0 as UInt8)
+            try encoder.storage.appendString(value)
         } else {
+            encoder.storage.append(1 as UInt8)
+        }
+    }
+
+    mutating func encodeIfPresent(_ value: Float?, forKey key: Key) throws {
+        if let value = value {
+            encoder.storage.append(0 as UInt8)
+            encoder.storage.appendFloat(value)
+        } else {
+            encoder.storage.append(1 as UInt8)
+        }
+    }
+
+    mutating func encodeIfPresent(_ value: Double?, forKey key: Key) throws {
+        if let value = value {
+            encoder.storage.append(0 as UInt8)
+            encoder.storage.appendDouble(value)
+        } else {
+            encoder.storage.append(1 as UInt8)
+        }
+    }
+
+    mutating func encodeIfPresent(_ value: Int?, forKey key: Key) throws {
+        if let value = value {
+            encoder.storage.append(0 as UInt8)
+            encoder.storage.append(Int64(value))
+        } else {
+            encoder.storage.append(1 as UInt8)
+        }
+    }
+
+    mutating func encodeIfPresent(_ value: Int8?, forKey key: Key) throws {
+        if let value = value {
+            encoder.storage.append(0 as UInt8)
+            encoder.storage.append(value)
+        } else {
+            encoder.storage.append(1 as UInt8)
+        }
+    }
+
+    mutating func encodeIfPresent(_ value: Int16?, forKey key: Key) throws {
+        if let value = value {
+            encoder.storage.append(0 as UInt8)
+            encoder.storage.append(value)
+        } else {
+            encoder.storage.append(1 as UInt8)
+        }
+    }
+
+    mutating func encodeIfPresent(_ value: Int32?, forKey key: Key) throws {
+        if let value = value {
+            encoder.storage.append(0 as UInt8)
+            encoder.storage.append(value)
+        } else {
+            encoder.storage.append(1 as UInt8)
+        }
+    }
+
+    mutating func encodeIfPresent(_ value: Int64?, forKey key: Key) throws {
+        if let value = value {
+            encoder.storage.append(0 as UInt8)
+            encoder.storage.append(value)
+        } else {
+            encoder.storage.append(1 as UInt8)
+        }
+    }
+
+    mutating func encodeIfPresent(_ value: UInt?, forKey key: Key) throws {
+        if let value = value {
+            encoder.storage.append(0 as UInt8)
+            encoder.storage.append(UInt64(value))
+        } else {
+            encoder.storage.append(1 as UInt8)
+        }
+    }
+
+    mutating func encodeIfPresent(_ value: UInt8?, forKey key: Key) throws {
+        if let value = value {
+            encoder.storage.append(0 as UInt8)
+            encoder.storage.append(value)
+        } else {
+            encoder.storage.append(1 as UInt8)
+        }
+    }
+
+    mutating func encodeIfPresent(_ value: UInt16?, forKey key: Key) throws {
+        if let value = value {
+            encoder.storage.append(0 as UInt8)
+            encoder.storage.append(value)
+        } else {
+            encoder.storage.append(1 as UInt8)
+        }
+    }
+
+    mutating func encodeIfPresent(_ value: UInt32?, forKey key: Key) throws {
+        if let value = value {
+            encoder.storage.append(0 as UInt8)
+            encoder.storage.append(value)
+        } else {
+            encoder.storage.append(1 as UInt8)
+        }
+    }
+
+    mutating func encodeIfPresent(_ value: UInt64?, forKey key: Key) throws {
+        if let value = value {
+            encoder.storage.append(0 as UInt8)
+            encoder.storage.append(value)
+        } else {
+            encoder.storage.append(1 as UInt8)
+        }
+    }
+
+    public func encode<T: Encodable>(_ value: T, forKey key: Key) throws {
+        if let bsatnSpecial = value as? BSATNSpecialEncodable {
+            try bsatnSpecial.encodeBSATN(to: encoder.storage)
+        } else {
+            let childEncoder = _BSATNEncoder(storage: encoder.storage, codingPath: codingPath + [key])
             try value.encode(to: childEncoder)
         }
     }
@@ -133,10 +311,10 @@ struct UnkeyedBSATNEncodingContainer: UnkeyedEncodingContainer {
     }
     
     mutating func encode<T: Encodable>(_ value: T) throws {
-        let childEncoder = _BSATNEncoder(storage: encoder.storage, codingPath: codingPath)
         if let bsatnSpecial = value as? BSATNSpecialEncodable {
-            try bsatnSpecial.encodeBSATN(to: childEncoder)
+            try bsatnSpecial.encodeBSATN(to: encoder.storage)
         } else {
+            let childEncoder = _BSATNEncoder(storage: encoder.storage, codingPath: codingPath)
             try value.encode(to: childEncoder)
         }
         count += 1
@@ -161,38 +339,12 @@ struct SingleValueBSATNEncodingContainer: SingleValueEncodingContainer {
     var encoder: _BSATNEncoder
     var codingPath: [CodingKey] { encoder.codingPath }
     
-    mutating func encodeNil() throws {
-        encoder.storage.append(1 as UInt8)
-    }
-    
-    mutating func encode(_ value: Bool) throws {
-        encoder.storage.append(value ? 1 as UInt8 : 0 as UInt8)
-    }
-    
-    mutating func encode(_ value: String) throws {
-        let utf8 = Data(value.utf8)
-        guard utf8.count <= Int(UInt32.max) else {
-            throw BSATNEncodingError.lengthOutOfRange
-        }
-        encoder.storage.append(UInt32(utf8.count))
-        encoder.storage.append(utf8)
-    }
-    
-    mutating func encode(_ value: Double) throws {
-        encoder.storage.append(value.bitPattern)
-    }
-    
-    mutating func encode(_ value: Float) throws {
-        encoder.storage.append(value.bitPattern)
-    }
-    
-    mutating func encode(_ value: Int) throws {
-        // BSATN doesn't natively use Int. Swift Int depends on arch. Encode as Int64 to be safe?
-        // Actually, SpacetimeDB generates specific strictly-typed models.
-        // It's safer to let the user types explicitly declare Int32 / Int64.
-        encoder.storage.append(Int64(value))
-    }
-    
+    mutating func encodeNil() throws { encoder.storage.append(1 as UInt8) }
+    mutating func encode(_ value: Bool) throws { encoder.storage.appendBool(value) }
+    mutating func encode(_ value: String) throws { try encoder.storage.appendString(value) }
+    mutating func encode(_ value: Double) throws { encoder.storage.appendDouble(value) }
+    mutating func encode(_ value: Float) throws { encoder.storage.appendFloat(value) }
+    mutating func encode(_ value: Int) throws { encoder.storage.append(Int64(value)) }
     mutating func encode(_ value: Int8) throws { encoder.storage.append(value) }
     mutating func encode(_ value: Int16) throws { encoder.storage.append(value) }
     mutating func encode(_ value: Int32) throws { encoder.storage.append(value) }
@@ -205,7 +357,7 @@ struct SingleValueBSATNEncodingContainer: SingleValueEncodingContainer {
     
     mutating func encode<T: Encodable>(_ value: T) throws {
         if let bsatnSpecial = value as? BSATNSpecialEncodable {
-            try bsatnSpecial.encodeBSATN(to: encoder)
+            try bsatnSpecial.encodeBSATN(to: encoder.storage)
         } else {
             let childEncoder = _BSATNEncoder(storage: encoder.storage, codingPath: codingPath)
             try value.encode(to: childEncoder)
@@ -213,33 +365,38 @@ struct SingleValueBSATNEncodingContainer: SingleValueEncodingContainer {
     }
 }
 
-protocol BSATNSpecialEncodable {
-    func encodeBSATN(to encoder: _BSATNEncoder) throws
+public protocol BSATNSpecialEncodable {
+    func encodeBSATN(to storage: BSATNStorage) throws
 }
 
 extension Array: BSATNSpecialEncodable where Element: Encodable {
-    func encodeBSATN(to encoder: _BSATNEncoder) throws {
+    public func encodeBSATN(to storage: BSATNStorage) throws {
         guard self.count <= Int(UInt32.max) else {
             throw BSATNEncodingError.lengthOutOfRange
         }
-        encoder.storage.append(UInt32(self.count))
-        var container = encoder.unkeyedContainer()
+        storage.append(UInt32(self.count))
         for element in self {
-            try container.encode(element)
+            if let bsatnSpecial = element as? BSATNSpecialEncodable {
+                try bsatnSpecial.encodeBSATN(to: storage)
+            } else {
+                let encoder = _BSATNEncoder(storage: storage, codingPath: [])
+                try element.encode(to: encoder)
+            }
         }
     }
 }
 
 extension Optional: BSATNSpecialEncodable where Wrapped: Encodable {
-    func encodeBSATN(to encoder: _BSATNEncoder) throws {
+    public func encodeBSATN(to storage: BSATNStorage) throws {
         switch self {
         case .none:
-            encoder.storage.append(1 as UInt8)
+            storage.append(1 as UInt8)
         case .some(let wrapped):
-            encoder.storage.append(0 as UInt8)
+            storage.append(0 as UInt8)
             if let bsatnSpecial = wrapped as? BSATNSpecialEncodable {
-                try bsatnSpecial.encodeBSATN(to: encoder)
+                try bsatnSpecial.encodeBSATN(to: storage)
             } else {
+                let encoder = _BSATNEncoder(storage: storage, codingPath: [])
                 try wrapped.encode(to: encoder)
             }
         }

@@ -19,23 +19,23 @@ public enum ClientMessage: Encodable {
 }
 
 extension ClientMessage: BSATNSpecialEncodable {
-    func encodeBSATN(to encoder: _BSATNEncoder) throws {
+    public func encodeBSATN(to storage: BSATNStorage) throws {
         switch self {
         case .subscribe(let msg):
-            encoder.storage.append(0 as UInt8)
-            try msg.encodeBSATN(to: encoder)
+            storage.append(0 as UInt8)
+            try msg.encodeBSATN(to: storage)
         case .unsubscribe(let msg):
-            encoder.storage.append(1 as UInt8)
-            try msg.encodeBSATN(to: encoder)
+            storage.append(1 as UInt8)
+            try msg.encodeBSATN(to: storage)
         case .oneOffQuery(let msg):
-            encoder.storage.append(2 as UInt8)
-            try msg.encodeBSATN(to: encoder)
+            storage.append(2 as UInt8)
+            try msg.encodeBSATN(to: storage)
         case .callReducer(let msg):
-            encoder.storage.append(3 as UInt8)
-            try msg.encodeBSATN(to: encoder)
+            storage.append(3 as UInt8)
+            try msg.encodeBSATN(to: storage)
         case .callProcedure(let msg):
-            encoder.storage.append(4 as UInt8)
-            try msg.encodeBSATN(to: encoder)
+            storage.append(4 as UInt8)
+            try msg.encodeBSATN(to: storage)
         }
     }
 }
@@ -54,13 +54,12 @@ public struct Subscribe: Encodable, BSATNSpecialEncodable {
 
     public func encode(to encoder: Encoder) throws {}
 
-    func encodeBSATN(to encoder: _BSATNEncoder) throws {
-        try requestId.encodeBSATN(to: encoder)
-        try querySetId.encodeBSATN(to: encoder)
-        encoder.storage.append(UInt32(queryStrings.count))
-        var singleVal = encoder.singleValueContainer()
+    public func encodeBSATN(to storage: BSATNStorage) throws {
+        try requestId.encodeBSATN(to: storage)
+        try querySetId.encodeBSATN(to: storage)
+        storage.append(UInt32(queryStrings.count))
         for query in queryStrings {
-            try singleVal.encode(query)
+            try storage.appendString(query)
         }
     }
 }
@@ -79,10 +78,10 @@ public struct Unsubscribe: Encodable, BSATNSpecialEncodable {
 
     public func encode(to encoder: Encoder) throws {}
 
-    func encodeBSATN(to encoder: _BSATNEncoder) throws {
-        try requestId.encodeBSATN(to: encoder)
-        try querySetId.encodeBSATN(to: encoder)
-        encoder.storage.append(flags)
+    public func encodeBSATN(to storage: BSATNStorage) throws {
+        try requestId.encodeBSATN(to: storage)
+        try querySetId.encodeBSATN(to: storage)
+        storage.append(flags)
     }
 }
 
@@ -98,10 +97,9 @@ public struct OneOffQuery: Encodable, BSATNSpecialEncodable {
 
     public func encode(to encoder: Encoder) throws {}
 
-    func encodeBSATN(to encoder: _BSATNEncoder) throws {
-        try requestId.encodeBSATN(to: encoder)
-        var singleVal = encoder.singleValueContainer()
-        try singleVal.encode(queryString)
+    public func encodeBSATN(to storage: BSATNStorage) throws {
+        try requestId.encodeBSATN(to: storage)
+        try storage.appendString(queryString)
     }
 }
 
@@ -121,15 +119,12 @@ public struct CallReducer: Encodable, BSATNSpecialEncodable {
 
     public func encode(to encoder: Encoder) throws {}
 
-    func encodeBSATN(to encoder: _BSATNEncoder) throws {
-        try requestId.encodeBSATN(to: encoder)
-        encoder.storage.append(flags)
-
-        var singleVal = encoder.singleValueContainer()
-        try singleVal.encode(reducer)
-
-        encoder.storage.append(UInt32(args.count))
-        encoder.storage.append(args)
+    public func encodeBSATN(to storage: BSATNStorage) throws {
+        try requestId.encodeBSATN(to: storage)
+        storage.append(flags)
+        try storage.appendString(reducer)
+        storage.append(UInt32(args.count))
+        storage.append(args)
     }
 }
 
@@ -149,14 +144,11 @@ public struct CallProcedure: Encodable, BSATNSpecialEncodable {
 
     public func encode(to encoder: Encoder) throws {}
 
-    func encodeBSATN(to encoder: _BSATNEncoder) throws {
-        try requestId.encodeBSATN(to: encoder)
-        encoder.storage.append(flags)
-
-        var singleVal = encoder.singleValueContainer()
-        try singleVal.encode(procedure)
-
-        encoder.storage.append(UInt32(args.count))
-        encoder.storage.append(args)
+    public func encodeBSATN(to storage: BSATNStorage) throws {
+        try requestId.encodeBSATN(to: storage)
+        storage.append(flags)
+        try storage.appendString(procedure)
+        storage.append(UInt32(args.count))
+        storage.append(args)
     }
 }

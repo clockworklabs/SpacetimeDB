@@ -104,15 +104,30 @@ public extension SpacetimeClientDelegate {
     func onReducerError(reducer: String, message: String, isInternal: Bool) {}
 }
 
-@MainActor
 public final class SpacetimeClient: @unchecked Sendable {
     public let serverUrl: URL
     public let moduleName: String
-    public weak var delegate: SpacetimeClientDelegate?
-    public private(set) var connectionState: ConnectionState = .disconnected
+    
+    private let lock = NSLock()
+    private weak var _delegate: SpacetimeClientDelegate?
+    public var delegate: SpacetimeClientDelegate? {
+        get { lock.lock(); defer { lock.unlock() }; return _delegate }
+        set { lock.lock(); defer { lock.unlock() }; _delegate = newValue }
+    }
+    
+    private var _connectionState: ConnectionState = .disconnected
+    public var connectionState: ConnectionState {
+        lock.lock(); defer { lock.unlock() }; return _connectionState
+    }
 
-    public static var shared: SpacetimeClient?
-    public static var clientCache = ClientCache()
+    private static let staticLock = NSLock()
+    nonisolated(unsafe) private static var _shared: SpacetimeClient?
+    public static var shared: SpacetimeClient? {
+        get { staticLock.lock(); defer { staticLock.unlock() }; return _shared }
+        set { staticLock.lock(); defer { staticLock.unlock() }; _shared = newValue }
+    }
+    
+    nonisolated(unsafe) public static var clientCache = ClientCache()
 
     private var webSocketTask: URLSessionWebSocketTask?
     private let urlSession: URLSession
@@ -171,6 +186,7 @@ public final class SpacetimeClient: @unchecked Sendable {
     }
 
     public func connect(token: String? = nil) {
+        lock.lock()
         shouldStayConnected = true
         reconnectAttempt = 0
         if let token {
@@ -178,14 +194,23 @@ public final class SpacetimeClient: @unchecked Sendable {
         }
         reconnectTask?.cancel()
         reconnectTask = nil
+        lock.unlock()
+        
         startNetworkMonitor()
-        performConnect(authToken: token ?? self.savedToken, isReconnect: false)
+        performConnect(authToken: token ?? getSavedToken(), isReconnect: false)
+    }
+    
+    private func getSavedToken() -> String? {
+        lock.lock(); defer { lock.unlock() }; return savedToken
     }
 
     private func performConnect(authToken: String?, isReconnect: Bool) {
+        lock.lock()
         reconnectTask?.cancel()
         reconnectTask = nil
         isHandlingConnectionFailure = false
+        lock.unlock()
+        
         stopKeepAliveLoop()
         emitCounter(
             "spacetimedb.connection.attempts",
@@ -203,31 +228,59 @@ public final class SpacetimeClient: @unchecked Sendable {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 
+        lock.lock()
         sendQueue.removeAll()
         isSending = false
         nextRequestId = RequestId(rawValue: 1)
         nextQuerySetId = QuerySetId(rawValue: 1)
         pendingReducerNames.removeAll()
-        failPendingProcedureCallbacks(with: SpacetimeClientProcedureError.disconnected)
-        failPendingOneOffQueryCallbacks(with: SpacetimeClientQueryError.disconnected)
+        let procedureCallbacks = pendingProcedureCallbacks
+        pendingProcedureCallbacks.removeAll()
+        let queryCallbacks = pendingOneOffQueryCallbacks
+        pendingOneOffQueryCallbacks.removeAll()
         pendingSubscriptionByRequestId.removeAll()
         pendingUnsubscribeByRequestId.removeAll()
         activeSubscriptionByQuerySetId.removeAll()
+        lock.unlock()
+        
+        failCallbacks(procedureCallbacks: procedureCallbacks, queryCallbacks: queryCallbacks, error: SpacetimeClientProcedureError.disconnected)
+        
         setConnectionState(isReconnect ? .reconnecting : .connecting)
+        
+        lock.lock()
         webSocketTask = urlSession.webSocketTask(with: request)
-        webSocketTask?.resume()
+        let task = webSocketTask
+        lock.unlock()
+        
+        task?.resume()
         receiveMessage()
     }
 
     public func disconnect() {
+        lock.lock()
         shouldStayConnected = false
         reconnectTask?.cancel()
         reconnectTask = nil
-        stopNetworkMonitor()
-        stopKeepAliveLoop()
         sendQueue.removeAll()
         isSending = false
-        if let task = webSocketTask {
+        let task = webSocketTask
+        webSocketTask = nil
+        pendingReducerNames.removeAll()
+        let procedureCallbacks = pendingProcedureCallbacks
+        pendingProcedureCallbacks.removeAll()
+        let queryCallbacks = pendingOneOffQueryCallbacks
+        pendingOneOffQueryCallbacks.removeAll()
+        pendingSubscriptionByRequestId.removeAll()
+        pendingUnsubscribeByRequestId.removeAll()
+        activeSubscriptionByQuerySetId.removeAll()
+        let managed = managedSubscriptions.values
+        managedSubscriptions.removeAll()
+        lock.unlock()
+        
+        stopNetworkMonitor()
+        stopKeepAliveLoop()
+        
+        if let task = task {
             switch task.state {
             case .running, .suspended:
                 task.cancel(with: .normalClosure, reason: nil)
@@ -237,31 +290,45 @@ public final class SpacetimeClient: @unchecked Sendable {
                 task.cancel(with: .normalClosure, reason: nil)
             }
         }
-        webSocketTask = nil
-        pendingReducerNames.removeAll()
-        failPendingProcedureCallbacks(with: SpacetimeClientProcedureError.disconnected)
-        failPendingOneOffQueryCallbacks(with: SpacetimeClientQueryError.disconnected)
-        pendingSubscriptionByRequestId.removeAll()
-        pendingUnsubscribeByRequestId.removeAll()
-        activeSubscriptionByQuerySetId.removeAll()
-        for handle in managedSubscriptions.values {
+        
+        failCallbacks(procedureCallbacks: procedureCallbacks, queryCallbacks: queryCallbacks, error: SpacetimeClientProcedureError.disconnected)
+        
+        for handle in managed {
             handle.markEnded()
         }
-        managedSubscriptions.removeAll()
+        
         setConnectionState(.disconnected)
         invokeDelegateCallback(named: "delegate.on_disconnect") { $0.onDisconnect(error: nil) }
+    }
+    
+    private func failCallbacks(procedureCallbacks: [RequestId: (Result<Data, Error>) -> Void], queryCallbacks: [RequestId: (Result<QueryRows, Error>) -> Void], error: Error) {
+        for callback in procedureCallbacks.values {
+            callback(.failure(error))
+        }
+        for callback in queryCallbacks.values {
+            callback(.failure(error))
+        }
     }
 
     // MARK: - Serialized send queue
 
     private func enqueue(_ message: URLSessionWebSocketTask.Message) {
+        lock.lock()
         sendQueue.append(message)
+        lock.unlock()
         flushQueue()
     }
 
     private func flushQueue() {
-        guard !isSending, !sendQueue.isEmpty, let task = webSocketTask else { return }
+        lock.lock()
+        guard !isSending, !sendQueue.isEmpty, let task = webSocketTask else {
+            lock.unlock()
+            return
+        }
         let msg = sendQueue.removeFirst()
+        isSending = true
+        lock.unlock()
+        
         emitCounter("spacetimedb.messages.out.count")
         switch msg {
         case .data(let data):
@@ -271,15 +338,16 @@ public final class SpacetimeClient: @unchecked Sendable {
         @unknown default:
             break
         }
-        isSending = true
+        
         task.send(msg) { [weak self] error in
-            Task { @MainActor [weak self] in
-                self?.isSending = false
-                if let error = error {
-                    Log.network.error("Send error: \(error.localizedDescription)")
-                }
-                self?.flushQueue()
+            guard let self else { return }
+            self.lock.lock()
+            self.isSending = false
+            self.lock.unlock()
+            if let error = error {
+                Log.network.error("Send error: \(error.localizedDescription)")
             }
+            self.flushQueue()
         }
     }
 
@@ -294,7 +362,9 @@ public final class SpacetimeClient: @unchecked Sendable {
 
     public func send(_ reducerName: String, _ args: Data) {
         let requestId = allocateRequestId()
+        lock.lock()
         pendingReducerNames[requestId] = reducerName
+        lock.unlock()
         let call = CallReducer(requestId: requestId, flags: 0, reducer: reducerName, args: args)
         let message = ClientMessage.callReducer(call)
         send(message)
@@ -321,7 +391,7 @@ public final class SpacetimeClient: @unchecked Sendable {
         completion: @escaping (Result<R, Error>) -> Void
     ) {
         let requestId = allocateRequestId()
-        pendingProcedureCallbacks[requestId] = makeTimedCallback(named: "procedure.completion") { result in
+        let timedCallback = makeTimedCallback(named: "procedure.completion") { (result: Result<Data, Error>) in
             switch result {
             case .success(let data):
                 do {
@@ -333,6 +403,10 @@ public final class SpacetimeClient: @unchecked Sendable {
                 completion(.failure(error))
             }
         }
+        
+        lock.lock()
+        pendingProcedureCallbacks[requestId] = timedCallback
+        lock.unlock()
 
         let call = CallProcedure(requestId: requestId, flags: 0, procedure: procedureName, args: args)
         let message = ClientMessage.callProcedure(call)
@@ -379,17 +453,23 @@ public final class SpacetimeClient: @unchecked Sendable {
                     return
                 }
 
-                pendingProcedureCallbacks[requestId] = makeTimedCallback(named: "procedure.completion") { result in
+                let timedCallback = makeTimedCallback(named: "procedure.completion") { result in
                     asyncResponse.resolve(result)
+                }
+                
+                lock.withLock {
+                    pendingProcedureCallbacks[requestId] = timedCallback
                 }
 
                 if let timeout {
                     asyncResponse.setTimeoutTask(
                         Task { [weak self] in
                             try? await Task.sleep(for: timeout)
-                            await MainActor.run {
-                                guard let self else { return }
-                                guard self.pendingProcedureCallbacks.removeValue(forKey: requestId) != nil else { return }
+                            guard let self else { return }
+                            let removed = self.lock.withLock {
+                                self.pendingProcedureCallbacks.removeValue(forKey: requestId) != nil
+                            }
+                            if removed {
                                 asyncResponse.resolve(.failure(SpacetimeClientProcedureError.timeout))
                             }
                         }
@@ -401,11 +481,10 @@ public final class SpacetimeClient: @unchecked Sendable {
                 send(message)
             }
         } onCancel: {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
+            lock.withLock {
                 _ = self.pendingProcedureCallbacks.removeValue(forKey: requestId)
-                asyncResponse.resolve(.failure(CancellationError()))
             }
+            asyncResponse.resolve(.failure(CancellationError()))
         }
     }
 
@@ -429,7 +508,10 @@ public final class SpacetimeClient: @unchecked Sendable {
 
     public func oneOffQuery(_ query: String, completion: @escaping (Result<QueryRows, Error>) -> Void) {
         let requestId = allocateRequestId()
-        pendingOneOffQueryCallbacks[requestId] = makeTimedCallback(named: "one_off_query.completion", completion)
+        let timedCallback = makeTimedCallback(named: "one_off_query.completion", completion)
+        lock.lock()
+        pendingOneOffQueryCallbacks[requestId] = timedCallback
+        lock.unlock()
         send(ClientMessage.oneOffQuery(OneOffQuery(requestId: requestId, queryString: query)))
     }
 
@@ -450,17 +532,23 @@ public final class SpacetimeClient: @unchecked Sendable {
                     return
                 }
 
-                pendingOneOffQueryCallbacks[requestId] = makeTimedCallback(named: "one_off_query.completion") { result in
+                let timedCallback = makeTimedCallback(named: "one_off_query.completion") { result in
                     asyncResponse.resolve(result)
+                }
+                
+                lock.withLock {
+                    pendingOneOffQueryCallbacks[requestId] = timedCallback
                 }
 
                 if let timeout {
                     asyncResponse.setTimeoutTask(
                         Task { [weak self] in
                             try? await Task.sleep(for: timeout)
-                            await MainActor.run {
-                                guard let self else { return }
-                                guard self.pendingOneOffQueryCallbacks.removeValue(forKey: requestId) != nil else { return }
+                            guard let self else { return }
+                            let removed = self.lock.withLock {
+                                self.pendingOneOffQueryCallbacks.removeValue(forKey: requestId) != nil
+                            }
+                            if removed {
                                 asyncResponse.resolve(.failure(SpacetimeClientQueryError.timeout))
                             }
                         }
@@ -470,11 +558,10 @@ public final class SpacetimeClient: @unchecked Sendable {
                 send(ClientMessage.oneOffQuery(OneOffQuery(requestId: requestId, queryString: query)))
             }
         } onCancel: {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
+            lock.withLock {
                 _ = self.pendingOneOffQueryCallbacks.removeValue(forKey: requestId)
-                asyncResponse.resolve(.failure(CancellationError()))
             }
+            asyncResponse.resolve(.failure(CancellationError()))
         }
     }
 
@@ -490,7 +577,9 @@ public final class SpacetimeClient: @unchecked Sendable {
             makeTimedCallback(named: "subscription.on_error", callback)
         }
         let handle = SubscriptionHandle(queries: queries, client: self, onApplied: timedOnApplied, onError: timedOnError)
+        lock.lock()
         managedSubscriptions[ObjectIdentifier(handle)] = handle
+        lock.unlock()
         startSubscription(handle)
         return handle
     }
@@ -502,7 +591,9 @@ public final class SpacetimeClient: @unchecked Sendable {
 
         let flags: UInt8 = sendDroppedRows ? 1 : 0
         let requestId = allocateRequestId()
+        lock.lock()
         pendingUnsubscribeByRequestId[requestId] = handle
+        lock.unlock()
         send(ClientMessage.unsubscribe(Unsubscribe(requestId: requestId, querySetId: querySetId, flags: flags)))
     }
 
@@ -523,24 +614,32 @@ public final class SpacetimeClient: @unchecked Sendable {
     private func startSubscription(_ handle: SubscriptionHandle) {
         guard !handle.queries.isEmpty else {
             handle.markError("Subscription requires at least one query.")
+            lock.lock()
             managedSubscriptions.removeValue(forKey: ObjectIdentifier(handle))
+            lock.unlock()
             return
         }
 
         let requestId = allocateRequestId()
         let querySetId = allocateQuerySetId()
         handle.markPending(requestId: requestId, querySetId: querySetId)
+        lock.lock()
         pendingSubscriptionByRequestId[requestId] = handle
+        lock.unlock()
         send(ClientMessage.subscribe(Subscribe(queryStrings: handle.queries, requestId: requestId, querySetId: querySetId)))
     }
 
     private func allocateRequestId() -> RequestId {
+        lock.lock()
+        defer { lock.unlock() }
         let id = nextRequestId
         nextRequestId = RequestId(rawValue: nextRequestId.rawValue &+ 1)
         return id
     }
 
     private func allocateQuerySetId() -> QuerySetId {
+        lock.lock()
+        defer { lock.unlock() }
         let id = nextQuerySetId
         nextQuerySetId = QuerySetId(rawValue: nextQuerySetId.rawValue &+ 1)
         return id
@@ -549,31 +648,29 @@ public final class SpacetimeClient: @unchecked Sendable {
     // MARK: - Receive loop
 
     private func receiveMessage() {
-        webSocketTask?.receive { [weak self] result in
+        lock.lock()
+        let task = webSocketTask
+        lock.unlock()
+        
+        task?.receive { [weak self] result in
             guard let self = self else { return }
-            Task { @MainActor in
-                switch result {
-                case .failure(let error):
-                    self.handleConnectionFailure(error)
-                case .success(let message):
-                    switch message {
-                    case .data(let data):
-                        self.emitCounter("spacetimedb.messages.in.count")
-                        self.emitCounter("spacetimedb.messages.in.bytes", by: Int64(data.count))
-                        self.decodeQueue.async { [weak self] in
-                            guard let self else { return }
-                            let decoded = Self.decodeServerMessage(from: data)
-                            Task { @MainActor [weak self] in
-                                self?.handleDecodedServerMessage(decoded)
-                            }
-                        }
-                    case .string:
-                        break
-                    @unknown default:
-                        break
-                    }
-                    self.receiveMessage()
+            switch result {
+            case .failure(let error):
+                self.handleConnectionFailure(error)
+            case .success(let message):
+                switch message {
+                case .data(let data):
+                    self.emitCounter("spacetimedb.messages.in.count")
+                    self.emitCounter("spacetimedb.messages.in.bytes", by: Int64(data.count))
+                    
+                    let decoded = Self.decodeServerMessage(from: data)
+                    self.handleDecodedServerMessage(decoded)
+                case .string:
+                    break
+                @unknown default:
+                    break
                 }
+                self.receiveMessage()
             }
         }
     }
@@ -597,14 +694,17 @@ public final class SpacetimeClient: @unchecked Sendable {
         case .success(let serverMsg):
             switch serverMsg {
             case .initialConnection(let connection):
+                lock.lock()
                 reconnectAttempt = 0
                 savedToken = connection.token
+                lock.unlock()
+                
                 setConnectionState(.connected)
                 startKeepAliveLoop()
                 invokeDelegateCallback(named: "delegate.on_identity_received") {
                     $0.onIdentityReceived(identity: Array(connection.identity.rawBytes), token: connection.token)
                 }
-                subscribeAll(tables: Array(Self.clientCache.registeredTableNames))
+                subscribeAll(tables: Self.clientCache.registeredTableNames)
                 resubscribeManagedSubscriptions()
                 invokeDelegateCallback(named: "delegate.on_connect") { $0.onConnect() }
             case .transactionUpdate(let update):
@@ -633,11 +733,14 @@ public final class SpacetimeClient: @unchecked Sendable {
     }
 
     func handleReducerResult(_ reducerResult: ReducerResult) {
+        lock.lock()
         let reducerName = pendingReducerNames.removeValue(forKey: reducerResult.requestId) ?? "<unknown>"
+        lock.unlock()
+        
         switch reducerResult.result {
         case .ok(let ok):
             Self.clientCache.applyTransactionUpdate(ok.transactionUpdate)
-            delegate?.onTransactionUpdate(message: nil)
+            invokeDelegateCallback(named: "delegate.on_transaction_update") { $0.onTransactionUpdate(message: nil) }
         case .okEmpty:
             break
         case .err(let errData):
@@ -663,7 +766,11 @@ public final class SpacetimeClient: @unchecked Sendable {
     }
 
     func handleProcedureResult(_ result: ProcedureResult) {
-        guard let callback = pendingProcedureCallbacks.removeValue(forKey: result.requestId) else {
+        lock.lock()
+        let callback = pendingProcedureCallbacks.removeValue(forKey: result.requestId)
+        lock.unlock()
+        
+        guard let callback else {
             Log.client.warning("Received ProcedureResult for unknown request_id: \(result.requestId)")
             return
         }
@@ -677,7 +784,11 @@ public final class SpacetimeClient: @unchecked Sendable {
     }
 
     func handleOneOffQueryResult(_ result: OneOffQueryResult) {
-        guard let callback = pendingOneOffQueryCallbacks.removeValue(forKey: result.requestId) else {
+        lock.lock()
+        let callback = pendingOneOffQueryCallbacks.removeValue(forKey: result.requestId)
+        lock.unlock()
+        
+        guard let callback else {
             Log.client.warning("Received OneOffQueryResult for unknown request_id: \(result.requestId)")
             return
         }
@@ -691,20 +802,26 @@ public final class SpacetimeClient: @unchecked Sendable {
     }
 
     func handleSubscribeApplied(_ applied: SubscribeApplied) {
-        guard let handle = pendingSubscriptionByRequestId.removeValue(forKey: applied.requestId) else {
-            return
+        lock.lock()
+        let handle = pendingSubscriptionByRequestId.removeValue(forKey: applied.requestId)
+        if let handle {
+            activeSubscriptionByQuerySetId[applied.querySetId] = handle
         }
-        activeSubscriptionByQuerySetId[applied.querySetId] = handle
-        handle.markApplied(querySetId: applied.querySetId)
+        lock.unlock()
+        
+        handle?.markApplied(querySetId: applied.querySetId)
     }
 
     func handleUnsubscribeApplied(_ applied: UnsubscribeApplied) {
-        guard let handle = pendingUnsubscribeByRequestId.removeValue(forKey: applied.requestId) else {
-            return
+        lock.lock()
+        let handle = pendingUnsubscribeByRequestId.removeValue(forKey: applied.requestId)
+        if let handle {
+            activeSubscriptionByQuerySetId.removeValue(forKey: applied.querySetId)
+            managedSubscriptions.removeValue(forKey: ObjectIdentifier(handle))
         }
-
-        activeSubscriptionByQuerySetId.removeValue(forKey: applied.querySetId)
-        managedSubscriptions.removeValue(forKey: ObjectIdentifier(handle))
+        lock.unlock()
+        
+        guard let handle else { return }
         handle.markEnded()
 
         if let rows = applied.rows {
@@ -715,40 +832,29 @@ public final class SpacetimeClient: @unchecked Sendable {
     }
 
     func handleSubscriptionError(_ error: SubscriptionError) {
+        lock.lock()
         let handle: SubscriptionHandle? = {
             if let requestId = error.requestId, let pending = pendingSubscriptionByRequestId.removeValue(forKey: requestId) {
                 return pending
             }
             return activeSubscriptionByQuerySetId.removeValue(forKey: error.querySetId)
         }()
-
-        guard let handle else { return }
-        managedSubscriptions.removeValue(forKey: ObjectIdentifier(handle))
-        handle.markError(error.error)
-    }
-
-    private func failPendingProcedureCallbacks(with error: Error) {
-        guard !pendingProcedureCallbacks.isEmpty else { return }
-        let callbacks = pendingProcedureCallbacks.values
-        pendingProcedureCallbacks.removeAll()
-        for callback in callbacks {
-            callback(.failure(error))
+        if let handle {
+            managedSubscriptions.removeValue(forKey: ObjectIdentifier(handle))
         }
-    }
+        lock.unlock()
 
-    private func failPendingOneOffQueryCallbacks(with error: Error) {
-        guard !pendingOneOffQueryCallbacks.isEmpty else { return }
-        let callbacks = pendingOneOffQueryCallbacks.values
-        pendingOneOffQueryCallbacks.removeAll()
-        for callback in callbacks {
-            callback(.failure(error))
-        }
+        handle?.markError(error.error)
     }
 
     private func resubscribeManagedSubscriptions() {
+        lock.lock()
         activeSubscriptionByQuerySetId.removeAll()
         pendingSubscriptionByRequestId.removeAll()
-        for handle in managedSubscriptions.values where handle.state != .ended {
+        let subsToStart = managedSubscriptions.values.filter { $0.state != .ended }
+        lock.unlock()
+        
+        for handle in subsToStart {
             startSubscription(handle)
         }
     }
@@ -768,31 +874,56 @@ public final class SpacetimeClient: @unchecked Sendable {
     // MARK: - Network monitoring
 
     private func startNetworkMonitor() {
-        guard networkMonitor == nil else { return }
+        lock.lock()
+        guard networkMonitor == nil else {
+            lock.unlock()
+            return
+        }
         let monitor = NetworkMonitor()
+        lock.unlock()
+        
         monitor.onPathChange = { [weak self] isConnected in
-            guard let self, self.shouldStayConnected else { return }
-            if isConnected {
+            guard let self else { return }
+            let shouldConnected = self.lock.withLock { self.shouldStayConnected }
+            let state = self.lock.withLock { self.connectionState }
+            let token = self.lock.withLock { self.savedToken }
+            
+            if isConnected && shouldConnected {
                 Log.network.info("Network restored, attempting reconnect")
-                self.reconnectAttempt = 0
-                guard self.connectionState != .connected else { return }
-                self.performConnect(authToken: self.savedToken, isReconnect: true)
+                self.lock.withLock {
+                    self.reconnectAttempt = 0
+                }
+                
+                guard state != .connected else { return }
+                self.performConnect(authToken: token, isReconnect: true)
             }
         }
         monitor.start()
+        
+        lock.lock()
         networkMonitor = monitor
+        lock.unlock()
     }
 
     private func stopNetworkMonitor() {
-        networkMonitor?.stop()
+        lock.lock()
+        let monitor = networkMonitor
         networkMonitor = nil
+        lock.unlock()
+        monitor?.stop()
     }
 
     // MARK: - Connection lifecycle
 
     private func setConnectionState(_ state: ConnectionState) {
-        guard connectionState != state else { return }
-        connectionState = state
+        lock.lock()
+        guard _connectionState != state else {
+            lock.unlock()
+            return
+        }
+        _connectionState = state
+        lock.unlock()
+        
         emitGauge(
             "spacetimedb.connection.state",
             value: stateMetricValue(state),
@@ -804,53 +935,73 @@ public final class SpacetimeClient: @unchecked Sendable {
     }
 
     private func handleConnectionFailure(_ error: Error) {
-        guard shouldStayConnected else { return }
-        guard !isHandlingConnectionFailure else { return }
+        lock.lock()
+        guard shouldStayConnected else { lock.unlock(); return }
+        guard !isHandlingConnectionFailure else { lock.unlock(); return }
         isHandlingConnectionFailure = true
+        let task = webSocketTask
+        webSocketTask = nil
+        let state = _connectionState
+        let procCallbacks = pendingProcedureCallbacks
+        pendingProcedureCallbacks.removeAll()
+        let queryCallbacks = pendingOneOffQueryCallbacks
+        pendingOneOffQueryCallbacks.removeAll()
+        lock.unlock()
 
         Log.network.error("WebSocket error: \(error.localizedDescription)")
         emitCounter(
             "spacetimedb.connection.failures",
-            tags: ["state": stateMetricName(connectionState)]
+            tags: ["state": stateMetricName(state)]
         )
         stopKeepAliveLoop()
-        webSocketTask?.cancel(with: .goingAway, reason: nil)
-        webSocketTask = nil
+        task?.cancel(with: .goingAway, reason: nil)
 
-        failPendingProcedureCallbacks(with: error)
-        failPendingOneOffQueryCallbacks(with: error)
+        failCallbacks(procedureCallbacks: procCallbacks, queryCallbacks: queryCallbacks, error: error)
 
-        if connectionState == .connecting {
-            invokeDelegateCallback(named: "delegate.on_connect_error") { $0.onConnectError(error: error) }
+        if state == .connecting {
+            invokeDelegateCallback(named: "delegate.on_connect_error") { @MainActor in $0.onConnectError(error: error) }
         }
-        invokeDelegateCallback(named: "delegate.on_disconnect") { $0.onDisconnect(error: error) }
+        invokeDelegateCallback(named: "delegate.on_disconnect") { @MainActor in $0.onDisconnect(error: error) }
 
         guard let reconnectDelay = nextReconnectDelay() else {
+            lock.lock()
             shouldStayConnected = false
+            lock.unlock()
             setConnectionState(.disconnected)
+            lock.lock()
             isHandlingConnectionFailure = false
+            lock.unlock()
             return
         }
 
         setConnectionState(.reconnecting)
 
+        let connected = lock.withLock { networkMonitor?.isConnected ?? true }
+        
         // If network is unavailable, defer reconnection until path restores.
-        guard networkMonitor?.isConnected ?? true else {
+        guard connected else {
             Log.network.info("Network unavailable, deferring reconnect until path restores")
+            lock.lock()
             isHandlingConnectionFailure = false
+            lock.unlock()
             return
         }
 
-        reconnectTask?.cancel()
-        reconnectTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            try? await Task.sleep(for: reconnectDelay)
-            guard self.shouldStayConnected else {
-                self.isHandlingConnectionFailure = false
-                return
+        lock.withLock {
+            reconnectTask?.cancel()
+            reconnectTask = Task { [weak self] in
+                try? await Task.sleep(for: reconnectDelay)
+                guard let self else { return }
+                let (shouldStay, token) = self.lock.withLock {
+                    (self.shouldStayConnected, self.savedToken)
+                }
+                guard shouldStay else {
+                    self.lock.withLock { self.isHandlingConnectionFailure = false }
+                    return
+                }
+                self.lock.withLock { self.isHandlingConnectionFailure = false }
+                self.performConnect(authToken: token, isReconnect: true)
             }
-            self.isHandlingConnectionFailure = false
-            self.performConnect(authToken: self.savedToken, isReconnect: true)
         }
     }
 
@@ -858,55 +1009,77 @@ public final class SpacetimeClient: @unchecked Sendable {
 
     private func startKeepAliveLoop() {
         stopKeepAliveLoop()
-        keepAliveTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            while !Task.isCancelled {
-                try? await Task.sleep(for: self.keepAlivePingInterval)
-                guard !Task.isCancelled else { return }
-                self.sendKeepAlivePing()
-            }
-        }
-    }
-
-    private func stopKeepAliveLoop() {
-        keepAliveTask?.cancel()
-        keepAliveTask = nil
-        keepAliveTimeoutTask?.cancel()
-        keepAliveTimeoutTask = nil
-        awaitingKeepAlivePong = false
-    }
-
-    private func sendKeepAlivePing() {
-        guard shouldStayConnected, connectionState == .connected, let webSocketTask else { return }
-        guard !awaitingKeepAlivePong else {
-            handleConnectionFailure(SpacetimeClientConnectionError.keepAliveTimeout)
-            return
-        }
-
-        awaitingKeepAlivePong = true
-        keepAliveTimeoutTask?.cancel()
-        keepAliveTimeoutTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            try? await Task.sleep(for: self.keepAlivePongTimeout)
-            guard self.awaitingKeepAlivePong else { return }
-            self.awaitingKeepAlivePong = false
-            self.handleConnectionFailure(SpacetimeClientConnectionError.keepAliveTimeout)
-        }
-
-        webSocketTask.sendPing { [weak self] error in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.awaitingKeepAlivePong = false
-                self.keepAliveTimeoutTask?.cancel()
-                self.keepAliveTimeoutTask = nil
-                if let error {
-                    self.handleConnectionFailure(error)
+        lock.withLock {
+            keepAliveTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    guard let self else { return }
+                    let interval = self.lock.withLock { self.keepAlivePingInterval }
+                    
+                    try? await Task.sleep(for: interval)
+                    guard !Task.isCancelled else { return }
+                    self.sendKeepAlivePing()
                 }
             }
         }
     }
 
+    private func stopKeepAliveLoop() {
+        lock.lock()
+        keepAliveTask?.cancel()
+        keepAliveTask = nil
+        keepAliveTimeoutTask?.cancel()
+        keepAliveTimeoutTask = nil
+        awaitingKeepAlivePong = false
+        lock.unlock()
+    }
+
+    private func sendKeepAlivePing() {
+        lock.lock()
+        guard shouldStayConnected, _connectionState == .connected, let task = webSocketTask else {
+            lock.unlock()
+            return
+        }
+        guard !awaitingKeepAlivePong else {
+            lock.unlock()
+            handleConnectionFailure(SpacetimeClientConnectionError.keepAliveTimeout)
+            return
+        }
+
+        lock.withLock {
+            awaitingKeepAlivePong = true
+            keepAliveTimeoutTask?.cancel()
+            let timeout = keepAlivePongTimeout
+            keepAliveTimeoutTask = Task { [weak self] in
+                try? await Task.sleep(for: timeout)
+                guard let self else { return }
+                let awaiting = self.lock.withLock {
+                    let val = self.awaitingKeepAlivePong
+                    self.awaitingKeepAlivePong = false
+                    return val
+                }
+                if awaiting {
+                    self.handleConnectionFailure(SpacetimeClientConnectionError.keepAliveTimeout)
+                }
+            }
+        }
+        lock.unlock()
+
+        task.sendPing { [weak self] error in
+            guard let self else { return }
+            self.lock.lock()
+            self.awaitingKeepAlivePong = false
+            self.keepAliveTimeoutTask?.cancel()
+            self.keepAliveTimeoutTask = nil
+            self.lock.unlock()
+            if let error {
+                self.handleConnectionFailure(error)
+            }
+        }
+    }
+
     private func nextReconnectDelay() -> Duration? {
+        lock.lock()
+        defer { lock.unlock() }
         guard let reconnectPolicy else { return nil }
         reconnectAttempt += 1
         return reconnectPolicy.delay(forAttempt: reconnectAttempt)
@@ -926,11 +1099,15 @@ public final class SpacetimeClient: @unchecked Sendable {
 
     private func invokeDelegateCallback(
         named callbackName: String,
-        _ callback: (SpacetimeClientDelegate) -> Void
+        _ callback: @escaping @MainActor (SpacetimeClientDelegate) -> Void
     ) {
+        let delegate = lock.withLock { _delegate }
+        
         guard let delegate else { return }
-        emitTimedCallbackMetric(named: callbackName) {
-            callback(delegate)
+        Task { @MainActor in
+            self.emitTimedCallbackMetric(named: callbackName) {
+                callback(delegate)
+            }
         }
     }
 
@@ -1007,7 +1184,9 @@ public final class SpacetimeClient: @unchecked Sendable {
 #if DEBUG
 extension SpacetimeClient {
     func _test_simulateConnectionFailure(_ error: Error, shouldStayConnected: Bool = true) {
+        lock.lock()
         self.shouldStayConnected = shouldStayConnected
+        lock.unlock()
         handleConnectionFailure(error)
     }
 
@@ -1020,11 +1199,11 @@ extension SpacetimeClient {
     }
 
     func _test_pendingProcedureCallbackCount() -> Int {
-        pendingProcedureCallbacks.count
+        lock.lock(); defer { lock.unlock() }; return pendingProcedureCallbacks.count
     }
 
     func _test_pendingOneOffQueryCallbackCount() -> Int {
-        pendingOneOffQueryCallbacks.count
+        lock.lock(); defer { lock.unlock() }; return pendingOneOffQueryCallbacks.count
     }
 }
 #endif

@@ -1,3 +1,4 @@
+import Foundation
 import Network
 
 /// Monitors network path changes for connectivity-aware reconnection.
@@ -5,20 +6,30 @@ import Network
 /// When the network becomes unavailable, the client defers reconnection attempts
 /// (saving battery and avoiding spurious errors). When the network is restored,
 /// an immediate reconnection is triggered.
-@MainActor
-final class NetworkMonitor {
+final class NetworkMonitor: @unchecked Sendable {
     private let monitor = NWPathMonitor()
     private let queue = DispatchQueue(label: "spacetimedb.network-monitor", qos: .utility)
+    private let lock = NSLock()
 
-    private(set) var isConnected: Bool = true
-    var onPathChange: ((Bool) -> Void)?
+    private var _isConnected: Bool = true
+    var isConnected: Bool {
+        lock.lock(); defer { lock.unlock() }; return _isConnected
+    }
+
+    var onPathChange: (@Sendable (Bool) -> Void)?
 
     func start() {
         monitor.pathUpdateHandler = { [weak self] path in
             let satisfied = path.status == .satisfied
-            Task { @MainActor [weak self] in
-                guard let self, self.isConnected != satisfied else { return }
-                self.isConnected = satisfied
+            guard let self else { return }
+            self.lock.lock()
+            let changed = self._isConnected != satisfied
+            if changed {
+                self._isConnected = satisfied
+            }
+            self.lock.unlock()
+
+            if changed {
                 Log.network.info("Network path changed: \(satisfied ? "connected" : "disconnected")")
                 self.onPathChange?(satisfied)
             }

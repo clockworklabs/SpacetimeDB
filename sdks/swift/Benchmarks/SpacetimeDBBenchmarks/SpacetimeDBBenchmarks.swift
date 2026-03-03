@@ -4,13 +4,27 @@ import SpacetimeDB
 
 // MARK: - Test Data Structures
 
-struct Point3D: Codable, Sendable {
+struct Point3D: Codable, Sendable, BSATNSpecialDecodable, BSATNSpecialEncodable {
     var x: Float
     var y: Float
     var z: Float
+
+    static func decodeBSATN(from reader: BSATNReader) throws -> Point3D {
+        return Point3D(
+            x: try reader.readFloat(),
+            y: try reader.readFloat(),
+            z: try reader.readFloat()
+        )
+    }
+
+    func encodeBSATN(to storage: BSATNStorage) throws {
+        storage.appendFloat(x)
+        storage.appendFloat(y)
+        storage.appendFloat(z)
+    }
 }
 
-struct PlayerRow: Codable, Sendable {
+struct PlayerRow: Codable, Sendable, BSATNSpecialDecodable, BSATNSpecialEncodable {
     var id: UInt64
     var name: String
     var x: Float
@@ -20,13 +34,58 @@ struct PlayerRow: Codable, Sendable {
     var kills: UInt32
     var respawnAtMicros: Int64
     var isReady: Bool
+
+    static func decodeBSATN(from reader: BSATNReader) throws -> PlayerRow {
+        return PlayerRow(
+            id: try reader.readU64(),
+            name: try reader.readString(),
+            x: try reader.readFloat(),
+            y: try reader.readFloat(),
+            health: try reader.readU32(),
+            weaponCount: try reader.readU32(),
+            kills: try reader.readU32(),
+            respawnAtMicros: try reader.readI64(),
+            isReady: try reader.readBool()
+        )
+    }
+
+    func encodeBSATN(to storage: BSATNStorage) throws {
+        storage.appendU64(id)
+        try storage.appendString(name)
+        storage.appendFloat(x)
+        storage.appendFloat(y)
+        storage.appendU32(health)
+        storage.appendU32(weaponCount)
+        storage.appendU32(kills)
+        storage.appendI64(respawnAtMicros)
+        storage.appendBool(isReady)
+    }
 }
 
-struct GameState: Codable, Sendable {
+struct GameState: Codable, Sendable, BSATNSpecialDecodable, BSATNSpecialEncodable {
     var tick: UInt64
     var players: [PlayerRow]
     var mapName: String
     var timeLimit: UInt32
+
+    static func decodeBSATN(from reader: BSATNReader) throws -> GameState {
+        return GameState(
+            tick: try reader.readU64(),
+            players: try reader.readArray { try PlayerRow.decodeBSATN(from: reader) },
+            mapName: try reader.readString(),
+            timeLimit: try reader.readU32()
+        )
+    }
+
+    func encodeBSATN(to storage: BSATNStorage) throws {
+        storage.appendU64(tick)
+        storage.appendU32(UInt32(players.count))
+        for player in players {
+            try player.encodeBSATN(to: storage)
+        }
+        try storage.appendString(mapName)
+        storage.appendU32(timeLimit)
+    }
 }
 
 // MARK: - Pre-built Test Data
@@ -296,13 +355,12 @@ let benchmarks: @Sendable () -> Void = {
             try! encoder.encode(Point3D(x: Float(i), y: Float(i), z: Float(i)))
         }
         for _ in benchmark.scaledIterations {
-            await MainActor.run {
-                let cache = TableCache<Point3D>(tableName: "bench")
-                for rowBytes in rows {
-                    try! cache.handleInsert(rowBytes: rowBytes)
-                }
-                blackHole(cache.rows)
+            let cache = TableCache<Point3D>(tableName: "bench")
+            for rowBytes in rows {
+                try! cache.handleInsert(rowBytes: rowBytes)
             }
+            // Performance: We only measure the background insertion/decoding here.
+            // In real usage, the UI will sync occasionally.
         }
     }
 
@@ -312,12 +370,9 @@ let benchmarks: @Sendable () -> Void = {
             try! encoder.encode(Point3D(x: Float(i), y: Float(i), z: Float(i)))
         }
         for _ in benchmark.scaledIterations {
-            await MainActor.run {
-                let cache = TableCache<Point3D>(tableName: "bench")
-                for rowBytes in rows {
-                    try! cache.handleInsert(rowBytes: rowBytes)
-                }
-                blackHole(cache.rows)
+            let cache = TableCache<Point3D>(tableName: "bench")
+            for rowBytes in rows {
+                try! cache.handleInsert(rowBytes: rowBytes)
             }
         }
     }
@@ -328,14 +383,29 @@ let benchmarks: @Sendable () -> Void = {
             try! encoder.encode(Point3D(x: Float(i), y: Float(i), z: Float(i)))
         }
         for _ in benchmark.scaledIterations {
+            let cache = TableCache<Point3D>(tableName: "bench")
+            for rowBytes in rows {
+                try! cache.handleInsert(rowBytes: rowBytes)
+            }
+            for rowBytes in rows {
+                try! cache.handleDelete(rowBytes: rowBytes)
+            }
+        }
+    }
+    
+    Benchmark("Cache Sync (1000 rows)") { benchmark in
+        let encoder = BSATNEncoder()
+        let rows = (0..<1000).map { i in
+            try! encoder.encode(Point3D(x: Float(i), y: Float(i), z: Float(i)))
+        }
+        let cache = TableCache<Point3D>(tableName: "bench")
+        for rowBytes in rows {
+            try! cache.handleInsert(rowBytes: rowBytes)
+        }
+        
+        for _ in benchmark.scaledIterations {
             await MainActor.run {
-                let cache = TableCache<Point3D>(tableName: "bench")
-                for rowBytes in rows {
-                    try! cache.handleInsert(rowBytes: rowBytes)
-                }
-                for rowBytes in rows {
-                    try! cache.handleDelete(rowBytes: rowBytes)
-                }
+                cache.sync()
                 blackHole(cache.rows)
             }
         }

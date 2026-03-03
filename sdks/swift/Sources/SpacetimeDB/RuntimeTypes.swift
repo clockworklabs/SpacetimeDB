@@ -49,92 +49,91 @@ public enum SpacetimeResult<Ok: Codable & Sendable, Err: Codable & Sendable>: Co
 }
 
 extension Identity: BSATNSpecialDecodable {
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        self.rawBytes = try decoder.storage.readBytes(count: Self.byteCount)
+    public static func decodeBSATN(from reader: BSATNReader) throws -> Identity {
+        return Identity(rawBytes: try reader.readBytes(count: Self.byteCount))
     }
 }
 
 extension Identity: BSATNSpecialEncodable {
-    func encodeBSATN(to encoder: _BSATNEncoder) throws {
+    public func encodeBSATN(to storage: BSATNStorage) throws {
         guard rawBytes.count == Self.byteCount else {
             throw BSATNEncodingError.lengthOutOfRange
         }
-        encoder.storage.append(rawBytes)
+        storage.append(rawBytes)
     }
 }
 
 extension ClientConnectionId: BSATNSpecialDecodable {
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        self.rawBytes = try decoder.storage.readBytes(count: Self.byteCount)
+    public static func decodeBSATN(from reader: BSATNReader) throws -> ClientConnectionId {
+        return ClientConnectionId(rawBytes: try reader.readBytes(count: Self.byteCount))
     }
 }
 
 extension ClientConnectionId: BSATNSpecialEncodable {
-    func encodeBSATN(to encoder: _BSATNEncoder) throws {
+    public func encodeBSATN(to storage: BSATNStorage) throws {
         guard rawBytes.count == Self.byteCount else {
             throw BSATNEncodingError.lengthOutOfRange
         }
-        encoder.storage.append(rawBytes)
+        storage.append(rawBytes)
     }
 }
 
 extension QuerySetId: BSATNSpecialDecodable {
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        self.rawValue = try decoder.storage.read(UInt32.self)
+    public static func decodeBSATN(from reader: BSATNReader) throws -> QuerySetId {
+        return QuerySetId(rawValue: try reader.read(UInt32.self))
     }
 }
 
 extension QuerySetId: BSATNSpecialEncodable {
-    func encodeBSATN(to encoder: _BSATNEncoder) throws {
-        encoder.storage.append(rawValue)
+    public func encodeBSATN(to storage: BSATNStorage) throws {
+        storage.append(rawValue)
     }
 }
 
 extension RequestId: BSATNSpecialDecodable {
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        self.rawValue = try decoder.storage.read(UInt32.self)
+    public static func decodeBSATN(from reader: BSATNReader) throws -> RequestId {
+        return RequestId(rawValue: try reader.read(UInt32.self))
     }
 }
 
 extension RequestId: BSATNSpecialEncodable {
-    func encodeBSATN(to encoder: _BSATNEncoder) throws {
-        encoder.storage.append(rawValue)
+    public func encodeBSATN(to storage: BSATNStorage) throws {
+        storage.append(rawValue)
     }
 }
 
 extension RawIdentifier: BSATNSpecialDecodable {
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        self.rawValue = try decoder.singleValueContainer().decode(String.self)
+    public static func decodeBSATN(from reader: BSATNReader) throws -> RawIdentifier {
+        return RawIdentifier(rawValue: try reader.readString())
     }
 }
 
 extension RawIdentifier: BSATNSpecialEncodable {
-    func encodeBSATN(to encoder: _BSATNEncoder) throws {
-        var container = encoder.singleValueContainer()
-        try container.encode(rawValue)
+    public func encodeBSATN(to storage: BSATNStorage) throws {
+        try storage.appendString(rawValue)
     }
 }
 
 extension TimeDurationMicros: BSATNSpecialDecodable {
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        self.rawValue = try decoder.storage.read(UInt64.self)
+    public static func decodeBSATN(from reader: BSATNReader) throws -> TimeDurationMicros {
+        return TimeDurationMicros(rawValue: try reader.read(UInt64.self))
     }
 }
 
 extension TimeDurationMicros: BSATNSpecialEncodable {
-    func encodeBSATN(to encoder: _BSATNEncoder) throws {
-        encoder.storage.append(rawValue)
+    public func encodeBSATN(to storage: BSATNStorage) throws {
+        storage.append(rawValue)
     }
 }
 
 extension ScheduleAt: BSATNSpecialDecodable {
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        let tag = try decoder.storage.read(UInt8.self)
+    public static func decodeBSATN(from reader: BSATNReader) throws -> ScheduleAt {
+        let tag = try reader.read(UInt8.self)
         switch tag {
         case 0:
-            self = .interval(try decoder.storage.read(UInt64.self))
+            return .interval(try reader.read(UInt64.self))
         case 1:
-            self = .time(try decoder.storage.read(UInt64.self))
+            return .time(try reader.read(UInt64.self))
         default:
             throw BSATNDecodingError.invalidType
         }
@@ -142,27 +141,34 @@ extension ScheduleAt: BSATNSpecialDecodable {
 }
 
 extension ScheduleAt: BSATNSpecialEncodable {
-    func encodeBSATN(to encoder: _BSATNEncoder) throws {
+    public func encodeBSATN(to storage: BSATNStorage) throws {
         switch self {
         case .interval(let value):
-            encoder.storage.append(0 as UInt8)
-            encoder.storage.append(value)
+            storage.append(0 as UInt8)
+            storage.append(value)
         case .time(let value):
-            encoder.storage.append(1 as UInt8)
-            encoder.storage.append(value)
+            storage.append(1 as UInt8)
+            storage.append(value)
         }
     }
 }
 
 extension SpacetimeResult: BSATNSpecialDecodable {
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        let tag = try decoder.storage.read(UInt8.self)
-        let container = try decoder.singleValueContainer()
+    public static func decodeBSATN(from reader: BSATNReader) throws -> SpacetimeResult {
+        let tag = try reader.read(UInt8.self)
         switch tag {
         case 0:
-            self = .ok(try container.decode(Ok.self))
+            if let specialType = Ok.self as? BSATNSpecialDecodable.Type {
+                return .ok(try specialType.decodeBSATN(from: reader) as! Ok)
+            }
+            let decoder = _BSATNDecoder(storage: reader, codingPath: [])
+            return .ok(try Ok(from: decoder))
         case 1:
-            self = .err(try container.decode(Err.self))
+            if let specialType = Err.self as? BSATNSpecialDecodable.Type {
+                return .err(try specialType.decodeBSATN(from: reader) as! Err)
+            }
+            let decoder = _BSATNDecoder(storage: reader, codingPath: [])
+            return .err(try Err(from: decoder))
         default:
             throw BSATNDecodingError.invalidType
         }
@@ -170,15 +176,24 @@ extension SpacetimeResult: BSATNSpecialDecodable {
 }
 
 extension SpacetimeResult: BSATNSpecialEncodable {
-    func encodeBSATN(to encoder: _BSATNEncoder) throws {
-        var container = encoder.singleValueContainer()
+    public func encodeBSATN(to storage: BSATNStorage) throws {
         switch self {
         case .ok(let value):
-            encoder.storage.append(0 as UInt8)
-            try container.encode(value)
+            storage.append(0 as UInt8)
+            if let bsatnSpecial = value as? BSATNSpecialEncodable {
+                try bsatnSpecial.encodeBSATN(to: storage)
+            } else {
+                let encoder = _BSATNEncoder(storage: storage, codingPath: [])
+                try value.encode(to: encoder)
+            }
         case .err(let value):
-            encoder.storage.append(1 as UInt8)
-            try container.encode(value)
+            storage.append(1 as UInt8)
+            if let bsatnSpecial = value as? BSATNSpecialEncodable {
+                try bsatnSpecial.encodeBSATN(to: storage)
+            } else {
+                let encoder = _BSATNEncoder(storage: storage, codingPath: [])
+                try value.encode(to: encoder)
+            }
         }
     }
 }

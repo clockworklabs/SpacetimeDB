@@ -11,9 +11,11 @@ public struct SingleTableRows: BSATNSpecialDecodable, Sendable, Decodable {
         self.rows = rows
     }
 
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        self.table = try RawIdentifier(fromBSATN: decoder)
-        self.rows = try BsatnRowList(fromBSATN: decoder)
+    public static func decodeBSATN(from reader: BSATNReader) throws -> SingleTableRows {
+        return SingleTableRows(
+            table: try RawIdentifier.decodeBSATN(from: reader),
+            rows: try BsatnRowList.decodeBSATN(from: reader)
+        )
     }
 }
 
@@ -24,8 +26,10 @@ public struct QueryRows: BSATNSpecialDecodable, Sendable, Decodable {
         self.tables = tables
     }
 
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        self.tables = try decoder.storage.readArray { try SingleTableRows(fromBSATN: decoder) }
+    public static func decodeBSATN(from reader: BSATNReader) throws -> QueryRows {
+        return QueryRows(
+            tables: try reader.readArray { try SingleTableRows.decodeBSATN(from: reader) }
+        )
     }
 }
 
@@ -40,8 +44,10 @@ public struct TransactionUpdate: BSATNSpecialDecodable, Sendable, Decodable {
         fatalError("Handled by BSATNSpecialDecodable")
     }
 
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        self.querySets = try decoder.storage.readArray { try QuerySetUpdate(fromBSATN: decoder) }
+    public static func decodeBSATN(from reader: BSATNReader) throws -> TransactionUpdate {
+        return TransactionUpdate(
+            querySets: try reader.readArray { try QuerySetUpdate.decodeBSATN(from: reader) }
+        )
     }
 }
 
@@ -54,9 +60,11 @@ public struct QuerySetUpdate: BSATNSpecialDecodable, Sendable, Decodable {
         self.tables = tables
     }
 
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        self.querySetId = try QuerySetId(fromBSATN: decoder)
-        self.tables = try decoder.storage.readArray { try TableUpdate(fromBSATN: decoder) }
+    public static func decodeBSATN(from reader: BSATNReader) throws -> QuerySetUpdate {
+        return QuerySetUpdate(
+            querySetId: try QuerySetId.decodeBSATN(from: reader),
+            tables: try reader.readArray { try TableUpdate.decodeBSATN(from: reader) }
+        )
     }
 }
 
@@ -69,27 +77,27 @@ public struct TableUpdate: Sendable, BSATNSpecialDecodable, Decodable {
         self.rows = rows
     }
 
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        self.tableName = try RawIdentifier(fromBSATN: decoder)
-        self.rows = try decoder.storage.readArray { try TableUpdateRows(fromBSATN: decoder) }
+    public static func decodeBSATN(from reader: BSATNReader) throws -> TableUpdate {
+        return TableUpdate(
+            tableName: try RawIdentifier.decodeBSATN(from: reader),
+            rows: try reader.readArray { try TableUpdateRows.decodeBSATN(from: reader) }
+        )
     }
 }
 
-public enum TableUpdateRows: Sendable, Decodable {
+public enum TableUpdateRows: Sendable, Decodable, BSATNSpecialDecodable {
     case persistentTable(PersistentTableRows)
     case eventTable(EventTableRows)
 
     public init(from decoder: Decoder) throws {
         fatalError("Use BSATNSpecialDecodable")
     }
-}
 
-extension TableUpdateRows: BSATNSpecialDecodable {
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        try self = decoder.storage.readTaggedEnum { tag in
+    public static func decodeBSATN(from reader: BSATNReader) throws -> TableUpdateRows {
+        try reader.readTaggedEnum { tag in
             switch tag {
-            case 0: return .persistentTable(try PersistentTableRows(fromBSATN: decoder))
-            case 1: return .eventTable(try EventTableRows(fromBSATN: decoder))
+            case 0: return .persistentTable(try PersistentTableRows.decodeBSATN(from: reader))
+            case 1: return .eventTable(try EventTableRows.decodeBSATN(from: reader))
             default: throw BSATNDecodingError.unsupportedType
             }
         }
@@ -105,9 +113,11 @@ public struct PersistentTableRows: Sendable, BSATNSpecialDecodable, Decodable {
         self.deletes = deletes
     }
 
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        self.inserts = try BsatnRowList(fromBSATN: decoder)
-        self.deletes = try BsatnRowList(fromBSATN: decoder)
+    public static func decodeBSATN(from reader: BSATNReader) throws -> PersistentTableRows {
+        return PersistentTableRows(
+            inserts: try BsatnRowList.decodeBSATN(from: reader),
+            deletes: try BsatnRowList.decodeBSATN(from: reader)
+        )
     }
 }
 
@@ -118,8 +128,10 @@ public struct EventTableRows: Sendable, BSATNSpecialDecodable, Decodable {
         self.events = events
     }
 
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        self.events = try BsatnRowList(fromBSATN: decoder)
+    public static func decodeBSATN(from reader: BSATNReader) throws -> EventTableRows {
+        return EventTableRows(
+            events: try BsatnRowList.decodeBSATN(from: reader)
+        )
     }
 }
 
@@ -131,11 +143,11 @@ public enum RowSizeHint: BSATNSpecialDecodable, Sendable, Decodable {
         fatalError("Use BSATNSpecialDecodable")
     }
 
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        try self = decoder.storage.readTaggedEnum { tag in
+    public static func decodeBSATN(from reader: BSATNReader) throws -> RowSizeHint {
+        try reader.readTaggedEnum { tag in
             switch tag {
-            case 0: return .fixedSize(try decoder.storage.read(UInt16.self))
-            case 1: return .rowOffsets(try decoder.storage.readArray { try decoder.storage.read(UInt64.self) })
+            case 0: return .fixedSize(try reader.read(UInt16.self))
+            case 1: return .rowOffsets(try reader.readArray { try reader.read(UInt64.self) })
             default: throw BSATNDecodingError.unsupportedType
             }
         }
@@ -153,14 +165,15 @@ public struct BsatnRowList: BSATNSpecialDecodable, Sendable, Decodable {
         self.rowsData = rowsData
     }
 
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        self.sizeHint = try RowSizeHint(fromBSATN: decoder)
-        let dataLen = try decoder.storage.read(UInt32.self)
-        self.rowsData = try decoder.storage.readBytes(count: Int(dataLen))
+    public static func decodeBSATN(from reader: BSATNReader) throws -> BsatnRowList {
+        let sizeHint = try RowSizeHint.decodeBSATN(from: reader)
+        let dataLen = try reader.read(UInt32.self)
+        let rowsData = try reader.readBytes(count: Int(dataLen))
+        return BsatnRowList(sizeHint: sizeHint, rowsData: rowsData)
     }
 }
 
-public enum ReducerOutcome: Decodable {
+public enum ReducerOutcome: Decodable, BSATNSpecialDecodable, Sendable {
     case ok(ReducerOk)
     case okEmpty
     case err(Data)
@@ -169,56 +182,51 @@ public enum ReducerOutcome: Decodable {
     public init(from decoder: Decoder) throws {
         fatalError("Use BSATNSpecialDecodable")
     }
-}
 
-extension ReducerOutcome: BSATNSpecialDecodable {
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        try self = decoder.storage.readTaggedEnum { tag in
+    public static func decodeBSATN(from reader: BSATNReader) throws -> ReducerOutcome {
+        try reader.readTaggedEnum { tag in
             switch tag {
-            case 0: return .ok(try ReducerOk(fromBSATN: decoder))
+            case 0: return .ok(try ReducerOk.decodeBSATN(from: reader))
             case 1: return .okEmpty
             case 2:
-                let len = try decoder.storage.read(UInt32.self)
-                return .err(try decoder.storage.readBytes(count: Int(len)))
+                let len = try reader.read(UInt32.self)
+                return .err(try reader.readBytes(count: Int(len)))
             case 3:
-                let container = try decoder.singleValueContainer()
-                return .internalError(try container.decode(String.self))
+                return .internalError(try reader.readString())
             default: throw BSATNDecodingError.unsupportedType
             }
         }
     }
 }
 
-public struct ReducerOk: BSATNSpecialDecodable, Decodable {
+public struct ReducerOk: BSATNSpecialDecodable, Decodable, Sendable {
     public var retValue: Data
     public var transactionUpdate: TransactionUpdate
 
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        let len = try decoder.storage.read(UInt32.self)
-        self.retValue = try decoder.storage.readBytes(count: Int(len))
-        self.transactionUpdate = try TransactionUpdate(fromBSATN: decoder)
+    public static func decodeBSATN(from reader: BSATNReader) throws -> ReducerOk {
+        let len = try reader.read(UInt32.self)
+        let retValue = try reader.readBytes(count: Int(len))
+        let transactionUpdate = try TransactionUpdate.decodeBSATN(from: reader)
+        return ReducerOk(retValue: retValue, transactionUpdate: transactionUpdate)
     }
 }
 
-public enum ProcedureStatus: Decodable {
+public enum ProcedureStatus: Decodable, BSATNSpecialDecodable, Sendable {
     case returned(Data)
     case internalError(String)
 
     public init(from decoder: Decoder) throws {
         fatalError("Use BSATNSpecialDecodable")
     }
-}
 
-extension ProcedureStatus: BSATNSpecialDecodable {
-    init(fromBSATN decoder: _BSATNDecoder) throws {
-        try self = decoder.storage.readTaggedEnum { tag in
+    public static func decodeBSATN(from reader: BSATNReader) throws -> ProcedureStatus {
+        try reader.readTaggedEnum { tag in
             switch tag {
             case 0:
-                let len = try decoder.storage.read(UInt32.self)
-                return .returned(try decoder.storage.readBytes(count: Int(len)))
+                let len = try reader.read(UInt32.self)
+                return .returned(try reader.readBytes(count: Int(len)))
             case 1:
-                let container = try decoder.singleValueContainer()
-                return .internalError(try container.decode(String.self))
+                return .internalError(try reader.readString())
             default: throw BSATNDecodingError.unsupportedType
             }
         }
