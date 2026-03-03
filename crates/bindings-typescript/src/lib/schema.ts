@@ -74,14 +74,14 @@ export function tablesToSchema<
   // `TablesToSchema<T>['tables']` is intentionally readonly in the public type,
   // but we need a mutable builder while materializing it from entries.
   type MutableTableDefs = {
-    -readonly [AccName in keyof TablesToSchema<T>['tables']]: TablesToSchema<
-      T
-    >['tables'][AccName];
+    -readonly [AccName in keyof TablesToSchema<T>['tables']]:
+      TablesToSchema<T>['tables'][AccName];
   };
   const tableDefs = Object.create(null) as MutableTableDefs;
-  for (const [accName, schema] of Object.entries(tables) as Array<
-    [keyof T & string, T[keyof T & string]]
-  >) {
+  for (const [accName, schema] of Object.entries(tables) as [
+    keyof T & string,
+    T[keyof T & string],
+  ][]) {
     tableDefs[accName] = tableToSchema(
       accName,
       schema,
