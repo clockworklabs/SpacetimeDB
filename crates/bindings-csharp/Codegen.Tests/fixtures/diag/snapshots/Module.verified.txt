@@ -296,23 +296,6 @@ public partial struct TestScheduleIssues
       }
     },
     {/*
-    [SpacetimeDB.View(Accessor = "view_def_no_public")]
-    public static List<Player> ViewDefNoPublic(ViewContext ctx)
-                  ^^^^^^^^^^^^
-    {
-*/
-      Message: View 'ViewDefNoPublic' must return T?, List<T>, IQuery<T>, or IEnumerable<T>.,
-      Severity: Error,
-      Descriptor: {
-        Id: STDB0024,
-        Title: Views must return T?, List<T>, IQuery<T>, or IEnumerable<T>,
-        MessageFormat: View '{0}' must return T?, List<T>, IQuery<T>, or IEnumerable<T>.,
-        Category: SpacetimeDB,
-        DefaultSeverity: Error,
-        IsEnabledByDefault: true
-      }
-    },
-    {/*
     [SpacetimeDB.View(Accessor = "view_def_no_context", Public = true)]
     public static List<Player> ViewDefNoContext()
                                                ^^
@@ -330,23 +313,6 @@ public partial struct TestScheduleIssues
       }
     },
     {/*
-    [SpacetimeDB.View(Accessor = "view_def_no_context", Public = true)]
-    public static List<Player> ViewDefNoContext()
-                  ^^^^^^^^^^^^
-    {
-*/
-      Message: View 'ViewDefNoContext' must return T?, List<T>, IQuery<T>, or IEnumerable<T>.,
-      Severity: Error,
-      Descriptor: {
-        Id: STDB0024,
-        Title: Views must return T?, List<T>, IQuery<T>, or IEnumerable<T>,
-        MessageFormat: View '{0}' must return T?, List<T>, IQuery<T>, or IEnumerable<T>.,
-        Category: SpacetimeDB,
-        DefaultSeverity: Error,
-        IsEnabledByDefault: true
-      }
-    },
-    {/*
     [SpacetimeDB.View(Accessor = "view_def_wrong_context", Public = true)]
     public static List<Player> ViewDefWrongContext(ReducerContext ctx)
                                                   ^^^^^^^^^^^^^^^^^^^^
@@ -358,23 +324,6 @@ public partial struct TestScheduleIssues
         Id: STDB0022,
         Title: Views must start with ViewContext or AnonymousViewContext,
         MessageFormat: View method {0} must have a first parameter of type ViewContext or AnonymousViewContext.,
-        Category: SpacetimeDB,
-        DefaultSeverity: Error,
-        IsEnabledByDefault: true
-      }
-    },
-    {/*
-    [SpacetimeDB.View(Accessor = "view_def_wrong_context", Public = true)]
-    public static List<Player> ViewDefWrongContext(ReducerContext ctx)
-                  ^^^^^^^^^^^^
-    {
-*/
-      Message: View 'ViewDefWrongContext' must return T?, List<T>, IQuery<T>, or IEnumerable<T>.,
-      Severity: Error,
-      Descriptor: {
-        Id: STDB0024,
-        Title: Views must return T?, List<T>, IQuery<T>, or IEnumerable<T>,
-        MessageFormat: View '{0}' must return T?, List<T>, IQuery<T>, or IEnumerable<T>.,
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true

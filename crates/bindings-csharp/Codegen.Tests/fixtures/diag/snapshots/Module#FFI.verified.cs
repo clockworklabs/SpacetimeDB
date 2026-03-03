@@ -1927,13 +1927,14 @@ sealed class view_def_no_contextViewDispatcher : global::SpacetimeDB.Internal.IV
         try
         {
             var returnValue = Module.ViewDefNoContext((SpacetimeDB.ViewContext)ctx);
-            SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
+            var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
             var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
             var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
             headerRW.Write(writer, header);
-            returnRW.Write(writer, returnValue);
+            listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
         catch (System.Exception e)
@@ -1968,13 +1969,14 @@ sealed class view_def_no_publicViewDispatcher : global::SpacetimeDB.Internal.IVi
         try
         {
             var returnValue = Module.ViewDefNoPublic((SpacetimeDB.ViewContext)ctx);
-            SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
+            var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
             var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
             var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
             headerRW.Write(writer, header);
-            returnRW.Write(writer, returnValue);
+            listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
         catch (System.Exception e)
@@ -2009,13 +2011,14 @@ sealed class view_def_wrong_contextViewDispatcher : global::SpacetimeDB.Internal
         try
         {
             var returnValue = Module.ViewDefWrongContext((SpacetimeDB.ViewContext)ctx);
-            SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
+            var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
             var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
             var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
             headerRW.Write(writer, header);
-            returnRW.Write(writer, returnValue);
+            listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
         catch (System.Exception e)
