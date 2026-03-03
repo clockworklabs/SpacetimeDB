@@ -54,7 +54,7 @@ pub(super) fn make_progress_bar() -> ProgressBar {
     pb
 }
 
-pub(crate) fn releases_url() -> String {
+fn releases_url() -> String {
     std::env::var("SPACETIME_UPDATE_RELEASES_URL")
         .unwrap_or_else(|_| "https://api.github.com/repos/clockworklabs/SpacetimeDB/releases".to_owned())
 }
@@ -64,20 +64,11 @@ const MIRROR_BASE_URL: &str = "https://spacetimedb-client-binaries.nyc3.digitalo
 /// Fetch the latest version tag from the mirror.
 ///
 /// This is the single source of truth for mirror version resolution.
-pub(crate) async fn fetch_latest_version_from_mirror(client: &reqwest::Client) -> Option<semver::Version> {
+async fn fetch_latest_version_from_mirror(client: &reqwest::Client) -> anyhow::Result<semver::Version> {
     let url = format!("{MIRROR_BASE_URL}/latest-version");
-    let tag = client
-        .get(&url)
-        .send()
-        .await
-        .ok()?
-        .error_for_status()
-        .ok()?
-        .text()
-        .await
-        .ok()?;
+    let tag = client.get(&url).send().await?.error_for_status()?.text().await?;
     let ver_str = tag.trim().strip_prefix('v').unwrap_or(tag.trim());
-    semver::Version::parse(ver_str).ok()
+    semver::Version::parse(ver_str).context("Could not parse version from mirror")
 }
 
 /// Fetch the latest release version from GitHub, falling back to the mirror.
@@ -97,7 +88,7 @@ pub(crate) async fn fetch_latest_release_version(client: &reqwest::Client) -> Op
     }
 
     // Fall back to mirror.
-    fetch_latest_version_from_mirror(client).await
+    fetch_latest_version_from_mirror(client).await.ok()
 }
 
 pub(super) fn mirror_asset_url(version: &semver::Version, asset_name: &str) -> String {
@@ -111,9 +102,7 @@ async fn mirror_release(
 ) -> anyhow::Result<(semver::Version, Release)> {
     let release_version = match version {
         Some(v) => v.clone(),
-        None => fetch_latest_version_from_mirror(client)
-            .await
-            .context("Could not fetch latest version from mirror")?,
+        None => fetch_latest_version_from_mirror(client).await?,
     };
     let release = Release {
         tag_name: format!("v{release_version}"),
@@ -271,9 +260,7 @@ pub(super) async fn available_releases(client: &reqwest::Client) -> anyhow::Resu
             .collect(),
         Err(_) => {
             eprintln!("GitHub unavailable, fetching latest version from mirror...");
-            let version = fetch_latest_version_from_mirror(client)
-                .await
-                .context("Could not fetch latest version from mirror")?;
+            let version = fetch_latest_version_from_mirror(client).await?;
             Ok(vec![version.to_string()])
         }
     }
@@ -286,13 +273,13 @@ pub(super) struct ReleaseAsset {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct Release {
+pub(super) struct Release {
     tag_name: String,
     pub(super) assets: Vec<ReleaseAsset>,
 }
 
 impl Release {
-    pub(crate) fn version(&self) -> anyhow::Result<semver::Version> {
+    fn version(&self) -> anyhow::Result<semver::Version> {
         let ver = self.tag_name.strip_prefix('v').unwrap_or(&self.tag_name);
         Ok(semver::Version::parse(ver)?)
     }

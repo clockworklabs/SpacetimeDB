@@ -7,13 +7,12 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use colored::Colorize;
+
 use crate::cli::install::fetch_latest_release_version;
 
 /// How long to cache the update check result.
 const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
-
-/// HTTP timeout for the version check.
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Cache file name.
 const CACHE_FILENAME: &str = ".update_check_cache";
@@ -28,6 +27,23 @@ struct Cache {
     latest_version: String,
 }
 
+impl Cache {
+    fn read(config_dir: &Path) -> Option<Self> {
+        let contents = std::fs::read_to_string(Self::path(config_dir)).ok()?;
+        serde_json::from_str(&contents).ok()
+    }
+
+    fn write(&self, config_dir: &Path) {
+        if let Ok(json) = serde_json::to_string(self) {
+            let _ = std::fs::write(Self::path(config_dir), json);
+        }
+    }
+
+    fn path(config_dir: &Path) -> PathBuf {
+        config_dir.join(CACHE_FILENAME)
+    }
+}
+
 fn now_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -35,28 +51,12 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
-fn cache_path(config_dir: &Path) -> PathBuf {
-    config_dir.join(CACHE_FILENAME)
-}
-
-fn read_cache(path: &Path) -> Option<Cache> {
-    let contents = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&contents).ok()
-}
-
-fn write_cache(path: &Path, cache: &Cache) {
-    if let Ok(json) = serde_json::to_string(cache) {
-        let _ = std::fs::write(path, json);
-    }
-}
-
 /// Resolve the latest version, using the cache if fresh or fetching from the network.
 ///
 /// On success, updates the cache. On network failure, leaves the cache unchanged
 /// so we retry on the next invocation.
-fn resolve_latest_version(config_dir: &Path) -> Option<semver::Version> {
-    let path = cache_path(config_dir);
-    let cache = read_cache(&path);
+fn latest_version_or_cached(config_dir: &Path) -> Option<semver::Version> {
+    let cache = Cache::read(config_dir);
     let now = now_secs();
 
     // Cache is fresh — use it.
@@ -67,11 +67,7 @@ fn resolve_latest_version(config_dir: &Path) -> Option<semver::Version> {
     }
 
     // Cache is stale or missing — fetch from network.
-    let client = reqwest::Client::builder()
-        .timeout(REQUEST_TIMEOUT)
-        .user_agent(format!("SpacetimeDB CLI/{CURRENT_VERSION}"))
-        .build()
-        .ok()?;
+    let client = crate::cli::reqwest_client().ok()?;
 
     let latest = crate::cli::tokio_block_on(async { fetch_latest_release_version(&client).await })
         .ok()
@@ -79,13 +75,11 @@ fn resolve_latest_version(config_dir: &Path) -> Option<semver::Version> {
 
     match latest {
         Some(version) => {
-            write_cache(
-                &path,
-                &Cache {
-                    last_check_secs: now,
-                    latest_version: version.to_string(),
-                },
-            );
+            Cache {
+                last_check_secs: now,
+                latest_version: version.to_string(),
+            }
+            .write(config_dir);
             Some(version)
         }
         None => {
@@ -104,25 +98,24 @@ fn resolve_latest_version(config_dir: &Path) -> Option<semver::Version> {
 /// If the cache is stale, it makes a quick HTTP request (with timeout) to refresh.
 ///
 /// `config_dir` should be the SpacetimeDB config directory (e.g. `~/.spacetime`).
+#[allow(clippy::disallowed_macros)]
 pub(crate) fn maybe_print_update_notice(config_dir: &Path) {
     let current = match semver::Version::parse(CURRENT_VERSION) {
         Ok(v) => v,
         Err(_) => return,
     };
 
-    let latest = match resolve_latest_version(config_dir) {
+    let latest = match latest_version_or_cached(config_dir) {
         Some(v) => v,
         None => return,
     };
 
     if latest > current {
-        print_notice(&current, &latest);
+        eprintln!(
+            "{}",
+            format!("A new version of SpacetimeDB is available: v{latest} (current: v{current})").yellow()
+        );
+        eprintln!("Run `spacetime version upgrade` to update.");
+        eprintln!();
     }
-}
-
-#[allow(clippy::disallowed_macros)]
-fn print_notice(current: &semver::Version, latest: &semver::Version) {
-    eprintln!("\x1b[33mA new version of SpacetimeDB is available: v{latest} (current: v{current})\x1b[0m");
-    eprintln!("Run `spacetime version upgrade` to update.");
-    eprintln!();
 }
