@@ -811,22 +811,26 @@ async fn get_template_config_interactive(
             .get(selected_lang)
             .ok_or_else(|| anyhow::anyhow!("No templates found for selected language"))?;
 
-        let template_items: Vec<String> = template_indices
-            .iter()
-            .map(|&idx| {
-                let template = &templates[idx];
-                format!("{} - {}", template.id, template.description)
-            })
-            .collect();
+        let template = if template_indices.len() > 1 {
+            let template_items: Vec<String> = template_indices
+                .iter()
+                .map(|&idx| {
+                    let template = &templates[idx];
+                    format!("{} - {}", template.id, template.description)
+                })
+                .collect();
 
-        let pair_prompt = format!("Templates available for {selected_lang} (type to filter)");
-        let template_selection = FuzzySelect::with_theme(&theme)
-            .with_prompt(&pair_prompt)
-            .items(&template_items)
-            .default(0)
-            .interact()?;
+            let pair_prompt = format!("Templates available for {selected_lang} (type to filter)");
+            let template_selection = FuzzySelect::with_theme(&theme)
+                .with_prompt(&pair_prompt)
+                .items(&template_items)
+                .default(0)
+                .interact()?;
 
-        let template = &templates[template_indices[template_selection]];
+            &templates[template_indices[template_selection]]
+        } else {
+            &templates[template_indices[0]]
+        };
 
         Ok(TemplateConfig {
             project_name,

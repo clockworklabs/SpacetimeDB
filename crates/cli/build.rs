@@ -196,11 +196,13 @@ fn generate_template_files() {
     write_if_changed(&dest_path, generated_code.as_bytes()).expect("Failed to write embedded_templates.rs");
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 struct TemplateInfo {
     id: String,
     description: String,
+    #[serde(serialize_with = "serialize_option_string_as_empty")]
     server_source: Option<String>,
+    #[serde(serialize_with = "serialize_option_string_as_empty")]
     client_source: Option<String>,
     server_lang: Option<String>,
     client_lang: Option<String>,
@@ -208,34 +210,8 @@ struct TemplateInfo {
 }
 
 #[derive(serde::Serialize)]
-struct TemplateJson {
-    id: String,
-    description: String,
-    server_source: String,
-    client_source: String,
-    server_lang: String,
-    client_lang: String,
-    #[serde(default)]
-    client_framework: Option<String>,
-}
-
-impl From<&TemplateInfo> for TemplateJson {
-    fn from(template: &TemplateInfo) -> Self {
-        Self {
-            id: template.id.clone(),
-            description: template.description.clone(),
-            server_source: template.server_source.clone().unwrap_or_default(),
-            client_source: template.client_source.clone().unwrap_or_default(),
-            server_lang: template.server_lang.clone().unwrap_or_default(),
-            client_lang: template.client_lang.clone().unwrap_or_default(),
-            client_framework: template.client_framework.clone(),
-        }
-    }
-}
-
-#[derive(serde::Serialize)]
-struct TemplatesJson {
-    templates: Vec<TemplateJson>,
+struct TemplatesJson<'a> {
+    templates: &'a [TemplateInfo],
 }
 
 #[derive(serde::Deserialize)]
@@ -310,10 +286,15 @@ fn discover_templates(templates_dir: &Path) -> Vec<TemplateInfo> {
 }
 
 fn generate_templates_json(templates: &[TemplateInfo]) -> String {
-    let payload = TemplatesJson {
-        templates: templates.iter().map(TemplateJson::from).collect(),
-    };
+    let payload = TemplatesJson { templates };
     serde_json::to_string_pretty(&payload).expect("Failed to serialize templates JSON")
+}
+
+fn serialize_option_string_as_empty<S>(value: &Option<String>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(value.as_deref().unwrap_or(""))
 }
 
 fn generate_template_entry(code: &mut String, template_path: &Path, source: &str, manifest_dir: &Path) {
