@@ -120,23 +120,7 @@ async fn exec_show(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
     Ok(())
 }
 
-async fn spacetimedb_login_and_save(
-    config: &mut Config,
-    host: &Url,
-    direct_login: bool,
-    open_browser: bool,
-) -> anyhow::Result<String> {
-    let token = spacetimedb_login_force(config, host, direct_login, open_browser).await?;
-
-    match decode_identity(&token) {
-        Ok(identity) => println!("Logged in with identity {identity}"),
-        Err(_) => println!("Login successful!"),
-    }
-
-    Ok(token)
-}
-
-pub async fn spacetimedb_login_force(
+pub async fn spacetimedb_login_and_save(
     config: &mut Config,
     host: &Url,
     direct_login: bool,
@@ -148,16 +132,19 @@ pub async fn spacetimedb_login_force(
         println!("WARNING: This login will NOT work for any other servers.");
         token
     } else {
-        let session_token = web_login_cached(config, host, open_browser).await?;
+        let session_token = web_login_or_cached(config, host, open_browser).await?;
         spacetimedb_login(host, &session_token).await?
     };
     config.set_spacetimedb_token(token.clone());
     config.save();
 
+    let identity = decode_identity(&token)?;
+    println!("Logged in with identity {identity}");
+
     Ok(token)
 }
 
-async fn web_login_cached(config: &mut Config, host: &Url, open_browser: bool) -> anyhow::Result<String> {
+async fn web_login_or_cached(config: &mut Config, host: &Url, open_browser: bool) -> anyhow::Result<String> {
     if let Some(session_token) = config.web_session_token() {
         // Currently, these session tokens do not expire. At some point in the future, we may also need to check this session token for validity.
         Ok(session_token.clone())
