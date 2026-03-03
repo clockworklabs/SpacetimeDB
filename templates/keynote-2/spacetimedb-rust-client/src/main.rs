@@ -115,7 +115,10 @@ fn seed(cli: &Common, seed: &Seed) {
     .unwrap();
 
     let reply = rx.blocking_recv().unwrap();
-    assert_eq!(reply, ServerMessage::TransactionUpdate);
+    assert!(matches!(
+        reply,
+        ServerMessage::TransactionUpdate | ServerMessage::TransactionUpdateLight
+    ));
 
     if !cli.quiet {
         println!("done seeding");
@@ -200,11 +203,16 @@ fn bench(cli: &Common, bench: &Bench) {
                     let mut recorded_transfers = 0;
                     while recorded_transfers < transfers {
                         match rx.blocking_recv() {
-                            None => unreachable!(),
-                            Some(ServerMessage::TransactionUpdate) => {}
+                            Some(ServerMessage::TransactionUpdate)
+                            | Some(ServerMessage::TransactionUpdateLight) => {
+                                recorded_transfers += 1;
+                            }
                             Some(_) => continue,
+                            None => {
+                                // Connection closed: stop waiting to avoid panic.
+                                break;
+                            }
                         }
-                        recorded_transfers += 1;
                     }
 
                     transfers
