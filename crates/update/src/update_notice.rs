@@ -24,8 +24,8 @@ const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 struct Cache {
     /// Unix timestamp of the last successful check.
     last_check_secs: u64,
-    /// The latest version string (without "v" prefix), if known.
-    latest_version: Option<String>,
+    /// The latest version string (without "v" prefix).
+    latest_version: String,
 }
 
 fn now_secs() -> u64 {
@@ -50,11 +50,49 @@ fn write_cache(path: &Path, cache: &Cache) {
     }
 }
 
-/// If `latest` is newer than `current`, print an update notice to stderr.
-fn notify_if_newer(current: &semver::Version, latest_str: &str) {
-    if let Ok(latest) = semver::Version::parse(latest_str) {
-        if latest > *current {
-            print_notice(current, &latest);
+/// Resolve the latest version, using the cache if fresh or fetching from the network.
+///
+/// On success, updates the cache. On network failure, leaves the cache unchanged
+/// so we retry on the next invocation.
+fn resolve_latest_version(config_dir: &Path) -> Option<semver::Version> {
+    let path = cache_path(config_dir);
+    let cache = read_cache(&path);
+    let now = now_secs();
+
+    // Cache is fresh — use it.
+    if let Some(ref cache) = cache {
+        if now.saturating_sub(cache.last_check_secs) < CHECK_INTERVAL.as_secs() {
+            return semver::Version::parse(&cache.latest_version).ok();
+        }
+    }
+
+    // Cache is stale or missing — fetch from network.
+    let client = reqwest::Client::builder()
+        .timeout(REQUEST_TIMEOUT)
+        .user_agent(format!("SpacetimeDB CLI/{CURRENT_VERSION}"))
+        .build()
+        .ok()?;
+
+    let latest = crate::cli::tokio_block_on(async { fetch_latest_release_version(&client).await })
+        .ok()
+        .flatten();
+
+    match latest {
+        Some(version) => {
+            write_cache(
+                &path,
+                &Cache {
+                    last_check_secs: now,
+                    latest_version: version.to_string(),
+                },
+            );
+            Some(version)
+        }
+        None => {
+            log::debug!("Failed to fetch latest version from network; will retry next invocation");
+            // Don't update cache — retry next time.
+            // Fall back to stale cache if available.
+            cache.and_then(|c| semver::Version::parse(&c.latest_version).ok())
         }
     }
 }
@@ -67,62 +105,19 @@ fn notify_if_newer(current: &semver::Version, latest_str: &str) {
 ///
 /// `config_dir` should be the SpacetimeDB config directory (e.g. `~/.spacetime`).
 pub(crate) fn maybe_print_update_notice(config_dir: &Path) {
-    // Best-effort: never let a failed update check interfere with the user's command.
-    let _ = check_and_notify(config_dir);
-}
+    let current = match semver::Version::parse(CURRENT_VERSION) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
 
-fn check_and_notify(config_dir: &Path) -> Option<()> {
-    let path = cache_path(config_dir);
-    let cache = read_cache(&path).unwrap_or_default();
-    let now = now_secs();
+    let latest = match resolve_latest_version(config_dir) {
+        Some(v) => v,
+        None => return,
+    };
 
-    let current = semver::Version::parse(CURRENT_VERSION).ok()?;
-
-    // Cache is fresh and has a known latest version — use it.
-    if now.saturating_sub(cache.last_check_secs) < CHECK_INTERVAL.as_secs() {
-        if let Some(ref latest_str) = cache.latest_version {
-            notify_if_newer(&current, latest_str);
-            return Some(());
-        }
-        // Cache is fresh but latest_version is None (previous fetch failed).
-        // Fall through to re-check rather than silently skipping for 24h.
+    if latest > current {
+        print_notice(&current, &latest);
     }
-
-    // Cache is stale or empty — do a quick network check.
-    let latest_version = fetch_latest_version_now();
-
-    match latest_version {
-        Some(ref latest) => {
-            // Successful fetch — save to cache and compare.
-            let new_cache = Cache {
-                last_check_secs: now,
-                latest_version: Some(latest.to_string()),
-            };
-            write_cache(&path, &new_cache);
-            notify_if_newer(&current, &latest.to_string());
-        }
-        None => {
-            // Fetch failed — don't update the cache so we retry next invocation.
-        }
-    }
-
-    Some(())
-}
-
-/// Fetch the latest version from GitHub/mirror with a short timeout.
-fn fetch_latest_version_now() -> Option<semver::Version> {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .ok()?
-        .block_on(async {
-            let client = reqwest::Client::builder()
-                .timeout(REQUEST_TIMEOUT)
-                .user_agent(format!("SpacetimeDB CLI/{CURRENT_VERSION}"))
-                .build()
-                .ok()?;
-            fetch_latest_release_version(&client).await
-        })
 }
 
 #[allow(clippy::disallowed_macros)]

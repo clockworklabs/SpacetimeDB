@@ -8603,6 +8603,7 @@ dependencies = [
  "flate2",
  "http-body-util",
  "indicatif",
+ "log",
  "reqwest 0.12.24",
  "self-replace",
  "semver",

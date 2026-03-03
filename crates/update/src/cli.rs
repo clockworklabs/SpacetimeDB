@@ -88,7 +88,7 @@ enum VersionSubcommand {
     Link(link::Link),
 }
 
-fn reqwest_client() -> anyhow::Result<reqwest::Client> {
+pub(crate) fn reqwest_client() -> anyhow::Result<reqwest::Client> {
     let mut client = reqwest::Client::builder();
     #[cfg(feature = "github-token-auth")]
     {
@@ -104,7 +104,7 @@ fn reqwest_client() -> anyhow::Result<reqwest::Client> {
     Ok(client.build()?)
 }
 
-fn tokio_block_on<Fut: Future>(fut: Fut) -> anyhow::Result<Fut::Output> {
+pub(crate) fn tokio_block_on<Fut: Future>(fut: Fut) -> anyhow::Result<Fut::Output> {
     Ok(tokio::runtime::Runtime::new()?.block_on(fut))
 }
 
