@@ -19,15 +19,14 @@ concurrency:
 
 jobs:
   smoketests:
-    needs: [lints]
     name: Smoketests (${{ matrix.name }})
     strategy:
       matrix:
         include:
           - name: Linux
-            runner: spacetimedb-new-runner-2
+            runner: none
           - name: Windows
-            runner: windows-latest
+            runner: boppy-experimental
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     env:
@@ -185,10 +184,10 @@ jobs:
       matrix:
         include:
           - name: Linux
-            runner: spacetimedb-new-runner-2
+            runner: none
             smoketest_args: --docker
           - name: Windows
-            runner: windows-latest
+            runner: none
             smoketest_args: --no-build-cli
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
@@ -307,7 +306,7 @@ jobs:
   test:
     needs: [lints]
     name: Test Suite
-    runs-on: spacetimedb-new-runner-2
+    runs-on: none
 
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -376,7 +375,7 @@ jobs:
 
   lints:
     name: Lints
-    runs-on: spacetimedb-new-runner-2
+    runs-on: none
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -406,7 +405,7 @@ jobs:
 
   wasm_bindings:
     name: Build and test wasm bindings
-    runs-on: spacetimedb-new-runner-2
+    runs-on: none
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -431,7 +430,7 @@ jobs:
 
   publish_checks:
     name: Check that packages are publishable
-    runs-on: spacetimedb-new-runner-2
+    runs-on: none
     permissions: read-all
     steps:
       - uses: actions/checkout@v3
@@ -463,10 +462,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-new-runner-2 }
-          - { target: aarch64-unknown-linux-gnu, runner: arm-runner }
-          - { target: aarch64-apple-darwin, runner: macos-latest }
-          - { target: x86_64-pc-windows-msvc, runner: windows-latest }
+          - { target: x86_64-unknown-linux-gnu, runner: none }
+          - { target: aarch64-unknown-linux-gnu, runner: none }
+          - { target: aarch64-apple-darwin, runner: none }
+          - { target: x86_64-pc-windows-msvc, runner: none }
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
@@ -512,7 +511,7 @@ jobs:
     name: Unreal Engine Tests
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
     # a custom runner.
-    runs-on: spacetimedb-new-runner-2
+    runs-on: none
     # Disable the tests because they are very flaky at the moment.
     # TODO: Remove this line and re-enable the `if` line just below here.
     if: false
@@ -601,7 +600,7 @@ jobs:
 
   ci_command_docs:
     name: Check CI command docs
-    runs-on: spacetimedb-new-runner-2
+    runs-on: none
     steps:
       - name: Find Git ref
         env:
@@ -631,7 +630,7 @@ jobs:
   cli_docs:
     name: Check CLI docs
     permissions: read-all
-    runs-on: spacetimedb-new-runner-2
+    runs-on: none
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -696,7 +695,7 @@ jobs:
     name: Verify LLM benchmark is up to date
     permissions:
       contents: read
-    runs-on: ubuntu-latest
+    runs-on: none
     # Disable the tests because they are causing us headaches with merge conflicts and re-runs etc.
     if: false
     steps:
@@ -733,7 +732,7 @@ jobs:
     permissions:
       contents: read
       checks: write
-    runs-on: spacetimedb-unity-runner
+    runs-on: none
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -878,7 +877,7 @@ jobs:
 
   csharp-testsuite:
     needs: [lints]
-    runs-on: spacetimedb-new-runner-2
+    runs-on: none
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -1004,7 +1003,7 @@ jobs:
       && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
     permissions:
       contents: read
-    runs-on: ubuntu-latest
+    runs-on: none
     env:
       TARGET_OWNER: clockworklabs
       TARGET_REPO: SpacetimeDBPrivate
@@ -1123,7 +1122,7 @@ jobs:
 
   global_json_policy:
     name: Verify global.json files are symlinks
-    runs-on: ubuntu-latest
+    runs-on: none
     permissions:
       contents: read
     steps:
@@ -1160,7 +1159,7 @@ jobs:
 
   warn-python-smoketests:
     name: Check for Python smoketest edits
-    runs-on: ubuntu-latest
+    runs-on: none
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
