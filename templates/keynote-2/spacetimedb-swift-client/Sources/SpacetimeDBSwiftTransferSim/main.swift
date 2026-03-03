@@ -1,4 +1,5 @@
 import Foundation
+import Atomics
 import SpacetimeDB
 
 enum CliError: Error, CustomStringConvertible {
@@ -65,26 +66,26 @@ struct TransferArgs: Encodable {
 }
 
 final class CompletionCounter: @unchecked Sendable {
-    private let lock = NSLock()
-    private var applied: UInt64 = 0
-    private var errors: UInt64 = 0
+    private let applied = ManagedAtomic<UInt64>(0)
+    private let errors = ManagedAtomic<UInt64>(0)
 
     func recordApplied() {
-        lock.lock()
-        applied &+= 1
-        lock.unlock()
+        applied.wrappingIncrement(ordering: .relaxed)
+    }
+
+    func recordApplied(count: UInt64) {
+        applied.wrappingIncrement(by: count, ordering: .relaxed)
     }
 
     func recordError() {
-        lock.lock()
-        errors &+= 1
-        lock.unlock()
+        errors.wrappingIncrement(ordering: .relaxed)
     }
 
     func snapshot() -> (applied: UInt64, errors: UInt64) {
-        lock.lock()
-        defer { lock.unlock() }
-        return (applied, errors)
+        (
+            applied.load(ordering: .relaxed),
+            errors.load(ordering: .relaxed)
+        )
     }
 }
 
@@ -103,7 +104,7 @@ final class BenchDelegate: SpacetimeClientDelegate {
     func onIdentityReceived(identity _: [UInt8], token _: String) {}
 
     func onTransactionUpdate(message _: Data?) {
-        counter.recordApplied()
+        // Completion accounting uses raw transaction observer callback.
     }
 
     func onReducerError(reducer _: String, message _: String, isInternal _: Bool) {
@@ -338,6 +339,9 @@ func makeClient(common: CommonOptions, counter: CompletionCounter) throws -> (cl
         reconnectPolicy: nil,
         compressionMode: .none
     )
+    client.setRawTransactionUpdateCountObserver { appliedCount in
+        counter.recordApplied(count: appliedCount)
+    }
     let delegate = BenchDelegate(counter: counter)
     client.delegate = delegate
     return (client, delegate)
@@ -382,7 +386,7 @@ func runSeed(common: CommonOptions, seed: SeedOptions) async throws {
     let payload = try encoder.encode(seedArgs)
 
     let before = counter.snapshot()
-    await MainActor.run { client.send("seed", payload) }
+    client.send("seed", payload)
     try await waitForAcks(
         counter: counter,
         targetTotalAcks: (before.applied + before.errors) + 1,
@@ -463,9 +467,7 @@ func runBench(common: CommonOptions, bench: BenchOptions) async throws {
 
                         let args = TransferArgs(from: pair.0, to: pair.1, amount: amount)
                         let payload = try encoder.encode(args)
-                        await MainActor.run {
-                            client.send("transfer", payload)
-                        }
+                        client.send("transfer", payload)
                         sent &+= 1
                     }
 

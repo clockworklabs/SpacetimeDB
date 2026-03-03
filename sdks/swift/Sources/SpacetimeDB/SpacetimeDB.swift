@@ -145,8 +145,12 @@ public final class SubscriptionHandle: @unchecked Sendable {
         }
         
         if let applied {
-            Task { @MainActor in
+            if Thread.isMainThread {
                 applied()
+            } else {
+                Task { @MainActor in
+                    applied()
+                }
             }
         }
     }
@@ -161,8 +165,12 @@ public final class SubscriptionHandle: @unchecked Sendable {
         }
         
         if let error {
-            Task { @MainActor in
+            if Thread.isMainThread {
                 error(message)
+            } else {
+                Task { @MainActor in
+                    error(message)
+                }
             }
         }
     }
