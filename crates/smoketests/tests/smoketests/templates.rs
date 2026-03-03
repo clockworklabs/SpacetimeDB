@@ -159,10 +159,10 @@ fn update_package_json_dependency(package_json_path: &Path, package_name: &str, 
 
     let path_str = normalize_dependency_path(local_path);
 
-    if let Some(deps) = data.get_mut("dependencies") {
-        if deps.get(package_name).is_some() {
-            deps[package_name] = Value::String(path_str);
-        }
+    if let Some(deps) = data.get_mut("dependencies")
+        && deps.get(package_name).is_some()
+    {
+        deps[package_name] = Value::String(path_str);
     }
 
     let new_content =
