@@ -4,13 +4,15 @@
 
 use fs_err as fs;
 use spacetimedb_codegen::{cpp, generate, CodegenOptions, OutputFile};
-use spacetimedb_lib::db::raw_def::v9::{RawModuleDefV9, RawModuleDefV9Builder};
+use spacetimedb_lib::db::raw_def::v10::{RawModuleDefV10, RawModuleDefV10Builder};
+use spacetimedb_lib::RawModuleDef;
 use spacetimedb_schema::def::ModuleDef;
 use std::path::Path;
 
 fn main() -> anyhow::Result<()> {
-    let mut builder = RawModuleDefV9Builder::new();
-    builder.add_type::<RawModuleDefV9>();
+    let mut builder = RawModuleDefV10Builder::new();
+    builder.add_type::<RawModuleDef>();
+    builder.add_type::<RawModuleDefV10>();
     let module = builder.finish();
 
     // Build relative path from the codegen crate to the C++ Module Library autogen directory

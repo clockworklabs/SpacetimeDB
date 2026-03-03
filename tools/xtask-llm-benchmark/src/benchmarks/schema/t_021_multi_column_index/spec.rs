@@ -12,7 +12,7 @@ pub fn spec() -> BenchmarkSpec {
         let case = casing_for_lang(lang);
         let sb   = SqlBuilder::new(case);
 
-        let seed = ident("Seed", case);
+        let seed = ident("Seed", crate::eval::Casing::Snake);
         let log_table = table_name("log", lang);
 
         let user_id = ident("user_id", sb.case);

@@ -155,7 +155,7 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
 #define SPACETIMEDB_PASTE(a, b) SPACETIMEDB_CONCAT(a, b)
 #endif
 
-// TypeRegistry system removed - use V9TypeRegistration instead
+// TypeRegistry system removed - use ModuleTypeRegistration instead
 /*
 // Register a C++ type name in the global TypeRegistry for reducer parameter lookup
 // This replaces the old TypeNameRegistry approach with a unified one.
@@ -179,15 +179,15 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
         if (!Type##_v9_registered) { \
             Type##_v9_registered = true; \
             std::string type_name = #Type; \
-            ::SpacetimeDB::Internal::getV9TypeRegistration().registerTypeByName(type_name, algebraic_type, &typeid(Type)); \
+            ::SpacetimeDB::Internal::getModuleTypeRegistration().registerTypeByName(type_name, algebraic_type, &typeid(Type)); \
         } \
     } while(0)
 */
 
 /**
- * @brief Updated registration using V9TypeRegistration system
+ * @brief Updated registration using ModuleTypeRegistration system
  * 
- * This is the new registration point using the V9TypeRegistration system.
+ * This is the new registration point using the ModuleTypeRegistration system.
  */
 #define SPACETIMEDB_REGISTER_TYPE_IN_V9(Type, algebraic_type) \
     do { \
@@ -196,7 +196,7 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
             Type##_v9_registered = true; \
             std::string type_name = #Type; \
             /* Register immediately with name and structure */ \
-            ::SpacetimeDB::Internal::getV9TypeRegistration().registerTypeByName(type_name, algebraic_type, &typeid(Type)); \
+            ::SpacetimeDB::Internal::getModuleTypeRegistration().registerTypeByName(type_name, algebraic_type, &typeid(Type)); \
         } \
     } while(0)
 
@@ -248,7 +248,7 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
  * - Empty field_registrar specialization  
  * 
  * Use this for simple types that don't need custom field registration.
- * Note: Type name registration is now handled automatically by V9TypeRegistration.
+ * Note: Type name registration is now handled automatically by ModuleTypeRegistration.
  */
 #define SPACETIMEDB_GENERATE_TYPE_REGISTRATION_BUNDLE(Type) \
     template<> \
@@ -263,7 +263,7 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
  * @brief Generate the complete registration bundle with field registration
  * 
  * This version includes actual field registration for table types.
- * Note: Type name registration is now handled automatically by V9TypeRegistration.
+ * Note: Type name registration is now handled automatically by ModuleTypeRegistration.
  */
 #define SPACETIMEDB_GENERATE_TYPE_REGISTRATION_BUNDLE_WITH_FIELDS(Type, ...) \
     template<> \
@@ -543,6 +543,17 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
 // =============================================================================
 
 /**
+ * @brief Set module case conversion policy using a fixed preinit registration symbol.
+ *
+ * Defining this macro more than once in a module intentionally causes a duplicate symbol error.
+ */
+#define SPACETIMEDB_SETTING_CASE_CONVERSION(policy_enum_value) \
+    extern "C" __attribute__((export_name("__preinit__18_module_settings_case_conversion_policy"))) \
+    void __spacetimedb_preinit_case_conversion_policy() { \
+        SpacetimeDB::Module::SetCaseConversionPolicy(policy_enum_value); \
+    }
+
+/**
  * @brief Register a client visibility filter with the SpacetimeDB module system
  * 
  * This macro registers a SQL string as a client visibility filter.
@@ -556,7 +567,7 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
 #define SPACETIMEDB_CLIENT_VISIBILITY_FILTER(filter_name, sql_query) \
     __attribute__((export_name("__preinit__25_register_row_level_security_" #filter_name))) \
     extern "C" void __register_client_visibility_filter_##filter_name() { \
-        SpacetimeDB::Internal::getV9Builder().RegisterRowLevelSecurity(sql_query); \
+        SpacetimeDB::Module::RegisterClientVisibilityFilter(sql_query); \
     }
 
 // =============================================================================
@@ -771,3 +782,4 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
 
 
 #endif // SPACETIMEDB_MACROS_H
+
