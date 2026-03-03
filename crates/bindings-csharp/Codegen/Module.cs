@@ -275,6 +275,8 @@ record TableAccessor
     public readonly bool IsEvent;
     public readonly Scheduled? Scheduled;
 
+    public string Identifier => EscapeIdentifier(Name);
+
     public TableAccessor(TableDeclaration table, AttributeData data, DiagReporter diag)
     {
         var attr = data.ParseAs<TableAttribute>();
@@ -333,6 +335,8 @@ record TableIndex
     public readonly string AccessorName;
     public readonly string? CanonicalName;
     public readonly TableIndexType Type;
+
+    public string AccessorIdentifier => EscapeIdentifier(AccessorName);
 
     // See: bindings_sys::index_id_from_name for documentation of this format.
     // Guaranteed not to contain quotes, so does not need to be escaped when embedded in a string.
@@ -574,7 +578,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 ? $"public {globalName} Update({globalName} row) => DoUpdate(row);"
                 : "";
             yield return $$"""
-                {{vis}} sealed class {{f.Identifier}}UniqueIndex : {{uniqueIndexBase}}<{{tableAccessor.Name}}, {{globalName}}, {{f.Type.Name}}, {{f.Type.BSATNName}}> {
+                {{vis}} sealed class {{f.Identifier}}UniqueIndex : {{uniqueIndexBase}}<{{tableAccessor.Identifier}}, {{globalName}}, {{f.Type.Name}}, {{f.Type.BSATNName}}> {
                     internal {{f.Identifier}}UniqueIndex() : base("{{standardIndexName}}") {}
                     // Important: don't move this to the base class.
                     // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -589,6 +593,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         foreach (var index in GetIndexes(tableAccessor))
         {
             var name = index.AccessorName;
+            var identifierName = index.AccessorIdentifier;
 
             // Skip bad declarations. Empty name means no columns, which we have already reported with a meaningful error.
             // Emitting this will result in further compilation errors due to missing property name.
@@ -601,7 +606,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             var standardIndexName = index.StandardIndexName(tableAccessor);
 
             yield return $$"""
-                    {{vis}} sealed class {{name}}Index() : SpacetimeDB.Internal.IndexBase<{{globalName}}>("{{standardIndexName}}") {
+                    {{vis}} sealed class {{identifierName}}Index() : SpacetimeDB.Internal.IndexBase<{{globalName}}>("{{standardIndexName}}") {
                 """;
 
             for (var n = 0; n < members.Length; n++)
@@ -644,7 +649,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     """;
             }
 
-            yield return $"}}\n {vis} {name}Index {name} => new();\n";
+            yield return $"}}\n {vis} {identifierName}Index {identifierName} => new();\n";
         }
     }
 
@@ -670,7 +675,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             yield return $$$"""
                 public sealed class {{{f.Identifier}}}Index
                     : {{{uniqueIndexBase}}}<
-                          global::SpacetimeDB.Internal.ViewHandles.{{{tableAccessor.Name}}}ReadOnly,
+                          global::SpacetimeDB.Internal.ViewHandles.{{{tableAccessor.Identifier}}}ReadOnly,
                           {{{globalName}}},
                           {{{f.Type.Name}}},
                           {{{f.Type.BSATNName}}}>
@@ -783,12 +788,13 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             var autoIncFields = Members.Where(m => m.GetAttrs(v).HasFlag(ColumnAttrs.AutoInc));
 
             var globalName = $"global::{FullName}";
-            var iTable = $"global::SpacetimeDB.Internal.ITableView<{v.Name}, {globalName}>";
+            var accessorIdentifier = v.Identifier;
+            var iTable = $"global::SpacetimeDB.Internal.ITableView<{accessorIdentifier}, {globalName}>";
             yield return new(
                 v.Name,
                 globalName,
                 $$$"""
-            {{{SyntaxFacts.GetText(Visibility)}}} readonly struct {{{v.Name}}} : {{{iTable}}} {
+            {{{SyntaxFacts.GetText(Visibility)}}} readonly struct {{{accessorIdentifier}}} : {{{iTable}}} {
                 public static {{{globalName}}} ReadGenFields(System.IO.BinaryReader reader, {{{globalName}}} row) {
                     {{{string.Join(
                         "\n",
@@ -805,7 +811,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 }
 
                 public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
-                    SourceName: nameof({{{v.Name}}}),
+                    SourceName: nameof({{{accessorIdentifier}}}),
                     ProductTypeRef: (uint) new {{{globalName}}}.BSATN().GetAlgebraicType(registrar).Ref_,
                     PrimaryKey: [{{{GetPrimaryKey(v)?.ToString() ?? ""}}}],
                     Indexes: [
@@ -839,7 +845,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 {{{string.Join("\n", GenerateTableAccessorFilters(v))}}}
             }
             """,
-                $"{SyntaxFacts.GetText(Visibility)} global::SpacetimeDB.Internal.TableHandles.{v.Name} {v.Name} => new();"
+                $"{SyntaxFacts.GetText(Visibility)} global::SpacetimeDB.Internal.TableHandles.{accessorIdentifier} {accessorIdentifier} => new();"
             );
         }
     }
@@ -861,6 +867,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         foreach (var accessor in TableAccessors)
         {
             var globalName = $"global::{FullName}";
+            var accessorIdentifier = accessor.Identifier;
 
             var readOnlyIndexDecls = string.Join("\n", GenerateReadOnlyAccessorFilters(accessor));
             var visibility = SyntaxFacts.GetText(Visibility);
@@ -868,17 +875,17 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 accessor.Name,
                 globalName,
                 $$$"""
-                {{{visibility}}} sealed class {{{accessor.Name}}}ReadOnly
+                {{{visibility}}} sealed class {{{accessorIdentifier}}}ReadOnly
                     : global::SpacetimeDB.Internal.ReadOnlyTableView<{{{globalName}}}>
                 {
-                    internal {{{accessor.Name}}}ReadOnly() : base("{{{accessor.Name}}}") { }
+                    internal {{{accessorIdentifier}}}ReadOnly() : base("{{{accessor.Name}}}") { }
 
                     public ulong Count => DoCount();
 
                     {{{readOnlyIndexDecls}}}
                 }
                 """,
-                $"{visibility} global::SpacetimeDB.Internal.ViewHandles.{accessor.Name}ReadOnly {accessor.Name} => new();"
+                $"{visibility} global::SpacetimeDB.Internal.ViewHandles.{accessorIdentifier}ReadOnly {accessorIdentifier} => new();"
             );
         }
     }
@@ -895,9 +902,10 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
         foreach (var accessor in TableAccessors)
         {
+            var accessorIdentifier = accessor.Identifier;
             var tableName = accessor.Name;
-            var colsTypeName = $"{accessor.Name}Cols";
-            var ixColsTypeName = $"{accessor.Name}IxCols";
+            var colsTypeName = $"{accessorIdentifier}Cols";
+            var ixColsTypeName = $"{accessorIdentifier}IxCols";
 
             string ColDecl(ColumnDeclaration col)
             {
@@ -992,7 +1000,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
                 public readonly partial struct QueryBuilder
                 {
-                    {{vis}} global::SpacetimeDB.Table<{{globalRowName}}, {{colsTypeName}}, {{ixColsTypeName}}> {{accessor.Name}}() =>
+                    {{vis}} global::SpacetimeDB.Table<{{globalRowName}}, {{colsTypeName}}, {{ixColsTypeName}}> {{accessorIdentifier}}() =>
                         new("{{tableName}}", new {{colsTypeName}}("{{tableName}}"), new {{ixColsTypeName}}("{{tableName}}"));
                 }
                 """;
@@ -1350,6 +1358,8 @@ record ReducerDeclaration
     public readonly Scope Scope;
     private readonly bool HasWrongSignature;
 
+    public string Identifier => EscapeIdentifier(Name);
+
     public ReducerDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
         var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
@@ -1403,11 +1413,11 @@ record ReducerDeclaration
             )})";
 
         return $$"""
-             class {{Name}}: SpacetimeDB.Internal.IReducer {
+             class {{Identifier}}: SpacetimeDB.Internal.IReducer {
                  {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args)}}
 
                  public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
-                     SourceName: nameof({{Name}}),
+                     SourceName: nameof({{Identifier}}),
                      Params: [{{MemberDeclaration.GenerateDefs(Args)}}],
                      Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
                      OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
@@ -1450,7 +1460,7 @@ record ReducerDeclaration
                     "\n",
                     Args.Select(a => $"new {a.Type.ToBSATNString()}().Write(writer, {a.Identifier});")
                 )}}
-                SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(nameof({{Name}}), stream);
+                SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(nameof({{Identifier}}), stream);
             }
             """
         );
@@ -1474,6 +1484,8 @@ record ProcedureDeclaration
     private readonly bool HasTxWrapper;
     private readonly TypeUse? TxPayloadType;
     private readonly bool TxPayloadIsUnit;
+
+    public string Identifier => EscapeIdentifier(Name);
 
     public ProcedureDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
@@ -1634,11 +1646,11 @@ record ProcedureDeclaration
         }
 
         return $$$"""
-            class {{{Name}}} : SpacetimeDB.Internal.IProcedure {
+            class {{{Identifier}}} : SpacetimeDB.Internal.IProcedure {
                 {{{classFields}}}
 
                 public SpacetimeDB.Internal.RawProcedureDefV10 MakeProcedureDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new(
-                    SourceName: nameof({{{Name}}}),
+                    SourceName: nameof({{{Identifier}}}),
                     Params: [{{{MemberDeclaration.GenerateDefs(Args)}}}],
                     ReturnType: {{{returnTypeExpr}}},
                     Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable
@@ -1672,7 +1684,7 @@ record ProcedureDeclaration
                     "\n",
                     Args.Select(a => $"new {a.Type.ToBSATNString()}().Write(writer, {a.Identifier});")
                 )}}
-                SpacetimeDB.Internal.ProcedureExtensions.VolatileNonatomicScheduleImmediate(nameof({{Name}}), stream);
+                SpacetimeDB.Internal.ProcedureExtensions.VolatileNonatomicScheduleImmediate(nameof({{Identifier}}), stream);
             }
             """
         );
@@ -2340,13 +2352,13 @@ public class Module : IIncrementalGenerator
                             {{string.Join(
                                 "\n",
                                 addReducers.Select(r =>
-                                    $"SpacetimeDB.Internal.Module.RegisterReducer<{r.Name}>();"
+                                    $"SpacetimeDB.Internal.Module.RegisterReducer<{EscapeIdentifier(r.Name)}>();"
                                 )
                             )}}
                             {{string.Join(
                                 "\n",
                                 addProcedures.Select(r =>
-                                    $"SpacetimeDB.Internal.Module.RegisterProcedure<{r.Name}>();"
+                                    $"SpacetimeDB.Internal.Module.RegisterProcedure<{EscapeIdentifier(r.Name)}>();"
                                 )
                             )}}
 
@@ -2364,7 +2376,7 @@ public class Module : IIncrementalGenerator
 
                             {{string.Join(
                                 "\n",
-                                tableAccessors.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.tableName}, SpacetimeDB.Internal.TableHandles.{t.tableAccessorName}>();")
+                                tableAccessors.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.tableName}, SpacetimeDB.Internal.TableHandles.{EscapeIdentifier(t.tableAccessorName)}>();")
                             )}}
                             {{string.Join(
                                 "\n",

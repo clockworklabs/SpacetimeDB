@@ -424,13 +424,6 @@ public record MemberDeclaration(
 
     public string Identifier => EscapeIdentifier(Name);
 
-    private static string EscapeIdentifier(string name)
-    {
-        var kind = SyntaxFacts.GetKeywordKind(name);
-        var contextualKind = SyntaxFacts.GetContextualKeywordKind(name);
-        return kind != SyntaxKind.None || contextualKind != SyntaxKind.None ? $"@{name}" : name;
-    }
-
     public static string GenerateBsatnFields(
         Accessibility visibility,
         IEnumerable<MemberDeclaration> members

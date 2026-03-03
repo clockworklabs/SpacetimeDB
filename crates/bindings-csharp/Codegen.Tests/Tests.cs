@@ -274,6 +274,21 @@ public static class GeneratorSnapshotTests
                 public int @params;
             }
 
+            [SpacetimeDB.Table(Accessor = "class")]
+            public partial struct AccessorKeywordTable
+            {
+                [SpacetimeDB.PrimaryKey]
+                [SpacetimeDB.Index.BTree(Accessor = "class")]
+                public int Id;
+            }
+
+            [SpacetimeDB.Table]
+            public partial struct @class
+            {
+                [SpacetimeDB.PrimaryKey]
+                public int Id;
+            }
+
             public static partial class KeywordApis
             {
                 [SpacetimeDB.Reducer]
@@ -283,10 +298,20 @@ public static class GeneratorSnapshotTests
                     _ = @class;
                 }
 
+                [SpacetimeDB.Reducer]
+                public static void @class(ReducerContext ctx)
+                {
+                }
+
                 [SpacetimeDB.Procedure]
                 public static int KeywordProcedure(ProcedureContext ctx, int @params, int @class)
                 {
                     return @params + @class;
+                }
+
+                [SpacetimeDB.Procedure]
+                public static void @params(ProcedureContext ctx)
+                {
                 }
             }
             """;
