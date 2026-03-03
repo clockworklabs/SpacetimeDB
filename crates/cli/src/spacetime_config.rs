@@ -1,11 +1,12 @@
 use anyhow::Context;
 use clap::{ArgMatches, Command};
+use path_clean::PathClean;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 /// The filename for configuration
@@ -120,7 +121,7 @@ pub struct SpacetimeConfig {
     pub children: Option<Vec<SpacetimeConfig>>,
 
     /// Name of the config file from which this target's `database` value was merged.
-    #[serde(rename = "_source-config", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "_source-config", skip_serializing)]
     pub source_config: Option<String>,
 
     /// All other entity-level fields (database, module-path, server, etc.)
@@ -753,7 +754,7 @@ impl<'a> CommandConfig<'a> {
             } else {
                 p
             };
-            normalize_path_lexical(&resolved)
+            resolved.clean()
         }))
     }
 
@@ -775,24 +776,6 @@ impl<'a> CommandConfig<'a> {
             }
         }
         Ok(())
-    }
-}
-
-fn normalize_path_lexical(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                normalized.pop();
-            }
-            other => normalized.push(other.as_os_str()),
-        }
-    }
-    if normalized.as_os_str().is_empty() {
-        PathBuf::from(".")
-    } else {
-        normalized
     }
 }
 
@@ -919,12 +902,46 @@ fn load_json_value(path: &Path) -> anyhow::Result<Option<serde_json::Value>> {
     }
     let content =
         std::fs::read_to_string(path).with_context(|| format!("Failed to read config file: {}", path.display()))?;
+
+    // In one of the releases we mistakenly save _source-config field into the JSON file
+    // Check if the field exists and remove it. We use text-based removal to preserve
+    // comments and formatting since json5 crate doesn't support serialization.
+    remove_source_config_from_text(path, &content);
+
     let value: serde_json::Value = json5::from_str(&content)
         .map_err(|e| anyhow::anyhow!("Failed to parse config file {}: {}", path.display(), e))?;
     Ok(Some(value))
 }
 
 const SOURCE_CONFIG_KEY: &str = "_source-config";
+
+/// Remove _source-config field from JSON text using regex
+/// This preserves comments and formatting in the file
+fn remove_source_config_from_text(path: &Path, content: &str) {
+    if !content.contains(SOURCE_CONFIG_KEY) {
+        return;
+    }
+
+    use regex::Regex;
+
+    // Match "_source-config": "value", or "_source-config": "value"
+    // Handles trailing comma and various whitespace patterns
+    let re = Regex::new(r#"(?m)^\s*"_source-config"\s*:\s*"[^"]*"\s*,?\s*$\n?"#).unwrap();
+    let cleaned = re.replace_all(content, "");
+
+    // Also remove trailing commas that might be left behind before closing braces
+    let re_trailing = Regex::new(r#"(?m),(\s*[\]}])"#).unwrap();
+    let cleaned_content = re_trailing.replace_all(&cleaned, "$1").to_string();
+
+    // Validate that the cleaned content is still valid JSON5
+    // If validation fails, don't save
+    if json5::from_str::<serde_json::Value>(&cleaned_content).is_err() {
+        return;
+    }
+
+    // Write the cleaned content back to the file (best effort, ignore errors)
+    let _ = std::fs::write(path, &cleaned_content);
+}
 
 fn mark_source_config(value: &mut serde_json::Value, source_file_name: &str) {
     if let Some(obj) = value.as_object_mut() {
@@ -3148,5 +3165,47 @@ mod tests {
 
         let config: SpacetimeConfig = json5::from_str(json).unwrap();
         assert_eq!(config.count_targets(), 4); // root + child-1 + child-2 + grandchild
+    }
+
+    #[test]
+    fn test_path_clean_preserves_leading_dotdot() {
+        // Regression test for #4429: leading `..` must be preserved.
+        // All config paths (--out-dir, --module-path, etc.) go through
+        // get_resolved_path which calls PathClean::clean().
+        use path_clean::PathClean;
+        use std::path::Path;
+
+        // --out-dir cases
+        assert_eq!(Path::new("../foo").clean(), PathBuf::from("../foo"));
+        assert_eq!(Path::new("../../a/b").clean(), PathBuf::from("../../a/b"));
+        assert_eq!(
+            Path::new("../frontend-ts-src/module-bindings").clean(),
+            PathBuf::from("../frontend-ts-src/module-bindings")
+        );
+        // Inner `..` should still resolve.
+        assert_eq!(Path::new("a/b/../c").clean(), PathBuf::from("a/c"));
+        // Pure `..` should stay.
+        assert_eq!(Path::new("..").clean(), PathBuf::from(".."));
+        // Absolute paths
+        assert_eq!(
+            Path::new("/home/user/project/../foo").clean(),
+            PathBuf::from("/home/user/foo")
+        );
+        // Current dir collapses.
+        assert_eq!(Path::new("./foo").clean(), PathBuf::from("foo"));
+        // Empty result → "."
+        assert_eq!(Path::new(".").clean(), PathBuf::from("."));
+        assert_eq!(Path::new("a/..").clean(), PathBuf::from("."));
+
+        // --module-path cases (same bug, reported by user on #4431)
+        assert_eq!(Path::new("../server").clean(), PathBuf::from("../server"));
+        assert_eq!(
+            Path::new("../../repos/server").clean(),
+            PathBuf::from("../../repos/server")
+        );
+        assert_eq!(
+            Path::new("../repos/server/spacetimedb").clean(),
+            PathBuf::from("../repos/server/spacetimedb")
+        );
     }
 }

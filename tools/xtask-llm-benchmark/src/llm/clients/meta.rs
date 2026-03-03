@@ -42,6 +42,8 @@ impl MetaLlamaClient {
             messages: Vec<Msg<'a>>,
             temperature: f32,
             #[serde(skip_serializing_if = "Option::is_none")]
+            top_p: Option<f32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             max_tokens: Option<u32>,
         }
 
@@ -81,6 +83,7 @@ impl MetaLlamaClient {
             model: wire_model,
             messages,
             temperature: 0.0,
+            top_p: Some(0.9), // avoid creative tangents; deterministic code
             max_tokens: None,
         };
 
@@ -101,12 +104,19 @@ impl MetaLlamaClient {
 // Map friendly names → OpenRouter slugs. Extend as needed.
 fn normalize_meta_model(id: &str) -> &str {
     match id {
-        // OpenRouter slugs
+        // OpenRouter slugs (Llama 4)
+        "meta-llama/llama-4-maverick" => "meta-llama/llama-4-maverick",
+        "meta-llama/llama-4-scout" => "meta-llama/llama-4-scout",
+        // Llama 3.x
+        "meta-llama/llama-3.3-70b-instruct" => "meta-llama/llama-3.3-70b-instruct",
         "meta-llama/llama-3.1-405b-instruct" => "meta-llama/llama-3.1-405b-instruct",
         "meta-llama/llama-3.1-70b-instruct" => "meta-llama/llama-3.1-70b-instruct",
         "meta-llama/llama-3.1-8b-instruct" => "meta-llama/llama-3.1-8b-instruct",
 
         // Friendly aliases -> slugs
+        "llama-4-maverick" | "llama4-maverick" => "meta-llama/llama-4-maverick",
+        "llama-4-scout" | "llama4-scout" => "meta-llama/llama-4-scout",
+        "llama-3.3-70b-instruct" | "llama3.3-70b-instruct" | "llama-3.3-70b" => "meta-llama/llama-3.3-70b-instruct",
         "llama-3.1-405b-instruct" | "llama3.1-405b-instruct" | "llama-3.1-405b" => "meta-llama/llama-3.1-405b-instruct",
         "llama-3.1-70b-instruct" | "llama3.1-70b-instruct" | "llama-3.1-70b" => "meta-llama/llama-3.1-70b-instruct",
         "llama-3.1-8b-instruct" | "llama3.1-8b-instruct" | "llama-3.1-8b" => "meta-llama/llama-3.1-8b-instruct",

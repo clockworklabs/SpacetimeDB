@@ -19,9 +19,7 @@ export type ProceduresView<RemoteModule> = IfAny<
   RemoteModule extends UntypedRemoteModule
     ? // x: camelCase(name)
       {
-        [K in RemoteModule['procedures'][number] as CamelCase<
-          K['accessorName']
-        >]: (
+        [K in RemoteModule['procedures'][number] as K['accessorName']]: (
           params: InferTypeOfRow<K['params']>
         ) => Promise<Infer<K['returnType']>>;
       }

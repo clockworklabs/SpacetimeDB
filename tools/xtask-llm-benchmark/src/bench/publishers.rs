@@ -2,8 +2,9 @@ use crate::bench::utils::sanitize_db_name;
 use anyhow::{bail, Result};
 use regex::Regex;
 use std::borrow::Cow;
+use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::LazyLock;
 
@@ -248,14 +249,63 @@ impl Publisher for TypeScriptPublisher {
         Self::ensure_package_json(source)?;
         let db = sanitize_db_name(module_name);
 
-        // Install dependencies (--ignore-workspace to avoid parent workspace interference)
-        run(
-            Command::new("pnpm")
-                .arg("install")
-                .arg("--ignore-workspace")
-                .current_dir(source),
-            "pnpm install (typescript)",
-        )?;
+        // Install dependencies (--ignore-workspace to avoid parent workspace interference).
+        // If NODEJS_DIR is set (e.g. nvm4w on Windows), use full path to pnpm so spawn finds it.
+        let pnpm_exe = env::var("NODEJS_DIR")
+            .ok()
+            .map(|s| s.trim().trim_matches('"').trim().to_string())
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from)
+            .and_then(|dir| {
+                #[cfg(windows)]
+                {
+                    let pnpm_cmd = dir.join("pnpm.cmd");
+                    let pnpm_exe_path = dir.join("pnpm.exe");
+                    if pnpm_cmd.is_file() {
+                        eprintln!("[pnpm] using NODEJS_DIR: {} (pnpm.cmd)", dir.display());
+                        Some(pnpm_cmd)
+                    } else if pnpm_exe_path.is_file() {
+                        eprintln!("[pnpm] using NODEJS_DIR: {} (pnpm.exe)", dir.display());
+                        Some(pnpm_exe_path)
+                    } else {
+                        eprintln!(
+                            "[pnpm] NODEJS_DIR set to {} but pnpm.cmd/pnpm.exe not found there, using PATH",
+                            dir.display()
+                        );
+                        None
+                    }
+                }
+                #[cfg(not(windows))]
+                {
+                    let pnpm = dir.join("pnpm");
+                    if pnpm.is_file() {
+                        eprintln!("[pnpm] using NODEJS_DIR: {} (pnpm)", dir.display());
+                        Some(pnpm)
+                    } else {
+                        eprintln!(
+                            "[pnpm] NODEJS_DIR set to {} but pnpm not found there, using PATH",
+                            dir.display()
+                        );
+                        None
+                    }
+                }
+            });
+        let mut pnpm_cmd = match &pnpm_exe {
+            Some(p) => Command::new(p),
+            None => Command::new("pnpm"),
+        };
+        pnpm_cmd.arg("install").arg("--ignore-workspace").current_dir(source);
+        // When using NODEJS_DIR, prepend it to PATH so pnpm.cmd can find node.
+        if let Some(ref dir) = pnpm_exe {
+            if let Some(parent) = dir.parent() {
+                let mut paths: Vec<PathBuf> = env::split_paths(&env::var("PATH").unwrap_or_default()).collect();
+                paths.insert(0, parent.to_path_buf());
+                if let Ok(new_path) = env::join_paths(paths) {
+                    pnpm_cmd.env("PATH", new_path);
+                }
+            }
+        }
+        run(&mut pnpm_cmd, "pnpm install (typescript)")?;
 
         // Publish (spacetime CLI handles TypeScript compilation internally)
         run(

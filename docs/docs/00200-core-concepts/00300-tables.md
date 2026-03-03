@@ -106,7 +106,7 @@ Tables are defined in your module code with a name, columns, and optional config
 Use the `table` function to declare a new table:
 
 ```typescript
-import { table, t } from 'spacetimedb/server';
+import { schema, table, t } from 'spacetimedb/server';
 
 const people = table(
   { name: 'people', public: true },
@@ -116,9 +116,12 @@ const people = table(
     email: t.string().unique(),
   }
 );
+
+const spacetimedb = schema({ people });
+export default spacetimedb;
 ```
 
-The first argument defines table options, and the second defines columns.
+The first argument to `table()` defines table options, and the second defines columns. Pass your tables to `schema()` as an object: `schema({ people })` or `schema({ table1, table2 })`. Never use `schema(table)` or `schema(t1, t2, t3)`.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -188,9 +191,29 @@ FIELD_Unique(person, email)
 </TabItem>
 </Tabs>
 
+### Creating the schema (TypeScript)
+
+After defining tables, pass them to `schema()` as a single object. The object keys become the accessor names in `ctx.db`:
+
+```typescript
+const people = table({ name: 'people', public: true }, { /* columns */ });
+const products = table({ name: 'products', public: true }, { /* columns */ });
+
+const spacetimedb = schema({ people, products });
+export default spacetimedb;
+```
+
+Use `schema({ table1 })` or `schema({ t1, t2 })`. Never use `schema(table)` or `schema(t1, t2, t3)`.
+
+For a compact list of TypeScript gotchas, see the [cheat sheet](./00100-databases/00500-cheat-sheet.md#common-mistakes).
+
 ## Table Naming and Accessors
 
-The table name you specify determines how you access the table in your code. Understanding this relationship is essential for writing correct SpacetimeDB modules.
+The table name you specify determines how you access the table in your code and in SQL. Understanding this relationship is essential for writing correct SpacetimeDB modules.
+
+:::note Table names in SQL
+The table `name` in your schema is used **verbatim** in SQL queries and subscriptions. There is no automatic pluralization or case conversion. If you define `name: 'position'`, SQL uses `position`; if you define `name: 'positions'`, SQL uses `positions`. Ensure your schema names match what your SQL queries expect.
+:::
 
 ### How Accessor Names Are Derived
 
@@ -219,25 +242,29 @@ ctx.db.playerScores.insert({ /* ... */ });
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-The accessor name **exactly matches** the `Name` attribute value:
+The accessor name **exactly matches** the `Accessor` attribute value:
 
 ```csharp
 // Table definition
 [SpacetimeDB.Table(Accessor = "Player", Public = true)]
 public partial struct Player { /* columns */ }
 
-// Accessor matches Name exactly
+// Accessor matches Accessor value exactly
 ctx.Db.Player.Insert(new Player { /* ... */ });
 ```
 
-| Name Attribute | Accessor |
-|----------------|----------|
-| `Name = "User"` | `ctx.Db.User` |
-| `Name = "Player"` | `ctx.Db.Player` |
-| `Name = "GameSession"` | `ctx.Db.GameSession` |
+| Accessor | API Accessor | SQL Table Name (when Name omitted) |
+|----------|---------------|-------------------------------------|
+| `"User"` | `ctx.Db.User` | `User` |
+| `"Player"` | `ctx.Db.Player` | `Player` |
+| `"GameSession"` | `ctx.Db.GameSession` | `GameSession` |
 
 :::warning Case Sensitivity
-The accessor is case-sensitive and must match the `Name` value exactly. `Name = "user"` produces `ctx.Db.user`, not `ctx.Db.User`.
+The accessor is case-sensitive and must match the `Accessor` value exactly. `Accessor = "user"` produces `ctx.Db.user`, not `ctx.Db.User`.
+:::
+
+:::tip C# Convention
+Pick a stable accessor style for your project and use it consistently (for example, `User`, `user`, or `player_score`). Accessor names are case-sensitive.
 :::
 
 </TabItem>

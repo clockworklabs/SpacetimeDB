@@ -63,11 +63,21 @@ public static partial class Module
 }
 ```
 
+:::note C# table accessors
+Table accessors use PascalCase: `ctx.Db.User`, `ctx.Db.Player`. The codegen derives these from table names.
+:::
+
 </TabItem>
 <TabItem value="rust" label="Rust">
 
+:::warning Required for Reducers
+Every reducer that uses `ctx.db.*.insert()`, `.iter()`, `.get_by_id()`, etc. **must** include `Table` in its imports:
+`use spacetimedb::{..., Table};`
+Without it you get: `no method named 'insert' found`.
+:::
+
 ```rust
-use spacetimedb::{table, reducer, ReducerContext};
+use spacetimedb::{table, reducer, ReducerContext, Table};
 
 #[table(accessor = user)]
 pub struct User {
@@ -187,7 +197,7 @@ public static partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::{table, reducer, ReducerContext, Identity};
+use spacetimedb::{table, reducer, ReducerContext, Identity, Table};
 
 #[table(accessor = player)]
 pub struct Player {

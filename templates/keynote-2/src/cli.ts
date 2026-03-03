@@ -22,7 +22,7 @@ let seconds = 1,
   accounts = process.env.SEED_ACCOUNTS
     ? Number(process.env.SEED_ACCOUNTS)
     : 100_000,
-  alpha = 0.5,
+  alpha = 1.5,
   connectors: string[] | null = null,
   contentionTests: {
     startAlpha: number;
@@ -173,7 +173,7 @@ class BenchmarkTester {
     startConc: number = 1,
     endConc: number = 100,
     step: number = 1,
-    alpha: number = 1,
+    alpha: number = 1.5,
   ) {
     const results: { concurrency: number; avgResult: RunResult }[] = [];
     for (let conc = startConc; conc <= endConc; conc += step) {
@@ -189,7 +189,7 @@ class BenchmarkTester {
     startConc: number = 1,
     endConc: number = 100,
     factor: number = 2,
-    alpha: number = 1,
+    alpha: number = 1.5,
   ) {
     if (factor <= 1) {
       throw new Error('factor must be > 1 to avoid infinite loop');
