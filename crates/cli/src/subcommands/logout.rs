@@ -23,16 +23,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let host: &String = args.get_one("auth-host").unwrap();
     let host = Url::parse(host)?;
 
-    // Grab identity before clearing tokens.
-    let identity = config.spacetimedb_token().and_then(|t| decode_identity(t).ok());
-
     do_logout(&mut config, &host).await;
-
-    if let Some(id) = identity {
-        println!("Logged out (identity {id}).");
-    } else {
-        println!("Logged out.");
-    }
 
     Ok(())
 }
@@ -53,10 +44,19 @@ async fn resulty_logout(config: &mut Config, host: &Url) -> Result<(), anyhow::E
 }
 
 pub async fn do_logout(config: &mut Config, host: &Url) {
+    // Grab identity before clearing tokens.
+    let identity = config.spacetimedb_token().and_then(|t| decode_identity(t).ok());
+
     // Best-effort server-side session invalidation.
     if let Err(e) = resulty_logout(config, host).await {
-        eprintln!("Failed to logout: {e}\nLocal credentials have been cleared.");
+        eprintln!("Failed to logout from server: {e}\nLocal credentials have been cleared.");
     }
     config.clear_login_tokens();
     config.save();
+
+    if let Some(id) = identity {
+        println!("Logged out (identity {id}).");
+    } else {
+        println!("Logged out.");
+    }
 }
