@@ -2,8 +2,21 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 import Foundation
+import SpacetimeDB
 
-public struct BotPlayer: Codable, Sendable {
+public struct BotPlayer: Codable, Sendable, BSATNSpecialDecodable, BSATNSpecialEncodable {
   public var id: UInt64
   public var lobbyId: UInt64
+
+  public static func decodeBSATN(from reader: BSATNReader) throws -> BotPlayer {
+    return BotPlayer(
+      id: try reader.readU64(),
+      lobbyId: try reader.readU64()
+    )
+  }
+
+  public func encodeBSATN(to storage: BSATNStorage) throws {
+    storage.appendU64(self.id)
+    storage.appendU64(self.lobbyId)
+  }
 }

@@ -2,10 +2,15 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 import Foundation
+import SpacetimeDB
 
 public enum JoinLobby {
-  public struct _Args: Codable, Sendable {
+  public struct _Args: Codable, Sendable, BSATNSpecialEncodable {
     public var lobbyId: UInt64
+
+    public func encodeBSATN(to storage: BSATNStorage) throws {
+      storage.appendU64(self.lobbyId)
+    }
   }
 
   @MainActor public static func invoke(lobbyId: UInt64) {

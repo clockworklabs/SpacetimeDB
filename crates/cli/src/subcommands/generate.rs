@@ -1,28 +1,28 @@
 #![warn(clippy::uninlined_format_args)]
 
 use anyhow::Context;
+use clap::parser::ValueSource;
 use clap::Arg;
 use clap::ArgAction::{Set, SetTrue};
-use clap::parser::ValueSource;
 use fs_err as fs;
 use spacetimedb_codegen::{
-    AUTO_GENERATED_PREFIX, CodegenOptions, CodegenVisibility, Csharp, Lang, OutputFile, Rust, Swift, TypeScript,
-    UnrealCpp, generate, private_table_names,
+    generate, private_table_names, CodegenOptions, CodegenVisibility, Csharp, Lang, OutputFile, Rust, Swift,
+    TypeScript, UnrealCpp, AUTO_GENERATED_PREFIX,
 };
 use spacetimedb_lib::de::serde::DeserializeWrapper;
-use spacetimedb_lib::{RawModuleDef, sats};
+use spacetimedb_lib::{sats, RawModuleDef};
 use spacetimedb_schema;
 use spacetimedb_schema::def::ModuleDef;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use crate::Config;
 use crate::spacetime_config::{
-    CommandConfig, CommandSchema, CommandSchemaBuilder, Key, LoadedConfig, SpacetimeConfig, find_and_load_with_env,
+    find_and_load_with_env, CommandConfig, CommandSchema, CommandSchemaBuilder, Key, LoadedConfig, SpacetimeConfig,
 };
 use crate::tasks::csharp::dotnet_format;
 use crate::tasks::rust::rustfmt;
 use crate::util::{resolve_sibling_binary, y_or_n};
+use crate::Config;
 use crate::{build, common_args};
 use clap::builder::PossibleValue;
 
@@ -1288,8 +1288,8 @@ mod tests {
     #[tokio::test]
     async fn test_unrealcpp_requires_uproject_dir_and_unreal_module_name() {
         use crate::config::Config;
-        use spacetimedb_paths::FromPathUnchecked;
         use spacetimedb_paths::cli::CliTomlPath;
+        use spacetimedb_paths::FromPathUnchecked;
 
         let cmd = cli();
         let config = Config::new_with_localhost(CliTomlPath::from_path_unchecked("/tmp/test-config.toml"));

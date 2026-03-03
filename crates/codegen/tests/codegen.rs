@@ -1,4 +1,4 @@
-use spacetimedb_codegen::{AUTO_GENERATED_PREFIX, CodegenOptions, Csharp, Rust, Swift, TypeScript, generate};
+use spacetimedb_codegen::{generate, CodegenOptions, Csharp, Rust, Swift, TypeScript, AUTO_GENERATED_PREFIX};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};

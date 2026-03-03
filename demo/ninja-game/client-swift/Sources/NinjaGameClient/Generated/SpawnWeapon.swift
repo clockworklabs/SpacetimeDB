@@ -2,11 +2,17 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 import Foundation
+import SpacetimeDB
 
 public enum SpawnWeapon {
-  public struct _Args: Codable, Sendable {
+  public struct _Args: Codable, Sendable, BSATNSpecialEncodable {
     public var x: Float
     public var y: Float
+
+    public func encodeBSATN(to storage: BSATNStorage) throws {
+      storage.appendFloat(self.x)
+      storage.appendFloat(self.y)
+    }
   }
 
   @MainActor public static func invoke(x: Float, y: Float) {

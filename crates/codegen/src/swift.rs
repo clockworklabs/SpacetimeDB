@@ -1,5 +1,5 @@
+use super::util::{collect_case, type_ref_name, AUTO_GENERATED_PREFIX};
 use super::Lang;
-use super::util::{AUTO_GENERATED_PREFIX, collect_case, type_ref_name};
 use crate::util::iter_table_names_and_types;
 use crate::{CodegenOptions, OutputFile};
 use convert_case::{Case, Casing};
@@ -65,6 +65,70 @@ fn get_swift_type_use(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
     }
 }
 
+fn get_swift_decode_expr(module: &ModuleDef, ty: &AlgebraicTypeUse, reader_expr: &str) -> String {
+    match ty {
+        AlgebraicTypeUse::Primitive(prim) => match prim {
+            PrimitiveType::Bool => format!("try {reader_expr}.readBool()"),
+            PrimitiveType::I8 => format!("try {reader_expr}.readI8()"),
+            PrimitiveType::U8 => format!("try {reader_expr}.readU8()"),
+            PrimitiveType::I16 => format!("try {reader_expr}.readI16()"),
+            PrimitiveType::U16 => format!("try {reader_expr}.readU16()"),
+            PrimitiveType::I32 => format!("try {reader_expr}.readI32()"),
+            PrimitiveType::U32 => format!("try {reader_expr}.readU32()"),
+            PrimitiveType::I64 => format!("try {reader_expr}.readI64()"),
+            PrimitiveType::U64 => format!("try {reader_expr}.readU64()"),
+            PrimitiveType::I128 | PrimitiveType::U128 | PrimitiveType::I256 | PrimitiveType::U256 => {
+                format!("try {reader_expr}.readString()")
+            }
+            PrimitiveType::F32 => format!("try {reader_expr}.readFloat()"),
+            PrimitiveType::F64 => format!("try {reader_expr}.readDouble()"),
+        },
+        AlgebraicTypeUse::String | AlgebraicTypeUse::Uuid => format!("try {reader_expr}.readString()"),
+        AlgebraicTypeUse::Timestamp | AlgebraicTypeUse::TimeDuration => {
+            format!("try {reader_expr}.readU64()")
+        }
+        AlgebraicTypeUse::Unit => "()".to_string(),
+        AlgebraicTypeUse::Never => "fatalError(\"Never cannot be decoded\")".to_string(),
+        _ => {
+            let swift_ty = get_swift_type_use(module, ty);
+            format!("try {swift_ty}.decodeBSATN(from: {reader_expr})")
+        }
+    }
+}
+
+fn get_swift_encode_stmt(module: &ModuleDef, ty: &AlgebraicTypeUse, value_expr: &str, storage_expr: &str) -> String {
+    match ty {
+        AlgebraicTypeUse::Primitive(prim) => match prim {
+            PrimitiveType::Bool => format!("{storage_expr}.appendBool({value_expr})"),
+            PrimitiveType::I8 => format!("{storage_expr}.appendI8({value_expr})"),
+            PrimitiveType::U8 => format!("{storage_expr}.appendU8({value_expr})"),
+            PrimitiveType::I16 => format!("{storage_expr}.appendI16({value_expr})"),
+            PrimitiveType::U16 => format!("{storage_expr}.appendU16({value_expr})"),
+            PrimitiveType::I32 => format!("{storage_expr}.appendI32({value_expr})"),
+            PrimitiveType::U32 => format!("{storage_expr}.appendU32({value_expr})"),
+            PrimitiveType::I64 => format!("{storage_expr}.appendI64({value_expr})"),
+            PrimitiveType::U64 => format!("{storage_expr}.appendU64({value_expr})"),
+            PrimitiveType::I128 | PrimitiveType::U128 | PrimitiveType::I256 | PrimitiveType::U256 => {
+                format!("try {storage_expr}.appendString({value_expr})")
+            }
+            PrimitiveType::F32 => format!("{storage_expr}.appendFloat({value_expr})"),
+            PrimitiveType::F64 => format!("{storage_expr}.appendDouble({value_expr})"),
+        },
+        AlgebraicTypeUse::String | AlgebraicTypeUse::Uuid => {
+            format!("try {storage_expr}.appendString({value_expr})")
+        }
+        AlgebraicTypeUse::Timestamp | AlgebraicTypeUse::TimeDuration => {
+            format!("{storage_expr}.appendU64({value_expr})")
+        }
+        AlgebraicTypeUse::Unit => "// Unit value carries no payload.".to_string(),
+        AlgebraicTypeUse::Never => "fatalError(\"Never cannot be encoded\")".to_string(),
+        _ => {
+            let _swift_ty = get_swift_type_use(module, ty);
+            format!("try {value_expr}.encodeBSATN(to: {storage_expr})")
+        }
+    }
+}
+
 impl Lang for Swift {
     fn generate_table_file_from_schema(
         &self,
@@ -78,7 +142,8 @@ impl Lang for Swift {
 
         let mut code = String::new();
         write_generated_file_preamble(&mut code);
-        writeln!(&mut code, "import Foundation\n").unwrap();
+        writeln!(&mut code, "import Foundation").unwrap();
+        writeln!(&mut code, "import SpacetimeDB\n").unwrap();
         writeln!(&mut code, "public struct {}Table {{", table_name_pascal).unwrap();
 
         // Expose a public cache accessor that UI can subscribe to
@@ -110,20 +175,63 @@ impl Lang for Swift {
         let mut code = String::new();
 
         write_generated_file_preamble(&mut code);
-        writeln!(&mut code, "import Foundation\n").unwrap();
+        writeln!(&mut code, "import Foundation").unwrap();
+        writeln!(&mut code, "import SpacetimeDB\n").unwrap();
 
         match &module.typespace_for_generate()[typ.ty] {
             AlgebraicTypeDef::Product(product) => {
-                writeln!(&mut code, "public struct {}: Codable, Sendable {{", type_name).unwrap();
+                writeln!(
+                    &mut code,
+                    "public struct {}: Codable, Sendable, BSATNSpecialDecodable, BSATNSpecialEncodable {{",
+                    type_name
+                )
+                .unwrap();
                 for (name, ty) in &product.elements {
                     let field_name = name.deref().to_case(Case::Camel);
                     let swift_ty = get_swift_type_use(module, ty);
                     writeln!(&mut code, "    public var {}: {}", field_name, swift_ty).unwrap();
                 }
+                writeln!(&mut code, "").unwrap();
+                writeln!(
+                    &mut code,
+                    "    public static func decodeBSATN(from reader: BSATNReader) throws -> {} {{",
+                    type_name
+                )
+                .unwrap();
+                writeln!(&mut code, "        return {}(", type_name).unwrap();
+                for (i, (name, ty)) in product.elements.iter().enumerate() {
+                    let field_name = name.deref().to_case(Case::Camel);
+                    let decode_expr = get_swift_decode_expr(module, ty, "reader");
+                    if i + 1 < product.elements.len() {
+                        writeln!(&mut code, "            {}: {},", field_name, decode_expr).unwrap();
+                    } else {
+                        writeln!(&mut code, "            {}: {}", field_name, decode_expr).unwrap();
+                    }
+                }
+                writeln!(&mut code, "        )").unwrap();
+                writeln!(&mut code, "    }}").unwrap();
+
+                writeln!(&mut code, "").unwrap();
+                writeln!(
+                    &mut code,
+                    "    public func encodeBSATN(to storage: BSATNStorage) throws {{"
+                )
+                .unwrap();
+                for (name, ty) in &product.elements {
+                    let field_name = name.deref().to_case(Case::Camel);
+                    let encode_stmt = get_swift_encode_stmt(module, ty, &format!("self.{}", field_name), "storage");
+                    writeln!(&mut code, "        {}", encode_stmt).unwrap();
+                }
+                writeln!(&mut code, "    }}").unwrap();
                 writeln!(&mut code, "}}").unwrap();
             }
             AlgebraicTypeDef::Sum(sum) => {
-                writeln!(&mut code, "public enum {}: Codable, Sendable {{", type_name).unwrap();
+                writeln!(
+                    &mut code,
+                    "public enum {}: Codable, Sendable, BSATNSpecialDecodable, BSATNSpecialEncodable {{",
+                    type_name
+                )
+                .unwrap();
                 for (name, ty) in sum.variants.iter() {
                     let case_name = name.deref().to_case(Case::Camel);
                     if matches!(ty, AlgebraicTypeUse::Unit) {
@@ -133,6 +241,52 @@ impl Lang for Swift {
                         writeln!(&mut code, "    case {}({})", case_name, swift_ty).unwrap();
                     }
                 }
+
+                writeln!(&mut code, "").unwrap();
+                writeln!(
+                    &mut code,
+                    "    public static func decodeBSATN(from reader: BSATNReader) throws -> {} {{",
+                    type_name
+                )
+                .unwrap();
+                writeln!(&mut code, "        let tag = try reader.readU8()").unwrap();
+                writeln!(&mut code, "        switch tag {{").unwrap();
+                for (idx, (name, ty)) in sum.variants.iter().enumerate() {
+                    let case_name = name.deref().to_case(Case::Camel);
+                    writeln!(&mut code, "        case UInt8({idx}):").unwrap();
+                    if matches!(ty, AlgebraicTypeUse::Unit) {
+                        writeln!(&mut code, "            return .{}", case_name).unwrap();
+                    } else {
+                        let decode_expr = get_swift_decode_expr(module, ty, "reader");
+                        writeln!(&mut code, "            return .{}({})", case_name, decode_expr).unwrap();
+                    }
+                }
+                writeln!(&mut code, "        default:").unwrap();
+                writeln!(&mut code, "            throw BSATNDecodingError.invalidType").unwrap();
+                writeln!(&mut code, "        }}").unwrap();
+                writeln!(&mut code, "    }}").unwrap();
+
+                writeln!(&mut code, "").unwrap();
+                writeln!(
+                    &mut code,
+                    "    public func encodeBSATN(to storage: BSATNStorage) throws {{"
+                )
+                .unwrap();
+                writeln!(&mut code, "        switch self {{").unwrap();
+                for (idx, (name, ty)) in sum.variants.iter().enumerate() {
+                    let case_name = name.deref().to_case(Case::Camel);
+                    if matches!(ty, AlgebraicTypeUse::Unit) {
+                        writeln!(&mut code, "        case .{}:", case_name).unwrap();
+                        writeln!(&mut code, "            storage.appendU8(UInt8({idx}))").unwrap();
+                    } else {
+                        writeln!(&mut code, "        case .{}(let value):", case_name).unwrap();
+                        writeln!(&mut code, "            storage.appendU8(UInt8({idx}))").unwrap();
+                        let encode_stmt = get_swift_encode_stmt(module, ty, "value", "storage");
+                        writeln!(&mut code, "            {}", encode_stmt).unwrap();
+                    }
+                }
+                writeln!(&mut code, "        }}").unwrap();
+                writeln!(&mut code, "    }}").unwrap();
 
                 writeln!(&mut code, "").unwrap();
                 writeln!(&mut code, "    public init(from decoder: Decoder) throws {{").unwrap();
@@ -179,11 +333,39 @@ impl Lang for Swift {
                 writeln!(&mut code, "}}").unwrap();
             }
             AlgebraicTypeDef::PlainEnum(plain_enum) => {
-                writeln!(&mut code, "public enum {}: UInt8, Codable, Sendable {{", type_name).unwrap();
+                writeln!(
+                    &mut code,
+                    "public enum {}: UInt8, Codable, Sendable, BSATNSpecialDecodable, BSATNSpecialEncodable {{",
+                    type_name
+                )
+                .unwrap();
                 for (idx, name) in plain_enum.variants.iter().enumerate() {
                     let case_name = name.deref().to_case(Case::Camel);
                     writeln!(&mut code, "    case {} = {}", case_name, idx).unwrap();
                 }
+
+                writeln!(&mut code, "").unwrap();
+                writeln!(
+                    &mut code,
+                    "    public static func decodeBSATN(from reader: BSATNReader) throws -> {} {{",
+                    type_name
+                )
+                .unwrap();
+                writeln!(&mut code, "        let tag = try reader.readU8()").unwrap();
+                writeln!(&mut code, "        guard let value = Self(rawValue: tag) else {{").unwrap();
+                writeln!(&mut code, "            throw BSATNDecodingError.invalidType").unwrap();
+                writeln!(&mut code, "        }}").unwrap();
+                writeln!(&mut code, "        return value").unwrap();
+                writeln!(&mut code, "    }}").unwrap();
+
+                writeln!(&mut code, "").unwrap();
+                writeln!(
+                    &mut code,
+                    "    public func encodeBSATN(to storage: BSATNStorage) throws {{"
+                )
+                .unwrap();
+                writeln!(&mut code, "        storage.appendU8(self.rawValue)").unwrap();
+                writeln!(&mut code, "    }}").unwrap();
 
                 writeln!(&mut code, "").unwrap();
                 writeln!(&mut code, "    public init(from decoder: Decoder) throws {{").unwrap();
@@ -216,17 +398,34 @@ impl Lang for Swift {
 
         let mut code = String::new();
         write_generated_file_preamble(&mut code);
-        writeln!(&mut code, "import Foundation\n").unwrap();
+        writeln!(&mut code, "import Foundation").unwrap();
+        writeln!(&mut code, "import SpacetimeDB\n").unwrap();
 
         writeln!(&mut code, "public enum {} {{", reducer_name_pascal).unwrap();
 
         // Write the internal args struct used for BSATN encoding
-        writeln!(&mut code, "    public struct _Args: Codable, Sendable {{").unwrap();
+        writeln!(
+            &mut code,
+            "    public struct _Args: Codable, Sendable, BSATNSpecialEncodable {{"
+        )
+        .unwrap();
         for (name, ty) in &reducer.params_for_generate.elements {
             let field_name = name.deref().to_case(Case::Camel);
             let swift_ty = get_swift_type_use(module, ty);
             writeln!(&mut code, "        public var {}: {}", field_name, swift_ty).unwrap();
         }
+        writeln!(&mut code, "").unwrap();
+        writeln!(
+            &mut code,
+            "        public func encodeBSATN(to storage: BSATNStorage) throws {{"
+        )
+        .unwrap();
+        for (name, ty) in &reducer.params_for_generate.elements {
+            let field_name = name.deref().to_case(Case::Camel);
+            let encode_stmt = get_swift_encode_stmt(module, ty, &format!("self.{}", field_name), "storage");
+            writeln!(&mut code, "            {}", encode_stmt).unwrap();
+        }
+        writeln!(&mut code, "        }}").unwrap();
         writeln!(&mut code, "    }}\n").unwrap();
 
         // Write a helper struct for invoking the reducer
@@ -300,16 +499,33 @@ impl Lang for Swift {
 
         let mut code = String::new();
         write_generated_file_preamble(&mut code);
-        writeln!(&mut code, "import Foundation\n").unwrap();
+        writeln!(&mut code, "import Foundation").unwrap();
+        writeln!(&mut code, "import SpacetimeDB\n").unwrap();
 
         writeln!(&mut code, "public enum {}Procedure {{", procedure_name_pascal).unwrap();
 
-        writeln!(&mut code, "    public struct _Args: Codable, Sendable {{").unwrap();
+        writeln!(
+            &mut code,
+            "    public struct _Args: Codable, Sendable, BSATNSpecialEncodable {{"
+        )
+        .unwrap();
         for (name, ty) in &procedure.params_for_generate.elements {
             let field_name = name.deref().to_case(Case::Camel);
             let swift_ty = get_swift_type_use(module, ty);
             writeln!(&mut code, "        public var {}: {}", field_name, swift_ty).unwrap();
         }
+        writeln!(&mut code, "").unwrap();
+        writeln!(
+            &mut code,
+            "        public func encodeBSATN(to storage: BSATNStorage) throws {{"
+        )
+        .unwrap();
+        for (name, ty) in &procedure.params_for_generate.elements {
+            let field_name = name.deref().to_case(Case::Camel);
+            let encode_stmt = get_swift_encode_stmt(module, ty, &format!("self.{}", field_name), "storage");
+            writeln!(&mut code, "            {}", encode_stmt).unwrap();
+        }
+        writeln!(&mut code, "        }}").unwrap();
         writeln!(&mut code, "    }}\n").unwrap();
 
         write!(&mut code, "    @MainActor public static func invoke(").unwrap();
@@ -395,7 +611,8 @@ impl Lang for Swift {
     fn generate_global_files(&self, module: &ModuleDef, options: &CodegenOptions) -> Vec<OutputFile> {
         let mut code = String::new();
         write_generated_file_preamble(&mut code);
-        writeln!(&mut code, "import Foundation\n").unwrap();
+        writeln!(&mut code, "import Foundation").unwrap();
+        writeln!(&mut code, "import SpacetimeDB\n").unwrap();
 
         writeln!(&mut code, "public enum SpacetimeModule {{").unwrap();
         writeln!(&mut code, "    @MainActor public static func registerTables() {{").unwrap();

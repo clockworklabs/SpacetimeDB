@@ -2,6 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 import Foundation
+import SpacetimeDB
 
 public struct WeaponDropTable {
   @MainActor public static var cache: TableCache<WeaponDrop> {
