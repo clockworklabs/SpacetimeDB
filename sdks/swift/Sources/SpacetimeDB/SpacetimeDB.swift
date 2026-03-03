@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 public enum CompressionMode: String, Sendable {
     case none = "None"
@@ -74,33 +75,53 @@ public enum ConnectionState: Sendable, Equatable {
 }
 
 public final class SubscriptionHandle: @unchecked Sendable {
-    public let queries: [String]
-    private let lock = NSLock()
-    
-    private var _state: SubscriptionState = .pending
-    public var state: SubscriptionState {
-        lock.lock(); defer { lock.unlock() }; return _state
+    private struct UnsafeSendable<Value>: @unchecked Sendable {
+        var value: Value
     }
 
-    private var _querySetId: QuerySetId?
+    private struct State {
+        var state: SubscriptionState = .pending
+        var querySetId: QuerySetId?
+        var requestId: RequestId?
+        var onApplied: UnsafeSendable<(() -> Void)?> = UnsafeSendable(value: nil)
+        var onError: UnsafeSendable<((String) -> Void)?> = UnsafeSendable(value: nil)
+    }
+
+    public let queries: [String]
+    private let stateLock: Mutex<State> = Mutex(State())
+
+    public var state: SubscriptionState {
+        stateLock.withLock { state in
+            state.state
+        }
+    }
+
     var querySetId: QuerySetId? {
-        lock.lock(); defer { lock.unlock() }; return _querySetId
+        stateLock.withLock { state in
+            state.querySetId
+        }
     }
     
     var requestId: RequestId? {
-        lock.lock(); defer { lock.unlock() }; return _requestId
+        stateLock.withLock { state in
+            state.requestId
+        }
     }
-    private var _requestId: RequestId?
     
     weak var client: SpacetimeClient?
-    private var onApplied: (() -> Void)?
-    private var onError: ((String) -> Void)?
 
-    init(queries: [String], client: SpacetimeClient, onApplied: (() -> Void)?, onError: ((String) -> Void)?) {
+    init(
+        queries: [String],
+        client: SpacetimeClient,
+        onApplied: (() -> Void)?,
+        onError: ((String) -> Void)?
+    ) {
         self.queries = queries
         self.client = client
-        self.onApplied = onApplied
-        self.onError = onError
+        stateLock.withLock { state in
+            state.onApplied.value = onApplied
+            state.onError.value = onError
+        }
     }
 
     public func unsubscribe(sendDroppedRows: Bool = false) {
@@ -108,20 +129,20 @@ public final class SubscriptionHandle: @unchecked Sendable {
     }
 
     func markPending(requestId: RequestId, querySetId: QuerySetId) {
-        lock.lock()
-        self._requestId = requestId
-        self._querySetId = querySetId
-        self._state = .pending
-        lock.unlock()
+        stateLock.withLock { state in
+            state.requestId = requestId
+            state.querySetId = querySetId
+            state.state = .pending
+        }
     }
 
     func markApplied(querySetId: QuerySetId) {
-        lock.lock()
-        self._requestId = nil
-        self._querySetId = querySetId
-        self._state = .active
-        let applied = onApplied
-        lock.unlock()
+        let applied = stateLock.withLock { state in
+            state.requestId = nil
+            state.querySetId = querySetId
+            state.state = .active
+            return state.onApplied.value
+        }
         
         if let applied {
             Task { @MainActor in
@@ -131,12 +152,13 @@ public final class SubscriptionHandle: @unchecked Sendable {
     }
 
     func markError(_ message: String) {
-        lock.lock()
-        self._state = .ended
-        let error = onError
-        onApplied = nil
-        onError = nil
-        lock.unlock()
+        let error = stateLock.withLock { state in
+            state.state = .ended
+            let callback = state.onError.value
+            state.onApplied.value = nil
+            state.onError.value = nil
+            return callback
+        }
         
         if let error {
             Task { @MainActor in
@@ -146,13 +168,13 @@ public final class SubscriptionHandle: @unchecked Sendable {
     }
 
     func markEnded() {
-        lock.lock()
-        self._state = .ended
-        self._requestId = nil
-        self._querySetId = nil
-        onApplied = nil
-        onError = nil
-        lock.unlock()
+        stateLock.withLock { state in
+            state.state = .ended
+            state.requestId = nil
+            state.querySetId = nil
+            state.onApplied.value = nil
+            state.onError.value = nil
+        }
     }
 }
 

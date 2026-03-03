@@ -1,55 +1,59 @@
 import Foundation
+import Synchronization
 
 /// Holds the local state of all SpacetimeDB tables, routing updates from the WebSocket down to each table.
-public final class ClientCache: @unchecked Sendable {
-    private let lock = UnfairLock()
-    private var tables: [String: any SpacetimeTableCacheProtocol] = [:]
+public final class ClientCache: Sendable {
+    private struct State {
+        var tables: [String: any SpacetimeTableCacheProtocol] = [:]
+    }
+
+    private let state: Mutex<State> = Mutex(State())
 
     public var registeredTableNames: [String] {
-        lock.lock()
-        defer { lock.unlock() }
-        return Array(tables.keys)
+        state.withLock { state in
+            Array(state.tables.keys)
+        }
     }
 
     public init() {}
 
     /// Registers a new table cache for a given table name.
     public func registerTable<T: Decodable & Sendable>(tableName: String, rowType: T.Type) {
-        lock.lock()
-        defer { lock.unlock() }
-        if let existing = self.tables[tableName] {
-            if existing is TableCache<T> {
-                // Idempotent re-registration: keep the existing cache instance so
-                // any replicated rows already loaded are preserved.
-                return
+        state.withLock { state in
+            if let existing = state.tables[tableName] {
+                if existing is TableCache<T> {
+                    // Idempotent re-registration: keep the existing cache instance so
+                    // any replicated rows already loaded are preserved.
+                    return
+                }
+                fatalError("Table \(tableName) already registered with a different row type.")
             }
-            fatalError("Table \(tableName) already registered with a different row type.")
+            let cache = TableCache<T>(tableName: tableName)
+            state.tables[tableName] = cache
         }
-        let cache = TableCache<T>(tableName: tableName)
-        self.tables[tableName] = cache
     }
 
     /// Registers a new table cache for a given table name.
     public func registerTable<T>(name: String, cache: TableCache<T>) {
-        lock.lock()
-        defer { lock.unlock() }
-        if self.tables[name] != nil {
-            // Preserve the first registration to avoid replacing a live cache.
-            return
+        state.withLock { state in
+            if state.tables[name] != nil {
+                // Preserve the first registration to avoid replacing a live cache.
+                return
+            }
+            state.tables[name] = cache
         }
-        self.tables[name] = cache
     }
 
     public func getTable(name: String) -> (any SpacetimeTableCacheProtocol)? {
-        lock.lock()
-        defer { lock.unlock() }
-        return self.tables[name]
+        state.withLock { state in
+            state.tables[name]
+        }
     }
 
     public func getTableCache<T: Decodable & Sendable>(tableName: String) -> TableCache<T> {
-        lock.lock()
-        defer { lock.unlock() }
-        guard let table = self.tables[tableName] as? TableCache<T> else {
+        guard let table = state.withLock({ state in
+            state.tables[tableName] as? TableCache<T>
+        }) else {
             fatalError("Table \(tableName) not registered or of wrong type.")
         }
         return table
@@ -58,10 +62,10 @@ public final class ClientCache: @unchecked Sendable {
     /// Processes a TransactionUpdate payload from the network.
     public func applyTransactionUpdate(_ update: TransactionUpdate) {
         var modifiedTables = Set<String>()
-        
-        lock.lock()
-        let tablesSnapshot = tables
-        lock.unlock()
+
+        let tablesSnapshot = state.withLock { state in
+            state.tables
+        }
 
         for querySet in update.querySets {
             for tableUpdate in querySet.tables {

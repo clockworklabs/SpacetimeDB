@@ -164,6 +164,18 @@ impl Lang for Swift {
         // Write the generic index mapping for any Unique constraints
         writeln!(&mut code, "}}").unwrap();
 
+        if let Some(pk_col) = table.primary_key {
+            if let AlgebraicTypeDef::Product(product) = &module.typespace_for_generate()[table.product_type_ref] {
+                let pk_field_name = product.elements[pk_col.idx() as usize].0.deref().to_case(Case::Camel);
+                let pk_swift_ty = get_swift_type_use(module, &product.elements[pk_col.idx() as usize].1);
+                writeln!(
+                    &mut code,
+                    "\nextension {}: Identifiable {{\n    public var id: {} {{\n        return self.{}\n    }}\n}}",
+                    row_type, pk_swift_ty, pk_field_name
+                ).unwrap();
+            }
+        }
+
         OutputFile {
             filename: format!("{}Table.swift", table_name_pascal),
             code,

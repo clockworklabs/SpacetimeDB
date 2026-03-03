@@ -1,6 +1,5 @@
 import Compression
 import Foundation
-import zlib
 
 enum ServerMessageFrameDecodingError: Error {
     case emptyFrame
@@ -93,50 +92,34 @@ enum ServerMessageFrameDecoder {
             return Data()
         }
 
-        guard payload.count <= Int(UInt32.max) else {
+        guard payload.count >= 10 else {
             throw ServerMessageFrameDecodingError.invalidInputSize
         }
 
-        return try payload.withUnsafeBytes { rawBuffer in
-            guard let srcBase = rawBuffer.bindMemory(to: Bytef.self).baseAddress else {
-                return Data()
-            }
-
-            var stream = z_stream()
-            stream.next_in = UnsafeMutablePointer<Bytef>(mutating: srcBase)
-            stream.avail_in = uInt(payload.count)
-
-            let initStatus = inflateInit2_(&stream, 47, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size))
-            guard initStatus == Z_OK else {
-                throw ServerMessageFrameDecodingError.initializationFailed
-            }
-            defer { inflateEnd(&stream) }
-
-            let destinationBufferSize = 64 * 1024
-            var destinationBuffer = [UInt8](repeating: 0, count: destinationBufferSize)
-            var output = Data()
-
-            while true {
-                let inflateStatus: Int32 = destinationBuffer.withUnsafeMutableBytes { outRaw in
-                    stream.next_out = outRaw.bindMemory(to: Bytef.self).baseAddress
-                    stream.avail_out = uInt(destinationBufferSize)
-                    return inflate(&stream, Z_NO_FLUSH)
-                }
-
-                let produced = destinationBufferSize - Int(stream.avail_out)
-                if produced > 0 {
-                    output.append(contentsOf: destinationBuffer[0..<produced])
-                }
-
-                switch inflateStatus {
-                case Z_OK:
-                    continue
-                case Z_STREAM_END:
-                    return output
-                default:
-                    throw ServerMessageFrameDecodingError.decompressionFailed
-                }
-            }
+        var offset = 10
+        let flags = payload[3]
+        if flags & 0x04 != 0 {
+            guard offset + 2 <= payload.count else { throw ServerMessageFrameDecodingError.invalidInputSize }
+            let xlen = Int(payload[offset]) | (Int(payload[offset+1]) << 8)
+            offset += 2 + xlen
         }
+        if flags & 0x08 != 0 {
+            while offset < payload.count && payload[offset] != 0 { offset += 1 }
+            offset += 1
+        }
+        if flags & 0x10 != 0 {
+            while offset < payload.count && payload[offset] != 0 { offset += 1 }
+            offset += 1
+        }
+        if flags & 0x02 != 0 {
+            offset += 2
+        }
+        
+        guard offset <= payload.count - 8 else {
+            throw ServerMessageFrameDecodingError.invalidInputSize
+        }
+        
+        let deflateData = payload[offset ..< payload.count - 8]
+        return try decompress(Data(deflateData), algorithm: COMPRESSION_ZLIB)
     }
 }

@@ -9,7 +9,7 @@ struct Point3D: Codable, Sendable, BSATNSpecialDecodable, BSATNSpecialEncodable 
     var y: Float
     var z: Float
 
-    static func decodeBSATN(from reader: BSATNReader) throws -> Point3D {
+    static func decodeBSATN(from reader: inout BSATNReader) throws -> Point3D {
         return Point3D(
             x: try reader.readFloat(),
             y: try reader.readFloat(),
@@ -17,7 +17,7 @@ struct Point3D: Codable, Sendable, BSATNSpecialDecodable, BSATNSpecialEncodable 
         )
     }
 
-    func encodeBSATN(to storage: BSATNStorage) throws {
+    func encodeBSATN(to storage: inout BSATNStorage) throws {
         storage.appendFloat(x)
         storage.appendFloat(y)
         storage.appendFloat(z)
@@ -35,7 +35,7 @@ struct PlayerRow: Codable, Sendable, BSATNSpecialDecodable, BSATNSpecialEncodabl
     var respawnAtMicros: Int64
     var isReady: Bool
 
-    static func decodeBSATN(from reader: BSATNReader) throws -> PlayerRow {
+    static func decodeBSATN(from reader: inout BSATNReader) throws -> PlayerRow {
         return PlayerRow(
             id: try reader.readU64(),
             name: try reader.readString(),
@@ -49,7 +49,7 @@ struct PlayerRow: Codable, Sendable, BSATNSpecialDecodable, BSATNSpecialEncodabl
         )
     }
 
-    func encodeBSATN(to storage: BSATNStorage) throws {
+    func encodeBSATN(to storage: inout BSATNStorage) throws {
         storage.appendU64(id)
         try storage.appendString(name)
         storage.appendFloat(x)
@@ -68,20 +68,20 @@ struct GameState: Codable, Sendable, BSATNSpecialDecodable, BSATNSpecialEncodabl
     var mapName: String
     var timeLimit: UInt32
 
-    static func decodeBSATN(from reader: BSATNReader) throws -> GameState {
+    static func decodeBSATN(from reader: inout BSATNReader) throws -> GameState {
         return GameState(
             tick: try reader.readU64(),
-            players: try reader.readArray { try PlayerRow.decodeBSATN(from: reader) },
+            players: try reader.readArray { reader in try PlayerRow.decodeBSATN(from: &reader) },
             mapName: try reader.readString(),
             timeLimit: try reader.readU32()
         )
     }
 
-    func encodeBSATN(to storage: BSATNStorage) throws {
+    func encodeBSATN(to storage: inout BSATNStorage) throws {
         storage.appendU64(tick)
         storage.appendU32(UInt32(players.count))
         for player in players {
-            try player.encodeBSATN(to: storage)
+            try player.encodeBSATN(to: &storage)
         }
         try storage.appendString(mapName)
         storage.appendU32(timeLimit)

@@ -27,7 +27,7 @@ private struct GeneratedPlayerSpecial: Codable, Sendable, BSATNSpecialDecodable,
     var isReady: Bool
     var lobbyId: UInt64?
 
-    static func decodeBSATN(from reader: BSATNReader) throws -> GeneratedPlayerSpecial {
+    static func decodeBSATN(from reader: inout BSATNReader) throws -> GeneratedPlayerSpecial {
         GeneratedPlayerSpecial(
             id: try reader.readU64(),
             name: try reader.readString(),
@@ -38,11 +38,11 @@ private struct GeneratedPlayerSpecial: Codable, Sendable, BSATNSpecialDecodable,
             kills: try reader.readU32(),
             respawnAtMicros: try reader.readI64(),
             isReady: try reader.readBool(),
-            lobbyId: try Optional<UInt64>.decodeBSATN(from: reader)
+            lobbyId: try Optional<UInt64>.decodeBSATN(from: &reader)
         )
     }
 
-    func encodeBSATN(to storage: BSATNStorage) throws {
+    func encodeBSATN(to storage: inout BSATNStorage) throws {
         storage.appendU64(id)
         try storage.appendString(name)
         storage.appendFloat(x)
@@ -52,7 +52,7 @@ private struct GeneratedPlayerSpecial: Codable, Sendable, BSATNSpecialDecodable,
         storage.appendU32(kills)
         storage.appendI64(respawnAtMicros)
         storage.appendBool(isReady)
-        try lobbyId.encodeBSATN(to: storage)
+        try lobbyId.encodeBSATN(to: &storage)
     }
 }
 
@@ -69,7 +69,7 @@ private struct ReducerArgsSpecial: Codable, Sendable, BSATNSpecialEncodable {
     var y: Float
     var weaponSlot: UInt8
 
-    func encodeBSATN(to storage: BSATNStorage) throws {
+    func encodeBSATN(to storage: inout BSATNStorage) throws {
         storage.appendU64(targetId)
         storage.appendFloat(x)
         storage.appendFloat(y)
