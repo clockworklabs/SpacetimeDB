@@ -36,18 +36,49 @@ fn cli_logout_removes_cached_tokens() {
     require_local_server!();
     let test = Smoketest::builder().autopublish(false).build();
 
-    let login = test.spacetime_cmd(&["login", "--server-issued-login", &test.server_url]);
-    assert_success(&login, "initial login");
-
     // Simulate a cached web session token; logout should clear both token fields.
     let mut config = read_config(&test);
     config.insert(
+        "spacetimedb_token".to_string(),
+        toml::Value::String("fake-spacetimedb-token".to_string()),
+    );
+    config.insert(
         "web_session_token".to_string(),
-        toml::Value::String("cached-session-token".to_string()),
+        toml::Value::String("fake-web-session-token".to_string()),
     );
     write_config(&test, &config);
 
-    let logout = test.spacetime_cmd(&["logout", "--auth-host", &test.server_url]);
+    let logout = test.spacetime_cmd(&["logout"]);
+    assert_success(&logout, "logout");
+    assert!(
+        output_stdout(&logout).contains("Logged out (identity "),
+        "logout stdout should include identity message:\n{}",
+        output_stdout(&logout),
+    );
+
+    let config_after = read_config(&test);
+    assert!(
+        config_after.get("spacetimedb_token").is_none(),
+        "spacetimedb_token should be removed after logout: {:?}",
+        config_after.get("spacetimedb_token")
+    );
+    assert!(
+        config_after.get("web_session_token").is_none(),
+        "web_session_token should be removed after logout: {:?}",
+        config_after.get("web_session_token")
+    );
+}
+
+#[test]
+// Even if there's no web session, logout still removes the SpacetimeDB token
+fn cli_logout_removes_cached_tokens_without_web_token() {
+    require_local_server!();
+    let test = Smoketest::builder().autopublish(false).build();
+
+    let login = test.spacetime_cmd(&["login", "--server-issued-login", &test.server_url]);
+    assert_success(&login, "initial login");
+
+    let logout = test.spacetime_cmd(&["logout"]);
     assert_success(&logout, "logout");
     assert!(
         output_stdout(&logout).contains("Logged out (identity "),
@@ -76,7 +107,7 @@ fn cli_logout_is_idempotent() {
     let login = test.spacetime_cmd(&["login", "--server-issued-login", &test.server_url]);
     assert_success(&login, "initial login");
 
-    let first_logout = test.spacetime_cmd(&["logout", "--auth-host", &test.server_url]);
+    let first_logout = test.spacetime_cmd(&["logout"]);
     assert_success(&first_logout, "first logout");
     assert!(
         output_stdout(&first_logout).contains("Logged out "),
@@ -84,7 +115,7 @@ fn cli_logout_is_idempotent() {
         output_stdout(&first_logout)
     );
 
-    let second_logout = test.spacetime_cmd(&["logout", "--auth-host", &test.server_url]);
+    let second_logout = test.spacetime_cmd(&["logout"]);
     assert_success(&second_logout, "second logout");
     assert!(
         output_stdout(&second_logout).contains("You are not logged in."),
