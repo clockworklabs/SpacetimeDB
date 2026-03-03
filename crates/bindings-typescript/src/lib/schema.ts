@@ -109,7 +109,9 @@ export function tableToSchema<
   // This is intentionally separate from `schema.idxs`, which keeps the original
   // user-declared `IndexOpts` shape for type-level inference.
   const resolvedIndexes: UntypedIndex<AllowedCol>[] = tableDef.indexes
-    .filter(idx => typeof idx.accessorName === 'string' && idx.accessorName.length > 0)
+    .filter(
+      idx => typeof idx.accessorName === 'string' && idx.accessorName.length > 0
+    )
     .map(idx => {
       const accessorName = idx.accessorName!;
 
@@ -138,8 +140,7 @@ export function tableToSchema<
         algorithm,
         columns: columnIds.map(getColName) as AllowedCol[],
       };
-    }
-  );
+    });
 
   return {
     // For client,`schama.tableName` will always be there as canonical name.
