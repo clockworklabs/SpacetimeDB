@@ -771,14 +771,14 @@ async fn get_template_config_interactive(
     let mut templates_by_lang: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (idx, template) in templates.iter().enumerate() {
         let server_lang = template.server_lang.as_deref();
-        let client_lang = template.client_lang.as_deref();
+        let client_lang = template.client_framework.as_deref().or(template.client_lang.as_deref());
         let lang = if server_lang == client_lang {
             format_language_label(server_lang)
         } else {
             format!(
                 "{}/{}",
                 format_language_label(server_lang),
-                format_language_label(client_lang)
+                format_language_label(client_lang),
             )
         };
         templates_by_lang.entry(lang).or_default().push(idx);

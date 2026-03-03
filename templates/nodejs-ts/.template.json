@@ -1,5 +1,6 @@
 {
   "description": "Node.js TypeScript client and server template",
-  "client_lang": "Node.js",
+  "client_framework": "Node.js",
+  "client_lang": "typescript",
   "server_lang": "typescript"
 }

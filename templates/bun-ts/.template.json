@@ -1,5 +1,6 @@
 {
   "description": "Bun TypeScript client and server template",
-  "client_lang": "Bun",
+  "client_framework": "Bun",
+  "client_lang": "typescript",
   "server_lang": "typescript"
 }

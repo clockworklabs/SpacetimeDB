@@ -1,5 +1,6 @@
 {
   "description": "Vue.js web app with TypeScript server",
-  "client_lang": "Vue.js",
+  "client_framework": "Vue.js",
+  "client_lang": "typescript",
   "server_lang": "typescript"
 }
