@@ -1,5 +1,5 @@
 use crate::Config;
-use crate::{logout::do_logout, util::decode_identity};
+use crate::{logout::ensure_logged_out, util::decode_identity};
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command};
 use reqwest::Url;
 use serde::Deserialize;
@@ -62,8 +62,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let server_issued_login: Option<&String> = args.get_one("server");
     let open_browser = !args.get_flag("no-browser");
 
-    // If already logged in, log out first
-    let _ = do_logout(&mut config, &host).await;
+    let _was_logged_in = ensure_logged_out(&mut config, &host).await;
 
     if let Some(token) = spacetimedb_token {
         config.set_spacetimedb_token(token.clone());

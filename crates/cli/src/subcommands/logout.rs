@@ -23,7 +23,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let host: &String = args.get_one("auth-host").unwrap();
     let host = Url::parse(host)?;
 
-    let _ = do_logout(&mut config, &host).await;
+    let _ = ensure_logged_out(&mut config, &host).await;
 
     Ok(())
 }
@@ -45,7 +45,7 @@ async fn server_logout(config: &mut Config, host: &Url) -> Result<(), anyhow::Er
 
 /// Logs out the user from the specified auth server.
 /// Returns true if the user was logged out, false if they were not logged in.
-pub async fn do_logout(config: &mut Config, host: &Url) -> bool {
+pub async fn ensure_logged_out(config: &mut Config, host: &Url) -> bool {
     let Some(token) = config.spacetimedb_token() else {
         return false;
     };
