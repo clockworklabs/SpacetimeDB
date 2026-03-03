@@ -36,6 +36,8 @@ pub struct TemplateDefinition {
     pub server_lang: Option<String>,
     #[serde(default)]
     pub client_lang: Option<String>,
+    #[serde(default)]
+    pub client_framework: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -765,50 +767,49 @@ async fn get_template_config_interactive(
     // Fully interactive mode - prompt for template/language selection
     let templates = fetch_templates_list().await?;
 
-    // First menu: all (server_lang, client_lang) pairs from templates + GitHub + None.
-    let mut templates_by_pair: BTreeMap<(Option<String>, Option<String>), Vec<usize>> = BTreeMap::new();
+    // First menu: all language combinations from templates + GitHub + None.
+    let mut templates_by_lang: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (idx, template) in templates.iter().enumerate() {
-        templates_by_pair
-            .entry((template.server_lang.clone(), template.client_lang.clone()))
-            .or_default()
-            .push(idx);
+        let server_lang = template.server_lang.as_deref();
+        let client_lang = template.client_lang.as_deref();
+        let lang = if server_lang == client_lang {
+            format_language_label(server_lang)
+        } else {
+            format!(
+                "{}/{}",
+                format_language_label(server_lang),
+                format_language_label(client_lang)
+            )
+        };
+        templates_by_lang.entry(lang).or_default().push(idx);
     }
 
-    let pair_keys: Vec<(Option<String>, Option<String>)> = templates_by_pair.keys().cloned().collect();
-    let mut pair_items: Vec<String> = templates_by_pair
+    let lang_keys: Vec<String> = templates_by_lang.keys().cloned().collect();
+    let mut lang_items: Vec<String> = templates_by_lang
         .iter()
-        .map(|((server_lang, client_lang), template_indices)| {
+        .map(|(lang, template_indices)| {
             let count = template_indices.len();
             let template_word = if count == 1 { "template" } else { "templates" };
-            let lang_string = if server_lang == client_lang {
-                format_language_label(server_lang.as_deref())
-            } else {
-                format!(
-                    "{}/{}",
-                    format_language_label(server_lang.as_deref()),
-                    format_language_label(client_lang.as_deref())
-                )
-            };
-            format!("{lang_string} ({count} {template_word})")
+            format!("{lang} ({count} {template_word})")
         })
         .collect();
-    pair_items.push("Clone from GitHub (owner/repo or git URL)".to_string());
-    pair_items.push("None".to_string());
+    lang_items.push("Clone from GitHub (owner/repo or git URL)".to_string());
+    lang_items.push("None".to_string());
 
     let client_selection = FuzzySelect::with_theme(&theme)
         .with_prompt("Select a language (type to filter)")
-        .items(&pair_items)
+        .items(&lang_items)
         .default(0)
         .interact()?;
 
-    let github_clone_index = pair_keys.len();
-    let none_index = pair_keys.len() + 1;
+    let github_clone_index = lang_keys.len();
+    let none_index = lang_keys.len() + 1;
 
-    if client_selection < pair_keys.len() {
-        let selected_pair = &pair_keys[client_selection];
-        let template_indices = templates_by_pair
-            .get(selected_pair)
-            .ok_or_else(|| anyhow::anyhow!("No templates found for selected language pair"))?;
+    if client_selection < lang_keys.len() {
+        let selected_lang = &lang_keys[client_selection];
+        let template_indices = templates_by_lang
+            .get(selected_lang)
+            .ok_or_else(|| anyhow::anyhow!("No templates found for selected language"))?;
 
         let template_items: Vec<String> = template_indices
             .iter()
@@ -818,18 +819,7 @@ async fn get_template_config_interactive(
             })
             .collect();
 
-        let (server_lang, client_lang) = selected_pair;
-        let lang_string = if server_lang == client_lang {
-            format_language_label(server_lang.as_deref())
-        } else {
-            format!(
-                "{}/{}",
-                format_language_label(server_lang.as_deref()),
-                format_language_label(client_lang.as_deref())
-            )
-        };
-
-        let pair_prompt = format!("Templates available for {lang_string} (type to filter)");
+        let pair_prompt = format!("Templates available for {selected_lang} (type to filter)");
         let template_selection = FuzzySelect::with_theme(&theme)
             .with_prompt(&pair_prompt)
             .items(&template_items)
