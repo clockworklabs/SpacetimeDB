@@ -92,7 +92,17 @@ pub struct SubscribeQueryParams {
     ///
     /// If `false`, send them immediately.
     #[serde(default)]
-    pub confirmed: bool,
+    pub confirmed: Option<bool>,
+}
+
+fn resolve_confirmed_reads_default(version: WsVersion, confirmed: Option<bool>) -> bool {
+    if let Some(confirmed) = confirmed {
+        return confirmed;
+    }
+    match version {
+        WsVersion::V1 => false,
+        WsVersion::V2 => crate::DEFAULT_CONFIRMED_READS,
+    }
 }
 
 pub fn generate_random_connection_id() -> ConnectionId {
@@ -170,7 +180,7 @@ where
         version: negotiated.version,
         compression,
         tx_update_full: !light,
-        confirmed_reads: confirmed,
+        confirmed_reads: resolve_confirmed_reads_default(negotiated.version, confirmed),
     };
 
     // TODO: Should also maybe refactor the code and the protocol to allow a single websocket
@@ -632,19 +642,17 @@ async fn ws_main_loop<HotswapWatcher>(
             // [`tokio::task::AbortHandle`]s), the reasonable thing to do is to
             // exit the loop as if the tasks completed normally.
             res = &mut send_task => {
-                if let Err(e) = res {
-                    if e.is_panic() {
+                if let Err(e) = res
+                    && e.is_panic() {
                         panic::resume_unwind(e.into_panic())
                     }
-                }
                 break;
             },
             res = &mut recv_task => {
-                if let Err(e) = res {
-                    if e.is_panic() {
+                if let Err(e) = res
+                    && e.is_panic() {
                         panic::resume_unwind(e.into_panic())
                     }
-                }
                 break;
             },
 
@@ -762,15 +770,15 @@ async fn ws_recv_task<MessageHandler>(
     while let Some((data, timer)) = recv_handler.next().await {
         let result = message_handler(data, timer).await;
         if let Err(e) = result {
-            if ws_version == WsVersion::V1 {
-                if let MessageHandleError::Execution(err) = e {
-                    log::error!("{err:#}");
-                    // If the send task has exited, also exit this recv task.
-                    if unordered_tx.send(err.into()).is_err() {
-                        break;
-                    }
-                    continue;
+            if ws_version == WsVersion::V1
+                && let MessageHandleError::Execution(err) = e
+            {
+                log::error!("{err:#}");
+                // If the send task has exited, also exit this recv task.
+                if unordered_tx.send(err.into()).is_err() {
+                    break;
                 }
+                continue;
             }
             log::debug!("Client caused error: {e}");
             let close = CloseFrame {
@@ -1442,7 +1450,7 @@ async fn ws_encode_message_v2(
     message: ws_v2::ServerMessage,
     is_large_message: bool,
     bsatn_rlb_pool: &BsatnRowListBuilderPool,
-) -> (EncodeMetrics, InUseSerializeBuffer, impl Iterator<Item = Frame>) {
+) -> (EncodeMetrics, InUseSerializeBuffer, impl Iterator<Item = Frame> + use<>) {
     let start = Instant::now();
 
     let (in_use, data) = if is_large_message {
@@ -2286,6 +2294,14 @@ mod tests {
         let options = WebSocketOptions::default();
         let toml = toml::to_string(&options).unwrap();
         assert_eq!(options, toml::from_str::<WebSocketOptions>(&toml).unwrap());
+    }
+
+    #[test]
+    fn confirmed_reads_default_depends_on_ws_version() {
+        assert!(resolve_confirmed_reads_default(WsVersion::V2, None));
+        assert!(!resolve_confirmed_reads_default(WsVersion::V1, None));
+        assert!(resolve_confirmed_reads_default(WsVersion::V1, Some(true)));
+        assert!(!resolve_confirmed_reads_default(WsVersion::V2, Some(false)));
     }
 
     #[test]

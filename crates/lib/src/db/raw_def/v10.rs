@@ -1054,6 +1054,22 @@ impl RawModuleDefV10Builder {
         self.explicit_names_mut().merge(names);
     }
 
+    /// Set the case conversion policy for this module.
+    ///
+    /// By default, SpacetimeDB applies `SnakeCase` conversion to table names,
+    /// column names, reducer names, etc. Use `CaseConversionPolicy::None` to
+    /// disable all case conversion (useful for modules with existing data that
+    /// was stored under the original naming convention).
+    pub fn set_case_conversion_policy(&mut self, policy: CaseConversionPolicy) {
+        // Remove any existing policy section.
+        self.module
+            .sections
+            .retain(|s| !matches!(s, RawModuleDefV10Section::CaseConversionPolicy(_)));
+        self.module
+            .sections
+            .push(RawModuleDefV10Section::CaseConversionPolicy(policy));
+    }
+
     /// Finish building, consuming the builder and returning the module.
     /// The module should be validated before use.
     pub fn finish(self) -> RawModuleDefV10 {

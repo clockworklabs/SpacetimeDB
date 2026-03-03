@@ -712,6 +712,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       }
       case 'SubscriptionError': {
         const querySetId = serverMessage.value.querySetId.id;
+        const requestId = serverMessage.value.requestId;
         const error = Error(serverMessage.value.error);
         const event: Event<never> = {
           id: this.#nextEventId(),
@@ -723,6 +724,19 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           ...eventContext,
           event: error,
         };
+
+        // If the requestId isn't set, that means we already applied the subscription.
+        // Since we don't know how to remove the relevant rows from our table cache, we need
+        // to kill the connection. Once we have per-query storage, this won't be fatal.
+        if (requestId == null) {
+          stdbLogger(
+            'error',
+            `Disconnecting due to error for a previously applied subscription: ${serverMessage.value.error}`
+          );
+          this.disconnect();
+          break;
+        }
+
         const subscription =
           this.#subscriptionManager.subscriptions.get(querySetId);
         if (subscription) {
@@ -740,7 +754,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       case 'TransactionUpdate': {
         const event: Event<never> = {
           id: this.#nextEventId(),
-          tag: 'UnknownTransaction',
+          tag: 'Transaction',
         };
         const eventContext = this.#makeEventContext(event);
         const callbacks = this.#applyTransactionUpdates(
@@ -777,7 +791,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
               }
             : {
                 id: eventId,
-                tag: 'UnknownTransaction',
+                tag: 'Transaction',
               };
           const eventContext = this.#makeEventContext(event as any);
 

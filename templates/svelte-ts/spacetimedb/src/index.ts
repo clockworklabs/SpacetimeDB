@@ -2,7 +2,7 @@ import { schema, table, t } from 'spacetimedb/server';
 
 const spacetimedb = schema({
   person: table(
-    {},
+    { public: true },
     {
       name: t.string(),
     }
@@ -29,7 +29,7 @@ export const add = spacetimedb.reducer(
   }
 );
 
-export const say_hello = spacetimedb.reducer(ctx => {
+export const sayHello = spacetimedb.reducer(ctx => {
   for (const person of ctx.db.person.iter()) {
     console.info(`Hello, ${person.name}!`);
   }

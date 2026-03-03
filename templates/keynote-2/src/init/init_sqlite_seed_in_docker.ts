@@ -1,4 +1,4 @@
-﻿// src/init/init_sqlite_seed_in_docker.ts
+// src/init/init_sqlite_seed_in_docker.ts
 import 'dotenv/config';
 import Database from 'better-sqlite3';
 import {
@@ -77,7 +77,7 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+main().catch((_err) => {
   console.error(
     '[sqlite-seed] failed: an error occurred during sqlite seeding (see secure logs for details)',
   );

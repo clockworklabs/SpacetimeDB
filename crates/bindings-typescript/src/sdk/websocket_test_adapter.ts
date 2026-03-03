@@ -27,6 +27,7 @@ class WebsocketTestAdapter {
 
   close(): void {
     this.closed = true;
+    this.onclose?.({ code: 1000, reason: 'normal closure', wasClean: true });
   }
 
   acceptConnection(): void {

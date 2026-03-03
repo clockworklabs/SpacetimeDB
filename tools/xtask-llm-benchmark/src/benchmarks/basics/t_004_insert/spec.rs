@@ -9,7 +9,7 @@ pub fn spec() -> BenchmarkSpec {
         let casing = casing_for_lang(lang);
         let sb = SqlBuilder::new(casing);
         let select = sb.select_by_id(&table_name("user", lang), &["id","name","age","active"], "id", 1);
-        let reducer_name = ident("InsertUser", casing);
+        let reducer_name = ident("InsertUser", crate::eval::Casing::Snake);
 
         v.push(make_reducer_data_parity_scorer(host_url, ReducerDataParityConfig {
             src_file: file!(),

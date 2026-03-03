@@ -120,7 +120,7 @@ pub fn print_books(ctx: &ReducerContext, prefix: String) {
         logging.info("Initial publish complete")
 
         # Start a subscription before publishing the module, to test that the subscription remains intact after re-publishing.
-        sub = self.subscribe("select * from person", n=4)
+        sub = self.subscribe("select * from person", n=4, confirmed=False)
 
         # initial module code is already published by test framework
         self.call("add_person", "Robert", "Student")
@@ -307,7 +307,10 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
         NUM_SUBSCRIBERS = 20
         subs = [None] * NUM_SUBSCRIBERS
         for i in range(NUM_SUBSCRIBERS):
-            subs[i]= self.subscribe("select * from person", n=5)
+            # We need unconfirmed reads for the updates to arrive properly.
+            # Otherwise, there's a race between module teardown in publish, vs subscribers
+            # getting the row deletion they expect.
+            subs[i]= self.subscribe("select * from person", n=5, confirmed=False)
 
         # Insert under initial schema
         self.call("add_person", "Robert")

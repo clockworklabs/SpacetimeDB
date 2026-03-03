@@ -15,6 +15,8 @@ The demo compares SpacetimeDB and Convex by default, since both are easy for any
 
 **Options:** `--systems a,b,c` | `--seconds N` | `--skip-prep` | `--no-animation`
 
+**Note:** You will need to [install Rust](https://rust-lang.org/tools/install/) to run the spacetimedb benchmark, because we run a [Rust Client](#rust-client).
+
 ## Results Summary
 
 All tests use 50 concurrent connections with a transfer workload (read-modify-write transaction between two accounts).
@@ -32,6 +34,8 @@ All tests use 50 concurrent connections with a transfer workload (read-modify-wr
 
 **Key Finding:** SpacetimeDB achieves **~14x higher throughput** than the next best option (SQLite RPC) and maintains nearly identical performance under high contention (only ~4% drop), while traditional databases suffer significant degradation (CockroachDB drops 96%).
 
+> **Note:** SpacetimeDB runs on ARM architectures (including Apple M-series Macs), but has not yet been optimized for them.
+
 ### Contention Impact
 
 ![Contention Chart](./contention-chart.png)
@@ -44,7 +48,7 @@ All systems were tested with **out-of-the-box default settings** - no custom tun
 
 For cloud services, we tested paid tiers to give them their best chance:
 
-- **PlanetScale**: PS-256G (32 cores, 256 GB RAM)
+- **PlanetScale**: PS-2560 (32 vCPUs, 256 GB RAM), single node, us-central1.
 - **Supabase**: Pro tier
 - **Convex**: Pro tier
 
@@ -97,10 +101,12 @@ docker compose run --rm bench --seconds 10 --concurrency 50 --alpha XX --connect
 
 - c4-standard-32-lssd (32 vCPUs, 120 GB Memory) OS: Ubuntu 24.04
 - RAID 0 on 5 Local SSDs
+- Region: us-central1
 
 **Client Machine:**
 
 - c4-standard-32 (32 vCPUs, 120 GB Memory) OS: Ubuntu 24.04
+- Region: us-central1
 - Runs on a **separate machine** from the server
 
 **Note:** All services (databases, web servers, benchmark runner) except Convex local dev backend run in the same Docker environment on the server machine.
@@ -151,6 +157,13 @@ SpacetimeDB supports `withConfirmedReads` mode which ensures transactions are du
 
 PlanetScale results (~477 TPS) demonstrate the **significant impact of cloud database latency**. When the database is accessed over the network (even within the same cloud region), round-trip latency dominates performance. This is why SpacetimeDB's colocated architecture provides such dramatic improvements.
 
+### Rust client
+
+When running the benchmark for SpacetimeDB on higher-end hardware we found out that we were actually bottlnecked
+on our test TypeScript client. To get the absolute most out of the performance of SpacetimeDB we wrote a custom
+Rust client that allows us to send a much larger number of requests then we could otherwise. We didn't do this
+for the other backends/databases as they maxed out before the client.
+
 ## Systems Tested
 
 | System                            | Architecture                                            |
@@ -184,7 +197,7 @@ docker compose up -d pg crdb
 npm run prep
 
 # Run benchmark
-npm run bench -- --seconds 10 --concurrency 50 --alpha 0 --connectors spacetimedb,postgres_rpc,sqlite_rpc
+npm run bench -- --seconds 10 --concurrency 50 --alpha 1.5 --connectors spacetimedb,postgres_rpc,sqlite_rpc
 ```
 
 ## Output

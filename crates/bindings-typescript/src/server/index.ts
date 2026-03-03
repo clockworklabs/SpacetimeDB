@@ -1,5 +1,11 @@
 export * from '../lib/type_builders';
-export { schema, type InferSchema, type ModuleExport } from './schema';
+export {
+  schema,
+  type InferSchema,
+  type ModuleExport,
+  type ModuleSettings,
+} from './schema';
+export { CaseConversionPolicy } from '../lib/autogen/types';
 export { table } from '../lib/table';
 export { SenderError, SpacetimeHostError, errors } from './errors';
 export type { Reducer, ReducerCtx } from '../lib/reducers';

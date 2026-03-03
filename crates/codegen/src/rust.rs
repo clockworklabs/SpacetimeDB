@@ -71,28 +71,27 @@ impl __sdk::InModule for {type_name} {{
         // Do not implement query col types for nested types.
         // as querying is only supported on top-level table row types.
         let name = type_ref_name(module, typ.ty);
-        let implemented = if let Some(table) = module
+        let implemented = match module
             .tables()
             .find(|t| type_ref_name(module, t.product_type_ref) == name)
         {
-            implement_query_col_types_for_table_struct(module, out, table)
-                .expect("failed to implement query col types");
-            out.newline();
-            true
-        } else {
-            false
+            Some(table) => {
+                implement_query_col_types_for_table_struct(module, out, table)
+                    .expect("failed to implement query col types");
+                out.newline();
+                true
+            }
+            _ => false,
         };
 
-        if !implemented {
-            if let Some(type_ref) = module
+        if !implemented
+            && let Some(type_ref) = module
                 .views()
                 .map(|v| v.product_type_ref)
                 .find(|type_ref| type_ref_name(module, *type_ref) == name)
-            {
-                implement_query_col_types_for_struct(module, out, type_ref)
-                    .expect("failed to implement query col types");
-                out.newline();
-            }
+        {
+            implement_query_col_types_for_struct(module, out, type_ref).expect("failed to implement query col types");
+            out.newline();
         }
 
         vec![OutputFile {
@@ -671,7 +670,7 @@ pub struct {cols_struct} {{"
     )?;
 
     for element in &product_def.elements {
-        let field_name = &element.0;
+        let field_name = &element.0.deref().to_case(Case::Snake);
         let field_type = type_name(module, &element.1);
         writeln!(
             out,
@@ -690,7 +689,7 @@ impl __sdk::__query_builder::HasCols for {struct_name} {{
         {cols_struct} {{"
     )?;
     for element in &product_def.elements {
-        let field_name = &element.0;
+        let field_name = &element.0.deref().to_case(Case::Snake);
         writeln!(
             out,
             "            {field_name}: __sdk::__query_builder::Col::new(table_name, {field_name:?}),"
@@ -735,7 +734,7 @@ pub struct {cols_ix} {{"
             .iter()
             .find(|col| col.col_id == cols.as_singleton().expect("singleton column"))
             .unwrap();
-        let field_name = column.accessor_name.deref();
+        let field_name = column.accessor_name.deref().to_case(Case::Snake);
         let field_type = type_name(module, &column.ty_for_generate);
 
         writeln!(
@@ -763,7 +762,7 @@ impl __sdk::__query_builder::HasIxCols for {struct_name} {{
             .iter()
             .find(|col| col.col_id == cols.as_singleton().expect("singleton column"))
             .expect("singleton column");
-        let field_name = column.accessor_name.deref();
+        let field_name = column.accessor_name.deref().to_case(Case::Snake);
         let col_name = column.name.deref();
 
         writeln!(

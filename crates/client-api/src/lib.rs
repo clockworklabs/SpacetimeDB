@@ -27,6 +27,11 @@ pub mod auth;
 pub mod routes;
 pub mod util;
 
+/// The default value for the `confirmed` reads parameter when the client does
+/// not specify it explicitly. When `true`, the server waits for durability
+/// confirmation before sending subscription updates and SQL results.
+pub const DEFAULT_CONFIRMED_READS: bool = true;
+
 /// Defines the state / environment of a SpacetimeDB node from the PoV of the
 /// client API.
 ///
@@ -168,11 +173,9 @@ impl Host {
             .await
             .map_err(log_and_500)??;
 
-        if confirmed_read {
-            if let Some(mut durable_offset) = durable_offset {
-                let tx_offset = tx_offset.await.map_err(|_| log_and_500("transaction aborted"))?;
-                durable_offset.wait_for(tx_offset).await.map_err(log_and_500)?;
-            }
+        if confirmed_read && let Some(mut durable_offset) = durable_offset {
+            let tx_offset = tx_offset.await.map_err(|_| log_and_500("transaction aborted"))?;
+            durable_offset.wait_for(tx_offset).await.map_err(log_and_500)?;
         }
 
         Ok(json)
