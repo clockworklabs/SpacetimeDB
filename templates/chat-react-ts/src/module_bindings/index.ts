@@ -61,7 +61,7 @@ const tablesSchema = __schema({
       indexes: [
         {
           accessor: 'identity',
-          name: 'identity',
+          name: 'user_identity_idx_btree',
           algorithm: 'btree',
           columns: ['identity'],
         },
