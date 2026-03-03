@@ -21,13 +21,12 @@ const LOCALHOST: &str = "http://localhost:3000";
 const MODULE: &str = "sim";
 
 const DURATION: &str = "5s";
-const WARMUP_DURATION: &str = "5s";
-const ALPHA: f32 = 0.5;
+const ALPHA: f32 = 1.5;
 const CONNECTIONS: usize = 10;
 const INIT_BALANCE: i64 = 1_000_000;
 const AMOUNT: u32 = 1;
 const ACCOUNTS: u32 = 100_000;
-const CONFIRMED_READS: bool = false;
+const CONFIRMED_READS: bool = true;
 // Max inflight reducer calls imposed by the server.
 const MAX_INFLIGHT_REDUCERS: u64 = 16384;
 
@@ -139,9 +138,11 @@ fn bench(cli: &Common, bench: &Bench) {
         println!();
     }
 
-    // Parse the durations.
+    // Parse the duration.
     let duration = parse_duration(&bench.duration).expect("invalid duration passed");
-    let warmup_duration = parse_duration(&bench.warmup_duration).expect("invalid warmup duration passed");
+    if !cli.quiet {
+        eprintln!("benchmarking for {}...", format_duration(duration));
+    }
 
     // Initialize connections.
     let connections = bench.connections;
@@ -160,15 +161,10 @@ fn bench(cli: &Common, bench: &Bench) {
     let transfer_pairs = &make_transfers(accounts, alpha);
     let transfers_per_worker = transfer_pairs.len() / conns.len();
 
-    let warmup_start_all = Instant::now();
-    let mut start_all = warmup_start_all;
-    let barrier = &std::sync::Barrier::new(conns.len());
+    let mut start_all = Instant::now();
     let completed = Arc::new(AtomicU64::default());
 
     thread::scope(|scope| {
-        if !cli.quiet {
-            eprintln!("warming up for {}...", format_duration(warmup_duration));
-        }
         let mut start_all = Some(&mut start_all);
         for (worker_idx, (mut rx, tx)) in conns.into_iter().enumerate() {
             let completed = completed.clone();
@@ -214,14 +210,6 @@ fn bench(cli: &Common, bench: &Bench) {
                     transfers
                 };
 
-                while warmup_start_all.elapsed() < warmup_duration {
-                    run();
-                }
-
-                if barrier.wait().is_leader() && !cli.quiet {
-                    eprintln!("finished warmup...");
-                    eprintln!("benchmarking for {}...", format_duration(duration));
-                }
                 let start = Instant::now();
                 if let Some(start_all) = start_all {
                     *start_all = start;
@@ -314,9 +302,6 @@ struct Bench {
 
     #[arg(short, long, default_value = DURATION)]
     duration: String,
-
-    #[arg(short, long, default_value = WARMUP_DURATION)]
-    warmup_duration: String,
 
     #[arg(short, long)]
     tps_write_path: Option<String>,
