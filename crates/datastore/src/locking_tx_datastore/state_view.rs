@@ -122,7 +122,7 @@ pub trait StateView {
 
     /// Look up an `st_column_accessor` row by its canonical table and column names
     fn find_st_column_accessor_row(&self, table_name: &str, col_name: &str) -> Result<Option<StColumnAccessorRow>> {
-        let row = match self.iter_by_col_eq(
+        match self.iter_by_col_eq(
             ST_COLUMN_ACCESSOR_ID,
             [StColumnAccessorFields::TableName, StColumnAccessorFields::ColName],
             &AlgebraicValue::product([table_name.into(), col_name.into()]),
@@ -137,8 +137,7 @@ pub trait StateView {
             // where missing accessor tables should be surfaced as real errors.
             Err(DatastoreError::Table(TableError::IdNotFound(..))) => Ok(None),
             Err(e) => Err(e),
-        };
-        row
+        }
     }
 
     /// Reads the schema information for the specified `table_id` directly from the database.

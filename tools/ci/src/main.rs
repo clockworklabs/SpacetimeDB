@@ -12,6 +12,9 @@ const README_PATH: &str = "tools/ci/README.md";
 
 mod ci_docs;
 mod smoketest;
+mod util;
+
+use util::ensure_repo_root;
 
 /// SpacetimeDB CI tasks
 ///
@@ -33,13 +36,6 @@ struct Cli {
     /// subcommand, use `--skip unreal-tests`.
     #[arg(long)]
     skip: Vec<String>,
-}
-
-fn ensure_repo_root() -> Result<()> {
-    if !Path::new("Cargo.toml").exists() {
-        bail!("You must execute this command from the SpacetimeDB repository root (where Cargo.toml is located)");
-    }
-    Ok(())
 }
 
 fn check_global_json_policy() -> Result<()> {
@@ -108,11 +104,11 @@ fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
 
     // Copy spacetimedb.<pkg>.meta
     let pkg_root_meta = skeleton_base.join(format!("{pkg_id}.meta"));
-    if pkg_root_meta.exists() {
-        if let Some(parent) = pkg_root.parent() {
-            let pkg_meta_dst = parent.join(format!("{pkg_id}.meta"));
-            fs::copy(&pkg_root_meta, &pkg_meta_dst)?;
-        }
+    if pkg_root_meta.exists()
+        && let Some(parent) = pkg_root.parent()
+    {
+        let pkg_meta_dst = parent.join(format!("{pkg_id}.meta"));
+        fs::copy(&pkg_root_meta, &pkg_meta_dst)?;
     }
 
     let versioned_dir = match find_only_subdir(&pkg_root) {
@@ -125,14 +121,14 @@ fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
 
     // If version.meta exists under the skeleton package, rename it to match the restored version dir.
     let version_meta_template = skeleton_root.join("version.meta");
-    if version_meta_template.exists() {
-        if let Some(parent) = versioned_dir.parent() {
-            let version_name = versioned_dir
-                .file_name()
-                .expect("versioned directory should have a file name");
-            let version_meta_dst = parent.join(format!("{}.meta", version_name.to_string_lossy()));
-            fs::copy(&version_meta_template, &version_meta_dst)?;
-        }
+    if version_meta_template.exists()
+        && let Some(parent) = versioned_dir.parent()
+    {
+        let version_name = versioned_dir
+            .file_name()
+            .expect("versioned directory should have a file name");
+        let version_meta_dst = parent.join(format!("{}.meta", version_name.to_string_lossy()));
+        fs::copy(&version_meta_template, &version_meta_dst)?;
     }
 
     copy_overlay_dir(&skeleton_root, &versioned_dir)

@@ -13,7 +13,7 @@ pub fn spec() -> BenchmarkSpec {
 
         let casing = casing_for_lang(lang);
         let sb = SqlBuilder::new(casing);
-        let reducer_name = ident("LookupUserName", casing);
+        let reducer_name = ident("LookupUserName", crate::eval::Casing::Snake);
         let user_table = table_name("user", lang);
         let result_table = table_name("result", lang);
 
