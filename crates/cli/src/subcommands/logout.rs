@@ -37,15 +37,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     Ok(())
 }
 
-pub async fn do_logout(config: &mut Config, host: &Url) {
-    // Best-effort server-side session invalidation.
-    if let Err(e) = resulty_logout(config, host).await {
-        eprintln!("Failed to logout: {e}\nLocal credentials have been cleared.");
-    }
-    config.clear_login_tokens();
-    config.save();
-}
-
 async fn resulty_logout(config: &mut Config, host: &Url) -> Result<(), anyhow::Error> {
     // Best-effort server-side session invalidation.
     if let Some(web_session_token) = config.web_session_token() {
@@ -59,4 +50,13 @@ async fn resulty_logout(config: &mut Config, host: &Url) -> Result<(), anyhow::E
     }
 
     Ok(())
+}
+
+pub async fn do_logout(config: &mut Config, host: &Url) {
+    // Best-effort server-side session invalidation.
+    if let Err(e) = resulty_logout(config, host).await {
+        eprintln!("Failed to logout: {e}\nLocal credentials have been cleared.");
+    }
+    config.clear_login_tokens();
+    config.save();
 }
