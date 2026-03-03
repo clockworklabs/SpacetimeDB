@@ -3,9 +3,12 @@
 
 import Foundation
 import SpacetimeDB
+import simd
 
 public struct LobbyTable {
   @MainActor public static var cache: TableCache<Lobby> {
     return SpacetimeClient.clientCache.getTableCache(tableName: "lobby")
   }
 }
+
+extension Lobby: Identifiable {}

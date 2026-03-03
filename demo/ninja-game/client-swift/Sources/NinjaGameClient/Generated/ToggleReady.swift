@@ -3,11 +3,12 @@
 
 import Foundation
 import SpacetimeDB
+import simd
 
 public enum ToggleReady {
   public struct _Args: Codable, Sendable, BSATNSpecialEncodable {
 
-    public func encodeBSATN(to storage: BSATNStorage) throws {
+    public func encodeBSATN(to storage: inout BSATNStorage) throws {
     }
   }
 

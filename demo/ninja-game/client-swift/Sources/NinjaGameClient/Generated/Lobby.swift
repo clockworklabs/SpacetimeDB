@@ -3,13 +3,14 @@
 
 import Foundation
 import SpacetimeDB
+import simd
 
 public struct Lobby: Codable, Sendable, BSATNSpecialDecodable, BSATNSpecialEncodable {
   public var id: UInt64
   public var name: String
   public var isPlaying: Bool
 
-  public static func decodeBSATN(from reader: BSATNReader) throws -> Lobby {
+  public static func decodeBSATN(from reader: inout BSATNReader) throws -> Lobby {
     return Lobby(
       id: try reader.readU64(),
       name: try reader.readString(),
@@ -17,7 +18,7 @@ public struct Lobby: Codable, Sendable, BSATNSpecialDecodable, BSATNSpecialEncod
     )
   }
 
-  public func encodeBSATN(to storage: BSATNStorage) throws {
+  public func encodeBSATN(to storage: inout BSATNStorage) throws {
     storage.appendU64(self.id)
     try storage.appendString(self.name)
     storage.appendBool(self.isPlaying)

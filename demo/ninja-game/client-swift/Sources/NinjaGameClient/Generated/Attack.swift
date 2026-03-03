@@ -3,12 +3,13 @@
 
 import Foundation
 import SpacetimeDB
+import simd
 
 public enum Attack {
   public struct _Args: Codable, Sendable, BSATNSpecialEncodable {
     public var targetId: UInt64
 
-    public func encodeBSATN(to storage: BSATNStorage) throws {
+    public func encodeBSATN(to storage: inout BSATNStorage) throws {
       storage.appendU64(self.targetId)
     }
   }

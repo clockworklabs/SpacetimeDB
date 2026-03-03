@@ -3,6 +3,7 @@
 
 import Foundation
 import SpacetimeDB
+import simd
 
 public struct WeaponDrop: Codable, Sendable, BSATNSpecialDecodable, BSATNSpecialEncodable {
   public var id: UInt64
@@ -11,7 +12,7 @@ public struct WeaponDrop: Codable, Sendable, BSATNSpecialDecodable, BSATNSpecial
   public var damage: UInt32
   public var lobbyId: UInt64
 
-  public static func decodeBSATN(from reader: BSATNReader) throws -> WeaponDrop {
+  public static func decodeBSATN(from reader: inout BSATNReader) throws -> WeaponDrop {
     return WeaponDrop(
       id: try reader.readU64(),
       x: try reader.readFloat(),
@@ -21,7 +22,7 @@ public struct WeaponDrop: Codable, Sendable, BSATNSpecialDecodable, BSATNSpecial
     )
   }
 
-  public func encodeBSATN(to storage: BSATNStorage) throws {
+  public func encodeBSATN(to storage: inout BSATNStorage) throws {
     storage.appendU64(self.id)
     storage.appendFloat(self.x)
     storage.appendFloat(self.y)

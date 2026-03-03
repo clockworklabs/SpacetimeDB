@@ -3,12 +3,13 @@
 
 import Foundation
 import SpacetimeDB
+import simd
 
 public enum JoinLobby {
   public struct _Args: Codable, Sendable, BSATNSpecialEncodable {
     public var lobbyId: UInt64
 
-    public func encodeBSATN(to storage: BSATNStorage) throws {
+    public func encodeBSATN(to storage: inout BSATNStorage) throws {
       storage.appendU64(self.lobbyId)
     }
   }

@@ -100,7 +100,7 @@ fn get_swift_decode_expr(module: &ModuleDef, ty: &AlgebraicTypeUse, reader_expr:
         AlgebraicTypeUse::Never => "fatalError(\"Never cannot be decoded\")".to_string(),
         _ => {
             let swift_ty = get_swift_type_use(module, ty);
-            format!("try {swift_ty}.decodeBSATN(from: {reader_expr})")
+            format!("try {swift_ty}.decodeBSATN(from: &{reader_expr})")
         }
     }
 }
@@ -133,7 +133,7 @@ fn get_swift_encode_stmt(module: &ModuleDef, ty: &AlgebraicTypeUse, value_expr: 
         AlgebraicTypeUse::Never => "fatalError(\"Never cannot be encoded\")".to_string(),
         _ => {
             let _swift_ty = get_swift_type_use(module, ty);
-            format!("try {value_expr}.encodeBSATN(to: {storage_expr})")
+            format!("try {value_expr}.encodeBSATN(to: &{storage_expr})")
         }
     }
 }
@@ -178,11 +178,15 @@ impl Lang for Swift {
             if let AlgebraicTypeDef::Product(product) = &module.typespace_for_generate()[table.product_type_ref] {
                 let pk_field_name = product.elements[pk_col.idx() as usize].0.deref().to_case(Case::Camel);
                 let pk_swift_ty = get_swift_type_use(module, &product.elements[pk_col.idx() as usize].1);
-                writeln!(
-                    &mut code,
-                    "\nextension {}: Identifiable {{\n    public var id: {} {{\n        return self.{}\n    }}\n}}",
-                    row_type, pk_swift_ty, pk_field_name
-                ).unwrap();
+                if pk_field_name == "id" {
+                    writeln!(&mut code, "\nextension {}: Identifiable {{}}", row_type).unwrap();
+                } else {
+                    writeln!(
+                        &mut code,
+                        "\nextension {}: Identifiable {{\n    public var id: {} {{\n        return self.{}\n    }}\n}}",
+                        row_type, pk_swift_ty, pk_field_name
+                    ).unwrap();
+                }
             }
         }
 
@@ -217,7 +221,7 @@ impl Lang for Swift {
                 writeln!(&mut code, "").unwrap();
                 writeln!(
                     &mut code,
-                    "    public static func decodeBSATN(from reader: BSATNReader) throws -> {} {{",
+                    "    public static func decodeBSATN(from reader: inout BSATNReader) throws -> {} {{",
                     type_name
                 )
                 .unwrap();
@@ -237,7 +241,7 @@ impl Lang for Swift {
                 writeln!(&mut code, "").unwrap();
                 writeln!(
                     &mut code,
-                    "    public func encodeBSATN(to storage: BSATNStorage) throws {{"
+                    "    public func encodeBSATN(to storage: inout BSATNStorage) throws {{"
                 )
                 .unwrap();
                 for (name, ty) in &product.elements {
@@ -268,7 +272,7 @@ impl Lang for Swift {
                 writeln!(&mut code, "").unwrap();
                 writeln!(
                     &mut code,
-                    "    public static func decodeBSATN(from reader: BSATNReader) throws -> {} {{",
+                    "    public static func decodeBSATN(from reader: inout BSATNReader) throws -> {} {{",
                     type_name
                 )
                 .unwrap();
@@ -292,7 +296,7 @@ impl Lang for Swift {
                 writeln!(&mut code, "").unwrap();
                 writeln!(
                     &mut code,
-                    "    public func encodeBSATN(to storage: BSATNStorage) throws {{"
+                    "    public func encodeBSATN(to storage: inout BSATNStorage) throws {{"
                 )
                 .unwrap();
                 writeln!(&mut code, "        switch self {{").unwrap();
@@ -370,7 +374,7 @@ impl Lang for Swift {
                 writeln!(&mut code, "").unwrap();
                 writeln!(
                     &mut code,
-                    "    public static func decodeBSATN(from reader: BSATNReader) throws -> {} {{",
+                    "    public static func decodeBSATN(from reader: inout BSATNReader) throws -> {} {{",
                     type_name
                 )
                 .unwrap();
@@ -384,7 +388,7 @@ impl Lang for Swift {
                 writeln!(&mut code, "").unwrap();
                 writeln!(
                     &mut code,
-                    "    public func encodeBSATN(to storage: BSATNStorage) throws {{"
+                    "    public func encodeBSATN(to storage: inout BSATNStorage) throws {{"
                 )
                 .unwrap();
                 writeln!(&mut code, "        storage.appendU8(self.rawValue)").unwrap();
@@ -441,7 +445,7 @@ impl Lang for Swift {
         writeln!(&mut code, "").unwrap();
         writeln!(
             &mut code,
-            "        public func encodeBSATN(to storage: BSATNStorage) throws {{"
+            "        public func encodeBSATN(to storage: inout BSATNStorage) throws {{"
         )
         .unwrap();
         for (name, ty) in &reducer.params_for_generate.elements {
@@ -542,7 +546,7 @@ impl Lang for Swift {
         writeln!(&mut code, "").unwrap();
         writeln!(
             &mut code,
-            "        public func encodeBSATN(to storage: BSATNStorage) throws {{"
+            "        public func encodeBSATN(to storage: inout BSATNStorage) throws {{"
         )
         .unwrap();
         for (name, ty) in &procedure.params_for_generate.elements {

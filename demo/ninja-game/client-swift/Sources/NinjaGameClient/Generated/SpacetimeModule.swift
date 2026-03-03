@@ -3,6 +3,7 @@
 
 import Foundation
 import SpacetimeDB
+import simd
 
 public enum SpacetimeModule {
   @MainActor public static func registerTables() {

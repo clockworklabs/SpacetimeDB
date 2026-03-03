@@ -3,9 +3,12 @@
 
 import Foundation
 import SpacetimeDB
+import simd
 
 public struct WeaponDropTable {
   @MainActor public static var cache: TableCache<WeaponDrop> {
     return SpacetimeClient.clientCache.getTableCache(tableName: "weapon_drop")
   }
 }
+
+extension WeaponDrop: Identifiable {}

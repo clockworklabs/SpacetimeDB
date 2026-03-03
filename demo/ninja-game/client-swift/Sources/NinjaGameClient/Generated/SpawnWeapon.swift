@@ -3,13 +3,14 @@
 
 import Foundation
 import SpacetimeDB
+import simd
 
 public enum SpawnWeapon {
   public struct _Args: Codable, Sendable, BSATNSpecialEncodable {
     public var x: Float
     public var y: Float
 
-    public func encodeBSATN(to storage: BSATNStorage) throws {
+    public func encodeBSATN(to storage: inout BSATNStorage) throws {
       storage.appendFloat(self.x)
       storage.appendFloat(self.y)
     }

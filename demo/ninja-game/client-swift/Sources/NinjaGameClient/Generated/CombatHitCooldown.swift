@@ -3,6 +3,7 @@
 
 import Foundation
 import SpacetimeDB
+import simd
 
 public struct CombatHitCooldown: Codable, Sendable, BSATNSpecialDecodable, BSATNSpecialEncodable {
   public var id: UInt64
@@ -10,7 +11,7 @@ public struct CombatHitCooldown: Codable, Sendable, BSATNSpecialDecodable, BSATN
   public var targetId: UInt64
   public var lastHitMicros: Int64
 
-  public static func decodeBSATN(from reader: BSATNReader) throws -> CombatHitCooldown {
+  public static func decodeBSATN(from reader: inout BSATNReader) throws -> CombatHitCooldown {
     return CombatHitCooldown(
       id: try reader.readU64(),
       attackerId: try reader.readU64(),
@@ -19,7 +20,7 @@ public struct CombatHitCooldown: Codable, Sendable, BSATNSpecialDecodable, BSATN
     )
   }
 
-  public func encodeBSATN(to storage: BSATNStorage) throws {
+  public func encodeBSATN(to storage: inout BSATNStorage) throws {
     storage.appendU64(self.id)
     storage.appendU64(self.attackerId)
     storage.appendU64(self.targetId)

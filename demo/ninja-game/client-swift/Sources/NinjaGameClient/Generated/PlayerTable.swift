@@ -3,9 +3,12 @@
 
 import Foundation
 import SpacetimeDB
+import simd
 
 public struct PlayerTable {
   @MainActor public static var cache: TableCache<Player> {
     return SpacetimeClient.clientCache.getTableCache(tableName: "player")
   }
 }
+
+extension Player: Identifiable {}

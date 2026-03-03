@@ -3,12 +3,13 @@
 
 import Foundation
 import SpacetimeDB
+import simd
 
 public enum SetName {
   public struct _Args: Codable, Sendable, BSATNSpecialEncodable {
     public var name: String
 
-    public func encodeBSATN(to storage: BSATNStorage) throws {
+    public func encodeBSATN(to storage: inout BSATNStorage) throws {
       try storage.appendString(self.name)
     }
   }
