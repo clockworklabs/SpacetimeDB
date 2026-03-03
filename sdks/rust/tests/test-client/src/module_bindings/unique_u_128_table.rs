@@ -5,7 +5,7 @@
 use super::unique_u_128_type::UniqueU128;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `unique_u128`.
+/// Table handle for the table `unique_u_128`.
 ///
 /// Obtain a handle from the [`UniqueU128TableAccess::unique_u_128`] method on [`super::RemoteTables`],
 /// like `ctx.db.unique_u_128()`.
@@ -19,19 +19,19 @@ pub struct UniqueU128TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `unique_u128`.
+/// Extension trait for access to the table `unique_u_128`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait UniqueU128TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`UniqueU128TableHandle`], which mediates access to the table `unique_u128`.
+    /// Obtain a [`UniqueU128TableHandle`], which mediates access to the table `unique_u_128`.
     fn unique_u_128(&self) -> UniqueU128TableHandle<'_>;
 }
 
 impl UniqueU128TableAccess for super::RemoteTables {
     fn unique_u_128(&self) -> UniqueU128TableHandle<'_> {
         UniqueU128TableHandle {
-            imp: self.imp.get_table::<UniqueU128>("unique_u128"),
+            imp: self.imp.get_table::<UniqueU128>("unique_u_128"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -78,24 +78,7 @@ impl<'ctx> __sdk::Table for UniqueU128TableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<UniqueU128>("unique_u128");
-    _table.add_unique_constraint::<u128>("n", |row| &row.n);
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<UniqueU128>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<UniqueU128>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
-}
-
-/// Access to the `n` unique index on the table `unique_u128`,
+/// Access to the `n` unique index on the table `unique_u_128`,
 /// which allows point queries on the field of the same name
 /// via the [`UniqueU128NUnique::find`] method.
 ///
@@ -108,7 +91,7 @@ pub struct UniqueU128NUnique<'ctx> {
 }
 
 impl<'ctx> UniqueU128TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `unique_u128`.
+    /// Get a handle on the `n` unique index on the table `unique_u_128`.
     pub fn n(&self) -> UniqueU128NUnique<'ctx> {
         UniqueU128NUnique {
             imp: self.imp.get_unique_constraint::<u128>("n"),
@@ -122,5 +105,36 @@ impl<'ctx> UniqueU128NUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &u128) -> Option<UniqueU128> {
         self.imp.find(col_val)
+    }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<UniqueU128>("unique_u_128");
+    _table.add_unique_constraint::<u128>("n", |row| &row.n);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<UniqueU128>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<UniqueU128>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `UniqueU128`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait unique_u_128QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `UniqueU128`.
+    fn unique_u_128(&self) -> __sdk::__query_builder::Table<UniqueU128>;
+}
+
+impl unique_u_128QueryTableAccess for __sdk::QueryTableAccessor {
+    fn unique_u_128(&self) -> __sdk::__query_builder::Table<UniqueU128> {
+        __sdk::__query_builder::Table::new("unique_u_128")
     }
 }

@@ -1,18 +1,18 @@
-use std::collections::HashMap;
-use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
-
 use crate::expr::LeftDeepJoin;
 use crate::expr::{Expr, ProjectList, ProjectName, Relvar};
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicType;
 use spacetimedb_primitives::TableId;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::schema::TableOrViewSchema;
 use spacetimedb_sql_parser::ast::BinOp;
 use spacetimedb_sql_parser::{
     ast::{sub::SqlSelect, SqlFrom, SqlIdent, SqlJoin},
     parser::sub::parse_subscription,
 };
+use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 
 use super::{
     errors::{DuplicateName, TypingError, Unresolved, Unsupported},
@@ -35,10 +35,10 @@ pub trait SchemaView {
 }
 
 #[derive(Default)]
-pub struct Relvars(HashMap<Box<str>, Arc<TableOrViewSchema>>);
+pub struct Relvars(HashMap<RawIdentifier, Arc<TableOrViewSchema>>);
 
 impl Deref for Relvars {
-    type Target = HashMap<Box<str>, Arc<TableOrViewSchema>>;
+    type Target = HashMap<RawIdentifier, Arc<TableOrViewSchema>>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -86,7 +86,7 @@ pub trait TypeChecker {
                 {
                     // Check for duplicate aliases
                     if vars.contains_key(&alias) {
-                        return Err(DuplicateName(alias.into_string()).into());
+                        return Err(DuplicateName(alias.clone()).into());
                     }
 
                     let lhs = Box::new(join);
@@ -178,6 +178,7 @@ fn expect_table_type(expr: ProjectList) -> TypingResult<ProjectName> {
 pub mod test_utils {
     use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, ProductType};
     use spacetimedb_primitives::TableId;
+    use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_schema::{
         def::ModuleDef,
         schema::{Schema, TableOrViewSchema, TableSchema},
@@ -189,7 +190,7 @@ pub mod test_utils {
     pub fn build_module_def(types: Vec<(&str, ProductType)>) -> ModuleDef {
         let mut builder = RawModuleDefV9Builder::new();
         for (name, ty) in types {
-            builder.build_table_with_new_type(name, ty, true);
+            builder.build_table_with_new_type(RawIdentifier::new(name), ty, true);
         }
         builder.finish().try_into().expect("failed to generate module def")
     }

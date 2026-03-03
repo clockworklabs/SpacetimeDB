@@ -3,17 +3,16 @@ title: What is SpacetimeDB?
 slug: /intro/what-is-spacetimedb
 ---
 
-# What is SpacetimeDB?
 
 SpacetimeDB is a database that is also a server.
 
-SpacetimeDB is a full-featured relational database system that lets you run your application logic **inside** the database. You no longer need to deploy a separate web or game server. [Several programming languages](/intro/language-support) are supported, including C# and Rust. You can still write authorization logic, just like you would in a traditional server.
+SpacetimeDB is a full-featured relational database system that lets you run your application logic **inside** the database. You no longer need to deploy a separate web or game server. [Several programming languages](./00300-language-support.md) are supported, including C# and Rust. You can still write authorization logic, just like you would in a traditional server.
 
 This means that you can write your entire application in a single language and deploy it as a single binary. No more microservices, no more containers, no more Kubernetes, no more Docker, no more VMs, no more DevOps, no more infrastructure, no more ops, no more servers.
 
 <figure>
   <img
-    src="/images/basic-architecture-diagram.png"
+    src="/docs/images/basic-architecture-diagram.png"
     alt="SpacetimeDB Architecture"
     style={{ width: '100%' }}
   />
@@ -26,8 +25,6 @@ This means that you can write your entire application in a single language and d
   </figcaption>
 </figure>
 
-This is similar to ["smart contracts"](https://en.wikipedia.org/wiki/Smart_contract), except that SpacetimeDB is a **database** and has nothing to do with blockchain. Because it isn't a blockchain, it can be dramatically faster than many "smart contract" systems.
-
 In fact, it's so fast that we've been able to write the entire backend of our MMORPG [BitCraft Online](https://bitcraftonline.com) as a single SpacetimeDB database. Everything in the game -- chat messages, items, resources, terrain, and player locations -- is stored and processed by the database. SpacetimeDB [automatically mirrors](#state-mirroring) relevant state to connected players in real-time.
 
 SpacetimeDB is optimized for maximum speed and minimum latency, rather than batch processing or analytical workloads. It is designed for real-time applications like games, chat, and collaboration tools.
@@ -38,7 +35,7 @@ Speed and latency is achieved by holding all of your application state in memory
 
 <figure>
   <img
-    src="/images/workflow-preview-diagram.png"
+    src="/docs/images/workflow-preview-diagram.png"
     alt="SpacetimeDB Application Workflow Preview"
     style={{ width: '100%' }}
   />
@@ -59,6 +56,6 @@ The above illustrates the workflow when using SpacetimeDB.
 
 ## State Mirroring
 
-SpacetimeDB can generate client code in a [variety of languages](/intro/language-support). This creates a client library custom-designed to talk to your database. It provides easy-to-use interfaces for connecting to the database and submitting requests. It can also **automatically mirror state** from your database to client applications.
+SpacetimeDB can generate client code in a [variety of languages](./00300-language-support.md). This creates a client library custom-designed to talk to your database. It provides easy-to-use interfaces for connecting to the database and submitting requests. It can also **automatically mirror state** from your database to client applications.
 
-You write SQL queries specifying what information a client is interested in -- for instance, the terrain and items near a player's avatar. SpacetimeDB will generate types in your client language for the relevant tables, and feed clients a stream of live updates whenever the database state changes. Note that this is a **read-only** mirror -- the only way to change the database is to submit requests, which are validated on the server.
+You define subscriptions specifying what information a client is interested in, typically with the type-safe query builder (or raw SQL for advanced cases) -- for instance, the terrain and items near a player's avatar. SpacetimeDB will generate types in your client language for the relevant tables, and feed clients a stream of live updates whenever the database state changes. Note that this is a **read-only** mirror -- the only way to change the database is to submit requests, which are validated on the server.

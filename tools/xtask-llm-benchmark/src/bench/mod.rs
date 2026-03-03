@@ -5,7 +5,7 @@ mod templates;
 pub mod types;
 pub(crate) mod utils;
 
-pub use publishers::{DotnetPublisher, Publisher, SpacetimeRustPublisher};
+pub use publishers::{DotnetPublisher, Publisher, SpacetimeRustPublisher, TypeScriptPublisher};
 pub use runner::TaskRunner;
 pub use types::{RunOutcome, TaskPaths};
 pub use utils::bench_route_concurrency;

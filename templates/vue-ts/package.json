@@ -1,0 +1,25 @@
+{
+  "name": "@clockworklabs/vue-ts",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview",
+    "generate": "pnpm --dir spacetimedb install && cargo run -p gen-bindings -- --out-dir src/module_bindings --project-path spacetimedb && prettier --write src/module_bindings",
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb",
+    "spacetime:publish:local": "spacetime publish --project-path spacetimedb --server local",
+    "spacetime:publish": "spacetime publish --project-path spacetimedb --server maincloud"
+  },
+  "dependencies": {
+    "spacetimedb": "workspace:*",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.4",
+    "typescript": "~5.6.2",
+    "vite": "^6.4.1",
+    "vue-tsc": "^2.2.0"
+  }
+}

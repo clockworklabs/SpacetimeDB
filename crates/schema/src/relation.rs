@@ -1,4 +1,5 @@
 use crate::def::error::{RelationError, TypeError};
+use crate::table_name::TableName;
 use core::fmt;
 use core::hash::Hash;
 use derive_more::From;
@@ -92,7 +93,7 @@ impl Column {
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Header {
     pub table_id: TableId,
-    pub table_name: Box<str>,
+    pub table_name: TableName,
     pub fields: Vec<Column>,
     pub constraints: BTreeMap<ColList, Constraints>,
 }
@@ -103,7 +104,7 @@ impl Header {
     /// `uncombined_constraints` will be normalized using [`combine_constraints`].
     pub fn new(
         table_id: TableId,
-        table_name: Box<str>,
+        table_name: TableName,
         fields: Vec<Column>,
         uncombined_constraints: impl IntoIterator<Item = (ColList, Constraints)>,
     ) -> Self {
@@ -310,7 +311,7 @@ mod tests {
 
         let id = id.into();
         let fields = [fields.0, fields.1].map(|col| Column::new(FieldName::new(id, col), AlgebraicType::I8));
-        Header::new(id, name.into(), fields.into(), ct)
+        Header::new(id, TableName::for_test(name), fields.into(), ct)
     }
 
     #[test]

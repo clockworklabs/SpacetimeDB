@@ -1,4 +1,4 @@
-﻿Write a SpacetimeDB backend module in C# that defines a struct type and uses it in a table.
+Write a SpacetimeDB backend module in C# that defines a struct type and uses it in a table.
 
 TYPES
 - Struct: Position
@@ -7,7 +7,7 @@ TYPES
     - Y: int
 
 TABLE
-- entities
+- Entity
   - Struct: Entity
   - Fields:
     - Id: int (primary key)

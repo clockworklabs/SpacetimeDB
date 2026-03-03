@@ -158,7 +158,7 @@ class ReplicationTest(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{duration, ReducerContext, Table};
 
-#[spacetimedb::table(name = counter, public)]
+#[spacetimedb::table(accessor = counter, public)]
 pub struct Counter {
     #[primary_key]
     #[auto_inc]
@@ -167,7 +167,7 @@ pub struct Counter {
     value: u64,
 }
 
-#[spacetimedb::table(name = schedule_counter, public, scheduled(increment, at = sched_at))]
+#[spacetimedb::table(accessor = schedule_counter, public, scheduled(increment, at = sched_at))]
 pub struct ScheduledCounter {
     #[primary_key]
     #[auto_inc]
@@ -207,7 +207,7 @@ fn start(ctx: &ReducerContext, id: u64, count: u64) {
     });
 }
 
-#[spacetimedb::table(name = message, public)]
+#[spacetimedb::table(accessor = message, public)]
 pub struct Message {
     #[primary_key]
     #[auto_inc]

@@ -78,12 +78,6 @@ impl<'ctx> __sdk::Table for PlayerTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<Player>("player");
-    _table.add_unique_constraint::<u64>("entity_id", |row| &row.entity_id);
-    _table.add_unique_constraint::<__sdk::Identity>("identity", |row| &row.identity);
-}
 pub struct PlayerUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PlayerTableHandle<'ctx> {
@@ -99,17 +93,6 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PlayerTableHandle<'ctx> {
     fn remove_on_update(&self, callback: PlayerUpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<Player>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<Player>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
 }
 
 /// Access to the `entity_id` unique index on the table `player`,
@@ -169,5 +152,37 @@ impl<'ctx> PlayerIdentityUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &__sdk::Identity) -> Option<Player> {
         self.imp.find(col_val)
+    }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<Player>("player");
+    _table.add_unique_constraint::<u64>("entity_id", |row| &row.entity_id);
+    _table.add_unique_constraint::<__sdk::Identity>("identity", |row| &row.identity);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<Player>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<Player>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `Player`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait playerQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `Player`.
+    fn player(&self) -> __sdk::__query_builder::Table<Player>;
+}
+
+impl playerQueryTableAccess for __sdk::QueryTableAccessor {
+    fn player(&self) -> __sdk::__query_builder::Table<Player> {
+        __sdk::__query_builder::Table::new("player")
     }
 }

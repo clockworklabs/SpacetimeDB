@@ -1,12 +1,20 @@
+#![allow(clippy::disallowed_macros)]
+
 use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
+use std::ffi::OsStr;
 use std::path::Path;
+use std::path::PathBuf;
 use std::{env, fs};
 
 const README_PATH: &str = "tools/ci/README.md";
 
 mod ci_docs;
+mod smoketest;
+mod util;
+
+use util::ensure_repo_root;
 
 /// SpacetimeDB CI tasks
 ///
@@ -30,6 +38,175 @@ struct Cli {
     skip: Vec<String>,
 }
 
+fn check_global_json_policy() -> Result<()> {
+    ensure_repo_root()?;
+
+    let root_json = Path::new("global.json");
+    let root_contents = fs::read_to_string(root_json)?;
+
+    fn find_all_global_json(dir: &Path) -> Result<Vec<PathBuf>> {
+        let mut out = Vec::new();
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            let ft = entry.file_type()?;
+            if ft.is_dir() {
+                out.extend(find_all_global_json(&path)?);
+            } else if path.file_name() == Some(OsStr::new("global.json")) {
+                out.push(path);
+            }
+        }
+        Ok(out)
+    }
+
+    let globals = find_all_global_json(Path::new("."))?;
+
+    let mut ok = true;
+    for p in globals {
+        let meta = fs::symlink_metadata(&p)?;
+        let is_symlink = meta.file_type().is_symlink();
+        let is_template_global_json = p.strip_prefix(".").unwrap_or(&p).starts_with(Path::new("templates"));
+        if is_template_global_json && is_symlink {
+            eprintln!(
+                "Error: {} is a symlink. Template files must not be symlinks; they are copied literally and this will break if the CLI is built under Windows where symlinks are not supported.",
+                p.display()
+            );
+            ok = false;
+        }
+
+        let contents = fs::read_to_string(&p)?;
+        if contents != root_contents {
+            eprintln!("Error: {} does not match the root global.json contents", p.display());
+            ok = false;
+        } else if !is_template_global_json || !is_symlink {
+            println!("OK: {}", p.display());
+        }
+    }
+
+    if !ok {
+        bail!("global.json policy check failed");
+    }
+
+    Ok(())
+}
+
+fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
+    let skeleton_base = Path::new("sdks/csharp/unity-meta-skeleton~");
+    let skeleton_root = skeleton_base.join(pkg_id);
+    if !skeleton_root.exists() {
+        return Ok(());
+    }
+
+    let pkg_root = Path::new("sdks/csharp/packages").join(pkg_id);
+    if !pkg_root.exists() {
+        return Ok(());
+    }
+
+    // Copy spacetimedb.<pkg>.meta
+    let pkg_root_meta = skeleton_base.join(format!("{pkg_id}.meta"));
+    if pkg_root_meta.exists() {
+        if let Some(parent) = pkg_root.parent() {
+            let pkg_meta_dst = parent.join(format!("{pkg_id}.meta"));
+            fs::copy(&pkg_root_meta, &pkg_meta_dst)?;
+        }
+    }
+
+    let versioned_dir = match find_only_subdir(&pkg_root) {
+        Ok(dir) => dir,
+        Err(err) => {
+            log::info!("Skipping Unity meta overlay for {pkg_id}: could not locate restored version dir: {err}");
+            return Ok(());
+        }
+    };
+
+    // If version.meta exists under the skeleton package, rename it to match the restored version dir.
+    let version_meta_template = skeleton_root.join("version.meta");
+    if version_meta_template.exists() {
+        if let Some(parent) = versioned_dir.parent() {
+            let version_name = versioned_dir
+                .file_name()
+                .expect("versioned directory should have a file name");
+            let version_meta_dst = parent.join(format!("{}.meta", version_name.to_string_lossy()));
+            fs::copy(&version_meta_template, &version_meta_dst)?;
+        }
+    }
+
+    copy_overlay_dir(&skeleton_root, &versioned_dir)
+}
+
+fn clear_restored_package_dirs(pkg_id: &str) -> Result<()> {
+    let pkg_root = Path::new("sdks/csharp/packages").join(pkg_id);
+    if !pkg_root.exists() {
+        return Ok(());
+    }
+
+    fs::remove_dir_all(&pkg_root)?;
+
+    Ok(())
+}
+
+fn find_only_subdir(dir: &Path) -> Result<PathBuf> {
+    let mut subdirs: Vec<PathBuf> = vec![];
+
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            subdirs.push(entry.path());
+        }
+    }
+
+    match subdirs.as_slice() {
+        [] => Err(anyhow::anyhow!(
+            "Could not find a restored versioned directory under {}",
+            dir.display()
+        )),
+        [only] => Ok(only.clone()),
+        _ => Err(anyhow::anyhow!(
+            "Expected exactly one restored versioned directory under {}, found {}",
+            dir.display(),
+            subdirs.len()
+        )),
+    }
+}
+
+fn copy_overlay_dir(src: &Path, dst: &Path) -> Result<()> {
+    if !src.exists() {
+        bail!("Skeleton directory does not exist: {}", src.display());
+    }
+    if !dst.exists() {
+        bail!("Destination directory does not exist: {}", dst.display());
+    }
+
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            if dst_path.exists() {
+                copy_overlay_dir(&src_path, &dst_path)?;
+            }
+        } else {
+            if src_path.extension() == Some(OsStr::new("meta")) {
+                let asset_path = dst_path
+                    .parent()
+                    .expect("dst_path should have a parent")
+                    .join(dst_path.file_stem().expect(".meta file should have a file stem"));
+
+                if asset_path.exists() {
+                    fs::copy(&src_path, &dst_path)?;
+                } else if dst_path.exists() {
+                    fs::remove_file(&dst_path)?;
+                }
+                continue;
+            }
+
+            fs::copy(&src_path, &dst_path)?;
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Subcommand)]
 enum CiCmd {
     /// Runs tests
@@ -46,16 +223,16 @@ enum CiCmd {
     ///
     /// Runs tests for the codegen crate and builds a test module with the wasm bindings.
     WasmBindings,
+    /// Builds and packs C# DLLs and NuGet packages for local Unity workflows
+    ///
+    /// Packs the in-repo C# NuGet packages and restores the C# SDK to populate `sdks/csharp/packages/**`.
+    /// Then overlays Unity `.meta` skeleton files from `sdks/csharp/unity-meta-skeleton~/**` onto the restored
+    /// versioned package directory, so Unity can associate stable meta files with the most recently built package.
+    Dlls,
     /// Runs smoketests
     ///
     /// Executes the smoketests suite with some default exclusions.
-    Smoketests {
-        #[arg(
-            trailing_var_arg = true,
-            long_help = "Additional arguments to pass to the smoketests runner. These are usually set by the CI environment, such as `-- --docker`"
-        )]
-        args: Vec<String>,
-    },
+    Smoketests(smoketest::SmoketestsArgs),
     /// Tests the update flow
     ///
     /// Tests the self-update flow by building the spacetimedb-update binary for the specified
@@ -90,6 +267,9 @@ enum CiCmd {
         )]
         check: bool,
     },
+
+    /// Verify that any non-root global.json files are symlinks to the root global.json.
+    GlobalJsonPolicy,
 }
 
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
@@ -109,15 +289,6 @@ fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn infer_python() -> String {
-    let py3_available = cmd!("python3", "--version").run().is_ok();
-    if py3_available {
-        "python3".to_string()
-    } else {
-        "python".to_string()
-    }
-}
-
 fn main() -> Result<()> {
     env_logger::init();
 
@@ -127,7 +298,36 @@ fn main() -> Result<()> {
         Some(CiCmd::Test) => {
             // TODO: This doesn't work on at least user Linux machines, because something here apparently uses `sudo`?
 
-            cmd!("cargo", "test", "--all", "--", "--skip", "unreal").run()?;
+            // Exclude smoketests from `cargo test --all` since they require pre-built binaries.
+            // Smoketests have their own dedicated command: `cargo ci smoketests`
+            cmd!(
+                "cargo",
+                "test",
+                "--all",
+                "--exclude",
+                "spacetimedb-smoketests",
+                "--exclude",
+                "spacetimedb-sdk",
+                "--",
+                "--test-threads=2",
+                "--skip",
+                "unreal"
+            )
+            .run()?;
+            // SDK procedure tests intentionally make localhost HTTP requests.
+            cmd!(
+                "cargo",
+                "test",
+                "-p",
+                "spacetimedb-sdk",
+                "--features",
+                "allow_loopback_http_for_tests",
+                "--",
+                "--test-threads=2",
+                "--skip",
+                "unreal"
+            )
+            .run()?;
             // TODO: This should check for a diff at the start. If there is one, we should alert the user
             // that we're disabling diff checks because they have a dirty git repo, and to re-run in a clean one
             // if they want those checks.
@@ -191,6 +391,8 @@ fn main() -> Result<()> {
 
         Some(CiCmd::WasmBindings) => {
             cmd!("cargo", "test", "-p", "spacetimedb-codegen").run()?;
+            // Pre-build the CLI so that it _doesn't_ get `cargo update`d, since that may break the build.
+            cmd!("cargo", "build", "-p", "spacetimedb-cli").run()?;
             // Make sure the `Cargo.lock` file reflects the latest available versions.
             // This is what users would end up with on a fresh module, so we want to
             // catch any compile errors arising from a different transitive closure
@@ -198,29 +400,93 @@ fn main() -> Result<()> {
             //
             // For context see also: https://github.com/clockworklabs/SpacetimeDB/pull/2714
             cmd!("cargo", "update").run()?;
+            let cli_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .ancestors()
+                .nth(2)
+                .unwrap()
+                .join("target/debug/spacetimedb-cli")
+                .with_extension(std::env::consts::EXE_EXTENSION);
+            cmd!(cli_path, "build", "--module-path", "modules/module-test",).run()?;
+        }
+
+        Some(CiCmd::Dlls) => {
+            ensure_repo_root()?;
+
             cmd!(
-                "cargo",
-                "run",
-                "-p",
-                "spacetimedb-cli",
-                "--",
-                "build",
-                "--project-path",
-                "modules/module-test",
+                "dotnet",
+                "pack",
+                "crates/bindings-csharp/BSATN.Runtime",
+                "-c",
+                "Release"
             )
+            .run()?;
+            cmd!("dotnet", "pack", "crates/bindings-csharp/Runtime", "-c", "Release").run()?;
+
+            let repo_root = env::current_dir()?;
+            let bsatn_source = repo_root.join("crates/bindings-csharp/BSATN.Runtime/bin/Release");
+            let runtime_source = repo_root.join("crates/bindings-csharp/Runtime/bin/Release");
+
+            let nuget_config_dir = tempfile::tempdir()?;
+            let nuget_config_path = nuget_config_dir.path().join("nuget.config");
+            let nuget_config_contents = format!(
+                r#"<?xml version="1.0" encoding="utf-8"?>
+            <configuration>
+              <packageSources>
+                <clear />
+                <add key="Local SpacetimeDB.BSATN.Runtime" value="{}" />
+                <add key="Local SpacetimeDB.Runtime" value="{}" />
+                <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+              </packageSources>
+              <packageSourceMapping>
+                <packageSource key="Local SpacetimeDB.BSATN.Runtime">
+                  <package pattern="SpacetimeDB.BSATN.Runtime" />
+                </packageSource>
+                <packageSource key="Local SpacetimeDB.Runtime">
+                  <package pattern="SpacetimeDB.Runtime" />
+                </packageSource>
+                <packageSource key="nuget.org">
+                  <package pattern="*" />
+                </packageSource>
+              </packageSourceMapping>
+            </configuration>
+            "#,
+                bsatn_source.display(),
+                runtime_source.display(),
+            );
+            fs::write(&nuget_config_path, nuget_config_contents)?;
+
+            let nuget_config_path_str = nuget_config_path.to_string_lossy().to_string();
+
+            clear_restored_package_dirs("spacetimedb.bsatn.runtime")?;
+            clear_restored_package_dirs("spacetimedb.runtime")?;
+
+            cmd!(
+                "dotnet",
+                "restore",
+                "SpacetimeDB.ClientSDK.csproj",
+                "--configfile",
+                &nuget_config_path_str,
+            )
+            .dir("sdks/csharp")
+            .run()?;
+
+            overlay_unity_meta_skeleton("spacetimedb.bsatn.runtime")?;
+            overlay_unity_meta_skeleton("spacetimedb.runtime")?;
+
+            cmd!(
+                "dotnet",
+                "pack",
+                "SpacetimeDB.ClientSDK.csproj",
+                "-c",
+                "Release",
+                "--no-restore"
+            )
+            .dir("sdks/csharp")
             .run()?;
         }
 
-        Some(CiCmd::Smoketests { args: smoketest_args }) => {
-            let python = infer_python();
-            cmd(
-                python,
-                ["-m", "smoketests"]
-                    .into_iter()
-                    .map(|s| s.to_string())
-                    .chain(smoketest_args),
-            )
-            .run()?;
+        Some(CiCmd::Smoketests(args)) => {
+            smoketest::run(args)?;
         }
 
         Some(CiCmd::UpdateFlow {
@@ -301,6 +567,10 @@ fn main() -> Result<()> {
                 fs::write(path, readme_content)?;
                 log::info!("Wrote CLI docs to {}", path.display());
             }
+        }
+
+        Some(CiCmd::GlobalJsonPolicy) => {
+            check_global_json_policy()?;
         }
 
         None => run_all_clap_subcommands(&cli.skip)?,

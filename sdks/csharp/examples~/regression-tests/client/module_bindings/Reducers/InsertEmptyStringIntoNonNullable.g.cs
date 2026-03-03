@@ -17,7 +17,7 @@ namespace SpacetimeDB.Types
 
         public void InsertEmptyStringIntoNonNullable()
         {
-            conn.InternalCallReducer(new Reducer.InsertEmptyStringIntoNonNullable(), this.SetCallReducerFlags.InsertEmptyStringIntoNonNullableFlags);
+            conn.InternalCallReducer(new Reducer.InsertEmptyStringIntoNonNullable());
         }
 
         public bool InvokeInsertEmptyStringIntoNonNullable(ReducerEventContext ctx, Reducer.InsertEmptyStringIntoNonNullable args)
@@ -47,13 +47,7 @@ namespace SpacetimeDB.Types
         [DataContract]
         public sealed partial class InsertEmptyStringIntoNonNullable : Reducer, IReducerArgs
         {
-            string IReducerArgs.ReducerName => "InsertEmptyStringIntoNonNullable";
+            string IReducerArgs.ReducerName => "insert_empty_string_into_non_nullable";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags InsertEmptyStringIntoNonNullableFlags;
-        public void InsertEmptyStringIntoNonNullable(CallReducerFlags flags) => InsertEmptyStringIntoNonNullableFlags = flags;
     }
 }

@@ -1,6 +1,7 @@
 use crate::error::IdentifierError;
 use spacetimedb_data_structures::map::{Equivalent, HashSet};
-use spacetimedb_sats::{de, ser};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st};
 use std::fmt::{self, Debug, Display};
 use std::ops::Deref;
 use unicode_ident::{is_xid_continue, is_xid_start};
@@ -23,18 +24,28 @@ lazy_static::lazy_static! {
 /// [`String::to_uppercase`](https://doc.rust-lang.org/std/string/struct.String.html#method.to_uppercase) will be rejected.
 ///
 /// The list of reserved words can be found in the file `SpacetimeDB/crates/sats/db/reserved_identifiers.txt`.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, de::Deserialize, ser::Serialize)]
-#[sats(crate = spacetimedb_sats)]
+///
+/// Internally, this is just a raw identifier with some validation on construction.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Identifier {
-    id: Box<str>,
+    id: RawIdentifier,
 }
 
+impl_st!([] Identifier, ts => RawIdentifier::make_type(ts));
+impl_serialize!([] Identifier, (self, ser) => ser.serialize_str(&self.id));
+impl_deserialize!([] Identifier, de => RawIdentifier::deserialize(de).map(Self::new_assume_valid));
+
 impl Identifier {
+    /// Returns a new identifier without validating the input.
+    pub fn new_assume_valid(name: RawIdentifier) -> Self {
+        Self { id: name }
+    }
+
     /// Validates that the input string is a valid identifier.
     ///
     /// Currently, this rejects non-canonicalized identifiers.
     /// Eventually, it will be changed to canonicalize the input string.
-    pub fn new(name: Box<str>) -> Result<Self, IdentifierError> {
+    pub fn new(name: RawIdentifier) -> Result<Self, IdentifierError> {
         if name.is_empty() {
             return Err(IdentifierError::Empty {});
         }
@@ -70,6 +81,15 @@ impl Identifier {
         Ok(Identifier { id: name })
     }
 
+    pub fn for_test(name: impl AsRef<str>) -> Self {
+        Identifier::new(RawIdentifier::new(name.as_ref())).unwrap()
+    }
+
+    /// Returns the raw identifier of this identifier.
+    pub fn as_raw(&self) -> &RawIdentifier {
+        &self.id
+    }
+
     /// Check if a string is a reserved identifier.
     pub fn is_reserved(name: &str) -> bool {
         RESERVED_IDENTIFIERS.contains(&*name.to_uppercase())
@@ -96,15 +116,15 @@ impl Deref for Identifier {
     }
 }
 
-impl From<Identifier> for Box<str> {
-    fn from(value: Identifier) -> Self {
-        value.id
-    }
-}
-
 impl Equivalent<Identifier> for str {
     fn equivalent(&self, other: &Identifier) -> bool {
         self == &other.id[..]
+    }
+}
+
+impl From<Identifier> for RawIdentifier {
+    fn from(id: Identifier) -> Self {
+        id.id
     }
 }
 
@@ -113,30 +133,34 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
 
+    fn new(s: &str) -> Result<Identifier, IdentifierError> {
+        Identifier::new(RawIdentifier::new(s))
+    }
+
     #[test]
     fn test_a_bunch_of_identifiers() {
-        assert!(Identifier::new("friends".into()).is_ok());
-        assert!(Identifier::new("Oysters".into()).is_ok());
-        assert!(Identifier::new("_hello".into()).is_ok());
-        assert!(Identifier::new("bananas_there_".into()).is_ok());
-        assert!(Identifier::new("Москва".into()).is_ok());
-        assert!(Identifier::new("東京".into()).is_ok());
-        assert!(Identifier::new("bees123".into()).is_ok());
+        assert!(new("friends").is_ok());
+        assert!(new("Oysters").is_ok());
+        assert!(new("_hello").is_ok());
+        assert!(new("bananas_there_").is_ok());
+        assert!(new("Москва").is_ok());
+        assert!(new("東京").is_ok());
+        assert!(new("bees123").is_ok());
 
-        assert!(Identifier::new("".into()).is_err());
-        assert!(Identifier::new("123bees".into()).is_err());
-        assert!(Identifier::new("\u{200B}hello".into()).is_err()); // zero-width space
-        assert!(Identifier::new(" hello".into()).is_err());
-        assert!(Identifier::new("hello ".into()).is_err());
-        assert!(Identifier::new("🍌".into()).is_err()); // ;-; the unicode committee is no fun
-        assert!(Identifier::new("".into()).is_err());
+        assert!(new("").is_err());
+        assert!(new("123bees").is_err());
+        assert!(new("\u{200B}hello").is_err()); // zero-width space
+        assert!(new(" hello").is_err());
+        assert!(new("hello ").is_err());
+        assert!(new("🍌").is_err()); // ;-; the unicode committee is no fun
+        assert!(new("").is_err());
     }
 
     #[test]
     fn test_canonicalization() {
-        assert!(Identifier::new("_\u{0041}\u{030A}".into()).is_err());
+        assert!(new("_\u{0041}\u{030A}").is_err());
         // canonicalized version of the above.
-        assert!(Identifier::new("_\u{00C5}".into()).is_ok());
+        assert!(new("_\u{00C5}").is_ok());
     }
 
     proptest! {
@@ -145,7 +169,7 @@ mod tests {
             // Ha! Proptest will reliably find these.
             prop_assume!(!Identifier::is_reserved(&s));
 
-            prop_assert!(Identifier::new(s.into()).is_ok());
+            prop_assert!(new(&s).is_ok());
         }
     }
 }

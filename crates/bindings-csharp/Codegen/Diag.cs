@@ -215,9 +215,9 @@ internal static class ErrorDescriptor
     public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewInvalidReturn =
         new(
             group,
-            "Views must return Vec<T> or Option<T>",
-            method => $"View '{method.Identifier}' must return Vec<T> or Option<T>.",
-            method => method
+            "Views must return T?, List<T>, or IQuery<T>",
+            method => $"View '{method.Identifier}' must return T?, List<T>, or IQuery<T>",
+            method => method.ReturnType
         );
 
     // TODO: Remove once Views support Private: Views must be Public currently
@@ -238,5 +238,23 @@ internal static class ErrorDescriptor
             method =>
                 $"View '{method.Identifier}' must have no arguments beyond the context. This is a temporary limitation.",
             method => method
+        );
+
+    public static readonly ErrorDescriptor<IFieldSymbol> SettingsMustBeConstCaseConversionPolicy =
+        new(
+            group,
+            "[SpacetimeDB.Settings] field must be a const CaseConversionPolicy",
+            field =>
+                $"Settings field {field.Name} must be declared as 'public const SpacetimeDB.CaseConversionPolicy ...'.",
+            field => field
+        );
+
+    public static readonly ErrorDescriptor<IEnumerable<string>> DuplicateSettings =
+        new(
+            group,
+            "Multiple [SpacetimeDB.Settings] declarations",
+            fullNames =>
+                $"[SpacetimeDB.Settings] is declared multiple times: {string.Join(", ", fullNames)}",
+            _ => Location.None
         );
 }

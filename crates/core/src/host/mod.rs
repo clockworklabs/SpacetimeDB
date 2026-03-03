@@ -53,7 +53,7 @@ impl FunctionArgs {
     fn into_tuple<Def: FunctionDef>(self, seed: ArgsSeed<'_, Def>) -> Result<ArgsTuple, InvalidFunctionArguments> {
         self._into_tuple(seed).map_err(|err| InvalidFunctionArguments {
             err,
-            function_name: seed.name().into(),
+            function_name: seed.name().clone(),
         })
     }
     fn _into_tuple<Def: FunctionDef>(self, seed: ArgsSeed<'_, Def>) -> anyhow::Result<ArgsTuple> {
@@ -113,6 +113,7 @@ impl Default for ArgsTuple {
 
 // TODO(noa): replace imports from this module with imports straight from primitives.
 pub use spacetimedb_primitives::ReducerId;
+use spacetimedb_schema::identifier::Identifier;
 
 /// Inner error type for [`InvalidReducerArguments`] and [`InvalidProcedureArguments`].
 #[derive(thiserror::Error, Debug)]
@@ -120,7 +121,7 @@ pub use spacetimedb_primitives::ReducerId;
 pub struct InvalidFunctionArguments {
     #[source]
     err: anyhow::Error,
-    function_name: Box<str>,
+    function_name: Identifier,
 }
 
 /// Newtype over [`InvalidFunctionArguments`] which renders with the word "reducer".

@@ -1,0 +1,15 @@
+Write a SpacetimeDB backend module in TypeScript that demonstrates product types (structs) used in tables.
+
+TYPES
+- Score
+  - left: number (i32)
+  - right: number (i32)
+
+TABLE
+- result
+  - Fields:
+    - id: number (i32, primary key)
+    - value: Score
+
+REDUCERS
+- setScore: given id:number, left:number, right:number, insert row with value=Score{left, right}

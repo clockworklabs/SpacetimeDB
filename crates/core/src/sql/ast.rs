@@ -12,6 +12,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_schema::def::error::RelationError;
 use spacetimedb_schema::relation::{ColExpr, FieldName};
 use spacetimedb_schema::schema::{ColumnSchema, TableOrViewSchema, TableSchema};
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::{Expr, FieldExpr, FieldOp};
 use spacetimedb_vm::operator::{OpCmp, OpLogic, OpQuery};
@@ -170,7 +171,7 @@ impl From {
     }
 
     /// Returns all the table names as a `Vec<String>`, including the ones inside the joins.
-    pub fn table_names(&self) -> Vec<Box<str>> {
+    pub fn table_names(&self) -> Vec<TableName> {
         self.iter_tables().map(|x| x.table_name.clone()).collect()
     }
 
@@ -491,9 +492,8 @@ impl<T> Deref for SchemaViewer<'_, T> {
 
 impl<T: StateView> SchemaView for SchemaViewer<'_, T> {
     fn table_id(&self, name: &str) -> Option<TableId> {
-        // Get the schema from the in-memory state instead of fetching from the database for speed
         self.tx
-            .table_id_from_name(name)
+            .table_id_from_name_or_alias(name)
             .ok()
             .flatten()
             .and_then(|table_id| self.schema_for_table(table_id))

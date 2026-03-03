@@ -57,7 +57,7 @@ namespace SpacetimeDB.Types
         [DataContract]
         public sealed partial class InsertWithTxRetryArgs : Procedure, IProcedureArgs
         {
-            string IProcedureArgs.ProcedureName => "InsertWithTxRetry";
+            string IProcedureArgs.ProcedureName => "insert_with_tx_retry";
         }
 
     }

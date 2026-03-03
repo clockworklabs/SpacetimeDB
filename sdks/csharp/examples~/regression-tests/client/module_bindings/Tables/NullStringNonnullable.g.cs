@@ -36,4 +36,26 @@ namespace SpacetimeDB.Types
 
         public readonly NullStringNonnullableHandle NullStringNonnullable;
     }
+
+    public sealed class NullStringNonnullableCols
+    {
+        public global::SpacetimeDB.Col<NullStringNonNullable, ulong> Id { get; }
+        public global::SpacetimeDB.Col<NullStringNonNullable, string> Name { get; }
+
+        public NullStringNonnullableCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.Col<NullStringNonNullable, ulong>(tableName, "id");
+            Name = new global::SpacetimeDB.Col<NullStringNonNullable, string>(tableName, "name");
+        }
+    }
+
+    public sealed class NullStringNonnullableIxCols
+    {
+        public global::SpacetimeDB.IxCol<NullStringNonNullable, ulong> Id { get; }
+
+        public NullStringNonnullableIxCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.IxCol<NullStringNonNullable, ulong>(tableName, "id");
+        }
+    }
 }

@@ -14,10 +14,10 @@ struct TESTCLIENT_API FInsertUniqueBoolArgs
     GENERATED_BODY()
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    bool B;
+    bool B = false;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FInsertUniqueBoolArgs() = default;
 
@@ -49,9 +49,9 @@ class TESTCLIENT_API UInsertUniqueBoolReducer : public UReducerBase
 
 public:
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    bool B;
+    bool B = false;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
 };
 

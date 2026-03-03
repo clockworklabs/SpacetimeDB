@@ -186,6 +186,7 @@ impl SnapshotWorkerActor {
     /// message is received, unless a new snapshot request is already being
     /// processed.
     async fn run(mut self) {
+        let database_identity = self.snapshot_repo.database_identity();
         let mut database_state: Option<WeakDatabaseState> = None;
         while let Some(req) = self.snapshot_requests.next().await {
             match req {
@@ -193,7 +194,7 @@ impl SnapshotWorkerActor {
                     let res = self
                         .maybe_take_snapshot(database_state.as_ref())
                         .await
-                        .inspect_err(|e| warn!("SnapshotWorker: {e:#}"));
+                        .inspect_err(|e| warn!("database={database_identity} SnapshotWorker: {e:#}"));
                     if let Ok(snapshot_offset) = res {
                         self.maybe_compress_snapshots(snapshot_offset).await;
                         self.snapshot_created.send_replace(snapshot_offset);

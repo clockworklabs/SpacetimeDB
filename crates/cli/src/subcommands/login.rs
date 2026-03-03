@@ -31,6 +31,12 @@ pub fn cli() -> Command {
                 .group("login-method")
                 .help("Bypass the login flow and use a login token directly"),
         )
+        .arg(
+            Arg::new("no-browser")
+                .long("no-browser")
+                .action(ArgAction::SetTrue)
+                .help("Do not open a browser window"),
+        )
         .about("Manage your login to the SpacetimeDB CLI")
 }
 
@@ -54,6 +60,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let host: &String = args.get_one("auth-host").unwrap();
     let host = Url::parse(host)?;
     let server_issued_login: Option<&String> = args.get_one("server");
+    let open_browser = !args.get_flag("no-browser");
 
     if let Some(token) = spacetimedb_token {
         config.set_spacetimedb_token(token.clone());
@@ -63,9 +70,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     if let Some(server) = server_issued_login {
         let host = Url::parse(&config.get_host_url(Some(server))?)?;
-        spacetimedb_token_cached(&mut config, &host, true).await?;
+        spacetimedb_token_cached(&mut config, &host, true, open_browser).await?;
     } else {
-        spacetimedb_token_cached(&mut config, &host, false).await?;
+        spacetimedb_token_cached(&mut config, &host, false, open_browser).await?;
     }
 
     Ok(())
@@ -98,7 +105,12 @@ async fn exec_show(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
     Ok(())
 }
 
-async fn spacetimedb_token_cached(config: &mut Config, host: &Url, direct_login: bool) -> anyhow::Result<String> {
+async fn spacetimedb_token_cached(
+    config: &mut Config,
+    host: &Url,
+    direct_login: bool,
+    open_browser: bool,
+) -> anyhow::Result<String> {
     // Currently, this token does not expire. However, it will at some point in the future. When that happens,
     // this code will need to happen before any request to a spacetimedb server, rather than at the end of the login flow here.
     if let Some(token) = config.spacetimedb_token() {
@@ -106,18 +118,23 @@ async fn spacetimedb_token_cached(config: &mut Config, host: &Url, direct_login:
         println!("If you want to log out, use spacetime logout.");
         Ok(token.clone())
     } else {
-        spacetimedb_login_force(config, host, direct_login).await
+        spacetimedb_login_force(config, host, direct_login, open_browser).await
     }
 }
 
-pub async fn spacetimedb_login_force(config: &mut Config, host: &Url, direct_login: bool) -> anyhow::Result<String> {
+pub async fn spacetimedb_login_force(
+    config: &mut Config,
+    host: &Url,
+    direct_login: bool,
+    open_browser: bool,
+) -> anyhow::Result<String> {
     let token = if direct_login {
         let token = spacetimedb_direct_login(host).await?;
         println!("We have logged in directly to your target server.");
         println!("WARNING: This login will NOT work for any other servers.");
         token
     } else {
-        let session_token = web_login_cached(config, host).await?;
+        let session_token = web_login_cached(config, host, open_browser).await?;
         spacetimedb_login(host, &session_token).await?
     };
     config.set_spacetimedb_token(token.clone());
@@ -126,12 +143,12 @@ pub async fn spacetimedb_login_force(config: &mut Config, host: &Url, direct_log
     Ok(token)
 }
 
-async fn web_login_cached(config: &mut Config, host: &Url) -> anyhow::Result<String> {
+async fn web_login_cached(config: &mut Config, host: &Url, open_browser: bool) -> anyhow::Result<String> {
     if let Some(session_token) = config.web_session_token() {
         // Currently, these session tokens do not expire. At some point in the future, we may also need to check this session token for validity.
         Ok(session_token.clone())
     } else {
-        let session_token = web_login(host).await?;
+        let session_token = web_login(host, open_browser).await?;
         config.set_web_session_token(session_token.clone());
         config.save();
         Ok(session_token)
@@ -193,7 +210,7 @@ impl WebLoginSessionResponse {
     }
 }
 
-async fn web_login(remote: &Url) -> Result<String, anyhow::Error> {
+async fn web_login(remote: &Url, open_browser: bool) -> Result<String, anyhow::Error> {
     let client = reqwest::Client::new();
 
     let response: WebLoginTokenResponse = client
@@ -213,9 +230,13 @@ async fn web_login(remote: &Url) -> Result<String, anyhow::Error> {
     browser_url
         .query_pairs_mut()
         .append_pair("token", web_login_request_token);
-    println!("Opening {browser_url} in your browser.");
-    if webbrowser::open(browser_url.as_str()).is_err() {
-        println!("Unable to open your browser! Please open the URL above manually.");
+    if open_browser {
+        println!("Opening {browser_url} in your browser.");
+        if webbrowser::open(browser_url.as_str()).is_err() {
+            println!("Unable to open your browser! Please open the URL above manually.");
+        }
+    } else {
+        println!("Open {browser_url} in your browser to finish logging in.");
     }
 
     println!("Waiting to hear response from the server...");

@@ -84,12 +84,26 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<Player>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<Player>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<Player>", "TableUpdate")
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `Player`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait my_playerQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `Player`.
+    fn my_player(&self) -> __sdk::__query_builder::Table<Player>;
+}
+
+impl my_playerQueryTableAccess for __sdk::QueryTableAccessor {
+    fn my_player(&self) -> __sdk::__query_builder::Table<Player> {
+        __sdk::__query_builder::Table::new("my_player")
+    }
 }

@@ -1,13 +1,7 @@
-use std::{
-    borrow::Cow,
-    collections::HashSet,
-    ops::{Bound, Deref, DerefMut},
-    sync::Arc,
-};
-
 use anyhow::{bail, Result};
 use derive_more::From;
 use either::Either;
+use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_expr::{
     expr::{AggType, CollectViews},
     StatementSource,
@@ -17,6 +11,11 @@ use spacetimedb_primitives::{ColId, ColSet, IndexId, TableId, ViewId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use spacetimedb_table::table::RowRef;
+use std::{
+    borrow::Cow,
+    ops::{Bound, Deref, DerefMut},
+    sync::Arc,
+};
 
 use crate::rules::{
     ComputePositions, HashToIxJoin, IxScanAnd, IxScanEq, IxScanEq2Col, IxScanEq3Col, PullFilterAboveHashJoin,
@@ -120,6 +119,13 @@ impl ProjectPlan {
     pub fn reads_from_view(&self, anonymous: bool) -> bool {
         match self {
             Self::None(plan) | Self::Name(plan, ..) => plan.reads_from_view(anonymous),
+        }
+    }
+
+    /// Does this plan use an event table as the lookup (rhs) table in a semi-join?
+    pub fn reads_from_event_table(&self) -> bool {
+        match self {
+            Self::None(plan) | Self::Name(plan, ..) => plan.reads_from_event_table(),
         }
     }
 }
@@ -227,6 +233,15 @@ impl ProjectListPlan {
             Self::Limit(plan, _) => plan.reads_from_view(anonymous),
             Self::Name(plans) => plans.iter().any(|plan| plan.reads_from_view(anonymous)),
             Self::List(plans, ..) | Self::Agg(plans, ..) => plans.iter().any(|plan| plan.reads_from_view(anonymous)),
+        }
+    }
+
+    /// Does this plan use an event table as the lookup (rhs) table in a semi-join?
+    pub fn reads_from_event_table(&self) -> bool {
+        match self {
+            Self::Limit(plan, _) => plan.reads_from_event_table(),
+            Self::Name(plans) => plans.iter().any(|plan| plan.reads_from_event_table()),
+            Self::List(plans, ..) | Self::Agg(plans, ..) => plans.iter().any(|plan| plan.reads_from_event_table()),
         }
     }
 }
@@ -827,7 +842,10 @@ impl PhysicalPlan {
                 Self::IxJoin(IxJoin { lhs, ..join }, Semi::Lhs)
             }
             Self::IxJoin(join, Semi::All) => {
-                let reqs = reqs.into_iter().filter(|label| label != &join.rhs_label).collect();
+                let mut reqs: Vec<_> = reqs.into_iter().filter(|label| label != &join.rhs_label).collect();
+                if !reqs.contains(&join.lhs_field.label) {
+                    reqs.push(join.lhs_field.label);
+                }
                 let lhs = join.lhs.introduce_semijoins(reqs);
                 let lhs = Box::new(lhs);
                 Self::IxJoin(IxJoin { lhs, ..join }, Semi::All)
@@ -840,7 +858,7 @@ impl PhysicalPlan {
     pub(crate) fn returns_distinct_values(&self, label: &Label, cols: &ColSet) -> bool {
         match self {
             // Is there a unique constraint for these cols?
-            Self::TableScan(TableScan { schema, .. }, var) => var == label && schema.as_ref().is_unique(cols),
+            Self::TableScan(TableScan { schema, .. }, var) => var == label && schema.as_ref().is_unique(&**cols),
             // Is there a unique constraint for these cols + the index cols?
             Self::IxScan(
                 IxScan {
@@ -852,7 +870,7 @@ impl PhysicalPlan {
                 var,
             ) => {
                 var == label
-                    && schema.as_ref().is_unique(&ColSet::from_iter(
+                    && schema.as_ref().is_unique(&*ColSet::from_iter(
                         cols.iter()
                             .chain(prefix.iter().map(|(col_id, _)| *col_id))
                             .chain(vec![*col]),
@@ -885,7 +903,7 @@ impl PhysicalPlan {
                 _,
             ) => {
                 lhs.returns_distinct_values(lhs_label, &ColSet::from(ColId(*lhs_field_pos as u16)))
-                    && rhs.as_ref().is_unique(cols)
+                    && rhs.as_ref().is_unique(&**cols)
             }
             // If the table in question is on the lhs,
             // and if the lhs returns distinct values,
@@ -1151,6 +1169,17 @@ impl PhysicalPlan {
             _ => false,
         })
     }
+
+    /// Does this plan use an event table as the lookup (rhs) table in a semi-join?
+    ///
+    /// Note, we only care about index joins because this method is only relevant for subscriptions,
+    /// and index joins are the only type of join allowed in subscriptions.
+    pub fn reads_from_event_table(&self) -> bool {
+        self.any(&|plan| match plan {
+            Self::IxJoin(join, _) => join.rhs.is_event,
+            _ => false,
+        })
+    }
 }
 
 /// Scan a table row by row, returning row ids
@@ -1185,6 +1214,17 @@ pub struct IxScan {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Sarg {
     Eq(ColId, AlgebraicValue),
+    /// NOTE(centril): We currently never construct this variant.
+    /// We do have non-ranged hash indices.
+    /// This means that when we get around to using this variant,
+    /// we must change the rewrite rules such that we do not emit
+    /// [`IxScan`] on a hash index.
+    ///
+    /// Moreover, an equality scan (the variant above)
+    /// `(a0, b0)` on an index `(a, b, c)` is actually a ranged scan.
+    /// We also currently do not emit such `IxScan`s where the number
+    /// of equalities provided are fewer than the number of columns in the index.
+    /// When we do, we must also account for hash indices in the rewrite rules.
     Range(ColId, Bound<AlgebraicValue>, Bound<AlgebraicValue>),
 }
 
@@ -1415,7 +1455,9 @@ mod tests {
     use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
     use spacetimedb_schema::{
         def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData},
+        identifier::Identifier,
         schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableOrViewSchema, TableSchema},
+        table_name::TableName,
     };
     use spacetimedb_sql_parser::ast::BinOp;
 
@@ -1457,16 +1499,17 @@ mod tests {
     ) -> TableOrViewSchema {
         TableOrViewSchema::from(Arc::new(TableSchema::new(
             table_id,
-            table_name.to_owned().into_boxed_str(),
+            TableName::for_test(table_name),
             None,
             columns
                 .iter()
                 .enumerate()
                 .map(|(i, (name, ty))| ColumnSchema {
                     table_id,
-                    col_name: (*name).to_owned().into_boxed_str(),
+                    col_name: Identifier::for_test(*name),
                     col_pos: i.into(),
                     col_type: ty.clone(),
+                    alias: None,
                 })
                 .collect(),
             indexes
@@ -1475,10 +1518,11 @@ mod tests {
                 .map(|(i, cols)| IndexSchema {
                     table_id,
                     index_id: i.into(),
-                    index_name: "".to_owned().into_boxed_str(),
+                    index_name: "".into(),
                     index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
                         columns: ColList::from_iter(cols.iter().copied()),
                     }),
+                    alias: None,
                 })
                 .collect(),
             unique
@@ -1487,7 +1531,7 @@ mod tests {
                 .map(|(i, cols)| ConstraintSchema {
                     table_id,
                     constraint_id: i.into(),
-                    constraint_name: "".to_owned().into_boxed_str(),
+                    constraint_name: "".into(),
                     data: ConstraintData::Unique(UniqueConstraintData {
                         columns: ColSet::from_iter(cols.iter().copied()),
                     }),
@@ -1498,6 +1542,8 @@ mod tests {
             StAccess::Public,
             None,
             primary_key.map(ColId::from),
+            false,
+            None,
         )))
     }
 

@@ -86,11 +86,27 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
+    raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<OneByteStruct>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<OneByteStruct>", "TableUpdate")
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OneByteStruct`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait one_byte_structQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OneByteStruct`.
+    fn one_byte_struct(&self) -> __sdk::__query_builder::Table<OneByteStruct>;
+}
+
+impl one_byte_structQueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_byte_struct(&self) -> __sdk::__query_builder::Table<OneByteStruct> {
+        __sdk::__query_builder::Table::new("one_byte_struct")
+    }
 }

@@ -5,8 +5,10 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use crate::context::combine::build_context;
 use crate::context::constants::docs_dir;
 use crate::context::{resolve_mode_paths_hashing, rustdoc_crate_root};
+use crate::eval::Lang;
 
 // --- compute: stable rel path + normalized file bytes ---
 pub fn compute_context_hash(mode: &str) -> Result<String> {
@@ -33,10 +35,21 @@ pub fn compute_context_hash(mode: &str) -> Result<String> {
     Ok(hasher.finalize().to_hex().to_string())
 }
 
+/// Compute hash of the processed context (after language-specific tab filtering).
+/// This ensures each lang/mode combination gets its own unique hash.
+pub fn compute_processed_context_hash(mode: &str, lang: Lang) -> Result<String> {
+    let context = build_context(mode, Some(lang))?;
+    let mut hasher = Hasher::new();
+    // Normalize line endings for deterministic hash across OS/checkouts
+    let normalized = normalize_lf(context.as_bytes());
+    hasher.update(&normalized);
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
 // --- stable base for stripping prefixes ---
 fn base_for_mode_hashing(mode: &str) -> Result<PathBuf> {
     Ok(match mode {
-        "docs" | "llms.md" | "cursor_rules" => docs_dir(),
+        "docs" | "llms.md" | "cursor_rules" | "none" => docs_dir(),
         "rustdoc_json" => rustdoc_crate_root(),
         _ => bail!("unknown mode `{mode}`"),
     })
@@ -79,6 +92,17 @@ pub fn gather_docs_files() -> Result<Vec<PathBuf>> {
     recurse_dir(&base, &mut out)?;
     out.retain(|p| matches!(p.extension().and_then(|e| e.to_str()), Some("md" | "mdc")));
     out.sort();
+
+    // Process migration guide first so it appears at the start of context
+    if let Some(pos) = out.iter().position(|p| {
+        p.file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n == "00600-migrating-to-2.0.md")
+    }) {
+        let migration = out.remove(pos);
+        out.insert(0, migration);
+    }
+
     Ok(out)
 }
 

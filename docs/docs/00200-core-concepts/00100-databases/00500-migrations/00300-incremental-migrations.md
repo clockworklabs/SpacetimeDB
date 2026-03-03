@@ -3,7 +3,6 @@ title: Incremental Migrations
 slug: /databases/incremental-migrations
 ---
 
-# Incremental Migrations
 
 SpacetimeDB does not provide built-in support for general schema-modifying migrations. It does, however, allow adding new tables, and changing reducers' definitions in arbitrary ways. It's possible to run general migrations using an external tool, but this is tedious, necessitates downtime, and imposes the requirement that you update all your clients at the same time as publishing your new module version.
 
@@ -20,7 +19,7 @@ For example, imagine we have a table `player` which stores information about our
 <!-- TODO: switchable language widget with C# version of below code. -->
 
 ```rust
-#[spacetimedb::table(name = character, public)]
+#[spacetimedb::table(accessor = character, public)]
 pub struct Character {
     #[primary_key]
     player_id: Identity,
@@ -47,7 +46,7 @@ fn create_character(ctx: &ReducerContext, class: Class, nickname: String) {
         "Creating new level 1 {class:?} named {nickname}",
     );
     ctx.db.character().insert(Character {
-        player_id: ctx.sender,
+        player_id: ctx.sender(),
         nickname,
         level: 1,
         class,
@@ -58,7 +57,7 @@ fn find_character_for_player(ctx: &ReducerContext) -> Character {
     ctx.db
         .character()
         .player_id()
-        .find(ctx.sender)
+        .find(ctx.sender())
         .expect("Player has not created a character")
 }
 
@@ -126,12 +125,12 @@ $ spacetime sql incr-migration-demo 'SELECT * FROM character'
  <snip>    | "Gefjon" | 2     | (Fighter = ())
 ```
 
-See [the SATS JSON reference](/sats-json) for more on the encoding of arguments to `spacetime call`.
+See [the SATS JSON reference](../../../00300-resources/00200-reference/00300-internals/00200-sats-json.md) for more on the encoding of arguments to `spacetime call`.
 
 Now we want to add a new feature: each player should be able to align themselves with the forces of good or evil, so we can get some healthy competition going between our players. We'll start each character off with `Alliance::Neutral`, and then offer them a reducer `choose_alliance` to set it to either `Alliance::Good` or `Alliance::Evil`. Our first attempt will be to add a new column to the type `Character`:
 
 ```rust
-#[spacetimedb::table(name = character, public)]
+#[spacetimedb::table(accessor = character, public)]
 struct Character {
     #[primary_key]
     player_id: Identity,
@@ -155,7 +154,7 @@ fn choose_alliance(ctx: &ReducerContext, alliance: Alliance) {
         "Setting {}'s alliance to {:?} for player {}",
         character.nickname,
         alliance,
-        ctx.sender,
+        ctx.sender(),
     );
     update_character(
         ctx,
@@ -177,7 +176,7 @@ Adding a column alliance to table character requires a manual migration
 Instead, we'll add a new table, `character_v2`, which will coexist with our original `character` table:
 
 ```rust
-#[spacetimedb::table(name = character_v2, public)]
+#[spacetimedb::table(accessor = character_v2, public)]
 struct CharacterV2 {
     #[primary_key]
     player_id: Identity,
@@ -195,18 +194,18 @@ When a new player creates a character, we'll make rows in both tables for them. 
 fn create_character(ctx: &ReducerContext, class: Class, nickname: String) {
     log::info!(
         "Creating new level 1 {class:?} named {nickname} for player {}",
-        ctx.sender,
+        ctx.sender(),
     );
 
     ctx.db.character().insert(Character {
-        player_id: ctx.sender,
+        player_id: ctx.sender(),
         nickname: nickname.clone(),
         level: 1,
         class,
     });
 
     ctx.db.character_v2().insert(CharacterV2 {
-        player_id: ctx.sender,
+        player_id: ctx.sender(),
         nickname,
         level: 1,
         class,
@@ -219,7 +218,7 @@ We'll update our helper functions so that they operate on `character_v2` rows. I
 
 ```rust
 fn find_character_for_player(ctx: &ReducerContext) -> CharacterV2 {
-    if let Some(character) = ctx.db.character_v2().player_id().find(ctx.sender) {
+    if let Some(character) = ctx.db.character_v2().player_id().find(ctx.sender()) {
         // Already migrated; just return the new player.
         return character;
     }
@@ -229,7 +228,7 @@ fn find_character_for_player(ctx: &ReducerContext) -> CharacterV2 {
         .db
         .character()
         .player_id()
-        .find(ctx.sender)
+        .find(ctx.sender())
         .expect("Player has not created a character");
 
     ctx.db.character_v2().insert(CharacterV2 {

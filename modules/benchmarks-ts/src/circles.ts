@@ -45,61 +45,79 @@ function isOverlapping(entity1: Entity, entity2: Entity): boolean {
   const entity2Radius = massToRadius(entity2.mass);
   const distance = Math.sqrt(
     (entity1.position.x - entity2.position.x) ** 2 +
-    (entity1.position.y - entity2.position.y) ** 2
+      (entity1.position.y - entity2.position.y) ** 2
   );
   return distance < Math.max(entity1Radius, entity2Radius);
 }
 
 // ---------- insert bulk ----------
 
-const insertBulkEntity = spacetimedb.reducer('insert_bulk_entity', { count: t.u32() }, (ctx, { count }) => {
-  for (let id = 0; id < count; id++) {
-    ctx.db.entity.insert(newEntity(0, id, id + 5, id * 5));
+export const insertBulkEntity = spacetimedb.reducer(
+  { name: 'insert_bulk_entity' },
+  { count: t.u32() },
+  (ctx, { count }) => {
+    for (let id = 0; id < count; id++) {
+      ctx.db.entity.insert(newEntity(0, id, id + 5, id * 5));
+    }
+    console.info(`INSERT ENTITY: ${count}`);
   }
-  console.info(`INSERT ENTITY: ${count}`);
-});
+);
 
-const insertBulkCircle = spacetimedb.reducer('insert_bulk_circle', { count: t.u32() }, (ctx, { count }) => {
-  for (let id = 0; id < count; id++) {
-    ctx.db.circle.insert(newCircle(id, id, id, id + 5, id * 5, ctx.timestamp));
+export const insertBulkCircle = spacetimedb.reducer(
+  { name: 'insert_bulk_circle' },
+  { count: t.u32() },
+  (ctx, { count }) => {
+    for (let id = 0; id < count; id++) {
+      ctx.db.circle.insert(
+        newCircle(id, id, id, id + 5, id * 5, ctx.timestamp)
+      );
+    }
+    console.info(`INSERT CIRCLE: ${count}`);
   }
-  console.info(`INSERT CIRCLE: ${count}`);
-});
+);
 
-const insertBulkFood = spacetimedb.reducer('insert_bulk_food', { count: t.u32() }, (ctx, { count }) => {
-  for (let id = 1; id <= count; id++) {
-    ctx.db.food.insert(newFood(id));
+export const insertBulkFood = spacetimedb.reducer(
+  { name: 'insert_bulk_food' },
+  { count: t.u32() },
+  (ctx, { count }) => {
+    for (let id = 1; id <= count; id++) {
+      ctx.db.food.insert(newFood(id));
+    }
+    console.info(`INSERT FOOD: ${count}`);
   }
-  console.info(`INSERT FOOD: ${count}`);
-});
+);
 
 // Simulate
 // ```
 // SELECT * FROM Circle, Entity, Food
 // ```
-const crossJoinAll = spacetimedb.reducer('cross_join_all', { expected: t.u32() }, (ctx, { expected }) => {
-  let count: number = 0;
+export const crossJoinAll = spacetimedb.reducer(
+  { name: 'cross_join_all' },
+  { expected: t.u32() },
+  (ctx, { expected }) => {
+    let count: number = 0;
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  for (const circle of ctx.db.circle.iter()) {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    for (const entity of ctx.db.entity.iter()) {
+    for (const circle of ctx.db.circle.iter()) {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      for (const food of ctx.db.food.iter()) {
-        count += 1;
+      for (const entity of ctx.db.entity.iter()) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        for (const food of ctx.db.food.iter()) {
+          count += 1;
+        }
       }
     }
-  }
 
-  console.info(`CROSS JOIN ALL: ${expected}, processed: ${count}`);
-});
+    console.info(`CROSS JOIN ALL: ${expected}, processed: ${count}`);
+  }
+);
 
 // Simulate
 // ```
 // SELECT * FROM Circle JOIN ENTITY USING(entity_id), Food JOIN ENTITY USING(entity_id)
 // ```
-const crossJoinCircleFood = spacetimedb.reducer(
-  'cross_join_circle_food',
+export const crossJoinCircleFood = spacetimedb.reducer(
+  { name: 'cross_join_circle_food' },
   { expected: t.u32() },
   (ctx, { expected }) => {
     let count: number = 0;
@@ -129,8 +147,8 @@ const crossJoinCircleFood = spacetimedb.reducer(
   }
 );
 
-spacetimedb.reducer(
-  'init_game_circles',
+export const initGameCircles = spacetimedb.reducer(
+  { name: 'init_game_circles' },
   { initial_load: t.u32() },
   (ctx, { initial_load }) => {
     const load = newLoad(initial_load);
@@ -141,8 +159,8 @@ spacetimedb.reducer(
   }
 );
 
-spacetimedb.reducer(
-  'run_game_circles',
+export const runGameCircles = spacetimedb.reducer(
+  { name: 'run_game_circles' },
   { initial_load: t.u32() },
   (ctx, { initial_load }) => {
     const load = newLoad(initial_load);

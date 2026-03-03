@@ -1,7 +1,7 @@
 use spacetimedb::table;
 
-#[table(name = users)]
-pub struct Users {
+#[table(accessor = user)]
+pub struct User {
     #[primary_key]
     pub id: i32,
     pub name: String,
@@ -9,8 +9,8 @@ pub struct Users {
     pub active: bool,
 }
 
-#[table(name = products)]
-pub struct Products {
+#[table(accessor = product)]
+pub struct Product {
     #[primary_key]
     pub id: i32,
     pub title: String,
@@ -18,8 +18,8 @@ pub struct Products {
     pub in_stock: bool,
 }
 
-#[table(name = notes)]
-pub struct Notes {
+#[table(accessor = note)]
+pub struct Note {
     #[primary_key]
     pub id: i32,
     pub body: String,

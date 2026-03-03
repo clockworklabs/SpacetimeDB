@@ -5,8 +5,8 @@ slug: /tables/performance
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
-# Performance Best Practices
 
 Follow these guidelines to optimize table performance in your SpacetimeDB modules.
 
@@ -17,11 +17,11 @@ Generally prefer indexed lookups over full table scans:
 ✅ **Good - Using an index:**
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
+```typescript
 // Fast: Uses unique index on name
-ctx.db.player().name().filter("Alice")
+ctx.db.player.name.filter('Alice')
 ```
 
 </TabItem>
@@ -33,11 +33,21 @@ ctx.Db.Player.Name.Filter("Alice")
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
+```rust
 // Fast: Uses unique index on name
-ctx.db.player.name.filter('Alice')
+ctx.db.player().name().filter("Alice")
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
+
+```cpp
+// Fast: Uses index on name
+auto results = ctx.db[player_name].filter("Alice");
 ```
 
 </TabItem>
@@ -46,13 +56,12 @@ ctx.db.player.name.filter('Alice')
 ❌ **Avoid - Full table scan:**
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
+```typescript
 // Slow: Iterates through all rows
-ctx.db.player()
-    .iter()
-    .find(|p| p.name == "Alice")
+Array.from(ctx.db.player.iter())
+  .find(p => p.name === 'Alice')
 ```
 
 </TabItem>
@@ -65,18 +74,32 @@ ctx.Db.Player.Iter()
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
+```rust
 // Slow: Iterates through all rows
-Array.from(ctx.db.player.iter())
-  .find(p => p.name === 'Alice')
+ctx.db.player()
+    .iter()
+    .find(|p| p.name == "Alice")
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Slow: Iterates through all rows
+for (const auto& p : ctx.db[player]) {
+    if (p.name == "Alice") {
+        // Found it
+        break;
+    }
+}
 ```
 
 </TabItem>
 </Tabs>
 
-Add indexes to columns you frequently filter or join on. See [Indexes](/tables/indexes) for details.
+Add indexes to columns you frequently filter or join on. See [Indexes](./00300-indexes.md) for details.
 
 ## Keep Tables Focused
 
@@ -85,25 +108,27 @@ Break large tables into smaller, more focused tables when appropriate:
 **Instead of one large table:**
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-#[spacetimedb::table(name = player)]
-pub struct Player {
-    id: u32,
-    name: String,
+```typescript
+const player = table(
+  { name: 'player' },
+  {
+    id: t.u32(),
+    name: t.string(),
     // Game state
-    position_x: f32,
-    position_y: f32,
-    health: u32,
+    position_x: t.f32(),
+    position_y: t.f32(),
+    health: t.u32(),
     // Statistics (rarely accessed)
-    total_kills: u32,
-    total_deaths: u32,
-    play_time_seconds: u64,
+    total_kills: t.u32(),
+    total_deaths: t.u32(),
+    play_time_seconds: t.u64(),
     // Settings (rarely changed)
-    audio_volume: f32,
-    graphics_quality: u8,
-}
+    audio_volume: t.f32(),
+    graphics_quality: t.u8(),
+  }
+);
 ```
 
 </TabItem>
@@ -130,27 +155,47 @@ public partial struct Player
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-const player = table(
-  { name: 'player' },
-  {
-    id: t.u32(),
-    name: t.string(),
+```rust
+#[spacetimedb::table(accessor = player)]
+pub struct Player {
+    id: u32,
+    name: String,
     // Game state
-    position_x: t.f32(),
-    position_y: t.f32(),
-    health: t.u32(),
+    position_x: f32,
+    position_y: f32,
+    health: u32,
     // Statistics (rarely accessed)
-    total_kills: t.u32(),
-    total_deaths: t.u32(),
-    play_time_seconds: t.u64(),
+    total_kills: u32,
+    total_deaths: u32,
+    play_time_seconds: u64,
     // Settings (rarely changed)
-    audio_volume: t.f32(),
-    graphics_quality: t.u8(),
-  }
-);
+    audio_volume: f32,
+    graphics_quality: u8,
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Instead of one large table with all fields:
+struct Player {
+    uint32_t id;
+    std::string name;
+    // Game state
+    float position_x;
+    float position_y;
+    uint32_t health;
+    // Statistics (rarely accessed)
+    uint32_t total_kills;
+    uint32_t total_deaths;
+    uint64_t play_time_seconds;
+    // Settings (rarely changed)
+    float audio_volume;
+    uint8_t graphics_quality;
+};
 ```
 
 </TabItem>
@@ -159,42 +204,45 @@ const player = table(
 **Consider splitting into multiple tables:**
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-#[spacetimedb::table(name = player)]
-pub struct Player {
-    #[primary_key]
-    id: u32,
-    #[unique]
-    name: String,
-}
+```typescript
+const player = table(
+  { name: 'player' },
+  {
+    id: t.u32().primaryKey(),
+    name: t.string().unique(),
+  }
+);
 
-#[spacetimedb::table(name = player_state)]
-pub struct PlayerState {
-    #[unique]
-    player_id: u32,
-    position_x: f32,
-    position_y: f32,
-    health: u32,
-}
+const playerState = table(
+  { name: 'player_state' },
+  {
+    player_id: t.u32().unique(),
+    position_x: t.f32(),
+    position_y: t.f32(),
+    health: t.u32(),
+  }
+);
 
-#[spacetimedb::table(name = player_stats)]
-pub struct PlayerStats {
-    #[unique]
-    player_id: u32,
-    total_kills: u32,
-    total_deaths: u32,
-    play_time_seconds: u64,
-}
+const playerStats = table(
+  { name: 'player_stats' },
+  {
+    player_id: t.u32().unique(),
+    total_kills: t.u32(),
+    total_deaths: t.u32(),
+    play_time_seconds: t.u64(),
+  }
+);
 
-#[spacetimedb::table(name = player_settings)]
-pub struct PlayerSettings {
-    #[unique]
-    player_id: u32,
-    audio_volume: f32,
-    graphics_quality: u8,
-}
+const playerSettings = table(
+  { name: 'player_settings' },
+  {
+    player_id: t.u32().unique(),
+    audio_volume: t.f32(),
+    graphics_quality: t.u8(),
+  }
+);
 ```
 
 </TabItem>
@@ -241,45 +289,84 @@ public partial struct PlayerSettings
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-const player = table(
-  { name: 'player' },
-  {
-    id: t.u32().primaryKey(),
-    name: t.string().unique(),
-  }
-);
+```rust
+#[spacetimedb::table(accessor = player)]
+pub struct Player {
+    #[primary_key]
+    id: u32,
+    #[unique]
+    name: String,
+}
 
-const playerState = table(
-  { name: 'player_state' },
-  {
-    player_id: t.u32().unique(),
-    position_x: t.f32(),
-    position_y: t.f32(),
-    health: t.u32(),
-  }
-);
+#[spacetimedb::table(accessor = player_state)]
+pub struct PlayerState {
+    #[unique]
+    player_id: u32,
+    position_x: f32,
+    position_y: f32,
+    health: u32,
+}
 
-const playerStats = table(
-  { name: 'player_stats' },
-  {
-    player_id: t.u32().unique(),
-    total_kills: t.u32(),
-    total_deaths: t.u32(),
-    play_time_seconds: t.u64(),
-  }
-);
+#[spacetimedb::table(accessor = player_stats)]
+pub struct PlayerStats {
+    #[unique]
+    player_id: u32,
+    total_kills: u32,
+    total_deaths: u32,
+    play_time_seconds: u64,
+}
 
-const playerSettings = table(
-  { name: 'player_settings' },
-  {
-    player_id: t.u32().unique(),
-    audio_volume: t.f32(),
-    graphics_quality: t.u8(),
-  }
-);
+#[spacetimedb::table(accessor = player_settings)]
+pub struct PlayerSettings {
+    #[unique]
+    player_id: u32,
+    audio_volume: f32,
+    graphics_quality: u8,
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct Player {
+    uint32_t id;
+    std::string name;
+};
+SPACETIMEDB_STRUCT(Player, id, name)
+SPACETIMEDB_TABLE(Player, player, Public)
+FIELD_PrimaryKey(player, id)
+
+struct PlayerState {
+    uint32_t player_id;
+    float position_x;
+    float position_y;
+    uint32_t health;
+};
+SPACETIMEDB_STRUCT(PlayerState, player_id, position_x, position_y, health)
+SPACETIMEDB_TABLE(PlayerState, player_state, Public)
+FIELD_Unique(player_state, player_id)
+
+struct PlayerStats {
+    uint32_t player_id;
+    uint32_t total_kills;
+    uint32_t total_deaths;
+    uint64_t play_time_seconds;
+};
+SPACETIMEDB_STRUCT(PlayerStats, player_id, total_kills, total_deaths, play_time_seconds)
+SPACETIMEDB_TABLE(PlayerStats, player_stats, Public)
+FIELD_Unique(player_stats, player_id)
+
+struct PlayerSettings {
+    uint32_t player_id;
+    float audio_volume;
+    uint8_t graphics_quality;
+};
+SPACETIMEDB_STRUCT(PlayerSettings, player_id, audio_volume, graphics_quality)
+SPACETIMEDB_TABLE(PlayerSettings, player_settings, Public)
+FIELD_Unique(player_settings, player_id)
 ```
 
 </TabItem>
@@ -296,13 +383,13 @@ Benefits:
 Use the smallest integer type that fits your data range:
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
+```typescript
 // If you only need 0-255, use u8 instead of u64
-level: u8,           // Not u64
-player_count: u16,   // Not u64
-entity_id: u32,      // Not u64
+level: t.u8(),           // Not t.u64()
+player_count: t.u16(),   // Not t.u64()
+entity_id: t.u32(),      // Not t.u64()
 ```
 
 </TabItem>
@@ -316,13 +403,24 @@ public uint EntityId;        // Not ulong
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
+```rust
 // If you only need 0-255, use u8 instead of u64
-level: t.u8(),           // Not t.u64()
-player_count: t.u16(),   // Not t.u64()
-entity_id: t.u32(),      // Not t.u64()
+level: u8,           // Not u64
+player_count: u16,   // Not u64
+entity_id: u32,      // Not u64
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// If you only need 0-255, use byte instead of uint64_t
+uint8_t level;             // Not uint64_t
+uint16_t player_count;      // Not uint64_t
+uint32_t entity_id;         // Not uint64_t
+
 ```
 
 </TabItem>
@@ -338,34 +436,6 @@ This reduces:
 Private tables avoid unnecessary client synchronization overhead:
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
-
-```rust
-// Public table - clients can subscribe and receive updates
-#[spacetimedb::table(name = player, public)]
-pub struct Player { /* ... */ }
-
-// Private table - only visible to module and owner
-// Better for internal state, caches, or sensitive data
-#[spacetimedb::table(name = internal_state)]
-pub struct InternalState { /* ... */ }
-```
-
-</TabItem>
-<TabItem value="csharp" label="C#">
-
-```csharp
-// Public table - clients can subscribe and receive updates
-[SpacetimeDB.Table(Public = true)]
-public partial struct Player { /* ... */ }
-
-// Private table - only visible to module and owner
-// Better for internal state, caches, or sensitive data
-[SpacetimeDB.Table]
-public partial struct InternalState { /* ... */ }
-```
-
-</TabItem>
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
@@ -384,6 +454,50 @@ const internalState = table(
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+// Public table - clients can subscribe and receive updates
+[SpacetimeDB.Table(Public = true)]
+public partial struct Player { /* ... */ }
+
+// Private table - only visible to module and owner
+// Better for internal state, caches, or sensitive data
+[SpacetimeDB.Table]
+public partial struct InternalState { /* ... */ }
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+// Public table - clients can subscribe and receive updates
+#[spacetimedb::table(accessor = player, public)]
+pub struct Player { /* ... */ }
+
+// Private table - only visible to module and owner
+// Better for internal state, caches, or sensitive data
+#[spacetimedb::table(accessor = internal_state)]
+pub struct InternalState { /* ... */ }
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Public table - clients can subscribe and receive updates
+struct Player { /* ... */ };
+SPACETIMEDB_STRUCT(Player, /* ... fields ... */)
+SPACETIMEDB_TABLE(Player, player, Public)
+
+// Private table - only visible to module and owner
+// Better for internal state, caches, or sensitive data
+struct InternalState {/* ... */ };
+SPACETIMEDB_STRUCT(InternalState, /* ... fields ... */ )
+SPACETIMEDB_TABLE(InternalState, internal_state, Private)
+```
+
+</TabItem>
 </Tabs>
 
 Make tables public only when clients need to access them. Private tables:
@@ -398,9 +512,43 @@ When inserting or updating multiple rows, batch them in a single reducer call ra
 ✅ **Good - Batch operation:**
 
 <Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+export const spawn_enemies = spacetimedb.reducer({ count: t.u32() }, (ctx, { count }) => {
+  for (let i = 0; i < count; i++) {
+    ctx.db.enemy.insert({
+      id: 0, // auto_inc
+      health: 100,
+    });
+  }
+});
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+[SpacetimeDB.Reducer]
+public static void SpawnEnemies(ReducerContext ctx, uint count)
+{
+    for (uint i = 0; i < count; i++)
+    {
+        ctx.Db.Enemy.Insert(new Enemy
+        {
+            Id = 0, // auto_inc
+            Health = 100
+        });
+    }
+}
+```
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 ```rust
+use spacetimedb::{ReducerContext, Table};
+
 #[spacetimedb::reducer]
 fn spawn_enemies(ctx: &ReducerContext, count: u32) {
     for i in 0..count {
@@ -413,35 +561,17 @@ fn spawn_enemies(ctx: &ReducerContext, count: u32) {
 ```
 
 </TabItem>
-<TabItem value="csharp" label="C#">
+<TabItem value="cpp" label="C++">
 
-```csharp
-[SpacetimeDB.Reducer]
-public static void SpawnEnemies(ReducerContext ctx, uint count)
-{
-    for (uint i = 0; i < count; i++)
-    {
-        ctx.Db.enemy.Insert(new Enemy
-        {
-            Id = 0, // auto_inc
-            Health = 100
-        });
+```cpp
+// Good - Batch operation in a single reducer call
+void spawn_enemies(ReducerContext& ctx, uint32_t count) {
+    for (uint32_t i = 0; i < count; ++i) {
+        Enemy new_enemy;
+        new_enemy.health = 100;
+        ctx.db[enemy].insert(new_enemy);
     }
 }
-```
-
-</TabItem>
-<TabItem value="typescript" label="TypeScript">
-
-```typescript
-spacetimedb.reducer('spawn_enemies', { count: t.u32() }, (ctx, { count }) => {
-  for (let i = 0; i < count; i++) {
-    ctx.db.enemy.insert({
-      id: 0, // auto_inc
-      health: 100,
-    });
-  }
-});
 ```
 
 </TabItem>
@@ -450,12 +580,12 @@ spacetimedb.reducer('spawn_enemies', { count: t.u32() }, (ctx, { count }) => {
 ❌ **Avoid - Multiple calls:**
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
+```typescript
 // Client makes 10 separate reducer calls
-for i in 0..10 {
-    connection.reducers.spawn_enemy();
+for (let i = 0; i < 10; i++) {
+  connection.reducers.spawnEnemy();
 }
 ```
 
@@ -471,12 +601,22 @@ for (int i = 0; i < 10; i++)
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
+```rust
 // Client makes 10 separate reducer calls
-for (let i = 0; i < 10; i++) {
-  connection.reducers.spawnEnemy();
+for i in 0..10 {
+    connection.reducers.spawn_enemy();
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Client making many separate reducer calls
+for (int i = 0; i < 10; ++i) {
+    connection.reducers.spawn_enemy();
 }
 ```
 
@@ -494,11 +634,11 @@ Be mindful of unbounded table growth:
 
 - Implement cleanup reducers for temporary data
 - Archive or delete old records
-- Use scheduled tables to automatically expire data
+- Use schedule tables to automatically expire data
 - Consider pagination for large result sets
 
 ## Next Steps
 
-- Learn about [Indexes](/tables/indexes) to optimize queries
-- Explore [Subscriptions](/subscriptions) for efficient client data sync
-- Review [Reducers](/functions/reducers) for efficient data modification patterns
+- Learn about [Indexes](./00300-indexes.md) to optimize queries
+- Explore [Subscriptions](../00400-subscriptions.md) for efficient client data sync
+- Review [Reducers](../00200-functions/00300-reducers/00300-reducers.md) for efficient data modification patterns

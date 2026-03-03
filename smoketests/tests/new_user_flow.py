@@ -6,7 +6,7 @@ class NewUserFlow(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     name: String
 }

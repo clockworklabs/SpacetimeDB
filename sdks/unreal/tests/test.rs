@@ -303,3 +303,9 @@ fn unreal_indexed_simple_enum() {
 fn unreal_overlapping_subscriptions() {
     make_test("OverlappingSubscriptionsTest").run();
 }
+
+#[test]
+#[serial(Group6)]
+fn unreal_insert_result_okay() {
+    make_test("InsertResultOkTest").run();
+}

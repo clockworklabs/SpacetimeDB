@@ -84,12 +84,26 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<VecIdentity>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<VecIdentity>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<VecIdentity>", "TableUpdate")
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `VecIdentity`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait vec_identityQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `VecIdentity`.
+    fn vec_identity(&self) -> __sdk::__query_builder::Table<VecIdentity>;
+}
+
+impl vec_identityQueryTableAccess for __sdk::QueryTableAccessor {
+    fn vec_identity(&self) -> __sdk::__query_builder::Table<VecIdentity> {
+        __sdk::__query_builder::Table::new("vec_identity")
+    }
 }

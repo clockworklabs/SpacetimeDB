@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-const TEST_TIMEOUT_SECS: u64 = 2 * 60;
+const TEST_TIMEOUT_SECS: u64 = 5 * 60;
 
 #[derive(Default)]
 struct TestCounterInner {

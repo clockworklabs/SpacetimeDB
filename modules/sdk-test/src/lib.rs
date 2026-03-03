@@ -127,9 +127,12 @@ pub struct EveryVecStruct {
 ///     e.g. insert_or_panic insert_my_table
 ///   - update_by reducer_name = update_method(field_name)
 ///     Defines a reducer which takes an argument for each of the table's columns,
-///     and calls the update_method with the value of field_name as a first argument
-///     to update an existing row.
+///     and calls the update method on the primary key column to update an existing row.
 ///     e.g. update_by update_my_table = update_by_name(name)
+///   - update_non_pk_by reducer_name = update_method(field_name)
+///     Like update_by, but for non-primary-key unique columns. Since `update()` is only
+///     available on primary key columns, this uses `delete()` + `insert()` instead.
+///     e.g. update_non_pk_by update_my_table = update_by_name(name)
 ///   - delete_by reducer_name = delete_method(field_name: field_type)
 ///     Defines a reducer which takes a single argument, and passes it to the delete_method
 ///     to delete a row.
@@ -202,8 +205,8 @@ macro_rules! define_tables {
         define_tables!(@impl_ops $name { $($($ops)*)? } $($field_name $ty,)*);
     };
 
-    // Define a reducer for tables with a unique field,
-    // which uses `$update_method` to update by that unique field.
+    // Define a reducer for tables with a primary key field,
+    // which uses `update` to update by that primary key field.
     (@impl_ops $name:ident
      { update_by $update:ident = $update_method:ident($unique_field:ident)
        $(, $($ops:tt)* )? }
@@ -212,6 +215,23 @@ macro_rules! define_tables {
             #[spacetimedb::reducer]
             pub fn $update (ctx: &ReducerContext, $($field_name : $ty,)*) {
                 ctx.db.[<$name:snake>]().$unique_field().update($name { $($field_name,)* });
+            }
+        }
+
+        define_tables!(@impl_ops $name { $($($ops)*)? } $($field_name $ty,)*);
+    };
+
+    // Define a reducer for tables with a non-pk unique field,
+    // which uses delete + insert to simulate an update by that unique field.
+    (@impl_ops $name:ident
+     { update_non_pk_by $update:ident = $update_method:ident($unique_field:ident)
+       $(, $($ops:tt)* )? }
+     $($field_name:ident $ty:ty),* $(,)*) => {
+        paste::paste! {
+            #[spacetimedb::reducer]
+            pub fn $update (ctx: &ReducerContext, $($field_name : $ty,)*) {
+                ctx.db.[<$name:snake>]().$unique_field().delete(&$unique_field);
+                ctx.db.[<$name:snake>]().insert($name { $($field_name,)* });
             }
         }
 
@@ -237,7 +257,7 @@ macro_rules! define_tables {
     // Define a table.
     (@one $name:ident { $($ops:tt)* } $($(#[$attr:meta])* $field_name:ident $ty:ty),* $(,)*) => {
         paste::paste! {
-            #[spacetimedb::table(name = [<$name:snake>], public)]
+            #[spacetimedb::table(accessor = [<$name:snake>], public)]
             pub struct $name {
                 $($(#[$attr])* pub $field_name : $ty,)*
             }
@@ -356,106 +376,106 @@ define_tables! {
 define_tables! {
     UniqueU8 {
         insert_or_panic insert_unique_u8,
-        update_by update_unique_u8 = update_by_n(n),
+        update_non_pk_by update_unique_u8 = update_by_n(n),
         delete_by delete_unique_u8 = delete_by_n(n: u8),
     } #[unique] n u8, data i32;
 
     UniqueU16 {
         insert_or_panic insert_unique_u16,
-        update_by update_unique_u16 = update_by_n(n),
+        update_non_pk_by update_unique_u16 = update_by_n(n),
         delete_by delete_unique_u16 = delete_by_n(n: u16),
     } #[unique] n u16, data i32;
 
     UniqueU32 {
         insert_or_panic insert_unique_u32,
-        update_by update_unique_u32 = update_by_n(n),
+        update_non_pk_by update_unique_u32 = update_by_n(n),
         delete_by delete_unique_u32 = delete_by_n(n: u32),
     } #[unique] n u32, data i32;
 
     UniqueU64 {
         insert_or_panic insert_unique_u64,
-        update_by update_unique_u64 = update_by_n(n),
+        update_non_pk_by update_unique_u64 = update_by_n(n),
         delete_by delete_unique_u64 = delete_by_n(n: u64),
     } #[unique] n u64, data i32;
 
     UniqueU128 {
         insert_or_panic insert_unique_u128,
-        update_by update_unique_u128 = update_by_n(n),
+        update_non_pk_by update_unique_u128 = update_by_n(n),
         delete_by delete_unique_u128 = delete_by_n(n: u128),
     } #[unique] n u128, data i32;
 
     UniqueU256 {
         insert_or_panic insert_unique_u256,
-        update_by update_unique_u256 = update_by_n(n),
+        update_non_pk_by update_unique_u256 = update_by_n(n),
         delete_by delete_unique_u256 = delete_by_n(n: u256),
     } #[unique] n u256, data i32;
 
 
     UniqueI8 {
         insert_or_panic insert_unique_i8,
-        update_by update_unique_i8 = update_by_n(n),
+        update_non_pk_by update_unique_i8 = update_by_n(n),
         delete_by delete_unique_i8 = delete_by_n(n: i8),
     } #[unique] n i8, data i32;
 
 
     UniqueI16 {
         insert_or_panic insert_unique_i16,
-        update_by update_unique_i16 = update_by_n(n),
+        update_non_pk_by update_unique_i16 = update_by_n(n),
         delete_by delete_unique_i16 = delete_by_n(n: i16),
     } #[unique] n i16, data i32;
 
     UniqueI32 {
         insert_or_panic insert_unique_i32,
-        update_by update_unique_i32 = update_by_n(n),
+        update_non_pk_by update_unique_i32 = update_by_n(n),
         delete_by delete_unique_i32 = delete_by_n(n: i32),
     } #[unique] n i32, data i32;
 
     UniqueI64 {
         insert_or_panic insert_unique_i64,
-        update_by update_unique_i64 = update_by_n(n),
+        update_non_pk_by update_unique_i64 = update_by_n(n),
         delete_by delete_unique_i64 = delete_by_n(n: i64),
     } #[unique] n i64, data i32;
 
     UniqueI128 {
         insert_or_panic insert_unique_i128,
-        update_by update_unique_i128 = update_by_n(n),
+        update_non_pk_by update_unique_i128 = update_by_n(n),
         delete_by delete_unique_i128 = delete_by_n(n: i128),
     } #[unique] n i128, data i32;
 
     UniqueI256 {
         insert_or_panic insert_unique_i256,
-        update_by update_unique_i256 = update_by_n(n),
+        update_non_pk_by update_unique_i256 = update_by_n(n),
         delete_by delete_unique_i256 = delete_by_n(n: i256),
     } #[unique] n i256, data i32;
 
 
     UniqueBool {
         insert_or_panic insert_unique_bool,
-        update_by update_unique_bool = update_by_b(b),
+        update_non_pk_by update_unique_bool = update_by_b(b),
         delete_by delete_unique_bool = delete_by_b(b: bool),
     } #[unique] b bool, data i32;
 
     UniqueString {
         insert_or_panic insert_unique_string,
-        update_by update_unique_string = update_by_s(s),
+        update_non_pk_by update_unique_string = update_by_s(s),
         delete_by delete_unique_string = delete_by_s(s: String),
     } #[unique] s String, data i32;
 
     UniqueIdentity {
         insert_or_panic insert_unique_identity,
-        update_by update_unique_identity = update_by_i(i),
+        update_non_pk_by update_unique_identity = update_by_i(i),
         delete_by delete_unique_identity = delete_by_i(i: Identity),
     } #[unique] i Identity, data i32;
 
     UniqueConnectionId {
         insert_or_panic insert_unique_connection_id,
-        update_by update_unique_connection_id = update_by_a(a),
+        update_non_pk_by update_unique_connection_id = update_by_a(a),
         delete_by delete_unique_connection_id = delete_by_a(a: ConnectionId),
     } #[unique] a ConnectionId, data i32;
 
     UniqueUuid {
         insert_or_panic insert_unique_uuid,
-        update_by update_unique_uuid = update_by_u(u),
+        update_non_pk_by update_unique_uuid = update_by_u(u),
         delete_by delete_unique_uuid = delete_by_u(u: Uuid),
     } #[unique] u Uuid, data i32;
 }
@@ -637,32 +657,34 @@ fn delete_pk_u32_insert_pk_u32_two(ctx: &ReducerContext, n: u32, data: i32) -> a
 
 #[spacetimedb::reducer]
 fn insert_caller_one_identity(ctx: &ReducerContext) -> anyhow::Result<()> {
-    ctx.db.one_identity().insert(OneIdentity { i: ctx.sender });
+    ctx.db.one_identity().insert(OneIdentity { i: ctx.sender() });
     Ok(())
 }
 
 #[spacetimedb::reducer]
 fn insert_caller_vec_identity(ctx: &ReducerContext) -> anyhow::Result<()> {
-    ctx.db.vec_identity().insert(VecIdentity { i: vec![ctx.sender] });
+    ctx.db.vec_identity().insert(VecIdentity { i: vec![ctx.sender()] });
     Ok(())
 }
 
 #[spacetimedb::reducer]
 fn insert_caller_unique_identity(ctx: &ReducerContext, data: i32) -> anyhow::Result<()> {
-    ctx.db.unique_identity().insert(UniqueIdentity { i: ctx.sender, data });
+    ctx.db
+        .unique_identity()
+        .insert(UniqueIdentity { i: ctx.sender(), data });
     Ok(())
 }
 
 #[spacetimedb::reducer]
 fn insert_caller_pk_identity(ctx: &ReducerContext, data: i32) -> anyhow::Result<()> {
-    ctx.db.pk_identity().insert(PkIdentity { i: ctx.sender, data });
+    ctx.db.pk_identity().insert(PkIdentity { i: ctx.sender(), data });
     Ok(())
 }
 
 #[spacetimedb::reducer]
 fn insert_caller_one_connection_id(ctx: &ReducerContext) -> anyhow::Result<()> {
     ctx.db.one_connection_id().insert(OneConnectionId {
-        a: ctx.connection_id.context("No connection id in reducer context")?,
+        a: ctx.connection_id().context("No connection id in reducer context")?,
     });
     Ok(())
 }
@@ -670,7 +692,7 @@ fn insert_caller_one_connection_id(ctx: &ReducerContext) -> anyhow::Result<()> {
 #[spacetimedb::reducer]
 fn insert_caller_vec_connection_id(ctx: &ReducerContext) -> anyhow::Result<()> {
     ctx.db.vec_connection_id().insert(VecConnectionId {
-        a: vec![ctx.connection_id.context("No connection id in reducer context")?],
+        a: vec![ctx.connection_id().context("No connection id in reducer context")?],
     });
     Ok(())
 }
@@ -678,7 +700,7 @@ fn insert_caller_vec_connection_id(ctx: &ReducerContext) -> anyhow::Result<()> {
 #[spacetimedb::reducer]
 fn insert_caller_unique_connection_id(ctx: &ReducerContext, data: i32) -> anyhow::Result<()> {
     ctx.db.unique_connection_id().insert(UniqueConnectionId {
-        a: ctx.connection_id.context("No connection id in reducer context")?,
+        a: ctx.connection_id().context("No connection id in reducer context")?,
         data,
     });
     Ok(())
@@ -687,7 +709,7 @@ fn insert_caller_unique_connection_id(ctx: &ReducerContext, data: i32) -> anyhow
 #[spacetimedb::reducer]
 fn insert_caller_pk_connection_id(ctx: &ReducerContext, data: i32) -> anyhow::Result<()> {
     ctx.db.pk_connection_id().insert(PkConnectionId {
-        a: ctx.connection_id.context("No connection id in reducer context")?,
+        a: ctx.connection_id().context("No connection id in reducer context")?,
         data,
     });
     Ok(())
@@ -786,9 +808,9 @@ define_tables! {
 fn no_op_succeeds(_ctx: &ReducerContext) {}
 
 #[spacetimedb::client_visibility_filter]
-const ONE_U8_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM one_u8");
+const ONE_U8_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM one_u_8");
 
-#[spacetimedb::table(name = scheduled_table, scheduled(send_scheduled_message), public)]
+#[spacetimedb::table(accessor = scheduled_table, scheduled(send_scheduled_message), public)]
 pub struct ScheduledTable {
     #[primary_key]
     #[auto_inc]
@@ -804,19 +826,19 @@ fn send_scheduled_message(_ctx: &ReducerContext, arg: ScheduledTable) {
     let _ = arg.scheduled_id;
 }
 
-#[spacetimedb::table(name = indexed_table)]
+#[spacetimedb::table(accessor = indexed_table)]
 struct IndexedTable {
     #[index(btree)]
     player_id: u32,
 }
 
-#[spacetimedb::table(name = indexed_table_2, index(name=player_id_snazz_index, btree(columns = [player_id, player_snazz])))]
+#[spacetimedb::table(accessor = indexed_table_2, index(accessor=player_id_snazz_index, btree(columns = [player_id, player_snazz])))]
 struct IndexedTable2 {
     player_id: u32,
     player_snazz: f32,
 }
 
-#[spacetimedb::table(name = btree_u32, public)]
+#[spacetimedb::table(accessor = btree_u32, public)]
 struct BTreeU32 {
     #[index(btree)]
     n: u32,
@@ -826,7 +848,7 @@ struct BTreeU32 {
 #[spacetimedb::client_visibility_filter]
 const USERS_FILTER: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM users WHERE identity = :sender");
 
-#[spacetimedb::table(name = users, public)]
+#[spacetimedb::table(accessor = users, public)]
 struct Users {
     #[primary_key]
     identity: Identity,
@@ -839,7 +861,7 @@ fn insert_user(ctx: &ReducerContext, name: String, identity: Identity) -> anyhow
     Ok(())
 }
 
-#[spacetimedb::table(name = indexed_simple_enum, public)]
+#[spacetimedb::table(accessor = indexed_simple_enum, public)]
 struct IndexedSimpleEnum {
     #[index(btree)]
     n: SimpleEnum,

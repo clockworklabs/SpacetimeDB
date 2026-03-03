@@ -7,13 +7,15 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Instant, SystemTime};
 
-use super::messages::{OneOffQueryResponseMessage, ProcedureResultMessage, SerializableMessage};
-use super::{message_handlers, ClientActorId, MessageHandleError};
+use super::messages::{OneOffQueryResponseMessage, ProcedureResultMessage};
+use super::{message_handlers, ClientActorId, MessageHandleError, OutboundMessage};
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use crate::host::module_host::ClientConnectedError;
-use crate::host::{CallProcedureReturn, FunctionArgs, ModuleHost, NoSuchModule, ReducerCallError, ReducerCallResult};
-use crate::messages::websocket::Subscribe;
+use crate::host::{
+    CallProcedureReturn, FunctionArgs, ModuleHost, NoSuchModule, ProcedureCallResult, ReducerCallError,
+    ReducerCallResult,
+};
 use crate::subscription::module_subscription_manager::BroadcastError;
 use crate::subscription::row_list_builder_pool::JsonRowListBuilderFakePool;
 use crate::util::asyncify;
@@ -25,14 +27,11 @@ use derive_more::From;
 use futures::prelude::*;
 use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_auth::identity::{ConnectionAuthCtx, SpacetimeIdentityClaims};
-use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, CallReducerFlags, Compression, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, Unsubscribe,
-    UnsubscribeMulti,
-};
+use spacetimedb_client_api_messages::websocket::{common as ws_common, v1 as ws_v1, v2 as ws_v2};
 use spacetimedb_durability::{DurableOffset, TxOffset};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::Identity;
+use spacetimedb_lib::{bsatn, Identity, TimeDuration, Timestamp};
 use tokio::sync::mpsc::error::{SendError, TrySendError};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
@@ -44,6 +43,12 @@ pub enum Protocol {
     Binary,
 }
 
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
+pub enum WsVersion {
+    V1,
+    V2,
+}
+
 impl Protocol {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -52,9 +57,9 @@ impl Protocol {
         }
     }
 
-    pub(crate) fn assert_matches_format_switch<B, J>(self, fs: &FormatSwitch<B, J>) {
+    pub(crate) fn assert_matches_format_switch<B, J>(self, fs: &ws_v1::FormatSwitch<B, J>) {
         match (self, fs) {
-            (Protocol::Text, FormatSwitch::Json(_)) | (Protocol::Binary, FormatSwitch::Bsatn(_)) => {}
+            (Protocol::Text, ws_v1::FormatSwitch::Json(_)) | (Protocol::Binary, ws_v1::FormatSwitch::Bsatn(_)) => {}
             _ => unreachable!("requested protocol does not match output format"),
         }
     }
@@ -64,8 +69,10 @@ impl Protocol {
 pub struct ClientConfig {
     /// The client's desired protocol (format) when the host replies.
     pub protocol: Protocol,
+    /// The websocket protocol version negotiated during the handshake.
+    pub version: WsVersion,
     /// The client's desired (conditional) compression algorithm, if any.
-    pub compression: Compression,
+    pub compression: ws_common::Compression,
     /// Whether the client prefers full [`TransactionUpdate`]s
     /// rather than  [`TransactionUpdateLight`]s on a successful update.
     // TODO(centril): As more knobs are added, make this into a bitfield (when there's time).
@@ -80,6 +87,7 @@ impl ClientConfig {
     pub fn for_test() -> ClientConfig {
         Self {
             protocol: Protocol::Binary,
+            version: WsVersion::V1,
             compression: <_>::default(),
             tx_update_full: true,
             confirmed_reads: false,
@@ -102,7 +110,7 @@ struct ClientUpdate {
     /// offset of the database is equal to or greater than `tx_offset`.
     pub tx_offset: Option<TxOffset>,
     /// Type-erased outgoing message.
-    pub message: SerializableMessage,
+    pub message: OutboundMessage,
 }
 
 /// Types with access to the [`DurableOffset`] of a database.
@@ -202,7 +210,7 @@ impl ClientConnectionReceiver {
     /// data.
     //
     // TODO: Can we make a cancel-safe `recv_many` with confirmed reads semantics?
-    pub async fn recv(&mut self) -> Option<SerializableMessage> {
+    pub async fn recv(&mut self) -> Option<OutboundMessage> {
         let ClientUpdate { tx_offset, message } = match self.current.take() {
             None => self.channel.recv().await?,
             Some(update) => update,
@@ -331,9 +339,9 @@ impl ClientConnectionSender {
         let cancelled = AtomicBool::new(false);
         let dummy_claims = SpacetimeIdentityClaims {
             identity: id.identity,
-            subject: "".to_string(),
-            issuer: "".to_string(),
-            audience: vec![],
+            subject: "".into(),
+            issuer: "".into(),
+            audience: [].into(),
             iat: SystemTime::now(),
             exp: None,
             extra: None,
@@ -370,12 +378,17 @@ impl ClientConnectionSender {
     pub fn send_message(
         &self,
         tx_offset: Option<TxOffset>,
-        message: impl Into<SerializableMessage>,
+        message: impl Into<OutboundMessage>,
     ) -> Result<(), ClientSendError> {
-        self.send(ClientUpdate {
-            tx_offset,
-            message: message.into(),
-        })
+        let message = message.into();
+        debug_assert!(
+            matches!(
+                (&self.config.version, &message),
+                (WsVersion::V1, OutboundMessage::V1(_)) | (WsVersion::V2, OutboundMessage::V2(_))
+            ),
+            "attempted to send message variant that does not match client websocket version"
+        );
+        self.send(ClientUpdate { tx_offset, message })
     }
 
     fn send(&self, message: ClientUpdate) -> Result<(), ClientSendError> {
@@ -826,13 +839,13 @@ impl ClientConnection {
         args: FunctionArgs,
         request_id: RequestId,
         timer: Instant,
-        flags: CallReducerFlags,
+        flags: ws_v1::CallReducerFlags,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let caller = match flags {
-            CallReducerFlags::FullUpdate => Some(self.sender()),
+            ws_v1::CallReducerFlags::FullUpdate => Some(self.sender()),
             // Setting `sender = None` causes `eval_updates` to skip sending to the caller
             // as it has no access to the caller other than by id/connection id.
-            CallReducerFlags::NoSuccessNotify => None,
+            ws_v1::CallReducerFlags::NoSuccessNotify => None,
         };
 
         self.module()
@@ -844,6 +857,27 @@ impl ClientConnection {
                 Some(timer),
                 reducer,
                 args,
+            )
+            .await
+    }
+
+    pub async fn call_reducer_v2(
+        &self,
+        reducer: &str,
+        args: Bytes,
+        request_id: RequestId,
+        timer: Instant,
+        _flags: ws_v2::CallReducerFlags,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
+        self.module()
+            .call_reducer(
+                self.id.identity,
+                Some(self.id.connection_id),
+                Some(self.sender()),
+                Some(request_id),
+                Some(timer),
+                reducer,
+                FunctionArgs::Bsatn(args),
             )
             .await
     }
@@ -873,9 +907,61 @@ impl ClientConnection {
             .send_procedure_message(self.sender(), message, tx_offset)
     }
 
+    pub async fn call_procedure_v2(
+        &self,
+        procedure: &str,
+        args: Bytes,
+        request_id: RequestId,
+        timer: Instant,
+        _flags: ws_v2::CallProcedureFlags,
+    ) -> Result<(), BroadcastError> {
+        let CallProcedureReturn { result, tx_offset } = self
+            .module()
+            .call_procedure(
+                self.id.identity,
+                Some(self.id.connection_id),
+                Some(timer),
+                procedure,
+                FunctionArgs::Bsatn(args),
+            )
+            .await;
+
+        let (status, timestamp, execution_duration) = match result {
+            Ok(ProcedureCallResult {
+                return_val,
+                execution_duration,
+                start_timestamp,
+            }) => (
+                ws_v2::ProcedureStatus::Returned(
+                    bsatn::to_vec(&return_val)
+                        .expect("Procedure return value failed to serialize to BSATN")
+                        .into(),
+                ),
+                start_timestamp,
+                TimeDuration::from(execution_duration),
+            ),
+            Err(err) => (
+                ws_v2::ProcedureStatus::InternalError(err.to_string().into()),
+                Timestamp::UNIX_EPOCH,
+                TimeDuration::ZERO,
+            ),
+        };
+
+        let message = ws_v2::ProcedureResult {
+            status,
+            timestamp,
+            total_host_execution_duration: execution_duration,
+            request_id,
+        };
+
+        self.module()
+            .subscriptions()
+            .send_procedure_message_v2(self.sender(), message, tx_offset)
+    }
+
     pub async fn subscribe_single(
         &self,
-        subscription: SubscribeSingle,
+        subscription: ws_v1::SubscribeSingle,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
@@ -889,7 +975,11 @@ impl ClientConnection {
             .await?
     }
 
-    pub async fn unsubscribe(&self, request: Unsubscribe, timer: Instant) -> Result<Option<ExecutionMetrics>, DBError> {
+    pub async fn unsubscribe(
+        &self,
+        request: ws_v1::Unsubscribe,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
         asyncify(move || {
             me.module()
@@ -899,9 +989,24 @@ impl ClientConnection {
         .await
     }
 
+    pub async fn subscribe_v2(
+        &self,
+        request: ws_v2::Subscribe,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
+        let me = self.clone();
+        self.module()
+            .on_module_thread_async("subscribe_v2", async move || {
+                let host = me.module();
+                host.subscriptions()
+                    .add_v2_subscription(Some(&host), me.sender, me.auth.clone(), request, timer, None)
+                    .await
+            })
+            .await?
+    }
     pub async fn subscribe_multi(
         &self,
-        request: SubscribeMulti,
+        request: ws_v1::SubscribeMulti,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
@@ -917,7 +1022,7 @@ impl ClientConnection {
 
     pub async fn unsubscribe_multi(
         &self,
-        request: UnsubscribeMulti,
+        request: ws_v1::UnsubscribeMulti,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
@@ -930,7 +1035,23 @@ impl ClientConnection {
             .await?
     }
 
-    pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<ExecutionMetrics, DBError> {
+    pub async fn unsubscribe_v2(
+        &self,
+        request: ws_v2::Unsubscribe,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
+        let me = self.clone();
+        self.module()
+            .on_module_thread_async("unsubscribe_v2", async move || {
+                let host = me.module();
+                host.subscriptions()
+                    .remove_v2_subscription(Some(&host), me.sender, me.auth.clone(), request, timer)
+                    .await
+            })
+            .await?
+    }
+
+    pub async fn subscribe(&self, subscription: ws_v1::Subscribe, timer: Instant) -> Result<ExecutionMetrics, DBError> {
         let me = self.clone();
         self.module()
             .on_module_thread_async("subscribe", async move || {
@@ -949,14 +1070,14 @@ impl ClientConnection {
         timer: Instant,
     ) -> Result<(), anyhow::Error> {
         self.module()
-            .one_off_query::<JsonFormat>(
+            .one_off_query::<ws_v1::JsonFormat>(
                 self.auth.clone(),
                 query.to_owned(),
                 self.sender.clone(),
                 message_id.to_owned(),
                 timer,
                 JsonRowListBuilderFakePool,
-                |msg: OneOffQueryResponseMessage<JsonFormat>| msg.into(),
+                |msg: OneOffQueryResponseMessage<ws_v1::JsonFormat>| msg.into(),
             )
             .await
     }
@@ -969,14 +1090,28 @@ impl ClientConnection {
     ) -> Result<(), anyhow::Error> {
         let bsatn_rlb_pool = self.module().replica_ctx().subscriptions.bsatn_rlb_pool.clone();
         self.module()
-            .one_off_query::<BsatnFormat>(
+            .one_off_query::<ws_v1::BsatnFormat>(
                 self.auth.clone(),
                 query.to_owned(),
                 self.sender.clone(),
                 message_id.to_owned(),
                 timer,
                 bsatn_rlb_pool,
-                |msg: OneOffQueryResponseMessage<BsatnFormat>| msg.into(),
+                |msg: OneOffQueryResponseMessage<ws_v1::BsatnFormat>| msg.into(),
+            )
+            .await
+    }
+
+    pub async fn one_off_query_v2(&self, query: &str, request_id: u32, timer: Instant) -> Result<(), anyhow::Error> {
+        let bsatn_rlb_pool = self.module().replica_ctx().subscriptions.bsatn_rlb_pool.clone();
+        self.module()
+            .one_off_query_v2(
+                self.auth.clone(),
+                query.to_owned(),
+                self.sender.clone(),
+                request_id,
+                timer,
+                bsatn_rlb_pool,
             )
             .await
     }
@@ -994,7 +1129,7 @@ mod tests {
     use pretty_assertions::assert_matches;
 
     use super::*;
-    use crate::client::messages::{SubscriptionUpdateMessage, TransactionUpdateMessage};
+    use crate::client::messages::{SerializableMessage, SubscriptionUpdateMessage, TransactionUpdateMessage};
 
     #[derive(Clone)]
     struct FakeDurableOffset {
@@ -1064,18 +1199,19 @@ mod tests {
         }
     }
 
-    fn empty_tx_update() -> TransactionUpdateMessage {
-        TransactionUpdateMessage {
+    fn empty_tx_update() -> SerializableMessage {
+        let msg = TransactionUpdateMessage {
             event: None,
             database_update: SubscriptionUpdateMessage::default_for_protocol(Protocol::Binary, None),
-        }
+        };
+        SerializableMessage::TxUpdate(msg)
     }
 
-    async fn assert_received_update(f: impl Future<Output = Option<SerializableMessage>>) {
-        assert_matches!(f.await, Some(SerializableMessage::TxUpdate(_)));
+    async fn assert_received_update(f: impl Future<Output = Option<OutboundMessage>>) {
+        assert_matches!(f.await, Some(OutboundMessage::V1(SerializableMessage::TxUpdate(_))));
     }
 
-    async fn assert_receiver_closed(f: impl Future<Output = Option<SerializableMessage>>) {
+    async fn assert_receiver_closed(f: impl Future<Output = Option<OutboundMessage>>) {
         assert_matches!(f.await, None);
     }
 

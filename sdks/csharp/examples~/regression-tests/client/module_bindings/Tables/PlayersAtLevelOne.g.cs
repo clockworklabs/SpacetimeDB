@@ -24,4 +24,28 @@ namespace SpacetimeDB.Types
 
         public readonly PlayersAtLevelOneHandle PlayersAtLevelOne;
     }
+
+    public sealed class PlayersAtLevelOneCols
+    {
+        public global::SpacetimeDB.Col<PlayerAndLevel, ulong> Id { get; }
+        public global::SpacetimeDB.Col<PlayerAndLevel, SpacetimeDB.Identity> Identity { get; }
+        public global::SpacetimeDB.Col<PlayerAndLevel, string> Name { get; }
+        public global::SpacetimeDB.Col<PlayerAndLevel, ulong> Level { get; }
+
+        public PlayersAtLevelOneCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.Col<PlayerAndLevel, ulong>(tableName, "id");
+            Identity = new global::SpacetimeDB.Col<PlayerAndLevel, SpacetimeDB.Identity>(tableName, "identity");
+            Name = new global::SpacetimeDB.Col<PlayerAndLevel, string>(tableName, "name");
+            Level = new global::SpacetimeDB.Col<PlayerAndLevel, ulong>(tableName, "level");
+        }
+    }
+
+    public sealed class PlayersAtLevelOneIxCols
+    {
+
+        public PlayersAtLevelOneIxCols(string tableName)
+        {
+        }
+    }
 }

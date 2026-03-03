@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::Config;
 use clap::{Arg, ArgMatches, Command};
 use reqwest::Url;
@@ -16,12 +18,19 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let host = Url::parse(host)?;
 
     if let Some(web_session_token) = config.web_session_token() {
-        let client = reqwest::Client::new();
-        client
+        let client = reqwest::Client::builder().timeout(Duration::from_secs(5)).build()?;
+        let result = client
             .post(host.join("auth/cli/logout")?)
             .header("Authorization", format!("Bearer {web_session_token}"))
             .send()
-            .await?;
+            .await;
+
+        if let Err(e) = result {
+            eprintln!(
+                "Warning: Could not reach auth server to invalidate session: {e}\n\
+                 Local credentials have been cleared."
+            );
+        }
     }
 
     config.clear_login_tokens();

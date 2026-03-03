@@ -78,11 +78,6 @@ impl<'ctx> __sdk::Table for PkStringTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<PkString>("pk_string");
-    _table.add_unique_constraint::<String>("s", |row| &row.s);
-}
 pub struct PkStringUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkStringTableHandle<'ctx> {
@@ -98,17 +93,6 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkStringTableHandle<'ctx> {
     fn remove_on_update(&self, callback: PkStringUpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<PkString>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<PkString>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
 }
 
 /// Access to the `s` unique index on the table `pk_string`,
@@ -138,5 +122,36 @@ impl<'ctx> PkStringSUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &String) -> Option<PkString> {
         self.imp.find(col_val)
+    }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<PkString>("pk_string");
+    _table.add_unique_constraint::<String>("s", |row| &row.s);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<PkString>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<PkString>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkString`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_stringQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkString`.
+    fn pk_string(&self) -> __sdk::__query_builder::Table<PkString>;
+}
+
+impl pk_stringQueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_string(&self) -> __sdk::__query_builder::Table<PkString> {
+        __sdk::__query_builder::Table::new("pk_string")
     }
 }
