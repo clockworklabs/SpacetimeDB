@@ -134,6 +134,7 @@ export function spacetimedb(
 
   return {
     name: 'spacetimedb',
+    maxInflightPerWorker: 16384,
 
     async open() {
       try {
@@ -178,14 +179,14 @@ export function spacetimedb(
       return worker;
     },
 
-    async reducer(fn: string, args: Record<string, any>) {
+    async call(fn: string, args: Record<string, any>) {
       await ready;
 
       switch (fn) {
         case 'seed': {
           conn.reducers.seed({
-            n: args.n,
-            initialBalance: args.initial_balance,
+            n: args.accounts,
+            initialBalance: args.initialBalance,
           });
           return;
         }
@@ -261,7 +262,7 @@ export function spacetimedb(
         return;
       }
 
-      let initial = BigInt(rawInitial);
+      const initial = BigInt(rawInitial);
 
       const accounts = conn.db?.accounts;
       if (!accounts) {
