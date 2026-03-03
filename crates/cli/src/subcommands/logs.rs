@@ -246,16 +246,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         let record = serde_json::from_str::<Record<'_>>(&line)?;
 
         // Apply log level filtering.
-        if let Some(min) = min_level {
-            if level_exact {
-                if record.level.severity() != min.severity() {
-                    line.clear();
-                    continue;
-                }
-            } else if record.level.severity() < min.severity() {
-                line.clear();
-                continue;
-            }
+        if !should_display(record.level, min_level, level_exact) {
+            line.clear();
+            continue;
         }
 
         if let Some(ts) = record.ts {
@@ -343,4 +336,128 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     Ok(())
+}
+
+/// Returns true if the record should be displayed given the filter settings.
+fn should_display(record_level: LogLevel, min_level: Option<LogLevel>, level_exact: bool) -> bool {
+    match min_level {
+        None => true,
+        Some(min) => {
+            if level_exact {
+                record_level.severity() == min.severity()
+            } else {
+                record_level.severity() >= min.severity()
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_severity_ordering() {
+        assert!(LogLevel::Trace.severity() < LogLevel::Debug.severity());
+        assert!(LogLevel::Debug.severity() < LogLevel::Info.severity());
+        assert!(LogLevel::Info.severity() < LogLevel::Warn.severity());
+        assert!(LogLevel::Warn.severity() < LogLevel::Error.severity());
+        assert!(LogLevel::Error.severity() < LogLevel::Panic.severity());
+    }
+
+    #[test]
+    fn test_no_filter_shows_all() {
+        for level in [
+            LogLevel::Trace,
+            LogLevel::Debug,
+            LogLevel::Info,
+            LogLevel::Warn,
+            LogLevel::Error,
+            LogLevel::Panic,
+        ] {
+            assert!(should_display(level, None, false));
+            assert!(should_display(level, None, true));
+        }
+    }
+
+    #[test]
+    fn test_min_level_filter() {
+        // With --level warn, only warn, error, and panic should show.
+        let min = Some(LogLevel::Warn);
+        assert!(!should_display(LogLevel::Trace, min, false));
+        assert!(!should_display(LogLevel::Debug, min, false));
+        assert!(!should_display(LogLevel::Info, min, false));
+        assert!(should_display(LogLevel::Warn, min, false));
+        assert!(should_display(LogLevel::Error, min, false));
+        assert!(should_display(LogLevel::Panic, min, false));
+    }
+
+    #[test]
+    fn test_min_level_info() {
+        // With --level info, info and above should show.
+        let min = Some(LogLevel::Info);
+        assert!(!should_display(LogLevel::Trace, min, false));
+        assert!(!should_display(LogLevel::Debug, min, false));
+        assert!(should_display(LogLevel::Info, min, false));
+        assert!(should_display(LogLevel::Warn, min, false));
+        assert!(should_display(LogLevel::Error, min, false));
+        assert!(should_display(LogLevel::Panic, min, false));
+    }
+
+    #[test]
+    fn test_min_level_trace_shows_all() {
+        let min = Some(LogLevel::Trace);
+        assert!(should_display(LogLevel::Trace, min, false));
+        assert!(should_display(LogLevel::Debug, min, false));
+        assert!(should_display(LogLevel::Info, min, false));
+        assert!(should_display(LogLevel::Warn, min, false));
+        assert!(should_display(LogLevel::Error, min, false));
+        assert!(should_display(LogLevel::Panic, min, false));
+    }
+
+    #[test]
+    fn test_exact_level_filter() {
+        // With --level warn --level-exact, only warn should show.
+        let min = Some(LogLevel::Warn);
+        assert!(!should_display(LogLevel::Trace, min, true));
+        assert!(!should_display(LogLevel::Debug, min, true));
+        assert!(!should_display(LogLevel::Info, min, true));
+        assert!(should_display(LogLevel::Warn, min, true));
+        assert!(!should_display(LogLevel::Error, min, true));
+        assert!(!should_display(LogLevel::Panic, min, true));
+    }
+
+    #[test]
+    fn test_exact_level_error() {
+        // With --level error --level-exact, only error should show.
+        let min = Some(LogLevel::Error);
+        assert!(!should_display(LogLevel::Trace, min, true));
+        assert!(!should_display(LogLevel::Debug, min, true));
+        assert!(!should_display(LogLevel::Info, min, true));
+        assert!(!should_display(LogLevel::Warn, min, true));
+        assert!(should_display(LogLevel::Error, min, true));
+        assert!(!should_display(LogLevel::Panic, min, true));
+    }
+
+    #[test]
+    fn test_value_enum_round_trip() {
+        use clap::ValueEnum;
+        // Every variant should have a possible value and round-trip through the parser.
+        for variant in LogLevel::value_variants() {
+            let pv = variant
+                .to_possible_value()
+                .expect("variant should have a possible value");
+            let name = pv.get_name();
+            // Parse it back via clap's ValueEnum.
+            let parsed = LogLevel::value_variants()
+                .iter()
+                .find(|v| {
+                    v.to_possible_value()
+                        .map(|p: clap::builder::PossibleValue| p.get_name() == name)
+                        .unwrap_or(false)
+                })
+                .expect("should find matching variant");
+            assert_eq!(variant.severity(), parsed.severity());
+        }
+    }
 }
