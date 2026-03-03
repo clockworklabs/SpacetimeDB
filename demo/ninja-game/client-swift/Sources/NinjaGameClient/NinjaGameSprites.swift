@@ -304,15 +304,11 @@ struct PlayerEntityView: View {
                 .offset(y: -46 * zoom)
         }
         .overlay {
-            let swords = swordPositions(count: Int(player.weaponCount), t: t)
-            ForEach(0..<swords.count, id: \.self) { i in
-                ProceduralSwordSpriteView(
-                    spriteSize: CGSize(width: 56 * zoom, height: 56 * zoom),
-                    style: .orbit
-                )
-                .scaleEffect(0.72)
-                .offset(x: swords[i].x * zoom, y: swords[i].y * zoom)
-            }
+            OrbitingSwordsOverlay(
+                count: Int(player.weaponCount),
+                t: t,
+                zoom: zoom
+            )
         }
         .position(x: px, y: py)
     }
@@ -326,6 +322,75 @@ struct PlayerEntityView: View {
             hitFlash: isFlashing,
             baseColor: color
         )
+    }
+}
+
+private struct OrbitingSwordsOverlay: View {
+    let count: Int
+    let t: TimeInterval
+    let zoom: CGFloat
+
+    var body: some View {
+        Canvas(rendersAsynchronously: true) { ctx, _ in
+            guard count > 0 else { return }
+            let spriteScale = 0.72 * zoom
+            let bladeW = 4.48 * spriteScale
+            let bladeH = 31.36 * spriteScale
+            let guardW = 12.32 * spriteScale
+            let guardH = 3.36 * spriteScale
+            let gripW = 5.6 * spriteScale
+            let gripH = 8.4 * spriteScale
+            let pommelW = 7.84 * spriteScale
+            let pommelH = 3.36 * spriteScale
+
+            forEachSwordPosition(count: count, t: t) { p in
+                let cx = p.x * zoom
+                let cy = p.y * zoom
+
+                let blade = CGRect(
+                    x: cx - bladeW * 0.5,
+                    y: cy - bladeH * 0.5 - 8 * spriteScale,
+                    width: bladeW,
+                    height: bladeH
+                )
+                let guardRect = CGRect(
+                    x: cx - guardW * 0.5,
+                    y: blade.maxY - 2.5 * spriteScale,
+                    width: guardW,
+                    height: guardH
+                )
+                let grip = CGRect(
+                    x: cx - gripW * 0.5,
+                    y: guardRect.maxY,
+                    width: gripW,
+                    height: gripH
+                )
+                let pommel = CGRect(
+                    x: cx - pommelW * 0.5,
+                    y: grip.maxY - 1.5 * spriteScale,
+                    width: pommelW,
+                    height: pommelH
+                )
+
+                ctx.fill(Path(blade), with: .color(Color(red: 0.82, green: 0.90, blue: 1.0)))
+                ctx.fill(
+                    Path(
+                        CGRect(
+                            x: blade.maxX - bladeW * 0.25,
+                            y: blade.minY + bladeH * 0.04,
+                            width: bladeW * 0.20,
+                            height: bladeH * 0.92
+                        )
+                    ),
+                    with: .color(.white)
+                )
+                ctx.fill(Path(guardRect), with: .color(Color(red: 0.90, green: 0.72, blue: 0.22)))
+                ctx.fill(Path(grip), with: .color(Color(red: 0.25, green: 0.13, blue: 0.06)))
+                ctx.fill(Path(pommel), with: .color(Color(red: 0.76, green: 0.58, blue: 0.15)))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(false)
     }
 }
 

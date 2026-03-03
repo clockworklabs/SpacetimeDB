@@ -180,6 +180,7 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
     private var lastRenderOrderUpdateTime: TimeInterval = 0
     private let renderOrderUpdateInterval: TimeInterval = 1.0 / 15.0
     private var renderPlayersDirty = false
+    private var renderSortScratch: [(y: Float, player: Player)] = []
     private enum HotPathSection: Int, CaseIterable {
         case onTransactionTotal
         case onTransactionRebuildCaches
@@ -1307,13 +1308,17 @@ public class NinjaGameViewModel: SpacetimeClientDelegate {
         }
         lastRenderOrderUpdateTime = now
         renderPlayersDirty = false
-        var decorated: [(y: Float, player: Player)] = []
-        decorated.reserveCapacity(players.count)
+        renderSortScratch.removeAll(keepingCapacity: true)
+        renderSortScratch.reserveCapacity(players.count)
         for player in players where player.health > 0 {
-            decorated.append((y: renderY(for: player), player: player))
+            renderSortScratch.append((y: renderY(for: player), player: player))
         }
-        decorated.sort { $0.y < $1.y }
-        renderPlayers = decorated.map(\.player)
+        renderSortScratch.sort { $0.y < $1.y }
+        renderPlayers.removeAll(keepingCapacity: true)
+        renderPlayers.reserveCapacity(renderSortScratch.count)
+        for entry in renderSortScratch {
+            renderPlayers.append(entry.player)
+        }
     }
 
     private func startWeaponSpawner() {
