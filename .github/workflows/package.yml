@@ -5,8 +5,8 @@ on:
     tags:
       - '**'
     branches:
-      - master
       - release/*
+  workflow_dispatch:
 
 jobs:
   build-cli:
