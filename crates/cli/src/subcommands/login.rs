@@ -71,7 +71,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             Ok(identity) => println!("Logged in with identity {identity}"),
             Err(_) => println!("Token saved."),
         }
-        return Ok(());
     }
 
     if let Some(server) = server_issued_login {
