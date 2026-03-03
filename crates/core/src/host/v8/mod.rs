@@ -934,13 +934,13 @@ where
     let call_result = call(scope, op).map_err(|mut e| {
         if let ErrorOrException::Exception(_) = e {
             // If we're terminating execution, don't try to check `instanceof`.
-            if scope.can_continue() {
-                if let Some(exc) = scope.exception() {
-                    match process_thrown_exception(scope, hooks, exc) {
-                        Ok(Some(err)) => return err,
-                        Ok(None) => {}
-                        Err(exc) => e = ErrorOrException::Exception(exc),
-                    }
+            if scope.can_continue()
+                && let Some(exc) = scope.exception()
+            {
+                match process_thrown_exception(scope, hooks, exc) {
+                    Ok(Some(err)) => return err,
+                    Ok(None) => {}
+                    Err(exc) => e = ErrorOrException::Exception(exc),
                 }
             }
         }

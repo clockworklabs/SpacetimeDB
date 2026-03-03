@@ -513,22 +513,22 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
 }
 
 pub async fn run_selected_or_all_for_model_async_for_lang(ctx: &BenchRunContext<'_>) -> Result<Vec<RunOutcome>> {
-    if let Some(sels) = ctx.selectors {
-        if !sels.is_empty() {
-            let sel_cfg = BenchRunContext {
-                bench_root: ctx.bench_root,
-                mode: ctx.mode,
-                hash: ctx.hash,
-                route: ctx.route,
-                context: ctx.context,
-                llm: ctx.llm,
-                lang: ctx.lang,
-                selectors: Option::from(sels),
-                host: ctx.host.clone(),
-                details_path: ctx.details_path.clone(),
-            };
-            return run_selected_for_model_async_for_lang(&sel_cfg).await;
-        }
+    if let Some(sels) = ctx.selectors
+        && !sels.is_empty()
+    {
+        let sel_cfg = BenchRunContext {
+            bench_root: ctx.bench_root,
+            mode: ctx.mode,
+            hash: ctx.hash,
+            route: ctx.route,
+            context: ctx.context,
+            llm: ctx.llm,
+            lang: ctx.lang,
+            selectors: Option::from(sels),
+            host: ctx.host.clone(),
+            details_path: ctx.details_path.clone(),
+        };
+        return run_selected_for_model_async_for_lang(&sel_cfg).await;
     }
 
     run_all_for_model_async_for_lang(ctx).await
