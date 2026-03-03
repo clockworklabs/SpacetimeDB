@@ -1215,6 +1215,19 @@ record ViewDeclaration
         else
         {
             ReturnType = TypeUse.Parse(method, method.ReturnType, diag);
+
+            if (
+                method.ReturnType
+                    is INamedTypeSymbol
+                    {
+                        OriginalDefinition: var listDefinition,
+                        TypeArguments.Length: 1,
+                    }
+                && listDefinition.ToString() == "System.Collections.Generic.List<T>"
+            )
+            {
+                ReturnsEnumerable = true;
+            }
         }
         Scope = new Scope(methodSyntax.Parent as MemberDeclarationSyntax);
 
