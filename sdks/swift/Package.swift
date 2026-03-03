@@ -40,5 +40,16 @@ let package = Package(
                 .plugin(name: "BenchmarkPlugin", package: "package-benchmark"),
             ]
         ),
+        .executableTarget(
+            name: "GeneratedBindingsBenchmarks",
+            dependencies: [
+                "SpacetimeDB",
+                .product(name: "Benchmark", package: "package-benchmark"),
+            ],
+            path: "Benchmarks/GeneratedBindingsBenchmarks",
+            plugins: [
+                .plugin(name: "BenchmarkPlugin", package: "package-benchmark"),
+            ]
+        ),
     ]
 )
