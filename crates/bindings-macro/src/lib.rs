@@ -343,7 +343,7 @@ pub fn settings(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
             #item
 
             const _: () = {
-                #[export_name = #register_symbol]
+                #[unsafe(export_name = #register_symbol)]
                 extern "C" fn __register_setting() {
                     #register_call
                 }
