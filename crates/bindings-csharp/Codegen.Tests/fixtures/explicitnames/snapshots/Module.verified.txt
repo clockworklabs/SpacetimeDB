@@ -1,0 +1,21 @@
+﻿{
+  Diagnostics: [
+    {/*
+    [SpacetimeDB.View(Accessor = "demo_view", Name = "canonical_view", Public = true)]
+    public static List<DemoTable> DemoView(ViewContext ctx)
+                  ^^^^^^^^^^^^^^^
+    {
+*/
+      Message: View 'DemoView' must return T?, List<T>, IQuery<T>, or IEnumerable<T>.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0024,
+        Title: Views must return T?, List<T>, IQuery<T>, or IEnumerable<T>,
+        MessageFormat: View '{0}' must return T?, List<T>, IQuery<T>, or IEnumerable<T>.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    }
+  ]
+}
