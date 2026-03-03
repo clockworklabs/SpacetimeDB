@@ -146,7 +146,7 @@ final class ObservabilityTests: XCTestCase {
                     status: .returned(Data([0x01])),
                     timestamp: 0,
                     totalHostExecutionDuration: 0,
-                    requestId: 1
+                    requestId: RequestId(rawValue: 1)
                 )
             )
         )

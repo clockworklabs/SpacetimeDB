@@ -270,6 +270,7 @@ Detailed publishing runbook:
 
 - `sdks/swift/PUBLISHING.md`
 - `sdks/swift/DISTRIBUTION.md`
+- `sdks/swift/SPI_SUBMISSION_CHECKLIST.md`
 
 Swift Package Index link and badge templates (replace `<owner>/<repo>` with mirror coordinates):
 

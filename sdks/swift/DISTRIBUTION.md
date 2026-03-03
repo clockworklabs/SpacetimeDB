@@ -2,6 +2,10 @@
 
 This runbook defines how to ship `sdks/swift` as a standalone public Swift package for SPM and Swift Package Index.
 
+Execution checklist (submission + badge verification):
+
+- `sdks/swift/SPI_SUBMISSION_CHECKLIST.md`
+
 ## Why Mirror Is Required
 
 The monorepo root is not a Swift package root. Public SPM consumers and Swift Package Index expect `Package.swift` at repository root.

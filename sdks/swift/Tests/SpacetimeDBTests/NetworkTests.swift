@@ -67,10 +67,9 @@ final class NetworkTests: XCTestCase {
         let client = SpacetimeClient(serverUrl: URL(string: "http://localhost:3000")!, moduleName: "test-module")
         let delegate = MockDelegate()
         client.delegate = delegate
-
         let initial = InitialConnection(
-            identity: Data(repeating: 0xAB, count: 32),
-            connectionId: Data(repeating: 0xCD, count: 16),
+            identity: Identity(rawBytes: Data(repeating: 0xAB, count: 32)),
+            connectionId: ClientConnectionId(rawBytes: Data(repeating: 0xCD, count: 16)),
             token: "token"
         )
         client._test_deliverServerMessage(.initialConnection(initial))
@@ -109,10 +108,9 @@ final class NetworkTests: XCTestCase {
         )
         let delegate = MockDelegate()
         client.delegate = delegate
-
         let initial = InitialConnection(
-            identity: Data(repeating: 0xAB, count: 32),
-            connectionId: Data(repeating: 0xCD, count: 16),
+            identity: Identity(rawBytes: Data(repeating: 0xAB, count: 32)),
+            connectionId: ClientConnectionId(rawBytes: Data(repeating: 0xCD, count: 16)),
             token: "token"
         )
         client._test_deliverServerMessage(.initialConnection(initial))
@@ -163,7 +161,7 @@ final class NetworkTests: XCTestCase {
     
     func testSubscriptionMessageEncoding() throws {
         // Just verify our protocol messages compile and encode with BSATN successfully
-        let subscribe = ClientMessage.subscribe(Subscribe(queryStrings: ["SELECT * FROM person"], requestId: 1))
+        let subscribe = ClientMessage.subscribe(Subscribe(queryStrings: ["SELECT * FROM person"], requestId: RequestId(rawValue: 1)))
         let encoder = BSATNEncoder()
         
         let data = try encoder.encode(subscribe)
@@ -173,7 +171,7 @@ final class NetworkTests: XCTestCase {
 
     func testProcedureMessageEncoding() throws {
         let call = ClientMessage.callProcedure(
-            CallProcedure(requestId: 42, flags: 0, procedure: "say_hello", args: Data([0x01, 0x02]))
+            CallProcedure(requestId: RequestId(rawValue: 42), flags: 0, procedure: "say_hello", args: Data([0x01, 0x02]))
         )
         let data = try BSATNEncoder().encode(call)
 
@@ -182,7 +180,7 @@ final class NetworkTests: XCTestCase {
     }
 
     func testUnsubscribeMessageEncoding() throws {
-        let msg = ClientMessage.unsubscribe(Unsubscribe(requestId: 1, querySetId: 7, flags: 1))
+        let msg = ClientMessage.unsubscribe(Unsubscribe(requestId: RequestId(rawValue: 1), querySetId: QuerySetId(rawValue: 7), flags: 1))
         let data = try BSATNEncoder().encode(msg)
         XCTAssertGreaterThan(data.count, 0)
         XCTAssertEqual(data.first, 1) // v2 ClientMessage::Unsubscribe tag
@@ -201,8 +199,8 @@ final class NetworkTests: XCTestCase {
         guard case .unsubscribeApplied(let decodedSome) = decodedSomeMessage else {
             return XCTFail("Expected unsubscribeApplied message")
         }
-        XCTAssertEqual(decodedSome.requestId, 1)
-        XCTAssertEqual(decodedSome.querySetId, 77)
+        XCTAssertEqual(decodedSome.requestId, RequestId(rawValue: 1))
+        XCTAssertEqual(decodedSome.querySetId, QuerySetId(rawValue: 77))
         XCTAssertEqual(decodedSome.rows?.tables.count, 0)
 
         var nonePayload = Data()
@@ -242,8 +240,8 @@ final class NetworkTests: XCTestCase {
         guard case .subscriptionError(let decodedSome) = decodedSomeMessage else {
             return XCTFail("Expected subscriptionError message")
         }
-        XCTAssertEqual(decodedSome.requestId, 9)
-        XCTAssertEqual(decodedSome.querySetId, 42)
+        XCTAssertEqual(decodedSome.requestId, RequestId(rawValue: 9))
+        XCTAssertEqual(decodedSome.querySetId, QuerySetId(rawValue: 42))
         XCTAssertEqual(decodedSome.error, "bad query")
 
         var nonePayload = Data()
@@ -258,7 +256,7 @@ final class NetworkTests: XCTestCase {
             return XCTFail("Expected subscriptionError message")
         }
         XCTAssertNil(decodedNone.requestId)
-        XCTAssertEqual(decodedNone.querySetId, 42)
+        XCTAssertEqual(decodedNone.querySetId, QuerySetId(rawValue: 42))
         XCTAssertEqual(decodedNone.error, "bad query")
 
         var invalidPayload = Data()
@@ -271,7 +269,7 @@ final class NetworkTests: XCTestCase {
     }
 
     func testOneOffQueryMessageEncoding() throws {
-        let msg = ClientMessage.oneOffQuery(OneOffQuery(requestId: 1, queryString: "SELECT * FROM player"))
+        let msg = ClientMessage.oneOffQuery(OneOffQuery(requestId: RequestId(rawValue: 1), queryString: "SELECT * FROM player"))
         let data = try BSATNEncoder().encode(msg)
         XCTAssertGreaterThan(data.count, 0)
         XCTAssertEqual(data.first, 2) // v2 ClientMessage::OneOffQuery tag
@@ -294,7 +292,7 @@ final class NetworkTests: XCTestCase {
         }
 
         client.handleOneOffQueryResult(
-            OneOffQueryResult(requestId: 1, result: .ok(QueryRows(tables: [])))
+            OneOffQueryResult(requestId: RequestId(rawValue: 1), result: .ok(QueryRows(tables: [])))
         )
 
         client.oneOffQuery("SELECT * FROM nope") { result in
@@ -308,7 +306,7 @@ final class NetworkTests: XCTestCase {
         }
 
         client.handleOneOffQueryResult(
-            OneOffQueryResult(requestId: 2, result: .err("bad query"))
+            OneOffQueryResult(requestId: RequestId(rawValue: 2), result: .err("bad query"))
         )
 
         wait(for: [success, failure], timeout: 1.0)
@@ -325,14 +323,14 @@ final class NetworkTests: XCTestCase {
 
         XCTAssertEqual(handle.state, .pending)
 
-        let applied = SubscribeApplied(requestId: 1, querySetId: 77, rows: QueryRows(tables: []))
+        let applied = SubscribeApplied(requestId: RequestId(rawValue: 1), querySetId: QuerySetId(rawValue: 77), rows: QueryRows(tables: []))
         client.handleSubscribeApplied(applied)
 
         wait(for: [onApplied], timeout: 1.0)
         XCTAssertEqual(handle.state, .active)
 
         client.unsubscribe(handle)
-        let unapplied = UnsubscribeApplied(requestId: 2, querySetId: 77, rows: nil)
+        let unapplied = UnsubscribeApplied(requestId: RequestId(rawValue: 2), querySetId: QuerySetId(rawValue: 77), rows: nil)
         client.handleUnsubscribeApplied(unapplied)
 
         XCTAssertEqual(handle.state, .ended)
@@ -353,7 +351,7 @@ final class NetworkTests: XCTestCase {
         )
 
         client.handleSubscriptionError(
-            SubscriptionError(requestId: 1, querySetId: 1, error: "bad query syntax")
+            SubscriptionError(requestId: RequestId(rawValue: 1), querySetId: QuerySetId(rawValue: 1), error: "bad query syntax")
         )
 
         wait(for: [onError], timeout: 1.0)
@@ -366,11 +364,11 @@ final class NetworkTests: XCTestCase {
         let client = SpacetimeClient(serverUrl: URL(string: "http://localhost:3000")!, moduleName: "test-module")
         let handle = client.subscribe(queries: ["SELECT * FROM player"])
 
-        client.handleSubscribeApplied(SubscribeApplied(requestId: 1, querySetId: 9, rows: QueryRows(tables: [])))
+        client.handleSubscribeApplied(SubscribeApplied(requestId: RequestId(rawValue: 1), querySetId: QuerySetId(rawValue: 9), rows: QueryRows(tables: [])))
         XCTAssertEqual(handle.state, .active)
 
         client.unsubscribe(handle)
-        client.handleUnsubscribeApplied(UnsubscribeApplied(requestId: 2, querySetId: 9, rows: nil))
+        client.handleUnsubscribeApplied(UnsubscribeApplied(requestId: RequestId(rawValue: 2), querySetId: QuerySetId(rawValue: 9), rows: nil))
         XCTAssertEqual(handle.state, .ended)
 
         // A second call should no-op and stay stable.
@@ -452,7 +450,7 @@ final class NetworkTests: XCTestCase {
             status: .returned(returned),
             timestamp: 0,
             totalHostExecutionDuration: 0,
-            requestId: 1
+            requestId: RequestId(rawValue: 1)
         )
         client.handleProcedureResult(procedureResult)
 
@@ -474,7 +472,7 @@ final class NetworkTests: XCTestCase {
                 status: .returned(expectedData),
                 timestamp: 0,
                 totalHostExecutionDuration: 0,
-                requestId: 1
+                requestId: RequestId(rawValue: 1)
             )
         )
 
@@ -532,7 +530,7 @@ final class NetworkTests: XCTestCase {
                 status: .returned(encoded),
                 timestamp: 0,
                 totalHostExecutionDuration: 0,
-                requestId: 1
+                requestId: RequestId(rawValue: 1)
             )
         )
 
@@ -560,7 +558,7 @@ final class NetworkTests: XCTestCase {
                 status: .returned(encoded),
                 timestamp: 0,
                 totalHostExecutionDuration: 0,
-                requestId: 1
+                requestId: RequestId(rawValue: 1)
             )
         )
 
@@ -591,7 +589,7 @@ final class NetworkTests: XCTestCase {
             status: .internalError("boom"),
             timestamp: 0,
             totalHostExecutionDuration: 0,
-            requestId: 1
+            requestId: RequestId(rawValue: 1)
         )
         client.handleProcedureResult(procedureResult)
 
@@ -610,7 +608,7 @@ final class NetworkTests: XCTestCase {
         client.send("add", Data())
 
         client.handleReducerResult(
-            ReducerResult(requestId: 1, timestamp: 0, result: .internalError("no such reducer"))
+            ReducerResult(requestId: RequestId(rawValue: 1), timestamp: 0, result: .internalError("no such reducer"))
         )
 
         wait(for: [expectation], timeout: 1.0)
@@ -628,7 +626,7 @@ final class NetworkTests: XCTestCase {
         client.delegate = delegate
 
         client.handleReducerResult(
-            ReducerResult(requestId: 4242, timestamp: 0, result: .err(Data("plain utf8 error".utf8)))
+            ReducerResult(requestId: RequestId(rawValue: 4242), timestamp: 0, result: .err(Data("plain utf8 error".utf8)))
         )
 
         wait(for: [expectation], timeout: 1.0)

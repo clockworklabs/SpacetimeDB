@@ -67,6 +67,21 @@ class BSATNReader {
         let bitPattern = try read(UInt32.self)
         return Float(bitPattern: bitPattern)
     }
+
+    func readArray<T>(_ block: () throws -> T) throws -> [T] {
+        let count = try read(UInt32.self)
+        var elements: [T] = []
+        elements.reserveCapacity(Int(count))
+        for _ in 0..<count {
+            elements.append(try block())
+        }
+        return elements
+    }
+
+    func readTaggedEnum<T>(_ block: (UInt8) throws -> T) throws -> T {
+        let tag = try read(UInt8.self)
+        return try block(tag)
+    }
 }
 
 struct _BSATNDecoder: Decoder {
@@ -274,12 +289,11 @@ protocol BSATNSpecialDecodable {
 
 extension Array: BSATNSpecialDecodable where Element: Decodable {
     init(fromBSATN decoder: _BSATNDecoder) throws {
-        let length = try decoder.storage.read(UInt32.self)
-        self = []
-        self.reserveCapacity(Int(length))
-        var container = try decoder.unkeyedContainer()
-        for _ in 0..<length {
-            self.append(try container.decode(Element.self))
+        self = try decoder.storage.readArray {
+            if let specialType = Element.self as? BSATNSpecialDecodable.Type {
+                return try specialType.init(fromBSATN: decoder) as! Element
+            }
+            return try Element(from: decoder)
         }
     }
 }

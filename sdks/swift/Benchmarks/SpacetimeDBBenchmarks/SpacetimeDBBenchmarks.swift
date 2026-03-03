@@ -119,15 +119,15 @@ private func makeTransactionUpdateMessage() -> Data {
 }
 
 private func makeSubscribeMessage() -> ClientMessage {
-    .subscribe(Subscribe(queryStrings: ["SELECT * FROM player"], requestId: 1, querySetId: 7))
+    .subscribe(Subscribe(queryStrings: ["SELECT * FROM player"], requestId: RequestId(rawValue: 1), querySetId: QuerySetId(rawValue: 7)))
 }
 
 private func makeReducerMessage() -> ClientMessage {
-    .callReducer(CallReducer(requestId: 44, flags: 0, reducer: "move", args: reducerArgsPayload))
+    .callReducer(CallReducer(requestId: RequestId(rawValue: 44), flags: 0, reducer: "move", args: reducerArgsPayload))
 }
 
 private func makeProcedureMessage() -> ClientMessage {
-    .callProcedure(CallProcedure(requestId: 45, flags: 0, procedure: "spawn", args: procedureArgsPayload))
+    .callProcedure(CallProcedure(requestId: RequestId(rawValue: 45), flags: 0, procedure: "spawn", args: procedureArgsPayload))
 }
 
 private func makeReducerResultMessage() -> Data {

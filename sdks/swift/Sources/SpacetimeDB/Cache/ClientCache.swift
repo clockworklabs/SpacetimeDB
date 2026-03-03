@@ -49,7 +49,7 @@ public final class ClientCache: @unchecked Sendable {
     public func applyTransactionUpdate(_ update: TransactionUpdate) {
         for querySet in update.querySets {
             for tableUpdate in querySet.tables {
-                guard let tableCache = self.tables[tableUpdate.tableName] else {
+                guard let tableCache = self.tables[tableUpdate.tableName.rawValue] else {
                     continue
                 }
 

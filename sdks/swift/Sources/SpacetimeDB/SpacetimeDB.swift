@@ -78,8 +78,8 @@ public final class SubscriptionHandle: @unchecked Sendable {
     public let queries: [String]
     public private(set) var state: SubscriptionState = .pending
 
-    var querySetId: UInt32?
-    var requestId: UInt32?
+    var querySetId: QuerySetId?
+    var requestId: RequestId?
     weak var client: SpacetimeClient?
     var onApplied: (() -> Void)?
     var onError: ((String) -> Void)?
@@ -95,13 +95,13 @@ public final class SubscriptionHandle: @unchecked Sendable {
         client?.unsubscribe(self, sendDroppedRows: sendDroppedRows)
     }
 
-    func markPending(requestId: UInt32, querySetId: UInt32) {
+    func markPending(requestId: RequestId, querySetId: QuerySetId) {
         self.requestId = requestId
         self.querySetId = querySetId
         self.state = .pending
     }
 
-    func markApplied(querySetId: UInt32) {
+    func markApplied(querySetId: QuerySetId) {
         self.requestId = nil
         self.querySetId = querySetId
         self.state = .active

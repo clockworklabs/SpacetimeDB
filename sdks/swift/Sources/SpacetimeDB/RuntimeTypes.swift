@@ -18,6 +18,26 @@ public struct ClientConnectionId: Codable, Sendable, Hashable {
     }
 }
 
+public struct QuerySetId: Codable, Sendable, Hashable, RawRepresentable {
+    public var rawValue: UInt32
+    public init(rawValue: UInt32) { self.rawValue = rawValue }
+}
+
+public struct RequestId: Codable, Sendable, Hashable, RawRepresentable {
+    public var rawValue: UInt32
+    public init(rawValue: UInt32) { self.rawValue = rawValue }
+}
+
+public struct RawIdentifier: Codable, Sendable, Hashable, RawRepresentable {
+    public var rawValue: String
+    public init(rawValue: String) { self.rawValue = rawValue }
+}
+
+public struct TimeDurationMicros: Codable, Sendable, Hashable, RawRepresentable {
+    public var rawValue: UInt64
+    public init(rawValue: UInt64) { self.rawValue = rawValue }
+}
+
 public enum ScheduleAt: Codable, Sendable {
     case interval(UInt64)
     case time(UInt64)
@@ -55,6 +75,55 @@ extension ClientConnectionId: BSATNSpecialEncodable {
             throw BSATNEncodingError.lengthOutOfRange
         }
         encoder.storage.append(rawBytes)
+    }
+}
+
+extension QuerySetId: BSATNSpecialDecodable {
+    init(fromBSATN decoder: _BSATNDecoder) throws {
+        self.rawValue = try decoder.storage.read(UInt32.self)
+    }
+}
+
+extension QuerySetId: BSATNSpecialEncodable {
+    func encodeBSATN(to encoder: _BSATNEncoder) throws {
+        encoder.storage.append(rawValue)
+    }
+}
+
+extension RequestId: BSATNSpecialDecodable {
+    init(fromBSATN decoder: _BSATNDecoder) throws {
+        self.rawValue = try decoder.storage.read(UInt32.self)
+    }
+}
+
+extension RequestId: BSATNSpecialEncodable {
+    func encodeBSATN(to encoder: _BSATNEncoder) throws {
+        encoder.storage.append(rawValue)
+    }
+}
+
+extension RawIdentifier: BSATNSpecialDecodable {
+    init(fromBSATN decoder: _BSATNDecoder) throws {
+        self.rawValue = try decoder.singleValueContainer().decode(String.self)
+    }
+}
+
+extension RawIdentifier: BSATNSpecialEncodable {
+    func encodeBSATN(to encoder: _BSATNEncoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
+extension TimeDurationMicros: BSATNSpecialDecodable {
+    init(fromBSATN decoder: _BSATNDecoder) throws {
+        self.rawValue = try decoder.storage.read(UInt64.self)
+    }
+}
+
+extension TimeDurationMicros: BSATNSpecialEncodable {
+    func encodeBSATN(to encoder: _BSATNEncoder) throws {
+        encoder.storage.append(rawValue)
     }
 }
 

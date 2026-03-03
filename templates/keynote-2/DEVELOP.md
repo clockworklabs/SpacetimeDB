@@ -31,6 +31,7 @@ The script will:
 - `--concurrency N` - Concurrent connections (default: 50)
 - `--alpha N` - Contention level (default: 1.5)
 - `--systems a,b,c` - Systems to compare (default: convex,spacetimedb)
+  - include `spacetimedb_swift` to benchmark the Swift transfer simulator client
 - `--skip-prep` - Skip database seeding
 - `--no-animation` - Disable animated output
 
@@ -42,6 +43,8 @@ The script will:
 - **pnpm** installed globally
 - **Docker** for local Postgres / Cockroach / Supabase
 - Local/Cloud Convex
+- **Rust toolchain** (required when running `spacetimedb`)
+- **Swift toolchain** (required when running `spacetimedb_swift`)
 
 From a fresh clone:
 

@@ -126,10 +126,10 @@ final class CacheTests: XCTestCase {
 
         let update = TransactionUpdate(querySets: [
             QuerySetUpdate(
-                querySetId: 1,
+                querySetId: QuerySetId(rawValue: 1),
                 tables: [
                     TableUpdate(
-                        tableName: "Person",
+                        tableName: RawIdentifier(rawValue: "Person"),
                         rows: [
                             .persistentTable(
                                 PersistentTableRows(

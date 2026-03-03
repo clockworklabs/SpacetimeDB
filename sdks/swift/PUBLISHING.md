@@ -21,6 +21,10 @@ Mirror/release automation:
 
 - `tools/swift-package-mirror.sh`
 
+Operational checklist for SPI submission + badge verification:
+
+- `sdks/swift/SPI_SUBMISSION_CHECKLIST.md`
+
 ## DocC
 
 DocC bundle location:

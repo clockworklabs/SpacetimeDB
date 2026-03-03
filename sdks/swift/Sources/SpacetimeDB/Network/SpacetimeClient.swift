@@ -124,14 +124,14 @@ public final class SpacetimeClient: @unchecked Sendable {
 
     private let encoder = BSATNEncoder()
     private let decoder = BSATNDecoder()
-    private var nextRequestId: UInt32 = 1
-    private var nextQuerySetId: UInt32 = 1
-    private var pendingReducerNames: [UInt32: String] = [:]
-    private var pendingProcedureCallbacks: [UInt32: (Result<Data, Error>) -> Void] = [:]
-    private var pendingOneOffQueryCallbacks: [UInt32: (Result<QueryRows, Error>) -> Void] = [:]
-    private var pendingSubscriptionByRequestId: [UInt32: SubscriptionHandle] = [:]
-    private var activeSubscriptionByQuerySetId: [UInt32: SubscriptionHandle] = [:]
-    private var pendingUnsubscribeByRequestId: [UInt32: SubscriptionHandle] = [:]
+    private var nextRequestId = RequestId(rawValue: 1)
+    private var nextQuerySetId = QuerySetId(rawValue: 1)
+    private var pendingReducerNames: [RequestId: String] = [:]
+    private var pendingProcedureCallbacks: [RequestId: (Result<Data, Error>) -> Void] = [:]
+    private var pendingOneOffQueryCallbacks: [RequestId: (Result<QueryRows, Error>) -> Void] = [:]
+    private var pendingSubscriptionByRequestId: [RequestId: SubscriptionHandle] = [:]
+    private var activeSubscriptionByQuerySetId: [QuerySetId: SubscriptionHandle] = [:]
+    private var pendingUnsubscribeByRequestId: [RequestId: SubscriptionHandle] = [:]
     private var managedSubscriptions: [ObjectIdentifier: SubscriptionHandle] = [:]
     private let decodeQueue = DispatchQueue(label: "spacetimedb.client.decode", qos: .utility)
 
@@ -205,8 +205,8 @@ public final class SpacetimeClient: @unchecked Sendable {
 
         sendQueue.removeAll()
         isSending = false
-        nextRequestId = 1
-        nextQuerySetId = 1
+        nextRequestId = RequestId(rawValue: 1)
+        nextQuerySetId = QuerySetId(rawValue: 1)
         pendingReducerNames.removeAll()
         failPendingProcedureCallbacks(with: SpacetimeClientProcedureError.disconnected)
         failPendingOneOffQueryCallbacks(with: SpacetimeClientQueryError.disconnected)
@@ -534,15 +534,15 @@ public final class SpacetimeClient: @unchecked Sendable {
         send(ClientMessage.subscribe(Subscribe(queryStrings: handle.queries, requestId: requestId, querySetId: querySetId)))
     }
 
-    private func allocateRequestId() -> UInt32 {
+    private func allocateRequestId() -> RequestId {
         let id = nextRequestId
-        nextRequestId &+= 1
+        nextRequestId = RequestId(rawValue: nextRequestId.rawValue &+ 1)
         return id
     }
 
-    private func allocateQuerySetId() -> UInt32 {
+    private func allocateQuerySetId() -> QuerySetId {
         let id = nextQuerySetId
-        nextQuerySetId &+= 1
+        nextQuerySetId = QuerySetId(rawValue: nextQuerySetId.rawValue &+ 1)
         return id
     }
 
@@ -602,7 +602,7 @@ public final class SpacetimeClient: @unchecked Sendable {
                 setConnectionState(.connected)
                 startKeepAliveLoop()
                 invokeDelegateCallback(named: "delegate.on_identity_received") {
-                    $0.onIdentityReceived(identity: Array(connection.identity), token: connection.token)
+                    $0.onIdentityReceived(identity: Array(connection.identity.rawBytes), token: connection.token)
                 }
                 subscribeAll(tables: Array(Self.clientCache.registeredTableNames))
                 resubscribeManagedSubscriptions()
@@ -753,7 +753,7 @@ public final class SpacetimeClient: @unchecked Sendable {
         }
     }
 
-    private func queryRowsToTransactionUpdate(_ rows: QueryRows, querySetId: UInt32, asInserts: Bool) -> TransactionUpdate {
+    private func queryRowsToTransactionUpdate(_ rows: QueryRows, querySetId: QuerySetId, asInserts: Bool) -> TransactionUpdate {
         let updates = rows.tables.map { tableRows in
             let persistent = PersistentTableRows(
                 inserts: asInserts ? tableRows.rows : .empty,
