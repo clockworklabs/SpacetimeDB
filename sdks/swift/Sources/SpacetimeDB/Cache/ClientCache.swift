@@ -2,7 +2,7 @@ import Foundation
 
 /// Holds the local state of all SpacetimeDB tables, routing updates from the WebSocket down to each table.
 public final class ClientCache: @unchecked Sendable {
-    private let lock = NSLock()
+    private let lock = UnfairLock()
     private var tables: [String: any SpacetimeTableCacheProtocol] = [:]
 
     public var registeredTableNames: [String] {

@@ -11,7 +11,7 @@ public protocol SpacetimeTableCacheProtocol: AnyObject, Sendable {
 
 public final class TableDeltaHandle: @unchecked Sendable {
     private let cancelAction: () -> Void
-    private let lock = NSLock()
+    private let lock = UnfairLock()
     private var isCancelled = false
 
     init(cancelAction: @escaping () -> Void) {
@@ -73,7 +73,7 @@ public final class TableCache<T: Decodable & Sendable>: SpacetimeTableCacheProto
     // All internal state is @ObservationIgnored to prevent the @Observable macro
     // from intercepting every dictionary mutation with willSet/didSet tracking.
     // Only `rows` is observed for SwiftUI reactivity.
-    @ObservationIgnored private let lock = NSLock()
+    @ObservationIgnored private let lock = UnfairLock()
     @ObservationIgnored private let decoder = BSATNDecoder()
     @ObservationIgnored private var entries: [HashedBytes: RowEntry<T>] = [:]
     @ObservationIgnored private var insertCallbacks: [UUID: (T) -> Void] = [:]
