@@ -204,12 +204,45 @@ struct TemplateInfo {
     client_source: Option<String>,
     server_lang: Option<String>,
     client_lang: Option<String>,
+    client_framework: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct TemplateJson {
+    id: String,
+    description: String,
+    server_source: String,
+    client_source: String,
+    server_lang: String,
+    client_lang: String,
+    #[serde(default)]
+    client_framework: Option<String>,
+}
+
+impl From<&TemplateInfo> for TemplateJson {
+    fn from(template: &TemplateInfo) -> Self {
+        Self {
+            id: template.id.clone(),
+            description: template.description.clone(),
+            server_source: template.server_source.clone().unwrap_or_default(),
+            client_source: template.client_source.clone().unwrap_or_default(),
+            server_lang: template.server_lang.clone().unwrap_or_default(),
+            client_lang: template.client_lang.clone().unwrap_or_default(),
+            client_framework: template.client_framework.clone(),
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+struct TemplatesJson {
+    templates: Vec<TemplateJson>,
 }
 
 #[derive(serde::Deserialize)]
 struct TemplateMetadata {
     description: String,
     client_lang: Option<String>,
+    client_framework: Option<String>,
     server_lang: Option<String>,
 }
 
@@ -267,6 +300,7 @@ fn discover_templates(templates_dir: &Path) -> Vec<TemplateInfo> {
                 client_source,
                 server_lang: metadata.server_lang,
                 client_lang: metadata.client_lang,
+                client_framework: metadata.client_framework,
             });
         }
     }
@@ -276,46 +310,10 @@ fn discover_templates(templates_dir: &Path) -> Vec<TemplateInfo> {
 }
 
 fn generate_templates_json(templates: &[TemplateInfo]) -> String {
-    let mut json = String::from("{\n  \"templates\": [\n");
-
-    for (i, template) in templates.iter().enumerate() {
-        json.push_str("    {\n");
-        json.push_str(&format!("      \"id\": \"{}\",\n", template.id));
-        json.push_str(&format!("      \"description\": \"{}\",\n", template.description));
-
-        if let Some(ref server_source) = template.server_source {
-            json.push_str(&format!("      \"server_source\": \"{}\",\n", server_source));
-        } else {
-            json.push_str("      \"server_source\": \"\",\n");
-        }
-
-        if let Some(ref client_source) = template.client_source {
-            json.push_str(&format!("      \"client_source\": \"{}\",\n", client_source));
-        } else {
-            json.push_str("      \"client_source\": \"\",\n");
-        }
-
-        if let Some(ref server_lang) = template.server_lang {
-            json.push_str(&format!("      \"server_lang\": \"{}\",\n", server_lang));
-        } else {
-            json.push_str("      \"server_lang\": \"\",\n");
-        }
-
-        if let Some(ref client_lang) = template.client_lang {
-            json.push_str(&format!("      \"client_lang\": \"{}\"", client_lang));
-        } else {
-            json.push_str("      \"client_lang\": \"\"");
-        }
-
-        json.push_str("\n    }");
-        if i < templates.len() - 1 {
-            json.push(',');
-        }
-        json.push('\n');
-    }
-
-    json.push_str("  ]\n}");
-    json
+    let payload = TemplatesJson {
+        templates: templates.iter().map(TemplateJson::from).collect(),
+    };
+    serde_json::to_string_pretty(&payload).expect("Failed to serialize templates JSON")
 }
 
 fn generate_template_entry(code: &mut String, template_path: &Path, source: &str, manifest_dir: &Path) {
