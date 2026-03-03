@@ -1,0 +1,13 @@
+.DS_Store
+**/.DS_Store
+
+# Swift build artifacts
+**/.build/
+**/.swiftpm/
+
+# Rust/Cargo build artifacts
+**/target/
+
+# Python cache
+**/__pycache__/
+*.pyc

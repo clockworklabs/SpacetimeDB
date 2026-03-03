@@ -14,13 +14,13 @@ let package = Package(
         )
     ],
     dependencies: [
-        .package(name: "SpacetimeDB", path: "../../../sdks/swift")
+        .package(url: "https://github.com/avias8/spacetimedb-swift.git", from: "0.21.0")
     ],
     targets: [
         .executableTarget(
             name: "NinjaGameClient",
             dependencies: [
-                .product(name: "SpacetimeDB", package: "SpacetimeDB")
+                .product(name: "SpacetimeDB", package: "spacetimedb-swift")
             ],
             resources: [
                 .process("Resources")
