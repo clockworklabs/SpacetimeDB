@@ -407,6 +407,11 @@ record TableIndex
                 .ToImmutableArray()
         )
     {
+        if (string.IsNullOrWhiteSpace(attr.Accessor))
+        {
+            diag.Report(ErrorDescriptor.TableLevelIndexMissingAccessor, data);
+        }
+
         if (attr.Columns.Length == 0)
         {
             diag.Report(ErrorDescriptor.EmptyIndexColumns, data);
