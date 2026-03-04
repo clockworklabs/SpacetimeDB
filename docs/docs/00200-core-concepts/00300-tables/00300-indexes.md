@@ -187,7 +187,7 @@ const user = table(
     name: 'user',
     public: true,
     indexes: [
-      { name: 'idx_age', algorithm: 'btree', columns: ['age'] },
+      { accessor: 'idx_age', algorithm: 'btree', columns: ['age'] },
     ],
   },
   {
@@ -256,7 +256,7 @@ const score = table(
     name: 'score',
     public: true,
     indexes: [
-      { name: 'by_player_and_level', algorithm: 'btree', columns: ['player_id', 'level'] },
+      { accessor: 'by_player_and_level', algorithm: 'btree', columns: ['player_id', 'level'] },
     ],
   },
   {
