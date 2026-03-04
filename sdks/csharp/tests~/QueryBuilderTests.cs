@@ -42,23 +42,23 @@ public sealed class QueryBuilderTests
 
     private sealed class RowNullableCols
     {
-        public NullableCol<Row, string> Name { get; }
-        public NullableCol<Row, int> Age { get; }
+        public Col<Row, string> Name { get; }
+        public Col<Row, int> Age { get; }
 
         public RowNullableCols(string tableName)
         {
-            Name = new NullableCol<Row, string>(tableName, "Name");
-            Age = new NullableCol<Row, int>(tableName, "Age");
+            Name = new Col<Row, string>(tableName, "Name");
+            Age = new Col<Row, int>(tableName, "Age");
         }
     }
 
     private sealed class RowNullableIxCols
     {
-        public NullableIxCol<Row, string> Name { get; }
+        public IxCol<Row, string> Name { get; }
 
         public RowNullableIxCols(string tableName)
         {
-            Name = new NullableIxCol<Row, string>(tableName, "Name");
+            Name = new IxCol<Row, string>(tableName, "Name");
         }
     }
 
@@ -113,21 +113,21 @@ public sealed class QueryBuilderTests
 
     private sealed class LeftNullableIxCols
     {
-        public NullableIxCol<LeftRow, int> Id { get; }
+        public IxCol<LeftRow, int> Id { get; }
 
         public LeftNullableIxCols(string tableName)
         {
-            Id = new NullableIxCol<LeftRow, int>(tableName, "id");
+            Id = new IxCol<LeftRow, int>(tableName, "id");
         }
     }
 
     private sealed class RightNullableIxCols
     {
-        public NullableIxCol<RightRow, int> Uid { get; }
+        public IxCol<RightRow, int> Uid { get; }
 
         public RightNullableIxCols(string tableName)
         {
-            Uid = new NullableIxCol<RightRow, int>(tableName, "uid");
+            Uid = new IxCol<RightRow, int>(tableName, "uid");
         }
     }
 

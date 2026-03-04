@@ -248,11 +248,11 @@ namespace SpacetimeDB
             global::PublicTable,
             System.Collections.Generic.List<int>
         > ListField;
-        public readonly global::SpacetimeDB.NullableCol<
+        public readonly global::SpacetimeDB.Col<
             global::PublicTable,
             int
         > NullableValueField;
-        public readonly global::SpacetimeDB.NullableCol<
+        public readonly global::SpacetimeDB.Col<
             global::PublicTable,
             string
         > NullableReferenceField;
@@ -357,11 +357,11 @@ namespace SpacetimeDB
                 global::PublicTable,
                 System.Collections.Generic.List<int>
             >(tableName, "ListField");
-            NullableValueField = new global::SpacetimeDB.NullableCol<global::PublicTable, int>(
+            NullableValueField = new global::SpacetimeDB.Col<global::PublicTable, int>(
                 tableName,
                 "NullableValueField"
             );
-            NullableReferenceField = new global::SpacetimeDB.NullableCol<
+            NullableReferenceField = new global::SpacetimeDB.Col<
                 global::PublicTable,
                 string
             >(tableName, "NullableReferenceField");

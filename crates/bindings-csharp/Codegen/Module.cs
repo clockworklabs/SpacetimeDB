@@ -905,7 +905,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 var isNullable = typeName.EndsWith("?", StringComparison.Ordinal);
                 var valueTypeName = isNullable ? typeName[..^1] : typeName;
                 var colType = isNullable
-                    ? "global::SpacetimeDB.NullableCol"
+                    ? "global::SpacetimeDB.Col"
                     : "global::SpacetimeDB.Col";
                 return $"public readonly {colType}<{globalRowName}, {valueTypeName}> {col.Name};";
             }
@@ -916,7 +916,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 var isNullable = typeName.EndsWith("?", StringComparison.Ordinal);
                 var valueTypeName = isNullable ? typeName[..^1] : typeName;
                 var colType = isNullable
-                    ? "global::SpacetimeDB.NullableCol"
+                    ? "global::SpacetimeDB.Col"
                     : "global::SpacetimeDB.Col";
                 return $"{col.Name} = new {colType}<{globalRowName}, {valueTypeName}>(tableName, \"{col.Name}\");";
             }
@@ -950,7 +950,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 var isNullable = typeName.EndsWith("?", StringComparison.Ordinal);
                 var valueTypeName = isNullable ? typeName[..^1] : typeName;
                 var colType = isNullable
-                    ? "global::SpacetimeDB.NullableIxCol"
+                    ? "global::SpacetimeDB.IxCol"
                     : "global::SpacetimeDB.IxCol";
                 return $"public readonly {colType}<{globalRowName}, {valueTypeName}> {col.Name};";
             }
@@ -961,7 +961,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 var isNullable = typeName.EndsWith("?", StringComparison.Ordinal);
                 var valueTypeName = isNullable ? typeName[..^1] : typeName;
                 var colType = isNullable
-                    ? "global::SpacetimeDB.NullableIxCol"
+                    ? "global::SpacetimeDB.IxCol"
                     : "global::SpacetimeDB.IxCol";
                 return $"{col.Name} = new {colType}<{globalRowName}, {valueTypeName}>(tableName, \"{col.Name}\");";
             }
