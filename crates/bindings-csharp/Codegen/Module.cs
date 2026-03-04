@@ -1242,7 +1242,7 @@ record ViewDeclaration
     {
         var returnTypeExpr =
             ReturnsQuery && QueryRowTypeBSATNName is { } rowTypeBSATNName
-                ? $"new global::SpacetimeDB.AlgebraicType.Product([new(\"{QueryViewReturnTag}\", new {rowTypeBSATNName}().GetAlgebraicType(registrar))])"
+                ? $"new global::SpacetimeDB.BSATN.AlgebraicType.Product([new global::SpacetimeDB.BSATN.AggregateElement(\"{QueryViewReturnTag}\", new {rowTypeBSATNName}().GetAlgebraicType(registrar))])"
                 : $"new {ReturnType.BSATNName}().GetAlgebraicType(registrar)";
 
         return $$$"""
