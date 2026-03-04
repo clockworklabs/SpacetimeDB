@@ -28,7 +28,7 @@ jobs:
           # - { name: aarch64 Linux musl, target: aarch64-unknown-linux-musl, runner: arm-runner }
           - { name: aarch64 macOS, target: aarch64-apple-darwin, runner: macos-latest }
           - { name: x86_64 macOS, target: x86_64-apple-darwin, runner: macos-latest }
-          - { name: x86_64 Windows, target: x86_64-pc-windows-msvc, runner: windows-latest }
+          - { name: x86_64 Windows, target: x86_64-pc-windows-msvc, runner: [self-hosted, windows, signing] }
 
     name: Build CLI for ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
@@ -57,70 +57,16 @@ jobs:
         run: |
           cargo build --release --target ${{ matrix.target }} -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
 
-      - name: Package (unix)
-        if: ${{ runner.os != 'Windows' }}
-        shell: bash
-        run: |
-          mkdir build
-          cd target/${{matrix.target}}/release
-          cp spacetimedb-update ../../../build/spacetimedb-update-${{matrix.target}}
-          tar -czf ../../../build/spacetime-${{matrix.target}}.tar.gz spacetimedb-{cli,standalone}
-
-      - name: Package (windows)
-        if: ${{ runner.os == 'Windows' }}
-        shell: bash
-        run: |
-          mkdir build
-          cd target/${{matrix.target}}/release
-          cp spacetimedb-update.exe ../../../build/spacetimedb-update-${{matrix.target}}.exe
-          7z a ../../../build/spacetime-${{matrix.target}}.zip spacetimedb-cli.exe spacetimedb-standalone.exe
-
-      - name: Extract branch name
-        shell: bash
-        run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
-        id: extract_branch
-
-      - name: Upload to DO Spaces
-        uses: shallwefootball/s3-upload-action@master
-        with:
-          aws_key_id: ${{ secrets.AWS_KEY_ID }}
-          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
-          aws_bucket: ${{ vars.AWS_BUCKET }}
-          source_dir: build
-          endpoint: https://nyc3.digitaloceanspaces.com
-          destination_dir: ${{ steps.extract_branch.outputs.branch }}
-
-  build-cli-windows-signed:
-    if: ${{ startsWith(github.ref, 'refs/tags/') }}
-    name: Build and sign CLI for x86_64 Windows
-    runs-on: [self-hosted, windows, signing]
-    environment: codesign
-    concurrency:
-      group: codesign-${{ github.ref }}
-      cancel-in-progress: false
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Install Rust
-        uses: dsherret/rust-toolchain-file@v1
-
-      - name: Install rust target
-        run: rustup target add x86_64-pc-windows-msvc
-
-      - name: Compile
-        run: |
-          cargo build --release --target x86_64-pc-windows-msvc -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
-
-      - name: Write certificate file
+      - name: Write certificate file for signing
+        if: ${{ startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows' }}
         shell: powershell
         env:
           DIGICERT_CERT_B64: ${{ secrets.DIGICERT_CERT_B64 }}
         run: |
           [IO.File]::WriteAllBytes("digicert.crt", [Convert]::FromBase64String($env:DIGICERT_CERT_B64))
 
-      - name: Sign binaries
+      - name: Sign binaries for Windows
+        if: ${{ startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows' }}
         shell: powershell
         env:
           DIGICERT_KEYPAIR_ALIAS: ${{ secrets.DIGICERT_KEYPAIR_ALIAS }}
@@ -142,28 +88,27 @@ jobs:
             & $signtool.Path verify /v /pa $file
           }
 
-      - name: Package (windows)
-        shell: powershell
+      - name: Package (unix)
+        if: ${{ runner.os != 'Windows' }}
+        shell: bash
         run: |
-          $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Force -Path build | Out-Null
-          $releaseDir = Join-Path $env:GITHUB_WORKSPACE 'target\x86_64-pc-windows-msvc\release'
+          mkdir build
+          cd target/${{matrix.target}}/release
+          cp spacetimedb-update ../../../build/spacetimedb-update-${{matrix.target}}
+          tar -czf ../../../build/spacetime-${{matrix.target}}.tar.gz spacetimedb-{cli,standalone}
 
-          Copy-Item (Join-Path $releaseDir 'spacetimedb-update.exe') (Join-Path $env:GITHUB_WORKSPACE 'build\spacetimedb-update-x86_64-pc-windows-msvc.exe')
-          Compress-Archive -Force -Path @(
-            (Join-Path $releaseDir 'spacetimedb-cli.exe'),
-            (Join-Path $releaseDir 'spacetimedb-standalone.exe')
-          ) -DestinationPath (Join-Path $env:GITHUB_WORKSPACE 'build\spacetime-x86_64-pc-windows-msvc.zip')
+      - name: Package (windows)
+        if: ${{ runner.os == 'Windows' }}
+        shell: bash
+        run: |
+          mkdir build
+          cd target/${{matrix.target}}/release
+          cp spacetimedb-update.exe ../../../build/spacetimedb-update-${{matrix.target}}.exe
+          7z a ../../../build/spacetime-${{matrix.target}}.zip spacetimedb-cli.exe spacetimedb-standalone.exe
 
       - name: Extract branch name
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $branch = $env:GITHUB_HEAD_REF
-          if ([string]::IsNullOrEmpty($branch)) {
-            $branch = $env:GITHUB_REF -replace '^refs/heads/', ''
-          }
-          "branch=$branch" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        shell: bash
+        run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
         id: extract_branch
 
       - name: Upload to DO Spaces
