@@ -50,6 +50,25 @@ jobs:
       - name: Install rust target
         run: rustup target add ${{ matrix.target }}
 
+      - name: Add signtool.exe to PATH
+        shell: pwsh
+        run: |
+          $root = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+          $signtool = Get-ChildItem $root -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+
+          if (-not $signtool) { throw "signtool.exe not found under $root" }
+
+          "Found: $($signtool.FullName)"
+          $dir = Split-Path $signtool.FullName
+          Add-Content -Path $env:GITHUB_PATH -Value $dir
+
+      - name: Verify signtool
+        shell: pwsh
+        run: signtool.exe /?
+
       - name: Compile
         run: |
           cargo build --release --target ${{ matrix.target }} -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
