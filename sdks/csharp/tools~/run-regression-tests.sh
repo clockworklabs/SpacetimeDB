@@ -31,6 +31,9 @@ rm -rf "$SDK_PATH/examples~/regression-tests/procedure-client/module_bindings"/*
 # Publish module for procedure tests
 cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- publish -c -y --server local -p "$STDB_PATH/modules/sdk-test-procedure" procedure-tests
 
+# Publish module for view primary-key tests
+cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- publish -c -y --server local -p "$STDB_PATH/modules/sdk-test-view-pk-cs" view-pk-tests
+
 
 # Run client for btree test
 cd "$SDK_PATH/examples~/regression-tests/client" && dotnet run -c Debug
@@ -40,3 +43,6 @@ cd "$SDK_PATH/examples~/regression-tests/republishing/client" && dotnet run -c D
 
 # Run client for procedure test
 cd "$SDK_PATH/examples~/regression-tests/procedure-client" && dotnet run -c Debug
+
+# Run client for view primary-key tests
+cd "$SDK_PATH/examples~/regression-tests/view-pk-client" && dotnet run -c Debug
