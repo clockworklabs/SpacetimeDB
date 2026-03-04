@@ -796,98 +796,103 @@ async fn get_template_config_interactive(
     lang_items.push("Clone from GitHub (owner/repo or git URL)".to_string());
     lang_items.push("None".to_string());
 
-    let client_selection = FuzzySelect::with_theme(&theme)
-        .with_prompt("Select a language (type to filter)")
-        .items(&lang_items)
-        .default(0)
-        .interact()?;
-
     let github_clone_index = lang_keys.len();
     let none_index = lang_keys.len() + 1;
-
-    if client_selection < lang_keys.len() {
-        let selected_lang = &lang_keys[client_selection];
-        let template_indices = templates_by_lang
-            .get(selected_lang)
-            .ok_or_else(|| anyhow::anyhow!("No templates found for selected language"))?;
-
-        let template = if template_indices.len() > 1 {
-            let template_items: Vec<String> = template_indices
-                .iter()
-                .map(|&idx| {
-                    let template = &templates[idx];
-                    format!("{} - {}", template.id, template.description)
-                })
-                .collect();
-
-            let pair_prompt = format!("Templates available for {selected_lang} (type to filter)");
-            let template_selection = FuzzySelect::with_theme(&theme)
-                .with_prompt(&pair_prompt)
-                .items(&template_items)
-                .default(0)
-                .interact()?;
-
-            &templates[template_indices[template_selection]]
-        } else {
-            &templates[template_indices[0]]
-        };
-
-        Ok(TemplateConfig {
-            project_name,
-            project_path,
-            template_type: TemplateType::Builtin,
-            server_lang: parse_server_lang(&template.server_lang)?,
-            client_lang: parse_client_lang(&template.client_lang)?,
-            github_repo: None,
-            template_def: Some(template.clone()),
-            use_local: true,
-        })
-    } else if client_selection == github_clone_index {
-        loop {
-            let repo_input = Input::<String>::with_theme(&theme)
-                .with_prompt("GitHub repository (owner/repo) or git URL")
-                .interact_text()?
-                .trim()
-                .to_string();
-            if repo_input.is_empty() {
-                eprintln!("{}", "Please enter a GitHub repository.".bold());
-                continue;
-            }
-            break create_template_config_from_template_str(
-                project_name.clone(),
-                project_path.clone(),
-                &repo_input,
-                &templates,
-            );
-        }
-    } else if client_selection == none_index {
-        // Ask for server language only
-        let server_lang_choices = vec!["Rust", "C#", "TypeScript"];
-        let server_selection = Select::with_theme(&theme)
-            .with_prompt("Select server language")
-            .items(&server_lang_choices)
+    loop {
+        let client_selection = FuzzySelect::with_theme(&theme)
+            .with_prompt("Select a language (type to filter)")
+            .items(&lang_items)
             .default(0)
             .interact()?;
 
-        let server_lang = match server_selection {
-            0 => Some(ServerLanguage::Rust),
-            1 => Some(ServerLanguage::Csharp),
-            2 => Some(ServerLanguage::TypeScript),
-            _ => unreachable!("Invalid server language selection"),
-        };
+        if client_selection < lang_keys.len() {
+            let selected_lang = &lang_keys[client_selection];
+            let template_indices = templates_by_lang
+                .get(selected_lang)
+                .ok_or_else(|| anyhow::anyhow!("No templates found for selected language"))?;
 
-        Ok(TemplateConfig {
-            project_name,
-            project_path,
-            template_type: TemplateType::Empty,
-            server_lang,
-            client_lang: None,
-            github_repo: None,
-            template_def: None,
-            use_local: true,
-        })
-    } else {
-        unreachable!("Invalid selection index")
+            let template = if template_indices.len() > 1 {
+                let template_items: Vec<String> = template_indices
+                    .iter()
+                    .map(|&idx| {
+                        let template = &templates[idx];
+                        format!("{} - {}", template.id, template.description)
+                    })
+                    .collect();
+
+                let pair_prompt = format!("Templates available for {selected_lang} (type to filter, Esc to go back)");
+                let template_selection = FuzzySelect::with_theme(&theme)
+                    .with_prompt(&pair_prompt)
+                    .items(&template_items)
+                    .default(0)
+                    .interact_opt()?;
+
+                let Some(template_selection) = template_selection else {
+                    continue;
+                };
+
+                &templates[template_indices[template_selection]]
+            } else {
+                &templates[template_indices[0]]
+            };
+
+            return Ok(TemplateConfig {
+                project_name,
+                project_path,
+                template_type: TemplateType::Builtin,
+                server_lang: parse_server_lang(&template.server_lang)?,
+                client_lang: parse_client_lang(&template.client_lang)?,
+                github_repo: None,
+                template_def: Some(template.clone()),
+                use_local: true,
+            });
+        } else if client_selection == github_clone_index {
+            return loop {
+                let repo_input = Input::<String>::with_theme(&theme)
+                    .with_prompt("GitHub repository (owner/repo) or git URL")
+                    .interact_text()?
+                    .trim()
+                    .to_string();
+                if repo_input.is_empty() {
+                    eprintln!("{}", "Please enter a GitHub repository.".bold());
+                    continue;
+                }
+                break create_template_config_from_template_str(
+                    project_name.clone(),
+                    project_path.clone(),
+                    &repo_input,
+                    &templates,
+                );
+            };
+        } else if client_selection == none_index {
+            // Ask for server language only
+            let server_lang_choices = vec!["Rust", "C#", "TypeScript"];
+            let server_selection = Select::with_theme(&theme)
+                .with_prompt("Select server language")
+                .items(&server_lang_choices)
+                .default(0)
+                .interact()?;
+
+            let server_lang = match server_selection {
+                0 => Some(ServerLanguage::Rust),
+                1 => Some(ServerLanguage::Csharp),
+                2 => Some(ServerLanguage::TypeScript),
+                _ => unreachable!("Invalid server language selection"),
+            };
+
+            return Ok(TemplateConfig {
+                project_name,
+                project_path,
+                template_type: TemplateType::Empty,
+                server_lang,
+                client_lang: None,
+                github_repo: None,
+                template_def: None,
+                use_local: true,
+            });
+        } else {
+            unreachable!("Invalid selection index");
+        }
     }
 }
 
