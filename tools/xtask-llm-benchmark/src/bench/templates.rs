@@ -133,7 +133,10 @@ fn inject_rust(root: &Path, llm_code: &str) -> anyhow::Result<()> {
     let replacement = format!(r#"{{ path = "{}" }}"#, relative);
     let cargo_toml = root.join("Cargo.toml");
     let mut toml = fs::read_to_string(&cargo_toml).with_context(|| format!("read {}", cargo_toml.display()))?;
-    toml = toml.replace("{SPACETIME_RUST_SDK_PATH}", &replacement);
+    toml = toml.replace(
+        "spacetimedb = { path = \"../../../../../../sdks/rust/\" }",
+        &replacement,
+    );
     fs::write(&cargo_toml, toml).with_context(|| format!("write {}", cargo_toml.display()))?;
     Ok(())
 }

@@ -246,12 +246,12 @@ impl ControlDb {
                 // Remove all existing names.
                 if let Some(value) = rev_tx.get(database_identity_bytes)? {
                     for domain in decode_domain_names(&value)? {
-                        if let Some(ref owner) = domain_owner(tld_tx, &domain)? {
-                            if owner != owner_identity {
-                                transaction::abort(AbortWith::Domain(SetDomainsResult::PermissionDenied {
-                                    domain: domain.clone(),
-                                }))?;
-                            }
+                        if let Some(ref owner) = domain_owner(tld_tx, &domain)?
+                            && owner != owner_identity
+                        {
+                            transaction::abort(AbortWith::Domain(SetDomainsResult::PermissionDenied {
+                                domain: domain.clone(),
+                            }))?;
                         }
                         dns_tx.remove(domain.to_lowercase().as_bytes())?;
                     }
@@ -260,12 +260,12 @@ impl ControlDb {
 
                 // Insert the new names.
                 for domain in domain_names {
-                    if let Some(ref owner) = domain_owner(tld_tx, domain)? {
-                        if owner != owner_identity {
-                            transaction::abort(AbortWith::Domain(SetDomainsResult::PermissionDenied {
-                                domain: domain.clone(),
-                            }))?;
-                        }
+                    if let Some(ref owner) = domain_owner(tld_tx, domain)?
+                        && owner != owner_identity
+                    {
+                        transaction::abort(AbortWith::Domain(SetDomainsResult::PermissionDenied {
+                            domain: domain.clone(),
+                        }))?;
                     }
                     tld_tx.insert(domain.tld().to_lowercase().as_bytes(), &owner_identity.to_byte_array())?;
                     dns_tx.insert(domain.to_lowercase().as_bytes(), &database_identity_bytes)?;

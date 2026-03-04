@@ -9,5 +9,5 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-spacetimedb = {SPACETIME_RUST_SDK_PATH}
+spacetimedb = { path = "../../../../../../sdks/rust/" }
 log = "0.4"

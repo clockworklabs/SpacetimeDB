@@ -10,6 +10,7 @@ import planetscale_pg_rpc from './rpc/planetscale_pg_rpc.ts';
 export const CONNECTORS = {
   convex,
   spacetimedb,
+  spacetimedbRustClient: spacetimedb,
   bun,
   postgres_rpc,
   cockroach_rpc,
