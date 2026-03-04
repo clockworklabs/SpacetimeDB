@@ -18,8 +18,6 @@ const UPDATE_CHECK_TIMEOUT: Duration = Duration::from_secs(2);
 /// Cache file name.
 const CACHE_FILENAME: &str = ".update_check_cache";
 
-const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
-
 #[derive(serde::Serialize, serde::Deserialize, Default)]
 struct Cache {
     /// Unix timestamp of the last successful check.
@@ -101,9 +99,13 @@ fn latest_version_or_cached(config_dir: &Path) -> Option<semver::Version> {
 /// `config_dir` should be the SpacetimeDB config directory (e.g. `~/.spacetime`).
 #[allow(clippy::disallowed_macros)]
 pub(crate) fn maybe_print_update_notice(config_dir: &Path) {
-    let current = match semver::Version::parse(CURRENT_VERSION) {
+    let current = env!("CARGO_PKG_VERSION");
+    let current = match semver::Version::parse(current) {
         Ok(v) => v,
-        Err(_) => return,
+        Err(e) => {
+            log::debug!("Failed to parse current version: {e}");
+            return;
+        },
     };
 
     let latest = match latest_version_or_cached(config_dir) {
