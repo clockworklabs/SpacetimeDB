@@ -81,6 +81,39 @@ public readonly struct BoolExpr<TRow>
     public BoolExpr<TRow> Not() => new($"(NOT {Sql})");
 
     public override string ToString() => Sql;
+
+    public static implicit operator BoolExpr<TRow>(bool value) =>
+        new(value ? "TRUE" : "FALSE");
+
+    public static implicit operator BoolExpr<TRow>(Col<TRow, bool> col) =>
+        col.Eq(true);
+
+    public static implicit operator BoolExpr<TRow>(NullableCol<TRow, bool> col) =>
+        col.Eq(true);
+
+    public static implicit operator BoolExpr<TRow>(IxCol<TRow, bool> col) =>
+        col.Eq(true);
+
+    public static implicit operator BoolExpr<TRow>(NullableIxCol<TRow, bool> col) =>
+        col.Eq(true);
+}
+
+internal static class QueryPredicate
+{
+    internal static BoolExpr<TRow> ToBoolExpr<TRow>(object value) =>
+        value switch
+        {
+            BoolExpr<TRow> expr => expr,
+            Col<TRow, bool> col => col.Eq(true),
+            NullableCol<TRow, bool> col => col.Eq(true),
+            IxCol<TRow, bool> col => col.Eq(true),
+            NullableIxCol<TRow, bool> col => col.Eq(true),
+            bool b => new BoolExpr<TRow>(b ? "TRUE" : "FALSE"),
+            _ => throw new ArgumentException(
+                $"Unsupported predicate type '{value.GetType().Name}'. Expected BoolExpr<{typeof(TRow).Name}> or a boolean column.",
+                nameof(value)
+            ),
+        };
 }
 
 public readonly struct IxJoinEq<TLeftRow, TRightRow>
@@ -261,16 +294,16 @@ public sealed class Table<TRow, TCols, TIxCols> : IQuery<TRow>
 
     public string ToSql() => $"SELECT * FROM {SqlFormat.QuoteIdent(tableName)}";
 
-    public FromWhere<TRow, TCols, TIxCols> Where(Func<TCols, BoolExpr<TRow>> predicate) =>
-        new(this, predicate(cols));
+    public FromWhere<TRow, TCols, TIxCols> Where<TPredicate>(Func<TCols, TPredicate> predicate) =>
+        new(this, QueryPredicate.ToBoolExpr<TRow>(predicate(cols)!));
 
-    public FromWhere<TRow, TCols, TIxCols> Where(Func<TCols, TIxCols, BoolExpr<TRow>> predicate) =>
-        new(this, predicate(cols, ixCols));
+    public FromWhere<TRow, TCols, TIxCols> Where<TPredicate>(Func<TCols, TIxCols, TPredicate> predicate) =>
+        new(this, QueryPredicate.ToBoolExpr<TRow>(predicate(cols, ixCols)!));
 
-    public FromWhere<TRow, TCols, TIxCols> Filter(Func<TCols, BoolExpr<TRow>> predicate) =>
+    public FromWhere<TRow, TCols, TIxCols> Filter<TPredicate>(Func<TCols, TPredicate> predicate) =>
         Where(predicate);
 
-    public FromWhere<TRow, TCols, TIxCols> Filter(Func<TCols, TIxCols, BoolExpr<TRow>> predicate) =>
+    public FromWhere<TRow, TCols, TIxCols> Filter<TPredicate>(Func<TCols, TIxCols, TPredicate> predicate) =>
         Where(predicate);
 
     public LeftSemiJoin<TRow, TCols, TIxCols, TRightRow, TRightCols, TRightIxCols> LeftSemijoin<
@@ -303,16 +336,16 @@ public sealed class FromWhere<TRow, TCols, TIxCols> : IQuery<TRow>
         this.expr = expr;
     }
 
-    public FromWhere<TRow, TCols, TIxCols> Where(Func<TCols, BoolExpr<TRow>> predicate) =>
-        new(table, expr.And(predicate(table.Cols)));
+    public FromWhere<TRow, TCols, TIxCols> Where<TPredicate>(Func<TCols, TPredicate> predicate) =>
+        new(table, expr.And(QueryPredicate.ToBoolExpr<TRow>(predicate(table.Cols)!)));
 
-    public FromWhere<TRow, TCols, TIxCols> Where(Func<TCols, TIxCols, BoolExpr<TRow>> predicate) =>
-        new(table, expr.And(predicate(table.Cols, table.IxCols)));
+    public FromWhere<TRow, TCols, TIxCols> Where<TPredicate>(Func<TCols, TIxCols, TPredicate> predicate) =>
+        new(table, expr.And(QueryPredicate.ToBoolExpr<TRow>(predicate(table.Cols, table.IxCols)!)));
 
-    public FromWhere<TRow, TCols, TIxCols> Filter(Func<TCols, BoolExpr<TRow>> predicate) =>
+    public FromWhere<TRow, TCols, TIxCols> Filter<TPredicate>(Func<TCols, TPredicate> predicate) =>
         Where(predicate);
 
-    public FromWhere<TRow, TCols, TIxCols> Filter(Func<TCols, TIxCols, BoolExpr<TRow>> predicate) =>
+    public FromWhere<TRow, TCols, TIxCols> Filter<TPredicate>(Func<TCols, TIxCols, TPredicate> predicate) =>
         Where(predicate);
 
     public string ToSql() => $"{table.ToSql()} WHERE {expr.Sql}";
@@ -410,7 +443,25 @@ public sealed class LeftSemiJoin<
         TRightRow,
         TRightCols,
         TRightIxCols
+    > Where(Func<TLeftCols, Col<TLeftRow, bool>> predicate) => Where(cols => predicate(cols).Eq(true));
+
+    public LeftSemiJoin<
+        TLeftRow,
+        TLeftCols,
+        TLeftIxCols,
+        TRightRow,
+        TRightCols,
+        TRightIxCols
     > Filter(Func<TLeftCols, BoolExpr<TLeftRow>> predicate) => Where(predicate);
+
+    public LeftSemiJoin<
+        TLeftRow,
+        TLeftCols,
+        TLeftIxCols,
+        TRightRow,
+        TRightCols,
+        TRightIxCols
+    > Filter(Func<TLeftCols, Col<TLeftRow, bool>> predicate) => Where(predicate);
 
     public LeftSemiJoin<
         TLeftRow,
@@ -519,7 +570,25 @@ public sealed class RightSemiJoin<
         TRightRow,
         TRightCols,
         TRightIxCols
+    > Where(Func<TRightCols, Col<TRightRow, bool>> predicate) => Where(cols => predicate(cols).Eq(true));
+
+    public RightSemiJoin<
+        TLeftRow,
+        TLeftCols,
+        TLeftIxCols,
+        TRightRow,
+        TRightCols,
+        TRightIxCols
     > Filter(Func<TRightCols, BoolExpr<TRightRow>> predicate) => Where(predicate);
+
+    public RightSemiJoin<
+        TLeftRow,
+        TLeftCols,
+        TLeftIxCols,
+        TRightRow,
+        TRightCols,
+        TRightIxCols
+    > Filter(Func<TRightCols, Col<TRightRow, bool>> predicate) => Where(predicate);
 
     public RightSemiJoin<
         TLeftRow,

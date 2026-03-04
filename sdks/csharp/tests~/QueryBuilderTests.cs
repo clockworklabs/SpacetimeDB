@@ -175,6 +175,14 @@ public sealed class QueryBuilderTests
     }
 
     [Fact]
+    public void Where_BoolColumn_ImplicitlyConvertsToBoolExpr()
+    {
+        var table = MakeTable("T");
+        var sql = table.Where(c => c.IsAdmin).ToSql();
+        Assert.Equal("SELECT * FROM \"T\" WHERE (\"T\".\"IsAdmin\" = TRUE)", sql);
+    }
+
+    [Fact]
     public void Where_WithIxColsOverload_FormatsCorrectly()
     {
         var table = MakeTable("T");

@@ -51,6 +51,7 @@ mod tests {
         pub id: Col<User, i32>,
         pub name: Col<User, String>,
         pub age: Col<User, i32>,
+        pub online: Col<User, bool>,
     }
     impl UserCols {
         fn new(table_name: &'static str) -> Self {
@@ -58,6 +59,7 @@ mod tests {
                 id: Col::new(table_name, "id"),
                 name: Col::new(table_name, "name"),
                 age: Col::new(table_name, "age"),
+                online: Col::new(table_name, "online"),
             }
         }
     }
@@ -129,6 +131,13 @@ mod tests {
     fn test_where_multiple_predicates() {
         let q = users().r#where(|c| c.id.eq(10)).r#where(|c| c.age.gt(18)).build();
         let expected = r#"SELECT * FROM "users" WHERE (("users"."id" = 10) AND ("users"."age" > 18))"#;
+        assert_eq!(norm(q.sql()), norm(expected));
+    }
+
+    #[test]
+    fn test_where_bool_column_directly() {
+        let q = users().r#where(|c| c.online).build();
+        let expected = r#"SELECT * FROM "users" WHERE ("users"."online" = TRUE)"#;
         assert_eq!(norm(q.sql()), norm(expected));
     }
 
