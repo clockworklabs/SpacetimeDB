@@ -608,11 +608,10 @@ fn auto_migrate_view<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def ViewDef,
     })
     .collect();
 
-    let requires_view_replacement =
-        old.is_anonymous != new.is_anonymous
-            || incompatible_return_type
-            || incompatible_param_types
-            || (old.primary_key != new.primary_key && new.primary_key.is_some());
+    let requires_view_replacement = old.is_anonymous != new.is_anonymous
+        || incompatible_return_type
+        || incompatible_param_types
+        || (old.primary_key != new.primary_key && new.primary_key.is_some());
 
     if requires_view_replacement {
         plan.steps.push(AutoMigrateStep::AddView(new.key()));

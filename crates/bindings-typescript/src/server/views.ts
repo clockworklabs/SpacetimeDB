@@ -117,10 +117,7 @@ export type AnonymousViewFn<
       ctx: AnonymousViewCtx<S>,
       params: InferTypeOfRow<Params>
     ) => RowTypedQuery<FlattenedArray<Infer<Ret>>, ExtractArrayProduct<Ret>>
-  : (
-      ctx: AnonymousViewCtx<S>,
-      params: InferTypeOfRow<Params>
-    ) => Infer<Ret>;
+  : (ctx: AnonymousViewCtx<S>, params: InferTypeOfRow<Params>) => Infer<Ret>;
 
 type QueryViewReturnTypeBuilder = QueryBuilderViewReturnBuilder<
   TypeBuilder<object, AlgebraicTypeVariants.Product>

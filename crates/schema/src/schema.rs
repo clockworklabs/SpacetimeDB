@@ -911,18 +911,19 @@ impl TableSchema {
                 .map(|(col_pos, schema)| ColumnSchema { col_pos, ..schema }),
         );
 
-        let index_schema = |name: RawIdentifier, col_list: ColList| {
-            IndexSchema {
-                index_id: IndexId::SENTINEL,
-                table_id: TableId::SENTINEL,
-                index_name: name,
-                index_algorithm: IndexAlgorithm::BTree(col_list.into()),
-                alias: None,
-            }
+        let index_schema = |name: RawIdentifier, col_list: ColList| IndexSchema {
+            index_id: IndexId::SENTINEL,
+            table_id: TableId::SENTINEL,
+            index_name: name,
+            index_algorithm: IndexAlgorithm::BTree(col_list.into()),
+            alias: None,
         };
 
         let mut indexes = match meta_cols {
-            1 => vec![index_schema(RawIdentifier::new(format!("{meta_index_name}_idx_btree")), col_list![0])],
+            1 => vec![index_schema(
+                RawIdentifier::new(format!("{meta_index_name}_idx_btree")),
+                col_list![0],
+            )],
             2 => vec![index_schema(
                 RawIdentifier::new(format!("{meta_index_name}_idx_btree")),
                 col_list![0, 1],
@@ -956,7 +957,7 @@ impl TableSchema {
                 unique_col_names.push("sender".to_string());
             }
             if !param_columns.is_empty() {
-                unique_cols.push(ColId(unique_cols.len() as u16));
+                unique_cols.push(ColId(unique_cols.len()));
                 unique_col_names.push("arg_id".to_string());
             }
             unique_cols.push(physical_pk_col);

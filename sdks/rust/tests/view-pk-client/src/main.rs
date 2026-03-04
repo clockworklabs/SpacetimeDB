@@ -1,9 +1,9 @@
 mod module_bindings;
 
 use module_bindings::*;
-use spacetimedb_sdk::{error::InternalError, DbContext, Table};
 #[cfg(feature = "expect_view_pk_on_update")]
 use spacetimedb_sdk::TableWithPrimaryKey;
+use spacetimedb_sdk::{error::InternalError, DbContext, Table};
 use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";

@@ -1095,9 +1095,8 @@ impl MutTxId {
         })?;
         let old_primary_key = old_primary_key
             .map(|pk| {
-                pk.as_singleton().ok_or_else(|| {
-                    anyhow::anyhow!("table_primary_key should be a single column, found {pk:?}")
-                })
+                pk.as_singleton()
+                    .ok_or_else(|| anyhow::anyhow!("table_primary_key should be a single column, found {pk:?}"))
             })
             .transpose()?;
 

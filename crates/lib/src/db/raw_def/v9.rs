@@ -138,11 +138,7 @@ impl RawModuleDefV9 {
                 });
 
                 query_product_ref
-                    .or_else(|| {
-                        return_type
-                            .as_option()
-                            .and_then(|inner| inner.clone().into_ref().ok())
-                    })
+                    .or_else(|| return_type.as_option().and_then(|inner| inner.clone().into_ref().ok()))
                     .or_else(|| {
                         return_type
                             .as_array()

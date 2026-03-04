@@ -997,9 +997,7 @@ impl RelationalDB {
         table_id: TableId,
         primary_key: Option<ColId>,
     ) -> Result<(), DBError> {
-        Ok(self
-            .inner
-            .alter_table_primary_key_mut_tx(tx, table_id, primary_key)?)
+        Ok(self.inner.alter_table_primary_key_mut_tx(tx, table_id, primary_key)?)
     }
 
     pub(crate) fn alter_table_row_type(
