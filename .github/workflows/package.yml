@@ -66,22 +66,17 @@ jobs:
           $dir = Split-Path $signtool.FullName
           Add-Content -Path $env:GITHUB_PATH -Value $dir
 
-      - name: Verify signtool
-        if: ${{ runner.os == 'Windows' }}
-        shell: pwsh
-        run: signtool.exe /?
-
-      - name: Compile
-        run: |
-          cargo build --release --target ${{ matrix.target }} -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
-
       - name: Write certificate file for signing
         if: ${{ runner.os == 'Windows' }}
         shell: powershell
         env:
           DIGICERT_CERT_B64: ${{ secrets.DIGICERT_CERT_B64 }}
         run: |
-          [IO.File]::WriteAllBytes("digicert.crt", [Convert]::FromBase64String($env:DIGICERT_CERT_B64))
+          [IO.File]::WriteAllBytes("digicert.pfx", [Convert]::FromBase64String($env:DIGICERT_CERT_B64))
+
+      - name: Compile
+        run: |
+          cargo build --release --target ${{ matrix.target }} -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
 
       - name: Sign binaries for Windows
         if: ${{ runner.os == 'Windows' }}
@@ -91,7 +86,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $targetDir = Join-Path $env:GITHUB_WORKSPACE 'target\x86_64-pc-windows-msvc\release'
-          $certFile = Join-Path $env:GITHUB_WORKSPACE 'digicert.crt'
+          $certFile = Join-Path $env:GITHUB_WORKSPACE 'digicert.pfx'
 
           $signtool = Get-Command signtool.exe -ErrorAction Stop
 
@@ -102,7 +97,7 @@ jobs:
           )
 
           foreach ($file in $files) {
-            & $signtool.Path sign /csp "DigiCert Signing Manager KSP" /kc $env:DIGICERT_KEYPAIR_ALIAS /f $certFile /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 $file
+            & $signtool.Path sign /f $certFile /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 $file
             & $signtool.Path verify /v /pa $file
           }
 
