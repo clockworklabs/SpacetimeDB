@@ -69,12 +69,10 @@ fn latest_version_or_cached(config_dir: &Path) -> Option<semver::Version> {
     // Cache is stale or missing — fetch from network.
     let client = crate::cli::reqwest_client().ok()?;
 
-    let latest = crate::cli::tokio_block_on(async { fetch_latest_release_version(&client).await })
-        .ok()
-        .flatten();
+    let latest = crate::cli::tokio_block_on(async { fetch_latest_release_version(&client).await }).flatten();
 
     match latest {
-        Some(version) => {
+        Ok(version) => {
             Cache {
                 last_check_secs: now,
                 latest_version: version.to_string(),
@@ -82,8 +80,8 @@ fn latest_version_or_cached(config_dir: &Path) -> Option<semver::Version> {
             .write(config_dir);
             Some(version)
         }
-        None => {
-            log::debug!("Failed to fetch latest version from network; will retry next invocation");
+        Err(e) => {
+            log::debug!("Failed to fetch latest version from network; will retry next invocation: {e}");
             // Don't update cache — retry next time.
             // Fall back to stale cache if available.
             cache.and_then(|c| semver::Version::parse(&c.latest_version).ok())

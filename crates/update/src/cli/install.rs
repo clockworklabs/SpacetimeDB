@@ -65,30 +65,33 @@ const MIRROR_BASE_URL: &str = "https://spacetimedb-client-binaries.nyc3.digitalo
 ///
 /// This is the single source of truth for mirror version resolution.
 async fn fetch_latest_version_from_mirror(client: &reqwest::Client) -> anyhow::Result<semver::Version> {
-    let url = format!("{MIRROR_BASE_URL}/latest-version");
-    let tag = client.get(&url).send().await?.error_for_status()?.text().await?;
-    let ver_str = tag.trim().strip_prefix('v').unwrap_or(tag.trim());
-    semver::Version::parse(ver_str).context("Could not parse version from mirror")
+    let inner = async || {
+        let url = format!("{MIRROR_BASE_URL}/latest-version");
+        let tag = client.get(&url).send().await?.error_for_status()?.text().await?;
+        let ver_str = tag.trim().strip_prefix('v').unwrap_or(tag.trim());
+        semver::Version::parse(ver_str).context("Could not parse version")
+    };
+    inner().await.context("Could not fetch latest version from mirror")
 }
 
 /// Fetch the latest release version from GitHub, falling back to the mirror.
 ///
 /// Returns `None` if both sources are unreachable.
-pub(crate) async fn fetch_latest_release_version(client: &reqwest::Client) -> Option<semver::Version> {
+pub(crate) async fn fetch_latest_release_version(client: &reqwest::Client) -> anyhow::Result<semver::Version> {
     // Try GitHub first.
     let url = format!("{}/latest", releases_url());
     if let Ok(resp) = client.get(&url).send().await {
         if resp.status().is_success() {
             if let Ok(release) = resp.json::<Release>().await {
                 if let Ok(v) = release.version() {
-                    return Some(v);
+                    return Ok(v);
                 }
             }
         }
     }
 
     // Fall back to mirror.
-    fetch_latest_version_from_mirror(client).await.ok()
+    fetch_latest_version_from_mirror(client).await
 }
 
 pub(super) fn mirror_asset_url(version: &semver::Version, asset_name: &str) -> String {
@@ -273,7 +276,7 @@ pub(super) struct ReleaseAsset {
 }
 
 #[derive(Deserialize)]
-pub(super) struct Release {
+pub struct Release {
     tag_name: String,
     pub(super) assets: Vec<ReleaseAsset>,
 }
