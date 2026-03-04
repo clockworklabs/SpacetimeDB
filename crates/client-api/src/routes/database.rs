@@ -341,7 +341,14 @@ pub async fn schema<S>(
 where
     S: ControlStateDelegate + NodeDelegate,
 {
-    let (module, _) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+    let (leader, _) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
+    // Wait for the module to finish loading rather than returning an immediate
+    // 500 error. The database may still be initializing (replaying the log,
+    // running init reducers, etc.).
+    let module = leader
+        .wait_for_module(std::time::Duration::from_secs(10))
+        .await
+        .map_err(log_and_500)?;
 
     let module_def = &module.info.module_def;
     let response_json = match version {
