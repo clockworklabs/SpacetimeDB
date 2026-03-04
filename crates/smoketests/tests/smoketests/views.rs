@@ -587,7 +587,7 @@ fn test_typescript_query_builder_view_query() {
         "SELECT name FROM online_players",
         r#" name
 ---------
-"Alice""#,
+ "Alice""#,
     );
 }
 
@@ -604,8 +604,8 @@ fn test_csharp_query_builder_view_query() {
 
     test.assert_sql(
         "SELECT * FROM some",
-        r#" value
--------
- 1"#,
+        r#" value | alive
+-------+-------
+ 1     | true"#,
     );
 }

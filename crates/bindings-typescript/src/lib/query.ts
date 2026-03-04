@@ -11,6 +11,7 @@ import type {
   TypeBuilder,
 } from './type_builders';
 import type { Values } from './type_util';
+import type { Bool as SatsBool } from './algebraic_type_variants';
 
 /**
  * Helper to get the set of table names.
@@ -630,7 +631,7 @@ export type ValueExpr<TableDef extends TypedTableDef, Value> =
 
 type PredicateExpr<TableDef extends TypedTableDef> =
   | BooleanExpr<TableDef>
-  | ColumnExprForValue<TableDef, boolean>
+  | ColumnExprForValue<TableDef, SatsBool>
   | boolean;
 
 type LiteralExpr<Value> = {
