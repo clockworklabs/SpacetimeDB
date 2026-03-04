@@ -2,6 +2,7 @@ import BinaryWriter from '../src/lib/binary_writer';
 import { Identity } from '../src/lib/identity';
 import type { Infer } from '../src/lib/type_builders';
 import { RowSizeHint, TableUpdateRows } from '../src/sdk/client_api/types';
+import AllViewPkPlayersRow from '../test-app/src/module_bindings/all_view_pk_players_table';
 import PlayerRow from '../test-app/src/module_bindings/player_table';
 import { Point } from '../test-app/src/module_bindings/types';
 import UserRow from '../test-app/src/module_bindings/user_table';
@@ -25,6 +26,14 @@ export function encodePlayer(value: Infer<typeof PlayerRow>): Uint8Array {
 export function encodeUser(value: Infer<typeof UserRow>): Uint8Array {
   const writer = new BinaryWriter(1024);
   UserRow.serialize(writer, value);
+  return writer.getBuffer();
+}
+
+export function encodeAllViewPkPlayersRow(
+  value: Infer<typeof AllViewPkPlayersRow>
+): Uint8Array {
+  const writer = new BinaryWriter(1024);
+  AllViewPkPlayersRow.serialize(writer, value);
   return writer.getBuffer();
 }
 

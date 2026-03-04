@@ -7,5 +7,17 @@ import { type Infer as __Infer } from '../../../../src/index';
 
 // Import all reducer arg schemas
 import CreatePlayerReducer from '../create_player_reducer';
+import InsertViewPkMembershipReducer from '../insert_view_pk_membership_reducer';
+import InsertViewPkPlayerReducer from '../insert_view_pk_player_reducer';
+import UpdateViewPkPlayerReducer from '../update_view_pk_player_reducer';
 
 export type CreatePlayerParams = __Infer<typeof CreatePlayerReducer>;
+export type InsertViewPkMembershipParams = __Infer<
+  typeof InsertViewPkMembershipReducer
+>;
+export type InsertViewPkPlayerParams = __Infer<
+  typeof InsertViewPkPlayerReducer
+>;
+export type UpdateViewPkPlayerParams = __Infer<
+  typeof UpdateViewPkPlayerReducer
+>;

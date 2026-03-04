@@ -41,3 +41,15 @@ export const User = __t.object('User', {
   username: __t.string(),
 });
 export type User = __Infer<typeof User>;
+
+export const ViewPkMembership = __t.object('ViewPkMembership', {
+  id: __t.u64(),
+  playerId: __t.u64(),
+});
+export type ViewPkMembership = __Infer<typeof ViewPkMembership>;
+
+export const ViewPkPlayer = __t.object('ViewPkPlayer', {
+  id: __t.u64(),
+  name: __t.string(),
+});
+export type ViewPkPlayer = __Infer<typeof ViewPkPlayer>;

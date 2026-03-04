@@ -10,9 +10,10 @@ import {
 } from '../src';
 import { ServerMessage } from '../src/sdk/client_api/types';
 import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
-import { DbConnection } from '../test-app/src/module_bindings';
+import { DbConnection, tables } from '../test-app/src/module_bindings';
 import User from '../test-app/src/module_bindings/user_table';
 import {
+  encodeAllViewPkPlayersRow,
   anIdentity,
   bobIdentity,
   encodePlayer,
@@ -80,6 +81,7 @@ function getLastCallReducerRequestId(wsAdapter: WebsocketTestAdapter): number {
 function getLastSubscribeMessageInfo(wsAdapter: WebsocketTestAdapter): {
   requestId: number;
   querySetId: number;
+  queryStrings: string[];
 } {
   for (let i = wsAdapter.outgoingMessages.length - 1; i >= 0; i--) {
     const message = wsAdapter.outgoingMessages[i];
@@ -87,6 +89,7 @@ function getLastSubscribeMessageInfo(wsAdapter: WebsocketTestAdapter): {
       return {
         requestId: message.value.requestId,
         querySetId: message.value.querySetId.id,
+        queryStrings: message.value.queryStrings,
       };
     }
   }
@@ -774,5 +777,117 @@ describe('DbConnection', () => {
     expect(foundUser).not.toBeUndefined();
     expect(foundUser!.username).toEqual('sally');
     expect(client.db.user.count()).toEqual(2n);
+  });
+
+  test('it calls onUpdate callback for a query-builder view once PK metadata is propagated', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .build();
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+
+    client.subscriptionBuilder().subscribe(tables.all_view_pk_players);
+    await Promise.resolve();
+    const { querySetId } = getLastSubscribeMessageInfo(wsAdapter);
+
+    const initial = { id: 1n, name: 'before' };
+    const updated = { id: 1n, name: 'after' };
+
+    const viewUpdatedPromise = new Deferred<void>();
+    client.db.all_view_pk_players.onUpdate((_ctx, oldRow, newRow) => {
+      expect(oldRow).toEqual(initial);
+      expect(newRow).toEqual(updated);
+      viewUpdatedPromise.resolve();
+    });
+
+    wsAdapter.sendToClient(
+      ServerMessage.TransactionUpdate({
+        querySets: [
+          makeQuerySetUpdate(
+            querySetId,
+            'all_view_pk_players',
+            encodeAllViewPkPlayersRow(initial)
+          ),
+        ],
+      })
+    );
+
+    wsAdapter.sendToClient(
+      ServerMessage.TransactionUpdate({
+        querySets: [
+          makeQuerySetUpdate(
+            querySetId,
+            'all_view_pk_players',
+            encodeAllViewPkPlayersRow(updated),
+            encodeAllViewPkPlayersRow(initial)
+          ),
+        ],
+      })
+    );
+
+    await viewUpdatedPromise.promise;
+  });
+
+  test('it subscribes with query-builder semijoin from table to view on view PK', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .build();
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+
+    client
+      .subscriptionBuilder()
+      .subscribe(qb =>
+        qb.view_pk_membership.rightSemijoin(
+          qb.all_view_pk_players,
+          (membership, player) => membership.playerId.eq(player.id)
+        )
+      );
+    await Promise.resolve();
+
+    const { queryStrings, querySetId } = getLastSubscribeMessageInfo(wsAdapter);
+    expect(queryStrings).toEqual([
+      'SELECT "all_view_pk_players".* FROM "view_pk_membership" JOIN "all_view_pk_players" ON "view_pk_membership"."playerId" = "all_view_pk_players"."id"',
+    ]);
+
+    const joinInsertPromise = new Deferred<void>();
+    client.db.all_view_pk_players.onInsert((_ctx, row) => {
+      expect(row).toEqual({ id: 2n, name: 'joined' });
+      joinInsertPromise.resolve();
+    });
+
+    wsAdapter.sendToClient(
+      ServerMessage.TransactionUpdate({
+        querySets: [
+          makeQuerySetUpdate(
+            querySetId,
+            'all_view_pk_players',
+            encodeAllViewPkPlayersRow({ id: 2n, name: 'joined' })
+          ),
+        ],
+      })
+    );
+
+    await joinInsertPromise.promise;
   });
 });
