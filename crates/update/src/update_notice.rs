@@ -13,6 +13,7 @@ use crate::cli::install::fetch_latest_release_version;
 
 /// How long to cache the update check result.
 const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+const UPDATE_CHECK_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Cache file name.
 const CACHE_FILENAME: &str = ".update_check_cache";
@@ -66,7 +67,10 @@ fn latest_version_or_cached(config_dir: &Path) -> Option<semver::Version> {
         }
 
     // Cache is stale or missing — fetch from network.
-    let client = crate::cli::reqwest_client().ok()?;
+    let client = crate::cli::reqwest_client_builder()
+        .timeout(UPDATE_CHECK_TIMEOUT)
+        .build()
+        .ok()?;
 
     let latest = crate::cli::tokio_block_on(async { fetch_latest_release_version(&client).await }).flatten();
 

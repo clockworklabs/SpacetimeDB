@@ -88,7 +88,7 @@ enum VersionSubcommand {
     Link(link::Link),
 }
 
-pub(crate) fn reqwest_client() -> anyhow::Result<reqwest::Client> {
+pub(crate) fn reqwest_client_builder() -> reqwest::ClientBuilder {
     let mut client = reqwest::Client::builder();
     #[cfg(feature = "github-token-auth")]
     {
@@ -101,7 +101,11 @@ pub(crate) fn reqwest_client() -> anyhow::Result<reqwest::Client> {
         }
     }
     client = client.user_agent(format!("SpacetimeDB CLI/{}", env!("CARGO_PKG_VERSION")));
-    Ok(client.build()?)
+    client
+}
+
+pub(crate) fn reqwest_client() -> anyhow::Result<reqwest::Client> {
+    Ok(reqwest_client_builder().build()?)
 }
 
 pub(crate) fn tokio_block_on<Fut: Future>(fut: Fut) -> anyhow::Result<Fut::Output> {
