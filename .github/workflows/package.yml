@@ -4,8 +4,6 @@ on:
   push:
     tags:
       - '**'
-    branches:
-      - release/*
   workflow_dispatch:
 
 permissions:
@@ -13,7 +11,6 @@ permissions:
 
 jobs:
   build-cli:
-    if: ${{ !(startsWith(github.ref, 'refs/tags/') && matrix.target == 'x86_64-pc-windows-msvc') }}
     strategy:
       fail-fast: false
       matrix:
@@ -28,7 +25,7 @@ jobs:
           # - { name: aarch64 Linux musl, target: aarch64-unknown-linux-musl, runner: arm-runner }
           - { name: aarch64 macOS, target: aarch64-apple-darwin, runner: macos-latest }
           - { name: x86_64 macOS, target: x86_64-apple-darwin, runner: macos-latest }
-          - { name: x86_64 Windows, target: x86_64-pc-windows-msvc, runner: [self-hosted, windows, signing] }
+          - { name: x86_64 Windows, target: x86_64-pc-windows-msvc, runner: windows-latest }
 
     name: Build CLI for ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
@@ -58,7 +55,7 @@ jobs:
           cargo build --release --target ${{ matrix.target }} -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
 
       - name: Write certificate file for signing
-        if: ${{ startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows' }}
+        if: ${{ runner.os == 'Windows' }}
         shell: powershell
         env:
           DIGICERT_CERT_B64: ${{ secrets.DIGICERT_CERT_B64 }}
@@ -66,7 +63,7 @@ jobs:
           [IO.File]::WriteAllBytes("digicert.crt", [Convert]::FromBase64String($env:DIGICERT_CERT_B64))
 
       - name: Sign binaries for Windows
-        if: ${{ startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows' }}
+        if: ${{ runner.os == 'Windows' }}
         shell: powershell
         env:
           DIGICERT_KEYPAIR_ALIAS: ${{ secrets.DIGICERT_KEYPAIR_ALIAS }}
