@@ -60,9 +60,10 @@ fn latest_version_or_cached(config_dir: &Path) -> Option<semver::Version> {
 
     // Cache is fresh — use it.
     if let Some(ref cache) = cache
-        && now.saturating_sub(cache.last_check_secs) < CHECK_INTERVAL.as_secs() {
-            return semver::Version::parse(&cache.latest_version).ok();
-        }
+        && now.saturating_sub(cache.last_check_secs) < CHECK_INTERVAL.as_secs()
+    {
+        return semver::Version::parse(&cache.latest_version).ok();
+    }
 
     // Cache is stale or missing — fetch from network.
     let client = crate::cli::reqwest_client_builder()
@@ -105,7 +106,7 @@ pub(crate) fn maybe_print_update_notice(config_dir: &Path) {
         Err(e) => {
             log::debug!("Failed to parse current version: {e}");
             return;
-        },
+        }
     };
 
     let latest = match latest_version_or_cached(config_dir) {
