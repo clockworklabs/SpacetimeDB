@@ -80,15 +80,12 @@ async fn fetch_latest_version_from_mirror(client: &reqwest::Client) -> anyhow::R
 pub(crate) async fn fetch_latest_release_version(client: &reqwest::Client) -> anyhow::Result<semver::Version> {
     // Try GitHub first.
     let url = format!("{}/latest", releases_url());
-    if let Ok(resp) = client.get(&url).send().await {
-        if resp.status().is_success() {
-            if let Ok(release) = resp.json::<Release>().await {
-                if let Ok(v) = release.version() {
+    if let Ok(resp) = client.get(&url).send().await
+        && resp.status().is_success()
+            && let Ok(release) = resp.json::<Release>().await
+                && let Ok(v) = release.version() {
                     return Ok(v);
                 }
-            }
-        }
-    }
 
     // Fall back to mirror.
     fetch_latest_version_from_mirror(client).await

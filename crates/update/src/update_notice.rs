@@ -60,11 +60,10 @@ fn latest_version_or_cached(config_dir: &Path) -> Option<semver::Version> {
     let now = now_secs();
 
     // Cache is fresh — use it.
-    if let Some(ref cache) = cache {
-        if now.saturating_sub(cache.last_check_secs) < CHECK_INTERVAL.as_secs() {
+    if let Some(ref cache) = cache
+        && now.saturating_sub(cache.last_check_secs) < CHECK_INTERVAL.as_secs() {
             return semver::Version::parse(&cache.latest_version).ok();
         }
-    }
 
     // Cache is stale or missing — fetch from network.
     let client = crate::cli::reqwest_client().ok()?;
