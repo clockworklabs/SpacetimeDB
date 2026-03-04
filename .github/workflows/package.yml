@@ -51,6 +51,7 @@ jobs:
         run: rustup target add ${{ matrix.target }}
 
       - name: Add signtool.exe to PATH
+        if: ${{ runner.os == 'Windows' }}
         shell: pwsh
         run: |
           $root = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
@@ -66,6 +67,7 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH -Value $dir
 
       - name: Verify signtool
+        if: ${{ runner.os == 'Windows' }}
         shell: pwsh
         run: signtool.exe /?
 
