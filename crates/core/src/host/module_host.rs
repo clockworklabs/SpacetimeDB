@@ -464,7 +464,6 @@ fn init_database_inner(
     let stdb = &*replica_ctx.relational_db;
     let logger = replica_ctx.logger.system_logger();
     let owner_identity = replica_ctx.database.owner_identity;
-    let host_type = replica_ctx.host_type;
 
     let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
     let auth_ctx = AuthCtx::for_current(owner_identity);
@@ -499,7 +498,7 @@ fn init_database_inner(
                     .with_context(|| format!("failed to create row-level security for table `{table_id}`: `{sql}`",))?;
             }
 
-            stdb.set_initialized(tx, host_type, program)?;
+            stdb.set_initialized(tx, program)?;
 
             anyhow::Ok(())
         })
