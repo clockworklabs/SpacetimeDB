@@ -1119,12 +1119,15 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 /// </summary>
 record ViewDeclaration
 {
+    private const string QueryViewReturnTag = "__query__";
+
     public readonly string Name;
     public readonly string? CanonicalName;
     public readonly string FullName;
     public readonly bool IsAnonymous;
     public readonly bool IsPublic;
     public readonly bool ReturnsQuery;
+    public readonly string? QueryRowTypeBSATNName;
     public readonly TypeUse ReturnType;
     public readonly EquatableArray<MemberDeclaration> Parameters;
     public readonly Scope Scope;
@@ -1190,6 +1193,7 @@ record ViewDeclaration
         {
             ReturnsQuery = true;
             var rowType = TypeUse.Parse(method, queryRowType, diag);
+            QueryRowTypeBSATNName = rowType.BSATNName;
             var optType = queryRowType.IsValueType
                 ? "SpacetimeDB.BSATN.ValueOption"
                 : "SpacetimeDB.BSATN.RefOption";
@@ -1199,6 +1203,7 @@ record ViewDeclaration
         }
         else
         {
+            QueryRowTypeBSATNName = null;
             ReturnType = TypeUse.Parse(method, method.ReturnType, diag);
         }
         Scope = new Scope(methodSyntax.Parent as MemberDeclarationSyntax);
@@ -1233,17 +1238,24 @@ record ViewDeclaration
         );
     }
 
-    public string GenerateViewDef(uint Index) =>
-        $$$"""
+    public string GenerateViewDef(uint Index)
+    {
+        var returnTypeExpr =
+            ReturnsQuery && QueryRowTypeBSATNName is { } rowTypeBSATNName
+                ? $"new global::SpacetimeDB.AlgebraicType.Product([new(\"{QueryViewReturnTag}\", new {rowTypeBSATNName}().GetAlgebraicType(registrar))])"
+                : $"new {ReturnType.BSATNName}().GetAlgebraicType(registrar)";
+
+        return $$$"""
             new global::SpacetimeDB.Internal.RawViewDefV10(
                 SourceName: "{{{Name}}}",
                 Index: {{{Index}}},
                 IsPublic: {{{IsPublic.ToString().ToLower()}}},
                 IsAnonymous: {{{IsAnonymous.ToString().ToLower()}}},
                 Params: [{{{MemberDeclaration.GenerateDefs(Parameters)}}}],
-                ReturnType: new {{{ReturnType.BSATNName}}}().GetAlgebraicType(registrar)
+                ReturnType: {{{returnTypeExpr}}}
             );
             """;
+    }
 
     /// <summary>
     /// Generates the class responsible for evaluating a view.

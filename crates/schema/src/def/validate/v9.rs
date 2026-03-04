@@ -14,6 +14,8 @@ use spacetimedb_lib::ProductType;
 use spacetimedb_primitives::col_list;
 use spacetimedb_sats::{bsatn::de::Deserializer, de::DeserializeSeed, WithTypespace};
 
+const QUERY_VIEW_RETURN_TAG: &str = "__query__";
+
 /// Validate a `RawModuleDefV9` and convert it into a `ModuleDef`,
 /// or return a stream of errors if the definition is invalid.
 pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
@@ -88,6 +90,15 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         // Later on, in `check_function_names_are_unique`, we'll transform this into an `IndexMap`.
         .collect_all_errors::<Vec<_>>();
 
+    let tables = tables
+        .into_iter()
+        .map(|table| {
+            validator
+                .validate_table_def(table)
+                .map(|table_def| (table_def.name.clone(), table_def))
+        })
+        .collect_all_errors();
+
     let views = views
         .into_iter()
         .map(|view| {
@@ -98,17 +109,8 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         })
         .map(|view| {
             validator
-                .validate_view_def(view)
+                .validate_view_def(view, tables.as_ref().ok())
                 .map(|view_def| (view_def.name.clone(), view_def))
-        })
-        .collect_all_errors();
-
-    let tables = tables
-        .into_iter()
-        .map(|table| {
-            validator
-                .validate_table_def(table)
-                .map(|table_def| (table_def.name.clone(), table_def))
         })
         .collect_all_errors();
 
@@ -421,7 +423,11 @@ impl ModuleValidatorV9<'_> {
     }
 
     /// Validate a view definition.
-    fn validate_view_def(&mut self, view_def: RawViewDefV9) -> Result<ViewDef> {
+    fn validate_view_def(
+        &mut self,
+        view_def: RawViewDefV9,
+        tables: Option<&HashMap<Identifier, TableDef>>,
+    ) -> Result<ViewDef> {
         let RawViewDefV9 {
             name,
             is_public,
@@ -438,20 +444,31 @@ impl ModuleValidatorV9<'_> {
             })
         };
 
-        // The possible return types of a view are `Vec<T>` or `Option<T>`,
-        // where `T` is a `ProductType` in the `Typespace`.
-        // Here we extract the inner product type ref `T`.
-        // We exit early for errors since this breaks all the other checks.
-        let product_type_ref = return_type
-            .as_option()
-            .and_then(AlgebraicType::as_ref)
+        let query_builder_product_type_ref = return_type.as_product().and_then(|product| {
+            let [field] = product.elements.as_ref() else {
+                return None;
+            };
+            if !field.has_name(QUERY_VIEW_RETURN_TAG) {
+                return None;
+            }
+            field.algebraic_type.as_ref().cloned()
+        });
+
+        let (product_type_ref, is_query_builder) = query_builder_product_type_ref
+            .map(|product_type_ref| (product_type_ref, true))
             .or_else(|| {
                 return_type
-                    .as_array()
-                    .map(|array_type| array_type.elem_ty.as_ref())
+                    .as_option()
                     .and_then(AlgebraicType::as_ref)
+                    .or_else(|| {
+                        return_type
+                            .as_array()
+                            .map(|array_type| array_type.elem_ty.as_ref())
+                            .and_then(AlgebraicType::as_ref)
+                    })
+                    .cloned()
+                    .map(|product_type_ref| (product_type_ref, false))
             })
-            .cloned()
             .ok_or_else(invalid_return_type)?;
 
         let product_type = self
@@ -474,11 +491,17 @@ impl ModuleValidatorV9<'_> {
                     arg_name,
                 })?;
 
+        let return_type_for_generate_ty = if is_query_builder {
+            AlgebraicType::array(product_type_ref.into())
+        } else {
+            return_type.clone()
+        };
+
         let return_type_for_generate = self.core.validate_for_type_use(
             || TypeLocation::ViewReturn {
                 view_name: name.clone(),
             },
-            &return_type,
+            &return_type_for_generate_ty,
         );
 
         let mut view_in_progress = ViewValidator::new(
@@ -512,6 +535,25 @@ impl ModuleValidatorV9<'_> {
         let (name, return_type_for_generate, return_columns, param_columns) =
             (name, return_type_for_generate, return_columns, param_columns).combine_errors()?;
 
+        let primary_key = is_query_builder
+            .then(|| {
+                let mut inferred = None;
+                for table in tables
+                    .into_iter()
+                    .flat_map(|tables| tables.values())
+                    .filter(|table| table.product_type_ref == product_type_ref)
+                {
+                    let table_pk = table.primary_key?;
+                    match inferred {
+                        None => inferred = Some(table_pk),
+                        Some(existing_pk) if existing_pk == table_pk => {}
+                        Some(_) => return None,
+                    }
+                }
+                inferred
+            })
+            .flatten();
+
         Ok(ViewDef {
             name: name.clone(),
             is_anonymous,
@@ -525,6 +567,7 @@ impl ModuleValidatorV9<'_> {
             return_type,
             return_type_for_generate,
             product_type_ref,
+            primary_key,
             return_columns,
             param_columns,
             accessor_name: name,
@@ -676,7 +719,11 @@ impl CoreValidator<'_> {
                 for element in &mut product.elements.iter_mut() {
                     // Convert the element name if it exists
                     if let Some(name) = element.name() {
-                        let new_name = convert(name.clone(), case_policy);
+                        let new_name = if &**name == QUERY_VIEW_RETURN_TAG {
+                            name.to_string()
+                        } else {
+                            convert(name.clone(), case_policy)
+                        };
                         element.name = Some(new_name.into());
                     }
                     // Recursively convert the element's type

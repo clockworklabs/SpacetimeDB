@@ -10,11 +10,13 @@ import type { OptionAlgebraicType } from '../lib/option';
 import type { ParamsObj } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
 import {
+  QueryBuilderViewReturnBuilder,
   RowBuilder,
   type Infer,
   type InferSpacetimeTypeOfTypeBuilder,
   type InferTypeOfRow,
   type TypeBuilder,
+  queryViewReturnMarker,
 } from '../lib/type_builders';
 import { bsatnBaseSize, toPascalCase } from '../lib/util';
 import type { ReadonlyDbView } from './db_view';
@@ -99,25 +101,32 @@ export type ViewFn<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
-> =
-  | ((ctx: ViewCtx<S>, params: InferTypeOfRow<Params>) => Infer<Ret>)
-  | ((
+> = Ret extends QueryViewReturnTypeBuilder
+  ? (
       ctx: ViewCtx<S>,
       params: InferTypeOfRow<Params>
-    ) => RowTypedQuery<FlattenedArray<Infer<Ret>>, ExtractArrayProduct<Ret>>);
+    ) => RowTypedQuery<FlattenedArray<Infer<Ret>>, ExtractArrayProduct<Ret>>
+  : (ctx: ViewCtx<S>, params: InferTypeOfRow<Params>) => Infer<Ret>;
 
 export type AnonymousViewFn<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
-> =
-  | ((ctx: AnonymousViewCtx<S>, params: InferTypeOfRow<Params>) => Infer<Ret>)
-  | ((
+> = Ret extends QueryViewReturnTypeBuilder
+  ? (
       ctx: AnonymousViewCtx<S>,
       params: InferTypeOfRow<Params>
-    ) => RowTypedQuery<FlattenedArray<Infer<Ret>>, ExtractArrayProduct<Ret>>);
+    ) => RowTypedQuery<FlattenedArray<Infer<Ret>>, ExtractArrayProduct<Ret>>
+  : (
+      ctx: AnonymousViewCtx<S>,
+      params: InferTypeOfRow<Params>
+    ) => Infer<Ret>;
 
-export type ViewReturnTypeBuilder =
+type QueryViewReturnTypeBuilder = QueryBuilderViewReturnBuilder<
+  TypeBuilder<object, AlgebraicTypeVariants.Product>
+>;
+
+type ProceduralViewReturnTypeBuilder =
   | TypeBuilder<
       readonly object[],
       { tag: 'Array'; value: AlgebraicTypeVariants.Product }
@@ -126,6 +135,10 @@ export type ViewReturnTypeBuilder =
       object | undefined,
       OptionAlgebraicType<AlgebraicTypeVariants.Product>
     >;
+
+export type ViewReturnTypeBuilder =
+  | ProceduralViewReturnTypeBuilder
+  | QueryViewReturnTypeBuilder;
 
 export function registerView<
   S extends UntypedSchemaDef,
@@ -154,13 +167,33 @@ export function registerView<
     ctx.registerTypesRecursively(paramsBuilder)
   );
 
+  const returnTypeDescriptor = returnType as AlgebraicType;
+  const isQueryBuilderReturn = (ret as any)[queryViewReturnMarker] === true;
+  const queryRowTypeIsProduct =
+    returnTypeDescriptor.tag === 'Array' &&
+    (returnTypeDescriptor.value.tag === 'Product' ||
+      (returnTypeDescriptor.value.tag === 'Ref' &&
+        typespace.types[returnTypeDescriptor.value.value]?.tag === 'Product'));
+
+  const moduleReturnType =
+    isQueryBuilderReturn && queryRowTypeIsProduct
+      ? AlgebraicType.Product({
+          elements: [
+            {
+              name: '__query__',
+              algebraicType: returnTypeDescriptor.value,
+            },
+          ],
+        })
+      : returnType;
+
   ctx.moduleDef.views.push({
     sourceName: exportName,
     index: (anon ? ctx.anonViews : ctx.views).length,
     isPublic: opts.public,
     isAnonymous: anon,
     params: paramType,
-    returnType,
+    returnType: moduleReturnType,
   });
 
   if (opts.name != null) {
@@ -186,7 +219,7 @@ export function registerView<
   }
 
   (anon ? ctx.anonViews : ctx.views).push({
-    fn,
+    fn: fn as any,
     deserializeParams: ProductType.makeDeserializer(paramType, typespace),
     serializeReturn: AlgebraicType.makeSerializer(returnType, typespace),
     returnTypeBaseSize: bsatnBaseSize(typespace, returnType),

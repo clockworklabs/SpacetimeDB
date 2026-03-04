@@ -11,6 +11,6 @@ import {
 } from '../../../src/index';
 
 export default __t.row({
-  id: __t.u64(),
+  id: __t.u64().primaryKey(),
   name: __t.string(),
 });

@@ -13,6 +13,8 @@ use crate::error::ValidationError;
 use crate::type_for_generate::ProductTypeDef;
 use crate::{def::validate::Result, error::TypeLocation};
 
+const QUERY_VIEW_RETURN_TAG: &str = "__query__";
+
 // Utitility struct to look up canonical names for tables, functions, and indexes based on the
 // explicit names provided in the `RawModuleDefV10`.
 #[derive(Default)]
@@ -135,18 +137,6 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         // Later on, in `check_function_names_are_unique`, we'll transform this into an `IndexMap`.
         .collect_all_errors::<Vec<_>>();
 
-    let views = def
-        .views()
-        .cloned()
-        .into_iter()
-        .flatten()
-        .map(|view| {
-            validator
-                .validate_view_def(view, &typespace_with_accessor_names)
-                .map(|view_def| (view_def.name.clone(), view_def))
-        })
-        .collect_all_errors();
-
     let tables = def
         .tables()
         .cloned()
@@ -156,6 +146,18 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
             validator
                 .validate_table_def(table, &typespace_with_accessor_names)
                 .map(|table_def| (table_def.name.clone(), table_def))
+        })
+        .collect_all_errors();
+
+    let views = def
+        .views()
+        .cloned()
+        .into_iter()
+        .flatten()
+        .map(|view| {
+            validator
+                .validate_view_def(view, &typespace_with_accessor_names, tables.as_ref().ok())
+                .map(|view_def| (view_def.name.clone(), view_def))
         })
         .collect_all_errors();
 
@@ -667,7 +669,12 @@ impl<'a> ModuleValidatorV10<'a> {
         })
     }
 
-    fn validate_view_def(&mut self, view_def: RawViewDefV10, typespace_with_accessor: &Typespace) -> Result<ViewDef> {
+    fn validate_view_def(
+        &mut self,
+        view_def: RawViewDefV10,
+        typespace_with_accessor: &Typespace,
+        tables: Option<&HashMap<Identifier, TableDef>>,
+    ) -> Result<ViewDef> {
         let RawViewDefV10 {
             source_name: accessor_name,
             is_public,
@@ -684,16 +691,31 @@ impl<'a> ModuleValidatorV10<'a> {
             })
         };
 
-        let product_type_ref = return_type
-            .as_option()
-            .and_then(AlgebraicType::as_ref)
+        let query_builder_product_type_ref = return_type.as_product().and_then(|product| {
+            let [field] = product.elements.as_ref() else {
+                return None;
+            };
+            if !field.has_name(QUERY_VIEW_RETURN_TAG) {
+                return None;
+            }
+            field.algebraic_type.as_ref().cloned()
+        });
+
+        let (product_type_ref, is_query_builder) = query_builder_product_type_ref
+            .map(|product_type_ref| (product_type_ref, true))
             .or_else(|| {
                 return_type
-                    .as_array()
-                    .map(|array_type| array_type.elem_ty.as_ref())
+                    .as_option()
                     .and_then(AlgebraicType::as_ref)
+                    .or_else(|| {
+                        return_type
+                            .as_array()
+                            .map(|array_type| array_type.elem_ty.as_ref())
+                            .and_then(AlgebraicType::as_ref)
+                    })
+                    .cloned()
+                    .map(|product_type_ref| (product_type_ref, false))
             })
-            .cloned()
             .ok_or_else(invalid_return_type)?;
 
         let product_type = self
@@ -716,11 +738,17 @@ impl<'a> ModuleValidatorV10<'a> {
                     arg_name,
                 })?;
 
+        let return_type_for_generate_ty = if is_query_builder {
+            AlgebraicType::array(product_type_ref.into())
+        } else {
+            return_type.clone()
+        };
+
         let return_type_for_generate = self.core.validate_for_type_use(
             || TypeLocation::ViewReturn {
                 view_name: accessor_name.clone(),
             },
-            &return_type,
+            &return_type_for_generate_ty,
         );
 
         let name = self.core.resolve_function_ident(accessor_name.clone())?;
@@ -760,6 +788,25 @@ impl<'a> ModuleValidatorV10<'a> {
         let (return_type_for_generate, return_columns, param_columns) =
             (return_type_for_generate, return_columns, param_columns).combine_errors()?;
 
+        let primary_key = is_query_builder
+            .then(|| {
+                let mut inferred = None;
+                for table in tables
+                    .into_iter()
+                    .flat_map(|tables| tables.values())
+                    .filter(|table| table.product_type_ref == product_type_ref)
+                {
+                    let table_pk = table.primary_key?;
+                    match inferred {
+                        None => inferred = Some(table_pk),
+                        Some(existing_pk) if existing_pk == table_pk => {}
+                        Some(_) => return None,
+                    }
+                }
+                inferred
+            })
+            .flatten();
+
         Ok(ViewDef {
             name,
             accessor_name: identifier(accessor_name)?,
@@ -774,6 +821,7 @@ impl<'a> ModuleValidatorV10<'a> {
             return_type,
             return_type_for_generate,
             product_type_ref,
+            primary_key,
             return_columns,
             param_columns,
         })
@@ -1611,6 +1659,38 @@ mod tests {
         expect_error_matching!(result, ValidationError::DuplicateFunctionName { name } => {
             &name[..] == "foo"
         });
+    }
+
+    #[test]
+    fn query_builder_view_marker_return_type_is_accepted() {
+        let mut builder = RawModuleDefV10Builder::new();
+
+        let row_type_ref = builder.add_algebraic_type(
+            [],
+            "Player",
+            AlgebraicType::product([("id", AlgebraicType::U64), ("name", AlgebraicType::String)]),
+            false,
+        );
+
+        builder
+            .build_table("player", row_type_ref)
+            .with_primary_key(0)
+            .with_unique_constraint(0)
+            .with_index_no_accessor_name(btree(0), "player_id_idx")
+            .finish();
+
+        builder.add_view(
+            "all_players",
+            0,
+            true,
+            true,
+            ProductType::unit(),
+            AlgebraicType::product([("__query__", row_type_ref.into())]),
+        );
+
+        let module: ModuleDef = builder.finish().try_into().unwrap();
+        let view = module.views.get("all_players").unwrap();
+        assert_eq!(view.primary_key, Some(ColId(0)));
     }
 
     fn make_case_conversion_builder() -> (RawModuleDefV10Builder, AlgebraicTypeRef) {

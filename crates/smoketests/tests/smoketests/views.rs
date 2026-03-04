@@ -22,7 +22,7 @@ export const my_player = spacetimedb.view(
 
 export const all_players = spacetimedb.anonymousView(
   { public: true },
-  t.array(playerState.rowType),
+  t.query(playerState.rowType),
   ctx => ctx.from.playerState
 );
 

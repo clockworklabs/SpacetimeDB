@@ -991,6 +991,17 @@ impl RelationalDB {
         Ok(self.inner.alter_table_access_mut_tx(tx, name, access)?)
     }
 
+    pub(crate) fn alter_table_primary_key(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        primary_key: Option<ColId>,
+    ) -> Result<(), DBError> {
+        Ok(self
+            .inner
+            .alter_table_primary_key_mut_tx(tx, table_id, primary_key)?)
+    }
+
     pub(crate) fn alter_table_row_type(
         &self,
         tx: &mut MutTx,

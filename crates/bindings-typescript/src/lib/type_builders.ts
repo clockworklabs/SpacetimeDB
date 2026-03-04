@@ -1295,6 +1295,14 @@ export class ArrayBuilder<Element extends TypeBuilder<any, any>>
   }
 }
 
+export const queryViewReturnMarker = Symbol('queryViewReturnMarker');
+
+export class QueryBuilderViewReturnBuilder<
+  Row extends TypeBuilder<object, AlgebraicTypeVariants.Product>,
+> extends ArrayBuilder<Row> {
+  readonly [queryViewReturnMarker] = true as const;
+}
+
 export class ByteArrayBuilder
   extends TypeBuilder<
     Uint8Array,
@@ -3869,6 +3877,18 @@ export const t = {
     e: Element
   ): ArrayBuilder<Element> {
     return new ArrayBuilder(e);
+  },
+
+  /**
+   * Declares that a view returns a query over rows of the given type.
+   *
+   * This emits a query-view return marker in the module definition while preserving
+   * list-valued runtime semantics for view execution.
+   */
+  query<Row extends TypeBuilder<object, AlgebraicTypeVariants.Product>>(
+    rowType: Row
+  ): QueryBuilderViewReturnBuilder<Row> {
+    return new QueryBuilderViewReturnBuilder(rowType);
   },
 
   enum: enumImpl,

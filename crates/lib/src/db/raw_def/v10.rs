@@ -498,7 +498,7 @@ pub struct RawViewDefV10 {
     pub params: ProductType,
 
     /// The return type of the view.
-    /// Either `T`, `Option<T>`, or `Vec<T>` where `T` is a `SpacetimeType`.
+    /// Either `Option<T>`, `Vec<T>`, or `{ __query__: T }` where `T` is a `SpacetimeType`.
     ///
     /// More strictly `T` must be a SATS `ProductType`,
     /// however this will be validated by the server on publish.

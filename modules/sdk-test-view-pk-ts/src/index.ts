@@ -21,7 +21,7 @@ export default spacetimedb;
 
 export const all_view_pk_players = spacetimedb.view(
   { public: true },
-  t.array(viewPkPlayer.rowType),
+  t.query(viewPkPlayer.rowType),
   ctx => ctx.from.viewPkPlayer
 );
 

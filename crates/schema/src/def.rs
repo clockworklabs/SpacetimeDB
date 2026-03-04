@@ -774,18 +774,52 @@ impl From<ViewDef> for TableDef {
         let ViewDef {
             name,
             is_public,
+            primary_key,
             product_type_ref,
             return_columns,
             accessor_name,
             ..
         } = def;
+
+        let mut indexes = StrMap::default();
+        let mut constraints = StrMap::default();
+
+        if let Some(pk_col) = primary_key {
+            let pk_column_name = return_columns[pk_col.idx()].name.as_raw().clone();
+            let pk_accessor_name = return_columns[pk_col.idx()].accessor_name.clone();
+            let index_name = RawIdentifier::new(format!("{name}_{pk_column_name}_idx_btree"));
+            let constraint_name = RawIdentifier::new(format!("{name}_{pk_column_name}_key"));
+
+            indexes.insert(
+                index_name.clone(),
+                IndexDef {
+                    name: index_name.clone(),
+                    source_name: index_name,
+                    accessor_name: Some(pk_accessor_name),
+                    algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
+                        columns: ColList::new(pk_col),
+                    }),
+                },
+            );
+
+            constraints.insert(
+                constraint_name.clone(),
+                ConstraintDef {
+                    name: constraint_name,
+                    data: ConstraintData::Unique(UniqueConstraintData {
+                        columns: ColSet::from(pk_col),
+                    }),
+                },
+            );
+        }
+
         Self {
             name,
             product_type_ref,
-            primary_key: None,
+            primary_key,
             columns: return_columns.into_iter().map(ColumnDef::from).collect(),
-            indexes: <_>::default(),
-            constraints: <_>::default(),
+            indexes,
+            constraints,
             sequences: <_>::default(),
             schedule: None,
             table_type: TableType::User,
@@ -1507,12 +1541,21 @@ pub struct ViewDef {
     pub params_for_generate: ProductTypeDef,
 
     /// The return type of the view.
-    /// Either `Option<T>` or `Vec<T>` where:
+    /// Either:
+    ///
+    /// 1. `Option<T>` for procedural views,
+    /// 2. `Vec<T>` for procedural views, or
+    /// 3. `{ __query__: T }` for query-builder views
+    ///
+    /// where:
     ///
     /// 1. `T` is a [`ProductType`] containing the columns of the view,
     /// 2. `T` is registered in the module's typespace,
     /// 3. `Option<T>` refers to [`AlgebraicType::option()`], and
-    /// 4. `Vec<T>` refers to [`AlgebraicType::array()`]
+    /// 4. `Vec<T>` refers to [`AlgebraicType::array()`].
+    ///
+    /// Query-builder view execution is still list-valued at runtime.
+    /// The `{ __query__: T }` shape is metadata for distinguishing query-builder views.
     pub return_type: AlgebraicType,
 
     /// The return type of the view, formatted for client codegen.
@@ -1520,10 +1563,16 @@ pub struct ViewDef {
 
     /// The single source of truth for the view's columns.
     ///
-    /// If a view can return only `Option<T>` or `Vec<T>`,
+    /// If a view returns `Option<T>`, `Vec<T>`, or `{ __query__: T }`,
     /// this is a reference to the inner product type `T`.
     /// All elements of `T` must have names.
     pub product_type_ref: AlgebraicTypeRef,
+
+    /// The primary key of the view rows, if known.
+    ///
+    /// This is only populated for query-builder views whose row source is
+    /// unambiguously mapped to a table with a primary key.
+    pub primary_key: Option<ColId>,
 
     /// The return columns of this view.
     /// The same information is stored in `product_type_ref`.
@@ -1559,6 +1608,18 @@ impl From<ViewDef> for RawViewDefV9 {
             fn_ptr: index,
             ..
         } = val;
+        let return_type = match return_type.as_product().and_then(|product| {
+            let [field] = product.elements.as_ref() else {
+                return None;
+            };
+            if !field.has_name("__query__") {
+                return None;
+            }
+            field.algebraic_type.as_ref().copied()
+        }) {
+            Some(row_type_ref) => AlgebraicType::array(row_type_ref.into()),
+            None => return_type,
+        };
         RawViewDefV9 {
             name: name.into(),
             index: index.into(),

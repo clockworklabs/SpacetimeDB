@@ -34,7 +34,7 @@ use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_paths::server::SnapshotDirPath;
-use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId, ViewId};
+use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId, ViewId};
 use spacetimedb_sats::{
     algebraic_value::de::ValueDeserializer, bsatn, buffer::BufReader, AlgebraicValue, ProductValue,
 };
@@ -328,6 +328,15 @@ impl Locking {
             .ok_or_else(|| TableError::NotFound(name.into()))?;
 
         tx.alter_table_access(table_id, access)
+    }
+
+    pub fn alter_table_primary_key_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        primary_key: Option<ColId>,
+    ) -> Result<()> {
+        tx.alter_table_primary_key(table_id, primary_key)
     }
 
     pub fn alter_table_row_type_mut_tx(

@@ -163,8 +163,21 @@ const tablesSchema = __schema({
   all_view_pk_players: __table(
     {
       name: 'all_view_pk_players',
-      indexes: [],
-      constraints: [],
+      indexes: [
+        {
+          accessor: 'id',
+          name: 'all_view_pk_players_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['id'],
+        },
+      ],
+      constraints: [
+        {
+          name: 'all_view_pk_players_id_key',
+          constraint: 'unique',
+          columns: ['id'],
+        },
+      ],
     },
     AllViewPkPlayersRow
   ),

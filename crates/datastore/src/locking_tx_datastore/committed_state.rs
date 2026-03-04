@@ -1305,6 +1305,11 @@ impl CommittedState {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.table_access = access);
             }
+            // A table's primary key was changed. Change back to the old one.
+            TableAlterPrimaryKey(table_id, primary_key) => {
+                let table = self.tables.get_mut(&table_id)?;
+                table.with_mut_schema(|s| s.primary_key = primary_key);
+            }
             // A table's row type was changed. Change back to the old one.
             // The row representation of old rows hasn't changed,
             // so it's safe to not rewrite the rows and merely change the type back.

@@ -8,7 +8,6 @@ use super::util::{collect_case, print_auto_generated_file_comment, type_ref_name
 
 use std::collections::BTreeSet;
 use std::fmt::{self, Write};
-use std::iter;
 use std::ops::Deref;
 
 use convert_case::{Case, Casing};
@@ -216,9 +215,18 @@ impl Lang for TypeScript {
         for view in iter_views(module) {
             let type_ref = view.product_type_ref;
             let view_name_pascalcase = view.accessor_name.deref().to_case(Case::Pascal);
+            let view_table = TableDef::from(view.clone());
             writeln!(out, "{}: __table({{", view.accessor_name);
             out.indent(1);
-            write_table_opts(module, out, type_ref, &view.name, iter::empty(), iter::empty(), false);
+            write_table_opts(
+                module,
+                out,
+                type_ref,
+                &view.name,
+                iter_indexes(&view_table),
+                iter_constraints(&view_table),
+                false,
+            );
             out.dedent(1);
             writeln!(out, "}}, {}Row),", view_name_pascalcase);
         }

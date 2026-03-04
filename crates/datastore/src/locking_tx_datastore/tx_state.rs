@@ -2,7 +2,7 @@ use super::{delete_table::DeleteTable, sequence::Sequence};
 use core::ops::RangeBounds;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::db::auth::StAccess;
-use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
+use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{memory_usage::MemoryUsage, AlgebraicValue};
 use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema};
 use spacetimedb_table::{
@@ -119,6 +119,9 @@ pub enum PendingSchemaChange {
     /// The access of the table with [`TableId`] was changed.
     /// The old access was stored.
     TableAlterAccess(TableId, StAccess),
+    /// The primary key of the table with [`TableId`] was changed.
+    /// The old primary key was stored.
+    TableAlterPrimaryKey(TableId, Option<ColId>),
     /// The row type of the table with [`TableId`] was changed.
     /// The old column schemas was stored.
     /// Only non-representational row-type changes are allowed here,
@@ -146,6 +149,7 @@ impl MemoryUsage for PendingSchemaChange {
             Self::TableRemoved(table_id, table) => table_id.heap_usage() + table.heap_usage(),
             Self::TableAdded(table_id) => table_id.heap_usage(),
             Self::TableAlterAccess(table_id, st_access) => table_id.heap_usage() + st_access.heap_usage(),
+            Self::TableAlterPrimaryKey(table_id, primary_key) => table_id.heap_usage() + primary_key.heap_usage(),
             Self::TableAlterRowType(table_id, column_schemas) => table_id.heap_usage() + column_schemas.heap_usage(),
             Self::ConstraintRemoved(table_id, constraint_schema) => {
                 table_id.heap_usage() + constraint_schema.heap_usage()

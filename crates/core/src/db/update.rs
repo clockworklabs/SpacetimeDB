@@ -5,7 +5,7 @@ use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
-use spacetimedb_primitives::{ColSet, TableId};
+use spacetimedb_primitives::{ColId, ColSet, TableId};
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
 use spacetimedb_schema::def::{TableDef, ViewDef};
 use spacetimedb_schema::schema::{column_schemas_from_defs, IndexSchema, Schema, SequenceSchema, TableSchema};
@@ -86,6 +86,11 @@ macro_rules! log {
     };
 }
 
+fn view_public_pk_to_backing_pk(view: &ViewDef, public_pk: ColId) -> ColId {
+    let offset = (if view.is_anonymous { 0 } else { 1 }) + (if view.param_columns.is_empty() { 0 } else { 1 });
+    ColId::from(offset + public_pk.idx())
+}
+
 /// Automatically migrate a database.
 fn auto_migrate_database(
     stdb: &RelationalDB,
@@ -160,7 +165,50 @@ fn auto_migrate_database(
                 let view_id = stdb.view_id_from_name_mut(tx, view_name)?.unwrap();
                 stdb.drop_view(tx, view_id)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::UpdateView(_) => {
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::UpdateView(view_name) => {
+                let old_view: &ViewDef = plan.old.expect_lookup(view_name);
+                let new_view: &ViewDef = plan.new.expect_lookup(view_name);
+
+                if let (Some(old_pk), None) = (old_view.primary_key, new_view.primary_key) {
+                    let table_id = stdb
+                        .table_id_from_name_mut(tx, &old_view.name)?
+                        .ok_or_else(|| anyhow::anyhow!("view backing table `{}` not found", old_view.name))?;
+                    let old_backing_pk = view_public_pk_to_backing_pk(old_view, old_pk);
+
+                    // Drop all unique constraints and indexes that include the old PK column.
+                    // This keeps the backing table intact while removing PK semantics.
+                    let constraint_ids = stdb
+                        .schema_for_table_mut(tx, table_id)?
+                        .constraints
+                        .iter()
+                        .filter_map(|constraint| {
+                            constraint
+                                .data
+                                .unique_columns()
+                                .filter(|columns| columns.contains(old_backing_pk))
+                                .map(|_| constraint.constraint_id)
+                        })
+                        .collect::<Vec<_>>();
+
+                    for constraint_id in constraint_ids {
+                        stdb.drop_constraint(tx, constraint_id)?;
+                    }
+
+                    let index_ids = stdb
+                        .schema_for_table_mut(tx, table_id)?
+                        .indexes
+                        .iter()
+                        .filter(|index| index.index_algorithm.columns().iter().any(|col| col == old_backing_pk))
+                        .map(|index| index.index_id)
+                        .collect::<Vec<_>>();
+
+                    for index_id in index_ids {
+                        stdb.drop_index(tx, index_id)?;
+                    }
+
+                    stdb.alter_table_primary_key(tx, table_id, None)?;
+                }
+
                 // if we already have to disconnect clients, no need to set
                 // `EvaluateSubscribedViews` as clients will be disconnected anyway
                 if !matches!(res, UpdateResult::RequiresClientDisconnect) {

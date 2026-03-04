@@ -7,6 +7,8 @@ pub use join::*;
 use spacetimedb_lib::{sats::impl_st, AlgebraicType, SpacetimeType};
 pub use table::*;
 
+const QUERY_VIEW_RETURN_TAG: &str = "__query__";
+
 /// Trait implemented by all query builder types. Use `impl Query<T>` as a
 /// return type for view functions and helpers.
 pub trait Query<T> {
@@ -38,7 +40,10 @@ impl<T> Query<T> for RawQuery<T> {
     }
 }
 
-impl_st!([T: SpacetimeType] RawQuery<T>, ts => AlgebraicType::option(T::make_type(ts)));
+impl_st!(
+    [T: SpacetimeType] RawQuery<T>,
+    ts => AlgebraicType::product([(QUERY_VIEW_RETURN_TAG, T::make_type(ts))])
+);
 
 #[cfg(test)]
 mod tests {

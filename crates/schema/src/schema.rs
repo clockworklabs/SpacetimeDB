@@ -22,8 +22,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::def::{
-    ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup, ScheduleDef,
-    SequenceDef, TableDef, UniqueConstraintData, ViewColumnDef, ViewDef,
+    BTreeAlgorithm, ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup,
+    ScheduleDef, SequenceDef, TableDef, UniqueConstraintData, ViewColumnDef, ViewDef,
 };
 use crate::identifier::Identifier;
 
@@ -760,6 +760,7 @@ impl TableSchema {
             name,
             is_public,
             is_anonymous,
+            primary_key,
             param_columns,
             return_columns,
             ..
@@ -785,18 +786,44 @@ impl TableSchema {
             is_anonymous: *is_anonymous,
         };
 
+        let mut indexes = Vec::new();
+        let mut constraints = Vec::new();
+
+        if let Some(pk_col) = *primary_key {
+            let pk_col_name = return_columns[pk_col.idx()].name.as_raw().clone();
+
+            indexes.push(IndexSchema {
+                index_id: IndexId::SENTINEL,
+                table_id: TableId::SENTINEL,
+                index_name: RawIdentifier::new(format!("{name}_{pk_col_name}_idx_btree")),
+                index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
+                    columns: ColList::new(pk_col),
+                }),
+                alias: None,
+            });
+
+            constraints.push(ConstraintSchema {
+                table_id: TableId::SENTINEL,
+                constraint_id: ConstraintId::SENTINEL,
+                constraint_name: RawIdentifier::new(format!("{name}_{pk_col_name}_key")),
+                data: ConstraintData::Unique(UniqueConstraintData {
+                    columns: ColSet::from(pk_col),
+                }),
+            });
+        }
+
         TableSchema::new(
             TableId::SENTINEL,
             TableName::new(name.clone()),
             Some(view_info),
             columns,
-            vec![],
-            vec![],
+            indexes,
+            constraints,
             vec![],
             StTableType::User,
             table_access,
             None,
-            None,
+            *primary_key,
             false,
             None,
         )
@@ -842,6 +869,7 @@ impl TableSchema {
             name,
             is_public,
             is_anonymous,
+            primary_key,
             param_columns,
             return_columns,
             accessor_name,
@@ -851,12 +879,12 @@ impl TableSchema {
         let n = return_columns.len() + 2;
         let mut columns = Vec::with_capacity(n);
         let mut meta_cols = 0;
-        let mut index_name = name.as_raw().clone().into_inner();
+        let mut meta_index_name = name.as_raw().clone().into_inner();
 
         let mut push_column = |name: &'static str, col_type| {
             meta_cols += 1;
-            index_name += "_";
-            index_name += name;
+            meta_index_name += "_";
+            meta_index_name += name;
             columns.push(ColumnSchema {
                 table_id: TableId::SENTINEL,
                 col_pos: columns.len().into(),
@@ -883,22 +911,71 @@ impl TableSchema {
                 .map(|(col_pos, schema)| ColumnSchema { col_pos, ..schema }),
         );
 
-        let index_schema = |col_list: ColList| {
-            index_name += "idx_btree";
+        let index_schema = |name: RawIdentifier, col_list: ColList| {
             IndexSchema {
                 index_id: IndexId::SENTINEL,
                 table_id: TableId::SENTINEL,
-                index_name: RawIdentifier::new(index_name),
+                index_name: name,
                 index_algorithm: IndexAlgorithm::BTree(col_list.into()),
                 alias: None,
             }
         };
 
-        let indexes = match meta_cols {
-            1 => vec![index_schema(col_list![0])],
-            2 => vec![index_schema(col_list![0, 1])],
+        let mut indexes = match meta_cols {
+            1 => vec![index_schema(RawIdentifier::new(format!("{meta_index_name}_idx_btree")), col_list![0])],
+            2 => vec![index_schema(
+                RawIdentifier::new(format!("{meta_index_name}_idx_btree")),
+                col_list![0, 1],
+            )],
             _ => vec![],
         };
+
+        let mut constraints = Vec::new();
+        let mut backing_table_primary_key = None;
+
+        if let Some(public_pk_col) = *primary_key {
+            let physical_pk_col = ColId::from(meta_cols + public_pk_col.idx());
+            backing_table_primary_key = Some(physical_pk_col);
+
+            let pk_col_name = return_columns[public_pk_col.idx()].name.as_raw().clone();
+
+            // Keep a dedicated index on the public PK column to support joins in subscription queries.
+            // If there are no metadata columns, the unique PK index below already serves this purpose.
+            if meta_cols > 0 {
+                indexes.push(index_schema(
+                    RawIdentifier::new(format!("{name}_{pk_col_name}_idx_btree")),
+                    ColList::new(physical_pk_col),
+                ));
+            }
+
+            // Enforce uniqueness per subscriber-argument partition.
+            let mut unique_cols = ColList::with_capacity((meta_cols + 1) as _);
+            let mut unique_col_names = Vec::with_capacity(meta_cols + 1);
+            if !is_anonymous {
+                unique_cols.push(ColId(0));
+                unique_col_names.push("sender".to_string());
+            }
+            if !param_columns.is_empty() {
+                unique_cols.push(ColId(unique_cols.len() as u16));
+                unique_col_names.push("arg_id".to_string());
+            }
+            unique_cols.push(physical_pk_col);
+            unique_col_names.push(pk_col_name.to_string());
+
+            let unique_suffix = unique_col_names.join("_");
+            let unique_index_name = RawIdentifier::new(format!("{name}_{unique_suffix}_idx_btree"));
+            let unique_constraint_name = RawIdentifier::new(format!("{name}_{unique_suffix}_key"));
+
+            indexes.push(index_schema(unique_index_name, unique_cols.clone()));
+            constraints.push(ConstraintSchema {
+                table_id: TableId::SENTINEL,
+                constraint_id: ConstraintId::SENTINEL,
+                constraint_name: unique_constraint_name,
+                data: ConstraintData::Unique(UniqueConstraintData {
+                    columns: ColSet::from(unique_cols),
+                }),
+            });
+        }
 
         let table_access = if *is_public {
             StAccess::Public
@@ -918,12 +995,12 @@ impl TableSchema {
             Some(view_info),
             columns,
             indexes,
-            vec![],
+            constraints,
             vec![],
             StTableType::User,
             table_access,
             None,
-            None,
+            backing_table_primary_key,
             false,
             Some(accessor_name.clone()),
         )

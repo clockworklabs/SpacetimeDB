@@ -1083,6 +1083,30 @@ impl MutTxId {
         Ok(())
     }
 
+    /// Set the table primary key of `table_id` to `primary_key`.
+    pub(crate) fn alter_table_primary_key(&mut self, table_id: TableId, primary_key: Option<ColId>) -> Result<()> {
+        // Write to the table in the tx state.
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        tx_table.with_mut_schema_and_clone(commit_table, |s| s.primary_key = primary_key);
+
+        // Update system tables.
+        let old_primary_key = self.update_st_table_row(table_id, |st| {
+            mem::replace(&mut st.table_primary_key, primary_key.map(ColList::new))
+        })?;
+        let old_primary_key = old_primary_key
+            .map(|pk| {
+                pk.as_singleton().ok_or_else(|| {
+                    anyhow::anyhow!("table_primary_key should be a single column, found {pk:?}")
+                })
+            })
+            .transpose()?;
+
+        // Remember the pending change so we can undo if necessary.
+        self.push_schema_change(PendingSchemaChange::TableAlterPrimaryKey(table_id, old_primary_key));
+
+        Ok(())
+    }
+
     /// Change the row type of the table identified by `table_id`.
     ///
     /// In practice, this should not error,

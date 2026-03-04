@@ -122,12 +122,27 @@ impl RawModuleDefV9 {
 
     /// Find and return the product type ref for a view in this module def
     fn type_ref_for_view(&self, view_name: &str) -> Option<AlgebraicTypeRef> {
+        const QUERY_VIEW_RETURN_TAG: &str = "__query__";
+
         self.find_view_def(view_name)
             .map(|view_def| &view_def.return_type)
             .and_then(|return_type| {
-                return_type
-                    .as_option()
-                    .and_then(|inner| inner.clone().into_ref().ok())
+                let query_product_ref = return_type.as_product().and_then(|product| {
+                    let [field] = product.elements.as_ref() else {
+                        return None;
+                    };
+                    if !field.has_name(QUERY_VIEW_RETURN_TAG) {
+                        return None;
+                    }
+                    field.algebraic_type.as_ref().copied()
+                });
+
+                query_product_ref
+                    .or_else(|| {
+                        return_type
+                            .as_option()
+                            .and_then(|inner| inner.clone().into_ref().ok())
+                    })
                     .or_else(|| {
                         return_type
                             .as_array()
@@ -523,7 +538,7 @@ pub struct RawViewDefV9 {
     pub params: ProductType,
 
     /// The return type of the view.
-    /// Either `T`, `Option<T>`, or `Vec<T>` where `T` is a `SpacetimeType`.
+    /// Either `Option<T>`, `Vec<T>`, or `{ __query__: T }` where `T` is a `SpacetimeType`.
     ///
     /// More strictly `T` must be a SATS `ProductType`,
     /// however this will be validated by the server on publish.
