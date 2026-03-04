@@ -75,6 +75,9 @@ members = [
     "client-connection-reject",
     "client-connection-disconnect-panic",
 
+    # Log filtering tests
+    "logs-level-filter",
+
     # Misc tests
     "namespaces",
     "new-user-flow",

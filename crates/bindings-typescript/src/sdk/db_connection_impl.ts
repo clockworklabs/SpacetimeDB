@@ -37,8 +37,10 @@ import {
   type PendingCallback,
   type TableUpdate as CacheTableUpdate,
 } from './table_cache.ts';
-import { WebsocketDecompressAdapter } from './websocket_decompress_adapter.ts';
-import type { WebsocketTestAdapter } from './websocket_test_adapter.ts';
+import {
+  WebsocketDecompressAdapter,
+  type WebsocketAdapter,
+} from './websocket_decompress_adapter.ts';
 import {
   SubscriptionBuilderImpl,
   SubscriptionHandleImpl,
@@ -146,7 +148,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #eventId = 0;
   #emitter: EventEmitter<ConnectionEvent>;
   #messageQueue = Promise.resolve();
-  #outboundQueue: ClientMessage[] = [];
+  #outboundQueue: Uint8Array[] = [];
   #subscriptionManager = new SubscriptionManager<RemoteModule>();
   #remoteModule: RemoteModule;
   #reducerCallbacks = new Map<
@@ -171,10 +173,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   // private fields.
   // We use them in testing.
   private clientCache: ClientCache<RemoteModule>;
-  private ws?: WebsocketDecompressAdapter | WebsocketTestAdapter;
-  private wsPromise: Promise<
-    WebsocketDecompressAdapter | WebsocketTestAdapter | undefined
-  >;
+  private ws?: WebsocketAdapter;
+  private wsPromise: Promise<WebsocketAdapter | undefined>;
 
   constructor({
     uri,
@@ -302,6 +302,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #makeReducers(def: RemoteModule): ReducersView<RemoteModule> {
     const out: Record<string, unknown> = {};
 
+    const writer = new BinaryWriter(1024);
+
     for (const reducer of def.reducers) {
       const reducerName = reducer.name;
       const key = reducer.accessorName;
@@ -310,7 +312,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         this.#reducerArgsSerializers[reducerName];
 
       (out as any)[key] = (params: InferTypeOfRow<typeof reducer.params>) => {
-        const writer = new BinaryWriter(1024);
+        writer.clear();
         serializeArgs(writer, params);
         const argsBuffer = writer.getBuffer();
         return this.callReducer(reducerName, argsBuffer, params);
@@ -323,6 +325,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #makeProcedures(def: RemoteModule): ProceduresView<RemoteModule> {
     const out: Record<string, unknown> = {};
 
+    const writer = new BinaryWriter(1024);
+
     for (const procedure of def.procedures) {
       const procedureName = procedure.name;
       const key = procedure.accessorName;
@@ -333,7 +337,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       (out as any)[key] = (
         params: InferTypeOfRow<typeof procedure.params>
       ): Promise<any> => {
-        const writer = new BinaryWriter(1024);
+        writer.clear();
         serializeArgs(writer, params);
         const argsBuffer = writer.getBuffer();
         return this.callProcedure(procedureName, argsBuffer).then(returnBuf => {
@@ -537,41 +541,36 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     return this.#mergeTableUpdates(updates);
   }
 
-  #sendEncoded(
-    wsResolved: WebsocketDecompressAdapter | WebsocketTestAdapter,
-    message: ClientMessage
-  ): void {
-    stdbLogger(
-      'trace',
-      () => `Sending message to server: ${stringify(message)}`
-    );
-    const writer = new BinaryWriter(1024);
-    ClientMessage.serialize(writer, message);
-    const encoded = writer.getBuffer();
-    wsResolved.send(encoded);
-  }
-
-  #flushOutboundQueue(
-    wsResolved: WebsocketDecompressAdapter | WebsocketTestAdapter
-  ): void {
-    if (!this.isActive || this.#outboundQueue.length === 0) {
-      return;
-    }
+  #flushOutboundQueue(wsResolved: WebsocketAdapter): void {
     const pending = this.#outboundQueue.splice(0);
     for (const message of pending) {
-      this.#sendEncoded(wsResolved, message);
+      wsResolved.send(message);
     }
   }
 
+  #clientMessageEncoder = new BinaryWriter(1024);
   #sendMessage(message: ClientMessage): void {
-    this.wsPromise.then(wsResolved => {
-      if (!wsResolved || !this.isActive) {
-        this.#outboundQueue.push(message);
-        return;
-      }
-      this.#flushOutboundQueue(wsResolved);
-      this.#sendEncoded(wsResolved, message);
-    });
+    const writer = this.#clientMessageEncoder;
+    writer.clear();
+    ClientMessage.serialize(writer, message);
+    const encoded = writer.getBuffer();
+
+    if (this.ws && this.isActive) {
+      if (this.#outboundQueue.length) this.#flushOutboundQueue(this.ws);
+
+      stdbLogger(
+        'trace',
+        () => `Sending message to server: ${stringify(message)}`
+      );
+      this.ws.send(encoded);
+    } else {
+      stdbLogger(
+        'trace',
+        () => `Queuing message to server: ${stringify(message)}`
+      );
+      // use slice() to copy, in case the clientMessageEncoder's buffer gets used
+      this.#outboundQueue.push(encoded.slice());
+    }
   }
 
   #nextEventId(): string {
@@ -978,11 +977,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * ```
    */
   disconnect(): void {
-    this.wsPromise.then(wsResolved => {
-      if (wsResolved) {
-        wsResolved.close();
-      }
-    });
+    this.wsPromise.then(ws => ws?.close());
   }
 
   private on(

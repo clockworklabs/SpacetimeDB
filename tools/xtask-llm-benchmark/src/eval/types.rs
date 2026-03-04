@@ -31,33 +31,29 @@ impl ScoreDetails {
         }
 
         // Check for table diff (schema_parity scorer)
-        if let Some(tables_diff) = notes.get("tables_diff") {
-            if !tables_diff.is_null() {
-                if let Ok(diff) = serde_json::from_value::<SchemaDiff>(tables_diff.clone()) {
-                    if !diff.only_golden.is_empty() || !diff.only_llm.is_empty() {
-                        let golden_names: Vec<_> = diff.only_golden.keys().collect();
-                        let llm_names: Vec<_> = diff.only_llm.keys().collect();
-                        return Some(format!(
-                            "tables differ - expected {:?}, got {:?}",
-                            golden_names, llm_names
-                        ));
-                    }
-                }
-            }
+        if let Some(tables_diff) = notes.get("tables_diff")
+            && !tables_diff.is_null()
+            && let Ok(diff) = serde_json::from_value::<SchemaDiff>(tables_diff.clone())
+            && (!diff.only_golden.is_empty() || !diff.only_llm.is_empty())
+        {
+            let golden_names: Vec<_> = diff.only_golden.keys().collect();
+            let llm_names: Vec<_> = diff.only_llm.keys().collect();
+            return Some(format!(
+                "tables differ - expected {:?}, got {:?}",
+                golden_names, llm_names
+            ));
         }
 
         // Check for reducer diff
-        if let Some(reducers_diff) = notes.get("reducers_diff") {
-            if !reducers_diff.is_null() {
-                if let Ok(diff) = serde_json::from_value::<ReducerDiff>(reducers_diff.clone()) {
-                    if !diff.only_golden.is_empty() || !diff.only_llm.is_empty() {
-                        return Some(format!(
-                            "reducers differ - expected {:?}, got {:?}",
-                            diff.only_golden, diff.only_llm
-                        ));
-                    }
-                }
-            }
+        if let Some(reducers_diff) = notes.get("reducers_diff")
+            && !reducers_diff.is_null()
+            && let Ok(diff) = serde_json::from_value::<ReducerDiff>(reducers_diff.clone())
+            && (!diff.only_golden.is_empty() || !diff.only_llm.is_empty())
+        {
+            return Some(format!(
+                "reducers differ - expected {:?}, got {:?}",
+                diff.only_golden, diff.only_llm
+            ));
         }
 
         Some("failed".to_string())
