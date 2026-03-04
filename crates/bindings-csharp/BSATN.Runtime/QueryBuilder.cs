@@ -82,14 +82,11 @@ public readonly struct BoolExpr<TRow>
 
     public override string ToString() => Sql;
 
-    public static implicit operator BoolExpr<TRow>(bool value) =>
-        new(value ? "TRUE" : "FALSE");
+    public static implicit operator BoolExpr<TRow>(bool value) => new(value ? "TRUE" : "FALSE");
 
-    public static implicit operator BoolExpr<TRow>(Col<TRow, bool> col) =>
-        col.Eq(true);
+    public static implicit operator BoolExpr<TRow>(Col<TRow, bool> col) => col.Eq(true);
 
-    public static implicit operator BoolExpr<TRow>(IxCol<TRow, bool> col) =>
-        col.Eq(true);
+    public static implicit operator BoolExpr<TRow>(IxCol<TRow, bool> col) => col.Eq(true);
 }
 
 internal static class QueryPredicate
@@ -151,17 +148,13 @@ public readonly struct Col<TRow, TValue>
 
     public BoolExpr<TRow> Gte(SqlLiteral<TValue> value) => new($"({RefSql} >= {value.Sql})");
 
-    public BoolExpr<TRow> Lt(Col<TRow, TValue> other) =>
-        new($"({RefSql} < {other.RefSql})");
+    public BoolExpr<TRow> Lt(Col<TRow, TValue> other) => new($"({RefSql} < {other.RefSql})");
 
-    public BoolExpr<TRow> Lte(Col<TRow, TValue> other) =>
-        new($"({RefSql} <= {other.RefSql})");
+    public BoolExpr<TRow> Lte(Col<TRow, TValue> other) => new($"({RefSql} <= {other.RefSql})");
 
-    public BoolExpr<TRow> Gt(Col<TRow, TValue> other) =>
-        new($"({RefSql} > {other.RefSql})");
+    public BoolExpr<TRow> Gt(Col<TRow, TValue> other) => new($"({RefSql} > {other.RefSql})");
 
-    public BoolExpr<TRow> Gte(Col<TRow, TValue> other) =>
-        new($"({RefSql} >= {other.RefSql})");
+    public BoolExpr<TRow> Gte(Col<TRow, TValue> other) => new($"({RefSql} >= {other.RefSql})");
 
     public BoolExpr<TRow> Lt(Col<TRow, TValue> other) => new($"({RefSql} < {other.RefSql})");
 
@@ -191,8 +184,7 @@ public readonly struct Col<TRow, TValue>
 
     public BoolExpr<TRow> Eq(SqlLiteral<TValue> value) => new($"({RefSql} = {value.Sql})");
 
-    public BoolExpr<TRow> Eq(Col<TRow, TValue> other) =>
-        new($"({RefSql} = {other.RefSql})");
+    public BoolExpr<TRow> Eq(Col<TRow, TValue> other) => new($"({RefSql} = {other.RefSql})");
 
     public BoolExpr<TRow> Eq(Col<TRow, TValue> other) => new($"({RefSql} = {other.RefSql})");
 
@@ -201,8 +193,7 @@ public readonly struct Col<TRow, TValue>
 
     public BoolExpr<TRow> Neq(SqlLiteral<TValue> value) => new($"({RefSql} <> {value.Sql})");
 
-    public BoolExpr<TRow> Neq(Col<TRow, TValue> other) =>
-        new($"({RefSql} <> {other.RefSql})");
+    public BoolExpr<TRow> Neq(Col<TRow, TValue> other) => new($"({RefSql} <> {other.RefSql})");
 
     public BoolExpr<TRow> Lt(SqlLiteral<TValue> value) => new($"({RefSql} < {value.Sql})");
 
@@ -289,14 +280,16 @@ public sealed class Table<TRow, TCols, TIxCols> : IQuery<TRow>
     public FromWhere<TRow, TCols, TIxCols> Where<TPredicate>(Func<TCols, TPredicate> predicate) =>
         new(this, QueryPredicate.ToBoolExpr<TRow>(predicate(cols)!));
 
-    public FromWhere<TRow, TCols, TIxCols> Where<TPredicate>(Func<TCols, TIxCols, TPredicate> predicate) =>
-        new(this, QueryPredicate.ToBoolExpr<TRow>(predicate(cols, ixCols)!));
+    public FromWhere<TRow, TCols, TIxCols> Where<TPredicate>(
+        Func<TCols, TIxCols, TPredicate> predicate
+    ) => new(this, QueryPredicate.ToBoolExpr<TRow>(predicate(cols, ixCols)!));
 
     public FromWhere<TRow, TCols, TIxCols> Filter<TPredicate>(Func<TCols, TPredicate> predicate) =>
         Where(predicate);
 
-    public FromWhere<TRow, TCols, TIxCols> Filter<TPredicate>(Func<TCols, TIxCols, TPredicate> predicate) =>
-        Where(predicate);
+    public FromWhere<TRow, TCols, TIxCols> Filter<TPredicate>(
+        Func<TCols, TIxCols, TPredicate> predicate
+    ) => Where(predicate);
 
     public LeftSemiJoin<TRow, TCols, TIxCols, TRightRow, TRightCols, TRightIxCols> LeftSemijoin<
         TRightRow,
@@ -331,14 +324,17 @@ public sealed class FromWhere<TRow, TCols, TIxCols> : IQuery<TRow>
     public FromWhere<TRow, TCols, TIxCols> Where<TPredicate>(Func<TCols, TPredicate> predicate) =>
         new(table, expr.And(QueryPredicate.ToBoolExpr<TRow>(predicate(table.Cols)!)));
 
-    public FromWhere<TRow, TCols, TIxCols> Where<TPredicate>(Func<TCols, TIxCols, TPredicate> predicate) =>
+    public FromWhere<TRow, TCols, TIxCols> Where<TPredicate>(
+        Func<TCols, TIxCols, TPredicate> predicate
+    ) =>
         new(table, expr.And(QueryPredicate.ToBoolExpr<TRow>(predicate(table.Cols, table.IxCols)!)));
 
     public FromWhere<TRow, TCols, TIxCols> Filter<TPredicate>(Func<TCols, TPredicate> predicate) =>
         Where(predicate);
 
-    public FromWhere<TRow, TCols, TIxCols> Filter<TPredicate>(Func<TCols, TIxCols, TPredicate> predicate) =>
-        Where(predicate);
+    public FromWhere<TRow, TCols, TIxCols> Filter<TPredicate>(
+        Func<TCols, TIxCols, TPredicate> predicate
+    ) => Where(predicate);
 
     public string ToSql() => $"{table.ToSql()} WHERE {expr.Sql}";
 
@@ -435,7 +431,8 @@ public sealed class LeftSemiJoin<
         TRightRow,
         TRightCols,
         TRightIxCols
-    > Where(Func<TLeftCols, Col<TLeftRow, bool>> predicate) => Where(cols => predicate(cols).Eq(true));
+    > Where(Func<TLeftCols, Col<TLeftRow, bool>> predicate) =>
+        Where(cols => predicate(cols).Eq(true));
 
     public LeftSemiJoin<
         TLeftRow,
@@ -562,7 +559,8 @@ public sealed class RightSemiJoin<
         TRightRow,
         TRightCols,
         TRightIxCols
-    > Where(Func<TRightCols, Col<TRightRow, bool>> predicate) => Where(cols => predicate(cols).Eq(true));
+    > Where(Func<TRightCols, Col<TRightRow, bool>> predicate) =>
+        Where(cols => predicate(cols).Eq(true));
 
     public RightSemiJoin<
         TLeftRow,
@@ -632,35 +630,23 @@ public static class QueryBuilderExtensions
     public static BoolExpr<TRow> Gte<TRow>(this Col<TRow, string> col, ReadOnlySpan<char> value) =>
         col.Gte(SqlLit.String(value));
 
-    public static BoolExpr<TRow> Eq<TRow>(
-        this Col<TRow, string> col,
-        ReadOnlySpan<char> value
-    ) => col.Eq(SqlLit.String(value));
+    public static BoolExpr<TRow> Eq<TRow>(this Col<TRow, string> col, ReadOnlySpan<char> value) =>
+        col.Eq(SqlLit.String(value));
 
-    public static BoolExpr<TRow> Neq<TRow>(
-        this Col<TRow, string> col,
-        ReadOnlySpan<char> value
-    ) => col.Neq(SqlLit.String(value));
+    public static BoolExpr<TRow> Neq<TRow>(this Col<TRow, string> col, ReadOnlySpan<char> value) =>
+        col.Neq(SqlLit.String(value));
 
-    public static BoolExpr<TRow> Lt<TRow>(
-        this Col<TRow, string> col,
-        ReadOnlySpan<char> value
-    ) => col.Lt(SqlLit.String(value));
+    public static BoolExpr<TRow> Lt<TRow>(this Col<TRow, string> col, ReadOnlySpan<char> value) =>
+        col.Lt(SqlLit.String(value));
 
-    public static BoolExpr<TRow> Lte<TRow>(
-        this Col<TRow, string> col,
-        ReadOnlySpan<char> value
-    ) => col.Lte(SqlLit.String(value));
+    public static BoolExpr<TRow> Lte<TRow>(this Col<TRow, string> col, ReadOnlySpan<char> value) =>
+        col.Lte(SqlLit.String(value));
 
-    public static BoolExpr<TRow> Gt<TRow>(
-        this Col<TRow, string> col,
-        ReadOnlySpan<char> value
-    ) => col.Gt(SqlLit.String(value));
+    public static BoolExpr<TRow> Gt<TRow>(this Col<TRow, string> col, ReadOnlySpan<char> value) =>
+        col.Gt(SqlLit.String(value));
 
-    public static BoolExpr<TRow> Gte<TRow>(
-        this Col<TRow, string> col,
-        ReadOnlySpan<char> value
-    ) => col.Gte(SqlLit.String(value));
+    public static BoolExpr<TRow> Gte<TRow>(this Col<TRow, string> col, ReadOnlySpan<char> value) =>
+        col.Gte(SqlLit.String(value));
 
     public static BoolExpr<TRow> Eq<TRow>(this Col<TRow, bool> col, bool value) =>
         col.Eq(SqlLit.Bool(value));
@@ -1016,15 +1002,11 @@ public static class QueryBuilderExtensions
     public static BoolExpr<TRow> Neq<TRow>(this Col<TRow, ConnectionId> col, ConnectionId value) =>
         col.Neq(SqlLit.ConnectionId(value));
 
-    public static BoolExpr<TRow> Eq<TRow>(
-        this Col<TRow, ConnectionId> col,
-        ConnectionId value
-    ) => col.Eq(SqlLit.ConnectionId(value));
+    public static BoolExpr<TRow> Eq<TRow>(this Col<TRow, ConnectionId> col, ConnectionId value) =>
+        col.Eq(SqlLit.ConnectionId(value));
 
-    public static BoolExpr<TRow> Neq<TRow>(
-        this Col<TRow, ConnectionId> col,
-        ConnectionId value
-    ) => col.Neq(SqlLit.ConnectionId(value));
+    public static BoolExpr<TRow> Neq<TRow>(this Col<TRow, ConnectionId> col, ConnectionId value) =>
+        col.Neq(SqlLit.ConnectionId(value));
 
     public static BoolExpr<TRow> Eq<TRow>(this Col<TRow, Uuid> col, Uuid value) =>
         col.Eq(SqlLit.Uuid(value));
@@ -1046,10 +1028,8 @@ public static class QueryBuilderExtensions
         ReadOnlySpan<char> value
     ) => col.Neq(SqlLit.String(value));
 
-    public static BoolExpr<TRow> Eq<TRow>(
-        this IxCol<TRow, string> col,
-        ReadOnlySpan<char> value
-    ) => col.Eq(SqlLit.String(value));
+    public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, string> col, ReadOnlySpan<char> value) =>
+        col.Eq(SqlLit.String(value));
 
     public static BoolExpr<TRow> Neq<TRow>(
         this IxCol<TRow, string> col,
@@ -1185,10 +1165,8 @@ public static class QueryBuilderExtensions
     public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, Identity> col, Identity value) =>
         col.Eq(SqlLit.Identity(value));
 
-    public static BoolExpr<TRow> Neq<TRow>(
-        this IxCol<TRow, Identity> col,
-        Identity value
-    ) => col.Neq(SqlLit.Identity(value));
+    public static BoolExpr<TRow> Neq<TRow>(this IxCol<TRow, Identity> col, Identity value) =>
+        col.Neq(SqlLit.Identity(value));
 
     public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, ConnectionId> col, ConnectionId value) =>
         col.Eq(SqlLit.ConnectionId(value));
@@ -1198,10 +1176,8 @@ public static class QueryBuilderExtensions
         ConnectionId value
     ) => col.Neq(SqlLit.ConnectionId(value));
 
-    public static BoolExpr<TRow> Eq<TRow>(
-        this IxCol<TRow, ConnectionId> col,
-        ConnectionId value
-    ) => col.Eq(SqlLit.ConnectionId(value));
+    public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, ConnectionId> col, ConnectionId value) =>
+        col.Eq(SqlLit.ConnectionId(value));
 
     public static BoolExpr<TRow> Neq<TRow>(
         this IxCol<TRow, ConnectionId> col,

@@ -904,9 +904,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 var typeName = col.Type.Name;
                 var isNullable = typeName.EndsWith("?", StringComparison.Ordinal);
                 var valueTypeName = isNullable ? typeName[..^1] : typeName;
-                var colType = isNullable
-                    ? "global::SpacetimeDB.Col"
-                    : "global::SpacetimeDB.Col";
+                var colType = isNullable ? "global::SpacetimeDB.Col" : "global::SpacetimeDB.Col";
                 return $"public readonly {colType}<{globalRowName}, {valueTypeName}> {col.Name};";
             }
 
@@ -915,9 +913,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 var typeName = col.Type.Name;
                 var isNullable = typeName.EndsWith("?", StringComparison.Ordinal);
                 var valueTypeName = isNullable ? typeName[..^1] : typeName;
-                var colType = isNullable
-                    ? "global::SpacetimeDB.Col"
-                    : "global::SpacetimeDB.Col";
+                var colType = isNullable ? "global::SpacetimeDB.Col" : "global::SpacetimeDB.Col";
                 return $"{col.Name} = new {colType}<{globalRowName}, {valueTypeName}>(tableName, \"{col.Name}\");";
             }
 
