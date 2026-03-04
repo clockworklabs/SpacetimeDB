@@ -46,7 +46,7 @@ Environment mapping for this guide:
 
 Operational defaults in this guide:
 
-- run rotation with `just kv-rotate-jwt-keys ENV=<prod|test|dev|local>`,
+- run rotation with `just kv-rotate-jwt-keys ENV=prod` (or `ENV=test|dev|local`),
 - keep token-preservation enabled,
 - keep mounted-key sync enabled (writes to `./.generated/spacetimedb-keys`),
 - mount `./.generated/spacetimedb-keys` read-only into `/etc/spacetimedb`,
@@ -92,33 +92,143 @@ By default, the rotation tool preserves publisher identity tokens and refreshes 
 ### 4) Restart and validate
 
 ```sh
-# Use your deploy tool (docker compose, kubectl, systemd, etc.)
-<restart-or-redeploy-command>
-
-# Check logs for your deployment markers
-<log-command> | rg "PUBLISH_SUCCESS|PUBLISH_FAILED|InvalidSignature|not authorized"
+docker compose -f ./.generated/docker-compose.yaml up -d --force-recreate spacetimedb
+docker compose -f ./.generated/docker-compose.yaml logs --no-color --tail=200 spacetimedb | rg "PUBLISH_SUCCESS|PUBLISH_FAILED|InvalidSignature|not authorized"
 ```
 
 ## Deployment Modes
 
-Choose one implementation track and keep the operation order identical:
+Pick one mode. The rotation/publish order stays the same in both:
 
-1. `az-login`
-2. preview rotation
-3. apply rotation
-4. sync mounted runtime keys
-5. verify policy/parity
-6. restart/redeploy
-7. self-publish module
-8. check markers/logs
+```sh
+just az-login
+just kv-rotate-jwt-keys-preview
+just kv-rotate-jwt-keys ENV=prod
+just kv-verify-jwt-keys
+docker compose -f ./.generated/docker-compose.yaml up -d --force-recreate spacetimedb
+just spacetimedb-publish
+docker compose -f ./.generated/docker-compose.yaml logs --no-color --tail=200 spacetimedb | rg "PUBLISH_SUCCESS|PUBLISH_FAILED|InvalidSignature|not authorized"
+```
 
 ### Mode A: Non-container self-hosted
 
-Run directly on host with `spacetime start` and local key paths.
+Run directly on the host using `spacetime start` with key paths mounted at `/etc/spacetimedb`.
+
+Simple sample:
+
+```sh
+spacetime start \
+  --listen-addr=0.0.0.0:3003 \
+  --pg-port=5432 \
+  --jwt-priv-key-path=/etc/spacetimedb/id_ecdsa \
+  --jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub
+```
 
 ### Mode B: Docker self-hosted
 
-Run in container, mount key files into `/etc/spacetimedb`, and pass explicit JWT key args.
+Run in Docker, mount key files into `/etc/spacetimedb`, and pass explicit JWT key args.
+
+**Development / local** -- expose ports directly:
+
+```yaml
+services:
+  spacetimedb:
+    image: clockworklabs/spacetime:v2.0.1
+    restart: always
+    command:
+      - start
+      - --listen-addr=0.0.0.0:3003
+      - --pg-port=5432
+      - --jwt-priv-key-path=/etc/spacetimedb/id_ecdsa
+      - --jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub
+    ports:
+      - "3003:3003"
+      - "5432:5432"
+    volumes:
+      - "./.config/spacetimedb/data:/home/spacetime/.local/share/spacetime/data"
+      - "./.generated/spacetimedb-keys:/etc/spacetimedb:ro"
+```
+
+**Production** -- use `expose` with a reverse proxy (Caddy shown here) instead of raw `ports`.
+This snippet includes both the Caddy reverse-proxy container and SpacetimeDB, which is the
+minimum viable production stack:
+
+```yaml
+networks:
+  caddy:
+    external: true
+
+services:
+  caddy:
+    container_name: caddy
+    image: lucaslorentz/caddy-docker-proxy:ci-alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443/tcp"
+      - "443:443/udp"
+    environment:
+      CADDY_INGRESS_NETWORKS: caddy
+    labels:
+      caddy.email: "ops@example.com"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "caddy_data:/data"
+    networks:
+      - caddy
+    deploy:
+      restart_policy:
+        condition: any
+
+  spacetimedb:
+    container_name: spacetimedb
+    image: registry.example.com/spacetimedb:v2.0.1
+    restart: always
+    hostname: spacetimedb
+    environment:
+      SPACETIME_DATABASE_NAME: spacetime
+    build:
+      context: ./
+      dockerfile: spacetimedb/Dockerfile
+    command:
+      - start
+      - --listen-addr
+      - "0.0.0.0:3003"
+      - --jwt-priv-key-path=/etc/spacetimedb/id_ecdsa
+      - --jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub
+      - --pg-port
+      - "5432"
+    expose:
+      - 3003
+      - 5432
+    volumes:
+      - "./.config/spacetimedb/data:/home/spacetime/.local/share/spacetime/data"
+      - "./.generated/spacetimedb-keys:/etc/spacetimedb:ro"
+    labels:
+      caddy: "https://stdb.example.com"
+      caddy.reverse_proxy: "{{upstreams 3003}}"
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+    networks:
+      caddy:
+        aliases:
+          - spacetimedb
+
+volumes:
+  caddy_data: {}
+```
+
+Key differences from the local variant:
+
+- `expose` keeps ports internal to the Docker network; only Caddy binds host ports 80/443.
+- Caddy auto-provisions TLS certificates and routes traffic based on service labels.
+- `caddy-docker-proxy` watches the Docker socket for label changes -- adding or restarting services automatically updates routing.
+- `deploy.restart_policy` ensures both containers restart on failure.
+- `networks` with an alias lets other services resolve `spacetimedb` by name.
+
+Before first run, create the external network: `docker network create caddy`.
 
 ## Background
 
@@ -127,16 +237,7 @@ SpacetimeDB signs local identity tokens with an EC keypair (ES256, P-256). The k
 - `--jwt-priv-key-path` and `--jwt-pub-key-path` CLI args, or
 - `[certificate-authority]` in `config.toml` (see [Standalone Configuration](../00200-reference/00100-cli-reference/00200-standalone-config.md)).
 
-To generate compatible keys:
-
-```sh
-KEY_DIR="./.generated/spacetimedb-keys"
-mkdir -p "${KEY_DIR}"
-openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out "${KEY_DIR}/id_ecdsa"
-openssl pkey -in "${KEY_DIR}/id_ecdsa" -pubout -out "${KEY_DIR}/id_ecdsa.pub"
-chmod 600 "${KEY_DIR}/id_ecdsa"
-chmod 644 "${KEY_DIR}/id_ecdsa.pub"
-```
+To generate compatible keys, use the canonical commands in `Quickstart Scaffold -> 1) Generate a compatible keypair`.
 
 Mount this directory into `/etc/spacetimedb` in your runtime so startup paths remain:
 
@@ -201,22 +302,7 @@ Tradeoff: more operational complexity; requires careful token handling.
 
 ### Strategy C: OIDC-backed identity (recommended for production)
 
-For production systems, prefer [Authentication](../../00200-core-concepts/00500-authentication.md) via OIDC providers. In that model:
-
-- your external IdP controls user/service identity (`iss` + `sub`),
-- SpacetimeDB local signing-key rotation does not redefine those identities.
-
-## Recommended operational sequence
-
-If you are using vault-managed keys and containerized deploys:
-
-1. Preview rotation (dry-run) in your automation.
-2. Rotate keypair secrets.
-3. Refresh mounted runtime key files used by your service startup (for example `id_ecdsa` and `id_ecdsa.pub`).
-4. Verify private/public pair parity.
-5. Restart SpacetimeDB deployment so new key files are used.
-6. Validate startup and publish logs.
-7. If needed, clear or replace persisted CLI credentials based on chosen strategy.
+Use [Authentication](../../00200-core-concepts/00500-authentication.md) with an external OIDC IdP so identity is anchored to external `iss`/`sub`, and local SpacetimeDB signing-key rotation does not redefine publisher identity.
 
 ## Azure Key Vault example (self-hosted)
 
@@ -243,37 +329,7 @@ just kv-verify-jwt-keys
 
 ### Direct Azure CLI pull/push snippets
 
-Use these when you want explicit Key Vault I/O commands in addition to the higher-level `just` wrappers.
-
-```sh
-#!/usr/bin/env bash
-set -euo pipefail
-
-VAULT_NAME="kv-local" # or kv-dev, kv-test, kv-prod
-SECRET_PRIVATE="spacetimedb-jwt-private-key"
-SECRET_PUBLIC="spacetimedb-jwt-public-key"
-KEY_DIR="./.generated/spacetimedb-keys"
-
-mkdir -p "${KEY_DIR}"
-
-# Pull from Azure Key Vault -> local key files
-az keyvault secret show --vault-name "${VAULT_NAME}" --name "${SECRET_PRIVATE}" --query value -o tsv > "${KEY_DIR}/id_ecdsa"
-az keyvault secret show --vault-name "${VAULT_NAME}" --name "${SECRET_PUBLIC}" --query value -o tsv > "${KEY_DIR}/id_ecdsa.pub"
-chmod 600 "${KEY_DIR}/id_ecdsa"
-chmod 644 "${KEY_DIR}/id_ecdsa.pub"
-
-# Push local key files -> Azure Key Vault
-az keyvault secret set --vault-name "${VAULT_NAME}" --name "${SECRET_PRIVATE}" --value "$(cat "${KEY_DIR}/id_ecdsa")" --only-show-errors >/dev/null
-az keyvault secret set --vault-name "${VAULT_NAME}" --name "${SECRET_PUBLIC}" --value "$(cat "${KEY_DIR}/id_ecdsa.pub")" --only-show-errors >/dev/null
-```
-
-After pull/push, run parity checks before restart/redeploy:
-
-```sh
-KEY_DIR="./.generated/spacetimedb-keys"
-openssl pkey -in "${KEY_DIR}/id_ecdsa" -pubout -out /tmp/derived.pub
-diff -u <(openssl pkey -pubin -in "${KEY_DIR}/id_ecdsa.pub" -outform PEM) <(openssl pkey -pubin -in /tmp/derived.pub -outform PEM)
-```
+For concrete file-safe AKV pull/push commands, use `Reproducibility Addendum -> 2) Safer AKV pull/push with files`.
 
 ### Example environment policy
 
@@ -337,12 +393,191 @@ kv-resign-jwt-token CLI_TOML="./data/.config/spacetime/cli.toml" PRIV_KEY=".gene
 
 [group('deploy')]
 spacetimedb-restart:
-    # replace with your orchestrator command
-    <restart-or-redeploy-command>
+    docker compose -f ./.generated/docker-compose.yaml up -d --force-recreate spacetimedb
 
 [group('deploy')]
 spacetimedb-publish:
     spacetime publish --yes --server http://127.0.0.1:3003 --js-path ./dist/bundle.js spacetime
+
+[group('deploy')]
+spacetimedb-build:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just spacetimedb-prebuild
+    echo "Building SpacetimeDB container image"
+    docker compose -f ./.generated/docker-compose.yaml build spacetimedb --progress=auto
+    echo "SpacetimeDB container image built"
+
+[group('deploy')]
+spacetimedb-deploy VERSION:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    COMPOSE_FILE="./.generated/docker-compose.yaml"
+    echo "SpacetimeDB deploy pipeline ({{VERSION}})"
+
+    # 1) Prebuild module artifact on host
+    just spacetimedb-prebuild
+
+    # 2) Build container image
+    docker compose -f "${COMPOSE_FILE}" build spacetimedb --progress=auto
+
+    # 3) Preflight-verify publish in a throwaway container
+    just spacetimedb-verify-preflight "{{VERSION}}"
+
+    # 4) Push to registry
+    docker compose -f "${COMPOSE_FILE}" push spacetimedb
+
+    # 5) Deploy
+    docker compose -f "${COMPOSE_FILE}" up -d --force-recreate spacetimedb
+
+    # 6) Verify runtime publish marker
+    just spacetimedb-verify-runtime
+
+    echo "SpacetimeDB deploy pipeline complete ({{VERSION}})"
+
+[group('deploy')]
+spacetimedb-setup-host:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    BASE_DIR="${SPACETIME_HOST_DIR:-.config/spacetimedb}"
+    DATA_DIR="${BASE_DIR}/data"
+    TARGET_UID="${SPACETIME_HOST_UID:-1000}"
+    TARGET_GID="${SPACETIME_HOST_GID:-1000}"
+    DRY_RUN="${DRY_RUN:-0}"
+    VERBOSE="${VERBOSE:-0}"
+    CHOWN_WITH_SUDO="${CHOWN_WITH_SUDO:-1}"
+
+    run_cmd() {
+        [ "$VERBOSE" = "1" ] && echo "   $*"
+        [ "$DRY_RUN" = "1" ] && return 0
+        "$@"
+    }
+
+    echo "Preparing host directories for SpacetimeDB"
+    echo "   Base dir: ${BASE_DIR}"
+    echo "   Data dir: ${DATA_DIR}"
+    echo "   Target owner: ${TARGET_UID}:${TARGET_GID}"
+    [ "$DRY_RUN" = "1" ] && echo "   Mode: dry-run (no changes)"
+
+    run_cmd mkdir -p "${DATA_DIR}"
+
+    if [ "$CHOWN_WITH_SUDO" = "1" ] && command -v sudo >/dev/null 2>&1; then
+        [ "$DRY_RUN" != "1" ] && sudo chown -R "${TARGET_UID}:${TARGET_GID}" "${BASE_DIR}"
+    else
+        run_cmd chown -R "${TARGET_UID}:${TARGET_GID}" "${BASE_DIR}"
+    fi
+
+    run_cmd chmod -R u+rwX,g+rwX "${BASE_DIR}"
+
+    [ "$DRY_RUN" != "1" ] && ls -ld "${BASE_DIR}" "${DATA_DIR}"
+    echo "SpacetimeDB host setup complete"
+    echo "Override defaults: SPACETIME_HOST_DIR, SPACETIME_HOST_UID, SPACETIME_HOST_GID, DRY_RUN=1, VERBOSE=1"
+
+[group('deploy')]
+[confirm("This will DELETE all SpacetimeDB host data/config and recreate empty directories. Continue?")]
+spacetimedb-reset-host:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    BASE_DIR="${SPACETIME_HOST_DIR:-.config/spacetimedb}"
+    DRY_RUN="${DRY_RUN:-0}"
+    echo "Resetting SpacetimeDB host state: ${BASE_DIR}"
+    [ "$DRY_RUN" = "1" ] && echo "   Mode: dry-run (no changes)"
+    if [ "$DRY_RUN" != "1" ]; then
+        if command -v sudo >/dev/null 2>&1; then
+            sudo rm -rf "${BASE_DIR}"
+        else
+            rm -rf "${BASE_DIR}"
+        fi
+    fi
+    just spacetimedb-setup-host
+
+[group('deploy')]
+spacetimedb-prebuild:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    MODULE_DIR="${SPACETIME_MODULE_DIR:-spacetimedb}"
+    ARTIFACT_PATH="${MODULE_DIR}/dist/bundle.js"
+    if ! command -v spacetime >/dev/null 2>&1; then
+        echo "SpacetimeDB CLI not found."
+        echo "   Install: curl -sSf https://install.spacetimedb.com | sh"
+        exit 1
+    fi
+    echo "Host prebuild: SpacetimeDB module artifact"
+    ( cd "${MODULE_DIR}" && spacetime build )
+    if [ ! -f "${ARTIFACT_PATH}" ]; then
+        echo "Expected host artifact missing: ${ARTIFACT_PATH}"
+        exit 1
+    fi
+    echo "Host prebuild ready: ${ARTIFACT_PATH}"
+
+[group('deploy')]
+spacetimedb-verify-preflight VERSION:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    SPACETIME_IMAGE="registry.example.com/spacetimedb:{{VERSION}}"
+    SPACETIME_MARKER="SPACETIMEDB_PUBLISH_SUCCESS"
+    SPACETIME_DATA_DIR=$(mktemp -d)
+    CONTAINER_NAME="spacetimedb-preflight-{{VERSION}}"
+    echo "Preflight: validating SpacetimeDB publish in throwaway container"
+    echo "   Image: ${SPACETIME_IMAGE}"
+    echo "   Temp data: ${SPACETIME_DATA_DIR}"
+    cleanup() {
+        docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+        rm -rf "${SPACETIME_DATA_DIR}" >/dev/null 2>&1 || true
+    }
+    trap cleanup EXIT
+    docker run -d --name "${CONTAINER_NAME}" \
+        -e SPACETIME_DATABASE_NAME=spacetime \
+        -v "${SPACETIME_DATA_DIR}:/home/spacetime/.local/share/spacetime/data" \
+        "${SPACETIME_IMAGE}" >/dev/null
+    PRECHECK_SUCCESS=0
+    for _ in $(seq 1 45); do
+        LOGS=$(docker logs "${CONTAINER_NAME}" 2>&1 || true)
+        if echo "${LOGS}" | grep -q "${SPACETIME_MARKER}"; then
+            PRECHECK_SUCCESS=1
+            break
+        fi
+        if ! docker ps --filter "name=^/${CONTAINER_NAME}$" -q | grep -q "."; then
+            echo "Preflight container exited before publish success"
+            echo "${LOGS}"
+            exit 1
+        fi
+        sleep 2
+    done
+    if [ "${PRECHECK_SUCCESS}" -ne 1 ]; then
+        echo "Preflight timed out waiting for publish success marker"
+        docker logs "${CONTAINER_NAME}" || true
+        exit 1
+    fi
+    echo "Preflight publish succeeded"
+
+[group('deploy')]
+spacetimedb-verify-runtime:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    COMPOSE_SERVICE="${SPACETIME_SERVICE:-spacetimedb}"
+    SPACETIME_MARKER="SPACETIMEDB_PUBLISH_SUCCESS"
+    COMPOSE_FILE="${COMPOSE_FILE:-./.generated/docker-compose.yaml}"
+    RUNTIME_SUCCESS=0
+    for _ in $(seq 1 45); do
+        RUNTIME_LOGS=$(docker compose -f "${COMPOSE_FILE}" logs --no-color --tail=200 "${COMPOSE_SERVICE}" 2>&1 || true)
+        if echo "${RUNTIME_LOGS}" | grep -q "${SPACETIME_MARKER}"; then
+            RUNTIME_SUCCESS=1
+            break
+        fi
+        if ! docker compose -f "${COMPOSE_FILE}" ps --status running "${COMPOSE_SERVICE}" | grep -q "${COMPOSE_SERVICE}"; then
+            echo "SpacetimeDB runtime container is not running"
+            echo "${RUNTIME_LOGS}"
+            exit 1
+        fi
+        sleep 2
+    done
+    if [ "${RUNTIME_SUCCESS}" -ne 1 ]; then
+        echo "SpacetimeDB runtime publish marker not found after deployment"
+        docker compose -f "${COMPOSE_FILE}" logs --no-color --tail=300 "${COMPOSE_SERVICE}" || true
+        exit 1
+    fi
+    echo "SpacetimeDB runtime publish verified"
 ```
 
 ### Template: rotation script skeleton (`tools/azure/spacetimedb-tooling.ts`)
@@ -502,103 +737,13 @@ done
 wait "$SERVER_PID"
 ```
 
-### Template: Docker Compose key mount
+## Mode B operator notes (Docker self-hosted)
 
-```yaml
-services:
-  spacetimedb:
-    image: your-org/spacetimedb:latest
-    volumes:
-      - ./.generated/spacetimedb-keys:/etc/spacetimedb:ro
-    command:
-      - start
-      - --listen-addr=0.0.0.0:3003
-      - --pg-port=5432
-      - --jwt-priv-key-path=/etc/spacetimedb/id_ecdsa
-      - --jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub
-```
-
-## Docker and entrypoint considerations
-
-If your container expects:
-
-- `/etc/spacetimedb/id_ecdsa`
-- `/etc/spacetimedb/id_ecdsa.pub`
-
-make sure those files are mounted before process startup.
-
-Generic runtime flow:
-
-1. Read private/public PEM values from Azure Key Vault.
-2. Write them to `./.generated/spacetimedb-keys/id_ecdsa` and `./.generated/spacetimedb-keys/id_ecdsa.pub`.
-3. Mount the directory read-only to `/etc/spacetimedb`.
-4. Start SpacetimeDB with:
-
-```sh
-spacetime start \
-  --jwt-priv-key-path=/etc/spacetimedb/id_ecdsa \
-  --jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub
-```
-
-If neither key file exists at startup, SpacetimeDB may generate keys locally, which can diverge from your managed secrets and cause auth mismatches across instances.
-
-For broader deployment guidance, see [Self-hosting](./00100-deploy/00200-self-hosting.md).
-
-If your rotation automation supports mounted-key sync, keep it enabled by default so the mounted files are refreshed in the same run as secret rotation.
-
-### Deployment variants
-
-Use the same key material and startup args, then adapt only the mounting strategy:
-
-#### Kubernetes secret volume
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: spacetimedb-jwt-keys
-type: Opaque
-stringData:
-  id_ecdsa: |
-    -----BEGIN PRIVATE KEY-----
-    <private-key>
-    -----END PRIVATE KEY-----
-  id_ecdsa.pub: |
-    -----BEGIN PUBLIC KEY-----
-    <public-key>
-    -----END PUBLIC KEY-----
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: spacetimedb
-spec:
-  template:
-    spec:
-      volumes:
-        - name: jwt-keys
-          secret:
-            secretName: spacetimedb-jwt-keys
-      containers:
-        - name: spacetimedb
-          image: your-org/spacetimedb:latest
-          volumeMounts:
-            - name: jwt-keys
-              mountPath: /etc/spacetimedb
-              readOnly: true
-```
-
-#### systemd service
-
-```ini
-[Service]
-ExecStart=/usr/local/bin/spacetime start \
-  --listen-addr=0.0.0.0:3003 \
-  --pg-port=5432 \
-  --jwt-priv-key-path=/etc/spacetimedb/id_ecdsa \
-  --jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub
-Restart=always
-```
+- Mount `./.generated/spacetimedb-keys` read-only to `/etc/spacetimedb`.
+- Always pass `--jwt-priv-key-path=/etc/spacetimedb/id_ecdsa` and `--jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub` at startup.
+- Keep mounted-key sync enabled in rotation runs so runtime files are refreshed with the same operation.
+- After rotation, restart with `docker compose -f ./.generated/docker-compose.yaml up -d --force-recreate spacetimedb`.
+- Validate with `docker compose -f ./.generated/docker-compose.yaml logs --no-color --tail=200 spacetimedb | rg "PUBLISH_SUCCESS|PUBLISH_FAILED|InvalidSignature|not authorized"`.
 
 ## Operational runbook (copy/paste)
 
@@ -622,20 +767,14 @@ just kv-rotate-jwt-keys ENV=local
 # Verify
 just kv-verify-jwt-keys
 
-# Optional staged data migration path (execute re-sign on destination host context)
-rsync -aHAX --delete user@azvmprod:/var/lib/spacetime/data/ user@azvmtest:/var/lib/spacetime/data/
-ssh azvmtest 'cd <repo-root> && bun tools/azure/spacetimedb-tooling.ts --resign-token-only --publisher-cli-toml-path "./data/.config/spacetime/cli.toml" --private-key-path "./.generated/spacetimedb-keys/id_ecdsa"'
-rsync -aHAX --delete user@azvmtest:/var/lib/spacetime/data/ user@azvmdev:/var/lib/spacetime/data/
-ssh azvmdev 'cd <repo-root> && bun tools/azure/spacetimedb-tooling.ts --resign-token-only --publisher-cli-toml-path "./data/.config/spacetime/cli.toml" --private-key-path "./.generated/spacetimedb-keys/id_ecdsa"'
-
-# Restart/redeploy so rotated keys are loaded (run on destination host)
-just spacetimedb-restart
+# Restart so rotated keys are loaded
+docker compose -f ./.generated/docker-compose.yaml up -d --force-recreate spacetimedb
 
 # Self-publish module to your self-hosted instance
 just spacetimedb-publish
 
 # Check runtime markers
-<log-command> | rg "PUBLISH_SUCCESS|PUBLISH_FAILED|InvalidSignature|not authorized"
+docker compose -f ./.generated/docker-compose.yaml logs --no-color --tail=200 spacetimedb | rg "PUBLISH_SUCCESS|PUBLISH_FAILED|InvalidSignature|not authorized"
 ```
 
 After restart/redeploy, verify your logs include your expected publish marker, for example:
@@ -643,66 +782,133 @@ After restart/redeploy, verify your logs include your expected publish marker, f
 - `PUBLISH_SUCCESS`
 - `PUBLISH_FAILED`
 
-### Data sync variant (prod -> test -> dev)
+### Canonical data sync flow (source -> destination)
 
-Use this when you are promoting data snapshots across environments and need publish identity continuity on each destination host.
-
-What is implemented vs conceptual:
-
-- The reference tooling demonstrates concrete sync flows such as `prod -> test` and host-local pulls.
-- The `prod -> test -> dev` sequence below is a topology pattern built from those same primitives.
+Use this flow for any host-to-host promotion hop (for example `prod -> test` or `test -> dev`).
 
 ```sh
-# 1) Preview (run from control host)
-rsync -aHAX --delete --dry-run user@azvmprod:/var/lib/spacetime/data/ user@azvmtest:/var/lib/spacetime/data/
+# 1) Stop destination service (run on destination host)
+ssh azvmtest 'cd /home/deploy/spacetimedb-app && docker compose -f ./.generated/docker-compose.yaml stop spacetimedb'
 
-# 2) Apply prod -> test (run from control host)
-rsync -aHAX --delete user@azvmprod:/var/lib/spacetime/data/ user@azvmtest:/var/lib/spacetime/data/
+# 2) Preview + sync data (run from control host)
+rsync -aHAX --delete --dry-run azvmprod:/var/lib/spacetime/data/ azvmtest:/var/lib/spacetime/data/
+rsync -aHAX --delete azvmprod:/var/lib/spacetime/data/ azvmtest:/var/lib/spacetime/data/
 
-# 3) Re-sign on test (run on azvmtest or via ssh)
-ssh azvmtest 'cd <repo-root> && bun tools/azure/spacetimedb-tooling.ts \
-  --resign-token-only \
-  --publisher-cli-toml-path "./data/.config/spacetime/cli.toml" \
-  --private-key-path "./.generated/spacetimedb-keys/id_ecdsa"'
+# 3) Re-sign destination cached publish token (run in destination repo)
+ssh azvmtest 'cd /home/deploy/spacetimedb-app && bun tools/azure/spacetimedb-tooling.ts --resign-token-only --publisher-cli-toml-path "./data/.config/spacetime/cli.toml" --private-key-path "./.generated/spacetimedb-keys/id_ecdsa"'
 
-# 4) Repeat test -> dev (run from control host)
-rsync -aHAX --delete user@azvmtest:/var/lib/spacetime/data/ user@azvmdev:/var/lib/spacetime/data/
-ssh azvmdev 'cd <repo-root> && bun tools/azure/spacetimedb-tooling.ts \
-  --resign-token-only \
-  --publisher-cli-toml-path "./data/.config/spacetime/cli.toml" \
-  --private-key-path "./.generated/spacetimedb-keys/id_ecdsa"'
-
-# 5) Restart + publish checks (run on destination host after each hop)
-just spacetimedb-restart
-just spacetimedb-publish
-<log-command> | rg "PUBLISH_SUCCESS|PUBLISH_FAILED|not authorized|InvalidSignature"
+# 4) Start destination service, publish, and check logs
+ssh azvmtest 'cd /home/deploy/spacetimedb-app && docker compose -f ./.generated/docker-compose.yaml up -d spacetimedb'
+ssh azvmtest 'cd /home/deploy/spacetimedb-app && just spacetimedb-publish'
+ssh azvmtest 'cd /home/deploy/spacetimedb-app && docker compose -f ./.generated/docker-compose.yaml logs --no-color --tail=200 spacetimedb | rg "PUBLISH_SUCCESS|PUBLISH_FAILED|InvalidSignature|not authorized"'
 ```
 
-Operational guardrails:
+### Sync justfile variables (DRY configuration)
 
-- `rsync --delete` is destructive; verify backups/snapshots before apply.
-- Stop service before sync and restart after sync on destination to avoid partial-state reads.
-- Treat key parity check + destination re-sign + publish marker validation as required promotion gates.
+Define these once at the top of your sync justfile so every recipe reuses the same paths:
 
-Detailed host-scoped sync pattern (modeled after production recipes):
+```make
+sync_key := home_directory() / ".ssh/azvmsync"
+sync_remote_data := "/home/deploy/spacetimedb-app/.config/spacetimedb/data/"
+sync_local_data := ".config/spacetimedb/data/"
+sync_rsync_opts := "-avz --delete"
+sync_spacetime_service := "spacetimedb"
+sync_local_cli_toml := sync_local_data + ".config/spacetime/cli.toml"
+sync_local_priv_key := ".generated/spacetimedb-keys/id_ecdsa"
+```
 
-```sh
-# run on destination host (example: azvmtest) before pull/apply
-<stop-service-command>
+Then reference them in recipes instead of repeating literal paths:
 
-# run on control host: preview first
-rsync -aHAX --delete --dry-run user@azvmprod:/var/lib/spacetime/data/ user@azvmtest:/var/lib/spacetime/data/
+```make
+[group('sync')]
+sync-from-prod:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Syncing SpacetimeDB data: azvmprod -> local"
+    docker compose -f ./.generated/docker-compose.yaml stop {{sync_spacetime_service}} || true
+    rsync {{sync_rsync_opts}} -e "ssh -i {{sync_key}}" \
+        "deploy@azvmprod:{{sync_remote_data}}" \
+        "{{sync_local_data}}"
+    bun tools/azure/spacetimedb-tooling.ts \
+        --resign-token-only \
+        --publisher-cli-toml-path "{{sync_local_cli_toml}}" \
+        --private-key-path "{{sync_local_priv_key}}"
+    docker compose -f ./.generated/docker-compose.yaml up -d {{sync_spacetime_service}}
+    echo "Sync complete: azvmprod -> local"
 
-# run on control host: apply
-rsync -aHAX --delete user@azvmprod:/var/lib/spacetime/data/ user@azvmtest:/var/lib/spacetime/data/
+[group('sync')]
+sync-from-prod-dry:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    rsync {{sync_rsync_opts}} --dry-run -e "ssh -i {{sync_key}}" \
+        "deploy@azvmprod:{{sync_remote_data}}" \
+        "{{sync_local_data}}"
 
-# run on destination host context (directly or via ssh): re-sign local cached token
-ssh azvmtest 'cd <repo-root> && bun tools/azure/spacetimedb-tooling.ts --resign-token-only --publisher-cli-toml-path "./data/.config/spacetime/cli.toml" --private-key-path "./.generated/spacetimedb-keys/id_ecdsa"'
+[group('sync')]
+sync-from-test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Syncing SpacetimeDB data: azvmtest -> local"
+    docker compose -f ./.generated/docker-compose.yaml stop {{sync_spacetime_service}} || true
+    rsync {{sync_rsync_opts}} -e "ssh -i {{sync_key}}" \
+        "deploy@azvmtest:{{sync_remote_data}}" \
+        "{{sync_local_data}}"
+    bun tools/azure/spacetimedb-tooling.ts \
+        --resign-token-only \
+        --publisher-cli-toml-path "{{sync_local_cli_toml}}" \
+        --private-key-path "{{sync_local_priv_key}}"
+    docker compose -f ./.generated/docker-compose.yaml up -d {{sync_spacetime_service}}
+    echo "Sync complete: azvmtest -> local"
 
-# run on destination host: start + verify publish markers
-<start-service-command>
-just spacetimedb-publish
-<log-command> | rg "PUBLISH_SUCCESS|PUBLISH_FAILED|InvalidSignature|not authorized"
+[group('sync')]
+sync-from-test-dry:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    rsync {{sync_rsync_opts}} --dry-run -e "ssh -i {{sync_key}}" \
+        "deploy@azvmtest:{{sync_remote_data}}" \
+        "{{sync_local_data}}"
+
+# Cross-VM sync (no local hop -- runs rsync from source VM to destination VM)
+[group('sync')]
+sync-prod-to-test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Syncing SpacetimeDB data: azvmprod -> azvmtest"
+    ssh -i "{{sync_key}}" deploy@azvmprod \
+        "rsync {{sync_rsync_opts}} -e 'ssh -i ~/.ssh/azvmsync' '{{sync_remote_data}}' 'deploy@azvmtest:{{sync_remote_data}}'"
+    ssh -i "{{sync_key}}" deploy@azvmtest \
+        "cd /home/deploy/spacetimedb-app && bun tools/azure/spacetimedb-tooling.ts --resign-token-only --publisher-cli-toml-path {{sync_remote_data}}.config/spacetime/cli.toml --private-key-path .generated/spacetimedb-keys/id_ecdsa"
+    echo "Sync complete: azvmprod -> azvmtest"
+
+[group('sync')]
+sync-prod-to-test-dry:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ssh -i "{{sync_key}}" deploy@azvmprod \
+        "rsync {{sync_rsync_opts}} --dry-run -e 'ssh -i ~/.ssh/azvmsync' '{{sync_remote_data}}' 'deploy@azvmtest:{{sync_remote_data}}'"
+```
+
+### Sync status (data size across hosts)
+
+Check SpacetimeDB data size on every host at a glance:
+
+```make
+[group('sync')]
+sync-status:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "SpacetimeDB data status across hosts"
+    echo ""
+    printf "%-20s %s\n" "HOST" "SIZE"
+    printf "%-20s %s\n" "----" "----"
+    PROD_SIZE=$(ssh -i "{{sync_key}}" deploy@azvmprod "du -sh {{sync_remote_data}} 2>/dev/null | cut -f1" || echo "unreachable")
+    printf "%-20s %s\n" "azvmprod" "${PROD_SIZE}"
+    TEST_SIZE=$(ssh -i "{{sync_key}}" deploy@azvmtest "du -sh {{sync_remote_data}} 2>/dev/null | cut -f1" || echo "unreachable")
+    printf "%-20s %s\n" "azvmtest" "${TEST_SIZE}"
+    DEV_SIZE=$(ssh -i "{{sync_key}}" deploy@azvmdev "du -sh {{sync_remote_data}} 2>/dev/null | cut -f1" || echo "unreachable")
+    printf "%-20s %s\n" "azvmdev" "${DEV_SIZE}"
+    LOCAL_SIZE=$(du -sh "{{sync_local_data}}" 2>/dev/null | cut -f1 || echo "not found")
+    printf "%-20s %s\n" "local" "${LOCAL_SIZE}"
 ```
 
 ## Reproducibility Addendum (Operator Copy/Paste)
@@ -773,11 +979,11 @@ just kv-rotate-jwt-keys ENV="${ENVIRONMENT}"
 just kv-verify-jwt-keys
 
 # Load rotated keys in runtime
-<restart-or-redeploy-command>
+docker compose -f ./.generated/docker-compose.yaml up -d --force-recreate spacetimedb
 
 # Publish validation gate
 just spacetimedb-publish
-<log-command> | rg "PUBLISH_SUCCESS|PUBLISH_FAILED|InvalidSignature|not authorized"
+docker compose -f ./.generated/docker-compose.yaml logs --no-color --tail=200 spacetimedb | rg "PUBLISH_SUCCESS|PUBLISH_FAILED|InvalidSignature|not authorized"
 ```
 
 ### 4) Identity continuity assertion (before/after re-sign)
@@ -823,18 +1029,18 @@ TS
 
 ```sshconfig
 Host azvmprod
-  HostName <prod-hostname-or-ip>
-  User <ssh-user>
+  HostName az-lxweb01.yourhost.com
+  User deploy
   IdentityFile ~/.ssh/azvmsync
 
 Host azvmtest
-  HostName <test-hostname-or-ip>
-  User <ssh-user>
+  HostName az-lxweb02.yourhost.com
+  User deploy
   IdentityFile ~/.ssh/azvmsync
 
 Host azvmdev
-  HostName <dev-hostname-or-ip>
-  User <ssh-user>
+  HostName az-lxweb03.yourhost.com
+  User deploy
   IdentityFile ~/.ssh/azvmsync
 ```
 
@@ -893,25 +1099,53 @@ spacetime install 2.0.1
 spacetime version use 2.0.1
 ```
 
-### Container image versioning
+### Container image versioning (host-prebuilt artifact pattern)
+
+Build the SpacetimeDB module on the host first, then package the artifact into a lean image.
+No multi-stage Docker build is needed -- `spacetime build` runs on the host, and the resulting
+`dist/bundle.js` is copied in:
 
 ```dockerfile
 FROM clockworklabs/spacetime:v2.0.1
-LABEL org.opencontainers.image.version="2.0.1"
+
+WORKDIR /opt/app/spacetime
+
+# Host-prebuilt: expects dist/bundle.js from `spacetime build` before `docker build`
+COPY spacetimedb/dist ./spacetimedb/dist
+COPY --chmod=755 spacetimedb/spacetimedb-entrypoint.sh /usr/local/bin/spacetimedb-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/spacetimedb-entrypoint.sh"]
 ```
 
+Build and push workflow:
+
 ```sh
-# Build and push with immutable and rolling tags
-docker build -t registry.example.com/spacetimedb-app:v2.0.1 -t registry.example.com/spacetimedb-app:v2.0 .
-docker push registry.example.com/spacetimedb-app:v2.0.1
-docker push registry.example.com/spacetimedb-app:v2.0
+# 1) Prebuild module artifact on host
+just spacetimedb-prebuild
+
+# 2) Build image with immutable + rolling tags
+docker build \
+  -t registry.example.com/spacetimedb:v2.0.1 \
+  -t registry.example.com/spacetimedb:v2.0 \
+  -f spacetimedb/Dockerfile .
+
+# 3) Preflight-verify publish in a throwaway container
+just spacetimedb-verify-preflight VERSION=v2.0.1
+
+# 4) Push to registry
+docker push registry.example.com/spacetimedb:v2.0.1
+docker push registry.example.com/spacetimedb:v2.0
 ```
 
 ### Deployment checkpoints
 
-- confirm module artifact exists before image build (for example `dist/bundle.js`),
+Run each step individually, or use `just spacetimedb-deploy VERSION` to execute the full pipeline in one command:
+
+- run `just spacetimedb-prebuild` to confirm module artifact exists before image build,
+- run `just spacetimedb-build` to prebuild + build the container image,
+- run `just spacetimedb-verify-preflight VERSION` to prove publish works in a disposable container before pushing the image,
 - deploy pinned tag first, then optional rolling tag updates,
-- verify publish markers after rollout,
+- run `just spacetimedb-verify-runtime` after rollout to confirm publish markers appear,
 - rollback by redeploying previous pinned image tag.
 
 ## Verification Commands
@@ -945,17 +1179,16 @@ openssl pkey -pubin -in "${KEY_DIR}/id_ecdsa.pub" -outform DER | openssl dgst -s
 
 ```sh
 # Converts CRLF to LF and ensures trailing newline
-python3 - <<'PY'
-from pathlib import Path
-key_dir = Path(".generated/spacetimedb-keys")
-for name in ["id_ecdsa", "id_ecdsa.pub"]:
-    path = key_dir / name
-    text = path.read_text()
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    if not text.endswith("\n"):
-        text += "\n"
-    Path(f"{path}.normalized").write_text(text)
-PY
+bun -e '
+const keyDir = ".generated/spacetimedb-keys";
+for (const name of ["id_ecdsa", "id_ecdsa.pub"]) {
+  const path = `${keyDir}/${name}`;
+  const text = await Bun.file(path).text();
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const withTrailingNewline = normalized.endsWith("\n") ? normalized : `${normalized}\n`;
+  await Bun.write(`${path}.normalized`, withTrailingNewline);
+}
+'
 ```
 
 ## AI/Automation Contract
@@ -986,18 +1219,18 @@ Use this section as a machine-readable checklist for scripts or AI agents.
   - `--jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub`
 - Identity-preserving token source:
   - default: `./data/.config/spacetime/cli.toml`
-  - override: `--publisher-cli-toml-path <path>`
+  - override example: `--publisher-cli-toml-path ./data/.config/spacetime/cli.toml`
 
 ### Required command order
 
 ```sh
 just az-login
 just kv-rotate-jwt-keys-preview
-just kv-rotate-jwt-keys ENV=<prod|test|dev|local>
+just kv-rotate-jwt-keys ENV=prod
 just kv-verify-jwt-keys
-rsync -aHAX --delete <src-host>:/var/lib/spacetime/data/ <dst-host>:/var/lib/spacetime/data/
-ssh <dst-host> 'cd <repo-root> && bun tools/azure/spacetimedb-tooling.ts --resign-token-only --publisher-cli-toml-path <dst-cli-toml> --private-key-path <dst-private-key>'
-<restart-or-redeploy-command>
+rsync -aHAX --delete azvmprod:/var/lib/spacetime/data/ azvmtest:/var/lib/spacetime/data/
+ssh azvmtest 'cd /home/deploy/spacetimedb-app && bun tools/azure/spacetimedb-tooling.ts --resign-token-only --publisher-cli-toml-path "./data/.config/spacetime/cli.toml" --private-key-path "./.generated/spacetimedb-keys/id_ecdsa"'
+docker compose -f ./.generated/docker-compose.yaml up -d --force-recreate spacetimedb
 ```
 
 ### Success/failure markers
