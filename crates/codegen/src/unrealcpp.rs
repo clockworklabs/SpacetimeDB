@@ -1280,19 +1280,17 @@ fn generate_table_cpp(
     writeln!(output);
 
     // Add DeriveUpdatesByPrimaryKey for persistent tables with a primary key.
-    if !table.is_event {
-        if let Some(pk) = schema.pk() {
-            let pk_field_name = pk.col_name.deref().to_case(Case::Pascal);
-            let pk_type = &product_type.unwrap().elements[pk.col_pos.idx()].1;
-            let pk_type_str = cpp_ty_fmt_with_module(module_prefix, module, pk_type, module_name).to_string();
-            writeln!(output, "    Diff.DeriveUpdatesByPrimaryKey<{pk_type_str}>(");
-            writeln!(output, "        [](const {row_struct}& Row) ");
-            writeln!(output, "        {{");
-            writeln!(output, "            return Row.{pk_field_name}; ");
-            writeln!(output, "        }}");
-            writeln!(output, "    );");
-            writeln!(output);
-        }
+    if let (false, Some(pk)) = (table.is_event, schema.pk()) {
+        let pk_field_name = pk.col_name.deref().to_case(Case::Pascal);
+        let pk_type = &product_type.unwrap().elements[pk.col_pos.idx()].1;
+        let pk_type_str = cpp_ty_fmt_with_module(module_prefix, module, pk_type, module_name).to_string();
+        writeln!(output, "    Diff.DeriveUpdatesByPrimaryKey<{pk_type_str}>(");
+        writeln!(output, "        [](const {row_struct}& Row) ");
+        writeln!(output, "        {{");
+        writeln!(output, "            return Row.{pk_field_name}; ");
+        writeln!(output, "        }}");
+        writeln!(output, "    );");
+        writeln!(output);
     }
 
     // Reset cache for indexes
