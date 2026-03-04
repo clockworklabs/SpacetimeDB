@@ -1,7 +1,6 @@
 mod module_bindings;
 
 use module_bindings::*;
-#[cfg(feature = "expect_view_pk_on_update")]
 use spacetimedb_sdk::TableWithPrimaryKey;
 use spacetimedb_sdk::{error::InternalError, DbContext, Table};
 use test_counter::TestCounter;
@@ -56,7 +55,6 @@ fn connect_then(
     conn
 }
 
-#[cfg(feature = "expect_view_pk_on_update")]
 fn subscribe_these_then(
     ctx: &impl RemoteDbContext,
     queries: &[&str],
@@ -68,7 +66,6 @@ fn subscribe_these_then(
         .subscribe(queries);
 }
 
-#[cfg(feature = "expect_view_pk_on_update")]
 fn exec_view_pk_on_update() {
     let test_counter = TestCounter::new();
     let mut on_update = Some(test_counter.add_test("on_update"));
@@ -102,11 +99,6 @@ fn exec_view_pk_on_update() {
     });
 
     test_counter.wait_for_all();
-}
-
-#[cfg(not(feature = "expect_view_pk_on_update"))]
-fn exec_view_pk_on_update() {
-    panic!("This test must be run with --features expect_view_pk_on_update");
 }
 
 fn exec_view_pk_join_query_builder() {

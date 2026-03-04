@@ -4,9 +4,6 @@ version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
 
-[features]
-expect_view_pk_on_update = []
-
 [dependencies]
 spacetimedb-sdk = { path = "../.." }
 test-counter = { path = "../test-counter" }

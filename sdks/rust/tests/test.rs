@@ -504,11 +504,8 @@ macro_rules! view_pk_tests {
                     .with_client(CLIENT)
                     .with_language("rust")
                     .with_bindings_dir("src/module_bindings")
-                    .with_compile_command("cargo build --features expect_view_pk_on_update")
-                    .with_run_command(format!(
-                        "cargo run --features expect_view_pk_on_update -- {}",
-                        subcommand
-                    ))
+                    .with_compile_command("cargo build")
+                    .with_run_command(format!("cargo run -- {}", subcommand))
                     .build()
             }
 
