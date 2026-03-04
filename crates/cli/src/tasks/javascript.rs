@@ -55,10 +55,10 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
             .status()
             .context("Failed to execute tsc")?;
         if !status.success() {
-            if let Some(code) = status.code() {
-                if let Ok(code) = u8::try_from(code).map(ExitCode::from) {
-                    anyhow::bail!(ExitWithCode(code));
-                }
+            if let Some(code) = status.code()
+                && let Ok(code) = u8::try_from(code).map(ExitCode::from)
+            {
+                anyhow::bail!(ExitWithCode(code));
             }
             // For an abnormal exit, show the details of the status.
             anyhow::bail!("tsc exited with {status}");

@@ -39,7 +39,12 @@ impl Lang for TypeScript {
     /// table({
     ///   name: 'player',
     ///   indexes: [
-    ///     { name: 'this_is_an_index', algorithm: "btree", columns: [ "ownerId" ] }
+    ///     {
+    ///       accessor: 'this_is_an_index',
+    ///       name: 'this_is_an_index',
+    ///       algorithm: "btree",
+    ///       columns: [ "ownerId" ],
+    ///     }
     ///   ],
     /// }, t.row({
     ///   id: t.u32().primaryKey(),
@@ -651,18 +656,12 @@ fn write_table_opts<'a>(
             let name_camel = field_name.deref().to_case(Case::Camel);
             (name_camel, field_type)
         };
-        // TODO(cloutiertyler):
-        // The name users supply is actually the accessor name which will be used
-        // in TypeScript to access the index. This will be used verbatim.
-        // This is confusing because it is not the index name and there is
-        // no actual way for the user to set the actual index name.
-        // I think we should standardize: name and accessorName as the way to set
-        // the name and accessor name of an index across all SDKs.
-        if let Some(accessor_name) = &index_def.accessor_name {
-            writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", accessor_name);
-        } else {
-            writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", index_def.name);
-        }
+        let accessor_name = index_def.accessor_name.as_deref().unwrap_or(&index_def.name);
+        writeln!(
+            out,
+            "{{ accessor: '{}', name: '{}', algorithm: 'btree', columns: [",
+            accessor_name, index_def.name
+        );
         out.indent(1);
         for col_id in columns.iter() {
             writeln!(out, "'{}',", get_name_and_type(col_id).0);

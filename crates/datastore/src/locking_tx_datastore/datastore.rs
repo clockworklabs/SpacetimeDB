@@ -1206,14 +1206,13 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
             // TODO: avoid clone
             Ok(schema) => schema.table_name.clone(),
 
-            Err(_) => {
-                if let Some(name) = self.dropped_table_names.remove(&table_id) {
-                    name
-                } else {
+            Err(_) => match self.dropped_table_names.remove(&table_id) {
+                Some(name) => name,
+                _ => {
                     return self
                         .process_error(anyhow!("Error looking up name for truncated table {table_id:?}").into());
                 }
-            }
+            },
         };
 
         if let Err(e) = self.committed_state.replay_truncate(table_id).with_context(|| {

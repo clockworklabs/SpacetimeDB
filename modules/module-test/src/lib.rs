@@ -4,7 +4,8 @@ use std::time::Duration;
 use spacetimedb::spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
 use spacetimedb::{
-    duration, table, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table, Timestamp, ViewContext,
+    duration, table, CaseConversionPolicy, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table,
+    Timestamp, ViewContext,
 };
 use spacetimedb::{log, ProcedureContext};
 
@@ -512,3 +513,6 @@ fn get_my_schema_via_http(ctx: &mut ProcedureContext) -> String {
         Err(e) => format!("{e}"),
     }
 }
+
+#[spacetimedb::settings]
+const CASE_CONVERSION_POLICY: CaseConversionPolicy = CaseConversionPolicy::SnakeCase;
