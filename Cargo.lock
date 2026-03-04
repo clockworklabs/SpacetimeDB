@@ -6995,6 +6995,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdk-test-view-pk"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb 2.0.3",
+]
+
+[[package]]
 name = "sdk-unreal-test-harness"
 version = "2.0.3"
 dependencies = [
@@ -10087,6 +10094,16 @@ dependencies = [
  "anyhow",
  "env_logger 0.10.2",
  "spacetimedb-lib 2.0.3",
+ "spacetimedb-sdk",
+ "test-counter",
+]
+
+[[package]]
+name = "view-pk-client"
+version = "2.0.3"
+dependencies = [
+ "anyhow",
+ "env_logger 0.10.2",
  "spacetimedb-sdk",
  "test-counter",
 ]

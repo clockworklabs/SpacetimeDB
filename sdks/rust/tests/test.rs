@@ -488,3 +488,43 @@ macro_rules! view_tests {
 
 view_tests!(rust_view, "");
 view_tests!(cpp_view, "-cpp");
+
+macro_rules! view_pk_tests {
+    ($mod_name:ident, $suffix:literal) => {
+        mod $mod_name {
+            use spacetimedb_testing::sdk::Test;
+
+            const MODULE: &str = concat!("sdk-test-view-pk", $suffix);
+            const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/view-pk-client");
+
+            fn make_test(subcommand: &str) -> Test {
+                Test::builder()
+                    .with_name(subcommand)
+                    .with_module(MODULE)
+                    .with_client(CLIENT)
+                    .with_language("rust")
+                    .with_bindings_dir("src/module_bindings")
+                    .with_compile_command("cargo build --features expect_view_pk_on_update")
+                    .with_run_command(format!(
+                        "cargo run --features expect_view_pk_on_update -- {}",
+                        subcommand
+                    ))
+                    .build()
+            }
+
+            #[test]
+            fn query_builder_view_with_pk_on_update_callback() {
+                make_test("view-pk-on-update").run()
+            }
+
+            #[test]
+            fn query_builder_join_table_with_view_pk() {
+                make_test("view-pk-join-query-builder").run()
+            }
+        }
+    };
+}
+
+view_pk_tests!(rust_view_pk, "");
+view_pk_tests!(typescript_view_pk, "-ts");
+view_pk_tests!(csharp_view_pk, "-cs");

@@ -1,4 +1,4 @@
-use serde_json::json;
+use serde_json::{json, Value};
 use spacetimedb_smoketests::{require_dotnet, require_pnpm, Smoketest};
 
 const TS_VIEWS_SUBSCRIBE_MODULE: &str = r#"import { schema, t, table } from "spacetimedb/server";
@@ -68,6 +68,31 @@ public static partial class Module
     }
 }
 "#;
+
+fn project_inserts_and_deletes(events: Vec<Value>, view_name: &str) -> Vec<Value> {
+    events
+        .into_iter()
+        .map(|event| {
+            let view_event = &event[view_name];
+            let deletes = view_event["deletes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| json!({"name": row["name"]}))
+                .collect::<Vec<_>>();
+            let inserts = view_event["inserts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| json!({"name": row["name"]}))
+                .collect::<Vec<_>>();
+
+            let mut projection = serde_json::Map::new();
+            projection.insert(view_name.to_string(), json!({"deletes": deletes, "inserts": inserts}));
+            Value::Object(projection)
+        })
+        .collect()
+}
 
 /// Tests that views populate the st_view_* system tables
 #[test]
@@ -396,24 +421,7 @@ fn test_subscribing_with_different_identities() {
     test.call("insert_player", &["Bob"]).unwrap();
     let events = sub.collect().unwrap();
 
-    let projection: Vec<serde_json::Value> = events
-        .into_iter()
-        .map(|event| {
-            let deletes = event["my_player"]["deletes"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            let inserts = event["my_player"]["inserts"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            json!({"my_player": {"deletes": deletes, "inserts": inserts}})
-        })
-        .collect();
+    let projection = project_inserts_and_deletes(events, "my_player");
 
     assert_eq!(
         serde_json::json!(projection),
@@ -458,6 +466,33 @@ fn test_query_left_semijoin_view() {
 }
 
 #[test]
+fn test_subscribe_join_with_view_on_primary_key_col() {
+    require_pnpm!();
+    let mut test = Smoketest::builder().autopublish(false).build();
+    test.publish_typescript_module_source(
+        "views-subscribe-typescript",
+        "views-subscribe-typescript",
+        TS_VIEWS_SUBSCRIBE_MODULE,
+    )
+    .unwrap();
+
+    let query =
+        "SELECT all_players.* FROM player_state JOIN all_players ON player_state.identity = all_players.identity";
+    let sub = test.subscribe_background(&[query], 1).unwrap();
+    test.call("insert_player_proc", &["Alice"]).unwrap();
+    let events = sub.collect().unwrap();
+
+    let projection = project_inserts_and_deletes(events, "all_players");
+
+    assert_eq!(
+        serde_json::json!(projection),
+        serde_json::json!([
+            {"all_players": {"deletes": [], "inserts": [{"name": "Alice"}]}}
+        ])
+    );
+}
+
+#[test]
 fn test_query_complex_right_semijoin_view() {
     let test = Smoketest::builder().precompiled_module("views-query").build();
     test.assert_sql(
@@ -493,24 +528,7 @@ fn test_procedure_triggers_subscription_updates() {
     test.call("insert_player_proc", &["Alice"]).unwrap();
     let events = sub.collect().unwrap();
 
-    let projection: Vec<serde_json::Value> = events
-        .into_iter()
-        .map(|event| {
-            let deletes = event["my_player"]["deletes"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            let inserts = event["my_player"]["inserts"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            json!({"my_player": {"deletes": deletes, "inserts": inserts}})
-        })
-        .collect();
+    let projection = project_inserts_and_deletes(events, "my_player");
 
     assert_eq!(
         serde_json::json!(projection),
@@ -535,24 +553,7 @@ fn test_typescript_procedure_triggers_subscription_updates() {
     test.call("insert_player_proc", &["Alice"]).unwrap();
     let events = sub.collect().unwrap();
 
-    let projection: Vec<serde_json::Value> = events
-        .into_iter()
-        .map(|event| {
-            let deletes = event["my_player"]["deletes"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            let inserts = event["my_player"]["inserts"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            json!({"my_player": {"deletes": deletes, "inserts": inserts}})
-        })
-        .collect();
+    let projection = project_inserts_and_deletes(events, "my_player");
 
     assert_eq!(
         serde_json::json!(projection),
