@@ -88,13 +88,7 @@ public readonly struct BoolExpr<TRow>
     public static implicit operator BoolExpr<TRow>(Col<TRow, bool> col) =>
         col.Eq(true);
 
-    public static implicit operator BoolExpr<TRow>(NullableCol<TRow, bool> col) =>
-        col.Eq(true);
-
     public static implicit operator BoolExpr<TRow>(IxCol<TRow, bool> col) =>
-        col.Eq(true);
-
-    public static implicit operator BoolExpr<TRow>(NullableIxCol<TRow, bool> col) =>
         col.Eq(true);
 }
 
@@ -105,9 +99,7 @@ internal static class QueryPredicate
         {
             BoolExpr<TRow> expr => expr,
             Col<TRow, bool> col => col.Eq(true),
-            NullableCol<TRow, bool> col => col.Eq(true),
             IxCol<TRow, bool> col => col.Eq(true),
-            NullableIxCol<TRow, bool> col => col.Eq(true),
             bool b => new BoolExpr<TRow>(b ? "TRUE" : "FALSE"),
             _ => throw new ArgumentException(
                 $"Unsupported predicate type '{value.GetType().Name}'. Expected BoolExpr<{typeof(TRow).Name}> or a boolean column.",
