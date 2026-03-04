@@ -149,7 +149,7 @@ impl CommittedState {
     }
 
     /// Returns the views that perform a full scan of this table
-    pub(super) fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> + use<'_> {
+    pub(super) fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> {
         self.read_sets.views_for_table_scan(table_id)
     }
 
@@ -158,7 +158,7 @@ impl CommittedState {
         &'a self,
         table_id: &TableId,
         row_ref: RowRef<'a>,
-    ) -> impl Iterator<Item = &'a ViewCallInfo> + use<'a> {
+    ) -> impl Iterator<Item = &'a ViewCallInfo> {
         self.read_sets.views_for_index_seek(table_id, row_ref)
     }
 }
@@ -1324,14 +1324,30 @@ impl CommittedState {
                     .unwrap_or_else(|e| match e {});
             }
             // A constraint was removed. Add it back.
-            ConstraintRemoved(table_id, constraint_schema) => {
+            ConstraintRemoved(table_id, constraint_schema, index_id) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.update_constraint(constraint_schema));
+                // If the constraint had a unique index, make it unique again.
+                if let Some(index_id) = index_id {
+                    if let Some(idx) = table.indexes.get_mut(&index_id) {
+                        idx.make_unique().expect("rollback: index should have no duplicates");
+                    }
+                }
             }
             // A constraint was added. Remove it.
-            ConstraintAdded(table_id, constraint_id) => {
+            ConstraintAdded(table_id, constraint_id, index_id, pointer_map) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.remove_constraint(constraint_id));
+                // If the constraint made an index unique, revert it to non-unique.
+                if let Some(index_id) = index_id {
+                    if let Some(idx) = table.indexes.get_mut(&index_id) {
+                        idx.make_non_unique();
+                    }
+                }
+                // Restore the pointer map if it was taken.
+                if let Some(pm) = pointer_map {
+                    table.restore_pointer_map(pm);
+                }
             }
             // A sequence was removed. Add it back.
             SequenceRemoved(table_id, seq, schema) => {
