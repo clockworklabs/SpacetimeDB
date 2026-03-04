@@ -10,7 +10,7 @@ const string HOST = "http://localhost:3000";
 const string DBNAME = "view-pk-tests";
 const int TIMEOUT_SECONDS = 20;
 
-DbConnection Connect(Action<DbConnection, Identity, string> onConnect)
+DbConnection Connect(DbConnectionBuilder<DbConnection>.ConnectCallback onConnect)
 {
     return DbConnection.Builder()
         .WithUri(HOST)
@@ -73,21 +73,8 @@ void RunOnUpdateTest()
                     onUpdateCalled = true;
                 };
 
-                ctx.Procedures.InsertViewPkPlayer(1UL, "before", (_, result) =>
-                {
-                    if (!result.IsSuccess)
-                    {
-                        throw result.Error!;
-                    }
-                });
-
-                ctx.Procedures.UpdateViewPkPlayer(1UL, "after", (_, result) =>
-                {
-                    if (!result.IsSuccess)
-                    {
-                        throw result.Error!;
-                    }
-                });
+                ctx.Reducers.InsertViewPkPlayer(1UL, "before");
+                ctx.Reducers.UpdateViewPkPlayer(1UL, "after");
             })
             .OnError((_, err) =>
             {
@@ -126,21 +113,8 @@ void RunJoinQueryBuilderTest()
                     onInsertCalled = true;
                 };
 
-                ctx.Procedures.InsertViewPkPlayer(2UL, "joined", (_, result) =>
-                {
-                    if (!result.IsSuccess)
-                    {
-                        throw result.Error!;
-                    }
-                });
-
-                ctx.Procedures.InsertViewPkMembership(1UL, 2UL, (_, result) =>
-                {
-                    if (!result.IsSuccess)
-                    {
-                        throw result.Error!;
-                    }
-                });
+                ctx.Reducers.InsertViewPkPlayer(2UL, "joined");
+                ctx.Reducers.InsertViewPkMembership(1UL, 2UL);
             })
             .OnError((_, err) =>
             {
