@@ -105,10 +105,7 @@ namespace SpacetimeDB
 
     public readonly struct TestDefaultFieldValuesCols
     {
-        public readonly global::SpacetimeDB.Col<
-            global::TestDefaultFieldValues,
-            int
-        > UniqueField;
+        public readonly global::SpacetimeDB.Col<global::TestDefaultFieldValues, int> UniqueField;
         public readonly global::SpacetimeDB.Col<
             global::TestDefaultFieldValues,
             string
@@ -198,10 +195,10 @@ namespace SpacetimeDB
                 tableName,
                 "DefaultEnum"
             );
-            DefaultNull = new global::SpacetimeDB.Col<
-                global::TestDefaultFieldValues,
-                MyStruct
-            >(tableName, "DefaultNull");
+            DefaultNull = new global::SpacetimeDB.Col<global::TestDefaultFieldValues, MyStruct>(
+                tableName,
+                "DefaultNull"
+            );
         }
     }
 
@@ -599,10 +596,7 @@ namespace SpacetimeDB
 
     public readonly struct TestUniqueNotEquatableCols
     {
-        public readonly global::SpacetimeDB.Col<
-            global::TestUniqueNotEquatable,
-            int
-        > UniqueField;
+        public readonly global::SpacetimeDB.Col<global::TestUniqueNotEquatable, int> UniqueField;
         public readonly global::SpacetimeDB.Col<
             global::TestUniqueNotEquatable,
             TestEnumWithExplicitValues
