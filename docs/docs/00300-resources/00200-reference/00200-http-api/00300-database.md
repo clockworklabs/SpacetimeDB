@@ -133,7 +133,7 @@ Accessible through the CLI as `spacetime delete <identity>`.
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
 
-Deleting a database requires ownership. If no `Authorization` header is provided, the request will be treated as anonymous and will be rejected unless the anonymous identity happens to own the database.
+Deleting a database requires ownership. If no `Authorization` header is provided, the request will be treated as anonymous and will be rejected.
 
 ## `GET /v1/database/:name_or_identity/names`
 
