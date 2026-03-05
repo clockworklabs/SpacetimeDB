@@ -1308,7 +1308,7 @@ impl __sdk::InModule for Reducer {{
 }
 
 fn print_db_update_defn(module: &ModuleDef, visibility: CodegenVisibility, out: &mut Indenter) {
-    writeln!(out, "#[derive(Default)]");
+    writeln!(out, "#[derive(Default, Debug)]");
     writeln!(out, "#[allow(non_snake_case)]");
     writeln!(out, "#[doc(hidden)]");
     out.delimited_block(
@@ -1606,6 +1606,7 @@ fn print_const_db_context_types(out: &mut Indenter) {
         out,
         "
 #[doc(hidden)]
+#[derive(Debug)]
 pub struct RemoteModule;
 
 impl __sdk::InModule for RemoteModule {{
