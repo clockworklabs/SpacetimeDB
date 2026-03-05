@@ -1,5 +1,8 @@
 {
   "description": "A basic TypeScript client and server template with only stubs for code",
   "client_lang": "typescript",
-  "server_lang": "typescript"
+  "server_lang": "typescript",
+  "builtWith": [
+    "spacetimedb"
+  ]
 }
