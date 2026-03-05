@@ -3086,10 +3086,11 @@ mod tests {
     }
 
     #[test]
+    /// Even when children share the parent's module-path, generate is not inherited.
+    ///
+    /// Deduplication in generate.rs handles the common case; inheritance would be
+    /// dangerous when a child overrides module-path.
     fn test_generate_not_inherited_for_children_sharing_module() {
-        // Even when children share the parent's module-path, generate is not inherited.
-        // Deduplication in generate.rs handles the common case; inheritance would be
-        // dangerous when a child overrides module-path.
         let json = r#"{
             "module-path": "./server",
             "generate": [
