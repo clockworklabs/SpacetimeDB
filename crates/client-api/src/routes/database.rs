@@ -538,15 +538,46 @@ where
 
 pub async fn sql<S>(
     State(worker_ctx): State<S>,
-    Path(name_or_identity): Path<SqlParams>,
-    Query(params): Query<SqlQueryParams>,
+    Path(SqlParams { name_or_identity }): Path<SqlParams>,
+    Query(SqlQueryParams { confirmed }): Query<SqlQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     body: String,
 ) -> axum::response::Result<impl IntoResponse>
 where
     S: NodeDelegate + ControlStateDelegate + Authorization,
 {
-    let json = sql_direct(worker_ctx, name_or_identity, params, auth.claims.identity, body).await?;
+    let caller_identity = auth.claims.identity;
+    let connection_id = generate_random_connection_id();
+
+    let (host, database) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
+
+    // Run the module's client_connected reducer, if any.
+    // If it rejects the connection, bail before executing SQL.
+    let module = host.module().await.map_err(log_and_500)?;
+    module
+        .call_identity_connected(auth.into(), connection_id)
+        .await
+        .map_err(client_connected_error_to_response)?;
+
+    let sql_auth = worker_ctx
+        .authorize_sql(caller_identity, database.database_identity)
+        .await?;
+
+    let result = host
+        .exec_sql(
+            sql_auth,
+            database,
+            confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS),
+            body,
+        )
+        .await;
+
+    module
+        .call_identity_disconnected(caller_identity, connection_id, false)
+        .await
+        .map_err(client_disconnected_error_to_response)?;
+
+    let json = result?;
 
     let total_duration = json.iter().fold(0, |acc, x| acc + x.total_duration_micros);
 
