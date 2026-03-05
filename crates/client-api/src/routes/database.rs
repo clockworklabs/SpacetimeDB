@@ -24,6 +24,7 @@ use futures::TryStreamExt;
 use http::StatusCode;
 use log::{info, warn};
 use serde::Deserialize;
+use spacetimedb::auth::identity::ConnectionAuthCtx;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::{CallResult, UpdateDatabaseResult};
@@ -518,35 +519,12 @@ pub async fn sql_direct<S>(
     SqlParams { name_or_identity }: SqlParams,
     SqlQueryParams { confirmed }: SqlQueryParams,
     caller_identity: Identity,
+    caller_auth: ConnectionAuthCtx,
     sql: String,
 ) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>>
 where
     S: NodeDelegate + ControlStateDelegate + Authorization,
 {
-    // Anyone is authorized to execute SQL queries. The SQL engine will determine
-    // which queries this identity is allowed to execute against the database.
-
-    let (host, database) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
-
-    let auth = worker_ctx
-        .authorize_sql(caller_identity, database.database_identity)
-        .await?;
-
-    host.exec_sql(auth, database, confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS), sql)
-        .await
-}
-
-pub async fn sql<S>(
-    State(worker_ctx): State<S>,
-    Path(SqlParams { name_or_identity }): Path<SqlParams>,
-    Query(SqlQueryParams { confirmed }): Query<SqlQueryParams>,
-    Extension(auth): Extension<SpacetimeAuth>,
-    body: String,
-) -> axum::response::Result<impl IntoResponse>
-where
-    S: NodeDelegate + ControlStateDelegate + Authorization,
-{
-    let caller_identity = auth.claims.identity;
     let connection_id = generate_random_connection_id();
 
     let (host, database) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
@@ -555,7 +533,7 @@ where
     // If it rejects the connection, bail before executing SQL.
     let module = host.module().await.map_err(log_and_500)?;
     module
-        .call_identity_connected(auth.into(), connection_id)
+        .call_identity_connected(caller_auth, connection_id)
         .await
         .map_err(client_connected_error_to_response)?;
 
@@ -568,7 +546,7 @@ where
             sql_auth,
             database,
             confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS),
-            body,
+            sql,
         )
         .await
     }
@@ -580,7 +558,22 @@ where
         .await
         .map_err(client_disconnected_error_to_response)?;
 
-    let json = result?;
+    result
+}
+
+pub async fn sql<S>(
+    State(worker_ctx): State<S>,
+    Path(name_or_identity): Path<SqlParams>,
+    Query(params): Query<SqlQueryParams>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    body: String,
+) -> axum::response::Result<impl IntoResponse>
+where
+    S: NodeDelegate + ControlStateDelegate + Authorization,
+{
+    let caller_identity = auth.claims.identity;
+    let caller_auth: ConnectionAuthCtx = auth.into();
+    let json = sql_direct(worker_ctx, name_or_identity, params, caller_identity, caller_auth, body).await?;
 
     let total_duration = json.iter().fold(0, |acc, x| acc + x.total_duration_micros);
 
