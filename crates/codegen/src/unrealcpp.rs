@@ -3514,8 +3514,7 @@ fn generate_client_implementation(
         output,
         "        const FString ErrorMessage = FString::Printf(TEXT(\"Reducer result for unknown request_id %u\"), Event.RequestId);"
     );
-    writeln!(output, "        UE_LOG(LogTemp, Error, TEXT(\"%s\"), *ErrorMessage);");
-    writeln!(output, "        ReducerEventFailed(Event, ErrorMessage);");
+    writeln!(output, "        HandleProtocolViolation(ErrorMessage);");
     writeln!(output, "        return;");
     writeln!(output, "    }}");
     writeln!(output);
@@ -3876,6 +3875,7 @@ fn generate_client_implementation(
         "void U{module_prefix}DbConnection::ForwardOnDisconnect(UDbConnectionBase* BaseConnection, const FString& Error)"
     );
     writeln!(output, "{{");
+    writeln!(output, "\tPendingTypedReducers.Empty();");
     writeln!(output, "\tif (OnDisconnectDelegate.IsBound())");
     writeln!(output, "\t{{");
     writeln!(output, "\t\tOnDisconnectDelegate.Execute(this, Error);");
@@ -3911,13 +3911,10 @@ fn generate_client_implementation(
     writeln!(output, "        {{");
     writeln!(
         output,
-        "            UE_LOG(LogTemp, Warning, TEXT(\"Missing typed reducer for request_id %u while building table-update event context; using UnknownTransaction event\"), ReducerEvent.RequestId);"
+        "            const FString ErrorMessage = FString::Printf(TEXT(\"Reducer result for unknown request_id %u\"), ReducerEvent.RequestId);"
     );
-    writeln!(
-        output,
-        "            BaseEvent = F{module_name_pascal}Event::UnknownTransaction(FSpacetimeDBUnit());"
-    );
-    writeln!(output, "            break;");
+    writeln!(output, "            HandleProtocolViolation(ErrorMessage);");
+    writeln!(output, "            return;");
     writeln!(output, "        }}");
     writeln!(
         output,

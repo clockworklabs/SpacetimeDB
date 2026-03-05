@@ -226,8 +226,7 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
     if (!TryTakePendingTypedReducer(Event.RequestId, DecodedReducer))
     {
         const FString ErrorMessage = FString::Printf(TEXT("Reducer result for unknown request_id %u"), Event.RequestId);
-        UE_LOG(LogTemp, Error, TEXT("%s"), *ErrorMessage);
-        ReducerEventFailed(Event, ErrorMessage);
+        HandleProtocolViolation(ErrorMessage);
         return;
     }
 
@@ -431,6 +430,7 @@ void UDbConnection::ForwardOnConnect(UDbConnectionBase* BaseConnection, FSpaceti
 }
 void UDbConnection::ForwardOnDisconnect(UDbConnectionBase* BaseConnection, const FString& Error)
 {
+	PendingTypedReducers.Empty();
 	if (OnDisconnectDelegate.IsBound())
 	{
 		OnDisconnectDelegate.Execute(this, Error);
@@ -451,9 +451,9 @@ void UDbConnection::DbUpdate(const FDatabaseUpdateType& Update, const FSpacetime
         FReducer Reducer;
         if (!TryGetPendingTypedReducer(ReducerEvent.RequestId, Reducer))
         {
-            UE_LOG(LogTemp, Warning, TEXT("Missing typed reducer for request_id %u while building table-update event context; using UnknownTransaction event"), ReducerEvent.RequestId);
-            BaseEvent = FQuickstartChatEvent::UnknownTransaction(FSpacetimeDBUnit());
-            break;
+            const FString ErrorMessage = FString::Printf(TEXT("Reducer result for unknown request_id %u"), ReducerEvent.RequestId);
+            HandleProtocolViolation(ErrorMessage);
+            return;
         }
         BaseEvent = FQuickstartChatEvent::Reducer(Reducer);
         break;
