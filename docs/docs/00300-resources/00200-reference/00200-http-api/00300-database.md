@@ -435,7 +435,7 @@ Accessible through the CLI as `spacetime logs <name_or_identity>`.
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
 
-Viewing logs requires ownership of the database. If no `Authorization` header is provided, the request will be treated as anonymous and will be rejected unless the anonymous identity owns the database.
+Viewing logs requires ownership of the database. If no `Authorization` header is provided, the request will be treated as anonymous and will be rejected.
 
 #### Returns
 
