@@ -4,7 +4,6 @@
   "server_lang": "typescript",
   "builtWith": [
     "spacetimedb",
-    "types",
     "esbuild",
     "typescript"
   ]

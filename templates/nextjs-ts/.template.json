@@ -7,7 +7,6 @@
     "react",
     "react-dom",
     "spacetimedb",
-    "types",
     "typescript"
   ]
 }

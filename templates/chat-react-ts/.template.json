@@ -8,7 +8,6 @@
     "spacetimedb",
     "eslint",
     "testing-library",
-    "types",
     "vitejs",
     "eslint-plugin-react-hooks",
     "eslint-plugin-react-refresh",

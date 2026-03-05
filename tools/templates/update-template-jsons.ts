@@ -27,6 +27,11 @@ function normalizeNpmPackageName(name: string): string {
     return name;
 }
 
+/** Skip @types/* packages - typings, not frameworks */
+function shouldSkipPackage(normalized: string): boolean {
+    return normalized === 'types';
+}
+
 function parsePackageJson(content: string): string[] {
     const result: string[] = [];
     let pkg: { dependencies?: Record<string, unknown>; devDependencies?: Record<string, unknown> };
@@ -38,7 +43,8 @@ function parsePackageJson(content: string): string[] {
     for (const deps of [pkg.dependencies, pkg.devDependencies]) {
         if (deps && typeof deps === 'object') {
             for (const name of Object.keys(deps)) {
-                result.push(normalizeNpmPackageName(name));
+                const normalized = normalizeNpmPackageName(name);
+                if (!shouldSkipPackage(normalized)) result.push(normalized);
             }
         }
     }
@@ -114,13 +120,25 @@ function sortRootFirst(paths: string[]): string[] {
     return [...paths].sort((a, b) => a.split(path.sep).length - b.split(path.sep).length);
 }
 
-async function collectDepsFromManifests(templateDir: string): Promise<string[]> {
+async function collectDepsFromManifests(templateDir: string, slug: string): Promise<string[]> {
     const seen = new Set<string>();
     const { packageJson, cargoToml, csproj } = await findManifests(templateDir);
+    const isNodeTemplate = slug.includes('nodejs');
 
     for (const filePath of sortRootFirst(packageJson)) {
         try {
             const content = await readFile(filePath, 'utf-8');
+            const pkg = JSON.parse(content) as {
+                dependencies?: Record<string, unknown>;
+                devDependencies?: Record<string, unknown>;
+            };
+            if (
+                isNodeTemplate &&
+                ((pkg.dependencies && '@types/node' in pkg.dependencies) ||
+                    (pkg.devDependencies && '@types/node' in pkg.devDependencies))
+            ) {
+                seen.add('nodejs');
+            }
             for (const dep of parsePackageJson(content)) {
                 seen.add(dep);
             }
@@ -186,7 +204,7 @@ export async function updateTemplateJsons(): Promise<void> {
             continue;
         }
 
-        const builtWith = await collectDepsFromManifests(templateDir);
+        const builtWith = await collectDepsFromManifests(templateDir, slug);
 
         const { image: _image, ...rest } = meta;
         const updatedMeta = { ...rest, builtWith };
