@@ -64,27 +64,27 @@ Tables store your data. Reducers are functions that modify data — they're the 
 import { schema, table, t } from 'spacetimedb/server';
 
 const spacetimedb = schema({
-person: table(
-{ public: true },
-{
-name: t.string(),
-}
-),
+  person: table(
+    { public: true },
+    {
+      name: t.string(),
+    }
+  ),
 });
 export default spacetimedb;
 
 export const add = spacetimedb.reducer(
-{ name: t.string() },
-(ctx, { name }) => {
-ctx.db.person.insert({ name });
-}
+  { name: t.string() },
+  (ctx, { name }) => {
+    ctx.db.person.insert({ name });
+  }
 );
 
 export const sayHello = spacetimedb.reducer(ctx => {
-for (const person of ctx.db.person.iter()) {
-console.info(`Hello, ${person.name}!`);
-}
-console.info('Hello, World!');
+  for (const person of ctx.db.person.iter()) {
+    console.info(`Hello, ${person.name}!`);
+  }
+  console.info('Hello, World!');
 });
 ```
 
@@ -102,9 +102,9 @@ spacetime call add Alice
 
 # Query the person table
 spacetime sql "SELECT * FROM person"
-name
+ name
 ---------
-"Alice"
+ "Alice"
 
 # Call sayHello to greet everyone
 spacetime call say_hello
@@ -131,21 +131,21 @@ The `lib/spacetimedb-server.ts` file provides a utility for server-side data fet
 import { DbConnection, tables } from '../src/module_bindings';
 
 export async function fetchPeople() {
-return new Promise((resolve, reject) => {
-const connection = DbConnection.builder()
-.withUri(process.env.SPACETIMEDB_HOST!)
-.withDatabaseName(process.env.SPACETIMEDB_DB_NAME!)
-.onConnect(conn => {
-conn.subscriptionBuilder()
-.onApplied(() => {
-const people = Array.from(conn.db.person.iter());
-conn.disconnect();
-resolve(people);
-})
-.subscribe(tables.person);
-})
-.build();
-});
+  return new Promise((resolve, reject) => {
+    const connection = DbConnection.builder()
+      .withUri(process.env.SPACETIMEDB_HOST!)
+      .withDatabaseName(process.env.SPACETIMEDB_DB_NAME!)
+      .onConnect(conn => {
+        conn.subscriptionBuilder()
+          .onApplied(() => {
+            const people = Array.from(conn.db.person.iter());
+            conn.disconnect();
+            resolve(people);
+          })
+          .subscribe(tables.person);
+      })
+      .build();
+  });
 }
 ```
 
@@ -161,8 +161,8 @@ import { PersonList } from './PersonList';
 import { fetchPeople } from '../lib/spacetimedb-server';
 
 export default async function Home() {
-const initialPeople = await fetchPeople();
-return <PersonList initialPeople={initialPeople} />;
+  const initialPeople = await fetchPeople();
+  return <PersonList initialPeople={initialPeople} />;
 }
 ```
 
@@ -174,18 +174,18 @@ import { tables, reducers } from '../src/module_bindings';
 import { useTable, useReducer } from 'spacetimedb/react';
 
 export function PersonList({ initialPeople }) {
-// Real-time data from WebSocket subscription
-const [people, isLoading] = useTable(tables.person);
-const addPerson = useReducer(reducers.add);
+  // Real-time data from WebSocket subscription
+  const [people, isLoading] = useTable(tables.person);
+  const addPerson = useReducer(reducers.add);
 
-// Use server data until client is connected
-const displayPeople = isLoading ? initialPeople : people;
+  // Use server data until client is connected
+  const displayPeople = isLoading ? initialPeople : people;
 
-return (
-<ul>
-{displayPeople.map((person, i) => <li key={i}>{person.name}</li>)}
-</ul>
-);
+  return (
+    <ul>
+      {displayPeople.map((person, i) => <li key={i}>{person.name}</li>)}
+    </ul>
+  );
 }
 ```
 

@@ -39,17 +39,17 @@ Use the CLI-managed workflow with `spacetime build`, which wraps CMake + `emcc` 
 ```bash
 spacetime dev --template basic-cpp
 ```
-</StepCode>
-<StepText>
-Need manual control? You can still drive CMake+emcc directly (see `spacetimedb/CMakeLists.txt`), but the recommended path is `spacetime build`/`spacetime dev`.
-</StepText>
-</Step>
 
-<Step title="Explore the project structure">
-<StepText>
+
+Need manual control? You can still drive CMake+emcc directly (see `spacetimedb/CMakeLists.txt`), but the recommended path is `spacetime build`/`spacetime dev`.
+
+
+
+
+
 Server code lives in the `spacetimedb` folder; the template uses CMake and the SpacetimeDB C++ SDK.
-</StepText>
-<StepCode>
+
+
 ```
 my-spacetime-app/
 ├── spacetimedb/               # Your C++ module
@@ -58,7 +58,7 @@ my-spacetime-app/
 │       └── lib.cpp            # Server-side logic
 ├── Cargo.toml
 └── src/
-└── main.rs                # Rust client application
+    └── main.rs                # Rust client application
 ```
 
 
@@ -76,16 +76,16 @@ SPACETIMEDB_STRUCT(Person, name)
 SPACETIMEDB_TABLE(Person, person, Public)
 
 SPACETIMEDB_REDUCER(add, ReducerContext ctx, std::string name) {
-ctx.db[person].insert(Person{name});
-return Ok();
+    ctx.db[person].insert(Person{name});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(say_hello, ReducerContext ctx) {
-for (const auto& person : ctx.db[person]) {
-LOG_INFO("Hello, " + person.name + "!");
-}
-LOG_INFO("Hello, World!");
-return Ok();
+    for (const auto& person : ctx.db[person]) {
+        LOG_INFO("Hello, " + person.name + "!");
+    }
+    LOG_INFO("Hello, World!");
+    return Ok();
 }
 ```
 

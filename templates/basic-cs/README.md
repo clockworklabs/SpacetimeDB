@@ -60,27 +60,27 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-[SpacetimeDB.Table(Accessor = "Person", Public = true)]
-public partial struct Person
-{
-public string Name;
-}
+    [SpacetimeDB.Table(Accessor = "Person", Public = true)]
+    public partial struct Person
+    {
+        public string Name;
+    }
 
-[SpacetimeDB.Reducer]
-public static void Add(ReducerContext ctx, string name)
-{
-ctx.Db.Person.Insert(new Person { Name = name });
-}
+    [SpacetimeDB.Reducer]
+    public static void Add(ReducerContext ctx, string name)
+    {
+        ctx.Db.Person.Insert(new Person { Name = name });
+    }
 
-[SpacetimeDB.Reducer]
-public static void SayHello(ReducerContext ctx)
-{
-foreach (var person in ctx.Db.Person.Iter())
-{
-Log.Info($"Hello, {person.Name}!");
-}
-Log.Info("Hello, World!");
-}
+    [SpacetimeDB.Reducer]
+    public static void SayHello(ReducerContext ctx)
+    {
+        foreach (var person in ctx.Db.Person.Iter())
+        {
+            Log.Info($"Hello, {person.Name}!");
+        }
+        Log.Info("Hello, World!");
+    }
 }
 ```
 
@@ -98,9 +98,9 @@ spacetime call add Alice
 
 # Query the person table
 spacetime sql "SELECT * FROM Person"
-name
+ name
 ---------
-"Alice"
+ "Alice"
 
 # Call say_hello to greet everyone
 spacetime call say_hello

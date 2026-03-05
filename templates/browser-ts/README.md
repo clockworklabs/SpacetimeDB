@@ -48,28 +48,28 @@ The browser IIFE bundle also exposes the generated `tables` query builders, so y
 <script src="dist/bindings.iife.js"></script>
 
 <script>
-const HOST = 'ws://localhost:3000';
-const DB_NAME = 'my-spacetime-app';
-const TOKEN_KEY = `${HOST}/${DB_NAME}/auth_token`;
+  const HOST = 'ws://localhost:3000';
+  const DB_NAME = 'my-spacetime-app';
+  const TOKEN_KEY = `${HOST}/${DB_NAME}/auth_token`;
 
-const conn = DbConnection.builder()
-.withUri(HOST)
-.withDatabaseName(DB_NAME)
-.withToken(localStorage.getItem(TOKEN_KEY))
-.onConnect((conn, identity, token) => {
-localStorage.setItem(TOKEN_KEY, token);
-console.log('Connected:', identity.toHexString());
+  const conn = DbConnection.builder()
+    .withUri(HOST)
+    .withDatabaseName(DB_NAME)
+    .withToken(localStorage.getItem(TOKEN_KEY))
+    .onConnect((conn, identity, token) => {
+      localStorage.setItem(TOKEN_KEY, token);
+      console.log('Connected:', identity.toHexString());
 
-// Subscribe to tables
-conn.subscriptionBuilder()
-.onApplied(() => {
-for (const person of conn.db.person.iter()) {
-console.log(person.name);
-}
-})
-.subscribe(tables.person);
-})
-.build();
+      // Subscribe to tables
+      conn.subscriptionBuilder()
+        .onApplied(() => {
+          for (const person of conn.db.person.iter()) {
+            console.log(person.name);
+          }
+        })
+        .subscribe(tables.person);
+    })
+    .build();
 </script>
 ```
 
@@ -92,11 +92,11 @@ Register callbacks to update your UI when data changes.
 
 ```javascript
 conn.db.person.onInsert((ctx, person) => {
-console.log('New person:', person.name);
+  console.log('New person:', person.name);
 });
 
 conn.db.person.onDelete((ctx, person) => {
-console.log('Removed:', person.name);
+  console.log('Removed:', person.name);
 });
 ```
 

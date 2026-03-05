@@ -63,27 +63,27 @@ Tables store your data. Reducers are functions that modify data — they're the 
 import { schema, table, t } from 'spacetimedb/server';
 
 const spacetimedb = schema({
-person: table(
-{ public: true },
-{
-name: t.string(),
-}
-),
+  person: table(
+    { public: true },
+    {
+      name: t.string(),
+    }
+  ),
 });
 export default spacetimedb;
 
 export const add = spacetimedb.reducer(
-{ name: t.string() },
-(ctx, { name }) => {
-ctx.db.person.insert({ name });
-}
+  { name: t.string() },
+  (ctx, { name }) => {
+    ctx.db.person.insert({ name });
+  }
 );
 
 export const sayHello = spacetimedb.reducer(ctx => {
-for (const person of ctx.db.person.iter()) {
-console.info(`Hello, ${person.name}!`);
-}
-console.info('Hello, World!');
+  for (const person of ctx.db.person.iter()) {
+    console.info(`Hello, ${person.name}!`);
+  }
+  console.info('Hello, World!');
 });
 ```
 
@@ -101,9 +101,9 @@ spacetime call add Alice
 
 # Query the person table
 spacetime sql "SELECT * FROM person"
-name
+ name
 ---------
-"Alice"
+ "Alice"
 
 # Call sayHello to greet everyone
 spacetime call say_hello
@@ -130,21 +130,21 @@ The server API route connects to SpacetimeDB, subscribes, fetches data, and disc
 import { DbConnection, tables } from '../../module_bindings';
 
 export default defineEventHandler(async () => {
-return new Promise((resolve, reject) => {
-DbConnection.builder()
-.withUri(process.env.SPACETIMEDB_HOST!)
-.withDatabaseName(process.env.SPACETIMEDB_DB_NAME!)
-.onConnect((conn) => {
-conn.subscriptionBuilder()
-.onApplied(() => {
-const people = Array.from(conn.db.person.iter());
-conn.disconnect();
-resolve(people);
-})
-.subscribe(tables.person);
-})
-.build();
-});
+  return new Promise((resolve, reject) => {
+    DbConnection.builder()
+      .withUri(process.env.SPACETIMEDB_HOST!)
+      .withDatabaseName(process.env.SPACETIMEDB_DB_NAME!)
+      .onConnect((conn) => {
+        conn.subscriptionBuilder()
+          .onApplied(() => {
+            const people = Array.from(conn.db.person.iter());
+            conn.disconnect();
+            resolve(people);
+          })
+          .subscribe(tables.person);
+      })
+      .build();
+  });
 });
 ```
 
@@ -157,14 +157,14 @@ The root `app.vue` wraps your app in a `SpacetimeDBProvider` that manages the We
 ```vue
 <!-- app.vue -->
 <template>
-<ClientOnly>
-<SpacetimeDBProvider :connection-builder="connectionBuilder">
-<AppContent />
-</SpacetimeDBProvider>
-<template #fallback>
-<AppContent />
-</template>
-</ClientOnly>
+  <ClientOnly>
+    <SpacetimeDBProvider :connection-builder="connectionBuilder">
+      <AppContent />
+    </SpacetimeDBProvider>
+    <template #fallback>
+      <AppContent />
+    </template>
+  </ClientOnly>
 </template>
 
 <script setup lang="ts">
@@ -176,17 +176,17 @@ const DB_NAME = import.meta.env.VITE_SPACETIMEDB_DB_NAME ?? 'nuxt-ts';
 const TOKEN_KEY = `${HOST}/${DB_NAME}/auth_token`;
 
 const connectionBuilder = import.meta.client
-? DbConnection.builder()
-.withUri(HOST)
-.withDatabaseName(DB_NAME)
-.withToken(localStorage.getItem(TOKEN_KEY) || undefined)
-.onConnect((_conn, identity, token) => {
-localStorage.setItem(TOKEN_KEY, token);
-console.log('Connected:', identity.toHexString());
-})
-.onDisconnect(() => console.log('Disconnected'))
-.onConnectError((_ctx, err) => console.log('Error:', err))
-: undefined;
+  ? DbConnection.builder()
+      .withUri(HOST)
+      .withDatabaseName(DB_NAME)
+      .withToken(localStorage.getItem(TOKEN_KEY) || undefined)
+      .onConnect((_conn, identity, token) => {
+        localStorage.setItem(TOKEN_KEY, token);
+        console.log('Connected:', identity.toHexString());
+      })
+      .onDisconnect(() => console.log('Disconnected'))
+      .onConnectError((_ctx, err) => console.log('Error:', err))
+  : undefined;
 </script>
 ```
 
@@ -208,16 +208,16 @@ const { data: initialPeople } = await useFetch('/api/people');
 // On the client, use real-time composables
 let conn, people, addReducer;
 if (import.meta.client) {
-const { useSpacetimeDB, useTable, useReducer } = await import('spacetimedb/vue');
-conn = useSpacetimeDB();
-[people] = useTable(tables.person);
-addReducer = useReducer(reducers.add);
+  const { useSpacetimeDB, useTable, useReducer } = await import('spacetimedb/vue');
+  conn = useSpacetimeDB();
+  [people] = useTable(tables.person);
+  addReducer = useReducer(reducers.add);
 }
 
 // Use real-time data once connected, fall back to SSR data
 const displayPeople = computed(() => {
-if (conn?.isActive && people?.value) return people.value;
-return initialPeople.value ?? [];
+  if (conn?.isActive && people?.value) return people.value;
+  return initialPeople.value ?? [];
 });
 </script>
 ```

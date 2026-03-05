@@ -53,20 +53,20 @@ use spacetimedb::{ReducerContext, Table};
 
 #[spacetimedb::table(accessor = person, public)]
 pub struct Person {
-name: String,
+    name: String,
 }
 
 #[spacetimedb::reducer]
 pub fn add(ctx: &ReducerContext, name: String) {
-ctx.db.person().insert(Person { name });
+    ctx.db.person().insert(Person { name });
 }
 
 #[spacetimedb::reducer]
 pub fn say_hello(ctx: &ReducerContext) {
-for person in ctx.db.person().iter() {
-log::info!("Hello, {}!", person.name);
-}
-log::info!("Hello, World!");
+    for person in ctx.db.person().iter() {
+        log::info!("Hello, {}!", person.name);
+    }
+    log::info!("Hello, World!");
 }
 ```
 
@@ -84,9 +84,9 @@ spacetime call add Alice
 
 # Query the person table
 spacetime sql "SELECT * FROM person"
-name
+ name
 ---------
-"Alice"
+ "Alice"
 
 # Call say_hello to greet everyone
 spacetime call say_hello

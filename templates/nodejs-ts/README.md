@@ -50,27 +50,27 @@ Tables store your data. Reducers are functions that modify data — they're the 
 import { schema, table, t } from 'spacetimedb/server';
 
 const spacetimedb = schema({
-person: table(
-{ public: true },
-{
-name: t.string(),
-}
-),
+  person: table(
+    { public: true },
+    {
+      name: t.string(),
+    }
+  ),
 });
 export default spacetimedb;
 
 export const add = spacetimedb.reducer(
-{ name: t.string() },
-(ctx, { name }) => {
-ctx.db.person.insert({ name });
-}
+  { name: t.string() },
+  (ctx, { name }) => {
+    ctx.db.person.insert({ name });
+  }
 );
 
 export const sayHello = spacetimedb.reducer(ctx => {
-for (const person of ctx.db.person.iter()) {
-console.info(`Hello, ${person.name}!`);
-}
-console.info('Hello, World!');
+  for (const person of ctx.db.person.iter()) {
+    console.info(`Hello, ${person.name}!`);
+  }
+  console.info('Hello, World!');
 });
 ```
 
@@ -115,28 +115,28 @@ Open `src/main.ts` to see the Node.js client. It uses `DbConnection.builder()` t
 import { DbConnection } from './module_bindings/index.js';
 
 DbConnection.builder()
-.withUri(HOST)
-.withDatabaseName(DB_NAME)
-.withToken(loadToken())  // Load saved token from file
-.onConnect((conn, identity, token) => {
-console.log('Connected! Identity:', identity.toHexString());
-saveToken(token);  // Save token for future connections
+  .withUri(HOST)
+  .withDatabaseName(DB_NAME)
+  .withToken(loadToken())  // Load saved token from file
+  .onConnect((conn, identity, token) => {
+    console.log('Connected! Identity:', identity.toHexString());
+    saveToken(token);  // Save token for future connections
 
-// Subscribe to all tables
-conn.subscriptionBuilder()
-.onApplied((ctx) => {
-// Show current people
-const people = [...ctx.db.person.iter()];
-console.log('Current people:', people.length);
-})
-.subscribeToAllTables();
+    // Subscribe to all tables
+    conn.subscriptionBuilder()
+      .onApplied((ctx) => {
+        // Show current people
+        const people = [...ctx.db.person.iter()];
+        console.log('Current people:', people.length);
+      })
+      .subscribeToAllTables();
 
-// Listen for table changes
-conn.db.person.onInsert((ctx, person) => {
-console.log(`[Added] ${person.name}`);
-});
-})
-.build();
+    // Listen for table changes
+    conn.db.person.onInsert((ctx, person) => {
+      console.log(`[Added] ${person.name}`);
+    });
+  })
+  .build();
 ````
 
 
