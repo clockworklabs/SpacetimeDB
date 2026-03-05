@@ -28,7 +28,6 @@ jobs:
 
           # Get PR number
           PR_NUMBER="${{ github.event.pull_request.number }}"
-
           # Get approval count
           APPROVALS=$(gh pr view $PR_NUMBER --json reviews -q '.reviews | map(select(.state == "APPROVED")) | length')
 
