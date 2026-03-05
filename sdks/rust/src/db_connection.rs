@@ -819,7 +819,7 @@ pub(crate) fn debug_log(
     body: impl FnOnce(&mut File) -> std::result::Result<(), std::io::Error>,
 ) {
     if let Some(file) = extra_logging {
-        body(&mut *file.lock().expect("`extra_logging` file Mutex is poisoned")).expect("Writing debug log failed")
+        body(&mut file.lock().expect("`extra_logging` file Mutex is poisoned")).expect("Writing debug log failed")
     }
 }
 
