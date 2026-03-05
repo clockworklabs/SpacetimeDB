@@ -286,7 +286,7 @@ pub trait StateView {
     }
 
     fn get_jwt_payload(&self, connection_id: ConnectionId) -> Result<Option<String>> {
-        log::info!("Getting JWT payload for connection id: {}", connection_id.to_hex());
+        log::debug!("Getting JWT payload for connection id: {}", connection_id.to_hex());
         let mut buf: Vec<u8> = Vec::new();
         self.iter_by_col_eq(
             ST_CONNECTION_CREDENTIALS_ID,
