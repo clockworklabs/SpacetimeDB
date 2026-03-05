@@ -36,12 +36,11 @@ fn cli_logout_removes_cached_tokens() {
     require_local_server!();
     let test = Smoketest::builder().autopublish(false).build();
 
+    let login = test.spacetime_cmd(&["login", "--server-issued-login", &test.server_url]);
+    assert_success(&login, "initial login");
+
     // Simulate a cached web session token; logout should clear both token fields.
     let mut config = read_config(&test);
-    config.insert(
-        "spacetimedb_token".to_string(),
-        toml::Value::String("fake-spacetimedb-token".to_string()),
-    );
     config.insert(
         "web_session_token".to_string(),
         toml::Value::String("fake-web-session-token".to_string()),
