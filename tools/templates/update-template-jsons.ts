@@ -109,11 +109,16 @@ async function findManifests(dir: string): Promise<{ packageJson: string[]; carg
     return { packageJson, cargoToml, csproj };
 }
 
+/** Sort paths so root manifests come before subdirs (e.g. root package.json before spacetimedb/package.json) */
+function sortRootFirst(paths: string[]): string[] {
+    return [...paths].sort((a, b) => a.split(path.sep).length - b.split(path.sep).length);
+}
+
 async function collectDepsFromManifests(templateDir: string): Promise<string[]> {
     const seen = new Set<string>();
     const { packageJson, cargoToml, csproj } = await findManifests(templateDir);
 
-    for (const filePath of packageJson) {
+    for (const filePath of sortRootFirst(packageJson)) {
         try {
             const content = await readFile(filePath, 'utf-8');
             for (const dep of parsePackageJson(content)) {
@@ -124,7 +129,7 @@ async function collectDepsFromManifests(templateDir: string): Promise<string[]> 
         }
     }
 
-    for (const filePath of cargoToml) {
+    for (const filePath of sortRootFirst(cargoToml)) {
         try {
             const content = await readFile(filePath, 'utf-8');
             for (const dep of parseCargoToml(content)) {
@@ -135,7 +140,7 @@ async function collectDepsFromManifests(templateDir: string): Promise<string[]> 
         }
     }
 
-    for (const filePath of csproj) {
+    for (const filePath of sortRootFirst(csproj)) {
         try {
             const content = await readFile(filePath, 'utf-8');
             for (const dep of parseCsproj(content)) {
@@ -146,7 +151,7 @@ async function collectDepsFromManifests(templateDir: string): Promise<string[]> 
         }
     }
 
-    return [...seen].sort();
+    return [...seen];
 }
 
 export async function updateTemplateJsons(): Promise<void> {
