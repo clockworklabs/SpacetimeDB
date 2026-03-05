@@ -8,7 +8,7 @@
  * Usage: pnpm run generate-readmes (from tools/templates/)
  */
 
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -18,24 +18,40 @@ const TEMPLATES_DIR = path.join(REPO_ROOT, 'templates');
 const QUICKSTARTS_DIR = path.join(REPO_ROOT, 'docs/docs/00100-intro/00200-quickstarts');
 const DOCS_ROOT = path.join(REPO_ROOT, 'docs/docs');
 
-const TEMPLATE_TO_QUICKSTART: Record<string, string> = {
-    'react-ts': '00100-react.md',
-    'nextjs-ts': '00150-nextjs.md',
-    'vue-ts': '00150-vue.md',
-    'nuxt-ts': '00155-nuxt.md',
-    'svelte-ts': '00160-svelte.md',
-    'angular-ts': '00165-angular.md',
-    'tanstack-ts': '00170-tanstack.md',
-    'remix-ts': '00175-remix.md',
-    'browser-ts': '00180-browser.md',
-    'bun-ts': '00250-bun.md',
-    'deno-ts': '00275-deno.md',
-    'nodejs-ts': '00300-nodejs.md',
-    'basic-ts': '00400-typescript.md',
-    'basic-rs': '00500-rust.md',
-    'basic-cs': '00600-c-sharp.md',
-    'basic-cpp': '00700-cpp.md',
-};
+const TEMPLATE_FROM_QUICKSTART_RE = /--template\s+(\S+)/;
+
+/** Parse --template X from quickstart content. Returns template slug or null. */
+function parseTemplateFromQuickstart(content: string): string | null {
+    const match = content.match(TEMPLATE_FROM_QUICKSTART_RE);
+    return match ? match[1] : null;
+}
+
+/** Discover template -> quickstart mapping by parsing --template from each quickstart file. */
+async function discoverQuickstartMapping(): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    let entries: import('node:fs').Dirent[];
+    try {
+        entries = await readdir(QUICKSTARTS_DIR, { withFileTypes: true });
+    } catch {
+        return map;
+    }
+    const files = entries
+        .filter(e => e.isFile() && e.name.endsWith('.md'))
+        .map(e => e.name)
+        .sort();
+    for (const file of files) {
+        try {
+            const content = await readFile(path.join(QUICKSTARTS_DIR, file), 'utf-8');
+            const template = parseTemplateFromQuickstart(content);
+            if (template && !map.has(template)) {
+                map.set(template, file);
+            }
+        } catch {
+            // skip
+        }
+    }
+    return map;
+}
 
 const DOCS_BASE = 'https://spacetimedb.com/docs';
 
@@ -141,17 +157,59 @@ function quickstartMdxToMarkdown(
     return md.trim() + '\n';
 }
 
+/** Resolve quickstart path: override with "/" is relative to DOCS_ROOT, else relative to QUICKSTARTS_DIR. */
+function resolveQuickstartPath(override: string): string {
+    if (override.includes('/')) {
+        return path.join(DOCS_ROOT, override);
+    }
+    return path.join(QUICKSTARTS_DIR, override);
+}
+
 export async function generateTemplateReadmes(): Promise<void> {
+    const discovered = await discoverQuickstartMapping();
+    let entries: import('node:fs').Dirent[];
+    try {
+        entries = await readdir(TEMPLATES_DIR, { withFileTypes: true });
+    } catch (err) {
+        console.warn(`Could not read templates dir: ${TEMPLATES_DIR}`, err);
+        return;
+    }
+
+    const templateDirs = entries
+        .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+        .map(e => e.name);
+
     let generated = 0;
-    for (const [templateSlug, quickstartFile] of Object.entries(TEMPLATE_TO_QUICKSTART)) {
-        const quickstartFullPath = path.join(QUICKSTARTS_DIR, quickstartFile);
+    for (const templateSlug of templateDirs) {
+        let quickstartOverride: string | undefined;
+        try {
+            const metaPath = path.join(TEMPLATES_DIR, templateSlug, '.template.json');
+            const metaRaw = await readFile(metaPath, 'utf-8');
+            const meta = JSON.parse(metaRaw) as { quickstart?: string };
+            quickstartOverride = meta.quickstart;
+        } catch {
+            // no .template.json or no quickstart field
+        }
+
+        let quickstartFullPath: string;
+        if (quickstartOverride) {
+            const resolved = resolveQuickstartPath(quickstartOverride);
+            if (!resolved.startsWith(QUICKSTARTS_DIR)) {
+                continue;
+            }
+            quickstartFullPath = resolved;
+        } else {
+            const quickstartFile = discovered.get(templateSlug);
+            if (!quickstartFile) continue;
+            quickstartFullPath = path.join(QUICKSTARTS_DIR, quickstartFile);
+        }
         const readmePath = path.join(TEMPLATES_DIR, templateSlug, 'README.md');
 
         let mdx: string;
         try {
             mdx = await readFile(quickstartFullPath, 'utf-8');
         } catch (err) {
-            console.warn(`Skipping ${templateSlug}: could not read ${quickstartFile}`);
+            console.warn(`Skipping ${templateSlug}: could not read ${quickstartFullPath}`);
             continue;
         }
 
