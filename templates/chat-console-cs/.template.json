@@ -3,6 +3,6 @@
   "client_lang": "csharp",
   "server_lang": "csharp",
   "builtWith": [
-    "spacetimedb"
+    "SpacetimeDB.Runtime"
   ]
 }

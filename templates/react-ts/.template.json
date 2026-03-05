@@ -4,6 +4,11 @@
   "server_lang": "typescript",
   "builtWith": [
     "react",
-    "spacetimedb"
+    "react-dom",
+    "spacetimedb",
+    "types",
+    "typescript",
+    "vite",
+    "vitejs"
   ]
 }

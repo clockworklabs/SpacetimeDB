@@ -4,6 +4,8 @@
   "server_lang": "typescript",
   "builtWith": [
     "bun",
-    "spacetimedb"
+    "spacetimedb",
+    "types",
+    "typescript"
   ]
 }

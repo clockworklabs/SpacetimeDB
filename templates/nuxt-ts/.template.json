@@ -4,6 +4,8 @@
   "server_lang": "typescript",
   "builtWith": [
     "nuxt",
-    "spacetimedb"
+    "spacetimedb",
+    "typescript",
+    "vue"
   ]
 }

@@ -1,6 +1,6 @@
 /**
  * Updates .template.json in each template folder with builtWith derived from
- * the slug. Run from SpacetimeDB repo root.
+ * package.json, Cargo.toml, and .csproj manifests. Run from SpacetimeDB repo root.
  *
  * Writes to templates/<slug>/.template.json. Commit those changes to keep
  * template metadata in sync with spacetimedb.com.
@@ -16,24 +16,137 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const TEMPLATES_DIR = path.join(REPO_ROOT, 'templates');
 
-/** Framework slugs that can be derived from template folder names. Must match spacetimedb.com BUILT_WITH keys. */
-const FRAMEWORK_SLUGS = new Set([
-    'react', 'nextjs', 'vue', 'nuxt', 'svelte', 'angular', 'tanstack', 'remix',
-    'browser', 'bun', 'deno', 'nodejs', 'spacetimedb', 'tailwind', 'vite',
-]);
+const PACKAGE_REFERENCE_RE = /PackageReference\s+Include="([^"]+)"/g;
 
-function deriveBuiltWith(slug: string): string[] {
-    const parts = slug.split('-');
-    const result = new Set<string>();
+/** Normalize npm package name: @scope/pkg → scope, else use as-is */
+function normalizeNpmPackageName(name: string): string {
+    if (name.startsWith('@')) {
+        const slash = name.indexOf('/');
+        return slash > 0 ? name.slice(1, slash) : name.slice(1);
+    }
+    return name;
+}
 
-    for (const part of parts) {
-        if (FRAMEWORK_SLUGS.has(part)) {
-            result.add(part);
+function parsePackageJson(content: string): string[] {
+    const result: string[] = [];
+    let pkg: { dependencies?: Record<string, unknown>; devDependencies?: Record<string, unknown> };
+    try {
+        pkg = JSON.parse(content);
+    } catch {
+        return result;
+    }
+    for (const deps of [pkg.dependencies, pkg.devDependencies]) {
+        if (deps && typeof deps === 'object') {
+            for (const name of Object.keys(deps)) {
+                result.push(normalizeNpmPackageName(name));
+            }
+        }
+    }
+    return result;
+}
+
+/** Parse [dependencies] section from Cargo.toml. Keys only, no external deps. */
+function parseCargoToml(content: string): string[] {
+    const result: string[] = [];
+    const lines = content.split(/\r?\n/);
+    let inDependencies = false;
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('[')) {
+            inDependencies = trimmed === '[dependencies]';
+            continue;
+        }
+        if (inDependencies && trimmed && !trimmed.startsWith('#')) {
+            const eq = trimmed.indexOf('=');
+            if (eq > 0) {
+                const key = trimmed.slice(0, eq).trim();
+                if (key) result.push(key);
+            }
+        }
+    }
+    return result;
+}
+
+function parseCsproj(content: string): string[] {
+    const result: string[] = [];
+    for (const match of content.matchAll(PACKAGE_REFERENCE_RE)) {
+        result.push(match[1]);
+    }
+    return result;
+}
+
+async function findManifests(dir: string): Promise<{ packageJson: string[]; cargoToml: string[]; csproj: string[] }> {
+    const packageJson: string[] = [];
+    const cargoToml: string[] = [];
+    const csproj: string[] = [];
+
+    async function walk(currentDir: string): Promise<void> {
+        let entries: import('node:fs').Dirent[];
+        try {
+            entries = await readdir(currentDir, { withFileTypes: true });
+        } catch {
+            return;
+        }
+        for (const entry of entries) {
+            const fullPath = path.join(currentDir, entry.name);
+            if (entry.isDirectory()) {
+                if (!entry.name.startsWith('.') && entry.name !== 'node_modules') {
+                    await walk(fullPath);
+                }
+            } else if (entry.isFile()) {
+                if (entry.name === 'package.json') {
+                    packageJson.push(fullPath);
+                } else if (entry.name === 'Cargo.toml') {
+                    cargoToml.push(fullPath);
+                } else if (entry.name.endsWith('.csproj')) {
+                    csproj.push(fullPath);
+                }
+            }
         }
     }
 
-    result.add('spacetimedb');
-    return [...result];
+    await walk(dir);
+    return { packageJson, cargoToml, csproj };
+}
+
+async function collectDepsFromManifests(templateDir: string): Promise<string[]> {
+    const seen = new Set<string>();
+    const { packageJson, cargoToml, csproj } = await findManifests(templateDir);
+
+    for (const filePath of packageJson) {
+        try {
+            const content = await readFile(filePath, 'utf-8');
+            for (const dep of parsePackageJson(content)) {
+                seen.add(dep);
+            }
+        } catch {
+            // skip
+        }
+    }
+
+    for (const filePath of cargoToml) {
+        try {
+            const content = await readFile(filePath, 'utf-8');
+            for (const dep of parseCargoToml(content)) {
+                seen.add(dep);
+            }
+        } catch {
+            // skip
+        }
+    }
+
+    for (const filePath of csproj) {
+        try {
+            const content = await readFile(filePath, 'utf-8');
+            for (const dep of parseCsproj(content)) {
+                seen.add(dep);
+            }
+        } catch {
+            // skip
+        }
+    }
+
+    return [...seen].sort();
 }
 
 export async function updateTemplateJsons(): Promise<void> {
@@ -51,7 +164,8 @@ export async function updateTemplateJsons(): Promise<void> {
 
     let updated = 0;
     for (const slug of dirs) {
-        const jsonPath = path.join(TEMPLATES_DIR, slug, '.template.json');
+        const templateDir = path.join(TEMPLATES_DIR, slug);
+        const jsonPath = path.join(templateDir, '.template.json');
         let jsonRaw: string;
         try {
             jsonRaw = await readFile(jsonPath, 'utf-8');
@@ -67,9 +181,7 @@ export async function updateTemplateJsons(): Promise<void> {
             continue;
         }
 
-        const builtWith = Array.isArray(meta.builtWith) && meta.builtWith.length > 0
-            ? meta.builtWith as string[]
-            : deriveBuiltWith(slug);
+        const builtWith = await collectDepsFromManifests(templateDir);
 
         const { image: _image, ...rest } = meta;
         const updatedMeta = { ...rest, builtWith };

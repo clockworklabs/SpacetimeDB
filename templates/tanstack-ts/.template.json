@@ -3,7 +3,14 @@
   "client_lang": "typescript",
   "server_lang": "typescript",
   "builtWith": [
+    "react",
+    "react-dom",
+    "spacetimedb",
     "tanstack",
-    "spacetimedb"
+    "types",
+    "typescript",
+    "vite",
+    "vite-tsconfig-paths",
+    "vitejs"
   ]
 }

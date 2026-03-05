@@ -3,7 +3,11 @@
   "client_lang": "typescript",
   "server_lang": "typescript",
   "builtWith": [
+    "spacetimedb",
     "svelte",
-    "spacetimedb"
+    "svelte-check",
+    "sveltejs",
+    "typescript",
+    "vite"
   ]
 }

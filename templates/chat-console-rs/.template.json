@@ -3,6 +3,8 @@
   "client_lang": "rust",
   "server_lang": "rust",
   "builtWith": [
-    "spacetimedb"
+    "log.workspace",
+    "spacetimedb",
+    "spacetimedb-sdk"
   ]
 }

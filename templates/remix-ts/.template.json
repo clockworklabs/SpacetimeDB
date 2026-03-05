@@ -3,7 +3,13 @@
   "client_lang": "typescript",
   "server_lang": "typescript",
   "builtWith": [
-    "remix",
-    "spacetimedb"
+    "isbot",
+    "react",
+    "react-dom",
+    "remix-run",
+    "spacetimedb",
+    "types",
+    "typescript",
+    "vite"
   ]
 }

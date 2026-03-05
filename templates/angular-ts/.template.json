@@ -4,6 +4,9 @@
   "server_lang": "typescript",
   "builtWith": [
     "angular",
-    "spacetimedb"
+    "rxjs",
+    "spacetimedb",
+    "tslib",
+    "typescript"
   ]
 }

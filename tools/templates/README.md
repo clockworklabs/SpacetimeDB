@@ -5,7 +5,7 @@ Scripts for maintaining template READMEs and metadata in the SpacetimeDB repo. O
 ## Scripts
 
 - **generate-readmes** – Converts quickstart MDX docs to Markdown and writes `templates/<slug>/README.md`
-- **update-jsons** – Updates `builtWith` in each `templates/<slug>/.template.json` from the slug
+- **update-jsons** – Updates `builtWith` in each `templates/<slug>/.template.json` from package.json, Cargo.toml, and .csproj manifests
 - **generate** – Runs both (readmes first, then jsons)
 
 ## Usage

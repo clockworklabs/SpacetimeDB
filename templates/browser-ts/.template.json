@@ -3,6 +3,8 @@
   "client_lang": "typescript",
   "server_lang": "typescript",
   "builtWith": [
-    "spacetimedb"
+    "spacetimedb",
+    "typescript",
+    "vite"
   ]
 }

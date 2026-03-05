@@ -3,6 +3,6 @@
   "server_lang": "cpp",
   "client_lang": "rust",
   "builtWith": [
-    "spacetimedb"
+    "spacetimedb-sdk"
   ]
 }

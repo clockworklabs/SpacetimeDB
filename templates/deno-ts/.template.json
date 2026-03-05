@@ -4,6 +4,7 @@
   "server_lang": "typescript",
   "builtWith": [
     "deno",
-    "spacetimedb"
+    "spacetimedb",
+    "typescript"
   ]
 }
