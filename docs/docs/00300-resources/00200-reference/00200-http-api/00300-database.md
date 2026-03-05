@@ -159,7 +159,7 @@ Add a new name for this database.
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
 
-Adding a name requires a registered TLD. If no `Authorization` header is provided, the request will be treated as anonymous.
+If no `Authorization` header is provided, the request will be treated as anonymous.
 
 #### Data
 
