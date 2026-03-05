@@ -60,8 +60,8 @@ help: the trait `Deserialize<'de>` is not implemented for `Test`
 note: required by a bound in `spacetimedb::spacetimedb_lib::de::SeqProductAccess::next_element`
  --> $WORKSPACE/crates/sats/src/de.rs
   |
-  | ...fn next_element<T: Deserialize<'de>>(&mut self) -> Result<Optio...
-  |                       ^^^^^^^^^^^^^^^^ required by this bound in `SeqProductAccess::next_element`
+  |     fn next_element<T: Deserialize<'de>>(&mut self) -> Result<Option<T>, Self::Error> {
+  |                        ^^^^^^^^^^^^^^^^ required by this bound in `SeqProductAccess::next_element`
 
 error[E0277]: the trait bound `Test: Deserialize<'de>` is not satisfied
  --> tests/ui/tables.rs:5:8
@@ -90,8 +90,8 @@ help: the trait `Deserialize<'de>` is not implemented for `Test`
 note: required by a bound in `spacetimedb::spacetimedb_lib::de::SeqProductAccess::validate_next_element`
  --> $WORKSPACE/crates/sats/src/de.rs
   |
-  | ...te_next_element<T: Deserialize<'de>>(&mut self) -> Result<Optio...
-  |                       ^^^^^^^^^^^^^^^^ required by this bound in `SeqProductAccess::validate_next_element`
+  |     fn validate_next_element<T: Deserialize<'de>>(&mut self) -> Result<Option<()>, Self::Error> {
+  |                                 ^^^^^^^^^^^^^^^^ required by this bound in `SeqProductAccess::validate_next_element`
 
 error[E0277]: the trait bound `Test: Deserialize<'_>` is not satisfied
  --> tests/ui/tables.rs:5:8
@@ -117,8 +117,8 @@ help: the trait `Deserialize<'_>` is not implemented for `Test`
 note: required by a bound in `get_field_value`
  --> $WORKSPACE/crates/sats/src/de.rs
   |
-  | ...get_field_value<T: Deserialize<'de>>(&mut self) -> Result<T, Se...
-  |                       ^^^^^^^^^^^^^^^^ required by this bound in `NamedProductAccess::get_field_value`
+  |     fn get_field_value<T: Deserialize<'de>>(&mut self) -> Result<T, Self::Error> {
+  |                           ^^^^^^^^^^^^^^^^ required by this bound in `NamedProductAccess::get_field_value`
 
 error[E0277]: the trait bound `Test: Deserialize<'_>` is not satisfied
  --> tests/ui/tables.rs:5:8
@@ -144,8 +144,8 @@ help: the trait `Deserialize<'_>` is not implemented for `Test`
 note: required by a bound in `validate_field_value`
  --> $WORKSPACE/crates/sats/src/de.rs
   |
-  | ...ate_field_value<T: Deserialize<'de>>(&mut self) -> Result<(), S...
-  |                       ^^^^^^^^^^^^^^^^ required by this bound in `NamedProductAccess::validate_field_value`
+  |     fn validate_field_value<T: Deserialize<'de>>(&mut self) -> Result<(), Self::Error> {
+  |                                ^^^^^^^^^^^^^^^^ required by this bound in `NamedProductAccess::validate_field_value`
 
 error[E0277]: the trait bound `Test: Serialize` is not satisfied
  --> tests/ui/tables.rs:5:8
@@ -171,8 +171,8 @@ help: the trait `Serialize` is not implemented for `Test`
 note: required by a bound in `spacetimedb::spacetimedb_lib::ser::SerializeNamedProduct::serialize_element`
  --> $WORKSPACE/crates/sats/src/ser.rs
   |
-  | ...serialize_element<T: Serialize + ?Sized>(&mut self, name: Optio...
-  |                         ^^^^^^^^^ required by this bound in `SerializeNamedProduct::serialize_element`
+  |     fn serialize_element<T: Serialize + ?Sized>(&mut self, name: Option<&str>, elem: &T) -> Result<(), Self::Error>;
+  |                             ^^^^^^^^^ required by this bound in `SerializeNamedProduct::serialize_element`
 
 error[E0277]: the column type `Test` does not implement `SpacetimeType`
  --> tests/ui/tables.rs:5:8
@@ -220,7 +220,7 @@ error[E0277]: `&'a Alpha` cannot appear as an argument to an index filtering ope
 note: required by a bound in `UniqueColumn::<Tbl, <Col as spacetimedb::table::Column>::ColType, Col>::find`
   --> src/table.rs
    |
-   |     pub fn find(&self, col_val: impl Borrow<Col::ColType>) -> Opti...
+   |     pub fn find(&self, col_val: impl Borrow<Col::ColType>) -> Option<Tbl::Row>
    |            ---- required by a bound in this associated function
    |     where
    |         for<'a> &'a Col::ColType: FilterableValue,
@@ -253,7 +253,7 @@ help: the trait `FilterableValue` is not implemented for `Alpha`
 note: required by a bound in `RangedIndex::<Tbl, IndexType, Idx>::filter`
   --> src/table.rs
    |
-   |     pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::...
+   |     pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row> + use<B, K, Tbl, IndexType, Idx>
    |            ------ required by a bound in this associated function
    |     where
    |         B: IndexScanRangeBounds<IndexType, K>,
