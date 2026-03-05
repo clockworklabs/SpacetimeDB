@@ -3,9 +3,9 @@
   "client_lang": "typescript",
   "server_lang": "typescript",
   "builtWith": [
-    "esbuild",
     "spacetimedb",
     "types",
+    "esbuild",
     "typescript"
   ]
 }

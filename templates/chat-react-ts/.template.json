@@ -3,21 +3,21 @@
   "client_lang": "typescript",
   "server_lang": "typescript",
   "builtWith": [
+    "react",
+    "react-dom",
+    "spacetimedb",
     "eslint",
+    "testing-library",
+    "types",
+    "vitejs",
     "eslint-plugin-react-hooks",
     "eslint-plugin-react-refresh",
     "globals",
     "jsdom",
     "prettier",
-    "react",
-    "react-dom",
-    "spacetimedb",
-    "testing-library",
-    "types",
     "typescript",
     "typescript-eslint",
     "vite",
-    "vitejs",
     "vitest"
   ]
 }

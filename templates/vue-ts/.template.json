@@ -3,11 +3,11 @@
   "client_lang": "typescript",
   "server_lang": "typescript",
   "builtWith": [
+    "vue",
     "spacetimedb",
+    "vitejs",
     "typescript",
     "vite",
-    "vitejs",
-    "vue",
     "vue-tsc"
   ]
 }

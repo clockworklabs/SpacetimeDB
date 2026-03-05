@@ -3,10 +3,10 @@
   "client_lang": "typescript",
   "server_lang": "typescript",
   "builtWith": [
-    "isbot",
+    "remix-run",
     "react",
     "react-dom",
-    "remix-run",
+    "isbot",
     "spacetimedb",
     "types",
     "typescript",

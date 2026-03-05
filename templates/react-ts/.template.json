@@ -7,8 +7,8 @@
     "react-dom",
     "spacetimedb",
     "types",
+    "vitejs",
     "typescript",
-    "vite",
-    "vitejs"
+    "vite"
   ]
 }
