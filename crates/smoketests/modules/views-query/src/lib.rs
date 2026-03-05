@@ -1,4 +1,4 @@
-use spacetimedb::{Query, ReducerContext, Table, ViewContext};
+use spacetimedb::{AnonymousViewContext, Query, ReducerContext, Table, ViewContext};
 
 #[spacetimedb::table(accessor = user, public)]
 pub struct User {
@@ -87,4 +87,22 @@ fn users_who_are_above_20_and_below_30(ctx: &ViewContext) -> impl Query<Person> 
 #[spacetimedb::view(accessor = users_who_are_above_eq_20_and_below_eq_30, public)]
 fn users_who_are_above_eq_20_and_below_eq_30(ctx: &ViewContext) -> impl Query<Person> {
     ctx.from.person().r#where(|p| p.age.gte(20).and(p.age.lte(30)))
+}
+
+#[spacetimedb::view(accessor = anonymous_adult_people, public)]
+fn anonymous_adult_people(ctx: &AnonymousViewContext) -> impl Query<Person> {
+    ctx.from.person().r#where(|p| p.age.gte(20))
+}
+
+#[spacetimedb::view(accessor = online_users_identity_1, public)]
+fn online_users_identity_1(ctx: &ViewContext) -> impl Query<User> {
+    ctx.from.user().r#where(|u| u.online).filter(|u| u.identity.eq(1))
+}
+
+#[spacetimedb::view(accessor = users_whos_age_is_known_identity_1, public)]
+fn users_whos_age_is_known_identity_1(ctx: &ViewContext) -> impl Query<User> {
+    ctx.from
+        .user()
+        .left_semijoin(ctx.from.person(), |p, u| p.identity.eq(u.identity))
+        .filter(|u| u.identity.eq(1))
 }

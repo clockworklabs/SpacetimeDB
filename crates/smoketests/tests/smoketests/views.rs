@@ -1,4 +1,4 @@
-use serde_json::json;
+use serde_json::{json, Value};
 use spacetimedb_smoketests::{require_dotnet, require_pnpm, Smoketest};
 
 const TS_VIEWS_SUBSCRIBE_MODULE: &str = r#"import { schema, t, table } from "spacetimedb/server";
@@ -76,6 +76,30 @@ public static partial class Module
     }
 }
 "#;
+
+fn project_inserts_and_deletes_for_view(events: Vec<Value>, view_name: &str) -> Vec<Value> {
+    events
+        .into_iter()
+        .map(|event| {
+            json!({
+                view_name: {
+                    "deletes": event[view_name]["deletes"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|row| json!({"name": row["name"]}))
+                        .collect::<Vec<_>>(),
+                    "inserts": event[view_name]["inserts"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|row| json!({"name": row["name"]}))
+                        .collect::<Vec<_>>()
+                }
+            })
+        })
+        .collect()
+}
 
 /// Tests that views populate the st_view_* system tables
 #[test]
@@ -404,24 +428,7 @@ fn test_subscribing_with_different_identities() {
     test.call("insert_player", &["Bob"]).unwrap();
     let events = sub.collect().unwrap();
 
-    let projection: Vec<serde_json::Value> = events
-        .into_iter()
-        .map(|event| {
-            let deletes = event["my_player"]["deletes"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            let inserts = event["my_player"]["inserts"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            json!({"my_player": {"deletes": deletes, "inserts": inserts}})
-        })
-        .collect();
+    let projection = project_inserts_and_deletes_for_view(events, "my_player");
 
     assert_eq!(
         serde_json::json!(projection),
@@ -500,26 +507,7 @@ fn test_procedure_triggers_subscription_updates() {
     let sub = test.subscribe_background(&["select * from my_player"], 1).unwrap();
     test.call("insert_player_proc", &["Alice"]).unwrap();
     let events = sub.collect().unwrap();
-
-    let projection: Vec<serde_json::Value> = events
-        .into_iter()
-        .map(|event| {
-            let deletes = event["my_player"]["deletes"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            let inserts = event["my_player"]["inserts"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            json!({"my_player": {"deletes": deletes, "inserts": inserts}})
-        })
-        .collect();
-
+    let projection = project_inserts_and_deletes_for_view(events, "my_player");
     assert_eq!(
         serde_json::json!(projection),
         serde_json::json!([
@@ -543,24 +531,7 @@ fn test_typescript_procedure_triggers_subscription_updates() {
     test.call("insert_player_proc", &["Alice"]).unwrap();
     let events = sub.collect().unwrap();
 
-    let projection: Vec<serde_json::Value> = events
-        .into_iter()
-        .map(|event| {
-            let deletes = event["my_player"]["deletes"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            let inserts = event["my_player"]["inserts"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            json!({"my_player": {"deletes": deletes, "inserts": inserts}})
-        })
-        .collect();
+    let projection = project_inserts_and_deletes_for_view(events, "my_player");
 
     assert_eq!(
         serde_json::json!(projection),
@@ -607,5 +578,82 @@ fn test_csharp_query_builder_view_query() {
         r#" value | alive
 -------+-------
  1     | true"#,
+    );
+}
+
+#[test]
+fn test_subscribe_join_with_view_on_primary_key_col() {
+    let test = Smoketest::builder().precompiled_module("views-subscribe").build();
+
+    test.call("insert_player_proc", &["Alice"]).unwrap();
+
+    let query =
+        "SELECT all_players.* FROM player_state JOIN all_players ON player_state.identity = all_players.identity";
+    let events = test.subscribe(&[query], 0).unwrap();
+    let projection = project_inserts_and_deletes_for_view(events, "all_players");
+
+    assert_eq!(
+        serde_json::json!(projection),
+        serde_json::json!([
+            {"all_players": {"deletes": [], "inserts": [{"name": "Alice"}]}}
+        ])
+    );
+}
+
+#[test]
+fn test_subscribe_join_two_views_on_primary_key_col() {
+    let test = Smoketest::builder().precompiled_module("views-query").build();
+
+    let query = "SELECT online_users.* \
+                 FROM online_users \
+                 JOIN users_whos_age_is_known \
+                 ON online_users.identity = users_whos_age_is_known.identity";
+    let events = test.subscribe(&[query], 0).unwrap();
+    let projection = project_inserts_and_deletes_for_view(events, "online_users");
+
+    assert_eq!(
+        serde_json::json!(projection),
+        serde_json::json!([
+            {"online_users": {"deletes": [], "inserts": [{"name": "Alice"}]}}
+        ])
+    );
+}
+
+#[test]
+fn test_subscribe_join_with_anonymous_view_on_primary_key_col() {
+    let test = Smoketest::builder().precompiled_module("views-query").build();
+
+    let query = "SELECT anonymous_adult_people.* \
+                 FROM person \
+                 JOIN anonymous_adult_people \
+                 ON person.identity = anonymous_adult_people.identity \
+                 WHERE anonymous_adult_people.identity = 1";
+    let events = test.subscribe(&[query], 0).unwrap();
+    let projection = project_inserts_and_deletes_for_view(events, "anonymous_adult_people");
+
+    assert_eq!(
+        serde_json::json!(projection),
+        serde_json::json!([
+            {"anonymous_adult_people": {"deletes": [], "inserts": [{"name": "Alice"}]}}
+        ])
+    );
+}
+
+#[test]
+fn test_subscribe_join_two_sender_views_with_filters_on_both_sides() {
+    let test = Smoketest::builder().precompiled_module("views-query").build();
+
+    let query = "SELECT online_users_identity_1.* \
+                 FROM online_users_identity_1 \
+                 JOIN users_whos_age_is_known_identity_1 \
+                 ON online_users_identity_1.identity = users_whos_age_is_known_identity_1.identity";
+    let events = test.subscribe(&[query], 0).unwrap();
+    let projection = project_inserts_and_deletes_for_view(events, "online_users_identity_1");
+
+    assert_eq!(
+        serde_json::json!(projection),
+        serde_json::json!([
+            {"online_users_identity_1": {"deletes": [], "inserts": [{"name": "Alice"}]}}
+        ])
     );
 }
