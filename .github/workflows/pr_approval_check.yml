@@ -25,7 +25,6 @@ jobs:
             echo "PR not opened by clockwork-labs-bot, skipping check"
             exit 0
           fi
-          echo "PR opened by clockwork-labs-bot. This requires 2 approvals."
 
           # Get PR number
           PR_NUMBER="${{ github.event.pull_request.number }}"
