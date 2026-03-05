@@ -920,7 +920,7 @@ but you must call one of them, or else the connection will never progress.
             procedure_callbacks,
         }));
 
-        let mut cache = ClientCache::default();
+        let mut cache = ClientCache::new(extra_logging.clone());
         M::register_tables(&mut cache);
         let cache = Arc::new(StdMutex::new(cache));
         let send_chan = Arc::new(StdMutex::new(Some(raw_msg_send)));
