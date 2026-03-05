@@ -105,10 +105,7 @@ namespace SpacetimeDB
 
     public readonly struct TestDefaultFieldValuesCols
     {
-        public readonly global::SpacetimeDB.NullableCol<
-            global::TestDefaultFieldValues,
-            int
-        > UniqueField;
+        public readonly global::SpacetimeDB.Col<global::TestDefaultFieldValues, int> UniqueField;
         public readonly global::SpacetimeDB.Col<
             global::TestDefaultFieldValues,
             string
@@ -127,14 +124,14 @@ namespace SpacetimeDB
         public readonly global::SpacetimeDB.Col<global::TestDefaultFieldValues, float> DefaultF32;
         public readonly global::SpacetimeDB.Col<global::TestDefaultFieldValues, double> DefaultF64;
         public readonly global::SpacetimeDB.Col<global::TestDefaultFieldValues, MyEnum> DefaultEnum;
-        public readonly global::SpacetimeDB.NullableCol<
+        public readonly global::SpacetimeDB.Col<
             global::TestDefaultFieldValues,
             MyStruct
         > DefaultNull;
 
         internal TestDefaultFieldValuesCols(string tableName)
         {
-            UniqueField = new global::SpacetimeDB.NullableCol<global::TestDefaultFieldValues, int>(
+            UniqueField = new global::SpacetimeDB.Col<global::TestDefaultFieldValues, int>(
                 tableName,
                 "UniqueField"
             );
@@ -198,10 +195,10 @@ namespace SpacetimeDB
                 tableName,
                 "DefaultEnum"
             );
-            DefaultNull = new global::SpacetimeDB.NullableCol<
-                global::TestDefaultFieldValues,
-                MyStruct
-            >(tableName, "DefaultNull");
+            DefaultNull = new global::SpacetimeDB.Col<global::TestDefaultFieldValues, MyStruct>(
+                tableName,
+                "DefaultNull"
+            );
         }
     }
 
@@ -599,10 +596,7 @@ namespace SpacetimeDB
 
     public readonly struct TestUniqueNotEquatableCols
     {
-        public readonly global::SpacetimeDB.NullableCol<
-            global::TestUniqueNotEquatable,
-            int
-        > UniqueField;
+        public readonly global::SpacetimeDB.Col<global::TestUniqueNotEquatable, int> UniqueField;
         public readonly global::SpacetimeDB.Col<
             global::TestUniqueNotEquatable,
             TestEnumWithExplicitValues
@@ -610,7 +604,7 @@ namespace SpacetimeDB
 
         internal TestUniqueNotEquatableCols(string tableName)
         {
-            UniqueField = new global::SpacetimeDB.NullableCol<global::TestUniqueNotEquatable, int>(
+            UniqueField = new global::SpacetimeDB.Col<global::TestUniqueNotEquatable, int>(
                 tableName,
                 "UniqueField"
             );

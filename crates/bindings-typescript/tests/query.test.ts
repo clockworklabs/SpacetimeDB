@@ -30,6 +30,7 @@ const personTable = table(
     id: t.identity(),
     name: t.string(),
     age: t.u32(),
+    active: t.bool(),
   }
 );
 
@@ -139,6 +140,13 @@ describe('TableScan.toSql', () => {
     expect(sql).toBe(
       `SELECT * FROM "person" WHERE ("person"."name" = 'Carol') OR ("person"."name" = 'Dave')`
     );
+  });
+
+  it('accepts boolean columns directly as where predicates', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(qb.person.where(row => row.active).build());
+
+    expect(sql).toBe(`SELECT * FROM "person" WHERE "person"."active" = TRUE`);
   });
 
   it('renders Identity literals using their hex form', () => {
