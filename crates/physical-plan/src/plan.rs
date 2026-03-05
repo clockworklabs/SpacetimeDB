@@ -575,6 +575,7 @@ impl PhysicalPlan {
                     rhs,
                     rhs_label,
                     rhs_index,
+                    rhs_prefix,
                     rhs_field,
                     unique,
                     lhs_field,
@@ -587,6 +588,7 @@ impl PhysicalPlan {
                     rhs,
                     rhs_label,
                     rhs_index,
+                    rhs_prefix,
                     rhs_field,
                     unique,
                     lhs_field,
@@ -1252,6 +1254,8 @@ pub struct IxJoin {
     pub rhs_label: Label,
     /// The index id
     pub rhs_index: IndexId,
+    /// Optional constant prefix values for multi-column index probes.
+    pub rhs_prefix: Vec<AlgebraicValue>,
     /// The index field
     pub rhs_field: ColId,
     /// Is the index a unique constraint index?
@@ -1451,7 +1455,7 @@ mod tests {
         identity::AuthCtx,
         AlgebraicType, AlgebraicValue,
     };
-    use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
+    use spacetimedb_primitives::{ColId, ColList, ColSet, IndexId, TableId};
     use spacetimedb_schema::{
         def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData},
         identifier::Identifier,
@@ -1462,7 +1466,8 @@ mod tests {
 
     use crate::{
         compile::{compile_select, compile_select_list},
-        plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, ProjectListPlan, Sarg, Semi, TupleField},
+        plan::{HashJoin, IxJoin, IxScan, Label, PhysicalPlan, ProjectListPlan, Sarg, Semi, TupleField},
+        rules::HashToIxJoin,
     };
 
     use super::{PhysicalExpr, ProjectPlan, TableScan};
@@ -1498,7 +1503,7 @@ mod tests {
     ) -> TableOrViewSchema {
         TableOrViewSchema::from(Arc::new(TableSchema::new(
             table_id,
-            TableName::for_test(table_name),
+            TableName::new(Identifier::for_test(table_name)),
             None,
             columns
                 .iter()
@@ -2309,5 +2314,159 @@ mod tests {
 
         assert!(plan.plan_iter().any(|plan| plan.has_filter()));
         assert!(plan.plan_iter().any(|plan| plan.has_table_scan(None)));
+    }
+
+    #[test]
+    fn hash_join_to_index_join_with_constant_prefix() {
+        let a_id = TableId(1);
+        let b_id = TableId(2);
+
+        let a = Arc::new(schema(a_id, "a", &[("id", AlgebraicType::U64)], &[], &[], None));
+
+        // Multi-column index on (owner, id).
+        let b = Arc::new(schema(
+            b_id,
+            "b",
+            &[("owner", AlgebraicType::U64), ("id", AlgebraicType::U64)],
+            &[&[0, 1]],
+            &[],
+            None,
+        ));
+
+        let plan = PhysicalPlan::Filter(
+            Box::new(PhysicalPlan::HashJoin(
+                HashJoin {
+                    lhs: Box::new(PhysicalPlan::TableScan(
+                        TableScan {
+                            schema: a.inner(),
+                            limit: None,
+                            delta: None,
+                        },
+                        Label(1),
+                    )),
+                    rhs: Box::new(PhysicalPlan::TableScan(
+                        TableScan {
+                            schema: b.inner(),
+                            limit: None,
+                            delta: None,
+                        },
+                        Label(2),
+                    )),
+                    lhs_field: TupleField {
+                        label: Label(1),
+                        label_pos: None,
+                        field_pos: 0,
+                    },
+                    rhs_field: TupleField {
+                        label: Label(2),
+                        label_pos: None,
+                        field_pos: 1,
+                    },
+                    unique: false,
+                },
+                Semi::All,
+            )),
+            PhysicalExpr::BinOp(
+                BinOp::Eq,
+                Box::new(PhysicalExpr::Field(TupleField {
+                    label: Label(2),
+                    label_pos: None,
+                    field_pos: 0,
+                })),
+                Box::new(PhysicalExpr::Value(AlgebraicValue::U64(5))),
+            ),
+        );
+
+        let plan = plan.apply_rec::<HashToIxJoin>().unwrap();
+
+        match plan {
+            PhysicalPlan::IxJoin(
+                IxJoin {
+                    rhs,
+                    rhs_field,
+                    rhs_prefix,
+                    ..
+                },
+                Semi::All,
+            ) => {
+                assert_eq!(rhs.table_id, b_id);
+                assert_eq!(rhs_field, ColId(1));
+                assert_eq!(rhs_prefix, vec![AlgebraicValue::U64(5)]);
+            }
+            plan => panic!("unexpected plan: {plan:#?}"),
+        }
+    }
+
+    #[test]
+    fn hash_join_to_index_join_with_rhs_ixscan_prefix() {
+        let a_id = TableId(1);
+        let b_id = TableId(2);
+
+        let a = Arc::new(schema(a_id, "a", &[("id", AlgebraicType::U64)], &[], &[], None));
+
+        // Multi-column index on (owner, id), plus a single-column index on owner.
+        let b = Arc::new(schema(
+            b_id,
+            "b",
+            &[("owner", AlgebraicType::U64), ("id", AlgebraicType::U64)],
+            &[&[0], &[0, 1]],
+            &[],
+            None,
+        ));
+
+        let plan = PhysicalPlan::HashJoin(
+            HashJoin {
+                lhs: Box::new(PhysicalPlan::TableScan(
+                    TableScan {
+                        schema: a.inner(),
+                        limit: None,
+                        delta: None,
+                    },
+                    Label(1),
+                )),
+                rhs: Box::new(PhysicalPlan::IxScan(
+                    IxScan {
+                        schema: b.inner(),
+                        limit: None,
+                        delta: None,
+                        index_id: IndexId(0),
+                        prefix: vec![],
+                        arg: Sarg::Eq(ColId(0), AlgebraicValue::U64(7)),
+                    },
+                    Label(2),
+                )),
+                lhs_field: TupleField {
+                    label: Label(1),
+                    label_pos: None,
+                    field_pos: 0,
+                },
+                rhs_field: TupleField {
+                    label: Label(2),
+                    label_pos: None,
+                    field_pos: 1,
+                },
+                unique: false,
+            },
+            Semi::All,
+        );
+
+        let plan = plan.apply_rec::<HashToIxJoin>().unwrap();
+
+        match plan {
+            PhysicalPlan::IxJoin(
+                IxJoin {
+                    rhs,
+                    rhs_field,
+                    rhs_prefix,
+                    ..
+                },
+                Semi::All,
+            ) => {
+                assert_eq!(rhs.table_id, b_id);
+                assert_eq!(rhs_field, ColId(1));
+                assert_eq!(rhs_prefix, vec![AlgebraicValue::U64(7)]);
+            }
+            plan => panic!("unexpected plan: {plan:#?}"),
+        }
     }
 }
