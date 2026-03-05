@@ -36,7 +36,7 @@ Accessible through the CLI as `spacetime publish`.
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
 
-If no `Authorization` header is provided, a new anonymous identity will be created and will own the new database. To publish to an existing database, the token must correspond to the database's owner.
+If no `Authorization` header is provided, a new anonymous identity will be created and will own the new database. This is generally not what you want.
 
 #### Data
 
@@ -71,7 +71,7 @@ Accessible through the CLI as `spacetime publish`.
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
 
-If no `Authorization` header is provided, a new anonymous identity will be created. When updating an existing database, the token must correspond to the database's owner, or the request will be rejected with `401 UNAUTHORIZED`.
+If no `Authorization` header is provided, a new anonymous identity will be created. When updating an existing database, the token must correspond to the database's owner, or the request will be rejected.
 
 #### Data
 
@@ -133,7 +133,7 @@ Accessible through the CLI as `spacetime delete <identity>`.
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
 
-Deleting a database requires ownership. If no `Authorization` header is provided, the request will be treated as anonymous and will be rejected unless the anonymous identity happens to own the database.
+Deleting a database requires ownership. If no `Authorization` header is provided, the request will be treated as anonymous and will be rejected.
 
 ## `GET /v1/database/:name_or_identity/names`
 
@@ -159,7 +159,7 @@ Add a new name for this database.
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
 
-Adding a name requires a registered TLD. If no `Authorization` header is provided, the request will be treated as anonymous.
+If no `Authorization` header is provided, the request will be treated as anonymous.
 
 #### Data
 
@@ -194,7 +194,7 @@ Set the list of names for this database.
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
 
-Setting names requires ownership of the database. If no `Authorization` header is provided, the request will be treated as anonymous and will likely be rejected with `401 UNAUTHORIZED`.
+Setting names requires ownership of the database. If no `Authorization` header is provided, the request will be treated as anonymous and will be rejected.
 
 #### Data
 
@@ -435,7 +435,7 @@ Accessible through the CLI as `spacetime logs <name_or_identity>`.
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
 
-Viewing logs requires ownership of the database. If no `Authorization` header is provided, the request will be treated as anonymous and will be rejected unless the anonymous identity owns the database.
+Viewing logs requires ownership of the database. If no `Authorization` header is provided, the request will be treated as anonymous and will be rejected.
 
 #### Returns
 
