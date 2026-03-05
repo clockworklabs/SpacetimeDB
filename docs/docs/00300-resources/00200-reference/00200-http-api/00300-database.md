@@ -194,7 +194,7 @@ Set the list of names for this database.
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
 
-Setting names requires ownership of the database. If no `Authorization` header is provided, the request will be treated as anonymous and will likely be rejected with `401 UNAUTHORIZED`.
+Setting names requires ownership of the database. If no `Authorization` header is provided, the request will be treated as anonymous and will be rejected.
 
 #### Data
 
