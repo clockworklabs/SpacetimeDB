@@ -50,6 +50,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let response = builder.send().await?;
     response.error_for_status()?;
 
-    println!("Database {} is now locked. It cannot be deleted until unlocked.", identity);
+    println!(
+        "Database {} is now locked. It cannot be deleted until unlocked.",
+        identity
+    );
     Ok(())
 }
