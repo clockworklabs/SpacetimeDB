@@ -79,7 +79,9 @@ jobs:
           cargo build --release --target ${{ matrix.target }} -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
 
       - name: Sign binaries for Windows
-        if: ${{ runner.os == 'Windows' }}
+        # Disabled for now since the current flow isn't working.
+        if: false
+        #if: ${{ runner.os == 'Windows' }}
         shell: powershell
         env:
           DIGICERT_KEYPAIR_ALIAS: ${{ secrets.DIGICERT_KEYPAIR_ALIAS }}
