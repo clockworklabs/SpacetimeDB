@@ -559,19 +559,22 @@ where
         .await
         .map_err(client_connected_error_to_response)?;
 
-    let sql_auth = worker_ctx
-        .authorize_sql(caller_identity, database.database_identity)
-        .await?;
+    let result = async {
+        let sql_auth = worker_ctx
+            .authorize_sql(caller_identity, database.database_identity)
+            .await?;
 
-    let result = host
-        .exec_sql(
+        host.exec_sql(
             sql_auth,
             database,
             confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS),
             body,
         )
-        .await;
+        .await
+    }
+    .await;
 
+    // Always disconnect, even if authorization or execution failed.
     module
         .call_identity_disconnected(caller_identity, connection_id, false)
         .await
