@@ -21,8 +21,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Check if PR author is clockwork-labs-bot
-          if [[ "${{ github.event.pull_request.user.login }}" == "clockwork-labs-bot" ]]; then
-            echo "PR not opened by clockwork-labs-bot, skipping check"
+          if [[ "${{ github.event.pull_request.user.login }}" != "clockwork-labs-bot" ]]; then
+            echo "PR opened by ${{ github.event.pull_request.user.login }}, not clockwork-labs-bot. Skipping check."
             exit 0
           fi
           echo "PR opened by clockwork-labs-bot. This requires 2 approvals."
