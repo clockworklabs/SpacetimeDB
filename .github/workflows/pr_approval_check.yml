@@ -1,0 +1,43 @@
+name: PR Approval Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  check-approvals:
+    runs-on: ubuntu-latest
+    # Skip this check if PR is in draft state
+    if: github.event.pull_request.draft == false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Check PR approvals
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Check if PR author is clockwork-labs-bot
+          if [[ "${{ github.event.pull_request.user.login }}" == "clockwork-labs-bot" ]]; then
+            echo "PR not opened by clockwork-labs-bot, skipping check"
+            exit 0
+          fi
+          echo "PR opened by clockwork-labs-bot. This requires 2 approvals."
+
+          # Get PR number
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+
+          # Get approval count
+          APPROVALS=$(gh pr view $PR_NUMBER --json reviews -q '.reviews | map(select(.state == "APPROVED")) | length')
+
+          echo "PR has $APPROVALS approvals"
+
+          if [[ $APPROVALS -lt 2 ]]; then
+            echo "Error: PRs from clockwork-labs-bot require at least 2 approvals"
+            exit 1
+          else
+            echo "PR has the required number of approvals"
+          fi
