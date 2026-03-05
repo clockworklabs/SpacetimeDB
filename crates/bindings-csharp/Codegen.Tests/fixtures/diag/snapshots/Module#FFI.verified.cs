@@ -251,6 +251,10 @@ namespace SpacetimeDB
     public readonly struct TestIndexIssuesCols
     {
         public readonly global::SpacetimeDB.Col<global::TestIndexIssues, int> SelfIndexingColumn;
+        public readonly global::SpacetimeDB.Col<
+            global::TestIndexIssues,
+            int
+        > SecondaryIndexingColumn;
 
         internal TestIndexIssuesCols(string tableName)
         {
@@ -258,18 +262,30 @@ namespace SpacetimeDB
                 tableName,
                 "SelfIndexingColumn"
             );
+            SecondaryIndexingColumn = new global::SpacetimeDB.Col<global::TestIndexIssues, int>(
+                tableName,
+                "SecondaryIndexingColumn"
+            );
         }
     }
 
     public readonly struct TestIndexIssuesIxCols
     {
         public readonly global::SpacetimeDB.IxCol<global::TestIndexIssues, int> SelfIndexingColumn;
+        public readonly global::SpacetimeDB.IxCol<
+            global::TestIndexIssues,
+            int
+        > SecondaryIndexingColumn;
 
         internal TestIndexIssuesIxCols(string tableName)
         {
             SelfIndexingColumn = new global::SpacetimeDB.IxCol<global::TestIndexIssues, int>(
                 tableName,
                 "SelfIndexingColumn"
+            );
+            SecondaryIndexingColumn = new global::SpacetimeDB.IxCol<global::TestIndexIssues, int>(
+                tableName,
+                "SecondaryIndexingColumn"
             );
         }
     }
@@ -1198,6 +1214,16 @@ namespace SpacetimeDB.Internal.TableHandles
                     ),
                     new(
                         SourceName: "TestIndexIssues_SelfIndexingColumn_idx_btree",
+                        AccessorName: "SelfIndexingColumn",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                    ),
+                    new(
+                        SourceName: "TestIndexIssues_SecondaryIndexingColumn_idx_btree",
+                        AccessorName: "SecondaryIndexingColumn",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                    ),
+                    new(
+                        SourceName: "TestIndexIssues_SelfIndexingColumn_idx_btree",
                         AccessorName: "TestUnexpectedColumns",
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
                     )
@@ -1256,6 +1282,82 @@ namespace SpacetimeDB.Internal.TableHandles
             ) { }
 
         public TestUnknownColumnsIndex TestUnknownColumns => new();
+
+        public sealed class SelfIndexingColumnIndex()
+            : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
+                "TestIndexIssues_SelfIndexingColumn_idx_btree"
+            )
+        {
+            public IEnumerable<global::TestIndexIssues> Filter(int SelfIndexingColumn) =>
+                DoFilter(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SelfIndexingColumn
+                    )
+                );
+
+            public ulong Delete(int SelfIndexingColumn) =>
+                DoDelete(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SelfIndexingColumn
+                    )
+                );
+
+            public IEnumerable<global::TestIndexIssues> Filter(
+                global::SpacetimeDB.Bound<int> SelfIndexingColumn
+            ) =>
+                DoFilter(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SelfIndexingColumn
+                    )
+                );
+
+            public ulong Delete(global::SpacetimeDB.Bound<int> SelfIndexingColumn) =>
+                DoDelete(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SelfIndexingColumn
+                    )
+                );
+        }
+
+        public SelfIndexingColumnIndex SelfIndexingColumn => new();
+
+        public sealed class SecondaryIndexingColumnIndex()
+            : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
+                "TestIndexIssues_SecondaryIndexingColumn_idx_btree"
+            )
+        {
+            public IEnumerable<global::TestIndexIssues> Filter(int SecondaryIndexingColumn) =>
+                DoFilter(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SecondaryIndexingColumn
+                    )
+                );
+
+            public ulong Delete(int SecondaryIndexingColumn) =>
+                DoDelete(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SecondaryIndexingColumn
+                    )
+                );
+
+            public IEnumerable<global::TestIndexIssues> Filter(
+                global::SpacetimeDB.Bound<int> SecondaryIndexingColumn
+            ) =>
+                DoFilter(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SecondaryIndexingColumn
+                    )
+                );
+
+            public ulong Delete(global::SpacetimeDB.Bound<int> SecondaryIndexingColumn) =>
+                DoDelete(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SecondaryIndexingColumn
+                    )
+                );
+        }
+
+        public SecondaryIndexingColumnIndex SecondaryIndexingColumn => new();
 
         public sealed class TestUnexpectedColumnsIndex()
             : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
@@ -2442,6 +2544,56 @@ namespace SpacetimeDB.Internal.ViewHandles
 
         public TestUnknownColumnsIndex TestUnknownColumns => new();
 
+        public sealed class SelfIndexingColumnIndex
+            : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
+        {
+            internal SelfIndexingColumnIndex()
+                : base("TestIndexIssues_SelfIndexingColumn_idx_btree") { }
+
+            public IEnumerable<global::TestIndexIssues> Filter(int SelfIndexingColumn) =>
+                DoFilter(
+                    new global::SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SelfIndexingColumn
+                    )
+                );
+
+            public IEnumerable<global::TestIndexIssues> Filter(
+                global::SpacetimeDB.Bound<int> SelfIndexingColumn
+            ) =>
+                DoFilter(
+                    new global::SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SelfIndexingColumn
+                    )
+                );
+        }
+
+        public SelfIndexingColumnIndex SelfIndexingColumn => new();
+
+        public sealed class SecondaryIndexingColumnIndex
+            : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
+        {
+            internal SecondaryIndexingColumnIndex()
+                : base("TestIndexIssues_SecondaryIndexingColumn_idx_btree") { }
+
+            public IEnumerable<global::TestIndexIssues> Filter(int SecondaryIndexingColumn) =>
+                DoFilter(
+                    new global::SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SecondaryIndexingColumn
+                    )
+                );
+
+            public IEnumerable<global::TestIndexIssues> Filter(
+                global::SpacetimeDB.Bound<int> SecondaryIndexingColumn
+            ) =>
+                DoFilter(
+                    new global::SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SecondaryIndexingColumn
+                    )
+                );
+        }
+
+        public SecondaryIndexingColumnIndex SecondaryIndexingColumn => new();
+
         public sealed class TestUnexpectedColumnsIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
         {
@@ -2827,6 +2979,11 @@ static class ModuleRegistration
             (identity, connectionId, random, time) =>
                 new SpacetimeDB.ProcedureContext(identity, connectionId, random, time)
         );
+        SpacetimeDB.Internal.Module.RegisterExplicitIndexName(
+            "TestIndexIssues_SecondaryIndexingColumn_idx_btree",
+            "TestCanonicalNameWithoutAccessor"
+        );
+
         var __memoryStream = new MemoryStream();
         var __writer = new BinaryWriter(__memoryStream);
 
