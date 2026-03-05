@@ -35,9 +35,25 @@ impl HttpClient {
             .headers(h)
             .send()
             .await
-            .with_context(|| format!("GET {url}"))?
-            .error_for_status()
-            .with_context(|| format!("GET {url} non-success status"))?;
+            .with_context(|| format!("GET {url}"))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let bytes = resp.bytes().await.context("read error response body")?;
+            let body_preview = String::from_utf8_lossy(&bytes);
+            let body_str = body_preview.trim();
+            let body_short: String = if body_str.len() > 500 {
+                format!("{}...", &body_str[..500])
+            } else {
+                body_str.into()
+            };
+            anyhow::bail!(
+                "GET {url} status {status} body: {body_short}",
+                url = url,
+                status = status,
+                body_short = body_short
+            );
+        }
 
         let bytes = resp.bytes().await.context("read GET body")?;
         let txt = String::from_utf8(bytes.to_vec()).context("decode GET body as UTF-8")?;
@@ -66,9 +82,25 @@ impl HttpClient {
             .json(body)
             .send()
             .await
-            .with_context(|| format!("POST {url}"))?
-            .error_for_status()
-            .with_context(|| format!("POST {url} non-success status"))?;
+            .with_context(|| format!("POST {url}"))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let bytes = resp.bytes().await.context("read error response body")?;
+            let body_preview = String::from_utf8_lossy(&bytes);
+            let body_str = body_preview.trim();
+            let body_short: String = if body_str.len() > 500 {
+                format!("{}...", &body_str[..500])
+            } else {
+                body_str.into()
+            };
+            anyhow::bail!(
+                "POST {url} status {status} body: {body_short}",
+                url = url,
+                status = status,
+                body_short = body_short
+            );
+        }
 
         let bytes = resp.bytes().await.context("read POST body")?;
         let txt = String::from_utf8(bytes.to_vec()).context("decode POST body as UTF-8")?;

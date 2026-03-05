@@ -682,6 +682,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-logs-level-filter"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-module-nested-op"
 version = "0.1.0"
 dependencies = [
