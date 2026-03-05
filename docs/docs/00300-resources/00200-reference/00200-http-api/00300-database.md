@@ -36,7 +36,7 @@ Accessible through the CLI as `spacetime publish`.
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
 
-If no `Authorization` header is provided, a new anonymous identity will be created and will own the new database. To publish to an existing database, the token must correspond to the database's owner.
+If no `Authorization` header is provided, a new anonymous identity will be created and will own the new database. This is generally not what you want.
 
 #### Data
 
