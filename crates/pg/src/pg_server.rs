@@ -284,6 +284,7 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                 let caller_auth = ConnectionAuthCtx::try_from(claims).map_err(|e| {
                     PgWireError::UserError(Box::new(ErrorInfo::new(
                         "FATAL".to_owned(),
+                        // "invalid_authorization_specification"
                         "28000".to_owned(),
                         e.to_string(),
                     )))
