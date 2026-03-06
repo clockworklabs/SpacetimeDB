@@ -1,10 +1,8 @@
 name: PR Approval Check
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
   pull_request_review:
-    types: [submitted]
+    types: [submitted, dismissed]
 
 permissions:
   contents: read
@@ -12,8 +10,6 @@ permissions:
 jobs:
   check-approvals:
     runs-on: ubuntu-latest
-    # Skip this check if PR is in draft state
-    if: github.event.pull_request.draft == false
 
     steps:
       - name: Checkout code
