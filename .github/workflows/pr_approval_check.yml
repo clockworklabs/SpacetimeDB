@@ -3,6 +3,7 @@ name: PR Approval Check
 on:
   pull_request_review:
     types: [submitted, dismissed]
+  merge_group:
 
 permissions:
   contents: read
@@ -20,6 +21,8 @@ jobs:
       - name: Check PR approvals
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # If it's in the merge queue, it's been approved already.
+        if: github.event_name != 'merge_group'
         run: |
           # Check if PR author is clockwork-labs-bot
           if [[ "${{ github.event.pull_request.user.login }}" != "clockwork-labs-bot" ]]; then
