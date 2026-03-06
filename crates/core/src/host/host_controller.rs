@@ -548,6 +548,12 @@ impl HostController {
 
             info!("replica={replica_id} database={database_identity} exiting module");
             module.exit().await;
+            // Abort background tasks before shutting down durability.
+            // These tasks may call `with_auto_commit`, which calls `request_durability`.
+            // If the durability channel is already closed, that panics.
+            host.view_cleanup_task.abort();
+            host.disk_metrics_recorder_task.abort();
+            host.tx_metrics_recorder_task.abort();
             let db = &module.replica_ctx().relational_db;
             info!("replica={replica_id} database={database_identity} exiting database");
             db.shutdown().await;
