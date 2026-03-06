@@ -18,7 +18,6 @@ mod domains;
 mod fail_initial_publish;
 mod filtering;
 mod http_egress;
-mod login;
 mod logs_level_filter;
 mod module_nested_op;
 mod modules;
