@@ -128,7 +128,7 @@ impl Headers {
     /// The sum of the lengths of all the header names and header values.
     ///
     /// For headers with multiple values for the same header name,
-    /// the length of the header name is counted once for each occurence.
+    /// the length of the header name is counted once for each occurrence.
     fn size_in_bytes(&self) -> usize {
         self.entries
             .iter()
