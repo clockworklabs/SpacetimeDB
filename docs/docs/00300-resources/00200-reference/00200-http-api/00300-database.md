@@ -11,9 +11,9 @@ The HTTP endpoints in `/v1/database` allow clients to interact with Spacetime da
 | Route                                                                                              | Description                                       |
 | -------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
 | [`POST /v1/database`](#post-v1database)                                                            | Publish a new database given its module code.     |
-| [`POST /v1/database/:name_or_identity`](#post-v1databasename_or_identity)                          | Publish to a database given its module code.      |
+| [`PUT /v1/database/:name_or_identity`](#put-v1databasename_or_identity)                            | Publish to a database given its module code.      |
 | [`GET /v1/database/:name_or_identity`](#get-v1databasename_or_identity)                            | Get a JSON description of a database.             |
-| [`DELETE /v1/database/:name_or_identity`](#post-v1databasename_or_identity)                        | Delete a database.                                |
+| [`DELETE /v1/database/:name_or_identity`](#delete-v1databasename_or_identity)                      | Delete a database.                                |
 | [`GET /v1/database/:name_or_identity/names`](#get-v1databasename_or_identitynames)                 | Get the names this database can be identified by. |
 | [`POST /v1/database/:name_or_identity/names`](#post-v1databasename_or_identitynames)               | Add a new name for this database.                 |
 | [`PUT /v1/database/:name_or_identity/names`](#put-v1databasename_or_identitynames)                 | Set the list of names for this database.          |
@@ -51,9 +51,9 @@ If the database was successfully published, returns JSON in the form:
 } }
 ```
 
-## `POST /v1/database/:name_or_identity`
+## `PUT /v1/database/:name_or_identity`
 
-Publish to a database with the specified name or identity. If the name doesn't exist, creates a new database.
+Publish to a database with the specified name or identity. If the name does not exist, creates a new database.
 
 Accessible through the CLI as `spacetime publish`.
 
@@ -223,7 +223,7 @@ For more information about WebSocket headers, see [RFC 6455](https://datatracker
 | Name                     | Value                                                                 |
 | ------------------------ | --------------------------------------------------------------------- |
 | `Sec-WebSocket-Protocol` | `v1.bsatn.spacetimedb` or `v1.json.spacetimedb`                       |
-| `Connection`             | `Updgrade`                                                            |
+| `Connection`             | `Upgrade`                                                             |
 | `Upgrade`                | `websocket`                                                           |
 | `Sec-WebSocket-Version`  | `13`                                                                  |
 | `Sec-WebSocket-Key`      | A 16-byte value, generated randomly by the client, encoded as Base64. |
