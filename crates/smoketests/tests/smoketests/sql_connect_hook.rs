@@ -58,3 +58,29 @@ fn test_sql_returns_data_with_connect_hook() {
  "Alice""#,
     );
 }
+
+/// Test that client_disconnected is still called even when the SQL query fails.
+///
+/// The `authorize_sql` and `exec_sql` errors are captured inside an async block,
+/// so `call_identity_disconnected` runs regardless of query success or failure.
+#[test]
+fn test_sql_disconnect_called_on_query_error() {
+    let test = Smoketest::builder().precompiled_module("sql-connect-hook").build();
+
+    // Run an invalid SQL query — this will fail in exec_sql
+    let result = test.sql("SELECT * FROM nonexistent_table");
+    assert!(result.is_err(), "Expected invalid SQL to fail");
+
+    // Despite the query error, both connect and disconnect should have been called
+    let logs = test.logs(100).unwrap();
+    assert!(
+        logs.iter().any(|l| l.contains("sql_connect_hook: client_connected")),
+        "Expected client_connected even on failed SQL, got: {:?}",
+        logs
+    );
+    assert!(
+        logs.iter().any(|l| l.contains("sql_connect_hook: client_disconnected")),
+        "Expected client_disconnected even on failed SQL, got: {:?}",
+        logs
+    );
+}
