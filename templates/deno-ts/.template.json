@@ -3,8 +3,8 @@
   "client_lang": "typescript",
   "server_lang": "typescript",
   "builtWith": [
-    "spacetimedb",
     "deno",
-    "typescript"
+    "typescript",
+    "spacetimedb"
   ]
 }

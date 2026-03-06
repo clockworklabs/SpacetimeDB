@@ -5,10 +5,10 @@
   "server_lang": "typescript",
   "builtWith": [
     "vue",
-    "spacetimedb",
     "vitejs",
     "typescript",
     "vite",
-    "vue-tsc"
+    "vue-tsc",
+    "spacetimedb"
   ]
 }

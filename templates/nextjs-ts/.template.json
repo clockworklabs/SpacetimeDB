@@ -7,7 +7,7 @@
     "next",
     "react",
     "react-dom",
-    "spacetimedb",
-    "typescript"
+    "typescript",
+    "spacetimedb"
   ]
 }

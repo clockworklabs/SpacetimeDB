@@ -5,11 +5,11 @@
   "server_lang": "typescript",
   "builtWith": [
     "remix-run",
+    "isbot",
     "react",
     "react-dom",
-    "isbot",
-    "spacetimedb",
     "typescript",
-    "vite"
+    "vite",
+    "spacetimedb"
   ]
 }

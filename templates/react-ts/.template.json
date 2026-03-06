@@ -6,9 +6,9 @@
   "builtWith": [
     "react",
     "react-dom",
-    "spacetimedb",
     "vitejs",
     "typescript",
-    "vite"
+    "vite",
+    "spacetimedb"
   ]
 }

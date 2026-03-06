@@ -5,9 +5,9 @@
   "server_lang": "typescript",
   "builtWith": [
     "nodejs",
-    "spacetimedb",
     "esbuild",
     "typescript",
-    "undici"
+    "undici",
+    "spacetimedb"
   ]
 }

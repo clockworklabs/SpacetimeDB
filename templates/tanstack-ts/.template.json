@@ -7,10 +7,10 @@
     "tanstack",
     "react",
     "react-dom",
-    "spacetimedb",
     "vitejs",
     "typescript",
     "vite",
-    "vite-tsconfig-paths"
+    "vite-tsconfig-paths",
+    "spacetimedb"
   ]
 }

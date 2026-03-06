@@ -5,7 +5,6 @@
   "builtWith": [
     "react",
     "react-dom",
-    "spacetimedb",
     "eslint",
     "testing-library",
     "vitejs",
@@ -17,6 +16,7 @@
     "typescript",
     "typescript-eslint",
     "vite",
-    "vitest"
+    "vitest",
+    "spacetimedb"
   ]
 }

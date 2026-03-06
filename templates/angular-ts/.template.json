@@ -6,8 +6,8 @@
   "builtWith": [
     "angular",
     "rxjs",
-    "spacetimedb",
     "tslib",
-    "typescript"
+    "typescript",
+    "spacetimedb"
   ]
 }

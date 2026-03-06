@@ -179,7 +179,17 @@ async function collectDepsFromManifests(
     }
   }
 
-  return [...seen];
+  const deps = [...seen];
+  const stdb: string[] = [];
+  const rest: string[] = [];
+  for (const d of deps) {
+    if (d.startsWith('spacetimedb') || d.startsWith('SpacetimeDB')) {
+      stdb.push(d);
+    } else {
+      rest.push(d);
+    }
+  }
+  return [...rest, ...stdb];
 }
 
 export async function updateTemplateJsons(): Promise<void> {

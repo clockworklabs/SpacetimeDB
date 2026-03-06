@@ -6,7 +6,7 @@
   "builtWith": [
     "nuxt",
     "vue",
-    "spacetimedb",
-    "typescript"
+    "typescript",
+    "spacetimedb"
   ]
 }
