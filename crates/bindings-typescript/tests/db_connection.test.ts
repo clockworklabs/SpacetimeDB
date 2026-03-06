@@ -775,9 +775,7 @@ describe('DbConnection', () => {
       })
     );
 
-    client
-      .subscriptionBuilder()
-      .subscribe('SELECT * FROM all_view_pk_players');
+    client.subscriptionBuilder().subscribe('SELECT * FROM all_view_pk_players');
 
     await Promise.resolve();
     expect(getLastSubscribeQueryStrings(wsAdapter)).toEqual([
@@ -844,12 +842,14 @@ describe('DbConnection', () => {
       })
     );
 
-    client.subscriptionBuilder().subscribe(t =>
-      t.view_pk_membership.rightSemijoin(
-        t.all_view_pk_players,
-        (membership, player) => membership.playerId.eq(player.id)
-      )
-    );
+    client
+      .subscriptionBuilder()
+      .subscribe(t =>
+        t.view_pk_membership.rightSemijoin(
+          t.all_view_pk_players,
+          (membership, player) => membership.playerId.eq(player.id)
+        )
+      );
 
     await Promise.resolve();
     expect(getLastSubscribeQueryStrings(wsAdapter)).toEqual([
@@ -921,12 +921,14 @@ describe('DbConnection', () => {
       })
     );
 
-    client.subscriptionBuilder().subscribe(t =>
-      t.sender_view_pk_players_a.rightSemijoin(
-        t.sender_view_pk_players_b,
-        (lhsView, rhsView) => lhsView.id.eq(rhsView.id)
-      )
-    );
+    client
+      .subscriptionBuilder()
+      .subscribe(t =>
+        t.sender_view_pk_players_a.rightSemijoin(
+          t.sender_view_pk_players_b,
+          (lhsView, rhsView) => lhsView.id.eq(rhsView.id)
+        )
+      );
 
     await Promise.resolve();
     expect(getLastSubscribeQueryStrings(wsAdapter)).toEqual([

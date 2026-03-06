@@ -1309,9 +1309,12 @@ type QueryReturnType<Row extends TypeBuilder<object, any>> = {
   };
 };
 
-export class QueryTypeBuilder<Row extends TypeBuilder<object, any>>
-  extends TypeBuilder<readonly InferTypeOfTypeBuilder<Row>[], QueryReturnType<Row>>
-{
+export class QueryTypeBuilder<
+  Row extends TypeBuilder<object, any>,
+> extends TypeBuilder<
+  readonly InferTypeOfTypeBuilder<Row>[],
+  QueryReturnType<Row>
+> {
   readonly row: Row;
 
   constructor(row: Row) {
