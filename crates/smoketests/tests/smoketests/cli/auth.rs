@@ -175,22 +175,56 @@ fn cli_logging_in_twice_works() {
 /// the token, without falling through to the interactive web login flow.
 ///
 /// Without the fix in PR #4579, the command would fall through to the web
-/// login flow, which tries to open a browser and fails in CI.
+/// login flow, which hangs waiting for a browser callback.
 #[test]
 fn cli_login_with_token() {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+
     let test = Smoketest::builder().autopublish(false).build();
+    let cli_path = spacetimedb_guard::ensure_binaries_built();
 
-    // A dummy token that won't decode to a valid identity.
-    let output = test.spacetime_cmd(&["login", "--token", "test-dummy-token"]);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let mut child = Command::new(&cli_path)
+        .arg("--config-path")
+        .arg(&test.config_path)
+        .args(["login", "--token", "test-dummy-token"])
+        .env_remove("BROWSER")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn spacetime login");
 
-    assert!(
-        output.status.success(),
-        "Expected `spacetime login --token` to succeed, but it failed.\nstdout: {stdout}\nstderr: {stderr}"
-    );
-    assert!(
-        stdout.contains("Token saved."),
-        "Expected 'Token saved.' in output, got: {stdout}"
-    );
+    // With the fix, the command exits immediately.
+    // Without the fix, it falls through to web login and hangs
+    // waiting for a browser callback.
+    let timeout = Duration::from_secs(15);
+    let start = Instant::now();
+    loop {
+        match child.try_wait().expect("Failed to poll child") {
+            Some(status) => {
+                let mut stdout = String::new();
+                child.stdout.take().unwrap().read_to_string(&mut stdout).unwrap();
+                assert!(
+                    status.success(),
+                    "spacetime login --token failed (exit {status}):\n{stdout}"
+                );
+                assert!(
+                    stdout.contains("Token saved."),
+                    "Expected 'Token saved.' in output, got: {stdout}"
+                );
+                return;
+            }
+            None => {
+                if start.elapsed() > timeout {
+                    child.kill().ok();
+                    panic!(
+                        "spacetime login --token hung for >{timeout:?} — \
+                         likely fell through to web login flow"
+                    );
+                }
+                std::thread::sleep(Duration::from_millis(200));
+            }
+        }
+    }
 }
