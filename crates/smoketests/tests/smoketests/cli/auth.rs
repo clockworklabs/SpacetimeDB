@@ -198,7 +198,7 @@ fn cli_login_with_token() {
     // With the fix, the command exits immediately.
     // Without the fix, it falls through to web login and hangs
     // waiting for a browser callback.
-    let timeout = Duration::from_secs(15);
+    let timeout = Duration::from_secs(5);
     let start = Instant::now();
     let result = loop {
         match child.try_wait().expect("Failed to poll child") {
