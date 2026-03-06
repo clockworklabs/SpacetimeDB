@@ -19,7 +19,7 @@ use toml_edit::{value, DocumentMut, Item};
 use xmltree::{Element, XMLNode};
 
 use crate::spacetime_config::{PackageManager, SpacetimeConfig, CONFIG_FILENAME};
-use crate::subcommands::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
+use crate::subcommands::login::{spacetimedb_login_and_save, DEFAULT_AUTH_HOST};
 
 mod embedded {
     use spacetimedb_data_structures::map::HashCollectionExt as _;
@@ -214,7 +214,7 @@ pub async fn check_and_prompt_login(config: &mut Config) -> anyhow::Result<bool>
 
     if should_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
-        spacetimedb_login_force(config, &host, false, true).await?;
+        spacetimedb_login_and_save(config, &host, false, true).await?;
         println!("{}", "Successfully logged in!".green());
         Ok(true)
     } else {
