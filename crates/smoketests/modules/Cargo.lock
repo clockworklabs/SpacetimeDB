@@ -850,6 +850,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-sql-connect-hook"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-sql-format"
 version = "0.1.0"
 dependencies = [

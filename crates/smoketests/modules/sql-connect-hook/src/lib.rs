@@ -14,10 +14,10 @@ pub fn init(ctx: &ReducerContext) {
 
 #[spacetimedb::reducer(client_connected)]
 pub fn connected(ctx: &ReducerContext) {
-    log::info!("sql_connect_hook: client_connected caller={}", ctx.sender);
+    log::info!("sql_connect_hook: client_connected caller={}", ctx.sender());
 }
 
 #[spacetimedb::reducer(client_disconnected)]
 pub fn disconnected(ctx: &ReducerContext) {
-    log::info!("sql_connect_hook: client_disconnected caller={}", ctx.sender);
+    log::info!("sql_connect_hook: client_disconnected caller={}", ctx.sender());
 }
