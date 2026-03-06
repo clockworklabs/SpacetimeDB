@@ -3,6 +3,7 @@
 use spacetimedb_smoketests::{require_local_server, Smoketest};
 use std::fs;
 use std::process::Output;
+use std::time::{Duration, Instant};
 
 fn output_stdout(output: &Output) -> String {
     String::from_utf8_lossy(&output.stdout).to_string()
@@ -171,6 +172,21 @@ fn cli_logging_in_twice_works() {
     );
 }
 
+fn try_until_timeout<F: FnMut() -> Option<R>, R>(timeout: Duration, mut f: F) -> Option<R> {
+    let start = Instant::now();
+    loop {
+        match f() {
+            Some(result) => return Some(result),
+            None => {
+                if start.elapsed() > timeout {
+                    return None;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+        }
+    }
+}
+
 /// Test that `spacetime login --token <token>` exits immediately after saving
 /// the token, without falling through to the interactive web login flow.
 ///
@@ -180,7 +196,6 @@ fn cli_logging_in_twice_works() {
 fn cli_login_with_token() {
     use std::io::Read;
     use std::process::{Command, Stdio};
-    use std::time::{Duration, Instant};
 
     let test = Smoketest::builder().autopublish(false).build();
     let cli_path = spacetimedb_guard::ensure_binaries_built();
@@ -195,23 +210,9 @@ fn cli_login_with_token() {
         .spawn()
         .expect("Failed to spawn spacetime login");
 
-    // With the fix, the command exits immediately.
-    // Without the fix, it falls through to web login and hangs
-    // waiting for a browser callback.
-    let timeout = Duration::from_secs(15);
-    let start = Instant::now();
-    let result = loop {
-        match child.try_wait().expect("Failed to poll child") {
-            Some(status) => break Some(status),
-            None => {
-                if start.elapsed() > timeout {
-                    break None;
-                }
-                std::thread::sleep(Duration::from_millis(200));
-            }
-        }
-    };
-    let Some(status) = result else {
+    // Run with timeout in case something goes wrong and it tries to open the browser for login.
+    let timeout = Duration::from_secs(5);
+    let Some(status) = try_until_timeout(timeout, || child.try_wait().expect("Failed to poll child")) else {
         child.kill().ok();
         panic!(
             "spacetime login --token hung for >{timeout:?} — \
