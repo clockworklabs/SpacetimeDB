@@ -210,6 +210,7 @@ export function useTable<TableDef extends UntypedTableDef>(
       connectionState,
       accessorName,
       querySql,
+      computeSnapshot,
       callbacks?.onDelete,
       callbacks?.onInsert,
       callbacks?.onUpdate,
