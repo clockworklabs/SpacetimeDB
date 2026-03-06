@@ -39,14 +39,39 @@ import CreatePlayerReducer from './create_player_reducer';
 // Import all procedure arg schemas
 
 // Import all table schema definitions
+import AllViewPkPlayersRow from './all_view_pk_players_table';
 import PlayerRow from './player_table';
+import SenderViewPkPlayersARow from './sender_view_pk_players_a_table';
+import SenderViewPkPlayersBRow from './sender_view_pk_players_b_table';
 import UnindexedPlayerRow from './unindexed_player_table';
 import UserRow from './user_table';
+import ViewPkMembershipRow from './view_pk_membership_table';
 
 /** Type-only namespace exports for generated type groups. */
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  all_view_pk_players: __table(
+    {
+      name: 'all_view_pk_players',
+      indexes: [
+        {
+          accessor: 'id',
+          name: 'all_view_pk_players_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['id'],
+        },
+      ],
+      constraints: [
+        {
+          name: 'all_view_pk_players_id_key',
+          constraint: 'unique',
+          columns: ['id'],
+        },
+      ],
+    },
+    AllViewPkPlayersRow
+  ),
   player: __table(
     {
       name: 'player',
@@ -63,6 +88,48 @@ const tablesSchema = __schema({
       ],
     },
     PlayerRow
+  ),
+  sender_view_pk_players_a: __table(
+    {
+      name: 'sender_view_pk_players_a',
+      indexes: [
+        {
+          accessor: 'id',
+          name: 'sender_view_pk_players_a_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['id'],
+        },
+      ],
+      constraints: [
+        {
+          name: 'sender_view_pk_players_a_id_key',
+          constraint: 'unique',
+          columns: ['id'],
+        },
+      ],
+    },
+    SenderViewPkPlayersARow
+  ),
+  sender_view_pk_players_b: __table(
+    {
+      name: 'sender_view_pk_players_b',
+      indexes: [
+        {
+          accessor: 'id',
+          name: 'sender_view_pk_players_b_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['id'],
+        },
+      ],
+      constraints: [
+        {
+          name: 'sender_view_pk_players_b_id_key',
+          constraint: 'unique',
+          columns: ['id'],
+        },
+      ],
+    },
+    SenderViewPkPlayersBRow
   ),
   unindexed_player: __table(
     {
@@ -105,6 +172,33 @@ const tablesSchema = __schema({
       ],
     },
     UserRow
+  ),
+  view_pk_membership: __table(
+    {
+      name: 'view_pk_membership',
+      indexes: [
+        {
+          accessor: 'id',
+          name: 'view_pk_membership_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['id'],
+        },
+        {
+          accessor: 'playerId',
+          name: 'view_pk_membership_player_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['playerId'],
+        },
+      ],
+      constraints: [
+        {
+          name: 'view_pk_membership_id_key',
+          constraint: 'unique',
+          columns: ['id'],
+        },
+      ],
+    },
+    ViewPkMembershipRow
   ),
 });
 

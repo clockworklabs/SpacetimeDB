@@ -71,10 +71,10 @@ const spacetime = schema({
   personWithMissing,
 });
 
-const arrayRetValue = t.array(person.rowType);
+const queryRetValue = t.query(person.rowType);
 const optionalPerson = t.option(person.rowType);
 
-spacetime.anonymousView({ name: 'v1', public: true }, arrayRetValue, ctx => {
+spacetime.anonymousView({ name: 'v1', public: true }, queryRetValue, ctx => {
   return ctx.from.person.build();
 });
 
@@ -106,7 +106,7 @@ spacetime.anonymousView(
 
 spacetime.anonymousView(
   { name: 'v2', public: true },
-  arrayRetValue,
+  queryRetValue,
   // @ts-expect-error returns a query of the wrong type.
   ctx => {
     return ctx.from.order.build();
@@ -116,7 +116,7 @@ spacetime.anonymousView(
 // For queries, we can't return rows with extra fields.
 spacetime.anonymousView(
   { name: 'v3', public: true },
-  arrayRetValue,
+  queryRetValue,
   // @ts-expect-error returns a query of the wrong type.
   ctx => {
     return ctx.from.personWithExtra.build();
@@ -126,7 +126,7 @@ spacetime.anonymousView(
 // Ideally this would fail, since we depend on the field ordering for serialization.
 spacetime.anonymousView(
   { name: 'reorderedPerson', public: true },
-  arrayRetValue,
+  queryRetValue,
   // Comment this out if we can fix the types.
   // // @ts-expect-error returns a query of the wrong type.
   ctx => {
@@ -137,21 +137,21 @@ spacetime.anonymousView(
 // Fails because it is missing a field.
 spacetime.anonymousView(
   { name: 'missingField', public: true },
-  arrayRetValue,
+  queryRetValue,
   // @ts-expect-error returns a query of the wrong type.
   ctx => {
     return ctx.from.personWithMissing.build();
   }
 );
 
-spacetime.anonymousView({ name: 'v4', public: true }, arrayRetValue, ctx => {
+spacetime.anonymousView({ name: 'v4', public: true }, queryRetValue, ctx => {
   // @ts-expect-error returns a query of the wrong type.
   const _invalid = ctx.from.person.where(row => row.id.eq('string')).build();
   const _columnEqs = ctx.from.person.where(row => row.id.eq(row.id)).build();
   return ctx.from.person.where(row => row.id.eq(5)).build();
 });
 
-spacetime.anonymousView({ name: 'v5', public: true }, arrayRetValue, ctx => {
+spacetime.anonymousView({ name: 'v5', public: true }, queryRetValue, ctx => {
   const _nonIndexedSemijoin = ctx.from.person
     .where(row => row.id.eq(5))
     // @ts-expect-error person_id is not indexed.

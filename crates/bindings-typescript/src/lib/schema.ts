@@ -19,6 +19,7 @@ import {
   ArrayBuilder,
   OptionBuilder,
   ProductBuilder,
+  QueryTypeBuilder,
   RefBuilder,
   ResultBuilder,
   RowBuilder,
@@ -306,6 +307,10 @@ export class ModuleContext {
     } else if (typeBuilder instanceof ArrayBuilder) {
       return new ArrayBuilder(
         this.registerTypesRecursively(typeBuilder.element)
+      ) as any;
+    } else if (typeBuilder instanceof QueryTypeBuilder) {
+      return new QueryTypeBuilder(
+        this.registerTypesRecursively(typeBuilder.row)
       ) as any;
     } else {
       return typeBuilder as any;
