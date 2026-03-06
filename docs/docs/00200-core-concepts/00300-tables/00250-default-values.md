@@ -8,7 +8,7 @@ import TabItem from '@theme/TabItem';
 import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
-Default values allow you to add new columns to existing tables during [automatic migrations](/databases/automatic-migrations). When you republish a module with a new column that has a default value, existing rows are automatically populated with that default.
+Default values allow you to add new columns to existing tables during [automatic migrations](../00100-databases/00500-migrations/00200-automatic-migrations.md). When you republish a module with a new column that has a default value, existing rows are automatically populated with that default.
 
 :::note
 New columns with default values must be added at the **end** of the table definition. Adding columns in the middle of a table is not supported.
@@ -117,7 +117,7 @@ Use `FIELD_Default(table, field, value)` after table registration to specify def
 Default values **cannot** be combined with:
 - Primary keys
 - Unique constraints
-- [Auto-increment](/tables/auto-increment)
+- [Auto-increment](./00230-auto-increment.md)
 
 This restriction exists because these attributes require the database to manage the column values, which conflicts with providing a static default.
 

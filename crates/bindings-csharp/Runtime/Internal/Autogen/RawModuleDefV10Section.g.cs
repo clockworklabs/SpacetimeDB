@@ -18,7 +18,7 @@ namespace SpacetimeDB.Internal
         System.Collections.Generic.List<RawScheduleDefV10> Schedules,
         System.Collections.Generic.List<RawLifeCycleReducerDefV10> LifeCycleReducers,
         System.Collections.Generic.List<RawRowLevelSecurityDefV9> RowLevelSecurity,
-        CaseConversionPolicy CaseConversionPolicy,
+        SpacetimeDB.CaseConversionPolicy CaseConversionPolicy,
         ExplicitNames ExplicitNames
     )>;
 }

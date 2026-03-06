@@ -3,10 +3,11 @@ import { execSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createConnection } from 'node:net';
 import { join } from 'node:path';
-import { CONNECTORS } from './connectors';
+import { ConnectorKey, CONNECTORS } from './connectors';
 import { runOne } from './core/runner';
 import { initConvex } from './init/init_convex';
 import { sh } from './init/utils';
+import * as fs from 'fs';
 
 // Simple TCP ping - just check if something is listening on the port
 function ping(port: number, timeoutMs = 2000): Promise<boolean> {
@@ -69,11 +70,11 @@ function hasFlag(name: string): boolean {
 }
 
 const seconds = getArg('seconds', 10);
-const concurrency = getArg('concurrency', 50);
+const concurrency = getArg('concurrency', 10);
 const alpha = getArg('alpha', 1.5);
 const systems = getStringArg('systems', 'convex,spacetimedb')
   .split(',')
-  .map((s) => s.trim());
+  .map((s) => s.trim()) as ConnectorKey[];
 const skipPrep = hasFlag('skip-prep');
 const noAnimation = hasFlag('no-animation');
 
@@ -156,6 +157,11 @@ const serviceConfigs: Record<string, ServiceConfig> = {
     healthCheck: async () => spacetimePing(),
     startCmd: 'spacetime start',
   },
+  spacetimedbRustClient: {
+    name: 'SpacetimeDB',
+    healthCheck: async () => spacetimePing(),
+    startCmd: 'spacetime start',
+  },
   convex: {
     name: 'Convex',
     healthCheck: () => ping(3210),
@@ -222,8 +228,8 @@ async function checkService(system: string): Promise<boolean> {
 // Prep / Seed
 // ============================================================================
 
-async function prepSystem(system: string): Promise<void> {
-  const connector = (CONNECTORS as any)[system];
+async function prepSystem(system: ConnectorKey): Promise<void> {
+  const connector = CONNECTORS[system];
   if (!connector) {
     console.log(`  ${system.padEnd(15)} ${c('yellow', '⚠ SKIPPED')}`);
     return;
@@ -232,9 +238,10 @@ async function prepSystem(system: string): Promise<void> {
   const spinner = createSpinner(system.padEnd(15));
 
   try {
-    if (system === 'spacetimedb') {
+    if (system === 'spacetimedb' || system == 'spacetimedbRustClient') {
       const moduleName = process.env.STDB_MODULE || 'test-1';
       const server = process.env.STDB_SERVER || 'local';
+      // const server2 = process.env.STDB_SERVER || 'http://localhost:3000';
       const modulePath = process.env.STDB_MODULE_PATH || './spacetimedb';
 
       // Publish module (creates DB if needed, updates if exists)
@@ -255,6 +262,7 @@ async function prepSystem(system: string): Promise<void> {
         String(accounts),
         String(initialBalance),
       ]);
+      console.log('[spacetimedb] seed complete.');
     } else if (system === 'convex') {
       await initConvex();
     } else {
@@ -276,12 +284,12 @@ async function prepSystem(system: string): Promise<void> {
 interface BenchResult {
   system: string;
   tps: number;
-  p50_ms: number;
-  p99_ms: number;
 }
 
-async function runBenchmark(system: string): Promise<BenchResult | null> {
-  const connectorFactory = (CONNECTORS as any)[system];
+async function runBenchmarkOther(
+  system: ConnectorKey,
+): Promise<BenchResult | null> {
+  const connectorFactory = CONNECTORS[system];
   if (!connectorFactory) {
     console.log(`  ${system}: Unknown connector`);
     return null;
@@ -303,9 +311,54 @@ async function runBenchmark(system: string): Promise<BenchResult | null> {
   return {
     system,
     tps: Math.round(result.tps),
-    p50_ms: result.p50_ms,
-    p99_ms: result.p99_ms,
   };
+}
+
+async function runBenchmarkStdb(): Promise<BenchResult | null> {
+  const moduleName = process.env.STDB_MODULE || 'test-1';
+  const server2 = process.env.STDB_SERVER || 'http://localhost:3000';
+
+  await sh('cargo', [
+    'run',
+    //"--quiet",
+    '--manifest-path',
+    'spacetimedb-rust-client/Cargo.toml',
+    '--',
+    'bench',
+    //"--quiet",
+    '--server',
+    server2,
+    '--module',
+    moduleName,
+    '--duration',
+    `${seconds}s`,
+    '--connections',
+    String(concurrency),
+    '--alpha',
+    String(alpha),
+    '--tps-write-path',
+    'spacetimedb-tps.tmp.log',
+  ]);
+
+  const tpsStr = fs.readFileSync('spacetimedb-tps.tmp.log', 'utf-8').trim();
+  const tps = Number(tpsStr);
+  if (isNaN(tps)) {
+    console.warn(`[spacetimedb] Failed to parse TPS from file: ${tpsStr}`);
+    return null;
+  }
+
+  return {
+    system: 'spacetimedb',
+    tps: Math.round(tps),
+  };
+}
+
+async function runBenchmark(system: ConnectorKey): Promise<BenchResult | null> {
+  if (system === 'spacetimedbRustClient') {
+    return await runBenchmarkStdb();
+  } else {
+    return await runBenchmarkOther(system);
+  }
 }
 
 // ============================================================================
@@ -359,7 +412,12 @@ async function displayResults(results: BenchResult[]): Promise<void> {
   const fastest = results[0];
   const slowest = results[results.length - 1];
 
-  if (fastest && slowest && fastest.system !== slowest.system) {
+  if (
+    fastest &&
+    slowest &&
+    fastest.system !== slowest.system &&
+    slowest.tps > 0
+  ) {
     const multiplier = Math.round(fastest.tps / slowest.tps);
 
     console.log('');
@@ -450,11 +508,11 @@ async function main() {
   for (const system of systems) {
     const spinner = createSpinner(`${system.padEnd(12)} benchmarking`);
     const result = await runBenchmark(system);
-    if (result) {
+    if (result && result.tps > 0) {
       spinner.stop(c('green', `✓ ${result.tps.toLocaleString()} TPS`));
       results.push(result);
     } else {
-      spinner.stop(c('red', '✗ failed'));
+      spinner.stop(c('red', `✗ FAILED (0 completed transactions)`));
     }
   }
 
@@ -478,8 +536,6 @@ async function main() {
           results: results.map((r) => ({
             system: r.system,
             tps: r.tps,
-            p50_ms: r.p50_ms,
-            p99_ms: r.p99_ms,
           })),
         },
         null,

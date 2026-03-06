@@ -1,7 +1,7 @@
 ﻿import type { RpcConnector } from '../core/connectors';
 
 export async function rpc_single_call(
-  conn: unknown,
+  conn: RpcConnector,
   from: number,
   to: number,
   amount: number,

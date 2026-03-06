@@ -1,4 +1,5 @@
-import { DbConnection, Person, tables } from '../../src/module_bindings';
+import { DbConnection, tables } from '../../src/module_bindings';
+import { Person } from '../../src/module_bindings/types';
 import type { Infer } from 'spacetimedb';
 
 const HOST = process.env.SPACETIMEDB_HOST ?? 'wss://maincloud.spacetimedb.com';

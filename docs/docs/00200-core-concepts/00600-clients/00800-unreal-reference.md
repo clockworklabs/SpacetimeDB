@@ -8,9 +8,9 @@ The SpacetimeDB client for Unreal Engine contains all the tools you need to buil
 
 Before diving into the reference, you may want to review:
 
-- [Generating Client Bindings](/clients/codegen) - How to generate Unreal bindings from your module
-- [Connecting to SpacetimeDB](/clients/connection) - Establishing and managing connections
-- [SDK API Reference](/clients/api) - Core concepts that apply across all SDKs
+- [Generating Client Bindings](./00200-codegen.md) - How to generate Unreal bindings from your module
+- [Connecting to SpacetimeDB](./00300-connection.md) - Establishing and managing connections
+- [SDK API Reference](./00400-sdk-api.md) - Core concepts that apply across all SDKs
 
 | Name                                                        | Description                                                                                             |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
