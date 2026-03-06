@@ -431,11 +431,11 @@ impl ControlDb {
         Ok(None)
     }
 
-    pub fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
-        self.get_replicas()
-            .unwrap()
+    pub fn get_leader_replica_by_database(&self, database_id: u64) -> Result<Option<Replica>> {
+        Ok(self
+            .get_replicas()?
             .into_iter()
-            .find(|instance| instance.database_id == database_id && instance.leader)
+            .find(|instance| instance.database_id == database_id && instance.leader))
     }
 
     pub fn get_replicas_by_database(&self, database_id: u64) -> Result<Vec<Replica>> {
@@ -463,7 +463,7 @@ impl ControlDb {
         let id = self.db.generate_id()?;
 
         replica.id = id;
-        let buf = bsatn::to_vec(&replica).unwrap();
+        let buf = bsatn::to_vec(&replica)?;
 
         tree.insert(id.to_be_bytes(), buf)?;
 
@@ -482,7 +482,7 @@ impl ControlDb {
         let scan_key: &[u8] = b"";
         for result in tree.range(scan_key..) {
             let (_key, value) = result?;
-            let node = bsatn::from_slice(&value[..]).unwrap();
+            let node = bsatn::from_slice(&value[..])?;
             nodes.push(node);
         }
         Ok(nodes)
@@ -506,7 +506,7 @@ impl ControlDb {
         let id = self.db.generate_id()?;
 
         node.id = id;
-        let buf = bsatn::to_vec(&node).unwrap();
+        let buf = bsatn::to_vec(&node)?;
 
         tree.insert(id.to_be_bytes(), buf)?;
 
