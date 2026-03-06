@@ -188,7 +188,7 @@ fn cli_login_with_token() {
     let mut child = Command::new(&cli_path)
         .arg("--config-path")
         .arg(&test.config_path)
-        .args(["login", "--token", "test-dummy-token"])
+        .args(["login", "--token", "test-dummy-token", "--no-browser"])
         .env_remove("BROWSER")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
