@@ -200,31 +200,32 @@ fn cli_login_with_token() {
     // waiting for a browser callback.
     let timeout = Duration::from_secs(15);
     let start = Instant::now();
-    loop {
+    let result = loop {
         match child.try_wait().expect("Failed to poll child") {
-            Some(status) => {
-                let mut stdout = String::new();
-                child.stdout.take().unwrap().read_to_string(&mut stdout).unwrap();
-                assert!(
-                    status.success(),
-                    "spacetime login --token failed (exit {status}):\n{stdout}"
-                );
-                assert!(
-                    stdout.contains("Token saved."),
-                    "Expected 'Token saved.' in output, got: {stdout}"
-                );
-                return;
-            }
+            Some(status) => break Some(status),
             None => {
                 if start.elapsed() > timeout {
-                    child.kill().ok();
-                    panic!(
-                        "spacetime login --token hung for >{timeout:?} — \
-                         likely fell through to web login flow"
-                    );
+                    break None;
                 }
                 std::thread::sleep(Duration::from_millis(200));
             }
         }
-    }
+    };
+    let Some(status) = result else {
+        child.kill().ok();
+        panic!(
+            "spacetime login --token hung for >{timeout:?} — \
+            likely fell through to web login flow"
+        );
+    };
+    let mut stdout = String::new();
+    child.stdout.take().unwrap().read_to_string(&mut stdout).unwrap();
+    assert!(
+        status.success(),
+        "spacetime login --token failed (exit {status}):\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Token saved."),
+        "Expected 'Token saved.' in output, got: {stdout}"
+    );
 }
