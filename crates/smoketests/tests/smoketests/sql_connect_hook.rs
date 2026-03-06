@@ -25,9 +25,7 @@ fn test_sql_rejected_when_client_connected_errors() {
 /// reducers. Without PR #4563, no connect/disconnect logs would appear.
 #[test]
 fn test_sql_triggers_connect_disconnect_hooks() {
-    let test = Smoketest::builder()
-        .precompiled_module("sql-connect-hook")
-        .build();
+    let test = Smoketest::builder().precompiled_module("sql-connect-hook").build();
 
     // Run a SQL query
     test.sql("SELECT * FROM person").unwrap();
@@ -51,14 +49,12 @@ fn test_sql_triggers_connect_disconnect_hooks() {
 /// Ensures the connect hook doesn't break normal SQL functionality.
 #[test]
 fn test_sql_returns_data_with_connect_hook() {
-    let test = Smoketest::builder()
-        .precompiled_module("sql-connect-hook")
-        .build();
+    let test = Smoketest::builder().precompiled_module("sql-connect-hook").build();
 
     test.assert_sql(
         "SELECT * FROM person",
         r#" name
--------
- Alice"#,
+---------
+ "Alice""#,
     );
 }
