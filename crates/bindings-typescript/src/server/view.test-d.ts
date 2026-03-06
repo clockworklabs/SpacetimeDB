@@ -72,11 +72,21 @@ const spacetime = schema({
 });
 
 const queryRetValue = t.query(person.rowType);
+const arrayRetValue = t.array(person.rowType);
 const optionalPerson = t.option(person.rowType);
 
 spacetime.anonymousView({ name: 'v1', public: true }, queryRetValue, ctx => {
   return ctx.from.person.build();
 });
+
+// Legacy compatibility: query-builder views can still be declared with array return types.
+spacetime.anonymousView(
+  { name: 'v1_legacy_array_query', public: true },
+  arrayRetValue,
+  ctx => {
+    return ctx.from.person.build();
+  }
+);
 
 spacetime.anonymousView(
   { name: 'optionalPerson', public: true },

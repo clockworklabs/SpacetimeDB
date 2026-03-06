@@ -89,15 +89,21 @@ export type ViewOpts = {
   public: true;
 };
 
+type FlattenedArray<T> = T extends readonly (infer E)[] ? E : never;
+
+type ArrayViewReturnTypeBuilder = TypeBuilder<
+  readonly object[],
+  { tag: 'Array'; value: AlgebraicTypeVariants.Product }
+>;
+
+type OptionViewReturnTypeBuilder = TypeBuilder<
+  object | undefined,
+  OptionAlgebraicType<AlgebraicTypeVariants.Product>
+>;
+
 type ProceduralViewReturnTypeBuilder =
-  | TypeBuilder<
-      readonly object[],
-      { tag: 'Array'; value: AlgebraicTypeVariants.Product }
-    >
-  | TypeBuilder<
-      object | undefined,
-      OptionAlgebraicType<AlgebraicTypeVariants.Product>
-    >;
+  | ArrayViewReturnTypeBuilder
+  | OptionViewReturnTypeBuilder;
 
 export type QueryViewReturnTypeBuilder = QueryTypeBuilder<
   TypeBuilder<object, any>
@@ -120,10 +126,22 @@ type QueryReturnProduct<Ret extends QueryViewReturnTypeBuilder> =
     ? ExtractProductFromTypeBuilder<Row>
     : never;
 
+type ExtractArrayProduct<T extends TypeBuilder<any, any>> =
+  InferSpacetimeTypeOfTypeBuilder<T> extends { tag: 'Array'; value: infer V }
+    ? V extends { tag: 'Product'; value: infer P }
+      ? P
+      : never
+    : never;
+
+type LegacyArrayQueryReturn<Ret extends ArrayViewReturnTypeBuilder> =
+  RowTypedQuery<FlattenedArray<Infer<Ret>>, ExtractArrayProduct<Ret>>;
+
 type ViewReturn<Ret extends ViewReturnTypeBuilder> =
   Ret extends QueryViewReturnTypeBuilder
     ? RowTypedQuery<QueryReturnRow<Ret>, QueryReturnProduct<Ret>>
-    : Infer<Ret>;
+    : Ret extends ArrayViewReturnTypeBuilder
+      ? Infer<Ret> | LegacyArrayQueryReturn<Ret>
+      : Infer<Ret>;
 
 // // If we allowed functions to return either.
 // type ViewReturn<Ret extends ViewReturnTypeBuilder> =
