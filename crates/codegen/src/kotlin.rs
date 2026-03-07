@@ -586,12 +586,12 @@ fn kotlin_type(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
 /// Returns the FQN import path for a type. Used for import statements.
 fn kotlin_type_fqn(_module: &ModuleDef, ty: &AlgebraicTypeUse) -> Option<String> {
     match ty {
-        AlgebraicTypeUse::Identity => Some(format!("{SDK_PKG}.Identity")),
-        AlgebraicTypeUse::ConnectionId => Some(format!("{SDK_PKG}.ConnectionId")),
-        AlgebraicTypeUse::Timestamp => Some(format!("{SDK_PKG}.Timestamp")),
-        AlgebraicTypeUse::TimeDuration => Some(format!("{SDK_PKG}.TimeDuration")),
-        AlgebraicTypeUse::ScheduleAt => Some(format!("{SDK_PKG}.ScheduleAt")),
-        AlgebraicTypeUse::Uuid => Some(format!("{SDK_PKG}.SpacetimeUuid")),
+        AlgebraicTypeUse::Identity => Some(format!("{SDK_PKG}.type.Identity")),
+        AlgebraicTypeUse::ConnectionId => Some(format!("{SDK_PKG}.type.ConnectionId")),
+        AlgebraicTypeUse::Timestamp => Some(format!("{SDK_PKG}.type.Timestamp")),
+        AlgebraicTypeUse::TimeDuration => Some(format!("{SDK_PKG}.type.TimeDuration")),
+        AlgebraicTypeUse::ScheduleAt => Some(format!("{SDK_PKG}.type.ScheduleAt")),
+        AlgebraicTypeUse::Uuid => Some(format!("{SDK_PKG}.type.SpacetimeUuid")),
         AlgebraicTypeUse::Result { .. } => Some(format!("{SDK_PKG}.SpacetimeResult")),
         AlgebraicTypeUse::Primitive(prim) => match prim {
             PrimitiveType::I128 => Some(format!("{SDK_PKG}.Int128")),
