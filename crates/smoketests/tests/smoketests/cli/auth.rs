@@ -3,6 +3,7 @@
 use spacetimedb_smoketests::{require_local_server, Smoketest};
 use std::fs;
 use std::process::Output;
+use std::time::{Duration, Instant};
 
 fn output_stdout(output: &Output) -> String {
     String::from_utf8_lossy(&output.stdout).to_string()
@@ -168,5 +169,64 @@ fn cli_logging_in_twice_works() {
         second_stdout.contains("Logged in with identity "),
         "second login should complete with a new login:\n{}",
         second_stdout
+    );
+}
+
+fn try_until_timeout<F: FnMut() -> Option<R>, R>(timeout: Duration, mut f: F) -> Option<R> {
+    let start = Instant::now();
+    loop {
+        match f() {
+            Some(result) => return Some(result),
+            None => {
+                if start.elapsed() > timeout {
+                    return None;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+        }
+    }
+}
+
+/// Test that `spacetime login --token <token>` exits immediately after saving
+/// the token, without falling through to the interactive web login flow.
+///
+/// Without the fix in PR #4579, the command would fall through to the web
+/// login flow, which hangs waiting for a browser callback.
+#[test]
+fn cli_login_with_token() {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+
+    let test = Smoketest::builder().autopublish(false).build();
+    let cli_path = spacetimedb_guard::ensure_binaries_built();
+
+    let mut child = Command::new(&cli_path)
+        .arg("--config-path")
+        .arg(&test.config_path)
+        .args(["login", "--token", "test-dummy-token", "--no-browser"])
+        .env_remove("BROWSER")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn spacetime login");
+
+    // Run with timeout in case something goes wrong and it tries to open the browser for login.
+    let timeout = Duration::from_secs(5);
+    let Some(status) = try_until_timeout(timeout, || child.try_wait().expect("Failed to poll child")) else {
+        child.kill().ok();
+        panic!(
+            "spacetime login --token hung for >{timeout:?} — \
+            likely fell through to web login flow"
+        );
+    };
+    let mut stdout = String::new();
+    child.stdout.take().unwrap().read_to_string(&mut stdout).unwrap();
+    assert!(
+        status.success(),
+        "spacetime login --token failed (exit {status}):\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Token saved."),
+        "Expected 'Token saved.' in output, got: {stdout}"
     );
 }
