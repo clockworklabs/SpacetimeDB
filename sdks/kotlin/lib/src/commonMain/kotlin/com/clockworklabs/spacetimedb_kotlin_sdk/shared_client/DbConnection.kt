@@ -336,8 +336,14 @@ public open class DbConnection internal constructor(
 
     public fun subscriptionBuilder(): SubscriptionBuilder = SubscriptionBuilder(this)
 
-    public fun subscribeToAllTables(): SubscriptionHandle {
-        return subscriptionBuilder().subscribeToAllTables()
+    public fun subscribeToAllTables(
+        onApplied: ((EventContext.SubscribeApplied) -> Unit)? = null,
+        onError: ((EventContext.Error, Throwable) -> Unit)? = null,
+    ): SubscriptionHandle {
+        val builder = subscriptionBuilder()
+        onApplied?.let { builder.onApplied(it) }
+        onError?.let { builder.onError(it) }
+        return builder.subscribeToAllTables()
     }
 
     // --- Subscriptions ---

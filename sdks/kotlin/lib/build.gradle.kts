@@ -51,6 +51,7 @@ kotlin {
 
         jvmMain.dependencies {
             implementation(libs.ktor.client.okhttp)
+            implementation(libs.slf4j.nop)
         }
 
         if (org.gradle.internal.os.OperatingSystem.current().isMacOsX) {
