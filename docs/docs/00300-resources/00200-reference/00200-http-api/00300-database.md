@@ -30,11 +30,13 @@ Publish a new database with no name.
 
 Accessible through the CLI as `spacetime publish`.
 
-#### Required Headers
+#### Optional Headers
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
+
+If no `Authorization` header is provided, a new anonymous identity will be created and will own the new database. This is generally not what you want.
 
 #### Data
 
@@ -63,11 +65,13 @@ Accessible through the CLI as `spacetime publish`.
 | ------- | --------------------------------------------------------------------------------- |
 | `clear` | A boolean; whether to clear any existing data when updating an existing database. |
 
-#### Required Headers
+#### Optional Headers
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
+
+If no `Authorization` header is provided, a new anonymous identity will be created. When updating an existing database, the token must correspond to the database's owner, or the request will be rejected.
 
 #### Data
 
@@ -123,11 +127,13 @@ Delete a database.
 
 Accessible through the CLI as `spacetime delete <identity>`.
 
-#### Required Headers
+#### Optional Headers
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
+
+Deleting a database requires ownership. If no `Authorization` header is provided, the request will be treated as anonymous and will be rejected.
 
 ## `GET /v1/database/:name_or_identity/names`
 
@@ -147,11 +153,13 @@ where `<names>` is a JSON array of strings, each of which is a name which refers
 
 Add a new name for this database.
 
-#### Required Headers
+#### Optional Headers
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
+
+If no `Authorization` header is provided, the request will be treated as anonymous.
 
 #### Data
 
@@ -180,11 +188,13 @@ If the new name already exists but the identity provided in the `Authorization` 
 
 Set the list of names for this database.
 
-#### Required Headers
+#### Optional Headers
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
+
+Setting names requires ownership of the database. If no `Authorization` header is provided, the request will be treated as anonymous and will be rejected.
 
 #### Data
 
@@ -249,11 +259,13 @@ Invoke a reducer in a database.
 | ---------- | ------------------------------------- |
 | `:reducer` | The name of the reducer OR procedure. |
 
-#### Required Headers
+#### Optional Headers
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
+
+If no `Authorization` header is provided, the request will be treated as anonymous. The caller's identity is passed to the reducer via its `ReducerContext`, and the module may accept or reject the call based on that identity.
 
 #### Data
 
@@ -270,6 +282,14 @@ Accessible through the CLI as `spacetime describe <name_or_identity>`.
 | Name      | Value                                            |
 | --------- | ------------------------------------------------ |
 | `version` | The version of `RawModuleDef` to return, e.g. 9. |
+
+#### Optional Headers
+
+| Name            | Value                                                                               |
+| --------------- | ----------------------------------------------------------------------------------- |
+| `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
+
+No authorization is required to fetch a database's schema. If an `Authorization` header is provided, the response will include `spacetime-identity` and `spacetime-identity-token` headers echoing the caller's identity. If omitted, a new anonymous identity will be allocated for this purpose.
 
 #### Returns
 
@@ -409,11 +429,13 @@ Accessible through the CLI as `spacetime logs <name_or_identity>`.
 | `num_lines` | Number of most-recent log lines to retrieve.                    |
 | `follow`    | A boolean; whether to continue receiving new logs via a stream. |
 
-#### Required Headers
+#### Optional Headers
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
+
+Viewing logs requires ownership of the database. If no `Authorization` header is provided, the request will be treated as anonymous and will be rejected.
 
 #### Returns
 
@@ -425,11 +447,13 @@ Run a SQL query against a database.
 
 Accessible through the CLI as `spacetime sql <name_or_identity> <query>`.
 
-#### Required Headers
+#### Optional Headers
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
+
+If no `Authorization` header is provided, the request will be treated as anonymous and will only have access to public tables. The caller's identity is used to enforce row-level security policies.
 
 #### Data
 
