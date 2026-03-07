@@ -1198,7 +1198,7 @@ impl CommittedState {
         &mut self,
         tx_data: &mut TxData,
         insert_tables: BTreeMap<TableId, Table>,
-        tx_blob_store: impl BlobStore,
+        tx_bs: impl BlobStore,
         truncates: &mut IntSet<TableId>,
     ) {
         // TODO(perf): Consider moving whole pages from the `insert_tables` into the committed state,
@@ -1210,40 +1210,62 @@ impl CommittedState {
         //             and the fullness of the page.
 
         for (table_id, tx_table) in insert_tables {
-            // For each newly-inserted row, serialize to a product value.
-            let mut inserts = Vec::with_capacity(tx_table.row_count as usize);
-            inserts.extend(tx_table.scan_rows(&tx_blob_store).map(|row| row.to_product_value()));
-
-            // For each newly-inserted row, serialize to a product value.
-            // This doesn't apply to event tables,
-            // which are only recorded in `TxData`,
-            // but never the committed state.
             let schema = tx_table.get_schema();
-            if !schema.is_event {
+            let page_pool = &self.page_pool;
+            if schema.is_event {
+                // For event tables, we don't want to insert into the committed state,
+                // we just want to include them in subscriptions and the commitlog.
+                Self::collect_inserts(page_pool, truncates, tx_data, &tx_bs, table_id, tx_table, |_| {});
+            } else {
                 let (commit_table, commit_blob_store, page_pool) =
-                    self.get_table_and_blob_store_or_create(table_id, tx_table.get_schema());
-                for row in &inserts {
+                    self.get_table_and_blob_store_or_create(table_id, schema);
+                Self::collect_inserts(page_pool, truncates, tx_data, &tx_bs, table_id, tx_table, |row| {
                     commit_table
                         .insert(page_pool, commit_blob_store, row)
                         .expect("Failed to insert when merging commit");
-                }
+                });
             }
-
-            // Add the table to `TxData` if there were insertions.
-            if !inserts.is_empty() {
-                tx_data.set_inserts_for_table(table_id, &schema.table_name, inserts.into());
-
-                // If table has inserted rows, it cannot be truncated.
-                if truncates.contains(&table_id) {
-                    truncates.remove(&table_id);
-                }
-            }
-
-            let (.., pages) = tx_table.consume_for_merge();
-
-            // Put all the pages in the table back into the pool.
-            self.page_pool.put_many(pages);
         }
+    }
+
+    /// Collects the inserted rows in `tx_table` into `tx_data`,
+    /// and applies `on_row` to each inserted row.
+    fn collect_inserts(
+        page_pool: &PagePool,
+        truncates: &mut IntSet<TableId>,
+        tx_data: &mut TxData,
+        tx_blob_store: &impl BlobStore,
+        table_id: TableId,
+        tx_table: Table,
+        mut on_row: impl FnMut(&ProductValue),
+    ) {
+        // For each newly-inserted row, serialize to a product value.
+        // This bypasses the `Vec<_>` intermediary and constructs the `Arc<[_]>` directly,
+        // which matters somewhat for smaller transactions and more for larger transactions.
+        let mut inserts = Arc::new_uninit_slice(tx_table.row_count as usize);
+        let inserts_mut = Arc::get_mut(&mut inserts).expect("`Arc` should be unique as it was just created");
+        for (row, slot) in tx_table.scan_rows(tx_blob_store).zip(inserts_mut) {
+            let row = row.to_product_value();
+            on_row(&row);
+            slot.write(row);
+        }
+        // SAFETY: We've written to every slot in `inserts`, so it's now fully initialized.
+        let inserts = unsafe { inserts.assume_init() };
+
+        // Add the table to `TxData` if there were insertions.
+        if !inserts.is_empty() {
+            tx_data.set_inserts_for_table(table_id, &tx_table.get_schema().table_name, inserts);
+
+            // If table has inserted rows, it cannot be truncated.
+            if truncates.contains(&table_id) {
+                truncates.remove(&table_id);
+            }
+        }
+
+        let (.., pages) = tx_table.consume_for_merge();
+
+        // Put all the pages in the table back into the pool.
+        page_pool.put_many(pages);
     }
 
     /// Rolls back the changes immediately made to the committed state during a transaction.
