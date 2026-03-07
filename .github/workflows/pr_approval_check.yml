@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   publish-approval-status:
-    name: Publish approval status
+    name: Set approval status
     runs-on: ubuntu-latest
 
     steps:
@@ -91,6 +91,11 @@ jobs:
 
             core.info(`Publishing status ${state} for ${targetSha}: ${description}`);
 
+            // We need to set a separate commit status for this, because it runs on both
+            // pull_request and pull_request_review events. If we don't set an explicit context,
+            // what happens is that there are sometimes two separate statuses on the same commit -
+            // one from each event type. This leads to weird cases where one copy of the check is failed,
+            // and the other is successful, and the failed one blocks the PR from merging.
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
