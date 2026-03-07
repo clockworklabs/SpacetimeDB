@@ -35,3 +35,4 @@ plugins {
 }
 
 include(":lib")
+include(":gradle-plugin")
