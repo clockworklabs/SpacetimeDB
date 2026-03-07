@@ -1,44 +1,101 @@
 name: PR Approval Check
 
 on:
+  pull_request:
+    types: [opened, synchronize, reopened]
   pull_request_review:
     types: [submitted, dismissed]
   merge_group:
 
 permissions:
   contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: pr-approval-check-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
 
 jobs:
-  check-approvals:
+  publish-approval-status:
+    name: Publish approval status
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Evaluate and publish approval status
+        uses: actions/github-script@v7
         with:
-          fetch-depth: 0
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const contextName = "bot-pr-approval-check";
 
-      - name: Check PR approvals
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # If it's in the merge queue, it's been approved already.
-        if: github.event_name != 'merge_group'
-        run: |
-          # Check if PR author is clockwork-labs-bot
-          if [[ "${{ github.event.pull_request.user.login }}" != "clockwork-labs-bot" ]]; then
-            echo "PR opened by ${{ github.event.pull_request.user.login }}, not clockwork-labs-bot. Skipping check."
-            exit 0
-          fi
+            let targetSha;
+            let state;
+            let description;
 
-          PR_NUMBER="${{ github.event.pull_request.number }}"
-          # Get approval count
-          APPROVALS=$(gh pr view $PR_NUMBER --json reviews -q '.reviews | map(select(.state == "APPROVED")) | length')
+            if (context.eventName === "merge_group") {
+              targetSha = process.env.GITHUB_SHA;
+              state = "success";
+              description = "Merge group entry; approvals already satisfied";
+            } else {
+              const pr = context.payload.pull_request;
+              targetSha = pr.head.sha;
 
-          echo "PR has $APPROVALS approvals"
+              if (pr.user.login !== "clockwork-labs-bot") {
+                state = "success";
+                description = "PR author is not clockwork-labs-bot";
+              } else {
+                const result = await github.graphql(
+                  `
+                  query($owner: String!, $repo: String!, $number: Int!) {
+                    repository(owner: $owner, name: $repo) {
+                      pullRequest(number: $number) {
+                        latestOpinionatedReviews(first: 100, writersOnly: true) {
+                          nodes {
+                            state
+                            author {
+                              login
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                  `,
+                  {
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    number: pr.number,
+                  }
+                );
 
-          if [[ $APPROVALS -lt 2 ]]; then
-            echo "Error: PRs from clockwork-labs-bot require at least 2 approvals"
-            exit 1
-          else
-            echo "PR has the required number of approvals"
-          fi
+                const effectiveApprovers =
+                  result.repository.pullRequest.latestOpinionatedReviews.nodes
+                    .filter((review) => review.state === "APPROVED")
+                    .map((review) => review.author?.login)
+                    .filter(Boolean);
+
+                core.info(
+                  `Latest effective approvers (${effectiveApprovers.length}): ${effectiveApprovers.join(", ")}`
+                );
+
+                if (effectiveApprovers.length < 2) {
+                  state = "failure";
+                  description = "PRs from clockwork-labs-bot require at least 2 approvals";
+                } else {
+                  state = "success";
+                  description = "PR has the required number of approvals";
+                }
+              }
+            }
+
+            core.info(`Publishing status ${state} for ${targetSha}: ${description}`);
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: targetSha,
+              state,
+              context: contextName,
+              description,
+            });
