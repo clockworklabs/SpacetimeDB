@@ -836,7 +836,7 @@ public open class DbConnection internal constructor(
             }
             val resolvedUri = requireNotNull(uri) { "URI is required" }
             val resolvedModule = requireNotNull(nameOrAddress) { "Module name is required" }
-            val resolvedClient = createDefaultHttpClient()
+            val resolvedClient = createPlatformHttpClient()
             val clientConnectionId = ConnectionId.random()
             val stats = Stats()
 
@@ -878,14 +878,6 @@ public open class DbConnection internal constructor(
             return conn
         }
 
-        private fun createDefaultHttpClient(): HttpClient {
-            return HttpClient {
-                install(io.ktor.client.plugins.websocket.WebSockets)
-                install(io.ktor.client.plugins.HttpTimeout) {
-                    connectTimeoutMillis = 10_000
-                }
-            }
-        }
     }
 }
 
