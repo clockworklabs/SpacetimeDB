@@ -1,4 +1,4 @@
-name: PR Approval Check
+name: Review Checks
 
 on:
   pull_request:
@@ -27,7 +27,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const contextName = "bot-pr-approval-check";
+            const contextName = "PR approval check";
 
             let targetSha;
             let state;
