@@ -1255,6 +1255,71 @@ class DbConnectionIntegrationTest {
         conn.disconnect()
     }
 
+    // --- use {} block ---
+
+    @Test
+    fun useBlockDisconnectsOnNormalReturn() = runTest {
+        val transport = FakeTransport()
+        var disconnected = false
+        val conn = buildTestConnection(transport, onDisconnect = { _, _ -> disconnected = true })
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        conn.use { /* no-op */ }
+        advanceUntilIdle()
+
+        assertTrue(disconnected)
+        assertFalse(conn.isActive)
+    }
+
+    @Test
+    fun useBlockDisconnectsOnException() = runTest {
+        val transport = FakeTransport()
+        var disconnected = false
+        val conn = buildTestConnection(transport, onDisconnect = { _, _ -> disconnected = true })
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        assertFailsWith<IllegalStateException> {
+            conn.use { throw IllegalStateException("boom") }
+        }
+        advanceUntilIdle()
+
+        assertTrue(disconnected)
+        assertFalse(conn.isActive)
+    }
+
+    @Test
+    fun useBlockReturnsValue() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val result = conn.use { 42 }
+
+        assertEquals(42, result)
+    }
+
+    @Test
+    fun useBlockDisconnectsOnCancellation() = runTest {
+        val transport = FakeTransport()
+        var disconnected = false
+        val conn = buildTestConnection(transport, onDisconnect = { _, _ -> disconnected = true })
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val job = launch {
+            conn.use { kotlinx.coroutines.awaitCancellation() }
+        }
+        advanceUntilIdle()
+
+        job.cancel()
+        advanceUntilIdle()
+
+        assertTrue(disconnected)
+    }
+
     // --- oneOffQuery cancellation ---
 
     @Test

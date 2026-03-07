@@ -883,6 +883,20 @@ public open class DbConnection internal constructor(
     }
 }
 
+/**
+ * Executes [block] with this [DbConnection], then calls [disconnect] when done.
+ * Ensures cleanup even if [block] throws or the coroutine is cancelled.
+ */
+public suspend inline fun <R> DbConnection.use(block: (DbConnection) -> R): R {
+    try {
+        return block(this)
+    } finally {
+        withContext(NonCancellable) {
+            disconnect()
+        }
+    }
+}
+
 /** Marker interface for generated table accessors. */
 public interface ModuleTables
 
