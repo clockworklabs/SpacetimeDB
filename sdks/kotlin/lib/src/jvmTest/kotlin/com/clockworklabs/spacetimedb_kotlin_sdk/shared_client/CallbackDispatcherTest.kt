@@ -61,7 +61,7 @@ class CallbackDispatcherTest {
             advanceUntilIdle()
             assertNotNull(capturedThread)
             assertTrue(capturedThread.contains("TestCallbackThread"))
-            conn.close()
+            conn.disconnect()
         } finally {
             callbackDispatcher.close()
         }

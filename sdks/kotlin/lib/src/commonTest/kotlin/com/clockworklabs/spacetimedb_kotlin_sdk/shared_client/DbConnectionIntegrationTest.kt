@@ -111,7 +111,7 @@ class DbConnectionIntegrationTest {
 
         assertEquals(testIdentity, connectIdentity)
         assertEquals(testToken, connectToken)
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -128,7 +128,7 @@ class DbConnectionIntegrationTest {
         assertEquals(testIdentity, conn.identity)
         assertEquals(testToken, conn.token)
         assertEquals(testConnectionId, conn.connectionId)
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -149,7 +149,7 @@ class DbConnectionIntegrationTest {
 
         assertTrue(disconnected)
         assertNull(disconnectError)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- Subscriptions ---
@@ -167,7 +167,7 @@ class DbConnectionIntegrationTest {
         val subMsg = transport.sentMessages.filterIsInstance<ClientMessage.Subscribe>().firstOrNull()
         assertNotNull(subMsg)
         assertEquals(listOf("SELECT * FROM player"), subMsg.queryStrings)
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -194,7 +194,7 @@ class DbConnectionIntegrationTest {
 
         assertTrue(applied)
         assertTrue(handle.isActive)
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -221,7 +221,7 @@ class DbConnectionIntegrationTest {
 
         assertEquals("table not found", errorMsg)
         assertTrue(handle.isEnded)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- Table cache ---
@@ -250,7 +250,7 @@ class DbConnectionIntegrationTest {
 
         assertEquals(1, cache.count())
         assertEquals("Alice", cache.all().first().name)
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -301,7 +301,7 @@ class DbConnectionIntegrationTest {
 
         assertEquals(1, cache.count())
         assertEquals("Bob", cache.all().first().name)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- Reducers ---
@@ -320,7 +320,7 @@ class DbConnectionIntegrationTest {
         assertNotNull(reducerMsg)
         assertEquals("add", reducerMsg.reducer)
         assertTrue(reducerMsg.args.contentEquals(byteArrayOf(1, 2, 3)))
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -352,7 +352,7 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         assertEquals(Status.Committed, status)
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -387,7 +387,7 @@ class DbConnectionIntegrationTest {
 
         assertTrue(status is Status.Failed)
         assertEquals(errorText, (status as Status.Failed).message)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- One-off queries ---
@@ -416,7 +416,7 @@ class DbConnectionIntegrationTest {
         val capturedResult = result
         assertNotNull(capturedResult)
         assertTrue(capturedResult.result is QueryResult.Ok)
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -451,7 +451,7 @@ class DbConnectionIntegrationTest {
         val capturedQueryResult = queryResult
         assertNotNull(capturedQueryResult)
         assertTrue(capturedQueryResult.result is QueryResult.Ok)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- Late registration & disconnect ---
@@ -469,7 +469,7 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         assertTrue(lateConnectFired)
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -488,49 +488,25 @@ class DbConnectionIntegrationTest {
         )
         advanceUntilIdle()
 
-        conn.close()
+        conn.disconnect()
         advanceUntilIdle()
 
         assertTrue(handle.isEnded)
     }
 
     @Test
-    fun disconnectThenReconnectWorks() = runTest {
+    fun disconnectIsFinal() = runTest {
         val transport = FakeTransport()
-        var connectCount = 0
-        val conn = createTestConnection(transport, onConnect = { _, _, _ -> connectCount++ })
+        val conn = createTestConnection(transport)
         conn.connect()
         transport.sendToClient(initialConnectionMsg())
         advanceUntilIdle()
 
-        assertEquals(1, connectCount)
-        assertNotNull(conn.identity)
-
-        // Disconnect — stops send/receive but keeps the object reusable
         conn.disconnect()
         advanceUntilIdle()
 
         assertFalse(conn.isActive)
-
-        // Reconnect — onConnect should fire again with fresh state
-        conn.onConnect { _, _, _ -> connectCount++ }
-        conn.connect()
-        transport.sendToClient(initialConnectionMsg())
-        advanceUntilIdle()
-
-        assertEquals(2, connectCount)
-        assertEquals(testIdentity, conn.identity)
-        assertTrue(conn.isActive)
-
-        // Verify messages can still be sent after reconnect
-        transport.clearSentMessages()
-        conn.subscribe(listOf("SELECT * FROM player"))
-        advanceUntilIdle()
-
-        val subscribeMsgs = transport.sentMessages.filterIsInstance<ClientMessage.Subscribe>()
-        assertEquals(1, subscribeMsgs.size)
-
-        conn.close()
+        assertFailsWith<IllegalStateException> { conn.connect() }
     }
 
     // --- onConnectError ---
@@ -544,10 +520,10 @@ class DbConnectionIntegrationTest {
         val conn = createTestConnection(transport, onConnectError = { _, err ->
             capturedError = err
         })
-        assertFailsWith<RuntimeException> { conn.connect() }
+        conn.connect()
 
         assertEquals(error, capturedError)
-        conn.close()
+        assertFalse(conn.isActive)
     }
 
     // --- Unsubscribe lifecycle ---
@@ -597,7 +573,7 @@ class DbConnectionIntegrationTest {
 
         assertTrue(unsubEndFired)
         assertTrue(handle.isEnded)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- Reducer outcomes ---
@@ -628,7 +604,7 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         assertEquals(Status.Committed, status)
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -658,7 +634,7 @@ class DbConnectionIntegrationTest {
 
         assertTrue(status is Status.Failed)
         assertEquals("internal server error", (status as Status.Failed).message)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- Procedures ---
@@ -677,7 +653,7 @@ class DbConnectionIntegrationTest {
         assertNotNull(procMsg)
         assertEquals("my_proc", procMsg.procedure)
         assertTrue(procMsg.args.contentEquals(byteArrayOf(42)))
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -706,7 +682,7 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         assertTrue(receivedStatus is ProcedureStatus.Returned)
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -736,7 +712,7 @@ class DbConnectionIntegrationTest {
 
         assertTrue(receivedStatus is ProcedureStatus.InternalError)
         assertEquals("proc failed", (receivedStatus as ProcedureStatus.InternalError).message)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- One-off query error ---
@@ -767,7 +743,7 @@ class DbConnectionIntegrationTest {
         val errResult = capturedResult.result
         assertTrue(errResult is QueryResult.Err)
         assertEquals("syntax error", errResult.error)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- close() ---
@@ -782,7 +758,7 @@ class DbConnectionIntegrationTest {
         transport.sendToClient(initialConnectionMsg())
         advanceUntilIdle()
 
-        conn.close()
+        conn.disconnect()
         advanceUntilIdle()
 
         assertTrue(disconnected)
@@ -814,7 +790,7 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         assertEquals(row, insertedRow)
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -869,7 +845,7 @@ class DbConnectionIntegrationTest {
 
         assertEquals(row, deletedRow)
         assertEquals(0, cache.count())
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -930,7 +906,7 @@ class DbConnectionIntegrationTest {
         assertEquals(newRow, updatedNew)
         assertEquals(1, cache.count())
         assertEquals("Alice Updated", cache.all().first().name)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- Identity mismatch ---
@@ -963,7 +939,7 @@ class DbConnectionIntegrationTest {
         assertTrue(errorMsg!!.contains("unexpected identity"))
         // Identity should NOT have changed
         assertEquals(testIdentity, conn.identity)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- SubscriptionError with null requestId triggers disconnect ---
@@ -996,7 +972,7 @@ class DbConnectionIntegrationTest {
         assertEquals("fatal subscription error", errorMsg)
         assertTrue(handle.isEnded)
         assertTrue(disconnected)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- Callback removal ---
@@ -1015,7 +991,7 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         assertFalse(fired)
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -1035,7 +1011,7 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         assertFalse(fired)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- Unsubscribe from wrong state ---
@@ -1054,7 +1030,7 @@ class DbConnectionIntegrationTest {
         assertFailsWith<IllegalStateException> {
             handle.unsubscribe()
         }
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -1083,7 +1059,7 @@ class DbConnectionIntegrationTest {
         assertFailsWith<IllegalStateException> {
             handle.unsubscribe()
         }
-        conn.close()
+        conn.disconnect()
     }
 
     // --- onBeforeDelete ---
@@ -1146,7 +1122,7 @@ class DbConnectionIntegrationTest {
         assertEquals(row, beforeDeleteRow)
         assertEquals(1, cacheCountDuringCallback) // Row still present during onBeforeDelete
         assertEquals(0, cache.count()) // Row removed after
-        conn.close()
+        conn.disconnect()
     }
 
     // --- Builder validation ---
@@ -1198,7 +1174,7 @@ class DbConnectionIntegrationTest {
         assertTrue(conn.isActive)
         assertEquals(0, cache.count())
         assertFalse(insertFired)
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -1224,7 +1200,7 @@ class DbConnectionIntegrationTest {
 
         assertTrue(conn.isActive)
         assertEquals(cacheCountBefore, cache.count())
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -1261,42 +1237,22 @@ class DbConnectionIntegrationTest {
         )
         advanceUntilIdle()
         assertTrue(realCallbackFired)
-        conn.close()
+        conn.disconnect()
     }
 
-    // --- close() states ---
+    // --- disconnect() states ---
 
     @Test
-    fun closeWhenAlreadyClosedIsNoOp() = runTest {
+    fun disconnectWhenAlreadyDisconnectedIsNoOp() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
         advanceUntilIdle()
 
-        conn.close()
-        advanceUntilIdle()
-        // Second close should not throw
-        conn.close()
-    }
-
-    @Test
-    fun closeFromDisconnectedState() = runTest {
-        val transport = FakeTransport()
-        var disconnectCount = 0
-        val conn = buildTestConnection(transport, onDisconnect = { _, _ ->
-            disconnectCount++
-        })
-        transport.sendToClient(initialConnectionMsg())
-        advanceUntilIdle()
-
         conn.disconnect()
         advanceUntilIdle()
-        assertEquals(1, disconnectCount)
-
-        // close() from DISCONNECTED should not fire onDisconnect again
-        conn.close()
-        advanceUntilIdle()
-        assertEquals(1, disconnectCount)
+        // Second disconnect should not throw
+        conn.disconnect()
     }
 
     // --- oneOffQuery cancellation ---
@@ -1329,7 +1285,7 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         assertTrue(conn.isActive)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- User callback exception does not crash receive loop ---
@@ -1361,7 +1317,7 @@ class DbConnectionIntegrationTest {
         assertEquals(1, cache.count())
         // Connection should still be active
         assertTrue(conn.isActive)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- Multiple callbacks ---
@@ -1380,7 +1336,7 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         assertEquals(3, count)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- Token not overwritten if already set ---
@@ -1406,7 +1362,7 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         assertEquals(testToken, conn.token)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- removeOnConnectError ---
@@ -1426,7 +1382,7 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         assertFalse(fired)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- close() from never-connected state ---
@@ -1436,7 +1392,7 @@ class DbConnectionIntegrationTest {
         val transport = FakeTransport()
         val conn = createTestConnection(transport)
         // close() on a freshly created connection that was never connected should not throw
-        conn.close()
+        conn.disconnect()
     }
 
     // --- callReducer without callback (fire-and-forget) ---
@@ -1466,7 +1422,7 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         assertTrue(conn.isActive)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- callProcedure without callback (fire-and-forget) ---
@@ -1497,7 +1453,7 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         assertTrue(conn.isActive)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- Reducer result before identity is set ---
@@ -1519,7 +1475,7 @@ class DbConnectionIntegrationTest {
 
         // Connection should still be active (message silently ignored)
         assertTrue(conn.isActive)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- Procedure result before identity is set ---
@@ -1541,7 +1497,7 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         assertTrue(conn.isActive)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- decodeReducerError with corrupted BSATN ---
@@ -1574,7 +1530,7 @@ class DbConnectionIntegrationTest {
         assertNotNull(capturedStatus)
         assertTrue(capturedStatus is Status.Failed)
         assertTrue(capturedStatus.message.contains("undecodable"))
-        conn.close()
+        conn.disconnect()
     }
 
     // --- unsubscribe with custom flags ---
@@ -1603,7 +1559,7 @@ class DbConnectionIntegrationTest {
         val unsub = transport.sentMessages.filterIsInstance<ClientMessage.Unsubscribe>().last()
         assertEquals(handle.querySetId, unsub.querySetId)
         assertEquals(UnsubscribeFlags.SendDroppedRows, unsub.flags)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- sendMessage after close ---
@@ -1615,7 +1571,7 @@ class DbConnectionIntegrationTest {
         transport.sendToClient(initialConnectionMsg())
         advanceUntilIdle()
 
-        conn.close()
+        conn.disconnect()
         advanceUntilIdle()
 
         // Calling subscribe on a closed connection should not throw —
@@ -1681,7 +1637,7 @@ class DbConnectionIntegrationTest {
 
         // The table should NOT be registered since we bypassed the Builder
         assertNull(conn.clientCache.getUntypedTable("sample"))
-        conn.close()
+        conn.disconnect()
     }
 
     // --- handleReducerEvent fires from module descriptor ---
@@ -1722,7 +1678,7 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         assertEquals("myReducer", reducerEventName)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- Mid-stream transport failures ---
@@ -1748,7 +1704,7 @@ class DbConnectionIntegrationTest {
         assertTrue(disconnected)
         assertNotNull(disconnectError)
         assertEquals("connection reset by peer", disconnectError!!.message)
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -1768,7 +1724,7 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         assertTrue(handle.isEnded)
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -1791,7 +1747,7 @@ class DbConnectionIntegrationTest {
 
         // The callback should NOT have been fired (no result arrived)
         assertFalse(callbackFired)
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -1841,7 +1797,7 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         assertEquals(1, cache.count())
-        conn.close()
+        conn.disconnect()
     }
 
     // --- Raw transport: partial/corrupted frame handling ---
@@ -1870,7 +1826,7 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         assertNotNull(disconnectError)
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -1889,7 +1845,7 @@ class DbConnectionIntegrationTest {
 
         assertNotNull(disconnectError)
         assertTrue(disconnectError!!.message!!.contains("Unknown ServerMessage tag"))
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -1907,7 +1863,7 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         assertNotNull(disconnectError)
-        conn.close()
+        conn.disconnect()
     }
 
     // --- Overlapping subscriptions ---
@@ -1983,7 +1939,7 @@ class DbConnectionIntegrationTest {
         assertEquals(0, cache.count()) // Row removed
         assertEquals(1, deleteCount) // onDelete fires now
 
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -2070,7 +2026,7 @@ class DbConnectionIntegrationTest {
         assertEquals(1, cache.count()) // Still present via handle2
         assertEquals("Alice Updated", cache.all().first().name)
 
-        conn.close()
+        conn.disconnect()
     }
 
     // --- Stats tracking ---
@@ -2100,7 +2056,7 @@ class DbConnectionIntegrationTest {
 
         assertEquals(1, tracker.getSampleCount())
         assertEquals(0, tracker.getRequestsAwaitingResponse())
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -2128,7 +2084,7 @@ class DbConnectionIntegrationTest {
 
         assertEquals(1, tracker.getSampleCount())
         assertEquals(0, tracker.getRequestsAwaitingResponse())
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -2157,7 +2113,7 @@ class DbConnectionIntegrationTest {
 
         assertEquals(1, tracker.getSampleCount())
         assertEquals(0, tracker.getRequestsAwaitingResponse())
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -2184,7 +2140,7 @@ class DbConnectionIntegrationTest {
 
         assertEquals(1, tracker.getSampleCount())
         assertEquals(0, tracker.getRequestsAwaitingResponse())
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -2223,7 +2179,7 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
         assertEquals(3, tracker.getSampleCount())
 
-        conn.close()
+        conn.disconnect()
     }
 
     @Test
@@ -2244,6 +2200,6 @@ class DbConnectionIntegrationTest {
         // The connection is now disconnected; identity should NOT be set
         // even if we somehow send a valid InitialConnection afterward
         assertNull(conn.identity)
-        conn.close()
+        conn.disconnect()
     }
 }

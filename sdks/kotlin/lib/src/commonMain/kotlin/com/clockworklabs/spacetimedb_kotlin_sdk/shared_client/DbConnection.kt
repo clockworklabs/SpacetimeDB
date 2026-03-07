@@ -135,7 +135,6 @@ public open class DbConnection internal constructor(
 
     private val sendChannel = Channel<ClientMessage>(Channel.UNLIMITED)
     private val _sendJob = atomic<Job?>(null)
-    private val _disconnectJob = atomic<Job?>(null)
     private val _nextQuerySetId = atomic(0)
     private val subscriptions = atomic(persistentHashMapOf<UInt, SubscriptionHandle>())
     private val reducerCallbacks =
@@ -220,37 +219,30 @@ public open class DbConnection internal constructor(
     }
 
     /**
-     * Reset connection state for a fresh connect cycle (matches C# SDK's Connect() reset).
-     */
-    private suspend fun resetState() {
-        _receiveJob.getAndSet(null)?.cancel()
-        _sendJob.getAndSet(null)?.cancel()
-        // Wait for any in-flight transport disconnect to finish before reconnecting
-        _disconnectJob.getAndSet(null)?.join()
-        identity = null
-        connectionId = null
-        token = null
-        _onConnectInvoked.value = false
-        while (sendChannel.tryReceive().isSuccess) { /* drain stale messages */ }
-        clientCache.clear()
-    }
-
-    /**
      * Connect to SpacetimeDB and start the message receive loop.
-     * Can be called after disconnect() to reconnect (matches C# SDK).
+     * Called internally by [Builder.build]. Not intended for direct use.
+     *
+     * If the transport fails to connect, [onConnectError] callbacks are fired
+     * and the connection transitions to [ConnectionState.CLOSED].
+     * No exception is thrown — errors are reported via callbacks
+     * (matching C# and TS SDK behavior).
      */
-    public suspend fun connect() {
+    internal suspend fun connect() {
+        check(_state.value != ConnectionState.CLOSED) {
+            "Connection is closed. Create a new DbConnection to reconnect."
+        }
         check(_state.compareAndSet(ConnectionState.DISCONNECTED, ConnectionState.CONNECTING)) {
             "connect() called in invalid state: ${_state.value}"
         }
-        resetState()
         Logger.info { "Connecting to SpacetimeDB..." }
         try {
             transport.connect()
         } catch (e: Exception) {
-            _state.value = ConnectionState.DISCONNECTED
+            _state.value = ConnectionState.CLOSED
+            httpClient.close()
+            scope.cancel()
             for (cb in _onConnectErrorCallbacks.value) runUserCallback { cb(this, e) }
-            throw e
+            return
         }
 
         _state.value = ConnectionState.CONNECTED
@@ -271,73 +263,43 @@ public open class DbConnection internal constructor(
                     stats.applyMessageTracker.insertSample(applyStart.elapsedNow())
                 }
                 // Normal completion — server closed the connection
-                _state.value = ConnectionState.DISCONNECTED
+                _state.value = ConnectionState.CLOSED
                 failPendingOperations()
                 for (cb in _onDisconnectCallbacks.value) runUserCallback { cb(this@DbConnection, null) }
             } catch (e: Exception) {
                 currentCoroutineContext().ensureActive()
                 Logger.error { "Connection error: ${e.message}" }
-                _state.value = ConnectionState.DISCONNECTED
+                _state.value = ConnectionState.CLOSED
                 failPendingOperations()
                 for (cb in _onDisconnectCallbacks.value) runUserCallback { cb(this@DbConnection, e) }
+            } finally {
+                // Release resources so the JVM can exit (OkHttp connection pool threads)
+                withContext(NonCancellable) {
+                    sendChannel.close()
+                    try { transport.disconnect() } catch (_: Exception) {}
+                    httpClient.close()
+                }
             }
         }
     }
 
+    /**
+     * Disconnect from SpacetimeDB and release all resources.
+     * The connection cannot be reused — create a new [DbConnection] to reconnect.
+     */
     public suspend fun disconnect() {
-        if (!_state.compareAndSet(expect = ConnectionState.CONNECTED, update = ConnectionState.DISCONNECTED)) return
-        tearDown()
-        launchTransportDisconnect()
-    }
-
-    /**
-     * Permanently release all resources (HttpClient, CoroutineScope).
-     * The connection cannot be used after this call.
-     */
-    public suspend fun close() {
         val prev = _state.getAndSet(ConnectionState.CLOSED)
-        when (prev) {
-            ConnectionState.CONNECTING, ConnectionState.CONNECTED -> {
-                tearDown()
-                sendChannel.close()
-                launchTransportDisconnect()
-                // Wait for transport disconnect to complete before killing the scope
-                _disconnectJob.value?.join()
-                httpClient.close()
-                scope.cancel()
-            }
-            ConnectionState.DISCONNECTED -> {
-                sendChannel.close()
-                // If a previous disconnect() launched a transport close, wait for it
-                _disconnectJob.value?.join()
-                httpClient.close()
-                scope.cancel()
-            }
-            ConnectionState.CLOSED -> {}
-        }
-    }
-
-    private fun launchTransportDisconnect() {
-        _disconnectJob.value = scope.launch {
-            try {
-                transport.disconnect()
-            } catch (e: Exception) {
-                Logger.warn { "Error during transport disconnect: ${e.message}" }
-            }
-        }
-    }
-
-    /**
-     * Shared teardown: cancel jobs, fail pending ops, clear cache, fire onDisconnect callbacks.
-     * Does NOT close the transport — callers handle that based on their lifecycle needs.
-     */
-    private suspend fun tearDown() {
+        if (prev != ConnectionState.CONNECTED && prev != ConnectionState.CONNECTING) return
         Logger.info { "Disconnecting from SpacetimeDB" }
         _receiveJob.getAndSet(null)?.cancel()
         _sendJob.getAndSet(null)?.cancel()
         failPendingOperations()
         clientCache.clear()
         for (cb in _onDisconnectCallbacks.value) runUserCallback { cb(this@DbConnection, null) }
+        sendChannel.close()
+        try { transport.disconnect() } catch (_: Exception) {}
+        httpClient.close()
+        scope.cancel()
     }
 
     /**
