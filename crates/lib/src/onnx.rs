@@ -19,8 +19,3 @@ pub struct Tensor {
     /// Flattened f32 data in row-major order.
     pub data: Vec<f32>,
 }
-
-/// An opaque handle to a loaded ONNX model on the host.
-///
-/// Returned by `onnx_load_model` and passed to `onnx_run_inference`.
-pub type ModelHandle = u32;

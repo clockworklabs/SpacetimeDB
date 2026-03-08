@@ -1,22 +1,21 @@
 //! ONNX inference support for SpacetimeDB modules.
 //!
-//! Load an ONNX model by name and run inference from within reducers or procedures.
+//! Run ONNX model inference from within reducers or procedures.
 //! Models are stored on the host filesystem — the model bytes never enter WASM memory.
+//! Models are cached on the host after first load.
 //!
 //! # Example
 //!
 //! ```no_run
-//! # use spacetimedb::{reducer, ReducerContext, onnx::{OnnxClient, Tensor, ModelHandle}};
+//! # use spacetimedb::{reducer, ReducerContext, onnx::{OnnxClient, Tensor}};
 //! // In a reducer:
 //! # #[reducer]
 //! # fn my_reducer(ctx: &ReducerContext) {
-//! // Load a model by name — the host resolves "bot_brain" to a .onnx file on disk.
-//! let model = ctx.onnx.load("bot_brain").expect("Failed to load model");
 //! let input = vec![Tensor {
 //!     shape: vec![1, 10],
 //!     data: vec![0.0; 10],
 //! }];
-//! let output = ctx.onnx.run(&model, &input).expect("Inference failed");
+//! let output = ctx.onnx.run("bot_brain", &input).expect("Inference failed");
 //! log::info!("Output: {:?}", output[0].data);
 //! # }
 //! ```
@@ -26,18 +25,6 @@ use spacetimedb_lib::bsatn;
 
 pub use spacetimedb_lib::onnx::Tensor;
 
-/// An opaque handle to a loaded ONNX model on the host.
-///
-/// Obtained via [`OnnxClient::load`] and used with [`OnnxClient::run`].
-/// The model is freed when this handle is dropped.
-pub struct ModelHandle(u32);
-
-impl Drop for ModelHandle {
-    fn drop(&mut self) {
-        spacetimedb_bindings_sys::onnx::close_model(self.0);
-    }
-}
-
 /// Client for performing ONNX inference.
 ///
 /// Access from within reducers via [`ReducerContext::onnx`](crate::ReducerContext)
@@ -46,35 +33,18 @@ impl Drop for ModelHandle {
 pub struct OnnxClient {}
 
 impl OnnxClient {
-    /// Load an ONNX model by name from the host's model storage.
+    /// Run inference on a named ONNX model.
     ///
-    /// The host resolves the name to a `.onnx` file on its filesystem
-    /// (e.g. in the database's `models/` directory), then loads and optimizes it
-    /// entirely on the host side. The model bytes never enter WASM memory.
-    ///
-    /// The returned [`ModelHandle`] can be used with [`OnnxClient::run`] for inference.
-    /// The model is automatically freed when the handle is dropped.
-    pub fn load(&self, model_name: &str) -> Result<ModelHandle, Error> {
-        match spacetimedb_bindings_sys::onnx::load_model(model_name) {
-            Ok(handle) => Ok(ModelHandle(handle)),
-            Err(err_source) => {
-                let message = read_bytes_source_as::<String>(err_source);
-                Err(Error { message })
-            }
-        }
-    }
-
-    /// Run inference on a loaded model.
+    /// The host resolves `model_name` to a `.onnx` file on its filesystem,
+    /// loads and caches it on first use, then runs inference with the given inputs.
+    /// Model bytes never enter WASM memory — only tensor data crosses the boundary.
     ///
     /// `inputs` are the input tensors for the model, in the order expected by the model's input nodes.
     /// Returns the output tensors from the model.
-    ///
-    /// Inference runs entirely on the host in native Rust — only the input/output tensor data
-    /// crosses the WASM boundary.
-    pub fn run(&self, model: &ModelHandle, inputs: &[Tensor]) -> Result<Vec<Tensor>, Error> {
+    pub fn run(&self, model_name: &str, inputs: &[Tensor]) -> Result<Vec<Tensor>, Error> {
         let input_bsatn = bsatn::to_vec(inputs).expect("Failed to BSATN-serialize input tensors");
 
-        match spacetimedb_bindings_sys::onnx::run_inference(model.0, &input_bsatn) {
+        match spacetimedb_bindings_sys::onnx::run(model_name, &input_bsatn) {
             Ok(output_source) => {
                 let output = read_bytes_source_as::<Vec<Tensor>>(output_source);
                 Ok(output)

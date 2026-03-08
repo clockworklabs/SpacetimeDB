@@ -196,7 +196,5 @@ pub enum AbiCall {
     ProcedureAbortMutTransaction,
     ProcedureHttpRequest,
 
-    OnnxLoadModel,
-    OnnxRunInference,
-    OnnxCloseModel,
+    OnnxRun,
 }
