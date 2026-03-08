@@ -306,6 +306,8 @@ pub enum NodesError {
     ScheduleError(#[source] ScheduleError),
     #[error("HTTP request failed: {0}")]
     HttpError(String),
+    #[error("ONNX inference failed: {0}")]
+    OnnxError(String),
 }
 
 impl From<DBError> for NodesError {

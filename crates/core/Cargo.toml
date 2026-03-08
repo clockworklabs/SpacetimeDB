@@ -120,6 +120,7 @@ url.workspace = true
 urlencoding.workspace = true
 uuid.workspace = true
 v8.workspace = true
+tract-onnx.workspace = true
 wasmtime.workspace = true
 wasmtime-internal-fiber.workspace = true
 jwks.workspace = true

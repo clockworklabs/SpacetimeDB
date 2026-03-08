@@ -133,6 +133,12 @@ pub(super) struct WasmInstanceEnv {
     /// A pool of unused allocated chunks that can be reused.
     // TODO(Centril): consider using this pool for `console_timer_start` and `bytes_sink_write`.
     chunk_pool: ChunkPool,
+
+    /// Loaded ONNX models, keyed by model handle.
+    onnx_models: std::collections::HashMap<u32, crate::host::onnx::OnnxModel>,
+
+    /// Counter for generating ONNX model handles.
+    next_onnx_model_id: u32,
 }
 
 const STANDARD_BYTES_SINK: u32 = 1;
@@ -158,6 +164,8 @@ impl WasmInstanceEnv {
             timing_spans: Default::default(),
             call_times: CallTimes::new(),
             chunk_pool: <_>::default(),
+            onnx_models: std::collections::HashMap::new(),
+            next_onnx_model_id: 1,
         }
     }
 
@@ -1878,6 +1886,105 @@ impl WasmInstanceEnv {
     /// - `body_ptr` is NULL or `body_ptr[..body_len]` is not in bounds of WASM memory.
     /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
     /// - `request_ptr[..request_len]` does not contain a valid BSATN-serialized `spacetimedb_lib::http::Request` object.
+    /// Load an ONNX model by name from the host's model storage.
+    ///
+    /// `name_ptr[..name_len]` is a UTF-8 model name. The host resolves this to
+    /// a `.onnx` file on disk, loads and optimizes it entirely on the host side.
+    /// The model bytes never enter WASM memory.
+    ///
+    /// On success, writes a model handle (u32) to `out` and returns 0.
+    /// On error, writes a `BytesSource` handle containing a BSATN-encoded error `String`
+    /// to `out` and returns `ONNX_ERROR`.
+    pub fn onnx_load_model(
+        caller: Caller<'_, Self>,
+        name_ptr: WasmPtr<u8>,
+        name_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_custom(caller, AbiCall::OnnxLoadModel, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            let name = mem.deref_str(name_ptr, name_len)?;
+
+            match crate::host::onnx::OnnxModel::load_by_name(name, &env.instance_env) {
+                Ok(model) => {
+                    let handle = env.next_onnx_model_id;
+                    env.next_onnx_model_id = handle.checked_add(1)
+                        .ok_or_else(|| WasmError::Wasm(anyhow!("ONNX model handle overflow")))?;
+                    env.onnx_models.insert(handle, model);
+                    handle.write_to(mem, out)?;
+                    Ok(0u32)
+                }
+                Err(err) => {
+                    let err_msg = bsatn::to_vec(&err.to_string())
+                        .context("Failed to BSATN-serialize ONNX error")?;
+                    let bytes_source = WasmInstanceEnv::create_bytes_source(env, err_msg.into())?;
+                    bytes_source.0.write_to(mem, out)?;
+                    Ok(errno::ONNX_ERROR.get() as u32)
+                }
+            }
+        })
+    }
+
+    /// Run inference on the model identified by `model_handle`
+    /// with BSATN-encoded input tensors at `input_ptr[..input_len]`.
+    ///
+    /// On success, writes a `BytesSource` containing BSATN-encoded output tensors to `out`
+    /// and returns 0.
+    /// On error, writes a `BytesSource` containing a BSATN-encoded error `String` to `out`
+    /// and returns `ONNX_ERROR`.
+    pub fn onnx_run_inference(
+        caller: Caller<'_, Self>,
+        model_handle: u32,
+        input_ptr: WasmPtr<u8>,
+        input_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_custom(caller, AbiCall::OnnxRunInference, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+
+            let model = env.onnx_models.get(&model_handle)
+                .ok_or(WasmError::Db(NodesError::OnnxError(
+                    format!("No ONNX model with handle {model_handle}")
+                )))?;
+
+            let input_buf = mem.deref_slice(input_ptr, input_len)?;
+            let inputs: Vec<spacetimedb_lib::onnx::Tensor> =
+                bsatn::from_slice(input_buf).map_err(|err| NodesError::DecodeValue(err))?;
+
+            match model.run(&inputs) {
+                Ok(outputs) => {
+                    let result = bsatn::to_vec(&outputs)
+                        .context("Failed to BSATN-serialize ONNX output tensors")?;
+                    let bytes_source = WasmInstanceEnv::create_bytes_source(env, result.into())?;
+                    bytes_source.0.write_to(mem, out)?;
+                    Ok(0u32)
+                }
+                Err(err) => {
+                    let err_msg = bsatn::to_vec(&err.to_string())
+                        .context("Failed to BSATN-serialize ONNX error")?;
+                    let bytes_source = WasmInstanceEnv::create_bytes_source(env, err_msg.into())?;
+                    bytes_source.0.write_to(mem, out)?;
+                    Ok(errno::ONNX_ERROR.get() as u32)
+                }
+            }
+        })
+    }
+
+    /// Free the ONNX model identified by `model_handle`.
+    pub fn onnx_close_model(
+        caller: Caller<'_, Self>,
+        model_handle: u32,
+    ) -> RtResult<u32> {
+        Self::cvt_custom(caller, AbiCall::OnnxCloseModel, |caller| {
+            let (_, env) = Self::mem_env(caller);
+            if env.onnx_models.remove(&model_handle).is_some() {
+                Ok(0u32)
+            } else {
+                Ok(errno::NO_SUCH_MODEL.get() as u32)
+            }
+        })
+    }
+
     pub fn procedure_http_request<'caller>(
         caller: Caller<'caller, Self>,
         (request_ptr, request_len, body_ptr, body_len, out): (WasmPtr<u8>, u32, WasmPtr<u8>, u32, WasmPtr<u32>),

@@ -53,6 +53,9 @@ pub struct InstanceEnv {
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
     procedure_last_tx_offset: Option<TransactionOffset>,
+    /// Directory on the host filesystem where ONNX model files are stored.
+    /// Set during module initialization if model storage is configured.
+    pub models_dir: Option<std::path::PathBuf>,
 }
 
 /// `InstanceEnv` needs to be `Send` because it is created on the host thread
@@ -237,6 +240,7 @@ impl InstanceEnv {
             func_name: None,
             in_anon_tx: false,
             procedure_last_tx_offset: None,
+            models_dir: None,
         }
     }
 

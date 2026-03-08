@@ -865,6 +865,79 @@ pub mod raw {
         ) -> u16;
     }
 
+    #[link(wasm_import_module = "spacetime_10.5")]
+    unsafe extern "C" {
+        /// Loads an ONNX model by name from the host's model storage.
+        ///
+        /// `name_ptr[..name_len]` is a UTF-8 model name (e.g. `"bot_brain"`).
+        /// The host resolves this to a `.onnx` file on its filesystem,
+        /// loads and optimizes the model entirely on the host side.
+        /// The model bytes never enter WASM memory.
+        ///
+        /// On success, writes a model handle (u32) to `out[0]` and returns 0.
+        /// The model handle can be used with [`onnx_run_inference`] and freed with [`onnx_close_model`].
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `name_ptr` is NULL or `name_ptr[..name_len]` is not in bounds of WASM memory.
+        /// - `name_ptr[..name_len]` is not valid UTF-8.
+        /// - `out` is NULL or `out[..size_of::<u32>()]` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `ONNX_ERROR` if the model could not be found or loaded.
+        ///   In this case, a [`BytesSource`] containing a BSATN-encoded error message `String`
+        ///   is written to `out[0]`.
+        pub fn onnx_load_model(
+            name_ptr: *const u8,
+            name_len: u32,
+            out: *mut u32,
+        ) -> u16;
+
+        /// Runs inference on the model identified by `model_handle`
+        /// with BSATN-encoded input tensors at `input_ptr[..input_len]`.
+        ///
+        /// `input_ptr[..input_len]` should contain a BSATN-encoded `Vec<spacetimedb_lib::onnx::Tensor>`.
+        ///
+        /// On success, a [`BytesSource`] is written to `out[0]` containing a BSATN-encoded
+        /// `Vec<spacetimedb_lib::onnx::Tensor>` with the inference output, and this function returns 0.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `input_ptr` is NULL or `input_ptr[..input_len]` is not in bounds of WASM memory.
+        /// - `out` is NULL or `out[..size_of::<u32>()]` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NO_SUCH_MODEL` if `model_handle` does not refer to a loaded model.
+        /// - `BSATN_DECODE_ERROR` if the input tensors could not be decoded.
+        /// - `ONNX_ERROR` if inference failed. In this case, a [`BytesSource`] containing
+        ///   a BSATN-encoded error message `String` is written to `out[0]`.
+        pub fn onnx_run_inference(
+            model_handle: u32,
+            input_ptr: *const u8,
+            input_len: u32,
+            out: *mut u32,
+        ) -> u16;
+
+        /// Frees the ONNX model identified by `model_handle`.
+        ///
+        /// After this call, the handle is no longer valid.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NO_SUCH_MODEL` if `model_handle` does not refer to a loaded model.
+        pub fn onnx_close_model(model_handle: u32) -> u16;
+    }
+
     /// What strategy does the database index use?
     ///
     /// See also: <https://www.postgresql.org/docs/current/sql-createindex.html>
@@ -1622,6 +1695,87 @@ pub mod procedure {
             None => Ok((out[0], out[1])),
             // HTTP_ERROR: `out` is a `spacetimedb_lib::http::Error`.
             Some(errno) if errno == super::Errno::HTTP_ERROR => Err(out[0]),
+            Some(errno) => panic!("{errno}"),
+        }
+    }
+}
+
+/// ONNX inference operations, available from both reducers and procedures.
+pub mod onnx {
+    use super::raw;
+
+    /// Load an ONNX model by name from the host's model storage.
+    ///
+    /// The host resolves the name to a `.onnx` file on its filesystem,
+    /// loads and optimizes the model entirely on the host side.
+    ///
+    /// On success, returns `Ok(model_handle)`.
+    /// On failure, returns `Err(bytes_source)` containing a BSATN-encoded error message `String`.
+    #[inline]
+    pub fn load_model(name: &str) -> Result<u32, raw::BytesSource> {
+        // The host writes either a model handle (on success) or a BytesSource handle (on error)
+        // into `out`. Both are u32. BytesSource is #[repr(transparent)] over u32.
+        let mut out = [raw::BytesSource::INVALID; 1];
+
+        let res = unsafe {
+            super::raw::onnx_load_model(
+                name.as_ptr(),
+                name.len() as u32,
+                out.as_mut_ptr().cast(),
+            )
+        };
+
+        match super::Errno::from_code(res) {
+            // Success: out[0] is a model handle as raw u32 bits.
+            // Safety: BytesSource is #[repr(transparent)] over u32.
+            None => Ok(unsafe { core::mem::transmute::<raw::BytesSource, u32>(out[0]) }),
+            // ONNX_ERROR: out[0] is a BytesSource with the error message.
+            Some(errno) if errno == super::Errno::ONNX_ERROR => Err(out[0]),
+            Some(errno) => panic!("{errno}"),
+        }
+    }
+
+    /// Run inference on a loaded model with BSATN-encoded input tensors.
+    ///
+    /// `input_bsatn` should be a BSATN-encoded `Vec<spacetimedb_lib::onnx::Tensor>`.
+    ///
+    /// On success, returns `Ok(bytes_source)` containing BSATN-encoded output tensors.
+    /// On failure, returns `Err(bytes_source)` containing a BSATN-encoded error message.
+    #[inline]
+    pub fn run_inference(
+        model_handle: u32,
+        input_bsatn: &[u8],
+    ) -> Result<raw::BytesSource, raw::BytesSource> {
+        let mut out = [raw::BytesSource::INVALID; 1];
+
+        let res = unsafe {
+            super::raw::onnx_run_inference(
+                model_handle,
+                input_bsatn.as_ptr(),
+                input_bsatn.len() as u32,
+                out.as_mut_ptr().cast(),
+            )
+        };
+
+        match super::Errno::from_code(res) {
+            None => Ok(out[0]),
+            Some(errno) if errno == super::Errno::ONNX_ERROR => Err(out[0]),
+            Some(errno) if errno == super::Errno::NO_SUCH_MODEL => {
+                panic!("ONNX model handle {model_handle} is not valid")
+            }
+            Some(errno) => panic!("{errno}"),
+        }
+    }
+
+    /// Close a loaded ONNX model, freeing its resources.
+    #[inline]
+    pub fn close_model(model_handle: u32) {
+        let res = unsafe { super::raw::onnx_close_model(model_handle) };
+        match super::Errno::from_code(res) {
+            None => {}
+            Some(errno) if errno == super::Errno::NO_SUCH_MODEL => {
+                panic!("ONNX model handle {model_handle} is not valid")
+            }
             Some(errno) => panic!("{errno}"),
         }
     }
