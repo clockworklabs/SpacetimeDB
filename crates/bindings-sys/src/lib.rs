@@ -865,6 +865,7 @@ pub mod raw {
         ) -> u16;
     }
 
+    #[cfg(feature = "onnx")]
     #[link(wasm_import_module = "spacetime_10.5")]
     unsafe extern "C" {
         /// Runs ONNX inference on a model identified by name.
@@ -1665,6 +1666,7 @@ pub mod procedure {
 }
 
 /// ONNX inference operations, available from both reducers and procedures.
+#[cfg(feature = "onnx")]
 pub mod onnx {
     use super::raw;
 

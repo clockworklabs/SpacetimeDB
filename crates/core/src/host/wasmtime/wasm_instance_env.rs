@@ -135,6 +135,7 @@ pub(super) struct WasmInstanceEnv {
     chunk_pool: ChunkPool,
 
     /// Cached ONNX models, keyed by model name.
+    #[cfg(feature = "onnx")]
     onnx_models: std::collections::HashMap<String, crate::host::onnx::OnnxModel>,
 }
 
@@ -161,6 +162,7 @@ impl WasmInstanceEnv {
             timing_spans: Default::default(),
             call_times: CallTimes::new(),
             chunk_pool: <_>::default(),
+            #[cfg(feature = "onnx")]
             onnx_models: std::collections::HashMap::new(),
         }
     }
@@ -1882,7 +1884,7 @@ impl WasmInstanceEnv {
     /// - `body_ptr` is NULL or `body_ptr[..body_len]` is not in bounds of WASM memory.
     /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
     /// - `request_ptr[..request_len]` does not contain a valid BSATN-serialized `spacetimedb_lib::http::Request` object.
-    /// Load an ONNX model by name from the host's model storage.
+    #[cfg(feature = "onnx")]
     /// Run ONNX inference on a model identified by name.
     ///
     /// `name_ptr[..name_len]` is a UTF-8 model name. The host resolves this to

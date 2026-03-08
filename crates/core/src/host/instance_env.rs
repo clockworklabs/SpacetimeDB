@@ -55,6 +55,7 @@ pub struct InstanceEnv {
     procedure_last_tx_offset: Option<TransactionOffset>,
     /// Directory on the host filesystem where ONNX model files are stored.
     /// Set during module initialization if model storage is configured.
+    #[cfg(feature = "onnx")]
     pub models_dir: Option<std::path::PathBuf>,
 }
 
@@ -240,6 +241,7 @@ impl InstanceEnv {
             func_name: None,
             in_anon_tx: false,
             procedure_last_tx_offset: None,
+            #[cfg(feature = "onnx")]
             models_dir: None,
         }
     }

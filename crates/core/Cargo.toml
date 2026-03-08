@@ -120,7 +120,7 @@ url.workspace = true
 urlencoding.workspace = true
 uuid.workspace = true
 v8.workspace = true
-tract-onnx.workspace = true
+tract-onnx = { workspace = true, optional = true }
 wasmtime.workspace = true
 wasmtime-internal-fiber.workspace = true
 jwks.workspace = true
@@ -151,6 +151,7 @@ perfmap = []
 # Disables core pinning
 no-core-pinning = []
 no-job-core-pinning = []
+onnx = ["dep:tract-onnx"]
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["proptest", "test"] }
