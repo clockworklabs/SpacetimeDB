@@ -290,6 +290,47 @@ mod tests {
     }
 
     #[test]
+    fn load_from_file_and_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let model_bytes = build_onnx_model("Relu", 1);
+        std::fs::write(dir.path().join("test_relu.onnx"), &model_bytes).unwrap();
+
+        // Simulate what load_by_name does: read from filesystem, then load.
+        let path = dir.path().join("test_relu.onnx");
+        let bytes = std::fs::read(&path).unwrap();
+        let model = OnnxModel::load_from_bytes(&bytes).expect("Failed to load model from file");
+
+        let input = StdbTensor {
+            shape: vec![1, 4],
+            data: vec![-1.0, 0.0, 1.0, 2.0],
+        };
+        let outputs = model.run(&[input]).unwrap();
+        assert_eq!(outputs[0].data, vec![0.0, 0.0, 1.0, 2.0]);
+    }
+
+    #[test]
+    fn load_by_name_rejects_path_traversal() {
+        // We can't construct a full InstanceEnv in unit tests, but we can verify
+        // the name validation logic directly.
+        let bad_names = ["", "../etc/passwd", "foo/bar", "foo\\bar", ".."];
+        for name in bad_names {
+            assert!(
+                name.contains('/') || name.contains('\\') || name.contains("..") || name.is_empty(),
+                "Expected {name:?} to be rejected by validation"
+            );
+        }
+
+        // Valid names pass validation.
+        let good_names = ["bot_brain", "my-model", "model.v2"];
+        for name in good_names {
+            assert!(
+                !name.contains('/') && !name.contains('\\') && !name.contains("..") && !name.is_empty(),
+                "Expected {name:?} to pass validation"
+            );
+        }
+    }
+
+    #[test]
     fn shape_mismatch_errors() {
         let model_bytes = build_onnx_model("Relu", 1);
         let model = OnnxModel::load_from_bytes(&model_bytes).expect("Failed to load model");

@@ -23,6 +23,7 @@ mod logs_level_filter;
 mod module_nested_op;
 mod modules;
 mod namespaces;
+mod onnx;
 mod new_user_flow;
 mod panic;
 mod permissions;
