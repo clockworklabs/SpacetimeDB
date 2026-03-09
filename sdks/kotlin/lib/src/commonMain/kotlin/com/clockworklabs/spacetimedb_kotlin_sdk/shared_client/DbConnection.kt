@@ -280,13 +280,15 @@ public open class DbConnection internal constructor(
                 // Normal completion — server closed the connection
                 _state.value = ConnectionState.CLOSED
                 failPendingOperations()
-                for (cb in _onDisconnectCallbacks.value) runUserCallback { cb(this@DbConnection, null) }
+                val cbs = _onDisconnectCallbacks.getAndSet(persistentListOf())
+                for (cb in cbs) runUserCallback { cb(this@DbConnection, null) }
             } catch (e: Exception) {
                 currentCoroutineContext().ensureActive()
                 Logger.error { "Connection error: ${e.message}" }
                 _state.value = ConnectionState.CLOSED
                 failPendingOperations()
-                for (cb in _onDisconnectCallbacks.value) runUserCallback { cb(this@DbConnection, e) }
+                val cbs = _onDisconnectCallbacks.getAndSet(persistentListOf())
+                for (cb in cbs) runUserCallback { cb(this@DbConnection, e) }
             } finally {
                 // Release resources so the JVM can exit (OkHttp connection pool threads)
                 withContext(NonCancellable) {
@@ -313,7 +315,8 @@ public open class DbConnection internal constructor(
         _sendJob.getAndSet(null)?.cancel()
         failPendingOperations()
         clientCache.clear()
-        for (cb in _onDisconnectCallbacks.value) runUserCallback { cb(this@DbConnection, reason) }
+        val cbs = _onDisconnectCallbacks.getAndSet(persistentListOf())
+        for (cb in cbs) runUserCallback { cb(this@DbConnection, reason) }
         sendChannel.close()
         try { transport.disconnect() } catch (_: Exception) {}
         httpClient.close()
