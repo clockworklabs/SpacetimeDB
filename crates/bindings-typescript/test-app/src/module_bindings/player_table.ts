@@ -9,7 +9,7 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../../src/index';
-import Point from './point_type';
+import { Point } from './types';
 
 export default __t.row({
   id: __t.u32().primaryKey(),

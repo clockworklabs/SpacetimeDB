@@ -284,7 +284,7 @@ fn test_call_query_macro() {
 { "CallReducer": {
   "reducer": "test",
   "args":
-    "[ { \"x\": 0, \"y\": 2, \"z\": \"Macro\" }, { \"foo\": \"Foo\" }, { \"Foo\": {} }, { \"Baz\": \"buzz\" } ]",
+    "[ { \"x\": 0, \"y\": 2, \"z\": \"Macro\" }, { \"foo\": \"Foo\" }, { \"foo\": {} }, { \"baz\": \"buzz\" } ]",
   "request_id": 0,
   "flags": 0
 } }"#

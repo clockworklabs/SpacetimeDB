@@ -36,6 +36,9 @@ prometheus.workspace = true
 rand.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
+# native-tls 0.2.17 fails to compile with Rust 1.93.0 due non-exhaustive
+# matching in upstream code. Pin until upstream ships a compatible release.
+native-tls = "=0.2.14"
 
 [dev-dependencies]
 # for quickstart-chat and cursive-chat examples

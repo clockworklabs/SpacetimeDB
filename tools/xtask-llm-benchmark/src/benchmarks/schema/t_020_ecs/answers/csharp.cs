@@ -2,10 +2,10 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [Table(Name = "Entity")]
+    [Table(Accessor = "Entity")]
     public partial struct Entity { [PrimaryKey] public int Id; }
 
-    [Table(Name = "Position")]
+    [Table(Accessor = "Position")]
     public partial struct Position
     {
         [PrimaryKey] public int EntityId;
@@ -13,7 +13,7 @@ public static partial class Module
         public int Y;
     }
 
-    [Table(Name = "Velocity")]
+    [Table(Accessor = "Velocity")]
     public partial struct Velocity
     {
         [PrimaryKey] public int EntityId;
@@ -21,7 +21,7 @@ public static partial class Module
         public int VY;
     }
 
-    [Table(Name = "NextPosition")]
+    [Table(Accessor = "NextPosition")]
     public partial struct NextPosition
     {
         [PrimaryKey] public int EntityId;

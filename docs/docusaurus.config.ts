@@ -103,6 +103,19 @@ const config: Config = {
           routeBasePath: '/',
           sidebarPath: './sidebars.ts',
           sidebarCollapsed: false,
+          includeCurrentVersion: true,
+          lastVersion: 'current',
+          versions: {
+            current: {
+              label: '2.0.0',
+              path: '',
+              banner: 'none',
+            },
+            '1.12.0': {
+              label: '1.12.0',
+              banner: 'none',
+            },
+          },
           beforeDefaultRehypePlugins: [
             [
               rehypeShiki,
@@ -150,6 +163,7 @@ const config: Config = {
       hideOnScroll: false,
       items: [
         { type: 'search', position: 'left' },
+        { type: 'docsVersionDropdown', position: 'left' },
         {
           href: 'https://spacetimedb.com/install',
           label: 'Install',
@@ -171,8 +185,8 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://spacetimedb.com/spacerace',
-          label: 'Spacerace',
+          href: 'https://spacetimedb.com/space-race',
+          label: 'Referrals',
           position: 'right',
         },
         {

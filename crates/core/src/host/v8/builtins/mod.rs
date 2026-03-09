@@ -5,7 +5,7 @@ use super::error::{exception_already_thrown, ExcResult, StringTooLongError, Thro
 use super::string::{str_from_ident, StringConst};
 use super::{FnRet, IntoJsString};
 
-pub(super) fn evalute_builtins(scope: &mut PinScope<'_, '_>) -> ExcResult<()> {
+pub(super) fn evaluate_builtins(scope: &mut PinScope<'_, '_>) -> ExcResult<()> {
     macro_rules! eval_builtin {
         ($file:literal) => {
             eval_builtin(

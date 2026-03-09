@@ -23,7 +23,9 @@ use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api::auth::{self, LOCALHOST};
 use spacetimedb_client_api::routes::subscribe::{HasWebSocketOptions, WebSocketOptions};
 use spacetimedb_client_api::{ControlStateReadAccess, DatabaseResetDef, Host, NodeDelegate};
-use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
+use spacetimedb_client_api_messages::name::{
+    DatabaseName, DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld,
+};
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::traits::Program;
@@ -122,9 +124,9 @@ pub enum GetLeaderHostError {
     NoSuchDatabase,
     #[error("replica does not exist")]
     NoSuchReplica,
-    #[error("error starting database")]
+    #[error("error starting database: {source:#}")]
     LaunchError { source: anyhow::Error },
-    #[error("error accessing controldb")]
+    #[error("error accessing controldb: {0:#}")]
     Control(#[from] control_db::Error),
 }
 
@@ -240,12 +242,17 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
     }
 
     // DNS
-    async fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
+    async fn lookup_database_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
         Ok(self.control_db.spacetime_dns(domain)?)
     }
 
     async fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
         Ok(self.control_db.spacetime_reverse_dns(database_identity)?)
+    }
+
+    async fn lookup_namespace_owner(&self, name: &str) -> anyhow::Result<Option<Identity>> {
+        let name: DatabaseName = name.parse()?;
+        Ok(self.control_db.spacetime_lookup_tld(Tld::from(name))?)
     }
 }
 
@@ -265,7 +272,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         match existing_db {
             // The database does not already exist, so we'll create it.
             None => {
-                let program = Program::from_bytes(&spec.program_bytes[..]);
+                let program = Program::from_bytes(spec.host_type.into(), &spec.program_bytes[..]);
 
                 let database = Database {
                     id: 0,
@@ -399,14 +406,14 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         let database_id = database.id;
 
         if let Some(program) = spec.program_bytes {
-            let program_bytes = &program[..];
-            let program = Program::from_bytes(program_bytes);
-            let _hash_for_assert = program.hash;
-
-            database.initial_program = program.hash;
             if let Some(host_type) = spec.host_type {
                 database.host_type = host_type;
             }
+            let program_bytes = &program[..];
+            let program = Program::from_bytes(database.host_type.into(), program_bytes);
+            let _hash_for_assert = program.hash;
+
+            database.initial_program = program.hash;
 
             self.host_controller
                 .check_module_validity(database.clone(), program)

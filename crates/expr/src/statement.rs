@@ -161,12 +161,12 @@ pub fn type_insert(insert: SqlInsert, tx: &impl SchemaView) -> TypingResult<Tabl
 /// Type check a DELETE statement
 pub fn type_delete(delete: SqlDelete, tx: &impl SchemaView) -> TypingResult<TableDelete> {
     let SqlDelete {
-        table: SqlIdent(table_name),
+        table: SqlIdent(query_table_name),
         filter,
     } = delete;
     let from = tx
-        .schema(&table_name)
-        .ok_or_else(|| Unresolved::table(&table_name))
+        .schema(&query_table_name)
+        .ok_or_else(|| Unresolved::table(&query_table_name))
         .map_err(TypingError::from)?;
     let table_name = &from.table_name;
 
@@ -176,7 +176,11 @@ pub fn type_delete(delete: SqlDelete, tx: &impl SchemaView) -> TypingResult<Tabl
         }));
     }
     let mut vars = Relvars::default();
+    vars.insert(query_table_name, from.clone());
     vars.insert(table_name.clone().into(), from.clone());
+    if let Some(alias) = from.inner().alias.as_ref() {
+        vars.insert(alias.clone().into(), from.clone());
+    }
     let expr = filter
         .map(|expr| type_expr(&vars, expr, Some(&AlgebraicType::Bool)))
         .transpose()?;
@@ -189,13 +193,13 @@ pub fn type_delete(delete: SqlDelete, tx: &impl SchemaView) -> TypingResult<Tabl
 /// Type check an UPDATE statement
 pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<TableUpdate> {
     let SqlUpdate {
-        table: SqlIdent(table_name),
+        table: SqlIdent(query_table_name),
         assignments,
         filter,
     } = update;
     let schema = tx
-        .schema(&table_name)
-        .ok_or_else(|| Unresolved::table(&table_name))
+        .schema(&query_table_name)
+        .ok_or_else(|| Unresolved::table(&query_table_name))
         .map_err(TypingError::from)?;
     let table_name = &schema.table_name;
 
@@ -212,7 +216,7 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
             ..
         } = schema
             .as_ref()
-            .get_column_by_name(&field)
+            .get_column_by_name_or_alias(&field)
             .ok_or_else(|| Unresolved::field(table_name.clone(), &field))?;
         match (lit, ty) {
             (SqlLiteral::Bool(v), AlgebraicType::Bool) => {
@@ -236,7 +240,11 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
         }
     }
     let mut vars = Relvars::default();
+    vars.insert(query_table_name, schema.clone());
     vars.insert(table_name.clone().into(), schema.clone());
+    if let Some(alias) = schema.inner().alias.as_ref() {
+        vars.insert(alias.clone().into(), schema.clone());
+    }
     let values = values.into_boxed_slice();
     let filter = filter
         .map(|expr| type_expr(&vars, expr, Some(&AlgebraicType::Bool)))

@@ -81,7 +81,6 @@ impl Identifier {
         Ok(Identifier { id: name })
     }
 
-    #[cfg(any(test, feature = "test"))]
     pub fn for_test(name: impl AsRef<str>) -> Self {
         Identifier::new(RawIdentifier::new(name.as_ref())).unwrap()
     }

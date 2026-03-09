@@ -163,7 +163,7 @@ mod tests {
     use crate::vm::DbProgram;
     use itertools::Itertools;
     use smallvec::SmallVec;
-    use spacetimedb_client_api_messages::websocket::{BsatnFormat, CompressableQueryUpdate, Compression};
+    use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
     use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
     use spacetimedb_datastore::execution_context::Workload;
     use spacetimedb_lib::bsatn;
@@ -359,7 +359,7 @@ mod tests {
         rows: &[ProductValue],
     ) -> ResultTest<()> {
         let result = s
-            .eval::<BsatnFormat>(db, tx, &BsatnRowListBuilderPool::new(), None, Compression::None)
+            .eval::<ws_v1::BsatnFormat>(db, tx, &BsatnRowListBuilderPool::new(), None, ws_v1::Compression::None)
             .tables;
         assert_eq!(
             result.len(),
@@ -371,7 +371,7 @@ mod tests {
             .into_iter()
             .flat_map(|x| x.updates)
             .map(|x| match x {
-                CompressableQueryUpdate::Uncompressed(x) => x,
+                ws_v1::CompressableQueryUpdate::Uncompressed(x) => x,
                 _ => unreachable!(),
             })
             .flat_map(|x| {

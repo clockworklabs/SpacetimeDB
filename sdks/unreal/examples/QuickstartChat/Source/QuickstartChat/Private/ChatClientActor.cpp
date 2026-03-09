@@ -45,7 +45,7 @@ void AChatClientActor::BeginPlay()
 	// Build the connection using the fluent builder API
 	Conn = UDbConnection::Builder()
 		->WithUri(Host)                // Host address to connect to
-		->WithModuleName(DbName)        // Database/module name
+		->WithDatabaseName(DbName)        // Database/module name
 		->WithToken(SavedToken)         // Optional authentication token
 		->WithCompression(ESpacetimeDBCompression::Gzip) // Enable gzip compression
 		->OnConnect(ConnectDelegate)    // Bind connect handler

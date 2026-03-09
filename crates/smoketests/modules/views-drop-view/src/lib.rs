@@ -1,5 +1,5 @@
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,

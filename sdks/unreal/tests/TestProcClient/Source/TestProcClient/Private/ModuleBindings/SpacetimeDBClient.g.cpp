@@ -7,7 +7,6 @@
 #include "ModuleBindings/Tables/MyTableTable.g.h"
 #include "ModuleBindings/Tables/PkUuidTable.g.h"
 #include "ModuleBindings/Tables/ProcInsertsIntoTable.g.h"
-#include "ModuleBindings/Tables/ScheduledProcTableTable.g.h"
 
 static FReducer DecodeReducer(const FReducerEvent& Event)
 {
@@ -39,7 +38,6 @@ UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Supe
 	RegisterTable<FMyTableType, UMyTableTable, FEventContext>(TEXT("my_table"), Db->MyTable);
 	RegisterTable<FPkUuidType, UPkUuidTable, FEventContext>(TEXT("pk_uuid"), Db->PkUuid);
 	RegisterTable<FProcInsertsIntoType, UProcInsertsIntoTable, FEventContext>(TEXT("proc_inserts_into"), Db->ProcInsertsInto);
-	RegisterTable<FScheduledProcTableType, UScheduledProcTableTable, FEventContext>(TEXT("scheduled_proc_table"), Db->ScheduledProcTable);
 }
 
 FContextBase::FContextBase(UDbConnection* InConn)
@@ -78,14 +76,12 @@ void URemoteTables::Initialize()
 	MyTable = NewObject<UMyTableTable>(this);
 	PkUuid = NewObject<UPkUuidTable>(this);
 	ProcInsertsInto = NewObject<UProcInsertsIntoTable>(this);
-	ScheduledProcTable = NewObject<UScheduledProcTableTable>(this);
 	/**/
 
 	/** Initialization */
 	MyTable->PostInitialize();
 	PkUuid->PostInitialize();
 	ProcInsertsInto->PostInitialize();
-	ScheduledProcTable->PostInitialize();
 	/**/
 }
 
@@ -370,35 +366,6 @@ void URemoteProcedures::ReturnStruct(const uint32 A, const FString& B, FOnReturn
 	Conn->CallProcedureTyped(TEXT("return_struct"), FReturnStructArgs(A, B), Wrapper);
 }
 
-void URemoteProcedures::ScheduledProc(const FScheduledProcTableType& Data, FOnScheduledProcComplete Callback)
-{
-    if (!Conn)
-    {
-        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
-        return;
-    }
-
-    FOnProcedureCompleteDelegate Wrapper;
-    Wrapper.BindLambda(
-        [Callback = MoveTemp(Callback), Conn = this->Conn]
-        (const FSpacetimeDBEvent& Event,
-            const TArray<uint8>& ResultData,
-            bool bSuccess) mutable
-        {
-            FSpacetimeDBUnit ResultValue{};
-
-            if (bSuccess) {
-                ResultValue = UE::SpacetimeDB::Deserialize<FSpacetimeDBUnit>(ResultData);
-            }
-
-            FTestProcClientProcedureEvent ProcedureEvent = FTestProcClientProcedureEvent(Event.GetAsProcedure());
-            FProcedureEventContext Context = FProcedureEventContext(Conn, ProcedureEvent);
-            // Fire the user's typed delegate
-            Callback.ExecuteIfBound(Context, ResultValue, bSuccess);
-        });
-	Conn->CallProcedureTyped(TEXT("scheduled_proc"), FScheduledProcArgs(Data), Wrapper);
-}
-
 void URemoteProcedures::SortedUuidsInsert(FOnSortedUuidsInsertComplete Callback)
 {
     if (!Conn)
@@ -636,9 +603,9 @@ UDbConnectionBuilder* UDbConnectionBuilder::WithUri(const FString& InUri)
 {
 	return Cast<UDbConnectionBuilder>(WithUriBase(InUri));
 }
-UDbConnectionBuilder* UDbConnectionBuilder::WithModuleName(const FString& InName)
+UDbConnectionBuilder* UDbConnectionBuilder::WithDatabaseName(const FString& InName)
 {
-	return Cast<UDbConnectionBuilder>(WithModuleNameBase(InName));
+	return Cast<UDbConnectionBuilder>(WithDatabaseNameBase(InName));
 }
 UDbConnectionBuilder* UDbConnectionBuilder::WithToken(const FString& InToken)
 {

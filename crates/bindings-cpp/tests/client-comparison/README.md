@@ -68,7 +68,7 @@ cd crates/bindings-cpp/tests/client-comparison
 ```bash
 # Rust baseline
 cd rust-sdk-test
-spacetime generate --lang rust --out-dir . --project-path ../../../modules/sdk-test
+spacetime generate --lang rust --out-dir . --module-path ../../../modules/sdk-test
 
 # Rust baseline
 ./scripts/regenerate_rust_client.sh

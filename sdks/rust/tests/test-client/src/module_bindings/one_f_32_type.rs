@@ -41,3 +41,5 @@ impl __sdk::__query_builder::HasIxCols for OneF32 {
         OneF32IxCols {}
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for OneF32 {}

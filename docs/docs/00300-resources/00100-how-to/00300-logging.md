@@ -5,6 +5,7 @@ slug: /how-to/logging
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 SpacetimeDB provides logging capabilities for debugging and monitoring your modules. Log messages are private to the database owner and are not visible to clients.
@@ -19,7 +20,7 @@ Use the standard `console` API to write logs from your reducers:
 ```typescript
 import { spacetimedb } from 'spacetimedb/server';
 
-spacetimedb.reducer('process_data', { value: t.u32() }, (ctx, { value }) => {
+export const process_data = spacetimedb.reducer({ value: t.u32() }, (ctx, { value }) => {
   console.log(`Processing data with value: ${value}`);
   
   if (value > 100) {
@@ -118,6 +119,8 @@ Available log levels:
 </TabItem>
 <TabItem value="cpp" label="C++">
 
+<CppModuleVersionNotice />
+
 Use the `LOG_*` macros to write logs from your reducers:
 
 ```cpp
@@ -182,7 +185,7 @@ spacetime logs --level warn <DATABASE_NAME>
 spacetime logs --since "2023-01-01 00:00:00" <DATABASE_NAME>
 ```
 
-For all log viewing options, see the [`spacetime logs` CLI reference](/cli-reference#spacetime-logs).
+For all log viewing options, see the [`spacetime logs` CLI reference](../00200-reference/00100-cli-reference/00100-cli-reference.md#spacetime-logs).
 
 ## Best Practices
 
@@ -216,7 +219,7 @@ Use appropriate log levels for different types of messages:
 Include relevant context in your log messages:
 
 ```typescript
-spacetimedb.reducer('transfer_credits', 
+export const transfer_credits = spacetimedb.reducer(
   { to_user: t.u64(), amount: t.u32() },
   (ctx, { to_user, amount }) => {
     console.log(`Credit transfer: from=${ctx.sender}, to=${to_user}, amount=${amount}`);
@@ -288,6 +291,6 @@ SPACETIMEDB_REDUCER(transfer_credits, ReducerContext ctx, uint64_t to_user, uint
 
 ## Next Steps
 
-- Learn about [Error Handling](/functions/reducers/error-handling) in reducers
-- Explore the [CLI Reference](/cli-reference) for more logging options
+- Learn about [Error Handling](../../00200-core-concepts/00200-functions/00300-reducers/00600-error-handling.md) in reducers
+- Explore the [CLI Reference](../00200-reference/00100-cli-reference/00100-cli-reference.md) for more logging options
 - Set up monitoring and alerting for your production databases

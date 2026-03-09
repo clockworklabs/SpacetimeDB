@@ -6,7 +6,7 @@ class Rls(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{Identity, ReducerContext, Table};
 
-#[spacetimedb::table(name = users, public)]
+#[spacetimedb::table(accessor = users, public)]
 pub struct Users {
     name: String,
     identity: Identity,
@@ -55,7 +55,7 @@ class BrokenRls(Smoketest):
     MODULE_CODE_BROKEN = """
 use spacetimedb::{client_visibility_filter, Filter};
 
-#[spacetimedb::table(name = user)]
+#[spacetimedb::table(accessor = user)]
 pub struct User {
     identity: Identity,
 }
@@ -80,7 +80,7 @@ class DisconnectRls(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{Identity, ReducerContext, Table};
 
-#[spacetimedb::table(name = users, public)]
+#[spacetimedb::table(accessor = users, public)]
 pub struct Users {
     name: String,
     identity: Identity,

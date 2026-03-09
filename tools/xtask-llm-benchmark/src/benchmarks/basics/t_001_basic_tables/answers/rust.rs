@@ -1,6 +1,6 @@
 use spacetimedb::table;
 
-#[table(name = user)]
+#[table(accessor = user)]
 pub struct User {
     #[primary_key]
     pub id: i32,
@@ -9,7 +9,7 @@ pub struct User {
     pub active: bool,
 }
 
-#[table(name = product)]
+#[table(accessor = product)]
 pub struct Product {
     #[primary_key]
     pub id: i32,
@@ -18,7 +18,7 @@ pub struct Product {
     pub in_stock: bool,
 }
 
-#[table(name = note)]
+#[table(accessor = note)]
 pub struct Note {
     #[primary_key]
     pub id: i32,

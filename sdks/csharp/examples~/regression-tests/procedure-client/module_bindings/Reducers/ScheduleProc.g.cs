@@ -17,7 +17,7 @@ namespace SpacetimeDB.Types
 
         public void ScheduleProc()
         {
-            conn.InternalCallReducer(new Reducer.ScheduleProc(), this.SetCallReducerFlags.ScheduleProcFlags);
+            conn.InternalCallReducer(new Reducer.ScheduleProc());
         }
 
         public bool InvokeScheduleProc(ReducerEventContext ctx, Reducer.ScheduleProc args)
@@ -49,11 +49,5 @@ namespace SpacetimeDB.Types
         {
             string IReducerArgs.ReducerName => "schedule_proc";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags ScheduleProcFlags;
-        public void ScheduleProc(CallReducerFlags flags) => ScheduleProcFlags = flags;
     }
 }

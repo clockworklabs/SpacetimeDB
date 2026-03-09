@@ -141,6 +141,7 @@ pub fn execute_sql(
                     args: ArgsTuple::default(),
                 },
                 status: EventStatus::Committed(DatabaseUpdate { tables: updates }),
+                reducer_return_value: None,
                 energy_quanta_used: EnergyQuanta::ZERO,
                 host_execution_duration: Duration::ZERO,
                 request_id: None,
@@ -346,6 +347,7 @@ fn run_inner<I: WasmInstance>(
                     args: ArgsTuple::default(),
                 },
                 status: EventStatus::Committed(DatabaseUpdate::default()),
+                reducer_return_value: None,
                 energy_quanta_used: EnergyQuanta::ZERO,
                 host_execution_duration: Duration::ZERO,
                 request_id: None,
@@ -1298,6 +1300,85 @@ pub(crate) mod tests {
         let row1 = product!(1u64, "health");
 
         assert_eq!(result, vec![row1], "Inventory JOIN Player JOIN Location");
+        Ok(())
+    }
+
+    #[test]
+    fn test_multi_way_join_with_bridge_tables() -> anyhow::Result<()> {
+        let db = TestDB::durable()?;
+
+        let orders = db.create_table_for_test(
+            "orders",
+            &[
+                ("o_orderkey", AlgebraicType::U64),
+                ("o_custkey", AlgebraicType::U64),
+                ("o_orderstatus", AlgebraicType::U64),
+            ],
+            &[0.into(), 1.into(), 2.into()],
+        )?;
+
+        let customer = db.create_table_for_test(
+            "customer",
+            &[("c_custkey", AlgebraicType::U64), ("c_nationkey", AlgebraicType::U64)],
+            &[0.into(), 1.into()],
+        )?;
+
+        let nation = db.create_table_for_test(
+            "nation",
+            &[
+                ("n_nationkey", AlgebraicType::U64),
+                ("n_name", AlgebraicType::String),
+                ("n_regionkey", AlgebraicType::U64),
+            ],
+            &[0.into(), 2.into()],
+        )?;
+
+        let region = db.create_table_for_test(
+            "region",
+            &[("r_regionkey", AlgebraicType::U64), ("r_name", AlgebraicType::String)],
+            &[0.into()],
+        )?;
+
+        insert_rows(&db, orders, [product![1u64, 10u64, 0u64], product![2u64, 20u64, 1u64]])?;
+        insert_rows(&db, customer, [product![10u64, 100u64], product![20u64, 200u64]])?;
+        insert_rows(
+            &db,
+            nation,
+            [
+                product![100u64, "NATION_A", 1000u64],
+                product![200u64, "NATION_B", 2000u64],
+            ],
+        )?;
+        insert_rows(
+            &db,
+            region,
+            [product![1000u64, "REGION_A"], product![2000u64, "REGION_B"]],
+        )?;
+
+        let result_three_way = run_for_testing(
+            &db,
+            "
+            SELECT customer.c_custkey, nation.n_name
+            FROM orders
+            JOIN customer ON customer.c_custkey = orders.o_custkey
+            JOIN nation ON nation.n_nationkey = customer.c_nationkey
+            WHERE orders.o_orderstatus = 0",
+        )?;
+
+        assert_eq!(result_three_way, vec![product![10u64, "NATION_A"]]);
+
+        let result_four_way = run_for_testing(
+            &db,
+            "
+            SELECT customer.c_custkey, region.r_name
+            FROM orders
+            JOIN customer ON customer.c_custkey = orders.o_custkey
+            JOIN nation ON nation.n_nationkey = customer.c_nationkey
+            JOIN region ON region.r_regionkey = nation.n_regionkey
+            WHERE orders.o_orderstatus = 0",
+        )?;
+
+        assert_eq!(result_four_way, vec![product![10u64, "REGION_A"]]);
         Ok(())
     }
 

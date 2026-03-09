@@ -7,6 +7,7 @@ const person = table(
     name: 'person',
     indexes: [
       {
+        accessor: 'name_id_idx',
         name: 'name_id_idx',
         algorithm: 'btree',
         columns: ['name', 'id'] as const,
@@ -48,6 +49,7 @@ const order = table(
     name: 'order',
     indexes: [
       {
+        accessor: 'id_person_id',
         name: 'id_person_id', // We are adding this to make sure `person_id` still isn't considered indexed.
         algorithm: 'btree',
         columns: ['id', 'person_id'] as const,
@@ -61,13 +63,13 @@ const order = table(
   }
 );
 
-const spacetime = schema(
+const spacetime = schema({
   person,
   order,
   personWithExtra,
   personReordered,
-  personWithMissing
-);
+  personWithMissing,
+});
 
 const arrayRetValue = t.array(person.rowType);
 const optionalPerson = t.option(person.rowType);

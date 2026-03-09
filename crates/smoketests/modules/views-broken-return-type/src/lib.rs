@@ -7,7 +7,7 @@ pub enum ABC {
     C,
 }
 
-#[spacetimedb::view(name = person, public)]
+#[spacetimedb::view(accessor = person, public)]
 pub fn person(ctx: &ViewContext) -> Option<ABC> {
     None
 }

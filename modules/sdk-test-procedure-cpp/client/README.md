@@ -18,13 +18,13 @@ Rust client for testing the sdk-test-procedure-cpp module.
 3. Publish the module:
    ```bash
    cd build
-   spacetime publish --project-path .. lib.wasm --clear-database
+   spacetime publish --module-path .. lib.wasm --clear-database
    ```
 
 4. Generate Rust bindings:
    ```bash
    cd ../client
-   spacetime generate --lang rust --out-dir src/module_bindings --project-path .
+   spacetime generate --lang rust --out-dir src/module_bindings --module-path .
    ```
 
 5. Run the client:

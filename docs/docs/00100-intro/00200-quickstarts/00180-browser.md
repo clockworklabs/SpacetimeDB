@@ -29,7 +29,7 @@ Get a SpacetimeDB app running in the browser with inline JavaScript.
     </StepText>
     <StepCode>
 ```bash
-spacetime dev --template browser-ts my-spacetime-app
+spacetime dev --template browser-ts
 ```
     </StepCode>
   </Step>
@@ -52,6 +52,10 @@ npm run build
       Open `index.html` directly in your browser. The app connects to SpacetimeDB and displays data in real-time.
 
       The JavaScript code runs inline in a script tag, using the bundled `DbConnection` class.
+
+      :::tip
+      The browser IIFE bundle also exposes the generated `tables` query builders, so you can use query-builder subscriptions here too.
+      :::
     </StepText>
     <StepCode>
 ```html
@@ -59,12 +63,16 @@ npm run build
 <script src="dist/bindings.iife.js"></script>
 
 <script>
+  const HOST = 'ws://localhost:3000';
+  const DB_NAME = 'my-spacetime-app';
+  const TOKEN_KEY = `${HOST}/${DB_NAME}/auth_token`;
+
   const conn = DbConnection.builder()
-    .withUri('ws://localhost:3000')
-    .withModuleName('my-spacetime-app')
-    .withToken(localStorage.getItem('auth_token'))
+    .withUri(HOST)
+    .withDatabaseName(DB_NAME)
+    .withToken(localStorage.getItem(TOKEN_KEY))
     .onConnect((conn, identity, token) => {
-      localStorage.setItem('auth_token', token);
+      localStorage.setItem(TOKEN_KEY, token);
       console.log('Connected:', identity.toHexString());
 
       // Subscribe to tables
@@ -74,7 +82,7 @@ npm run build
             console.log(person.name);
           }
         })
-        .subscribe(['SELECT * FROM person']);
+        .subscribe(tables.person);
     })
     .build();
 </script>
@@ -114,5 +122,5 @@ conn.db.person.onDelete((ctx, person) => {
 
 ## Next steps
 
-- See the [Chat App Tutorial](/tutorials/chat-app) for a complete example
-- Read the [TypeScript SDK Reference](/sdks/typescript) for detailed API docs
+- See the [Chat App Tutorial](../00300-tutorials/00100-chat-app.md) for a complete example
+- Read the [TypeScript SDK Reference](../../00200-core-concepts/00600-clients/00700-typescript-reference.md) for detailed API docs

@@ -4,17 +4,21 @@ on:
   push:
     tags:
       - '**'
-    branches:
-      - master
-      - release/*
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build-cli:
+    if: ${{ !(startsWith(github.ref, 'refs/tags/') && matrix.target == 'x86_64-pc-windows-msvc') }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: spacetimedb-new-runner-2 }
+          # WARNING - do not upgrade this runner to 24.04 or the self hosted runners because it will break downloads for
+          #   anyone who uses a linux distro that doesn't have glibc >= GLIBC_2.38
+          - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: ubuntu-22.04 }
           - { name: aarch64 Linux, target: aarch64-unknown-linux-gnu, runner: arm-runner }
           # Disabled because musl builds weren't working and we didn't want to investigate. See https://github.com/clockworklabs/SpacetimeDB/pull/2964.
           # - { name: x86_64 Linux musl, target: x86_64-unknown-linux-musl, runner: bare-metal, container: alpine }
@@ -72,6 +76,92 @@ jobs:
       - name: Extract branch name
         shell: bash
         run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
+        id: extract_branch
+
+      - name: Upload to DO Spaces
+        uses: shallwefootball/s3-upload-action@master
+        with:
+          aws_key_id: ${{ secrets.AWS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
+          aws_bucket: ${{ vars.AWS_BUCKET }}
+          source_dir: build
+          endpoint: https://nyc3.digitaloceanspaces.com
+          destination_dir: ${{ steps.extract_branch.outputs.branch }}
+
+  build-cli-windows-signed:
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
+    name: Build and sign CLI for x86_64 Windows
+    runs-on: [self-hosted, windows, signing]
+    environment: codesign
+    concurrency:
+      group: codesign-${{ github.ref }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: dsherret/rust-toolchain-file@v1
+
+      - name: Install rust target
+        run: rustup target add x86_64-pc-windows-msvc
+
+      - name: Compile
+        run: |
+          cargo build --release --target x86_64-pc-windows-msvc -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
+
+      - name: Write certificate file
+        shell: powershell
+        env:
+          DIGICERT_CERT_B64: ${{ secrets.DIGICERT_CERT_B64 }}
+        run: |
+          [IO.File]::WriteAllBytes("digicert.crt", [Convert]::FromBase64String($env:DIGICERT_CERT_B64))
+
+      - name: Sign binaries
+        shell: powershell
+        env:
+          DIGICERT_KEYPAIR_ALIAS: ${{ secrets.DIGICERT_KEYPAIR_ALIAS }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $targetDir = Join-Path $env:GITHUB_WORKSPACE 'target\x86_64-pc-windows-msvc\release'
+          $certFile = Join-Path $env:GITHUB_WORKSPACE 'digicert.crt'
+
+          $signtool = Get-Command signtool.exe -ErrorAction Stop
+
+          $files = @(
+            (Join-Path $targetDir 'spacetimedb-update.exe'),
+            (Join-Path $targetDir 'spacetimedb-cli.exe'),
+            (Join-Path $targetDir 'spacetimedb-standalone.exe')
+          )
+
+          foreach ($file in $files) {
+            & $signtool.Path sign /csp "DigiCert Signing Manager KSP" /kc $env:DIGICERT_KEYPAIR_ALIAS /f $certFile /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 $file
+            & $signtool.Path verify /v /pa $file
+          }
+
+      - name: Package (windows)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+          $releaseDir = Join-Path $env:GITHUB_WORKSPACE 'target\x86_64-pc-windows-msvc\release'
+
+          Copy-Item (Join-Path $releaseDir 'spacetimedb-update.exe') (Join-Path $env:GITHUB_WORKSPACE 'build\spacetimedb-update-x86_64-pc-windows-msvc.exe')
+          Compress-Archive -Force -Path @(
+            (Join-Path $releaseDir 'spacetimedb-cli.exe'),
+            (Join-Path $releaseDir 'spacetimedb-standalone.exe')
+          ) -DestinationPath (Join-Path $env:GITHUB_WORKSPACE 'build\spacetime-x86_64-pc-windows-msvc.zip')
+
+      - name: Extract branch name
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $branch = $env:GITHUB_HEAD_REF
+          if ([string]::IsNullOrEmpty($branch)) {
+            $branch = $env:GITHUB_REF -replace '^refs/heads/', ''
+          }
+          "branch=$branch" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
         id: extract_branch
 
       - name: Upload to DO Spaces

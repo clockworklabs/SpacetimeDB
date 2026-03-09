@@ -5,6 +5,7 @@ slug: /tables/indexes
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Indexes accelerate queries by maintaining sorted data structures alongside your tables. Without an index, finding rows that match a condition requires scanning every row. With an index, the database locates matching rows directly.
@@ -73,7 +74,7 @@ const position = table(
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = position, public)]
+#[spacetimedb::table(accessor = position, public)]
 pub struct Position {
     #[primary_key]
     #[index(direct)]
@@ -116,8 +117,12 @@ const user = table(
 </TabItem>
 <TabItem value="csharp" label="C#">
 
+:::danger Use full namespace
+Never use bare `Index` — it conflicts with `System.Index`. Always write `SpacetimeDB.Index.BTree`. For table-level indexes, use `Columns = new[] { nameof(Col) }` or `new[] { "Col1", "Col2" }`, not collection expressions like `[nameof(X)]`.
+:::
+
 ```csharp
-[SpacetimeDB.Table(Name = "User", Public = true)]
+[SpacetimeDB.Table(Accessor = "User", Public = true)]
 public partial struct User
 {
     [SpacetimeDB.PrimaryKey]
@@ -135,7 +140,7 @@ public partial struct User
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = user, public)]
+#[spacetimedb::table(accessor = user, public)]
 pub struct User {
     #[primary_key]
     id: u32,
@@ -148,6 +153,8 @@ pub struct User {
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 struct User {
@@ -180,7 +187,7 @@ const user = table(
     name: 'user',
     public: true,
     indexes: [
-      { name: 'idx_age', algorithm: 'btree', columns: ['age'] },
+      { accessor: 'idx_age', algorithm: 'btree', columns: ['age'] },
     ],
   },
   {
@@ -195,8 +202,8 @@ const user = table(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "User", Public = true)]
-[SpacetimeDB.Index.BTree(Name = "idx_age", Columns = new[] { "Age" })]
+[SpacetimeDB.Table(Accessor = "User", Public = true)]
+[SpacetimeDB.Index.BTree(Accessor = "idx_age", Columns = new[] { "Age" })]
 public partial struct User
 {
     [SpacetimeDB.PrimaryKey]
@@ -212,7 +219,7 @@ public partial struct User
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = user, public, index(name = idx_age, btree(columns = [age])))]
+#[spacetimedb::table(accessor = user, public, index(accessor = idx_age, btree(columns = [age])))]
 pub struct User {
     #[primary_key]
     id: u32,
@@ -249,7 +256,7 @@ const score = table(
     name: 'score',
     public: true,
     indexes: [
-      { name: 'by_player_and_level', algorithm: 'btree', columns: ['player_id', 'level'] },
+      { accessor: 'by_player_and_level', algorithm: 'btree', columns: ['player_id', 'level'] },
     ],
   },
   {
@@ -264,8 +271,8 @@ const score = table(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "Score", Public = true)]
-[SpacetimeDB.Index.BTree(Name = "by_player_and_level", Columns = new[] { "PlayerId", "Level" })]
+[SpacetimeDB.Table(Accessor = "Score", Public = true)]
+[SpacetimeDB.Index.BTree(Accessor = "by_player_and_level", Columns = new[] { "PlayerId", "Level" })]
 public partial struct Score
 {
     public uint PlayerId;
@@ -278,7 +285,7 @@ public partial struct Score
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = score, public, index(name = by_player_and_level, btree(columns = [player_id, level])))]
+#[spacetimedb::table(accessor = score, public, index(accessor = by_player_and_level, btree(columns = [player_id, level])))]
 pub struct Score {
     player_id: u32,
     level: u32,
@@ -568,5 +575,5 @@ log::info!("Deleted {} minor(s)", deleted);
 
 ## Next Steps
 
-- Learn about [Constraints](/tables/constraints) for primary keys and unique indexes
-- See [Access Permissions](/tables/access-permissions) for querying tables from reducers
+- Learn about [Constraints](./00240-constraints.md) for primary keys and unique indexes
+- See [Access Permissions](./00400-access-permissions.md) for querying tables from reducers

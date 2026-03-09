@@ -1,6 +1,6 @@
 use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb::table(name = person, public)]
+#[spacetimedb::table(accessor = person, public)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]

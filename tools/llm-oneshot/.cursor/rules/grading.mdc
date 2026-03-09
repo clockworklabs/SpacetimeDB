@@ -1,0 +1,125 @@
+# Grading Workflow
+
+When the user asks to "grade" a chat app implementation, follow this workflow:
+
+## Trigger Phrases
+- "grade [path]"
+- "grade the app in [path]"
+- "run grading on [path]"
+- "evaluate [path]"
+
+## Project Location
+
+Apps should be in the **staging** folder until graded:
+- `staging/typescript/<llm>/<backend>/chat-app-YYYYMMDD-HHMMSS/`
+
+After grading, promote to final location:
+- `typescript/<llm>/<backend>/chat-app-YYYYMMDD-HHMMSS/`
+
+## Workflow
+
+### Step 1: Run Automated Grading
+```bash
+cd apps/chat-app/test-harness
+npm run grade -- <project-path> --level=<N>
+```
+
+If level is not specified, check the project name for hints (e.g., `05_` prefix means level 5).
+
+### Step 2: Read the Generated Summary
+After the script runs, read:
+- `apps/chat-app/test-harness/results/grade-summary-<project-name>.md`
+
+### Step 3: Read Key Source Files
+Read the main implementation files for qualitative review:
+
+**For SpacetimeDB projects:**
+- `<project>/backend/src/schema.ts` - Table definitions
+- `<project>/backend/src/reducers.ts` - Business logic
+- `<project>/client/src/App.tsx` - Main UI component
+
+**For PostgreSQL projects:**
+- `<project>/server/src/schema.ts` - Database schema
+- `<project>/server/src/routes.ts` or `index.ts` - API endpoints
+- `<project>/client/src/App.tsx` - Main UI component
+
+### Step 4: Provide Qualitative Review
+
+After reading the code, provide a review covering:
+
+1. **Architecture Assessment**
+   - Is the code well-organized?
+   - Are concerns properly separated?
+   - Is the real-time sync pattern correct?
+
+2. **Feature Implementation Quality**
+   - Are features implemented correctly?
+   - Any missing edge cases?
+   - Any potential race conditions?
+
+3. **Code Quality**
+   - TypeScript types used properly?
+   - Error handling present?
+   - Input validation?
+
+4. **Real-Time Correctness** (Critical for benchmarks)
+   - SpacetimeDB: Are subscriptions set up correctly?
+   - PostgreSQL: Is WebSocket broadcasting complete?
+   - Any features that would fail real-time sync?
+
+5. **Potential Bugs**
+   - Any obvious bugs that tests might miss?
+   - Memory leaks? Stale closures?
+   - Race conditions?
+
+6. **Final Score Recommendation**
+   - Confidence in pattern analysis score
+   - Any adjustments recommended
+   - Overall assessment
+
+## Output Format
+
+```markdown
+# Code Review: [project-name]
+
+## Automated Scores
+- Pattern Analysis: X/Y (Z%)
+- E2E Tests: X/Y (Z%) [if available]
+
+## Architecture: [Good/Fair/Poor]
+[Assessment]
+
+## Feature Quality
+| Feature | Implementation | Issues |
+|---------|---------------|--------|
+| Basic Chat | ✅ Good | None |
+| Typing | ⚠️ Partial | No debounce |
+...
+
+## Real-Time Correctness: [Good/Fair/Poor]
+[Assessment of sync patterns]
+
+## Bugs Found
+1. [Bug description]
+2. [Bug description]
+
+## Recommended Score Adjustments
+- Feature X: Pattern says 3, recommend 2 because [reason]
+
+## Final Assessment
+[Overall summary and grade recommendation]
+```
+
+### Step 5: Promote to Final Location (if in staging)
+
+If the app is in the staging folder, ask the user if they want to promote it:
+
+> "Grading complete! Would you like me to promote this app to the final location?"
+
+If yes, run:
+```bash
+cd apps/chat-app/test-harness
+npm run promote -- <staging-path>
+```
+
+This moves the app from `staging/typescript/...` to `typescript/...`.

@@ -3,11 +3,23 @@
 
 /* eslint-disable */
 /* tslint:disable */
-import { type Infer as __Infer } from 'spacetimedb';
+import {
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from 'spacetimedb';
 
-// Import all non-reducer types
-import Message from './message_type';
-import User from './user_type';
-
+export const Message = __t.object('Message', {
+  sender: __t.identity(),
+  sent: __t.timestamp(),
+  text: __t.string(),
+});
 export type Message = __Infer<typeof Message>;
+
+export const User = __t.object('User', {
+  identity: __t.identity(),
+  name: __t.option(__t.string()),
+  online: __t.bool(),
+});
 export type User = __Infer<typeof User>;
