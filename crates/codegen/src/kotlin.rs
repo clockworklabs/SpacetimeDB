@@ -87,6 +87,8 @@ impl Lang for Kotlin {
         writeln!(out, "import {SDK_PKG}.protocol.QueryResult");
         if is_event {
             writeln!(out, "import {SDK_PKG}.RemoteEventTable");
+        } else if table.primary_key.is_some() {
+            writeln!(out, "import {SDK_PKG}.RemotePersistentTableWithPrimaryKey");
         } else {
             writeln!(out, "import {SDK_PKG}.RemotePersistentTable");
         }
@@ -100,7 +102,13 @@ impl Lang for Kotlin {
         writeln!(out);
 
         // Table handle class
-        let table_marker = if is_event { "RemoteEventTable" } else { "RemotePersistentTable" };
+        let table_marker = if is_event {
+            "RemoteEventTable"
+        } else if table.primary_key.is_some() {
+            "RemotePersistentTableWithPrimaryKey"
+        } else {
+            "RemotePersistentTable"
+        };
         writeln!(out, "class {table_name_pascal}TableHandle internal constructor(");
         out.indent(1);
         writeln!(out, "private val conn: DbConnection,");
@@ -156,13 +164,13 @@ impl Lang for Kotlin {
         if !is_event {
             writeln!(out, "override fun onDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.onDelete(cb) }}");
             if table.primary_key.is_some() {
-                writeln!(out, "fun onUpdate(cb: (EventContext, {type_name}, {type_name}) -> Unit) {{ tableCache.onUpdate(cb) }}");
+                writeln!(out, "override fun onUpdate(cb: (EventContext, {type_name}, {type_name}) -> Unit) {{ tableCache.onUpdate(cb) }}");
             }
             writeln!(out, "override fun onBeforeDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.onBeforeDelete(cb) }}");
             writeln!(out);
             writeln!(out, "override fun removeOnDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.removeOnDelete(cb) }}");
             if table.primary_key.is_some() {
-                writeln!(out, "fun removeOnUpdate(cb: (EventContext, {type_name}, {type_name}) -> Unit) {{ tableCache.removeOnUpdate(cb) }}");
+                writeln!(out, "override fun removeOnUpdate(cb: (EventContext, {type_name}, {type_name}) -> Unit) {{ tableCache.removeOnUpdate(cb) }}");
             }
             writeln!(out, "override fun removeOnBeforeDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.removeOnBeforeDelete(cb) }}");
         }

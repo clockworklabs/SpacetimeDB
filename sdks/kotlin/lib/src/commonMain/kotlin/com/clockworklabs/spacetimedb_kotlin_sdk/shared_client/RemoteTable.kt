@@ -29,6 +29,15 @@ public interface RemotePersistentTable<Row> : RemoteTable<Row> {
 }
 
 /**
+ * A [RemotePersistentTable] whose rows have a primary key.
+ * Adds [onUpdate] / [removeOnUpdate] callbacks that fire when an existing row is replaced.
+ */
+public interface RemotePersistentTableWithPrimaryKey<Row> : RemotePersistentTable<Row> {
+    public fun onUpdate(cb: (EventContext, Row, Row) -> Unit)
+    public fun removeOnUpdate(cb: (EventContext, Row, Row) -> Unit)
+}
+
+/**
  * A generated table handle backed by an event (non-stored) table.
  * Rows are not cached; only insert callbacks fire per event.
  */

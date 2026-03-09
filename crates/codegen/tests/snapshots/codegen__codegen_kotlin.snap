@@ -254,7 +254,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.IxCol
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.RemotePersistentTable
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.RemotePersistentTableWithPrimaryKey
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.TableCache
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.UniqueIndex
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
@@ -263,7 +263,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 class LoggedOutPlayerTableHandle internal constructor(
     private val conn: DbConnection,
     private val tableCache: TableCache<Player, *>,
-) : RemotePersistentTable {
+) : RemotePersistentTableWithPrimaryKey<Player> {
     companion object {
         const val TABLE_NAME = "logged_out_player"
 
@@ -276,19 +276,19 @@ class LoggedOutPlayerTableHandle internal constructor(
         }
     }
 
-    fun count(): Int = tableCache.count()
-    fun all(): List<Player> = tableCache.all()
-    fun iter(): Iterator<Player> = tableCache.iter()
+    override fun count(): Int = tableCache.count()
+    override fun all(): List<Player> = tableCache.all()
+    override fun iter(): Sequence<Player> = tableCache.iter()
 
-    fun onInsert(cb: (EventContext, Player) -> Unit) { tableCache.onInsert(cb) }
-    fun removeOnInsert(cb: (EventContext, Player) -> Unit) { tableCache.removeOnInsert(cb) }
-    fun onDelete(cb: (EventContext, Player) -> Unit) { tableCache.onDelete(cb) }
-    fun onUpdate(cb: (EventContext, Player, Player) -> Unit) { tableCache.onUpdate(cb) }
-    fun onBeforeDelete(cb: (EventContext, Player) -> Unit) { tableCache.onBeforeDelete(cb) }
+    override fun onInsert(cb: (EventContext, Player) -> Unit) { tableCache.onInsert(cb) }
+    override fun removeOnInsert(cb: (EventContext, Player) -> Unit) { tableCache.removeOnInsert(cb) }
+    override fun onDelete(cb: (EventContext, Player) -> Unit) { tableCache.onDelete(cb) }
+    override fun onUpdate(cb: (EventContext, Player, Player) -> Unit) { tableCache.onUpdate(cb) }
+    override fun onBeforeDelete(cb: (EventContext, Player) -> Unit) { tableCache.onBeforeDelete(cb) }
 
-    fun removeOnDelete(cb: (EventContext, Player) -> Unit) { tableCache.removeOnDelete(cb) }
-    fun removeOnUpdate(cb: (EventContext, Player, Player) -> Unit) { tableCache.removeOnUpdate(cb) }
-    fun removeOnBeforeDelete(cb: (EventContext, Player) -> Unit) { tableCache.removeOnBeforeDelete(cb) }
+    override fun removeOnDelete(cb: (EventContext, Player) -> Unit) { tableCache.removeOnDelete(cb) }
+    override fun removeOnUpdate(cb: (EventContext, Player, Player) -> Unit) { tableCache.removeOnUpdate(cb) }
+    override fun removeOnBeforeDelete(cb: (EventContext, Player) -> Unit) { tableCache.removeOnBeforeDelete(cb) }
 
     fun remoteQuery(query: String = "", callback: (List<Player>) -> Unit) {
         val sql = "SELECT $TABLE_NAME.* FROM $TABLE_NAME $query"
@@ -349,6 +349,7 @@ VERSION_COMMENT
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ClientCache
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnectionView
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ModuleAccessors
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ModuleDescriptor
@@ -433,6 +434,24 @@ val DbConnection.procedures: RemoteProcedures
     get() = moduleProcedures as RemoteProcedures
 
 /**
+ * Typed table accessors for this module's tables.
+ */
+val DbConnectionView.db: RemoteTables
+    get() = (this as DbConnection).moduleTables as RemoteTables
+
+/**
+ * Typed reducer call functions for this module's reducers.
+ */
+val DbConnectionView.reducers: RemoteReducers
+    get() = (this as DbConnection).moduleReducers as RemoteReducers
+
+/**
+ * Typed procedure call functions for this module's procedures.
+ */
+val DbConnectionView.procedures: RemoteProcedures
+    get() = (this as DbConnection).moduleProcedures as RemoteProcedures
+
+/**
  * Typed table accessors available directly on event context.
  */
 val EventContext.db: RemoteTables
@@ -515,7 +534,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 class MyPlayerTableHandle internal constructor(
     private val conn: DbConnection,
     private val tableCache: TableCache<Player, *>,
-) : RemotePersistentTable {
+) : RemotePersistentTable<Player> {
     companion object {
         const val TABLE_NAME = "my_player"
 
@@ -528,17 +547,17 @@ class MyPlayerTableHandle internal constructor(
         }
     }
 
-    fun count(): Int = tableCache.count()
-    fun all(): List<Player> = tableCache.all()
-    fun iter(): Iterator<Player> = tableCache.iter()
+    override fun count(): Int = tableCache.count()
+    override fun all(): List<Player> = tableCache.all()
+    override fun iter(): Sequence<Player> = tableCache.iter()
 
-    fun onInsert(cb: (EventContext, Player) -> Unit) { tableCache.onInsert(cb) }
-    fun removeOnInsert(cb: (EventContext, Player) -> Unit) { tableCache.removeOnInsert(cb) }
-    fun onDelete(cb: (EventContext, Player) -> Unit) { tableCache.onDelete(cb) }
-    fun onBeforeDelete(cb: (EventContext, Player) -> Unit) { tableCache.onBeforeDelete(cb) }
+    override fun onInsert(cb: (EventContext, Player) -> Unit) { tableCache.onInsert(cb) }
+    override fun removeOnInsert(cb: (EventContext, Player) -> Unit) { tableCache.removeOnInsert(cb) }
+    override fun onDelete(cb: (EventContext, Player) -> Unit) { tableCache.onDelete(cb) }
+    override fun onBeforeDelete(cb: (EventContext, Player) -> Unit) { tableCache.onBeforeDelete(cb) }
 
-    fun removeOnDelete(cb: (EventContext, Player) -> Unit) { tableCache.removeOnDelete(cb) }
-    fun removeOnBeforeDelete(cb: (EventContext, Player) -> Unit) { tableCache.removeOnBeforeDelete(cb) }
+    override fun removeOnDelete(cb: (EventContext, Player) -> Unit) { tableCache.removeOnDelete(cb) }
+    override fun removeOnBeforeDelete(cb: (EventContext, Player) -> Unit) { tableCache.removeOnBeforeDelete(cb) }
 
     fun remoteQuery(query: String = "", callback: (List<Player>) -> Unit) {
         val sql = "SELECT $TABLE_NAME.* FROM $TABLE_NAME $query"
@@ -592,7 +611,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.IxCol
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.RemotePersistentTable
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.RemotePersistentTableWithPrimaryKey
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.TableCache
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.UniqueIndex
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
@@ -600,7 +619,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 class PersonTableHandle internal constructor(
     private val conn: DbConnection,
     private val tableCache: TableCache<Person, *>,
-) : RemotePersistentTable {
+) : RemotePersistentTableWithPrimaryKey<Person> {
     companion object {
         const val TABLE_NAME = "person"
 
@@ -613,19 +632,19 @@ class PersonTableHandle internal constructor(
         }
     }
 
-    fun count(): Int = tableCache.count()
-    fun all(): List<Person> = tableCache.all()
-    fun iter(): Iterator<Person> = tableCache.iter()
+    override fun count(): Int = tableCache.count()
+    override fun all(): List<Person> = tableCache.all()
+    override fun iter(): Sequence<Person> = tableCache.iter()
 
-    fun onInsert(cb: (EventContext, Person) -> Unit) { tableCache.onInsert(cb) }
-    fun removeOnInsert(cb: (EventContext, Person) -> Unit) { tableCache.removeOnInsert(cb) }
-    fun onDelete(cb: (EventContext, Person) -> Unit) { tableCache.onDelete(cb) }
-    fun onUpdate(cb: (EventContext, Person, Person) -> Unit) { tableCache.onUpdate(cb) }
-    fun onBeforeDelete(cb: (EventContext, Person) -> Unit) { tableCache.onBeforeDelete(cb) }
+    override fun onInsert(cb: (EventContext, Person) -> Unit) { tableCache.onInsert(cb) }
+    override fun removeOnInsert(cb: (EventContext, Person) -> Unit) { tableCache.removeOnInsert(cb) }
+    override fun onDelete(cb: (EventContext, Person) -> Unit) { tableCache.onDelete(cb) }
+    override fun onUpdate(cb: (EventContext, Person, Person) -> Unit) { tableCache.onUpdate(cb) }
+    override fun onBeforeDelete(cb: (EventContext, Person) -> Unit) { tableCache.onBeforeDelete(cb) }
 
-    fun removeOnDelete(cb: (EventContext, Person) -> Unit) { tableCache.removeOnDelete(cb) }
-    fun removeOnUpdate(cb: (EventContext, Person, Person) -> Unit) { tableCache.removeOnUpdate(cb) }
-    fun removeOnBeforeDelete(cb: (EventContext, Person) -> Unit) { tableCache.removeOnBeforeDelete(cb) }
+    override fun removeOnDelete(cb: (EventContext, Person) -> Unit) { tableCache.removeOnDelete(cb) }
+    override fun removeOnUpdate(cb: (EventContext, Person, Person) -> Unit) { tableCache.removeOnUpdate(cb) }
+    override fun removeOnBeforeDelete(cb: (EventContext, Person) -> Unit) { tableCache.removeOnBeforeDelete(cb) }
 
     fun remoteQuery(query: String = "", callback: (List<Person>) -> Unit) {
         val sql = "SELECT $TABLE_NAME.* FROM $TABLE_NAME $query"
@@ -685,7 +704,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.IxCol
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.RemotePersistentTable
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.RemotePersistentTableWithPrimaryKey
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.TableCache
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.UniqueIndex
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
@@ -694,7 +713,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 class PlayerTableHandle internal constructor(
     private val conn: DbConnection,
     private val tableCache: TableCache<Player, *>,
-) : RemotePersistentTable {
+) : RemotePersistentTableWithPrimaryKey<Player> {
     companion object {
         const val TABLE_NAME = "player"
 
@@ -707,19 +726,19 @@ class PlayerTableHandle internal constructor(
         }
     }
 
-    fun count(): Int = tableCache.count()
-    fun all(): List<Player> = tableCache.all()
-    fun iter(): Iterator<Player> = tableCache.iter()
+    override fun count(): Int = tableCache.count()
+    override fun all(): List<Player> = tableCache.all()
+    override fun iter(): Sequence<Player> = tableCache.iter()
 
-    fun onInsert(cb: (EventContext, Player) -> Unit) { tableCache.onInsert(cb) }
-    fun removeOnInsert(cb: (EventContext, Player) -> Unit) { tableCache.removeOnInsert(cb) }
-    fun onDelete(cb: (EventContext, Player) -> Unit) { tableCache.onDelete(cb) }
-    fun onUpdate(cb: (EventContext, Player, Player) -> Unit) { tableCache.onUpdate(cb) }
-    fun onBeforeDelete(cb: (EventContext, Player) -> Unit) { tableCache.onBeforeDelete(cb) }
+    override fun onInsert(cb: (EventContext, Player) -> Unit) { tableCache.onInsert(cb) }
+    override fun removeOnInsert(cb: (EventContext, Player) -> Unit) { tableCache.removeOnInsert(cb) }
+    override fun onDelete(cb: (EventContext, Player) -> Unit) { tableCache.onDelete(cb) }
+    override fun onUpdate(cb: (EventContext, Player, Player) -> Unit) { tableCache.onUpdate(cb) }
+    override fun onBeforeDelete(cb: (EventContext, Player) -> Unit) { tableCache.onBeforeDelete(cb) }
 
-    fun removeOnDelete(cb: (EventContext, Player) -> Unit) { tableCache.removeOnDelete(cb) }
-    fun removeOnUpdate(cb: (EventContext, Player, Player) -> Unit) { tableCache.removeOnUpdate(cb) }
-    fun removeOnBeforeDelete(cb: (EventContext, Player) -> Unit) { tableCache.removeOnBeforeDelete(cb) }
+    override fun removeOnDelete(cb: (EventContext, Player) -> Unit) { tableCache.removeOnDelete(cb) }
+    override fun removeOnUpdate(cb: (EventContext, Player, Player) -> Unit) { tableCache.removeOnUpdate(cb) }
+    override fun removeOnBeforeDelete(cb: (EventContext, Player) -> Unit) { tableCache.removeOnBeforeDelete(cb) }
 
     fun remoteQuery(query: String = "", callback: (List<Player>) -> Unit) {
         val sql = "SELECT $TABLE_NAME.* FROM $TABLE_NAME $query"
@@ -1291,7 +1310,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 class TestDTableHandle internal constructor(
     private val conn: DbConnection,
     private val tableCache: TableCache<TestD, *>,
-) : RemotePersistentTable {
+) : RemotePersistentTable<TestD> {
     companion object {
         const val TABLE_NAME = "test_d"
 
@@ -1302,17 +1321,17 @@ class TestDTableHandle internal constructor(
         }
     }
 
-    fun count(): Int = tableCache.count()
-    fun all(): List<TestD> = tableCache.all()
-    fun iter(): Iterator<TestD> = tableCache.iter()
+    override fun count(): Int = tableCache.count()
+    override fun all(): List<TestD> = tableCache.all()
+    override fun iter(): Sequence<TestD> = tableCache.iter()
 
-    fun onInsert(cb: (EventContext, TestD) -> Unit) { tableCache.onInsert(cb) }
-    fun removeOnInsert(cb: (EventContext, TestD) -> Unit) { tableCache.removeOnInsert(cb) }
-    fun onDelete(cb: (EventContext, TestD) -> Unit) { tableCache.onDelete(cb) }
-    fun onBeforeDelete(cb: (EventContext, TestD) -> Unit) { tableCache.onBeforeDelete(cb) }
+    override fun onInsert(cb: (EventContext, TestD) -> Unit) { tableCache.onInsert(cb) }
+    override fun removeOnInsert(cb: (EventContext, TestD) -> Unit) { tableCache.removeOnInsert(cb) }
+    override fun onDelete(cb: (EventContext, TestD) -> Unit) { tableCache.onDelete(cb) }
+    override fun onBeforeDelete(cb: (EventContext, TestD) -> Unit) { tableCache.onBeforeDelete(cb) }
 
-    fun removeOnDelete(cb: (EventContext, TestD) -> Unit) { tableCache.removeOnDelete(cb) }
-    fun removeOnBeforeDelete(cb: (EventContext, TestD) -> Unit) { tableCache.removeOnBeforeDelete(cb) }
+    override fun removeOnDelete(cb: (EventContext, TestD) -> Unit) { tableCache.removeOnDelete(cb) }
+    override fun removeOnBeforeDelete(cb: (EventContext, TestD) -> Unit) { tableCache.removeOnBeforeDelete(cb) }
 
     fun remoteQuery(query: String = "", callback: (List<TestD>) -> Unit) {
         val sql = "SELECT $TABLE_NAME.* FROM $TABLE_NAME $query"
@@ -1369,7 +1388,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 class TestFTableHandle internal constructor(
     private val conn: DbConnection,
     private val tableCache: TableCache<TestFoobar, *>,
-) : RemotePersistentTable {
+) : RemotePersistentTable<TestFoobar> {
     companion object {
         const val TABLE_NAME = "test_f"
 
@@ -1380,17 +1399,17 @@ class TestFTableHandle internal constructor(
         }
     }
 
-    fun count(): Int = tableCache.count()
-    fun all(): List<TestFoobar> = tableCache.all()
-    fun iter(): Iterator<TestFoobar> = tableCache.iter()
+    override fun count(): Int = tableCache.count()
+    override fun all(): List<TestFoobar> = tableCache.all()
+    override fun iter(): Sequence<TestFoobar> = tableCache.iter()
 
-    fun onInsert(cb: (EventContext, TestFoobar) -> Unit) { tableCache.onInsert(cb) }
-    fun removeOnInsert(cb: (EventContext, TestFoobar) -> Unit) { tableCache.removeOnInsert(cb) }
-    fun onDelete(cb: (EventContext, TestFoobar) -> Unit) { tableCache.onDelete(cb) }
-    fun onBeforeDelete(cb: (EventContext, TestFoobar) -> Unit) { tableCache.onBeforeDelete(cb) }
+    override fun onInsert(cb: (EventContext, TestFoobar) -> Unit) { tableCache.onInsert(cb) }
+    override fun removeOnInsert(cb: (EventContext, TestFoobar) -> Unit) { tableCache.removeOnInsert(cb) }
+    override fun onDelete(cb: (EventContext, TestFoobar) -> Unit) { tableCache.onDelete(cb) }
+    override fun onBeforeDelete(cb: (EventContext, TestFoobar) -> Unit) { tableCache.onBeforeDelete(cb) }
 
-    fun removeOnDelete(cb: (EventContext, TestFoobar) -> Unit) { tableCache.removeOnDelete(cb) }
-    fun removeOnBeforeDelete(cb: (EventContext, TestFoobar) -> Unit) { tableCache.removeOnBeforeDelete(cb) }
+    override fun removeOnDelete(cb: (EventContext, TestFoobar) -> Unit) { tableCache.removeOnDelete(cb) }
+    override fun removeOnBeforeDelete(cb: (EventContext, TestFoobar) -> Unit) { tableCache.removeOnBeforeDelete(cb) }
 
     fun remoteQuery(query: String = "", callback: (List<TestFoobar>) -> Unit) {
         val sql = "SELECT $TABLE_NAME.* FROM $TABLE_NAME $query"
