@@ -1,6 +1,5 @@
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn
 
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Logger
 import com.ionspin.kotlin.bignum.integer.BigInteger
 import com.ionspin.kotlin.bignum.integer.util.toTwosComplementByteArray
 import kotlin.io.encoding.Base64
@@ -102,18 +101,15 @@ public class BsatnWriter(initialCapacity: Int = 256) {
 
     public fun writeU256(value: BigInteger): Unit = writeBigIntLE(value, 32)
 
-    // Oversized values are silently truncated to byteSize, matching the behavior
-    // of the C# SDK (cast truncation) and TypeScript SDK (bitmask truncation).
     private fun writeBigIntLE(value: BigInteger, byteSize: Int) {
         expandBuffer(byteSize)
         // Two's complement big-endian bytes (sign-aware, like java.math.BigInteger)
         val beBytes = value.toTwosComplementByteArray()
         val padByte: Byte = if (value.signum() < 0) 0xFF.toByte() else 0
-        // Warn if the value doesn't fit — high bytes beyond byteSize will be truncated
         if (beBytes.size > byteSize) {
             val isSignExtensionOnly = (0 until beBytes.size - byteSize).all { beBytes[it] == padByte }
-            if (!isSignExtensionOnly) {
-                Logger.warn { "BigInteger value truncated from ${beBytes.size} to $byteSize bytes: $value" }
+            require(isSignExtensionOnly) {
+                "BigInteger value does not fit in $byteSize bytes: $value"
             }
         }
         val padded = ByteArray(byteSize) { padByte }
