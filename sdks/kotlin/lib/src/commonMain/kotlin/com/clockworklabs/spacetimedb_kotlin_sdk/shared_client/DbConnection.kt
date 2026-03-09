@@ -32,7 +32,10 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlin.coroutines.resume
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.INFINITE
 
 /**
  * Tracks reducer call info so we can populate the Event.Reducer
@@ -481,14 +484,22 @@ public open class DbConnection internal constructor(
 
     /**
      * Execute a one-off SQL query against the database, suspending until the result is available.
+     *
+     * @param timeout maximum time to wait for a response. Defaults to [Duration.INFINITE].
+     *                Throws [kotlinx.coroutines.TimeoutCancellationException] if exceeded.
      */
-    public suspend fun oneOffQuery(queryString: String): ServerMessage.OneOffQueryResult =
-        suspendCancellableCoroutine { cont ->
-            val requestId = oneOffQuery(queryString) { result ->
-                cont.resume(result)
-            }
-            cont.invokeOnCancellation {
-                oneOffQueryCallbacks.update { it.remove(requestId) }
+    public suspend fun oneOffQuery(
+        queryString: String,
+        timeout: Duration = Duration.INFINITE,
+    ): ServerMessage.OneOffQueryResult =
+        withTimeout(timeout) {
+            suspendCancellableCoroutine { cont ->
+                val requestId = oneOffQuery(queryString) { result ->
+                    cont.resume(result)
+                }
+                cont.invokeOnCancellation {
+                    oneOffQueryCallbacks.update { it.remove(requestId) }
+                }
             }
         }
 
