@@ -40,9 +40,9 @@ class DbConnectionIntegrationTest {
 
     private suspend fun TestScope.buildTestConnection(
         transport: FakeTransport,
-        onConnect: ((DbConnection, Identity, String) -> Unit)? = null,
-        onDisconnect: ((DbConnection, Throwable?) -> Unit)? = null,
-        onConnectError: ((DbConnection, Throwable) -> Unit)? = null,
+        onConnect: ((DbConnectionView, Identity, String) -> Unit)? = null,
+        onDisconnect: ((DbConnectionView, Throwable?) -> Unit)? = null,
+        onConnectError: ((DbConnectionView, Throwable) -> Unit)? = null,
         moduleDescriptor: ModuleDescriptor? = null,
         callbackDispatcher: kotlinx.coroutines.CoroutineDispatcher? = null,
     ): DbConnection {
@@ -53,9 +53,9 @@ class DbConnectionIntegrationTest {
 
     private fun TestScope.createTestConnection(
         transport: FakeTransport,
-        onConnect: ((DbConnection, Identity, String) -> Unit)? = null,
-        onDisconnect: ((DbConnection, Throwable?) -> Unit)? = null,
-        onConnectError: ((DbConnection, Throwable) -> Unit)? = null,
+        onConnect: ((DbConnectionView, Identity, String) -> Unit)? = null,
+        onDisconnect: ((DbConnectionView, Throwable?) -> Unit)? = null,
+        onConnectError: ((DbConnectionView, Throwable) -> Unit)? = null,
         moduleDescriptor: ModuleDescriptor? = null,
         callbackDispatcher: kotlinx.coroutines.CoroutineDispatcher? = null,
     ): DbConnection {
@@ -76,7 +76,7 @@ class DbConnectionIntegrationTest {
     /** Generic helper that accepts any [Transport] implementation. */
     private fun TestScope.createConnectionWithTransport(
         transport: Transport,
-        onDisconnect: ((DbConnection, Throwable?) -> Unit)? = null,
+        onDisconnect: ((DbConnectionView, Throwable?) -> Unit)? = null,
     ): DbConnection {
         return DbConnection(
             transport = transport,
@@ -981,7 +981,7 @@ class DbConnectionIntegrationTest {
     fun removeOnConnectPreventsCallback() = runTest {
         val transport = FakeTransport()
         var fired = false
-        val cb: (DbConnection, Identity, String) -> Unit = { _, _, _ -> fired = true }
+        val cb: (DbConnectionView, Identity, String) -> Unit = { _, _, _ -> fired = true }
 
         val conn = createTestConnection(transport, onConnect = cb)
         conn.removeOnConnect(cb)
@@ -998,7 +998,7 @@ class DbConnectionIntegrationTest {
     fun removeOnDisconnectPreventsCallback() = runTest {
         val transport = FakeTransport()
         var fired = false
-        val cb: (DbConnection, Throwable?) -> Unit = { _, _ -> fired = true }
+        val cb: (DbConnectionView, Throwable?) -> Unit = { _, _ -> fired = true }
 
         val conn = createTestConnection(transport, onDisconnect = cb)
         conn.removeOnDisconnect(cb)
@@ -1436,7 +1436,7 @@ class DbConnectionIntegrationTest {
     fun removeOnConnectErrorPreventsCallback() = runTest {
         val transport = FakeTransport(connectError = RuntimeException("fail"))
         var fired = false
-        val cb: (DbConnection, Throwable) -> Unit = { _, _ -> fired = true }
+        val cb: (DbConnectionView, Throwable) -> Unit = { _, _ -> fired = true }
 
         val conn = createTestConnection(transport, onConnectError = cb)
         conn.removeOnConnectError(cb)

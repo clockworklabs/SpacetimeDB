@@ -66,7 +66,7 @@ private fun decodeReducerError(bytes: ByteArray): String {
  */
 private sealed interface OnConnectState {
     data class Pending(
-        val callbacks: kotlinx.collections.immutable.PersistentList<(DbConnection, Identity, String) -> Unit>,
+        val callbacks: kotlinx.collections.immutable.PersistentList<(DbConnectionView, Identity, String) -> Unit>,
     ) : OnConnectState
 
     data class Connected(val identity: Identity, val token: String) : OnConnectState
@@ -105,9 +105,9 @@ public open class DbConnection internal constructor(
     private val transport: Transport,
     private val httpClient: HttpClient,
     private val scope: CoroutineScope,
-    onConnectCallbacks: List<(DbConnection, Identity, String) -> Unit>,
-    onDisconnectCallbacks: List<(DbConnection, Throwable?) -> Unit>,
-    onConnectErrorCallbacks: List<(DbConnection, Throwable) -> Unit>,
+    onConnectCallbacks: List<(DbConnectionView, Identity, String) -> Unit>,
+    onDisconnectCallbacks: List<(DbConnectionView, Throwable?) -> Unit>,
+    onConnectErrorCallbacks: List<(DbConnectionView, Throwable) -> Unit>,
     private val clientConnectionId: ConnectionId,
     public val stats: Stats,
     private val moduleDescriptor: ModuleDescriptor?,
@@ -168,7 +168,7 @@ public open class DbConnection internal constructor(
 
     // --- Multiple connection callbacks ---
 
-    public override fun onConnect(cb: (DbConnection, Identity, String) -> Unit) {
+    public override fun onConnect(cb: (DbConnectionView, Identity, String) -> Unit) {
         var fireNow: OnConnectState.Connected? = null
         _onConnectState.update { state ->
             when (state) {
@@ -184,7 +184,7 @@ public open class DbConnection internal constructor(
         }
     }
 
-    public override fun removeOnConnect(cb: (DbConnection, Identity, String) -> Unit) {
+    public override fun removeOnConnect(cb: (DbConnectionView, Identity, String) -> Unit) {
         _onConnectState.update { state ->
             when (state) {
                 is OnConnectState.Pending -> OnConnectState.Pending(state.callbacks.remove(cb))
@@ -193,19 +193,19 @@ public open class DbConnection internal constructor(
         }
     }
 
-    public override fun onDisconnect(cb: (DbConnection, Throwable?) -> Unit) {
+    public override fun onDisconnect(cb: (DbConnectionView, Throwable?) -> Unit) {
         _onDisconnectCallbacks.update { it.add(cb) }
     }
 
-    public override fun removeOnDisconnect(cb: (DbConnection, Throwable?) -> Unit) {
+    public override fun removeOnDisconnect(cb: (DbConnectionView, Throwable?) -> Unit) {
         _onDisconnectCallbacks.update { it.remove(cb) }
     }
 
-    public override fun onConnectError(cb: (DbConnection, Throwable) -> Unit) {
+    public override fun onConnectError(cb: (DbConnectionView, Throwable) -> Unit) {
         _onConnectErrorCallbacks.update { it.add(cb) }
     }
 
-    public override fun removeOnConnectError(cb: (DbConnection, Throwable) -> Unit) {
+    public override fun removeOnConnectError(cb: (DbConnectionView, Throwable) -> Unit) {
         _onConnectErrorCallbacks.update { it.remove(cb) }
     }
 
@@ -817,9 +817,9 @@ public open class DbConnection internal constructor(
         private var compression: CompressionMode = defaultCompressionMode
         private var lightMode: Boolean = false
         private var confirmedReads: Boolean? = null
-        private val onConnectCallbacks = atomic(persistentListOf<(DbConnection, Identity, String) -> Unit>())
-        private val onDisconnectCallbacks = atomic(persistentListOf<(DbConnection, Throwable?) -> Unit>())
-        private val onConnectErrorCallbacks = atomic(persistentListOf<(DbConnection, Throwable) -> Unit>())
+        private val onConnectCallbacks = atomic(persistentListOf<(DbConnectionView, Identity, String) -> Unit>())
+        private val onDisconnectCallbacks = atomic(persistentListOf<(DbConnectionView, Throwable?) -> Unit>())
+        private val onConnectErrorCallbacks = atomic(persistentListOf<(DbConnectionView, Throwable) -> Unit>())
         private var module: ModuleDescriptor? = null
         private var callbackDispatcher: CoroutineDispatcher? = null
 
@@ -851,13 +851,13 @@ public open class DbConnection internal constructor(
          */
         public fun withModule(descriptor: ModuleDescriptor): Builder = apply { module = descriptor }
 
-        public fun onConnect(cb: (DbConnection, Identity, String) -> Unit): Builder =
+        public fun onConnect(cb: (DbConnectionView, Identity, String) -> Unit): Builder =
             apply { onConnectCallbacks.update { it.add(cb) } }
 
-        public fun onDisconnect(cb: (DbConnection, Throwable?) -> Unit): Builder =
+        public fun onDisconnect(cb: (DbConnectionView, Throwable?) -> Unit): Builder =
             apply { onDisconnectCallbacks.update { it.add(cb) } }
 
-        public fun onConnectError(cb: (DbConnection, Throwable) -> Unit): Builder =
+        public fun onConnectError(cb: (DbConnectionView, Throwable) -> Unit): Builder =
             apply { onConnectErrorCallbacks.update { it.add(cb) } }
 
         public suspend fun build(): DbConnection {

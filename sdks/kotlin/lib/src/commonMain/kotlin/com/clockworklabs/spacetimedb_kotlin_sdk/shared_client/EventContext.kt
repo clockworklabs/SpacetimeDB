@@ -65,12 +65,12 @@ public interface DbConnectionView {
 
     public suspend fun disconnect(reason: Throwable? = null)
 
-    public fun onConnect(cb: (DbConnection, Identity, String) -> Unit)
-    public fun removeOnConnect(cb: (DbConnection, Identity, String) -> Unit)
-    public fun onDisconnect(cb: (DbConnection, Throwable?) -> Unit)
-    public fun removeOnDisconnect(cb: (DbConnection, Throwable?) -> Unit)
-    public fun onConnectError(cb: (DbConnection, Throwable) -> Unit)
-    public fun removeOnConnectError(cb: (DbConnection, Throwable) -> Unit)
+    public fun onConnect(cb: (DbConnectionView, Identity, String) -> Unit)
+    public fun removeOnConnect(cb: (DbConnectionView, Identity, String) -> Unit)
+    public fun onDisconnect(cb: (DbConnectionView, Throwable?) -> Unit)
+    public fun removeOnDisconnect(cb: (DbConnectionView, Throwable?) -> Unit)
+    public fun onConnectError(cb: (DbConnectionView, Throwable) -> Unit)
+    public fun removeOnConnectError(cb: (DbConnectionView, Throwable) -> Unit)
 }
 
 /**
