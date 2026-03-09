@@ -61,20 +61,20 @@ error[E0425]: cannot find type `ScheduledTable` in this scope
     |                                             ^^^^^^^^^^^^^^ not found in this scope
 
 error[E0425]: cannot find type `T` in this scope
-   --> tests/ui/views.rs:201:60
+   --> tests/ui/views.rs:202:60
     |
-201 | fn view_nonexistent_table(ctx: &ViewContext) -> impl Query<T> {
+202 | fn view_nonexistent_table(ctx: &ViewContext) -> impl Query<T> {
     |                                                            ^ not found in this scope
     |
 help: you might be missing a type parameter
     |
-201 | fn view_nonexistent_table<T>(ctx: &ViewContext) -> impl Query<T> {
+202 | fn view_nonexistent_table<T>(ctx: &ViewContext) -> impl Query<T> {
     |                          +++
 
 error[E0425]: cannot find type `T` in this scope
-   --> tests/ui/views.rs:201:60
+   --> tests/ui/views.rs:202:60
     |
-201 | fn view_nonexistent_table(ctx: &ViewContext) -> impl Query<T> {
+202 | fn view_nonexistent_table(ctx: &ViewContext) -> impl Query<T> {
     |                                                            ^ not found in this scope
 
 error[E0277]: the trait bound `ViewKind<ReducerContext>: ViewKindTrait` is not satisfied
@@ -411,9 +411,9 @@ help: the trait `SpacetimeType` is not implemented for `NotSpacetimeType`
     = note: required for `Option<NotSpacetimeType>` to implement `SpacetimeType`
 
 error[E0277]: the trait bound `{integer}: RHS<Player, spacetimedb::Identity>` is not satisfied
-   --> tests/ui/views.rs:159:49
+   --> tests/ui/views.rs:160:49
     |
-159 |     ctx.from.player().r#where(|a| a.identity.eq(42)).build()
+160 |     ctx.from.player().r#where(|a| a.identity.eq(42)).build()
     |                                              -- ^^ the trait `RHS<Player, spacetimedb::Identity>` is not implemented for `{integer}`
     |                                              |
     |                                              required by a bound introduced by this call
@@ -435,9 +435,9 @@ note: required by a bound in `Col::<T, V>::eq`
     |                  ^^^^^^^^^ required by this bound in `Col::<T, V>::eq`
 
 error[E0277]: the trait bound `u32: RHS<PlayerInfo, u8>` is not satisfied
-   --> tests/ui/views.rs:165:49
+   --> tests/ui/views.rs:166:49
     |
-165 |     ctx.from.player_info().r#where(|a| a.age.eq(4200u32)).build()
+166 |     ctx.from.player_info().r#where(|a| a.age.eq(4200u32)).build()
     |                                              -- ^^^^^^^ the trait `RHS<PlayerInfo, u8>` is not implemented for `u32`
     |                                              |
     |                                              required by a bound introduced by this call
@@ -457,9 +457,9 @@ note: required by a bound in `Col::<T, V>::eq`
     = note: this error originates in the macro `impl_rhs` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0308]: mismatched types
-   --> tests/ui/views.rs:174:62
+   --> tests/ui/views.rs:175:62
     |
-174 |         .left_semijoin(ctx.from.player(), |a, b| a.weight.eq(b.identity))
+175 |         .left_semijoin(ctx.from.player(), |a, b| a.weight.eq(b.identity))
     |                                                           -- ^^^^^^^^^^ expected `IxCol<Player, u32>`, found `IxCol<Player, Identity>`
     |                                                           |
     |                                                           arguments to this method are incorrect
@@ -473,15 +473,15 @@ note: method defined here
     |            ^^
 
 error[E0609]: no field `age` on type `&PlayerInfoIxCols`
-   --> tests/ui/views.rs:184:72
+   --> tests/ui/views.rs:185:72
     |
-184 |         .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.age))
+185 |         .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.age))
     |                                                                        ^^^ unknown field
     |
     = note: available fields are: `identity`, `weight`
 
 error[E0599]: no method named `xyz` found for struct `QueryBuilder` in the current scope
-   --> tests/ui/views.rs:202:14
+   --> tests/ui/views.rs:203:14
     |
-202 |     ctx.from.xyz().build()
+203 |     ctx.from.xyz().build()
     |              ^^^ method not found in `QueryBuilder`
