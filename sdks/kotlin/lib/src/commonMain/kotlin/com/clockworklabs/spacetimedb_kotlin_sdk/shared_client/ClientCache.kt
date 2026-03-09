@@ -112,7 +112,7 @@ public class TableCache<Row, Key : Any> private constructor(
 
     public fun count(): Int = _rows.value.size
 
-    public fun iter(): Iterator<Row> = _rows.value.values.map { it.first }.iterator()
+    public fun iter(): Sequence<Row> = _rows.value.values.asSequence().map { it.first }
 
     public fun all(): List<Row> = _rows.value.values.map { it.first }
 
