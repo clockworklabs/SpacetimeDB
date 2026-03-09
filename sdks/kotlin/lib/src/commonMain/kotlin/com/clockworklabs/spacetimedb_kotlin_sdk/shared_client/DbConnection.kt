@@ -61,6 +61,18 @@ private fun decodeReducerError(bytes: ByteArray): String {
 }
 
 /**
+ * Single-atomic state for onConnect callback management.
+ * Pending → Connected is a one-shot transition; the callback list is drained atomically.
+ */
+private sealed interface OnConnectState {
+    data class Pending(
+        val callbacks: kotlinx.collections.immutable.PersistentList<(DbConnection, Identity, String) -> Unit>,
+    ) : OnConnectState
+
+    data class Connected(val identity: Identity, val token: String) : OnConnectState
+}
+
+/**
  * Compression mode for the WebSocket connection.
  */
 public enum class CompressionMode(internal val wireValue: String) {
@@ -150,35 +162,37 @@ public open class DbConnection internal constructor(
     private val querySetIdToRequestId = atomic(persistentHashMapOf<UInt, UInt>())
     private val _receiveJob = atomic<Job?>(null)
     private val _eventId = atomic(0L)
-    private val _onConnectInvoked = atomic(false)
-    private val _onConnectCallbacks = atomic(onConnectCallbacks.toPersistentList())
+    private val _onConnectState = atomic<OnConnectState>(
+        OnConnectState.Pending(onConnectCallbacks.toPersistentList())
+    )
     private val _onDisconnectCallbacks = atomic(onDisconnectCallbacks.toPersistentList())
     private val _onConnectErrorCallbacks = atomic(onConnectErrorCallbacks.toPersistentList())
 
     // --- Multiple connection callbacks ---
 
     public fun onConnect(cb: (DbConnection, Identity, String) -> Unit) {
-        // Add first, then check — avoids TOCTOU race where the receive loop
-        // drains the list between our check and add.
-        _onConnectCallbacks.update { it.add(cb) }
-        if (_onConnectInvoked.value) {
-            // Already connected — drain and fire. getAndSet ensures each
-            // callback is claimed by exactly one thread (us or the receive loop).
-            val cbs = _onConnectCallbacks.getAndSet(persistentListOf())
-            val id = identity
-            val tok = token
-            if (id == null || tok == null) {
-                Logger.error { "onConnect called after connection but identity or token is null" }
-                return
+        var fireNow: OnConnectState.Connected? = null
+        _onConnectState.update { state ->
+            when (state) {
+                is OnConnectState.Pending -> OnConnectState.Pending(state.callbacks.add(cb))
+                is OnConnectState.Connected -> {
+                    fireNow = state
+                    state
+                }
             }
-            scope.launch {
-                for (c in cbs) runUserCallback { c(this@DbConnection, id, tok) }
-            }
+        }
+        fireNow?.let { conn ->
+            scope.launch { runUserCallback { cb(this@DbConnection, conn.identity, conn.token) } }
         }
     }
 
     public fun removeOnConnect(cb: (DbConnection, Identity, String) -> Unit) {
-        _onConnectCallbacks.update { it.remove(cb) }
+        _onConnectState.update { state ->
+            when (state) {
+                is OnConnectState.Pending -> OnConnectState.Pending(state.callbacks.remove(cb))
+                is OnConnectState.Connected -> state
+            }
+        }
     }
 
     public fun onDisconnect(cb: (DbConnection, Throwable?) -> Unit) {
@@ -531,10 +545,12 @@ public open class DbConnection internal constructor(
                     token = message.token
                 }
                 Logger.info { "Connected with identity=${message.identity}" }
-                // One-shot: fire onConnect callbacks once, then discard (matches C# SDK)
-                if (_onConnectInvoked.compareAndSet(expect = false, update = true)) {
-                    val cbs = _onConnectCallbacks.getAndSet(persistentListOf())
-                    for (cb in cbs) runUserCallback { cb(this, message.identity, message.token) }
+                // One-shot: atomically transition Pending → Connected, draining callbacks.
+                val prev = _onConnectState.getAndSet(
+                    OnConnectState.Connected(message.identity, message.token)
+                )
+                if (prev is OnConnectState.Pending) {
+                    for (cb in prev.callbacks) runUserCallback { cb(this, message.identity, message.token) }
                 }
             }
 
