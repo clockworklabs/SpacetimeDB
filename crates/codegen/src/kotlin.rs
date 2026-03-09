@@ -106,7 +106,7 @@ impl Lang for Kotlin {
         writeln!(out, "private val conn: DbConnection,");
         writeln!(out, "private val tableCache: TableCache<{type_name}, *>,");
         out.dedent(1);
-        writeln!(out, ") : {table_marker} {{");
+        writeln!(out, ") : {table_marker}<{type_name}> {{");
         out.indent(1);
 
         // Constants
@@ -144,27 +144,27 @@ impl Lang for Kotlin {
 
         // Accessors (event tables don't store rows)
         if !is_event {
-            writeln!(out, "fun count(): Int = tableCache.count()");
-            writeln!(out, "fun all(): List<{type_name}> = tableCache.all()");
-            writeln!(out, "fun iter(): Iterator<{type_name}> = tableCache.iter()");
+            writeln!(out, "override fun count(): Int = tableCache.count()");
+            writeln!(out, "override fun all(): List<{type_name}> = tableCache.all()");
+            writeln!(out, "override fun iter(): Sequence<{type_name}> = tableCache.iter()");
             writeln!(out);
         }
 
         // Callbacks
-        writeln!(out, "fun onInsert(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.onInsert(cb) }}");
-        writeln!(out, "fun removeOnInsert(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.removeOnInsert(cb) }}");
+        writeln!(out, "override fun onInsert(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.onInsert(cb) }}");
+        writeln!(out, "override fun removeOnInsert(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.removeOnInsert(cb) }}");
         if !is_event {
-            writeln!(out, "fun onDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.onDelete(cb) }}");
+            writeln!(out, "override fun onDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.onDelete(cb) }}");
             if table.primary_key.is_some() {
                 writeln!(out, "fun onUpdate(cb: (EventContext, {type_name}, {type_name}) -> Unit) {{ tableCache.onUpdate(cb) }}");
             }
-            writeln!(out, "fun onBeforeDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.onBeforeDelete(cb) }}");
+            writeln!(out, "override fun onBeforeDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.onBeforeDelete(cb) }}");
             writeln!(out);
-            writeln!(out, "fun removeOnDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.removeOnDelete(cb) }}");
+            writeln!(out, "override fun removeOnDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.removeOnDelete(cb) }}");
             if table.primary_key.is_some() {
                 writeln!(out, "fun removeOnUpdate(cb: (EventContext, {type_name}, {type_name}) -> Unit) {{ tableCache.removeOnUpdate(cb) }}");
             }
-            writeln!(out, "fun removeOnBeforeDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.removeOnBeforeDelete(cb) }}");
+            writeln!(out, "override fun removeOnBeforeDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.removeOnBeforeDelete(cb) }}");
         }
         writeln!(out);
 
