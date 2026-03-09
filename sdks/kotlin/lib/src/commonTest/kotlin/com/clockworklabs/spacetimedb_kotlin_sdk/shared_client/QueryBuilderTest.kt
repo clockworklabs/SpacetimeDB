@@ -109,14 +109,6 @@ class QueryBuilderTest {
         assertEquals("(\"t\".\"active\" = TRUE)", col.eq(true).sql)
     }
 
-    // ---- NullableCol ----
-
-    @Test
-    fun nullableColEqLiteral() {
-        val col = NullableCol<Unit, Int>("t", "hp")
-        assertEquals("(\"t\".\"hp\" = 100)", col.eq(SqlLit.int(100)).sql)
-    }
-
     // ---- IxCol join equality ----
 
     @Test

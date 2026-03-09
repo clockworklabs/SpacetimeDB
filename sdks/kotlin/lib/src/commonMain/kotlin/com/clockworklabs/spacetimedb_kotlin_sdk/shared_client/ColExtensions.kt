@@ -15,32 +15,16 @@ public fun <TRow> Col<TRow, String>.lte(value: String): BoolExpr<TRow> = lte(Sql
 public fun <TRow> Col<TRow, String>.gt(value: String): BoolExpr<TRow> = gt(SqlLit.string(value))
 public fun <TRow> Col<TRow, String>.gte(value: String): BoolExpr<TRow> = gte(SqlLit.string(value))
 
-public fun <TRow> NullableCol<TRow, String>.eq(value: String): BoolExpr<TRow> = eq(SqlLit.string(value))
-public fun <TRow> NullableCol<TRow, String>.neq(value: String): BoolExpr<TRow> = neq(SqlLit.string(value))
-public fun <TRow> NullableCol<TRow, String>.lt(value: String): BoolExpr<TRow> = lt(SqlLit.string(value))
-public fun <TRow> NullableCol<TRow, String>.lte(value: String): BoolExpr<TRow> = lte(SqlLit.string(value))
-public fun <TRow> NullableCol<TRow, String>.gt(value: String): BoolExpr<TRow> = gt(SqlLit.string(value))
-public fun <TRow> NullableCol<TRow, String>.gte(value: String): BoolExpr<TRow> = gte(SqlLit.string(value))
-
 public fun <TRow> IxCol<TRow, String>.eq(value: String): BoolExpr<TRow> = eq(SqlLit.string(value))
 public fun <TRow> IxCol<TRow, String>.neq(value: String): BoolExpr<TRow> = neq(SqlLit.string(value))
-
-public fun <TRow> NullableIxCol<TRow, String>.eq(value: String): BoolExpr<TRow> = eq(SqlLit.string(value))
-public fun <TRow> NullableIxCol<TRow, String>.neq(value: String): BoolExpr<TRow> = neq(SqlLit.string(value))
 
 // ---- Col<TRow, Boolean> ----
 
 public fun <TRow> Col<TRow, Boolean>.eq(value: Boolean): BoolExpr<TRow> = eq(SqlLit.bool(value))
 public fun <TRow> Col<TRow, Boolean>.neq(value: Boolean): BoolExpr<TRow> = neq(SqlLit.bool(value))
 
-public fun <TRow> NullableCol<TRow, Boolean>.eq(value: Boolean): BoolExpr<TRow> = eq(SqlLit.bool(value))
-public fun <TRow> NullableCol<TRow, Boolean>.neq(value: Boolean): BoolExpr<TRow> = neq(SqlLit.bool(value))
-
 public fun <TRow> IxCol<TRow, Boolean>.eq(value: Boolean): BoolExpr<TRow> = eq(SqlLit.bool(value))
 public fun <TRow> IxCol<TRow, Boolean>.neq(value: Boolean): BoolExpr<TRow> = neq(SqlLit.bool(value))
-
-public fun <TRow> NullableIxCol<TRow, Boolean>.eq(value: Boolean): BoolExpr<TRow> = eq(SqlLit.bool(value))
-public fun <TRow> NullableIxCol<TRow, Boolean>.neq(value: Boolean): BoolExpr<TRow> = neq(SqlLit.bool(value))
 
 // ---- Col<TRow, Int> ----
 
@@ -51,18 +35,8 @@ public fun <TRow> Col<TRow, Int>.lte(value: Int): BoolExpr<TRow> = lte(SqlLit.in
 public fun <TRow> Col<TRow, Int>.gt(value: Int): BoolExpr<TRow> = gt(SqlLit.int(value))
 public fun <TRow> Col<TRow, Int>.gte(value: Int): BoolExpr<TRow> = gte(SqlLit.int(value))
 
-public fun <TRow> NullableCol<TRow, Int>.eq(value: Int): BoolExpr<TRow> = eq(SqlLit.int(value))
-public fun <TRow> NullableCol<TRow, Int>.neq(value: Int): BoolExpr<TRow> = neq(SqlLit.int(value))
-public fun <TRow> NullableCol<TRow, Int>.lt(value: Int): BoolExpr<TRow> = lt(SqlLit.int(value))
-public fun <TRow> NullableCol<TRow, Int>.lte(value: Int): BoolExpr<TRow> = lte(SqlLit.int(value))
-public fun <TRow> NullableCol<TRow, Int>.gt(value: Int): BoolExpr<TRow> = gt(SqlLit.int(value))
-public fun <TRow> NullableCol<TRow, Int>.gte(value: Int): BoolExpr<TRow> = gte(SqlLit.int(value))
-
 public fun <TRow> IxCol<TRow, Int>.eq(value: Int): BoolExpr<TRow> = eq(SqlLit.int(value))
 public fun <TRow> IxCol<TRow, Int>.neq(value: Int): BoolExpr<TRow> = neq(SqlLit.int(value))
-
-public fun <TRow> NullableIxCol<TRow, Int>.eq(value: Int): BoolExpr<TRow> = eq(SqlLit.int(value))
-public fun <TRow> NullableIxCol<TRow, Int>.neq(value: Int): BoolExpr<TRow> = neq(SqlLit.int(value))
 
 // ---- Col<TRow, Long> ----
 
@@ -73,18 +47,8 @@ public fun <TRow> Col<TRow, Long>.lte(value: Long): BoolExpr<TRow> = lte(SqlLit.
 public fun <TRow> Col<TRow, Long>.gt(value: Long): BoolExpr<TRow> = gt(SqlLit.long(value))
 public fun <TRow> Col<TRow, Long>.gte(value: Long): BoolExpr<TRow> = gte(SqlLit.long(value))
 
-public fun <TRow> NullableCol<TRow, Long>.eq(value: Long): BoolExpr<TRow> = eq(SqlLit.long(value))
-public fun <TRow> NullableCol<TRow, Long>.neq(value: Long): BoolExpr<TRow> = neq(SqlLit.long(value))
-public fun <TRow> NullableCol<TRow, Long>.lt(value: Long): BoolExpr<TRow> = lt(SqlLit.long(value))
-public fun <TRow> NullableCol<TRow, Long>.lte(value: Long): BoolExpr<TRow> = lte(SqlLit.long(value))
-public fun <TRow> NullableCol<TRow, Long>.gt(value: Long): BoolExpr<TRow> = gt(SqlLit.long(value))
-public fun <TRow> NullableCol<TRow, Long>.gte(value: Long): BoolExpr<TRow> = gte(SqlLit.long(value))
-
 public fun <TRow> IxCol<TRow, Long>.eq(value: Long): BoolExpr<TRow> = eq(SqlLit.long(value))
 public fun <TRow> IxCol<TRow, Long>.neq(value: Long): BoolExpr<TRow> = neq(SqlLit.long(value))
-
-public fun <TRow> NullableIxCol<TRow, Long>.eq(value: Long): BoolExpr<TRow> = eq(SqlLit.long(value))
-public fun <TRow> NullableIxCol<TRow, Long>.neq(value: Long): BoolExpr<TRow> = neq(SqlLit.long(value))
 
 // ---- Col<TRow, Byte/Short/UByte/UShort/UInt/ULong/Float/Double> ----
 
@@ -135,35 +99,17 @@ public fun <TRow> Col<TRow, Double>.gte(value: Double): BoolExpr<TRow> = gte(Sql
 public fun <TRow> Col<TRow, Identity>.eq(value: Identity): BoolExpr<TRow> = eq(SqlLit.identity(value))
 public fun <TRow> Col<TRow, Identity>.neq(value: Identity): BoolExpr<TRow> = neq(SqlLit.identity(value))
 
-public fun <TRow> NullableCol<TRow, Identity>.eq(value: Identity): BoolExpr<TRow> = eq(SqlLit.identity(value))
-public fun <TRow> NullableCol<TRow, Identity>.neq(value: Identity): BoolExpr<TRow> = neq(SqlLit.identity(value))
-
 public fun <TRow> IxCol<TRow, Identity>.eq(value: Identity): BoolExpr<TRow> = eq(SqlLit.identity(value))
 public fun <TRow> IxCol<TRow, Identity>.neq(value: Identity): BoolExpr<TRow> = neq(SqlLit.identity(value))
-
-public fun <TRow> NullableIxCol<TRow, Identity>.eq(value: Identity): BoolExpr<TRow> = eq(SqlLit.identity(value))
-public fun <TRow> NullableIxCol<TRow, Identity>.neq(value: Identity): BoolExpr<TRow> = neq(SqlLit.identity(value))
 
 public fun <TRow> Col<TRow, ConnectionId>.eq(value: ConnectionId): BoolExpr<TRow> = eq(SqlLit.connectionId(value))
 public fun <TRow> Col<TRow, ConnectionId>.neq(value: ConnectionId): BoolExpr<TRow> = neq(SqlLit.connectionId(value))
 
-public fun <TRow> NullableCol<TRow, ConnectionId>.eq(value: ConnectionId): BoolExpr<TRow> = eq(SqlLit.connectionId(value))
-public fun <TRow> NullableCol<TRow, ConnectionId>.neq(value: ConnectionId): BoolExpr<TRow> = neq(SqlLit.connectionId(value))
-
 public fun <TRow> IxCol<TRow, ConnectionId>.eq(value: ConnectionId): BoolExpr<TRow> = eq(SqlLit.connectionId(value))
 public fun <TRow> IxCol<TRow, ConnectionId>.neq(value: ConnectionId): BoolExpr<TRow> = neq(SqlLit.connectionId(value))
-
-public fun <TRow> NullableIxCol<TRow, ConnectionId>.eq(value: ConnectionId): BoolExpr<TRow> = eq(SqlLit.connectionId(value))
-public fun <TRow> NullableIxCol<TRow, ConnectionId>.neq(value: ConnectionId): BoolExpr<TRow> = neq(SqlLit.connectionId(value))
 
 public fun <TRow> Col<TRow, SpacetimeUuid>.eq(value: SpacetimeUuid): BoolExpr<TRow> = eq(SqlLit.uuid(value))
 public fun <TRow> Col<TRow, SpacetimeUuid>.neq(value: SpacetimeUuid): BoolExpr<TRow> = neq(SqlLit.uuid(value))
 
-public fun <TRow> NullableCol<TRow, SpacetimeUuid>.eq(value: SpacetimeUuid): BoolExpr<TRow> = eq(SqlLit.uuid(value))
-public fun <TRow> NullableCol<TRow, SpacetimeUuid>.neq(value: SpacetimeUuid): BoolExpr<TRow> = neq(SqlLit.uuid(value))
-
 public fun <TRow> IxCol<TRow, SpacetimeUuid>.eq(value: SpacetimeUuid): BoolExpr<TRow> = eq(SqlLit.uuid(value))
 public fun <TRow> IxCol<TRow, SpacetimeUuid>.neq(value: SpacetimeUuid): BoolExpr<TRow> = neq(SqlLit.uuid(value))
-
-public fun <TRow> NullableIxCol<TRow, SpacetimeUuid>.eq(value: SpacetimeUuid): BoolExpr<TRow> = eq(SqlLit.uuid(value))
-public fun <TRow> NullableIxCol<TRow, SpacetimeUuid>.neq(value: SpacetimeUuid): BoolExpr<TRow> = neq(SqlLit.uuid(value))

@@ -84,10 +84,6 @@ impl Lang for Kotlin {
         if has_ix_cols {
             writeln!(out, "import {SDK_PKG}.IxCol");
         }
-        writeln!(out, "import {SDK_PKG}.NullableCol");
-        if has_ix_cols {
-            writeln!(out, "import {SDK_PKG}.NullableIxCol");
-        }
         writeln!(out, "import {SDK_PKG}.protocol.QueryResult");
         if is_event {
             writeln!(out, "import {SDK_PKG}.RemoteEventTable");
@@ -308,13 +304,13 @@ impl Lang for Kotlin {
         for (ident, field_type) in product_def.elements.iter() {
             let field_camel = ident.deref().to_case(Case::Camel);
             let col_name = ident.deref();
-            let (col_class, value_type) = match field_type {
-                AlgebraicTypeUse::Option(inner) => ("NullableCol", kotlin_type(module, inner)),
-                _ => ("Col", kotlin_type(module, field_type)),
+            let value_type = match field_type {
+                AlgebraicTypeUse::Option(inner) => kotlin_type(module, inner),
+                _ => kotlin_type(module, field_type),
             };
             writeln!(
                 out,
-                "val {field_camel} = {col_class}<{type_name}, {value_type}>(tableName, \"{col_name}\")"
+                "val {field_camel} = Col<{type_name}, {value_type}>(tableName, \"{col_name}\")"
             );
         }
         out.dedent(1);
@@ -331,13 +327,13 @@ impl Lang for Kotlin {
                 }
                 let field_camel = ident.deref().to_case(Case::Camel);
                 let col_name = ident.deref();
-                let (col_class, value_type) = match field_type {
-                    AlgebraicTypeUse::Option(inner) => ("NullableIxCol", kotlin_type(module, inner)),
-                    _ => ("IxCol", kotlin_type(module, field_type)),
+                let value_type = match field_type {
+                    AlgebraicTypeUse::Option(inner) => kotlin_type(module, inner),
+                    _ => kotlin_type(module, field_type),
                 };
                 writeln!(
                     out,
-                    "val {field_camel} = {col_class}<{type_name}, {value_type}>(tableName, \"{col_name}\")"
+                    "val {field_camel} = IxCol<{type_name}, {value_type}>(tableName, \"{col_name}\")"
                 );
             }
             out.dedent(1);

@@ -253,14 +253,12 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Col
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.IxCol
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.NullableCol
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.NullableIxCol
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.RemotePersistentTable
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.TableCache
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.UniqueIndex
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Identity
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 
 class LoggedOutPlayerTableHandle internal constructor(
     private val conn: DbConnection,
@@ -363,7 +361,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Table
  * Contains version info and the names of all tables, reducers, and procedures.
  */
 object RemoteModule : ModuleDescriptor {
-    override val cliVersion: String = "2.0.1"
+    override val cliVersion: String = "2.0.3"
 
     val tableNames: List<String> = listOf(
         "logged_out_player",
@@ -508,12 +506,11 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ClientCache
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Col
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.NullableCol
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.RemotePersistentTable
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.TableCache
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Identity
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 
 class MyPlayerTableHandle internal constructor(
     private val conn: DbConnection,
@@ -594,8 +591,6 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Col
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.IxCol
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.NullableCol
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.NullableIxCol
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.RemotePersistentTable
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.TableCache
@@ -689,14 +684,12 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Col
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.IxCol
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.NullableCol
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.NullableIxCol
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.RemotePersistentTable
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.TableCache
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.UniqueIndex
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Identity
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 
 class PlayerTableHandle internal constructor(
     private val conn: DbConnection,
@@ -1290,7 +1283,6 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ClientCache
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Col
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.NullableCol
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.RemotePersistentTable
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.TableCache
@@ -1352,7 +1344,7 @@ class TestDTableHandle internal constructor(
 }
 
 class TestDCols(tableName: String) {
-    val testC = NullableCol<TestD, NamespaceTestC>(tableName, "test_c")
+    val testC = Col<TestD, NamespaceTestC>(tableName, "test_c")
 }
 
 class TestDIxCols
@@ -1369,7 +1361,6 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ClientCache
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Col
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.NullableCol
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.RemotePersistentTable
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.TableCache
@@ -1485,12 +1476,12 @@ object TestReducer {
 
 package module_bindings
 
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ConnectionId
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Identity
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ScheduleAt
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Timestamp
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ScheduleAt
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Timestamp
 
 data class Baz(
     val field: String

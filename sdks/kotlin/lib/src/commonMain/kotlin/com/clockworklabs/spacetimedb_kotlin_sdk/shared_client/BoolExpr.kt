@@ -3,7 +3,7 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 /**
  * A type-safe boolean SQL expression.
  * The type parameter [TRow] tracks which table row type this expression applies to.
- * Constructed via column comparison methods on [Col], [NullableCol], [IxCol], [NullableIxCol].
+ * Constructed via column comparison methods on [Col] and [IxCol].
  */
 @JvmInline
 public value class BoolExpr<@Suppress("unused") TRow>(public val sql: String) {
