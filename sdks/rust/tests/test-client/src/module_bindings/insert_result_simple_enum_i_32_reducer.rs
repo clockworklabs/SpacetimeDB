@@ -23,11 +23,11 @@ impl __sdk::InModule for InsertResultSimpleEnumI32Args {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `insert_result_simple_enum_i32`.
+/// Extension trait for access to the reducer `insert_result_simple_enum_i_32`.
 ///
 /// Implemented for [`super::RemoteReducers`].
 pub trait insert_result_simple_enum_i_32 {
-    /// Request that the remote module invoke the reducer `insert_result_simple_enum_i32` to run as soon as possible.
+    /// Request that the remote module invoke the reducer `insert_result_simple_enum_i_32` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
@@ -37,7 +37,7 @@ pub trait insert_result_simple_enum_i_32 {
         self.insert_result_simple_enum_i_32_then(r, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `insert_result_simple_enum_i32` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `insert_result_simple_enum_i_32` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.

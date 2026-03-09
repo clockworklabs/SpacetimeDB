@@ -12,52 +12,12 @@
 #include "DBCache/TableCache.h"
 #include "FoodTable.g.generated.h"
 
-UCLASS(Blueprintable)
-class CLIENT_UNREAL_API UFoodFoodEntityIdIdxBtreeUniqueIndex : public UObject
-{
-    GENERATED_BODY()
-
-private:
-    // Declare an instance of your templated helper.
-    // It's private because the UObject wrapper will expose its functionality.
-    FUniqueIndexHelper<FFoodType, int32, FTableCache<FFoodType>> FoodEntityIdIdxBtreeIndexHelper;
-
-public:
-    UFoodFoodEntityIdIdxBtreeUniqueIndex()
-        // Initialize the helper with the specific unique index name
-        : FoodEntityIdIdxBtreeIndexHelper("entity_id") {
-    }
-
-    /**
-     * Finds a Food by their unique entityid.
-     * @param Key The entityid to search for.
-     * @return The found FFoodType, or a default-constructed FFoodType if not found.
-     */
-    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|FoodIndex")
-    FFoodType Find(int32 Key)
-    {
-        // Simply delegate the call to the internal helper
-        return FoodEntityIdIdxBtreeIndexHelper.FindUniqueIndex(Key);
-    }
-
-    // A public setter to provide the cache to the helper after construction
-    // This is a common pattern when the cache might be created or provided by another system.
-    void SetCache(TSharedPtr<const FTableCache<FFoodType>> InFoodCache)
-    {
-        FoodEntityIdIdxBtreeIndexHelper.Cache = InFoodCache;
-    }
-};
-/***/
-
 UCLASS(BlueprintType)
 class CLIENT_UNREAL_API UFoodTable : public URemoteTable
 {
     GENERATED_BODY()
 
 public:
-    UPROPERTY(BlueprintReadOnly)
-    UFoodFoodEntityIdIdxBtreeUniqueIndex* FoodEntityIdIdxBtree;
-
     void PostInitialize();
 
     /** Update function for food table*/

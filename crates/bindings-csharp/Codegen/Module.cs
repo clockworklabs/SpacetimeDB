@@ -61,7 +61,11 @@ record SettingsDeclaration
     public readonly string FullName;
     public readonly string? CaseConversionPolicy;
 
-    private const string CaseConversionPolicyTypeName = "SpacetimeDB.Internal.CaseConversionPolicy";
+    private static readonly string[] CaseConversionPolicyTypeNames =
+    [
+        "SpacetimeDB.CaseConversionPolicy",
+        "SpacetimeDB.Internal.CaseConversionPolicy", // backward compat
+    ];
 
     public SettingsDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
@@ -73,7 +77,7 @@ record SettingsDeclaration
             diag.Report(ErrorDescriptor.SettingsMustBeConstCaseConversionPolicy, fieldSymbol);
             return;
         }
-        if (fieldSymbol.Type.ToString() != CaseConversionPolicyTypeName)
+        if (!CaseConversionPolicyTypeNames.Contains(fieldSymbol.Type.ToString()))
         {
             diag.Report(ErrorDescriptor.SettingsMustBeConstCaseConversionPolicy, fieldSymbol);
             return;
@@ -403,6 +407,11 @@ record TableIndex
                 .ToImmutableArray()
         )
     {
+        if (string.IsNullOrWhiteSpace(attr.Accessor))
+        {
+            diag.Report(ErrorDescriptor.TableLevelIndexMissingAccessor, data);
+        }
+
         if (attr.Columns.Length == 0)
         {
             diag.Report(ErrorDescriptor.EmptyIndexColumns, data);
@@ -452,7 +461,7 @@ record TableIndex
         $$"""
             new(
                 SourceName: "{{StandardIndexName(tableAccessor)}}",
-                AccessorName: null,
+                AccessorName: "{{AccessorName}}",
                 Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.{{Type}}([{{string.Join(
                     ", ",
                     Columns.Select(c => c.Index)
@@ -895,9 +904,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 var typeName = col.Type.Name;
                 var isNullable = typeName.EndsWith("?", StringComparison.Ordinal);
                 var valueTypeName = isNullable ? typeName[..^1] : typeName;
-                var colType = isNullable
-                    ? "global::SpacetimeDB.NullableCol"
-                    : "global::SpacetimeDB.Col";
+                var colType = isNullable ? "global::SpacetimeDB.Col" : "global::SpacetimeDB.Col";
                 return $"public readonly {colType}<{globalRowName}, {valueTypeName}> {col.Name};";
             }
 
@@ -906,9 +913,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 var typeName = col.Type.Name;
                 var isNullable = typeName.EndsWith("?", StringComparison.Ordinal);
                 var valueTypeName = isNullable ? typeName[..^1] : typeName;
-                var colType = isNullable
-                    ? "global::SpacetimeDB.NullableCol"
-                    : "global::SpacetimeDB.Col";
+                var colType = isNullable ? "global::SpacetimeDB.Col" : "global::SpacetimeDB.Col";
                 return $"{col.Name} = new {colType}<{globalRowName}, {valueTypeName}>(tableName, \"{col.Name}\");";
             }
 
@@ -941,7 +946,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 var isNullable = typeName.EndsWith("?", StringComparison.Ordinal);
                 var valueTypeName = isNullable ? typeName[..^1] : typeName;
                 var colType = isNullable
-                    ? "global::SpacetimeDB.NullableIxCol"
+                    ? "global::SpacetimeDB.IxCol"
                     : "global::SpacetimeDB.IxCol";
                 return $"public readonly {colType}<{globalRowName}, {valueTypeName}> {col.Name};";
             }
@@ -952,7 +957,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 var isNullable = typeName.EndsWith("?", StringComparison.Ordinal);
                 var valueTypeName = isNullable ? typeName[..^1] : typeName;
                 var colType = isNullable
-                    ? "global::SpacetimeDB.NullableIxCol"
+                    ? "global::SpacetimeDB.IxCol"
                     : "global::SpacetimeDB.IxCol";
                 return $"{col.Name} = new {colType}<{globalRowName}, {valueTypeName}>(tableName, \"{col.Name}\");";
             }
@@ -1151,14 +1156,33 @@ record ViewDeclaration
         IsAnonymous = isAnonymousContext;
 
         ReturnsQuery = false;
+        INamedTypeSymbol? iquery = null;
         if (
             method.ReturnType is INamedTypeSymbol
             {
-                Name: "Query",
+                Name: "IQuery",
                 ContainingNamespace: { Name: "SpacetimeDB" },
-                TypeArguments: [var queryRowType]
-            }
+                TypeArguments: [var _]
+            } directIQuery
         )
+        {
+            iquery = directIQuery;
+        }
+        else
+        {
+            iquery = method
+                .ReturnType.AllInterfaces.OfType<INamedTypeSymbol>()
+                .FirstOrDefault(i =>
+                    i
+                        is {
+                            Name: "IQuery",
+                            ContainingNamespace: { Name: "SpacetimeDB" },
+                            TypeArguments.Length: 1
+                        }
+                );
+        }
+
+        if (iquery is { TypeArguments: [var queryRowType] })
         {
             ReturnsQuery = true;
             var rowType = TypeUse.Parse(method, queryRowType, diag);
@@ -1166,7 +1190,7 @@ record ViewDeclaration
                 ? "SpacetimeDB.BSATN.ValueOption"
                 : "SpacetimeDB.BSATN.RefOption";
             var opt = $"{optType}<{rowType.Name}, {rowType.BSATNName}>";
-            // Match Rust semantics: Query<T> is described as Option<T>.
+            // Match Rust semantics: Query<T> is described as a nullable row (T?).
             ReturnType = new ReferenceUse(opt, opt);
         }
         else
@@ -1187,7 +1211,7 @@ record ViewDeclaration
             diag.Report(ErrorDescriptor.ViewContextParam, methodSyntax);
         }
 
-        // Validate return type: must be Option<T> or Vec<T>
+        // Validate return type: must be List<T> or T?
         if (
             !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.ValueOption")
             && !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.RefOption")
@@ -1981,7 +2005,7 @@ public class Module : IIncrementalGenerator
                 var settingsRegistration =
                     settings.Array.Length == 1
                     && settings.Array[0].CaseConversionPolicy is { } policyName
-                        ? $"SpacetimeDB.Internal.Module.SetCaseConversionPolicy(SpacetimeDB.Internal.CaseConversionPolicy.{policyName});"
+                        ? $"SpacetimeDB.Internal.Module.SetCaseConversionPolicy(SpacetimeDB.CaseConversionPolicy.{policyName});"
                         : string.Empty;
 
                 var explicitTableRegistrations = string.Join(

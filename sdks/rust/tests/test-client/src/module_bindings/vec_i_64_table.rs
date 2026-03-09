@@ -5,7 +5,7 @@
 use super::vec_i_64_type::VecI64;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `vec_i64`.
+/// Table handle for the table `vec_i_64`.
 ///
 /// Obtain a handle from the [`VecI64TableAccess::vec_i_64`] method on [`super::RemoteTables`],
 /// like `ctx.db.vec_i_64()`.
@@ -19,19 +19,19 @@ pub struct VecI64TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `vec_i64`.
+/// Extension trait for access to the table `vec_i_64`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait VecI64TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`VecI64TableHandle`], which mediates access to the table `vec_i64`.
+    /// Obtain a [`VecI64TableHandle`], which mediates access to the table `vec_i_64`.
     fn vec_i_64(&self) -> VecI64TableHandle<'_>;
 }
 
 impl VecI64TableAccess for super::RemoteTables {
     fn vec_i_64(&self) -> VecI64TableHandle<'_> {
         VecI64TableHandle {
-            imp: self.imp.get_table::<VecI64>("vec_i64"),
+            imp: self.imp.get_table::<VecI64>("vec_i_64"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,7 +80,7 @@ impl<'ctx> __sdk::Table for VecI64TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<VecI64>("vec_i64");
+    let _table = client_cache.get_or_make_table::<VecI64>("vec_i_64");
 }
 
 #[doc(hidden)]
@@ -96,14 +96,14 @@ pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::R
 /// Extension trait for query builder access to the table `VecI64`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait vec_i64QueryTableAccess {
+pub trait vec_i_64QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `VecI64`.
-    fn vec_i64(&self) -> __sdk::__query_builder::Table<VecI64>;
+    fn vec_i_64(&self) -> __sdk::__query_builder::Table<VecI64>;
 }
 
-impl vec_i64QueryTableAccess for __sdk::QueryTableAccessor {
-    fn vec_i64(&self) -> __sdk::__query_builder::Table<VecI64> {
-        __sdk::__query_builder::Table::new("vec_i64")
+impl vec_i_64QueryTableAccess for __sdk::QueryTableAccessor {
+    fn vec_i_64(&self) -> __sdk::__query_builder::Table<VecI64> {
+        __sdk::__query_builder::Table::new("vec_i_64")
     }
 }

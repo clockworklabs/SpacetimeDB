@@ -4,12 +4,12 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev": "ng serve",
+    "dev": "node scripts/dev.mjs",
     "build": "ng build",
     "generate": "cargo run -p gen-bindings -- --out-dir src/module_bindings --module-path spacetimedb && prettier --write src/module_bindings",
-    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb",
-    "spacetime:publish:local": "spacetime publish --project-path spacetimedb --server local",
-    "spacetime:publish": "spacetime publish --project-path spacetimedb --server maincloud"
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb",
+    "spacetime:publish:local": "spacetime publish --module-path spacetimedb --server local",
+    "spacetime:publish": "spacetime publish --module-path spacetimedb --server maincloud"
   },
   "dependencies": {
     "@angular/common": "^21.1.1",

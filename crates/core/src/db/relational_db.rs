@@ -3,7 +3,7 @@ use crate::db::MetricsRecorderQueue;
 use crate::error::{DBError, RestoreSnapshotError};
 use crate::messages::control_db::HostType;
 use crate::subscription::ExecutionCounters;
-use crate::util::{asyncify, spawn_rayon};
+use crate::util::asyncify;
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, Context};
 use enum_map::EnumMap;
@@ -403,7 +403,7 @@ impl RelationalDB {
     /// It is an error to call this method on an already-initialized database.
     ///
     /// See [`Self::open`] for further information.
-    pub fn set_initialized(&self, tx: &mut MutTx, host_type: HostType, program: Program) -> Result<(), DBError> {
+    pub fn set_initialized(&self, tx: &mut MutTx, program: Program) -> Result<(), DBError> {
         log::trace!(
             "[{}] DATABASE: set initialized owner={} program_hash={}",
             self.database_identity,
@@ -426,7 +426,7 @@ impl RelationalDB {
             database_identity: self.database_identity.into(),
             owner_identity: self.owner_identity.into(),
 
-            program_kind: host_type.into(),
+            program_kind: program.kind,
             program_hash: program.hash,
             program_bytes: program.bytes,
             module_version: ONLY_MODULE_VERSION.into(),
@@ -469,8 +469,8 @@ impl RelationalDB {
     ///   the transactional context `tx`.
     /// - the `__init__` reducer contained in the module has been executed
     ///   within the transactional context `tx`.
-    pub fn update_program(&self, tx: &mut MutTx, host_type: HostType, program: Program) -> Result<(), DBError> {
-        Ok(self.inner.update_program(tx, host_type.into(), program)?)
+    pub fn update_program(&self, tx: &mut MutTx, program: Program) -> Result<(), DBError> {
+        Ok(self.inner.update_program(tx, program)?)
     }
 
     fn restore_from_snapshot_or_bootstrap(
@@ -864,12 +864,11 @@ impl RelationalDB {
     /// This requires a small amount of additional logic when restoring from a snapshot
     /// to ensure we don't restore a snapshot more recent than the durable TX offset.
     fn maybe_do_snapshot(&self, tx_data: &TxData) {
-        if let Some(snapshot_worker) = &self.snapshot_worker {
-            if let Some(tx_offset) = tx_data.tx_offset() {
-                if tx_offset % SNAPSHOT_FREQUENCY == 0 {
-                    snapshot_worker.request_snapshot();
-                }
-            }
+        if let Some(snapshot_worker) = &self.snapshot_worker
+            && let Some(tx_offset) = tx_data.tx_offset()
+            && tx_offset % SNAPSHOT_FREQUENCY == 0
+        {
+            snapshot_worker.request_snapshot();
         }
     }
 
@@ -1404,7 +1403,7 @@ impl RelationalDB {
             TableId,
             Bound<AlgebraicValue>,
             Bound<AlgebraicValue>,
-            impl Iterator<Item = RowRef<'a>>,
+            impl Iterator<Item = RowRef<'a>> + use<'a>,
         ),
         DBError,
     > {
@@ -1416,7 +1415,7 @@ impl RelationalDB {
         tx: &'a MutTx,
         index_id: IndexId,
         point: &[u8],
-    ) -> Result<(TableId, AlgebraicValue, impl Iterator<Item = RowRef<'a>>), DBError> {
+    ) -> Result<(TableId, AlgebraicValue, impl Iterator<Item = RowRef<'a>> + use<'a>), DBError> {
         Ok(tx.index_scan_point(index_id, point)?)
     }
 
@@ -1741,7 +1740,6 @@ pub async fn local_durability(
     snapshot_worker: Option<&SnapshotWorker>,
 ) -> Result<(LocalDurability, DiskSizeFn), DBError> {
     let rt = tokio::runtime::Handle::current();
-    // TODO: Should this better be spawn_blocking?
     let on_new_segment = snapshot_worker.map(|snapshot_worker| {
         let snapshot_worker = snapshot_worker.clone();
         Arc::new(move || {
@@ -1750,17 +1748,11 @@ pub async fn local_durability(
             snapshot_worker.request_snapshot_ignore_closed();
         }) as Arc<OnNewSegmentFn>
     });
-    let local = spawn_rayon(move || {
+    let local = asyncify(move || {
         durability::Local::open(
             replica_dir.clone(),
             rt,
-            durability::local::Options {
-                commitlog: commitlog::Options {
-                    max_records_in_commit: 1.try_into().unwrap(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
+            <_>::default(),
             // Give the durability a handle to request a new snapshot run,
             // which it will send down whenever we rotate commitlog segments.
             on_new_segment,
@@ -1779,7 +1771,7 @@ pub async fn local_durability(
 /// Open a [History] for replay from the local durable state.
 ///
 /// Currently, this is simply a read-only copy of the commitlog.
-pub async fn local_history(replica_dir: &ReplicaDir) -> io::Result<impl History<TxData = Txdata>> {
+pub async fn local_history(replica_dir: &ReplicaDir) -> io::Result<impl History<TxData = Txdata> + use<>> {
     let commitlog_dir = replica_dir.commit_log();
     asyncify(move || Commitlog::open(commitlog_dir, <_>::default(), None)).await
 }
@@ -1799,10 +1791,10 @@ pub async fn snapshot_watching_commitlog_compressor(
         let snapshot_offset = *snapshot_rx.borrow_and_update();
         let durability = durability.clone();
 
-        if let Some(snap_tx) = &mut snap_tx {
-            if let Err(err) = snap_tx.try_send(snapshot_offset) {
-                tracing::warn!("failed to send offset {snapshot_offset} after snapshot creation: {err}");
-            }
+        if let Some(snap_tx) = &mut snap_tx
+            && let Err(err) = snap_tx.try_send(snapshot_offset)
+        {
+            tracing::warn!("failed to send offset {snapshot_offset} after snapshot creation: {err}");
         }
 
         let res: io::Result<_> = asyncify(move || {
@@ -1835,10 +1827,10 @@ pub async fn snapshot_watching_commitlog_compressor(
         };
         prev_snapshot_offset = snapshot_offset;
 
-        if let Some((clog_tx, last_compressed_segment)) = clog_tx.as_mut().zip(last_compressed_segment) {
-            if let Err(err) = clog_tx.try_send(last_compressed_segment) {
-                tracing::warn!("failed to send offset {last_compressed_segment} after compression: {err}");
-            }
+        if let Some((clog_tx, last_compressed_segment)) = clog_tx.as_mut().zip(last_compressed_segment)
+            && let Err(err) = clog_tx.try_send(last_compressed_segment)
+        {
+            tracing::warn!("failed to send offset {last_compressed_segment} after compression: {err}");
         }
     }
 }
@@ -2182,7 +2174,7 @@ pub mod tests_utils {
             assert_eq!(connected_clients.len(), expected_num_clients);
             let db = db.with_row_count(Self::row_count_fn());
             db.with_auto_commit(Workload::Internal, |tx| {
-                db.set_initialized(tx, HostType::Wasm, Program::empty())
+                db.set_initialized(tx, Program::empty(HostType::Wasm.into()))
             })?;
             Ok(db)
         }

@@ -14,5 +14,5 @@ export type Event<Reducer extends ReducerEventInfo> = WithId &
     | { tag: 'SubscribeApplied' }
     | { tag: 'UnsubscribeApplied' }
     | { tag: 'Error'; value: Error }
-    | { tag: 'UnknownTransaction' }
+    | { tag: 'Transaction' }
   );

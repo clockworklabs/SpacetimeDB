@@ -73,7 +73,7 @@ namespace SpacetimeDB.Types
                 this.Name = "";
             }
 
-            string IReducerArgs.ReducerName => "InsertWhereTest";
+            string IReducerArgs.ReducerName => "insert_where_test";
         }
     }
 }

@@ -865,8 +865,8 @@ impl Lang for UnrealCpp<'_> {
         writeln!(client_h);
 
         writeln!(client_h, "/** Forward declaration for tables */");
-        for (table_name, _) in iter_table_names_and_types(module, options.visibility) {
-            writeln!(client_h, "class U{}Table;", table_name.deref().to_case(Case::Pascal));
+        for (_, accessor_name, _) in iter_table_names_and_types(module, options.visibility) {
+            writeln!(client_h, "class U{}Table;", accessor_name.deref().to_case(Case::Pascal));
         }
         writeln!(client_h, "/***/");
         writeln!(client_h);
@@ -972,10 +972,10 @@ impl Lang for UnrealCpp<'_> {
 
         // Build table includes
         let table_includes: Vec<String> = iter_table_names_and_types(module, options.visibility)
-            .map(|(table_name, _)| {
+            .map(|(_, accessor_name, _)| {
                 format!(
                     "ModuleBindings/Tables/{}Table.g.h",
-                    table_name.deref().to_case(Case::Pascal) //type_ref_name(module, product_type_ref)
+                    accessor_name.deref().to_case(Case::Pascal) //type_ref_name(module, product_type_ref)
                 )
             })
             .collect();
@@ -2385,13 +2385,13 @@ fn generate_remote_tables_class(
     writeln!(output);
 
     // Generate table handle properties
-    for (table_name, _) in iter_table_names_and_types(module, visibility) {
+    for (_, accessor_name, _) in iter_table_names_and_types(module, visibility) {
         writeln!(output, "    UPROPERTY(BlueprintReadOnly, Category=\"SpacetimeDB\")");
         writeln!(
             output,
             "    U{}Table* {};",
-            table_name.deref().to_case(Case::Pascal),
-            table_name.deref().to_case(Case::Pascal)
+            accessor_name.deref().to_case(Case::Pascal),
+            accessor_name.deref().to_case(Case::Pascal)
         );
         writeln!(output);
     }
@@ -3066,16 +3066,16 @@ fn generate_client_implementation(
     writeln!(output, "\tProcedures->Conn = this;");
     writeln!(output);
 
-    for (table_name, product_type_ref) in iter_table_names_and_types(module, visibility) {
+    for (name, accessor_name, product_type_ref) in iter_table_names_and_types(module, visibility) {
         let struct_name = type_ref_name(module, product_type_ref);
-        let table_name = table_name.deref();
+        let accessor = accessor_name.deref();
         writeln!(
             output,
             "\tRegisterTable<F{}Type, U{}Table, FEventContext>(TEXT(\"{}\"), Db->{});",
             struct_name,
-            table_name.to_case(Case::Pascal),
-            table_name,
-            table_name.to_case(Case::Pascal)
+            accessor.to_case(Case::Pascal),
+            name.deref(),
+            accessor.to_case(Case::Pascal)
         );
     }
     writeln!(output, "}}");
@@ -3122,22 +3122,22 @@ fn generate_client_implementation(
     writeln!(output, "{{");
     writeln!(output);
     writeln!(output, "\t/** Creating tables */");
-    for (table_name, _) in iter_table_names_and_types(module, visibility) {
+    for (_, accessor_name, _) in iter_table_names_and_types(module, visibility) {
         writeln!(
             output,
             "\t{} = NewObject<U{}Table>(this);",
-            table_name.deref().to_case(Case::Pascal),
-            table_name.deref().to_case(Case::Pascal)
+            accessor_name.deref().to_case(Case::Pascal),
+            accessor_name.deref().to_case(Case::Pascal)
         );
     }
     writeln!(output, "\t/**/");
     writeln!(output);
     writeln!(output, "\t/** Initialization */");
-    for (table_name, _) in iter_table_names_and_types(module, visibility) {
+    for (_, accessor_name, _) in iter_table_names_and_types(module, visibility) {
         writeln!(
             output,
             "\t{}->PostInitialize();",
-            table_name.deref().to_case(Case::Pascal)
+            accessor_name.deref().to_case(Case::Pascal)
         );
     }
     writeln!(output, "\t/**/");
@@ -4036,7 +4036,7 @@ fn collect_wrapper_types(
     }
 
     // Collect from all tables
-    for (_, product_type_ref) in iter_table_names_and_types(module, visibility) {
+    for (_, _, product_type_ref) in iter_table_names_and_types(module, visibility) {
         let product_type = module.typespace_for_generate()[product_type_ref].as_product().unwrap();
         for (_, field_ty) in &product_type.elements {
             collect_from_type(module, field_ty, &mut optional_types, &mut result_types);

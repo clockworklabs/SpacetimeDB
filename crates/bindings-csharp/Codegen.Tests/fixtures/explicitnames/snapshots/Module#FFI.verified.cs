@@ -269,12 +269,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 [
                     new(
                         SourceName: "DemoTable_Id_idx_btree",
-                        AccessorName: null,
+                        AccessorName: "Id",
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
                     ),
                     new(
                         SourceName: "DemoTable_Id_idx_btree",
-                        AccessorName: null,
+                        AccessorName: "ById",
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
                     )
                 ],
@@ -523,7 +523,7 @@ static class ModuleRegistration
                 new SpacetimeDB.ProcedureContext(identity, connectionId, random, time)
         );
         SpacetimeDB.Internal.Module.SetCaseConversionPolicy(
-            SpacetimeDB.Internal.CaseConversionPolicy.SnakeCase
+            SpacetimeDB.CaseConversionPolicy.SnakeCase
         );
         SpacetimeDB.Internal.Module.RegisterExplicitTableName("DemoTable", "canonical_table");
         SpacetimeDB.Internal.Module.RegisterExplicitFunctionName(

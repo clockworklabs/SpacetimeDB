@@ -58,7 +58,7 @@ namespace SpacetimeDB.Types
         [DataContract]
         public sealed partial class AuthenticationCapabilitiesArgs : Procedure, IProcedureArgs
         {
-            string IProcedureArgs.ProcedureName => "AuthenticationCapabilities";
+            string IProcedureArgs.ProcedureName => "authentication_capabilities";
         }
 
     }

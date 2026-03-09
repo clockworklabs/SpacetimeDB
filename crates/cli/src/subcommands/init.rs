@@ -1,16 +1,17 @@
+use crate::detect::{find_executable, has_package_manager};
 use crate::Config;
-use crate::{detect::find_executable, util::UNSTABLE_WARNING};
 use anyhow::anyhow;
 use anyhow::Context;
 use clap::{Arg, ArgMatches};
 use colored::Colorize;
 use convert_case::{Case, Casing};
-use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
+use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect, Input, Select};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use spacetimedb_client_api_messages::name::parse_database_name;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -18,7 +19,7 @@ use toml_edit::{value, DocumentMut, Item};
 use xmltree::{Element, XMLNode};
 
 use crate::spacetime_config::{PackageManager, SpacetimeConfig, CONFIG_FILENAME};
-use crate::subcommands::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
+use crate::subcommands::login::{spacetimedb_login_and_save, DEFAULT_AUTH_HOST};
 
 mod embedded {
     use spacetimedb_data_structures::map::HashCollectionExt as _;
@@ -35,17 +36,12 @@ pub struct TemplateDefinition {
     pub server_lang: Option<String>,
     #[serde(default)]
     pub client_lang: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct HighlightDefinition {
-    pub name: String,
-    pub template_id: String,
+    #[serde(default)]
+    pub client_framework: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct TemplatesList {
-    highlights: Vec<HighlightDefinition>,
     templates: Vec<TemplateDefinition>,
 }
 
@@ -156,7 +152,7 @@ impl InitOptions {
 
 pub fn cli() -> clap::Command {
     clap::Command::new("init")
-        .about(format!("Initializes a new spacetime project. {UNSTABLE_WARNING}"))
+        .about("Initializes a new spacetime project.")
         .arg(
             Arg::new("project-path")
                 .long("project-path")
@@ -195,11 +191,11 @@ pub fn cli() -> clap::Command {
         )
 }
 
-pub async fn fetch_templates_list() -> anyhow::Result<(Vec<HighlightDefinition>, Vec<TemplateDefinition>)> {
+pub async fn fetch_templates_list() -> anyhow::Result<Vec<TemplateDefinition>> {
     let content = embedded::get_templates_json();
     let templates_list: TemplatesList = serde_json::from_str(content).context("Failed to parse templates list JSON")?;
 
-    Ok((templates_list.highlights, templates_list.templates))
+    Ok(templates_list.templates)
 }
 
 pub async fn check_and_prompt_login(config: &mut Config) -> anyhow::Result<bool> {
@@ -218,7 +214,7 @@ pub async fn check_and_prompt_login(config: &mut Config) -> anyhow::Result<bool>
 
     if should_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
-        spacetimedb_login_force(config, &host, false, true).await?;
+        spacetimedb_login_and_save(config, &host, false, true).await?;
         println!("{}", "Successfully logged in!".green());
         Ok(true)
     } else {
@@ -391,22 +387,38 @@ pub fn prompt_for_typescript_package_manager() -> anyhow::Result<Option<PackageM
         "TypeScript server requires dependencies to be installed before publishing.".yellow()
     );
 
-    // Prompt for package manager
     let theme = ColorfulTheme::default();
     let choices = vec!["npm", "pnpm", "yarn", "bun", "none"];
-    let selection = Select::with_theme(&theme)
-        .with_prompt("Which package manager would you like to use?")
-        .items(&choices)
-        .default(0)
-        .interact()?;
 
-    Ok(match selection {
-        0 => Some(PackageManager::Npm),
-        1 => Some(PackageManager::Pnpm),
-        2 => Some(PackageManager::Yarn),
-        3 => Some(PackageManager::Bun),
-        _ => None,
-    })
+    loop {
+        let selection = Select::with_theme(&theme)
+            .with_prompt("Which package manager would you like to use?")
+            .items(&choices)
+            .default(0)
+            .interact()?;
+
+        let pm = match selection {
+            0 => Some(PackageManager::Npm),
+            1 => Some(PackageManager::Pnpm),
+            2 => Some(PackageManager::Yarn),
+            3 => Some(PackageManager::Bun),
+            _ => None,
+        };
+
+        match pm {
+            Some(pm) if !has_package_manager(pm) => {
+                println!(
+                    "{}",
+                    format!(
+                        "'{}' was not found on PATH. Please install it or choose a different package manager.",
+                        pm
+                    )
+                    .yellow()
+                );
+            }
+            _ => return Ok(pm),
+        }
+    }
 }
 
 pub fn install_typescript_dependencies(
@@ -664,7 +676,7 @@ async fn get_template_config_non_interactive(
     // Check if template is provided
     if let Some(template_str) = options.template.as_ref() {
         // Check if it's a builtin template
-        let (_, templates) = fetch_templates_list().await?;
+        let templates = fetch_templates_list().await?;
         return create_template_config_from_template_str(project_name, project_path, template_str, &templates);
     }
 
@@ -729,7 +741,7 @@ async fn get_template_config_interactive(
     if let Some(template_str) = options.template.as_ref() {
         println!("{} {}", "Template:".bold(), template_str);
 
-        let (_, templates) = fetch_templates_list().await?;
+        let templates = fetch_templates_list().await?;
         return create_template_config_from_template_str(project_name, project_path, template_str, &templates);
     }
 
@@ -753,114 +765,145 @@ async fn get_template_config_interactive(
     }
 
     // Fully interactive mode - prompt for template/language selection
-    let (highlights, templates) = fetch_templates_list().await?;
+    let templates = fetch_templates_list().await?;
 
-    let mut client_choices: Vec<String> = highlights
+    // First menu: all language combinations from templates + GitHub + None.
+    let mut templates_by_lang: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    for (idx, template) in templates.iter().enumerate() {
+        let server_lang = template.server_lang.as_deref();
+        let client_lang = template.client_framework.as_deref().or(template.client_lang.as_deref());
+        let lang = if server_lang == client_lang {
+            format_language_label(server_lang)
+        } else {
+            format!(
+                "{}/{}",
+                format_language_label(server_lang),
+                format_language_label(client_lang),
+            )
+        };
+        templates_by_lang.entry(lang).or_default().push(idx);
+    }
+
+    let lang_keys: Vec<String> = templates_by_lang.keys().cloned().collect();
+    let mut lang_items: Vec<String> = templates_by_lang
         .iter()
-        .map(|h| {
-            let template = templates.iter().find(|t| t.id == h.template_id);
-            match template {
-                Some(t) => format!("{} - {}", h.name, t.description),
-                None => h.name.clone(),
-            }
+        .map(|(lang, template_indices)| {
+            let count = template_indices.len();
+            let template_word = if count == 1 { "template" } else { "templates" };
+            format!("{lang} ({count} {template_word})")
         })
         .collect();
-    client_choices.push("Use Template - Choose from a list of built-in template projects or clone an existing SpacetimeDB project from GitHub".to_string());
-    client_choices.push("None".to_string());
+    lang_items.push("Clone from GitHub (owner/repo or git URL)".to_string());
+    lang_items.push("None".to_string());
 
-    let client_selection = Select::with_theme(&theme)
-        .with_prompt("Select a client type for your project (you can add other clients later)")
-        .items(&client_choices)
-        .default(0)
-        .interact()?;
-
-    let other_index = highlights.len();
-    let none_index = highlights.len() + 1;
-
-    if client_selection < highlights.len() {
-        let highlight = &highlights[client_selection];
-        let template = templates
-            .iter()
-            .find(|t| t.id == highlight.template_id)
-            .ok_or_else(|| anyhow::anyhow!("Template {} not found", highlight.template_id))?;
-
-        Ok(TemplateConfig {
-            project_name,
-            project_path,
-            template_type: TemplateType::Builtin,
-            server_lang: parse_server_lang(&template.server_lang)?,
-            client_lang: parse_client_lang(&template.client_lang)?,
-            github_repo: None,
-            template_def: Some(template.clone()),
-            use_local: true,
-        })
-    } else if client_selection == other_index {
-        println!("\n{}", "Available built-in templates:".bold());
-        for template in &templates {
-            println!("  {} - {}", template.id, template.description);
-        }
-        println!();
-
-        loop {
-            let template_id = Input::<String>::with_theme(&theme)
-                .with_prompt("Template ID or GitHub repository (owner/repo) or git URL")
-                .interact_text()?
-                .trim()
-                .to_string();
-            let template_config = create_template_config_from_template_str(
-                project_name.clone(),
-                project_path.clone(),
-                &template_id,
-                &templates,
-            );
-            // If template_id looks like a builtin template ID (e.g. kebab-case, all lowercase, no slashes, alphanumeric and dashes only)
-            // then ensure that it is a valid builtin template ID, if not reprompt
-            let is_builtin_like = |s: &str| {
-                !s.is_empty()
-                    && !s.contains('/')
-                    && s.chars()
-                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-            };
-            if !is_builtin_like(&template_id) {
-                break template_config;
-            }
-            if templates.iter().any(|t| t.id == template_id) {
-                break template_config;
-            }
-            eprintln!(
-                "{}",
-                "Unrecognized format. Enter a built-in ID (e.g. \"rust-chat\"), a GitHub repo (\"owner/repo\"), or a git URL."
-                    .bold()
-            );
-        }
-    } else if client_selection == none_index {
-        // Ask for server language only
-        let server_lang_choices = vec!["Rust", "C#", "TypeScript"];
-        let server_selection = Select::with_theme(&theme)
-            .with_prompt("Select server language")
-            .items(&server_lang_choices)
+    let github_clone_index = lang_keys.len();
+    let none_index = lang_keys.len() + 1;
+    loop {
+        let client_selection = FuzzySelect::with_theme(&theme)
+            .with_prompt("Select a language (type to filter)")
+            .items(&lang_items)
             .default(0)
             .interact()?;
 
-        let server_lang = match server_selection {
-            0 => Some(ServerLanguage::Rust),
-            1 => Some(ServerLanguage::Csharp),
-            2 => Some(ServerLanguage::TypeScript),
-            _ => unreachable!("Invalid server language selection"),
-        };
+        if client_selection < lang_keys.len() {
+            let selected_lang = &lang_keys[client_selection];
+            let template_indices = templates_by_lang
+                .get(selected_lang)
+                .ok_or_else(|| anyhow::anyhow!("No templates found for selected language"))?;
 
-        Ok(TemplateConfig {
-            project_name,
-            project_path,
-            template_type: TemplateType::Empty,
-            server_lang,
-            client_lang: None,
-            github_repo: None,
-            template_def: None,
-            use_local: true,
-        })
-    } else {
-        unreachable!("Invalid selection index")
+            let template = if template_indices.len() > 1 {
+                let template_items: Vec<String> = template_indices
+                    .iter()
+                    .map(|&idx| {
+                        let template = &templates[idx];
+                        format!("{} - {}", template.id, template.description)
+                    })
+                    .collect();
+
+                let pair_prompt = format!("Templates available for {selected_lang} (type to filter, Esc to go back)");
+                let template_selection = FuzzySelect::with_theme(&theme)
+                    .with_prompt(&pair_prompt)
+                    .items(&template_items)
+                    .default(0)
+                    .interact_opt()?;
+
+                let Some(template_selection) = template_selection else {
+                    continue;
+                };
+
+                &templates[template_indices[template_selection]]
+            } else {
+                &templates[template_indices[0]]
+            };
+
+            return Ok(TemplateConfig {
+                project_name,
+                project_path,
+                template_type: TemplateType::Builtin,
+                server_lang: parse_server_lang(&template.server_lang)?,
+                client_lang: parse_client_lang(&template.client_lang)?,
+                github_repo: None,
+                template_def: Some(template.clone()),
+                use_local: true,
+            });
+        } else if client_selection == github_clone_index {
+            return loop {
+                let repo_input = Input::<String>::with_theme(&theme)
+                    .with_prompt("GitHub repository (owner/repo) or git URL")
+                    .interact_text()?
+                    .trim()
+                    .to_string();
+                if repo_input.is_empty() {
+                    eprintln!("{}", "Please enter a GitHub repository.".bold());
+                    continue;
+                }
+                break create_template_config_from_template_str(
+                    project_name.clone(),
+                    project_path.clone(),
+                    &repo_input,
+                    &templates,
+                );
+            };
+        } else if client_selection == none_index {
+            // Ask for server language only
+            let server_lang_choices = vec!["Rust", "C#", "TypeScript"];
+            let server_selection = Select::with_theme(&theme)
+                .with_prompt("Select server language")
+                .items(&server_lang_choices)
+                .default(0)
+                .interact()?;
+
+            let server_lang = match server_selection {
+                0 => Some(ServerLanguage::Rust),
+                1 => Some(ServerLanguage::Csharp),
+                2 => Some(ServerLanguage::TypeScript),
+                _ => unreachable!("Invalid server language selection"),
+            };
+
+            return Ok(TemplateConfig {
+                project_name,
+                project_path,
+                template_type: TemplateType::Empty,
+                server_lang,
+                client_lang: None,
+                github_repo: None,
+                template_def: None,
+                use_local: true,
+            });
+        } else {
+            unreachable!("Invalid selection index");
+        }
+    }
+}
+
+fn format_language_label(lang: Option<&str>) -> String {
+    match lang {
+        Some(value) if value.eq_ignore_ascii_case("rust") => "Rust".to_string(),
+        Some(value) if value.eq_ignore_ascii_case("csharp") || value.eq_ignore_ascii_case("c#") => "C#".to_string(),
+        Some(value) if value.eq_ignore_ascii_case("typescript") => "TypeScript".to_string(),
+        Some(value) if value.eq_ignore_ascii_case("cpp") || value.eq_ignore_ascii_case("c++") => "C++".to_string(),
+        Some(value) if !value.trim().is_empty() => value.to_string(),
+        _ => "None".to_string(),
     }
 }
 
@@ -887,10 +930,10 @@ fn clone_github_template(repo_input: &str, target: &Path, is_server_only: bool) 
     let mut callbacks = git2::RemoteCallbacks::new();
 
     callbacks.credentials(|_url, username_from_url, allowed_types| {
-        if allowed_types.contains(git2::CredentialType::SSH_KEY) {
-            if let Some(username) = username_from_url {
-                return git2::Cred::ssh_key_from_agent(username);
-            }
+        if allowed_types.contains(git2::CredentialType::SSH_KEY)
+            && let Some(username) = username_from_url
+        {
+            return git2::Cred::ssh_key_from_agent(username);
         }
         if allowed_types.contains(git2::CredentialType::USER_PASS_PLAINTEXT) {
             return git2::Cred::userpass_plaintext("", "");
@@ -956,10 +999,10 @@ fn update_package_json(dir: &Path, package_name: &str) -> anyhow::Result<()> {
     package["name"] = json!(package_name);
 
     // Update spacetimedb version if it exists in dependencies
-    if let Some(deps) = package.get_mut("dependencies") {
-        if deps.get("spacetimedb").is_some() {
-            deps["spacetimedb"] = json!(format!("^{}", get_spacetimedb_typescript_version()));
-        }
+    if let Some(deps) = package.get_mut("dependencies")
+        && deps.get("spacetimedb").is_some()
+    {
+        deps["spacetimedb"] = json!(format!("^{}", get_spacetimedb_typescript_version()));
     }
 
     let updated_content = serde_json::to_string_pretty(&package)?;
@@ -992,40 +1035,40 @@ fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> 
         .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
         .collect::<String>();
 
-    if let Some(package_item) = doc.get_mut("package") {
-        if let Some(package_table) = package_item.as_table_mut() {
-            package_table["name"] = value(safe_name);
-            if let Some(edition_item) = package_table.get_mut("edition") {
-                if edition_uses_workspace(edition_item) {
-                    *edition_item = value(embedded::get_workspace_edition());
-                }
-            }
+    if let Some(package_item) = doc.get_mut("package")
+        && let Some(package_table) = package_item.as_table_mut()
+    {
+        package_table["name"] = value(safe_name);
+        if let Some(edition_item) = package_table.get_mut("edition")
+            && edition_uses_workspace(edition_item)
+        {
+            *edition_item = value(embedded::get_workspace_edition());
         }
     }
 
-    if let Some(deps_item) = doc.get_mut("dependencies") {
-        if let Some(deps_table) = deps_item.as_table_mut() {
-            let keys: Vec<String> = deps_table.iter().map(|(k, _)| k.to_string()).collect();
-            for key in keys {
-                if let Some(dep_item) = deps_table.get_mut(&key) {
-                    if dependency_uses_workspace(dep_item) {
-                        if has_path(dep_item) {
-                            if key == "spacetimedb" {
-                                if let Some(version) = embedded::get_workspace_dependency_version(&key) {
-                                    set_dependency_version(dep_item, version, true);
-                                }
-                            } else if key == "spacetimedb-sdk" {
-                                set_dependency_version(dep_item, patch_wildcard.as_str(), true);
-                            }
-                            continue;
+    if let Some(deps_item) = doc.get_mut("dependencies")
+        && let Some(deps_table) = deps_item.as_table_mut()
+    {
+        let keys: Vec<String> = deps_table.iter().map(|(k, _)| k.to_string()).collect();
+        for key in keys {
+            if let Some(dep_item) = deps_table.get_mut(&key)
+                && dependency_uses_workspace(dep_item)
+            {
+                if has_path(dep_item) {
+                    if key == "spacetimedb" {
+                        if let Some(version) = embedded::get_workspace_dependency_version(&key) {
+                            set_dependency_version(dep_item, version, true);
                         }
-
-                        if uses_workspace(dep_item) {
-                            if let Some(version) = embedded::get_workspace_dependency_version(&key) {
-                                set_dependency_version(dep_item, version, key == "spacetimedb");
-                            }
-                        }
+                    } else if key == "spacetimedb-sdk" {
+                        set_dependency_version(dep_item, patch_wildcard.as_str(), true);
                     }
+                    continue;
+                }
+
+                if uses_workspace(dep_item)
+                    && let Some(version) = embedded::get_workspace_dependency_version(&key)
+                {
+                    set_dependency_version(dep_item, version, key == "spacetimedb");
                 }
             }
         }
@@ -1105,20 +1148,20 @@ fn find_first_csproj(dir: &Path) -> anyhow::Result<Option<PathBuf>> {
 /// Remove every <ProjectReference/> under any <ItemGroup>
 fn remove_all_project_references(project: &mut Element) {
     for node in project.children.iter_mut() {
-        if let XMLNode::Element(item_group) = node {
-            if item_group.name == "ItemGroup" {
-                item_group
-                    .children
-                    .retain(|n| !matches!(n, XMLNode::Element(el) if el.name == "ProjectReference"));
-            }
+        if let XMLNode::Element(item_group) = node
+            && item_group.name == "ItemGroup"
+        {
+            item_group
+                .children
+                .retain(|n| !matches!(n, XMLNode::Element(el) if el.name == "ProjectReference"));
         }
     }
     // Optional: prune empty ItemGroups
     project.children.retain(|n| {
-        if let XMLNode::Element(el) = n {
-            if el.name == "ItemGroup" {
-                return el.children.iter().any(|c| matches!(c, XMLNode::Element(_)));
-            }
+        if let XMLNode::Element(el) = n
+            && el.name == "ItemGroup"
+        {
+            return el.children.iter().any(|c| matches!(c, XMLNode::Element(_)));
         }
         true
     });
@@ -1128,19 +1171,18 @@ fn remove_all_project_references(project: &mut Element) {
 fn upsert_packageref(project: &mut Element, include: &str, version: &str) {
     // Try to find an existing PackageReference
     for node in project.children.iter_mut() {
-        if let XMLNode::Element(item_group) = node {
-            if item_group.name == "ItemGroup" {
-                if let Some(XMLNode::Element(existing)) = item_group.children.iter_mut().find(|n| {
-                    matches!(n,
-                        XMLNode::Element(e)
-                        if e.name == "PackageReference"
-                           && e.attributes.get("Include").map(|v| v == include).unwrap_or(false)
-                    )
-                }) {
-                    existing.attributes.insert("Version".to_string(), version.to_string());
-                    return;
-                }
-            }
+        if let XMLNode::Element(item_group) = node
+            && item_group.name == "ItemGroup"
+            && let Some(XMLNode::Element(existing)) = item_group.children.iter_mut().find(|n| {
+                matches!(n,
+                    XMLNode::Element(e)
+                    if e.name == "PackageReference"
+                       && e.attributes.get("Include").map(|v| v == include).unwrap_or(false)
+                )
+            })
+        {
+            existing.attributes.insert("Version".to_string(), version.to_string());
+            return;
         }
     }
     // Otherwise create one in (or create) an ItemGroup
@@ -1595,8 +1637,6 @@ fn check_for_git() -> bool {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathBuf> {
-    println!("{UNSTABLE_WARNING}\n");
-
     let options = InitOptions::from_args(args);
     let is_interactive = !options.non_interactive;
     let template = options.template.as_ref();
@@ -1808,15 +1848,15 @@ fn has_path(item: &Item) -> bool {
 }
 
 fn set_dependency_version(item: &mut Item, version: &str, remove_path: bool) {
-    if let Item::Value(val) = item {
-        if let Some(inline) = val.as_inline_table_mut() {
-            inline.remove("workspace");
-            if remove_path {
-                inline.remove("path");
-            }
-            inline.insert("version", toml_edit::Value::from(version.to_string()));
-            return;
+    if let Item::Value(val) = item
+        && let Some(inline) = val.as_inline_table_mut()
+    {
+        inline.remove("workspace");
+        if remove_path {
+            inline.remove("path");
         }
+        inline.insert("version", toml_edit::Value::from(version.to_string()));
+        return;
     }
 
     if let Item::Table(table) = item {
@@ -1907,13 +1947,13 @@ fn install_ai_rules(config: &TemplateConfig, project_path: &Path) -> anyhow::Res
 /// Strip YAML frontmatter from .mdc files (the --- delimited section at the start)
 fn strip_mdc_frontmatter(content: &str) -> &str {
     // Look for frontmatter: starts with --- and ends with ---
-    if let Some(after_opening) = content.strip_prefix("---") {
-        if let Some(end_idx) = after_opening.find("\n---") {
-            // Skip past the closing --- and the newline after it
-            let remaining = &after_opening[end_idx + 4..]; // 4 for \n---
-                                                           // Skip any leading newlines after frontmatter
-            return remaining.trim_start_matches('\n');
-        }
+    if let Some(after_opening) = content.strip_prefix("---")
+        && let Some(end_idx) = after_opening.find("\n---")
+    {
+        // Skip past the closing --- and the newline after it
+        let remaining = &after_opening[end_idx + 4..]; // 4 for \n---
+                                                       // Skip any leading newlines after frontmatter
+        return remaining.trim_start_matches('\n');
     }
     content
 }

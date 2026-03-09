@@ -121,18 +121,18 @@ internal static class PublicTableViewRegressions
     }
 
     private static string BuildPublicTableQuerySql() =>
-        MakeTable().Where(cols => cols.Id.Eq(0)).Build().Sql;
+        MakeTable().Where(cols => cols.Id.Eq(0)).ToSql();
 
     private static string BuildPublicTableViewSql()
     {
         var cols = new PublicTableCols("PublicTable");
-        return MakeTable().Where(_ => cols.Id.Eq(0)).Build().Sql;
+        return MakeTable().Where(_ => cols.Id.Eq(0)).ToSql();
     }
 
     private static string BuildFindPublicTableByIdentitySql()
     {
         var table = MakeTable();
-        return table.Where(cols => cols.Id.Eq(0)).Build().Sql;
+        return table.Where(cols => cols.Id.Eq(0)).ToSql();
     }
 
     /// <summary>

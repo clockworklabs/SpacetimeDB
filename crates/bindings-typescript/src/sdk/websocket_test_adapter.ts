@@ -1,10 +1,11 @@
 import { BinaryReader, BinaryWriter } from '../';
 import { ClientMessage, ServerMessage } from './client_api/types';
+import type { WebsocketAdapter } from './websocket_decompress_adapter';
 
-class WebsocketTestAdapter {
+class WebsocketTestAdapter implements WebsocketAdapter {
   onclose: any;
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-  onopen!: Function;
+  onopen!: () => void;
   onmessage: any;
   onerror: any;
 
@@ -27,6 +28,7 @@ class WebsocketTestAdapter {
 
   close(): void {
     this.closed = true;
+    this.onclose?.({ code: 1000, reason: 'normal closure', wasClean: true });
   }
 
   acceptConnection(): void {

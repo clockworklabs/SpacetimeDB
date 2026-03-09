@@ -68,7 +68,7 @@ namespace SpacetimeDB.Types
                 this.Name = "";
             }
 
-            string IReducerArgs.ReducerName => "EmitTestEvent";
+            string IReducerArgs.ReducerName => "emit_test_event";
         }
     }
 }

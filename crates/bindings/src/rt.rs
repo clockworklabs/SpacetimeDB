@@ -4,7 +4,9 @@ use crate::query_builder::{FromWhere, HasCols, LeftSemiJoin, RawQuery, RightSemi
 use crate::table::IndexAlgo;
 use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext};
 use spacetimedb_lib::bsatn::EncodeError;
-use spacetimedb_lib::db::raw_def::v10::{ExplicitNames as RawExplicitNames, RawModuleDefV10Builder};
+use spacetimedb_lib::db::raw_def::v10::{
+    CaseConversionPolicy, ExplicitNames as RawExplicitNames, RawModuleDefV10Builder,
+};
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableType, ViewResultHeader};
 use spacetimedb_lib::de::{self, Deserialize, DeserializeOwned, Error as _, SeqProductAccess};
@@ -747,7 +749,7 @@ pub fn register_table<T: Table>() {
             table = table.with_unique_constraint(col);
         }
         for index in T::INDEXES {
-            table = table.with_index(index.algo.into(), index.source_name);
+            table = table.with_index(index.algo.into(), index.source_name, index.accessor_name);
         }
         if let Some(primary_key) = T::PRIMARY_KEY {
             table = table.with_primary_key(primary_key);
@@ -856,6 +858,22 @@ pub fn register_row_level_security(sql: &'static str) {
     })
 }
 
+/// Set the case conversion policy for this module.
+///
+/// This is called by the `#[spacetimedb::settings]` attribute macro.
+/// Do not call directly; use the attribute instead:
+///
+/// ```ignore
+/// #[spacetimedb::settings]
+/// const CASE_CONVERSION_POLICY: CaseConversionPolicy = CaseConversionPolicy::SnakeCase;
+/// ```
+#[doc(hidden)]
+pub fn register_case_conversion_policy(policy: CaseConversionPolicy) {
+    register_describer(move |module| {
+        module.inner.set_case_conversion_policy(policy);
+    })
+}
+
 /// A builder for a module.
 #[derive(Default)]
 pub struct ModuleBuilder {
@@ -908,7 +926,7 @@ static ANONYMOUS_VIEWS: OnceLock<Vec<AnonymousFn>> = OnceLock::new();
 /// to define and, to a limited extent, alter the schema at initialization time,
 /// including when modules are updated (re-publishing).
 /// After initialization, the module cannot alter the schema.
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn __describe_module__(description: BytesSink) {
     // Collect the `module`.
     let mut module = ModuleBuilder::default();
@@ -964,7 +982,7 @@ extern "C" fn __describe_module__(description: BytesSink) {
 /// it is expected that `HOST_CALL_FAILURE` is returned.
 /// Otherwise, `0` should be returned, i.e., the reducer completed successfully.
 /// Note that in the future, more failure codes could be supported.
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn __call_reducer__(
     id: usize,
     sender_0: u64,
@@ -1061,7 +1079,7 @@ fn convert_err_to_errno(res: Result<(), Box<str>>, out: BytesSink) -> i16 {
 ///
 /// Procedures always return the error 0. All other return values are reserved.
 #[cfg(feature = "unstable")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn __call_procedure__(
     id: usize,
     sender_0: u64,
@@ -1115,7 +1133,7 @@ extern "C" fn __call_procedure__(
 ///
 /// The current abi is identified by a return code of 2.
 /// The previous abi, which we still support, is identified by a return code of 0.
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn __call_view_anon__(id: usize, args: BytesSource, sink: BytesSink) -> i16 {
     let views = ANONYMOUS_VIEWS.get().unwrap();
     write_to_sink(
@@ -1143,7 +1161,7 @@ extern "C" fn __call_view_anon__(id: usize, args: BytesSource, sink: BytesSink) 
 ///
 /// The current abi is identified by a return code of 2.
 /// The previous abi, which we still support, is identified by a return code of 0.
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn __call_view__(
     id: usize,
     sender_0: u64,
@@ -1277,7 +1295,7 @@ fn write_to_sink(sink: BytesSink, mut buf: &[u8]) {
 macro_rules! __make_register_reftype {
     ($ty:ty, $name:literal) => {
         const _: () = {
-            #[export_name = concat!("__preinit__20_register_describer_", $name)]
+            #[unsafe(export_name = concat!("__preinit__20_register_describer_", $name))]
             extern "C" fn __register_describer() {
                 $crate::rt::register_reftype::<$ty>()
             }

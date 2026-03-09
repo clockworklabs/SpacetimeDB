@@ -52,14 +52,14 @@ fn init(ctx: &ReducerContext) {
 
 #[spacetimedb::view(accessor = online_users, public)]
 fn online_users(ctx: &ViewContext) -> impl Query<User> {
-    ctx.from.user().r#where(|c| c.online.eq(true))
+    ctx.from.user().r#where(|c| c.online)
 }
 
 #[spacetimedb::view(accessor = online_users_age, public)]
 fn online_users_age(ctx: &ViewContext) -> impl Query<Person> {
     ctx.from
         .user()
-        .r#where(|u| u.online.eq(true))
+        .r#where(|u| u.online)
         .right_semijoin(ctx.from.person(), |u, p| u.identity.eq(p.identity))
 }
 

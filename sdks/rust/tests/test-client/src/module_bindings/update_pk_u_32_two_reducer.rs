@@ -25,11 +25,11 @@ impl __sdk::InModule for UpdatePkU32TwoArgs {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `update_pk_u32_two`.
+/// Extension trait for access to the reducer `update_pk_u_32_two`.
 ///
 /// Implemented for [`super::RemoteReducers`].
 pub trait update_pk_u_32_two {
-    /// Request that the remote module invoke the reducer `update_pk_u32_two` to run as soon as possible.
+    /// Request that the remote module invoke the reducer `update_pk_u_32_two` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
@@ -39,7 +39,7 @@ pub trait update_pk_u_32_two {
         self.update_pk_u_32_two_then(n, data, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `update_pk_u32_two` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `update_pk_u_32_two` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.

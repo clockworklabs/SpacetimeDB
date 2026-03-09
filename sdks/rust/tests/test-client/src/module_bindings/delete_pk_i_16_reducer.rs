@@ -21,11 +21,11 @@ impl __sdk::InModule for DeletePkI16Args {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `delete_pk_i16`.
+/// Extension trait for access to the reducer `delete_pk_i_16`.
 ///
 /// Implemented for [`super::RemoteReducers`].
 pub trait delete_pk_i_16 {
-    /// Request that the remote module invoke the reducer `delete_pk_i16` to run as soon as possible.
+    /// Request that the remote module invoke the reducer `delete_pk_i_16` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
@@ -35,7 +35,7 @@ pub trait delete_pk_i_16 {
         self.delete_pk_i_16_then(n, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `delete_pk_i16` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `delete_pk_i_16` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
