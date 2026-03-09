@@ -166,11 +166,11 @@ fn cli_can_publish_automigration_change_with_delete_data_always_and_yes_break_cl
 }
 
 #[test]
-fn cli_cannot_publish_breaking_change_without_flag() {
+fn cli_can_publish_remove_empty_table() {
     migration_test(
-        "breaking-change-test",
+        "remove-empty-table-test",
         &["--build-options=--features test-remove-table"],
-        false,
+        true,
     );
 }
 
