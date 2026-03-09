@@ -178,6 +178,7 @@ public class TableCache<Row, Key : Any> private constructor(
         _rows.update { current ->
             callbacks.clear()
             newInserts.clear()
+            val insertCbs = _onInsertCallbacks.value
             var snapshot = current
             for ((row, rawBytes) in decoded) {
                 val id = keyExtractor(row, rawBytes)
@@ -187,9 +188,9 @@ public class TableCache<Row, Key : Any> private constructor(
                 } else {
                     snapshot = snapshot.put(id, Pair(row, 1))
                     newInserts.add(row)
-                    if (_onInsertCallbacks.value.isNotEmpty()) {
+                    if (insertCbs.isNotEmpty()) {
                         callbacks.add(PendingCallback {
-                            for (cb in _onInsertCallbacks.value) cb(ctx, row)
+                            for (cb in insertCbs) cb(ctx, row)
                         })
                     }
                 }
@@ -236,6 +237,7 @@ public class TableCache<Row, Key : Any> private constructor(
         _rows.update { current ->
             callbacks.clear()
             removedRows.clear()
+            val deleteCbs = _onDeleteCallbacks.value
             var snapshot = current
             for ((row, rawBytes) in data.rows) {
                 val id = keyExtractor(row, rawBytes)
@@ -244,9 +246,9 @@ public class TableCache<Row, Key : Any> private constructor(
                     val capturedRow = existing.first
                     snapshot = snapshot.remove(id)
                     removedRows.add(capturedRow)
-                    if (_onDeleteCallbacks.value.isNotEmpty()) {
+                    if (deleteCbs.isNotEmpty()) {
                         callbacks.add(PendingCallback {
-                            for (cb in _onDeleteCallbacks.value) cb(ctx, capturedRow)
+                            for (cb in deleteCbs) cb(ctx, capturedRow)
                         })
                     }
                 } else {
@@ -314,6 +316,9 @@ public class TableCache<Row, Key : Any> private constructor(
                     updatedRows.clear()
                     newInserts.clear()
                     removedRows.clear()
+                    val insertCbs = _onInsertCallbacks.value
+                    val deleteCbs = _onDeleteCallbacks.value
+                    val updateCbs = _onUpdateCallbacks.value
                     val localDeleteMap = deleteMap.toMutableMap()
                     var snapshot = current
 
@@ -326,9 +331,9 @@ public class TableCache<Row, Key : Any> private constructor(
                             val oldRow = snapshot[id]?.first ?: deletedRow
                             snapshot = snapshot.put(id, Pair(row, snapshot[id]?.second ?: 1))
                             updatedRows.add(oldRow to row)
-                            if (_onUpdateCallbacks.value.isNotEmpty()) {
+                            if (updateCbs.isNotEmpty()) {
                                 callbacks.add(PendingCallback {
-                                    for (cb in _onUpdateCallbacks.value) cb(ctx, oldRow, row)
+                                    for (cb in updateCbs) cb(ctx, oldRow, row)
                                 })
                             }
                         } else {
@@ -339,9 +344,9 @@ public class TableCache<Row, Key : Any> private constructor(
                             } else {
                                 snapshot = snapshot.put(id, Pair(row, 1))
                                 newInserts.add(row)
-                                if (_onInsertCallbacks.value.isNotEmpty()) {
+                                if (insertCbs.isNotEmpty()) {
                                     callbacks.add(PendingCallback {
-                                        for (cb in _onInsertCallbacks.value) cb(ctx, row)
+                                        for (cb in insertCbs) cb(ctx, row)
                                     })
                                 }
                             }
@@ -355,9 +360,9 @@ public class TableCache<Row, Key : Any> private constructor(
                             val capturedRow = existing.first
                             snapshot = snapshot.remove(id)
                             removedRows.add(capturedRow)
-                            if (_onDeleteCallbacks.value.isNotEmpty()) {
+                            if (deleteCbs.isNotEmpty()) {
                                 callbacks.add(PendingCallback {
-                                    for (cb in _onDeleteCallbacks.value) cb(ctx, capturedRow)
+                                    for (cb in deleteCbs) cb(ctx, capturedRow)
                                 })
                             }
                         } else {
@@ -385,12 +390,13 @@ public class TableCache<Row, Key : Any> private constructor(
             is ParsedEventUpdate<*> -> {
                 // Event table: fire insert callbacks, but don't store
                 val events = (parsed as ParsedEventUpdate<Row>).events
+                val insertCbs = _onInsertCallbacks.value
                 val callbacks = mutableListOf<PendingCallback>()
                 for (row in events) {
-                    if (_onInsertCallbacks.value.isNotEmpty()) {
+                    if (insertCbs.isNotEmpty()) {
                         val capturedRow = row
                         callbacks.add(PendingCallback {
-                            for (cb in _onInsertCallbacks.value) cb(ctx, capturedRow)
+                            for (cb in insertCbs) cb(ctx, capturedRow)
                         })
                     }
                 }
