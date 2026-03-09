@@ -69,6 +69,8 @@ impl WasmtimeModule {
         abi_funcs!(link_functions, link_async_functions);
         #[cfg(feature = "onnx")]
         linker.func_wrap("spacetime_10.5", "onnx_run", WasmInstanceEnv::onnx_run)?;
+        #[cfg(feature = "onnx")]
+        linker.func_wrap("spacetime_10.5", "onnx_run_multi", WasmInstanceEnv::onnx_run_multi)?;
         Ok(())
     }
 }

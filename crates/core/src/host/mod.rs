@@ -199,4 +199,6 @@ pub enum AbiCall {
 
     #[cfg(feature = "onnx")]
     OnnxRun,
+    #[cfg(feature = "onnx")]
+    OnnxRunMulti,
 }

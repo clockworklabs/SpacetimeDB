@@ -97,6 +97,15 @@ impl OnnxModel {
 
         Ok(outputs)
     }
+
+    /// Run inference on multiple batches of input tensors.
+    ///
+    /// Each element of `batches` is one set of input tensors (one inference invocation).
+    /// Returns one `Vec<StdbTensor>` of outputs per batch, in the same order.
+    /// This amortizes the overhead of crossing the WASM boundary for many inferences.
+    pub fn run_multi(&self, batches: &[Vec<StdbTensor>]) -> Result<Vec<Vec<StdbTensor>>, OnnxError> {
+        batches.iter().map(|inputs| self.run(inputs)).collect()
+    }
 }
 
 /// An error from ONNX model loading or inference.
@@ -247,6 +256,37 @@ mod tests {
     fn invalid_model_bytes() {
         let result = OnnxModel::load_from_bytes(b"not a valid onnx model");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn run_multi_batches() {
+        let model_bytes = build_onnx_model("Add", 2);
+        let model = OnnxModel::load_from_bytes(&model_bytes).expect("Failed to load model");
+
+        let batches = vec![
+            vec![
+                StdbTensor { shape: vec![1, 4], data: vec![1.0, 2.0, 3.0, 4.0] },
+                StdbTensor { shape: vec![1, 4], data: vec![10.0, 20.0, 30.0, 40.0] },
+            ],
+            vec![
+                StdbTensor { shape: vec![1, 4], data: vec![5.0, 5.0, 5.0, 5.0] },
+                StdbTensor { shape: vec![1, 4], data: vec![1.0, 1.0, 1.0, 1.0] },
+            ],
+        ];
+
+        let results = model.run_multi(&batches).expect("run_multi failed");
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0][0].data, vec![11.0, 22.0, 33.0, 44.0]);
+        assert_eq!(results[1][0].data, vec![6.0, 6.0, 6.0, 6.0]);
+    }
+
+    #[test]
+    fn run_multi_empty_batches() {
+        let model_bytes = build_onnx_model("Relu", 1);
+        let model = OnnxModel::load_from_bytes(&model_bytes).expect("Failed to load model");
+
+        let results = model.run_multi(&[]).expect("run_multi on empty batches failed");
+        assert!(results.is_empty());
     }
 
     #[test]

@@ -55,6 +55,28 @@ impl OnnxClient {
             }
         }
     }
+
+    /// Run inference on multiple batches of inputs in a single host call.
+    ///
+    /// Each element of `batches` is one set of input tensors (one inference invocation).
+    /// Returns one `Vec<Tensor>` of outputs per batch, in the same order.
+    ///
+    /// This is more efficient than calling [`run`](Self::run) in a loop because it
+    /// crosses the WASM boundary only once for all batches.
+    pub fn run_multi(&self, model_name: &str, batches: &[Vec<Tensor>]) -> Result<Vec<Vec<Tensor>>, Error> {
+        let input_bsatn = bsatn::to_vec(batches).expect("Failed to BSATN-serialize input tensor batches");
+
+        match spacetimedb_bindings_sys::onnx::run_multi(model_name, &input_bsatn) {
+            Ok(output_source) => {
+                let output = read_bytes_source_as::<Vec<Vec<Tensor>>>(output_source);
+                Ok(output)
+            }
+            Err(err_source) => {
+                let message = read_bytes_source_as::<String>(err_source);
+                Err(Error { message })
+            }
+        }
+    }
 }
 
 /// An error from ONNX model loading or inference.
