@@ -2,7 +2,7 @@ use spacetimedb::{log, ReducerContext, Table};
 
 #[spacetimedb::table(accessor = person)]
 pub struct Person {
-    name: String,
+    name: String
 }
 
 #[spacetimedb::reducer]

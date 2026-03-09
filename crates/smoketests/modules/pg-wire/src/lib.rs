@@ -1,5 +1,5 @@
 use spacetimedb::sats::{i256, u256};
-use spacetimedb::{ConnectionId, Identity, ReducerContext, SpacetimeType, Table, TimeDuration, Timestamp, Uuid};
+use spacetimedb::{ConnectionId, Identity, ReducerContext, SpacetimeType, Table, Timestamp, TimeDuration, Uuid};
 
 #[derive(Copy, Clone)]
 #[spacetimedb::table(accessor = t_ints, public)]
@@ -50,7 +50,7 @@ pub struct TOthers {
 
 #[spacetimedb::table(accessor = t_others_tuple, public)]
 pub struct TOthersTuple {
-    tuple: TOthers,
+    tuple: TOthers
 }
 
 #[derive(SpacetimeType, Debug, Clone, Copy)]
@@ -79,9 +79,9 @@ pub struct TEnum {
 
 #[spacetimedb::table(accessor = t_nested, public)]
 pub struct TNested {
-    en: TEnum,
-    se: TSimpleEnum,
-    ints: TInts,
+   en: TEnum,
+   se: TSimpleEnum,
+   ints: TInts,
 }
 
 #[derive(Clone)]
@@ -127,7 +127,7 @@ pub fn test(ctx: &ReducerContext) {
         f32: 594806.58906,
         f64: -3454353.345389043278459,
         str: "This is spacetimedb".to_string(),
-        bytes: vec![1, 2, 3, 4, 5, 6, 7],
+        bytes: vec!(1, 2, 3, 4, 5, 6, 7),
         identity: Identity::ONE,
         connection_id: ConnectionId::ZERO,
         timestamp: Timestamp::UNIX_EPOCH,
@@ -137,29 +137,14 @@ pub fn test(ctx: &ReducerContext) {
     ctx.db.t_others().insert(tuple.clone());
     ctx.db.t_others_tuple().insert(TOthersTuple { tuple });
 
-    ctx.db.t_simple_enum().insert(TSimpleEnum {
-        id: 1,
-        action: Action::Inactive,
-    });
-    ctx.db.t_simple_enum().insert(TSimpleEnum {
-        id: 2,
-        action: Action::Active,
-    });
+    ctx.db.t_simple_enum().insert(TSimpleEnum { id: 1, action: Action::Inactive });
+    ctx.db.t_simple_enum().insert(TSimpleEnum { id: 2, action: Action::Active });
 
-    ctx.db.t_enum().insert(TEnum {
-        id: 1,
-        color: Color::Gray(128),
-    });
+    ctx.db.t_enum().insert(TEnum { id: 1, color: Color::Gray(128) });
 
     ctx.db.t_nested().insert(TNested {
-        en: TEnum {
-            id: 1,
-            color: Color::Gray(128),
-        },
-        se: TSimpleEnum {
-            id: 2,
-            action: Action::Active,
-        },
+        en: TEnum { id: 1, color: Color::Gray(128) },
+        se: TSimpleEnum { id: 2, action: Action::Active },
         ints,
     });
 

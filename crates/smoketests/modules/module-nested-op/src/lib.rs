@@ -15,7 +15,7 @@ pub struct Friends {
 
 #[spacetimedb::reducer]
 pub fn create_account(ctx: &ReducerContext, account_id: i32, name: String) {
-    ctx.db.account().insert(Account { id: account_id, name });
+    ctx.db.account().insert(Account { id: account_id, name } );
 }
 
 #[spacetimedb::reducer]
@@ -23,10 +23,7 @@ pub fn add_friend(ctx: &ReducerContext, my_id: i32, their_id: i32) {
     // Make sure our friend exists
     for account in ctx.db.account().iter() {
         if account.id == their_id {
-            ctx.db.friends().insert(Friends {
-                friend_1: my_id,
-                friend_2: their_id,
-            });
+            ctx.db.friends().insert(Friends { friend_1: my_id, friend_2: their_id });
             return;
         }
     }
