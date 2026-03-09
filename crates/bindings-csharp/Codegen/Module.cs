@@ -407,6 +407,11 @@ record TableIndex
                 .ToImmutableArray()
         )
     {
+        if (string.IsNullOrWhiteSpace(attr.Accessor))
+        {
+            diag.Report(ErrorDescriptor.TableLevelIndexMissingAccessor, data);
+        }
+
         if (attr.Columns.Length == 0)
         {
             diag.Report(ErrorDescriptor.EmptyIndexColumns, data);
@@ -899,9 +904,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 var typeName = col.Type.Name;
                 var isNullable = typeName.EndsWith("?", StringComparison.Ordinal);
                 var valueTypeName = isNullable ? typeName[..^1] : typeName;
-                var colType = isNullable
-                    ? "global::SpacetimeDB.NullableCol"
-                    : "global::SpacetimeDB.Col";
+                var colType = isNullable ? "global::SpacetimeDB.Col" : "global::SpacetimeDB.Col";
                 return $"public readonly {colType}<{globalRowName}, {valueTypeName}> {col.Name};";
             }
 
@@ -910,9 +913,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 var typeName = col.Type.Name;
                 var isNullable = typeName.EndsWith("?", StringComparison.Ordinal);
                 var valueTypeName = isNullable ? typeName[..^1] : typeName;
-                var colType = isNullable
-                    ? "global::SpacetimeDB.NullableCol"
-                    : "global::SpacetimeDB.Col";
+                var colType = isNullable ? "global::SpacetimeDB.Col" : "global::SpacetimeDB.Col";
                 return $"{col.Name} = new {colType}<{globalRowName}, {valueTypeName}>(tableName, \"{col.Name}\");";
             }
 
@@ -945,7 +946,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 var isNullable = typeName.EndsWith("?", StringComparison.Ordinal);
                 var valueTypeName = isNullable ? typeName[..^1] : typeName;
                 var colType = isNullable
-                    ? "global::SpacetimeDB.NullableIxCol"
+                    ? "global::SpacetimeDB.IxCol"
                     : "global::SpacetimeDB.IxCol";
                 return $"public readonly {colType}<{globalRowName}, {valueTypeName}> {col.Name};";
             }
@@ -956,7 +957,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 var isNullable = typeName.EndsWith("?", StringComparison.Ordinal);
                 var valueTypeName = isNullable ? typeName[..^1] : typeName;
                 var colType = isNullable
-                    ? "global::SpacetimeDB.NullableIxCol"
+                    ? "global::SpacetimeDB.IxCol"
                     : "global::SpacetimeDB.IxCol";
                 return $"{col.Name} = new {colType}<{globalRowName}, {valueTypeName}>(tableName, \"{col.Name}\");";
             }
@@ -1189,7 +1190,7 @@ record ViewDeclaration
                 ? "SpacetimeDB.BSATN.ValueOption"
                 : "SpacetimeDB.BSATN.RefOption";
             var opt = $"{optType}<{rowType.Name}, {rowType.BSATNName}>";
-            // Match Rust semantics: Query<T> is described as Option<T>.
+            // Match Rust semantics: Query<T> is described as a nullable row (T?).
             ReturnType = new ReferenceUse(opt, opt);
         }
         else
@@ -1210,7 +1211,7 @@ record ViewDeclaration
             diag.Report(ErrorDescriptor.ViewContextParam, methodSyntax);
         }
 
-        // Validate return type: must be Option<T> or Vec<T>
+        // Validate return type: must be List<T> or T?
         if (
             !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.ValueOption")
             && !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.RefOption")

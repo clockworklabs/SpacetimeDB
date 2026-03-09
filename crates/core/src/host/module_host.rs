@@ -464,7 +464,6 @@ fn init_database_inner(
     let stdb = &*replica_ctx.relational_db;
     let logger = replica_ctx.logger.system_logger();
     let owner_identity = replica_ctx.database.owner_identity;
-    let host_type = replica_ctx.host_type;
 
     let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
     let auth_ctx = AuthCtx::for_current(owner_identity);
@@ -499,7 +498,7 @@ fn init_database_inner(
                     .with_context(|| format!("failed to create row-level security for table `{table_id}`: `{sql}`",))?;
             }
 
-            stdb.set_initialized(tx, host_type, program)?;
+            stdb.set_initialized(tx, program)?;
 
             anyhow::Ok(())
         })
@@ -1114,7 +1113,7 @@ impl ModuleHost {
         })
     }
 
-    fn start_call_timer(&self, label: &str) -> ScopeGuard<(), impl FnOnce(())> {
+    fn start_call_timer(&self, label: &str) -> ScopeGuard<(), impl FnOnce(()) + use<>> {
         // Record the time until our function starts running.
         let queue_timer = WORKER_METRICS
             .reducer_wait_time
@@ -1312,10 +1311,8 @@ impl ModuleHost {
 
         // Decrement the number of subscribers for each view this caller is subscribed to
         let dec_view_subscribers = |tx: &mut MutTxId| {
-            if drop_view_subscribers {
-                if let Err(err) = tx.unsubscribe_views(caller_identity) {
-                    log::error!("`call_identity_disconnected`: failed to delete client view data: {err}");
-                }
+            if drop_view_subscribers && let Err(err) = tx.unsubscribe_views(caller_identity) {
+                log::error!("`call_identity_disconnected`: failed to delete client view data: {err}");
             }
         };
 
