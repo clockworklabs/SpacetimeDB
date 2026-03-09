@@ -373,8 +373,8 @@ fn main() -> Result<()> {
         Some(CiCmd::Lint) => {
             ensure_repo_root()?;
             // `cargo fmt --all` only checks files that Cargo discovers through workspace/package targets.
-            // We also keep Rust sources in a few non-standard locations that are tracked but not reliably
-            // covered by cargo fmt target discovery.
+            // However, we also keep Rust sources in a locations that are tracked but not part of our workspace,
+            // so this approach properly catches all the files, where `cargo fmt` does not.
             let mut files = Vec::new();
             files.extend(tracked_rs_files_under(".")?);
             const RUSTFMT_BATCH_SIZE: usize = 200;
