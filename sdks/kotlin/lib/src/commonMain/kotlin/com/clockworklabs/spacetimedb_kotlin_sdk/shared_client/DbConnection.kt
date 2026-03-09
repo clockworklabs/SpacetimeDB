@@ -506,8 +506,8 @@ public open class DbConnection internal constructor(
     public override suspend fun oneOffQuery(
         queryString: String,
         timeout: Duration,
-    ): ServerMessage.OneOffQueryResult =
-        withTimeout(timeout) {
+    ): ServerMessage.OneOffQueryResult {
+        suspend fun await(): ServerMessage.OneOffQueryResult =
             suspendCancellableCoroutine { cont ->
                 val requestId = oneOffQuery(queryString) { result ->
                     cont.resume(result)
@@ -516,7 +516,8 @@ public open class DbConnection internal constructor(
                     oneOffQueryCallbacks.update { it.remove(requestId) }
                 }
             }
-        }
+        return if (timeout.isInfinite()) await() else withTimeout(timeout) { await() }
+    }
 
     // --- Internal ---
 

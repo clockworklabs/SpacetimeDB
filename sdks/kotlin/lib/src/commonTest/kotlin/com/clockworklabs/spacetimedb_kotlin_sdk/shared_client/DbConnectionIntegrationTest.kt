@@ -2267,4 +2267,327 @@ class DbConnectionIntegrationTest {
         assertNull(conn.identity)
         conn.disconnect()
     }
+
+    // --- Callback exception handling ---
+
+    @Test
+    fun onConnectCallbackExceptionDoesNotPreventOtherCallbacks() = runTest {
+        val transport = FakeTransport()
+        var secondFired = false
+        val conn = buildTestConnection(transport, onConnect = { _, _, _ ->
+            error("onConnect explosion")
+        })
+        conn.onConnect { _, _, _ -> secondFired = true }
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        assertTrue(secondFired, "Second onConnect callback should fire despite first throwing")
+        assertTrue(conn.isActive)
+        conn.disconnect()
+    }
+
+    @Test
+    fun onDeleteCallbackExceptionDoesNotPreventRowRemoval() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        val cache = createSampleCache()
+        conn.clientCache.register("sample", cache)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        // Insert a row first
+        val row = SampleRow(1, "Alice")
+        val handle = conn.subscribe(listOf("SELECT * FROM sample"))
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 1u,
+                querySetId = handle.querySetId,
+                rows = QueryRows(listOf(SingleTableRows("sample", buildRowList(row.encode())))),
+            )
+        )
+        advanceUntilIdle()
+        assertEquals(1, cache.count())
+
+        // Register a throwing onDelete callback
+        cache.onDelete { _, _ -> error("delete callback explosion") }
+
+        // Delete the row via transaction update
+        transport.sendToClient(
+            ServerMessage.TransactionUpdateMsg(
+                update = TransactionUpdate(
+                    listOf(
+                        QuerySetUpdate(
+                            handle.querySetId,
+                            listOf(
+                                TableUpdate(
+                                    "sample",
+                                    listOf(TableUpdateRows.PersistentTable(
+                                        inserts = buildRowList(),
+                                        deletes = buildRowList(row.encode()),
+                                    ))
+                                )
+                            ),
+                        )
+                    )
+                )
+            )
+        )
+        advanceUntilIdle()
+
+        // Row should still be deleted despite callback exception
+        assertEquals(0, cache.count())
+        assertTrue(conn.isActive)
+        conn.disconnect()
+    }
+
+    @Test
+    fun reducerCallbackExceptionDoesNotCrashConnection() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val requestId = conn.callReducer(
+            reducerName = "boom",
+            encodedArgs = byteArrayOf(),
+            typedArgs = "args",
+            callback = { _ -> error("reducer callback explosion") },
+        )
+        advanceUntilIdle()
+
+        transport.sendToClient(
+            ServerMessage.ReducerResultMsg(
+                requestId = requestId,
+                timestamp = Timestamp.UNIX_EPOCH,
+                result = ReducerOutcome.OkEmpty,
+            )
+        )
+        advanceUntilIdle()
+
+        assertTrue(conn.isActive, "Connection should survive throwing reducer callback")
+        conn.disconnect()
+    }
+
+    // --- Subscription state machine edge cases ---
+
+    @Test
+    fun subscriptionErrorWhileUnsubscribingMovesToEnded() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        var errorMsg: String? = null
+        val handle = conn.subscribe(
+            queries = listOf("SELECT * FROM sample"),
+            onError = listOf { _, err -> errorMsg = err.message },
+        )
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 1u,
+                querySetId = handle.querySetId,
+                rows = emptyQueryRows(),
+            )
+        )
+        advanceUntilIdle()
+        assertTrue(handle.isActive)
+
+        // Start unsubscribing
+        handle.unsubscribe()
+        advanceUntilIdle()
+        assertTrue(handle.isUnsubscribing)
+
+        // Server sends error instead of UnsubscribeApplied
+        transport.sendToClient(
+            ServerMessage.SubscriptionError(
+                requestId = 2u,
+                querySetId = handle.querySetId,
+                error = "internal error during unsubscribe",
+            )
+        )
+        advanceUntilIdle()
+
+        assertTrue(handle.isEnded)
+        assertEquals("internal error during unsubscribe", errorMsg)
+        conn.disconnect()
+    }
+
+    @Test
+    fun transactionUpdateDuringUnsubscribeStillApplies() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        val cache = createSampleCache()
+        conn.clientCache.register("sample", cache)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val row = SampleRow(1, "Alice")
+        val handle = conn.subscribe(listOf("SELECT * FROM sample"))
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 1u,
+                querySetId = handle.querySetId,
+                rows = QueryRows(listOf(SingleTableRows("sample", buildRowList(row.encode())))),
+            )
+        )
+        advanceUntilIdle()
+        assertEquals(1, cache.count())
+
+        // Start unsubscribing
+        handle.unsubscribe()
+        advanceUntilIdle()
+        assertTrue(handle.isUnsubscribing)
+
+        // A transaction arrives while unsubscribe is in-flight — row is inserted
+        val newRow = SampleRow(2, "Bob")
+        transport.sendToClient(
+            ServerMessage.TransactionUpdateMsg(
+                update = TransactionUpdate(
+                    listOf(
+                        QuerySetUpdate(
+                            handle.querySetId,
+                            listOf(
+                                TableUpdate(
+                                    "sample",
+                                    listOf(TableUpdateRows.PersistentTable(
+                                        inserts = buildRowList(newRow.encode()),
+                                        deletes = buildRowList(),
+                                    ))
+                                )
+                            ),
+                        )
+                    )
+                )
+            )
+        )
+        advanceUntilIdle()
+
+        // Transaction should still be applied to cache
+        assertEquals(2, cache.count())
+        conn.disconnect()
+    }
+
+    @Test
+    fun multipleSubscriptionsIndependentLifecycle() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        var applied1 = false
+        var applied2 = false
+        val handle1 = conn.subscribe(
+            queries = listOf("SELECT * FROM players"),
+            onApplied = listOf { _ -> applied1 = true },
+        )
+        val handle2 = conn.subscribe(
+            queries = listOf("SELECT * FROM items"),
+            onApplied = listOf { _ -> applied2 = true },
+        )
+        advanceUntilIdle()
+
+        // Only first subscription is confirmed
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 1u,
+                querySetId = handle1.querySetId,
+                rows = emptyQueryRows(),
+            )
+        )
+        advanceUntilIdle()
+
+        assertTrue(applied1)
+        assertFalse(applied2)
+        assertTrue(handle1.isActive)
+        assertTrue(handle2.isPending)
+
+        // Unsubscribe first while second is still pending
+        handle1.unsubscribe()
+        advanceUntilIdle()
+        assertTrue(handle1.isUnsubscribing)
+        assertTrue(handle2.isPending)
+
+        // Second subscription confirmed
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 2u,
+                querySetId = handle2.querySetId,
+                rows = emptyQueryRows(),
+            )
+        )
+        advanceUntilIdle()
+
+        assertTrue(applied2)
+        assertTrue(handle2.isActive)
+        assertTrue(handle1.isUnsubscribing)
+
+        // First unsubscribe confirmed
+        transport.sendToClient(
+            ServerMessage.UnsubscribeApplied(
+                requestId = 3u,
+                querySetId = handle1.querySetId,
+                rows = null,
+            )
+        )
+        advanceUntilIdle()
+
+        assertTrue(handle1.isEnded)
+        assertTrue(handle2.isActive)
+        conn.disconnect()
+    }
+
+    // --- Disconnect race conditions ---
+
+    @Test
+    fun disconnectDuringServerCloseDoesNotDoubleFireCallbacks() = runTest {
+        val transport = FakeTransport()
+        var disconnectCount = 0
+        val conn = buildTestConnection(transport, onDisconnect = { _, _ ->
+            disconnectCount++
+        })
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        // Close from server side and call disconnect concurrently
+        transport.closeFromServer()
+        conn.disconnect()
+        advanceUntilIdle()
+
+        assertEquals(1, disconnectCount, "onDisconnect should fire exactly once")
+    }
+
+    @Test
+    fun disconnectPassesReasonToCallbacks() = runTest {
+        val transport = FakeTransport()
+        var receivedError: Throwable? = null
+        val conn = buildTestConnection(transport, onDisconnect = { _, err ->
+            receivedError = err
+        })
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val reason = RuntimeException("forced disconnect")
+        conn.disconnect(reason)
+        advanceUntilIdle()
+
+        assertEquals(reason, receivedError)
+    }
+
+    // --- Late callback registration ---
+
+    @Test
+    fun lateOnConnectDoesNotFireTwice() = runTest {
+        val transport = FakeTransport()
+        var count = 0
+        val conn = buildTestConnection(transport)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        // Register after already connected — should fire exactly once
+        conn.onConnect { _, _, _ -> count++ }
+        advanceUntilIdle()
+
+        assertEquals(1, count, "Late onConnect should fire exactly once")
+        conn.disconnect()
+    }
 }
