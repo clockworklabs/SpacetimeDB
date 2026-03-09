@@ -2,8 +2,9 @@ name: Check merge labels
 
 on:
   pull_request:
-    types: [labeled, unlabeled]
+    types: [opened, reopened, labeled, unlabeled]
   merge_group:
+
 permissions: read-all
 
 jobs:
@@ -11,10 +12,10 @@ jobs:
     name: Check merge labels
     runs-on: ubuntu-latest
     steps:
-      - if: contains(github.event.pull_request.labels.*.name, 'do not merge')
-        run: exit 0
+      - if: github.event_name == 'merge_group'
+        run: echo "Merge group run; skipping merge-label checks."
 
-      - if: contains(github.event.pull_request.labels.*.name, 'do not merge')
+      - if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'do not merge')
         run: |
           echo "This is labeled \"Do not merge\"."
           exit 1
