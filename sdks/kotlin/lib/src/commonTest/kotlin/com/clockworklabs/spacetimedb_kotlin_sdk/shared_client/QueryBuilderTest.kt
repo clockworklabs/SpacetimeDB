@@ -176,6 +176,7 @@ class QueryBuilderTest {
 
     class LeftIxCols(tableName: String) {
         val id = IxCol<LeftRow, Int>(tableName, "id")
+        val verified = IxCol<LeftRow, Boolean>(tableName, "verified")
     }
     class RightIxCols(tableName: String) {
         val lid = IxCol<RightRow, Int>(tableName, "lid")
@@ -221,6 +222,22 @@ class QueryBuilderTest {
             "SELECT \"a\".* FROM \"a\" JOIN \"b\" ON \"a\".\"id\" = \"b\".\"lid\" WHERE (\"a\".\"status\" = 'active')",
             q.toSql()
         )
+    }
+
+    // ---- where with IxCol<Boolean> ----
+
+    @Test
+    fun tableWhereIxColBool() {
+        val t = Table<LeftRow, LeftCols, LeftIxCols>("a", LeftCols("a"), LeftIxCols("a"))
+        val q = t.where { _, ix -> ix.verified }
+        assertEquals("SELECT * FROM \"a\" WHERE (\"a\".\"verified\" = TRUE)", q.toSql())
+    }
+
+    @Test
+    fun tableWhereNotIxColBool() {
+        val t = Table<LeftRow, LeftCols, LeftIxCols>("a", LeftCols("a"), LeftIxCols("a"))
+        val q = t.where { _, ix -> !ix.verified }
+        assertEquals("SELECT * FROM \"a\" WHERE (NOT (\"a\".\"verified\" = TRUE))", q.toSql())
     }
 
     // ---- SqlLit factory methods ----
