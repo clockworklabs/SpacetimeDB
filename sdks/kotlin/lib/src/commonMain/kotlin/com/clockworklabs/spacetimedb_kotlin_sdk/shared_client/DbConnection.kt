@@ -286,8 +286,11 @@ public open class DbConnection internal constructor(
     /**
      * Disconnect from SpacetimeDB and release all resources.
      * The connection cannot be reused — create a new [DbConnection] to reconnect.
+     *
+     * @param reason if non-null, passed to onDisconnect callbacks to distinguish
+     *               error-driven disconnects from graceful ones.
      */
-    public suspend fun disconnect() {
+    public suspend fun disconnect(reason: Throwable? = null) {
         val prev = _state.getAndSet(ConnectionState.CLOSED)
         if (prev != ConnectionState.CONNECTED && prev != ConnectionState.CONNECTING) return
         Logger.info { "Disconnecting from SpacetimeDB" }
@@ -295,7 +298,7 @@ public open class DbConnection internal constructor(
         _sendJob.getAndSet(null)?.cancel()
         failPendingOperations()
         clientCache.clear()
-        for (cb in _onDisconnectCallbacks.value) runUserCallback { cb(this@DbConnection, null) }
+        for (cb in _onDisconnectCallbacks.value) runUserCallback { cb(this@DbConnection, reason) }
         sendChannel.close()
         try { transport.disconnect() } catch (_: Exception) {}
         httpClient.close()
@@ -589,7 +592,7 @@ public open class DbConnection internal constructor(
 
                 if (message.requestId == null) {
                     handle.handleError(ctx, error)
-                    disconnect()
+                    disconnect(error)
                     return
                 }
 
