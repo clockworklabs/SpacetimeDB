@@ -22,9 +22,11 @@ public fun <TRow> IxCol<TRow, String>.neq(value: String): BoolExpr<TRow> = neq(S
 
 public fun <TRow> Col<TRow, Boolean>.eq(value: Boolean): BoolExpr<TRow> = eq(SqlLit.bool(value))
 public fun <TRow> Col<TRow, Boolean>.neq(value: Boolean): BoolExpr<TRow> = neq(SqlLit.bool(value))
+public operator fun <TRow> Col<TRow, Boolean>.not(): BoolExpr<TRow> = eq(SqlLit.bool(true)).not()
 
 public fun <TRow> IxCol<TRow, Boolean>.eq(value: Boolean): BoolExpr<TRow> = eq(SqlLit.bool(value))
 public fun <TRow> IxCol<TRow, Boolean>.neq(value: Boolean): BoolExpr<TRow> = neq(SqlLit.bool(value))
+public operator fun <TRow> IxCol<TRow, Boolean>.not(): BoolExpr<TRow> = eq(SqlLit.bool(true)).not()
 
 // ---- Col<TRow, Int> ----
 

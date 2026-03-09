@@ -134,6 +134,21 @@ class QueryBuilderTest {
     class FakeCols(tableName: String) {
         val health = Col<FakeRow, Int>(tableName, "health")
         val name = Col<FakeRow, String>(tableName, "name")
+        val active = Col<FakeRow, Boolean>(tableName, "active")
+    }
+
+    @Test
+    fun tableWhereBoolCol() {
+        val t = Table<FakeRow, FakeCols, Unit>("player", FakeCols("player"), Unit)
+        val q = t.where { c -> c.active }
+        assertEquals("SELECT * FROM \"player\" WHERE (\"player\".\"active\" = TRUE)", q.toSql())
+    }
+
+    @Test
+    fun tableWhereNotBoolCol() {
+        val t = Table<FakeRow, FakeCols, Unit>("player", FakeCols("player"), Unit)
+        val q = t.where { c -> !c.active }
+        assertEquals("SELECT * FROM \"player\" WHERE (NOT (\"player\".\"active\" = TRUE))", q.toSql())
     }
 
     @Test
@@ -200,7 +215,7 @@ class QueryBuilderTest {
     fun fromWhereLeftSemiJoinToSql() {
         val left = Table<LeftRow, LeftCols, LeftIxCols>("a", LeftCols("a"), LeftIxCols("a"))
         val right = Table<RightRow, Unit, RightIxCols>("b", Unit, RightIxCols("b"))
-        val q = left.where { c -> c.status.eq("active") }
+        val q = left.where { c: LeftCols -> c.status.eq("active") }
             .leftSemijoin(right) { l, r -> l.id.eq(r.lid) }
         assertEquals(
             "SELECT \"a\".* FROM \"a\" JOIN \"b\" ON \"a\".\"id\" = \"b\".\"lid\" WHERE (\"a\".\"status\" = 'active')",

@@ -1,3 +1,5 @@
+@file:OptIn(kotlin.experimental.ExperimentalTypeInference::class)
+
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
 /**
@@ -31,8 +33,23 @@ public class Table<TRow, TCols, TIxCols>(
     public fun where(predicate: (TCols, TIxCols) -> BoolExpr<TRow>): FromWhere<TRow, TCols, TIxCols> =
         FromWhere(this, predicate(cols, ixCols))
 
+    @OverloadResolutionByLambdaReturnType
+    @JvmName("whereCol")
+    public fun where(predicate: (TCols) -> Col<TRow, Boolean>): FromWhere<TRow, TCols, TIxCols> =
+        FromWhere(this, predicate(cols).eq(SqlLit.bool(true)))
+
+    @OverloadResolutionByLambdaReturnType
+    @JvmName("whereColIx")
+    public fun where(predicate: (TCols, TIxCols) -> Col<TRow, Boolean>): FromWhere<TRow, TCols, TIxCols> =
+        FromWhere(this, predicate(cols, ixCols).eq(SqlLit.bool(true)))
+
     public fun filter(predicate: (TCols) -> BoolExpr<TRow>): FromWhere<TRow, TCols, TIxCols> =
-        where(predicate)
+        FromWhere(this, predicate(cols))
+
+    @OverloadResolutionByLambdaReturnType
+    @JvmName("filterCol")
+    public fun filter(predicate: (TCols) -> Col<TRow, Boolean>): FromWhere<TRow, TCols, TIxCols> =
+        FromWhere(this, predicate(cols).eq(SqlLit.bool(true)))
 
     public fun <TRRow, TRCols, TRIxCols> leftSemijoin(
         right: Table<TRRow, TRCols, TRIxCols>,
@@ -64,8 +81,23 @@ public class FromWhere<TRow, TCols, TIxCols>(
     public fun where(predicate: (TCols, TIxCols) -> BoolExpr<TRow>): FromWhere<TRow, TCols, TIxCols> =
         FromWhere(table, expr.and(predicate(table.cols, table.ixCols)))
 
+    @OverloadResolutionByLambdaReturnType
+    @JvmName("whereCol")
+    public fun where(predicate: (TCols) -> Col<TRow, Boolean>): FromWhere<TRow, TCols, TIxCols> =
+        FromWhere(table, expr.and(predicate(table.cols).eq(SqlLit.bool(true))))
+
+    @OverloadResolutionByLambdaReturnType
+    @JvmName("whereColIx")
+    public fun where(predicate: (TCols, TIxCols) -> Col<TRow, Boolean>): FromWhere<TRow, TCols, TIxCols> =
+        FromWhere(table, expr.and(predicate(table.cols, table.ixCols).eq(SqlLit.bool(true))))
+
     public fun filter(predicate: (TCols) -> BoolExpr<TRow>): FromWhere<TRow, TCols, TIxCols> =
-        where(predicate)
+        FromWhere(table, expr.and(predicate(table.cols)))
+
+    @OverloadResolutionByLambdaReturnType
+    @JvmName("filterCol")
+    public fun filter(predicate: (TCols) -> Col<TRow, Boolean>): FromWhere<TRow, TCols, TIxCols> =
+        FromWhere(table, expr.and(predicate(table.cols).eq(SqlLit.bool(true))))
 
     public fun <TRRow, TRCols, TRIxCols> leftSemijoin(
         right: Table<TRRow, TRCols, TRIxCols>,
@@ -100,8 +132,24 @@ public class LeftSemiJoin<TLRow, TLCols, TLIxCols, TRRow, TRCols, TRIxCols>(
         return LeftSemiJoin(left, right, join, whereExpr?.and(newExpr) ?: newExpr)
     }
 
-    public fun filter(predicate: (TLCols) -> BoolExpr<TLRow>): LeftSemiJoin<TLRow, TLCols, TLIxCols, TRRow, TRCols, TRIxCols> =
-        where(predicate)
+    @OverloadResolutionByLambdaReturnType
+    @JvmName("whereCol")
+    public fun where(predicate: (TLCols) -> Col<TLRow, Boolean>): LeftSemiJoin<TLRow, TLCols, TLIxCols, TRRow, TRCols, TRIxCols> {
+        val newExpr = predicate(left.cols).eq(SqlLit.bool(true))
+        return LeftSemiJoin(left, right, join, whereExpr?.and(newExpr) ?: newExpr)
+    }
+
+    public fun filter(predicate: (TLCols) -> BoolExpr<TLRow>): LeftSemiJoin<TLRow, TLCols, TLIxCols, TRRow, TRCols, TRIxCols> {
+        val newExpr = predicate(left.cols)
+        return LeftSemiJoin(left, right, join, whereExpr?.and(newExpr) ?: newExpr)
+    }
+
+    @OverloadResolutionByLambdaReturnType
+    @JvmName("filterCol")
+    public fun filter(predicate: (TLCols) -> Col<TLRow, Boolean>): LeftSemiJoin<TLRow, TLCols, TLIxCols, TRRow, TRCols, TRIxCols> {
+        val newExpr = predicate(left.cols).eq(SqlLit.bool(true))
+        return LeftSemiJoin(left, right, join, whereExpr?.and(newExpr) ?: newExpr)
+    }
 }
 
 /**
@@ -128,6 +176,22 @@ public class RightSemiJoin<TLRow, TLCols, TLIxCols, TRRow, TRCols, TRIxCols>(
         return RightSemiJoin(left, right, join, leftWhereExpr, rightWhereExpr?.and(newExpr) ?: newExpr)
     }
 
-    public fun filter(predicate: (TRCols) -> BoolExpr<TRRow>): RightSemiJoin<TLRow, TLCols, TLIxCols, TRRow, TRCols, TRIxCols> =
-        where(predicate)
+    @OverloadResolutionByLambdaReturnType
+    @JvmName("whereCol")
+    public fun where(predicate: (TRCols) -> Col<TRRow, Boolean>): RightSemiJoin<TLRow, TLCols, TLIxCols, TRRow, TRCols, TRIxCols> {
+        val newExpr = predicate(right.cols).eq(SqlLit.bool(true))
+        return RightSemiJoin(left, right, join, leftWhereExpr, rightWhereExpr?.and(newExpr) ?: newExpr)
+    }
+
+    public fun filter(predicate: (TRCols) -> BoolExpr<TRRow>): RightSemiJoin<TLRow, TLCols, TLIxCols, TRRow, TRCols, TRIxCols> {
+        val newExpr = predicate(right.cols)
+        return RightSemiJoin(left, right, join, leftWhereExpr, rightWhereExpr?.and(newExpr) ?: newExpr)
+    }
+
+    @OverloadResolutionByLambdaReturnType
+    @JvmName("filterCol")
+    public fun filter(predicate: (TRCols) -> Col<TRRow, Boolean>): RightSemiJoin<TLRow, TLCols, TLIxCols, TRRow, TRCols, TRIxCols> {
+        val newExpr = predicate(right.cols).eq(SqlLit.bool(true))
+        return RightSemiJoin(left, right, join, leftWhereExpr, rightWhereExpr?.and(newExpr) ?: newExpr)
+    }
 }
