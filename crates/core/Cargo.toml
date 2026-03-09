@@ -170,6 +170,7 @@ pretty_assertions.workspace = true
 jsonwebtoken.workspace = true
 axum.workspace = true
 fs_extra.workspace = true
+prost = "0.11"
 
 [lints]
 workspace = true

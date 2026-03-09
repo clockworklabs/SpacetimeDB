@@ -48,7 +48,8 @@ impl OnnxModel {
     }
 
     /// Load an ONNX model from raw bytes.
-    fn load_from_bytes(model_bytes: &[u8]) -> Result<Self, OnnxError> {
+    #[cfg_attr(test, allow(dead_code))]
+    pub(crate) fn load_from_bytes(model_bytes: &[u8]) -> Result<Self, OnnxError> {
         let model = tract_onnx::onnx()
             .model_for_read(&mut std::io::Cursor::new(model_bytes))
             .map_err(|e| OnnxError(format!("Failed to parse ONNX model: {e}")))?
@@ -109,3 +110,157 @@ impl std::fmt::Display for OnnxError {
 }
 
 impl std::error::Error for OnnxError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use prost::Message;
+    use tract_onnx::pb;
+
+    /// Build a minimal ONNX model as raw bytes using protobuf types.
+    /// `op_type` is the ONNX operator (e.g. "Add", "Relu", "Identity").
+    /// `n_inputs` is the number of inputs the operator expects.
+    fn build_onnx_model(op_type: &str, n_inputs: usize) -> Vec<u8> {
+        let input_names: Vec<String> = (0..n_inputs).map(|i| format!("input_{i}")).collect();
+        let inputs: Vec<pb::ValueInfoProto> = input_names
+            .iter()
+            .map(|name| pb::ValueInfoProto {
+                name: name.clone(),
+                r#type: Some(pb::TypeProto {
+                    denotation: String::new(),
+                    value: Some(pb::type_proto::Value::TensorType(pb::type_proto::Tensor {
+                        elem_type: 1, // FLOAT
+                        shape: Some(pb::TensorShapeProto {
+                            dim: vec![
+                                pb::tensor_shape_proto::Dimension {
+                                    denotation: String::new(),
+                                    value: Some(pb::tensor_shape_proto::dimension::Value::DimValue(1)),
+                                },
+                                pb::tensor_shape_proto::Dimension {
+                                    denotation: String::new(),
+                                    value: Some(pb::tensor_shape_proto::dimension::Value::DimValue(4)),
+                                },
+                            ],
+                        }),
+                    })),
+                }),
+                doc_string: String::new(),
+            })
+            .collect();
+
+        let output = pb::ValueInfoProto {
+            name: "output".into(),
+            r#type: Some(pb::TypeProto {
+                denotation: String::new(),
+                value: Some(pb::type_proto::Value::TensorType(pb::type_proto::Tensor {
+                    elem_type: 1,
+                    shape: Some(pb::TensorShapeProto {
+                        dim: vec![
+                            pb::tensor_shape_proto::Dimension {
+                                denotation: String::new(),
+                                value: Some(pb::tensor_shape_proto::dimension::Value::DimValue(1)),
+                            },
+                            pb::tensor_shape_proto::Dimension {
+                                denotation: String::new(),
+                                value: Some(pb::tensor_shape_proto::dimension::Value::DimValue(4)),
+                            },
+                        ],
+                    }),
+                })),
+            }),
+            doc_string: String::new(),
+        };
+
+        let node = pb::NodeProto {
+            input: input_names,
+            output: vec!["output".into()],
+            name: "node_0".into(),
+            op_type: op_type.into(),
+            domain: String::new(),
+            attribute: vec![],
+            doc_string: String::new(),
+        };
+
+        let graph = pb::GraphProto {
+            name: "test_graph".into(),
+            node: vec![node],
+            input: inputs.clone(),
+            output: vec![output],
+            initializer: vec![],
+            sparse_initializer: vec![],
+            doc_string: String::new(),
+            value_info: vec![],
+            quantization_annotation: vec![],
+        };
+
+        let model = pb::ModelProto {
+            ir_version: 7,
+            opset_import: vec![pb::OperatorSetIdProto {
+                domain: String::new(),
+                version: 13,
+            }],
+            producer_name: "spacetimedb-test".into(),
+            graph: Some(graph),
+            ..Default::default()
+        };
+
+        model.encode_to_vec()
+    }
+
+    #[test]
+    fn load_and_run_add_model() {
+        let model_bytes = build_onnx_model("Add", 2);
+        let model = OnnxModel::load_from_bytes(&model_bytes).expect("Failed to load model");
+
+        let a = StdbTensor {
+            shape: vec![1, 4],
+            data: vec![1.0, 2.0, 3.0, 4.0],
+        };
+        let b = StdbTensor {
+            shape: vec![1, 4],
+            data: vec![10.0, 20.0, 30.0, 40.0],
+        };
+
+        let outputs = model.run(&[a, b]).expect("Inference failed");
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].shape, vec![1, 4]);
+        assert_eq!(outputs[0].data, vec![11.0, 22.0, 33.0, 44.0]);
+    }
+
+    #[test]
+    fn load_and_run_relu_model() {
+        let model_bytes = build_onnx_model("Relu", 1);
+        let model = OnnxModel::load_from_bytes(&model_bytes).expect("Failed to load model");
+
+        let input = StdbTensor {
+            shape: vec![1, 4],
+            data: vec![-2.0, -1.0, 0.0, 3.0],
+        };
+
+        let outputs = model.run(&[input]).expect("Inference failed");
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].shape, vec![1, 4]);
+        assert_eq!(outputs[0].data, vec![0.0, 0.0, 0.0, 3.0]);
+    }
+
+    #[test]
+    fn invalid_model_bytes() {
+        let result = OnnxModel::load_from_bytes(b"not a valid onnx model");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn shape_mismatch_errors() {
+        let model_bytes = build_onnx_model("Relu", 1);
+        let model = OnnxModel::load_from_bytes(&model_bytes).expect("Failed to load model");
+
+        // Wrong number of elements for the declared shape.
+        let bad_input = StdbTensor {
+            shape: vec![1, 4],
+            data: vec![1.0, 2.0], // only 2 elements for a 1x4 tensor
+        };
+
+        let result = model.run(&[bad_input]);
+        assert!(result.is_err());
+    }
+}
