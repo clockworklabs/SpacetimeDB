@@ -1578,6 +1578,7 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
 
     writeln!(out, "import {SDK_PKG}.ClientCache");
     writeln!(out, "import {SDK_PKG}.DbConnection");
+    writeln!(out, "import {SDK_PKG}.DbConnectionView");
     writeln!(out, "import {SDK_PKG}.EventContext");
     writeln!(out, "import {SDK_PKG}.ModuleAccessors");
     writeln!(out, "import {SDK_PKG}.ModuleDescriptor");
@@ -1717,6 +1718,43 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     writeln!(out, "val DbConnection.procedures: RemoteProcedures");
     out.indent(1);
     writeln!(out, "get() = moduleProcedures as RemoteProcedures");
+    out.dedent(1);
+    writeln!(out);
+
+    // Extension properties on DbConnectionView (exposed via EventContext.connection)
+    writeln!(out, "/**");
+    writeln!(
+        out,
+        " * Typed table accessors for this module's tables."
+    );
+    writeln!(out, " */");
+    writeln!(out, "val DbConnectionView.db: RemoteTables");
+    out.indent(1);
+    writeln!(out, "get() = (this as DbConnection).moduleTables as RemoteTables");
+    out.dedent(1);
+    writeln!(out);
+
+    writeln!(out, "/**");
+    writeln!(
+        out,
+        " * Typed reducer call functions for this module's reducers."
+    );
+    writeln!(out, " */");
+    writeln!(out, "val DbConnectionView.reducers: RemoteReducers");
+    out.indent(1);
+    writeln!(out, "get() = (this as DbConnection).moduleReducers as RemoteReducers");
+    out.dedent(1);
+    writeln!(out);
+
+    writeln!(out, "/**");
+    writeln!(
+        out,
+        " * Typed procedure call functions for this module's procedures."
+    );
+    writeln!(out, " */");
+    writeln!(out, "val DbConnectionView.procedures: RemoteProcedures");
+    out.indent(1);
+    writeln!(out, "get() = (this as DbConnection).moduleProcedures as RemoteProcedures");
     out.dedent(1);
     writeln!(out);
 

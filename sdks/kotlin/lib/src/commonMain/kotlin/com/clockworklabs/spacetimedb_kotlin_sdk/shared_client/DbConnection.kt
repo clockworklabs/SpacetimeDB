@@ -112,7 +112,7 @@ public open class DbConnection internal constructor(
     public val stats: Stats,
     private val moduleDescriptor: ModuleDescriptor?,
     private val callbackDispatcher: CoroutineDispatcher?,
-) {
+) : DbConnectionView {
     public val clientCache: ClientCache = ClientCache()
 
     private val _moduleTables = atomic<ModuleTables?>(null)
@@ -131,14 +131,12 @@ public open class DbConnection internal constructor(
         internal set(value) { _moduleProcedures.value = value }
 
     private val _identity = atomic<Identity?>(null)
-    public var identity: Identity?
+    public override val identity: Identity?
         get() = _identity.value
-        private set(value) { _identity.value = value }
 
     private val _connectionId = atomic<ConnectionId?>(null)
-    public var connectionId: ConnectionId?
+    public override val connectionId: ConnectionId?
         get() = _connectionId.value
-        private set(value) { _connectionId.value = value }
 
     private val _token = atomic<String?>(null)
     public var token: String?
@@ -146,7 +144,7 @@ public open class DbConnection internal constructor(
         private set(value) { _token.value = value }
 
     private val _state = atomic(ConnectionState.DISCONNECTED)
-    public val isActive: Boolean get() = _state.value == ConnectionState.CONNECTED
+    public override val isActive: Boolean get() = _state.value == ConnectionState.CONNECTED
 
     private val sendChannel = Channel<ClientMessage>(Channel.UNLIMITED)
     private val _sendJob = atomic<Job?>(null)
@@ -170,7 +168,7 @@ public open class DbConnection internal constructor(
 
     // --- Multiple connection callbacks ---
 
-    public fun onConnect(cb: (DbConnection, Identity, String) -> Unit) {
+    public override fun onConnect(cb: (DbConnection, Identity, String) -> Unit) {
         var fireNow: OnConnectState.Connected? = null
         _onConnectState.update { state ->
             when (state) {
@@ -186,7 +184,7 @@ public open class DbConnection internal constructor(
         }
     }
 
-    public fun removeOnConnect(cb: (DbConnection, Identity, String) -> Unit) {
+    public override fun removeOnConnect(cb: (DbConnection, Identity, String) -> Unit) {
         _onConnectState.update { state ->
             when (state) {
                 is OnConnectState.Pending -> OnConnectState.Pending(state.callbacks.remove(cb))
@@ -195,19 +193,19 @@ public open class DbConnection internal constructor(
         }
     }
 
-    public fun onDisconnect(cb: (DbConnection, Throwable?) -> Unit) {
+    public override fun onDisconnect(cb: (DbConnection, Throwable?) -> Unit) {
         _onDisconnectCallbacks.update { it.add(cb) }
     }
 
-    public fun removeOnDisconnect(cb: (DbConnection, Throwable?) -> Unit) {
+    public override fun removeOnDisconnect(cb: (DbConnection, Throwable?) -> Unit) {
         _onDisconnectCallbacks.update { it.remove(cb) }
     }
 
-    public fun onConnectError(cb: (DbConnection, Throwable) -> Unit) {
+    public override fun onConnectError(cb: (DbConnection, Throwable) -> Unit) {
         _onConnectErrorCallbacks.update { it.add(cb) }
     }
 
-    public fun removeOnConnectError(cb: (DbConnection, Throwable) -> Unit) {
+    public override fun removeOnConnectError(cb: (DbConnection, Throwable) -> Unit) {
         _onConnectErrorCallbacks.update { it.remove(cb) }
     }
 
@@ -307,7 +305,7 @@ public open class DbConnection internal constructor(
      * @param reason if non-null, passed to onDisconnect callbacks to distinguish
      *               error-driven disconnects from graceful ones.
      */
-    public suspend fun disconnect(reason: Throwable? = null) {
+    public override suspend fun disconnect(reason: Throwable?) {
         val prev = _state.getAndSet(ConnectionState.CLOSED)
         if (prev != ConnectionState.CONNECTED && prev != ConnectionState.CONNECTING) return
         Logger.info { "Disconnecting from SpacetimeDB" }
@@ -354,11 +352,11 @@ public open class DbConnection internal constructor(
 
     // --- Subscription Builder ---
 
-    public fun subscriptionBuilder(): SubscriptionBuilder = SubscriptionBuilder(this)
+    public override fun subscriptionBuilder(): SubscriptionBuilder = SubscriptionBuilder(this)
 
-    public fun subscribeToAllTables(
-        onApplied: ((EventContext.SubscribeApplied) -> Unit)? = null,
-        onError: ((EventContext.Error, Throwable) -> Unit)? = null,
+    public override fun subscribeToAllTables(
+        onApplied: ((EventContext.SubscribeApplied) -> Unit)?,
+        onError: ((EventContext.Error, Throwable) -> Unit)?,
     ): SubscriptionHandle {
         val builder = subscriptionBuilder()
         onApplied?.let { builder.onApplied(it) }
@@ -372,10 +370,10 @@ public open class DbConnection internal constructor(
      * Subscribe to a set of SQL queries.
      * Returns a SubscriptionHandle to track the subscription lifecycle.
      */
-    public fun subscribe(
+    public override fun subscribe(
         queries: List<String>,
-        onApplied: List<(EventContext.SubscribeApplied) -> Unit> = emptyList(),
-        onError: List<(EventContext.Error, Throwable) -> Unit> = emptyList(),
+        onApplied: List<(EventContext.SubscribeApplied) -> Unit>,
+        onError: List<(EventContext.Error, Throwable) -> Unit>,
     ): SubscriptionHandle {
         val requestId = stats.subscriptionRequestTracker.startTrackingRequest()
         val querySetId = QuerySetId(_nextQuerySetId.incrementAndGet().toUInt())
@@ -399,7 +397,7 @@ public open class DbConnection internal constructor(
         return handle
     }
 
-    public fun subscribe(vararg queries: String): SubscriptionHandle =
+    public override fun subscribe(vararg queries: String): SubscriptionHandle =
         subscribe(queries.toList())
 
     internal fun unsubscribe(handle: SubscriptionHandle, flags: UnsubscribeFlags) {
@@ -481,7 +479,7 @@ public open class DbConnection internal constructor(
      * Execute a one-off SQL query against the database.
      * The result callback receives the query result or error.
      */
-    public fun oneOffQuery(
+    public override fun oneOffQuery(
         queryString: String,
         callback: (ServerMessage.OneOffQueryResult) -> Unit,
     ): UInt {
@@ -502,9 +500,9 @@ public open class DbConnection internal constructor(
      * @param timeout maximum time to wait for a response. Defaults to [Duration.INFINITE].
      *                Throws [kotlinx.coroutines.TimeoutCancellationException] if exceeded.
      */
-    public suspend fun oneOffQuery(
+    public override suspend fun oneOffQuery(
         queryString: String,
-        timeout: Duration = Duration.INFINITE,
+        timeout: Duration,
     ): ServerMessage.OneOffQueryResult =
         withTimeout(timeout) {
             suspendCancellableCoroutine { cont ->
@@ -539,8 +537,8 @@ public open class DbConnection internal constructor(
                     return
                 }
 
-                identity = message.identity
-                connectionId = message.connectionId
+                _identity.value = message.identity
+                _connectionId.value = message.connectionId
                 if (token == null && message.token.isNotEmpty()) {
                     token = message.token
                 }
