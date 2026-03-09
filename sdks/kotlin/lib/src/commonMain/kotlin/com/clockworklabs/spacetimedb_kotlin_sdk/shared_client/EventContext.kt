@@ -12,7 +12,6 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Timestamp
 public sealed interface Status {
     public data object Committed : Status
     public data class Failed(val message: String) : Status
-    public data object OutOfEnergy : Status
 }
 
 /**
