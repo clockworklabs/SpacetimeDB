@@ -488,7 +488,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         &mut self,
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
-        drop_view_subscribers: bool,
     ) -> Result<(), ReducerCallError> {
         let module = &self.common.info.clone();
         let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
@@ -497,7 +496,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             caller_identity,
             caller_connection_id,
             module,
-            drop_view_subscribers,
             call_reducer,
             &mut trapped,
         );

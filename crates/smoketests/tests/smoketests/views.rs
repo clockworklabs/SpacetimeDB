@@ -571,6 +571,75 @@ fn test_typescript_procedure_triggers_subscription_updates() {
 }
 
 #[test]
+fn test_disconnect_does_not_break_sender_view() {
+    let test = Smoketest::builder().precompiled_module("views-sql").build();
+
+    test.call("set_player_state", &["42", "1"]).unwrap();
+
+    // Two connections subscribe to the same view.
+    let sub_keep = test.subscribe_background(&["SELECT * FROM player"], 2).unwrap();
+    let sub_drop = test.subscribe_background(&["SELECT * FROM player"], 1).unwrap();
+
+    // Both connections should receive the first update.
+    // After one connection disconnects, the other should still receive updates.
+    test.call("set_player_state", &["42", "2"]).unwrap();
+    let _ = sub_drop.collect().unwrap();
+    test.call("set_player_state", &["42", "3"]).unwrap();
+
+    let events = sub_keep.collect().unwrap();
+
+    assert_eq!(events.len(), 2, "Expected two updates for player, got: {events:?}");
+    let inserts = events[1]["player"]["inserts"]
+        .as_array()
+        .expect("Expected inserts array on player update");
+    assert!(
+        inserts
+            .iter()
+            .any(|row| row["id"] == json!(42) && row["level"] == json!(3)),
+        "Expected player id=42 level=3 insert after disconnect, got: {events:?}"
+    );
+}
+
+#[test]
+fn test_disconnect_does_not_break_anonymous_view() {
+    let test = Smoketest::builder().precompiled_module("views-sql").build();
+
+    // Seed a row in the anonymous-view source table.
+    test.call("add_player_level", &["0", "2"]).unwrap();
+
+    // Two connections subscribe to the same anonymous view.
+    let sub_keep = test
+        .subscribe_background(&["SELECT * FROM player_and_level"], 2)
+        .unwrap();
+    let sub_drop = test
+        .subscribe_background(&["SELECT * FROM player_and_level"], 1)
+        .unwrap();
+
+    // Both connections should receive the first update.
+    // After one connection disconnects, the other should still receive updates.
+    test.call("add_player_level", &["1", "2"]).unwrap();
+    let _ = sub_drop.collect().unwrap();
+    test.call("add_player_level", &["2", "2"]).unwrap();
+
+    let events = sub_keep.collect().unwrap();
+
+    assert_eq!(
+        events.len(),
+        2,
+        "Expected two updates for player_and_level, got: {events:?}"
+    );
+    let inserts = events[1]["player_and_level"]["inserts"]
+        .as_array()
+        .expect("Expected inserts array on player_and_level update");
+    assert!(
+        inserts
+            .iter()
+            .any(|row| row["id"] == json!(2) && row["level"] == json!(2)),
+        "Expected player id=2 level=2 insert after disconnect, got: {events:?}"
+    );
+}
+
+#[test]
 fn test_typescript_query_builder_view_query() {
     require_pnpm!();
     let mut test = Smoketest::builder().autopublish(false).build();
