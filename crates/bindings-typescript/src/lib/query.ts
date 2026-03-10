@@ -711,7 +711,7 @@ type BooleanExprData<Table extends TypedTableDef> = (
 };
 
 type AndOrMixedTableScopeError = {
-  readonly __queryBuilderAndOrError: 'Cannot combine predicates from different table scopes with and/or. In semijoin on(...), keep only the join equality and move extra predicates to .where(...).';
+  readonly 'Cannot combine predicates from different table scopes with and/or. In semijoin on(...), keep only the join equality and move extra predicates to .where(...).': never;
 };
 
 type RequireSameAndOrTable<
