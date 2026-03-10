@@ -1,5 +1,6 @@
 {
   "description": "TanStack Start (React + TanStack Query/Router) with TypeScript server",
+  "client_framework": "TanStack",
   "client_lang": "typescript",
   "server_lang": "typescript"
 }

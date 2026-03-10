@@ -141,11 +141,12 @@ impl<R: HasCols, L: HasCols> Query<R> for RightSemiJoin<R, L> {
 
 // LeftSemiJoin where() operates on L
 impl<L: HasCols> LeftSemiJoin<L> {
-    pub fn r#where<F>(self, f: F) -> Self
+    pub fn r#where<F, E>(self, f: F) -> Self
     where
-        F: Fn(&L::Cols) -> BoolExpr<L>,
+        F: Fn(&L::Cols) -> E,
+        E: Into<BoolExpr<L>>,
     {
-        let extra = f(&L::cols(self.left_col.table_name()));
+        let extra = f(&L::cols(self.left_col.table_name())).into();
         let new = match self.where_expr {
             Some(existing) => Some(existing.and(extra)),
             None => Some(extra),
@@ -159,9 +160,10 @@ impl<L: HasCols> LeftSemiJoin<L> {
     }
 
     // Filter is an alias for where
-    pub fn filter<F>(self, f: F) -> Self
+    pub fn filter<F, E>(self, f: F) -> Self
     where
-        F: Fn(&L::Cols) -> BoolExpr<L>,
+        F: Fn(&L::Cols) -> E,
+        E: Into<BoolExpr<L>>,
     {
         self.r#where(f)
     }
@@ -189,11 +191,12 @@ impl<L: HasCols> LeftSemiJoin<L> {
 
 // RightSemiJoin where() operates on R
 impl<R: HasCols, L: HasCols> RightSemiJoin<R, L> {
-    pub fn r#where<F>(self, f: F) -> Self
+    pub fn r#where<F, E>(self, f: F) -> Self
     where
-        F: Fn(&R::Cols) -> BoolExpr<R>,
+        F: Fn(&R::Cols) -> E,
+        E: Into<BoolExpr<R>>,
     {
-        let extra = f(&R::cols(self.right_col.table_name()));
+        let extra = f(&R::cols(self.right_col.table_name())).into();
         let new = match self.right_where_expr {
             Some(existing) => Some(existing.and(extra)),
             None => Some(extra),
@@ -208,9 +211,10 @@ impl<R: HasCols, L: HasCols> RightSemiJoin<R, L> {
     }
 
     // Filter is an alias for where
-    pub fn filter<F>(self, f: F) -> Self
+    pub fn filter<F, E>(self, f: F) -> Self
     where
-        F: Fn(&R::Cols) -> BoolExpr<R>,
+        F: Fn(&R::Cols) -> E,
+        E: Into<BoolExpr<R>>,
     {
         self.r#where(f)
     }
