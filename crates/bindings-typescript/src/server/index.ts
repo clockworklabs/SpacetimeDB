@@ -21,6 +21,6 @@ export { toCamelCase } from '../lib/util';
 export type { Uuid } from '../lib/uuid';
 export type { Random } from './rng';
 export type { ViewExport, ViewCtx, AnonymousViewCtx } from './views';
-export * from './range';
+export { Range, type Bound } from './range';
 
 import './polyfills'; // Ensure polyfills are loaded
