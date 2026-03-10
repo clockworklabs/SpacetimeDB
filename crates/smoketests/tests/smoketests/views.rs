@@ -1,5 +1,5 @@
 use serde_json::json;
-use spacetimedb_smoketests::{require_pnpm, Smoketest};
+use spacetimedb_smoketests::{require_dotnet, require_pnpm, Smoketest};
 
 const TS_VIEWS_SUBSCRIBE_MODULE: &str = r#"import { schema, t, table } from "spacetimedb/server";
 
@@ -8,6 +8,7 @@ const playerState = table(
   {
     identity: t.identity().primaryKey(),
     name: t.string().unique(),
+    online: t.bool(),
   }
 );
 
@@ -26,17 +27,54 @@ export const all_players = spacetimedb.anonymousView(
   ctx => ctx.from.playerState
 );
 
+export const online_players = spacetimedb.anonymousView(
+  { public: true },
+  t.array(playerState.rowType),
+  ctx => ctx.from.playerState.where(row => row.online)
+);
+
 export const insert_player_proc = spacetimedb.procedure(
   { name: t.string() },
   t.unit(),
   (ctx, { name }) => {
     const sender = ctx.sender;
     ctx.withTx(tx => {
-      tx.db.playerState.insert({ name, identity: sender });
+      tx.db.playerState.insert({ name, identity: sender, online: true });
     });
     return {};
   }
 );
+"#;
+
+const CS_VIEWS_QUERY_BUILDER_MODULE: &str = r#"using SpacetimeDB;
+
+public static partial class Module
+{
+    [Table(Accessor = "Table", Public = true)]
+    public partial struct Table
+    {
+        public uint Value;
+        public bool Alive;
+    }
+
+    [Reducer]
+    public static void InsertValue(ReducerContext ctx, uint value, bool alive)
+    {
+        ctx.Db.Table.Insert(new Table { Value = value, Alive = alive });
+    }
+
+    [View(Accessor = "all", Public = true)]
+    public static IQuery<Table> All(ViewContext ctx)
+    {
+        return ctx.From.Table();
+    }
+
+    [View(Accessor = "some", Public = true)]
+    public static IQuery<Table> Some(ViewContext ctx)
+    {
+        return ctx.From.Table().Where(Row => Row.Alive);
+    }
+}
 "#;
 
 /// Tests that views populate the st_view_* system tables
@@ -546,9 +584,28 @@ fn test_typescript_query_builder_view_query() {
     test.call("insert_player_proc", &["Alice"]).unwrap();
 
     test.assert_sql(
-        "SELECT name FROM all_players",
+        "SELECT name FROM online_players",
         r#" name
 ---------
  "Alice""#,
+    );
+}
+
+#[test]
+fn test_csharp_query_builder_view_query() {
+    require_dotnet!();
+    let mut test = Smoketest::builder().autopublish(false).build();
+    test.publish_csharp_module_source("views-csharp", "views-csharp", CS_VIEWS_QUERY_BUILDER_MODULE)
+        .unwrap();
+
+    test.call("insert_value", &["0", "false"]).unwrap();
+    test.call("insert_value", &["1", "true"]).unwrap();
+    test.call("insert_value", &["2", "false"]).unwrap();
+
+    test.assert_sql(
+        "SELECT * FROM some",
+        r#" value | alive
+-------+-------
+ 1     | true"#,
     );
 }

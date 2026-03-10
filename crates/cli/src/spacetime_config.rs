@@ -1,11 +1,12 @@
 use anyhow::Context;
 use clap::{ArgMatches, Command};
+use path_clean::PathClean;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 /// The filename for configuration
@@ -310,13 +311,13 @@ impl CommandSchemaBuilder {
             }
 
             // Validate alias if present
-            if let Some(alias) = &key.clap_alias {
-                if !clap_arg_names.contains(alias) {
-                    return Err(CommandConfigError::InvalidAliasReference {
-                        config_name: key.config_name().to_string(),
-                        alias: alias.clone(),
-                    });
-                }
+            if let Some(alias) = &key.clap_alias
+                && !clap_arg_names.contains(alias)
+            {
+                return Err(CommandConfigError::InvalidAliasReference {
+                    config_name: key.config_name().to_string(),
+                    alias: alias.clone(),
+                });
             }
         }
 
@@ -398,23 +399,20 @@ impl CommandSchema {
             .unwrap_or(config_name);
 
         // Only return the value if it was actually provided by the user, not from defaults
-        if let Some(source) = matches.value_source(clap_name) {
-            if source == clap::parser::ValueSource::CommandLine {
-                if let Some(value) = matches.get_one::<T>(clap_name) {
-                    return Ok(Some(value.clone()));
-                }
-            }
+        if let Some(source) = matches.value_source(clap_name)
+            && source == clap::parser::ValueSource::CommandLine
+            && let Some(value) = matches.get_one::<T>(clap_name)
+        {
+            return Ok(Some(value.clone()));
         }
 
         // Try clap with the alias if it exists
-        if let Some(alias) = self.config_to_alias.get(config_name) {
-            if let Some(source) = matches.value_source(alias) {
-                if source == clap::parser::ValueSource::CommandLine {
-                    if let Some(value) = matches.get_one::<T>(alias) {
-                        return Ok(Some(value.clone()));
-                    }
-                }
-            }
+        if let Some(alias) = self.config_to_alias.get(config_name)
+            && let Some(source) = matches.value_source(alias)
+            && source == clap::parser::ValueSource::CommandLine
+            && let Some(value) = matches.get_one::<T>(alias)
+        {
+            return Ok(Some(value.clone()));
         }
 
         Ok(None)
@@ -431,19 +429,18 @@ impl CommandSchema {
             .unwrap_or(config_name);
 
         // Use value_source to check if the value was actually provided by the user
-        if let Some(source) = matches.value_source(clap_name) {
-            if source == clap::parser::ValueSource::CommandLine {
-                return true;
-            }
+        if let Some(source) = matches.value_source(clap_name)
+            && source == clap::parser::ValueSource::CommandLine
+        {
+            return true;
         }
 
         // Check clap with alias
-        if let Some(alias) = self.config_to_alias.get(config_name) {
-            if let Some(source) = matches.value_source(alias) {
-                if source == clap::parser::ValueSource::CommandLine {
-                    return true;
-                }
-            }
+        if let Some(alias) = self.config_to_alias.get(config_name)
+            && let Some(source) = matches.value_source(alias)
+            && source == clap::parser::ValueSource::CommandLine
+        {
+            return true;
         }
 
         false
@@ -753,7 +750,7 @@ impl<'a> CommandConfig<'a> {
             } else {
                 p
             };
-            normalize_path_lexical(&resolved)
+            resolved.clean()
         }))
     }
 
@@ -775,24 +772,6 @@ impl<'a> CommandConfig<'a> {
             }
         }
         Ok(())
-    }
-}
-
-fn normalize_path_lexical(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                normalized.pop();
-            }
-            other => normalized.push(other.as_os_str()),
-        }
-    }
-    if normalized.as_os_str().is_empty() {
-        PathBuf::from(".")
-    } else {
-        normalized
     }
 }
 
@@ -1146,16 +1125,15 @@ pub fn detect_package_manager(project_dir: &Path) -> Option<PackageManager> {
 pub fn detect_client_command(project_dir: &Path) -> Option<(String, Option<PackageManager>)> {
     // JavaScript/TypeScript: package.json with "dev" script
     let package_json = project_dir.join("package.json");
-    if package_json.exists() {
-        if let Ok(content) = fs::read_to_string(&package_json) {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                let has_dev = json.get("scripts").and_then(|s| s.get("dev")).is_some();
-                if has_dev {
-                    let pm = detect_package_manager(project_dir);
-                    let cmd = pm.map(|p| p.run_dev_command()).unwrap_or("npm run dev");
-                    return Some((cmd.to_string(), pm));
-                }
-            }
+    if package_json.exists()
+        && let Ok(content) = fs::read_to_string(&package_json)
+        && let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
+    {
+        let has_dev = json.get("scripts").and_then(|s| s.get("dev")).is_some();
+        if has_dev {
+            let pm = detect_package_manager(project_dir);
+            let cmd = pm.map(|p| p.run_dev_command()).unwrap_or("npm run dev");
+            return Some((cmd.to_string(), pm));
         }
     }
 
@@ -3125,9 +3103,9 @@ mod tests {
                 target.fields.get("module-path").and_then(|v| v.as_str()),
                 Some("./server")
             );
-            let gen = target.generate.as_ref().unwrap();
-            assert_eq!(gen.len(), 1);
-            assert_eq!(gen[0].get("language").and_then(|v| v.as_str()), Some("typescript"));
+            let r#gen = target.generate.as_ref().unwrap();
+            assert_eq!(r#gen.len(), 1);
+            assert_eq!(r#gen[0].get("language").and_then(|v| v.as_str()), Some("typescript"));
         }
 
         // All have the same (module-path, generate) so dedup should reduce to 1
@@ -3182,5 +3160,47 @@ mod tests {
 
         let config: SpacetimeConfig = json5::from_str(json).unwrap();
         assert_eq!(config.count_targets(), 4); // root + child-1 + child-2 + grandchild
+    }
+
+    #[test]
+    fn test_path_clean_preserves_leading_dotdot() {
+        // Regression test for #4429: leading `..` must be preserved.
+        // All config paths (--out-dir, --module-path, etc.) go through
+        // get_resolved_path which calls PathClean::clean().
+        use path_clean::PathClean;
+        use std::path::Path;
+
+        // --out-dir cases
+        assert_eq!(Path::new("../foo").clean(), PathBuf::from("../foo"));
+        assert_eq!(Path::new("../../a/b").clean(), PathBuf::from("../../a/b"));
+        assert_eq!(
+            Path::new("../frontend-ts-src/module-bindings").clean(),
+            PathBuf::from("../frontend-ts-src/module-bindings")
+        );
+        // Inner `..` should still resolve.
+        assert_eq!(Path::new("a/b/../c").clean(), PathBuf::from("a/c"));
+        // Pure `..` should stay.
+        assert_eq!(Path::new("..").clean(), PathBuf::from(".."));
+        // Absolute paths
+        assert_eq!(
+            Path::new("/home/user/project/../foo").clean(),
+            PathBuf::from("/home/user/foo")
+        );
+        // Current dir collapses.
+        assert_eq!(Path::new("./foo").clean(), PathBuf::from("foo"));
+        // Empty result → "."
+        assert_eq!(Path::new(".").clean(), PathBuf::from("."));
+        assert_eq!(Path::new("a/..").clean(), PathBuf::from("."));
+
+        // --module-path cases (same bug, reported by user on #4431)
+        assert_eq!(Path::new("../server").clean(), PathBuf::from("../server"));
+        assert_eq!(
+            Path::new("../../repos/server").clean(),
+            PathBuf::from("../../repos/server")
+        );
+        assert_eq!(
+            Path::new("../repos/server/spacetimedb").clean(),
+            PathBuf::from("../repos/server/spacetimedb")
+        );
     }
 }

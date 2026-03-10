@@ -113,6 +113,65 @@ The `init` reducer:
 - Runs when clearing with `spacetime publish -c`
 - Failure prevents publishing or clearing
 
+:::tip Module Owner
+In the `init` reducer, `ctx.sender` is the **module owner** — the identity of the user who published the database. This is the only place where the owner identity is automatically provided, so if you need to reference it later (e.g. for authorization), store it in a table during `init`:
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+const config = table({ name: 'config' }, {
+  ownerIdentity: t.identity().primaryKey(),
+});
+
+export const init = spacetimedb.init((ctx) => {
+  ctx.db.config.insert({ ownerIdentity: ctx.sender });
+});
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+[SpacetimeDB.Table(Name = "Config")]
+public partial struct Config
+{
+    [SpacetimeDB.PrimaryKey]
+    public Identity OwnerIdentity;
+}
+
+[SpacetimeDB.Reducer(ReducerKind.Init)]
+public static void Init(ReducerContext ctx)
+{
+    ctx.Db.Config.Insert(new Config { OwnerIdentity = ctx.Sender });
+}
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+#[table(accessor = config)]
+pub struct Config {
+    #[primary_key]
+    pub owner_identity: Identity,
+}
+
+#[reducer(init)]
+pub fn init(ctx: &ReducerContext) -> Result<(), String> {
+    ctx.db.config().try_insert(Config {
+        owner_identity: ctx.sender(),
+    })?;
+    Ok(())
+}
+```
+
+</TabItem>
+</Tabs>
+
+You can then check `ctx.sender` against the stored owner identity in other reducers to restrict admin-only operations.
+:::
+
 ## Client Connected
 
 Runs when a client establishes a connection.
