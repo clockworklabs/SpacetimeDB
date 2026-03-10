@@ -1068,7 +1068,37 @@ fn define_product_type(
     writeln!(out);
 }
 
+/// Returns the Kotlin type name for `ty`, qualifying with `module_bindings.` when
+/// a variant name in `variant_names` would shadow the type inside a sealed interface scope.
+fn kotlin_type_avoiding_variants(module: &ModuleDef, ty: &AlgebraicTypeUse, variant_names: &[String]) -> String {
+    let base = kotlin_type(module, ty);
+    if variant_names.contains(&base) {
+        format!("module_bindings.{base}")
+    } else {
+        base
+    }
+}
+
+/// Like [write_decode_expr] but qualifies `Ref` types that collide with variant names.
+fn write_decode_expr_avoiding_variants(module: &ModuleDef, ty: &AlgebraicTypeUse, variant_names: &[String]) -> String {
+    if let AlgebraicTypeUse::Ref(r) = ty {
+        let name = type_ref_name(module, *r);
+        if variant_names.contains(&name) {
+            return format!("module_bindings.{name}.decode(reader)");
+        }
+    }
+    write_decode_expr(module, ty)
+}
+
 fn define_sum_type(module: &ModuleDef, out: &mut Indenter, name: &str, variants: &[(Identifier, AlgebraicTypeUse)]) {
+    // Collect all variant names so we can detect when a payload type name collides
+    // with a variant name (which would resolve to the sealed interface member instead
+    // of the top-level type).
+    let variant_names: Vec<String> = variants
+        .iter()
+        .map(|(ident, _)| ident.deref().to_case(Case::Pascal))
+        .collect();
+
     writeln!(out, "sealed interface {name} {{");
     out.indent(1);
 
@@ -1080,7 +1110,7 @@ fn define_sum_type(module: &ModuleDef, out: &mut Indenter, name: &str, variants:
                 writeln!(out, "data object {variant_name} : {name}");
             }
             _ => {
-                let kotlin_ty = kotlin_type(module, ty);
+                let kotlin_ty = kotlin_type_avoiding_variants(module, ty, &variant_names);
                 writeln!(out, "data class {variant_name}(val value: {kotlin_ty}) : {name}");
             }
         }
@@ -1130,7 +1160,7 @@ fn define_sum_type(module: &ModuleDef, out: &mut Indenter, name: &str, variants:
             }
             _ => {
                 if is_simple_decode(ty) {
-                    let expr = write_decode_expr(module, ty);
+                    let expr = write_decode_expr_avoiding_variants(module, ty, &variant_names);
                     writeln!(out, "{i} -> {variant_name}({expr})");
                 } else {
                     writeln!(out, "{i} -> {{");

@@ -1518,7 +1518,7 @@ data class Baz(
 }
 
 sealed interface Foobar {
-    data class Baz(val value: Baz) : Foobar
+    data class Baz(val value: module_bindings.Baz) : Foobar
     data object Bar : Foobar
     data class Har(val value: UInt) : Foobar
 
@@ -1539,7 +1539,7 @@ sealed interface Foobar {
     companion object {
         fun decode(reader: BsatnReader): Foobar {
             return when (val tag = reader.readSumTag().toInt()) {
-                0 -> Baz(Baz.decode(reader))
+                0 -> Baz(module_bindings.Baz.decode(reader))
                 1 -> Bar
                 2 -> Har(reader.readU32())
                 else -> error("Unknown Foobar tag: $tag")
