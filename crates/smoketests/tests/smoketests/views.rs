@@ -1,4 +1,4 @@
-use serde_json::json;
+use serde_json::{json, Value};
 use spacetimedb_smoketests::{require_dotnet, require_pnpm, Smoketest};
 
 const TS_VIEWS_SUBSCRIBE_MODULE: &str = r#"import { schema, t, table } from "spacetimedb/server";
@@ -76,6 +76,44 @@ public static partial class Module
     }
 }
 "#;
+
+fn project_fields(events: Vec<Value>, view_name: &str, projected_fields: &[&str]) -> Vec<Value> {
+    let project_row = |row: &Value| {
+        if projected_fields.is_empty() {
+            row.clone()
+        } else {
+            let mut projected = serde_json::Map::new();
+            for field in projected_fields {
+                if let Some(value) = row.get(*field) {
+                    projected.insert((*field).to_string(), value.clone());
+                }
+            }
+            Value::Object(projected)
+        }
+    };
+
+    events
+        .into_iter()
+        .map(|event| {
+            json!({
+                view_name: {
+                    "deletes": event[view_name]["deletes"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(&project_row)
+                        .collect::<Vec<_>>(),
+                    "inserts": event[view_name]["inserts"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(&project_row)
+                        .collect::<Vec<_>>()
+                }
+            })
+        })
+        .collect()
+}
 
 /// Tests that views populate the st_view_* system tables
 #[test]
@@ -404,25 +442,7 @@ fn test_subscribing_with_different_identities() {
     test.call("insert_player", &["Bob"]).unwrap();
     let events = sub.collect().unwrap();
 
-    let projection: Vec<serde_json::Value> = events
-        .into_iter()
-        .map(|event| {
-            let deletes = event["my_player"]["deletes"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            let inserts = event["my_player"]["inserts"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            json!({"my_player": {"deletes": deletes, "inserts": inserts}})
-        })
-        .collect();
-
+    let projection = project_fields(events, "my_player", &["name"]);
     assert_eq!(
         serde_json::json!(projection),
         serde_json::json!([
@@ -500,26 +520,7 @@ fn test_procedure_triggers_subscription_updates() {
     let sub = test.subscribe_background(&["select * from my_player"], 1).unwrap();
     test.call("insert_player_proc", &["Alice"]).unwrap();
     let events = sub.collect().unwrap();
-
-    let projection: Vec<serde_json::Value> = events
-        .into_iter()
-        .map(|event| {
-            let deletes = event["my_player"]["deletes"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            let inserts = event["my_player"]["inserts"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            json!({"my_player": {"deletes": deletes, "inserts": inserts}})
-        })
-        .collect();
-
+    let projection = project_fields(events, "my_player", &["name"]);
     assert_eq!(
         serde_json::json!(projection),
         serde_json::json!([
@@ -543,25 +544,7 @@ fn test_typescript_procedure_triggers_subscription_updates() {
     test.call("insert_player_proc", &["Alice"]).unwrap();
     let events = sub.collect().unwrap();
 
-    let projection: Vec<serde_json::Value> = events
-        .into_iter()
-        .map(|event| {
-            let deletes = event["my_player"]["deletes"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            let inserts = event["my_player"]["inserts"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            json!({"my_player": {"deletes": deletes, "inserts": inserts}})
-        })
-        .collect();
-
+    let projection = project_fields(events, "my_player", &["name"]);
     assert_eq!(
         serde_json::json!(projection),
         serde_json::json!([
@@ -607,5 +590,184 @@ fn test_csharp_query_builder_view_query() {
         r#" value | alive
 -------+-------
  1     | true"#,
+    );
+}
+
+enum PkJoinMutation {
+    UpdateLhs { id: u64, ok: bool },
+    UpdateRhs { id: u64, ok: bool },
+    DeleteLhs { id: u64 },
+}
+
+fn apply_pk_join_mutation(test: &Smoketest, mutation: &PkJoinMutation) {
+    match mutation {
+        PkJoinMutation::UpdateLhs { id, ok } => {
+            let id = id.to_string();
+            let ok = if *ok { "true" } else { "false" };
+            test.call("update_pk_join_lhs", &[id.as_str(), ok]).unwrap();
+        }
+        PkJoinMutation::UpdateRhs { id, ok } => {
+            let id = id.to_string();
+            let ok = if *ok { "true" } else { "false" };
+            test.call("update_pk_join_rhs", &[id.as_str(), ok]).unwrap();
+        }
+        PkJoinMutation::DeleteLhs { id } => {
+            let id = id.to_string();
+            test.call("delete_pk_join_lhs", &[id.as_str()]).unwrap();
+        }
+    }
+}
+
+fn expected_pk_join_projection(view_name: &str) -> Value {
+    let mk_event = |deletes: Vec<Value>, inserts: Vec<Value>| {
+        let mut event_payload = serde_json::Map::new();
+        event_payload.insert("deletes".to_string(), Value::Array(deletes));
+        event_payload.insert("inserts".to_string(), Value::Array(inserts));
+
+        let mut event = serde_json::Map::new();
+        event.insert(view_name.to_string(), Value::Object(event_payload));
+        Value::Object(event)
+    };
+
+    Value::Array(vec![
+        mk_event(vec![], vec![json!({"id": 1, "ok": true})]),
+        mk_event(vec![json!({"id": 1, "ok": true})], vec![]),
+        mk_event(vec![], vec![json!({"id": 2, "ok": true})]),
+        mk_event(vec![json!({"id": 2, "ok": true})], vec![]),
+    ])
+}
+
+fn run_pk_join_subscription_test(query: &str, projected_view_name: &str, mutations: &[PkJoinMutation]) {
+    let test = Smoketest::builder().precompiled_module("views-query").build();
+
+    // Seed rows for identity A in both underlying tables.
+    test.call("update_pk_join_lhs", &["200", "true"]).unwrap();
+    test.call("update_pk_join_rhs", &["200", "true"]).unwrap();
+
+    // Switch to identity B so each underlying table has rows for 2 identities.
+    test.new_identity().unwrap();
+
+    let sub = test.subscribe_background(&[query], 4).unwrap();
+
+    for mutation in mutations {
+        apply_pk_join_mutation(&test, mutation);
+    }
+
+    let update_events = sub.collect().unwrap();
+    assert_eq!(
+        serde_json::json!(project_fields(update_events, projected_view_name, &["id", "ok"])),
+        expected_pk_join_projection(projected_view_name)
+    );
+}
+
+#[test]
+fn test_subscribe_join_pk_views_with_filters_on_both_sides() {
+    let query = "SELECT pk_join_lhs_sender_view.* \
+                 FROM pk_join_lhs_sender_view \
+                 JOIN pk_join_rhs_sender_view \
+                 ON pk_join_lhs_sender_view.id = pk_join_rhs_sender_view.id \
+                 WHERE pk_join_lhs_sender_view.ok = true \
+                 AND pk_join_rhs_sender_view.ok = true";
+
+    run_pk_join_subscription_test(
+        query,
+        "pk_join_lhs_sender_view",
+        &[
+            PkJoinMutation::UpdateLhs { id: 1, ok: true },
+            PkJoinMutation::UpdateRhs { id: 1, ok: true },
+            PkJoinMutation::UpdateRhs { id: 1, ok: false },
+            PkJoinMutation::UpdateRhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: false },
+        ],
+    );
+}
+
+#[test]
+fn test_subscribe_join_anon_pk_views_with_filters_on_both_sides() {
+    let query = "SELECT pk_join_lhs_view.* \
+                 FROM pk_join_lhs_view \
+                 JOIN pk_join_rhs_view \
+                 ON pk_join_lhs_view.id = pk_join_rhs_view.id \
+                 WHERE pk_join_lhs_view.ok = true \
+                 AND pk_join_rhs_view.ok = true";
+
+    run_pk_join_subscription_test(
+        query,
+        "pk_join_lhs_view",
+        &[
+            PkJoinMutation::UpdateLhs { id: 1, ok: true },
+            PkJoinMutation::UpdateRhs { id: 1, ok: true },
+            PkJoinMutation::UpdateRhs { id: 1, ok: false },
+            PkJoinMutation::UpdateRhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: false },
+        ],
+    );
+}
+
+#[test]
+fn test_subscribe_join_anon_pk_view_with_table_and_filter() {
+    let query = "SELECT pk_join_lhs_view.* \
+                 FROM pk_join_lhs_view \
+                 JOIN pk_join_rhs \
+                 ON pk_join_lhs_view.id = pk_join_rhs.id \
+                 WHERE pk_join_lhs_view.ok = true \
+                 AND pk_join_rhs.identity = :sender";
+
+    run_pk_join_subscription_test(
+        query,
+        "pk_join_lhs_view",
+        &[
+            PkJoinMutation::UpdateLhs { id: 1, ok: true },
+            PkJoinMutation::UpdateRhs { id: 1, ok: true },
+            PkJoinMutation::UpdateLhs { id: 1, ok: false },
+            PkJoinMutation::UpdateRhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: false },
+        ],
+    );
+}
+
+#[test]
+fn test_subscribe_join_anon_pk_view_with_table() {
+    let query = "SELECT pk_join_lhs_view.* \
+                 FROM pk_join_lhs_view \
+                 JOIN pk_join_rhs \
+                 ON pk_join_lhs_view.id = pk_join_rhs.id \
+                 WHERE pk_join_rhs.identity = :sender";
+
+    run_pk_join_subscription_test(
+        query,
+        "pk_join_lhs_view",
+        &[
+            PkJoinMutation::UpdateLhs { id: 1, ok: true },
+            PkJoinMutation::UpdateRhs { id: 1, ok: true },
+            PkJoinMutation::DeleteLhs { id: 1 },
+            PkJoinMutation::UpdateRhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: true },
+            PkJoinMutation::DeleteLhs { id: 2 },
+        ],
+    );
+}
+
+#[test]
+fn test_subscribe_join_pk_view_with_table() {
+    let query = "SELECT pk_join_lhs_sender_view.* \
+                 FROM pk_join_lhs_sender_view \
+                 JOIN pk_join_rhs \
+                 ON pk_join_lhs_sender_view.id = pk_join_rhs.id";
+
+    run_pk_join_subscription_test(
+        query,
+        "pk_join_lhs_sender_view",
+        &[
+            PkJoinMutation::UpdateLhs { id: 1, ok: true },
+            PkJoinMutation::UpdateRhs { id: 1, ok: true },
+            PkJoinMutation::DeleteLhs { id: 1 },
+            PkJoinMutation::UpdateRhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: true },
+            PkJoinMutation::DeleteLhs { id: 2 },
+        ],
     );
 }

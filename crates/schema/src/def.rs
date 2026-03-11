@@ -775,6 +775,7 @@ impl From<ViewDef> for TableDef {
             name,
             is_public,
             product_type_ref,
+            primary_key,
             return_columns,
             accessor_name,
             ..
@@ -782,7 +783,7 @@ impl From<ViewDef> for TableDef {
         Self {
             name,
             product_type_ref,
-            primary_key: None,
+            primary_key,
             columns: return_columns.into_iter().map(ColumnDef::from).collect(),
             indexes: <_>::default(),
             constraints: <_>::default(),
@@ -1507,12 +1508,13 @@ pub struct ViewDef {
     pub params_for_generate: ProductTypeDef,
 
     /// The return type of the view.
-    /// Either `Option<T>` or `Vec<T>` where:
+    /// Either `Option<T>`, `Vec<T>`, or `Query<T>` where:
     ///
-    /// 1. `T` is a [`ProductType`] containing the columns of the view,
-    /// 2. `T` is registered in the module's typespace,
-    /// 3. `Option<T>` refers to [`AlgebraicType::option()`], and
+    /// 1. `T` is a [`ProductType`] containing the columns of the view
+    /// 2. `T` is registered in the module's typespace
+    /// 3. `Option<T>` refers to [`AlgebraicType::option()`]
     /// 4. `Vec<T>` refers to [`AlgebraicType::array()`]
+    /// 5. `Query<T>` is a special [`ProductType`] `{ __query__: T }`
     pub return_type: AlgebraicType,
 
     /// The return type of the view, formatted for client codegen.
@@ -1520,10 +1522,16 @@ pub struct ViewDef {
 
     /// The single source of truth for the view's columns.
     ///
-    /// If a view can return only `Option<T>` or `Vec<T>`,
+    /// If a view can return only `Option<T>`, `Vec<T>`, or `Query<T>`,
     /// this is a reference to the inner product type `T`.
     /// All elements of `T` must have names.
     pub product_type_ref: AlgebraicTypeRef,
+
+    /// The primary key of the view.
+    ///
+    /// This is set for query-builder views when the underlying table has a primary key.
+    /// The database engine does not actually care about this, but client code generation does.
+    pub primary_key: Option<ColId>,
 
     /// The return columns of this view.
     /// The same information is stored in `product_type_ref`.
