@@ -669,6 +669,13 @@ fn test_subscribe_join_pk_views_with_filters_on_both_sides() {
 fn test_subscribe_join_anon_pk_views_with_filters_on_both_sides() {
     let test = Smoketest::builder().precompiled_module("views-query").build();
 
+    // Seed rows for identity A.
+    test.call("update_left_pk_join_source", &["200", "true"]).unwrap();
+    test.call("update_right_pk_join_source", &["200", "true"]).unwrap();
+
+    // Switch to identity B so each underlying table has rows for 2 identities.
+    test.new_identity().unwrap();
+
     let query = "SELECT left_pk_join_view.* \
                  FROM left_pk_join_view \
                  JOIN right_pk_join_view \
@@ -686,6 +693,78 @@ fn test_subscribe_join_anon_pk_views_with_filters_on_both_sides() {
 
     // Right side update toggles ok=false and removes the joined row.
     test.call("update_right_pk_join_source", &["1", "false"]).unwrap();
+
+    // Right-only row for id=2: still no join output.
+    test.call("update_right_pk_join_source", &["2", "true"]).unwrap();
+
+    // Left insert completes the join for id=2 and emits an insert.
+    test.call("update_left_pk_join_source", &["2", "true"]).unwrap();
+
+    // Left side update toggles ok=false and removes the joined row.
+    test.call("update_left_pk_join_source", &["2", "false"]).unwrap();
+
+    let update_events = sub.collect().unwrap();
+    let expected = serde_json::json!([
+        {
+            "left_pk_join_view": {
+                "deletes": [],
+                "inserts": [{"id": 1, "ok": true}],
+            }
+        },
+        {
+            "left_pk_join_view": {
+                "deletes": [{"id": 1, "ok": true}],
+                "inserts": [],
+            }
+        },
+        {
+            "left_pk_join_view": {
+                "deletes": [],
+                "inserts": [{"id": 2, "ok": true}],
+            }
+        },
+        {
+            "left_pk_join_view": {
+                "deletes": [{"id": 2, "ok": true}],
+                "inserts": [],
+            }
+        }
+    ]);
+
+    assert_eq!(
+        serde_json::json!(project_fields(update_events, "left_pk_join_view", &["id", "ok"])),
+        expected
+    );
+}
+
+#[test]
+fn test_subscribe_join_anon_pk_view_with_physical_table_sender_filter() {
+    let test = Smoketest::builder().precompiled_module("views-query").build();
+
+    // Seed rows for identity A in both underlying tables.
+    test.call("update_left_pk_join_source", &["200", "true"]).unwrap();
+    test.call("update_right_pk_join_source", &["200", "true"]).unwrap();
+
+    // Switch to identity B so each underlying table has rows for 2 identities.
+    test.new_identity().unwrap();
+
+    let query = "SELECT left_pk_join_view.* \
+                 FROM left_pk_join_view \
+                 JOIN right_pk_join_source \
+                 ON left_pk_join_view.id = right_pk_join_source.id \
+                 WHERE left_pk_join_view.ok = true \
+                 AND right_pk_join_source.identity = :sender";
+
+    let sub = test.subscribe_background(&[query], 4).unwrap();
+
+    // Left-only row: no join output yet.
+    test.call("update_left_pk_join_source", &["1", "true"]).unwrap();
+
+    // Right insert completes the join for id=1 and emits an insert.
+    test.call("update_right_pk_join_source", &["1", "true"]).unwrap();
+
+    // Left side update toggles ok=false and removes the joined row.
+    test.call("update_left_pk_join_source", &["1", "false"]).unwrap();
 
     // Right-only row for id=2: still no join output.
     test.call("update_right_pk_join_source", &["2", "true"]).unwrap();
