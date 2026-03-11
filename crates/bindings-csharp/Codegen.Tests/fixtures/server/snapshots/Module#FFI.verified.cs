@@ -1636,10 +1636,14 @@ sealed class public_table_queryViewDispatcher : global::SpacetimeDB.Internal.IVi
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
-            ReturnType: new SpacetimeDB.BSATN.ValueOption<
-                PublicTable,
-                PublicTable.BSATN
-            >().GetAlgebraicType(registrar)
+            ReturnType: new global::SpacetimeDB.BSATN.AlgebraicType.Product(
+                [
+                    new global::SpacetimeDB.BSATN.AggregateElement(
+                        "__query__",
+                        new PublicTable.BSATN().GetAlgebraicType(registrar)
+                    )
+                ]
+            )
         );
 
     public byte[] Invoke(
