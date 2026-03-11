@@ -20,7 +20,7 @@ public static partial class Module
 
 
 	#region Tables
-	[Table(Name = "config", Public = true)]
+	[Table(Accessor = "config", Public = true)]
 	public partial struct Config
 	{
 		[PrimaryKey]
@@ -28,8 +28,8 @@ public static partial class Module
 		public long world_size;
 	}
 
-	[Table(Name = "entity", Public = true)]
-	[Table(Name = "logged_out_entity")]
+	[Table(Accessor = "entity", Public = true)]
+	[Table(Accessor = "logged_out_entity")]
 	public partial struct Entity
 	{
 		[PrimaryKey, AutoInc]
@@ -38,9 +38,9 @@ public static partial class Module
 		public int mass;
 	}
 
-	[Table(Name = "circle", Public = true)]
-	[SpacetimeDB.Index.BTree(Name = "player_id", Columns = [nameof(player_id)])]
-	[Table(Name = "logged_out_circle")]
+	[Table(Accessor = "circle", Public = true)]
+	[SpacetimeDB.Index.BTree(Accessor = "player_id", Columns = [nameof(player_id)])]
+	[Table(Accessor = "logged_out_circle")]
 	public partial struct Circle
 	{
 		[PrimaryKey]
@@ -51,8 +51,8 @@ public static partial class Module
 		public SpacetimeDB.Timestamp last_split_time;
 	}
 
-	[Table(Name = "player", Public = true)]
-	[Table(Name = "logged_out_player")]
+	[Table(Accessor = "player", Public = true)]
+	[Table(Accessor = "logged_out_player")]
 	public partial struct Player
 	{
 		[PrimaryKey]
@@ -62,14 +62,14 @@ public static partial class Module
 		public string name;
 	}
 
-	[Table(Name = "food", Public = true)]
+	[Table(Accessor = "food", Public = true)]
 	public partial struct Food
 	{
 		[PrimaryKey]
 		public int entity_id;
 	}
 
-	[Table(Name = "move_all_players_timer", Scheduled = nameof(MoveAllPlayers), ScheduledAt = nameof(scheduled_at))]
+	[Table(Accessor = "move_all_players_timer", Scheduled = nameof(MoveAllPlayers), ScheduledAt = nameof(scheduled_at))]
 	public partial struct MoveAllPlayersTimer
 	{
 		[PrimaryKey, AutoInc]
@@ -77,7 +77,7 @@ public static partial class Module
 		public ScheduleAt scheduled_at;
 	}
 
-	[Table(Name = "spawn_food_timer", Scheduled = nameof(SpawnFood), ScheduledAt = nameof(scheduled_at))]
+	[Table(Accessor = "spawn_food_timer", Scheduled = nameof(SpawnFood), ScheduledAt = nameof(scheduled_at))]
 	public partial struct SpawnFoodTimer
 	{
 		[PrimaryKey, AutoInc]
@@ -85,7 +85,7 @@ public static partial class Module
 		public ScheduleAt scheduled_at;
 	}
 
-	[Table(Name = "circle_decay_timer", Scheduled = nameof(CircleDecay), ScheduledAt = nameof(scheduled_at))]
+	[Table(Accessor = "circle_decay_timer", Scheduled = nameof(CircleDecay), ScheduledAt = nameof(scheduled_at))]
 	public partial struct CircleDecayTimer
 	{
 		[PrimaryKey, AutoInc]
@@ -93,7 +93,7 @@ public static partial class Module
 		public ScheduleAt scheduled_at;
 	}
 
-	[Table(Name = "circle_recombine_timer", Scheduled = nameof(CircleRecombine), ScheduledAt = nameof(scheduled_at))]
+	[Table(Accessor = "circle_recombine_timer", Scheduled = nameof(CircleRecombine), ScheduledAt = nameof(scheduled_at))]
 	public partial struct CircleRecombineTimer
 	{
 		[PrimaryKey, AutoInc]
@@ -102,7 +102,7 @@ public static partial class Module
 		public int player_id;
 	}
 
-	[Table(Name = "consume_entity_timer", Scheduled = nameof(ConsumeEntity), ScheduledAt = nameof(scheduled_at))]
+	[Table(Accessor = "consume_entity_timer", Scheduled = nameof(ConsumeEntity), ScheduledAt = nameof(scheduled_at))]
 	public partial struct ConsumeEntityTimer
 	{
 		[PrimaryKey, AutoInc]

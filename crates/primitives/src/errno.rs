@@ -38,6 +38,7 @@ macro_rules! errnos {
         );
     };
 }
+pub use errnos;
 
 const fn nz(n: u16) -> NonZeroU16 {
     match NonZeroU16::new(n) {

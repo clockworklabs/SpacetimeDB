@@ -1,7 +1,7 @@
-use std::fmt::{Display, Formatter};
-
+use spacetimedb_lib::sats::raw_identifier::RawIdentifier;
 use spacetimedb_lib::Identity;
 use sqlparser::ast::Ident;
+use std::fmt::{Display, Formatter};
 
 pub mod sql;
 pub mod sub;
@@ -187,12 +187,12 @@ pub enum Parameter {
 /// A SQL identifier or named reference.
 /// Currently case sensitive.
 #[derive(Debug, Clone)]
-pub struct SqlIdent(pub Box<str>);
+pub struct SqlIdent(pub RawIdentifier);
 
 /// Case insensitivity should be implemented here if at all
 impl From<Ident> for SqlIdent {
     fn from(Ident { value, .. }: Ident) -> Self {
-        SqlIdent(value.into_boxed_str())
+        SqlIdent(RawIdentifier::new(value))
     }
 }
 

@@ -6,8 +6,6 @@
 #include "BSATN/UEBSATNHelpers.h"
 #include "ModuleBindings/Tables/BtreeU32Table.g.h"
 #include "ModuleBindings/Tables/IndexedSimpleEnumTable.g.h"
-#include "ModuleBindings/Tables/IndexedTableTable.g.h"
-#include "ModuleBindings/Tables/IndexedTable2Table.g.h"
 #include "ModuleBindings/Tables/LargeTableTable.g.h"
 #include "ModuleBindings/Tables/OneBoolTable.g.h"
 #include "ModuleBindings/Tables/OneByteStructTable.g.h"
@@ -1072,12 +1070,6 @@ static FReducer DecodeReducer(const FReducerEvent& Event)
         return FReducer::NoOpSucceeds(Args);
     }
 
-    if (ReducerName == TEXT("send_scheduled_message"))
-    {
-        FSendScheduledMessageArgs Args = UE::SpacetimeDB::Deserialize<FSendScheduledMessageArgs>(Event.ReducerCall.Args);
-        return FReducer::SendScheduledMessage(Args);
-    }
-
     if (ReducerName == TEXT("sorted_uuids_insert"))
     {
         FSortedUuidsInsertArgs Args = UE::SpacetimeDB::Deserialize<FSortedUuidsInsertArgs>(Event.ReducerCall.Args);
@@ -1325,8 +1317,6 @@ UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Supe
 
 	RegisterTable<FBTreeU32Type, UBtreeU32Table, FEventContext>(TEXT("btree_u32"), Db->BtreeU32);
 	RegisterTable<FIndexedSimpleEnumType, UIndexedSimpleEnumTable, FEventContext>(TEXT("indexed_simple_enum"), Db->IndexedSimpleEnum);
-	RegisterTable<FIndexedTableType, UIndexedTableTable, FEventContext>(TEXT("indexed_table"), Db->IndexedTable);
-	RegisterTable<FIndexedTable2Type, UIndexedTable2Table, FEventContext>(TEXT("indexed_table_2"), Db->IndexedTable2);
 	RegisterTable<FLargeTableType, ULargeTableTable, FEventContext>(TEXT("large_table"), Db->LargeTable);
 	RegisterTable<FOneBoolType, UOneBoolTable, FEventContext>(TEXT("one_bool"), Db->OneBool);
 	RegisterTable<FOneByteStructType, UOneByteStructTable, FEventContext>(TEXT("one_byte_struct"), Db->OneByteStruct);
@@ -1469,8 +1459,6 @@ void URemoteTables::Initialize()
 	/** Creating tables */
 	BtreeU32 = NewObject<UBtreeU32Table>(this);
 	IndexedSimpleEnum = NewObject<UIndexedSimpleEnumTable>(this);
-	IndexedTable = NewObject<UIndexedTableTable>(this);
-	IndexedTable2 = NewObject<UIndexedTable2Table>(this);
 	LargeTable = NewObject<ULargeTableTable>(this);
 	OneBool = NewObject<UOneBoolTable>(this);
 	OneByteStruct = NewObject<UOneByteStructTable>(this);
@@ -1581,8 +1569,6 @@ void URemoteTables::Initialize()
 	/** Initialization */
 	BtreeU32->PostInitialize();
 	IndexedSimpleEnum->PostInitialize();
-	IndexedTable->PostInitialize();
-	IndexedTable2->PostInitialize();
 	LargeTable->PostInitialize();
 	OneBool->PostInitialize();
 	OneByteStruct->PostInitialize();
@@ -2326,10 +2312,6 @@ void USetReducerFlags::InsertVecUuid(ECallReducerFlags Flag)
 void USetReducerFlags::NoOpSucceeds(ECallReducerFlags Flag)
 {
 	FlagMap.Add("NoOpSucceeds", Flag);
-}
-void USetReducerFlags::SendScheduledMessage(ECallReducerFlags Flag)
-{
-	FlagMap.Add("SendScheduledMessage", Flag);
 }
 void USetReducerFlags::SortedUuidsInsert(ECallReducerFlags Flag)
 {
@@ -9526,50 +9508,6 @@ bool URemoteReducers::InvokeNoOpSucceedsWithArgs(const FReducerEventContext& Con
     return true;
 }
 
-void URemoteReducers::SendScheduledMessage(const FScheduledTableType& Arg)
-{
-    if (!Conn)
-    {
-        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
-        return;
-    }
-
-	Conn->CallReducerTyped(TEXT("send_scheduled_message"), FSendScheduledMessageArgs(Arg), SetCallReducerFlags);
-}
-
-bool URemoteReducers::InvokeSendScheduledMessage(const FReducerEventContext& Context, const USendScheduledMessageReducer* Args)
-{
-    if (!OnSendScheduledMessage.IsBound())
-    {
-        // Handle unhandled reducer error
-        if (InternalOnUnhandledReducerError.IsBound())
-        {
-            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
-            // For now, just broadcast any error
-            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for SendScheduledMessage"));
-        }
-        return false;
-    }
-
-    OnSendScheduledMessage.Broadcast(Context, Args->Arg);
-    return true;
-}
-
-bool URemoteReducers::InvokeSendScheduledMessageWithArgs(const FReducerEventContext& Context, const FSendScheduledMessageArgs& Args)
-{
-    if (!OnSendScheduledMessage.IsBound())
-    {
-        if (InternalOnUnhandledReducerError.IsBound())
-        {
-            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for SendScheduledMessage"));
-        }
-        return false;
-    }
-
-    OnSendScheduledMessage.Broadcast(Context, Args.Arg);
-    return true;
-}
-
 void URemoteReducers::SortedUuidsInsert()
 {
     if (!Conn)
@@ -12250,12 +12188,6 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeNoOpSucceedsWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("send_scheduled_message"))
-    {
-        FSendScheduledMessageArgs Args = ReducerEvent.Reducer.GetAsSendScheduledMessage();
-        Reducers->InvokeSendScheduledMessageWithArgs(Context, Args);
-        return;
-    }
     if (ReducerName == TEXT("sorted_uuids_insert"))
     {
         FSortedUuidsInsertArgs Args = ReducerEvent.Reducer.GetAsSortedUuidsInsert();
@@ -12603,9 +12535,9 @@ UDbConnectionBuilder* UDbConnectionBuilder::WithUri(const FString& InUri)
 {
 	return Cast<UDbConnectionBuilder>(WithUriBase(InUri));
 }
-UDbConnectionBuilder* UDbConnectionBuilder::WithModuleName(const FString& InName)
+UDbConnectionBuilder* UDbConnectionBuilder::WithDatabaseName(const FString& InName)
 {
-	return Cast<UDbConnectionBuilder>(WithModuleNameBase(InName));
+	return Cast<UDbConnectionBuilder>(WithDatabaseNameBase(InName));
 }
 UDbConnectionBuilder* UDbConnectionBuilder::WithToken(const FString& InToken)
 {

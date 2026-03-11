@@ -24,7 +24,7 @@ fn init(ctx: &ReducerContext) {
      do_cancel(ctx, schedule.scheduled_id);
 }
 
-#[spacetimedb::table(name = scheduled_reducer_args, public, scheduled(reducer))]
+#[spacetimedb::table(accessor = scheduled_reducer_args, public, scheduled(reducer))]
 pub struct ScheduledReducerArgs {
     #[primary_key]
     #[auto_inc]
@@ -59,7 +59,7 @@ class SubscribeScheduledTable(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{log, duration, ReducerContext, Table, Timestamp};
 
-#[spacetimedb::table(name = scheduled_table, public, scheduled(my_reducer, at = sched_at))]
+#[spacetimedb::table(accessor = scheduled_table, public, scheduled(my_reducer, at = sched_at))]
 pub struct ScheduledTable {
     #[primary_key]
     #[auto_inc]
@@ -150,7 +150,7 @@ class SubscribeScheduledProcedureTable(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{log, duration, ReducerContext, ProcedureContext, Table, Timestamp};
 
-#[spacetimedb::table(name = scheduled_table, public, scheduled(my_procedure, at = sched_at))]
+#[spacetimedb::table(accessor = scheduled_table, public, scheduled(my_procedure, at = sched_at))]
 pub struct ScheduledTable {
     #[primary_key]
     #[auto_inc]
@@ -242,7 +242,7 @@ class VolatileNonatomicScheduleImmediate(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb::table(name = my_table, public)]
+#[spacetimedb::table(accessor = my_table, public)]
 pub struct MyTable {
     x: String,
 }

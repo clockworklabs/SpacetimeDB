@@ -4,7 +4,7 @@ mod module_bindings;
 use module_bindings::*;
 use std::env;
 
-use spacetimedb_sdk::{credentials, DbContext, Error, Event, Identity, Status, Table, TableWithPrimaryKey};
+use spacetimedb_sdk::{credentials, DbContext, Error, Event, Identity, Table, TableWithPrimaryKey};
 
 // ## Define the main function
 
@@ -47,7 +47,7 @@ fn connect_to_db() -> DbConnection {
         // so we can re-authenticate as the same `Identity`.
         .with_token(creds_store().load().expect("Error loading credentials"))
         // Set the database name we chose when we called `spacetime publish`.
-        .with_module_name(db_name)
+        .with_database_name(db_name)
         // Set the URI of the SpacetimeDB host that's running our database.
         .with_uri(host)
         // Finalize configuration and connect!
@@ -99,12 +99,6 @@ fn register_callbacks(ctx: &DbConnection) {
 
     // When a new message is received, print it.
     ctx.db.message().on_insert(on_message_inserted);
-
-    // When we fail to set our name, print a warning.
-    ctx.reducers.on_set_name(on_name_set);
-
-    // When we fail to send a message, print a warning.
-    ctx.reducers.on_send_message(on_message_sent);
 }
 
 // ### Notify about new users
@@ -162,22 +156,6 @@ fn print_message(ctx: &impl RemoteDbContext, message: &Message) {
     println!("{}: {}", sender, message.text);
 }
 
-// ### Handle reducer failures
-
-/// Our `on_set_name` callback: print a warning if the reducer failed.
-fn on_name_set(ctx: &ReducerEventContext, name: &String) {
-    if let Status::Failed(err) = &ctx.event.status {
-        eprintln!("Failed to change name to {name:?}: {err}");
-    }
-}
-
-/// Our `on_send_message` callback: print a warning if the reducer failed.
-fn on_message_sent(ctx: &ReducerEventContext, text: &String) {
-    if let Status::Failed(err) = &ctx.event.status {
-        eprintln!("Failed to send message {text:?}: {err}");
-    }
-}
-
 // ## Subscribe to tables
 
 /// Register subscriptions for all rows of both tables.
@@ -185,7 +163,9 @@ fn subscribe_to_tables(ctx: &DbConnection) {
     ctx.subscription_builder()
         .on_applied(on_sub_applied)
         .on_error(on_sub_error)
-        .subscribe(["SELECT * FROM user", "SELECT * FROM message"]);
+        .add_query(|q| q.from.user())
+        .add_query(|q| q.from.message())
+        .subscribe();
 }
 
 // ### Print past messages in order
@@ -220,9 +200,26 @@ fn user_input_loop(ctx: &DbConnection) {
             panic!("Failed to read from stdin.");
         };
         if let Some(name) = line.strip_prefix("/name ") {
-            ctx.reducers.set_name(name.to_string()).unwrap();
+            ctx.reducers
+                .set_name_then(name.to_string(), {
+                    let name = name.to_string();
+                    move |_ctx, result| match result {
+                        Err(e) => panic!("Internal error when setting name: {e}"),
+                        Ok(Err(e)) => eprintln!("Failed to set name to {name}: {e}"),
+                        Ok(Ok(())) => (),
+                    }
+                })
+                .unwrap();
         } else {
-            ctx.reducers.send_message(line).unwrap();
+            ctx.reducers
+                .send_message_then(line.clone(), {
+                    move |_ctx, result| match result {
+                        Err(e) => panic!("Internal error when sending message: {e}"),
+                        Ok(Err(e)) => eprintln!("Failed to send message {line:?}: {e}"),
+                        Ok(Ok(())) => (),
+                    }
+                })
+                .unwrap();
         }
     }
 }

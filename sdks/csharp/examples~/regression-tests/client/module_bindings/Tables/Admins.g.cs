@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class AdminsHandle : RemoteTableHandle<EventContext, User>
         {
-            protected override string RemoteTableName => "Admins";
+            protected override string RemoteTableName => "admins";
 
             internal AdminsHandle(DbConnection conn) : base(conn)
             {
@@ -34,10 +34,10 @@ namespace SpacetimeDB.Types
 
         public AdminsCols(string tableName)
         {
-            Id = new global::SpacetimeDB.Col<User, SpacetimeDB.Uuid>(tableName, "Id");
-            Name = new global::SpacetimeDB.Col<User, string>(tableName, "Name");
-            IsAdmin = new global::SpacetimeDB.Col<User, bool>(tableName, "IsAdmin");
-            Age = new global::SpacetimeDB.Col<User, byte>(tableName, "Age");
+            Id = new global::SpacetimeDB.Col<User, SpacetimeDB.Uuid>(tableName, "id");
+            Name = new global::SpacetimeDB.Col<User, string>(tableName, "name");
+            IsAdmin = new global::SpacetimeDB.Col<User, bool>(tableName, "is_admin");
+            Age = new global::SpacetimeDB.Col<User, byte>(tableName, "age");
         }
     }
 

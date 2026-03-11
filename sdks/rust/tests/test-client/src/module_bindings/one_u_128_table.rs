@@ -5,7 +5,7 @@
 use super::one_u_128_type::OneU128;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `one_u128`.
+/// Table handle for the table `one_u_128`.
 ///
 /// Obtain a handle from the [`OneU128TableAccess::one_u_128`] method on [`super::RemoteTables`],
 /// like `ctx.db.one_u_128()`.
@@ -19,19 +19,19 @@ pub struct OneU128TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `one_u128`.
+/// Extension trait for access to the table `one_u_128`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OneU128TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OneU128TableHandle`], which mediates access to the table `one_u128`.
+    /// Obtain a [`OneU128TableHandle`], which mediates access to the table `one_u_128`.
     fn one_u_128(&self) -> OneU128TableHandle<'_>;
 }
 
 impl OneU128TableAccess for super::RemoteTables {
     fn one_u_128(&self) -> OneU128TableHandle<'_> {
         OneU128TableHandle {
-            imp: self.imp.get_table::<OneU128>("one_u128"),
+            imp: self.imp.get_table::<OneU128>("one_u_128"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,13 +80,11 @@ impl<'ctx> __sdk::Table for OneU128TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<OneU128>("one_u128");
+    let _table = client_cache.get_or_make_table::<OneU128>("one_u_128");
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<OneU128>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<OneU128>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<OneU128>", "TableUpdate")
             .with_cause(e)
@@ -98,14 +96,14 @@ pub(super) fn parse_table_update(
 /// Extension trait for query builder access to the table `OneU128`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait one_u128QueryTableAccess {
+pub trait one_u_128QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `OneU128`.
-    fn one_u128(&self) -> __sdk::__query_builder::Table<OneU128>;
+    fn one_u_128(&self) -> __sdk::__query_builder::Table<OneU128>;
 }
 
-impl one_u128QueryTableAccess for __sdk::QueryTableAccessor {
-    fn one_u128(&self) -> __sdk::__query_builder::Table<OneU128> {
-        __sdk::__query_builder::Table::new("one_u128")
+impl one_u_128QueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_u_128(&self) -> __sdk::__query_builder::Table<OneU128> {
+        __sdk::__query_builder::Table::new("one_u_128")
     }
 }

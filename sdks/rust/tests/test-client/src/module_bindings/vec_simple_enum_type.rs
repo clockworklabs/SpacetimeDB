@@ -43,3 +43,5 @@ impl __sdk::__query_builder::HasIxCols for VecSimpleEnum {
         VecSimpleEnumIxCols {}
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for VecSimpleEnum {}

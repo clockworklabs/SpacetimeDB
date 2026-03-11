@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::ast::SchemaViewer;
-use crate::db::relational_db::{RelationalDB, Tx};
+use crate::db::relational_db::RelationalDB;
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
@@ -19,7 +19,6 @@ use crate::vm::{check_row_limit, DbProgram, TxMode};
 use anyhow::anyhow;
 use smallvec::SmallVec;
 use spacetimedb_datastore::execution_context::Workload;
-use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
@@ -27,7 +26,7 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductValue};
 use spacetimedb_query::{compile_sql_stmt, execute_dml_stmt, execute_select_stmt};
-use spacetimedb_schema::relation::FieldName;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use spacetimedb_vm::relation::MemTable;
@@ -142,6 +141,7 @@ pub fn execute_sql(
                     args: ArgsTuple::default(),
                 },
                 status: EventStatus::Committed(DatabaseUpdate { tables: updates }),
+                reducer_return_value: None,
                 energy_quanta_used: EnergyQuanta::ZERO,
                 host_execution_duration: Duration::ZERO,
                 request_id: None,
@@ -199,7 +199,7 @@ pub async fn run(
     auth: AuthCtx,
     subs: Option<ModuleSubscriptions>,
     module: Option<ModuleHost>,
-    head: &mut Vec<(Box<str>, AlgebraicType)>,
+    head: &mut Vec<(RawIdentifier, AlgebraicType)>,
 ) -> Result<SqlResult, DBError> {
     match module {
         Some(module) => module.call_view_sql(db, sql_text, auth, subs, head).await,
@@ -216,7 +216,7 @@ pub(crate) fn run_with_instance<I: WasmInstance>(
     sql_text: String,
     auth: AuthCtx,
     subs: Option<ModuleSubscriptions>,
-    head: &mut Vec<(Box<str>, AlgebraicType)>,
+    head: &mut Vec<(RawIdentifier, AlgebraicType)>,
 ) -> Result<(SqlResult, bool), DBError> {
     run_inner::<I>(Some(instance), db, sql_text, auth, subs, head)
 }
@@ -227,7 +227,7 @@ fn run_inner<I: WasmInstance>(
     sql_text: String,
     auth: AuthCtx,
     subs: Option<ModuleSubscriptions>,
-    head: &mut Vec<(Box<str>, AlgebraicType)>,
+    head: &mut Vec<(RawIdentifier, AlgebraicType)>,
 ) -> Result<(SqlResult, bool), DBError> {
     // We parse the sql statement in a mutable transaction.
     // If it turns out to be a query, we downgrade the tx.
@@ -258,7 +258,7 @@ fn run_inner<I: WasmInstance>(
 
             // Compute the header for the result set
             stmt.for_each_return_field(|col_name, col_type| {
-                head.push((col_name.into(), col_type.clone()));
+                head.push((col_name.clone(), col_type.clone()));
             });
 
             // Evaluate the query
@@ -347,6 +347,7 @@ fn run_inner<I: WasmInstance>(
                     args: ArgsTuple::default(),
                 },
                 status: EventStatus::Committed(DatabaseUpdate::default()),
+                reducer_return_value: None,
                 energy_quanta_used: EnergyQuanta::ZERO,
                 host_execution_duration: Duration::ZERO,
                 request_id: None,
@@ -363,16 +364,6 @@ fn run_inner<I: WasmInstance>(
             ))
         }
     }
-}
-
-/// Translates a `FieldName` to the field's name.
-pub fn translate_col(tx: &Tx, field: FieldName) -> Option<Box<str>> {
-    Some(
-        tx.get_schema(field.table)?
-            .get_column(field.col.idx())?
-            .col_name
-            .clone(),
-    )
 }
 
 #[cfg(test)]
@@ -1309,6 +1300,85 @@ pub(crate) mod tests {
         let row1 = product!(1u64, "health");
 
         assert_eq!(result, vec![row1], "Inventory JOIN Player JOIN Location");
+        Ok(())
+    }
+
+    #[test]
+    fn test_multi_way_join_with_bridge_tables() -> anyhow::Result<()> {
+        let db = TestDB::durable()?;
+
+        let orders = db.create_table_for_test(
+            "orders",
+            &[
+                ("o_orderkey", AlgebraicType::U64),
+                ("o_custkey", AlgebraicType::U64),
+                ("o_orderstatus", AlgebraicType::U64),
+            ],
+            &[0.into(), 1.into(), 2.into()],
+        )?;
+
+        let customer = db.create_table_for_test(
+            "customer",
+            &[("c_custkey", AlgebraicType::U64), ("c_nationkey", AlgebraicType::U64)],
+            &[0.into(), 1.into()],
+        )?;
+
+        let nation = db.create_table_for_test(
+            "nation",
+            &[
+                ("n_nationkey", AlgebraicType::U64),
+                ("n_name", AlgebraicType::String),
+                ("n_regionkey", AlgebraicType::U64),
+            ],
+            &[0.into(), 2.into()],
+        )?;
+
+        let region = db.create_table_for_test(
+            "region",
+            &[("r_regionkey", AlgebraicType::U64), ("r_name", AlgebraicType::String)],
+            &[0.into()],
+        )?;
+
+        insert_rows(&db, orders, [product![1u64, 10u64, 0u64], product![2u64, 20u64, 1u64]])?;
+        insert_rows(&db, customer, [product![10u64, 100u64], product![20u64, 200u64]])?;
+        insert_rows(
+            &db,
+            nation,
+            [
+                product![100u64, "NATION_A", 1000u64],
+                product![200u64, "NATION_B", 2000u64],
+            ],
+        )?;
+        insert_rows(
+            &db,
+            region,
+            [product![1000u64, "REGION_A"], product![2000u64, "REGION_B"]],
+        )?;
+
+        let result_three_way = run_for_testing(
+            &db,
+            "
+            SELECT customer.c_custkey, nation.n_name
+            FROM orders
+            JOIN customer ON customer.c_custkey = orders.o_custkey
+            JOIN nation ON nation.n_nationkey = customer.c_nationkey
+            WHERE orders.o_orderstatus = 0",
+        )?;
+
+        assert_eq!(result_three_way, vec![product![10u64, "NATION_A"]]);
+
+        let result_four_way = run_for_testing(
+            &db,
+            "
+            SELECT customer.c_custkey, region.r_name
+            FROM orders
+            JOIN customer ON customer.c_custkey = orders.o_custkey
+            JOIN nation ON nation.n_nationkey = customer.c_nationkey
+            JOIN region ON region.r_regionkey = nation.n_regionkey
+            WHERE orders.o_orderstatus = 0",
+        )?;
+
+        assert_eq!(result_four_way, vec![product![10u64, "REGION_A"]]);
         Ok(())
     }
 

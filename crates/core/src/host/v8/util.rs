@@ -30,3 +30,14 @@ pub(super) fn make_uint8array<'scope>(
     let buf = v8::ArrayBuffer::with_backing_store(scope, &store.make_shared());
     v8::Uint8Array::new(scope, buf, 0, len).expect("len > 8 pebibytes")
 }
+
+/// Taking a scope and a buffer, return a `v8::Local<'scope, v8::DataView>`.
+pub(super) fn make_dataview<'scope>(
+    scope: &v8::PinScope<'scope, '_>,
+    buf: impl IntoArrayBufferBackingStore,
+) -> v8::Local<'scope, v8::DataView> {
+    let store = buf.into_backing_store();
+    let len = store.byte_length();
+    let buf = v8::ArrayBuffer::with_backing_store(scope, &store.make_shared());
+    v8::DataView::new(scope, buf, 0, len)
+}

@@ -1,159 +1,107 @@
+import { SenderError } from '../lib/errors';
+
 /**
  * Base class for all Spacetime host errors (i.e. errors that may be thrown
  * by database functions).
- *
- * Instances of SpacetimeError can be created with just an error code,
- * which will return the appropriate subclass instance.
  */
 export class SpacetimeHostError extends Error {
-  public readonly code: number;
-  public readonly message: string;
-  constructor(code: number, message?: string) {
-    super();
-    const proto = Object.getPrototypeOf(this);
-    let cls;
-    if (errorProtoypes.has(proto)) {
-      cls = proto.constructor;
-      if (code !== cls.CODE)
-        throw new TypeError(`invalid error code for ${cls.name}`);
-    } else if (proto === SpacetimeHostError.prototype) {
-      cls = errnoToClass.get(code);
-      if (!cls) throw new RangeError(`unknown error code ${code}`);
-    } else {
-      throw new TypeError('cannot subclass SpacetimeError');
-    }
-    Object.setPrototypeOf(this, cls.prototype);
-    this.code = cls.CODE;
-    this.message = message ?? cls.MESSAGE;
-  }
-  get name(): string {
-    return errnoToClass.get(this.code)?.name ?? 'SpacetimeHostError';
-  }
-}
-
-/**
- * An error thrown by a reducer that indicates a problem to the sender.
- *
- * When this error is thrown by a reducer, the sender will be notified
- * that the reducer failed gracefully with the given message.
- */
-export class SenderError extends Error {
   constructor(message: string) {
     super(message);
   }
-  get name() {
-    return 'SenderError';
+  get name(): string {
+    return 'SpacetimeHostError';
   }
 }
+
+export { SenderError };
 
 const errorData = {
   /**
    * A generic error class for unknown error codes.
    */
-  HostCallFailure: [1, 'ABI called by host returned an error'],
+  HostCallFailure: 1,
 
   /**
    * Error indicating that an ABI call was made outside of a transaction.
    */
-  NotInTransaction: [2, 'ABI call can only be made while in a transaction'],
+  NotInTransaction: 2,
 
   /**
    * Error indicating that BSATN decoding failed.
    * This typically means that the data could not be decoded to the expected type.
    */
-  BsatnDecodeError: [3, "Couldn't decode the BSATN to the expected type"],
+  BsatnDecodeError: 3,
 
   /**
    * Error indicating that a specified table does not exist.
    */
-  NoSuchTable: [4, 'No such table'],
+  NoSuchTable: 4,
 
   /**
    * Error indicating that a specified index does not exist.
    */
-  NoSuchIndex: [5, 'No such index'],
+  NoSuchIndex: 5,
 
   /**
    * Error indicating that a specified row iterator is not valid.
    */
-  NoSuchIter: [6, 'The provided row iterator is not valid'],
+  NoSuchIter: 6,
 
   /**
    * Error indicating that a specified console timer does not exist.
    */
-  NoSuchConsoleTimer: [7, 'The provided console timer does not exist'],
+  NoSuchConsoleTimer: 7,
 
   /**
    * Error indicating that a specified bytes source or sink is not valid.
    */
-  NoSuchBytes: [8, 'The provided bytes source or sink is not valid'],
+  NoSuchBytes: 8,
 
   /**
    * Error indicating that a provided sink has no more space left.
    */
-  NoSpace: [9, 'The provided sink has no more space left'],
+  NoSpace: 9,
 
   /**
    * Error indicating that there is no more space in the database.
    */
-  BufferTooSmall: [
-    11,
-    'The provided buffer is not large enough to store the data',
-  ],
+  BufferTooSmall: 11,
 
   /**
    * Error indicating that a value with a given unique identifier already exists.
    */
-  UniqueAlreadyExists: [
-    12,
-    'Value with given unique identifier already exists',
-  ],
+  UniqueAlreadyExists: 12,
 
   /**
    * Error indicating that the specified delay in scheduling a row was too long.
    */
-  ScheduleAtDelayTooLong: [
-    13,
-    'Specified delay in scheduling row was too long',
-  ],
+  ScheduleAtDelayTooLong: 13,
 
   /**
    * Error indicating that an index was not unique when it was expected to be.
    */
-  IndexNotUnique: [14, 'The index was not unique'],
+  IndexNotUnique: 14,
 
   /**
    * Error indicating that an index was not unique when it was expected to be.
    */
-  NoSuchRow: [15, 'The row was not found, e.g., in an update call'],
+  NoSuchRow: 15,
 
   /**
    * Error indicating that an auto-increment sequence has overflowed.
    */
-  AutoIncOverflow: [16, 'The auto-increment sequence overflowed'],
+  AutoIncOverflow: 16,
 
-  WouldBlockTransaction: [
-    17,
-    'Attempted async or blocking op while holding open a transaction',
-  ],
+  WouldBlockTransaction: 17,
 
-  TransactionNotAnonymous: [
-    18,
-    'Not in an anonymous transaction. Called by a reducer?',
-  ],
+  TransactionNotAnonymous: 18,
 
-  TransactionIsReadOnly: [
-    19,
-    'ABI call can only be made while within a mutable transaction',
-  ],
+  TransactionIsReadOnly: 19,
 
-  TransactionIsMut: [
-    20,
-    'ABI call can only be made while within a read-only transaction',
-  ],
+  TransactionIsMut: 20,
 
-  HttpError: [21, 'The HTTP request failed'],
-} as const;
+  HttpError: 21,
+};
 
 function mapEntries<const T extends Record<string, any>, U>(
   x: T,
@@ -164,30 +112,27 @@ function mapEntries<const T extends Record<string, any>, U>(
   ) as any;
 }
 
+/**
+ * Map from error codes to their corresponding SpacetimeError subclass.
+ */
+const errnoToClass = new Map<number, new (msg: string) => Error>();
+
 export const errors = Object.freeze(
-  mapEntries(errorData, (name, [code, message]) =>
-    Object.defineProperty(
+  mapEntries(errorData, (name, code) => {
+    const cls = Object.defineProperty(
       class extends SpacetimeHostError {
-        static CODE = code;
-        static MESSAGE = message;
-        constructor() {
-          super(code);
+        get name() {
+          return name;
         }
       },
       'name',
       { value: name, writable: false }
-    )
-  )
+    );
+    errnoToClass.set(code, cls);
+    return cls;
+  })
 );
 
-/**
- * Set of prototypes of all SpacetimeError subclasses for quick lookup.
- */
-const errorProtoypes = new Set(Object.values(errors).map(cls => cls.prototype));
-
-/**
- * Map from error codes to their corresponding SpacetimeError subclass.
- */
-const errnoToClass = new Map(
-  Object.values(errors).map(cls => [cls.CODE as number, cls])
-);
+export function getErrorConstructor(code: number): new (msg: string) => Error {
+  return errnoToClass.get(code) ?? SpacetimeHostError;
+}

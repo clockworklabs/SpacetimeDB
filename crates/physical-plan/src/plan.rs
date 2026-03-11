@@ -121,6 +121,13 @@ impl ProjectPlan {
             Self::None(plan) | Self::Name(plan, ..) => plan.reads_from_view(anonymous),
         }
     }
+
+    /// Does this plan use an event table as the lookup (rhs) table in a semi-join?
+    pub fn reads_from_event_table(&self) -> bool {
+        match self {
+            Self::None(plan) | Self::Name(plan, ..) => plan.reads_from_event_table(),
+        }
+    }
 }
 
 /// Physical plans always terminate with a projection.
@@ -226,6 +233,15 @@ impl ProjectListPlan {
             Self::Limit(plan, _) => plan.reads_from_view(anonymous),
             Self::Name(plans) => plans.iter().any(|plan| plan.reads_from_view(anonymous)),
             Self::List(plans, ..) | Self::Agg(plans, ..) => plans.iter().any(|plan| plan.reads_from_view(anonymous)),
+        }
+    }
+
+    /// Does this plan use an event table as the lookup (rhs) table in a semi-join?
+    pub fn reads_from_event_table(&self) -> bool {
+        match self {
+            Self::Limit(plan, _) => plan.reads_from_event_table(),
+            Self::Name(plans) => plans.iter().any(|plan| plan.reads_from_event_table()),
+            Self::List(plans, ..) | Self::Agg(plans, ..) => plans.iter().any(|plan| plan.reads_from_event_table()),
         }
     }
 }
@@ -559,6 +575,7 @@ impl PhysicalPlan {
                     rhs,
                     rhs_label,
                     rhs_index,
+                    rhs_prefix,
                     rhs_field,
                     unique,
                     lhs_field,
@@ -571,6 +588,7 @@ impl PhysicalPlan {
                     rhs,
                     rhs_label,
                     rhs_index,
+                    rhs_prefix,
                     rhs_field,
                     unique,
                     lhs_field,
@@ -753,10 +771,10 @@ impl PhysicalPlan {
         match self {
             Self::Filter(input, expr) => {
                 expr.visit(&mut |expr| {
-                    if let PhysicalExpr::Field(TupleField { label: var, .. }) = expr {
-                        if !reqs.contains(var) {
-                            reqs.push(*var);
-                        }
+                    if let PhysicalExpr::Field(TupleField { label: var, .. }) = expr
+                        && !reqs.contains(var)
+                    {
+                        reqs.push(*var);
                     }
                 });
                 Self::Filter(Box::new(input.introduce_semijoins(reqs)), expr)
@@ -826,7 +844,10 @@ impl PhysicalPlan {
                 Self::IxJoin(IxJoin { lhs, ..join }, Semi::Lhs)
             }
             Self::IxJoin(join, Semi::All) => {
-                let reqs = reqs.into_iter().filter(|label| label != &join.rhs_label).collect();
+                let mut reqs: Vec<_> = reqs.into_iter().filter(|label| label != &join.rhs_label).collect();
+                if !reqs.contains(&join.lhs_field.label) {
+                    reqs.push(join.lhs_field.label);
+                }
                 let lhs = join.lhs.introduce_semijoins(reqs);
                 let lhs = Box::new(lhs);
                 Self::IxJoin(IxJoin { lhs, ..join }, Semi::All)
@@ -935,12 +956,11 @@ impl PhysicalPlan {
             Self::Filter(input, expr) => {
                 let mut cols: Vec<_> = cols.iter().collect();
                 expr.visit(&mut |plan| {
-                    if let PhysicalExpr::BinOp(BinOp::Eq, expr, value) = plan {
-                        if let (PhysicalExpr::Field(proj), PhysicalExpr::Value(..)) = (&**expr, &**value) {
-                            if proj.label == *label {
-                                cols.push(proj.field_pos.into());
-                            }
-                        }
+                    if let PhysicalExpr::BinOp(BinOp::Eq, expr, value) = plan
+                        && let (PhysicalExpr::Field(proj), PhysicalExpr::Value(..)) = (&**expr, &**value)
+                        && proj.label == *label
+                    {
+                        cols.push(proj.field_pos.into());
                     }
                 });
                 input.returns_distinct_values(label, &ColSet::from_iter(cols))
@@ -1150,6 +1170,17 @@ impl PhysicalPlan {
             _ => false,
         })
     }
+
+    /// Does this plan use an event table as the lookup (rhs) table in a semi-join?
+    ///
+    /// Note, we only care about index joins because this method is only relevant for subscriptions,
+    /// and index joins are the only type of join allowed in subscriptions.
+    pub fn reads_from_event_table(&self) -> bool {
+        self.any(&|plan| match plan {
+            Self::IxJoin(join, _) => join.rhs.is_event,
+            _ => false,
+        })
+    }
 }
 
 /// Scan a table row by row, returning row ids
@@ -1223,6 +1254,8 @@ pub struct IxJoin {
     pub rhs_label: Label,
     /// The index id
     pub rhs_index: IndexId,
+    /// Optional constant prefix values for multi-column index probes.
+    pub rhs_prefix: Vec<AlgebraicValue>,
     /// The index field
     pub rhs_field: ColId,
     /// Is the index a unique constraint index?
@@ -1425,6 +1458,7 @@ mod tests {
     use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
     use spacetimedb_schema::{
         def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData},
+        identifier::Identifier,
         schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableOrViewSchema, TableSchema},
         table_name::TableName,
     };
@@ -1468,16 +1502,17 @@ mod tests {
     ) -> TableOrViewSchema {
         TableOrViewSchema::from(Arc::new(TableSchema::new(
             table_id,
-            TableName::new_from_str(table_name),
+            TableName::new(Identifier::for_test(table_name)),
             None,
             columns
                 .iter()
                 .enumerate()
                 .map(|(i, (name, ty))| ColumnSchema {
                     table_id,
-                    col_name: (*name).to_owned().into_boxed_str(),
+                    col_name: Identifier::for_test(*name),
                     col_pos: i.into(),
                     col_type: ty.clone(),
+                    alias: None,
                 })
                 .collect(),
             indexes
@@ -1486,10 +1521,11 @@ mod tests {
                 .map(|(i, cols)| IndexSchema {
                     table_id,
                     index_id: i.into(),
-                    index_name: "".to_owned().into_boxed_str(),
+                    index_name: "".into(),
                     index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
                         columns: ColList::from_iter(cols.iter().copied()),
                     }),
+                    alias: None,
                 })
                 .collect(),
             unique
@@ -1498,7 +1534,7 @@ mod tests {
                 .map(|(i, cols)| ConstraintSchema {
                     table_id,
                     constraint_id: i.into(),
-                    constraint_name: "".to_owned().into_boxed_str(),
+                    constraint_name: "".into(),
                     data: ConstraintData::Unique(UniqueConstraintData {
                         columns: ColSet::from_iter(cols.iter().copied()),
                     }),
@@ -1509,6 +1545,8 @@ mod tests {
             StAccess::Public,
             None,
             primary_key.map(ColId::from),
+            false,
+            None,
         )))
     }
 

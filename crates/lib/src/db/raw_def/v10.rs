@@ -5,16 +5,14 @@
 //! into dedicated sections for cleaner organization.
 //! It allows easier future extensibility to add new kinds of definitions.
 
+use crate::db::raw_def::v9::{Lifecycle, RawIndexAlgorithm, TableAccess, TableType};
 use core::fmt;
-use std::any::TypeId;
-use std::collections::{btree_map, BTreeMap};
-
-use itertools::Itertools as _;
 use spacetimedb_primitives::{ColId, ColList};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::typespace::TypespaceBuilder;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, SpacetimeType, Typespace};
-
-use crate::db::raw_def::v9::{Lifecycle, RawIdentifier, RawIndexAlgorithm, TableAccess, TableType};
+use std::any::TypeId;
+use std::collections::{btree_map, BTreeMap};
 
 /// A possibly-invalid raw module definition.
 ///
@@ -85,6 +83,109 @@ pub enum RawModuleDefV10Section {
     LifeCycleReducers(Vec<RawLifeCycleReducerDefV10>),
 
     RowLevelSecurity(Vec<RawRowLevelSecurityDefV10>), //TODO: Add section for Event tables, and Case conversion before exposing this from module
+
+    /// Case conversion policy for identifiers in this module.
+    CaseConversionPolicy(CaseConversionPolicy),
+
+    /// Names provided explicitly by the user that do not follow from the case conversion policy.
+    ExplicitNames(ExplicitNames),
+}
+
+#[derive(Debug, Clone, Copy, Default, SpacetimeType)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+#[sats(crate = crate)]
+#[non_exhaustive]
+pub enum CaseConversionPolicy {
+    /// No conversion - names used verbatim as canonical names
+    None,
+    /// Convert to snake_case (SpacetimeDB default)
+    #[default]
+    SnakeCase,
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, Ord, PartialOrd))]
+#[non_exhaustive]
+pub struct NameMapping {
+    /// The original name as defined or generated inside module.
+    ///
+    /// Generated as:
+    /// - Tables: value from `#[spacetimedb::table(accessor = ...)]`.
+    /// - Reducers/Procedures/Views: function name
+    /// - Indexes: `{table_name}_{column_names}_idx_{algorithm}`
+    ///
+    /// During validation, this may be replaced by `canonical_name`
+    /// if an explicit or policy-based name is applied.
+    pub source_name: RawIdentifier,
+
+    /// The canonical identifier used in system tables and client code generation.
+    ///
+    /// Set via:
+    /// - `#[spacetimedb::table(name = "...")]` for tables
+    /// - `#[spacetimedb::reducer(name = "...")]` for reducers
+    /// - `#[name("...")]` for other entities
+    ///
+    /// If not explicitly provided, this defaults to `source_name`
+    /// after validation. No particular format should be assumed.
+    pub canonical_name: RawIdentifier,
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, Ord, PartialOrd))]
+#[non_exhaustive]
+pub enum ExplicitNameEntry {
+    Table(NameMapping),
+    Function(NameMapping),
+    Index(NameMapping),
+}
+
+#[derive(Debug, Default, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, Ord, PartialOrd))]
+#[non_exhaustive]
+pub struct ExplicitNames {
+    /// Explicit name mappings defined in the module.
+    ///
+    /// These override policy-based or auto-generated names
+    /// during schema validation.
+    entries: Vec<ExplicitNameEntry>,
+}
+
+impl ExplicitNames {
+    fn insert(&mut self, entry: ExplicitNameEntry) {
+        self.entries.push(entry);
+    }
+
+    pub fn insert_table(&mut self, source_name: impl Into<RawIdentifier>, canonical_name: impl Into<RawIdentifier>) {
+        self.insert(ExplicitNameEntry::Table(NameMapping {
+            source_name: source_name.into(),
+            canonical_name: canonical_name.into(),
+        }));
+    }
+
+    pub fn insert_function(&mut self, source_name: impl Into<RawIdentifier>, canonical_name: impl Into<RawIdentifier>) {
+        self.insert(ExplicitNameEntry::Function(NameMapping {
+            source_name: source_name.into(),
+            canonical_name: canonical_name.into(),
+        }));
+    }
+
+    pub fn insert_index(&mut self, source_name: impl Into<RawIdentifier>, canonical_name: impl Into<RawIdentifier>) {
+        self.insert(ExplicitNameEntry::Index(NameMapping {
+            source_name: source_name.into(),
+            canonical_name: canonical_name.into(),
+        }));
+    }
+
+    pub fn merge(&mut self, other: ExplicitNames) {
+        self.entries.extend(other.entries);
+    }
+
+    pub fn into_entries(self) -> Vec<ExplicitNameEntry> {
+        self.entries
+    }
 }
 
 pub type RawRowLevelSecurityDefV10 = crate::db::raw_def::v9::RawRowLevelSecurityDefV9;
@@ -141,6 +242,13 @@ pub struct RawTableDefV10 {
 
     /// Default values for columns in this table.
     pub default_values: Vec<RawColumnDefaultValueV10>,
+
+    /// Whether this is an event table.
+    ///
+    /// Event tables are write-only: their rows are persisted to the commitlog
+    /// but are NOT merged into committed state. They are only visible to V2
+    /// subscribers in the transaction that inserted them.
+    pub is_event: bool,
 }
 
 /// Marks a particular table column as having a particular default value.
@@ -183,9 +291,13 @@ pub struct RawReducerDefV10 {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub enum FunctionVisibility {
-    /// Internal-only, not callable from clients.
-    /// Typically used for lifecycle reducers and scheduled functions.
-    Internal,
+    /// Not callable by arbitrary clients.
+    ///
+    /// Still callable by the module owner, collaborators,
+    /// and internal module code.
+    ///
+    /// Enabled for lifecycle reducers and scheduled functions by default.
+    Private,
 
     /// Callable from client code.
     ClientCallable,
@@ -199,7 +311,7 @@ pub struct RawScheduleDefV10 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
     /// If `None`, a nicely-formatted unique default will be chosen.
-    pub source_name: Option<Box<str>>,
+    pub source_name: Option<RawIdentifier>,
 
     /// The name of the table containing the schedule.
     pub table_name: RawIdentifier,
@@ -253,7 +365,7 @@ pub struct RawSequenceDefV10 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
     /// If `None`, a nicely-formatted unique default will be chosen.
-    pub source_name: Option<Box<str>>,
+    pub source_name: Option<RawIdentifier>,
 
     /// The position of the column associated with this sequence.
     /// This refers to a column in the same `RawTableDef` that contains this `RawSequenceDef`.
@@ -283,20 +395,12 @@ pub struct RawSequenceDefV10 {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawIndexDefV10 {
-    /// In the future, the user may FOR SOME REASON want to override this.
-    /// Even though there is ABSOLUTELY NO REASON TO.
-    pub source_name: Option<Box<str>>,
+    /// Must be supplied as `{table_name}_{column_names}_idx_{algorithm}`.
+    /// Where `{table_name}` is the name of the table containing in `RawTableDefV10`.
+    pub source_name: Option<RawIdentifier>,
 
-    /// Accessor name for the index used in client codegen.
-    ///
-    /// This is set the user and should not be assumed to follow
-    /// any particular format.
-    ///
-    /// May be set to `None` if this is an auto-generated index for which the user
-    /// has not supplied a name. In this case, no client code generation for this index
-    /// will be performed.
-    ///
-    /// This name is not visible in the system tables, it is only used for client codegen.
+    /// `accessor_name` is the name of the index accessor function that is used inside the module
+    /// code.
     pub accessor_name: Option<RawIdentifier>,
 
     /// The algorithm parameters for the index.
@@ -310,7 +414,7 @@ pub struct RawIndexDefV10 {
 pub struct RawConstraintDefV10 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
-    pub source_name: Option<Box<str>>,
+    pub source_name: Option<RawIdentifier>,
 
     /// The data for the constraint.
     pub data: RawConstraintDataV10,
@@ -484,6 +588,23 @@ impl RawModuleDefV10 {
     pub fn row_level_security(&self) -> Option<&Vec<RawRowLevelSecurityDefV10>> {
         self.sections.iter().find_map(|s| match s {
             RawModuleDefV10Section::RowLevelSecurity(rls) => Some(rls),
+            _ => None,
+        })
+    }
+
+    pub fn case_conversion_policy(&self) -> CaseConversionPolicy {
+        self.sections
+            .iter()
+            .find_map(|s| match s {
+                RawModuleDefV10Section::CaseConversionPolicy(policy) => Some(*policy),
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn explicit_names(&self) -> Option<&ExplicitNames> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::ExplicitNames(names) => Some(names),
             _ => None,
         })
     }
@@ -664,6 +785,26 @@ impl RawModuleDefV10Builder {
         }
     }
 
+    /// Get mutable access to the case conversion policy, creating it if missing.
+    fn explicit_names_mut(&mut self) -> &mut ExplicitNames {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::ExplicitNames(_)))
+            .unwrap_or_else(|| {
+                self.module
+                    .sections
+                    .push(RawModuleDefV10Section::ExplicitNames(ExplicitNames::default()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::ExplicitNames(names) => names,
+            _ => unreachable!("Just ensured ExplicitNames section exists"),
+        }
+    }
+
     /// Create a table builder.
     ///
     /// Does not validate that the product_type_ref is valid; this is left to the module validation code.
@@ -685,6 +826,7 @@ impl RawModuleDefV10Builder {
                 table_type: TableType::User,
                 table_access: TableAccess::Public,
                 default_values: vec![],
+                is_event: false,
             },
         }
     }
@@ -747,7 +889,7 @@ impl RawModuleDefV10Builder {
         // Make the type into a ref.
         let name = *name_gen;
         let add_ty = core::mem::replace(ty, AlgebraicType::U8);
-        *ty = AlgebraicType::Ref(self.add_algebraic_type([], format!("gen_{name}"), add_ty, true));
+        *ty = AlgebraicType::Ref(self.add_algebraic_type([], RawIdentifier::new(format!("gen_{name}")), add_ty, true));
         *name_gen += 1;
     }
 
@@ -872,7 +1014,7 @@ impl RawModuleDefV10Builder {
         self.reducers_mut().push(RawReducerDefV10 {
             source_name: function_name,
             params,
-            visibility: FunctionVisibility::Internal,
+            visibility: FunctionVisibility::Private,
             ok_return_type: reducer_default_ok_return_type(),
             err_return_type: reducer_default_err_return_type(),
         });
@@ -908,45 +1050,29 @@ impl RawModuleDefV10Builder {
             .push(RawRowLevelSecurityDefV10 { sql: sql.into() });
     }
 
+    pub fn add_explicit_names(&mut self, names: ExplicitNames) {
+        self.explicit_names_mut().merge(names);
+    }
+
+    /// Set the case conversion policy for this module.
+    ///
+    /// By default, SpacetimeDB applies `SnakeCase` conversion to table names,
+    /// column names, reducer names, etc. Use `CaseConversionPolicy::None` to
+    /// disable all case conversion (useful for modules with existing data that
+    /// was stored under the original naming convention).
+    pub fn set_case_conversion_policy(&mut self, policy: CaseConversionPolicy) {
+        // Remove any existing policy section.
+        self.module
+            .sections
+            .retain(|s| !matches!(s, RawModuleDefV10Section::CaseConversionPolicy(_)));
+        self.module
+            .sections
+            .push(RawModuleDefV10Section::CaseConversionPolicy(policy));
+    }
+
     /// Finish building, consuming the builder and returning the module.
     /// The module should be validated before use.
-    ///
-    /// This method automatically marks functions used in lifecycle or schedule functions
-    /// as `Internal` visibility.
-    pub fn finish(mut self) -> RawModuleDefV10 {
-        let internal_functions = self
-            .module
-            .lifecycle_reducers()
-            .cloned()
-            .into_iter()
-            .flatten()
-            .map(|lcr| lcr.function_name.clone())
-            .chain(
-                self.module
-                    .schedules()
-                    .cloned()
-                    .into_iter()
-                    .flatten()
-                    .map(|sched| sched.function_name.clone()),
-            );
-
-        for internal_function in internal_functions {
-            if let Some(r) = self
-                .reducers_mut()
-                .iter_mut()
-                .find(|r| r.source_name == internal_function)
-            {
-                r.visibility = FunctionVisibility::Internal;
-            }
-
-            if let Some(p) = self
-                .procedures_mut()
-                .iter_mut()
-                .find(|p| p.source_name == internal_function)
-            {
-                p.visibility = FunctionVisibility::Internal;
-            }
-        }
+    pub fn finish(self) -> RawModuleDefV10 {
         self.module
     }
 }
@@ -1007,7 +1133,11 @@ pub fn reducer_default_err_return_type() -> AlgebraicType {
 ///
 pub fn sats_name_to_scoped_name_v10(sats_name: &str) -> RawScopedTypeNameV10 {
     // We can't use `&[char]: Pattern` for `split` here because "::" is not a char :/
-    let mut scope: Vec<RawIdentifier> = sats_name.split("::").flat_map(|s| s.split('.')).map_into().collect();
+    let mut scope: Vec<RawIdentifier> = sats_name
+        .split("::")
+        .flat_map(|s| s.split('.'))
+        .map(RawIdentifier::new)
+        .collect();
     // Unwrapping to "" will result in a validation error down the line, which is exactly what we want.
     let source_name = scope.pop().unwrap_or_default();
     RawScopedTypeNameV10 {
@@ -1035,6 +1165,12 @@ impl RawTableDefBuilderV10<'_> {
     /// Sets the access rights for the table and return it.
     pub fn with_access(mut self, table_access: TableAccess) -> Self {
         self.table.table_access = table_access;
+        self
+    }
+
+    /// Sets whether this table is an event table.
+    pub fn with_event(mut self, is_event: bool) -> Self {
+        self.table.is_event = is_event;
         self
     }
 
@@ -1066,21 +1202,28 @@ impl RawTableDefBuilderV10<'_> {
     }
 
     /// Generates a [RawIndexDefV10] using the supplied `columns`.
-    pub fn with_index(mut self, algorithm: RawIndexAlgorithm, accessor_name: impl Into<RawIdentifier>) -> Self {
-        let accessor_name = accessor_name.into();
-
+    pub fn with_index(
+        mut self,
+        algorithm: RawIndexAlgorithm,
+        source_name: impl Into<RawIdentifier>,
+        accessor_name: impl Into<RawIdentifier>,
+    ) -> Self {
         self.table.indexes.push(RawIndexDefV10 {
-            source_name: None,
-            accessor_name: Some(accessor_name),
+            source_name: Some(source_name.into()),
+            accessor_name: Some(accessor_name.into()),
             algorithm,
         });
         self
     }
 
-    /// Generates a [RawIndexDefV10] using the supplied `columns` but with no `accessor_name`.
-    pub fn with_index_no_accessor_name(mut self, algorithm: RawIndexAlgorithm) -> Self {
+    /// Generates a [RawIndexDefV10] using the supplied `columns`.
+    pub fn with_index_no_accessor_name(
+        mut self,
+        algorithm: RawIndexAlgorithm,
+        source_name: impl Into<RawIdentifier>,
+    ) -> Self {
         self.table.indexes.push(RawIndexDefV10 {
-            source_name: None,
+            source_name: Some(source_name.into()),
             accessor_name: None,
             algorithm,
         });
@@ -1154,7 +1297,7 @@ impl RawTableDefBuilderV10<'_> {
             .as_product()?
             .elements
             .iter()
-            .position(|e| e.name().is_some_and(|n| n == column))
+            .position(|x| x.has_name(column.as_ref()))
             .map(|i| ColId(i as u16))
     }
 }
