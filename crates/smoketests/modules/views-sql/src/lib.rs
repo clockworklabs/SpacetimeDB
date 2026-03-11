@@ -24,6 +24,16 @@ pub fn add_player_level(ctx: &ReducerContext, id: u64, level: u64) {
     ctx.db.player_level().insert(PlayerState { id, level });
 }
 
+#[spacetimedb::reducer]
+pub fn set_player_state(ctx: &ReducerContext, id: u64, level: u64) {
+    if let Some(mut row) = ctx.db.player_state().id().find(id) {
+        row.level = level;
+        ctx.db.player_state().id().update(row);
+    } else {
+        ctx.db.player_state().insert(PlayerState { id, level });
+    }
+}
+
 #[spacetimedb::view(accessor = my_player_and_level, public)]
 pub fn my_player_and_level(ctx: &AnonymousViewContext) -> Option<PlayerState> {
     ctx.db.player_level().id().find(0)

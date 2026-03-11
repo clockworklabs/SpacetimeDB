@@ -1012,7 +1012,7 @@ impl Host {
         // No need to clear view tables here since we do it in `clear_all_clients`.
         for (identity, connection_id) in connected_clients {
             module_host
-                .call_identity_disconnected(identity, connection_id, false)
+                .call_identity_disconnected(identity, connection_id)
                 .await
                 .with_context(|| {
                     format!(

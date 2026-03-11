@@ -20,7 +20,6 @@ jobs:
   publish-approval-status:
     name: Set approval status
     runs-on: ubuntu-latest
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
 
     steps:
       - name: Evaluate and publish approval status
@@ -42,7 +41,10 @@ jobs:
               const pr = context.payload.pull_request;
               targetSha = pr.head.sha;
 
-              if (pr.user.login !== "clockwork-labs-bot") {
+              if (pr.head.repo.fork) {
+                state = "success";
+                description = "Skipped for external PR";
+              } else if (pr.user.login !== "clockwork-labs-bot") {
                 state = "success";
                 description = "PR author is not clockwork-labs-bot";
               } else {
