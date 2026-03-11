@@ -19,7 +19,16 @@ fn configure_test_client_commands(
             .and_then(|name| name.to_str())
             .expect("client project path should end in a UTF-8 directory name");
         let artifact_name = package_name.replace('-', "_");
-        let wasm_path = format!("target/wasm32-unknown-unknown/debug/{artifact_name}.wasm");
+
+        // Cargo workspace members emit into the workspace target directory, not each crate's local `./target`.
+        // Use CARGO_TARGET_DIR when set (e.g. in CI), otherwise fall back to `<workspace>/target`.
+        let target_dir = std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../target")
+                .to_string_lossy()
+                .into_owned()
+        });
+        let wasm_path = format!("{target_dir}/wasm32-unknown-unknown/debug/{artifact_name}.wasm");
         let bindgen_out_dir = format!("target/sdk-test-web-bindgen/{package_name}");
 
         builder
