@@ -464,7 +464,7 @@ impl RelationalDB {
     /// The caller must ensure that:
     ///
     /// - `program.hash` is the [`Hash`] over `program.bytes`.
-    /// - `program.bytes` is a valid module acc. to `host_type`.
+    /// - `program.bytes` is a valid module acc. to `program.host_type`.
     /// - the schema updates contained in the module have been applied within
     ///   the transactional context `tx`.
     /// - the `__init__` reducer contained in the module has been executed
