@@ -1094,8 +1094,11 @@ name = "connect_disconnect_client"
 version = "2.0.4"
 dependencies = [
  "anyhow",
+ "futures",
  "spacetimedb-sdk",
  "test-counter",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]
@@ -2090,8 +2093,11 @@ version = "2.0.4"
 dependencies = [
  "anyhow",
  "env_logger 0.10.2",
+ "futures",
  "spacetimedb-sdk",
  "test-counter",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]
@@ -5673,10 +5679,13 @@ version = "2.0.4"
 dependencies = [
  "anyhow",
  "env_logger 0.10.2",
+ "futures",
  "serde_json",
  "spacetimedb-lib 2.0.4",
  "spacetimedb-sdk",
  "test-counter",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]
@@ -10219,9 +10228,12 @@ version = "2.0.4"
 dependencies = [
  "anyhow",
  "env_logger 0.10.2",
+ "futures",
  "spacetimedb-lib 2.0.4",
  "spacetimedb-sdk",
  "test-counter",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]
@@ -10230,8 +10242,11 @@ version = "2.0.4"
 dependencies = [
  "anyhow",
  "env_logger 0.10.2",
+ "futures",
  "spacetimedb-sdk",
  "test-counter",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]

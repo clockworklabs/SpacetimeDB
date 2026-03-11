@@ -455,8 +455,12 @@ fn run_client(runner: &ClientRunner, run_command: &str, client_project: &str, db
             .expect("Error running wasm-bindgen");
             status_ok_or_panic(output, "wasm-bindgen", "(wasm-bindgen)");
 
-            // Crate name test-client becomes test_client for wasm-bindgen output.
-            let js_module = bindgen_out_dir.join("test_client.js");
+            let js_module_name = wasm_path
+                .file_stem()
+                .expect("wasm_path should have a filename stem")
+                .to_str()
+                .expect("wasm_path stem should be valid utf-8");
+            let js_module = bindgen_out_dir.join(format!("{js_module_name}.js"));
             let js_module = js_module
                 .to_str()
                 .expect("js_module path should be valid utf-8")

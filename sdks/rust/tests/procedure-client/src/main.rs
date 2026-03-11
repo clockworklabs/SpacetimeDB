@@ -1,4 +1,4 @@
-mod module_bindings;
+pub(crate) mod module_bindings;
 
 use core::time::Duration;
 
@@ -13,6 +13,7 @@ const LOCALHOST: &str = "http://localhost:3000";
 /// Register a panic hook which will exit the process whenever any thread panics.
 ///
 /// This allows us to fail tests by panicking in callbacks.
+#[cfg(not(target_arch = "wasm32"))]
 fn exit_on_panic() {
     // The default panic hook is responsible for printing the panic message and backtrace to stderr.
     // Grab a handle on it, and invoke it in our custom hook before exiting.
@@ -30,6 +31,7 @@ fn db_name_or_panic() -> String {
     std::env::var("SPACETIME_SDK_TEST_DB_NAME").expect("Failed to read db name from env")
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     env_logger::init();
     exit_on_panic();
@@ -38,6 +40,10 @@ fn main() {
         .nth(1)
         .expect("Pass a test name as a command-line argument to the test client");
 
+    dispatch(&test);
+}
+
+pub(crate) fn dispatch(test: &str) {
     match &*test {
         "procedure-return-values" => exec_procedure_return_values(),
         "procedure-observe-panic" => exec_procedure_panic(),
@@ -49,6 +55,16 @@ fn main() {
         "sorted-uuids-insert" => exec_sorted_uuids_insert(),
         _ => panic!("Unknown test: {test}"),
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+    builder.build().unwrap()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+    futures::executor::block_on(builder.build()).unwrap()
 }
 
 fn assert_table_empty<T: Table>(tbl: T) -> anyhow::Result<()> {
@@ -88,8 +104,11 @@ fn connect_with_then(
             connected_result(Ok(()));
         })
         .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
-    let conn = with_builder(builder).build().unwrap();
+    let conn = build_connection(with_builder(builder));
+    #[cfg(not(target_arch = "wasm32"))]
     conn.run_threaded();
+    #[cfg(target_arch = "wasm32")]
+    conn.run_background_task();
     conn
 }
 

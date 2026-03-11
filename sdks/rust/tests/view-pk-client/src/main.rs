@@ -1,14 +1,15 @@
-mod module_bindings;
+pub(crate) mod module_bindings;
 
 use module_bindings::*;
 use spacetimedb_sdk::TableWithPrimaryKey;
-use spacetimedb_sdk::{error::InternalError, DbContext};
+use spacetimedb_sdk::{error::InternalError, DbConnectionBuilder, DbContext};
 use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";
 
 type ResultRecorder = Box<dyn Send + FnOnce(Result<(), anyhow::Error>)>;
 
+#[cfg(not(target_arch = "wasm32"))]
 fn exit_on_panic() {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
@@ -19,6 +20,16 @@ fn exit_on_panic() {
 
 fn db_name_or_panic() -> String {
     std::env::var("SPACETIME_SDK_TEST_DB_NAME").expect("Failed to read db name from env")
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+    builder.build().unwrap()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+    futures::executor::block_on(builder.build()).unwrap()
 }
 
 fn put_result(result: &mut Option<ResultRecorder>, res: Result<(), anyhow::Error>) {
@@ -48,10 +59,12 @@ fn connect_then(
             callback(ctx);
             connected_result(Ok(()));
         })
-        .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"))
-        .build()
-        .unwrap();
+        .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
+    let conn = build_connection(conn);
+    #[cfg(not(target_arch = "wasm32"))]
     conn.run_threaded();
+    #[cfg(target_arch = "wasm32")]
+    conn.run_background_task();
     conn
 }
 
@@ -279,6 +292,7 @@ fn exec_view_pk_semijoin_two_sender_views_query_builder() {
     test_counter.wait_for_all();
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     env_logger::init();
     exit_on_panic();
@@ -287,6 +301,10 @@ fn main() {
         .nth(1)
         .expect("Pass a test name as a command-line argument to the test client");
 
+    dispatch(&test);
+}
+
+pub(crate) fn dispatch(test: &str) {
     match &*test {
         "view-pk-on-update" => exec_view_pk_on_update(),
         "view-pk-join-query-builder" => exec_view_pk_join_query_builder(),

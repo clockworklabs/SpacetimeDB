@@ -18,7 +18,8 @@ fn configure_test_client_commands(
             .file_name()
             .and_then(|name| name.to_str())
             .expect("client project path should end in a UTF-8 directory name");
-        let wasm_path = format!("target/wasm32-unknown-unknown/debug/{package_name}.wasm");
+        let artifact_name = package_name.replace('-', "_");
+        let wasm_path = format!("target/wasm32-unknown-unknown/debug/{artifact_name}.wasm");
         let bindgen_out_dir = format!("target/sdk-test-web-bindgen/{package_name}");
 
         builder
