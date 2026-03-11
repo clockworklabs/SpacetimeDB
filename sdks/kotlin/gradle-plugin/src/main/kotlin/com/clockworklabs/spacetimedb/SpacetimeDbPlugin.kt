@@ -3,6 +3,7 @@ package com.clockworklabs.spacetimedb
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.tasks.SourceSetContainer
+import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 
 class SpacetimeDbPlugin : Plugin<Project> {
 
@@ -32,10 +33,14 @@ class SpacetimeDbPlugin : Plugin<Project> {
         }
 
         project.pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
-            project.afterEvaluate {
-                project.tasks.matching { it.name.startsWith("compileKotlin") }.configureEach {
-                    it.dependsOn(generateTask)
-                }
+            project.extensions.getByType(KotlinMultiplatformExtension::class.java)
+                .sourceSets
+                .getByName("commonMain")
+                .kotlin
+                .srcDir(generatedDir)
+
+            project.tasks.matching { it.name.startsWith("compileKotlin") }.configureEach {
+                it.dependsOn(generateTask)
             }
         }
     }

@@ -654,9 +654,7 @@ fn write_encode_field(module: &ModuleDef, out: &mut Indenter, field_name: &str, 
             writeln!(out, "if ({field_name} != null) {{");
             out.indent(1);
             writeln!(out, "writer.writeSumTag(0u)");
-            // For nullable, we need a temp var to satisfy smart cast
-            let inner_name = format!("{field_name}!!");
-            write_encode_value(module, out, &inner_name, inner);
+            write_encode_value(module, out, field_name, inner);
             out.dedent(1);
             writeln!(out, "}} else {{");
             out.indent(1);

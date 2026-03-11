@@ -1737,7 +1737,7 @@ data class TestD(
     fun encode(writer: BsatnWriter) {
         if (testC != null) {
             writer.writeSumTag(0u)
-            testC!!.encode(writer)
+            testC.encode(writer)
         } else {
             writer.writeSumTag(1u)
         }
