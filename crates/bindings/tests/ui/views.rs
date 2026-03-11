@@ -144,7 +144,6 @@ fn sched_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<PlayerInfo> {
     vec![]
 }
 
-
 #[table(accessor = player_info)]
 struct PlayerInfo {
     #[unique]
