@@ -7,13 +7,13 @@ A benchmark suite comparing SpacetimeDB against traditional web application stac
 See SpacetimeDB's performance advantage with one command:
 
 ```bash
-npm install
+pnpm install
 npm run demo
 ```
 
 The demo compares SpacetimeDB and Convex by default, since both are easy for anyone to set up and run locally without additional infrastructure. Other systems (Postgres, CockroachDB, SQLite, etc.) are also supported but require more setup. The demo checks that required services are running (prompts you to start them if not), seeds databases, and displays animated results.
 
-**Options:** `--systems a,b,c` | `--seconds N` | `--skip-prep` | `--no-animation`
+**Options:** `--systems a,b,c` | `--seconds N` | `--concurrency N` | `--alpha N` | `--skip-prep` | `--no-animation`
 
 **Note:** You will need to [install Rust](https://rust-lang.org/tools/install/) to run the spacetimedb benchmark, because we run a [Rust Client](#rust-client).
 
@@ -159,9 +159,9 @@ PlanetScale results (~477 TPS) demonstrate the **significant impact of cloud dat
 
 ### Rust client
 
-When running the benchmark for SpacetimeDB on higher-end hardware we found out that we were actually bottlnecked
+When running the benchmark for SpacetimeDB on higher-end hardware we found out that we were actually bottlenecked
 on our test TypeScript client. To get the absolute most out of the performance of SpacetimeDB we wrote a custom
-Rust client that allows us to send a much larger number of requests then we could otherwise. We didn't do this
+Rust client that allows us to send a much larger number of requests than we could otherwise. We didn't do this
 for the other backends/databases as they maxed out before the client.
 
 ## Systems Tested
@@ -179,26 +179,7 @@ for the other backends/databases as they maxed out before the client.
 
 ## Running the Benchmarks
 
-See [DEVELOP.md](./DEVELOP.md) for detailed setup and execution instructions.
-
-### Quick Start
-
-```bash
-# Install dependencies
-pnpm install
-
-# Copy environment config
-cp .env.example .env
-
-# Start services (PostgreSQL, CockroachDB, etc.)
-docker compose up -d pg crdb
-
-# Seed databases
-npm run prep
-
-# Run benchmark
-npm run bench -- --seconds 10 --concurrency 50 --alpha 1.5 --connectors spacetimedb,postgres_rpc,sqlite_rpc
-```
+See [DEVELOP.md](./DEVELOP.md) for prerequisites, configuration, and full CLI reference.
 
 ## Output
 

@@ -40,6 +40,7 @@ The script will:
 
 - **Node.js** ≥ 22.x
 - **pnpm** installed globally
+- **Rust** (required for SpacetimeDB benchmarks) -- [install](https://rust-lang.org/tools/install/)
 - **Docker** for local Postgres / Cockroach / Supabase
 - Local/Cloud Convex
 
@@ -163,7 +164,7 @@ cd ..
 ### 1. Run a test
 
 ```bash
-npm run bench [test-name] [--seconds N] [--concurrency N] [--alpha A] [--connectors list]
+npm run bench -- [test-name] [--seconds N] [--concurrency N] [--alpha A] [--connectors list]
 ```
 
 Examples:
@@ -173,16 +174,16 @@ Examples:
 npm run bench
 
 # Explicit test name
-npm run bench test-1
+npm run bench -- test-1
 
 # Short run, 100 concurrent workers
-npm run bench test-1 --seconds 10 --concurrency 100
+npm run bench -- test-1 --seconds 10 --concurrency 100
 
 # Heavier skew on hot accounts
-npm run bench test-1 --alpha 2.0
+npm run bench -- test-1 --alpha 2.0
 
 # Only run selected connectors
-npm run bench test-1 --connectors spacetimedb,sqlite
+npm run bench -- test-1 --connectors spacetimedb,sqlite_rpc
 ```
 
 ---
@@ -212,7 +213,7 @@ From `src/cli.ts`:
   - Example:
 
     ```bash
-    --connectors spacetimedb,sqlite,postgres
+    --connectors spacetimedb,sqlite_rpc,postgres_rpc
     ```
 
   - If omitted, all connectors for that test are run
@@ -242,7 +243,7 @@ docker compose run --rm bench \
   --connectors convex
 ```
 
-If using Docker, make sure to set `USE_DOCKER=1` in `.env`, verify docker-compose env variables, verify you've run supabase init, and run `npm prep` before running bench.
+If using Docker, make sure to set `USE_DOCKER=1` in `.env`, verify docker-compose env variables, verify you've run supabase init, and run `npm run prep` before running bench.
 
 ## Output
 
