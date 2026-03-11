@@ -17,7 +17,7 @@ pub struct Person {
     age: u8,
 }
 
-#[spacetimedb::table(accessor = left_pk_join_source, public)]
+#[spacetimedb::table(accessor = pk_join_lhs, public)]
 pub struct LeftPkJoinSource {
     #[primary_key]
     id: u8,
@@ -26,7 +26,7 @@ pub struct LeftPkJoinSource {
     identity: Identity,
 }
 
-#[spacetimedb::table(accessor = right_pk_join_source, public)]
+#[spacetimedb::table(accessor = pk_join_rhs, public)]
 pub struct RightPkJoinSource {
     #[primary_key]
     id: u8,
@@ -126,9 +126,9 @@ fn users_whos_age_is_known_identity_1(ctx: &ViewContext) -> impl Query<User> {
 }
 
 #[spacetimedb::reducer]
-fn update_left_pk_join_source(ctx: &ReducerContext, id: u8, ok: bool) {
-    ctx.db.left_pk_join_source().id().delete(&id);
-    ctx.db.left_pk_join_source().insert(LeftPkJoinSource {
+fn update_pk_join_lhs(ctx: &ReducerContext, id: u8, ok: bool) {
+    ctx.db.pk_join_lhs().id().delete(&id);
+    ctx.db.pk_join_lhs().insert(LeftPkJoinSource {
         id,
         ok,
         identity: ctx.sender(),
@@ -136,35 +136,31 @@ fn update_left_pk_join_source(ctx: &ReducerContext, id: u8, ok: bool) {
 }
 
 #[spacetimedb::reducer]
-fn update_right_pk_join_source(ctx: &ReducerContext, id: u8, ok: bool) {
-    ctx.db.right_pk_join_source().id().delete(&id);
-    ctx.db.right_pk_join_source().insert(RightPkJoinSource {
+fn update_pk_join_rhs(ctx: &ReducerContext, id: u8, ok: bool) {
+    ctx.db.pk_join_rhs().id().delete(&id);
+    ctx.db.pk_join_rhs().insert(RightPkJoinSource {
         id,
         ok,
         identity: ctx.sender(),
     });
 }
 
-#[spacetimedb::view(accessor = left_pk_join_view, public)]
-fn left_pk_join_view(ctx: &AnonymousViewContext) -> impl Query<LeftPkJoinSource> {
-    ctx.from.left_pk_join_source()
+#[spacetimedb::view(accessor = pk_join_lhs_view, public)]
+fn pk_join_lhs_view(ctx: &AnonymousViewContext) -> impl Query<LeftPkJoinSource> {
+    ctx.from.pk_join_lhs()
 }
 
-#[spacetimedb::view(accessor = right_pk_join_view, public)]
-fn right_pk_join_view(ctx: &AnonymousViewContext) -> impl Query<RightPkJoinSource> {
-    ctx.from.right_pk_join_source()
+#[spacetimedb::view(accessor = pk_join_rhs_view, public)]
+fn pk_join_rhs_view(ctx: &AnonymousViewContext) -> impl Query<RightPkJoinSource> {
+    ctx.from.pk_join_rhs()
 }
 
-#[spacetimedb::view(accessor = left_pk_join_view_sender, public)]
-fn left_pk_join_view_sender(ctx: &ViewContext) -> impl Query<LeftPkJoinSource> {
-    ctx.from
-        .left_pk_join_source()
-        .filter(|row| row.identity.eq(ctx.sender()))
+#[spacetimedb::view(accessor = pk_join_lhs_view_sender, public)]
+fn pk_join_lhs_view_sender(ctx: &ViewContext) -> impl Query<LeftPkJoinSource> {
+    ctx.from.pk_join_lhs().filter(|row| row.identity.eq(ctx.sender()))
 }
 
-#[spacetimedb::view(accessor = right_pk_join_view_sender, public)]
-fn right_pk_join_view_sender(ctx: &ViewContext) -> impl Query<RightPkJoinSource> {
-    ctx.from
-        .right_pk_join_source()
-        .filter(|row| row.identity.eq(ctx.sender()))
+#[spacetimedb::view(accessor = pk_join_rhs_view_sender, public)]
+fn pk_join_rhs_view_sender(ctx: &ViewContext) -> impl Query<RightPkJoinSource> {
+    ctx.from.pk_join_rhs().filter(|row| row.identity.eq(ctx.sender()))
 }
