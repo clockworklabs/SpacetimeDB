@@ -972,6 +972,7 @@ but you must call one of them, or else the connection will never progress.
         ))
     }
 
+
     /// Set the URI of the SpacetimeDB host which is running the remote database.
     ///
     /// The URI must have either no scheme or one of the schemes `http`, `https`, `ws` or `wss`.
