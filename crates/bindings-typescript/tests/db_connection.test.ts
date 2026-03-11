@@ -757,6 +757,21 @@ describe('DbConnection', () => {
     expect(client.db.user.count()).toEqual(1n);
   });
 
+  /**
+   * Subscribe to a query builder view whose underlying table has a primary key.
+   * Ensures the TypeScript SDK emits an `onUpdate` callback and that the client
+   * receives the correct old and new rows.
+   *
+   * Test:
+   * 1. Subscribe to: SELECT * FROM all_view_pk_players
+   * 2. Insert row:  (id=1, name="before")
+   * 3. Update row:  (id=1, name="after")
+   *
+   * Expect:
+   * - `onUpdate` is called for PK=1
+   * - `oldRow` should be the "before" value
+   * - `newRow` should be the "after" value
+   */
   test('it calls onUpdate for a primary-key view subscription', async () => {
     const wsAdapter = new WebsocketTestAdapter();
     const client = DbConnection.builder()
@@ -824,6 +839,29 @@ describe('DbConnection', () => {
     expect(updates[0]!.newRow).toEqual(after);
   });
 
+  /**
+   * Subscribe to a right semijoin whose rhs is a view with primary key.
+   *
+   * Ensures:
+   * 1. A semijoin subscription involving a view is valid
+   * 2. The TypeScript SDK emits an `onUpdate` callback and that the client
+   *    receives the correct old and new rows
+   *
+   * Query:
+   *   SELECT player.*
+   *   FROM view_pk_membership membership
+   *   JOIN all_view_pk_players player ON membership.player_id = player.id
+   *
+   * Test:
+   * 1. Insert player row (id=1, "before").
+   * 2. Insert membership row referencing player_id=1, allowing the semijoin match.
+   * 3. Update player row to (id=1, "after").
+   *
+   * Expect:
+   * - `onUpdate` is called for player PK=1
+   * - `oldRow` should be the "before" value
+   * - `newRow` should be the "after" value
+   */
   test('it calls onUpdate for a query-builder join where the rhs is a primary-key view', async () => {
     const wsAdapter = new WebsocketTestAdapter();
     const client = DbConnection.builder()
@@ -903,6 +941,30 @@ describe('DbConnection', () => {
     expect(updates[0]!.newRow).toEqual(after);
   });
 
+  /**
+   * Subscribe to a semijoin between two views with primary keys.
+   *
+   * Ensures:
+   * 1. A semijoin subscription involving a view is valid
+   * 2. The TypeScript SDK emits an `onUpdate` callback and that the client
+   *    receives the correct old and new rows
+   *
+   * Query:
+   *   SELECT b.*
+   *   FROM sender_view_pk_players_a a
+   *   JOIN sender_view_pk_players_b b ON a.id = b.id
+   *
+   * Test:
+   * 1. Insert player row (id=1, "before").
+   * 2. Insert membership for sender view A.
+   * 3. Insert membership for sender view B.
+   * 4. Update player row to (id=1, "after").
+   *
+   * Expect:
+   * - `onUpdate` is called for player PK=1
+   * - `oldRow` should be the "before" value
+   * - `newRow` should be the "after" value
+   */
   test('it calls onUpdate for a query-builder semijoin between two sender views with primary keys', async () => {
     const wsAdapter = new WebsocketTestAdapter();
     const client = DbConnection.builder()
