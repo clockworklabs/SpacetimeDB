@@ -822,6 +822,13 @@ public open class DbConnection internal constructor(
         private val onConnectErrorCallbacks = atomic(persistentListOf<(DbConnectionView, Throwable) -> Unit>())
         private var module: ModuleDescriptor? = null
         private var callbackDispatcher: CoroutineDispatcher? = null
+        private var httpClient: HttpClient? = null
+
+        /**
+         * Provide the [HttpClient] for the WebSocket transport.
+         * Must have the Ktor WebSockets plugin installed.
+         */
+        public fun withHttpClient(client: HttpClient): Builder = apply { httpClient = client }
 
         public fun withUri(uri: String): Builder = apply { this.uri = uri }
         public fun withDatabaseName(nameOrAddress: String): Builder =
@@ -868,7 +875,7 @@ public open class DbConnection internal constructor(
             }
             val resolvedUri = requireNotNull(uri) { "URI is required" }
             val resolvedModule = requireNotNull(nameOrAddress) { "Module name is required" }
-            val resolvedClient = createPlatformHttpClient()
+            val resolvedClient = requireNotNull(httpClient) { "HttpClient is required. Call withHttpClient() on the builder." }
             val clientConnectionId = ConnectionId.random()
             val stats = Stats()
 

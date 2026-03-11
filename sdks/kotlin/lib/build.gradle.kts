@@ -31,10 +31,6 @@ kotlin {
     jvm()
 
     sourceSets {
-        androidMain.dependencies {
-            implementation(libs.ktor.client.okhttp)
-        }
-
         commonMain.dependencies {
             implementation(libs.kotlinx.collections.immutable)
             implementation(libs.kotlinx.atomicfu)
@@ -47,17 +43,11 @@ kotlin {
         commonTest.dependencies {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
+            implementation(libs.ktor.client.okhttp)
         }
 
         jvmMain.dependencies {
-            implementation(libs.ktor.client.okhttp)
             implementation(libs.slf4j.nop)
-        }
-
-        if (org.gradle.internal.os.OperatingSystem.current().isMacOsX) {
-            nativeMain.dependencies {
-                implementation(libs.ktor.client.darwin)
-            }
         }
 
         all {

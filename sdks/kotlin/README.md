@@ -4,11 +4,13 @@ Kotlin Multiplatform client SDK for [SpacetimeDB](https://spacetimedb.com). Conn
 
 ## Supported Platforms
 
-| Platform | Minimum Version | Transport |
-|----------|----------------|-----------|
-| JVM      | 21             | OkHttp    |
-| Android  | API 26         | OkHttp    |
-| iOS      | arm64 / x64 / simulator-arm64 | Darwin (URLSession) |
+| Platform | Minimum Version |
+|----------|----------------|
+| JVM      | 21             |
+| Android  | API 26         |
+| iOS      | arm64 / x64 / simulator-arm64 |
+
+The SDK uses [Ktor](https://ktor.io/) for WebSocket transport. You must provide an `HttpClient` with a platform-appropriate engine (e.g. OkHttp for JVM/Android, Darwin for iOS) and the WebSockets plugin installed.
 
 ## Installation
 
@@ -52,10 +54,16 @@ spacetimedb-cli generate \
 ## Quick Start
 
 ```kotlin
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.websocket.WebSockets
 import module_bindings.*
 
 suspend fun main() {
+    val httpClient = HttpClient(OkHttp) { install(WebSockets) }
+
     val conn = DbConnection.Builder()
+        .withHttpClient(httpClient)
         .withUri("ws://localhost:3000")
         .withDatabaseName("my_module")
         .withModuleBindings()
@@ -109,6 +117,7 @@ Extension properties are generated on both `DbConnection` and `EventContext`, so
 
 ```kotlin
 DbConnection.Builder()
+    .withHttpClient(httpClient)              // Ktor HttpClient with WebSockets (required)
     .withUri("ws://localhost:3000")          // WebSocket URI (required)
     .withDatabaseName("my_module")           // Module name or address (required)
     .withModuleBindings()                    // Register generated module (required)
@@ -137,10 +146,11 @@ Once `CLOSED`, the connection cannot be reused. Create a new `DbConnection` to r
 The SDK does not reconnect automatically. Implement retry logic at the application level:
 
 ```kotlin
-suspend fun connectWithRetry(maxAttempts: Int = 5): DbConnection {
+suspend fun connectWithRetry(httpClient: HttpClient, maxAttempts: Int = 5): DbConnection {
     repeat(maxAttempts) { attempt ->
         try {
             return DbConnection.Builder()
+                .withHttpClient(httpClient)
                 .withUri("ws://localhost:3000")
                 .withDatabaseName("my_module")
                 .withModuleBindings()
@@ -238,6 +248,7 @@ By default, callbacks execute on the WebSocket receive coroutine. To dispatch ca
 
 ```kotlin
 DbConnection.Builder()
+    .withHttpClient(httpClient)
     .withCallbackDispatcher(Dispatchers.Main)
     // ...
     .build()
