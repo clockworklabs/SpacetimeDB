@@ -454,23 +454,7 @@ class DbConnectionIntegrationTest {
         conn.disconnect()
     }
 
-    // --- Late registration & disconnect ---
-
-    @Test
-    fun lateOnConnectRegistrationFiresImmediately() = runTest {
-        val transport = FakeTransport()
-        val conn = buildTestConnection(transport)
-        transport.sendToClient(initialConnectionMsg())
-        advanceUntilIdle()
-
-        // Register onConnect AFTER the InitialConnection has been processed
-        var lateConnectFired = false
-        conn.onConnect { _, _, _ -> lateConnectFired = true }
-        advanceUntilIdle()
-
-        assertTrue(lateConnectFired)
-        conn.disconnect()
-    }
+    // --- Disconnect ---
 
     @Test
     fun disconnectClearsPendingCallbacks() = runTest {
@@ -573,6 +557,47 @@ class DbConnectionIntegrationTest {
 
         assertTrue(unsubEndFired)
         assertTrue(handle.isEnded)
+        conn.disconnect()
+    }
+
+    @Test
+    fun unsubscribeThenCallbackIsSetBeforeMessageSent() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val handle = conn.subscribe(
+            queries = listOf("SELECT * FROM sample"),
+            onApplied = listOf { _ -> },
+        )
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 1u,
+                querySetId = handle.querySetId,
+                rows = emptyQueryRows(),
+            )
+        )
+        advanceUntilIdle()
+        assertTrue(handle.isActive)
+
+        var callbackFired = false
+        handle.unsubscribeThen { _ -> callbackFired = true }
+        advanceUntilIdle()
+
+        assertTrue(handle.isUnsubscribing)
+
+        // Simulate immediate server response
+        transport.sendToClient(
+            ServerMessage.UnsubscribeApplied(
+                requestId = 2u,
+                querySetId = handle.querySetId,
+                rows = null,
+            )
+        )
+        advanceUntilIdle()
+
+        assertTrue(callbackFired, "Callback should fire even with immediate server response")
         conn.disconnect()
     }
 
@@ -978,23 +1003,6 @@ class DbConnectionIntegrationTest {
     // --- Callback removal ---
 
     @Test
-    fun removeOnConnectPreventsCallback() = runTest {
-        val transport = FakeTransport()
-        var fired = false
-        val cb: (DbConnectionView, Identity, String) -> Unit = { _, _, _ -> fired = true }
-
-        val conn = createTestConnection(transport, onConnect = cb)
-        conn.removeOnConnect(cb)
-        conn.connect()
-
-        transport.sendToClient(initialConnectionMsg())
-        advanceUntilIdle()
-
-        assertFalse(fired)
-        conn.disconnect()
-    }
-
-    @Test
     fun removeOnDisconnectPreventsCallback() = runTest {
         val transport = FakeTransport()
         var fired = false
@@ -1391,10 +1399,19 @@ class DbConnectionIntegrationTest {
     fun multipleOnConnectCallbacksAllFire() = runTest {
         val transport = FakeTransport()
         var count = 0
-        val conn = createTestConnection(transport)
-        conn.onConnect { _, _, _ -> count++ }
-        conn.onConnect { _, _, _ -> count++ }
-        conn.onConnect { _, _, _ -> count++ }
+        val cb: (DbConnectionView, Identity, String) -> Unit = { _, _, _ -> count++ }
+        val conn = DbConnection(
+            transport = transport,
+            httpClient = HttpClient(),
+            scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)),
+            onConnectCallbacks = listOf(cb, cb, cb),
+            onDisconnectCallbacks = emptyList(),
+            onConnectErrorCallbacks = emptyList(),
+            clientConnectionId = ConnectionId.random(),
+            stats = Stats(),
+            moduleDescriptor = null,
+            callbackDispatcher = null,
+        )
         conn.connect()
 
         transport.sendToClient(initialConnectionMsg())
@@ -2274,10 +2291,22 @@ class DbConnectionIntegrationTest {
     fun onConnectCallbackExceptionDoesNotPreventOtherCallbacks() = runTest {
         val transport = FakeTransport()
         var secondFired = false
-        val conn = buildTestConnection(transport, onConnect = { _, _, _ ->
-            error("onConnect explosion")
-        })
-        conn.onConnect { _, _, _ -> secondFired = true }
+        val conn = DbConnection(
+            transport = transport,
+            httpClient = HttpClient(),
+            scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)),
+            onConnectCallbacks = listOf(
+                { _, _, _ -> error("onConnect explosion") },
+                { _, _, _ -> secondFired = true },
+            ),
+            onDisconnectCallbacks = emptyList(),
+            onConnectErrorCallbacks = emptyList(),
+            clientConnectionId = ConnectionId.random(),
+            stats = Stats(),
+            moduleDescriptor = null,
+            callbackDispatcher = null,
+        )
+        conn.connect()
         transport.sendToClient(initialConnectionMsg())
         advanceUntilIdle()
 
@@ -2573,21 +2602,4 @@ class DbConnectionIntegrationTest {
         assertEquals(reason, receivedError)
     }
 
-    // --- Late callback registration ---
-
-    @Test
-    fun lateOnConnectDoesNotFireTwice() = runTest {
-        val transport = FakeTransport()
-        var count = 0
-        val conn = buildTestConnection(transport)
-        transport.sendToClient(initialConnectionMsg())
-        advanceUntilIdle()
-
-        // Register after already connected — should fire exactly once
-        conn.onConnect { _, _, _ -> count++ }
-        advanceUntilIdle()
-
-        assertEquals(1, count, "Late onConnect should fire exactly once")
-        conn.disconnect()
-    }
 }

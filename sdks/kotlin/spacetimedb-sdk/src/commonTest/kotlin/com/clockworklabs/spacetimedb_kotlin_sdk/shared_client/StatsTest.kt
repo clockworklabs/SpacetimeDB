@@ -76,6 +76,35 @@ class StatsTest {
         assertEquals("slow", max.metadata)
     }
 
+    @Test
+    fun getAllTimeMinMaxReturnsNullWhenEmpty() {
+        val tracker = NetworkRequestTracker()
+        assertNull(tracker.getAllTimeMinMax())
+    }
+
+    @Test
+    fun getAllTimeMinMaxReturnsConsistentPair() {
+        val tracker = NetworkRequestTracker()
+        tracker.insertSample(100.milliseconds, "fast")
+        tracker.insertSample(500.milliseconds, "slow")
+
+        val result = assertNotNull(tracker.getAllTimeMinMax())
+        assertEquals(100.milliseconds, result.min.duration)
+        assertEquals("fast", result.min.metadata)
+        assertEquals(500.milliseconds, result.max.duration)
+        assertEquals("slow", result.max.metadata)
+    }
+
+    @Test
+    fun getAllTimeMinMaxWithSingleSampleReturnsSameForBoth() {
+        val tracker = NetworkRequestTracker()
+        tracker.insertSample(250.milliseconds, "only")
+
+        val result = assertNotNull(tracker.getAllTimeMinMax())
+        assertEquals(250.milliseconds, result.min.duration)
+        assertEquals(250.milliseconds, result.max.duration)
+    }
+
     // ---- Insert sample ----
 
     @Test

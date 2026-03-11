@@ -2,6 +2,7 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class QueryBuilderTest {
 
@@ -35,6 +36,48 @@ class QueryBuilderTest {
     @Test
     fun formatHexLiteralWithoutPrefix() {
         assertEquals("0xABCD", SqlFormat.formatHexLiteral("ABCD"))
+    }
+
+    // ---- SqlLit NaN/Infinity rejection ----
+
+    @Test
+    fun floatNanThrows() {
+        assertFailsWith<IllegalArgumentException> { SqlLit.float(Float.NaN) }
+    }
+
+    @Test
+    fun floatPositiveInfinityThrows() {
+        assertFailsWith<IllegalArgumentException> { SqlLit.float(Float.POSITIVE_INFINITY) }
+    }
+
+    @Test
+    fun floatNegativeInfinityThrows() {
+        assertFailsWith<IllegalArgumentException> { SqlLit.float(Float.NEGATIVE_INFINITY) }
+    }
+
+    @Test
+    fun doubleNanThrows() {
+        assertFailsWith<IllegalArgumentException> { SqlLit.double(Double.NaN) }
+    }
+
+    @Test
+    fun doublePositiveInfinityThrows() {
+        assertFailsWith<IllegalArgumentException> { SqlLit.double(Double.POSITIVE_INFINITY) }
+    }
+
+    @Test
+    fun doubleNegativeInfinityThrows() {
+        assertFailsWith<IllegalArgumentException> { SqlLit.double(Double.NEGATIVE_INFINITY) }
+    }
+
+    @Test
+    fun finiteFloatSucceeds() {
+        assertEquals("3.14", SqlLit.float(3.14f).sql)
+    }
+
+    @Test
+    fun finiteDoubleSucceeds() {
+        assertEquals("2.718", SqlLit.double(2.718).sql)
     }
 
     // ---- BoolExpr ----

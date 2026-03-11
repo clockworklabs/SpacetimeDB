@@ -30,8 +30,15 @@ public object SqlLit {
     public fun uint(value: UInt): SqlLiteral<UInt> = SqlLiteral(value.toString())
     public fun long(value: Long): SqlLiteral<Long> = SqlLiteral(value.toString())
     public fun ulong(value: ULong): SqlLiteral<ULong> = SqlLiteral(value.toString())
-    public fun float(value: Float): SqlLiteral<Float> = SqlLiteral(value.toString())
-    public fun double(value: Double): SqlLiteral<Double> = SqlLiteral(value.toString())
+    public fun float(value: Float): SqlLiteral<Float> {
+        require(value.isFinite()) { "SQL literals do not support NaN or Infinity" }
+        return SqlLiteral(value.toString())
+    }
+
+    public fun double(value: Double): SqlLiteral<Double> {
+        require(value.isFinite()) { "SQL literals do not support NaN or Infinity" }
+        return SqlLiteral(value.toString())
+    }
 
     public fun identity(value: Identity): SqlLiteral<Identity> =
         SqlLiteral(SqlFormat.formatHexLiteral(value.toHexString()))

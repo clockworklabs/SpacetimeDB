@@ -41,6 +41,9 @@ public interface DbConnectionView {
     public val identity: Identity?
     public val connectionId: ConnectionId?
     public val isActive: Boolean
+    public val moduleTables: ModuleTables?
+    public val moduleReducers: ModuleReducers?
+    public val moduleProcedures: ModuleProcedures?
 
     public fun subscriptionBuilder(): SubscriptionBuilder
     public fun subscribeToAllTables(
@@ -65,8 +68,6 @@ public interface DbConnectionView {
 
     public suspend fun disconnect(reason: Throwable? = null)
 
-    public fun onConnect(cb: (DbConnectionView, Identity, String) -> Unit)
-    public fun removeOnConnect(cb: (DbConnectionView, Identity, String) -> Unit)
     public fun onDisconnect(cb: (DbConnectionView, Throwable?) -> Unit)
     public fun removeOnDisconnect(cb: (DbConnectionView, Throwable?) -> Unit)
     public fun onConnectError(cb: (DbConnectionView, Throwable) -> Unit)

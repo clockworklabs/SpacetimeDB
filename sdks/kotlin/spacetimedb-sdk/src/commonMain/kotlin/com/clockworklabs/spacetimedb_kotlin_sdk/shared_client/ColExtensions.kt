@@ -68,6 +68,20 @@ public fun <TRow> Col<TRow, Short>.lte(value: Short): BoolExpr<TRow> = lte(SqlLi
 public fun <TRow> Col<TRow, Short>.gt(value: Short): BoolExpr<TRow> = gt(SqlLit.short(value))
 public fun <TRow> Col<TRow, Short>.gte(value: Short): BoolExpr<TRow> = gte(SqlLit.short(value))
 
+public fun <TRow> Col<TRow, UByte>.eq(value: UByte): BoolExpr<TRow> = eq(SqlLit.ubyte(value))
+public fun <TRow> Col<TRow, UByte>.neq(value: UByte): BoolExpr<TRow> = neq(SqlLit.ubyte(value))
+public fun <TRow> Col<TRow, UByte>.lt(value: UByte): BoolExpr<TRow> = lt(SqlLit.ubyte(value))
+public fun <TRow> Col<TRow, UByte>.lte(value: UByte): BoolExpr<TRow> = lte(SqlLit.ubyte(value))
+public fun <TRow> Col<TRow, UByte>.gt(value: UByte): BoolExpr<TRow> = gt(SqlLit.ubyte(value))
+public fun <TRow> Col<TRow, UByte>.gte(value: UByte): BoolExpr<TRow> = gte(SqlLit.ubyte(value))
+
+public fun <TRow> Col<TRow, UShort>.eq(value: UShort): BoolExpr<TRow> = eq(SqlLit.ushort(value))
+public fun <TRow> Col<TRow, UShort>.neq(value: UShort): BoolExpr<TRow> = neq(SqlLit.ushort(value))
+public fun <TRow> Col<TRow, UShort>.lt(value: UShort): BoolExpr<TRow> = lt(SqlLit.ushort(value))
+public fun <TRow> Col<TRow, UShort>.lte(value: UShort): BoolExpr<TRow> = lte(SqlLit.ushort(value))
+public fun <TRow> Col<TRow, UShort>.gt(value: UShort): BoolExpr<TRow> = gt(SqlLit.ushort(value))
+public fun <TRow> Col<TRow, UShort>.gte(value: UShort): BoolExpr<TRow> = gte(SqlLit.ushort(value))
+
 public fun <TRow> Col<TRow, UInt>.eq(value: UInt): BoolExpr<TRow> = eq(SqlLit.uint(value))
 public fun <TRow> Col<TRow, UInt>.neq(value: UInt): BoolExpr<TRow> = neq(SqlLit.uint(value))
 public fun <TRow> Col<TRow, UInt>.lt(value: UInt): BoolExpr<TRow> = lt(SqlLit.uint(value))
@@ -95,6 +109,30 @@ public fun <TRow> Col<TRow, Double>.lt(value: Double): BoolExpr<TRow> = lt(SqlLi
 public fun <TRow> Col<TRow, Double>.lte(value: Double): BoolExpr<TRow> = lte(SqlLit.double(value))
 public fun <TRow> Col<TRow, Double>.gt(value: Double): BoolExpr<TRow> = gt(SqlLit.double(value))
 public fun <TRow> Col<TRow, Double>.gte(value: Double): BoolExpr<TRow> = gte(SqlLit.double(value))
+
+public fun <TRow> IxCol<TRow, Byte>.eq(value: Byte): BoolExpr<TRow> = eq(SqlLit.byte(value))
+public fun <TRow> IxCol<TRow, Byte>.neq(value: Byte): BoolExpr<TRow> = neq(SqlLit.byte(value))
+
+public fun <TRow> IxCol<TRow, Short>.eq(value: Short): BoolExpr<TRow> = eq(SqlLit.short(value))
+public fun <TRow> IxCol<TRow, Short>.neq(value: Short): BoolExpr<TRow> = neq(SqlLit.short(value))
+
+public fun <TRow> IxCol<TRow, UByte>.eq(value: UByte): BoolExpr<TRow> = eq(SqlLit.ubyte(value))
+public fun <TRow> IxCol<TRow, UByte>.neq(value: UByte): BoolExpr<TRow> = neq(SqlLit.ubyte(value))
+
+public fun <TRow> IxCol<TRow, UShort>.eq(value: UShort): BoolExpr<TRow> = eq(SqlLit.ushort(value))
+public fun <TRow> IxCol<TRow, UShort>.neq(value: UShort): BoolExpr<TRow> = neq(SqlLit.ushort(value))
+
+public fun <TRow> IxCol<TRow, UInt>.eq(value: UInt): BoolExpr<TRow> = eq(SqlLit.uint(value))
+public fun <TRow> IxCol<TRow, UInt>.neq(value: UInt): BoolExpr<TRow> = neq(SqlLit.uint(value))
+
+public fun <TRow> IxCol<TRow, ULong>.eq(value: ULong): BoolExpr<TRow> = eq(SqlLit.ulong(value))
+public fun <TRow> IxCol<TRow, ULong>.neq(value: ULong): BoolExpr<TRow> = neq(SqlLit.ulong(value))
+
+public fun <TRow> IxCol<TRow, Float>.eq(value: Float): BoolExpr<TRow> = eq(SqlLit.float(value))
+public fun <TRow> IxCol<TRow, Float>.neq(value: Float): BoolExpr<TRow> = neq(SqlLit.float(value))
+
+public fun <TRow> IxCol<TRow, Double>.eq(value: Double): BoolExpr<TRow> = eq(SqlLit.double(value))
+public fun <TRow> IxCol<TRow, Double>.neq(value: Double): BoolExpr<TRow> = neq(SqlLit.double(value))
 
 // ---- Col<TRow, Identity/ConnectionId/SpacetimeUuid> ----
 

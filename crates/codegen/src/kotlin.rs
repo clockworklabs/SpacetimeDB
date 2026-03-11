@@ -1766,7 +1766,7 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     writeln!(out, " */");
     writeln!(out, "val DbConnectionView.db: RemoteTables");
     out.indent(1);
-    writeln!(out, "get() = (this as DbConnection).moduleTables as RemoteTables");
+    writeln!(out, "get() = moduleTables as RemoteTables");
     out.dedent(1);
     writeln!(out);
 
@@ -1778,7 +1778,7 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     writeln!(out, " */");
     writeln!(out, "val DbConnectionView.reducers: RemoteReducers");
     out.indent(1);
-    writeln!(out, "get() = (this as DbConnection).moduleReducers as RemoteReducers");
+    writeln!(out, "get() = moduleReducers as RemoteReducers");
     out.dedent(1);
     writeln!(out);
 
@@ -1790,7 +1790,7 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     writeln!(out, " */");
     writeln!(out, "val DbConnectionView.procedures: RemoteProcedures");
     out.indent(1);
-    writeln!(out, "get() = (this as DbConnection).moduleProcedures as RemoteProcedures");
+    writeln!(out, "get() = moduleProcedures as RemoteProcedures");
     out.dedent(1);
     writeln!(out);
 

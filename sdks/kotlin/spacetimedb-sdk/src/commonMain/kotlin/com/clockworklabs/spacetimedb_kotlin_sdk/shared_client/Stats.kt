@@ -34,6 +34,12 @@ public class NetworkRequestTracker internal constructor(
     private var nextRequestId = 0u
     private val requests = mutableMapOf<UInt, RequestEntry>()
 
+    public fun getAllTimeMinMax(): MinMaxResult? = synchronized(this) {
+        val min = allTimeMin ?: return null
+        val max = allTimeMax ?: return null
+        MinMaxResult(min, max)
+    }
+
     public fun getMinMaxTimes(lastSeconds: Int): MinMaxResult? = synchronized(this) {
         val tracker = trackers.getOrPut(lastSeconds) {
             check(trackers.size < MAX_TRACKERS) {

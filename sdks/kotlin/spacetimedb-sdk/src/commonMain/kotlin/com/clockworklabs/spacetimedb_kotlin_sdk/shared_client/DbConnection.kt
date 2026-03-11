@@ -60,17 +60,6 @@ private fun decodeReducerError(bytes: ByteArray): String {
     }
 }
 
-/**
- * Single-atomic state for onConnect callback management.
- * Pending → Connected is a one-shot transition; the callback list is drained atomically.
- */
-private sealed interface OnConnectState {
-    data class Pending(
-        val callbacks: kotlinx.collections.immutable.PersistentList<(DbConnectionView, Identity, String) -> Unit>,
-    ) : OnConnectState
-
-    data class Connected(val identity: Identity, val token: String) : OnConnectState
-}
 
 /**
  * Compression mode for the WebSocket connection.
@@ -116,17 +105,17 @@ public open class DbConnection internal constructor(
     public val clientCache: ClientCache = ClientCache()
 
     private val _moduleTables = atomic<ModuleTables?>(null)
-    public var moduleTables: ModuleTables?
+    public override var moduleTables: ModuleTables?
         get() = _moduleTables.value
         internal set(value) { _moduleTables.value = value }
 
     private val _moduleReducers = atomic<ModuleReducers?>(null)
-    public var moduleReducers: ModuleReducers?
+    public override var moduleReducers: ModuleReducers?
         get() = _moduleReducers.value
         internal set(value) { _moduleReducers.value = value }
 
     private val _moduleProcedures = atomic<ModuleProcedures?>(null)
-    public var moduleProcedures: ModuleProcedures?
+    public override var moduleProcedures: ModuleProcedures?
         get() = _moduleProcedures.value
         internal set(value) { _moduleProcedures.value = value }
 
@@ -160,38 +149,11 @@ public open class DbConnection internal constructor(
     private val querySetIdToRequestId = atomic(persistentHashMapOf<UInt, UInt>())
     private val _receiveJob = atomic<Job?>(null)
     private val _eventId = atomic(0L)
-    private val _onConnectState = atomic<OnConnectState>(
-        OnConnectState.Pending(onConnectCallbacks.toPersistentList())
-    )
+    private val _onConnectCallbacks = onConnectCallbacks.toList()
     private val _onDisconnectCallbacks = atomic(onDisconnectCallbacks.toPersistentList())
     private val _onConnectErrorCallbacks = atomic(onConnectErrorCallbacks.toPersistentList())
 
-    // --- Multiple connection callbacks ---
-
-    public override fun onConnect(cb: (DbConnectionView, Identity, String) -> Unit) {
-        var fireNow: OnConnectState.Connected? = null
-        _onConnectState.update { state ->
-            when (state) {
-                is OnConnectState.Pending -> OnConnectState.Pending(state.callbacks.add(cb))
-                is OnConnectState.Connected -> {
-                    fireNow = state
-                    state
-                }
-            }
-        }
-        fireNow?.let { conn ->
-            scope.launch { runUserCallback { cb(this@DbConnection, conn.identity, conn.token) } }
-        }
-    }
-
-    public override fun removeOnConnect(cb: (DbConnectionView, Identity, String) -> Unit) {
-        _onConnectState.update { state ->
-            when (state) {
-                is OnConnectState.Pending -> OnConnectState.Pending(state.callbacks.remove(cb))
-                is OnConnectState.Connected -> state
-            }
-        }
-    }
+    // --- Connection callbacks ---
 
     public override fun onDisconnect(cb: (DbConnectionView, Throwable?) -> Unit) {
         _onDisconnectCallbacks.update { it.add(cb) }
@@ -547,13 +509,7 @@ public open class DbConnection internal constructor(
                     token = message.token
                 }
                 Logger.info { "Connected with identity=${message.identity}" }
-                // One-shot: atomically transition Pending → Connected, draining callbacks.
-                val prev = _onConnectState.getAndSet(
-                    OnConnectState.Connected(message.identity, message.token)
-                )
-                if (prev is OnConnectState.Pending) {
-                    for (cb in prev.callbacks) runUserCallback { cb(this, message.identity, message.token) }
-                }
+                for (cb in _onConnectCallbacks) runUserCallback { cb(this, message.identity, message.token) }
             }
 
             is ServerMessage.SubscribeApplied -> {

@@ -126,7 +126,8 @@ public class TableCache<Row, Key : Any> private constructor(
         val rowCount = when (val hint = rowList.sizeHint) {
             is RowSizeHint.FixedSize -> {
                 val rowSize = hint.size.toInt()
-                if (rowSize > 0) rowList.rowsSize / rowSize else 0
+                require(rowSize > 0) { "Server sent FixedSize(0), which violates the protocol invariant" }
+                rowList.rowsSize / rowSize
             }
             is RowSizeHint.RowOffsets -> hint.offsets.size
         }
