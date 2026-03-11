@@ -1108,6 +1108,47 @@ fn rhs_eq_constants(expr: &PhysicalExpr, rhs_label: Label) -> Vec<EqConstFilterT
     }
 }
 
+/// Collect equality constants from a list of filter expressions.
+fn rhs_eq_constants_from_filters<'a>(
+    filters: impl IntoIterator<Item = &'a PhysicalExpr>,
+    rhs_label: Label,
+) -> Vec<EqConstFilterTerm> {
+    filters
+        .into_iter()
+        .flat_map(|expr| rhs_eq_constants(expr, rhs_label))
+        .collect()
+}
+
+/// Peel a chain of `Filter` nodes and return:
+/// 1) the non-filter base plan
+/// 2) all filter expressions in that chain
+fn peel_filters_ref(mut plan: &PhysicalPlan) -> (&PhysicalPlan, Vec<&PhysicalExpr>) {
+    let mut filters = Vec::new();
+    while let PhysicalPlan::Filter(input, expr) = plan {
+        filters.push(expr);
+        plan = input;
+    }
+    (plan, filters)
+}
+
+/// Owned variant of `peel_filters_ref`.
+fn peel_filters_owned(mut plan: PhysicalPlan) -> (PhysicalPlan, Vec<PhysicalExpr>) {
+    let mut filters = Vec::new();
+    while let PhysicalPlan::Filter(input, expr) = plan {
+        filters.push(expr);
+        plan = *input;
+    }
+    (plan, filters)
+}
+
+fn and_expr(exprs: Vec<PhysicalExpr>) -> Option<PhysicalExpr> {
+    match exprs.len() {
+        0 => None,
+        1 => exprs.into_iter().next(),
+        _ => Some(PhysicalExpr::LogOp(LogOp::And, exprs)),
+    }
+}
+
 fn ix_join_candidate(
     schema: &TableSchema,
     rhs_field_pos: usize,
@@ -1236,16 +1277,32 @@ impl RewriteRule for HashToIxJoin {
                     },
                     _,
                 ) => {
-                    // New behavior: if earlier rules already lowered an RHS filter to
-                    // `IxScan(sender = const)`, reuse those constants when proving that
-                    // a multi-column join index can be probed.
+                    // If earlier rules already lowered an RHS filter to `IxScan(sender = const)`,
+                    // reuse those constants when proving that a multi-column join index can be probed.
                     let constants = rhs_eq_constants_from_ixscan(scan)?;
                     let info = ix_join_candidate(schema, *field_pos, &constants)?;
                     // Guardrail: do not rewrite unless every scan-encoded predicate is
                     // represented in the chosen `rhs_prefix` + join key.
                     all_terms_consumed(&constants, &info.consumed_filter_terms).then_some(info)
                 }
-                _ => None,
+                _ => {
+                    // We prefer to pull filters above an index join where possible.
+                    let (base, filters) = peel_filters_ref(rhs);
+                    match base {
+                        PhysicalPlan::TableScan(
+                            TableScan {
+                                schema,
+                                limit: None,
+                                delta: _,
+                            },
+                            rhs_label,
+                        ) => {
+                            let constants = rhs_eq_constants_from_filters(filters, *rhs_label);
+                            ix_join_candidate(schema, *field_pos, &constants)
+                        }
+                        _ => None,
+                    }
+                }
             },
             PhysicalPlan::Filter(input, expr) => {
                 let PhysicalPlan::HashJoin(
@@ -1286,10 +1343,11 @@ impl RewriteRule for HashToIxJoin {
                     rhs_index,
                     rhs_field,
                     rhs_prefix,
-                    ..
+                    consumed_filter_terms,
                 } = info;
 
-                let (rhs, rhs_label, rhs_delta) = match *join.rhs {
+                let (rhs_plan, rhs_filters) = peel_filters_owned(*join.rhs);
+                let (rhs, rhs_label, rhs_delta) = match rhs_plan {
                     PhysicalPlan::TableScan(
                         TableScan {
                             schema: rhs,
@@ -1310,7 +1368,7 @@ impl RewriteRule for HashToIxJoin {
                     _ => bail!("{INVARIANT_VIOLATION}: Failed to rewrite hash join as index join"),
                 };
 
-                Ok(PhysicalPlan::IxJoin(
+                let ix_join = PhysicalPlan::IxJoin(
                     IxJoin {
                         lhs: join.lhs,
                         rhs,
@@ -1323,7 +1381,18 @@ impl RewriteRule for HashToIxJoin {
                         lhs_field: join.lhs_field,
                     },
                     semi,
-                ))
+                );
+
+                let residual_filters = rhs_filters
+                    .into_iter()
+                    .filter_map(|expr| remove_consumed_filter_terms(expr, rhs_label, &consumed_filter_terms))
+                    .collect();
+
+                if let Some(expr) = and_expr(residual_filters) {
+                    Ok(PhysicalPlan::Filter(Box::new(ix_join), expr))
+                } else {
+                    Ok(ix_join)
+                }
             }
             PhysicalPlan::Filter(input, expr) => {
                 let HashToIxJoinInfo {

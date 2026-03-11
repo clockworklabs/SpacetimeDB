@@ -77,7 +77,21 @@ public static partial class Module
 }
 "#;
 
-fn project_inserts_and_deletes_for_view(events: Vec<Value>, view_name: &str) -> Vec<Value> {
+fn project_fields(events: Vec<Value>, view_name: &str, projected_fields: &[&str]) -> Vec<Value> {
+    let project_row = |row: &Value| {
+        if projected_fields.is_empty() {
+            row.clone()
+        } else {
+            let mut projected = serde_json::Map::new();
+            for field in projected_fields {
+                if let Some(value) = row.get(*field) {
+                    projected.insert((*field).to_string(), value.clone());
+                }
+            }
+            Value::Object(projected)
+        }
+    };
+
     events
         .into_iter()
         .map(|event| {
@@ -87,13 +101,13 @@ fn project_inserts_and_deletes_for_view(events: Vec<Value>, view_name: &str) -> 
                         .as_array()
                         .unwrap()
                         .iter()
-                        .map(|row| json!({"name": row["name"]}))
+                        .map(&project_row)
                         .collect::<Vec<_>>(),
                     "inserts": event[view_name]["inserts"]
                         .as_array()
                         .unwrap()
                         .iter()
-                        .map(|row| json!({"name": row["name"]}))
+                        .map(&project_row)
                         .collect::<Vec<_>>()
                 }
             })
@@ -428,8 +442,7 @@ fn test_subscribing_with_different_identities() {
     test.call("insert_player", &["Bob"]).unwrap();
     let events = sub.collect().unwrap();
 
-    let projection = project_inserts_and_deletes_for_view(events, "my_player");
-
+    let projection = project_fields(events, "my_player", &["name"]);
     assert_eq!(
         serde_json::json!(projection),
         serde_json::json!([
@@ -507,7 +520,7 @@ fn test_procedure_triggers_subscription_updates() {
     let sub = test.subscribe_background(&["select * from my_player"], 1).unwrap();
     test.call("insert_player_proc", &["Alice"]).unwrap();
     let events = sub.collect().unwrap();
-    let projection = project_inserts_and_deletes_for_view(events, "my_player");
+    let projection = project_fields(events, "my_player", &["name"]);
     assert_eq!(
         serde_json::json!(projection),
         serde_json::json!([
@@ -531,8 +544,7 @@ fn test_typescript_procedure_triggers_subscription_updates() {
     test.call("insert_player_proc", &["Alice"]).unwrap();
     let events = sub.collect().unwrap();
 
-    let projection = project_inserts_and_deletes_for_view(events, "my_player");
-
+    let projection = project_fields(events, "my_player", &["name"]);
     assert_eq!(
         serde_json::json!(projection),
         serde_json::json!([
@@ -582,78 +594,138 @@ fn test_csharp_query_builder_view_query() {
 }
 
 #[test]
-fn test_subscribe_join_with_view_on_primary_key_col() {
-    let test = Smoketest::builder().precompiled_module("views-subscribe").build();
+fn test_subscribe_join_pk_views_with_filters_on_both_sides() {
+    let test = Smoketest::builder().precompiled_module("views-query").build();
 
-    test.call("insert_player_proc", &["Alice"]).unwrap();
+    // Seed rows for identity A.
+    test.call("update_left_pk_join_source", &["200", "true"]).unwrap();
+    test.call("update_right_pk_join_source", &["200", "true"]).unwrap();
 
-    let query =
-        "SELECT all_players.* FROM player_state JOIN all_players ON player_state.identity = all_players.identity";
-    let events = test.subscribe(&[query], 0).unwrap();
-    let projection = project_inserts_and_deletes_for_view(events, "all_players");
+    // Switch to identity B so sender-scoped views read/write a different identity.
+    test.new_identity().unwrap();
+
+    let query = "SELECT left_pk_join_view_sender.* \
+                 FROM left_pk_join_view_sender \
+                 JOIN right_pk_join_view_sender \
+                 ON left_pk_join_view_sender.id = right_pk_join_view_sender.id \
+                 WHERE left_pk_join_view_sender.ok = true \
+                 AND right_pk_join_view_sender.ok = true";
+
+    let sub = test.subscribe_background(&[query], 4).unwrap();
+
+    // Left-only row: no join output yet.
+    test.call("update_left_pk_join_source", &["1", "true"]).unwrap();
+
+    // Right insert completes the join for id=1 and emits an insert.
+    test.call("update_right_pk_join_source", &["1", "true"]).unwrap();
+
+    // Right side update toggles ok=false and removes the joined row.
+    test.call("update_right_pk_join_source", &["1", "false"]).unwrap();
+
+    // Right-only row for id=2: still no join output.
+    test.call("update_right_pk_join_source", &["2", "true"]).unwrap();
+
+    // Left insert completes the join for id=2 and emits an insert.
+    test.call("update_left_pk_join_source", &["2", "true"]).unwrap();
+
+    // Left side update toggles ok=false and removes the joined row.
+    test.call("update_left_pk_join_source", &["2", "false"]).unwrap();
+
+    let update_events = sub.collect().unwrap();
+    let expected = serde_json::json!([
+        {
+            "left_pk_join_view_sender": {
+                "deletes": [],
+                "inserts": [{"id": 1, "ok": true}],
+            }
+        },
+        {
+            "left_pk_join_view_sender": {
+                "deletes": [{"id": 1, "ok": true}],
+                "inserts": [],
+            }
+        },
+        {
+            "left_pk_join_view_sender": {
+                "deletes": [],
+                "inserts": [{"id": 2, "ok": true}],
+            }
+        },
+        {
+            "left_pk_join_view_sender": {
+                "deletes": [{"id": 2, "ok": true}],
+                "inserts": [],
+            }
+        }
+    ]);
 
     assert_eq!(
-        serde_json::json!(projection),
-        serde_json::json!([
-            {"all_players": {"deletes": [], "inserts": [{"name": "Alice"}]}}
-        ])
+        serde_json::json!(project_fields(update_events, "left_pk_join_view_sender", &["id", "ok"])),
+        expected
     );
 }
 
 #[test]
-fn test_subscribe_join_two_views_on_primary_key_col() {
+fn test_subscribe_join_anon_pk_views_with_filters_on_both_sides() {
     let test = Smoketest::builder().precompiled_module("views-query").build();
 
-    let query = "SELECT online_users.* \
-                 FROM online_users \
-                 JOIN users_whos_age_is_known \
-                 ON online_users.identity = users_whos_age_is_known.identity";
-    let events = test.subscribe(&[query], 0).unwrap();
-    let projection = project_inserts_and_deletes_for_view(events, "online_users");
+    let query = "SELECT left_pk_join_view.* \
+                 FROM left_pk_join_view \
+                 JOIN right_pk_join_view \
+                 ON left_pk_join_view.id = right_pk_join_view.id \
+                 WHERE left_pk_join_view.ok = true \
+                 AND right_pk_join_view.ok = true";
+
+    let sub = test.subscribe_background(&[query], 4).unwrap();
+
+    // Left-only row: no join output yet.
+    test.call("update_left_pk_join_source", &["1", "true"]).unwrap();
+
+    // Right insert completes the join for id=1 and emits an insert.
+    test.call("update_right_pk_join_source", &["1", "true"]).unwrap();
+
+    // Right side update toggles ok=false and removes the joined row.
+    test.call("update_right_pk_join_source", &["1", "false"]).unwrap();
+
+    // Right-only row for id=2: still no join output.
+    test.call("update_right_pk_join_source", &["2", "true"]).unwrap();
+
+    // Left insert completes the join for id=2 and emits an insert.
+    test.call("update_left_pk_join_source", &["2", "true"]).unwrap();
+
+    // Left side update toggles ok=false and removes the joined row.
+    test.call("update_left_pk_join_source", &["2", "false"]).unwrap();
+
+    let update_events = sub.collect().unwrap();
+    let expected = serde_json::json!([
+        {
+            "left_pk_join_view": {
+                "deletes": [],
+                "inserts": [{"id": 1, "ok": true}],
+            }
+        },
+        {
+            "left_pk_join_view": {
+                "deletes": [{"id": 1, "ok": true}],
+                "inserts": [],
+            }
+        },
+        {
+            "left_pk_join_view": {
+                "deletes": [],
+                "inserts": [{"id": 2, "ok": true}],
+            }
+        },
+        {
+            "left_pk_join_view": {
+                "deletes": [{"id": 2, "ok": true}],
+                "inserts": [],
+            }
+        }
+    ]);
 
     assert_eq!(
-        serde_json::json!(projection),
-        serde_json::json!([
-            {"online_users": {"deletes": [], "inserts": [{"name": "Alice"}]}}
-        ])
-    );
-}
-
-#[test]
-fn test_subscribe_join_with_anonymous_view_on_primary_key_col() {
-    let test = Smoketest::builder().precompiled_module("views-query").build();
-
-    let query = "SELECT anonymous_adult_people.* \
-                 FROM person \
-                 JOIN anonymous_adult_people \
-                 ON person.identity = anonymous_adult_people.identity \
-                 WHERE anonymous_adult_people.identity = 1";
-    let events = test.subscribe(&[query], 0).unwrap();
-    let projection = project_inserts_and_deletes_for_view(events, "anonymous_adult_people");
-
-    assert_eq!(
-        serde_json::json!(projection),
-        serde_json::json!([
-            {"anonymous_adult_people": {"deletes": [], "inserts": [{"name": "Alice"}]}}
-        ])
-    );
-}
-
-#[test]
-fn test_subscribe_join_two_sender_views_with_filters_on_both_sides() {
-    let test = Smoketest::builder().precompiled_module("views-query").build();
-
-    let query = "SELECT online_users_identity_1.* \
-                 FROM online_users_identity_1 \
-                 JOIN users_whos_age_is_known_identity_1 \
-                 ON online_users_identity_1.identity = users_whos_age_is_known_identity_1.identity";
-    let events = test.subscribe(&[query], 0).unwrap();
-    let projection = project_inserts_and_deletes_for_view(events, "online_users_identity_1");
-
-    assert_eq!(
-        serde_json::json!(projection),
-        serde_json::json!([
-            {"online_users_identity_1": {"deletes": [], "inserts": [{"name": "Alice"}]}}
-        ])
+        serde_json::json!(project_fields(update_events, "left_pk_join_view", &["id", "ok"])),
+        expected
     );
 }
