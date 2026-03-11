@@ -230,7 +230,7 @@ jobs:
 
       # Install native and wasm toolchains required by SDK tests:
       # - `emcc` for C++ module compilation tests.
-      # - `wasm32-unknown-unknown` target + `wasm-bindgen` CLI for Rust web client tests.
+      # - `wasm32-unknown-unknown` target for Rust web client tests.
       - name: Install native and wasm test prerequisites
         run: |
           sudo apt-get update
@@ -238,16 +238,20 @@ jobs:
 
           rustup target add wasm32-unknown-unknown
 
+          git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
+          cd ~/emsdk
+          ./emsdk install 4.0.21
+          ./emsdk activate 4.0.21
+
+      - name: Install wasm-bindgen CLI
+        run: |
           REQUIRED_WASM_BINDGEN_VERSION="0.2.100"
           INSTALLED_WASM_BINDGEN_VERSION="$(wasm-bindgen --version 2>/dev/null | awk '{print $2}' || true)"
           if [ "${INSTALLED_WASM_BINDGEN_VERSION}" != "${REQUIRED_WASM_BINDGEN_VERSION}" ]; then
             cargo install --locked --force wasm-bindgen-cli --version "${REQUIRED_WASM_BINDGEN_VERSION}"
           fi
 
-          git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
-          cd ~/emsdk
-          ./emsdk install 4.0.21
-          ./emsdk activate 4.0.21
+          wasm-bindgen --version
 
       - name: Build typescript module sdk
         working-directory: crates/bindings-typescript
