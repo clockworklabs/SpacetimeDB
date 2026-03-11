@@ -1455,7 +1455,7 @@ mod tests {
         identity::AuthCtx,
         AlgebraicType, AlgebraicValue,
     };
-    use spacetimedb_primitives::{ColId, ColList, ColSet, IndexId, TableId};
+    use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
     use spacetimedb_schema::{
         def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData},
         identifier::Identifier,
@@ -1466,8 +1466,7 @@ mod tests {
 
     use crate::{
         compile::{compile_select, compile_select_list},
-        plan::{HashJoin, IxJoin, IxScan, Label, PhysicalPlan, ProjectListPlan, Sarg, Semi, TupleField},
-        rules::HashToIxJoin,
+        plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, ProjectListPlan, Sarg, Semi, TupleField},
     };
 
     use super::{PhysicalExpr, ProjectPlan, TableScan};
