@@ -6998,7 +6998,7 @@ dependencies = [
 name = "sdk-test-view-pk"
 version = "0.1.0"
 dependencies = [
- "spacetimedb 2.0.3",
+ "spacetimedb 2.0.4",
 ]
 
 [[package]]
@@ -10103,7 +10103,7 @@ dependencies = [
 
 [[package]]
 name = "view-pk-client"
-version = "2.0.3"
+version = "2.0.4"
 dependencies = [
  "anyhow",
  "env_logger 0.10.2",
