@@ -197,7 +197,7 @@ macro_rules! memoized {
 
         MEMOIZED
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .get_or_insert_default()
             .entry(($($key_tuple,)*))
             .or_insert_with_key(|($($key_tuple,)*)| -> $value_ty { $body })
@@ -466,8 +466,7 @@ fn run_client(runner: &ClientRunner, run_command: &str, client_project: &str, db
                 "(async () => {{\n  const m = require({js_module:?});\n  if (m.default) {{ await m.default(); }}\n  const run = m.run || m.main || m.start;\n  if (!run) throw new Error('No exported run/main/start function from wasm module');\n  await run(process.argv[2]);\n}})().catch((e) => {{ console.error(e); process.exit(1); }});"
             );
 
-            let mut node_args: Vec<String> =
-                vec!["-e".to_owned(), node_script, "--".to_owned(), run_command.to_owned()];
+            let node_args: Vec<String> = vec!["-e".to_owned(), node_script, "--".to_owned(), run_command.to_owned()];
 
             let output = cmd("node", node_args)
                 .dir(client_project)

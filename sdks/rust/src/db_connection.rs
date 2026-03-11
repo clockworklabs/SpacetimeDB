@@ -39,10 +39,7 @@ use http::Uri;
 use spacetimedb_client_api_messages::websocket::{self as ws, common::QuerySetId};
 use spacetimedb_lib::{bsatn, ser::Serialize, ConnectionId, Identity, Timestamp};
 use spacetimedb_sats::Deserialize;
-use std::{
-    collections::HashMap,
-    sync::{atomic::AtomicU32, Arc, Mutex as StdMutex, OnceLock},
-};
+use std::sync::{atomic::AtomicU32, Arc, Mutex as StdMutex, OnceLock};
 #[cfg(not(feature = "web"))]
 use tokio::{
     runtime::{self, Runtime},
@@ -944,7 +941,7 @@ but you must call one of them, or else the connection will never progress.
         let connection_id_override = get_connection_id_override();
         let ws_connection = WsConnection::connect(
             self.uri.clone().unwrap(),
-            self.module_name.as_ref().unwrap(),
+            self.database_name.as_ref().unwrap(),
             self.token.as_deref(),
             connection_id_override,
             self.params,
@@ -1230,7 +1227,7 @@ fn spawn_parse_loop<M: SpacetimeModule>(
 
 #[cfg(feature = "web")]
 fn spawn_parse_loop<M: SpacetimeModule>(
-    raw_message_recv: mpsc::UnboundedReceiver<ws::ServerMessage<BsatnFormat>>,
+    raw_message_recv: mpsc::UnboundedReceiver<ws::v2::ServerMessage>,
 ) -> mpsc::UnboundedReceiver<ParsedMessage<M>> {
     let (parsed_message_send, parsed_message_recv) = mpsc::unbounded();
     wasm_bindgen_futures::spawn_local(parse_loop(raw_message_recv, parsed_message_send));

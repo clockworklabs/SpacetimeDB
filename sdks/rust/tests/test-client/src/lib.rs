@@ -3,6 +3,8 @@
 #[path = "main.rs"]
 mod cli;
 
+pub(crate) use cli::module_bindings;
+
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
 use wasm_bindgen::prelude::wasm_bindgen;
 

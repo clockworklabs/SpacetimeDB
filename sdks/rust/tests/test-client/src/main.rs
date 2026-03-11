@@ -1,6 +1,6 @@
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::large_enum_variant)]
-mod module_bindings;
+pub(crate) mod module_bindings;
 
 use core::fmt::Display;
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -9,11 +9,13 @@ use std::sync::{Arc, Barrier, Mutex};
 use module_bindings::*;
 
 use rand::RngCore;
+#[cfg(not(target_arch = "wasm32"))]
+use spacetimedb_sdk::credentials;
 use spacetimedb_sdk::error::InternalError;
 use spacetimedb_sdk::TableWithPrimaryKey;
 use spacetimedb_sdk::{
-    credentials, i256, u256, Compression, ConnectionId, DbConnectionBuilder, DbContext, Event, Identity, ReducerEvent,
-    Status, SubscriptionHandle, Table, TimeDuration, Timestamp, Uuid,
+    i256, u256, Compression, ConnectionId, DbConnectionBuilder, DbContext, Event, Identity, ReducerEvent, Status,
+    SubscriptionHandle, Table, TimeDuration, Timestamp, Uuid,
 };
 use test_counter::TestCounter;
 
@@ -408,8 +410,11 @@ fn connect_with_then(
             connected_result(Ok(()));
         })
         .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
-    let conn = with_builder(builder).build().unwrap();
+    let conn = build_connection(with_builder(builder));
+    #[cfg(not(target_arch = "wasm32"))]
     conn.run_threaded();
+    #[cfg(target_arch = "wasm32")]
+    conn.run_background_task();
     conn
 }
 
@@ -422,6 +427,16 @@ fn connect_then(
 
 fn connect(test_counter: &std::sync::Arc<TestCounter>) -> DbConnection {
     connect_then(test_counter, |_| {})
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+    builder.build().unwrap()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+    futures::executor::block_on(builder.build()).unwrap()
 }
 
 fn subscribe_all_then(ctx: &impl RemoteDbContext, callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static) {
@@ -1716,12 +1731,14 @@ fn exec_insert_primitives_as_strings() {
 //     test_counter.wait_for_all();
 // }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn creds_store() -> credentials::File {
     credentials::File::new("rust-sdk-test")
 }
 
 /// Part of the `reauth` test, this connects to Spacetime to get new credentials,
 /// and saves them to a file.
+#[cfg(not(target_arch = "wasm32"))]
 fn exec_reauth_part_1() {
     let test_counter = TestCounter::new();
 
@@ -1747,6 +1764,7 @@ fn exec_reauth_part_1() {
 /// and passes them to `connect`.
 ///
 /// Must run after `exec_reauth_part_1`.
+#[cfg(not(target_arch = "wasm32"))]
 fn exec_reauth_part_2() {
     let test_counter = TestCounter::new();
 
@@ -1778,6 +1796,17 @@ fn exec_reauth_part_2() {
     test_counter.wait_for_all();
 }
 
+#[cfg(target_arch = "wasm32")]
+fn exec_reauth_part_1() {
+    // Native-only: requires file-backed credentials via `credentials::File`,
+    // which is unavailable in wasm/web.
+}
+
+#[cfg(target_arch = "wasm32")]
+fn exec_reauth_part_2() {
+    // Native-only: requires persisted credentials from `exec_reauth_part_1`.
+}
+
 // Ensure a new connection gets a different connection id.
 fn exec_reconnect_different_connection_id() {
     let initial_test_counter = TestCounter::new();
@@ -1786,21 +1815,24 @@ fn exec_reconnect_different_connection_id() {
     let disconnect_test_counter = TestCounter::new();
     let disconnect_result = disconnect_test_counter.add_test("disconnect");
 
-    let initial_connection = DbConnection::builder()
-        .with_database_name(db_name_or_panic())
-        .with_uri(LOCALHOST)
-        .on_connect_error(|_ctx, error| panic!("on_connect_error: {error:?}"))
-        .on_connect(move |_, _, _| {
-            initial_connect_result(Ok(()));
-        })
-        .on_disconnect(|_, error| match error {
-            None => disconnect_result(Ok(())),
-            Some(err) => disconnect_result(Err(anyhow::anyhow!("{err:?}"))),
-        })
-        .build()
-        .unwrap();
+    let initial_connection = build_connection(
+        DbConnection::builder()
+            .with_database_name(db_name_or_panic())
+            .with_uri(LOCALHOST)
+            .on_connect_error(|_ctx, error| panic!("on_connect_error: {error:?}"))
+            .on_connect(move |_, _, _| {
+                initial_connect_result(Ok(()));
+            })
+            .on_disconnect(|_, error| match error {
+                None => disconnect_result(Ok(())),
+                Some(err) => disconnect_result(Err(anyhow::anyhow!("{err:?}"))),
+            }),
+    );
 
+    #[cfg(not(target_arch = "wasm32"))]
     initial_connection.run_threaded();
+    #[cfg(target_arch = "wasm32")]
+    initial_connection.run_background_task();
 
     initial_test_counter.wait_for_all();
 
@@ -1814,22 +1846,25 @@ fn exec_reconnect_different_connection_id() {
     let reconnect_result = reconnect_test_counter.add_test("reconnect");
     let addr_after_reconnect_result = reconnect_test_counter.add_test("addr_after_reconnect");
 
-    let re_connection = DbConnection::builder()
-        .with_database_name(db_name_or_panic())
-        .with_uri(LOCALHOST)
-        .on_connect_error(|_ctx, error| panic!("on_connect_error: {error:?}"))
-        .on_connect(move |ctx, _, _| {
-            reconnect_result(Ok(()));
-            let run_checks = || {
-                // A new connection should have a different connection id.
-                anyhow::ensure!(ctx.connection_id() != my_connection_id);
-                Ok(())
-            };
-            addr_after_reconnect_result(run_checks());
-        })
-        .build()
-        .unwrap();
+    let re_connection = build_connection(
+        DbConnection::builder()
+            .with_database_name(db_name_or_panic())
+            .with_uri(LOCALHOST)
+            .on_connect_error(|_ctx, error| panic!("on_connect_error: {error:?}"))
+            .on_connect(move |ctx, _, _| {
+                reconnect_result(Ok(()));
+                let run_checks = || {
+                    // A new connection should have a different connection id.
+                    anyhow::ensure!(ctx.connection_id() != my_connection_id);
+                    Ok(())
+                };
+                addr_after_reconnect_result(run_checks());
+            }),
+    );
+    #[cfg(not(target_arch = "wasm32"))]
     re_connection.run_threaded();
+    #[cfg(target_arch = "wasm32")]
+    re_connection.run_background_task();
 
     reconnect_test_counter.wait_for_all();
 }
