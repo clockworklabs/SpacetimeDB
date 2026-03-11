@@ -612,8 +612,9 @@ impl InstanceCommon {
         };
 
         let program_hash = program.hash;
+        let host_type = HostType::from(program.kind);
         let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-        let (mut tx, _) = stdb.with_auto_rollback(tx, |tx| stdb.update_program(tx, HostType::Wasm, program))?;
+        let (mut tx, _) = stdb.with_auto_rollback(tx, |tx| stdb.update_program(tx, program))?;
         system_logger.info(&format!("Updated program to {program_hash}"));
 
         let auth_ctx = AuthCtx::for_current(replica_ctx.database.owner_identity);
@@ -631,7 +632,7 @@ impl InstanceCommon {
             }
             Ok(res) => {
                 system_logger.info("Database updated");
-                log::info!("Database updated, {}", stdb.database_identity());
+                log::info!("Database updated, {} host-type={}", stdb.database_identity(), host_type);
                 let res: UpdateDatabaseResult = match res {
                     crate::db::update::UpdateResult::Success => UpdateDatabaseResult::UpdatePerformed,
                     crate::db::update::UpdateResult::EvaluateSubscribedViews => {
