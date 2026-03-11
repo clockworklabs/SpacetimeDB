@@ -1560,8 +1560,24 @@ impl ModuleSubscriptions {
     }
 
     pub fn remove_subscriber(&self, client_id: ClientActorId) {
-        let mut subscriptions = self.subscriptions.write();
-        subscriptions.remove_all_subscriptions(&(client_id.identity, client_id.connection_id));
+        let removed_queries = {
+            let mut subscriptions = self.subscriptions.write();
+            subscriptions.remove_all_subscriptions(&(client_id.identity, client_id.connection_id))
+        };
+
+        if removed_queries.is_empty() {
+            return;
+        }
+
+        // TODO(perf): Removing a subscriber is currently O(subscribed_queries).
+        // Instead we should maintain an index to make this O(subscribed_views).
+        if let Err(err) = self.unsubscribe_views(&removed_queries, client_id.identity) {
+            log::error!(
+                "failed to unsubscribe views for disconnected client ({}, {}): {err}",
+                client_id.identity,
+                client_id.connection_id
+            );
+        }
     }
 
     /// Rolls back `tx` and returns the offset as it was before `tx`.
