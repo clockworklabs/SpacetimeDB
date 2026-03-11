@@ -1231,7 +1231,7 @@ record ViewDeclaration
     public string GenerateViewDef(uint Index)
     {
         var returnTypeExpr = ReturnsQuery
-            ? $"new global::SpacetimeDB.BSATN.AlgebraicType.Product([new global::SpacetimeDB.BSATN.AggregateElement(\"__query__\", new global::SpacetimeDB.BSATN.AlgebraicType.Ref(new {QueryRowType!.BSATNName}().GetAlgebraicType(registrar).Ref_))])"
+            ? $"global::SpacetimeDB.BSATN.AlgebraicType.MakeQueryBuilderProductType(new {QueryRowType!.BSATNName}().GetAlgebraicType(registrar))"
             : $"new {ReturnType.BSATNName}().GetAlgebraicType(registrar)";
         return $$$"""
             new global::SpacetimeDB.Internal.RawViewDefV10(
