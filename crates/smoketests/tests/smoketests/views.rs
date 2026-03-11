@@ -593,152 +593,51 @@ fn test_csharp_query_builder_view_query() {
     );
 }
 
-#[test]
-fn test_subscribe_join_pk_views_with_filters_on_both_sides() {
-    let test = Smoketest::builder().precompiled_module("views-query").build();
-
-    // Seed rows for identity A.
-    test.call("update_pk_join_lhs", &["200", "true"]).unwrap();
-    test.call("update_pk_join_rhs", &["200", "true"]).unwrap();
-
-    // Switch to identity B so sender-scoped views read/write a different identity.
-    test.new_identity().unwrap();
-
-    let query = "SELECT pk_join_lhs_view_sender.* \
-                 FROM pk_join_lhs_view_sender \
-                 JOIN pk_join_rhs_view_sender \
-                 ON pk_join_lhs_view_sender.id = pk_join_rhs_view_sender.id \
-                 WHERE pk_join_lhs_view_sender.ok = true \
-                 AND pk_join_rhs_view_sender.ok = true";
-
-    let sub = test.subscribe_background(&[query], 4).unwrap();
-
-    // Left-only row: no join output yet.
-    test.call("update_pk_join_lhs", &["1", "true"]).unwrap();
-
-    // Right insert completes the join for id=1 and emits an insert.
-    test.call("update_pk_join_rhs", &["1", "true"]).unwrap();
-
-    // Right side update toggles ok=false and removes the joined row.
-    test.call("update_pk_join_rhs", &["1", "false"]).unwrap();
-
-    // Right-only row for id=2: still no join output.
-    test.call("update_pk_join_rhs", &["2", "true"]).unwrap();
-
-    // Left insert completes the join for id=2 and emits an insert.
-    test.call("update_pk_join_lhs", &["2", "true"]).unwrap();
-
-    // Left side update toggles ok=false and removes the joined row.
-    test.call("update_pk_join_lhs", &["2", "false"]).unwrap();
-
-    let update_events = sub.collect().unwrap();
-    let expected = serde_json::json!([
-        {
-            "pk_join_lhs_view_sender": {
-                "deletes": [],
-                "inserts": [{"id": 1, "ok": true}],
-            }
-        },
-        {
-            "pk_join_lhs_view_sender": {
-                "deletes": [{"id": 1, "ok": true}],
-                "inserts": [],
-            }
-        },
-        {
-            "pk_join_lhs_view_sender": {
-                "deletes": [],
-                "inserts": [{"id": 2, "ok": true}],
-            }
-        },
-        {
-            "pk_join_lhs_view_sender": {
-                "deletes": [{"id": 2, "ok": true}],
-                "inserts": [],
-            }
-        }
-    ]);
-
-    assert_eq!(
-        serde_json::json!(project_fields(update_events, "pk_join_lhs_view_sender", &["id", "ok"])),
-        expected
-    );
+enum PkJoinMutation {
+    UpdateLhs { id: u64, ok: bool },
+    UpdateRhs { id: u64, ok: bool },
+    DeleteLhs { id: u64 },
 }
 
-#[test]
-fn test_subscribe_join_anon_pk_views_with_filters_on_both_sides() {
-    let test = Smoketest::builder().precompiled_module("views-query").build();
-
-    // Seed rows for identity A.
-    test.call("update_pk_join_lhs", &["200", "true"]).unwrap();
-    test.call("update_pk_join_rhs", &["200", "true"]).unwrap();
-
-    // Switch to identity B so each underlying table has rows for 2 identities.
-    test.new_identity().unwrap();
-
-    let query = "SELECT pk_join_lhs_view.* \
-                 FROM pk_join_lhs_view \
-                 JOIN pk_join_rhs_view \
-                 ON pk_join_lhs_view.id = pk_join_rhs_view.id \
-                 WHERE pk_join_lhs_view.ok = true \
-                 AND pk_join_rhs_view.ok = true";
-
-    let sub = test.subscribe_background(&[query], 4).unwrap();
-
-    // Left-only row: no join output yet.
-    test.call("update_pk_join_lhs", &["1", "true"]).unwrap();
-
-    // Right insert completes the join for id=1 and emits an insert.
-    test.call("update_pk_join_rhs", &["1", "true"]).unwrap();
-
-    // Right side update toggles ok=false and removes the joined row.
-    test.call("update_pk_join_rhs", &["1", "false"]).unwrap();
-
-    // Right-only row for id=2: still no join output.
-    test.call("update_pk_join_rhs", &["2", "true"]).unwrap();
-
-    // Left insert completes the join for id=2 and emits an insert.
-    test.call("update_pk_join_lhs", &["2", "true"]).unwrap();
-
-    // Left side update toggles ok=false and removes the joined row.
-    test.call("update_pk_join_lhs", &["2", "false"]).unwrap();
-
-    let update_events = sub.collect().unwrap();
-    let expected = serde_json::json!([
-        {
-            "pk_join_lhs_view": {
-                "deletes": [],
-                "inserts": [{"id": 1, "ok": true}],
-            }
-        },
-        {
-            "pk_join_lhs_view": {
-                "deletes": [{"id": 1, "ok": true}],
-                "inserts": [],
-            }
-        },
-        {
-            "pk_join_lhs_view": {
-                "deletes": [],
-                "inserts": [{"id": 2, "ok": true}],
-            }
-        },
-        {
-            "pk_join_lhs_view": {
-                "deletes": [{"id": 2, "ok": true}],
-                "inserts": [],
-            }
+fn apply_pk_join_mutation(test: &Smoketest, mutation: &PkJoinMutation) {
+    match mutation {
+        PkJoinMutation::UpdateLhs { id, ok } => {
+            let id = id.to_string();
+            let ok = if *ok { "true" } else { "false" };
+            test.call("update_pk_join_lhs", &[id.as_str(), ok]).unwrap();
         }
-    ]);
-
-    assert_eq!(
-        serde_json::json!(project_fields(update_events, "pk_join_lhs_view", &["id", "ok"])),
-        expected
-    );
+        PkJoinMutation::UpdateRhs { id, ok } => {
+            let id = id.to_string();
+            let ok = if *ok { "true" } else { "false" };
+            test.call("update_pk_join_rhs", &[id.as_str(), ok]).unwrap();
+        }
+        PkJoinMutation::DeleteLhs { id } => {
+            let id = id.to_string();
+            test.call("delete_pk_join_lhs", &[id.as_str()]).unwrap();
+        }
+    }
 }
 
-#[test]
-fn test_subscribe_join_anon_pk_view_with_physical_table_sender_filter() {
+fn expected_pk_join_projection(view_name: &str) -> Value {
+    let mk_event = |deletes: Vec<Value>, inserts: Vec<Value>| {
+        let mut event_payload = serde_json::Map::new();
+        event_payload.insert("deletes".to_string(), Value::Array(deletes));
+        event_payload.insert("inserts".to_string(), Value::Array(inserts));
+
+        let mut event = serde_json::Map::new();
+        event.insert(view_name.to_string(), Value::Object(event_payload));
+        Value::Object(event)
+    };
+
+    Value::Array(vec![
+        mk_event(vec![], vec![json!({"id": 1, "ok": true})]),
+        mk_event(vec![json!({"id": 1, "ok": true})], vec![]),
+        mk_event(vec![], vec![json!({"id": 2, "ok": true})]),
+        mk_event(vec![json!({"id": 2, "ok": true})], vec![]),
+    ])
+}
+
+fn run_pk_join_subscription_test(query: &str, projected_view_name: &str, mutations: &[PkJoinMutation]) {
     let test = Smoketest::builder().precompiled_module("views-query").build();
 
     // Seed rows for identity A in both underlying tables.
@@ -748,6 +647,67 @@ fn test_subscribe_join_anon_pk_view_with_physical_table_sender_filter() {
     // Switch to identity B so each underlying table has rows for 2 identities.
     test.new_identity().unwrap();
 
+    let sub = test.subscribe_background(&[query], 4).unwrap();
+
+    for mutation in mutations {
+        apply_pk_join_mutation(&test, mutation);
+    }
+
+    let update_events = sub.collect().unwrap();
+    assert_eq!(
+        serde_json::json!(project_fields(update_events, projected_view_name, &["id", "ok"])),
+        expected_pk_join_projection(projected_view_name)
+    );
+}
+
+#[test]
+fn test_subscribe_join_pk_views_with_filters_on_both_sides() {
+    let query = "SELECT pk_join_lhs_sender_view.* \
+                 FROM pk_join_lhs_sender_view \
+                 JOIN pk_join_rhs_sender_view \
+                 ON pk_join_lhs_sender_view.id = pk_join_rhs_sender_view.id \
+                 WHERE pk_join_lhs_sender_view.ok = true \
+                 AND pk_join_rhs_sender_view.ok = true";
+
+    run_pk_join_subscription_test(
+        query,
+        "pk_join_lhs_sender_view",
+        &[
+            PkJoinMutation::UpdateLhs { id: 1, ok: true },
+            PkJoinMutation::UpdateRhs { id: 1, ok: true },
+            PkJoinMutation::UpdateRhs { id: 1, ok: false },
+            PkJoinMutation::UpdateRhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: false },
+        ],
+    );
+}
+
+#[test]
+fn test_subscribe_join_anon_pk_views_with_filters_on_both_sides() {
+    let query = "SELECT pk_join_lhs_view.* \
+                 FROM pk_join_lhs_view \
+                 JOIN pk_join_rhs_view \
+                 ON pk_join_lhs_view.id = pk_join_rhs_view.id \
+                 WHERE pk_join_lhs_view.ok = true \
+                 AND pk_join_rhs_view.ok = true";
+
+    run_pk_join_subscription_test(
+        query,
+        "pk_join_lhs_view",
+        &[
+            PkJoinMutation::UpdateLhs { id: 1, ok: true },
+            PkJoinMutation::UpdateRhs { id: 1, ok: true },
+            PkJoinMutation::UpdateRhs { id: 1, ok: false },
+            PkJoinMutation::UpdateRhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: false },
+        ],
+    );
+}
+
+#[test]
+fn test_subscribe_join_anon_pk_view_with_table_and_filter() {
     let query = "SELECT pk_join_lhs_view.* \
                  FROM pk_join_lhs_view \
                  JOIN pk_join_rhs \
@@ -755,56 +715,59 @@ fn test_subscribe_join_anon_pk_view_with_physical_table_sender_filter() {
                  WHERE pk_join_lhs_view.ok = true \
                  AND pk_join_rhs.identity = :sender";
 
-    let sub = test.subscribe_background(&[query], 4).unwrap();
+    run_pk_join_subscription_test(
+        query,
+        "pk_join_lhs_view",
+        &[
+            PkJoinMutation::UpdateLhs { id: 1, ok: true },
+            PkJoinMutation::UpdateRhs { id: 1, ok: true },
+            PkJoinMutation::UpdateLhs { id: 1, ok: false },
+            PkJoinMutation::UpdateRhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: false },
+        ],
+    );
+}
 
-    // Left-only row: no join output yet.
-    test.call("update_pk_join_lhs", &["1", "true"]).unwrap();
+#[test]
+fn test_subscribe_join_anon_pk_view_with_table() {
+    let query = "SELECT pk_join_lhs_view.* \
+                 FROM pk_join_lhs_view \
+                 JOIN pk_join_rhs \
+                 ON pk_join_lhs_view.id = pk_join_rhs.id \
+                 WHERE pk_join_rhs.identity = :sender";
 
-    // Right insert completes the join for id=1 and emits an insert.
-    test.call("update_pk_join_rhs", &["1", "true"]).unwrap();
+    run_pk_join_subscription_test(
+        query,
+        "pk_join_lhs_view",
+        &[
+            PkJoinMutation::UpdateLhs { id: 1, ok: true },
+            PkJoinMutation::UpdateRhs { id: 1, ok: true },
+            PkJoinMutation::DeleteLhs { id: 1 },
+            PkJoinMutation::UpdateRhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: true },
+            PkJoinMutation::DeleteLhs { id: 2 },
+        ],
+    );
+}
 
-    // Left side update toggles ok=false and removes the joined row.
-    test.call("update_pk_join_lhs", &["1", "false"]).unwrap();
+#[test]
+fn test_subscribe_join_pk_view_with_table() {
+    let query = "SELECT pk_join_lhs_sender_view.* \
+                 FROM pk_join_lhs_sender_view \
+                 JOIN pk_join_rhs \
+                 ON pk_join_lhs_sender_view.id = pk_join_rhs.id";
 
-    // Right-only row for id=2: still no join output.
-    test.call("update_pk_join_rhs", &["2", "true"]).unwrap();
-
-    // Left insert completes the join for id=2 and emits an insert.
-    test.call("update_pk_join_lhs", &["2", "true"]).unwrap();
-
-    // Left side update toggles ok=false and removes the joined row.
-    test.call("update_pk_join_lhs", &["2", "false"]).unwrap();
-
-    let update_events = sub.collect().unwrap();
-    let expected = serde_json::json!([
-        {
-            "pk_join_lhs_view": {
-                "deletes": [],
-                "inserts": [{"id": 1, "ok": true}],
-            }
-        },
-        {
-            "pk_join_lhs_view": {
-                "deletes": [{"id": 1, "ok": true}],
-                "inserts": [],
-            }
-        },
-        {
-            "pk_join_lhs_view": {
-                "deletes": [],
-                "inserts": [{"id": 2, "ok": true}],
-            }
-        },
-        {
-            "pk_join_lhs_view": {
-                "deletes": [{"id": 2, "ok": true}],
-                "inserts": [],
-            }
-        }
-    ]);
-
-    assert_eq!(
-        serde_json::json!(project_fields(update_events, "pk_join_lhs_view", &["id", "ok"])),
-        expected
+    run_pk_join_subscription_test(
+        query,
+        "pk_join_lhs_sender_view",
+        &[
+            PkJoinMutation::UpdateLhs { id: 1, ok: true },
+            PkJoinMutation::UpdateRhs { id: 1, ok: true },
+            PkJoinMutation::DeleteLhs { id: 1 },
+            PkJoinMutation::UpdateRhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: true },
+            PkJoinMutation::DeleteLhs { id: 2 },
+        ],
     );
 }

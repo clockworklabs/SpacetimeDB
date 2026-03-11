@@ -107,24 +107,6 @@ fn users_who_are_above_eq_20_and_below_eq_30(ctx: &ViewContext) -> impl Query<Pe
     ctx.from.person().r#where(|p| p.age.gte(20).and(p.age.lte(30)))
 }
 
-#[spacetimedb::view(accessor = anonymous_adult_people, public)]
-fn anonymous_adult_people(ctx: &AnonymousViewContext) -> impl Query<Person> {
-    ctx.from.person().r#where(|p| p.age.gte(20))
-}
-
-#[spacetimedb::view(accessor = online_users_identity_1, public)]
-fn online_users_identity_1(ctx: &ViewContext) -> impl Query<User> {
-    ctx.from.user().r#where(|u| u.online).filter(|u| u.identity.eq(1))
-}
-
-#[spacetimedb::view(accessor = users_whos_age_is_known_identity_1, public)]
-fn users_whos_age_is_known_identity_1(ctx: &ViewContext) -> impl Query<User> {
-    ctx.from
-        .user()
-        .left_semijoin(ctx.from.person(), |p, u| p.identity.eq(u.identity))
-        .filter(|u| u.identity.eq(1))
-}
-
 #[spacetimedb::reducer]
 fn update_pk_join_lhs(ctx: &ReducerContext, id: u8, ok: bool) {
     ctx.db.pk_join_lhs().id().delete(&id);
@@ -133,6 +115,11 @@ fn update_pk_join_lhs(ctx: &ReducerContext, id: u8, ok: bool) {
         ok,
         identity: ctx.sender(),
     });
+}
+
+#[spacetimedb::reducer]
+fn delete_pk_join_lhs(ctx: &ReducerContext, id: u8) {
+    ctx.db.pk_join_lhs().id().delete(&id);
 }
 
 #[spacetimedb::reducer]
@@ -145,6 +132,11 @@ fn update_pk_join_rhs(ctx: &ReducerContext, id: u8, ok: bool) {
     });
 }
 
+#[spacetimedb::reducer]
+fn delete_pk_join_rhs(ctx: &ReducerContext, id: u8) {
+    ctx.db.pk_join_rhs().id().delete(&id);
+}
+
 #[spacetimedb::view(accessor = pk_join_lhs_view, public)]
 fn pk_join_lhs_view(ctx: &AnonymousViewContext) -> impl Query<LeftPkJoinSource> {
     ctx.from.pk_join_lhs()
@@ -155,12 +147,12 @@ fn pk_join_rhs_view(ctx: &AnonymousViewContext) -> impl Query<RightPkJoinSource>
     ctx.from.pk_join_rhs()
 }
 
-#[spacetimedb::view(accessor = pk_join_lhs_view_sender, public)]
-fn pk_join_lhs_view_sender(ctx: &ViewContext) -> impl Query<LeftPkJoinSource> {
+#[spacetimedb::view(accessor = pk_join_lhs_sender_view, public)]
+fn pk_join_lhs_sender_view(ctx: &ViewContext) -> impl Query<LeftPkJoinSource> {
     ctx.from.pk_join_lhs().filter(|row| row.identity.eq(ctx.sender()))
 }
 
-#[spacetimedb::view(accessor = pk_join_rhs_view_sender, public)]
-fn pk_join_rhs_view_sender(ctx: &ViewContext) -> impl Query<RightPkJoinSource> {
+#[spacetimedb::view(accessor = pk_join_rhs_sender_view, public)]
+fn pk_join_rhs_sender_view(ctx: &ViewContext) -> impl Query<RightPkJoinSource> {
     ctx.from.pk_join_rhs().filter(|row| row.identity.eq(ctx.sender()))
 }
