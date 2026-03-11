@@ -9,7 +9,7 @@ version = "0.1.0"
 kotlin {
     explicitApi()
 
-    androidLibrary {
+    android {
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
         namespace = "com.clockworklabs.spacetimedb_kotlin_sdk.shared_client"
@@ -22,7 +22,7 @@ kotlin {
             iosSimulatorArm64()
         ).forEach { iosTarget ->
             iosTarget.binaries.framework {
-                baseName = "lib"
+                baseName = "SpacetimeDBSdk"
                 isStatic = true
             }
         }
@@ -44,10 +44,6 @@ kotlin {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
             implementation(libs.ktor.client.okhttp)
-        }
-
-        jvmMain.dependencies {
-            implementation(libs.slf4j.nop)
         }
 
         all {

@@ -1,26 +1,22 @@
 [versions]
-agp = "9.0.0"
+agp = "9.1.0"
 android-compileSdk = "36"
 android-minSdk = "26"
-android-targetSdk = "36"
 kotlin = "2.3.10"
 kotlinx-coroutines = "1.10.2"
 kotlinxAtomicfu = "0.31.0"
 kotlinxCollectionsImmutable = "0.4.0"
-ktor = "3.4.0"
+ktor = "3.4.1"
 bignum = "0.3.10"
 
 [libraries]
-kotlinx-coroutines-swing = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
 kotlinx-atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "kotlinxAtomicfu" }
 kotlinx-collections-immutable = { module = "org.jetbrains.kotlinx:kotlinx-collections-immutable", version.ref = "kotlinxCollectionsImmutable" }
 
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
-ktor-client-darwin = { module = "io.ktor:ktor-client-darwin", version.ref = "ktor" }
 ktor-client-websockets = { module = "io.ktor:ktor-client-websockets", version.ref = "ktor" }
 
-slf4j-nop = { module = "org.slf4j:slf4j-nop", version = "2.0.17" }
 bignum = { module = "com.ionspin.kotlin:bignum", version.ref = "bignum" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
