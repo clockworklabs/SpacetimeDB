@@ -116,6 +116,29 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FOU
   },
   {/*
     {
+        return ctx.Db.Player.Iter();
+                             ^^^^
+    }
+*/
+    Message: 'PlayerReadOnly' does not contain a definition for 'Iter' and no accessible extension method 'Iter' accepting a first argument of type 'PlayerReadOnly' could be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS1061,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1061),
+      MessageFormat: '{0}' does not contain a definition for '{1}' and no accessible extension method '{1}' accepting a first argument of type '{0}' could be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    {
         ctx.Db.Player.Iter();
                       ^^^^
         return null;
@@ -276,6 +299,29 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
     }
   },
   {/*
+    {
+        return ctx.Db.TestIndexIssues.TestUnexpectedColumns.Filter(0);
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
+*/
+    Message: Cannot implicitly convert type 'System.Collections.Generic.IEnumerable<TestIndexIssues>' to 'System.Collections.Generic.IEnumerable<TestScheduleIssues>'. An explicit conversion exists (are you missing a cast?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0266,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0266),
+      MessageFormat: Cannot implicitly convert type '{0}' to '{1}'. An explicit conversion exists (are you missing a cast?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
             
             var returnValue = Module.ViewDefNoContext((SpacetimeDB.ViewContext)ctx);
                                      ^^^^^^^^^^^^^^^^
@@ -288,6 +334,144 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
       Title: ,
       HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1501),
       MessageFormat: No overload for method '{0}' takes {1} arguments,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    public global::SpacetimeDB.Table<global::InAnotherNamespace.TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
+        new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+}
+*/
+    Message: The call is ambiguous between the following methods or properties: 'TestDuplicateTableNameCols.TestDuplicateTableNameCols(string)' and 'TestDuplicateTableNameCols.TestDuplicateTableNameCols(string)',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0121,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0121),
+      MessageFormat: The call is ambiguous between the following methods or properties: '{0}' and '{1}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    public global::SpacetimeDB.Table<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
+        new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+}
+*/
+    Message: The call is ambiguous between the following methods or properties: 'TestDuplicateTableNameCols.TestDuplicateTableNameCols(string)' and 'TestDuplicateTableNameCols.TestDuplicateTableNameCols(string)',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0121,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0121),
+      MessageFormat: The call is ambiguous between the following methods or properties: '{0}' and '{1}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    public global::SpacetimeDB.Table<global::InAnotherNamespace.TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
+        new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
+                                                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+}
+*/
+    Message: The call is ambiguous between the following methods or properties: 'TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(string)' and 'TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(string)',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0121,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0121),
+      MessageFormat: The call is ambiguous between the following methods or properties: '{0}' and '{1}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    public global::SpacetimeDB.Table<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
+        new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
+                                                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+}
+*/
+    Message: The call is ambiguous between the following methods or properties: 'TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(string)' and 'TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(string)',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0121,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0121),
+      MessageFormat: The call is ambiguous between the following methods or properties: '{0}' and '{1}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+}
+public readonly struct TestDuplicateTableNameCols
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+{
+*/
+    Message: The namespace 'SpacetimeDB' already contains a definition for 'TestDuplicateTableNameCols',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0101,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0101),
+      MessageFormat: The namespace '{1}' already contains a definition for '{0}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+
+public readonly struct TestDuplicateTableNameIxCols
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+{
+*/
+    Message: The namespace 'SpacetimeDB' already contains a definition for 'TestDuplicateTableNameIxCols',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0101,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0101),
+      MessageFormat: The namespace '{1}' already contains a definition for '{0}',
       Category: Compiler,
       DefaultSeverity: Error,
       IsEnabledByDefault: true,
@@ -380,6 +564,75 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
       Title: ,
       HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0246),
       MessageFormat: The type or namespace name '{0}' could not be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+{
+    public global::SpacetimeDB.Table<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
+                                                                                                                               ^^^^^^^^^^^^^^^^^^^^^^
+        new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
+*/
+    Message: Type 'QueryBuilder' already defines a member called 'TestDuplicateTableName' with the same parameter types,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0111,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0111),
+      MessageFormat: Type '{1}' already defines a member called '{0}' with the same parameter types,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+
+    internal TestDuplicateTableNameCols(string tableName)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    {
+*/
+    Message: Type 'TestDuplicateTableNameCols' already defines a member called 'TestDuplicateTableNameCols' with the same parameter types,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0111,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0111),
+      MessageFormat: Type '{1}' already defines a member called '{0}' with the same parameter types,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+
+    internal TestDuplicateTableNameIxCols(string tableName)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    {
+*/
+    Message: Type 'TestDuplicateTableNameIxCols' already defines a member called 'TestDuplicateTableNameIxCols' with the same parameter types,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0111,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0111),
+      MessageFormat: Type '{1}' already defines a member called '{0}' with the same parameter types,
       Category: Compiler,
       DefaultSeverity: Error,
       IsEnabledByDefault: true,

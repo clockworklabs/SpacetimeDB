@@ -17,7 +17,7 @@ namespace SpacetimeDB.Types
 
         public void Suicide()
         {
-            conn.InternalCallReducer(new Reducer.Suicide(), this.SetCallReducerFlags.SuicideFlags);
+            conn.InternalCallReducer(new Reducer.Suicide());
         }
 
         public bool InvokeSuicide(ReducerEventContext ctx, Reducer.Suicide args)
@@ -49,11 +49,5 @@ namespace SpacetimeDB.Types
         {
             string IReducerArgs.ReducerName => "suicide";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags SuicideFlags;
-        public void Suicide(CallReducerFlags flags) => SuicideFlags = flags;
     }
 }

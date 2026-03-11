@@ -499,21 +499,24 @@ fn delete_scheduled_function_row_with_tx(
     id: ScheduledFunctionId,
 ) -> Option<ScheduleAt> {
     if let Ok(Some(schedule_row)) = get_schedule_row_mut(&tx, db, id) {
-        if let Ok(schedule_at) = read_schedule_at(&schedule_row, id.at_column) {
-            // If the schedule is an interval, we handle it as a repeated schedule
-            if let ScheduleAt::Interval(_) = schedule_at {
-                return Some(schedule_at);
-            }
-            let row_ptr = schedule_row.pointer();
-            db.delete(&mut tx, id.table_id, [row_ptr]);
+        match read_schedule_at(&schedule_row, id.at_column) {
+            Ok(schedule_at) => {
+                // If the schedule is an interval, we handle it as a repeated schedule
+                if let ScheduleAt::Interval(_) = schedule_at {
+                    return Some(schedule_at);
+                }
+                let row_ptr = schedule_row.pointer();
+                db.delete(&mut tx, id.table_id, [row_ptr]);
 
-            commit_and_broadcast_deletion_event(tx, module_info);
-        } else {
-            log::debug!(
-                "Failed to read 'scheduled_at' from row: table_id {}, schedule_id {}",
-                id.table_id,
-                id.schedule_id
-            );
+                commit_and_broadcast_deletion_event(tx, module_info);
+            }
+            _ => {
+                log::debug!(
+                    "Failed to read 'scheduled_at' from row: table_id {}, schedule_id {}",
+                    id.table_id,
+                    id.schedule_id
+                );
+            }
         }
     }
     None
@@ -526,6 +529,7 @@ fn commit_and_broadcast_deletion_event(tx: MutTxId, module_info: &ModuleInfo) {
         caller_connection_id: None,
         function_call: ModuleFunctionCall::default(),
         status: EventStatus::Committed(DatabaseUpdate::default()),
+        reducer_return_value: None,
         //Keeping them 0 as it is internal transaction, not by reducer
         energy_quanta_used: EnergyQuanta { quanta: 0 },
         host_execution_duration: Duration::from_millis(0),

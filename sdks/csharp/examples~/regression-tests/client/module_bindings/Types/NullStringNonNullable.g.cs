@@ -13,9 +13,9 @@ namespace SpacetimeDB.Types
     [DataContract]
     public sealed partial class NullStringNonNullable
     {
-        [DataMember(Name = "Id")]
+        [DataMember(Name = "id")]
         public ulong Id;
-        [DataMember(Name = "Name")]
+        [DataMember(Name = "name")]
         public string Name;
 
         public NullStringNonNullable(

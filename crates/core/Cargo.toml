@@ -51,6 +51,7 @@ bytestring.workspace = true
 chrono.workspace = true
 crossbeam-channel.workspace = true
 crossbeam-queue.workspace = true
+deno_core_icudata.workspace = true
 derive_more.workspace = true
 dirs.workspace = true
 enum-as-inner.workspace = true
@@ -137,6 +138,9 @@ nix = { workspace = true, features = ["sched"] }
 # Print a warning when doing an unindexed `iter_by_col_range` on a large table.
 unindexed_iter_by_col_range_warn = []
 default = ["unindexed_iter_by_col_range_warn"]
+# Test-only escape hatch used by SDK procedure tests that intentionally call `localhost`.
+# Keep this off in production builds.
+allow_loopback_http_for_tests = []
 # Enable timing for wasm ABI calls
 spacetimedb-wasm-instance-env-times = []
 # Enable test helpers and utils
@@ -152,6 +156,7 @@ spacetimedb-lib = { path = "../lib", features = ["proptest", "test"] }
 spacetimedb-sats = { path = "../sats", features = ["proptest"] }
 spacetimedb-commitlog = { path = "../commitlog", features = ["test"] }
 spacetimedb-datastore = { path = "../datastore/", features = ["test"] }
+spacetimedb-vm = { workspace = true, features = ["test"]}
 
 criterion.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.

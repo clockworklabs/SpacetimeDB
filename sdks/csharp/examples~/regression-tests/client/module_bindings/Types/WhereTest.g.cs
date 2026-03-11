@@ -13,11 +13,11 @@ namespace SpacetimeDB.Types
     [DataContract]
     public sealed partial class WhereTest
     {
-        [DataMember(Name = "Id")]
+        [DataMember(Name = "id")]
         public uint Id;
-        [DataMember(Name = "Value")]
+        [DataMember(Name = "value")]
         public uint Value;
-        [DataMember(Name = "Name")]
+        [DataMember(Name = "name")]
         public string Name;
 
         public WhereTest(

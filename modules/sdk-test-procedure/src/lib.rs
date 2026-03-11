@@ -62,7 +62,7 @@ fn invalid_request(ctx: &mut ProcedureContext) -> String {
     }
 }
 
-#[table(public, name = my_table)]
+#[table(public, accessor = my_table)]
 struct MyTable {
     field: ReturnStruct,
 }
@@ -117,7 +117,7 @@ fn schedule_proc(ctx: &ReducerContext) {
     });
 }
 
-#[table(name = scheduled_proc_table, scheduled(scheduled_proc))]
+#[table(accessor = scheduled_proc_table, scheduled(scheduled_proc))]
 struct ScheduledProcTable {
     #[primary_key]
     #[auto_inc]
@@ -143,7 +143,7 @@ fn scheduled_proc(ctx: &mut ProcedureContext, data: ScheduledProcTable) {
     });
 }
 
-#[table(name = proc_inserts_into, public)]
+#[table(accessor = proc_inserts_into, public)]
 struct ProcInsertsInto {
     reducer_ts: Timestamp,
     procedure_ts: Timestamp,
@@ -151,7 +151,7 @@ struct ProcInsertsInto {
     y: u8,
 }
 
-#[table(public, name = pk_uuid)]
+#[table(public, accessor = pk_uuid)]
 struct PkUuid {
     u: Uuid,
     data: u8,
@@ -168,10 +168,10 @@ fn sorted_uuids_insert(ctx: &mut ProcedureContext) {
         // Verify UUIDs are sorted
         let mut last_uuid = None;
         for row in ctx.db.pk_uuid().iter() {
-            if let Some(last) = last_uuid {
-                if last >= row.u {
-                    panic!("UUIDs are not sorted correctly");
-                }
+            if let Some(last) = last_uuid
+                && last >= row.u
+            {
+                panic!("UUIDs are not sorted correctly");
             }
             last_uuid = Some(row.u);
         }

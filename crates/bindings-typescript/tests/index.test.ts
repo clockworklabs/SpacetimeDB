@@ -4,8 +4,10 @@ import {
   ConnectionId,
   Identity,
   ScheduleAt,
-  type IdentityTokenMessage,
+  toCamelCase,
+  type Infer,
 } from '../src/index';
+import * as ws from '../src/sdk/client_api';
 import type { ColumnBuilder } from '../src/server';
 import { t } from '../src/lib/type_builders';
 
@@ -146,8 +148,7 @@ describe('TypeBuilder', () => {
 
 describe('Identity', () => {
   it('imports something from the spacetimedb sdk', () => {
-    const _msg: IdentityTokenMessage = {
-      tag: 'IdentityToken',
+    const _msg: Infer<typeof ws.InitialConnection> = {
       identity: Identity.fromString(
         '0xc200000000000000000000000000000000000000000000000000000000000000'
       ),
@@ -156,5 +157,11 @@ describe('Identity', () => {
         '0x00000000000000000000000000000000'
       ),
     };
+  });
+});
+
+describe(toCamelCase, () => {
+  it('converts PascalCase to camelCase', () => {
+    expect(toCamelCase('FooBar')).toEqual('fooBar');
   });
 });

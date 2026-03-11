@@ -1,0 +1,11 @@
+node_modules
+.DS_Store
+.env
+.env.local
+.output
+.nitro
+.tanstack
+dist
+*.log
+
+spacetime.local.json

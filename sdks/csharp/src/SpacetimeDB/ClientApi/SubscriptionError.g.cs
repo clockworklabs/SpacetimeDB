@@ -13,34 +13,27 @@ namespace SpacetimeDB.ClientApi
     [DataContract]
     public sealed partial class SubscriptionError
     {
-        [DataMember(Name = "total_host_execution_duration_micros")]
-        public ulong TotalHostExecutionDurationMicros;
         [DataMember(Name = "request_id")]
         public uint? RequestId;
-        [DataMember(Name = "query_id")]
-        public uint? QueryId;
-        [DataMember(Name = "table_id")]
-        public uint? TableId;
+        [DataMember(Name = "query_set_id")]
+        public QuerySetId QuerySetId;
         [DataMember(Name = "error")]
         public string Error;
 
         public SubscriptionError(
-            ulong TotalHostExecutionDurationMicros,
             uint? RequestId,
-            uint? QueryId,
-            uint? TableId,
+            QuerySetId QuerySetId,
             string Error
         )
         {
-            this.TotalHostExecutionDurationMicros = TotalHostExecutionDurationMicros;
             this.RequestId = RequestId;
-            this.QueryId = QueryId;
-            this.TableId = TableId;
+            this.QuerySetId = QuerySetId;
             this.Error = Error;
         }
 
         public SubscriptionError()
         {
+            this.QuerySetId = new();
             this.Error = "";
         }
     }

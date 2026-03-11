@@ -43,3 +43,5 @@ impl __sdk::__query_builder::HasIxCols for ResultSimpleEnumI32 {
         ResultSimpleEnumI32IxCols {}
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for ResultSimpleEnumI32 {}

@@ -10,7 +10,7 @@ namespace SpacetimeDB.Internal
     [SpacetimeDB.Type]
     public enum FunctionVisibility
     {
-        Internal,
+        Private,
         ClientCallable,
     }
 }

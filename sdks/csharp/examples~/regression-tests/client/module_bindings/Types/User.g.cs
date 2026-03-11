@@ -13,13 +13,13 @@ namespace SpacetimeDB.Types
     [DataContract]
     public sealed partial class User
     {
-        [DataMember(Name = "Id")]
+        [DataMember(Name = "id")]
         public SpacetimeDB.Uuid Id;
-        [DataMember(Name = "Name")]
+        [DataMember(Name = "name")]
         public string Name;
-        [DataMember(Name = "IsAdmin")]
+        [DataMember(Name = "is_admin")]
         public bool IsAdmin;
-        [DataMember(Name = "Age")]
+        [DataMember(Name = "age")]
         public byte Age;
 
         public User(

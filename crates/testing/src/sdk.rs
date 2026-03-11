@@ -83,6 +83,9 @@ pub struct Test {
     /// not any of the aliases the SpacetimeDB CLI's `generate` command would accept.
     generate_language: String,
 
+    /// If true, pass `--include-private` to `spacetime generate` to include bindings for private items.
+    generate_include_private: bool,
+
     /// A relative path within the `client_project` to place the module bindings.
     ///
     /// Usually `src/module_bindings`.
@@ -138,6 +141,7 @@ impl Test {
             host_type,
             &self.client_project,
             &self.generate_subdir,
+            self.generate_include_private,
         );
 
         compile_client(&self.compile_command, &self.client_project);
@@ -292,6 +296,7 @@ fn generate_bindings(
     host_type: HostType,
     client_project: &str,
     generate_subdir: &str,
+    generate_include_private: bool,
 ) {
     // We need these to be owned `String`s so we can memoize on them.
     let client_project = client_project.to_owned();
@@ -312,6 +317,10 @@ fn generate_bindings(
             },
             wasm_file,
         ];
+
+        if generate_include_private {
+            args.push("--include-private");
+        }
 
         let generate_dir: String;
 
@@ -482,6 +491,7 @@ pub struct TestBuilder {
     module_name: Option<String>,
     client_project: Option<String>,
     generate_language: Option<String>,
+    generate_include_private: bool,
     generate_subdir: Option<String>,
     compile_command: Option<String>,
     run_command: Option<String>,
@@ -557,6 +567,13 @@ impl TestBuilder {
         }
     }
 
+    pub fn with_generate_private_items(self, include_private: bool) -> Self {
+        TestBuilder {
+            generate_include_private: include_private,
+            ..self
+        }
+    }
+
     pub fn build(self) -> Test {
         let generate_language = self
             .generate_language
@@ -580,6 +597,7 @@ impl TestBuilder {
                 .client_project
                 .expect("Supply a client project directory using TestBuilder::with_client"),
             generate_language,
+            generate_include_private: self.generate_include_private,
             generate_subdir,
             compile_command: self
                 .compile_command

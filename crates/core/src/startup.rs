@@ -137,13 +137,13 @@ fn reload_config<S>(conf_file: &ConfigToml, reload_handle: &reload::Handle<EnvFi
     let mut prev_time = conf_file.metadata().and_then(|m| m.modified()).ok();
     loop {
         std::thread::sleep(RELOAD_INTERVAL);
-        if let Ok(modified) = conf_file.metadata().and_then(|m| m.modified()) {
-            if prev_time.is_none_or(|prev| modified > prev) {
-                log::info!("reloading log config...");
-                prev_time = Some(modified);
-                if reload_handle.reload(parse_from_file(conf_file)).is_err() {
-                    break;
-                }
+        if let Ok(modified) = conf_file.metadata().and_then(|m| m.modified())
+            && prev_time.is_none_or(|prev| modified > prev)
+        {
+            log::info!("reloading log config...");
+            prev_time = Some(modified);
+            if reload_handle.reload(parse_from_file(conf_file)).is_err() {
+                break;
             }
         }
     }
@@ -436,18 +436,12 @@ pub struct DatabaseCores(Vec<CoreId>);
 impl DatabaseCores {
     /// Construct a [`JobCores`] manager suitable for running database WASM code on.
     ///
-    /// The `global_runtime` should be a [`tokio::runtime::Handle`] to the [`tokio::runtime::Runtime`]
-    /// constructed from the [`TokioCores`] of this [`Cores`].
-    ///
     /// ```rust
     /// # use spacetimedb::startup::pin_threads;
     /// let cores = pin_threads();
-    /// let mut builder = tokio::runtime::Builder::new_multi_thread();
-    /// cores.tokio.configure(&mut builder);
-    /// let mut rt = builder.build().unwrap();
-    /// let database_cores = cores.databases.make_database_runners(rt.handle());
+    /// let database_cores = cores.databases.make_database_runners();
     /// ```
-    pub fn make_database_runners(self, global_runtime: &tokio::runtime::Handle) -> JobCores {
-        JobCores::from_pinned_cores(self.0, global_runtime.clone())
+    pub fn make_database_runners(self) -> JobCores {
+        JobCores::from_pinned_cores(self.0)
     }
 }

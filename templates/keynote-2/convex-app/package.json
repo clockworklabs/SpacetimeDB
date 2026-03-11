@@ -1,0 +1,13 @@
+{
+  "name": "convex-app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "convex dev"
+  },
+  "dependencies": {
+    "@convex-dev/sharded-counter": "^0.2.0",
+    "convex": "^1.29.3",
+    "convex-helpers": "^0.1.0"
+  }
+}

@@ -1,10 +1,7 @@
 use bytes::BytesMut;
 use bytestring::ByteString;
 use core::mem;
-use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, BsatnRowList, CompressableQueryUpdate, Compression, JsonFormat, QueryUpdate, RowOffset, RowSize,
-    RowSizeHint, WebsocketFormat,
-};
+use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_sats::bsatn::{self, ToBsatn};
 use spacetimedb_sats::ser::serde::SerializeWrapper;
 use spacetimedb_sats::Serialize;
@@ -28,7 +25,7 @@ pub trait RowListBuilder: Default {
     fn finish(self) -> Self::FinishedList;
 }
 
-pub trait BuildableWebsocketFormat: WebsocketFormat {
+pub trait BuildableWebsocketFormat: ws_v1::WebsocketFormat {
     /// The builder for [`WebsocketFormat::List`].
     type ListBuilder: RowListBuilder<FinishedList = Self::List>;
 
@@ -49,13 +46,13 @@ pub trait BuildableWebsocketFormat: WebsocketFormat {
 
     /// Convert a `QueryUpdate` into [`WebsocketFormat::QueryUpdate`].
     /// This allows some formats to e.g., compress the update.
-    fn into_query_update(qu: QueryUpdate<Self>, compression: Compression) -> Self::QueryUpdate;
+    fn into_query_update(qu: ws_v1::QueryUpdate<Self>, compression: ws_v1::Compression) -> Self::QueryUpdate;
 }
 
-impl BuildableWebsocketFormat for JsonFormat {
+impl BuildableWebsocketFormat for ws_v1::JsonFormat {
     type ListBuilder = Self::List;
 
-    fn into_query_update(qu: QueryUpdate<Self>, _: Compression) -> Self::QueryUpdate {
+    fn into_query_update(qu: ws_v1::QueryUpdate<Self>, _: ws_v1::Compression) -> Self::QueryUpdate {
         qu
     }
 }
@@ -82,8 +79,10 @@ pub struct BsatnRowListBuilder {
 }
 
 /// A [`RowSizeHint`] under construction.
+#[derive(Default)]
 pub enum RowSizeHintBuilder {
     /// We haven't seen any rows yet.
+    #[default]
     Empty,
     /// Each row in `rows_data` is of the same fixed size as specified here
     /// but we don't know whether the size fits in `RowSize`
@@ -91,12 +90,12 @@ pub enum RowSizeHintBuilder {
     FixedSizeDyn(usize),
     /// Each row in `rows_data` is of the same fixed size as specified here
     /// and we know that this will be the case for future rows as well.
-    FixedSizeStatic(RowSize),
+    FixedSizeStatic(ws_v1::RowSize),
     /// The offsets into `rows_data` defining the boundaries of each row.
     /// Only stores the offset to the start of each row.
     /// The ends of each row is inferred from the start of the next row, or `rows_data.len()`.
     /// The behavior of this is identical to that of `PackedStr`.
-    RowOffsets(Vec<RowOffset>),
+    RowOffsets(Vec<ws_v1::RowOffset>),
 }
 
 impl BsatnRowListBuilder {
@@ -107,14 +106,8 @@ impl BsatnRowListBuilder {
     }
 }
 
-impl Default for RowSizeHintBuilder {
-    fn default() -> Self {
-        Self::Empty
-    }
-}
-
 impl RowListBuilder for BsatnRowListBuilder {
-    type FinishedList = BsatnRowList;
+    type FinishedList = ws_v1::BsatnRowList;
 
     fn push(&mut self, row: impl ToBsatn + Serialize) {
         use RowSizeHintBuilder::*;
@@ -161,16 +154,18 @@ impl RowListBuilder for BsatnRowListBuilder {
     fn finish(self) -> Self::FinishedList {
         let Self { size_hint, rows_data } = self;
         let size_hint = match size_hint {
-            RowSizeHintBuilder::Empty => RowSizeHint::RowOffsets([].into()),
-            RowSizeHintBuilder::FixedSizeStatic(fs) => RowSizeHint::FixedSize(fs),
+            RowSizeHintBuilder::Empty => ws_v1::RowSizeHint::RowOffsets([].into()),
+            RowSizeHintBuilder::FixedSizeStatic(fs) => ws_v1::RowSizeHint::FixedSize(fs),
             RowSizeHintBuilder::FixedSizeDyn(fs) => match u16::try_from(fs) {
-                Ok(fs) => RowSizeHint::FixedSize(fs),
-                Err(_) => RowSizeHint::RowOffsets(collect_offsets_from_num_rows(rows_data.len() / fs, fs).into()),
+                Ok(fs) => ws_v1::RowSizeHint::FixedSize(fs),
+                Err(_) => {
+                    ws_v1::RowSizeHint::RowOffsets(collect_offsets_from_num_rows(rows_data.len() / fs, fs).into())
+                }
             },
-            RowSizeHintBuilder::RowOffsets(ro) => RowSizeHint::RowOffsets(ro.into()),
+            RowSizeHintBuilder::RowOffsets(ro) => ws_v1::RowSizeHint::RowOffsets(ro.into()),
         };
         let rows_data = rows_data.into();
-        BsatnRowList::new(size_hint, rows_data)
+        ws_v1::BsatnRowList::new(size_hint, rows_data)
     }
 }
 
@@ -178,31 +173,31 @@ fn collect_offsets_from_num_rows(num_rows: usize, size: usize) -> Vec<u64> {
     (0..num_rows).map(|i| i * size).map(|o| o as u64).collect()
 }
 
-impl BuildableWebsocketFormat for BsatnFormat {
+impl BuildableWebsocketFormat for ws_v1::BsatnFormat {
     type ListBuilder = BsatnRowListBuilder;
 
-    fn into_query_update(qu: QueryUpdate<Self>, compression: Compression) -> Self::QueryUpdate {
+    fn into_query_update(qu: ws_v1::QueryUpdate<Self>, compression: ws_v1::Compression) -> Self::QueryUpdate {
         let qu_len_would_have_been = bsatn::to_len(&qu).unwrap();
 
         match decide_compression(qu_len_would_have_been, compression) {
-            Compression::None => CompressableQueryUpdate::Uncompressed(qu),
-            Compression::Brotli => {
+            ws_v1::Compression::None => ws_v1::CompressableQueryUpdate::Uncompressed(qu),
+            ws_v1::Compression::Brotli => {
                 let bytes = bsatn::to_vec(&qu).unwrap();
                 let mut out = Vec::new();
                 brotli_compress(&bytes, &mut out);
-                CompressableQueryUpdate::Brotli(out.into())
+                ws_v1::CompressableQueryUpdate::Brotli(out.into())
             }
-            Compression::Gzip => {
+            ws_v1::Compression::Gzip => {
                 let bytes = bsatn::to_vec(&qu).unwrap();
                 let mut out = Vec::new();
                 gzip_compress(&bytes, &mut out);
-                CompressableQueryUpdate::Gzip(out.into())
+                ws_v1::CompressableQueryUpdate::Gzip(out.into())
             }
         }
     }
 }
 
-pub fn decide_compression(len: usize, compression: Compression) -> Compression {
+pub fn decide_compression(len: usize, compression: ws_v1::Compression) -> ws_v1::Compression {
     /// The threshold beyond which we start to compress messages.
     /// 1KiB was chosen without measurement.
     /// TODO(perf): measure!
@@ -211,7 +206,7 @@ pub fn decide_compression(len: usize, compression: Compression) -> Compression {
     if len > COMPRESS_THRESHOLD {
         compression
     } else {
-        Compression::None
+        ws_v1::Compression::None
     }
 }
 

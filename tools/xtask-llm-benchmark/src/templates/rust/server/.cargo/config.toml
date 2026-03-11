@@ -9,3 +9,4 @@ linker = "rust-lld.exe"
 [target.wasm32-unknown-unknown]
 # wasm already uses wasm-ld; keep output lean
 rustflags = ["-C","debuginfo=0","-C","panic=abort"]
+
