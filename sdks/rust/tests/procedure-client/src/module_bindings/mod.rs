@@ -23,7 +23,6 @@ pub mod return_primitive_procedure;
 pub mod return_struct_procedure;
 pub mod return_struct_type;
 pub mod schedule_proc_reducer;
-pub mod schedule_proc_type;
 pub mod scheduled_proc_procedure;
 pub mod scheduled_proc_table_table;
 pub mod scheduled_proc_table_type;
@@ -47,7 +46,6 @@ pub use return_primitive_procedure::return_primitive;
 pub use return_struct_procedure::return_struct;
 pub use return_struct_type::ReturnStruct;
 pub use schedule_proc_reducer::schedule_proc;
-pub use schedule_proc_type::ScheduleProc;
 pub use scheduled_proc_procedure::scheduled_proc;
 pub use scheduled_proc_table_table::*;
 pub use scheduled_proc_table_type::ScheduledProcTable;
@@ -132,9 +130,7 @@ impl __sdk::DbUpdate for DbUpdate {
         let mut diff = AppliedDiff::default();
 
         diff.my_table = cache.apply_diff_to_table::<MyTable>("my_table", &self.my_table);
-        diff.pk_uuid = cache
-            .apply_diff_to_table::<PkUuid>("pk_uuid", &self.pk_uuid)
-            .with_updates_by_pk(|row| &row.u);
+        diff.pk_uuid = cache.apply_diff_to_table::<PkUuid>("pk_uuid", &self.pk_uuid);
         diff.proc_inserts_into =
             cache.apply_diff_to_table::<ProcInsertsInto>("proc_inserts_into", &self.proc_inserts_into);
         diff.scheduled_proc_table = cache

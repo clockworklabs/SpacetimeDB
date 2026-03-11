@@ -78,23 +78,6 @@ impl<'ctx> __sdk::Table for PkUuidTableHandle<'ctx> {
     }
 }
 
-pub struct PkUuidUpdateCallbackId(__sdk::CallbackId);
-
-impl<'ctx> __sdk::TableWithPrimaryKey for PkUuidTableHandle<'ctx> {
-    type UpdateCallbackId = PkUuidUpdateCallbackId;
-
-    fn on_update(
-        &self,
-        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
-    ) -> PkUuidUpdateCallbackId {
-        PkUuidUpdateCallbackId(self.imp.on_update(Box::new(callback)))
-    }
-
-    fn remove_on_update(&self, callback: PkUuidUpdateCallbackId) {
-        self.imp.remove_on_update(callback.0)
-    }
-}
-
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<PkUuid>("pk_uuid");
