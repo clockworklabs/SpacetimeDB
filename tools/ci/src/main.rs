@@ -338,6 +338,20 @@ fn main() -> Result<()> {
                 "unreal"
             )
             .run()?;
+            // Run the same SDK suite against wasm+web test clients.
+            cmd!(
+                "cargo",
+                "test",
+                "-p",
+                "spacetimedb-sdk",
+                "--features",
+                "allow_loopback_http_for_tests,sdk-tests-web-client",
+                "--",
+                "--test-threads=2",
+                "--skip",
+                "unreal"
+            )
+            .run()?;
             // TODO: This should check for a diff at the start. If there is one, we should alert the user
             // that we're disabling diff checks because they have a dirty git repo, and to re-run in a clean one
             // if they want those checks.

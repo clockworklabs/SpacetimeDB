@@ -11,6 +11,8 @@ rust-version.workspace = true
 [features]
 default = []
 allow_loopback_http_for_tests = ["spacetimedb-testing/allow_loopback_http_for_tests"]
+# Run SDK integration tests with wasm+web test clients instead of native test clients.
+sdk-tests-web-client = []
 web = [
     "dep:getrandom",
     "dep:gloo-console",

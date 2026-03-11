@@ -6,7 +6,9 @@ license-file = "LICENSE"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-<<<<<<< Updated upstream
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [features]
 default = ["native"]
 
@@ -28,57 +30,19 @@ web = [
 [[bin]]
 name = "test-client"
 path = "src/main.rs"
-
-||||||| Stash base
-=======
-[lib]
-crate-type = ["cdylib", "rlib"]
-
-[features]
-default = ["native"]
-
-native = [
-    "dep:test-counter",
-    "dep:tokio",
-    "dep:env_logger",
-    "dep:rand",
-]
-
-web = [
-    "spacetimedb-sdk/web",
-    "dep:wasm-bindgen",
-]
-
-[[bin]]
-name = "test-client"
-path = "src/main.rs"
 required-features = ["native"]
 
->>>>>>> Stashed changes
 [dependencies]
 spacetimedb-sdk = { path = "../.." }
 anyhow.workspace = true
-<<<<<<< Updated upstream
 
 test-counter = { path = "../test-counter", optional = true }
 tokio = { workspace = true, optional = true }
 env_logger = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 
-wasm-bindgen = { workspace = true, optional = true }
-wasm-bindgen-futures = { workspace = true, optional = true }
-||||||| Stash base
-env_logger.workspace = true
-rand.workspace = true
-=======
-
-test-counter = { path = "../test-counter", optional = true }
-tokio = { workspace = true, optional = true }
-env_logger = { workspace = true, optional = true }
-rand = { workspace = true, optional = true }
-
-wasm-bindgen = { workspace = true, optional = true }
->>>>>>> Stashed changes
+wasm-bindgen = { version = "0.2.100", optional = true }
+wasm-bindgen-futures = { version = "0.4.45", optional = true }
 
 [lints]
 workspace = true

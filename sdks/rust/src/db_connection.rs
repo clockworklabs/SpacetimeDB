@@ -972,7 +972,6 @@ but you must call one of them, or else the connection will never progress.
         ))
     }
 
-
     /// Set the URI of the SpacetimeDB host which is running the remote database.
     ///
     /// The URI must have either no scheme or one of the schemes `http`, `https`, `ws` or `wss`.
@@ -1117,7 +1116,7 @@ fn build_db_ctx<M: SpacetimeModule>(
     #[cfg(not(feature = "web"))] runtime_handle: runtime::Handle,
 
     inner_ctx: Arc<StdMutex<DbContextImplInner<M>>>,
-    raw_msg_send: mpsc::UnboundedSender<ws::ClientMessage<Bytes>>,
+    raw_msg_send: mpsc::UnboundedSender<ws::v2::ClientMessage>,
     parsed_msg_recv: SharedAsyncCell<mpsc::UnboundedReceiver<ParsedMessage<M>>>,
     pending_mutations_send: mpsc::UnboundedSender<PendingMutation<M>>,
     pending_mutations_recv: SharedAsyncCell<mpsc::UnboundedReceiver<PendingMutation<M>>>,

@@ -8354,7 +8354,7 @@ dependencies = [
  "spacetimedb-lib 2.0.4",
  "thiserror 1.0.69",
  "tokio",
- "tokio-tungstenite",
+ "tokio-tungstenite 0.27.0",
 ]
 
 [[package]]
@@ -9216,6 +9216,8 @@ dependencies = [
  "spacetimedb-sdk",
  "test-counter",
  "tokio",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]
