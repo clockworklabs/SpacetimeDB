@@ -77,27 +77,27 @@ error[E0425]: cannot find type `T` in this scope
 201 | fn view_nonexistent_table(ctx: &ViewContext) -> impl Query<T> {
     |                                                            ^ not found in this scope
 
-error[E0277]: the trait bound `ViewKind<ReducerContext>: ViewKindTrait` is not satisfied
+error[E0277]: the trait bound `spacetimedb::rt::ViewKind<ReducerContext>: ViewKindTrait` is not satisfied
    --> tests/ui/views.rs:106:1
     |
 106 | #[view(accessor = view_def_wrong_context, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `ViewKindTrait` is not implemented for `ViewKind<ReducerContext>`
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `ViewKindTrait` is not implemented for `spacetimedb::rt::ViewKind<ReducerContext>`
     |
 help: the following other types implement trait `ViewKindTrait`
    --> src/rt.rs
     |
     | impl ViewKindTrait for ViewKind<ViewContext> {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `ViewKind<ViewContext>`
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `spacetimedb::rt::ViewKind<ViewContext>`
 ...
     | impl ViewKindTrait for ViewKind<AnonymousViewContext> {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `ViewKind<AnonymousViewContext>`
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `spacetimedb::rt::ViewKind<AnonymousViewContext>`
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0276]: impl has stricter requirements than trait
    --> tests/ui/views.rs:106:1
     |
 106 | #[view(accessor = view_def_wrong_context, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ impl has extra requirement `ViewKind<ReducerContext>: ViewKindTrait`
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ impl has extra requirement `spacetimedb::rt::ViewKind<ReducerContext>: ViewKindTrait`
     |
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
