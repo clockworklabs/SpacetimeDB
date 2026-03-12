@@ -15,8 +15,11 @@ import User from '../test-app/src/module_bindings/user_table';
 import {
   anIdentity,
   bobIdentity,
+  encodeAllViewPkPlayer,
   encodePlayer,
+  encodeSenderViewPkPlayerB,
   encodeUser,
+  encodeViewPkMembership,
   makeQuerySetUpdate,
   sallyIdentity,
 } from './utils';
@@ -88,6 +91,18 @@ function getLastSubscribeMessageInfo(wsAdapter: WebsocketTestAdapter): {
         requestId: message.value.requestId,
         querySetId: message.value.querySetId.id,
       };
+    }
+  }
+  throw new Error('No Subscribe message found in messageQueue.');
+}
+
+function getLastSubscribeQueryStrings(
+  wsAdapter: WebsocketTestAdapter
+): string[] {
+  for (let i = wsAdapter.outgoingMessages.length - 1; i >= 0; i--) {
+    const message = wsAdapter.outgoingMessages[i];
+    if (message.tag === 'Subscribe') {
+      return message.value.queryStrings;
     }
   }
   throw new Error('No Subscribe message found in messageQueue.');
@@ -740,6 +755,293 @@ describe('DbConnection', () => {
 
     console.log('Users: ', [...client.db.user.iter()]);
     expect(client.db.user.count()).toEqual(1n);
+  });
+
+  /**
+   * Subscribe to a query builder view whose underlying table has a primary key.
+   * Ensures the TypeScript SDK emits an `onUpdate` callback and that the client
+   * receives the correct old and new rows.
+   *
+   * Test:
+   * 1. Subscribe to: SELECT * FROM all_view_pk_players
+   * 2. Insert row:  (id=1, name="before")
+   * 3. Update row:  (id=1, name="after")
+   *
+   * Expect:
+   * - `onUpdate` is called for PK=1
+   * - `oldRow` should be the "before" value
+   * - `newRow` should be the "after" value
+   */
+  test('it calls onUpdate for a primary-key view subscription', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+
+    client.subscriptionBuilder().subscribe('SELECT * FROM all_view_pk_players');
+
+    await Promise.resolve();
+    expect(getLastSubscribeQueryStrings(wsAdapter)).toEqual([
+      'SELECT * FROM all_view_pk_players',
+    ]);
+
+    const before = { id: 1n, name: 'before' };
+    const after = { id: 1n, name: 'after' };
+
+    const updates: { oldRow: typeof before; newRow: typeof after }[] = [];
+    const onUpdatePromise = new Deferred<void>();
+    client.db.all_view_pk_players.onUpdate((_ctx, oldRow, newRow) => {
+      updates.push({ oldRow, newRow });
+      onUpdatePromise.resolve();
+    });
+
+    wsAdapter.sendToClient(
+      ServerMessage.TransactionUpdate({
+        querySets: [
+          makeQuerySetUpdate(
+            0,
+            'all_view_pk_players',
+            encodeAllViewPkPlayer(before)
+          ),
+        ],
+      })
+    );
+
+    wsAdapter.sendToClient(
+      ServerMessage.TransactionUpdate({
+        querySets: [
+          makeQuerySetUpdate(
+            0,
+            'all_view_pk_players',
+            encodeAllViewPkPlayer(after),
+            encodeAllViewPkPlayer(before)
+          ),
+        ],
+      })
+    );
+
+    await onUpdatePromise.promise;
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0]!.oldRow).toEqual(before);
+    expect(updates[0]!.newRow).toEqual(after);
+  });
+
+  /**
+   * Subscribe to a right semijoin whose rhs is a view with primary key.
+   *
+   * Ensures:
+   * 1. A semijoin subscription involving a view is valid
+   * 2. The TypeScript SDK emits an `onUpdate` callback and that the client
+   *    receives the correct old and new rows
+   *
+   * Query:
+   *   SELECT player.*
+   *   FROM view_pk_membership membership
+   *   JOIN all_view_pk_players player ON membership.player_id = player.id
+   *
+   * Test:
+   * 1. Insert player row (id=1, "before").
+   * 2. Insert membership row referencing player_id=1, allowing the semijoin match.
+   * 3. Update player row to (id=1, "after").
+   *
+   * Expect:
+   * - `onUpdate` is called for player PK=1
+   * - `oldRow` should be the "before" value
+   * - `newRow` should be the "after" value
+   */
+  test('it calls onUpdate for a query-builder join where the rhs is a primary-key view', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+
+    client
+      .subscriptionBuilder()
+      .subscribe(t =>
+        t.view_pk_membership.rightSemijoin(
+          t.all_view_pk_players,
+          (membership, player) => membership.playerId.eq(player.id)
+        )
+      );
+
+    await Promise.resolve();
+    expect(getLastSubscribeQueryStrings(wsAdapter)).toEqual([
+      'SELECT "all_view_pk_players".* FROM "view_pk_membership" JOIN "all_view_pk_players" ON "view_pk_membership"."playerId" = "all_view_pk_players"."id"',
+    ]);
+
+    const before = { id: 1n, name: 'before' };
+    const after = { id: 1n, name: 'after' };
+
+    const updates: { oldRow: typeof before; newRow: typeof after }[] = [];
+    const onUpdatePromise = new Deferred<void>();
+    client.db.all_view_pk_players.onUpdate((_ctx, oldRow, newRow) => {
+      updates.push({ oldRow, newRow });
+      onUpdatePromise.resolve();
+    });
+
+    wsAdapter.sendToClient(
+      ServerMessage.TransactionUpdate({
+        querySets: [
+          makeQuerySetUpdate(
+            0,
+            'view_pk_membership',
+            encodeViewPkMembership({ id: 1n, playerId: 1n })
+          ),
+          makeQuerySetUpdate(
+            0,
+            'all_view_pk_players',
+            encodeAllViewPkPlayer(before)
+          ),
+        ],
+      })
+    );
+
+    wsAdapter.sendToClient(
+      ServerMessage.TransactionUpdate({
+        querySets: [
+          makeQuerySetUpdate(
+            0,
+            'all_view_pk_players',
+            encodeAllViewPkPlayer(after),
+            encodeAllViewPkPlayer(before)
+          ),
+        ],
+      })
+    );
+
+    await onUpdatePromise.promise;
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0]!.oldRow).toEqual(before);
+    expect(updates[0]!.newRow).toEqual(after);
+  });
+
+  /**
+   * Subscribe to a semijoin between two views with primary keys.
+   *
+   * Ensures:
+   * 1. A semijoin subscription involving a view is valid
+   * 2. The TypeScript SDK emits an `onUpdate` callback and that the client
+   *    receives the correct old and new rows
+   *
+   * Query:
+   *   SELECT b.*
+   *   FROM sender_view_pk_players_a a
+   *   JOIN sender_view_pk_players_b b ON a.id = b.id
+   *
+   * Test:
+   * 1. Insert player row (id=1, "before").
+   * 2. Insert membership for sender view A.
+   * 3. Insert membership for sender view B.
+   * 4. Update player row to (id=1, "after").
+   *
+   * Expect:
+   * - `onUpdate` is called for player PK=1
+   * - `oldRow` should be the "before" value
+   * - `newRow` should be the "after" value
+   */
+  test('it calls onUpdate for a query-builder semijoin between two sender views with primary keys', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+
+    client
+      .subscriptionBuilder()
+      .subscribe(t =>
+        t.sender_view_pk_players_a.rightSemijoin(
+          t.sender_view_pk_players_b,
+          (lhsView, rhsView) => lhsView.id.eq(rhsView.id)
+        )
+      );
+
+    await Promise.resolve();
+    expect(getLastSubscribeQueryStrings(wsAdapter)).toEqual([
+      'SELECT "sender_view_pk_players_b".* FROM "sender_view_pk_players_a" JOIN "sender_view_pk_players_b" ON "sender_view_pk_players_a"."id" = "sender_view_pk_players_b"."id"',
+    ]);
+
+    const before = { id: 1n, name: 'before' };
+    const after = { id: 1n, name: 'after' };
+
+    const updates: { oldRow: typeof before; newRow: typeof after }[] = [];
+    const onUpdatePromise = new Deferred<void>();
+    client.db.sender_view_pk_players_b.onUpdate((_ctx, oldRow, newRow) => {
+      updates.push({ oldRow, newRow });
+      onUpdatePromise.resolve();
+    });
+
+    wsAdapter.sendToClient(
+      ServerMessage.TransactionUpdate({
+        querySets: [
+          makeQuerySetUpdate(
+            0,
+            'sender_view_pk_players_a',
+            encodeAllViewPkPlayer(before)
+          ),
+          makeQuerySetUpdate(
+            0,
+            'sender_view_pk_players_b',
+            encodeSenderViewPkPlayerB(before)
+          ),
+        ],
+      })
+    );
+
+    wsAdapter.sendToClient(
+      ServerMessage.TransactionUpdate({
+        querySets: [
+          makeQuerySetUpdate(
+            0,
+            'sender_view_pk_players_b',
+            encodeSenderViewPkPlayerB(after),
+            encodeSenderViewPkPlayerB(before)
+          ),
+        ],
+      })
+    );
+
+    await onUpdatePromise.promise;
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0]!.oldRow).toEqual(before);
+    expect(updates[0]!.newRow).toEqual(after);
   });
 
   test('Filtering works', async () => {

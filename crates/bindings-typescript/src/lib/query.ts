@@ -54,7 +54,7 @@ export const isRowTypedQuery = (val: unknown): val is RowTypedQuery<any, any> =>
 export const isTypedQuery = (val: unknown): val is TableTypedQuery<any> =>
   !!val && typeof val === 'object' && QueryBrand in (val as object);
 
-export function toSql(q: Query<any>): string {
+export function toSql(q: RowTypedQuery<any, any>): string {
   return (q as unknown as { toSql(): string }).toSql();
 }
 

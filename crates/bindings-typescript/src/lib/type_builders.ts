@@ -15,6 +15,8 @@ import { Uuid, type UuidAlgebraicType } from './uuid';
 // Used in codegen files
 export { type AlgebraicTypeType } from './algebraic_type';
 
+export const QUERY_VIEW_RETURN_TAG = '__query__' as const;
+
 /**
  * Helper type to extract the TypeScript type from a TypeBuilder
  */
@@ -1292,6 +1294,43 @@ export class ArrayBuilder<Element extends TypeBuilder<any, any>>
     name: Name
   ): ArrayColumnBuilder<Element, SetField<DefaultMetadata, 'name', Name>> {
     return new ArrayColumnBuilder(this, set(defaultMetadata, { name }));
+  }
+}
+
+type QueryReturnType<Row extends TypeBuilder<object, any>> = {
+  tag: 'Product';
+  value: {
+    elements: [
+      {
+        name: typeof QUERY_VIEW_RETURN_TAG;
+        algebraicType: InferSpacetimeTypeOfTypeBuilder<Row>;
+      },
+    ];
+  };
+};
+
+export class QueryTypeBuilder<
+  Row extends TypeBuilder<object, any>,
+> extends TypeBuilder<
+  readonly InferTypeOfTypeBuilder<Row>[],
+  QueryReturnType<Row>
+> {
+  readonly row: Row;
+
+  constructor(row: Row) {
+    super(
+      AlgebraicType.Product({
+        elements: [
+          {
+            name: QUERY_VIEW_RETURN_TAG,
+            get algebraicType() {
+              return row.algebraicType;
+            },
+          },
+        ],
+      }) as QueryReturnType<Row>
+    );
+    this.row = row;
   }
 }
 
@@ -3869,6 +3908,16 @@ export const t = {
     e: Element
   ): ArrayBuilder<Element> {
     return new ArrayBuilder(e);
+  },
+
+  /**
+   * Creates a return type marker for query-builder views.
+   *
+   * This encodes as the special SATS product shape `{ __query__: T }`,
+   * where `T` is the row product type returned by the query.
+   */
+  query<Row extends TypeBuilder<object, any>>(row: Row): QueryTypeBuilder<Row> {
+    return new QueryTypeBuilder(row);
   },
 
   enum: enumImpl,

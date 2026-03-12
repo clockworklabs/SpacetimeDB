@@ -10,6 +10,7 @@ import type { OptionAlgebraicType } from '../lib/option';
 import type { ParamsObj } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
 import {
+  QueryTypeBuilder,
   RowBuilder,
   type Infer,
   type InferSpacetimeTypeOfTypeBuilder,
@@ -90,6 +91,58 @@ export type ViewOpts = {
 
 type FlattenedArray<T> = T extends readonly (infer E)[] ? E : never;
 
+type ArrayViewReturnTypeBuilder = TypeBuilder<
+  readonly object[],
+  { tag: 'Array'; value: AlgebraicTypeVariants.Product }
+>;
+
+type OptionViewReturnTypeBuilder = TypeBuilder<
+  object | undefined,
+  OptionAlgebraicType<AlgebraicTypeVariants.Product>
+>;
+
+type ProceduralViewReturnTypeBuilder =
+  | ArrayViewReturnTypeBuilder
+  | OptionViewReturnTypeBuilder;
+
+export type QueryViewReturnTypeBuilder = QueryTypeBuilder<
+  TypeBuilder<object, any>
+>;
+
+export type ViewReturnTypeBuilder =
+  | ProceduralViewReturnTypeBuilder
+  | QueryViewReturnTypeBuilder;
+
+type ExtractProductFromTypeBuilder<T extends TypeBuilder<any, any>> =
+  InferSpacetimeTypeOfTypeBuilder<T> extends { tag: 'Product'; value: infer P }
+    ? P
+    : never;
+
+type QueryReturnRow<Ret extends QueryViewReturnTypeBuilder> =
+  Ret extends QueryTypeBuilder<infer Row> ? Infer<Row> : never;
+
+type QueryReturnProduct<Ret extends QueryViewReturnTypeBuilder> =
+  Ret extends QueryTypeBuilder<infer Row>
+    ? ExtractProductFromTypeBuilder<Row>
+    : never;
+
+type ExtractArrayProduct<T extends TypeBuilder<any, any>> =
+  InferSpacetimeTypeOfTypeBuilder<T> extends { tag: 'Array'; value: infer V }
+    ? V extends { tag: 'Product'; value: infer P }
+      ? P
+      : never
+    : never;
+
+type LegacyArrayQueryReturn<Ret extends ArrayViewReturnTypeBuilder> =
+  RowTypedQuery<FlattenedArray<Infer<Ret>>, ExtractArrayProduct<Ret>>;
+
+type ViewReturn<Ret extends ViewReturnTypeBuilder> =
+  Ret extends QueryViewReturnTypeBuilder
+    ? RowTypedQuery<QueryReturnRow<Ret>, QueryReturnProduct<Ret>>
+    : Ret extends ArrayViewReturnTypeBuilder
+      ? Infer<Ret> | LegacyArrayQueryReturn<Ret>
+      : Infer<Ret>;
+
 // // If we allowed functions to return either.
 // type ViewReturn<Ret extends ViewReturnTypeBuilder> =
 //   | Infer<Ret>
@@ -99,33 +152,16 @@ export type ViewFn<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
-> =
-  | ((ctx: ViewCtx<S>, params: InferTypeOfRow<Params>) => Infer<Ret>)
-  | ((
-      ctx: ViewCtx<S>,
-      params: InferTypeOfRow<Params>
-    ) => RowTypedQuery<FlattenedArray<Infer<Ret>>, ExtractArrayProduct<Ret>>);
+> = (ctx: ViewCtx<S>, params: InferTypeOfRow<Params>) => ViewReturn<Ret>;
 
 export type AnonymousViewFn<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
-> =
-  | ((ctx: AnonymousViewCtx<S>, params: InferTypeOfRow<Params>) => Infer<Ret>)
-  | ((
-      ctx: AnonymousViewCtx<S>,
-      params: InferTypeOfRow<Params>
-    ) => RowTypedQuery<FlattenedArray<Infer<Ret>>, ExtractArrayProduct<Ret>>);
-
-export type ViewReturnTypeBuilder =
-  | TypeBuilder<
-      readonly object[],
-      { tag: 'Array'; value: AlgebraicTypeVariants.Product }
-    >
-  | TypeBuilder<
-      object | undefined,
-      OptionAlgebraicType<AlgebraicTypeVariants.Product>
-    >;
+> = (
+  ctx: AnonymousViewCtx<S>,
+  params: InferTypeOfRow<Params>
+) => ViewReturn<Ret>;
 
 export function registerView<
   S extends UntypedSchemaDef,
@@ -202,12 +238,3 @@ type ViewInfo<F> = {
 
 export type Views = ViewInfo<ViewFn<any, any, any>>[];
 export type AnonViews = ViewInfo<AnonymousViewFn<any, any, any>>[];
-
-// A helper to get the product type out of a type builder.
-// This is only non-never if the type builder is an array.
-type ExtractArrayProduct<T extends TypeBuilder<any, any>> =
-  InferSpacetimeTypeOfTypeBuilder<T> extends { tag: 'Array'; value: infer V }
-    ? V extends { tag: 'Product'; value: infer P }
-      ? P
-      : never
-    : never;
