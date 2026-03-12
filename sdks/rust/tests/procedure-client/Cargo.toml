@@ -14,7 +14,6 @@ default = ["native"]
 
 # Builds the existing CLI test client.
 native = [
-    "dep:test-counter",
     "dep:env_logger",
 ]
 
@@ -24,7 +23,6 @@ web = [
     "dep:wasm-bindgen",
     "dep:wasm-bindgen-futures",
     "dep:futures",
-    "dep:test-counter",
 ]
 
 [[bin]]
@@ -35,7 +33,7 @@ required-features = ["native"]
 [dependencies]
 spacetimedb-sdk = { path = "../.." }
 spacetimedb-lib.workspace = true
-test-counter = { path = "../test-counter", optional = true }
+test-counter = { path = "../test-counter" }
 anyhow.workspace = true
 env_logger = { workspace = true, optional = true }
 serde_json.workspace = true

@@ -14,7 +14,6 @@ default = ["native"]
 
 # Builds the existing CLI test client.
 native = [
-    "dep:test-counter",
     "dep:tokio",
     "dep:env_logger",
     "dep:rand",
@@ -28,7 +27,6 @@ web = [
     "dep:console_error_panic_hook",
     "dep:gloo-timers",
     "dep:futures",
-    "dep:test-counter",
     "dep:rand",
 ]
 
@@ -41,7 +39,7 @@ required-features = ["native"]
 spacetimedb-sdk = { path = "../.." }
 anyhow.workspace = true
 
-test-counter = { path = "../test-counter", optional = true }
+test-counter = { path = "../test-counter" }
 tokio = { workspace = true, optional = true }
 env_logger = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
