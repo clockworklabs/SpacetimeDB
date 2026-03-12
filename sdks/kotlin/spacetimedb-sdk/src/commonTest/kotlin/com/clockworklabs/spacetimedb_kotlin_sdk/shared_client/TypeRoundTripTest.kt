@@ -299,4 +299,65 @@ class TypeRoundTripTest {
         assertTrue(a < b)
         assertEquals(0, a.compareTo(a))
     }
+
+    @Test
+    fun spacetimeUuidV7TimestampEncoding() {
+        val counter = Counter()
+        // 1_700_000_000_000_000 microseconds = 1_700_000_000_000 ms
+        val ts = Timestamp.fromEpochMicroseconds(1_700_000_000_000_000L)
+        val randomBytes = byteArrayOf(0x01, 0x02, 0x03, 0x04)
+        val uuid = SpacetimeUuid.fromCounterV7(counter, ts, randomBytes)
+        val b = uuid.toByteArray()
+
+        // Extract 48-bit timestamp from bytes 0-5 (big-endian)
+        val tsMs = (b[0].toLong() and 0xFF shl 40) or
+            (b[1].toLong() and 0xFF shl 32) or
+            (b[2].toLong() and 0xFF shl 24) or
+            (b[3].toLong() and 0xFF shl 16) or
+            (b[4].toLong() and 0xFF shl 8) or
+            (b[5].toLong() and 0xFF)
+        assertEquals(1_700_000_000_000L, tsMs)
+    }
+
+    @Test
+    fun spacetimeUuidV7VersionAndVariantBits() {
+        val counter = Counter()
+        val ts = Timestamp.fromEpochMicroseconds(1_700_000_000_000_000L)
+        val randomBytes = byteArrayOf(0x01, 0x02, 0x03, 0x04)
+        val uuid = SpacetimeUuid.fromCounterV7(counter, ts, randomBytes)
+        val b = uuid.toByteArray()
+
+        // Byte 6 high nibble must be 0x7 (version 7)
+        assertEquals(0x07, (b[6].toInt() shr 4) and 0x0F)
+        // Byte 8 high 2 bits must be 0b10 (variant RFC 4122)
+        assertEquals(0x02, (b[8].toInt() shr 6) and 0x03)
+    }
+
+    @Test
+    fun spacetimeUuidV7CounterWraparound() {
+        // Counter wraps at 0x7FFF_FFFF
+        val counter = Counter(0x7FFF_FFFE)
+        val ts = Timestamp.fromEpochMicroseconds(1_700_000_000_000_000L)
+        val randomBytes = byteArrayOf(0x01, 0x02, 0x03, 0x04)
+
+        val uuid1 = SpacetimeUuid.fromCounterV7(counter, ts, randomBytes)
+        assertEquals(0x7FFF_FFFE, uuid1.getCounter())
+
+        val uuid2 = SpacetimeUuid.fromCounterV7(counter, ts, randomBytes)
+        assertEquals(0x7FFF_FFFF, uuid2.getCounter())
+
+        // Next increment wraps to 0
+        val uuid3 = SpacetimeUuid.fromCounterV7(counter, ts, randomBytes)
+        assertEquals(0, uuid3.getCounter())
+    }
+
+    @Test
+    fun spacetimeUuidV7RoundTrip() {
+        val counter = Counter()
+        val ts = Timestamp.fromEpochMicroseconds(1_700_000_000_000_000L)
+        val randomBytes = byteArrayOf(0x01, 0x02, 0x03, 0x04)
+        val uuid = SpacetimeUuid.fromCounterV7(counter, ts, randomBytes)
+        val decoded = encodeDecode({ uuid.encode(it) }, { SpacetimeUuid.decode(it) })
+        assertEquals(uuid, decoded)
+    }
 }

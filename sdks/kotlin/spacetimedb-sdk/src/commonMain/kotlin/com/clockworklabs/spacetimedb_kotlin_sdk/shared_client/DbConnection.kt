@@ -2,6 +2,7 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ClientMessage
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QuerySetId
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ReducerOutcome
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ServerMessage
@@ -304,7 +305,14 @@ public open class DbConnection internal constructor(
 
         val pendingQueries = oneOffQueryCallbacks.getAndSet(persistentHashMapOf())
         if (pendingQueries.isNotEmpty()) {
-            Logger.warn { "Discarding ${pendingQueries.size} pending one-off query callback(s) due to disconnect" }
+            Logger.warn { "Failing ${pendingQueries.size} pending one-off query callback(s) due to disconnect" }
+            val errorResult = ServerMessage.OneOffQueryResult(
+                requestId = 0u,
+                result = QueryResult.Err("Connection closed before query result was received"),
+            )
+            for ((requestId, cb) in pendingQueries) {
+                cb.invoke(errorResult.copy(requestId = requestId))
+            }
         }
 
         querySetIdToRequestId.getAndSet(persistentHashMapOf())
@@ -486,7 +494,7 @@ public open class DbConnection internal constructor(
     private fun sendMessage(message: ClientMessage) {
         val result = sendChannel.trySend(message)
         if (result.isClosed) {
-            Logger.warn { "Message dropped (connection closed): $message" }
+            throw IllegalStateException("Connection is closed; cannot send message: $message")
         }
     }
 

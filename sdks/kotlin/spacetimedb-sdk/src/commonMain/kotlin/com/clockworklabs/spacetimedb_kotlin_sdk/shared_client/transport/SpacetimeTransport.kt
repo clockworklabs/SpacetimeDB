@@ -18,7 +18,6 @@ import io.ktor.websocket.WebSocketSession
 import io.ktor.websocket.close
 import io.ktor.websocket.readBytes
 import kotlinx.atomicfu.atomic
-import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
@@ -90,17 +89,16 @@ public class SpacetimeTransport(
      */
     override fun incoming(): Flow<ServerMessage> = flow {
         val ws = _session.value ?: error("Not connected")
-        try {
-            for (frame in ws.incoming) {
-                if (frame is Frame.Binary) {
-                    val raw = frame.readBytes()
-                    val decompressed = decompressMessage(raw)
-                    val message = ServerMessage.decodeFromBytes(decompressed)
-                    emit(message)
-                }
+        // On clean close, the for-loop exits normally (hasNext() returns false).
+        // On abnormal close, hasNext() throws the original cause (e.g. IOException),
+        // which propagates to DbConnection's error handling path.
+        for (frame in ws.incoming) {
+            if (frame is Frame.Binary) {
+                val raw = frame.readBytes()
+                val decompressed = decompressMessage(raw)
+                val message = ServerMessage.decodeFromBytes(decompressed)
+                emit(message)
             }
-        } catch (_: ClosedReceiveChannelException) {
-            // Connection closed normally
         }
     }
 

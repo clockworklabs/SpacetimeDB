@@ -1647,7 +1647,7 @@ class DbConnectionIntegrationTest {
     // --- sendMessage after close ---
 
     @Test
-    fun subscribeAfterCloseDoesNotCrash() = runTest {
+    fun subscribeAfterCloseThrows() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -1656,10 +1656,11 @@ class DbConnectionIntegrationTest {
         conn.disconnect()
         advanceUntilIdle()
 
-        // Calling subscribe on a closed connection should not throw —
-        // sendMessage gracefully handles closed channel
-        conn.subscribe(listOf("SELECT * FROM player"))
-        Unit
+        // Calling subscribe on a closed connection should throw
+        // so the caller knows the message was not sent
+        assertFailsWith<IllegalStateException> {
+            conn.subscribe(listOf("SELECT * FROM player"))
+        }
     }
 
     // --- Builder ensureMinimumVersion ---
@@ -2600,6 +2601,150 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         assertEquals(reason, receivedError)
+    }
+
+    // --- ensureMinimumVersion edge cases ---
+
+    @Test
+    fun builderAcceptsExactMinimumVersion() = runTest {
+        val module = object : ModuleDescriptor {
+            override val cliVersion = "2.0.0"
+            override fun registerTables(cache: ClientCache) {}
+            override fun createAccessors(conn: DbConnection) = ModuleAccessors(
+                object : ModuleTables {},
+                object : ModuleReducers {},
+                object : ModuleProcedures {},
+            )
+            override fun handleReducerEvent(conn: DbConnection, ctx: EventContext.Reducer<*>) {}
+        }
+
+        // Should not throw — 2.0.0 is the exact minimum
+        val conn = buildTestConnection(FakeTransport(), moduleDescriptor = module)
+        conn.disconnect()
+    }
+
+    @Test
+    fun builderAcceptsNewerVersion() = runTest {
+        val module = object : ModuleDescriptor {
+            override val cliVersion = "3.1.0"
+            override fun registerTables(cache: ClientCache) {}
+            override fun createAccessors(conn: DbConnection) = ModuleAccessors(
+                object : ModuleTables {},
+                object : ModuleReducers {},
+                object : ModuleProcedures {},
+            )
+            override fun handleReducerEvent(conn: DbConnection, ctx: EventContext.Reducer<*>) {}
+        }
+
+        val conn = buildTestConnection(FakeTransport(), moduleDescriptor = module)
+        conn.disconnect()
+    }
+
+    @Test
+    fun builderAcceptsPreReleaseSuffix() = runTest {
+        val module = object : ModuleDescriptor {
+            override val cliVersion = "2.1.0-beta.1"
+            override fun registerTables(cache: ClientCache) {}
+            override fun createAccessors(conn: DbConnection) = ModuleAccessors(
+                object : ModuleTables {},
+                object : ModuleReducers {},
+                object : ModuleProcedures {},
+            )
+            override fun handleReducerEvent(conn: DbConnection, ctx: EventContext.Reducer<*>) {}
+        }
+
+        // Pre-release suffix is stripped; 2.1.0 >= 2.0.0
+        val conn = buildTestConnection(FakeTransport(), moduleDescriptor = module)
+        conn.disconnect()
+    }
+
+    @Test
+    fun builderRejectsOldMinorVersion() = runTest {
+        val module = object : ModuleDescriptor {
+            override val cliVersion = "1.9.9"
+            override fun registerTables(cache: ClientCache) {}
+            override fun createAccessors(conn: DbConnection) = ModuleAccessors(
+                object : ModuleTables {},
+                object : ModuleReducers {},
+                object : ModuleProcedures {},
+            )
+            override fun handleReducerEvent(conn: DbConnection, ctx: EventContext.Reducer<*>) {}
+        }
+
+        assertFailsWith<IllegalStateException> {
+            DbConnection.Builder()
+                .withUri("ws://localhost:3000")
+                .withDatabaseName("test")
+                .withModule(module)
+                .build()
+        }
+    }
+
+    // --- Cross-table preApply ordering ---
+
+    @Test
+    fun crossTablePreApplyRunsBeforeAnyApply() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+
+        // Set up two independent table caches
+        val cacheA = createSampleCache()
+        val cacheB = createSampleCache()
+        conn.clientCache.register("table_a", cacheA)
+        conn.clientCache.register("table_b", cacheB)
+
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        // Subscribe and apply initial rows to both tables
+        val handle = conn.subscribe(listOf("SELECT * FROM table_a", "SELECT * FROM table_b"))
+        val rowA = SampleRow(1, "Alice")
+        val rowB = SampleRow(2, "Bob")
+
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 1u,
+                querySetId = handle.querySetId,
+                rows = QueryRows(
+                    listOf(
+                        SingleTableRows("table_a", buildRowList(rowA.encode())),
+                        SingleTableRows("table_b", buildRowList(rowB.encode())),
+                    )
+                ),
+            )
+        )
+        advanceUntilIdle()
+        assertEquals(1, cacheA.count())
+        assertEquals(1, cacheB.count())
+
+        // Track event ordering: onBeforeDelete (preApply) vs onDelete (apply)
+        val events = mutableListOf<String>()
+        cacheA.onBeforeDelete { _, _ -> events.add("preApply_A") }
+        cacheA.onDelete { _, _ -> events.add("apply_A") }
+        cacheB.onBeforeDelete { _, _ -> events.add("preApply_B") }
+        cacheB.onDelete { _, _ -> events.add("apply_B") }
+
+        // Send a TransactionUpdate that deletes from BOTH tables
+        transport.sendToClient(
+            ServerMessage.TransactionUpdateMsg(
+                TransactionUpdate(
+                    listOf(
+                        QuerySetUpdate(
+                            handle.querySetId,
+                            listOf(
+                                TableUpdate("table_a", listOf(TableUpdateRows.PersistentTable(buildRowList(), buildRowList(rowA.encode())))),
+                                TableUpdate("table_b", listOf(TableUpdateRows.PersistentTable(buildRowList(), buildRowList(rowB.encode())))),
+                            )
+                        )
+                    )
+                )
+            )
+        )
+        advanceUntilIdle()
+
+        // The key invariant: ALL preApply callbacks fire before ANY apply callbacks
+        assertEquals(listOf("preApply_A", "preApply_B", "apply_A", "apply_B"), events)
+        conn.disconnect()
     }
 
 }
