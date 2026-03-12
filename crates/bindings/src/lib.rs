@@ -760,7 +760,7 @@ pub use spacetimedb_bindings_macro::reducer;
 // TODO(procedure-transaction): document obtaining and using a transaction within a procedure.
 ///
 /// # Scheduled procedures
-// TODO(docs): after moving scheduled reducer docs into table secion, link there.
+// TODO(docs): after moving scheduled reducer docs into table section, link there.
 ///
 /// Like [reducer]s, procedures can be made **scheduled**.
 /// This allows calling procedures at a particular time, or in a loop.

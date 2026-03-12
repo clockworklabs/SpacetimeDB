@@ -61,16 +61,13 @@ impl ViewArgs {
 fn extract_impl_query_inner(ty: &syn::Type) -> Option<&syn::Type> {
     if let syn::Type::ImplTrait(impl_trait) = ty {
         for bound in &impl_trait.bounds {
-            if let syn::TypeParamBound::Trait(trait_bound) = bound {
-                if let Some(seg) = trait_bound.path.segments.last() {
-                    if seg.ident == "Query" {
-                        if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
-                            if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
-                                return Some(inner);
-                            }
-                        }
-                    }
-                }
+            if let syn::TypeParamBound::Trait(trait_bound) = bound
+                && let Some(seg) = trait_bound.path.segments.last()
+                && seg.ident == "Query"
+                && let syn::PathArguments::AngleBracketed(args) = &seg.arguments
+                && let Some(syn::GenericArgument::Type(inner)) = args.args.first()
+            {
+                return Some(inner);
             }
         }
     }
@@ -162,7 +159,7 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
     let lt_where_clause = &lt_params.where_clause;
 
     let generated_describe_function = quote! {
-        #[export_name = #register_describer_symbol]
+        #[unsafe(export_name = #register_describer_symbol)]
         pub extern "C" fn __register_describer() {
             spacetimedb::rt::ViewRegistrar::<#ctx_ty>::register::<_, #func_name, _, _>(#func_name)
         }

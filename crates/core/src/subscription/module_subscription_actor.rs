@@ -1056,20 +1056,26 @@ impl ModuleSubscriptions {
         let mut new_queries = 0;
 
         for (sql, hash, hash_with_param) in query_hashes {
-            if let Some(unit) = guard.query(&hash) {
-                plans.push(unit);
-            } else if let Some(unit) = guard.query(&hash_with_param) {
-                plans.push(unit);
-            } else {
-                plans.push(Arc::new(
-                    compile_query_with_hashes(&auth, &*mut_tx, sql, hash, hash_with_param).map_err(|err| {
-                        DBError::WithSql {
-                            error: Box::new(DBError::Other(err.into())),
-                            sql: sql.into(),
-                        }
-                    })?,
-                ));
-                new_queries += 1;
+            match guard.query(&hash) {
+                Some(unit) => {
+                    plans.push(unit);
+                }
+                _ => match guard.query(&hash_with_param) {
+                    Some(unit) => {
+                        plans.push(unit);
+                    }
+                    _ => {
+                        plans.push(Arc::new(
+                            compile_query_with_hashes(&auth, &*mut_tx, sql, hash, hash_with_param).map_err(|err| {
+                                DBError::WithSql {
+                                    error: Box::new(DBError::Other(err.into())),
+                                    sql: sql.into(),
+                                }
+                            })?,
+                        ));
+                        new_queries += 1;
+                    }
+                },
             }
         }
 
@@ -1554,8 +1560,24 @@ impl ModuleSubscriptions {
     }
 
     pub fn remove_subscriber(&self, client_id: ClientActorId) {
-        let mut subscriptions = self.subscriptions.write();
-        subscriptions.remove_all_subscriptions(&(client_id.identity, client_id.connection_id));
+        let removed_queries = {
+            let mut subscriptions = self.subscriptions.write();
+            subscriptions.remove_all_subscriptions(&(client_id.identity, client_id.connection_id))
+        };
+
+        if removed_queries.is_empty() {
+            return;
+        }
+
+        // TODO(perf): Removing a subscriber is currently O(subscribed_queries).
+        // Instead we should maintain an index to make this O(subscribed_views).
+        if let Err(err) = self.unsubscribe_views(&removed_queries, client_id.identity) {
+            log::error!(
+                "failed to unsubscribe views for disconnected client ({}, {}): {err}",
+                client_id.identity,
+                client_id.connection_id
+            );
+        }
     }
 
     /// Rolls back `tx` and returns the offset as it was before `tx`.
@@ -1878,7 +1900,7 @@ mod tests {
     use spacetimedb_commitlog::{commitlog, repo};
     use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
     use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
-    use spacetimedb_durability::{Durability, EmptyHistory, TxOffset};
+    use spacetimedb_durability::{Durability, EmptyHistory, Transaction, TxOffset};
     use spacetimedb_execution::dml::MutDatastore;
     use spacetimedb_lib::bsatn::ToBsatn;
     use spacetimedb_lib::db::auth::StAccess;
@@ -1963,13 +1985,10 @@ mod tests {
     impl Durability for ManualDurability {
         type TxData = Txdata;
 
-        fn append_tx(&self, tx: Self::TxData) {
+        fn append_tx(&self, tx: Transaction<Self::TxData>) {
             let mut commitlog = self.commitlog.write().unwrap();
-            if let Err(tx) = commitlog.append(tx) {
-                commitlog.commit().expect("error flushing commitlog");
-                commitlog.append(tx).expect("should be able to append after flush");
-            }
-            commitlog.commit().expect("error flushing commitlog");
+            commitlog.commit([tx]).expect("commit failed");
+            commitlog.flush().expect("error flushing commitlog");
         }
 
         fn durable_tx_offset(&self) -> spacetimedb_durability::DurableOffset {

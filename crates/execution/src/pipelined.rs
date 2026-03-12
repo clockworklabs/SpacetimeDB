@@ -341,6 +341,7 @@ impl From<PhysicalPlan> for PipelinedExecutor {
                     lhs,
                     rhs,
                     rhs_index,
+                    rhs_prefix,
                     rhs_field,
                     unique,
                     lhs_field,
@@ -352,6 +353,7 @@ impl From<PhysicalPlan> for PipelinedExecutor {
                 lhs: Box::new(Self::from(*lhs)),
                 rhs_table: rhs.table_id,
                 rhs_index,
+                rhs_prefix,
                 rhs_field,
                 lhs_field,
                 unique,
@@ -362,6 +364,7 @@ impl From<PhysicalPlan> for PipelinedExecutor {
                     lhs,
                     rhs,
                     rhs_index,
+                    rhs_prefix,
                     rhs_field,
                     unique,
                     lhs_field,
@@ -373,6 +376,7 @@ impl From<PhysicalPlan> for PipelinedExecutor {
                 lhs: Box::new(Self::from(*lhs)),
                 rhs_table: rhs.table_id,
                 rhs_index,
+                rhs_prefix,
                 rhs_field,
                 rhs_delta,
                 lhs_field,
@@ -923,6 +927,16 @@ fn combine_prefix_and_last(prefix: Vec<(ColId, AlgebraicValue)>, last: Algebraic
     }
 }
 
+fn combine_probe_prefix_and_last(prefix: &[AlgebraicValue], last: AlgebraicValue) -> AlgebraicValue {
+    if prefix.is_empty() {
+        last
+    } else {
+        AlgebraicValue::product(ProductValue::from_iter(
+            prefix.iter().cloned().chain(std::iter::once(last)),
+        ))
+    }
+}
+
 impl PipelinedIxScanEq {
     /// We don't know statically if an index scan will return rows
     pub fn is_empty(&self, _: &impl DeltaStore) -> bool {
@@ -969,6 +983,8 @@ pub struct PipelinedIxJoin {
     pub rhs_table: TableId,
     /// The rhs index
     pub rhs_index: IndexId,
+    /// Constant prefix values for multi-column index probes.
+    pub rhs_prefix: Vec<AlgebraicValue>,
     /// The rhs join field
     pub rhs_field: ColId,
     /// The lhs join field
@@ -996,7 +1012,7 @@ impl PipelinedIxJoin {
         let mut bytes_scanned = 0;
 
         let iter_rhs = |u: &Tuple, lhs_field: &TupleField, bytes_scanned: &mut usize| -> Result<_> {
-            let key = project(u, lhs_field, bytes_scanned);
+            let key = combine_probe_prefix_and_last(&self.rhs_prefix, project(u, lhs_field, bytes_scanned));
             Ok(tx
                 .index_scan_point(self.rhs_table, self.rhs_index, &key)?
                 .map(Row::Ptr)
@@ -1135,6 +1151,8 @@ pub struct PipelinedIxDeltaJoin {
     pub rhs_delta: Delta,
     /// The rhs index
     pub rhs_index: IndexId,
+    /// Constant prefix values for multi-column index probes.
+    pub rhs_prefix: Vec<AlgebraicValue>,
     /// The rhs join field
     pub rhs_field: ColId,
     /// The lhs join field
@@ -1177,13 +1195,10 @@ impl PipelinedIxDeltaJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
+                    let key =
+                        combine_probe_prefix_and_last(&self.rhs_prefix, project(&u, lhs_field, &mut bytes_scanned));
                     if tx
-                        .index_scan_point_for_delta(
-                            self.rhs_table,
-                            self.rhs_index,
-                            self.rhs_delta,
-                            &project(&u, lhs_field, &mut bytes_scanned),
-                        )
+                        .index_scan_point_for_delta(self.rhs_table, self.rhs_index, self.rhs_delta, &key)
                         .next()
                         .is_some()
                     {
@@ -1203,13 +1218,10 @@ impl PipelinedIxDeltaJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
+                    let key =
+                        combine_probe_prefix_and_last(&self.rhs_prefix, project(&u, lhs_field, &mut bytes_scanned));
                     if let Some(v) = tx
-                        .index_scan_point_for_delta(
-                            self.rhs_table,
-                            self.rhs_index,
-                            self.rhs_delta,
-                            &project(&u, lhs_field, &mut bytes_scanned),
-                        )
+                        .index_scan_point_for_delta(self.rhs_table, self.rhs_index, self.rhs_delta, &key)
                         .next()
                         .map(Tuple::Row)
                     {
@@ -1229,13 +1241,10 @@ impl PipelinedIxDeltaJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
+                    let key =
+                        combine_probe_prefix_and_last(&self.rhs_prefix, project(&u, lhs_field, &mut bytes_scanned));
                     if let Some(v) = tx
-                        .index_scan_point_for_delta(
-                            self.rhs_table,
-                            self.rhs_index,
-                            self.rhs_delta,
-                            &project(&u, lhs_field, &mut bytes_scanned),
-                        )
+                        .index_scan_point_for_delta(self.rhs_table, self.rhs_index, self.rhs_delta, &key)
                         .next()
                         .map(Tuple::Row)
                     {
@@ -1256,13 +1265,10 @@ impl PipelinedIxDeltaJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
+                    let key =
+                        combine_probe_prefix_and_last(&self.rhs_prefix, project(&u, lhs_field, &mut bytes_scanned));
                     for _ in 0..tx
-                        .index_scan_point_for_delta(
-                            self.rhs_table,
-                            self.rhs_index,
-                            self.rhs_delta,
-                            &project(&u, lhs_field, &mut bytes_scanned),
-                        )
+                        .index_scan_point_for_delta(self.rhs_table, self.rhs_index, self.rhs_delta, &key)
                         .count()
                     {
                         f(u.clone())?;
@@ -1281,13 +1287,10 @@ impl PipelinedIxDeltaJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
+                    let key =
+                        combine_probe_prefix_and_last(&self.rhs_prefix, project(&u, lhs_field, &mut bytes_scanned));
                     for v in tx
-                        .index_scan_point_for_delta(
-                            self.rhs_table,
-                            self.rhs_index,
-                            self.rhs_delta,
-                            &project(&u, lhs_field, &mut bytes_scanned),
-                        )
+                        .index_scan_point_for_delta(self.rhs_table, self.rhs_index, self.rhs_delta, &key)
                         .map(Tuple::Row)
                     {
                         f(v)?;
@@ -1306,13 +1309,10 @@ impl PipelinedIxDeltaJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
+                    let key =
+                        combine_probe_prefix_and_last(&self.rhs_prefix, project(&u, lhs_field, &mut bytes_scanned));
                     for v in tx
-                        .index_scan_point_for_delta(
-                            self.rhs_table,
-                            self.rhs_index,
-                            self.rhs_delta,
-                            &project(&u, lhs_field, &mut bytes_scanned),
-                        )
+                        .index_scan_point_for_delta(self.rhs_table, self.rhs_index, self.rhs_delta, &key)
                         .map(Tuple::Row)
                     {
                         f(u.clone().join(v.clone()))?;
