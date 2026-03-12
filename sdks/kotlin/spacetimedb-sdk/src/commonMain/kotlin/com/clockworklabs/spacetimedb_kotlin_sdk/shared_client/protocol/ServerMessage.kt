@@ -353,8 +353,8 @@ public sealed interface ServerMessage {
             }
         }
 
-        public fun decodeFromBytes(data: ByteArray): ServerMessage {
-            val reader = BsatnReader(data)
+        public fun decodeFromBytes(data: ByteArray, offset: Int = 0): ServerMessage {
+            val reader = BsatnReader(data, offset = offset)
             return decode(reader)
         }
     }

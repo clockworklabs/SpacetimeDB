@@ -274,15 +274,21 @@ public open class DbConnection internal constructor(
         val prev = _state.getAndSet(ConnectionState.CLOSED)
         if (prev != ConnectionState.CONNECTED && prev != ConnectionState.CONNECTING) return
         Logger.info { "Disconnecting from SpacetimeDB" }
-        _receiveJob.getAndSet(null)?.cancel()
-        _sendJob.getAndSet(null)?.cancel()
+        // Cancel jobs and wait for completion. The receive job's finally block
+        // handles resource cleanup (sendChannel, transport, httpClient) — we
+        // don't duplicate that here to avoid a concurrent cleanup race.
+        val receiveJob = _receiveJob.getAndSet(null)
+        val sendJob = _sendJob.getAndSet(null)
+        receiveJob?.cancel()
+        sendJob?.cancel()
         failPendingOperations()
         clientCache.clear()
         val cbs = _onDisconnectCallbacks.getAndSet(persistentListOf())
         for (cb in cbs) runUserCallback { cb(this@DbConnection, reason) }
-        sendChannel.close()
-        try { transport.disconnect() } catch (_: Exception) {}
-        httpClient.close()
+        // Wait for the finally block to finish resource cleanup before returning,
+        // so callers can rely on resources being released when disconnect() completes.
+        receiveJob?.join()
+        sendJob?.join()
         scope.cancel()
     }
 
@@ -291,7 +297,7 @@ public open class DbConnection internal constructor(
      * Clears callback maps so captured lambdas can be GC'd, and marks all
      * subscription handles as ENDED so callers don't try to use stale handles.
      */
-    private fun failPendingOperations() {
+    private suspend fun failPendingOperations() {
         val pendingReducers = reducerCallbacks.getAndSet(persistentHashMapOf())
         reducerCallInfo.getAndSet(persistentHashMapOf())
         if (pendingReducers.isNotEmpty()) {
@@ -311,7 +317,7 @@ public open class DbConnection internal constructor(
                 result = QueryResult.Err("Connection closed before query result was received"),
             )
             for ((requestId, cb) in pendingQueries) {
-                cb.invoke(errorResult.copy(requestId = requestId))
+                runUserCallback { cb.invoke(errorResult.copy(requestId = requestId)) }
             }
         }
 

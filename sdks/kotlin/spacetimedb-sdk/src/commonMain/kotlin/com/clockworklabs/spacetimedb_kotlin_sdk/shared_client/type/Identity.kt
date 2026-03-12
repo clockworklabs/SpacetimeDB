@@ -15,10 +15,12 @@ public data class Identity(val data: BigInteger) : Comparable<Identity> {
      */
     public fun toByteArray(): ByteArray {
         val beBytes = data.toByteArray()
+        require(beBytes.size <= 32) {
+            "Identity value too large: ${beBytes.size} bytes exceeds U256 (32 bytes)"
+        }
         val padded = ByteArray(32)
-        val srcStart = maxOf(0, beBytes.size - 32)
-        val dstStart = maxOf(0, 32 - beBytes.size)
-        beBytes.copyInto(padded, dstStart, srcStart, beBytes.size)
+        val dstStart = 32 - beBytes.size
+        beBytes.copyInto(padded, dstStart)
         padded.reverse()
         return padded
     }

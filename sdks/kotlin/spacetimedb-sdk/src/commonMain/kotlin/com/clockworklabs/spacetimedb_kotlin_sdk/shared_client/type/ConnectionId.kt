@@ -17,10 +17,12 @@ public data class ConnectionId(val data: BigInteger) {
      */
     public fun toByteArray(): ByteArray {
         val beBytes = data.toByteArray()
+        require(beBytes.size <= 16) {
+            "ConnectionId value too large: ${beBytes.size} bytes exceeds U128 (16 bytes)"
+        }
         val padded = ByteArray(16)
-        val srcStart = maxOf(0, beBytes.size - 16)
-        val dstStart = maxOf(0, 16 - beBytes.size)
-        beBytes.copyInto(padded, dstStart, srcStart, beBytes.size)
+        val dstStart = 16 - beBytes.size
+        beBytes.copyInto(padded, dstStart)
         padded.reverse()
         return padded
     }

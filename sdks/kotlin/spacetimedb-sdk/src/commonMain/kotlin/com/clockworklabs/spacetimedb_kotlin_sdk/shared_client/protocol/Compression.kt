@@ -11,10 +11,20 @@ public object Compression {
 }
 
 /**
+ * Result of decompressing a message: the payload bytes and the offset at which they start.
+ * For compressed messages, [data] is a freshly-allocated array and [offset] is 0.
+ * For uncompressed messages, [data] is the original array and [offset] skips the tag byte,
+ * avoiding an unnecessary allocation.
+ */
+public class DecompressedPayload(public val data: ByteArray, public val offset: Int = 0) {
+    public val size: Int get() = data.size - offset
+}
+
+/**
  * Strips the compression prefix byte and decompresses if needed.
  * Returns the raw BSATN payload.
  */
-public expect fun decompressMessage(data: ByteArray): ByteArray
+public expect fun decompressMessage(data: ByteArray): DecompressedPayload
 
 /**
  * Default compression mode for this platform.

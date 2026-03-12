@@ -96,7 +96,7 @@ public class SpacetimeTransport(
             if (frame is Frame.Binary) {
                 val raw = frame.readBytes()
                 val decompressed = decompressMessage(raw)
-                val message = ServerMessage.decodeFromBytes(decompressed)
+                val message = ServerMessage.decodeFromBytes(decompressed.data, decompressed.offset)
                 emit(message)
             }
         }

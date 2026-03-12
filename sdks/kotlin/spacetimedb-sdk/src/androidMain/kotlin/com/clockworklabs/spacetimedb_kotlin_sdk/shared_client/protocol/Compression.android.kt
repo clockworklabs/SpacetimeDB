@@ -5,20 +5,17 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.zip.GZIPInputStream
 
-public actual fun decompressMessage(data: ByteArray): ByteArray {
+public actual fun decompressMessage(data: ByteArray): DecompressedPayload {
     require(data.isNotEmpty()) { "Empty message" }
 
-    val tag = data[0]
-    val payload = data.copyOfRange(1, data.size)
-
-    return when (tag) {
-        Compression.NONE -> payload
+    return when (val tag = data[0]) {
+        Compression.NONE -> DecompressedPayload(data, offset = 1)
         Compression.BROTLI -> error("Brotli compression is not supported. Use gzip or none.")
         Compression.GZIP -> {
-            val input = GZIPInputStream(ByteArrayInputStream(payload))
+            val input = GZIPInputStream(ByteArrayInputStream(data, 1, data.size - 1))
             val output = ByteArrayOutputStream()
             input.use { it.copyTo(output) }
-            output.toByteArray()
+            DecompressedPayload(output.toByteArray())
         }
         else -> error("Unknown compression tag: $tag")
     }
