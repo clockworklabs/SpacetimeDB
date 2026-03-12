@@ -2556,7 +2556,7 @@ fn on_user_updated(_ctx: &EventContext, old: &User, new: &User) {
 
 #### Print messages
 
-When we receive a new message, we'll print it to standard output, along with the name of the user who sent it. Keep in mind that we only want to do this for new messages, i.e. those inserted by a `send_message` reducer invocation. We have to handle the backlog we receive when our subscription is initialized separately, to ensure they're printed in the correct order. To that effect, our `on_message_inserted` callback will check if the ctx.event type is an `Event::Reducer`, and only print in that case.
+When we receive a new message, we'll print it to standard output, along with the name of the user who sent it. Keep in mind that we only want to do this for new messages, i.e. those inserted by a `send_message` reducer invocation. We have to handle the backlog we receive when our subscription is initialized separately, to ensure they're printed in the correct order. To that effect, our `on_message_inserted` callback will check if the ctx.event type is an `Event::Reducer` (new local messages) or `Event::Transaction` (new messages from others), and only print in that case.
 
 To find the `User` based on the message's `sender` identity, we'll use `ctx.db.user().identity().find(..)`, which behaves like the same function on the server.
 
@@ -2569,7 +2569,7 @@ To `src/main.rs`, add:
 ```rust
 /// Our `Message::on_insert` callback: print new messages.
 fn on_message_inserted(ctx: &EventContext, message: &Message) {
-    if let Event::Reducer(_) = ctx.event {
+    if matches!(ctx.event, Event::Reducer(_) | Event::Transaction) {
         print_message(ctx, message)
     }
 }
