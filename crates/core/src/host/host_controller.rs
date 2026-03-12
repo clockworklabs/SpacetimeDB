@@ -30,6 +30,8 @@ use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{IntMap, IntSet};
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
+use spacetimedb_datastore::execution_context::Workload;
+use spacetimedb_datastore::system_tables::ModuleKind;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_durability::{self as durability};
 use spacetimedb_lib::{AlgebraicValue, Identity, Timestamp};
@@ -898,7 +900,6 @@ impl Host {
             bsatn_rlb_pool,
             ..
         } = host_controller;
-        let on_panic = host_controller.unregister_fn(replica_id);
         let replica_dir = data_dir.replica(replica_id);
         let (tx_metrics_queue, tx_metrics_recorder_task) = spawn_tx_metrics_recorder();
 
@@ -947,7 +948,7 @@ impl Host {
                 (db, clients)
             }
         };
-        let (program, program_needs_init) = match db.program()? {
+        let (mut program, program_needs_init) = match db.program()? {
             // Launch module with program from existing database.
             Some(program) => {
                 info!(
@@ -974,23 +975,89 @@ impl Host {
             }
         };
 
-        let (program, launched) = ModuleLauncher {
-            database,
-            replica_id,
-            program,
-            on_panic,
-            relational_db: Arc::new(db),
-            energy_monitor: energy_monitor.clone(),
-            module_logs: match config.storage {
-                db::Storage::Memory => None,
-                db::Storage::Disk => Some(replica_dir.module_logs()),
-            },
-            runtimes: runtimes.clone(),
-            core: host_controller.db_cores.take(),
-            bsatn_rlb_pool: bsatn_rlb_pool.clone(),
-        }
-        .launch_module()
-        .await?;
+        let relational_db = Arc::new(db);
+        let (program, launched) = match HostType::from(program.kind) {
+            HostType::Js => {
+                ModuleLauncher {
+                    database,
+                    replica_id,
+                    program,
+                    on_panic: host_controller.unregister_fn(replica_id),
+                    relational_db,
+                    energy_monitor: energy_monitor.clone(),
+                    module_logs: match config.storage {
+                        db::Storage::Memory => None,
+                        db::Storage::Disk => Some(replica_dir.module_logs()),
+                    },
+                    runtimes: runtimes.clone(),
+                    core: host_controller.db_cores.take(),
+                    bsatn_rlb_pool: bsatn_rlb_pool.clone(),
+                }
+                .launch_module()
+                .await?
+            }
+            HostType::Wasm => {
+                // Prior to https://github.com/clockworklabs/SpacetimeDB/pull/4549
+                // the host type in `st_module` was always set to wasm.
+                // We now correctly use the host type from the database, but the
+                // module may in fact be a JS module.
+                // So if launching it as a wasm module fails, try JS instead.
+                // If this succeeds, the module is definitely a JS module, so
+                // attempt to repair `st_module` in this case.
+                //
+                // TODO: This code should eventually be removed once all
+                // databases have been repaired.
+                let launch_wasm_result = ModuleLauncher {
+                    database: database.clone(),
+                    replica_id,
+                    program: program.clone(),
+                    on_panic: host_controller.unregister_fn(replica_id),
+                    relational_db: relational_db.clone(),
+                    energy_monitor: energy_monitor.clone(),
+                    module_logs: match config.storage {
+                        db::Storage::Memory => None,
+                        db::Storage::Disk => Some(replica_dir.clone().module_logs()),
+                    },
+                    runtimes: runtimes.clone(),
+                    core: host_controller.db_cores.take(),
+                    bsatn_rlb_pool: bsatn_rlb_pool.clone(),
+                }
+                .launch_module()
+                .await;
+                match launch_wasm_result {
+                    Ok(program_and_module_host) => program_and_module_host,
+                    Err(e) => {
+                        warn!("failed to launch wasm module, trying js: {e:#}");
+
+                        program.kind = ModuleKind::JS;
+                        let res = ModuleLauncher {
+                            database,
+                            replica_id,
+                            program: program.clone(),
+                            on_panic: host_controller.unregister_fn(replica_id),
+                            relational_db: relational_db.clone(),
+                            energy_monitor: energy_monitor.clone(),
+                            module_logs: match config.storage {
+                                db::Storage::Memory => None,
+                                db::Storage::Disk => Some(replica_dir.module_logs()),
+                            },
+                            runtimes: runtimes.clone(),
+                            core: host_controller.db_cores.take(),
+                            bsatn_rlb_pool: bsatn_rlb_pool.clone(),
+                        }
+                        .launch_module()
+                        .await;
+
+                        if res.is_ok() {
+                            let _ = relational_db
+                                .with_auto_commit(Workload::Internal, |tx| relational_db.update_program(tx, program));
+                        }
+
+                        res?
+                    }
+                }
+            }
+        };
 
         if program_needs_init {
             let call_result = launched.module_host.init_database(program).await?;
