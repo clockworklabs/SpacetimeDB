@@ -6,9 +6,9 @@ use bytes::Bytes;
 use futures::{SinkExt, TryStreamExt};
 use http::uri::{InvalidUri, Scheme, Uri};
 use spacetimedb_client_api_messages::websocket::common::SERVER_MSG_COMPRESSION_TAG_NONE;
-use spacetimedb_client_api_messages::websocket::v1::{BIN_PROTOCOL, ClientMessage, Compression};
+use spacetimedb_client_api_messages::websocket::v1::{ClientMessage, Compression, BIN_PROTOCOL};
 use spacetimedb_lib::de::Deserialize;
-use spacetimedb_lib::{ConnectionId, bsatn};
+use spacetimedb_lib::{bsatn, ConnectionId};
 use std::mem;
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,9 +18,10 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use tokio::{net::TcpStream, runtime};
 use tokio_tungstenite::{
-    MaybeTlsStream, WebSocketStream, connect_async_with_config,
+    connect_async_with_config,
     tungstenite::client::IntoClientRequest,
     tungstenite::protocol::{Message as WebSocketMessage, WebSocketConfig},
+    MaybeTlsStream, WebSocketStream,
 };
 
 fn decompress_server_message(raw: &[u8]) -> &[u8] {

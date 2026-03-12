@@ -196,6 +196,12 @@ impl SpacetimeDbGuard {
             child.id(),
             host_url
         );
+        // Ensure logs from the killed server are retained.
+        {
+            let mut new_logs = logs.lock().unwrap();
+            let old_logs = self.logs.lock().unwrap();
+            new_logs.insert_str(0, old_logs.as_str());
+        }
 
         self.child = child;
         self.logs = logs;
@@ -313,11 +319,11 @@ impl SpacetimeDbGuard {
         let deadline = Instant::now() + Duration::from_secs(10);
         while Instant::now() < deadline {
             let url = format!("{}/v1/ping", host_url);
-            if let Ok(resp) = client.get(&url).send() {
-                if resp.status().is_success() {
-                    eprintln!("[SPAWN-{:03}] HTTP ready at {}", spawn_id, host_url);
-                    return (child, logs, host_url, reader_threads);
-                }
+            if let Ok(resp) = client.get(&url).send()
+                && resp.status().is_success()
+            {
+                eprintln!("[SPAWN-{:03}] HTTP ready at {}", spawn_id, host_url);
+                return (child, logs, host_url, reader_threads);
             }
             sleep(Duration::from_millis(50));
         }
@@ -477,13 +483,13 @@ impl Drop for SpacetimeDbGuard {
         self.kill_process();
 
         // Only print logs if the test is currently panicking
-        if std::thread::panicking() {
-            if let Ok(logs) = self.logs.lock() {
-                eprintln!(
+        if std::thread::panicking()
+            && let Ok(logs) = self.logs.lock()
+        {
+            eprintln!(
                     "\n===== SpacetimeDB child logs (only on failure) =====\n{}\n====================================================",
                     *logs
                 );
-            }
         }
     }
 }

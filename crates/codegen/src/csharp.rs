@@ -659,7 +659,7 @@ impl Lang for Csharp<'_> {
             for (field_name, field_type) in &product_type.elements {
                 let prop = field_name.deref().to_case(Case::Pascal);
                 let (col_ty, ty) = match field_type {
-                    AlgebraicTypeUse::Option(inner) => ("NullableCol", ty_fmt(module, inner).to_string()),
+                    AlgebraicTypeUse::Option(inner) => ("Col", ty_fmt(module, inner).to_string()),
                     _ => ("Col", ty_fmt(module, field_type).to_string()),
                 };
                 writeln!(
@@ -673,7 +673,7 @@ impl Lang for Csharp<'_> {
                 for (field_name, field_type) in &product_type.elements {
                     let prop = field_name.deref().to_case(Case::Pascal);
                     let (col_ty, ty) = match field_type {
-                        AlgebraicTypeUse::Option(inner) => ("NullableCol", ty_fmt(module, inner).to_string()),
+                        AlgebraicTypeUse::Option(inner) => ("Col", ty_fmt(module, inner).to_string()),
                         _ => ("Col", ty_fmt(module, field_type).to_string()),
                     };
                     let col_name = field_name.deref();
@@ -694,7 +694,7 @@ impl Lang for Csharp<'_> {
                 }
                 let prop = field_name.deref().to_case(Case::Pascal);
                 let (col_ty, ty) = match field_type {
-                    AlgebraicTypeUse::Option(inner) => ("NullableIxCol", ty_fmt(module, inner).to_string()),
+                    AlgebraicTypeUse::Option(inner) => ("IxCol", ty_fmt(module, inner).to_string()),
                     _ => ("IxCol", ty_fmt(module, field_type).to_string()),
                 };
                 writeln!(
@@ -711,7 +711,7 @@ impl Lang for Csharp<'_> {
                     }
                     let prop = field_name.deref().to_case(Case::Pascal);
                     let (col_ty, ty) = match field_type {
-                        AlgebraicTypeUse::Option(inner) => ("NullableIxCol", ty_fmt(module, inner).to_string()),
+                        AlgebraicTypeUse::Option(inner) => ("IxCol", ty_fmt(module, inner).to_string()),
                         _ => ("IxCol", ty_fmt(module, field_type).to_string()),
                     };
                     let col_name = field_name.deref();

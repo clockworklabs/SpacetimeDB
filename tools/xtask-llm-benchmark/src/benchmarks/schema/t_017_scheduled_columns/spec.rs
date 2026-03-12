@@ -1,7 +1,4 @@
-use crate::eval::defaults::{
-    default_schema_parity_scorers,
-    make_sql_count_only_scorer,
-};
+use crate::eval::defaults::{default_schema_parity_scorers, make_sql_count_only_scorer};
 use crate::eval::{casing_for_lang, ident, table_name, BenchmarkSpec, SqlBuilder};
 use std::time::Duration;
 

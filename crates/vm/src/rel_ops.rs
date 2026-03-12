@@ -224,12 +224,11 @@ where
 
             // If we can relate `KeyLhs` and `KeyRhs`, we have candidate.
             // If that candidate still has rhs elements, test against the predicate and yield.
-            if let Some(rvv) = self.map.get_mut(&k) {
-                if let Some(rhs) = rvv.pop() {
-                    if (self.predicate)(lhs, &rhs) {
-                        return Some((self.projection)(lhs.clone(), rhs));
-                    }
-                }
+            if let Some(rvv) = self.map.get_mut(&k)
+                && let Some(rhs) = rvv.pop()
+                && (self.predicate)(lhs, &rhs)
+            {
+                return Some((self.projection)(lhs.clone(), rhs));
             }
             self.left = None;
             continue;

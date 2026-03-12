@@ -37,6 +37,7 @@ use spacetimedb_client_api_messages::name::{
     self, DatabaseName, DomainName, MigrationPolicy, PrePublishAutoMigrateResult, PrePublishManualMigrateResult,
     PrePublishResult, PrettyPrintStyle, PublishOp, PublishResult,
 };
+use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::{sats, AlgebraicValue, Hash, ProductValue, Timestamp};
 use spacetimedb_schema::auto_migrate::{
@@ -183,8 +184,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     };
 
     module
-        // We don't clear views or procedures after reducer calls
-        .call_identity_disconnected(caller_identity, connection_id, false)
+        .call_identity_disconnected(caller_identity, connection_id)
         .await
         .map_err(client_disconnected_error_to_response)?;
 
@@ -327,6 +327,8 @@ pub struct SchemaQueryParams {
 enum SchemaVersion {
     #[serde(rename = "9")]
     V9,
+    #[serde(rename = "10")]
+    V10,
 }
 
 pub async fn schema<S>(
@@ -338,12 +340,23 @@ pub async fn schema<S>(
 where
     S: ControlStateDelegate + NodeDelegate,
 {
-    let (module, _) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+    let (leader, _) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
+    // Wait for the module to finish loading rather than returning an immediate
+    // 500 error. The database may still be initializing (replaying the log,
+    // running init reducers, etc.).
+    let module = leader
+        .wait_for_module(std::time::Duration::from_secs(10))
+        .await
+        .map_err(log_and_500)?;
 
     let module_def = &module.info.module_def;
     let response_json = match version {
         SchemaVersion::V9 => {
             let raw = RawModuleDefV9::from(module_def.as_ref().clone());
+            axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
+        }
+        SchemaVersion::V10 => {
+            let raw = RawModuleDefV10::from(module_def.as_ref().clone());
             axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
         }
     };
