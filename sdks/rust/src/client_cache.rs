@@ -5,7 +5,6 @@
 use crate::callbacks::CallbackId;
 use crate::db_connection::{PendingMutation, SharedCell};
 use crate::spacetime_module::{InModule, SpacetimeModule, TableUpdate, WithBsatn};
-use anymap::{any::Any, Map};
 use bytes::Bytes;
 use core::any::type_name;
 use core::hash::Hash;
@@ -13,6 +12,10 @@ use futures_channel::mpsc;
 use spacetimedb_data_structures::map::{hash_map::Entry, HashCollectionExt, HashMap};
 use std::marker::PhantomData;
 use std::sync::Arc;
+use std::{
+    any::{Any, TypeId},
+    boxed::Box,
+};
 
 /// A local mirror of the subscribed rows of one table in the database.
 pub struct TableCache<Row> {
@@ -318,7 +321,7 @@ pub struct ClientCache<M: SpacetimeModule + ?Sized> {
     /// "keyed" on the type `HashMap<&'static str, TableCache<Row>`.
     ///
     /// The strings are table names, since we may have multiple tables with the same row type.
-    tables: Map<dyn Any + Send + Sync>,
+    tables: TypeMap,
 
     _module: PhantomData<M>,
 }
@@ -326,9 +329,39 @@ pub struct ClientCache<M: SpacetimeModule + ?Sized> {
 impl<M: SpacetimeModule> Default for ClientCache<M> {
     fn default() -> Self {
         Self {
-            tables: Map::new(),
+            tables: Default::default(),
             _module: PhantomData,
         }
+    }
+}
+
+// We intentionally avoid `anymap` here.
+//
+// In wasm test-client runs (`wasm32-unknown-unknown` under Node),
+// `anymap`'s TypeId hasher path can trigger an alignment-UB check panic:
+// `ptr::copy_nonoverlapping requires aligned pointers`.
+// Using this local `TypeId -> Box<dyn Any + Send + Sync>` map preserves the
+// required functionality without that runtime failure.
+#[derive(Default)]
+struct TypeMap {
+    values: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
+}
+
+impl TypeMap {
+    fn get<T: Any + Send + Sync + 'static>(&self) -> Option<&T> {
+        self.values
+            .get(&TypeId::of::<T>())
+            .and_then(|value| value.downcast_ref::<T>())
+    }
+
+    fn get_or_insert_with<T: Any + Send + Sync + 'static>(&mut self, make: impl FnOnce() -> T) -> &mut T {
+        let value = match self.values.entry(TypeId::of::<T>()) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => entry.insert(Box::new(make())),
+        };
+        value
+            .downcast_mut::<T>()
+            .expect("TypeMap entry did not match stored TypeId")
     }
 }
 
@@ -350,8 +383,7 @@ impl<M: SpacetimeModule> ClientCache<M> {
         table_name: &'static str,
     ) -> &mut TableCache<Row> {
         self.tables
-            .entry::<HashMap<&'static str, TableCache<Row>>>()
-            .or_insert_with(Default::default)
+            .get_or_insert_with::<HashMap<&'static str, TableCache<Row>>>(Default::default)
             .entry(table_name)
             .or_default()
     }

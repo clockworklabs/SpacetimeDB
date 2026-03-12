@@ -3,7 +3,7 @@ use rand::seq::IteratorRandom;
 use spacetimedb::messages::control_db::HostType;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_paths::{RootDir, SpacetimePaths};
-use std::fs::create_dir_all;
+use std::fs::{copy, create_dir_all};
 use std::sync::{Mutex, OnceLock};
 use std::thread::JoinHandle;
 use std::{path::Path, path::PathBuf};
@@ -120,6 +120,7 @@ enum ClientRunner {
 pub const TEST_MODULE_PROJECT_ENV_VAR: &str = "SPACETIME_SDK_TEST_MODULE_PROJECT";
 pub const TEST_DB_NAME_ENV_VAR: &str = "SPACETIME_SDK_TEST_DB_NAME";
 pub const TEST_CLIENT_PROJECT_ENV_VAR: &str = "SPACETIME_SDK_TEST_CLIENT_PROJECT";
+pub const TEST_RUN_SELECTOR_ENV_VAR: &str = "SPACETIME_SDK_TEST_RUN_SELECTOR";
 
 fn language_is_unreal(language: &str) -> bool {
     language.eq_ignore_ascii_case("unrealcpp")
@@ -461,21 +462,24 @@ fn run_client(runner: &ClientRunner, run_command: &str, client_project: &str, db
                 .to_str()
                 .expect("wasm_path stem should be valid utf-8");
             let js_module = bindgen_out_dir.join(format!("{js_module_name}.js"));
-            let js_module = js_module
+            let js_module_cjs = bindgen_out_dir.join(format!("{js_module_name}.cjs"));
+            copy(&js_module, &js_module_cjs).expect("Failed to create .cjs wrapper for wasm-bindgen output");
+            let js_module = js_module_cjs
                 .to_str()
                 .expect("js_module path should be valid utf-8")
                 .to_owned();
 
             let node_script = format!(
-                "(async () => {{\n  const m = require({js_module:?});\n  if (m.default) {{ await m.default(); }}\n  const run = m.run || m.main || m.start;\n  if (!run) throw new Error('No exported run/main/start function from wasm module');\n  await run(process.argv[2]);\n}})().catch((e) => {{ console.error(e); process.exit(1); }});"
+                "(async () => {{\n  const m = require({js_module:?});\n  if (m.default) {{ await m.default(); }}\n  const run = m.run || m.main || m.start;\n  if (!run) throw new Error('No exported run/main/start function from wasm module');\n  const runSelector = process.env.{TEST_RUN_SELECTOR_ENV_VAR} ?? '';\n  const dbName = process.env.{TEST_DB_NAME_ENV_VAR};\n  if (!dbName) throw new Error('Missing {TEST_DB_NAME_ENV_VAR}');\n  await run(runSelector, dbName);\n}})().catch((e) => {{ console.error(e); process.exit(1); }});"
             );
 
-            let node_args: Vec<String> = vec!["-e".to_owned(), node_script, "--".to_owned(), run_command.to_owned()];
+            let node_args: Vec<String> = vec!["--experimental-websocket".to_owned(), "-e".to_owned(), node_script];
 
             let output = cmd("node", node_args)
-                .dir(client_project)
+                .dir(&bindgen_out_dir)
                 .env(TEST_CLIENT_PROJECT_ENV_VAR, client_project)
                 .env(TEST_DB_NAME_ENV_VAR, db_name)
+                .env(TEST_RUN_SELECTOR_ENV_VAR, run_command)
                 .env("RUST_LOG", rust_log)
                 .stderr_to_stdout()
                 .stdout_capture()

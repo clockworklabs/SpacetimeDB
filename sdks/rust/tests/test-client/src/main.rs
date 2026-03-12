@@ -3,7 +3,7 @@
 pub(crate) mod module_bindings;
 
 use core::fmt::Display;
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier, Mutex};
 
 use module_bindings::*;
@@ -30,8 +30,27 @@ use unique_test_table::{insert_then_delete_one, UniqueTestTable};
 
 const LOCALHOST: &str = "http://localhost:3000";
 
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+static WEB_DB_NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+pub(crate) fn set_web_db_name(db_name: String) {
+    WEB_DB_NAME.set(db_name).expect("WASM DB name was already initialized");
+}
+
 fn db_name_or_panic() -> String {
-    std::env::var("SPACETIME_SDK_TEST_DB_NAME").expect("Failed to read db name from env")
+    #[cfg(all(target_arch = "wasm32", feature = "web"))]
+    {
+        return WEB_DB_NAME
+            .get()
+            .cloned()
+            .expect("Failed to read db name from wasm runner");
+    }
+
+    #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
+    {
+        std::env::var("SPACETIME_SDK_TEST_DB_NAME").expect("Failed to read db name from env")
+    }
 }
 
 /// Register a panic hook which will exit the process whenever any thread panics.
@@ -151,6 +170,16 @@ pub(crate) fn dispatch(test: &str) {
         "sorted-uuids-insert" => exec_sorted_uuids_insert(),
 
         _ => panic!("Unknown test: {test}"),
+    }
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+pub(crate) async fn dispatch_async(test: &str) {
+    match test {
+        "row-deduplication-r-join-s-and-r-joint" => {
+            exec_row_deduplication_r_join_s_and_r_join_t_async().await;
+        }
+        _ => dispatch(test),
     }
 }
 
@@ -2268,6 +2297,119 @@ fn exec_row_deduplication_r_join_s_and_r_join_t() {
     test_counter.wait_for_all();
 
     assert_eq!(count_unique_u32_on_insert.load(Ordering::SeqCst), 1);
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+async fn exec_row_deduplication_r_join_s_and_r_join_t_async() {
+    use gloo_timers::future::TimeoutFuture;
+
+    let on_subscription_applied = Arc::new(AtomicBool::new(false));
+    let pk_u32_on_insert = Arc::new(AtomicBool::new(false));
+    let pk_u32_on_delete = Arc::new(AtomicBool::new(false));
+    let pk_u32_two_on_insert = Arc::new(AtomicBool::new(false));
+    let count_unique_u32_on_insert = Arc::new(AtomicUsize::new(0));
+
+    let name = db_name_or_panic();
+    let builder = DbConnection::builder()
+        .with_database_name(name)
+        .with_uri(LOCALHOST)
+        .on_connect({
+            let on_subscription_applied = on_subscription_applied.clone();
+            let pk_u32_on_insert = pk_u32_on_insert.clone();
+            let pk_u32_on_delete = pk_u32_on_delete.clone();
+            let pk_u32_two_on_insert = pk_u32_two_on_insert.clone();
+            let count_unique_u32_on_insert = count_unique_u32_on_insert.clone();
+
+            move |ctx, _, _| {
+                let queries = [
+                    "SELECT * FROM pk_u_32;",
+                    "SELECT * FROM pk_u_32_two;",
+                    "SELECT unique_u_32.* FROM unique_u_32 JOIN pk_u_32 ON unique_u_32.n = pk_u_32.n;",
+                    "SELECT unique_u_32.* FROM unique_u_32 JOIN pk_u_32_two ON unique_u_32.n = pk_u_32_two.n;",
+                ];
+
+                const KEY: u32 = 42;
+                const DATA: i32 = 0xbeef;
+
+                UniqueU32::insert(ctx, KEY, DATA);
+
+                subscribe_these_then(ctx, &queries, {
+                    let on_subscription_applied = on_subscription_applied.clone();
+                    move |ctx| {
+                        PkU32::insert(ctx, KEY, DATA);
+                        assert_all_tables_empty(ctx).unwrap();
+                        on_subscription_applied.store(true, Ordering::SeqCst);
+                    }
+                });
+                PkU32::on_insert(ctx, {
+                    let pk_u32_on_insert = pk_u32_on_insert.clone();
+                    move |ctx, val| {
+                        assert_eq!(val, &PkU32 { n: KEY, data: DATA });
+                        pk_u32_on_insert.store(true, Ordering::SeqCst);
+                        ctx.reducers
+                            .delete_pk_u_32_insert_pk_u_32_two_then(
+                                KEY,
+                                DATA,
+                                reducer_callback_assert_committed("delete_pk_u_32_insert_pk_u_32_two"),
+                            )
+                            .unwrap();
+                    }
+                });
+                PkU32Two::on_insert(ctx, {
+                    let pk_u32_two_on_insert = pk_u32_two_on_insert.clone();
+                    move |_, val| {
+                        assert_eq!(val, &PkU32Two { n: KEY, data: DATA });
+                        pk_u32_two_on_insert.store(true, Ordering::SeqCst);
+                    }
+                });
+                PkU32::on_delete(ctx, {
+                    let pk_u32_on_delete = pk_u32_on_delete.clone();
+                    move |_, val| {
+                        assert_eq!(val, &PkU32 { n: KEY, data: DATA });
+                        pk_u32_on_delete.store(true, Ordering::SeqCst);
+                    }
+                });
+                UniqueU32::on_insert(ctx, {
+                    let count_unique_u32_on_insert = count_unique_u32_on_insert.clone();
+                    move |_, _| {
+                        count_unique_u32_on_insert.fetch_add(1, Ordering::SeqCst);
+                    }
+                });
+                UniqueU32::on_delete(ctx, move |_, _| panic!());
+                PkU32Two::on_delete(ctx, move |_, _| panic!());
+            }
+        })
+        .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
+
+    let conn = builder.build().await.unwrap();
+    conn.run_background_task();
+
+    const WAIT_INTERVAL_MS: u32 = 10;
+    const MAX_WAIT_ITERATIONS: u32 = 3000;
+    let all_callbacks_observed = || {
+        on_subscription_applied.load(Ordering::SeqCst)
+            && pk_u32_on_insert.load(Ordering::SeqCst)
+            && pk_u32_on_delete.load(Ordering::SeqCst)
+            && pk_u32_two_on_insert.load(Ordering::SeqCst)
+    };
+    for _ in 0..MAX_WAIT_ITERATIONS {
+        if all_callbacks_observed() {
+            break;
+        }
+        TimeoutFuture::new(WAIT_INTERVAL_MS).await;
+    }
+    if !all_callbacks_observed() {
+        panic!(
+            "Timeout waiting for callbacks: on_subscription_applied={}, pk_u32_on_insert={}, pk_u32_on_delete={}, pk_u32_two_on_insert={}",
+            on_subscription_applied.load(Ordering::SeqCst),
+            pk_u32_on_insert.load(Ordering::SeqCst),
+            pk_u32_on_delete.load(Ordering::SeqCst),
+            pk_u32_two_on_insert.load(Ordering::SeqCst),
+        );
+    }
+
+    assert_eq!(count_unique_u32_on_insert.load(Ordering::SeqCst), 1);
+    conn.disconnect().unwrap();
 }
 
 /// This test asserts that the correct callbacks are invoked when updating the lhs table of a join

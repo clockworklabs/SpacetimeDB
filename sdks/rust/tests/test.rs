@@ -28,7 +28,7 @@ fn configure_test_client_commands(
                 .to_string_lossy()
                 .into_owned()
         });
-        let wasm_path = format!("{target_dir}/wasm32-unknown-unknown/debug/{artifact_name}.wasm");
+        let wasm_path = format!("{target_dir}/wasm32-unknown-unknown/debug/deps/{artifact_name}.wasm");
         let bindgen_out_dir = format!("target/sdk-test-web-bindgen/{package_name}");
 
         builder
