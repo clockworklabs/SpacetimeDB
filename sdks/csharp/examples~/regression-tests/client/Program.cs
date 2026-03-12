@@ -20,15 +20,19 @@ const string UPDATED_WHERE_TEST_NAME = "this_name_was_updated";
 const string EXPECTED_TEST_EVENT_NAME = "hello";
 const ulong EXPECTED_TEST_EVENT_VALUE = 42;
 
+DbConnection db = null!;
 uint waiting = 0;
-var applied = false;
-SubscriptionHandle? handle = null;
+var runComplete = false;
+SubscriptionHandle? mainHandle = null;
 uint testEventInsertCount = 0;
+long viewPkIdCounter = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 10;
+
+ulong NextViewPkId() => (ulong)Interlocked.Increment(ref viewPkIdCounter);
 
 void OnConnected(DbConnection conn, Identity identity, string authToken)
 {
     Log.Debug($"Connected to {DBNAME} on {HOST}");
-    handle = conn.SubscriptionBuilder()
+    mainHandle = conn.SubscriptionBuilder()
         .OnApplied(OnSubscriptionApplied)
         .OnError(
             (ctx, err) =>
@@ -254,6 +258,34 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
             !ctx.Db.TestEvent.Iter().Any(),
             "Event table iterator should remain empty after noop"
         );
+    };
+
+    conn.Reducers.OnInsertViewPkPlayer += (ctx, _, _) =>
+    {
+        Log.Info("Got InsertViewPkPlayer callback");
+        waiting--;
+        ValidateCommittedReducer("InsertViewPkPlayer", ctx);
+    };
+
+    conn.Reducers.OnUpdateViewPkPlayer += (ctx, _, _) =>
+    {
+        Log.Info("Got UpdateViewPkPlayer callback");
+        waiting--;
+        ValidateCommittedReducer("UpdateViewPkPlayer", ctx);
+    };
+
+    conn.Reducers.OnInsertViewPkMembership += (ctx, _, _) =>
+    {
+        Log.Info("Got InsertViewPkMembership callback");
+        waiting--;
+        ValidateCommittedReducer("InsertViewPkMembership", ctx);
+    };
+
+    conn.Reducers.OnInsertViewPkMembershipSecondary += (ctx, _, _) =>
+    {
+        Log.Info("Got InsertViewPkMembershipSecondary callback");
+        waiting--;
+        ValidateCommittedReducer("InsertViewPkMembershipSecondary", ctx);
     };
 }
 
@@ -511,10 +543,229 @@ void ValidateSemijoinSubscriptions(IRemoteDbContext conn, Identity identity)
     Debug.Assert(levels[0].Level == 1, $"Expected player_level.Level == 1, got {levels[0].Level}");
 }
 
+void ValidateCommittedReducer(string reducerName, ReducerEventContext ctx)
+{
+    switch (ctx.Event.Status)
+    {
+        case Status.Committed:
+            return;
+        case Status.Failed(var reason):
+            throw new Exception($"{reducerName} should commit, got failure: {reason}");
+        case Status.OutOfEnergy(var _):
+            throw new Exception($"{reducerName} ran out of energy");
+        default:
+            throw new Exception($"{reducerName} returned unexpected status: {ctx.Event.Status}");
+    }
+}
+
+void ExpectSingleViewPkPlayerUpdate(
+    string testName,
+    ref bool sawUpdate,
+    ulong expectedId,
+    string expectedOldName,
+    string expectedNewName,
+    ViewPkPlayer oldRow,
+    ViewPkPlayer newRow
+)
+{
+    Debug.Assert(!sawUpdate, $"Expected exactly one OnUpdate callback for {testName}");
+    Debug.Assert(oldRow.Id == expectedId, $"Expected oldRow.Id={expectedId}, got {oldRow.Id}");
+    Debug.Assert(
+        oldRow.Name == expectedOldName,
+        $"Expected oldRow.Name={expectedOldName}, got {oldRow.Name}"
+    );
+    Debug.Assert(newRow.Id == expectedId, $"Expected newRow.Id={expectedId}, got {newRow.Id}");
+    Debug.Assert(
+        newRow.Name == expectedNewName,
+        $"Expected newRow.Name={expectedNewName}, got {newRow.Name}"
+    );
+    sawUpdate = true;
+}
+
+void StartViewPkOnUpdatePhase()
+{
+    const string testName = "view-pk-on-update";
+    var playerId = NextViewPkId();
+    const string before = "before";
+    const string after = "after";
+    bool sawUpdate = false;
+    SubscriptionHandle? phaseHandle = null;
+
+    Log.Debug($"Starting {testName}");
+    phaseHandle = db
+        .SubscriptionBuilder()
+        .OnApplied(ctx =>
+        {
+            void OnAllViewPkPlayersUpdate(EventContext _, ViewPkPlayer oldRow, ViewPkPlayer newRow)
+            {
+                ctx.Db.AllViewPkPlayers.OnUpdate -= OnAllViewPkPlayersUpdate;
+                ExpectSingleViewPkPlayerUpdate(
+                    testName,
+                    ref sawUpdate,
+                    playerId,
+                    before,
+                    after,
+                    oldRow,
+                    newRow
+                );
+
+                waiting++;
+                phaseHandle?.UnsubscribeThen(_ =>
+                {
+                    Debug.Assert(sawUpdate, $"Expected an OnUpdate callback for {testName}");
+                    StartViewPkJoinPhase();
+                    waiting--;
+                });
+            }
+
+            ctx.Db.AllViewPkPlayers.OnUpdate += OnAllViewPkPlayersUpdate;
+
+            waiting++;
+            ctx.Reducers.InsertViewPkPlayer(playerId, before);
+
+            waiting++;
+            ctx.Reducers.UpdateViewPkPlayer(playerId, after);
+        })
+        .OnError((_, err) =>
+        {
+            throw err;
+        })
+        .AddQuery(q => q.From.AllViewPkPlayers())
+        .Subscribe();
+}
+
+void StartViewPkJoinPhase()
+{
+    const string testName = "view-pk-join-query-builder";
+    var playerId = NextViewPkId();
+    var membershipId = NextViewPkId();
+    const string before = "before";
+    const string after = "after";
+    bool sawUpdate = false;
+    SubscriptionHandle? phaseHandle = null;
+
+    Log.Debug($"Starting {testName}");
+    phaseHandle = db
+        .SubscriptionBuilder()
+        .OnApplied(ctx =>
+        {
+            void OnAllViewPkPlayersUpdate(EventContext _, ViewPkPlayer oldRow, ViewPkPlayer newRow)
+            {
+                ctx.Db.AllViewPkPlayers.OnUpdate -= OnAllViewPkPlayersUpdate;
+                ExpectSingleViewPkPlayerUpdate(
+                    testName,
+                    ref sawUpdate,
+                    playerId,
+                    before,
+                    after,
+                    oldRow,
+                    newRow
+                );
+
+                waiting++;
+                phaseHandle?.UnsubscribeThen(_ =>
+                {
+                    Debug.Assert(sawUpdate, $"Expected an OnUpdate callback for {testName}");
+                    StartViewPkSemijoinTwoSenderViewsPhase();
+                    waiting--;
+                });
+            }
+
+            ctx.Db.AllViewPkPlayers.OnUpdate += OnAllViewPkPlayersUpdate;
+
+            waiting++;
+            ctx.Reducers.InsertViewPkPlayer(playerId, before);
+
+            waiting++;
+            ctx.Reducers.InsertViewPkMembership(membershipId, playerId);
+
+            waiting++;
+            ctx.Reducers.UpdateViewPkPlayer(playerId, after);
+        })
+        .OnError((_, err) =>
+        {
+            throw err;
+        })
+        .AddQuery(q =>
+            q.From.ViewPkMembership().RightSemijoin(
+                q.From.AllViewPkPlayers(),
+                (membership, player) => membership.PlayerId.Eq(player.Id)
+            )
+        )
+        .Subscribe();
+}
+
+void StartViewPkSemijoinTwoSenderViewsPhase()
+{
+    const string testName = "view-pk-semijoin-two-sender-views-query-builder";
+    var playerId = NextViewPkId();
+    var membershipAId = NextViewPkId();
+    var membershipBId = NextViewPkId();
+    const string before = "before";
+    const string after = "after";
+    bool sawUpdate = false;
+    SubscriptionHandle? phaseHandle = null;
+
+    Log.Debug($"Starting {testName}");
+    phaseHandle = db
+        .SubscriptionBuilder()
+        .OnApplied(ctx =>
+        {
+            void OnSenderViewPkPlayersBUpdate(
+                EventContext _,
+                ViewPkPlayer oldRow,
+                ViewPkPlayer newRow
+            )
+            {
+                ctx.Db.SenderViewPkPlayersB.OnUpdate -= OnSenderViewPkPlayersBUpdate;
+                ExpectSingleViewPkPlayerUpdate(
+                    testName,
+                    ref sawUpdate,
+                    playerId,
+                    before,
+                    after,
+                    oldRow,
+                    newRow
+                );
+
+                waiting++;
+                phaseHandle?.UnsubscribeThen(_ =>
+                {
+                    Debug.Assert(sawUpdate, $"Expected an OnUpdate callback for {testName}");
+                    runComplete = true;
+                    waiting--;
+                });
+            }
+
+            ctx.Db.SenderViewPkPlayersB.OnUpdate += OnSenderViewPkPlayersBUpdate;
+
+            waiting++;
+            ctx.Reducers.InsertViewPkPlayer(playerId, before);
+
+            waiting++;
+            ctx.Reducers.InsertViewPkMembership(membershipAId, playerId);
+
+            waiting++;
+            ctx.Reducers.InsertViewPkMembershipSecondary(membershipBId, playerId);
+
+            waiting++;
+            ctx.Reducers.UpdateViewPkPlayer(playerId, after);
+        })
+        .OnError((_, err) =>
+        {
+            throw err;
+        })
+        .AddQuery(q =>
+            q.From.SenderViewPkPlayersA().RightSemijoin(
+                q.From.SenderViewPkPlayersB(),
+                (lhsView, rhsView) => lhsView.Id.Eq(rhsView.Id)
+            )
+        )
+        .Subscribe();
+}
+
 void OnSubscriptionApplied(SubscriptionEventContext context)
 {
-    applied = true;
-
     ValidateWhereSubscription(context);
     ValidateWhereTestViews(context);
     ValidateSemijoinSubscriptions(context, context.Identity!.Value);
@@ -1089,19 +1340,20 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     // Now unsubscribe and check that the unsubscribing is actually applied.
     Log.Debug("Calling Unsubscribe");
     waiting++;
-    handle?.UnsubscribeThen(
+    mainHandle?.UnsubscribeThen(
         (ctx) =>
         {
             Log.Debug("Received Unsubscribe");
             ValidateBTreeIndexes(ctx);
+            StartViewPkOnUpdatePhase();
             waiting--;
         }
     );
 }
 
 RegressionTestHarness.RegisterUnhandledExceptionExitHandler();
-var db = RegressionTestHarness.ConnectToDatabase(HOST, DBNAME, OnConnected);
+db = RegressionTestHarness.ConnectToDatabase(HOST, DBNAME, OnConnected);
 const int TIMEOUT = 20; // seconds;
-RegressionTestHarness.FrameTickUntilComplete(db, () => applied && waiting == 0, TIMEOUT);
+RegressionTestHarness.FrameTickUntilComplete(db, () => runComplete && waiting == 0, TIMEOUT);
 Log.Info("Success");
 Environment.Exit(0);
