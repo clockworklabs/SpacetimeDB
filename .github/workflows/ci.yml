@@ -887,7 +887,9 @@ jobs:
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v14
         with:
-          version: 3.1.56
+          # Use older Emscripten version compatible with NativeAOT-LLVM 8.0.0-preview.7
+          # Newer versions (3.1.56+) have clang 19.0.0 which causes "absolute addressing not supported" errors
+          version: 3.1.47
 
       - name: Smoketest C# AOT build (NativeAOT-LLVM)
         shell: pwsh
