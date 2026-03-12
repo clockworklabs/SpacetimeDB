@@ -83,7 +83,7 @@ This is a classic read-modify-write workload that tests transactional integrity 
 ### Test Command
 
 ```bash
-docker compose run --rm bench --seconds 10 --concurrency 50 --alpha XX --connectors YY
+docker compose run --rm bench -- --seconds 10 --concurrency 50 --alpha XX --connectors YY
 ```
 
 - `--seconds 10`: Duration of benchmark run

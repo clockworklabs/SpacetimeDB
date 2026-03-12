@@ -164,7 +164,7 @@ cd ..
 ### 1. Run a test
 
 ```bash
-pnpm run bench -- [test-name] [--seconds N] [--concurrency N] [--alpha A] [--connectors list]
+pnpm run bench [test-name] [--seconds N] [--concurrency N] [--alpha A] [--connectors list]
 ```
 
 Examples:
@@ -174,16 +174,16 @@ Examples:
 pnpm run bench
 
 # Explicit test name
-pnpm run bench -- test-1
+pnpm run bench test-1
 
 # Short run, 100 concurrent workers
-pnpm run bench -- test-1 --seconds 10 --concurrency 100
+pnpm run bench test-1 --seconds 10 --concurrency 100
 
 # Heavier skew on hot accounts
-pnpm run bench -- test-1 --alpha 2.0
+pnpm run bench test-1 --alpha 2.0
 
 # Only run selected connectors
-pnpm run bench -- test-1 --connectors spacetimedb,sqlite_rpc
+pnpm run bench test-1 --connectors spacetimedb,sqlite_rpc
 ```
 
 ---
@@ -237,11 +237,7 @@ From `src/cli.ts`:
 You can also run the benchmark via Docker instead of Node directly:
 
 ```bash
-docker compose run --rm bench \
-  --seconds 5 \
-  --concurrency 50 \
-  --alpha 1 \
-  --connectors convex
+docker compose run --rm bench -- --seconds 5 --concurrency 50 --alpha 1 --connectors convex
 ```
 
 If using Docker, make sure to set `USE_DOCKER=1` in `.env`, verify docker-compose env variables, verify you've run supabase init, and run `pnpm run prep` before running bench.
