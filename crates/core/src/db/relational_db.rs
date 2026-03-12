@@ -1,7 +1,6 @@
 use crate::db::durability::DurabilityWorker;
 use crate::db::MetricsRecorderQueue;
 use crate::error::{DBError, RestoreSnapshotError};
-use crate::messages::control_db::HostType;
 use crate::subscription::ExecutionCounters;
 use crate::util::asyncify;
 use crate::worker_metrics::WORKER_METRICS;
@@ -403,7 +402,7 @@ impl RelationalDB {
     /// It is an error to call this method on an already-initialized database.
     ///
     /// See [`Self::open`] for further information.
-    pub fn set_initialized(&self, tx: &mut MutTx, host_type: HostType, program: Program) -> Result<(), DBError> {
+    pub fn set_initialized(&self, tx: &mut MutTx, program: Program) -> Result<(), DBError> {
         log::trace!(
             "[{}] DATABASE: set initialized owner={} program_hash={}",
             self.database_identity,
@@ -426,7 +425,7 @@ impl RelationalDB {
             database_identity: self.database_identity.into(),
             owner_identity: self.owner_identity.into(),
 
-            program_kind: host_type.into(),
+            program_kind: program.kind,
             program_hash: program.hash,
             program_bytes: program.bytes,
             module_version: ONLY_MODULE_VERSION.into(),
@@ -464,13 +463,13 @@ impl RelationalDB {
     /// The caller must ensure that:
     ///
     /// - `program.hash` is the [`Hash`] over `program.bytes`.
-    /// - `program.bytes` is a valid module acc. to `host_type`.
+    /// - `program.bytes` is a valid module acc. to `program.host_type`.
     /// - the schema updates contained in the module have been applied within
     ///   the transactional context `tx`.
     /// - the `__init__` reducer contained in the module has been executed
     ///   within the transactional context `tx`.
-    pub fn update_program(&self, tx: &mut MutTx, host_type: HostType, program: Program) -> Result<(), DBError> {
-        Ok(self.inner.update_program(tx, host_type.into(), program)?)
+    pub fn update_program(&self, tx: &mut MutTx, program: Program) -> Result<(), DBError> {
+        Ok(self.inner.update_program(tx, program)?)
     }
 
     fn restore_from_snapshot_or_bootstrap(
@@ -1861,6 +1860,7 @@ fn default_row_count_fn(db: Identity) -> RowCountFn {
 pub mod tests_utils {
     use crate::db::snapshot;
     use crate::db::snapshot::SnapshotWorker;
+    use crate::messages::control_db::HostType;
 
     use super::*;
     use core::ops::Deref;
@@ -2174,7 +2174,7 @@ pub mod tests_utils {
             assert_eq!(connected_clients.len(), expected_num_clients);
             let db = db.with_row_count(Self::row_count_fn());
             db.with_auto_commit(Workload::Internal, |tx| {
-                db.set_initialized(tx, HostType::Wasm, Program::empty())
+                db.set_initialized(tx, Program::empty(HostType::Wasm.into()))
             })?;
             Ok(db)
         }

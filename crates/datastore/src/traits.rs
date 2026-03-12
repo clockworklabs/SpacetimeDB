@@ -500,11 +500,14 @@ pub struct Metadata {
 }
 
 /// Program associated with a database.
+#[derive(Clone)]
 pub struct Program {
     /// Hash over the program's bytes.
     pub hash: Hash,
     /// The raw bytes of the program.
     pub bytes: Box<[u8]>,
+    /// The kind (host type) of the program.
+    pub kind: ModuleKind,
 }
 
 impl Program {
@@ -512,15 +515,15 @@ impl Program {
     ///
     /// This computes the hash over `bytes`, so prefer constructing [`Program`]
     /// directly if the hash is already known.
-    pub fn from_bytes(bytes: impl Into<Box<[u8]>>) -> Self {
+    pub fn from_bytes(kind: ModuleKind, bytes: impl Into<Box<[u8]>>) -> Self {
         let bytes = bytes.into();
         let hash = hash_bytes(&bytes);
-        Self { hash, bytes }
+        Self { hash, bytes, kind }
     }
 
     /// Create a [`Program`] with no bytes.
-    pub fn empty() -> Self {
-        Self::from_bytes([])
+    pub fn empty(kind: ModuleKind) -> Self {
+        Self::from_bytes(kind, [])
     }
 }
 
@@ -714,5 +717,5 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn metadata_mut_tx(&self, tx: &Self::MutTx) -> Result<Option<Metadata>>;
 
     /// Update the datastore with the supplied binary program.
-    fn update_program(&self, tx: &mut Self::MutTx, program_kind: ModuleKind, program: Program) -> Result<()>;
+    fn update_program(&self, tx: &mut Self::MutTx, program: Program) -> Result<()>;
 }
