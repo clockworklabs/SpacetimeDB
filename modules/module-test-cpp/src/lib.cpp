@@ -217,7 +217,7 @@ FIELD_Default(table_with_defaults, active, true)
 
 // View to find the player associated with the calling identity
 SPACETIMEDB_VIEW(std::optional<Player>, my_player, Public, ViewContext ctx) {
-    return ctx.db[player_identity].find(ctx.sender);
+    return ctx.db[player_identity].find(ctx.sender());
 }
 
 // =============================================================================
@@ -287,7 +287,7 @@ SPACETIMEDB_REDUCER(log_module_identity, ReducerContext ctx) {
 // Complex test reducer with multiple parameters
 SPACETIMEDB_REDUCER(test, ReducerContext ctx, TestAlias arg, TestB arg2, TestC arg3, TestF arg4) {
     LOG_INFO("BEGIN");
-    LOG_INFO("sender: " + ctx.sender.to_string());
+    LOG_INFO("sender: " + ctx.sender().to_string());
     LOG_INFO("timestamp: " + ctx.timestamp.to_string());
     LOG_INFO("bar: " + arg2.foo);
 
@@ -550,8 +550,8 @@ SPACETIMEDB_REDUCER(test_btree_index_args, ReducerContext ctx) {
 
 // Test reducer for assertions
 SPACETIMEDB_REDUCER(assert_caller_identity_is_module_identity, ReducerContext ctx) {
-    LOG_INFO("Sender: " + ctx.sender.to_string() + " Identity: " + ctx.identity().to_string());
-    if (ctx.sender != ctx.identity()) {
+    LOG_INFO("Sender: " + ctx.sender().to_string() + " Identity: " + ctx.identity().to_string());
+    if (ctx.sender() != ctx.identity()) {
         LOG_ERROR("Assertion failed: caller identity does not match module identity");
     } else {
         LOG_INFO("Assertion passed: caller identity matches module identity");
@@ -639,14 +639,14 @@ SPACETIMEDB_REDUCER(test_jwt_auth, ReducerContext ctx) {
         LOG_INFO("JWT Identity: " + identity.to_string());
         
         // Compare with caller identity
-        LOG_INFO("Caller Identity: " + ctx.sender.to_string());
+        LOG_INFO("Caller Identity: " + ctx.sender().to_string());
         
-        // Verify that get_caller_identity returns the same as ctx.sender
+        // Verify that get_caller_identity returns the same as ctx.sender()
         auto caller_identity = auth.get_caller_identity();
-        if (caller_identity == ctx.sender) {
-            LOG_INFO("get_caller_identity matches ctx.sender");
+        if (caller_identity == ctx.sender()) {
+            LOG_INFO("get_caller_identity matches ctx.sender()");
         } else {
-            LOG_ERROR("get_caller_identity does NOT match ctx.sender");
+            LOG_ERROR("get_caller_identity does NOT match ctx.sender()");
         }
     } else {
         LOG_INFO("No JWT present (anonymous or scheduled reducer)");
