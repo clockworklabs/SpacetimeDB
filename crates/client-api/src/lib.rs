@@ -166,11 +166,7 @@ impl Host {
                 .await
                 .map_err(|e| {
                     log::warn!("{e}");
-                    if let Some(auth_err) = e.get_auth_error() {
-                        (StatusCode::UNAUTHORIZED, auth_err.to_string())
-                    } else {
-                        (StatusCode::BAD_REQUEST, e.to_string())
-                    }
+                    (StatusCode::BAD_REQUEST, e.to_string())
                 })?;
 
                 let total_duration = sql_start.elapsed();

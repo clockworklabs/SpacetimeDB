@@ -38,7 +38,6 @@ members = [
   "crates/table",
   "crates/testing",
   "crates/update",
-  "crates/vm",
   "modules/benchmarks",
   "modules/keynote-benchmarks",
   "modules/perf-test",
@@ -143,7 +142,6 @@ spacetimedb-schema = { path = "crates/schema", version = "=2.0.5" }
 spacetimedb-standalone = { path = "crates/standalone", version = "=2.0.5" }
 spacetimedb-sql-parser = { path = "crates/sql-parser", version = "=2.0.5" }
 spacetimedb-table = { path = "crates/table", version = "=2.0.5" }
-spacetimedb-vm = { path = "crates/vm", version = "=2.0.5" }
 spacetimedb-fs-utils = { path = "crates/fs-utils", version = "=2.0.5" }
 spacetimedb-snapshot = { path = "crates/snapshot", version = "=2.0.5" }
 spacetimedb-subscription = { path = "crates/subscription", version = "=2.0.5" }
