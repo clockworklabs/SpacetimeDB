@@ -316,6 +316,8 @@ pub struct WasmModuleHostActor<T: WasmModule> {
     module: T::InstancePre,
     common: ModuleCommon,
     func_names: Arc<FuncNames>,
+    #[cfg(feature = "onnx")]
+    models_dir: Option<std::path::PathBuf>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -375,19 +377,28 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             func_names
         };
         let uninit_instance = module.instantiate_pre()?;
+        #[cfg(feature = "onnx")]
+        let models_dir = mcc.data_dir.as_ref().map(|d| d.0.join("models"));
         let instance_env = InstanceEnv::new(mcc.replica_ctx.clone(), mcc.scheduler.clone());
+        #[cfg(feature = "onnx")]
+        let instance_env = {
+            let mut env = instance_env;
+            env.models_dir = models_dir.clone();
+            env
+        };
         let mut instance = uninit_instance.instantiate(instance_env, &func_names)?;
 
         let desc = instance.extract_descriptions()?;
 
         // Validate and create a common module rom the raw definition.
         let common = build_common_module_from_raw(mcc, desc)?;
-
         let func_names = Arc::new(func_names);
         let module = WasmModuleHostActor {
             module: uninit_instance,
             func_names,
             common,
+            #[cfg(feature = "onnx")]
+            models_dir,
         };
         let initial_instance = module.make_from_instance(instance);
 
@@ -423,6 +434,12 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
     pub fn create_instance(&self) -> WasmModuleInstance<T::Instance> {
         let common = &self.common;
         let env = InstanceEnv::new(common.replica_ctx().clone(), common.scheduler().clone());
+        #[cfg(feature = "onnx")]
+        let env = {
+            let mut env = env;
+            env.models_dir = self.models_dir.clone();
+            env
+        };
         // this shouldn't fail, since we already called module.create_instance()
         // before and it didn't error, and ideally they should be deterministic
         let mut instance = self

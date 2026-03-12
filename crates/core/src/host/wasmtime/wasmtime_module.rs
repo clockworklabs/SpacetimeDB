@@ -50,7 +50,7 @@ impl WasmtimeModule {
         WasmtimeModule { module }
     }
 
-    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(10, 4);
+    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(10, 5);
 
     pub(super) fn link_imports(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::Result<()> {
         const { assert!(WasmtimeModule::IMPLEMENTED_ABI.major == spacetimedb_lib::MODULE_ABI_MAJOR_VERSION) };
@@ -67,6 +67,10 @@ impl WasmtimeModule {
             }
         }
         abi_funcs!(link_functions, link_async_functions);
+        #[cfg(feature = "onnx")]
+        linker.func_wrap("spacetime_10.5", "onnx_run", WasmInstanceEnv::onnx_run)?;
+        #[cfg(feature = "onnx")]
+        linker.func_wrap("spacetime_10.5", "onnx_run_multi", WasmInstanceEnv::onnx_run_multi)?;
         Ok(())
     }
 }

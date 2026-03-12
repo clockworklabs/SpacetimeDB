@@ -13,6 +13,8 @@ use spacetimedb_schema::def::ModuleDef;
 mod disk_storage;
 mod host_controller;
 mod module_common;
+#[cfg(feature = "onnx")]
+pub mod onnx;
 #[allow(clippy::too_many_arguments)]
 pub mod module_host;
 pub mod scheduler;
@@ -194,4 +196,9 @@ pub enum AbiCall {
     ProcedureCommitMutTransaction,
     ProcedureAbortMutTransaction,
     ProcedureHttpRequest,
+
+    #[cfg(feature = "onnx")]
+    OnnxRun,
+    #[cfg(feature = "onnx")]
+    OnnxRunMulti,
 }

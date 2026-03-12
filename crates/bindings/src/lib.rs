@@ -11,6 +11,8 @@ mod client_visibility_filter;
 #[cfg(feature = "unstable")]
 pub mod http;
 pub mod log_stopwatch;
+#[cfg(feature = "onnx")]
+pub mod onnx;
 mod logger;
 #[cfg(feature = "rand08")]
 mod rng;
@@ -1005,6 +1007,10 @@ pub struct ReducerContext {
     /// See the [`#[table]`](macro@crate::table) macro for more information.
     pub db: Local,
 
+    /// Methods for performing ONNX inference.
+    #[cfg(feature = "onnx")]
+    pub onnx: crate::onnx::OnnxClient,
+
     #[cfg(feature = "rand08")]
     rng: std::cell::OnceCell<StdbRng>,
     /// A counter used for generating UUIDv7 values.
@@ -1018,6 +1024,8 @@ impl ReducerContext {
     pub fn __dummy() -> Self {
         Self {
             db: Local {},
+            #[cfg(feature = "onnx")]
+            onnx: crate::onnx::OnnxClient {},
             sender: Identity::__dummy(),
             timestamp: Timestamp::UNIX_EPOCH,
             connection_id: None,
@@ -1033,6 +1041,8 @@ impl ReducerContext {
     fn new(db: Local, sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
         Self {
             db,
+            #[cfg(feature = "onnx")]
+            onnx: crate::onnx::OnnxClient {},
             sender,
             timestamp,
             connection_id,
@@ -1179,6 +1189,10 @@ pub struct ProcedureContext {
 
     /// Methods for performing HTTP requests.
     pub http: crate::http::HttpClient,
+
+    /// Methods for performing ONNX inference.
+    #[cfg(feature = "onnx")]
+    pub onnx: crate::onnx::OnnxClient,
     // TODO: Change rng?
     // Complex and requires design because we may want procedure RNG to behave differently from reducer RNG,
     // as it could actually be seeded by OS randomness rather than a deterministic source.
@@ -1199,6 +1213,8 @@ impl ProcedureContext {
             timestamp,
             connection_id,
             http: http::HttpClient {},
+            #[cfg(feature = "onnx")]
+            onnx: crate::onnx::OnnxClient {},
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
             #[cfg(feature = "rand")]

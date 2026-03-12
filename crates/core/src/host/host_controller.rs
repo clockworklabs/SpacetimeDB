@@ -453,6 +453,8 @@ impl HostController {
                     this.energy_monitor.clone(),
                     this.unregister_fn(replica_id),
                     this.db_cores.take(),
+                    #[cfg(feature = "onnx")]
+                    Some(this.data_dir.clone()),
                 )
                 .await?;
 
@@ -709,6 +711,7 @@ async fn make_module_host(
     energy_monitor: Arc<dyn EnergyMonitor>,
     unregister: impl Fn() + Send + Sync + 'static,
     core: AllocatedJobCore,
+    #[cfg(feature = "onnx")] data_dir: Option<Arc<ServerDataDir>>,
 ) -> anyhow::Result<(Program, ModuleHost)> {
     // `make_actor` is blocking, as it needs to compile the wasm to native code,
     // which may be computationally expensive - sometimes up to 1s for a large module.
@@ -722,6 +725,8 @@ async fn make_module_host(
         scheduler,
         program_hash: program.hash,
         energy_monitor,
+        #[cfg(feature = "onnx")]
+        data_dir,
     };
 
     match HostType::from(program.kind) {
@@ -770,6 +775,8 @@ struct ModuleLauncher<F> {
     runtimes: Arc<HostRuntimes>,
     core: AllocatedJobCore,
     bsatn_rlb_pool: BsatnRowListBuilderPool,
+    #[cfg(feature = "onnx")]
+    data_dir: Option<Arc<ServerDataDir>>,
 }
 
 impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
@@ -801,6 +808,8 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
             self.energy_monitor,
             self.on_panic,
             self.core,
+            #[cfg(feature = "onnx")]
+            self.data_dir,
         )
         .await?;
 
@@ -988,6 +997,8 @@ impl Host {
             runtimes: runtimes.clone(),
             core: host_controller.db_cores.take(),
             bsatn_rlb_pool: bsatn_rlb_pool.clone(),
+            #[cfg(feature = "onnx")]
+            data_dir: Some(data_dir.clone()),
         }
         .launch_module()
         .await?;
@@ -1084,6 +1095,8 @@ impl Host {
             runtimes: runtimes.clone(),
             core,
             bsatn_rlb_pool,
+            #[cfg(feature = "onnx")]
+            data_dir: None,
         }
         .launch_module()
         .await
@@ -1110,6 +1123,7 @@ impl Host {
         energy_monitor: Arc<dyn EnergyMonitor>,
         on_panic: impl Fn() + Send + Sync + 'static,
         core: AllocatedJobCore,
+        #[cfg(feature = "onnx")] data_dir: Option<Arc<ServerDataDir>>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
         let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db.clone());
@@ -1122,6 +1136,8 @@ impl Host {
             energy_monitor,
             on_panic,
             core,
+            #[cfg(feature = "onnx")]
+            data_dir,
         )
         .await?;
 

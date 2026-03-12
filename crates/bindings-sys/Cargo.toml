@@ -12,6 +12,7 @@ bench = false
 
 [features]
 unstable = []
+onnx = []
 
 [dependencies]
 spacetimedb-primitives.workspace = true

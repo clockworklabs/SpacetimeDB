@@ -358,6 +358,8 @@ pub fn err_to_errno(err: NodesError) -> Result<(NonZeroU16, Option<String>), Nod
         NodesError::IndexCannotSeekRange => errno::WRONG_INDEX_ALGO,
         NodesError::ScheduleError(ScheduleError::DelayTooLong(_)) => errno::SCHEDULE_AT_DELAY_TOO_LONG,
         NodesError::HttpError(message) => return Ok((errno::HTTP_ERROR, Some(message))),
+        #[cfg(feature = "onnx")]
+        NodesError::OnnxError(message) => return Ok((errno::ONNX_ERROR, Some(message))),
         NodesError::Internal(ref internal) => match **internal {
             DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(
                 UniqueConstraintViolation {

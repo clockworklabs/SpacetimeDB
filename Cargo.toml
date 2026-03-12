@@ -354,6 +354,8 @@ zstd-framed = { version = "0.1.1", features = ["tokio"] }
 # potentially very old system version.
 openssl = { version = "0.10", features = ["vendored"] }
 
+tract-onnx = "0.21"
+
 [workspace.dependencies.wasmtime]
 version = "39"
 default-features = false

@@ -17,6 +17,7 @@ pub mod error;
 mod filterable_value;
 pub mod http;
 pub mod identity;
+pub mod onnx;
 pub mod metrics;
 pub mod operator;
 pub mod query;

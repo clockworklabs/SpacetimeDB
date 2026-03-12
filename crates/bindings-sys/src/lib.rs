@@ -865,6 +865,75 @@ pub mod raw {
         ) -> u16;
     }
 
+    #[cfg(feature = "onnx")]
+    #[link(wasm_import_module = "spacetime_10.5")]
+    unsafe extern "C" {
+        /// Runs ONNX inference on a model identified by name.
+        ///
+        /// `name_ptr[..name_len]` is a UTF-8 model name (e.g. `"bot_brain"`).
+        /// The host resolves this to a `.onnx` file on its filesystem,
+        /// loads and caches the model on first use. Model bytes never enter WASM memory.
+        ///
+        /// `input_ptr[..input_len]` should contain a BSATN-encoded `Vec<spacetimedb_lib::onnx::Tensor>`.
+        ///
+        /// On success, a [`BytesSource`] is written to `out[0]` containing a BSATN-encoded
+        /// `Vec<spacetimedb_lib::onnx::Tensor>` with the inference output, and this function returns 0.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `name_ptr` is NULL or `name_ptr[..name_len]` is not in bounds of WASM memory.
+        /// - `name_ptr[..name_len]` is not valid UTF-8.
+        /// - `input_ptr` is NULL or `input_ptr[..input_len]` is not in bounds of WASM memory.
+        /// - `out` is NULL or `out[..size_of::<u32>()]` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `ONNX_ERROR` if the model could not be found, loaded, or inference failed.
+        ///   In this case, a [`BytesSource`] containing a BSATN-encoded error message `String`
+        ///   is written to `out[0]`.
+        pub fn onnx_run(
+            name_ptr: *const u8,
+            name_len: u32,
+            input_ptr: *const u8,
+            input_len: u32,
+            out: *mut u32,
+        ) -> u16;
+
+        /// Runs ONNX inference on multiple batches of inputs for a single model.
+        ///
+        /// `name_ptr[..name_len]` is a UTF-8 model name.
+        /// `input_ptr[..input_len]` should contain a BSATN-encoded `Vec<Vec<spacetimedb_lib::onnx::Tensor>>`.
+        ///
+        /// On success, a [`BytesSource`] is written to `out[0]` containing a BSATN-encoded
+        /// `Vec<Vec<spacetimedb_lib::onnx::Tensor>>` with the inference outputs, and this function returns 0.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `name_ptr` is NULL or `name_ptr[..name_len]` is not in bounds of WASM memory.
+        /// - `name_ptr[..name_len]` is not valid UTF-8.
+        /// - `input_ptr` is NULL or `input_ptr[..input_len]` is not in bounds of WASM memory.
+        /// - `out` is NULL or `out[..size_of::<u32>()]` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `ONNX_ERROR` if the model could not be found, loaded, or inference failed.
+        ///   In this case, a [`BytesSource`] containing a BSATN-encoded error message `String`
+        ///   is written to `out[0]`.
+        pub fn onnx_run_multi(
+            name_ptr: *const u8,
+            name_len: u32,
+            input_ptr: *const u8,
+            input_len: u32,
+            out: *mut u32,
+        ) -> u16;
+    }
+
     /// What strategy does the database index use?
     ///
     /// See also: <https://www.postgresql.org/docs/current/sql-createindex.html>
@@ -1622,6 +1691,68 @@ pub mod procedure {
             None => Ok((out[0], out[1])),
             // HTTP_ERROR: `out` is a `spacetimedb_lib::http::Error`.
             Some(errno) if errno == super::Errno::HTTP_ERROR => Err(out[0]),
+            Some(errno) => panic!("{errno}"),
+        }
+    }
+}
+
+/// ONNX inference operations, available from both reducers and procedures.
+#[cfg(feature = "onnx")]
+pub mod onnx {
+    use super::raw;
+
+    /// Run ONNX inference on a named model with BSATN-encoded input tensors.
+    ///
+    /// The host loads and caches the model on first use.
+    /// `input_bsatn` should be a BSATN-encoded `Vec<spacetimedb_lib::onnx::Tensor>`.
+    ///
+    /// On success, returns `Ok(bytes_source)` containing BSATN-encoded output tensors.
+    /// On failure, returns `Err(bytes_source)` containing a BSATN-encoded error message.
+    #[inline]
+    pub fn run(name: &str, input_bsatn: &[u8]) -> Result<raw::BytesSource, raw::BytesSource> {
+        let mut out = [raw::BytesSource::INVALID; 1];
+
+        let res = unsafe {
+            super::raw::onnx_run(
+                name.as_ptr(),
+                name.len() as u32,
+                input_bsatn.as_ptr(),
+                input_bsatn.len() as u32,
+                out.as_mut_ptr().cast(),
+            )
+        };
+
+        match super::Errno::from_code(res) {
+            None => Ok(out[0]),
+            Some(errno) if errno == super::Errno::ONNX_ERROR => Err(out[0]),
+            Some(errno) => panic!("{errno}"),
+        }
+    }
+
+    /// Run ONNX inference on multiple batches of inputs for a named model.
+    ///
+    /// The host loads and caches the model on first use.
+    /// `input_bsatn` should be a BSATN-encoded `Vec<Vec<spacetimedb_lib::onnx::Tensor>>`.
+    ///
+    /// On success, returns `Ok(bytes_source)` containing BSATN-encoded `Vec<Vec<Tensor>>`.
+    /// On failure, returns `Err(bytes_source)` containing a BSATN-encoded error message.
+    #[inline]
+    pub fn run_multi(name: &str, input_bsatn: &[u8]) -> Result<raw::BytesSource, raw::BytesSource> {
+        let mut out = [raw::BytesSource::INVALID; 1];
+
+        let res = unsafe {
+            super::raw::onnx_run_multi(
+                name.as_ptr(),
+                name.len() as u32,
+                input_bsatn.as_ptr(),
+                input_bsatn.len() as u32,
+                out.as_mut_ptr().cast(),
+            )
+        };
+
+        match super::Errno::from_code(res) {
+            None => Ok(out[0]),
+            Some(errno) if errno == super::Errno::ONNX_ERROR => Err(out[0]),
             Some(errno) => panic!("{errno}"),
         }
     }

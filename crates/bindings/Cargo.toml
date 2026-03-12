@@ -18,6 +18,7 @@ default = ["rand"]
 rand = ["rand08"]
 rand08 = ["dep:rand08", "dep:getrandom02"]
 unstable = ["spacetimedb-bindings-sys/unstable"]
+onnx = ["spacetimedb-bindings-sys/onnx"]
 
 [dependencies]
 spacetimedb-bindings-sys.workspace = true
