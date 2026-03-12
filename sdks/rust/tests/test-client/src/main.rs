@@ -465,6 +465,13 @@ fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection 
 
 #[cfg(target_arch = "wasm32")]
 fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+    // Why this differs from native:
+    // - In the SDK, `DbConnectionBuilder::build` is sync on non-web builds,
+    //   but async on `feature = "web"` because the websocket/token setup uses
+    //   wasm/web async primitives.
+    // - This test client keeps `connect*` helpers sync so one test body works
+    //   for both native and web runs.
+    // Therefore we bridge the async web `build()` into this sync test harness.
     futures::executor::block_on(builder.build()).unwrap()
 }
 
