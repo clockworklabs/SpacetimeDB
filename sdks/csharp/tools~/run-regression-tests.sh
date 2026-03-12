@@ -23,14 +23,18 @@ cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" call --server local
 cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- publish  --server local -p "$SDK_PATH/examples~/regression-tests/republishing/server-republish" --break-clients republish-test
 cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" call --server local republish-test insert 2
 
-echo "Cleanup obj~ folders generated in $SDK_PATH/examples~/regression-tests/procedure-client"
+echo "Cleanup obj~ folders generated in $SDK_PATH/examples~/regression-tests/procedure-client and $SDK_PATH/examples~/regression-tests/view-pk-client"
 # There is a bug in the code generator that creates obj~ folders in the output directory using a Rust project.
 rm -rf "$SDK_PATH/examples~/regression-tests/procedure-client"/*/obj~
 rm -rf "$SDK_PATH/examples~/regression-tests/procedure-client/module_bindings"/*/obj~
+rm -rf "$SDK_PATH/examples~/regression-tests/view-pk-client"/*/obj~
+rm -rf "$SDK_PATH/examples~/regression-tests/view-pk-client/module_bindings"/*/obj~
 
 # Publish module for procedure tests
 cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- publish -c -y --server local -p "$STDB_PATH/modules/sdk-test-procedure" procedure-tests
 
+# Publish module for view-pk tests
+cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- publish -c -y --server local -p "$STDB_PATH/modules/sdk-test-view-pk-cs" view-pk-tests
 
 # Run client for btree test
 cd "$SDK_PATH/examples~/regression-tests/client" && dotnet run -c Debug
@@ -40,3 +44,6 @@ cd "$SDK_PATH/examples~/regression-tests/republishing/client" && dotnet run -c D
 
 # Run client for procedure test
 cd "$SDK_PATH/examples~/regression-tests/procedure-client" && dotnet run -c Debug
+
+# Run client for view-pk tests
+cd "$SDK_PATH/examples~/regression-tests/view-pk-client" && dotnet run -c Debug
