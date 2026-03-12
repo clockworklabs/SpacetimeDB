@@ -13,7 +13,7 @@ crate-type = ["cdylib", "rlib"]
 default = ["native"]
 
 # Builds the existing CLI test client.
-native = ["dep:test-counter"]
+native = []
 
 # Builds the client for wasm32-unknown-unknown using the Rust SDK `web` backend.
 web = [
@@ -21,7 +21,6 @@ web = [
     "dep:wasm-bindgen",
     "dep:wasm-bindgen-futures",
     "dep:futures",
-    "dep:test-counter",
 ]
 
 [[bin]]
@@ -31,7 +30,7 @@ required-features = ["native"]
 
 [dependencies]
 spacetimedb-sdk = { path = "../.." }
-test-counter = { path = "../test-counter", optional = true }
+test-counter = { path = "../test-counter" }
 anyhow.workspace = true
 futures = { workspace = true, optional = true }
 
