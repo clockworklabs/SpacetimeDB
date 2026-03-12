@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using RegressionTests.Shared;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 
@@ -18,37 +19,6 @@ const uint UPDATED_WHERE_TEST_VALUE = 42;
 const string UPDATED_WHERE_TEST_NAME = "this_name_was_updated";
 const string EXPECTED_TEST_EVENT_NAME = "hello";
 const ulong EXPECTED_TEST_EVENT_VALUE = 42;
-
-DbConnection ConnectToDB()
-{
-    DbConnection? conn = null;
-    conn = DbConnection
-        .Builder()
-        .WithUri(HOST)
-        .WithDatabaseName(DBNAME)
-        .OnConnect(OnConnected)
-        .OnConnectError(
-            (err) =>
-            {
-                throw err;
-            }
-        )
-        .OnDisconnect(
-            (conn, err) =>
-            {
-                if (err != null)
-                {
-                    throw err;
-                }
-                else
-                {
-                    throw new Exception("Unexpected disconnect");
-                }
-            }
-        )
-        .Build();
-    return conn;
-}
 
 uint waiting = 0;
 var applied = false;
@@ -1129,24 +1099,9 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     );
 }
 
-System.AppDomain.CurrentDomain.UnhandledException += (sender, args) =>
-{
-    Log.Exception($"Unhandled exception: {sender} {args}");
-    Environment.Exit(1);
-};
-var db = ConnectToDB();
-Log.Info("Starting timer");
+RegressionTestHarness.RegisterUnhandledExceptionExitHandler();
+var db = RegressionTestHarness.ConnectToDatabase(HOST, DBNAME, OnConnected);
 const int TIMEOUT = 20; // seconds;
-var start = DateTime.Now;
-while (!applied || waiting > 0)
-{
-    db.FrameTick();
-    Thread.Sleep(100);
-    if ((DateTime.Now - start).Seconds > TIMEOUT)
-    {
-        Log.Error($"Timeout, all events should have elapsed in {TIMEOUT} seconds!");
-        Environment.Exit(1);
-    }
-}
+RegressionTestHarness.FrameTickUntilComplete(db, () => applied && waiting == 0, TIMEOUT);
 Log.Info("Success");
 Environment.Exit(0);

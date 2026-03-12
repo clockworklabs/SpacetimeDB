@@ -2,6 +2,7 @@
 /// To run these, start a local SpacetimeDB via `spacetime start`,
 /// publish `modules/sdk-test-view-pk-cs`, and then run this client.
 using System.Threading;
+using RegressionTests.Shared;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 
@@ -20,143 +21,60 @@ var tests = new Dictionary<string, Action>(StringComparer.Ordinal)
         ExecViewPkSemijoinTwoSenderViewsQueryBuilder,
 };
 
-if (args.Length > 1)
-{
-    throw new ArgumentException("Pass zero args (run all) or a single test name.");
-}
-
-System.AppDomain.CurrentDomain.UnhandledException += (sender, evt) =>
-{
-    Log.Exception($"Unhandled exception: {sender} {evt}");
-    Environment.Exit(1);
-};
-
-if (args.Length == 1)
-{
-    var testName = args[0];
-    if (!tests.TryGetValue(testName, out var test))
-    {
-        throw new ArgumentException($"Unknown test: {testName}");
-    }
-
-    Log.Info($"Running {testName}");
-    test();
-}
-else
-{
-    foreach (var (testName, test) in tests)
-    {
-        Log.Info($"Running {testName}");
-        test();
-    }
-}
-
+RegressionTestHarness.RegisterUnhandledExceptionExitHandler();
+RegressionTestHarness.RunNamedTests(args, tests);
 Log.Info("Success");
 Environment.Exit(0);
 
-void Expect(bool condition, string message)
+void RunViewPkTest(string testName, Action<DbConnection, Action, Action<Exception>> start)
 {
-    if (!condition)
+    RegressionTestHarness.RunLiveConnectionTest(HOST, DBNAME, testName, TIMEOUT_SECONDS, start);
+}
+
+void RunOrFail(Action work, Action<Exception> fail)
+{
+    try
     {
-        throw new Exception(message);
+        work();
+    }
+    catch (Exception ex)
+    {
+        fail(ex);
     }
 }
 
-void AssertReducerCommitted(string reducerName, ReducerEventContext ctx)
+void AssertCommittedOrFail(string reducerName, ReducerEventContext ctx, Action<Exception> fail)
 {
-    switch (ctx.Event.Status)
-    {
-        case Status.Committed:
-            return;
-        case Status.Failed(var reason):
-            throw new Exception($"`{reducerName}` reducer returned error: {reason}");
-        case Status.OutOfEnergy(var _):
-            throw new Exception($"`{reducerName}` reducer ran out of energy");
-        default:
-            throw new Exception($"`{reducerName}` reducer returned unexpected status: {ctx.Event.Status}");
-    }
+    RunOrFail(() => RegressionTestHarness.AssertReducerCommitted(reducerName, ctx), fail);
 }
 
-void RunViewPkTest(
+void ExpectSinglePlayerUpdate(
     string testName,
-    Action<DbConnection, Action, Action<Exception>> start
+    ref bool sawUpdate,
+    ulong expectedId,
+    string expectedOldName,
+    string expectedNewName,
+    ulong oldId,
+    string oldName,
+    ulong newId,
+    string newName
 )
 {
-    bool complete = false;
-    bool disconnectExpected = false;
-    Exception? failure = null;
-
-    void Pass()
-    {
-        complete = true;
-    }
-
-    void Fail(Exception error)
-    {
-        failure ??= error;
-    }
-
-    var conn = DbConnection
-        .Builder()
-        .WithUri(HOST)
-        .WithDatabaseName(DBNAME)
-        .OnConnect((connected, _, _) =>
-        {
-            try
-            {
-                start(connected, Pass, Fail);
-            }
-            catch (Exception ex)
-            {
-                Fail(ex);
-            }
-        })
-        .OnConnectError(err =>
-        {
-            Fail(err);
-        })
-        .OnDisconnect((_, err) =>
-        {
-            if (disconnectExpected)
-            {
-                return;
-            }
-
-            if (err != null)
-            {
-                Fail(err);
-                return;
-            }
-
-            if (!complete)
-            {
-                Fail(new Exception($"Unexpected disconnect in {testName}"));
-            }
-        })
-        .Build();
-
-    var deadline = DateTime.UtcNow.AddSeconds(TIMEOUT_SECONDS);
-    while (!complete && failure == null)
-    {
-        conn.FrameTick();
-        Thread.Sleep(10);
-
-        if (DateTime.UtcNow > deadline)
-        {
-            throw new TimeoutException($"Timeout waiting for {testName}");
-        }
-    }
-
-    disconnectExpected = true;
-    if (conn.IsActive)
-    {
-        conn.Disconnect();
-    }
-
-    if (failure != null)
-    {
-        throw new Exception($"{testName} failed", failure);
-    }
+    RegressionTestHarness.Require(
+        !sawUpdate,
+        $"Expected exactly one OnUpdate callback for {testName}."
+    );
+    RegressionTestHarness.Require(oldId == expectedId, $"Expected oldRow.Id={expectedId}, got {oldId}.");
+    RegressionTestHarness.Require(
+        oldName == expectedOldName,
+        $"Expected oldRow.Name={expectedOldName}, got {oldName}."
+    );
+    RegressionTestHarness.Require(newId == expectedId, $"Expected newRow.Id={expectedId}, got {newId}.");
+    RegressionTestHarness.Require(
+        newName == expectedNewName,
+        $"Expected newRow.Name={expectedNewName}, got {newName}."
+    );
+    sawUpdate = true;
 }
 
 /// Subscribe to a query builder view whose underlying table has a primary key.
@@ -173,70 +91,52 @@ void RunViewPkTest(
 /// - `newRow` should be the "after" value
 void ExecViewPkOnUpdate()
 {
+    const string testName = "view-pk-on-update";
     var playerId = NextId();
     const string before = "before";
     const string after = "after";
 
-    RunViewPkTest("view-pk-on-update", (conn, pass, fail) =>
+    RunViewPkTest(testName, (conn, pass, fail) =>
     {
         bool sawUpdate = false;
 
         conn.Reducers.OnInsertViewPkPlayer += (ctx, _, _) =>
-        {
-            try
-            {
-                AssertReducerCommitted("insert_view_pk_player", ctx);
-            }
-            catch (Exception ex)
-            {
-                fail(ex);
-            }
-        };
-
+            AssertCommittedOrFail("insert_view_pk_player", ctx, fail);
         conn.Reducers.OnUpdateViewPkPlayer += (ctx, _, _) =>
-        {
-            try
-            {
-                AssertReducerCommitted("update_view_pk_player", ctx);
-            }
-            catch (Exception ex)
-            {
-                fail(ex);
-            }
-        };
+            AssertCommittedOrFail("update_view_pk_player", ctx, fail);
 
         conn
             .SubscriptionBuilder()
             .OnApplied(ctx =>
-            {
-                try
-                {
-                    ctx.Db.AllViewPkPlayers.OnUpdate += (_, oldRow, newRow) =>
+                RunOrFail(
+                    () =>
                     {
-                        try
-                        {
-                            Expect(!sawUpdate, "Expected exactly one OnUpdate callback for view-pk-on-update.");
-                            Expect(oldRow.Id == playerId, $"Expected oldRow.Id={playerId}, got {oldRow.Id}.");
-                            Expect(oldRow.Name == before, $"Expected oldRow.Name={before}, got {oldRow.Name}.");
-                            Expect(newRow.Id == playerId, $"Expected newRow.Id={playerId}, got {newRow.Id}.");
-                            Expect(newRow.Name == after, $"Expected newRow.Name={after}, got {newRow.Name}.");
-                            sawUpdate = true;
-                            pass();
-                        }
-                        catch (Exception ex)
-                        {
-                            fail(ex);
-                        }
-                    };
+                        ctx.Db.AllViewPkPlayers.OnUpdate += (_, oldRow, newRow) =>
+                            RunOrFail(
+                                () =>
+                                {
+                                    ExpectSinglePlayerUpdate(
+                                        testName,
+                                        ref sawUpdate,
+                                        playerId,
+                                        before,
+                                        after,
+                                        oldRow.Id,
+                                        oldRow.Name,
+                                        newRow.Id,
+                                        newRow.Name
+                                    );
+                                    pass();
+                                },
+                                fail
+                            );
 
-                    ctx.Reducers.InsertViewPkPlayer(playerId, before);
-                    ctx.Reducers.UpdateViewPkPlayer(playerId, after);
-                }
-                catch (Exception ex)
-                {
-                    fail(ex);
-                }
-            })
+                        ctx.Reducers.InsertViewPkPlayer(playerId, before);
+                        ctx.Reducers.UpdateViewPkPlayer(playerId, after);
+                    },
+                    fail
+                )
+            )
             .OnError((_, err) => fail(err))
             .Subscribe(["SELECT * FROM all_view_pk_players"]);
     });
@@ -264,50 +164,22 @@ void ExecViewPkOnUpdate()
 /// - `newRow` should be the "after" value
 void ExecViewPkJoinQueryBuilder()
 {
+    const string testName = "view-pk-join-query-builder";
     var playerId = NextId();
     var membershipId = NextId();
     const string before = "before";
     const string after = "after";
 
-    RunViewPkTest("view-pk-join-query-builder", (conn, pass, fail) =>
+    RunViewPkTest(testName, (conn, pass, fail) =>
     {
         bool sawUpdate = false;
 
         conn.Reducers.OnInsertViewPkPlayer += (ctx, _, _) =>
-        {
-            try
-            {
-                AssertReducerCommitted("insert_view_pk_player", ctx);
-            }
-            catch (Exception ex)
-            {
-                fail(ex);
-            }
-        };
-
+            AssertCommittedOrFail("insert_view_pk_player", ctx, fail);
         conn.Reducers.OnInsertViewPkMembership += (ctx, _, _) =>
-        {
-            try
-            {
-                AssertReducerCommitted("insert_view_pk_membership", ctx);
-            }
-            catch (Exception ex)
-            {
-                fail(ex);
-            }
-        };
-
+            AssertCommittedOrFail("insert_view_pk_membership", ctx, fail);
         conn.Reducers.OnUpdateViewPkPlayer += (ctx, _, _) =>
-        {
-            try
-            {
-                AssertReducerCommitted("update_view_pk_player", ctx);
-            }
-            catch (Exception ex)
-            {
-                fail(ex);
-            }
-        };
+            AssertCommittedOrFail("update_view_pk_player", ctx, fail);
 
         conn
             .SubscriptionBuilder()
@@ -318,36 +190,36 @@ void ExecViewPkJoinQueryBuilder()
                 )
             )
             .OnApplied(ctx =>
-            {
-                try
-                {
-                    ctx.Db.AllViewPkPlayers.OnUpdate += (_, oldRow, newRow) =>
+                RunOrFail(
+                    () =>
                     {
-                        try
-                        {
-                            Expect(!sawUpdate, "Expected exactly one OnUpdate callback for view-pk-join-query-builder.");
-                            Expect(oldRow.Id == playerId, $"Expected oldRow.Id={playerId}, got {oldRow.Id}.");
-                            Expect(oldRow.Name == before, $"Expected oldRow.Name={before}, got {oldRow.Name}.");
-                            Expect(newRow.Id == playerId, $"Expected newRow.Id={playerId}, got {newRow.Id}.");
-                            Expect(newRow.Name == after, $"Expected newRow.Name={after}, got {newRow.Name}.");
-                            sawUpdate = true;
-                            pass();
-                        }
-                        catch (Exception ex)
-                        {
-                            fail(ex);
-                        }
-                    };
+                        ctx.Db.AllViewPkPlayers.OnUpdate += (_, oldRow, newRow) =>
+                            RunOrFail(
+                                () =>
+                                {
+                                    ExpectSinglePlayerUpdate(
+                                        testName,
+                                        ref sawUpdate,
+                                        playerId,
+                                        before,
+                                        after,
+                                        oldRow.Id,
+                                        oldRow.Name,
+                                        newRow.Id,
+                                        newRow.Name
+                                    );
+                                    pass();
+                                },
+                                fail
+                            );
 
-                    ctx.Reducers.InsertViewPkPlayer(playerId, before);
-                    ctx.Reducers.InsertViewPkMembership(membershipId, playerId);
-                    ctx.Reducers.UpdateViewPkPlayer(playerId, after);
-                }
-                catch (Exception ex)
-                {
-                    fail(ex);
-                }
-            })
+                        ctx.Reducers.InsertViewPkPlayer(playerId, before);
+                        ctx.Reducers.InsertViewPkMembership(membershipId, playerId);
+                        ctx.Reducers.UpdateViewPkPlayer(playerId, after);
+                    },
+                    fail
+                )
+            )
             .OnError((_, err) => fail(err))
             .Subscribe();
     });
@@ -376,108 +248,67 @@ void ExecViewPkJoinQueryBuilder()
 /// - `newRow` should be the "after" value
 void ExecViewPkSemijoinTwoSenderViewsQueryBuilder()
 {
+    const string testName = "view-pk-semijoin-two-sender-views-query-builder";
     var playerId = NextId();
     var membershipAId = NextId();
     var membershipBId = NextId();
     const string before = "before";
     const string after = "after";
 
-    RunViewPkTest(
-        "view-pk-semijoin-two-sender-views-query-builder",
-        (conn, pass, fail) =>
-        {
-            bool sawUpdate = false;
+    RunViewPkTest(testName, (conn, pass, fail) =>
+    {
+        bool sawUpdate = false;
 
-            conn.Reducers.OnInsertViewPkPlayer += (ctx, _, _) =>
-            {
-                try
-                {
-                    AssertReducerCommitted("insert_view_pk_player", ctx);
-                }
-                catch (Exception ex)
-                {
-                    fail(ex);
-                }
-            };
+        conn.Reducers.OnInsertViewPkPlayer += (ctx, _, _) =>
+            AssertCommittedOrFail("insert_view_pk_player", ctx, fail);
+        conn.Reducers.OnInsertViewPkMembership += (ctx, _, _) =>
+            AssertCommittedOrFail("insert_view_pk_membership", ctx, fail);
+        conn.Reducers.OnInsertViewPkMembershipSecondary += (ctx, _, _) =>
+            AssertCommittedOrFail("insert_view_pk_membership_secondary", ctx, fail);
+        conn.Reducers.OnUpdateViewPkPlayer += (ctx, _, _) =>
+            AssertCommittedOrFail("update_view_pk_player", ctx, fail);
 
-            conn.Reducers.OnInsertViewPkMembership += (ctx, _, _) =>
-            {
-                try
-                {
-                    AssertReducerCommitted("insert_view_pk_membership", ctx);
-                }
-                catch (Exception ex)
-                {
-                    fail(ex);
-                }
-            };
-
-            conn.Reducers.OnInsertViewPkMembershipSecondary += (ctx, _, _) =>
-            {
-                try
-                {
-                    AssertReducerCommitted("insert_view_pk_membership_secondary", ctx);
-                }
-                catch (Exception ex)
-                {
-                    fail(ex);
-                }
-            };
-
-            conn.Reducers.OnUpdateViewPkPlayer += (ctx, _, _) =>
-            {
-                try
-                {
-                    AssertReducerCommitted("update_view_pk_player", ctx);
-                }
-                catch (Exception ex)
-                {
-                    fail(ex);
-                }
-            };
-
-            conn
-                .SubscriptionBuilder()
-                .AddQuery(q =>
-                    q.From.SenderViewPkPlayersA().RightSemijoin(
-                        q.From.SenderViewPkPlayersB(),
-                        (lhsView, rhsView) => lhsView.Id.Eq(rhsView.Id)
-                    )
+        conn
+            .SubscriptionBuilder()
+            .AddQuery(q =>
+                q.From.SenderViewPkPlayersA().RightSemijoin(
+                    q.From.SenderViewPkPlayersB(),
+                    (lhsView, rhsView) => lhsView.Id.Eq(rhsView.Id)
                 )
-                .OnApplied(ctx =>
-                {
-                    try
+            )
+            .OnApplied(ctx =>
+                RunOrFail(
+                    () =>
                     {
                         ctx.Db.SenderViewPkPlayersB.OnUpdate += (_, oldRow, newRow) =>
-                        {
-                            try
-                            {
-                                Expect(!sawUpdate, "Expected exactly one OnUpdate callback for view-pk-semijoin-two-sender-views-query-builder.");
-                                Expect(oldRow.Id == playerId, $"Expected oldRow.Id={playerId}, got {oldRow.Id}.");
-                                Expect(oldRow.Name == before, $"Expected oldRow.Name={before}, got {oldRow.Name}.");
-                                Expect(newRow.Id == playerId, $"Expected newRow.Id={playerId}, got {newRow.Id}.");
-                                Expect(newRow.Name == after, $"Expected newRow.Name={after}, got {newRow.Name}.");
-                                sawUpdate = true;
-                                pass();
-                            }
-                            catch (Exception ex)
-                            {
-                                fail(ex);
-                            }
-                        };
+                            RunOrFail(
+                                () =>
+                                {
+                                    ExpectSinglePlayerUpdate(
+                                        testName,
+                                        ref sawUpdate,
+                                        playerId,
+                                        before,
+                                        after,
+                                        oldRow.Id,
+                                        oldRow.Name,
+                                        newRow.Id,
+                                        newRow.Name
+                                    );
+                                    pass();
+                                },
+                                fail
+                            );
 
                         ctx.Reducers.InsertViewPkPlayer(playerId, before);
                         ctx.Reducers.InsertViewPkMembership(membershipAId, playerId);
                         ctx.Reducers.InsertViewPkMembershipSecondary(membershipBId, playerId);
                         ctx.Reducers.UpdateViewPkPlayer(playerId, after);
-                    }
-                    catch (Exception ex)
-                    {
-                        fail(ex);
-                    }
-                })
-                .OnError((_, err) => fail(err))
-                .Subscribe();
-        }
-    );
+                    },
+                    fail
+                )
+            )
+            .OnError((_, err) => fail(err))
+            .Subscribe();
+    });
 }
