@@ -8432,6 +8432,7 @@ dependencies = [
  "predicates",
  "regex",
  "serde_json",
+ "spacetimedb-core",
  "spacetimedb-guard",
  "tempfile",
  "tokio",
