@@ -884,6 +884,11 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.56
+
       - name: Smoketest C# AOT build (NativeAOT-LLVM)
         shell: pwsh
         run: |
