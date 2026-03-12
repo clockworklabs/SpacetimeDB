@@ -15,33 +15,6 @@ internal static class RegressionTestHarness
         };
     }
 
-    public static void RunNamedTests(string[] args, IReadOnlyDictionary<string, Action> tests)
-    {
-        if (args.Length > 1)
-        {
-            throw new ArgumentException("Pass zero args (run all) or a single test name.");
-        }
-
-        if (args.Length == 1)
-        {
-            var testName = args[0];
-            if (!tests.TryGetValue(testName, out var test))
-            {
-                throw new ArgumentException($"Unknown test: {testName}");
-            }
-
-            Log.Info($"Running {testName}");
-            test();
-            return;
-        }
-
-        foreach (var (testName, test) in tests)
-        {
-            Log.Info($"Running {testName}");
-            test();
-        }
-    }
-
     public static DbConnection ConnectToDatabase(
         string host,
         string databaseName,
@@ -83,76 +56,6 @@ internal static class RegressionTestHarness
             .Build();
     }
 
-    public static void RunLiveConnectionTest(
-        string host,
-        string databaseName,
-        string testName,
-        int timeoutSeconds,
-        Action<DbConnection, Action, Action<Exception>> start
-    )
-    {
-        bool complete = false;
-        bool disconnectExpected = false;
-        Exception? failure = null;
-
-        void Pass() => complete = true;
-        void Fail(Exception error) => failure ??= error;
-
-        var conn = ConnectToDatabase(
-            host,
-            databaseName,
-            (connected, _, _) =>
-            {
-                try
-                {
-                    start(connected, Pass, Fail);
-                }
-                catch (Exception ex)
-                {
-                    Fail(ex);
-                }
-            },
-            onConnectError: Fail,
-            onDisconnect: err =>
-            {
-                if (disconnectExpected)
-                {
-                    return;
-                }
-
-                if (err != null)
-                {
-                    Fail(err);
-                    return;
-                }
-
-                if (!complete)
-                {
-                    Fail(new Exception($"Unexpected disconnect in {testName}"));
-                }
-            }
-        );
-
-        FrameTickUntilComplete(
-            conn,
-            () => complete || failure != null,
-            timeoutSeconds,
-            sleepMilliseconds: 10,
-            logStart: false
-        );
-
-        disconnectExpected = true;
-        if (conn.IsActive)
-        {
-            conn.Disconnect();
-        }
-
-        if (failure != null)
-        {
-            throw new Exception($"{testName} failed", failure);
-        }
-    }
-
     public static void FrameTickUntilComplete(
         DbConnection conn,
         Func<bool> isComplete,
@@ -184,23 +87,6 @@ internal static class RegressionTestHarness
         if (!condition)
         {
             throw new Exception(message);
-        }
-    }
-
-    public static void AssertReducerCommitted(string reducerName, ReducerEventContext ctx)
-    {
-        switch (ctx.Event.Status)
-        {
-            case Status.Committed:
-                return;
-            case Status.Failed(var reason):
-                throw new Exception($"`{reducerName}` reducer returned error: {reason}");
-            case Status.OutOfEnergy(var _):
-                throw new Exception($"`{reducerName}` reducer ran out of energy");
-            default:
-                throw new Exception(
-                    $"`{reducerName}` reducer returned unexpected status: {ctx.Event.Status}"
-                );
         }
     }
 }

@@ -582,7 +582,19 @@ void ExpectSingleViewPkPlayerUpdate(
     sawUpdate = true;
 }
 
-void StartViewPkOnUpdatePhase()
+/// Subscribe to a query builder view whose underlying table has a primary key.
+/// Ensures the C# SDK emits an `OnUpdate` callback and that the client receives the correct old and new rows.
+///
+/// Test:
+/// 1. Subscribe to: SELECT * FROM all_view_pk_players
+/// 2. Insert row:  (id=1, name="before")
+/// 3. Update row:  (id=1, name="after")
+///
+/// Expect:
+/// - `OnUpdate` is called for PK=1
+/// - `oldRow` should be the "before" value
+/// - `newRow` should be the "after" value
+void ExecViewPkOnUpdate()
 {
     const string testName = "view-pk-on-update";
     var playerId = NextViewPkId();
@@ -613,7 +625,7 @@ void StartViewPkOnUpdatePhase()
                 phaseHandle?.UnsubscribeThen(_ =>
                 {
                     Debug.Assert(sawUpdate, $"Expected an OnUpdate callback for {testName}");
-                    StartViewPkJoinPhase();
+                    ExecViewPkJoinQueryBuilder();
                     waiting--;
                 });
             }
@@ -634,7 +646,27 @@ void StartViewPkOnUpdatePhase()
         .Subscribe();
 }
 
-void StartViewPkJoinPhase()
+/// Subscribe to a right semijoin whose rhs is a view with primary key.
+///
+/// Ensures:
+/// 1. A semijoin subscription involving a view is valid
+/// 2. The C# SDK emits an `OnUpdate` callback and that the client receives the correct old and new rows
+///
+/// Query:
+///   SELECT player.*
+///   FROM view_pk_membership membership
+///   JOIN all_view_pk_players player ON membership.player_id = player.id
+///
+/// Test:
+/// 1. Insert player row (id=1, "before").
+/// 2. Insert membership row referencing player_id=1, allowing the semijoin match.
+/// 3. Update player row to (id=1, "after").
+///
+/// Expect:
+/// - `OnUpdate` is called for player PK=1
+/// - `oldRow` should be the "before" value
+/// - `newRow` should be the "after" value
+void ExecViewPkJoinQueryBuilder()
 {
     const string testName = "view-pk-join-query-builder";
     var playerId = NextViewPkId();
@@ -666,7 +698,7 @@ void StartViewPkJoinPhase()
                 phaseHandle?.UnsubscribeThen(_ =>
                 {
                     Debug.Assert(sawUpdate, $"Expected an OnUpdate callback for {testName}");
-                    StartViewPkSemijoinTwoSenderViewsPhase();
+                    ExecViewPkSemijoinTwoSenderViewsQueryBuilder();
                     waiting--;
                 });
             }
@@ -695,7 +727,28 @@ void StartViewPkJoinPhase()
         .Subscribe();
 }
 
-void StartViewPkSemijoinTwoSenderViewsPhase()
+/// Subscribe to a semijoin between two views with primary keys.
+///
+/// Ensures:
+/// 1. A semijoin subscription involving a view is valid
+/// 2. The C# SDK emits an `OnUpdate` callback and that the client receives the correct old and new rows
+///
+/// Query:
+///   SELECT b.*
+///   FROM sender_view_pk_players_a a
+///   JOIN sender_view_pk_players_b b ON a.id = b.id
+///
+/// Test:
+/// 1. Insert player row (id=1, "before").
+/// 2. Insert membership for sender view A.
+/// 3. Insert membership for sender view B.
+/// 4. Update player row to (id=1, "after").
+///
+/// Expect:
+/// - `OnUpdate` is called for player PK=1
+/// - `oldRow` should be the "before" value
+/// - `newRow` should be the "after" value
+void ExecViewPkSemijoinTwoSenderViewsQueryBuilder()
 {
     const string testName = "view-pk-semijoin-two-sender-views-query-builder";
     var playerId = NextViewPkId();
@@ -1345,7 +1398,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         {
             Log.Debug("Received Unsubscribe");
             ValidateBTreeIndexes(ctx);
-            StartViewPkOnUpdatePhase();
+            ExecViewPkOnUpdate();
             waiting--;
         }
     );
