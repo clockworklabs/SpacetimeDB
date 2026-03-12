@@ -13,7 +13,7 @@ use tokio::{
     runtime,
     sync::{
         futures::OwnedNotified,
-        mpsc::{channel, unbounded_channel, Receiver, Sender, UnboundedReceiver, UnboundedSender},
+        mpsc::{self, channel, Receiver, Sender},
         oneshot, Notify,
     },
     time::timeout,
@@ -36,7 +36,7 @@ type ShutdownReply = oneshot::Sender<OwnedNotified>;
 /// preparing the [TxData] for processing by the [Durability] layer.
 pub struct DurabilityWorker {
     database: Identity,
-    request_tx: UnboundedSender<DurabilityRequest>,
+    request_tx: Sender<DurabilityRequest>,
     shutdown: Sender<ShutdownReply>,
     durability: Arc<Durability>,
     runtime: runtime::Handle,
@@ -47,7 +47,7 @@ impl DurabilityWorker {
     ///
     /// Background tasks will be spawned onto to provided tokio `runtime`.
     pub fn new(database: Identity, durability: Arc<Durability>, runtime: runtime::Handle) -> Self {
-        let (request_tx, request_rx) = unbounded_channel();
+        let (request_tx, request_rx) = channel(5000);
         let (shutdown_tx, shutdown_rx) = channel(1);
 
         let actor = DurabilityWorkerActor {
@@ -76,8 +76,8 @@ impl DurabilityWorker {
     /// this method is responsible only for reading its decision out of the `tx_data`
     /// and calling `durability.append_tx`.
     ///
-    /// This method does not block,
-    /// and sends the work to an actor that collects data and calls `durability.append_tx`.
+    /// This method sends the work to an actor that collects data and calls `durability.append_tx`.
+    /// It blocks if the queue is at capacity.
     ///
     /// # Panics
     ///
@@ -88,12 +88,19 @@ impl DurabilityWorker {
     /// - [Self::shutdown] was called
     ///
     pub fn request_durability(&self, reducer_context: Option<ReducerContext>, tx_data: &Arc<TxData>) {
-        self.request_tx
-            .send(DurabilityRequest {
-                reducer_context,
-                tx_data: tx_data.clone(),
-            })
-            .unwrap_or_else(|_| panic!("durability actor vanished database={}", self.database));
+        // NOTE: Even though the method signature doesn't make it obvious, it is
+        // running in an ambient async context that is a [tokio::task::LocalSet].
+        // This won't allow to block on any tokio runtime, even if it is not the
+        // one the local set is running on.
+        // To escape this, we use a [futures] local thread runtime to effectively
+        // block the execution of the local set.
+        // This is what we want: exert backpressure on the transactional
+        // engine when the durability layer is unable to keep up.
+        futures::executor::block_on(self.request_tx.send(DurabilityRequest {
+            reducer_context,
+            tx_data: tx_data.clone(),
+        }))
+        .unwrap_or_else(|_| panic!("durability actor vanished database={}", self.database));
     }
 
     /// Get the [`DurableOffset`] of this database.
@@ -163,7 +170,7 @@ impl DurabilityWorker {
 }
 
 pub struct DurabilityWorkerActor {
-    request_rx: UnboundedReceiver<DurabilityRequest>,
+    request_rx: mpsc::Receiver<DurabilityRequest>,
     shutdown: Receiver<ShutdownReply>,
     durability: Arc<Durability>,
 }
