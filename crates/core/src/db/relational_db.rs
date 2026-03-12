@@ -1,7 +1,6 @@
 use crate::db::durability::DurabilityWorker;
 use crate::db::MetricsRecorderQueue;
 use crate::error::{DBError, RestoreSnapshotError};
-use crate::messages::control_db::HostType;
 use crate::subscription::ExecutionCounters;
 use crate::util::asyncify;
 use crate::worker_metrics::WORKER_METRICS;
@@ -1861,6 +1860,7 @@ fn default_row_count_fn(db: Identity) -> RowCountFn {
 pub mod tests_utils {
     use crate::db::snapshot;
     use crate::db::snapshot::SnapshotWorker;
+    use crate::messages::control_db::HostType;
 
     use super::*;
     use core::ops::Deref;
