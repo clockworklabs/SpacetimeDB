@@ -1,4 +1,4 @@
-﻿import 'dotenv/config';
+import 'dotenv/config';
 import { readdir, mkdir, writeFile } from 'node:fs/promises';
 import { CONNECTORS } from './connectors';
 import { runOne } from './core/runner';
@@ -17,8 +17,8 @@ if (args.length > 0 && !args[0].startsWith('--')) {
   posArgs = args.slice(1);
 }
 
-let seconds = 1,
-  concurrency = 10,
+let seconds = 10,
+  concurrency = 50,
   accounts = process.env.SEED_ACCOUNTS
     ? Number(process.env.SEED_ACCOUNTS)
     : 100_000,

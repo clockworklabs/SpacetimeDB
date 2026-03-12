@@ -15,7 +15,7 @@ Each run:
 Run a quick performance comparison:
 
 ```bash
-npm run demo
+pnpm run demo
 ```
 
 The script will:
@@ -156,34 +156,34 @@ cd ..
 1. Start SpacetimeDB (`cargo run -p spacetimedb-cli -- start` or `spacetime start`)
 2. Start Convex (inside convex-app run `npx convex dev`)
 3. Init Supabase (run `supabase init`) inside project root.
-4. `npm run prep` to seed the databases.
-5. `npm run bench` to run the test against all connectors.
+4. `pnpm run prep` to seed the databases.
+5. `pnpm run bench` to run the test against all connectors.
 
 ## Commands & Examples
 
 ### 1. Run a test
 
 ```bash
-npm run bench -- [test-name] [--seconds N] [--concurrency N] [--alpha A] [--connectors list]
+pnpm run bench -- [test-name] [--seconds N] [--concurrency N] [--alpha A] [--connectors list]
 ```
 
 Examples:
 
 ```bash
 # Default test (test-1), default args (note: only 1 test right now, and it's embedded)
-npm run bench
+pnpm run bench
 
 # Explicit test name
-npm run bench -- test-1
+pnpm run bench -- test-1
 
 # Short run, 100 concurrent workers
-npm run bench -- test-1 --seconds 10 --concurrency 100
+pnpm run bench -- test-1 --seconds 10 --concurrency 100
 
 # Heavier skew on hot accounts
-npm run bench -- test-1 --alpha 2.0
+pnpm run bench -- test-1 --alpha 2.0
 
 # Only run selected connectors
-npm run bench -- test-1 --connectors spacetimedb,sqlite_rpc
+pnpm run bench -- test-1 --connectors spacetimedb,sqlite_rpc
 ```
 
 ---
@@ -198,11 +198,11 @@ From `src/cli.ts`:
 
 - **`--seconds N`**
   - Duration of the benchmark in seconds
-  - Default: `1`
+  - Default: `10`
 
 - **`--concurrency N`**
   - Number of workers / in-flight operations
-  - Default: `10`
+  - Default: `50`
 
 - **`--alpha A`**
   - Zipf α parameter for account selection (hot vs cold distribution)
@@ -218,6 +218,7 @@ From `src/cli.ts`:
 
   - If omitted, all connectors for that test are run
   - The valid names come from `tc.system` in the test modules and the keys in `CONNECTORS`
+  - Valid names: `convex`, `spacetimedb`, `bun`, `postgres_rpc`, `cockroach_rpc`, `sqlite_rpc`, `supabase_rpc`, `planetscale_pg_rpc`
 
 - **`--contention-tests startAlpha endAlpha step concurrency`**
   - Runs a sweep over Zipf α values for a single connector
@@ -243,7 +244,7 @@ docker compose run --rm bench \
   --connectors convex
 ```
 
-If using Docker, make sure to set `USE_DOCKER=1` in `.env`, verify docker-compose env variables, verify you've run supabase init, and run `npm run prep` before running bench.
+If using Docker, make sure to set `USE_DOCKER=1` in `.env`, verify docker-compose env variables, verify you've run supabase init, and run `pnpm run prep` before running bench.
 
 ## Output
 

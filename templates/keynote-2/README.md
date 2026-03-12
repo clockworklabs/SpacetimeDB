@@ -8,7 +8,7 @@ See SpacetimeDB's performance advantage with one command:
 
 ```bash
 pnpm install
-npm run demo
+pnpm run demo
 ```
 
 The demo compares SpacetimeDB and Convex by default, since both are easy for anyone to set up and run locally without additional infrastructure. Other systems (Postgres, CockroachDB, SQLite, etc.) are also supported but require more setup. The demo checks that required services are running (prompts you to start them if not), seeds databases, and displays animated results.
@@ -95,7 +95,7 @@ docker compose run --rm bench --seconds 10 --concurrency 50 --alpha XX --connect
 
 **Server Machine (Variant A - PhoenixNAP):**
 
-- s3.c3.medium bare metal instance - Intel i9-14900k 24 cores (32 threads), 128GB DDR5 Memory OS: Ubuntu 24.04
+- s3.c3.medium bare metal instance - Intel i9-14900k 24 cores (32 threads), 128GB DDR5 Memory, OS: Ubuntu 24.04
 
 **Server Machine (Variant B - Google Cloud):**
 
@@ -157,7 +157,7 @@ SpacetimeDB supports `withConfirmedReads` mode which ensures transactions are du
 
 PlanetScale results (~477 TPS) demonstrate the **significant impact of cloud database latency**. When the database is accessed over the network (even within the same cloud region), round-trip latency dominates performance. This is why SpacetimeDB's colocated architecture provides such dramatic improvements.
 
-### Rust client
+### Rust Client
 
 When running the benchmark for SpacetimeDB on higher-end hardware we found out that we were actually bottlenecked
 on our test TypeScript client. To get the absolute most out of the performance of SpacetimeDB we wrote a custom
