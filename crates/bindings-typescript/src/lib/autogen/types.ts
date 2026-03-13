@@ -133,6 +133,22 @@ export const HttpResponse = __t.object('HttpResponse', {
 });
 export type HttpResponse = __Infer<typeof HttpResponse>;
 
+export const HttpRequestAndBody = __t.object('HttpRequestAndBody', {
+  get request() {
+    return HttpRequest;
+  },
+  body: __t.byteArray(),
+});
+export type HttpRequestAndBody = __Infer<typeof HttpRequestAndBody>;
+
+export const HttpResponseAndBody = __t.object('HttpResponseAndBody', {
+  get response() {
+    return HttpResponse;
+  },
+  body: __t.byteArray(),
+});
+export type HttpResponseAndBody = __Infer<typeof HttpResponseAndBody>;
+
 // The tagged union or sum type for the algebraic type `HttpVersion`.
 export const HttpVersion = __t.enum('HttpVersion', {
   Http09: __t.unit(),
@@ -358,6 +374,9 @@ export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
   get ExplicitNames() {
     return ExplicitNames;
   },
+  get HttpRoutes() {
+    return __t.array(RawHttpRouteDefV10);
+  },
 });
 export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;
 
@@ -412,6 +431,22 @@ export const RawProcedureDefV10 = __t.object('RawProcedureDefV10', {
   },
 });
 export type RawProcedureDefV10 = __Infer<typeof RawProcedureDefV10>;
+
+export const Path = __t.object('Path', {
+  path: __t.string(),
+});
+export type Path = __Infer<typeof Path>;
+
+export const RawHttpRouteDefV10 = __t.object('RawHttpRouteDefV10', {
+  handlerFunction: __t.string(),
+  get method() {
+    return HttpMethod;
+  },
+  get path() {
+    return Path;
+  },
+});
+export type RawHttpRouteDefV10 = __Infer<typeof RawHttpRouteDefV10>;
 
 export const RawProcedureDefV9 = __t.object('RawProcedureDefV9', {
   name: __t.string(),

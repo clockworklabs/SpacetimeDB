@@ -6,6 +6,7 @@
 //! It allows easier future extensibility to add new kinds of definitions.
 
 use crate::db::raw_def::v9::{Lifecycle, RawIndexAlgorithm, TableAccess, TableType};
+use crate::http;
 use core::fmt;
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
@@ -89,6 +90,9 @@ pub enum RawModuleDefV10Section {
 
     /// Names provided explicitly by the user that do not follow from the case conversion policy.
     ExplicitNames(ExplicitNames),
+
+    /// HTTP route definitions.
+    HttpRoutes(Vec<RawHttpRouteDefV10>),
 }
 
 #[derive(Debug, Clone, Copy, Default, SpacetimeType)]
@@ -134,11 +138,24 @@ pub struct NameMapping {
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, Ord, PartialOrd))]
+pub struct EnumVariantNameMapping {
+    /// The source name of the containing enum.
+    pub enum_source_name: RawIdentifier,
+    /// The source name of the variant.
+    pub variant_source_name: RawIdentifier,
+    /// The canonical name of the variant.
+    pub variant_canonical_name: RawIdentifier,
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, Ord, PartialOrd))]
 #[non_exhaustive]
 pub enum ExplicitNameEntry {
     Table(NameMapping),
     Function(NameMapping),
     Index(NameMapping),
+    EnumVariant(EnumVariantNameMapping),
 }
 
 #[derive(Debug, Default, Clone, SpacetimeType)]
@@ -176,6 +193,19 @@ impl ExplicitNames {
         self.insert(ExplicitNameEntry::Index(NameMapping {
             source_name: source_name.into(),
             canonical_name: canonical_name.into(),
+        }));
+    }
+
+    pub fn insert_enum_variant(
+        &mut self,
+        enum_source_name: impl Into<RawIdentifier>,
+        variant_source_name: impl Into<RawIdentifier>,
+        variant_canonical_name: impl Into<RawIdentifier>,
+    ) {
+        self.insert(ExplicitNameEntry::EnumVariant(EnumVariantNameMapping {
+            enum_source_name: enum_source_name.into(),
+            variant_source_name: variant_source_name.into(),
+            variant_canonical_name: variant_canonical_name.into(),
         }));
     }
 
@@ -355,6 +385,28 @@ pub struct RawProcedureDefV10 {
 
     /// Whether this procedure is callable from clients or is internal-only.
     pub visibility: FunctionVisibility,
+}
+
+/// A path component of a URI.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct Path {
+    /// The trailing path component, including the leading `/`.
+    pub path: RawIdentifier,
+}
+
+/// A definition binding a procedure to an HTTP route.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawHttpRouteDefV10 {
+    /// Identifier for a procedure defined by the module.
+    pub handler_function: RawIdentifier,
+    /// One of the supported HTTP methods.
+    pub method: http::Method,
+    /// The user-configurable trailing part of the path to listen on.
+    pub path: Path,
 }
 
 /// A sequence definition for a database table column.
@@ -608,6 +660,14 @@ impl RawModuleDefV10 {
             _ => None,
         })
     }
+
+    /// Get the http routes section, if present.
+    pub fn http_routes(&self) -> Option<&Vec<RawHttpRouteDefV10>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::HttpRoutes(routes) => Some(routes),
+            _ => None,
+        })
+    }
 }
 
 /// A builder for a [`RawModuleDefV10`].
@@ -782,6 +842,26 @@ impl RawModuleDefV10Builder {
         match &mut self.module.sections[idx] {
             RawModuleDefV10Section::RowLevelSecurity(rls) => rls,
             _ => unreachable!("Just ensured RowLevelSecurity section exists"),
+        }
+    }
+
+    /// Get mutable access to the http routes section, creating it if missing.
+    fn http_routes_mut(&mut self) -> &mut Vec<RawHttpRouteDefV10> {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::HttpRoutes(_)))
+            .unwrap_or_else(|| {
+                self.module
+                    .sections
+                    .push(RawModuleDefV10Section::HttpRoutes(Vec::new()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::HttpRoutes(routes) => routes,
+            _ => unreachable!("Just ensured HttpRoutes section exists"),
         }
     }
 
@@ -968,11 +1048,27 @@ impl RawModuleDefV10Builder {
         params: ProductType,
         return_type: AlgebraicType,
     ) {
+        self.add_procedure_with_visibility(
+            source_name,
+            params,
+            return_type,
+            FunctionVisibility::ClientCallable,
+        );
+    }
+
+    /// Add a procedure to the in-progress module with explicit visibility.
+    pub fn add_procedure_with_visibility(
+        &mut self,
+        source_name: impl Into<RawIdentifier>,
+        params: ProductType,
+        return_type: AlgebraicType,
+        visibility: FunctionVisibility,
+    ) {
         self.procedures_mut().push(RawProcedureDefV10 {
             source_name: source_name.into(),
             params,
             return_type,
-            visibility: FunctionVisibility::ClientCallable,
+            visibility,
         })
     }
 
@@ -1050,6 +1146,20 @@ impl RawModuleDefV10Builder {
             .push(RawRowLevelSecurityDefV10 { sql: sql.into() });
     }
 
+    /// Add an HTTP route definition to the module.
+    pub fn add_http_route(
+        &mut self,
+        handler_function: impl Into<RawIdentifier>,
+        method: http::Method,
+        path: impl Into<RawIdentifier>,
+    ) {
+        self.http_routes_mut().push(RawHttpRouteDefV10 {
+            handler_function: handler_function.into(),
+            method,
+            path: Path { path: path.into() },
+        });
+    }
+
     pub fn add_explicit_names(&mut self, names: ExplicitNames) {
         self.explicit_names_mut().merge(names);
     }
@@ -1088,7 +1198,7 @@ impl TypespaceBuilder for RawModuleDefV10Builder {
         if let btree_map::Entry::Occupied(o) = self.type_map.entry(typeid) {
             AlgebraicType::Ref(*o.get())
         } else {
-            let slot_ref = {
+            let (slot_ref, enum_source_name) = {
                 let ts = self.typespace_mut();
                 // Bind a fresh alias to the unit type.
                 let slot_ref = ts.add(AlgebraicType::unit());
@@ -1096,8 +1206,10 @@ impl TypespaceBuilder for RawModuleDefV10Builder {
                 self.type_map.insert(typeid, slot_ref);
 
                 // Alias provided? Relate `name -> slot_ref`.
-                if let Some(sats_name) = source_name {
+                let enum_source_name = if let Some(sats_name) = source_name {
                     let source_name = sats_name_to_scoped_name_v10(sats_name);
+                    let enum_source_name = should_register_enum_variant_names(sats_name)
+                        .then(|| source_name.source_name.clone());
 
                     self.types_mut().push(RawTypeDefV10 {
                         source_name,
@@ -1108,16 +1220,36 @@ impl TypespaceBuilder for RawModuleDefV10Builder {
                         // macro doesn't know about the default ordering yet.
                         custom_ordering: true,
                     });
-                }
-                slot_ref
+                    enum_source_name
+                } else {
+                    None
+                };
+                (slot_ref, enum_source_name)
             };
 
             // Borrow of `v` has ended here, so we can now convince the borrow checker.
             let ty = make_ty(self);
             self.typespace_mut()[slot_ref] = ty;
+            let enum_variants = match (&enum_source_name, &self.typespace_mut()[slot_ref]) {
+                (Some(enum_source_name), AlgebraicType::Sum(sum)) => Some((
+                    enum_source_name.clone(),
+                    sum.variants.iter().filter_map(|variant| variant.name().cloned()).collect::<Vec<_>>(),
+                )),
+                _ => None,
+            };
+            if let Some((enum_source_name, variant_names)) = enum_variants {
+                for variant_name in variant_names {
+                    self.explicit_names_mut()
+                        .insert_enum_variant(enum_source_name.clone(), variant_name.clone(), variant_name);
+                }
+            }
             AlgebraicType::Ref(slot_ref)
         }
     }
+}
+
+fn should_register_enum_variant_names(sats_name: &str) -> bool {
+    matches!(sats_name, "HttpMethod" | "HttpVersion")
 }
 
 pub fn reducer_default_ok_return_type() -> AlgebraicType {

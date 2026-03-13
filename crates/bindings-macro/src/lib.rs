@@ -132,6 +132,7 @@ mod sym {
     symbol!(update);
     symbol!(default);
     symbol!(event);
+    symbol!(route);
 
     symbol!(u8);
     symbol!(i8);

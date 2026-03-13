@@ -32,9 +32,10 @@ use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors,
 use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v10::{
-    ExplicitNames, RawConstraintDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10,
-    RawModuleDefV10Section, RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10,
-    RawScopedTypeNameV10, RawSequenceDefV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10,
+    ExplicitNames, Path as RawHttpPath, RawConstraintDefV10, RawHttpRouteDefV10, RawIndexDefV10,
+    RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section, RawProcedureDefV10, RawReducerDefV10,
+    RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10, RawSequenceDefV10, RawTableDefV10,
+    RawTypeDefV10, RawViewDefV10,
 };
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
@@ -42,7 +43,7 @@ use spacetimedb_lib::db::raw_def::v9::{
     RawScheduleDefV9, RawScopedTypeNameV9, RawSequenceDefV9, RawSql, RawTableDefV9, RawTypeDefV9,
     RawUniqueConstraintDataV9, RawViewDefV9, TableAccess, TableType,
 };
-use spacetimedb_lib::{ProductType, RawModuleDef};
+use spacetimedb_lib::{http, ProductType, RawModuleDef};
 use spacetimedb_primitives::{ColId, ColList, ColOrCols, ColSet, ProcedureId, ReducerId, TableId, ViewFnPtr};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, Typespace};
@@ -147,6 +148,12 @@ pub struct ModuleDef {
     /// **Note**: Are only validated syntax-wise.
     row_level_security_raw: HashMap<RawSql, RawRowLevelSecurityDefV9>,
 
+    /// HTTP route definitions for this module.
+    http_routes: Vec<HttpRouteDef>,
+
+    /// Lookup map for HTTP routes by method and path.
+    http_route_lookup: HashMap<HttpRouteKey, ProcedureId>,
+
     /// Indicates which raw module definition semantics this module
     /// was authored under.
     #[allow(unused)]
@@ -220,6 +227,19 @@ impl ModuleDef {
     /// The row-level security policies of the module definition.
     pub fn row_level_security(&self) -> impl Iterator<Item = &RawRowLevelSecurityDefV9> {
         self.row_level_security_raw.values()
+    }
+
+    /// The HTTP routes of the module definition.
+    pub fn http_routes(&self) -> impl Iterator<Item = &HttpRouteDef> {
+        self.http_routes.iter()
+    }
+
+    /// Look up an HTTP route by method and path.
+    pub fn http_route(&self, method: &http::Method, path: &str) -> Option<(ProcedureId, &ProcedureDef)> {
+        let key = HttpRouteKey::new(method, path);
+        let procedure_id = self.http_route_lookup.get(&key).copied()?;
+        let def = self.get_procedure_by_id(procedure_id)?;
+        Some((procedure_id, def))
     }
 
     /// The `Typespace` used by the module.
@@ -436,6 +456,8 @@ impl From<ModuleDef> for RawModuleDefV9 {
             refmap: _,
             row_level_security_raw,
             procedures,
+            http_routes: _,
+            http_route_lookup: _,
             raw_module_def_version: _,
         } = val;
 
@@ -492,6 +514,8 @@ impl From<ModuleDef> for RawModuleDefV10 {
             refmap: _,
             row_level_security_raw,
             procedures,
+            http_routes,
+            http_route_lookup: _,
             raw_module_def_version: _,
         } = val;
 
@@ -560,6 +584,19 @@ impl From<ModuleDef> for RawModuleDefV10 {
         }
 
         // Collect ExplicitNames for procedures: accessor_name → source_name, name → canonical_name.
+        let raw_http_routes: Vec<RawHttpRouteDefV10> = http_routes
+            .into_iter()
+            .filter_map(|route| {
+                let (_, def) = procedures.get_index(route.procedure_id.idx())?;
+                Some(RawHttpRouteDefV10 {
+                    handler_function: def.accessor_name.clone().into(),
+                    method: route.method,
+                    path: RawHttpPath {
+                        path: route.path.into(),
+                    },
+                })
+            })
+            .collect();
         let raw_procedures: Vec<RawProcedureDefV10> = procedures
             .into_values()
             .map(|pd| {
@@ -572,6 +609,10 @@ impl From<ModuleDef> for RawModuleDefV10 {
             .collect();
         if !raw_procedures.is_empty() {
             sections.push(RawModuleDefV10Section::Procedures(raw_procedures));
+        }
+
+        if !raw_http_routes.is_empty() {
+            sections.push(RawModuleDefV10Section::HttpRoutes(raw_http_routes));
         }
 
         // Collect ExplicitNames for views: accessor_name → source_name, name → canonical_name.
@@ -1317,6 +1358,29 @@ pub struct ScheduleDef {
 
     /// Whether the `function_name` refers to a reducer or a procedure.
     pub function_kind: FunctionKind,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct HttpRouteDef {
+    pub method: http::Method,
+    pub path: String,
+    pub procedure_id: ProcedureId,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+struct HttpRouteKey {
+    method: http::Method,
+    path: String,
+}
+
+impl HttpRouteKey {
+    fn new(method: &http::Method, path: &str) -> Self {
+        Self {
+            method: method.clone(),
+            path: path.to_string(),
+        }
+    }
 }
 
 impl From<ScheduleDef> for RawScheduleDefV9 {

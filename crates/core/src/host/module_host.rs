@@ -1803,6 +1803,35 @@ impl ModuleHost {
         ret
     }
 
+    pub async fn call_procedure_internal(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        timer: Option<Instant>,
+        procedure_id: ProcedureId,
+        procedure_def: &ProcedureDef,
+        args: FunctionArgs,
+    ) -> CallProcedureReturn {
+        let res = self
+            .call_procedure_inner(
+                caller_identity,
+                caller_connection_id,
+                timer,
+                procedure_id,
+                procedure_def,
+                args,
+            )
+            .await;
+
+        match res {
+            Ok(ret) => ret,
+            Err(err) => CallProcedureReturn {
+                result: Err(err),
+                tx_offset: None,
+            },
+        }
+    }
+
     async fn call_procedure_inner(
         &self,
         caller_identity: Identity,
