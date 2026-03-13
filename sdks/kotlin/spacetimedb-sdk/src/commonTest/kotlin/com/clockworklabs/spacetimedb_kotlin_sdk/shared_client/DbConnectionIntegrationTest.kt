@@ -2398,6 +2398,261 @@ class DbConnectionIntegrationTest {
         conn.disconnect()
     }
 
+    // --- Reducer timeout and burst scenarios ---
+
+    @Test
+    fun pendingReducerCallbacksClearedOnDisconnectNeverFire() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        var callbackFired = false
+        val requestId = conn.callReducer("slow", byteArrayOf(), "args", callback = { _ ->
+            callbackFired = true
+        })
+        advanceUntilIdle()
+
+        // Verify the reducer is pending
+        assertEquals(1, conn.stats.reducerRequestTracker.getRequestsAwaitingResponse())
+
+        // Disconnect before the server responds — simulates a "timeout" scenario
+        conn.disconnect()
+        advanceUntilIdle()
+
+        assertFalse(callbackFired, "Reducer callback must not fire after disconnect")
+    }
+
+    @Test
+    fun burstReducerCallsAllGetUniqueRequestIds() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val count = 100
+        val requestIds = mutableSetOf<UInt>()
+        val results = mutableMapOf<UInt, Status>()
+
+        // Fire 100 reducer calls in a burst
+        repeat(count) { i ->
+            val id = conn.callReducer("op", byteArrayOf(i.toByte()), "args-$i", callback = { ctx ->
+                results[i.toUInt()] = ctx.status
+            })
+            requestIds.add(id)
+        }
+        advanceUntilIdle()
+
+        // All IDs must be unique
+        assertEquals(count, requestIds.size)
+        assertEquals(count, conn.stats.reducerRequestTracker.getRequestsAwaitingResponse())
+
+        // Respond to all in order
+        for (id in requestIds) {
+            transport.sendToClient(
+                ServerMessage.ReducerResultMsg(
+                    requestId = id,
+                    timestamp = Timestamp.UNIX_EPOCH,
+                    result = ReducerOutcome.OkEmpty,
+                )
+            )
+        }
+        advanceUntilIdle()
+
+        assertEquals(0, conn.stats.reducerRequestTracker.getRequestsAwaitingResponse())
+        assertEquals(count, conn.stats.reducerRequestTracker.getSampleCount())
+        conn.disconnect()
+    }
+
+    @Test
+    fun burstReducerCallsRespondedOutOfOrder() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val count = 50
+        val callbacks = mutableMapOf<UInt, Status>()
+        val requestIds = mutableListOf<UInt>()
+
+        repeat(count) { i ->
+            val id = conn.callReducer("op-$i", byteArrayOf(i.toByte()), "args-$i", callback = { ctx ->
+                callbacks[i.toUInt()] = ctx.status
+            })
+            requestIds.add(id)
+        }
+        advanceUntilIdle()
+
+        // Respond in reverse order
+        for (id in requestIds.reversed()) {
+            transport.sendToClient(
+                ServerMessage.ReducerResultMsg(
+                    requestId = id,
+                    timestamp = Timestamp.UNIX_EPOCH,
+                    result = ReducerOutcome.OkEmpty,
+                )
+            )
+        }
+        advanceUntilIdle()
+
+        assertEquals(0, conn.stats.reducerRequestTracker.getRequestsAwaitingResponse())
+        conn.disconnect()
+    }
+
+    @Test
+    fun reducerResultAfterDisconnectIsDropped() = runTest {
+        val transport = FakeTransport()
+        var callbackFired = false
+        val conn = buildTestConnection(transport)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val requestId = conn.callReducer("op", byteArrayOf(), "args", callback = { _ ->
+            callbackFired = true
+        })
+        advanceUntilIdle()
+
+        // Server closes the connection
+        transport.closeFromServer()
+        advanceUntilIdle()
+        assertFalse(conn.isActive)
+
+        // Callback was cleared by failPendingOperations, never fires
+        assertFalse(callbackFired)
+    }
+
+    @Test
+    fun reducerWithTableMutationsAndCallbackBothFire() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        val cache = createSampleCache()
+        conn.clientCache.register("sample", cache)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val handle = conn.subscribe(listOf("SELECT * FROM sample"))
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 1u,
+                querySetId = handle.querySetId,
+                rows = emptyQueryRows(),
+            )
+        )
+        advanceUntilIdle()
+
+        var reducerStatus: Status? = null
+        val insertedRows = mutableListOf<SampleRow>()
+        cache.onInsert { _, row -> insertedRows.add(row) }
+
+        val row1 = SampleRow(1, "Alice")
+        val row2 = SampleRow(2, "Bob")
+
+        val requestId = conn.callReducer("add_two", byteArrayOf(), "args", callback = { ctx ->
+            reducerStatus = ctx.status
+        })
+        advanceUntilIdle()
+
+        // Reducer result inserts two rows in a single transaction
+        transport.sendToClient(
+            ServerMessage.ReducerResultMsg(
+                requestId = requestId,
+                timestamp = Timestamp.UNIX_EPOCH,
+                result = ReducerOutcome.Ok(
+                    retValue = byteArrayOf(),
+                    transactionUpdate = TransactionUpdate(
+                        listOf(
+                            QuerySetUpdate(
+                                handle.querySetId,
+                                listOf(
+                                    TableUpdate(
+                                        "sample",
+                                        listOf(
+                                            TableUpdateRows.PersistentTable(
+                                                inserts = buildRowList(row1.encode(), row2.encode()),
+                                                deletes = buildRowList(),
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    ),
+                ),
+            )
+        )
+        advanceUntilIdle()
+
+        // Both callbacks must have fired
+        assertEquals(Status.Committed, reducerStatus)
+        assertEquals(2, insertedRows.size)
+        assertEquals(2, cache.count())
+        conn.disconnect()
+    }
+
+    @Test
+    fun manyPendingReducersAllClearedOnDisconnect() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        var firedCount = 0
+        repeat(50) {
+            conn.callReducer("op", byteArrayOf(), "args", callback = { _ -> firedCount++ })
+        }
+        advanceUntilIdle()
+
+        assertEquals(50, conn.stats.reducerRequestTracker.getRequestsAwaitingResponse())
+
+        conn.disconnect()
+        advanceUntilIdle()
+
+        assertEquals(0, firedCount, "No reducer callbacks should fire after disconnect")
+    }
+
+    @Test
+    fun mixedReducerOutcomesInBurst() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val results = mutableMapOf<String, Status>()
+
+        val id1 = conn.callReducer("ok1", byteArrayOf(), "ok1", callback = { ctx ->
+            results["ok1"] = ctx.status
+        })
+        val id2 = conn.callReducer("err", byteArrayOf(), "err", callback = { ctx ->
+            results["err"] = ctx.status
+        })
+        val id3 = conn.callReducer("ok2", byteArrayOf(), "ok2", callback = { ctx ->
+            results["ok2"] = ctx.status
+        })
+        val id4 = conn.callReducer("internal_err", byteArrayOf(), "internal_err", callback = { ctx ->
+            results["internal_err"] = ctx.status
+        })
+        advanceUntilIdle()
+
+        val errWriter = BsatnWriter()
+        errWriter.writeString("bad input")
+
+        // Send all results at once — mixed outcomes
+        transport.sendToClient(ServerMessage.ReducerResultMsg(id1, Timestamp.UNIX_EPOCH, ReducerOutcome.OkEmpty))
+        transport.sendToClient(ServerMessage.ReducerResultMsg(id2, Timestamp.UNIX_EPOCH, ReducerOutcome.Err(errWriter.toByteArray())))
+        transport.sendToClient(ServerMessage.ReducerResultMsg(id3, Timestamp.UNIX_EPOCH, ReducerOutcome.OkEmpty))
+        transport.sendToClient(ServerMessage.ReducerResultMsg(id4, Timestamp.UNIX_EPOCH, ReducerOutcome.InternalError("server crash")))
+        advanceUntilIdle()
+
+        assertEquals(4, results.size)
+        assertEquals(Status.Committed, results["ok1"])
+        assertEquals(Status.Committed, results["ok2"])
+        assertTrue(results["err"] is Status.Failed)
+        assertEquals("bad input", (results["err"] as Status.Failed).message)
+        assertTrue(results["internal_err"] is Status.Failed)
+        assertEquals("server crash", (results["internal_err"] as Status.Failed).message)
+        conn.disconnect()
+    }
+
     // --- Subscription state machine edge cases ---
 
     @Test
@@ -2563,6 +2818,432 @@ class DbConnectionIntegrationTest {
 
         assertTrue(handle1.isEnded)
         assertTrue(handle2.isActive)
+        conn.disconnect()
+    }
+
+    // --- Multi-subscription conflict scenarios ---
+
+    @Test
+    fun subscribeAppliedDuringUnsubscribeOfOverlappingSubscription() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        val cache = createSampleCache()
+        conn.clientCache.register("sample", cache)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val sharedRow = SampleRow(1, "Alice")
+        val sub1OnlyRow = SampleRow(2, "Bob")
+
+        // Sub1: gets both rows
+        val handle1 = conn.subscribe(listOf("SELECT * FROM sample"))
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 1u,
+                querySetId = handle1.querySetId,
+                rows = QueryRows(
+                    listOf(SingleTableRows("sample", buildRowList(sharedRow.encode(), sub1OnlyRow.encode())))
+                ),
+            )
+        )
+        advanceUntilIdle()
+        assertEquals(2, cache.count())
+
+        // Start unsubscribing sub1
+        handle1.unsubscribeThen(UnsubscribeFlags.SendDroppedRows) {}
+        advanceUntilIdle()
+        assertTrue(handle1.isUnsubscribing)
+
+        // Sub2 arrives while sub1 unsubscribe is in-flight — shares one row
+        val handle2 = conn.subscribe(listOf("SELECT * FROM sample WHERE id = 1"))
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 2u,
+                querySetId = handle2.querySetId,
+                rows = QueryRows(
+                    listOf(SingleTableRows("sample", buildRowList(sharedRow.encode())))
+                ),
+            )
+        )
+        advanceUntilIdle()
+        assertTrue(handle2.isActive)
+        // sharedRow now has ref count 2, sub1OnlyRow has ref count 1
+        assertEquals(2, cache.count())
+
+        // Sub1 unsubscribe completes — drops both rows by ref count
+        transport.sendToClient(
+            ServerMessage.UnsubscribeApplied(
+                requestId = 3u,
+                querySetId = handle1.querySetId,
+                rows = QueryRows(
+                    listOf(SingleTableRows("sample", buildRowList(sharedRow.encode(), sub1OnlyRow.encode())))
+                ),
+            )
+        )
+        advanceUntilIdle()
+
+        // sharedRow survives (ref count 2 -> 1), sub1OnlyRow removed (ref count 1 -> 0)
+        assertEquals(1, cache.count())
+        assertEquals(sharedRow, cache.all().single())
+        assertTrue(handle1.isEnded)
+        assertTrue(handle2.isActive)
+        conn.disconnect()
+    }
+
+    @Test
+    fun subscriptionErrorDoesNotAffectOtherSubscriptionCachedRows() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        val cache = createSampleCache()
+        conn.clientCache.register("sample", cache)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val row = SampleRow(1, "Alice")
+
+        // Sub1: active with a row in cache
+        val handle1 = conn.subscribe(
+            queries = listOf("SELECT * FROM sample"),
+        )
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 1u,
+                querySetId = handle1.querySetId,
+                rows = QueryRows(
+                    listOf(SingleTableRows("sample", buildRowList(row.encode())))
+                ),
+            )
+        )
+        advanceUntilIdle()
+        assertEquals(1, cache.count())
+        assertTrue(handle1.isActive)
+
+        // Sub2: errors during subscribe (requestId present = non-fatal)
+        var sub2Error: Throwable? = null
+        val handle2 = conn.subscribe(
+            queries = listOf("SELECT * FROM sample WHERE invalid"),
+            onError = listOf { _, err -> sub2Error = err },
+        )
+        transport.sendToClient(
+            ServerMessage.SubscriptionError(
+                requestId = 2u,
+                querySetId = handle2.querySetId,
+                error = "parse error",
+            )
+        )
+        advanceUntilIdle()
+
+        // Sub2 is ended, but sub1's row must still be in cache
+        assertTrue(handle2.isEnded)
+        assertNotNull(sub2Error)
+        assertTrue(handle1.isActive)
+        assertEquals(1, cache.count())
+        assertEquals(row, cache.all().single())
+        assertTrue(conn.isActive)
+        conn.disconnect()
+    }
+
+    @Test
+    fun transactionUpdateSpansMultipleQuerySets() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        val cache = createSampleCache()
+        conn.clientCache.register("sample", cache)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val row1 = SampleRow(1, "Alice")
+        val row2 = SampleRow(2, "Bob")
+
+        // Two subscriptions on the same table
+        val handle1 = conn.subscribe(listOf("SELECT * FROM sample"))
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 1u,
+                querySetId = handle1.querySetId,
+                rows = QueryRows(listOf(SingleTableRows("sample", buildRowList(row1.encode())))),
+            )
+        )
+        advanceUntilIdle()
+
+        val handle2 = conn.subscribe(listOf("SELECT * FROM sample WHERE id = 2"))
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 2u,
+                querySetId = handle2.querySetId,
+                rows = QueryRows(listOf(SingleTableRows("sample", buildRowList()))),
+            )
+        )
+        advanceUntilIdle()
+        assertEquals(1, cache.count())
+
+        // Single TransactionUpdate with updates from BOTH query sets
+        var insertCount = 0
+        cache.onInsert { _, _ -> insertCount++ }
+        transport.sendToClient(
+            ServerMessage.TransactionUpdateMsg(
+                TransactionUpdate(
+                    listOf(
+                        QuerySetUpdate(
+                            handle1.querySetId,
+                            listOf(
+                                TableUpdate(
+                                    "sample",
+                                    listOf(TableUpdateRows.PersistentTable(
+                                        inserts = buildRowList(row2.encode()),
+                                        deletes = buildRowList(),
+                                    ))
+                                )
+                            ),
+                        ),
+                        QuerySetUpdate(
+                            handle2.querySetId,
+                            listOf(
+                                TableUpdate(
+                                    "sample",
+                                    listOf(TableUpdateRows.PersistentTable(
+                                        inserts = buildRowList(row2.encode()),
+                                        deletes = buildRowList(),
+                                    ))
+                                )
+                            ),
+                        ),
+                    )
+                )
+            )
+        )
+        advanceUntilIdle()
+
+        // row2 inserted via both query sets — ref count = 2, but onInsert fires once
+        assertEquals(2, cache.count())
+        assertEquals(1, insertCount)
+        conn.disconnect()
+    }
+
+    @Test
+    fun resubscribeAfterUnsubscribeCompletes() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        val cache = createSampleCache()
+        conn.clientCache.register("sample", cache)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val row = SampleRow(1, "Alice")
+
+        // First subscription
+        val handle1 = conn.subscribe(listOf("SELECT * FROM sample"))
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 1u,
+                querySetId = handle1.querySetId,
+                rows = QueryRows(listOf(SingleTableRows("sample", buildRowList(row.encode())))),
+            )
+        )
+        advanceUntilIdle()
+        assertEquals(1, cache.count())
+
+        // Unsubscribe
+        handle1.unsubscribeThen(UnsubscribeFlags.SendDroppedRows) {}
+        advanceUntilIdle()
+        transport.sendToClient(
+            ServerMessage.UnsubscribeApplied(
+                requestId = 2u,
+                querySetId = handle1.querySetId,
+                rows = QueryRows(listOf(SingleTableRows("sample", buildRowList(row.encode())))),
+            )
+        )
+        advanceUntilIdle()
+        assertEquals(0, cache.count())
+        assertTrue(handle1.isEnded)
+
+        // Re-subscribe with the same query — fresh handle, row re-inserted
+        var reApplied = false
+        val handle2 = conn.subscribe(
+            queries = listOf("SELECT * FROM sample"),
+            onApplied = listOf { _ -> reApplied = true },
+        )
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 3u,
+                querySetId = handle2.querySetId,
+                rows = QueryRows(listOf(SingleTableRows("sample", buildRowList(row.encode())))),
+            )
+        )
+        advanceUntilIdle()
+
+        assertTrue(reApplied)
+        assertTrue(handle2.isActive)
+        assertEquals(1, cache.count())
+        assertEquals(row, cache.all().single())
+        // Old handle stays ended
+        assertTrue(handle1.isEnded)
+        conn.disconnect()
+    }
+
+    @Test
+    fun threeOverlappingSubscriptionsUnsubscribeMiddle() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        val cache = createSampleCache()
+        conn.clientCache.register("sample", cache)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val row = SampleRow(1, "Alice")
+        val encodedRow = row.encode()
+
+        var deleteCount = 0
+        cache.onDelete { _, _ -> deleteCount++ }
+
+        // Three subscriptions all sharing the same row
+        val handle1 = conn.subscribe(listOf("SELECT * FROM sample"))
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 1u,
+                querySetId = handle1.querySetId,
+                rows = QueryRows(listOf(SingleTableRows("sample", buildRowList(encodedRow)))),
+            )
+        )
+        advanceUntilIdle()
+
+        val handle2 = conn.subscribe(listOf("SELECT * FROM sample WHERE id = 1"))
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 2u,
+                querySetId = handle2.querySetId,
+                rows = QueryRows(listOf(SingleTableRows("sample", buildRowList(encodedRow)))),
+            )
+        )
+        advanceUntilIdle()
+
+        val handle3 = conn.subscribe(listOf("SELECT * FROM sample WHERE name = 'Alice'"))
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 3u,
+                querySetId = handle3.querySetId,
+                rows = QueryRows(listOf(SingleTableRows("sample", buildRowList(encodedRow)))),
+            )
+        )
+        advanceUntilIdle()
+        // ref count = 3
+        assertEquals(1, cache.count())
+
+        // Unsubscribe middle subscription
+        handle2.unsubscribeThen(UnsubscribeFlags.SendDroppedRows) {}
+        advanceUntilIdle()
+        transport.sendToClient(
+            ServerMessage.UnsubscribeApplied(
+                requestId = 4u,
+                querySetId = handle2.querySetId,
+                rows = QueryRows(listOf(SingleTableRows("sample", buildRowList(encodedRow)))),
+            )
+        )
+        advanceUntilIdle()
+
+        // ref count 3 -> 2, row still present, no onDelete
+        assertEquals(1, cache.count())
+        assertEquals(0, deleteCount)
+        assertTrue(handle2.isEnded)
+        assertTrue(handle1.isActive)
+        assertTrue(handle3.isActive)
+
+        // Unsubscribe first
+        handle1.unsubscribeThen(UnsubscribeFlags.SendDroppedRows) {}
+        advanceUntilIdle()
+        transport.sendToClient(
+            ServerMessage.UnsubscribeApplied(
+                requestId = 5u,
+                querySetId = handle1.querySetId,
+                rows = QueryRows(listOf(SingleTableRows("sample", buildRowList(encodedRow)))),
+            )
+        )
+        advanceUntilIdle()
+
+        // ref count 2 -> 1, still present
+        assertEquals(1, cache.count())
+        assertEquals(0, deleteCount)
+
+        // Unsubscribe last — ref count -> 0, row deleted
+        handle3.unsubscribeThen(UnsubscribeFlags.SendDroppedRows) {}
+        advanceUntilIdle()
+        transport.sendToClient(
+            ServerMessage.UnsubscribeApplied(
+                requestId = 6u,
+                querySetId = handle3.querySetId,
+                rows = QueryRows(listOf(SingleTableRows("sample", buildRowList(encodedRow)))),
+            )
+        )
+        advanceUntilIdle()
+
+        assertEquals(0, cache.count())
+        assertEquals(1, deleteCount)
+        conn.disconnect()
+    }
+
+    @Test
+    fun unsubscribeDropsUniqueRowsButKeepsSharedRows() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        val cache = createSampleCache()
+        conn.clientCache.register("sample", cache)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val sharedRow = SampleRow(1, "Alice")
+        val sub1Only = SampleRow(2, "Bob")
+        val sub2Only = SampleRow(3, "Charlie")
+
+        // Sub1: gets sharedRow + sub1Only
+        val handle1 = conn.subscribe(listOf("SELECT * FROM sample WHERE id <= 2"))
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 1u,
+                querySetId = handle1.querySetId,
+                rows = QueryRows(
+                    listOf(SingleTableRows("sample", buildRowList(sharedRow.encode(), sub1Only.encode())))
+                ),
+            )
+        )
+        advanceUntilIdle()
+        assertEquals(2, cache.count())
+
+        // Sub2: gets sharedRow + sub2Only
+        val handle2 = conn.subscribe(listOf("SELECT * FROM sample WHERE id != 2"))
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 2u,
+                querySetId = handle2.querySetId,
+                rows = QueryRows(
+                    listOf(SingleTableRows("sample", buildRowList(sharedRow.encode(), sub2Only.encode())))
+                ),
+            )
+        )
+        advanceUntilIdle()
+        assertEquals(3, cache.count())
+
+        val deleted = mutableListOf<Int>()
+        cache.onDelete { _, row -> deleted.add(row.id) }
+
+        // Unsubscribe sub1 — drops sharedRow (ref 2->1) and sub1Only (ref 1->0)
+        handle1.unsubscribeThen(UnsubscribeFlags.SendDroppedRows) {}
+        advanceUntilIdle()
+        transport.sendToClient(
+            ServerMessage.UnsubscribeApplied(
+                requestId = 3u,
+                querySetId = handle1.querySetId,
+                rows = QueryRows(
+                    listOf(SingleTableRows("sample", buildRowList(sharedRow.encode(), sub1Only.encode())))
+                ),
+            )
+        )
+        advanceUntilIdle()
+
+        // sub1Only deleted, sharedRow survives
+        assertEquals(2, cache.count())
+        assertEquals(listOf(2), deleted) // only sub1Only's id
+        val remaining = cache.all().sortedBy { it.id }
+        assertEquals(listOf(sharedRow, sub2Only), remaining)
         conn.disconnect()
     }
 
