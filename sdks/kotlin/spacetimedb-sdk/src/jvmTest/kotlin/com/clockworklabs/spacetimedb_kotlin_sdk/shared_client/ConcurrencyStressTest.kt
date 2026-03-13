@@ -1,6 +1,7 @@
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ServerMessage
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.TableUpdateRows
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 import com.ionspin.kotlin.bignum.integer.BigInteger
@@ -637,5 +638,306 @@ class ConcurrencyStressTest {
 
         assertFalse(conn.isActive)
         assertEquals(1, disconnectCount.get(), "onDisconnect must fire exactly once")
+    }
+
+    // ---- TableCache: concurrent updates (combined delete+insert) ----
+
+    @Test
+    fun tableCacheConcurrentUpdatesReplaceCorrectly() = runBlocking(Dispatchers.Default) {
+        val cache = createSampleCache()
+        val totalRows = THREAD_COUNT * OPS_PER_THREAD
+        // Pre-insert all rows with original names
+        for (i in 0 until totalRows) {
+            cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, "original-$i").encode()))
+        }
+        assertEquals(totalRows, cache.count())
+
+        val barrier = CyclicBarrier(THREAD_COUNT)
+        coroutineScope {
+            repeat(THREAD_COUNT) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val base = threadIdx * OPS_PER_THREAD
+                    for (i in base until base + OPS_PER_THREAD) {
+                        val oldRow = SampleRow(i, "original-$i")
+                        val newRow = SampleRow(i, "updated-$i")
+                        val update = TableUpdateRows.PersistentTable(
+                            inserts = buildRowList(newRow.encode()),
+                            deletes = buildRowList(oldRow.encode()),
+                        )
+                        val parsed = cache.parseUpdate(update)
+                        cache.applyUpdate(STUB_CTX, parsed)
+                    }
+                }
+            }
+        }
+
+        // All rows should be updated, count unchanged
+        assertEquals(totalRows, cache.count())
+        for (row in cache.all()) {
+            assertTrue(row.name.startsWith("updated-"), "Row not updated: $row")
+        }
+    }
+
+    // ---- TableCache: two-phase deletes under contention ----
+
+    @Test
+    fun twoPhaseDeletesUnderContention() = runBlocking(Dispatchers.Default) {
+        val cache = createSampleCache()
+        val totalRows = THREAD_COUNT * OPS_PER_THREAD
+        for (i in 0 until totalRows) {
+            cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, "row-$i").encode()))
+        }
+
+        val beforeDeleteCount = AtomicInteger(0)
+        val deleteCount = AtomicInteger(0)
+        cache.onBeforeDelete { _, _ -> beforeDeleteCount.incrementAndGet() }
+        cache.onDelete { _, _ -> deleteCount.incrementAndGet() }
+
+        val barrier = CyclicBarrier(THREAD_COUNT)
+        coroutineScope {
+            repeat(THREAD_COUNT) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val base = threadIdx * OPS_PER_THREAD
+                    for (i in base until base + OPS_PER_THREAD) {
+                        val row = SampleRow(i, "row-$i")
+                        val parsed = cache.parseDeletes(buildRowList(row.encode()))
+                        cache.preApplyDeletes(STUB_CTX, parsed)
+                        val callbacks = cache.applyDeletes(STUB_CTX, parsed)
+                        callbacks.forEach { it.invoke() }
+                    }
+                }
+            }
+        }
+
+        assertEquals(0, cache.count())
+        assertEquals(totalRows, beforeDeleteCount.get())
+        assertEquals(totalRows, deleteCount.get())
+    }
+
+    // ---- TableCache: two-phase updates under contention ----
+
+    @Test
+    fun twoPhaseUpdatesUnderContention() = runBlocking(Dispatchers.Default) {
+        val cache = createSampleCache()
+        val totalRows = THREAD_COUNT * OPS_PER_THREAD
+        for (i in 0 until totalRows) {
+            cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, "v0-$i").encode()))
+        }
+
+        val updateCount = AtomicInteger(0)
+        cache.onUpdate { _, _, _ -> updateCount.incrementAndGet() }
+
+        val barrier = CyclicBarrier(THREAD_COUNT)
+        coroutineScope {
+            repeat(THREAD_COUNT) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val base = threadIdx * OPS_PER_THREAD
+                    for (i in base until base + OPS_PER_THREAD) {
+                        val oldRow = SampleRow(i, "v0-$i")
+                        val newRow = SampleRow(i, "v1-$i")
+                        val update = TableUpdateRows.PersistentTable(
+                            inserts = buildRowList(newRow.encode()),
+                            deletes = buildRowList(oldRow.encode()),
+                        )
+                        val parsed = cache.parseUpdate(update)
+                        cache.preApplyUpdate(STUB_CTX, parsed)
+                        val callbacks = cache.applyUpdate(STUB_CTX, parsed)
+                        callbacks.forEach { it.invoke() }
+                    }
+                }
+            }
+        }
+
+        assertEquals(totalRows, cache.count())
+        assertEquals(totalRows, updateCount.get())
+        for (row in cache.all()) {
+            assertTrue(row.name.startsWith("v1-"), "Row not updated: $row")
+        }
+    }
+
+    // ---- Content-key table: concurrent operations without primary key ----
+
+    @Test
+    fun contentKeyTableConcurrentInserts() = runBlocking(Dispatchers.Default) {
+        val cache = TableCache.withContentKey(::decodeSampleRow)
+        val totalRows = THREAD_COUNT * OPS_PER_THREAD
+        val barrier = CyclicBarrier(THREAD_COUNT)
+
+        coroutineScope {
+            repeat(THREAD_COUNT) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val base = threadIdx * OPS_PER_THREAD
+                    for (i in base until base + OPS_PER_THREAD) {
+                        cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, "row-$i").encode()))
+                    }
+                }
+            }
+        }
+
+        assertEquals(totalRows, cache.count())
+        val allIds = cache.all().map { it.id }.toSet()
+        assertEquals(totalRows, allIds.size)
+    }
+
+    @Test
+    fun contentKeyTableConcurrentInsertAndDelete() = runBlocking(Dispatchers.Default) {
+        val cache = TableCache.withContentKey(::decodeSampleRow)
+
+        // Pre-insert rows to delete
+        val deleteCount = (THREAD_COUNT / 2) * OPS_PER_THREAD
+        for (i in 0 until deleteCount) {
+            cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, "pre-$i").encode()))
+        }
+
+        val barrier = CyclicBarrier(THREAD_COUNT)
+        coroutineScope {
+            repeat(THREAD_COUNT / 2) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val base = deleteCount + threadIdx * OPS_PER_THREAD
+                    for (i in base until base + OPS_PER_THREAD) {
+                        cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, "new-$i").encode()))
+                    }
+                }
+            }
+            repeat(THREAD_COUNT / 2) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val start = threadIdx * OPS_PER_THREAD
+                    for (i in start until start + OPS_PER_THREAD) {
+                        val row = SampleRow(i, "pre-$i")
+                        val parsed = cache.parseDeletes(buildRowList(row.encode()))
+                        cache.applyDeletes(STUB_CTX, parsed)
+                    }
+                }
+            }
+        }
+
+        val expectedCount = (THREAD_COUNT / 2) * OPS_PER_THREAD
+        assertEquals(expectedCount, cache.count())
+        for (row in cache.all()) {
+            assertTrue(row.name.startsWith("new-"), "Unexpected row: $row")
+        }
+    }
+
+    // ---- Event table: concurrent fire-and-forget ----
+
+    @Test
+    fun eventTableConcurrentUpdatesNeverStoreRows() = runBlocking(Dispatchers.Default) {
+        val cache = createSampleCache()
+        val insertCallbackCount = AtomicInteger(0)
+        cache.onInsert { _, _ -> insertCallbackCount.incrementAndGet() }
+
+        val barrier = CyclicBarrier(THREAD_COUNT)
+        coroutineScope {
+            repeat(THREAD_COUNT) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val base = threadIdx * OPS_PER_THREAD
+                    for (i in base until base + OPS_PER_THREAD) {
+                        val event = TableUpdateRows.EventTable(
+                            events = buildRowList(SampleRow(i, "evt-$i").encode()),
+                        )
+                        val parsed = cache.parseUpdate(event)
+                        val callbacks = cache.applyUpdate(STUB_CTX, parsed)
+                        callbacks.forEach { it.invoke() }
+                    }
+                }
+            }
+        }
+
+        // Event rows must never persist
+        assertEquals(0, cache.count())
+        // Every event should have fired a callback
+        assertEquals(THREAD_COUNT * OPS_PER_THREAD, insertCallbackCount.get())
+    }
+
+    // ---- Index construction from pre-populated cache under contention ----
+
+    @Test
+    fun indexConstructionDuringConcurrentInserts() = runBlocking(Dispatchers.Default) {
+        val cache = createSampleCache()
+        val totalRows = THREAD_COUNT * OPS_PER_THREAD
+        val barrier = CyclicBarrier(THREAD_COUNT + 1) // +1 for index builder
+
+        val indices = mutableListOf<UniqueIndex<SampleRow, Int>>()
+
+        coroutineScope {
+            // Inserters
+            repeat(THREAD_COUNT) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val base = threadIdx * OPS_PER_THREAD
+                    for (i in base until base + OPS_PER_THREAD) {
+                        cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, "row-$i").encode()))
+                    }
+                }
+            }
+            // Index builder — constructs index while inserts are in flight
+            launch {
+                barrier.await()
+                // Build index at various points during insertion
+                repeat(10) {
+                    val index = UniqueIndex(cache) { it.id }
+                    synchronized(indices) { indices.add(index) }
+                    // Small yield to let inserts progress
+                    kotlinx.coroutines.yield()
+                }
+            }
+        }
+
+        // After all inserts complete, every index must be consistent with the final cache
+        assertEquals(totalRows, cache.count())
+        for (index in indices) {
+            // Every row in the cache must be findable in every index
+            for (i in 0 until totalRows) {
+                val found = index.find(i)
+                assertEquals(SampleRow(i, "row-$i"), found, "Index missing row id=$i")
+            }
+        }
+    }
+
+    // ---- ClientCache: concurrent operations across multiple tables ----
+
+    @Test
+    fun clientCacheConcurrentMultiTableOperations() = runBlocking(Dispatchers.Default) {
+        val clientCache = ClientCache()
+        val tableCount = 8
+        val barrier = CyclicBarrier(THREAD_COUNT)
+
+        // Each thread works on a different table (round-robin)
+        coroutineScope {
+            repeat(THREAD_COUNT) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val tableName = "table-${threadIdx % tableCount}"
+                    val table = clientCache.getOrCreateTable<SampleRow>(tableName) {
+                        TableCache.withPrimaryKey(::decodeSampleRow) { it.id }
+                    }
+                    val base = threadIdx * OPS_PER_THREAD
+                    for (i in base until base + OPS_PER_THREAD) {
+                        table.applyInserts(STUB_CTX, buildRowList(SampleRow(i, "row-$i").encode()))
+                    }
+                }
+            }
+        }
+
+        // Verify all tables exist and have correct counts
+        val totalRows = THREAD_COUNT * OPS_PER_THREAD
+        var totalCount = 0
+        val allIds = mutableSetOf<Int>()
+        for (t in 0 until tableCount) {
+            val table = clientCache.getTable<SampleRow>("table-$t")
+            totalCount += table.count()
+            for (row in table.all()) {
+                assertTrue(allIds.add(row.id), "Duplicate row id=${row.id} across tables")
+            }
+        }
+        assertEquals(totalRows, totalCount)
+        assertEquals(totalRows, allIds.size)
     }
 }

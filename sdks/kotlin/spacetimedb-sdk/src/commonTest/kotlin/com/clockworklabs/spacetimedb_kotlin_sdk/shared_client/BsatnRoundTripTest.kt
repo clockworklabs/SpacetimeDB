@@ -145,12 +145,48 @@ class BsatnRoundTripTest {
             BigInteger.ZERO,
             BigInteger.ONE,
             BigInteger(-1),
-            BigInteger.parseString("170141183460469231731687303715884105727"), // I128 max
-            BigInteger.parseString("-170141183460469231731687303715884105728"), // I128 min
+            BigInteger.parseString("170141183460469231731687303715884105727"), // I128 max (2^127 - 1)
+            BigInteger.parseString("-170141183460469231731687303715884105728"), // I128 min (-2^127)
         )
         for (v in values) {
             val result = roundTrip({ it.writeI128(v) }, { it.readI128() })
             assertEquals(v, result, "I128 round-trip failed for $v")
+        }
+    }
+
+    @Test
+    fun i128NegativeEdgeCases() {
+        val ONE = BigInteger.ONE
+        val values = listOf(
+            BigInteger(-2),                                 // 0xFF...FE — near -1
+            -ONE.shl(63),                                   // -2^63: p0=Long.MIN_VALUE as unsigned, p1=-1
+            -ONE.shl(63) + ONE,                             // -2^63 + 1: p0 high bit set
+            -ONE.shl(63) - ONE,                             // -2^63 - 1: borrow from p1 into p0
+            -ONE.shl(64),                                   // -2^64: p0=0, p1=-1 — exact chunk boundary
+            -ONE.shl(64) + ONE,                             // -2^64 + 1: p0 = ULong.MAX_VALUE, p1 = -2
+            -ONE.shl(64) - ONE,                             // -2^64 - 1: just past chunk boundary
+            BigInteger.parseString("-9223372036854775808"),  // -2^63 as decimal
+            BigInteger.parseString("-18446744073709551616"), // -2^64 as decimal
+        )
+        for (v in values) {
+            val result = roundTrip({ it.writeI128(v) }, { it.readI128() })
+            assertEquals(v, result, "I128 negative edge case failed for $v")
+        }
+    }
+
+    @Test
+    fun i128ChunkBoundaryValues() {
+        val ONE = BigInteger.ONE
+        val values = listOf(
+            ONE.shl(63) - ONE,   // 2^63 - 1 = Long.MAX_VALUE in p0
+            ONE.shl(63),         // 2^63: p0 bit 63 set (unsigned), p1=0
+            ONE.shl(64) - ONE,   // 2^64 - 1: p0 = all ones (unsigned), p1 = 0
+            ONE.shl(64),         // 2^64: p0 = 0, p1 = 1
+            ONE.shl(64) + ONE,   // 2^64 + 1: p0 = 1, p1 = 1
+        )
+        for (v in values) {
+            val result = roundTrip({ it.writeI128(v) }, { it.readI128() })
+            assertEquals(v, result, "I128 chunk boundary failed for $v")
         }
     }
 
@@ -167,6 +203,22 @@ class BsatnRoundTripTest {
         }
     }
 
+    @Test
+    fun u128ChunkBoundaryValues() {
+        val ONE = BigInteger.ONE
+        val values = listOf(
+            ONE.shl(63) - ONE,   // 2^63 - 1: p0 just below Long sign bit
+            ONE.shl(63),         // 2^63: p0 has high bit set (read as negative Long)
+            ONE.shl(64) - ONE,   // 2^64 - 1: p0 all ones, p1 = 0
+            ONE.shl(64),         // 2^64: p0 = 0, p1 = 1
+            ONE.shl(127),        // 2^127: p1 high bit set (read as negative Long)
+        )
+        for (v in values) {
+            val result = roundTrip({ it.writeU128(v) }, { it.readU128() })
+            assertEquals(v, result, "U128 chunk boundary failed for $v")
+        }
+    }
+
     // ---- I256 / U256 ----
 
     @Test
@@ -175,10 +227,54 @@ class BsatnRoundTripTest {
             BigInteger.ZERO,
             BigInteger.ONE,
             BigInteger(-1),
+            // I256 max: 2^255 - 1
+            BigInteger.parseString("57896044618658097711785492504343953926634992332820282019728792003956564819967"),
+            // I256 min: -2^255
+            BigInteger.parseString("-57896044618658097711785492504343953926634992332820282019728792003956564819968"),
         )
         for (v in values) {
             val result = roundTrip({ it.writeI256(v) }, { it.readI256() })
             assertEquals(v, result, "I256 round-trip failed for $v")
+        }
+    }
+
+    @Test
+    fun i256NegativeEdgeCases() {
+        val ONE = BigInteger.ONE
+        val values = listOf(
+            BigInteger(-2),                                 // near -1
+            -ONE.shl(63),                                   // -2^63: chunk 0 boundary
+            -ONE.shl(64),                                   // -2^64: exact chunk 0/1 boundary
+            -ONE.shl(64) - ONE,                             // -2^64 - 1: just past first chunk boundary
+            -ONE.shl(127),                                  // -2^127: chunk 1/2 boundary
+            -ONE.shl(128),                                  // -2^128: exact chunk 2 boundary
+            -ONE.shl(128) + ONE,                            // -2^128 + 1
+            -ONE.shl(191),                                  // -2^191: chunk 2/3 boundary
+            -ONE.shl(192),                                  // -2^192: exact chunk 3 boundary
+            -ONE.shl(192) - ONE,                            // -2^192 - 1
+            // Large negative with mixed chunk values
+            BigInteger.parseString("-1000000000000000000000000000000000000000"),
+        )
+        for (v in values) {
+            val result = roundTrip({ it.writeI256(v) }, { it.readI256() })
+            assertEquals(v, result, "I256 negative edge case failed for $v")
+        }
+    }
+
+    @Test
+    fun i256ChunkBoundaryValues() {
+        val ONE = BigInteger.ONE
+        val values = listOf(
+            ONE.shl(63),    // chunk 0 high bit
+            ONE.shl(64),    // chunk 0→1 boundary
+            ONE.shl(127),   // chunk 1 high bit
+            ONE.shl(128),   // chunk 1→2 boundary
+            ONE.shl(191),   // chunk 2 high bit
+            ONE.shl(192),   // chunk 2→3 boundary
+        )
+        for (v in values) {
+            val result = roundTrip({ it.writeI256(v) }, { it.readI256() })
+            assertEquals(v, result, "I256 chunk boundary failed for $v")
         }
     }
 
@@ -193,6 +289,90 @@ class BsatnRoundTripTest {
         for (v in values) {
             val result = roundTrip({ it.writeU256(v) }, { it.readU256() })
             assertEquals(v, result, "U256 round-trip failed for $v")
+        }
+    }
+
+    @Test
+    fun u256ChunkBoundaryValues() {
+        val ONE = BigInteger.ONE
+        val values = listOf(
+            ONE.shl(63),    // chunk 0 high bit (read as negative Long)
+            ONE.shl(64),    // chunk 0→1 boundary
+            ONE.shl(127),   // chunk 1 high bit
+            ONE.shl(128),   // chunk 1→2 boundary
+            ONE.shl(191),   // chunk 2 high bit
+            ONE.shl(192),   // chunk 2→3 boundary
+            ONE.shl(255),   // chunk 3 high bit (read as negative Long)
+        )
+        for (v in values) {
+            val result = roundTrip({ it.writeU256(v) }, { it.readU256() })
+            assertEquals(v, result, "U256 chunk boundary failed for $v")
+        }
+    }
+
+    // ---- Overflow detection ----
+
+    @Test
+    fun i128OverflowRejects() {
+        val ONE = BigInteger.ONE
+        val tooLarge = ONE.shl(127)            // 2^127 = I128 max + 1
+        val tooSmall = -ONE.shl(127) - ONE     // -2^127 - 1
+        assertFailsWith<IllegalArgumentException> {
+            val writer = BsatnWriter()
+            writer.writeI128(tooLarge)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            val writer = BsatnWriter()
+            writer.writeI128(tooSmall)
+        }
+    }
+
+    @Test
+    fun u128OverflowRejects() {
+        val tooLarge = BigInteger.ONE.shl(128)  // 2^128 = U128 max + 1
+        assertFailsWith<IllegalArgumentException> {
+            val writer = BsatnWriter()
+            writer.writeU128(tooLarge)
+        }
+    }
+
+    @Test
+    fun u128NegativeRejects() {
+        assertFailsWith<IllegalArgumentException> {
+            val writer = BsatnWriter()
+            writer.writeU128(BigInteger(-1))
+        }
+    }
+
+    @Test
+    fun i256OverflowRejects() {
+        val ONE = BigInteger.ONE
+        val tooLarge = ONE.shl(255)            // 2^255 = I256 max + 1
+        val tooSmall = -ONE.shl(255) - ONE     // -2^255 - 1
+        assertFailsWith<IllegalArgumentException> {
+            val writer = BsatnWriter()
+            writer.writeI256(tooLarge)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            val writer = BsatnWriter()
+            writer.writeI256(tooSmall)
+        }
+    }
+
+    @Test
+    fun u256OverflowRejects() {
+        val tooLarge = BigInteger.ONE.shl(256)  // 2^256 = U256 max + 1
+        assertFailsWith<IllegalArgumentException> {
+            val writer = BsatnWriter()
+            writer.writeU256(tooLarge)
+        }
+    }
+
+    @Test
+    fun u256NegativeRejects() {
+        assertFailsWith<IllegalArgumentException> {
+            val writer = BsatnWriter()
+            writer.writeU256(BigInteger(-1))
         }
     }
 
