@@ -679,7 +679,7 @@ using namespace SpacetimeDB;
 
 // Return single row using unique indexed field
 SPACETIMEDB_VIEW(std::optional<Player>, my_player, Public, ViewContext ctx) {
-    return ctx.db[player_identity].find(ctx.sender);
+    return ctx.db[player_identity].find(ctx.sender());
 }
 
 // Return multiple rows using indexed field
@@ -733,7 +733,7 @@ ctx.rng()               // Random number generator
 
 ```cpp
 ctx.db                  // Database access (Table accessor)
-ctx.sender              // Identity of caller (Identity type)
+ctx.sender()            // Identity of caller (Identity type)
 ctx.connection_id       // std::optional<ConnectionId>
 ctx.timestamp           // Timestamp of current transaction (Timestamp type)
 ctx.identity()          // Module's own identity (Identity type)

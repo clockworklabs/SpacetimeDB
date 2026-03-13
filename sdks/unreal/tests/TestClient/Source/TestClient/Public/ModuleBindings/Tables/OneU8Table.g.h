@@ -20,7 +20,7 @@ class TESTCLIENT_API UOneU8Table : public URemoteTable
 public:
     void PostInitialize();
 
-    /** Update function for one_u8 table*/
+    /** Update function for one_u_8 table*/
     FTableAppliedDiff<FOneU8Type> Update(TArray<FWithBsatn<FOneU8Type>> InsertsRef, TArray<FWithBsatn<FOneU8Type>> DeletesRef);
 
     /** Number of subscribed rows currently in the cache */
@@ -58,7 +58,7 @@ public:
     FOnOneU8Delete OnDelete;
 
 private:
-    const FString TableName = TEXT("one_u8");
+    const FString TableName = TEXT("one_u_8");
 
     TSharedPtr<UClientCache<FOneU8Type>> Data;
 };

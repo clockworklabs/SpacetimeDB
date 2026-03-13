@@ -238,7 +238,7 @@ FIELD_PrimaryKey(player, identity);
 
 SPACETIMEDB_REDUCER(update_score, ReducerContext ctx, uint32_t new_score) {
     // Get the caller's identity
-    auto caller = ctx.sender;
+    auto caller = ctx.sender();
     
     // Find and update their player record
     if (auto player = ctx.db[player_identity].find(caller)) {
@@ -385,7 +385,7 @@ SPACETIMEDB_SCHEDULE(scheduled_task, 1, send_reminder);
 
 SPACETIMEDB_REDUCER(send_reminder, ReducerContext ctx, ScheduledTask task) {
     // Only allow the scheduler (module identity) to call this
-    if (ctx.sender != ctx.identity()) {
+    if (ctx.sender() != ctx.identity()) {
         return Err("This reducer can only be called by the scheduler");
     }
     

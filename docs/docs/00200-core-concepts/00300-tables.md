@@ -499,10 +499,10 @@ FIELD_UniqueAutoInc(player, player_id)
 FIELD_UniqueAutoInc(logged_out_player, player_id)
 
 // Move a row between tables
-auto maybe_logged_out = ctx.db[logged_out_player_identity].find(ctx.sender);
+auto maybe_logged_out = ctx.db[logged_out_player_identity].find(ctx.sender());
 if (maybe_logged_out) {
   ctx.db[player].insert(*maybe_logged_out);
-  ctx.db[logged_out_player_identity].delete_by_key(ctx.sender);
+  ctx.db[logged_out_player_identity].delete_by_key(ctx.sender());
 }
 ```
 

@@ -20,7 +20,7 @@ class TESTCLIENT_API UVecU128Table : public URemoteTable
 public:
     void PostInitialize();
 
-    /** Update function for vec_u128 table*/
+    /** Update function for vec_u_128 table*/
     FTableAppliedDiff<FVecU128Type> Update(TArray<FWithBsatn<FVecU128Type>> InsertsRef, TArray<FWithBsatn<FVecU128Type>> DeletesRef);
 
     /** Number of subscribed rows currently in the cache */
@@ -58,7 +58,7 @@ public:
     FOnVecU128Delete OnDelete;
 
 private:
-    const FString TableName = TEXT("vec_u128");
+    const FString TableName = TEXT("vec_u_128");
 
     TSharedPtr<UClientCache<FVecU128Type>> Data;
 };
