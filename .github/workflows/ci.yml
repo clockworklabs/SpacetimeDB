@@ -887,30 +887,12 @@ jobs:
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v14
         with:
-          # Emscripten is required by NativeAOT-LLVM for the EMSDK env var
-          version: 3.1.24
+          version: 4.0.23
 
       - name: Smoketest C# AOT build (NativeAOT-LLVM)
         shell: pwsh
         run: |
           $env:EXPERIMENTAL_WASM_AOT = "1"
-          # Pre-download wasi-sdk so we can use its clang instead of Emscripten's
-          # NativeAOT-LLVM auto-downloads wasi-sdk but then uses EMSDK's clang which is incompatible
-          $wasiSdkVersion = "24"
-          $wasiSdkPath = "$env:USERPROFILE\.wasi-sdk\wasi-sdk-$wasiSdkVersion"
-          if (-not (Test-Path $wasiSdkPath)) {
-            Write-Host "Downloading wasi-sdk-$wasiSdkVersion..."
-            $wasiSdkUrl = "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-$wasiSdkVersion/wasi-sdk-$wasiSdkVersion.0-x86_64-windows.tar.gz"
-            $wasiSdkTar = "$env:TEMP\wasi-sdk.tar.gz"
-            Invoke-WebRequest -Uri $wasiSdkUrl -OutFile $wasiSdkTar
-            New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.wasi-sdk" | Out-Null
-            tar -xzf $wasiSdkTar -C "$env:USERPROFILE\.wasi-sdk"
-            Move-Item "$env:USERPROFILE\.wasi-sdk\wasi-sdk-$wasiSdkVersion.0-x86_64-windows" $wasiSdkPath
-          }
-          # Override EMSDK clang path to use wasi-sdk's clang instead
-          # This prevents the "absolute addressing not supported" error from Emscripten's newer clang
-          $env:CC = "$wasiSdkPath\bin\clang.exe"
-          $env:CXX = "$wasiSdkPath\bin\clang++.exe"
           dotnet publish -c Release modules/sdk-test-cs
           if (-not (Test-Path "modules/sdk-test-cs/bin/Release/net8.0/wasi-wasm/publish/StdbModule.wasm")) {
             Write-Error "StdbModule.wasm not found"
