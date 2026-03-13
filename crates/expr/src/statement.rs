@@ -137,16 +137,10 @@ pub fn type_insert(insert: SqlInsert, tx: &impl SchemaView) -> TypingResult<Tabl
                 (SqlLiteral::Bool(v), AlgebraicType::Bool) => {
                     values.push(AlgebraicValue::Bool(v));
                 }
-                (SqlLiteral::Str(v), AlgebraicType::String) => {
-                    values.push(AlgebraicValue::String(v));
-                }
                 (SqlLiteral::Bool(_), _) => {
-                    return Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into());
+                    return Err(UnexpectedType::new(ty, &AlgebraicType::Bool).into());
                 }
-                (SqlLiteral::Str(_), _) => {
-                    return Err(UnexpectedType::new(&AlgebraicType::String, ty).into());
-                }
-                (SqlLiteral::Hex(v), ty) | (SqlLiteral::Num(v), ty) => {
+                (SqlLiteral::Num(v), ty) | (SqlLiteral::Hex(v), ty) | (SqlLiteral::Str(v), ty) => {
                     values.push(parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?);
                 }
             }
@@ -222,16 +216,10 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
             (SqlLiteral::Bool(v), AlgebraicType::Bool) => {
                 values.push((*col_id, AlgebraicValue::Bool(v)));
             }
-            (SqlLiteral::Str(v), AlgebraicType::String) => {
-                values.push((*col_id, AlgebraicValue::String(v)));
-            }
             (SqlLiteral::Bool(_), _) => {
-                return Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into());
+                return Err(UnexpectedType::new(ty, &AlgebraicType::Bool).into());
             }
-            (SqlLiteral::Str(_), _) => {
-                return Err(UnexpectedType::new(&AlgebraicType::String, ty).into());
-            }
-            (SqlLiteral::Hex(v), ty) | (SqlLiteral::Num(v), ty) => {
+            (SqlLiteral::Num(v), ty) | (SqlLiteral::Hex(v), ty) | (SqlLiteral::Str(v), ty) => {
                 values.push((
                     *col_id,
                     parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?,
