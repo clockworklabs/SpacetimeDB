@@ -25,6 +25,7 @@ members = [
     "views-subscribe",
     "views-query",
     "views-callable",
+    "views-count",
 
     # Security and permissions
     "rls",
