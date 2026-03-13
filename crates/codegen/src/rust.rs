@@ -1308,7 +1308,7 @@ impl __sdk::InModule for Reducer {{
 }
 
 fn print_db_update_defn(module: &ModuleDef, visibility: CodegenVisibility, out: &mut Indenter) {
-    writeln!(out, "#[derive(Default)]");
+    writeln!(out, "#[derive(Default, Debug)]");
     writeln!(out, "#[allow(non_snake_case)]");
     writeln!(out, "#[doc(hidden)]");
     out.delimited_block(
@@ -1411,9 +1411,19 @@ impl __sdk::InModule for DbUpdate {{
                     }
                     for view in iter_views(module) {
                         let field_name = table_method_name(&view.accessor_name);
+                        let with_updates = view
+                            .primary_key
+                            .map(|col| {
+                                let pk_field = view.return_columns[col.idx()]
+                                    .accessor_name
+                                    .deref()
+                                    .to_case(Case::Snake);
+                                format!(".with_updates_by_pk(|row| &row.{pk_field})")
+                            })
+                            .unwrap_or_default();
                         writeln!(
                             out,
-                            "diff.{field_name} = cache.apply_diff_to_table::<{}>({:?}, &self.{field_name});",
+                            "diff.{field_name} = cache.apply_diff_to_table::<{}>({:?}, &self.{field_name}){with_updates};",
                             type_ref_name(module, view.product_type_ref),
                             view.name.deref(),
                         );
@@ -1606,6 +1616,7 @@ fn print_const_db_context_types(out: &mut Indenter) {
         out,
         "
 #[doc(hidden)]
+#[derive(Debug)]
 pub struct RemoteModule;
 
 impl __sdk::InModule for RemoteModule {{

@@ -1203,10 +1203,20 @@ impl SubscriptionManager {
     /// If a query no longer has any subscribers,
     /// it is removed from the index along with its table ids.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn remove_all_subscriptions(&mut self, client: &ClientId) {
+    pub fn remove_all_subscriptions(&mut self, client: &ClientId) -> Vec<Query> {
+        let mut removed_query_hashes = HashSet::new();
+        if let Some(client_info) = self.clients.get(client) {
+            removed_query_hashes.extend(client_info.legacy_subscriptions.iter().copied());
+            removed_query_hashes.extend(client_info.subscription_ref_count.keys().copied());
+        }
+        let removed_queries = removed_query_hashes
+            .into_iter()
+            .filter_map(|hash| self.queries.get(&hash).map(|q| q.query.clone()))
+            .collect::<Vec<_>>();
+
         self.remove_legacy_subscriptions(client);
         let Some(client_info) = self.remove_client_and_inform_send_worker(*client) else {
-            return;
+            return removed_queries;
         };
 
         debug_assert!(client_info.legacy_subscriptions.is_empty());
@@ -1252,6 +1262,8 @@ impl SubscriptionManager {
         for query_hash in queries_to_remove {
             self.queries.remove(&query_hash);
         }
+
+        removed_queries
     }
 
     /// Find the queries that need to be evaluated for this table update.

@@ -970,12 +970,16 @@ impl InstanceEnv {
 
 /// Default timeout for HTTP requests performed by [`InstanceEnv::http_request`].
 ///
-/// Value chosen arbitrarily by pgoldman 2025-11-18, based on little more than a vague guess.
-const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
+/// Applied when the module does not specify a timeout.
+/// 30 seconds is generous enough for most external API calls (including LLM APIs)
+/// without silently hanging forever on a broken endpoint.
+const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 /// Maximum timeout for HTTP requests performed by [`InstanceEnv::http_request`].
 ///
 /// If the user requests a timeout longer than this, we will clamp to this value.
-const HTTP_MAX_TIMEOUT: Duration = Duration::from_secs(10);
+/// 180 seconds accommodates long-running LLM and AI API calls,
+/// which routinely take 30-120 seconds for complex requests.
+const HTTP_MAX_TIMEOUT: Duration = Duration::from_secs(180);
 const BLOCKED_HTTP_ADDRESS_ERROR: &str = "refusing to connect to private or special-purpose addresses";
 
 struct FilteredDnsResolver;
