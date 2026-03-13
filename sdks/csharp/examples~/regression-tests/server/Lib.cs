@@ -169,6 +169,35 @@ public static partial class Module
         public string? Name;
     }
 
+    [SpacetimeDB.Table(Accessor = "view_pk_player", Public = true)]
+    public partial struct ViewPkPlayer
+    {
+        [SpacetimeDB.PrimaryKey]
+        public ulong Id;
+
+        public string Name;
+    }
+
+    [SpacetimeDB.Table(Accessor = "view_pk_membership", Public = true)]
+    public partial struct ViewPkMembership
+    {
+        [SpacetimeDB.PrimaryKey]
+        public ulong Id;
+
+        [SpacetimeDB.Index.BTree]
+        public ulong PlayerId;
+    }
+
+    [SpacetimeDB.Table(Accessor = "view_pk_membership_secondary", Public = true)]
+    public partial struct ViewPkMembershipSecondary
+    {
+        [SpacetimeDB.PrimaryKey]
+        public ulong Id;
+
+        [SpacetimeDB.Index.BTree]
+        public ulong PlayerId;
+    }
+
     // At-most-one row: return T?
     [SpacetimeDB.View(Accessor = "my_player", Public = true)]
     public static Player? MyPlayer(ViewContext ctx)
@@ -335,6 +364,34 @@ public static partial class Module
         return rows;
     }
 
+    [SpacetimeDB.View(Accessor = "all_view_pk_players", Public = true)]
+    public static IQuery<ViewPkPlayer> AllViewPkPlayers(ViewContext ctx)
+    {
+        return ctx.From.view_pk_player();
+    }
+
+    [SpacetimeDB.View(Accessor = "sender_view_pk_players_a", Public = true)]
+    public static IQuery<ViewPkPlayer> SenderViewPkPlayersA(ViewContext ctx)
+    {
+        return ctx
+            .From.view_pk_membership()
+            .RightSemijoin(
+                ctx.From.view_pk_player(),
+                (membership, player) => membership.PlayerId.Eq(player.Id)
+            );
+    }
+
+    [SpacetimeDB.View(Accessor = "sender_view_pk_players_b", Public = true)]
+    public static IQuery<ViewPkPlayer> SenderViewPkPlayersB(ViewContext ctx)
+    {
+        return ctx
+            .From.view_pk_membership_secondary()
+            .RightSemijoin(
+                ctx.From.view_pk_player(),
+                (membership, player) => membership.PlayerId.Eq(player.Id)
+            );
+    }
+
     [SpacetimeDB.Reducer]
     public static void Delete(ReducerContext ctx, uint id)
     {
@@ -421,6 +478,36 @@ public static partial class Module
                 Value = value,
                 Name = name,
             }
+        );
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void InsertViewPkPlayer(ReducerContext ctx, ulong id, string name)
+    {
+        ctx.Db.view_pk_player.Insert(new ViewPkPlayer { Id = id, Name = name });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void UpdateViewPkPlayer(ReducerContext ctx, ulong id, string name)
+    {
+        ctx.Db.view_pk_player.Id.Update(new ViewPkPlayer { Id = id, Name = name });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void InsertViewPkMembership(ReducerContext ctx, ulong id, ulong playerId)
+    {
+        ctx.Db.view_pk_membership.Insert(new ViewPkMembership { Id = id, PlayerId = playerId });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void InsertViewPkMembershipSecondary(
+        ReducerContext ctx,
+        ulong id,
+        ulong playerId
+    )
+    {
+        ctx.Db.view_pk_membership_secondary.Insert(
+            new ViewPkMembershipSecondary { Id = id, PlayerId = playerId }
         );
     }
 

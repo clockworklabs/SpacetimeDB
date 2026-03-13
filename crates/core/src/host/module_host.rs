@@ -464,7 +464,6 @@ fn init_database_inner(
     let stdb = &*replica_ctx.relational_db;
     let logger = replica_ctx.logger.system_logger();
     let owner_identity = replica_ctx.database.owner_identity;
-    let host_type = replica_ctx.host_type;
 
     let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
     let auth_ctx = AuthCtx::for_current(owner_identity);
@@ -499,7 +498,7 @@ fn init_database_inner(
                     .with_context(|| format!("failed to create row-level security for table `{table_id}`: `{sql}`",))?;
             }
 
-            stdb.set_initialized(tx, host_type, program)?;
+            stdb.set_initialized(tx, program)?;
 
             anyhow::Ok(())
         })
@@ -1252,7 +1251,6 @@ impl ModuleHost {
             client_id.identity,
             client_id.connection_id,
             info,
-            true,
             call_reducer,
             trapped_slot,
         )
@@ -1294,7 +1292,6 @@ impl ModuleHost {
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
         info: &ModuleInfo,
-        drop_view_subscribers: bool,
         call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResult, bool),
         trapped_slot: &mut bool,
     ) -> Result<(), ReducerCallError> {
@@ -1310,20 +1307,10 @@ impl ModuleHost {
 
         let workload = || Workload::reducer_no_args(reducer_name.clone(), caller_identity, caller_connection_id);
 
-        // Decrement the number of subscribers for each view this caller is subscribed to
-        let dec_view_subscribers = |tx: &mut MutTxId| {
-            if drop_view_subscribers && let Err(err) = tx.unsubscribe_views(caller_identity) {
-                log::error!("`call_identity_disconnected`: failed to delete client view data: {err}");
-            }
-        };
-
         // A fallback transaction that deletes the client from `st_client`.
         let database_identity = stdb.database_identity();
         let fallback = || {
             stdb.with_auto_commit(workload(), |mut_tx| {
-
-                dec_view_subscribers(mut_tx);
-
                 if !is_client_exist(mut_tx) {
                     // The client is already gone. Nothing to do.
                     log::debug!(
@@ -1349,9 +1336,7 @@ impl ModuleHost {
         };
 
         if let Some((reducer_id, reducer_def)) = reducer_lookup {
-            let mut mut_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload());
-
-            dec_view_subscribers(&mut mut_tx);
+            let mut_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload());
 
             if !is_client_exist(&mut_tx) {
                 // The client is already gone. Nothing to do.
@@ -1431,13 +1416,12 @@ impl ModuleHost {
         &self,
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
-        drop_view_subscribers: bool,
     ) -> Result<(), ReducerCallError> {
         self.call(
             "call_identity_disconnected",
-            (caller_identity, caller_connection_id, drop_view_subscribers),
-            async |(a, b, c), inst| inst.call_identity_disconnected(a, b, c),
-            async |(a, b, c), inst| inst.call_identity_disconnected(a, b, c).await,
+            (caller_identity, caller_connection_id),
+            async |(a, b), inst| inst.call_identity_disconnected(a, b),
+            async |(a, b), inst| inst.call_identity_disconnected(a, b).await,
         )
         .await?
     }
