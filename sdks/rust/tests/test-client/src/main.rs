@@ -148,8 +148,8 @@ pub(crate) async fn dispatch(test: &str) {
 
         "should-fail" => exec_should_fail().await,
 
-        "reconnect-different-connection-id" => exec_reconnect_different_connection_id(),
-        "caller-always-notified" => exec_caller_always_notified(),
+        "reconnect-different-connection-id" => exec_reconnect_different_connection_id().await,
+        "caller-always-notified" => exec_caller_always_notified().await,
 
         "subscribe-all-select-star" => exec_subscribe_all_select_star().await,
         "caller-alice-receives-reducer-callback-but-not-bob" => {
@@ -449,7 +449,7 @@ async fn connect_with_then(
     conn
 }
 
-fn connect_then(
+async fn connect_then(
     test_counter: &std::sync::Arc<TestCounter>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
 ) -> DbConnection {
@@ -2671,7 +2671,7 @@ async fn exec_two_different_compression_algos() {
     // Connect with brotli, gzip, and no compression.
     // One of them will insert and all of them will subscribe.
     // All should get back `bytes`.
-    fn connect_with_compression(
+    async fn connect_with_compression(
         test_counter: &Arc<TestCounter>,
         compression_name: &str,
         compression: Compression,
@@ -2709,7 +2709,8 @@ async fn exec_two_different_compression_algos() {
                     }
                 })
             },
-        );
+        )
+        .await;
     }
     let test_counter: Arc<TestCounter> = TestCounter::new();
     let barrier = Arc::new(Barrier::new(3));
@@ -2735,7 +2736,7 @@ async fn test_parameterized_subscription() {
     let update_0 = Some(ctr_for_test.add_test("update_0"));
     let update_1 = Some(ctr_for_test.add_test("update_1"));
 
-    fn subscribe_and_update(
+    async fn subscribe_and_update(
         test_name: &str,
         old: i32,
         new: i32,
@@ -2821,8 +2822,9 @@ async fn test_rls_subscription() {
                 let expected_identity = sender;
                 subscribe_these_then(ctx, &["SELECT * FROM users"], move |ctx| {
                     put_result(&mut record_sub, Ok(()));
-                    // Wait to insert until both client connections have been made
-                    ctr_for_subs.wait_for_all();
+                    // Invoke the reducer only after this client's RLS-filtered subscription is
+                    // active. As above, callback code must remain non-blocking so wasm can keep
+                    // delivering websocket and row events on the same event loop.
                     ctx.reducers
                         .insert_user_then(user_name, sender, reducer_callback_assert_committed("insert_user"))
                         .unwrap();
