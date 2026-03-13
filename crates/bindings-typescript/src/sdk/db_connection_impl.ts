@@ -176,6 +176,15 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   private ws?: WebsocketAdapter;
   private wsPromise: Promise<WebsocketAdapter | undefined>;
 
+  private wsConfig?: {
+    url: URL;
+    nameOrAddress: string;
+    createWSFn: typeof WebsocketDecompressAdapter.createWebSocketFn;
+    compression: 'gzip' | 'none';
+    lightMode: boolean;
+    confirmedReads?: boolean;
+  };
+
   constructor({
     uri,
     nameOrAddress,
@@ -242,6 +251,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     this.db = this.#makeDbView();
     this.reducers = this.#makeReducers(remoteModule);
     this.procedures = this.#makeProcedures(remoteModule);
+
+    this.wsConfig = { url, nameOrAddress, createWSFn, compression, lightMode, confirmedReads };
 
     this.wsPromise = createWSFn({
       url,
@@ -978,6 +989,69 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    */
   disconnect(): void {
     this.wsPromise.then(ws => ws?.close());
+  }
+
+  /**
+   * Reconnect to SpacetimeDB with an optional new authentication token.
+   *
+   * Preserves the client cache — existing table data stays intact while
+   * subscriptions are re-established on the new connection. This avoids
+   * the data gap that occurs when creating a new connection object.
+   *
+   * @param newToken - Optional new auth token. If not provided, reuses the existing token.
+   *
+   * @example
+   *
+   * ```ts
+   * connection.onDisconnect(() => {
+   *   const freshToken = await refreshAuthToken();
+   *   connection.reconnect(freshToken);
+   * });
+   * ```
+   */
+  reconnect(newToken?: string): void {
+    if (newToken !== undefined) {
+      this.token = newToken;
+    }
+    stdbLogger('info', 'Reconnecting to SpacetimeDB WS...');
+    if (this.ws) {
+      this.ws.onclose = null as any;
+      this.ws.onerror = null as any;
+      this.ws.onopen = null as any;
+      this.ws.onmessage = null as any;
+      this.ws.close();
+      this.ws = undefined;
+    }
+    this.isActive = false;
+    const cfg = this.wsConfig!;
+    this.wsPromise = cfg.createWSFn({
+      url: cfg.url,
+      nameOrAddress: cfg.nameOrAddress,
+      wsProtocol: 'v2.bsatn.spacetimedb',
+      authToken: this.token,
+      compression: cfg.compression,
+      lightMode: cfg.lightMode,
+      confirmedReads: cfg.confirmedReads,
+    })
+      .then(v => {
+        this.ws = v;
+        this.ws.onclose = () => {
+          this.#emitter.emit('disconnect', this);
+          this.isActive = false;
+        };
+        this.ws.onerror = (e: ErrorEvent) => {
+          this.#emitter.emit('connectError', this, e);
+          this.isActive = false;
+        };
+        this.ws.onopen = this.#handleOnOpen.bind(this);
+        this.ws.onmessage = this.#handleOnMessage.bind(this);
+        return v;
+      })
+      .catch(e => {
+        stdbLogger('error', 'Error reconnecting to SpacetimeDB WS');
+        this.#emitter.emit('connectError', this, e);
+        return undefined;
+      });
   }
 
   private on(
