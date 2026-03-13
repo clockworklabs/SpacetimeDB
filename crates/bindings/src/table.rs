@@ -21,11 +21,10 @@ pub trait Table: TableInternal + ExplicitNames {
     /// The type of rows stored in this table.
     type Row: SpacetimeType + Serialize + DeserializeOwned + Sized + 'static;
 
-    /// Returns the number of rows of this table.
+    /// Returns the number of rows in this table.
     ///
-    /// This takes into account modifications by the current transaction,
-    /// even though those modifications have not yet been committed or broadcast to clients.
-    /// This applies generally to insertions, deletions, updates, and iteration as well.
+    /// This reads datastore metadata, so it runs in constant time.
+    /// It also takes into account modifications by the current transaction.
     fn count(&self) -> u64 {
         count::<Self>()
     }

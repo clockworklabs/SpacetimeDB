@@ -614,6 +614,13 @@ export const top_players = spacetimedb.view({ name: 'top_players' }, {}, t.array
 export const bottom_players = spacetimedb.view({ name: 'bottom_players' }, {}, t.array(player.rowType), ctx => {
   return ctx.from.player.where(p => p.score.lt(1000))
 });
+
+// Count rows in a table.
+export const player_count = spacetimedb.anonymousView({ name: 'player_count' }, {}, t.array(t.row('PlayerCount', {
+  count: t.u64(),
+})), ctx => {
+  return [{ count: ctx.db.player.count() }];
+});
 ```
 
 </TabItem>
@@ -643,13 +650,26 @@ public static IQuery<Player> BottomPlayers(ViewContext ctx)
 {
     return ctx.From.Player().Where(p => p.Score.Lt(1000));
 }
+
+// Count rows in a table.
+[SpacetimeDB.Type]
+public partial struct PlayerCount
+{
+    public ulong Count;
+}
+
+[SpacetimeDB.View(Accessor = "PlayerCount", Public = true)]
+public static List<PlayerCount> PlayerCountView(AnonymousViewContext ctx)
+{
+    return new List<PlayerCount> { new PlayerCount { Count = ctx.Db.Player.Count } };
+}
 ```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::{view, Query, ViewContext};
+use spacetimedb::{view, AnonymousViewContext, Query, SpacetimeType, ViewContext};
 
 // Return single row
 #[view(accessor = my_player, public)]
@@ -668,6 +688,19 @@ fn top_players(ctx: &ViewContext) -> Vec<Player> {
 #[view(accessor = bottom_players, public)]
 fn bottom_players(ctx: &ViewContext) -> impl Query<Player> {
     ctx.from.player().r#where(|p| p.score.lt(1000))
+}
+
+#[derive(SpacetimeType)]
+struct PlayerCount {
+    count: u64,
+}
+
+// Count rows in a table.
+#[view(accessor = player_count, public)]
+fn player_count(ctx: &AnonymousViewContext) -> Vec<PlayerCount> {
+    vec![PlayerCount {
+        count: ctx.db.player().count(),
+    }]
 }
 ```
 
