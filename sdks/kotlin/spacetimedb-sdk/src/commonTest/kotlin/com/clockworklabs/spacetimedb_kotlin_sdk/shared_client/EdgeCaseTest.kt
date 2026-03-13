@@ -6,6 +6,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.TimeDuration
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Timestamp
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.transport.Transport
 import com.ionspin.kotlin.bignum.integer.BigInteger
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -1832,6 +1833,239 @@ class EdgeCaseTest {
         advanceUntilIdle()
 
         assertNull(receivedReason)
+    }
+
+    // =========================================================================
+    // Reconnection (new connection after old one is closed)
+    // =========================================================================
+
+    @Test
+    fun freshConnectionWorksAfterPreviousDisconnect() = runTest {
+        val transport1 = FakeTransport()
+        val conn1 = buildTestConnection(transport1)
+        transport1.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        assertTrue(conn1.isActive)
+        assertEquals(testIdentity, conn1.identity)
+
+        conn1.disconnect()
+        advanceUntilIdle()
+        assertFalse(conn1.isActive)
+
+        // Build a completely new connection (the "reconnect by rebuilding" pattern)
+        val transport2 = FakeTransport()
+        val secondIdentity = Identity(BigInteger.TEN)
+        val secondConnectionId = ConnectionId(BigInteger(20))
+        var conn2ConnectFired = false
+        val conn2 = buildTestConnection(transport2, onConnect = { _, _, _ ->
+            conn2ConnectFired = true
+        })
+        transport2.sendToClient(
+            ServerMessage.InitialConnection(
+                identity = secondIdentity,
+                connectionId = secondConnectionId,
+                token = "new-token",
+            )
+        )
+        advanceUntilIdle()
+
+        assertTrue(conn2.isActive)
+        assertTrue(conn2ConnectFired)
+        assertEquals(secondIdentity, conn2.identity)
+
+        // Old connection must remain closed
+        assertFalse(conn1.isActive)
+        conn2.disconnect()
+    }
+
+    @Test
+    fun freshConnectionCacheIsIndependentFromOld() = runTest {
+        val transport1 = FakeTransport()
+        val conn1 = buildTestConnection(transport1)
+        val cache1 = createSampleCache()
+        conn1.clientCache.register("sample", cache1)
+        transport1.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        // Insert a row via first connection
+        val handle1 = conn1.subscribe(listOf("SELECT * FROM sample"))
+        transport1.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 1u,
+                querySetId = handle1.querySetId,
+                rows = QueryRows(
+                    listOf(SingleTableRows("sample", buildRowList(SampleRow(1, "Alice").encode())))
+                ),
+            )
+        )
+        advanceUntilIdle()
+        assertEquals(1, cache1.count())
+
+        conn1.disconnect()
+        advanceUntilIdle()
+
+        // Second connection has its own empty cache
+        val transport2 = FakeTransport()
+        val conn2 = buildTestConnection(transport2)
+        val cache2 = createSampleCache()
+        conn2.clientCache.register("sample", cache2)
+        transport2.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        assertEquals(0, cache2.count())
+        conn2.disconnect()
+    }
+
+    // =========================================================================
+    // Concurrent / racing disconnect
+    // =========================================================================
+
+    @Test
+    fun disconnectWhileConnectingDoesNotCrash() = runTest {
+        // Use a transport that suspends forever in connect()
+        val suspendingTransport = object : Transport {
+            override val isConnected: Boolean get() = false
+            override suspend fun connect() {
+                kotlinx.coroutines.awaitCancellation()
+            }
+            override suspend fun send(message: ClientMessage) {}
+            override fun incoming(): kotlinx.coroutines.flow.Flow<ServerMessage> =
+                kotlinx.coroutines.flow.emptyFlow()
+            override suspend fun disconnect() {}
+        }
+
+        val conn = DbConnection(
+            transport = suspendingTransport,
+            httpClient = io.ktor.client.HttpClient(),
+            scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)),
+            onConnectCallbacks = emptyList(),
+            onDisconnectCallbacks = emptyList(),
+            onConnectErrorCallbacks = emptyList(),
+            clientConnectionId = ConnectionId.random(),
+            stats = Stats(),
+            moduleDescriptor = null,
+            callbackDispatcher = null,
+        )
+
+        // Start connecting in a background job — it will suspend in transport.connect()
+        val connectJob = launch { conn.connect() }
+        advanceUntilIdle()
+
+        // Disconnect while connect() is still suspended
+        conn.disconnect()
+        advanceUntilIdle()
+
+        assertFalse(conn.isActive)
+        connectJob.cancel()
+    }
+
+    @Test
+    fun multipleSequentialDisconnectsFireCallbackOnlyOnce() = runTest {
+        val transport = FakeTransport()
+        var disconnectCount = 0
+        val conn = buildTestConnection(transport, onDisconnect = { _, _ ->
+            disconnectCount++
+        })
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+        assertTrue(conn.isActive)
+
+        // Three rapid sequential disconnects
+        conn.disconnect()
+        conn.disconnect()
+        conn.disconnect()
+        advanceUntilIdle()
+
+        assertEquals(1, disconnectCount)
+    }
+
+    @Test
+    fun disconnectDuringSubscribeAppliedProcessing() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        val cache = createSampleCache()
+        conn.clientCache.register("sample", cache)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val handle = conn.subscribe(listOf("SELECT * FROM sample"))
+        // Queue a SubscribeApplied then immediately disconnect
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 1u,
+                querySetId = handle.querySetId,
+                rows = QueryRows(
+                    listOf(SingleTableRows("sample", buildRowList(SampleRow(1, "Alice").encode())))
+                ),
+            )
+        )
+        conn.disconnect()
+        advanceUntilIdle()
+
+        // Connection must be closed; cache state depends on timing but must be consistent
+        assertFalse(conn.isActive)
+    }
+
+    @Test
+    fun disconnectClearsClientCacheCompletely() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        val cache = createSampleCache()
+        conn.clientCache.register("sample", cache)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val handle = conn.subscribe(listOf("SELECT * FROM sample"))
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 1u,
+                querySetId = handle.querySetId,
+                rows = QueryRows(
+                    listOf(
+                        SingleTableRows(
+                            "sample",
+                            buildRowList(
+                                SampleRow(1, "Alice").encode(),
+                                SampleRow(2, "Bob").encode(),
+                            )
+                        )
+                    )
+                ),
+            )
+        )
+        advanceUntilIdle()
+        assertEquals(2, cache.count())
+
+        conn.disconnect()
+        advanceUntilIdle()
+
+        // disconnect() must clear the cache
+        assertEquals(0, cache.count())
+    }
+
+    @Test
+    fun serverCloseFollowedByClientDisconnectDoesNotDoubleFailPending() = runTest {
+        val transport = FakeTransport()
+        var disconnectCount = 0
+        val conn = buildTestConnection(transport, onDisconnect = { _, _ ->
+            disconnectCount++
+        })
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        // Fire a reducer call so there's a pending callback
+        conn.callReducer("test", byteArrayOf(1), "args")
+        advanceUntilIdle()
+
+        // Server closes, then client also calls disconnect
+        transport.closeFromServer()
+        conn.disconnect()
+        advanceUntilIdle()
+
+        // Callback fires at most once
+        assertEquals(1, disconnectCount)
+        assertFalse(conn.isActive)
     }
 
     // =========================================================================

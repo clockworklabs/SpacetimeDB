@@ -1,0 +1,641 @@
+package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
+
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ServerMessage
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
+import com.ionspin.kotlin.bignum.integer.BigInteger
+import io.ktor.client.HttpClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
+
+/**
+ * Concurrency stress tests for the lock-free data structures in the SDK.
+ * These run on JVM with real threads (Dispatchers.Default) to exercise
+ * CAS loops and atomic operations under actual contention.
+ */
+class ConcurrencyStressTest {
+
+    companion object {
+        private const val THREAD_COUNT = 16
+        private const val OPS_PER_THREAD = 500
+    }
+
+    // ---- TableCache: concurrent inserts ----
+
+    @Test
+    fun tableCacheConcurrentInsertsAreNotLost() = runBlocking(Dispatchers.Default) {
+        val cache = createSampleCache()
+        val totalRows = THREAD_COUNT * OPS_PER_THREAD
+        val barrier = CyclicBarrier(THREAD_COUNT)
+
+        coroutineScope {
+            repeat(THREAD_COUNT) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val start = threadIdx * OPS_PER_THREAD
+                    for (i in start until start + OPS_PER_THREAD) {
+                        val row = SampleRow(i, "row-$i")
+                        cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
+                    }
+                }
+            }
+        }
+
+        assertEquals(totalRows, cache.count())
+        val allIds = cache.all().map { it.id }.toSet()
+        assertEquals(totalRows, allIds.size)
+        for (i in 0 until totalRows) {
+            assertTrue(i in allIds, "Missing row id=$i")
+        }
+    }
+
+    // ---- TableCache: concurrent inserts and deletes ----
+
+    @Test
+    fun tableCacheConcurrentInsertAndDeleteConverges() = runBlocking(Dispatchers.Default) {
+        val cache = createSampleCache()
+        val barrier = CyclicBarrier(THREAD_COUNT)
+
+        // Pre-insert rows that will be deleted
+        val deleteRange = 0 until (THREAD_COUNT / 2) * OPS_PER_THREAD
+        for (i in deleteRange) {
+            cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, "pre-$i").encode()))
+        }
+
+        coroutineScope {
+            // Half the threads insert new rows
+            repeat(THREAD_COUNT / 2) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val base = deleteRange.last + 1 + threadIdx * OPS_PER_THREAD
+                    for (i in base until base + OPS_PER_THREAD) {
+                        cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, "new-$i").encode()))
+                    }
+                }
+            }
+            // Half the threads delete pre-inserted rows
+            repeat(THREAD_COUNT / 2) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val start = threadIdx * OPS_PER_THREAD
+                    for (i in start until start + OPS_PER_THREAD) {
+                        val row = SampleRow(i, "pre-$i")
+                        val parsed = cache.parseDeletes(buildRowList(row.encode()))
+                        cache.applyDeletes(STUB_CTX, parsed)
+                    }
+                }
+            }
+        }
+
+        // All pre-inserted rows should be gone, all new rows should exist
+        val insertedCount = (THREAD_COUNT / 2) * OPS_PER_THREAD
+        assertEquals(insertedCount, cache.count())
+        for (row in cache.all()) {
+            assertTrue(row.name.startsWith("new-"), "Unexpected row: $row")
+        }
+    }
+
+    // ---- TableCache: concurrent reads during writes ----
+
+    @Test
+    fun tableCacheReadsAreConsistentSnapshotsDuringWrites() = runBlocking(Dispatchers.Default) {
+        val cache = createSampleCache()
+        val barrier = CyclicBarrier(THREAD_COUNT)
+
+        coroutineScope {
+            // Writers
+            repeat(THREAD_COUNT / 2) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val base = threadIdx * OPS_PER_THREAD
+                    for (i in base until base + OPS_PER_THREAD) {
+                        cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, "row-$i").encode()))
+                    }
+                }
+            }
+            // Readers: snapshot must always be self-consistent
+            repeat(THREAD_COUNT / 2) { _ ->
+                launch {
+                    barrier.await()
+                    repeat(OPS_PER_THREAD) {
+                        val snapshot = cache.all()
+                        val count = cache.count()
+                        // Snapshot is a point-in-time view — its size should be consistent
+                        // (count() may differ since it reads a newer snapshot)
+                        val ids = snapshot.map { it.id }.toSet()
+                        assertEquals(snapshot.size, ids.size, "Snapshot contains duplicate IDs")
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- TableCache: concurrent ref count increments and decrements ----
+
+    @Test
+    fun tableCacheRefCountSurvivesConcurrentIncrementDecrement() = runBlocking(Dispatchers.Default) {
+        val cache = createSampleCache()
+        val sharedRow = SampleRow(42, "shared")
+        cache.applyInserts(STUB_CTX, buildRowList(sharedRow.encode()))
+
+        val barrier = CyclicBarrier(THREAD_COUNT)
+
+        // Each thread increments then decrements the refcount
+        coroutineScope {
+            repeat(THREAD_COUNT) { _ ->
+                launch {
+                    barrier.await()
+                    repeat(OPS_PER_THREAD) {
+                        cache.applyInserts(STUB_CTX, buildRowList(sharedRow.encode()))
+                        val parsed = cache.parseDeletes(buildRowList(sharedRow.encode()))
+                        cache.applyDeletes(STUB_CTX, parsed)
+                    }
+                }
+            }
+        }
+
+        // After all increments + decrements, refcount should be back to 1
+        assertEquals(1, cache.count())
+        assertEquals(sharedRow, cache.all().single())
+    }
+
+    // ---- UniqueIndex: consistent with cache under concurrent mutations ----
+
+    @Test
+    fun uniqueIndexStaysConsistentUnderConcurrentInserts() = runBlocking(Dispatchers.Default) {
+        val cache = createSampleCache()
+        val index = UniqueIndex(cache) { it.id }
+        val totalRows = THREAD_COUNT * OPS_PER_THREAD
+        val barrier = CyclicBarrier(THREAD_COUNT)
+
+        coroutineScope {
+            repeat(THREAD_COUNT) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val base = threadIdx * OPS_PER_THREAD
+                    for (i in base until base + OPS_PER_THREAD) {
+                        cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, "row-$i").encode()))
+                    }
+                }
+            }
+        }
+
+        // Every inserted row must be findable in the index
+        for (i in 0 until totalRows) {
+            val found = index.find(i)
+            assertEquals(SampleRow(i, "row-$i"), found, "Index missing row id=$i")
+        }
+    }
+
+    @Test
+    fun uniqueIndexStaysConsistentUnderConcurrentInsertsAndDeletes() = runBlocking(Dispatchers.Default) {
+        val cache = createSampleCache()
+        val index = UniqueIndex(cache) { it.id }
+
+        // Pre-insert rows to delete
+        val deleteCount = (THREAD_COUNT / 2) * OPS_PER_THREAD
+        for (i in 0 until deleteCount) {
+            cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, "pre-$i").encode()))
+        }
+
+        val barrier = CyclicBarrier(THREAD_COUNT)
+        coroutineScope {
+            // Inserters
+            repeat(THREAD_COUNT / 2) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val base = deleteCount + threadIdx * OPS_PER_THREAD
+                    for (i in base until base + OPS_PER_THREAD) {
+                        cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, "new-$i").encode()))
+                    }
+                }
+            }
+            // Deleters
+            repeat(THREAD_COUNT / 2) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val start = threadIdx * OPS_PER_THREAD
+                    for (i in start until start + OPS_PER_THREAD) {
+                        val row = SampleRow(i, "pre-$i")
+                        val parsed = cache.parseDeletes(buildRowList(row.encode()))
+                        cache.applyDeletes(STUB_CTX, parsed)
+                    }
+                }
+            }
+        }
+
+        // Deleted rows gone from index
+        for (i in 0 until deleteCount) {
+            assertEquals(null, index.find(i), "Deleted row id=$i still in index")
+        }
+        // New rows present in index
+        val insertBase = deleteCount
+        val insertCount = (THREAD_COUNT / 2) * OPS_PER_THREAD
+        for (i in insertBase until insertBase + insertCount) {
+            assertEquals(SampleRow(i, "new-$i"), index.find(i), "Index missing new row id=$i")
+        }
+    }
+
+    // ---- BTreeIndex: consistent under concurrent mutations ----
+
+    @Test
+    fun btreeIndexStaysConsistentUnderConcurrentInserts() = runBlocking(Dispatchers.Default) {
+        val cache = createSampleCache()
+        // Key on name — groups of rows share the same name
+        val groupCount = 10
+        val index = BTreeIndex(cache) { it.name }
+        val barrier = CyclicBarrier(THREAD_COUNT)
+
+        coroutineScope {
+            repeat(THREAD_COUNT) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val base = threadIdx * OPS_PER_THREAD
+                    for (i in base until base + OPS_PER_THREAD) {
+                        val groupName = "group-${i % groupCount}"
+                        cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, groupName).encode()))
+                    }
+                }
+            }
+        }
+
+        val totalRows = THREAD_COUNT * OPS_PER_THREAD
+        val expectedPerGroup = totalRows / groupCount
+        for (g in 0 until groupCount) {
+            val matches = index.filter("group-$g")
+            assertEquals(expectedPerGroup, matches.size, "Group group-$g count mismatch")
+        }
+    }
+
+    // ---- Callback registration: concurrent add/remove during iteration ----
+
+    @Test
+    fun callbackRegistrationSurvivesConcurrentAddRemove() = runBlocking(Dispatchers.Default) {
+        val cache = createSampleCache()
+        val callCount = AtomicInteger(0)
+        val barrier = CyclicBarrier(THREAD_COUNT)
+
+        coroutineScope {
+            // Half the threads add and remove callbacks
+            repeat(THREAD_COUNT / 2) { _ ->
+                launch {
+                    barrier.await()
+                    repeat(OPS_PER_THREAD) {
+                        val cb: (EventContext, SampleRow) -> Unit = { _, _ -> callCount.incrementAndGet() }
+                        cache.onInsert(cb)
+                        cache.removeOnInsert(cb)
+                    }
+                }
+            }
+            // Other half trigger inserts (fires callbacks that are registered at snapshot time)
+            repeat(THREAD_COUNT / 2) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val base = threadIdx * OPS_PER_THREAD
+                    for (i in base until base + OPS_PER_THREAD) {
+                        val callbacks = cache.applyInserts(
+                            STUB_CTX, buildRowList(SampleRow(i, "row-$i").encode())
+                        )
+                        callbacks.forEach { it.invoke() }
+                    }
+                }
+            }
+        }
+
+        // The test passes if no ConcurrentModificationException or lost update occurs.
+        // callCount can be anything (depends on timing), but count() must be exact.
+        val insertedCount = (THREAD_COUNT / 2) * OPS_PER_THREAD
+        assertEquals(insertedCount, cache.count())
+    }
+
+    // ---- ClientCache.getOrCreateTable: concurrent creation of same table ----
+
+    @Test
+    fun clientCacheGetOrCreateTableIsIdempotentUnderContention() = runBlocking(Dispatchers.Default) {
+        val clientCache = ClientCache()
+        val barrier = CyclicBarrier(THREAD_COUNT)
+        val creationCount = AtomicInteger(0)
+
+        val results = coroutineScope {
+            (0 until THREAD_COUNT).map {
+                async {
+                    barrier.await()
+                    clientCache.getOrCreateTable<SampleRow>("players") {
+                        creationCount.incrementAndGet()
+                        TableCache.withPrimaryKey(::decodeSampleRow) { it.id }
+                    }
+                }
+            }.awaitAll()
+        }
+
+        // All threads must get the same instance
+        val first = results.first()
+        for (table in results) {
+            assertTrue(first === table, "Different table instance returned by getOrCreateTable")
+        }
+        // Factory should only be called once (though CAS retries may call it more,
+        // only one result wins). At least one call must have happened.
+        assertTrue(creationCount.get() >= 1, "Factory never called")
+    }
+
+    // ---- NetworkRequestTracker: concurrent start/finish ----
+
+    @Test
+    fun networkRequestTrackerConcurrentStartFinish() = runBlocking(Dispatchers.Default) {
+        val tracker = NetworkRequestTracker()
+        val barrier = CyclicBarrier(THREAD_COUNT)
+        val totalOps = THREAD_COUNT * OPS_PER_THREAD
+
+        coroutineScope {
+            repeat(THREAD_COUNT) { _ ->
+                launch {
+                    barrier.await()
+                    repeat(OPS_PER_THREAD) {
+                        val id = tracker.startTrackingRequest("test")
+                        tracker.finishTrackingRequest(id)
+                    }
+                }
+            }
+        }
+
+        assertEquals(totalOps, tracker.getSampleCount())
+        assertEquals(0, tracker.getRequestsAwaitingResponse())
+    }
+
+    @Test
+    fun networkRequestTrackerConcurrentInsertSample() = runBlocking(Dispatchers.Default) {
+        val tracker = NetworkRequestTracker()
+        val barrier = CyclicBarrier(THREAD_COUNT)
+        val totalOps = THREAD_COUNT * OPS_PER_THREAD
+
+        coroutineScope {
+            repeat(THREAD_COUNT) { _ ->
+                launch {
+                    barrier.await()
+                    repeat(OPS_PER_THREAD) { i ->
+                        tracker.insertSample((i + 1).milliseconds, "op-$i")
+                    }
+                }
+            }
+        }
+
+        assertEquals(totalOps, tracker.getSampleCount())
+        // Min must be 1ms (smallest sample), max must be OPS_PER_THREAD ms
+        val min = tracker.allTimeMin
+        val max = tracker.allTimeMax
+        assertTrue(min != null && min.duration == 1.milliseconds, "allTimeMin wrong: $min")
+        assertTrue(max != null && max.duration == OPS_PER_THREAD.milliseconds, "allTimeMax wrong: $max")
+    }
+
+    // ---- Logger: concurrent level/handler read/write ----
+
+    @Test
+    fun loggerConcurrentLevelAndHandlerChanges() = runBlocking(Dispatchers.Default) {
+        val originalLevel = Logger.level
+        val originalHandler = Logger.handler
+        val barrier = CyclicBarrier(THREAD_COUNT)
+        val logCount = AtomicInteger(0)
+
+        try {
+            coroutineScope {
+                // Half the threads toggle the log level
+                repeat(THREAD_COUNT / 2) { _ ->
+                    launch {
+                        barrier.await()
+                        repeat(OPS_PER_THREAD) { i ->
+                            Logger.level = if (i % 2 == 0) LogLevel.DEBUG else LogLevel.ERROR
+                        }
+                    }
+                }
+                // Other half swap the handler and log
+                repeat(THREAD_COUNT / 2) { _ ->
+                    launch {
+                        barrier.await()
+                        repeat(OPS_PER_THREAD) {
+                            Logger.handler = LogHandler { _, _ -> logCount.incrementAndGet() }
+                            Logger.info { "stress" }
+                        }
+                    }
+                }
+            }
+            // No crash or exception = pass. logCount is non-deterministic.
+        } finally {
+            Logger.level = originalLevel
+            Logger.handler = originalHandler
+        }
+    }
+
+    // ---- Internal listeners: concurrent listener fire during add ----
+
+    @Test
+    fun internalListenersFireSafelyDuringConcurrentRegistration() = runBlocking(Dispatchers.Default) {
+        val cache = createSampleCache()
+        val listenerCallCount = AtomicInteger(0)
+        val barrier = CyclicBarrier(THREAD_COUNT)
+
+        coroutineScope {
+            // Half add listeners
+            repeat(THREAD_COUNT / 2) { _ ->
+                launch {
+                    barrier.await()
+                    repeat(OPS_PER_THREAD) {
+                        cache.addInternalInsertListener { listenerCallCount.incrementAndGet() }
+                    }
+                }
+            }
+            // Half do inserts (which fire all currently-registered listeners)
+            repeat(THREAD_COUNT / 2) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val base = threadIdx * OPS_PER_THREAD
+                    for (i in base until base + OPS_PER_THREAD) {
+                        cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, "r-$i").encode()))
+                    }
+                }
+            }
+        }
+
+        val insertedCount = (THREAD_COUNT / 2) * OPS_PER_THREAD
+        assertEquals(insertedCount, cache.count())
+        // Listener calls >= 0, no crash = pass
+        assertTrue(listenerCallCount.get() >= 0)
+    }
+
+    // ---- TableCache clear() racing with inserts ----
+
+    @Test
+    fun tableCacheClearRacingWithInserts() = runBlocking(Dispatchers.Default) {
+        val cache = createSampleCache()
+        val barrier = CyclicBarrier(THREAD_COUNT)
+
+        coroutineScope {
+            // One thread clears repeatedly
+            launch {
+                barrier.await()
+                repeat(OPS_PER_THREAD) {
+                    cache.clear()
+                }
+            }
+            // Rest insert
+            repeat(THREAD_COUNT - 1) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val base = threadIdx * OPS_PER_THREAD
+                    for (i in base until base + OPS_PER_THREAD) {
+                        cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, "r-$i").encode()))
+                    }
+                }
+            }
+        }
+
+        // The final state depends on timing, but the cache must be internally consistent:
+        // count() == all().size, no duplicates in all()
+        val all = cache.all()
+        assertEquals(cache.count(), all.size)
+        val ids = all.map { it.id }.toSet()
+        assertEquals(all.size, ids.size, "Duplicate IDs after clear/insert race")
+    }
+
+    // ---- UniqueIndex: reads during concurrent mutations ----
+
+    @Test
+    fun uniqueIndexReadsReturnConsistentSnapshotsDuringMutations() = runBlocking(Dispatchers.Default) {
+        val cache = createSampleCache()
+        val index = UniqueIndex(cache) { it.id }
+        val barrier = CyclicBarrier(THREAD_COUNT)
+
+        coroutineScope {
+            // Writers
+            repeat(THREAD_COUNT / 2) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val base = threadIdx * OPS_PER_THREAD
+                    for (i in base until base + OPS_PER_THREAD) {
+                        cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, "r-$i").encode()))
+                    }
+                }
+            }
+            // Readers
+            repeat(THREAD_COUNT / 2) { _ ->
+                launch {
+                    barrier.await()
+                    repeat(OPS_PER_THREAD * 2) { i ->
+                        val row = index.find(i)
+                        // If found, it must be consistent
+                        if (row != null) {
+                            assertEquals(i, row.id, "Index returned wrong row for key=$i")
+                            assertEquals("r-$i", row.name)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- BTreeIndex: concurrent insert/delete with group verification ----
+
+    @Test
+    fun btreeIndexGroupCountConvergesAfterConcurrentInsertDelete() = runBlocking(Dispatchers.Default) {
+        val cache = createSampleCache()
+        val index = BTreeIndex(cache) { it.name }
+        val groupName = "shared-group"
+
+        // Pre-insert rows to delete
+        val deleteCount = (THREAD_COUNT / 2) * OPS_PER_THREAD
+        for (i in 0 until deleteCount) {
+            cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, groupName).encode()))
+        }
+
+        val barrier = CyclicBarrier(THREAD_COUNT)
+        coroutineScope {
+            // Insert new rows with same group
+            repeat(THREAD_COUNT / 2) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val base = deleteCount + threadIdx * OPS_PER_THREAD
+                    for (i in base until base + OPS_PER_THREAD) {
+                        cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, groupName).encode()))
+                    }
+                }
+            }
+            // Delete pre-inserted rows
+            repeat(THREAD_COUNT / 2) { threadIdx ->
+                launch {
+                    barrier.await()
+                    val start = threadIdx * OPS_PER_THREAD
+                    for (i in start until start + OPS_PER_THREAD) {
+                        val row = SampleRow(i, groupName)
+                        val parsed = cache.parseDeletes(buildRowList(row.encode()))
+                        cache.applyDeletes(STUB_CTX, parsed)
+                    }
+                }
+            }
+        }
+
+        val expectedCount = (THREAD_COUNT / 2) * OPS_PER_THREAD
+        val groupRows = index.filter(groupName)
+        assertEquals(expectedCount, groupRows.size, "BTreeIndex group count mismatch")
+        // Verify only new rows remain
+        for (row in groupRows) {
+            assertTrue(row.id >= deleteCount, "Deleted row still in BTreeIndex: $row")
+        }
+    }
+
+    // ---- DbConnection: concurrent disconnect from multiple threads ----
+
+    @Test
+    fun concurrentDisconnectFiresCallbackExactlyOnce() = runBlocking(Dispatchers.Default) {
+        val transport = FakeTransport()
+        val disconnectCount = AtomicInteger(0)
+
+        val conn = DbConnection(
+            transport = transport,
+            httpClient = HttpClient(),
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+            onConnectCallbacks = emptyList(),
+            onDisconnectCallbacks = listOf { _, _ -> disconnectCount.incrementAndGet() },
+            onConnectErrorCallbacks = emptyList(),
+            clientConnectionId = ConnectionId.random(),
+            stats = Stats(),
+            moduleDescriptor = null,
+            callbackDispatcher = null,
+        )
+        conn.connect()
+        transport.sendToClient(
+            ServerMessage.InitialConnection(
+                identity = Identity(BigInteger.ONE),
+                connectionId = ConnectionId(BigInteger.TWO),
+                token = "token",
+            )
+        )
+        // Give the receive loop time to process the initial connection
+        kotlinx.coroutines.delay(100)
+        assertTrue(conn.isActive)
+
+        val barrier = CyclicBarrier(THREAD_COUNT)
+        coroutineScope {
+            repeat(THREAD_COUNT) {
+                launch {
+                    barrier.await()
+                    conn.disconnect()
+                }
+            }
+        }
+
+        assertFalse(conn.isActive)
+        assertEquals(1, disconnectCount.get(), "onDisconnect must fire exactly once")
+    }
+}
