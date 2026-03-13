@@ -139,7 +139,7 @@ pub(crate) async fn dispatch() {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
     builder.build().unwrap()
 }
 
