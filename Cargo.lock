@@ -5226,9 +5226,9 @@ dependencies = [
 
 [[package]]
 name = "pg_interval"
-version = "0.4.2"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe46640b465e284b048ef065cbed8ef17a622878d310c724578396b4cfd00df2"
+checksum = "7ceff720b1579b383347d48e5df5f604042adaa6a06f640b1f1e3c065f40766d"
 dependencies = [
  "bytes",
  "chrono",
@@ -7932,7 +7932,6 @@ dependencies = [
  "spacetimedb-snapshot",
  "spacetimedb-subscription",
  "spacetimedb-table",
- "spacetimedb-vm",
  "sqlparser",
  "strum",
  "tabled",
@@ -8643,29 +8642,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "spacetimedb-vm"
-version = "2.0.5"
-dependencies = [
- "anyhow",
- "arrayvec",
- "derive_more 0.99.20",
- "itertools 0.12.1",
- "log",
- "smallvec",
- "spacetimedb-data-structures",
- "spacetimedb-execution",
- "spacetimedb-lib 2.0.5",
- "spacetimedb-primitives 2.0.5",
- "spacetimedb-sats 2.0.5",
- "spacetimedb-schema",
- "spacetimedb-table",
- "tempfile",
- "thiserror 1.0.69",
- "tracing",
- "typed-arena",
-]
-
-[[package]]
 name = "spin"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8750,10 +8726,8 @@ dependencies = [
  "rusqlite",
  "rust_decimal",
  "spacetimedb-core",
- "spacetimedb-datastore",
  "spacetimedb-lib 2.0.5",
  "spacetimedb-sats 2.0.5",
- "spacetimedb-vm",
  "sqllogictest",
  "sqllogictest-engines",
  "tempfile",
@@ -9856,12 +9830,6 @@ dependencies = [
  "url",
  "utf-8",
 ]
-
-[[package]]
-name = "typed-arena"
-version = "2.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6af6ae20167a9ece4bcb41af5b80f8a1f1df981f6391189ce00fd257af04126a"
 
 [[package]]
 name = "typedmap"
