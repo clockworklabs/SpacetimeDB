@@ -93,13 +93,34 @@ public class BsatnWriter(initialCapacity: Int = 256) {
 
     // ---------- Big Integer Writes ----------
 
-    public fun writeI128(value: BigInteger): Unit = writeBigIntLE(value, 16)
+    public fun writeI128(value: BigInteger): Unit = writeSignedBigIntLE(value, 16)
 
-    public fun writeU128(value: BigInteger): Unit = writeBigIntLE(value, 16)
+    public fun writeU128(value: BigInteger): Unit = writeUnsignedBigIntLE(value, 16)
 
-    public fun writeI256(value: BigInteger): Unit = writeBigIntLE(value, 32)
+    public fun writeI256(value: BigInteger): Unit = writeSignedBigIntLE(value, 32)
 
-    public fun writeU256(value: BigInteger): Unit = writeBigIntLE(value, 32)
+    public fun writeU256(value: BigInteger): Unit = writeUnsignedBigIntLE(value, 32)
+
+    private fun writeSignedBigIntLE(value: BigInteger, byteSize: Int) {
+        val bitSize = byteSize * 8
+        val min = -BigInteger.ONE.shl(bitSize - 1)       // -2^(n-1)
+        val max = BigInteger.ONE.shl(bitSize - 1) - BigInteger.ONE  // 2^(n-1) - 1
+        require(value in min..max) {
+            "Signed value does not fit in $byteSize bytes (range $min..$max): $value"
+        }
+        writeBigIntLE(value, byteSize)
+    }
+
+    private fun writeUnsignedBigIntLE(value: BigInteger, byteSize: Int) {
+        require(value.signum() >= 0) {
+            "Unsigned value must be non-negative: $value"
+        }
+        val max = BigInteger.ONE.shl(byteSize * 8) - BigInteger.ONE  // 2^n - 1
+        require(value <= max) {
+            "Unsigned value does not fit in $byteSize bytes (max $max): $value"
+        }
+        writeBigIntLE(value, byteSize)
+    }
 
     private fun writeBigIntLE(value: BigInteger, byteSize: Int) {
         expandBuffer(byteSize)
@@ -107,7 +128,8 @@ public class BsatnWriter(initialCapacity: Int = 256) {
         val beBytes = value.toTwosComplementByteArray()
         val padByte: Byte = if (value.signum() < 0) 0xFF.toByte() else 0
         if (beBytes.size > byteSize) {
-            val isSignExtensionOnly = (0 until beBytes.size - byteSize).all { beBytes[it] == padByte }
+            val srcStart = beBytes.size - byteSize
+            val isSignExtensionOnly = (0 until srcStart).all { beBytes[it] == padByte }
             require(isSignExtensionOnly) {
                 "BigInteger value does not fit in $byteSize bytes: $value"
             }
