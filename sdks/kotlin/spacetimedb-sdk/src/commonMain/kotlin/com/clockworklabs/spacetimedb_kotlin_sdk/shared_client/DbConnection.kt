@@ -242,6 +242,7 @@ public open class DbConnection internal constructor(
                 }
                 // Normal completion — server closed the connection
                 _state.value = ConnectionState.CLOSED
+                sendChannel.close()
                 failPendingOperations()
                 val cbs = _onDisconnectCallbacks.getAndSet(persistentListOf())
                 for (cb in cbs) runUserCallback { cb(this@DbConnection, null) }
@@ -249,6 +250,7 @@ public open class DbConnection internal constructor(
                 currentCoroutineContext().ensureActive()
                 Logger.error { "Connection error: ${e.message}" }
                 _state.value = ConnectionState.CLOSED
+                sendChannel.close()
                 failPendingOperations()
                 val cbs = _onDisconnectCallbacks.getAndSet(persistentListOf())
                 for (cb in cbs) runUserCallback { cb(this@DbConnection, e) }
@@ -274,9 +276,12 @@ public open class DbConnection internal constructor(
         val prev = _state.getAndSet(ConnectionState.CLOSED)
         if (prev != ConnectionState.CONNECTED && prev != ConnectionState.CONNECTING) return
         Logger.info { "Disconnecting from SpacetimeDB" }
-        // Cancel jobs and wait for completion. The receive job's finally block
-        // handles resource cleanup (sendChannel, transport, httpClient) — we
-        // don't duplicate that here to avoid a concurrent cleanup race.
+        // Close the send channel FIRST so concurrent callReducer/oneOffQuery/etc.
+        // calls fail immediately instead of enqueuing messages that will never
+        // get responses. This eliminates the TOCTOU window between state=CLOSED
+        // and the channel close that previously lived in the receive job's finally block.
+        // (Double-close is safe for Channels — it's a no-op.)
+        sendChannel.close()
         val receiveJob = _receiveJob.getAndSet(null)
         val sendJob = _sendJob.getAndSet(null)
         receiveJob?.cancel()
