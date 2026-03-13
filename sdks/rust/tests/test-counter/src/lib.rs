@@ -131,9 +131,12 @@ impl TestCounter {
         const WAIT_INTERVAL_MS: u32 = 10;
         const MAX_WAIT_ITERATIONS: u32 = (TEST_TIMEOUT_SECS as u32 * 1000) / WAIT_INTERVAL_MS;
 
-        // On wasm/web the SDK message loop runs on the same single-threaded event loop
-        // as test code. Blocking on a Condvar here can deadlock callbacks forever.
-        // We poll with timer yields so websocket/callback tasks can continue to run.
+        // Native can block on a Condvar because callbacks keep moving on a different SDK thread.
+        // wasm/web does not have that escape hatch in this harness: the websocket/message loop and
+        // the test body share the same single-threaded JS event loop, so blocking here would stop
+        // callback delivery entirely. We poll with timer yields so websocket/callback tasks can
+        // continue to run, and then do the same final pass native uses to convert recorded failures
+        // into a panic.
         let all_tests_finished = || {
             let inner = self.inner.lock().expect("TestCounterInner Mutex is poisoned");
             inner.outcomes.len() == inner.registered.len()
