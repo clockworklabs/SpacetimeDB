@@ -200,9 +200,7 @@ fn convert_response(response: st_http::Response) -> http::Result<http::response:
 }
 
 #[doc(hidden)]
-pub fn request_and_body_to_http(
-    request: st_http::RequestAndBody,
-) -> http::Result<http::Request<Body>> {
+pub fn request_and_body_to_http(request: st_http::RequestAndBody) -> http::Result<http::Request<Body>> {
     let st_http::RequestAndBody { request, body } = request;
     let parts = convert_request_from_st(request)?;
     Ok(http::Request::from_parts(parts, Body::from_bytes(body)))

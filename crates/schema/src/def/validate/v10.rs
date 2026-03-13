@@ -287,9 +287,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .cloned()
         .into_iter()
         .flatten()
-        .map(|route| {
-            validator.validate_http_route_def(route, &procedures, &expected_request_ty, &expected_response_ty)
-        })
+        .map(|route| validator.validate_http_route_def(route, &procedures, &expected_request_ty, &expected_response_ty))
         .collect_all_errors::<Vec<_>>()
         .map_err(|errors| errors.sort_deduplicate())?;
 

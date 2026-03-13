@@ -21,9 +21,9 @@ use axum::response::{ErrorResponse, IntoResponse};
 use axum::routing::MethodRouter;
 use axum::Extension;
 use axum_extra::TypedHeader;
-use http_body_util::BodyExt;
 use futures::TryStreamExt;
 use http::StatusCode;
+use http_body_util::BodyExt;
 use log::{info, warn};
 use serde::Deserialize;
 use spacetimedb::database_logger::DatabaseLogger;
@@ -41,12 +41,12 @@ use spacetimedb_client_api_messages::name::{
 };
 use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
-use spacetimedb_lib::{bsatn, http as st_http, sats, AlgebraicValue, Hash, ProductValue, Timestamp};
 use spacetimedb_lib::de as st_de;
+use spacetimedb_lib::sats::algebraic_value::de::ValueDeserializer;
+use spacetimedb_lib::{bsatn, http as st_http, sats, AlgebraicValue, Hash, ProductValue, Timestamp};
 use spacetimedb_schema::auto_migrate::{
     MigrationPolicy as SchemaMigrationPolicy, MigrationToken, PrettyPrintStyle as AutoMigratePrettyPrintStyle,
 };
-use spacetimedb_lib::sats::algebraic_value::de::ValueDeserializer;
 
 use super::subscribe::{handle_websocket, HasWebSocketOptions};
 
@@ -250,8 +250,12 @@ pub async fn http_route<S: ControlStateDelegate + NodeDelegate>(
         .to_bytes();
 
     let request_and_body = convert_request_to_st(parts, body_bytes);
-    let args = bsatn::to_vec(&request_and_body)
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to encode request: {err}")))?;
+    let args = bsatn::to_vec(&request_and_body).map_err(|err| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to encode request: {err}"),
+        )
+    })?;
 
     let call_result = module
         .call_procedure_internal(
@@ -269,8 +273,8 @@ pub async fn http_route<S: ControlStateDelegate + NodeDelegate>(
         Err(_) => return Ok(StatusCode::INTERNAL_SERVER_ERROR.into_response()),
     };
 
-    let response = decode_response_and_body(result.return_val)
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err))?;
+    let response =
+        decode_response_and_body(result.return_val).map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err))?;
 
     let response = response_and_body_to_axum(response)
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, format!("Invalid response: {err}")))?;

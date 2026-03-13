@@ -1048,12 +1048,7 @@ impl RawModuleDefV10Builder {
         params: ProductType,
         return_type: AlgebraicType,
     ) {
-        self.add_procedure_with_visibility(
-            source_name,
-            params,
-            return_type,
-            FunctionVisibility::ClientCallable,
-        );
+        self.add_procedure_with_visibility(source_name, params, return_type, FunctionVisibility::ClientCallable);
     }
 
     /// Add a procedure to the in-progress module with explicit visibility.
@@ -1208,8 +1203,8 @@ impl TypespaceBuilder for RawModuleDefV10Builder {
                 // Alias provided? Relate `name -> slot_ref`.
                 let enum_source_name = if let Some(sats_name) = source_name {
                     let source_name = sats_name_to_scoped_name_v10(sats_name);
-                    let enum_source_name = should_register_enum_variant_names(sats_name)
-                        .then(|| source_name.source_name.clone());
+                    let enum_source_name =
+                        should_register_enum_variant_names(sats_name).then(|| source_name.source_name.clone());
 
                     self.types_mut().push(RawTypeDefV10 {
                         source_name,
@@ -1233,14 +1228,20 @@ impl TypespaceBuilder for RawModuleDefV10Builder {
             let enum_variants = match (&enum_source_name, &self.typespace_mut()[slot_ref]) {
                 (Some(enum_source_name), AlgebraicType::Sum(sum)) => Some((
                     enum_source_name.clone(),
-                    sum.variants.iter().filter_map(|variant| variant.name().cloned()).collect::<Vec<_>>(),
+                    sum.variants
+                        .iter()
+                        .filter_map(|variant| variant.name().cloned())
+                        .collect::<Vec<_>>(),
                 )),
                 _ => None,
             };
             if let Some((enum_source_name, variant_names)) = enum_variants {
                 for variant_name in variant_names {
-                    self.explicit_names_mut()
-                        .insert_enum_variant(enum_source_name.clone(), variant_name.clone(), variant_name);
+                    self.explicit_names_mut().insert_enum_variant(
+                        enum_source_name.clone(),
+                        variant_name.clone(),
+                        variant_name,
+                    );
                 }
             }
             AlgebraicType::Ref(slot_ref)

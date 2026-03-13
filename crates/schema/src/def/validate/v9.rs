@@ -667,13 +667,7 @@ impl CoreValidator<'_> {
         for (index, ty) in typespace.types.iter_mut().enumerate() {
             let type_ref = AlgebraicTypeRef(index as u32);
             let enum_name = type_ref_names.get(&type_ref);
-            Self::convert_algebraic_type(
-                ty,
-                case_policy,
-                case_policy_for_enum_variants,
-                enum_name,
-                enum_variants,
-            );
+            Self::convert_algebraic_type(ty, case_policy, case_policy_for_enum_variants, enum_name, enum_variants);
         }
     }
 

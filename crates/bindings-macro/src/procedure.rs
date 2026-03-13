@@ -59,7 +59,10 @@ fn parse_route_expr(expr: Expr) -> syn::Result<RouteAttr> {
         return Err(syn::Error::new_spanned(args, "expected a single path argument"));
     }
 
-    let Expr::Lit(ExprLit { lit: Lit::Str(path), .. }) = args.first().unwrap() else {
+    let Expr::Lit(ExprLit {
+        lit: Lit::Str(path), ..
+    }) = args.first().unwrap()
+    else {
         return Err(syn::Error::new_spanned(args, "expected a string literal path"));
     };
 
@@ -129,7 +132,9 @@ pub(crate) fn procedure_impl(_args: ProcedureArgs, original_function: &ItemFn) -
     let lifetime_params = &original_function.sig.generics;
     let lifetime_where_clause = &lifetime_params.where_clause;
 
-    let (generated_describe_function, wrapper_fn, invoke_target, fn_kind_ty, return_type_ty) = if let Some(route) = route {
+    let (generated_describe_function, wrapper_fn, invoke_target, fn_kind_ty, return_type_ty) = if let Some(route) =
+        route
+    {
         let RouteAttr { method, path } = route.clone();
         let method_str = method.to_string();
         let method_expr = match method_str.as_str() {
@@ -149,7 +154,10 @@ pub(crate) fn procedure_impl(_args: ProcedureArgs, original_function: &ItemFn) -
         let path_value = path.value();
         let valid_path = path_value.starts_with('/') && !path_value[1..].is_empty() && !path_value[1..].contains('/');
         if !valid_path {
-            return Err(syn::Error::new_spanned(path, "route path must be a single segment starting with `/`"));
+            return Err(syn::Error::new_spanned(
+                path,
+                "route path must be a single segment starting with `/`",
+            ));
         }
 
         let wrapper_name = format_ident!("__spacetimedb_http_route_wrapper_{}", func_name);

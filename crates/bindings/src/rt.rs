@@ -819,10 +819,8 @@ where
     I: FnInfo<Invoke = ProcedureFn>,
 {
     register_describer(move |module| {
-        let params =
-            <(spacetimedb_lib::http::RequestAndBody,) as Args>::schema::<I>(&mut module.inner);
-        let ret_ty =
-            <spacetimedb_lib::http::ResponseAndBody as SpacetimeType>::make_type(&mut module.inner);
+        let params = <(spacetimedb_lib::http::RequestAndBody,) as Args>::schema::<I>(&mut module.inner);
+        let ret_ty = <spacetimedb_lib::http::ResponseAndBody as SpacetimeType>::make_type(&mut module.inner);
         module.inner.add_procedure_with_visibility(
             I::NAME,
             params,
