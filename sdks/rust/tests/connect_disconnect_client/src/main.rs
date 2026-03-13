@@ -1,5 +1,8 @@
 pub(crate) mod module_bindings;
 
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+use std::sync::OnceLock;
+
 use module_bindings::*;
 
 use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Table};
@@ -131,11 +134,29 @@ pub(crate) async fn dispatch() {
         .subscribe("SELECT * FROM disconnected");
 
     #[cfg(not(target_arch = "wasm32"))]
-    new_connection.run_threaded();
+    let reconnect_join_handle = new_connection.run_threaded();
     #[cfg(target_arch = "wasm32")]
     new_connection.run_background_task();
 
-    reconnect_test_counter.wait_for_all();
+    wait_for_all(&reconnect_test_counter).await;
+
+    // The second connection has no disconnect assertion, but it still needs an explicit
+    // shutdown on wasm so the background task releases its websocket before the test exits.
+    disconnect_connection(&new_connection).await;
+    #[cfg(not(target_arch = "wasm32"))]
+    reconnect_join_handle.join().unwrap();
+}
+
+async fn wait_for_all(test_counter: &std::sync::Arc<TestCounter>) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        // wasm/web callbacks run on the JS event loop, so this wait must stay async.
+        test_counter.wait_for_all_async().await;
+        return;
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    test_counter.wait_for_all();
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -144,6 +165,19 @@ async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConne
 }
 
 #[cfg(target_arch = "wasm32")]
-fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
-    futures::executor::block_on(builder.build()).unwrap()
+async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+    // Web builds use async connection setup, so awaiting here avoids blocking the event loop
+    // before websocket callbacks have a chance to run.
+    builder.build().await.unwrap()
+}
+
+async fn disconnect_connection(connection: &DbConnection) {
+    connection.disconnect().unwrap();
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        // Yield once so the queued disconnect mutation is processed by the background task
+        // before the wasm test function returns to Node.
+        gloo_timers::future::TimeoutFuture::new(0).await;
+    }
 }

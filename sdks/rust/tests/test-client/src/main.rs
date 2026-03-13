@@ -4,7 +4,9 @@ pub(crate) mod module_bindings;
 
 use core::fmt::Display;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Barrier, Mutex};
+#[cfg(target_arch = "wasm32")]
+use std::cell::RefCell;
+use std::sync::{Arc, Mutex};
 
 use module_bindings::*;
 
@@ -30,6 +32,20 @@ use unique_test_table::{insert_then_delete_one, UniqueTestTable};
 
 const LOCALHOST: &str = "http://localhost:3000";
 
+fn fixed_test_timestamp() -> Timestamp {
+    // `Timestamp::now()` is stubbed on `wasm32-unknown-unknown`, so client-side tests
+    // that need a timestamp value must use a deterministic literal instead of wall-clock time.
+    Timestamp::from_micros_since_unix_epoch(1_706_000_000_000_000)
+}
+
+// ---- Test harness platform shim layer ----
+//
+// Keep all intentional native-vs-wasm differences concentrated here so reviewers can reason
+// about the rest of the file as ordinary shared test logic. The desired high-level behavior is:
+// - all tests call the same async `connect*` and `wait_for_all` helpers
+// - native keeps using its existing threaded SDK runtime
+// - wasm keeps the JS event loop unblocked and preserves native-style connection lifetimes
+
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
 static WEB_DB_NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
@@ -38,6 +54,122 @@ pub(crate) fn set_web_db_name(db_name: String) {
     WEB_DB_NAME.set(db_name).expect("WASM DB name was already initialized");
 }
 
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+thread_local! {
+    // Why wasm needs extra lifetime plumbing:
+    // - Native test clients call `run_threaded()`, so SDK websocket work keeps progressing on a
+    //   dedicated background thread even if the test thread blocks in `wait_for_all()`.
+    // - wasm/web runs the client and its websocket callbacks on the same single-threaded JS event
+    //   loop as the test body. There is no equivalent background OS thread here.
+    // - That means an early last-handle drop disconnects the websocket immediately, and a blocking
+    //   wait would freeze the very event loop that is supposed to deliver the remaining callbacks.
+    // Retain connections until the async wait completes so wasm observes the same logical lifetime
+    // that the native tests were implicitly relying on.
+    // Many native-first tests intentionally ignore the returned connection and rely on the
+    // background message loop to stay alive until `wait_for_all()` finishes. Retain a clone on
+    // wasm so the final-drop disconnect cleanup does not self-terminate those tests early.
+    static RETAINED_WASM_CONNECTIONS: RefCell<Vec<ManagedConnection>> = const { RefCell::new(Vec::new()) };
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+fn retain_connection_until_wait(connection: &ManagedConnection) {
+    RETAINED_WASM_CONNECTIONS.with(|connections| connections.borrow_mut().push(connection.clone()));
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+fn release_retained_connections() {
+    RETAINED_WASM_CONNECTIONS.with(|connections| connections.borrow_mut().clear());
+}
+
+#[cfg(not(all(target_arch = "wasm32", feature = "web")))]
+fn retain_connection_until_wait(_: &ManagedConnection) {}
+
+#[cfg(not(all(target_arch = "wasm32", feature = "web")))]
+fn release_retained_connections() {}
+
+// `ManagedConnection` exists to separate test logic from connection-lifetime mechanics.
+// The generated `DbConnection` is a single owned handle, but this harness now needs two extra
+// properties:
+// - shared ownership, so wasm can retain a connection until `wait_for_all()` even when the test
+//   itself ignores the returned value, and
+// - final-owner disconnect semantics, so only the last live handle shuts down the websocket.
+// Wrapping the connection in an `Arc` and re-exposing `DbContext` here keeps those lifecycle rules
+// local to the shim layer instead of forcing the individual tests to reason about them.
+#[derive(Clone)]
+struct ManagedConnection(Arc<DbConnection>);
+
+impl ManagedConnection {
+    fn new(connection: DbConnection) -> Self {
+        Self(Arc::new(connection))
+    }
+}
+
+impl core::ops::Deref for ManagedConnection {
+    type Target = DbConnection;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref()
+    }
+}
+
+impl DbContext for ManagedConnection {
+    type DbView = <DbConnection as DbContext>::DbView;
+    type Reducers = <DbConnection as DbContext>::Reducers;
+    type Procedures = <DbConnection as DbContext>::Procedures;
+    type SubscriptionBuilder = <DbConnection as DbContext>::SubscriptionBuilder;
+
+    fn db(&self) -> &Self::DbView {
+        &self.0.db
+    }
+
+    fn reducers(&self) -> &Self::Reducers {
+        &self.0.reducers
+    }
+
+    fn procedures(&self) -> &Self::Procedures {
+        &self.0.procedures
+    }
+
+    fn is_active(&self) -> bool {
+        self.0.is_active()
+    }
+
+    fn disconnect(&self) -> spacetimedb_sdk::Result<()> {
+        self.0.disconnect()
+    }
+
+    fn subscription_builder(&self) -> Self::SubscriptionBuilder {
+        self.0.subscription_builder()
+    }
+
+    fn try_identity(&self) -> Option<Identity> {
+        self.0.try_identity()
+    }
+
+    fn connection_id(&self) -> ConnectionId {
+        self.0.connection_id()
+    }
+
+    fn try_connection_id(&self) -> Option<ConnectionId> {
+        self.0.try_connection_id()
+    }
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+impl Drop for ManagedConnection {
+    fn drop(&mut self) {
+        if Arc::strong_count(&self.0) == 1 {
+            // Only the final owner should disconnect. wasm tests now clone connections into a
+            // temporary retention list so ignored return values stay alive until `wait_for_all()`.
+            // Disconnecting from any earlier clone drop would let the websocket shut down while
+            // the test still expects subscription or reducer callbacks to arrive.
+            let _ = self.0.disconnect();
+        }
+    }
+}
+
+/// Read the per-test database name from the native process environment or the wasm runner shim.
+/// Keeping this lookup centralized avoids sprinkling target-specific configuration through tests.
 fn db_name_or_panic() -> String {
     #[cfg(all(target_arch = "wasm32", feature = "web"))]
     {
@@ -51,6 +183,23 @@ fn db_name_or_panic() -> String {
     {
         std::env::var("SPACETIME_SDK_TEST_DB_NAME").expect("Failed to read db name from env")
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn start_connection_runtime(connection: &ManagedConnection) {
+    // Native keeps websocket/callback work on a dedicated SDK thread, so the test body can block
+    // later without preventing callbacks from being delivered.
+    connection.run_threaded();
+    retain_connection_until_wait(connection);
+}
+
+#[cfg(target_arch = "wasm32")]
+fn start_connection_runtime(connection: &ManagedConnection) {
+    // wasm/web has no background OS thread in this harness. Start the async message loop and keep
+    // the connection retained until `wait_for_all()` so native-style ignored return values do not
+    // disconnect the websocket before the expected callbacks have run.
+    connection.run_background_task();
+    retain_connection_until_wait(connection);
 }
 
 /// Register a panic hook which will exit the process whenever any thread panics.
@@ -172,16 +321,6 @@ pub(crate) async fn dispatch(test: &str) {
         "sorted-uuids-insert" => exec_sorted_uuids_insert().await,
 
         _ => panic!("Unknown test: {test}"),
-    }
-}
-
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-pub(crate) async fn dispatch_async(test: &str) {
-    match test {
-        "row-deduplication-r-join-s-and-r-joint" => {
-            exec_row_deduplication_r_join_s_and_r_join_t_async().await;
-        }
-        _ => dispatch(test),
     }
 }
 
@@ -430,7 +569,7 @@ async fn connect_with_then(
     on_connect_suffix: &str,
     with_builder: impl FnOnce(DbConnectionBuilder<RemoteModule>) -> DbConnectionBuilder<RemoteModule>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
-) -> DbConnection {
+) -> ManagedConnection {
     let connected_result = test_counter.add_test(format!("on_connect_{on_connect_suffix}"));
     let name = db_name_or_panic();
     let builder = DbConnection::builder()
@@ -442,39 +581,45 @@ async fn connect_with_then(
         })
         .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
     let conn = build_connection(with_builder(builder)).await;
-    #[cfg(not(target_arch = "wasm32"))]
-    conn.run_threaded();
-    #[cfg(target_arch = "wasm32")]
-    conn.run_background_task();
+    start_connection_runtime(&conn);
     conn
 }
 
 async fn connect_then(
     test_counter: &std::sync::Arc<TestCounter>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
-) -> DbConnection {
-    connect_with_then(test_counter, "", |x| x, callback)
+) -> ManagedConnection {
+    connect_with_then(test_counter, "", |x| x, callback).await
 }
 
-fn connect(test_counter: &std::sync::Arc<TestCounter>) -> DbConnection {
-    connect_then(test_counter, |_| {})
+async fn connect(test_counter: &std::sync::Arc<TestCounter>) -> ManagedConnection {
+    connect_then(test_counter, |_| {}).await
+}
+
+async fn wait_for_all(test_counter: &std::sync::Arc<TestCounter>) {
+    // Use one shared async wait entrypoint even on native. The TestCounter implementation hides
+    // the native blocking wait vs wasm event-loop-friendly poll, which keeps test bodies uniform.
+    test_counter.wait_for_all_async().await;
+    // This is a no-op on native and the wasm-side lifetime release point on web.
+    release_retained_connections();
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
-    builder.build().unwrap()
+async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> ManagedConnection {
+    // Keep the helper async even though native `build()` is synchronous so shared callers do not
+    // need target-specific branches.
+    ManagedConnection::new(builder.build().unwrap())
 }
 
 #[cfg(target_arch = "wasm32")]
-fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> ManagedConnection {
     // Why this differs from native:
     // - In the SDK, `DbConnectionBuilder::build` is sync on non-web builds,
     //   but async on `feature = "web"` because the websocket/token setup uses
     //   wasm/web async primitives.
-    // - This test client keeps `connect*` helpers sync so one test body works
-    //   for both native and web runs.
-    // Therefore we bridge the async web `build()` into this sync test harness.
-    futures::executor::block_on(builder.build()).unwrap()
+    // - We therefore keep the helper async and await directly so wasm stays
+    //   non-blocking and can make forward progress on the JS event loop.
+    ManagedConnection::new(builder.build().await.unwrap())
 }
 
 fn subscribe_all_then(ctx: &impl RemoteDbContext, callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static) {
@@ -912,7 +1057,7 @@ async fn exec_insert_timestamp() {
         let test_counter = test_counter.clone();
         move |ctx| {
             subscribe_all_then(ctx, move |ctx| {
-                insert_one::<OneTimestamp>(ctx, &test_counter, Timestamp::now());
+                insert_one::<OneTimestamp>(ctx, &test_counter, fixed_test_timestamp());
 
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             })
@@ -1239,7 +1384,7 @@ async fn exec_insert_vec() {
             insert_one::<VecIdentity>(ctx, &test_counter, vec![ctx.identity()]);
             insert_one::<VecConnectionId>(ctx, &test_counter, vec![ctx.connection_id()]);
 
-            insert_one::<VecTimestamp>(ctx, &test_counter, vec![Timestamp::now()]);
+            insert_one::<VecTimestamp>(ctx, &test_counter, vec![fixed_test_timestamp()]);
 
             sub_applied_nothing_result(assert_all_tables_empty(ctx));
         }
@@ -2049,23 +2194,22 @@ async fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
     let pre_ins_counter = TestCounter::new();
 
     // Have two actors, Alice (0) and Bob (1), connect to the module.
-    // For each actor, subscribe to the `OneU8` table.
-    // The choice of table is a fairly random one: just one of the simpler tables.
-    let conns = ["alice", "bob"].map(|who| {
-        let conn = connect_with_then(&pre_ins_counter, who, |b| b, |_| {});
+    async fn connect_actor(
+        who: &'static str,
+        pre_ins_counter: &Arc<TestCounter>,
+        counter: &Arc<TestCounter>,
+    ) -> ManagedConnection {
+        let conn = connect_with_then(pre_ins_counter, who, |b| b, |_| {}).await;
         let sub_applied = pre_ins_counter.add_test(format!("sub_applied_{who}"));
-
-        let counter2 = counter.clone();
+        let counter = counter.clone();
         subscribe_all_then(&conn, move |ctx| {
-            sub_applied(Ok(()));
-
             // Test that we are notified when a row is inserted.
             let db = ctx.db();
-            let mut one_u8_inserted = Some(counter2.add_test(format!("one_u8_inserted_{who}")));
+            let mut one_u8_inserted = Some(counter.add_test(format!("one_u8_inserted_{who}")));
             db.one_u_8().on_insert(move |_, row| {
                 (one_u8_inserted.take().unwrap())(check_val(row.n, 42));
             });
-            let mut one_u16_inserted = Some(counter2.add_test(format!("one_u16_inserted_{who}")));
+            let mut one_u16_inserted = Some(counter.add_test(format!("one_u16_inserted_{who}")));
             let is_alice = who == "alice";
             db.one_u_16().on_insert(move |event, row| {
                 let run_checks = || {
@@ -2088,9 +2232,23 @@ async fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
                 };
                 (one_u16_inserted.take().unwrap())(run_checks());
             });
+
+            // Mark subscription readiness only after callback handlers are installed.
+            // On wasm this prevents a race where reducer calls can run before handlers
+            // are fully registered in the single-threaded event loop.
+            // The test uses `pre_ins_counter` as the "both clients are safe to use now" barrier.
+            // In this harness, "safe" must mean the handlers under test are already installed.
+            // Signalling readiness any earlier would allow Alice to fire the reducer while Bob's
+            // callbacks still do not exist, which would turn the test into an event-loop race.
+            sub_applied(Ok(()));
         });
         conn
-    });
+    }
+
+    let conns = [
+        connect_actor("alice", &pre_ins_counter, &counter).await,
+        connect_actor("bob", &pre_ins_counter, &counter).await,
+    ];
 
     // Ensure both have finished connecting
     // and finished subscribing so that there isn't a race condition
@@ -2412,7 +2570,7 @@ async fn exec_row_deduplication_r_join_s_and_r_join_t_async() {
         })
         .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
 
-    let conn = builder.build().await.unwrap();
+    let conn = ManagedConnection::new(builder.build().await.unwrap());
     conn.run_background_task();
 
     const WAIT_INTERVAL_MS: u32 = 10;
@@ -2452,18 +2610,21 @@ async fn test_lhs_join_update() {
     let mut on_insert_1 = Some(insert_counter.add_test("on_insert_1"));
     let mut on_insert_2 = Some(insert_counter.add_test("on_insert_2"));
 
-    let conn = Arc::new(connect_then(&update_counter, {
-        move |ctx| {
-            subscribe_these_then(
-                ctx,
-                &[
-                    "SELECT p.* FROM pk_u_32 p WHERE n = 1",
-                    "SELECT p.* FROM pk_u_32 p JOIN unique_u_32 u ON p.n = u.n WHERE u.data > 0 AND u.data < 5",
-                ],
-                |_| {},
-            );
-        }
-    }));
+    let conn = Arc::new(
+        connect_then(&update_counter, {
+            move |ctx| {
+                subscribe_these_then(
+                    ctx,
+                    &[
+                        "SELECT p.* FROM pk_u_32 p WHERE n = 1",
+                        "SELECT p.* FROM pk_u_32 p JOIN unique_u_32 u ON p.n = u.n WHERE u.data > 0 AND u.data < 5",
+                    ],
+                    |_| {},
+                );
+            }
+        })
+        .await,
+    );
 
     // Add two pk_u32 rows to the subscription
     conn.reducers
@@ -2651,6 +2812,12 @@ async fn test_intra_query_bag_semantics_for_join() {
         }
     })
     .await;
+
+    // This test is only complete once both registered expectations have reported:
+    // `on_subscription_applied_nothing` confirms the initial state, and `pk_u32_on_delete`
+    // confirms the bag-semantics transition at the end. Without an explicit wait, the harness can
+    // finish before that final delete callback runs, which leaves the test under-synchronized.
+    wait_for_all(&test_counter).await;
 }
 
 /// Test that several clients subscribing to the same query and using the same protocol (bsatn)
@@ -2676,12 +2843,12 @@ async fn exec_two_different_compression_algos() {
         compression_name: &str,
         compression: Compression,
         mut recorder: Option<ResultRecorder>,
-        barrier: &Arc<Barrier>,
+        subscribed_clients: Arc<AtomicUsize>,
+        row_inserted: Arc<AtomicBool>,
         expected: &Arc<[u8]>,
     ) {
         let expected1 = expected.clone();
         let expected2 = expected1.clone();
-        let barrier = barrier.clone();
         connect_with_then(
             test_counter,
             compression_name,
@@ -2700,11 +2867,16 @@ async fn exec_two_different_compression_algos() {
                         put_result(&mut recorder, res)
                     });
 
-                    // All clients must have subscribed and registered the `on_insert` callback
-                    // before we actually insert the row.
-                    barrier.wait();
-
-                    if compression == None {
+                    // We cannot block inside wasm callbacks (e.g. with `Barrier::wait`),
+                    // because that stalls the event loop and prevents other subscriptions
+                    // from applying. Instead we atomically gate on the third subscriber.
+                    // All three subscriptions must be live before any client inserts the row under
+                    // test, otherwise the last client could miss the only insert. We coordinate
+                    // with atomics instead of a blocking barrier because callback code shares the
+                    // single-threaded wasm event loop with subscription delivery.
+                    if subscribed_clients.fetch_add(1, Ordering::SeqCst) + 1 == 3
+                        && !row_inserted.swap(true, Ordering::SeqCst)
+                    {
                         VecU8::insert(ctx, expected2.to_vec());
                     }
                 })
@@ -2713,24 +2885,55 @@ async fn exec_two_different_compression_algos() {
         .await;
     }
     let test_counter: Arc<TestCounter> = TestCounter::new();
-    let barrier = Arc::new(Barrier::new(3));
+    let subscribed_clients = Arc::new(AtomicUsize::new(0));
+    let row_inserted = Arc::new(AtomicBool::new(false));
     let got_brotli = Some(test_counter.add_test("got_right_row_brotli"));
     let got_gzip = Some(test_counter.add_test("got_right_row_gzip"));
     let got_none = Some(test_counter.add_test("got_right_row_none"));
-    connect_with_compression(&test_counter, "brotli", Brotli, got_brotli, &barrier, &bytes);
-    connect_with_compression(&test_counter, "gzip", Gzip, got_gzip, &barrier, &bytes);
-    connect_with_compression(&test_counter, "none", None, got_none, &barrier, &bytes);
-    test_counter.wait_for_all();
+    connect_with_compression(
+        &test_counter,
+        "brotli",
+        Brotli,
+        got_brotli,
+        subscribed_clients.clone(),
+        row_inserted.clone(),
+        &bytes,
+    )
+    .await;
+    connect_with_compression(
+        &test_counter,
+        "gzip",
+        Gzip,
+        got_gzip,
+        subscribed_clients.clone(),
+        row_inserted.clone(),
+        &bytes,
+    )
+    .await;
+    connect_with_compression(
+        &test_counter,
+        "none",
+        None,
+        got_none,
+        subscribed_clients,
+        row_inserted,
+        &bytes,
+    )
+    .await;
+    wait_for_all(&test_counter).await;
 }
 
 /// In this test we have two clients issue parameterized subscriptions.
 /// These subscriptions are identical syntactically but not semantically,
 /// because they are parameterized by `:sender` - the caller's identity.
 async fn test_parameterized_subscription() {
+    // This test cares about per-client query parameterization, not about both clients reaching a
+    // global barrier at exactly the same moment. Each client only mutates state after its own
+    // subscription is applied, which is the point at which that client's visibility guarantee
+    // becomes meaningful on both native and wasm runtimes.
     let ctr_for_test = TestCounter::new();
-    let ctr_for_subs = TestCounter::new();
-    let sub_0 = Some(ctr_for_subs.add_test("sub_0"));
-    let sub_1 = Some(ctr_for_subs.add_test("sub_1"));
+    let sub_0 = Some(ctr_for_test.add_test("sub_0"));
+    let sub_1 = Some(ctr_for_test.add_test("sub_1"));
     let insert_0 = Some(ctr_for_test.add_test("insert_0"));
     let insert_1 = Some(ctr_for_test.add_test("insert_1"));
     let update_0 = Some(ctr_for_test.add_test("update_0"));
@@ -2740,18 +2943,19 @@ async fn test_parameterized_subscription() {
         test_name: &str,
         old: i32,
         new: i32,
-        waiters: [Arc<TestCounter>; 2],
+        ctr_for_test: Arc<TestCounter>,
         senders: [Option<ResultRecorder>; 3],
     ) {
-        let [ctr_for_test, ctr_for_subs] = waiters;
         let [mut record_sub, mut record_ins, mut record_upd] = senders;
         connect_with_then(&ctr_for_test, test_name, |builder| builder, {
             move |ctx| {
                 let sender = ctx.identity();
                 subscribe_these_then(ctx, &["SELECT * FROM pk_identity WHERE i = :sender"], move |ctx| {
                     put_result(&mut record_sub, Ok(()));
-                    // Wait to insert until both client connections have been made
-                    ctr_for_subs.wait_for_all();
+                    // Trigger the writes from inside this caller's subscription-applied callback
+                    // so we know the parameterized query is active before the rows are created.
+                    // Callback code must stay non-blocking here because wasm delivers both the
+                    // subscription event and subsequent row callbacks on the same event loop.
                     PkIdentity::insert(ctx, sender, old);
                     PkIdentity::update(ctx, sender, new);
                 });
@@ -2772,21 +2976,9 @@ async fn test_parameterized_subscription() {
         .await;
     }
 
-    subscribe_and_update(
-        "client_0",
-        1,
-        2,
-        [ctr_for_test.clone(), ctr_for_subs.clone()],
-        [sub_0, insert_0, update_0],
-    );
-    subscribe_and_update(
-        "client_1",
-        3,
-        4,
-        [ctr_for_test.clone(), ctr_for_subs.clone()],
-        [sub_1, insert_1, update_1],
-    );
-    ctr_for_test.wait_for_all();
+    subscribe_and_update("client_0", 1, 2, ctr_for_test.clone(), [sub_0, insert_0, update_0]).await;
+    subscribe_and_update("client_1", 3, 4, ctr_for_test.clone(), [sub_1, insert_1, update_1]).await;
+    wait_for_all(&ctr_for_test).await;
 }
 
 /// In this test we have two clients subscribe to the `users` table.
@@ -2799,20 +2991,21 @@ async fn test_parameterized_subscription() {
 /// ```
 /// Hence each client should receive different rows.
 async fn test_rls_subscription() {
+    // Same principle as `test_parameterized_subscription`: the property under test is "what rows
+    // is this client allowed to observe once its subscription is active?", not "did two clients
+    // reach a synchronization barrier at the same instant?".
     let ctr_for_test = TestCounter::new();
-    let ctr_for_subs = TestCounter::new();
-    let sub_0 = Some(ctr_for_subs.add_test("sub_0"));
-    let sub_1 = Some(ctr_for_subs.add_test("sub_1"));
+    let sub_0 = Some(ctr_for_test.add_test("sub_0"));
+    let sub_1 = Some(ctr_for_test.add_test("sub_1"));
     let ins_0 = Some(ctr_for_test.add_test("insert_0"));
     let ins_1 = Some(ctr_for_test.add_test("insert_1"));
 
     async fn subscribe_and_update(
         test_name: &str,
         user_name: &str,
-        waiters: [Arc<TestCounter>; 2],
+        ctr_for_test: Arc<TestCounter>,
         senders: [Option<ResultRecorder>; 2],
     ) {
-        let [ctr_for_test, ctr_for_subs] = waiters;
         let [mut record_sub, mut record_ins] = senders;
         let user_name = user_name.to_owned();
         let expected_name = user_name.to_owned();
@@ -2839,19 +3032,9 @@ async fn test_rls_subscription() {
         .await;
     }
 
-    subscribe_and_update(
-        "client_0",
-        "Alice",
-        [ctr_for_test.clone(), ctr_for_subs.clone()],
-        [sub_0, ins_0],
-    );
-    subscribe_and_update(
-        "client_1",
-        "Bob",
-        [ctr_for_test.clone(), ctr_for_subs.clone()],
-        [sub_1, ins_1],
-    );
-    ctr_for_test.wait_for_all();
+    subscribe_and_update("client_0", "Alice", ctr_for_test.clone(), [sub_0, ins_0]).await;
+    subscribe_and_update("client_1", "Bob", ctr_for_test.clone(), [sub_1, ins_1]).await;
+    wait_for_all(&ctr_for_test).await;
 }
 
 async fn exec_pk_simple_enum() {
