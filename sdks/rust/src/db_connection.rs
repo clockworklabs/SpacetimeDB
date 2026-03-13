@@ -95,6 +95,8 @@ pub struct DbContextImpl<M: SpacetimeModule> {
     ///
     /// This may be none if we have not yet received the [`ws::v2::InitialConnection`] message.
     connection_id: SharedCell<Option<ConnectionId>>,
+
+    pub(crate) extra_logging: Option<SharedCell<File>>,
 }
 
 impl<M: SpacetimeModule> Clone for DbContextImpl<M> {
@@ -113,14 +115,20 @@ impl<M: SpacetimeModule> Clone for DbContextImpl<M> {
             pending_mutations_recv: Arc::clone(&self.pending_mutations_recv),
             identity: Arc::clone(&self.identity),
             connection_id: Arc::clone(&self.connection_id),
+            extra_logging: Option::<Arc<_>>::clone(&self.extra_logging),
         }
     }
 }
 
 impl<M: SpacetimeModule> DbContextImpl<M> {
+    pub(crate) fn debug_log(&self, body: impl FnOnce(&mut File) -> std::result::Result<(), std::io::Error>) {
+        debug_log(&self.extra_logging, body);
+    }
+
     /// Process a parsed WebSocket message,
     /// applying its mutations to the client cache and invoking callbacks.
     fn process_message(&self, msg: ParsedMessage<M>) -> crate::Result<()> {
+        self.debug_log(|out| writeln!(out, "`process_message`: {msg:?}"));
         match msg {
             // Error: treat this as an erroneous disconnect.
             ParsedMessage::Error(e) => {
@@ -326,6 +334,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
     /// Apply an individual [`PendingMutation`].
     fn apply_mutation(&self, mutation: PendingMutation<M>) -> crate::Result<()> {
+        self.debug_log(|out| writeln!(out, "`apply_mutation`: {mutation:?}"));
         match mutation {
             // Subscribe: register the subscription in the [`SubscriptionManager`]
             // and send the `Subscribe` WS message.
@@ -806,6 +815,8 @@ pub struct DbConnectionBuilder<M: SpacetimeModule> {
     on_connect_error: Option<OnConnectErrorCallback<M>>,
     on_disconnect: Option<OnDisconnectCallback<M>>,
 
+    additional_logging_path: Option<PathBuf>,
+
     params: WsParams,
 }
 
@@ -841,6 +852,15 @@ pub fn set_connection_id(id: ConnectionId) -> crate::Result<()> {
     Ok(())
 }
 
+pub(crate) fn debug_log(
+    extra_logging: &Option<SharedCell<File>>,
+    body: impl FnOnce(&mut File) -> std::result::Result<(), std::io::Error>,
+) {
+    if let Some(file) = extra_logging {
+        body(&mut file.lock().expect("`extra_logging` file Mutex is poisoned")).expect("Writing debug log failed")
+    }
+}
+
 impl<M: SpacetimeModule> DbConnectionBuilder<M> {
     /// Implementation of the generated `DbConnection::builder` method.
     /// Call that method instead.
@@ -853,6 +873,7 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
             on_connect: None,
             on_connect_error: None,
             on_disconnect: None,
+            additional_logging_path: None,
             params: <_>::default(),
         }
     }
@@ -899,6 +920,16 @@ but you must call one of them, or else the connection will never progress.
     /// to construct a [`DbContextImpl`].
     #[cfg(not(feature = "web"))]
     fn build_impl(self) -> crate::Result<DbContextImpl<M>> {
+        let extra_logging = self
+            .additional_logging_path
+            .map(|path| {
+                OpenOptions::new().append(true).create(true).open(&path).map_err(|e| {
+                    InternalError::new(format!("Failed to open file '{path:?}' for additional logging")).with_cause(e)
+                })
+            })
+            .transpose()?
+            .map(|file| Arc::new(StdMutex::new(file)));
+
         let (runtime, handle) = enter_or_create_runtime()?;
 
         let connection_id_override = get_connection_id_override();
@@ -1026,6 +1057,23 @@ but you must call one of them, or else the connection will never progress.
     /// If this method is not called, the server chooses the default.
     pub fn with_confirmed_reads(mut self, confirmed: bool) -> Self {
         self.params.confirmed = Some(confirmed);
+        self
+    }
+
+    /// Set `path` as a path for additional debug logging related to SDK internals.
+    ///
+    /// When enabled, the SDK will create or open `path` for write-append and write logs to it.
+    /// This is useful for diagnosing bugs in the SDK,
+    /// but will generate a large volume of text logs and may have performance overhead,
+    /// so it should not be used in production.
+    ///
+    /// When running multiple connections in parallel,
+    /// either within the same process or from separate processes,
+    /// prefer giving each its own unique path here;
+    /// multiple `DbConnection`s writing to the same debug file concurrently
+    /// may interleave or corrupt the output.
+    pub fn with_debug_to_file(mut self, path: impl Into<PathBuf>) -> Self {
+        self.additional_logging_path = Some(path.into());
         self
     }
 
@@ -1219,9 +1267,10 @@ enum ParsedMessage<M: SpacetimeModule> {
 fn spawn_parse_loop<M: SpacetimeModule>(
     raw_message_recv: mpsc::UnboundedReceiver<ws::v2::ServerMessage>,
     handle: &runtime::Handle,
+    extra_logging: Option<SharedCell<File>>,
 ) -> (tokio::task::JoinHandle<()>, mpsc::UnboundedReceiver<ParsedMessage<M>>) {
     let (parsed_message_send, parsed_message_recv) = mpsc::unbounded();
-    let handle = handle.spawn(parse_loop(raw_message_recv, parsed_message_send));
+    let handle = handle.spawn(parse_loop(raw_message_recv, parsed_message_send, extra_logging));
     (handle, parsed_message_recv)
 }
 
@@ -1239,9 +1288,13 @@ fn spawn_parse_loop<M: SpacetimeModule>(
 async fn parse_loop<M: SpacetimeModule>(
     mut recv: mpsc::UnboundedReceiver<ws::v2::ServerMessage>,
     send: mpsc::UnboundedSender<ParsedMessage<M>>,
+    extra_logging: Option<SharedCell<File>>,
 ) {
     while let Some(msg) = recv.next().await {
-        send.unbounded_send(match msg {
+        debug_log(&extra_logging, |file| {
+            writeln!(file, "`parse_loop`: Got raw message: {msg:?}")
+        });
+        let parsed = match msg {
             ws::v2::ServerMessage::TransactionUpdate(transaction_update) => {
                 match M::DbUpdate::parse_update(transaction_update) {
                     Err(e) => ParsedMessage::Error(
@@ -1365,8 +1418,12 @@ async fn parse_loop<M: SpacetimeModule>(
                     ws::v2::ProcedureStatus::Returned(val) => Ok(val),
                 },
             },
-        })
-        .expect("Failed to send ParsedMessage to main thread");
+        };
+        debug_log(&extra_logging, |file| {
+            writeln!(file, "`parse_loop`: Parsed as: {parsed:?}")
+        });
+        send.unbounded_send(parsed)
+            .expect("Failed to send ParsedMessage to main thread");
     }
 }
 
@@ -1416,6 +1473,62 @@ pub(crate) enum PendingMutation<M: SpacetimeModule> {
         args: Vec<u8>,
         callback: ProcedureCallback<M>,
     },
+}
+
+// Hand-written `Debug` impl, 'cause `SubscriptionHandleImpl` and callbacks aren't printable.
+impl<M: SpacetimeModule> std::fmt::Debug for PendingMutation<M> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            PendingMutation::Unsubscribe { query_set_id } => f
+                .debug_struct("PendingMutation::Unsubscribe")
+                .field("query_set_id", query_set_id)
+                .finish(),
+            PendingMutation::Subscribe { query_set_id, .. } => f
+                .debug_struct("PendingMutation::Subscribe")
+                .field("query_set_id", query_set_id)
+                .finish_non_exhaustive(),
+            PendingMutation::AddInsertCallback { table, callback_id, .. } => f
+                .debug_struct("PendingMutation::AddInsertCallback")
+                .field("table", table)
+                .field("callback_id", callback_id)
+                .finish_non_exhaustive(),
+            PendingMutation::RemoveInsertCallback { table, callback_id } => f
+                .debug_struct("PendingMutation::RemoveInsertCallback")
+                .field("table", table)
+                .field("callback_id", callback_id)
+                .finish(),
+            PendingMutation::AddDeleteCallback { table, callback_id, .. } => f
+                .debug_struct("PendingMutation::AddDeleteCallback")
+                .field("table", table)
+                .field("callback_id", callback_id)
+                .finish_non_exhaustive(),
+            PendingMutation::RemoveDeleteCallback { table, callback_id } => f
+                .debug_struct("PendingMutation::RemoveDeleteCallback")
+                .field("table", table)
+                .field("callback_id", callback_id)
+                .finish(),
+            PendingMutation::AddUpdateCallback { table, callback_id, .. } => f
+                .debug_struct("PendingMutation::AddUpdateCallback")
+                .field("table", table)
+                .field("callback_id", callback_id)
+                .finish_non_exhaustive(),
+            PendingMutation::RemoveUpdateCallback { table, callback_id } => f
+                .debug_struct("PendingMutation::RemoveUpdateCallback")
+                .field("table", table)
+                .field("callback_id", callback_id)
+                .finish(),
+            PendingMutation::Disconnect => write!(f, "PendingMutation::Disconnect"),
+            PendingMutation::InvokeReducerWithCallback { reducer, .. } => f
+                .debug_struct("PendingMutation::InvokeReducerWithCallback")
+                .field("reducer", reducer)
+                .finish_non_exhaustive(),
+            PendingMutation::InvokeProcedureWithCallback { procedure, args, .. } => f
+                .debug_struct("PendingMutation::InvokeProcedureWithCallback")
+                .field("procedure", procedure)
+                .field("args", args)
+                .finish_non_exhaustive(),
+        }
+    }
 }
 
 enum Message<M: SpacetimeModule> {

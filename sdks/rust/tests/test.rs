@@ -592,3 +592,4 @@ macro_rules! view_pk_tests {
 }
 
 view_pk_tests!(rust_view_pk, "");
+view_pk_tests!(csharp_view_pk, "-cs");
