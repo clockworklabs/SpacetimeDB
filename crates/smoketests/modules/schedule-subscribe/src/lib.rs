@@ -44,7 +44,9 @@ fn failing_scheduled_sender_view(ctx: &ViewContext) -> impl Query<FailingSchedul
     ctx.from
         .player_entity()
         .r#where(|pe| pe.owner.eq(ctx.sender()))
-        .right_semijoin(ctx.from.failing_scheduled_table(), |pe, st| pe.entity_id.eq(st.scheduled_id))
+        .right_semijoin(ctx.from.failing_scheduled_table(), |pe, st| {
+            pe.entity_id.eq(st.scheduled_id)
+        })
         .build()
 }
 
