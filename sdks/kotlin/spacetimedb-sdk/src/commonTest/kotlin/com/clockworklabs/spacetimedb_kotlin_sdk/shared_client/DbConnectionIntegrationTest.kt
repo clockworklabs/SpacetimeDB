@@ -1949,6 +1949,236 @@ class DbConnectionIntegrationTest {
         conn.disconnect()
     }
 
+    /** Encode a valid InitialConnection as raw BSATN bytes. */
+    private fun encodeInitialConnectionBytes(): ByteArray {
+        val w = BsatnWriter()
+        w.writeSumTag(0u) // InitialConnection tag
+        w.writeU256(testIdentity.data)
+        w.writeU128(testConnectionId.data)
+        w.writeString(testToken)
+        return w.toByteArray()
+    }
+
+    @Test
+    fun truncatedMidFieldDisconnects() = runTest {
+        // Valid tag (6 = ReducerResultMsg) + valid requestId, but truncated before timestamp
+        val rawTransport = RawFakeTransport()
+        var disconnectError: Throwable? = null
+        val conn = createConnectionWithTransport(rawTransport, onDisconnect = { _, err ->
+            disconnectError = err
+        })
+        conn.connect()
+        rawTransport.sendRawToClient(encodeInitialConnectionBytes())
+        advanceUntilIdle()
+        assertTrue(conn.isActive)
+
+        val w = BsatnWriter()
+        w.writeSumTag(6u) // ReducerResultMsg
+        w.writeU32(1u)    // requestId — valid
+        // Missing: timestamp + ReducerOutcome
+        rawTransport.sendRawToClient(w.toByteArray())
+        advanceUntilIdle()
+
+        assertNotNull(disconnectError, "Truncated mid-field should fire onDisconnect with error")
+        assertFalse(conn.isActive)
+    }
+
+    @Test
+    fun invalidNestedOptionTagDisconnects() = runTest {
+        // SubscriptionError (tag 3) has Option<u32> for requestId — inject invalid option tag
+        val rawTransport = RawFakeTransport()
+        var disconnectError: Throwable? = null
+        val conn = createConnectionWithTransport(rawTransport, onDisconnect = { _, err ->
+            disconnectError = err
+        })
+        conn.connect()
+        rawTransport.sendRawToClient(encodeInitialConnectionBytes())
+        advanceUntilIdle()
+
+        val w = BsatnWriter()
+        w.writeSumTag(3u)  // SubscriptionError
+        w.writeSumTag(99u) // Invalid Option tag (should be 0=Some or 1=None)
+        rawTransport.sendRawToClient(w.toByteArray())
+        advanceUntilIdle()
+
+        assertNotNull(disconnectError)
+        assertTrue(disconnectError!!.message!!.contains("Invalid Option tag"))
+    }
+
+    @Test
+    fun invalidResultTagInOneOffQueryDisconnects() = runTest {
+        // OneOffQueryResult (tag 5) has Result<QueryRows, String> — inject invalid result tag
+        val rawTransport = RawFakeTransport()
+        var disconnectError: Throwable? = null
+        val conn = createConnectionWithTransport(rawTransport, onDisconnect = { _, err ->
+            disconnectError = err
+        })
+        conn.connect()
+        rawTransport.sendRawToClient(encodeInitialConnectionBytes())
+        advanceUntilIdle()
+
+        val w = BsatnWriter()
+        w.writeSumTag(5u)  // OneOffQueryResult
+        w.writeU32(42u)    // requestId
+        w.writeSumTag(77u) // Invalid Result tag (should be 0=Ok or 1=Err)
+        rawTransport.sendRawToClient(w.toByteArray())
+        advanceUntilIdle()
+
+        assertNotNull(disconnectError)
+        assertTrue(disconnectError!!.message!!.contains("Invalid Result tag"))
+    }
+
+    @Test
+    fun oversizedStringLengthDisconnects() = runTest {
+        // Valid InitialConnection tag + identity + connectionId + string with huge length prefix
+        val rawTransport = RawFakeTransport()
+        var disconnectError: Throwable? = null
+        val conn = createConnectionWithTransport(rawTransport, onDisconnect = { _, err ->
+            disconnectError = err
+        })
+        conn.connect()
+        advanceUntilIdle()
+
+        val w = BsatnWriter()
+        w.writeSumTag(0u) // InitialConnection
+        w.writeU256(testIdentity.data)
+        w.writeU128(testConnectionId.data)
+        w.writeU32(0xFFFFFFFFu) // String length = 4GB — way more than remaining bytes
+        rawTransport.sendRawToClient(w.toByteArray())
+        advanceUntilIdle()
+
+        assertNotNull(disconnectError)
+    }
+
+    @Test
+    fun invalidReducerOutcomeTagDisconnects() = runTest {
+        // ReducerResultMsg (tag 6) with valid fields but invalid ReducerOutcome tag
+        val rawTransport = RawFakeTransport()
+        var disconnectError: Throwable? = null
+        val conn = createConnectionWithTransport(rawTransport, onDisconnect = { _, err ->
+            disconnectError = err
+        })
+        conn.connect()
+        rawTransport.sendRawToClient(encodeInitialConnectionBytes())
+        advanceUntilIdle()
+
+        val w = BsatnWriter()
+        w.writeSumTag(6u)    // ReducerResultMsg
+        w.writeU32(1u)       // requestId
+        w.writeI64(12345L)   // timestamp (Timestamp = i64 microseconds)
+        w.writeSumTag(200u)  // Invalid ReducerOutcome tag
+        rawTransport.sendRawToClient(w.toByteArray())
+        advanceUntilIdle()
+
+        assertNotNull(disconnectError)
+    }
+
+    @Test
+    fun corruptFrameAfterEstablishedConnectionFailsPendingOps() = runTest {
+        // Establish full connection with subscriptions/reducers, then corrupt frame
+        val rawTransport = RawFakeTransport()
+        var disconnectError: Throwable? = null
+        val conn = createConnectionWithTransport(rawTransport, onDisconnect = { _, err ->
+            disconnectError = err
+        })
+        conn.connect()
+        rawTransport.sendRawToClient(encodeInitialConnectionBytes())
+        advanceUntilIdle()
+        assertTrue(conn.isActive)
+
+        // Fire a reducer call so there's a pending operation
+        var callbackFired = false
+        conn.callReducer("test", byteArrayOf(), "args", callback = { _ -> callbackFired = true })
+        advanceUntilIdle()
+        assertEquals(1, conn.stats.reducerRequestTracker.getRequestsAwaitingResponse())
+
+        // Corrupt frame kills the connection
+        rawTransport.sendRawToClient(byteArrayOf(0xFE.toByte()))
+        advanceUntilIdle()
+
+        assertNotNull(disconnectError)
+        assertFalse(conn.isActive)
+        // Reducer callback should NOT have fired (it was discarded, not responded to)
+        assertFalse(callbackFired)
+    }
+
+    @Test
+    fun garbageAfterValidMessageIsIgnored() = runTest {
+        // A fully valid InitialConnection with extra trailing bytes appended.
+        // BsatnReader doesn't check that all bytes are consumed, so this should work.
+        val rawTransport = RawFakeTransport()
+        var connected = false
+        var disconnectError: Throwable? = null
+        val conn = DbConnection(
+            transport = rawTransport,
+            httpClient = HttpClient(),
+            scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)),
+            onConnectCallbacks = listOf { _, _, _ -> connected = true },
+            onDisconnectCallbacks = listOf { _, err -> disconnectError = err },
+            onConnectErrorCallbacks = emptyList(),
+            clientConnectionId = ConnectionId.random(),
+            stats = Stats(),
+            moduleDescriptor = null,
+            callbackDispatcher = null,
+        )
+        conn.connect()
+        advanceUntilIdle()
+
+        val validBytes = encodeInitialConnectionBytes()
+        val withTrailing = validBytes + byteArrayOf(0xDE.toByte(), 0xAD.toByte(), 0xBE.toByte(), 0xEF.toByte())
+        rawTransport.sendRawToClient(withTrailing)
+        advanceUntilIdle()
+
+        // Connection should succeed — trailing bytes are not consumed but not checked
+        assertTrue(connected, "Valid message with trailing garbage should still connect")
+        assertNull(disconnectError, "Trailing garbage should not cause disconnect")
+        conn.disconnect()
+    }
+
+    @Test
+    fun allZeroBytesFrameDisconnects() = runTest {
+        // A frame of all zeroes — tag 0 (InitialConnection) but fields are all zeroes,
+        // which will produce a truncated read since the string length is 0 but
+        // Identity (32 bytes) and ConnectionId (16 bytes) consume the buffer first
+        val rawTransport = RawFakeTransport()
+        var disconnectError: Throwable? = null
+        val conn = createConnectionWithTransport(rawTransport, onDisconnect = { _, err ->
+            disconnectError = err
+        })
+        conn.connect()
+        advanceUntilIdle()
+
+        // 10 zero bytes: tag=0 (InitialConnection), then only 9 bytes for Identity (needs 32)
+        rawTransport.sendRawToClient(ByteArray(10))
+        advanceUntilIdle()
+
+        assertNotNull(disconnectError)
+    }
+
+    @Test
+    fun validTagWithRandomGarbageFieldsDisconnects() = runTest {
+        // SubscribeApplied (tag 1) followed by random garbage that doesn't form valid QueryRows
+        val rawTransport = RawFakeTransport()
+        var disconnectError: Throwable? = null
+        val conn = createConnectionWithTransport(rawTransport, onDisconnect = { _, err ->
+            disconnectError = err
+        })
+        conn.connect()
+        rawTransport.sendRawToClient(encodeInitialConnectionBytes())
+        advanceUntilIdle()
+
+        val w = BsatnWriter()
+        w.writeSumTag(1u) // SubscribeApplied
+        w.writeU32(1u)    // requestId
+        w.writeU32(1u)    // querySetId
+        // QueryRows needs: array_len (u32) + table entries — write nonsensical large array len
+        w.writeU32(999999u) // array_len for QueryRows — far more than available bytes
+        rawTransport.sendRawToClient(w.toByteArray())
+        advanceUntilIdle()
+
+        assertNotNull(disconnectError)
+    }
+
     // --- Overlapping subscriptions ---
 
     @Test
