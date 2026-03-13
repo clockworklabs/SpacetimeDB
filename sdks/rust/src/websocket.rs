@@ -2,10 +2,10 @@
 //!
 //! This module is internal, and may incompatibly change without warning.
 
-#[cfg(not(feature = "web"))]
+use std::fs::File;
+use std::io::Write;
 use std::mem;
-use std::sync::Arc;
-#[cfg(not(feature = "web"))]
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 #[cfg(not(feature = "web"))]
@@ -31,6 +31,7 @@ use tokio_tungstenite::{
 use tokio_tungstenite_wasm::{Message as WebSocketMessage, WebSocketStream};
 
 use crate::compression::decompress_server_message;
+use crate::db_connection::debug_log;
 use crate::metrics::CLIENT_METRICS;
 
 #[cfg(not(feature = "web"))]
@@ -304,9 +305,11 @@ async fn fetch_ws_token(host: &Uri, auth_token: &str) -> Result<String, WsError>
 /// Could be trivially written as a function, but macro-ifying it preserves the source location of the log.
 #[cfg(not(feature = "web"))]
 macro_rules! maybe_log_error {
-    ($cause:expr, $res:expr) => {
+    ($extra_logging:expr, $cause:expr, $res:expr) => {
         if let Err(e) = $res {
-            log::warn!("{}: {:?}", $cause, e);
+            let cause = $cause;
+            debug_log($extra_logging, |file| writeln!(file, "{}: {:?}", cause, e));
+            log::warn!("{}: {:?}", cause, e);
         }
     };
 }
@@ -386,6 +389,7 @@ impl WsConnection {
         mut self,
         incoming_messages: mpsc::UnboundedSender<ws::v2::ServerMessage>,
         outgoing_messages: mpsc::UnboundedReceiver<ws::v2::ClientMessage>,
+        extra_logging: Option<Arc<Mutex<File>>>,
     ) {
         let websocket_received = CLIENT_METRICS.websocket_received.with_label_values(&self.db_name);
         let websocket_received_msg_size = CLIENT_METRICS
@@ -439,6 +443,7 @@ impl WsConnection {
 
                     Err(e) => {
                         maybe_log_error!(
+                            &extra_logging,
                             "Error reading message from read WebSocket stream",
                             Result::<(), _>::Err(e)
                         );
@@ -450,10 +455,12 @@ impl WsConnection {
                         record_metrics(bytes.len());
                         match Self::parse_response(&bytes) {
                             Err(e) => maybe_log_error!(
+                                &extra_logging,
                                 "Error decoding WebSocketMessage::Binary payload",
                                 Result::<(), _>::Err(e)
                             ),
                             Ok(msg) => maybe_log_error!(
+                                &extra_logging,
                                 "Error sending decoded message to incoming_messages queue",
                                 incoming_messages.unbounded_send(msg)
                             ),
@@ -477,6 +484,7 @@ impl WsConnection {
                     },
 
                     Ok(Some(other)) => {
+                        debug_log(&extra_logging, |file| writeln!(file, "Unexpeccted WebSocket message {other:?}"));
                         log::warn!("Unexpected WebSocket message {other:?}");
                         idle = false;
                         record_metrics(other.len());
@@ -487,6 +495,7 @@ impl WsConnection {
                     if mem::replace(&mut idle, true) {
                         if want_pong {
                             // Nothing received while we were waiting for a pong.
+                            debug_log(&extra_logging, |file| writeln!(file, "Connection timed out"));
                             log::warn!("Connection timed out");
                             break;
                         }
@@ -494,6 +503,7 @@ impl WsConnection {
                         log::trace!("sending client ping");
                         let ping = WebSocketMessage::Ping(Bytes::new());
                         if let Err(e) = self.sock.send(ping).await {
+                            debug_log(&extra_logging, |file| writeln!(file, "Error sending ping: {e:?}"));
                             log::warn!("Error sending ping: {e:?}");
                             break;
                         }
@@ -506,12 +516,13 @@ impl WsConnection {
                     Some(outgoing) => {
                         let msg = Self::encode_message(outgoing);
                         if let Err(e) = self.sock.send(msg).await {
+                            debug_log(&extra_logging, |file| writeln!(file, "Error sending outgoing message: {e:?}"));
                             log::warn!("Error sending outgoing message: {e:?}");
                             break;
                         }
                     }
                     None => {
-                        maybe_log_error!("Error sending close frame", SinkExt::close(&mut self.sock).await);
+                        maybe_log_error!(&extra_logging, "Error sending close frame", SinkExt::close(&mut self.sock).await);
                         outgoing_messages = None;
                     }
                 },
@@ -523,6 +534,7 @@ impl WsConnection {
     pub(crate) fn spawn_message_loop(
         self,
         runtime: &runtime::Handle,
+        extra_logging: Option<Arc<Mutex<File>>>,
     ) -> (
         JoinHandle<()>,
         mpsc::UnboundedReceiver<ws::v2::ServerMessage>,
@@ -530,7 +542,7 @@ impl WsConnection {
     ) {
         let (outgoing_send, outgoing_recv) = mpsc::unbounded();
         let (incoming_send, incoming_recv) = mpsc::unbounded();
-        let handle = runtime.spawn(self.message_loop(incoming_send, outgoing_recv));
+        let handle = runtime.spawn(self.message_loop(incoming_send, outgoing_recv, extra_logging));
         (handle, incoming_recv, outgoing_send)
     }
 
