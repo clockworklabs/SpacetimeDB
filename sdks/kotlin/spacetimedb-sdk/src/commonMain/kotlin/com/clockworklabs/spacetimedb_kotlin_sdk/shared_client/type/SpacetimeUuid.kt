@@ -39,6 +39,21 @@ public data class SpacetimeUuid(val data: Uuid) : Comparable<SpacetimeUuid> {
 
     public fun toByteArray(): ByteArray = data.toByteArray()
 
+    /**
+     * Extracts the 31-bit monotonic counter from a V7 UUID.
+     *
+     * UUID V7 byte layout:
+     * ```
+     * Byte:  0  1  2  3  4  5 |  6  |  7  |  8  |  9  10  11 | 12  13  14  15
+     *       [--- timestamp ---][ver ][ctr ][var ][-- counter --] [-- random --]
+     * ```
+     * - Bytes 0–5: 48-bit Unix timestamp in milliseconds
+     * - Byte 6: UUID version nibble (0x70 for V7) — **not** counter data, skipped
+     * - Byte 7: counter bits 30–23
+     * - Byte 8: RFC 4122 variant bits (0x80) — **not** counter data, skipped
+     * - Bytes 9–11: counter bits 22–0 (bit 0 is in the high bit of the byte after byte 11)
+     * - Bytes 12–15: random
+     */
     public fun getCounter(): Int {
         val b = data.toByteArray()
         return ((b[7].toInt() and 0xFF) shl 23) or
@@ -80,6 +95,24 @@ public data class SpacetimeUuid(val data: Uuid) : Comparable<SpacetimeUuid> {
             return SpacetimeUuid(Uuid.fromByteArray(b))
         }
 
+        /**
+         * Creates a V7 UUID with the given counter, timestamp, and random bytes.
+         *
+         * UUID V7 byte layout:
+         * ```
+         * Byte:  0  1  2  3  4  5 |  6  |  7  |  8  |  9  10  11 | 12  13  14  15
+         *       [--- timestamp ---][ver ][ctr ][var ][-- counter --] [-- random --]
+         * ```
+         * - Bytes 0–5: 48-bit Unix timestamp in milliseconds (big-endian)
+         * - Byte 6: UUID version nibble, fixed to `0x70` (V7)
+         * - Byte 7: counter bits 30–23
+         * - Byte 8: RFC 4122 variant, fixed to `0x80`
+         * - Bytes 9–11: counter bits 22–0 (bit 0 stored in high bit of byte after 11)
+         * - Bytes 12–15: random bytes
+         *
+         * Bytes 6 and 8 hold fixed version/variant metadata and are **not** part of
+         * the counter, which is why [getCounter] skips them when reading back.
+         */
         public fun fromCounterV7(counter: Counter, now: Timestamp, randomBytes: ByteArray): SpacetimeUuid {
             require(randomBytes.size >= 4) { "V7 UUID requires at least 4 random bytes, got ${randomBytes.size}" }
             val counterVal = counter.getAndIncrement()
@@ -94,11 +127,11 @@ public data class SpacetimeUuid(val data: Uuid) : Comparable<SpacetimeUuid> {
             b[3] = (tsMs shr 16).toByte()
             b[4] = (tsMs shr 8).toByte()
             b[5] = tsMs.toByte()
-            // Byte 6: version 7
+            // Byte 6: version 7 (fixed — not counter data)
             b[6] = 0x70.toByte()
             // Byte 7: counter bits 30-23
             b[7] = ((counterVal shr 23) and 0xFF).toByte()
-            // Byte 8: variant RFC 4122
+            // Byte 8: variant RFC 4122 (fixed — not counter data)
             b[8] = 0x80.toByte()
             // Bytes 9-11: counter bits 22-0
             b[9] = ((counterVal shr 15) and 0xFF).toByte()
