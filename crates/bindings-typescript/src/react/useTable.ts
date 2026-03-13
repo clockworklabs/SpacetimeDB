@@ -205,6 +205,8 @@ export function useTable<TableDef extends UntypedTableDef>(
         table.removeOnUpdate?.(onUpdate);
       };
     },
+    // TODO: investigating refactoring so that this is no longer necessary, as we have had genuine bugs with missed deps.
+    // See https://github.com/clockworklabs/SpacetimeDB/pull/4580.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       connectionState,
