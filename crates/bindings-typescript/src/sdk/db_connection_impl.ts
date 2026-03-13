@@ -316,8 +316,6 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #makeReducers(def: RemoteModule): ReducersView<RemoteModule> {
     const out: Record<string, unknown> = {};
 
-    const writer = new BinaryWriter(1024);
-
     for (const reducer of def.reducers) {
       const reducerName = reducer.name;
       const key = reducer.accessorName;
@@ -326,6 +324,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         this.#reducerArgsSerializers[reducerName];
 
       (out as any)[key] = (params: InferTypeOfRow<typeof reducer.params>) => {
+        const writer = this.#reducerArgsEncoder;
         writer.clear();
         serializeArgs(writer, params);
         const argsBuffer = writer.getBuffer();
@@ -555,6 +554,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     }
   }
 
+  #reducerArgsEncoder = new BinaryWriter(1024);
   #clientMessageEncoder = new BinaryWriter(1024);
   #sendMessage(message: ClientMessage): void {
     const writer = this.#clientMessageEncoder;
@@ -913,7 +913,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     _paramsType: ProductType,
     params: object
   ): Promise<void> {
-    const writer = new BinaryWriter(1024);
+    const writer = this.#reducerArgsEncoder;
+    writer.clear();
     this.#reducerArgsSerializers[reducerName].serialize(writer, params);
     const argsBuffer = writer.getBuffer();
     return this.callReducer(reducerName, argsBuffer, params);
