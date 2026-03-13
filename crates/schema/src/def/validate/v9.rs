@@ -165,6 +165,8 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         row_level_security_raw,
         lifecycle_reducers,
         procedures,
+        http_routes: Vec::new(),
+        http_route_lookup: HashMap::default(),
         raw_module_def_version: RawModuleDefVersion::V9OrEarlier,
     })
 }
@@ -650,15 +652,22 @@ impl CoreValidator<'_> {
 
     // Recursive function to change typenames in the typespace according to the case conversion
     // policy.
-    pub(crate) fn typespace_case_conversion(case_policy: ValidationCase, typespace: &mut Typespace) {
+    pub(crate) fn typespace_case_conversion(
+        case_policy: ValidationCase,
+        typespace: &mut Typespace,
+        type_ref_names: &HashMap<AlgebraicTypeRef, RawIdentifier>,
+        enum_variants: &HashMap<RawIdentifier, HashMap<RawIdentifier, RawIdentifier>>,
+    ) {
         let case_policy_for_enum_variants = if matches!(case_policy, ValidationCase::SnakeCase) {
             ValidationCase::CamelCase
         } else {
             case_policy
         };
 
-        for ty in &mut typespace.types {
-            Self::convert_algebraic_type(ty, case_policy, case_policy_for_enum_variants);
+        for (index, ty) in typespace.types.iter_mut().enumerate() {
+            let type_ref = AlgebraicTypeRef(index as u32);
+            let enum_name = type_ref_names.get(&type_ref);
+            Self::convert_algebraic_type(ty, case_policy, case_policy_for_enum_variants, enum_name, enum_variants);
         }
     }
 
@@ -667,6 +676,8 @@ impl CoreValidator<'_> {
         ty: &mut AlgebraicType,
         case_policy: ValidationCase,
         case_policy_for_enum_variants: ValidationCase,
+        enum_name: Option<&RawIdentifier>,
+        enum_variants: &HashMap<RawIdentifier, HashMap<RawIdentifier, RawIdentifier>>,
     ) {
         if ty.is_special() {
             return;
@@ -684,6 +695,8 @@ impl CoreValidator<'_> {
                         &mut element.algebraic_type,
                         case_policy,
                         case_policy_for_enum_variants,
+                        None,
+                        enum_variants,
                     );
                 }
             }
@@ -691,20 +704,35 @@ impl CoreValidator<'_> {
                 for variant in &mut sum.variants.iter_mut() {
                     // Convert the variant name if it exists
                     if let Some(name) = variant.name() {
-                        let new_name = convert(name.clone(), case_policy_for_enum_variants);
-                        variant.name = Some(new_name.into())
+                        let explicit_name = enum_name
+                            .and_then(|enum_name| enum_variants.get(enum_name))
+                            .and_then(|variants| variants.get(name));
+                        if let Some(canonical) = explicit_name {
+                            variant.name = Some(canonical.clone());
+                        } else {
+                            let new_name = convert(name.clone(), case_policy_for_enum_variants);
+                            variant.name = Some(new_name.into())
+                        }
                     }
                     // Recursively convert the variant's type
                     Self::convert_algebraic_type(
                         &mut variant.algebraic_type,
                         case_policy,
                         case_policy_for_enum_variants,
+                        None,
+                        enum_variants,
                     );
                 }
             }
             AlgebraicType::Array(array) => {
                 // Arrays contain a base type that might need conversion
-                Self::convert_algebraic_type(&mut array.elem_ty, case_policy, case_policy_for_enum_variants);
+                Self::convert_algebraic_type(
+                    &mut array.elem_ty,
+                    case_policy,
+                    case_policy_for_enum_variants,
+                    None,
+                    enum_variants,
+                );
             }
             _ => {}
         }

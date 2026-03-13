@@ -34,6 +34,7 @@ axum-extra.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true
 http.workspace = true
+http-body-util.workspace = true
 headers.workspace = true
 mime = "0.3.17"
 tokio-stream = { version = "0.1.12", features = ["sync"] }

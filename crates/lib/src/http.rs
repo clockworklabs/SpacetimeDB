@@ -45,7 +45,7 @@ impl Request {
 }
 
 /// Represents an HTTP method.
-#[derive(Clone, SpacetimeType, PartialEq, Eq)]
+#[derive(Clone, SpacetimeType, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 #[sats(crate = crate, name = "HttpMethod")]
 pub enum Method {
     Get,
@@ -164,4 +164,26 @@ impl Response {
     pub fn size_in_bytes(&self) -> usize {
         self.headers.size_in_bytes()
     }
+}
+
+/// A request paired with its body bytes.
+///
+/// This is used for incoming HTTP route handling where the body bytes are kept separate
+/// from the metadata-only [`Request`].
+#[derive(Clone, SpacetimeType)]
+#[sats(crate = crate, name = "HttpRequestAndBody")]
+pub struct RequestAndBody {
+    pub request: Request,
+    pub body: Box<[u8]>,
+}
+
+/// A response paired with its body bytes.
+///
+/// This is used for HTTP route handling where the body bytes are kept separate
+/// from the metadata-only [`Response`].
+#[derive(Clone, SpacetimeType)]
+#[sats(crate = crate, name = "HttpResponseAndBody")]
+pub struct ResponseAndBody {
+    pub response: Response,
+    pub body: Box<[u8]>,
 }
