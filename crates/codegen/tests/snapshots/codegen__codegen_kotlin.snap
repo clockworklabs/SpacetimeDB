@@ -1,5 +1,6 @@
 ---
 source: crates/codegen/tests/codegen.rs
+assertion_line: 37
 expression: outfiles
 ---
 "AddPlayerReducer.kt" = '''
@@ -437,19 +438,19 @@ val DbConnection.procedures: RemoteProcedures
  * Typed table accessors for this module's tables.
  */
 val DbConnectionView.db: RemoteTables
-    get() = (this as DbConnection).moduleTables as RemoteTables
+    get() = moduleTables as RemoteTables
 
 /**
  * Typed reducer call functions for this module's reducers.
  */
 val DbConnectionView.reducers: RemoteReducers
-    get() = (this as DbConnection).moduleReducers as RemoteReducers
+    get() = moduleReducers as RemoteReducers
 
 /**
  * Typed procedure call functions for this module's procedures.
  */
 val DbConnectionView.procedures: RemoteProcedures
-    get() = (this as DbConnection).moduleProcedures as RemoteProcedures
+    get() = moduleProcedures as RemoteProcedures
 
 /**
  * Typed table accessors available directly on event context.

@@ -25,6 +25,23 @@ use std::collections::BTreeSet;
 const INDENT: &str = "    ";
 const SDK_PKG: &str = "com.clockworklabs.spacetimedb_kotlin_sdk.shared_client";
 
+/// Kotlin hard keywords that must be escaped with backticks when used as identifiers.
+/// See: https://kotlinlang.org/docs/keyword-reference.html#hard-keywords
+const KOTLIN_HARD_KEYWORDS: &[&str] = &[
+    "as", "break", "class", "continue", "do", "else", "false", "for", "fun", "if", "in",
+    "interface", "is", "null", "object", "package", "return", "super", "this", "throw", "true",
+    "try", "typealias", "typeof", "val", "var", "when", "while",
+];
+
+/// Escapes a Kotlin identifier with backticks if it collides with a hard keyword.
+fn kotlin_ident(name: String) -> String {
+    if KOTLIN_HARD_KEYWORDS.contains(&name.as_str()) {
+        format!("`{name}`")
+    } else {
+        name
+    }
+}
+
 pub struct Kotlin;
 
 impl Lang for Kotlin {
@@ -133,7 +150,7 @@ impl Lang for Kotlin {
         // Primary key extractor
         if let Some(pk_col) = table.primary_key {
             let pk_field = table.get_column(pk_col).unwrap();
-            let pk_field_camel = pk_field.accessor_name.deref().to_case(Case::Camel);
+            let pk_field_camel = kotlin_ident(pk_field.accessor_name.deref().to_case(Case::Camel));
             writeln!(
                 out,
                 "return TableCache.withPrimaryKey({{ reader -> {type_name}.decode(reader) }}) {{ row -> row.{pk_field_camel} }}"
@@ -231,7 +248,7 @@ impl Lang for Kotlin {
         // Index properties
         let get_field_name_and_type = |col_pos: ColId| -> (String, String) {
             let (field_name, field_type) = &product_def.elements[col_pos.idx()];
-            let name_camel = field_name.deref().to_case(Case::Camel);
+            let name_camel = kotlin_ident(field_name.deref().to_case(Case::Camel));
             let kt_type = kotlin_type(module, field_type);
             (name_camel, kt_type)
         };
@@ -244,7 +261,7 @@ impl Lang for Kotlin {
 
             let columns = idx.algorithm.columns();
             let is_unique = schema.is_unique(&columns);
-            let index_name_camel = accessor_name.deref().to_case(Case::Camel);
+            let index_name_camel = kotlin_ident(accessor_name.deref().to_case(Case::Camel));
             let index_class = if is_unique { "UniqueIndex" } else { "BTreeIndex" };
 
             match columns.as_singleton() {
@@ -310,7 +327,7 @@ impl Lang for Kotlin {
         writeln!(out, "class {table_name_pascal}Cols(tableName: String) {{");
         out.indent(1);
         for (ident, field_type) in product_def.elements.iter() {
-            let field_camel = ident.deref().to_case(Case::Camel);
+            let field_camel = kotlin_ident(ident.deref().to_case(Case::Camel));
             let col_name = ident.deref();
             let value_type = match field_type {
                 AlgebraicTypeUse::Option(inner) => kotlin_type(module, inner),
@@ -333,7 +350,7 @@ impl Lang for Kotlin {
                 if !ix_col_positions.contains(&i) {
                     continue;
                 }
-                let field_camel = ident.deref().to_case(Case::Camel);
+                let field_camel = kotlin_ident(ident.deref().to_case(Case::Camel));
                 let col_name = ident.deref();
                 let value_type = match field_type {
                     AlgebraicTypeUse::Option(inner) => kotlin_type(module, inner),
@@ -378,7 +395,7 @@ impl Lang for Kotlin {
             writeln!(out, "data class {reducer_name_pascal}Args(");
             out.indent(1);
             for (i, (ident, ty)) in reducer.params_for_generate.elements.iter().enumerate() {
-                let field_name = ident.deref().to_case(Case::Camel);
+                let field_name = kotlin_ident(ident.deref().to_case(Case::Camel));
                 let kotlin_ty = kotlin_type(module, ty);
                 let comma = if i + 1 < reducer.params_for_generate.elements.len() {
                     ","
@@ -396,7 +413,7 @@ impl Lang for Kotlin {
             out.indent(1);
             writeln!(out, "val writer = BsatnWriter()");
             for (ident, ty) in reducer.params_for_generate.elements.iter() {
-                let field_name = ident.deref().to_case(Case::Camel);
+                let field_name = kotlin_ident(ident.deref().to_case(Case::Camel));
                 write_encode_field(module, out, &field_name, ty);
             }
             writeln!(out, "return writer.toByteArray()");
@@ -410,14 +427,14 @@ impl Lang for Kotlin {
             writeln!(out, "fun decode(reader: BsatnReader): {reducer_name_pascal}Args {{");
             out.indent(1);
             for (ident, ty) in reducer.params_for_generate.elements.iter() {
-                let field_name = ident.deref().to_case(Case::Camel);
+                let field_name = kotlin_ident(ident.deref().to_case(Case::Camel));
                 write_decode_field(module, out, &field_name, ty);
             }
             let field_names: Vec<String> = reducer
                 .params_for_generate
                 .elements
                 .iter()
-                .map(|(ident, _)| ident.deref().to_case(Case::Camel))
+                .map(|(ident, _)| kotlin_ident(ident.deref().to_case(Case::Camel)))
                 .collect();
             let args = field_names.join(", ");
             writeln!(out, "return {reducer_name_pascal}Args({args})");
@@ -487,7 +504,7 @@ impl Lang for Kotlin {
             writeln!(out, "data class {procedure_name_pascal}Args(");
             out.indent(1);
             for (i, (ident, ty)) in procedure.params_for_generate.elements.iter().enumerate() {
-                let field_name = ident.deref().to_case(Case::Camel);
+                let field_name = kotlin_ident(ident.deref().to_case(Case::Camel));
                 let kotlin_ty = kotlin_type(module, ty);
                 let comma = if i + 1 < procedure.params_for_generate.elements.len() {
                     ","
@@ -973,7 +990,7 @@ fn define_product_type(
         writeln!(out, "data class {name}(");
         out.indent(1);
         for (i, (ident, ty)) in elements.iter().enumerate() {
-            let field_name = ident.deref().to_case(Case::Camel);
+            let field_name = kotlin_ident(ident.deref().to_case(Case::Camel));
             let kotlin_ty = kotlin_type(module, ty);
             let comma = if i + 1 < elements.len() { "," } else { "" };
             writeln!(out, "val {field_name}: {kotlin_ty}{comma}");
@@ -986,7 +1003,7 @@ fn define_product_type(
         writeln!(out, "fun encode(writer: BsatnWriter) {{");
         out.indent(1);
         for (ident, ty) in elements.iter() {
-            let field_name = ident.deref().to_case(Case::Camel);
+            let field_name = kotlin_ident(ident.deref().to_case(Case::Camel));
             write_encode_field(module, out, &field_name, ty);
         }
         out.dedent(1);
@@ -999,13 +1016,13 @@ fn define_product_type(
         writeln!(out, "fun decode(reader: BsatnReader): {name} {{");
         out.indent(1);
         for (ident, ty) in elements.iter() {
-            let field_name = ident.deref().to_case(Case::Camel);
+            let field_name = kotlin_ident(ident.deref().to_case(Case::Camel));
             write_decode_field(module, out, &field_name, ty);
         }
         // Constructor call
         let field_names: Vec<String> = elements
             .iter()
-            .map(|(ident, _)| ident.deref().to_case(Case::Camel))
+            .map(|(ident, _)| kotlin_ident(ident.deref().to_case(Case::Camel)))
             .collect();
         let args = field_names.join(", ");
         writeln!(out, "return {name}({args})");
@@ -1026,7 +1043,7 @@ fn define_product_type(
             writeln!(out, "if (this === other) return true");
             writeln!(out, "if (other !is {name}) return false");
             for (ident, ty) in elements.iter() {
-                let field_name = ident.deref().to_case(Case::Camel);
+                let field_name = kotlin_ident(ident.deref().to_case(Case::Camel));
                 if matches!(ty, AlgebraicTypeUse::Array(inner) if matches!(&**inner, AlgebraicTypeUse::Primitive(PrimitiveType::U8))) {
                     writeln!(
                         out,
@@ -1045,7 +1062,7 @@ fn define_product_type(
             out.indent(1);
             writeln!(out, "var result = 0");
             for (ident, ty) in elements.iter() {
-                let field_name = ident.deref().to_case(Case::Camel);
+                let field_name = kotlin_ident(ident.deref().to_case(Case::Camel));
                 if matches!(ty, AlgebraicTypeUse::Array(inner) if matches!(&**inner, AlgebraicTypeUse::Primitive(PrimitiveType::U8))) {
                     writeln!(
                         out,
@@ -1239,7 +1256,7 @@ fn generate_remote_tables_file(module: &ModuleDef, options: &CodegenOptions) -> 
 
     for table in iter_tables(module, options.visibility) {
         let table_name_pascal = table.accessor_name.deref().to_case(Case::Pascal);
-        let table_name_camel = table.accessor_name.deref().to_case(Case::Camel);
+        let table_name_camel = kotlin_ident(table.accessor_name.deref().to_case(Case::Camel));
         let type_name = type_ref_name(module, table.product_type_ref);
 
         writeln!(out, "val {table_name_camel}: {table_name_pascal}TableHandle by lazy {{");
@@ -1310,7 +1327,7 @@ fn generate_remote_reducers_file(module: &ModuleDef, options: &CodegenOptions) -
             continue;
         }
 
-        let reducer_name_camel = reducer.accessor_name.deref().to_case(Case::Camel);
+        let reducer_name_camel = kotlin_ident(reducer.accessor_name.deref().to_case(Case::Camel));
         let reducer_name_pascal = reducer.accessor_name.deref().to_case(Case::Pascal);
 
         if reducer.params_for_generate.elements.is_empty() {
@@ -1328,7 +1345,7 @@ fn generate_remote_reducers_file(module: &ModuleDef, options: &CodegenOptions) -
                 .elements
                 .iter()
                 .map(|(ident, ty)| {
-                    let name = ident.deref().to_case(Case::Camel);
+                    let name = kotlin_ident(ident.deref().to_case(Case::Camel));
                     let kotlin_ty = kotlin_type(module, ty);
                     format!("{name}: {kotlin_ty}")
                 })
@@ -1341,7 +1358,7 @@ fn generate_remote_reducers_file(module: &ModuleDef, options: &CodegenOptions) -
                 .params_for_generate
                 .elements
                 .iter()
-                .map(|(ident, _)| ident.deref().to_case(Case::Camel))
+                .map(|(ident, _)| kotlin_ident(ident.deref().to_case(Case::Camel)))
                 .collect();
             let arg_names_str = arg_names.join(", ");
             writeln!(out, "val args = {reducer_name_pascal}Args({arg_names_str})");
@@ -1433,7 +1450,7 @@ fn generate_remote_reducers_file(module: &ModuleDef, options: &CodegenOptions) -
                         .elements
                         .iter()
                         .map(|(ident, _)| {
-                            let field_name = ident.deref().to_case(Case::Camel);
+                            let field_name = kotlin_ident(ident.deref().to_case(Case::Camel));
                             format!("typedCtx.args.{field_name}")
                         }),
                 )
@@ -1501,7 +1518,7 @@ fn generate_remote_procedures_file(module: &ModuleDef, options: &CodegenOptions)
     out.indent(1);
 
     for procedure in iter_procedures(module, options.visibility) {
-        let procedure_name_camel = procedure.accessor_name.deref().to_case(Case::Camel);
+        let procedure_name_camel = kotlin_ident(procedure.accessor_name.deref().to_case(Case::Camel));
         let procedure_name_pascal = procedure.accessor_name.deref().to_case(Case::Pascal);
         let return_ty = &procedure.return_type_for_generate;
         let return_ty_str = kotlin_type(module, return_ty);
@@ -1513,7 +1530,7 @@ fn generate_remote_procedures_file(module: &ModuleDef, options: &CodegenOptions)
             .elements
             .iter()
             .map(|(ident, ty)| {
-                let name = ident.deref().to_case(Case::Camel);
+                let name = kotlin_ident(ident.deref().to_case(Case::Camel));
                 let kotlin_ty = kotlin_type(module, ty);
                 format!("{name}: {kotlin_ty}")
             })
@@ -1538,7 +1555,7 @@ fn generate_remote_procedures_file(module: &ModuleDef, options: &CodegenOptions)
         if !procedure.params_for_generate.elements.is_empty() {
             writeln!(out, "val writer = BsatnWriter()");
             for (ident, ty) in procedure.params_for_generate.elements.iter() {
-                let field_name = ident.deref().to_case(Case::Camel);
+                let field_name = kotlin_ident(ident.deref().to_case(Case::Camel));
                 write_encode_field(module, out, &field_name, ty);
             }
         }
@@ -1872,7 +1889,7 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
         let table_name = table.name.deref();
         let type_name = type_ref_name(module, table.product_type_ref);
         let table_name_pascal = table.accessor_name.deref().to_case(Case::Pascal);
-        let method_name = table.accessor_name.deref().to_case(Case::Camel);
+        let method_name = kotlin_ident(table.accessor_name.deref().to_case(Case::Camel));
 
         // Check if this table has indexed columns
         let has_ix = iter_indexes(table).any(|idx| {
@@ -1922,5 +1939,47 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     OutputFile {
         filename: "Module.kt".to_string(),
         code: output.into_inner(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kotlin_ident_escapes_hard_keywords() {
+        for &kw in KOTLIN_HARD_KEYWORDS {
+            assert_eq!(
+                kotlin_ident(kw.to_string()),
+                format!("`{kw}`"),
+                "Expected keyword '{kw}' to be backtick-escaped"
+            );
+        }
+    }
+
+    #[test]
+    fn kotlin_ident_passes_through_non_keywords() {
+        let non_keywords = ["name", "age", "id", "foo", "bar", "myField", "data", "value"];
+        for &name in &non_keywords {
+            assert_eq!(
+                kotlin_ident(name.to_string()),
+                name,
+                "Non-keyword '{name}' should not be escaped"
+            );
+        }
+    }
+
+    #[test]
+    fn kotlin_ident_is_case_sensitive() {
+        // PascalCase versions of keywords are NOT keywords
+        assert_eq!(kotlin_ident("Object".to_string()), "Object");
+        assert_eq!(kotlin_ident("Class".to_string()), "Class");
+        assert_eq!(kotlin_ident("When".to_string()), "When");
+        assert_eq!(kotlin_ident("Val".to_string()), "Val");
+        // But lowercase versions are
+        assert_eq!(kotlin_ident("object".to_string()), "`object`");
+        assert_eq!(kotlin_ident("class".to_string()), "`class`");
+        assert_eq!(kotlin_ident("when".to_string()), "`when`");
+        assert_eq!(kotlin_ident("val".to_string()), "`val`");
     }
 }
