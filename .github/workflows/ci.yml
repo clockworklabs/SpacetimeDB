@@ -236,9 +236,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake
-
-          rustup target add wasm32-unknown-unknown
-
           git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
           cd ~/emsdk
           ./emsdk install 4.0.21
