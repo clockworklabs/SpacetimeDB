@@ -1,18 +1,46 @@
-mod module_bindings;
+pub(crate) mod module_bindings;
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+use std::sync::OnceLock;
 
 use module_bindings::*;
 
-use spacetimedb_sdk::{DbContext, Table};
+use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Table};
 
 use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";
 
-fn db_name_or_panic() -> String {
-    std::env::var("SPACETIME_SDK_TEST_DB_NAME").expect("Failed to read db name from env")
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+static WEB_DB_NAME: OnceLock<String> = OnceLock::new();
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+pub(crate) fn set_web_db_name(db_name: String) {
+    WEB_DB_NAME.set(db_name).expect("WASM DB name was already initialized");
 }
 
+fn db_name_or_panic() -> String {
+    #[cfg(all(target_arch = "wasm32", feature = "web"))]
+    {
+        return WEB_DB_NAME
+            .get()
+            .cloned()
+            .expect("Failed to read db name from wasm runner");
+    }
+
+    #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
+    {
+        std::env::var("SPACETIME_SDK_TEST_DB_NAME").expect("Failed to read db name from env")
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
+    // Keep a single async execution path so native and wasm exercise the same logic.
+    tokio::runtime::Runtime::new().unwrap().block_on(dispatch());
+}
+
+pub(crate) async fn dispatch() {
     let disconnect_test_counter = TestCounter::new();
     let disconnect_result = disconnect_test_counter.add_test("disconnect");
 
@@ -56,18 +84,21 @@ fn main() {
                 Some(err) => disconnect_result(Err(anyhow::anyhow!("{err:?}"))),
                 None => disconnect_result(Ok(())),
             }
-        })
-        .build()
-        .unwrap();
+        });
+    let connection = build_connection(connection).await;
 
+    #[cfg(not(target_arch = "wasm32"))]
     let join_handle = connection.run_threaded();
+    #[cfg(target_arch = "wasm32")]
+    connection.run_background_task();
 
-    connect_test_counter.wait_for_all();
+    wait_for_all(&connect_test_counter).await;
 
-    connection.disconnect().unwrap();
+    disconnect_connection(&connection).await;
+    #[cfg(not(target_arch = "wasm32"))]
     join_handle.join().unwrap();
 
-    disconnect_test_counter.wait_for_all();
+    wait_for_all(&disconnect_test_counter).await;
 
     let reconnect_test_counter = TestCounter::new();
     let reconnected_result = reconnect_test_counter.add_test("on_reconnect");
@@ -79,9 +110,8 @@ fn main() {
             reconnected_result(Ok(()));
         })
         .with_database_name(db_name_or_panic())
-        .with_uri(LOCALHOST)
-        .build()
-        .unwrap();
+        .with_uri(LOCALHOST);
+    let new_connection = build_connection(new_connection).await;
 
     new_connection
         .subscription_builder()
@@ -103,7 +133,51 @@ fn main() {
         .on_error(|_ctx, error| panic!("subscription on_error: {error:?}"))
         .subscribe("SELECT * FROM disconnected");
 
-    new_connection.run_threaded();
+    #[cfg(not(target_arch = "wasm32"))]
+    let reconnect_join_handle = new_connection.run_threaded();
+    #[cfg(target_arch = "wasm32")]
+    new_connection.run_background_task();
 
-    reconnect_test_counter.wait_for_all();
+    wait_for_all(&reconnect_test_counter).await;
+
+    // The second connection has no disconnect assertion, but it still needs an explicit
+    // shutdown on wasm so the background task releases its websocket before the test exits.
+    disconnect_connection(&new_connection).await;
+    #[cfg(not(target_arch = "wasm32"))]
+    reconnect_join_handle.join().unwrap();
+}
+
+async fn wait_for_all(test_counter: &std::sync::Arc<TestCounter>) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        // wasm/web callbacks run on the JS event loop, so this wait must stay async.
+        test_counter.wait_for_all_async().await;
+        return;
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    test_counter.wait_for_all();
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+    builder.build().unwrap()
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+    // Web builds use async connection setup, so awaiting here avoids blocking the event loop
+    // before websocket callbacks have a chance to run.
+    builder.build().await.unwrap()
+}
+
+async fn disconnect_connection(connection: &DbConnection) {
+    connection.disconnect().unwrap();
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        // Yield once so the queued disconnect mutation is processed by the background task
+        // before the wasm test function returns to Node.
+        gloo_timers::future::TimeoutFuture::new(0).await;
+    }
 }

@@ -1,19 +1,23 @@
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::large_enum_variant)]
-mod module_bindings;
+pub(crate) mod module_bindings;
 
 use core::fmt::Display;
-use core::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Barrier, Mutex};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+#[cfg(target_arch = "wasm32")]
+use std::cell::RefCell;
+use std::sync::{Arc, Mutex};
 
 use module_bindings::*;
 
 use rand::RngCore;
+#[cfg(not(target_arch = "wasm32"))]
+use spacetimedb_sdk::credentials;
 use spacetimedb_sdk::error::InternalError;
 use spacetimedb_sdk::TableWithPrimaryKey;
 use spacetimedb_sdk::{
-    credentials, i256, u256, Compression, ConnectionId, DbConnectionBuilder, DbContext, Event, Identity, ReducerEvent,
-    Status, SubscriptionHandle, Table, TimeDuration, Timestamp, Uuid,
+    i256, u256, Compression, ConnectionId, DbConnectionBuilder, DbContext, Event, Identity, ReducerEvent, Status,
+    SubscriptionHandle, Table, TimeDuration, Timestamp, Uuid,
 };
 use test_counter::TestCounter;
 
@@ -28,13 +32,180 @@ use unique_test_table::{insert_then_delete_one, UniqueTestTable};
 
 const LOCALHOST: &str = "http://localhost:3000";
 
+fn fixed_test_timestamp() -> Timestamp {
+    // `Timestamp::now()` is stubbed on `wasm32-unknown-unknown`, so client-side tests
+    // that need a timestamp value must use a deterministic literal instead of wall-clock time.
+    Timestamp::from_micros_since_unix_epoch(1_706_000_000_000_000)
+}
+
+// ---- Test harness platform shim layer ----
+//
+// Keep all intentional native-vs-wasm differences concentrated here so reviewers can reason
+// about the rest of the file as ordinary shared test logic. The desired high-level behavior is:
+// - all tests call the same async `connect*` and `wait_for_all` helpers
+// - native keeps using its existing threaded SDK runtime
+// - wasm keeps the JS event loop unblocked and preserves native-style connection lifetimes
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+static WEB_DB_NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+pub(crate) fn set_web_db_name(db_name: String) {
+    WEB_DB_NAME.set(db_name).expect("WASM DB name was already initialized");
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+thread_local! {
+    // Why wasm needs extra lifetime plumbing:
+    // - Native test clients call `run_threaded()`, so SDK websocket work keeps progressing on a
+    //   dedicated background thread even if the test thread blocks in `wait_for_all()`.
+    // - wasm/web runs the client and its websocket callbacks on the same single-threaded JS event
+    //   loop as the test body. There is no equivalent background OS thread here.
+    // - That means an early last-handle drop disconnects the websocket immediately, and a blocking
+    //   wait would freeze the very event loop that is supposed to deliver the remaining callbacks.
+    // Retain connections until the async wait completes so wasm observes the same logical lifetime
+    // that the native tests were implicitly relying on.
+    // Many native-first tests intentionally ignore the returned connection and rely on the
+    // background message loop to stay alive until `wait_for_all()` finishes. Retain a clone on
+    // wasm so the final-drop disconnect cleanup does not self-terminate those tests early.
+    static RETAINED_WASM_CONNECTIONS: RefCell<Vec<ManagedConnection>> = const { RefCell::new(Vec::new()) };
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+fn retain_connection_until_wait(connection: &ManagedConnection) {
+    RETAINED_WASM_CONNECTIONS.with(|connections| connections.borrow_mut().push(connection.clone()));
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+fn release_retained_connections() {
+    RETAINED_WASM_CONNECTIONS.with(|connections| connections.borrow_mut().clear());
+}
+
+#[cfg(not(all(target_arch = "wasm32", feature = "web")))]
+fn retain_connection_until_wait(_: &ManagedConnection) {}
+
+#[cfg(not(all(target_arch = "wasm32", feature = "web")))]
+fn release_retained_connections() {}
+
+// `ManagedConnection` exists to separate test logic from connection-lifetime mechanics.
+// The generated `DbConnection` is a single owned handle, but this harness now needs two extra
+// properties:
+// - shared ownership, so wasm can retain a connection until `wait_for_all()` even when the test
+//   itself ignores the returned value, and
+// - final-owner disconnect semantics, so only the last live handle shuts down the websocket.
+// Wrapping the connection in an `Arc` and re-exposing `DbContext` here keeps those lifecycle rules
+// local to the shim layer instead of forcing the individual tests to reason about them.
+#[derive(Clone)]
+struct ManagedConnection(Arc<DbConnection>);
+
+impl ManagedConnection {
+    fn new(connection: DbConnection) -> Self {
+        Self(Arc::new(connection))
+    }
+}
+
+impl core::ops::Deref for ManagedConnection {
+    type Target = DbConnection;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref()
+    }
+}
+
+impl DbContext for ManagedConnection {
+    type DbView = <DbConnection as DbContext>::DbView;
+    type Reducers = <DbConnection as DbContext>::Reducers;
+    type Procedures = <DbConnection as DbContext>::Procedures;
+    type SubscriptionBuilder = <DbConnection as DbContext>::SubscriptionBuilder;
+
+    fn db(&self) -> &Self::DbView {
+        &self.0.db
+    }
+
+    fn reducers(&self) -> &Self::Reducers {
+        &self.0.reducers
+    }
+
+    fn procedures(&self) -> &Self::Procedures {
+        &self.0.procedures
+    }
+
+    fn is_active(&self) -> bool {
+        self.0.is_active()
+    }
+
+    fn disconnect(&self) -> spacetimedb_sdk::Result<()> {
+        self.0.disconnect()
+    }
+
+    fn subscription_builder(&self) -> Self::SubscriptionBuilder {
+        self.0.subscription_builder()
+    }
+
+    fn try_identity(&self) -> Option<Identity> {
+        self.0.try_identity()
+    }
+
+    fn connection_id(&self) -> ConnectionId {
+        self.0.connection_id()
+    }
+
+    fn try_connection_id(&self) -> Option<ConnectionId> {
+        self.0.try_connection_id()
+    }
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+impl Drop for ManagedConnection {
+    fn drop(&mut self) {
+        if Arc::strong_count(&self.0) == 1 {
+            // Only the final owner should disconnect. wasm tests now clone connections into a
+            // temporary retention list so ignored return values stay alive until `wait_for_all()`.
+            // Disconnecting from any earlier clone drop would let the websocket shut down while
+            // the test still expects subscription or reducer callbacks to arrive.
+            let _ = self.0.disconnect();
+        }
+    }
+}
+
+/// Read the per-test database name from the native process environment or the wasm runner shim.
+/// Keeping this lookup centralized avoids sprinkling target-specific configuration through tests.
 fn db_name_or_panic() -> String {
-    std::env::var("SPACETIME_SDK_TEST_DB_NAME").expect("Failed to read db name from env")
+    #[cfg(all(target_arch = "wasm32", feature = "web"))]
+    {
+        return WEB_DB_NAME
+            .get()
+            .cloned()
+            .expect("Failed to read db name from wasm runner");
+    }
+
+    #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
+    {
+        std::env::var("SPACETIME_SDK_TEST_DB_NAME").expect("Failed to read db name from env")
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn start_connection_runtime(connection: &ManagedConnection) {
+    // Native keeps websocket/callback work on a dedicated SDK thread, so the test body can block
+    // later without preventing callbacks from being delivered.
+    connection.run_threaded();
+    retain_connection_until_wait(connection);
+}
+
+#[cfg(target_arch = "wasm32")]
+fn start_connection_runtime(connection: &ManagedConnection) {
+    // wasm/web has no background OS thread in this harness. Start the async message loop and keep
+    // the connection retained until `wait_for_all()` so native-style ignored return values do not
+    // disconnect the websocket before the expected callbacks have run.
+    connection.run_background_task();
+    retain_connection_until_wait(connection);
 }
 
 /// Register a panic hook which will exit the process whenever any thread panics.
 ///
 /// This allows us to fail tests by panicking in callbacks.
+#[cfg(not(target_arch = "wasm32"))]
 fn exit_on_panic() {
     // The default panic hook is responsible for printing the panic message and backtrace to stderr.
     // Grab a handle on it, and invoke it in our custom hook before exiting.
@@ -64,6 +235,7 @@ macro_rules! assert_eq_or_bail {
     }};
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     env_logger::init();
     exit_on_panic();
@@ -71,77 +243,82 @@ fn main() {
     let test = std::env::args()
         .nth(1)
         .expect("Pass a test name as a command-line argument to the test client");
+    // Keep a single async dispatch entrypoint so wasm and native execute
+    // the same test bodies; native blocks at the CLI boundary only.
+    tokio::runtime::Runtime::new().unwrap().block_on(dispatch(&test));
+}
 
-    match &*test {
-        "insert-primitive" => exec_insert_primitive(),
-        "subscribe-and-cancel" => exec_subscribe_and_cancel(),
-        "subscribe-and-unsubscribe" => exec_subscribe_and_unsubscribe(),
-        "subscription-error-smoke-test" => exec_subscription_error_smoke_test(),
-        "delete-primitive" => exec_delete_primitive(),
-        "update-primitive" => exec_update_primitive(),
+pub(crate) async fn dispatch(test: &str) {
+    match test {
+        "insert-primitive" => exec_insert_primitive().await,
+        "subscribe-and-cancel" => exec_subscribe_and_cancel().await,
+        "subscribe-and-unsubscribe" => exec_subscribe_and_unsubscribe().await,
+        "subscription-error-smoke-test" => exec_subscription_error_smoke_test().await,
+        "delete-primitive" => exec_delete_primitive().await,
+        "update-primitive" => exec_update_primitive().await,
 
-        "insert-identity" => exec_insert_identity(),
-        "insert-caller-identity" => exec_insert_caller_identity(),
-        "delete-identity" => exec_delete_identity(),
-        "update-identity" => exec_update_identity(),
+        "insert-identity" => exec_insert_identity().await,
+        "insert-caller-identity" => exec_insert_caller_identity().await,
+        "delete-identity" => exec_delete_identity().await,
+        "update-identity" => exec_update_identity().await,
 
-        "insert-connection-id" => exec_insert_connection_id(),
-        "insert-caller-connection-id" => exec_insert_caller_connection_id(),
-        "delete-connection-id" => exec_delete_connection_id(),
-        "update-connection-id" => exec_update_connection_id(),
+        "insert-connection-id" => exec_insert_connection_id().await,
+        "insert-caller-connection-id" => exec_insert_caller_connection_id().await,
+        "delete-connection-id" => exec_delete_connection_id().await,
+        "update-connection-id" => exec_update_connection_id().await,
 
-        "insert-timestamp" => exec_insert_timestamp(),
-        "insert-call-timestamp" => exec_insert_call_timestamp(),
+        "insert-timestamp" => exec_insert_timestamp().await,
+        "insert-call-timestamp" => exec_insert_call_timestamp().await,
 
-        "insert-uuid" => exec_insert_uuid(),
-        "insert-call-uuid-v4" => exec_insert_caller_uuid_v4(),
-        "insert-call-uuid-v7" => exec_insert_caller_uuid_v7(),
-        "delete-uuid" => exec_delete_uuid(),
-        "update-uuid" => exec_update_uuid(),
+        "insert-uuid" => exec_insert_uuid().await,
+        "insert-call-uuid-v4" => exec_insert_caller_uuid_v4().await,
+        "insert-call-uuid-v7" => exec_insert_caller_uuid_v7().await,
+        "delete-uuid" => exec_delete_uuid().await,
+        "update-uuid" => exec_update_uuid().await,
 
-        "on-reducer" => exec_on_reducer(),
-        "fail-reducer" => exec_fail_reducer(),
+        "on-reducer" => exec_on_reducer().await,
+        "fail-reducer" => exec_fail_reducer().await,
 
-        "insert-vec" => exec_insert_vec(),
-        "insert-option-some" => exec_insert_option_some(),
-        "insert-option-none" => exec_insert_option_none(),
-        "insert-struct" => exec_insert_struct(),
-        "insert-simple-enum" => exec_insert_simple_enum(),
-        "insert-enum-with-payload" => exec_insert_enum_with_payload(),
+        "insert-vec" => exec_insert_vec().await,
+        "insert-option-some" => exec_insert_option_some().await,
+        "insert-option-none" => exec_insert_option_none().await,
+        "insert-struct" => exec_insert_struct().await,
+        "insert-simple-enum" => exec_insert_simple_enum().await,
+        "insert-enum-with-payload" => exec_insert_enum_with_payload().await,
 
-        "insert-delete-large-table" => exec_insert_delete_large_table(),
+        "insert-delete-large-table" => exec_insert_delete_large_table().await,
 
-        "insert-primitives-as-strings" => exec_insert_primitives_as_strings(),
+        "insert-primitives-as-strings" => exec_insert_primitives_as_strings().await,
 
         // "resubscribe" => exec_resubscribe(),
         //
-        "reauth-part-1" => exec_reauth_part_1(),
-        "reauth-part-2" => exec_reauth_part_2(),
+        "reauth-part-1" => exec_reauth_part_1().await,
+        "reauth-part-2" => exec_reauth_part_2().await,
 
-        "should-fail" => exec_should_fail(),
+        "should-fail" => exec_should_fail().await,
 
-        "reconnect-different-connection-id" => exec_reconnect_different_connection_id(),
-        "caller-always-notified" => exec_caller_always_notified(),
+        "reconnect-different-connection-id" => exec_reconnect_different_connection_id().await,
+        "caller-always-notified" => exec_caller_always_notified().await,
 
-        "subscribe-all-select-star" => exec_subscribe_all_select_star(),
+        "subscribe-all-select-star" => exec_subscribe_all_select_star().await,
         "caller-alice-receives-reducer-callback-but-not-bob" => {
-            exec_caller_alice_receives_reducer_callback_but_not_bob()
+            exec_caller_alice_receives_reducer_callback_but_not_bob().await
         }
-        "row-deduplication" => exec_row_deduplication(),
-        "row-deduplication-join-r-and-s" => exec_row_deduplication_join_r_and_s(),
-        "row-deduplication-r-join-s-and-r-joint" => exec_row_deduplication_r_join_s_and_r_join_t(),
-        "test-lhs-join-update" => test_lhs_join_update(),
-        "test-lhs-join-update-disjoint-queries" => test_lhs_join_update_disjoint_queries(),
-        "test-intra-query-bag-semantics-for-join" => test_intra_query_bag_semantics_for_join(),
-        "two-different-compression-algos" => exec_two_different_compression_algos(),
-        "test-parameterized-subscription" => test_parameterized_subscription(),
-        "test-rls-subscription" => test_rls_subscription(),
-        "pk-simple-enum" => exec_pk_simple_enum(),
-        "indexed-simple-enum" => exec_indexed_simple_enum(),
+        "row-deduplication" => exec_row_deduplication().await,
+        "row-deduplication-join-r-and-s" => exec_row_deduplication_join_r_and_s().await,
+        "row-deduplication-r-join-s-and-r-joint" => exec_row_deduplication_r_join_s_and_r_join_t().await,
+        "test-lhs-join-update" => test_lhs_join_update().await,
+        "test-lhs-join-update-disjoint-queries" => test_lhs_join_update_disjoint_queries().await,
+        "test-intra-query-bag-semantics-for-join" => test_intra_query_bag_semantics_for_join().await,
+        "two-different-compression-algos" => exec_two_different_compression_algos().await,
+        "test-parameterized-subscription" => test_parameterized_subscription().await,
+        "test-rls-subscription" => test_rls_subscription().await,
+        "pk-simple-enum" => exec_pk_simple_enum().await,
+        "indexed-simple-enum" => exec_indexed_simple_enum().await,
 
-        "overlapping-subscriptions" => exec_overlapping_subscriptions(),
+        "overlapping-subscriptions" => exec_overlapping_subscriptions().await,
 
-        "sorted-uuids-insert" => exec_sorted_uuids_insert(),
+        "sorted-uuids-insert" => exec_sorted_uuids_insert().await,
 
         _ => panic!("Unknown test: {test}"),
     }
@@ -387,12 +564,12 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM table_holds_table;",
 ];
 
-fn connect_with_then(
+async fn connect_with_then(
     test_counter: &std::sync::Arc<TestCounter>,
     on_connect_suffix: &str,
     with_builder: impl FnOnce(DbConnectionBuilder<RemoteModule>) -> DbConnectionBuilder<RemoteModule>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
-) -> DbConnection {
+) -> ManagedConnection {
     let connected_result = test_counter.add_test(format!("on_connect_{on_connect_suffix}"));
     let name = db_name_or_panic();
     let builder = DbConnection::builder()
@@ -403,20 +580,46 @@ fn connect_with_then(
             connected_result(Ok(()));
         })
         .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
-    let conn = with_builder(builder).build().unwrap();
-    conn.run_threaded();
+    let conn = build_connection(with_builder(builder)).await;
+    start_connection_runtime(&conn);
     conn
 }
 
-fn connect_then(
+async fn connect_then(
     test_counter: &std::sync::Arc<TestCounter>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
-) -> DbConnection {
-    connect_with_then(test_counter, "", |x| x, callback)
+) -> ManagedConnection {
+    connect_with_then(test_counter, "", |x| x, callback).await
 }
 
-fn connect(test_counter: &std::sync::Arc<TestCounter>) -> DbConnection {
-    connect_then(test_counter, |_| {})
+async fn connect(test_counter: &std::sync::Arc<TestCounter>) -> ManagedConnection {
+    connect_then(test_counter, |_| {}).await
+}
+
+async fn wait_for_all(test_counter: &std::sync::Arc<TestCounter>) {
+    // Use one shared async wait entrypoint even on native. The TestCounter implementation hides
+    // the native blocking wait vs wasm event-loop-friendly poll, which keeps test bodies uniform.
+    test_counter.wait_for_all_async().await;
+    // This is a no-op on native and the wasm-side lifetime release point on web.
+    release_retained_connections();
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> ManagedConnection {
+    // Keep the helper async even though native `build()` is synchronous so shared callers do not
+    // need target-specific branches.
+    ManagedConnection::new(builder.build().unwrap())
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> ManagedConnection {
+    // Why this differs from native:
+    // - In the SDK, `DbConnectionBuilder::build` is sync on non-web builds,
+    //   but async on `feature = "web"` because the websocket/token setup uses
+    //   wasm/web async primitives.
+    // - We therefore keep the helper async and await directly so wasm stays
+    //   non-blocking and can make forward progress on the JS event loop.
+    ManagedConnection::new(builder.build().await.unwrap())
 }
 
 fn subscribe_all_then(ctx: &impl RemoteDbContext, callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static) {
@@ -448,7 +651,7 @@ fn reducer_callback_assert_committed(
     move |_ctx, outcome| assert_outcome_committed(reducer_name, outcome)
 }
 
-fn exec_subscribe_and_cancel() {
+async fn exec_subscribe_and_cancel() {
     let test_counter = TestCounter::new();
     let cb = test_counter.add_test("unsubscribe_then_called");
     connect_then(&test_counter, {
@@ -471,11 +674,12 @@ fn exec_subscribe_and_cancel() {
                 }))
                 .unwrap();
         }
-    });
-    test_counter.wait_for_all();
+    })
+    .await;
+    wait_for_all(&test_counter).await;
 }
 
-fn exec_subscribe_and_unsubscribe() {
+async fn exec_subscribe_and_unsubscribe() {
     let test_counter = TestCounter::new();
     let cb = test_counter.add_test("unsubscribe_then_called");
     connect_then(&test_counter, {
@@ -509,11 +713,12 @@ fn exec_subscribe_and_unsubscribe() {
             assert!(!handle.is_active());
             assert!(!handle.is_ended());
         }
-    });
-    test_counter.wait_for_all();
+    })
+    .await;
+    wait_for_all(&test_counter).await;
 }
 
-fn exec_subscription_error_smoke_test() {
+async fn exec_subscription_error_smoke_test() {
     let test_counter = TestCounter::new();
     let cb = test_counter.add_test("error_callback_is_called");
     connect_then(&test_counter, {
@@ -528,15 +733,16 @@ fn exec_subscription_error_smoke_test() {
             assert!(!handle.is_active());
             assert!(!handle.is_ended());
         }
-    });
-    test_counter.wait_for_all();
+    })
+    .await;
+    wait_for_all(&test_counter).await;
 }
 
 /// This tests that we can:
 /// - Pass primitive types to reducers.
 /// - Deserialize primitive types in rows and in reducer arguments.
 /// - Observe `on_insert` callbacks with appropriate reducer events.
-fn exec_insert_primitive() {
+async fn exec_insert_primitive() {
     let test_counter = TestCounter::new();
 
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
@@ -569,13 +775,14 @@ fn exec_insert_primitive() {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             });
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 /// This tests that we can observe `on_delete` callbacks.
-fn exec_delete_primitive() {
+async fn exec_delete_primitive() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -604,15 +811,16 @@ fn exec_delete_primitive() {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             });
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 
     assert_all_tables_empty(&connection).unwrap();
 }
 
 /// This tests that we can distinguish between `on_update` and `on_delete` callbacks for tables with primary keys.
-fn exec_update_primitive() {
+async fn exec_update_primitive() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -641,15 +849,16 @@ fn exec_update_primitive() {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             });
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 
     assert_all_tables_empty(&connection).unwrap();
 }
 
 /// This tests that we can serialize and deserialize `Identity` in various contexts.
-fn exec_insert_identity() {
+async fn exec_insert_identity() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -666,13 +875,14 @@ fn exec_insert_identity() {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             })
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 /// This tests that we can retrieve and use the caller's `Identity` from the reducer context.
-fn exec_insert_caller_identity() {
+async fn exec_insert_caller_identity() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -690,14 +900,15 @@ fn exec_insert_caller_identity() {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             });
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 /// This test doesn't add much alongside `exec_insert_identity` and `exec_delete_primitive`,
 /// but it's here for symmetry.
-fn exec_delete_identity() {
+async fn exec_delete_identity() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -710,16 +921,17 @@ fn exec_delete_identity() {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             });
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 
     assert_all_tables_empty(&connection).unwrap();
 }
 
 /// This tests that we can distinguish between `on_delete` and `on_update` events
 /// for tables with `Identity` primary keys.
-fn exec_update_identity() {
+async fn exec_update_identity() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -732,15 +944,16 @@ fn exec_update_identity() {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             });
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 
     assert_all_tables_empty(&connection).unwrap();
 }
 
 /// This tests that we can serialize and deserialize `ConnectionId` in various contexts.
-fn exec_insert_connection_id() {
+async fn exec_insert_connection_id() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -753,13 +966,14 @@ fn exec_insert_connection_id() {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             });
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 /// This tests that we can serialize and deserialize `ConnectionId` in various contexts.
-fn exec_insert_caller_connection_id() {
+async fn exec_insert_caller_connection_id() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -778,14 +992,15 @@ fn exec_insert_caller_connection_id() {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             });
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 /// This test doesn't add much alongside `exec_insert_connection_id` and `exec_delete_primitive`,
 /// but it's here for symmetry.
-fn exec_delete_connection_id() {
+async fn exec_delete_connection_id() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -798,20 +1013,21 @@ fn exec_delete_connection_id() {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             });
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 
     assert_all_tables_empty(&connection).unwrap();
 }
 
 /// This tests that we can distinguish between `on_delete` and `on_update` events
 /// for tables with `ConnectionId` primary keys.
-fn exec_update_connection_id() {
+async fn exec_update_connection_id() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter);
+    let connection = connect(&test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -828,12 +1044,12 @@ fn exec_update_connection_id() {
         }
     });
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 
     assert_all_tables_empty(&connection).unwrap();
 }
 
-fn exec_insert_timestamp() {
+async fn exec_insert_timestamp() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -841,17 +1057,18 @@ fn exec_insert_timestamp() {
         let test_counter = test_counter.clone();
         move |ctx| {
             subscribe_all_then(ctx, move |ctx| {
-                insert_one::<OneTimestamp>(ctx, &test_counter, Timestamp::now());
+                insert_one::<OneTimestamp>(ctx, &test_counter, fixed_test_timestamp());
 
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             })
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
-fn exec_insert_call_timestamp() {
+async fn exec_insert_call_timestamp() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -890,12 +1107,13 @@ fn exec_insert_call_timestamp() {
             });
             sub_applied_nothing_result(assert_all_tables_empty(ctx));
         }
-    });
-    test_counter.wait_for_all();
+    })
+    .await;
+    wait_for_all(&test_counter).await;
 }
 
 /// This tests that we can serialize and deserialize `Uuid` in various contexts.
-fn exec_insert_uuid() {
+async fn exec_insert_uuid() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -908,13 +1126,14 @@ fn exec_insert_uuid() {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             });
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 /// This tests that we can serialize and deserialize `Uuid` in various contexts.
-fn exec_insert_caller_uuid_v4() {
+async fn exec_insert_caller_uuid_v4() {
     /*    let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -931,15 +1150,15 @@ fn exec_insert_caller_uuid_v4() {
         }
     });
 
-    test_counter.wait_for_all();*/
+    wait_for_all(&test_counter).await;*/
 }
 
 /// This tests that we can serialize and deserialize `Uuid` in various contexts.
-fn exec_insert_caller_uuid_v7() {}
+async fn exec_insert_caller_uuid_v7() {}
 
 /// This test doesn't add much alongside `exec_insert_uuid` and `exec_delete_primitive`,
 /// but it's here for symmetry.
-fn exec_delete_uuid() {
+async fn exec_delete_uuid() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -952,20 +1171,21 @@ fn exec_delete_uuid() {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             });
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 
     assert_all_tables_empty(&connection).unwrap();
 }
 
 /// This tests that we can distinguish between `on_delete` and `on_update` events
 /// for tables with `Uuid` primary keys.
-fn exec_update_uuid() {
+async fn exec_update_uuid() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter);
+    let connection = connect(&test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -976,17 +1196,17 @@ fn exec_update_uuid() {
         }
     });
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 
     assert_all_tables_empty(&connection).unwrap();
 }
 
 /// This tests that we can observe reducer callbacks for successful reducer runs.
-fn exec_on_reducer() {
+async fn exec_on_reducer() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter);
+    let connection = connect(&test_counter).await;
 
     let reducer_result = test_counter.add_test("reducer-callback");
 
@@ -1027,17 +1247,17 @@ fn exec_on_reducer() {
             .unwrap();
     });
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 /// This tests that we can observe reducer callbacks for failed reducers.
-fn exec_fail_reducer() {
+async fn exec_fail_reducer() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
     let reducer_success_result = test_counter.add_test("reducer-callback-success");
     let reducer_fail_result = test_counter.add_test("reducer-callback-failure");
 
-    let connection = connect(&test_counter);
+    let connection = connect(&test_counter).await;
 
     let key = 128;
     let initial_data = 0xbeef;
@@ -1127,15 +1347,15 @@ fn exec_fail_reducer() {
             .unwrap();
     });
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 /// This tests that we can serialize and deserialize `Vec<?>` in various contexts.
-fn exec_insert_vec() {
+async fn exec_insert_vec() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter);
+    let connection = connect(&test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1164,13 +1384,13 @@ fn exec_insert_vec() {
             insert_one::<VecIdentity>(ctx, &test_counter, vec![ctx.identity()]);
             insert_one::<VecConnectionId>(ctx, &test_counter, vec![ctx.connection_id()]);
 
-            insert_one::<VecTimestamp>(ctx, &test_counter, vec![Timestamp::now()]);
+            insert_one::<VecTimestamp>(ctx, &test_counter, vec![fixed_test_timestamp()]);
 
             sub_applied_nothing_result(assert_all_tables_empty(ctx));
         }
     });
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 fn every_primitive_struct() -> EveryPrimitiveStruct {
@@ -1265,11 +1485,11 @@ fn large_table() -> LargeTable {
 ///
 /// Note that this must be a separate test from [`exec_insert_option_none`],
 /// as [`insert_one`] cannot handle running multiple tests for the same type in parallel.
-fn exec_insert_option_some() {
+async fn exec_insert_option_some() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter);
+    let connection = connect(&test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1285,18 +1505,18 @@ fn exec_insert_option_some() {
         }
     });
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 /// This tests that we can serialize and deserialize `Option`s of various payload types which are `None`.
 ///
 /// Note that this must be a separate test from [`exec_insert_option_some`],
 /// as [`insert_one`] cannot handle running multiple tests for the same type in parallel.
-fn exec_insert_option_none() {
+async fn exec_insert_option_none() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter);
+    let connection = connect(&test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1312,15 +1532,15 @@ fn exec_insert_option_none() {
         }
     });
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 /// This tests that we can serialize and deserialize structs in various contexts.
-fn exec_insert_struct() {
+async fn exec_insert_struct() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter);
+    let connection = connect(&test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1339,15 +1559,15 @@ fn exec_insert_struct() {
         }
     });
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 /// This tests that we can serialize and deserialize C-style enums in various contexts.
-fn exec_insert_simple_enum() {
+async fn exec_insert_simple_enum() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter);
+    let connection = connect(&test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1363,15 +1583,15 @@ fn exec_insert_simple_enum() {
         }
     });
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 /// This tests that we can serialize and deserialize sum types in various contexts.
-fn exec_insert_enum_with_payload() {
+async fn exec_insert_enum_with_payload() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter);
+    let connection = connect(&test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1413,24 +1633,24 @@ fn exec_insert_enum_with_payload() {
         }
     });
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 /// This tests that the test machinery itself is functional and can detect failures.
-fn exec_should_fail() {
+async fn exec_should_fail() {
     let test_counter = TestCounter::new();
     let fail = test_counter.add_test("should-fail");
     fail(Err(anyhow::anyhow!("This is an intentional failure")));
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 /// This test invokes a reducer with many arguments of many types,
 /// and observes a callback for an inserted table with many columns of many types.
-fn exec_insert_delete_large_table() {
+async fn exec_insert_delete_large_table() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter);
+    let connection = connect(&test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1536,14 +1756,14 @@ fn exec_insert_delete_large_table() {
         }
     });
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
-fn exec_insert_primitives_as_strings() {
+async fn exec_insert_primitives_as_strings() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter);
+    let connection = connect(&test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1605,7 +1825,7 @@ fn exec_insert_primitives_as_strings() {
         }
     });
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 // /// This tests the behavior of re-subscribing
@@ -1631,7 +1851,7 @@ fn exec_insert_primitives_as_strings() {
 //     connect_result(connect(LOCALHOST, &name, None));
 
 //     // Wait for all previous checks before continuing.
-//     test_counter.wait_for_all();
+//     wait_for_all(&test_counter).await;
 
 //     // Insert 256 rows of `OneU8`.
 //     // At this point, we should be subscribed to all of them.
@@ -1647,7 +1867,7 @@ fn exec_insert_primitives_as_strings() {
 //         insert_one_u_8(n as u8);
 //     }
 //     // Wait for all previous checks before continuing,
-//     test_counter.wait_for_all();
+//     wait_for_all(&test_counter).await;
 //     // and remove the callback now that we're done with it.
 //     OneU8::remove_on_insert(on_insert_u8);
 //     // Re-subscribe with a query that excludes the lower half of the `OneU8` rows,
@@ -1679,7 +1899,7 @@ fn exec_insert_primitives_as_strings() {
 //     let subscribe_result = test_counter.add_test("resubscribe");
 //     subscribe_result(subscribe(&["SELECT * FROM OneU8 WHERE n > 127"]));
 //     // Wait before continuing, and remove callbacks.
-//     test_counter.wait_for_all();
+//     wait_for_all(&test_counter).await;
 //     OneU8::remove_on_delete(on_delete_verify);
 //     OneU8::remove_on_insert(on_insert_panic);
 
@@ -1708,16 +1928,18 @@ fn exec_insert_primitives_as_strings() {
 //     });
 //     let subscribe_result = test_counter.add_test("resubscribe-again");
 //     subscribe_result(subscribe(&["SELECT * FROM OneU8"]));
-//     test_counter.wait_for_all();
+//     wait_for_all(&test_counter).await;
 // }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn creds_store() -> credentials::File {
     credentials::File::new("rust-sdk-test")
 }
 
 /// Part of the `reauth` test, this connects to Spacetime to get new credentials,
 /// and saves them to a file.
-fn exec_reauth_part_1() {
+#[cfg(not(target_arch = "wasm32"))]
+async fn exec_reauth_part_1() {
     let test_counter = TestCounter::new();
 
     let name = db_name_or_panic();
@@ -1735,14 +1957,15 @@ fn exec_reauth_part_1() {
         .unwrap()
         .run_threaded();
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 /// Part of the `reauth` test, this loads credentials from a file,
 /// and passes them to `connect`.
 ///
 /// Must run after `exec_reauth_part_1`.
-fn exec_reauth_part_2() {
+#[cfg(not(target_arch = "wasm32"))]
+async fn exec_reauth_part_2() {
     let test_counter = TestCounter::new();
 
     let name = db_name_or_panic();
@@ -1770,71 +1993,90 @@ fn exec_reauth_part_2() {
         .unwrap()
         .run_threaded();
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn exec_reauth_part_1() {
+    // Native-only: requires file-backed credentials via `credentials::File`,
+    // which is unavailable in wasm/web.
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn exec_reauth_part_2() {
+    // Native-only: requires persisted credentials from `exec_reauth_part_1`.
 }
 
 // Ensure a new connection gets a different connection id.
-fn exec_reconnect_different_connection_id() {
+async fn exec_reconnect_different_connection_id() {
     let initial_test_counter = TestCounter::new();
     let initial_connect_result = initial_test_counter.add_test("connect");
 
     let disconnect_test_counter = TestCounter::new();
     let disconnect_result = disconnect_test_counter.add_test("disconnect");
 
-    let initial_connection = DbConnection::builder()
-        .with_database_name(db_name_or_panic())
-        .with_uri(LOCALHOST)
-        .on_connect_error(|_ctx, error| panic!("on_connect_error: {error:?}"))
-        .on_connect(move |_, _, _| {
-            initial_connect_result(Ok(()));
-        })
-        .on_disconnect(|_, error| match error {
-            None => disconnect_result(Ok(())),
-            Some(err) => disconnect_result(Err(anyhow::anyhow!("{err:?}"))),
-        })
-        .build()
-        .unwrap();
+    let initial_connection = build_connection(
+        DbConnection::builder()
+            .with_database_name(db_name_or_panic())
+            .with_uri(LOCALHOST)
+            .on_connect_error(|_ctx, error| panic!("on_connect_error: {error:?}"))
+            .on_connect(move |_, _, _| {
+                initial_connect_result(Ok(()));
+            })
+            .on_disconnect(|_, error| match error {
+                None => disconnect_result(Ok(())),
+                Some(err) => disconnect_result(Err(anyhow::anyhow!("{err:?}"))),
+            }),
+    )
+    .await;
 
+    #[cfg(not(target_arch = "wasm32"))]
     initial_connection.run_threaded();
+    #[cfg(target_arch = "wasm32")]
+    initial_connection.run_background_task();
 
-    initial_test_counter.wait_for_all();
+    wait_for_all(&initial_test_counter).await;
 
     let my_connection_id = initial_connection.connection_id();
 
     initial_connection.disconnect().unwrap();
 
-    disconnect_test_counter.wait_for_all();
+    wait_for_all(&disconnect_test_counter).await;
 
     let reconnect_test_counter = TestCounter::new();
     let reconnect_result = reconnect_test_counter.add_test("reconnect");
     let addr_after_reconnect_result = reconnect_test_counter.add_test("addr_after_reconnect");
 
-    let re_connection = DbConnection::builder()
-        .with_database_name(db_name_or_panic())
-        .with_uri(LOCALHOST)
-        .on_connect_error(|_ctx, error| panic!("on_connect_error: {error:?}"))
-        .on_connect(move |ctx, _, _| {
-            reconnect_result(Ok(()));
-            let run_checks = || {
-                // A new connection should have a different connection id.
-                anyhow::ensure!(ctx.connection_id() != my_connection_id);
-                Ok(())
-            };
-            addr_after_reconnect_result(run_checks());
-        })
-        .build()
-        .unwrap();
+    let re_connection = build_connection(
+        DbConnection::builder()
+            .with_database_name(db_name_or_panic())
+            .with_uri(LOCALHOST)
+            .on_connect_error(|_ctx, error| panic!("on_connect_error: {error:?}"))
+            .on_connect(move |ctx, _, _| {
+                reconnect_result(Ok(()));
+                let run_checks = || {
+                    // A new connection should have a different connection id.
+                    anyhow::ensure!(ctx.connection_id() != my_connection_id);
+                    Ok(())
+                };
+                addr_after_reconnect_result(run_checks());
+            }),
+    )
+    .await;
+    #[cfg(not(target_arch = "wasm32"))]
     re_connection.run_threaded();
+    #[cfg(target_arch = "wasm32")]
+    re_connection.run_background_task();
 
-    reconnect_test_counter.wait_for_all();
+    wait_for_all(&reconnect_test_counter).await;
 }
 
-fn exec_caller_always_notified() {
+async fn exec_caller_always_notified() {
     let test_counter = TestCounter::new();
 
     let no_op_result = test_counter.add_test("notified_of_no_op_reducer");
 
-    let connection = connect(&test_counter);
+    let connection = connect(&test_counter).await;
 
     connection
         .reducers
@@ -1857,17 +2099,17 @@ fn exec_caller_always_notified() {
         })
         .unwrap();
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 /// Duplicates the test `insert_primitive`,
 /// but using `SubscriptionBuilder::subscribe_to_all_tables` rather than an explicit query set.
-fn exec_subscribe_all_select_star() {
+async fn exec_subscribe_all_select_star() {
     let test_counter = TestCounter::new();
 
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter);
+    let connection = connect(&test_counter).await;
 
     connection
         .subscription_builder()
@@ -1901,14 +2143,14 @@ fn exec_subscribe_all_select_star() {
         .on_error(|_, e| panic!("Subscription error: {e:?}"))
         .subscribe_to_all_tables();
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
-fn exec_sorted_uuids_insert() {
+async fn exec_sorted_uuids_insert() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("sorted-uuids-insert");
 
-    let connection = connect(&test_counter);
+    let connection = connect(&test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1938,10 +2180,10 @@ fn exec_sorted_uuids_insert() {
         }
     });
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
-fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
+async fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
     fn check_val<T: Display + Eq>(val: T, eq: T) -> anyhow::Result<()> {
         (val == eq)
             .then_some(())
@@ -1952,23 +2194,22 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
     let pre_ins_counter = TestCounter::new();
 
     // Have two actors, Alice (0) and Bob (1), connect to the module.
-    // For each actor, subscribe to the `OneU8` table.
-    // The choice of table is a fairly random one: just one of the simpler tables.
-    let conns = ["alice", "bob"].map(|who| {
-        let conn = connect_with_then(&pre_ins_counter, who, |b| b, |_| {});
+    async fn connect_actor(
+        who: &'static str,
+        pre_ins_counter: &Arc<TestCounter>,
+        counter: &Arc<TestCounter>,
+    ) -> ManagedConnection {
+        let conn = connect_with_then(pre_ins_counter, who, |b| b, |_| {}).await;
         let sub_applied = pre_ins_counter.add_test(format!("sub_applied_{who}"));
-
-        let counter2 = counter.clone();
+        let counter = counter.clone();
         subscribe_all_then(&conn, move |ctx| {
-            sub_applied(Ok(()));
-
             // Test that we are notified when a row is inserted.
             let db = ctx.db();
-            let mut one_u8_inserted = Some(counter2.add_test(format!("one_u8_inserted_{who}")));
+            let mut one_u8_inserted = Some(counter.add_test(format!("one_u8_inserted_{who}")));
             db.one_u_8().on_insert(move |_, row| {
                 (one_u8_inserted.take().unwrap())(check_val(row.n, 42));
             });
-            let mut one_u16_inserted = Some(counter2.add_test(format!("one_u16_inserted_{who}")));
+            let mut one_u16_inserted = Some(counter.add_test(format!("one_u16_inserted_{who}")));
             let is_alice = who == "alice";
             db.one_u_16().on_insert(move |event, row| {
                 let run_checks = || {
@@ -1991,15 +2232,29 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
                 };
                 (one_u16_inserted.take().unwrap())(run_checks());
             });
+
+            // Mark subscription readiness only after callback handlers are installed.
+            // On wasm this prevents a race where reducer calls can run before handlers
+            // are fully registered in the single-threaded event loop.
+            // The test uses `pre_ins_counter` as the "both clients are safe to use now" barrier.
+            // In this harness, "safe" must mean the handlers under test are already installed.
+            // Signalling readiness any earlier would allow Alice to fire the reducer while Bob's
+            // callbacks still do not exist, which would turn the test into an event-loop race.
+            sub_applied(Ok(()));
         });
         conn
-    });
+    }
+
+    let conns = [
+        connect_actor("alice", &pre_ins_counter, &counter).await,
+        connect_actor("bob", &pre_ins_counter, &counter).await,
+    ];
 
     // Ensure both have finished connecting
     // and finished subscribing so that there isn't a race condition
     // between Alice executing the reducer and Bob being connected
     // or Alice executing the reducer and either having subscriptions applied.
-    pre_ins_counter.wait_for_all();
+    wait_for_all(&pre_ins_counter).await;
 
     // Alice executes a reducer.
     // This should cause a row callback to be received by Alice and Bob.
@@ -2022,7 +2277,7 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
         .insert_one_u_16_then(24, reducer_callback_assert_committed("insert_one_u_16"))
         .unwrap();
 
-    counter.wait_for_all();
+    wait_for_all(&counter).await;
 
     // For the integrity of the test, ensure that Alice != Bob.
     // We do this after `run_threaded` so that the ids have been filled.
@@ -2039,7 +2294,7 @@ fn put_result(result: &mut Option<ResultRecorder>, res: Result<(), anyhow::Error
     (result.take().unwrap())(res);
 }
 
-fn exec_row_deduplication() {
+async fn exec_row_deduplication() {
     let test_counter = TestCounter::new();
 
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
@@ -2092,9 +2347,10 @@ fn exec_row_deduplication() {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             });
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 
     // Ensure we're not double counting anything.
     let table = conn.db.pk_u_32();
@@ -2103,7 +2359,7 @@ fn exec_row_deduplication() {
     assert_eq!(table.n().find(&42), Some(PkU32 { n: 42, data: 0xfeeb }));
 }
 
-fn exec_row_deduplication_join_r_and_s() {
+async fn exec_row_deduplication_join_r_and_s() {
     let test_counter = TestCounter::new();
 
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
@@ -2163,12 +2419,13 @@ fn exec_row_deduplication_join_r_and_s() {
                 put_result(&mut unique_u32_on_insert_result, Ok(()));
             });
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
-fn exec_row_deduplication_r_join_s_and_r_join_t() {
+async fn exec_row_deduplication_r_join_s_and_r_join_t() {
     let test_counter: Arc<TestCounter> = TestCounter::new();
 
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
@@ -2223,15 +2480,16 @@ fn exec_row_deduplication_r_join_s_and_r_join_t() {
             UniqueU32::on_delete(ctx, move |_, _| panic!());
             PkU32Two::on_delete(ctx, move |_, _| panic!());
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 
     assert_eq!(count_unique_u32_on_insert.load(Ordering::SeqCst), 1);
 }
 
 /// This test asserts that the correct callbacks are invoked when updating the lhs table of a join
-fn test_lhs_join_update() {
+async fn test_lhs_join_update() {
     let insert_counter = TestCounter::new();
     let update_counter = TestCounter::new();
     let mut on_update_1 = Some(update_counter.add_test("on_update_1"));
@@ -2239,18 +2497,21 @@ fn test_lhs_join_update() {
     let mut on_insert_1 = Some(insert_counter.add_test("on_insert_1"));
     let mut on_insert_2 = Some(insert_counter.add_test("on_insert_2"));
 
-    let conn = Arc::new(connect_then(&update_counter, {
-        move |ctx| {
-            subscribe_these_then(
-                ctx,
-                &[
-                    "SELECT p.* FROM pk_u_32 p WHERE n = 1",
-                    "SELECT p.* FROM pk_u_32 p JOIN unique_u_32 u ON p.n = u.n WHERE u.data > 0 AND u.data < 5",
-                ],
-                |_| {},
-            );
-        }
-    }));
+    let conn = Arc::new(
+        connect_then(&update_counter, {
+            move |ctx| {
+                subscribe_these_then(
+                    ctx,
+                    &[
+                        "SELECT p.* FROM pk_u_32 p WHERE n = 1",
+                        "SELECT p.* FROM pk_u_32 p JOIN unique_u_32 u ON p.n = u.n WHERE u.data > 0 AND u.data < 5",
+                    ],
+                    |_| {},
+                );
+            }
+        })
+        .await,
+    );
 
     // Add two pk_u32 rows to the subscription
     conn.reducers
@@ -2274,7 +2535,7 @@ fn test_lhs_join_update() {
 
     // Wait for the subscription to be updated,
     // then update one of the pk_u32 rows.
-    insert_counter.wait_for_all();
+    wait_for_all(&insert_counter).await;
     conn.reducers
         .update_pk_u_32_then(2, 1, move |ctx, outcome| {
             assert_outcome_committed("update_pk_u_32", outcome);
@@ -2290,11 +2551,11 @@ fn test_lhs_join_update() {
         .unwrap();
 
     // Wait for the second row update for pk_u32
-    update_counter.wait_for_all();
+    wait_for_all(&update_counter).await;
 }
 
 /// This test asserts that the correct callbacks are invoked when updating the lhs table of a join
-fn test_lhs_join_update_disjoint_queries() {
+async fn test_lhs_join_update_disjoint_queries() {
     let insert_counter = TestCounter::new();
     let update_counter = TestCounter::new();
     let mut on_update_1 = Some(update_counter.add_test("on_update_1"));
@@ -2309,7 +2570,8 @@ fn test_lhs_join_update_disjoint_queries() {
                 "SELECT p.* FROM pk_u_32 p JOIN unique_u_32 u ON p.n = u.n WHERE u.data > 0 AND u.data < 5 AND u.n != 1",
             ], |_| {});
         }
-    }));
+    })
+    .await);
 
     // Add two pk_u32 rows to the subscription
     conn.reducers
@@ -2333,7 +2595,7 @@ fn test_lhs_join_update_disjoint_queries() {
 
     // Wait for the subscription to be updated,
     // then update one of the pk_u32 rows.
-    insert_counter.wait_for_all();
+    wait_for_all(&insert_counter).await;
     conn.reducers
         .update_pk_u_32_then(2, 1, move |ctx, outcome| {
             assert_outcome_committed("update_pk_u_32", outcome);
@@ -2349,7 +2611,7 @@ fn test_lhs_join_update_disjoint_queries() {
         .unwrap();
 
     // Wait for the second row update for pk_u32
-    update_counter.wait_for_all();
+    wait_for_all(&update_counter).await;
 }
 
 /// Test that when subscribing to a single join query,
@@ -2357,7 +2619,7 @@ fn test_lhs_join_update_disjoint_queries() {
 ///
 /// This is a regression test for [2397](https://github.com/clockworklabs/SpacetimeDB/issues/2397),
 /// where the server was incorrectly deduplicating incremental subscription updates.
-fn test_intra_query_bag_semantics_for_join() {
+async fn test_intra_query_bag_semantics_for_join() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
     let mut pk_u32_on_delete_result = Some(test_counter.add_test("pk_u32_on_delete"));
@@ -2435,14 +2697,21 @@ fn test_intra_query_bag_semantics_for_join() {
                 put_result(&mut pk_u32_on_delete_result, Ok(()));
             });
         }
-    });
+    })
+    .await;
+
+    // This test is only complete once both registered expectations have reported:
+    // `on_subscription_applied_nothing` confirms the initial state, and `pk_u32_on_delete`
+    // confirms the bag-semantics transition at the end. Without an explicit wait, the harness can
+    // finish before that final delete callback runs, which leaves the test under-synchronized.
+    wait_for_all(&test_counter).await;
 }
 
 /// Test that several clients subscribing to the same query and using the same protocol (bsatn)
 /// can use different compression algorithms than each other.
 ///
 /// This is a regression test.
-fn exec_two_different_compression_algos() {
+async fn exec_two_different_compression_algos() {
     use Compression::*;
 
     // Create 32 KiB of random bytes to make it very likely that compression is used.
@@ -2456,17 +2725,17 @@ fn exec_two_different_compression_algos() {
     // Connect with brotli, gzip, and no compression.
     // One of them will insert and all of them will subscribe.
     // All should get back `bytes`.
-    fn connect_with_compression(
+    async fn connect_with_compression(
         test_counter: &Arc<TestCounter>,
         compression_name: &str,
         compression: Compression,
         mut recorder: Option<ResultRecorder>,
-        barrier: &Arc<Barrier>,
+        subscribed_clients: Arc<AtomicUsize>,
+        row_inserted: Arc<AtomicBool>,
         expected: &Arc<[u8]>,
     ) {
         let expected1 = expected.clone();
         let expected2 = expected1.clone();
-        let barrier = barrier.clone();
         connect_with_then(
             test_counter,
             compression_name,
@@ -2485,57 +2754,95 @@ fn exec_two_different_compression_algos() {
                         put_result(&mut recorder, res)
                     });
 
-                    // All clients must have subscribed and registered the `on_insert` callback
-                    // before we actually insert the row.
-                    barrier.wait();
-
-                    if compression == None {
+                    // We cannot block inside wasm callbacks (e.g. with `Barrier::wait`),
+                    // because that stalls the event loop and prevents other subscriptions
+                    // from applying. Instead we atomically gate on the third subscriber.
+                    // All three subscriptions must be live before any client inserts the row under
+                    // test, otherwise the last client could miss the only insert. We coordinate
+                    // with atomics instead of a blocking barrier because callback code shares the
+                    // single-threaded wasm event loop with subscription delivery.
+                    if subscribed_clients.fetch_add(1, Ordering::SeqCst) + 1 == 3
+                        && !row_inserted.swap(true, Ordering::SeqCst)
+                    {
                         VecU8::insert(ctx, expected2.to_vec());
                     }
                 })
             },
-        );
+        )
+        .await;
     }
     let test_counter: Arc<TestCounter> = TestCounter::new();
-    let barrier = Arc::new(Barrier::new(3));
+    let subscribed_clients = Arc::new(AtomicUsize::new(0));
+    let row_inserted = Arc::new(AtomicBool::new(false));
     let got_brotli = Some(test_counter.add_test("got_right_row_brotli"));
     let got_gzip = Some(test_counter.add_test("got_right_row_gzip"));
     let got_none = Some(test_counter.add_test("got_right_row_none"));
-    connect_with_compression(&test_counter, "brotli", Brotli, got_brotli, &barrier, &bytes);
-    connect_with_compression(&test_counter, "gzip", Gzip, got_gzip, &barrier, &bytes);
-    connect_with_compression(&test_counter, "none", None, got_none, &barrier, &bytes);
-    test_counter.wait_for_all();
+    connect_with_compression(
+        &test_counter,
+        "brotli",
+        Brotli,
+        got_brotli,
+        subscribed_clients.clone(),
+        row_inserted.clone(),
+        &bytes,
+    )
+    .await;
+    connect_with_compression(
+        &test_counter,
+        "gzip",
+        Gzip,
+        got_gzip,
+        subscribed_clients.clone(),
+        row_inserted.clone(),
+        &bytes,
+    )
+    .await;
+    connect_with_compression(
+        &test_counter,
+        "none",
+        None,
+        got_none,
+        subscribed_clients,
+        row_inserted,
+        &bytes,
+    )
+    .await;
+    wait_for_all(&test_counter).await;
 }
 
 /// In this test we have two clients issue parameterized subscriptions.
 /// These subscriptions are identical syntactically but not semantically,
 /// because they are parameterized by `:sender` - the caller's identity.
-fn test_parameterized_subscription() {
+async fn test_parameterized_subscription() {
+    // This test cares about per-client query parameterization, not about both clients reaching a
+    // global barrier at exactly the same moment. Each client only mutates state after its own
+    // subscription is applied, which is the point at which that client's visibility guarantee
+    // becomes meaningful on both native and wasm runtimes.
     let ctr_for_test = TestCounter::new();
-    let ctr_for_subs = TestCounter::new();
-    let sub_0 = Some(ctr_for_subs.add_test("sub_0"));
-    let sub_1 = Some(ctr_for_subs.add_test("sub_1"));
+    let sub_0 = Some(ctr_for_test.add_test("sub_0"));
+    let sub_1 = Some(ctr_for_test.add_test("sub_1"));
     let insert_0 = Some(ctr_for_test.add_test("insert_0"));
     let insert_1 = Some(ctr_for_test.add_test("insert_1"));
     let update_0 = Some(ctr_for_test.add_test("update_0"));
     let update_1 = Some(ctr_for_test.add_test("update_1"));
 
-    fn subscribe_and_update(
+    async fn subscribe_and_update(
         test_name: &str,
         old: i32,
         new: i32,
-        waiters: [Arc<TestCounter>; 2],
+        ctr_for_test: Arc<TestCounter>,
         senders: [Option<ResultRecorder>; 3],
     ) {
-        let [ctr_for_test, ctr_for_subs] = waiters;
         let [mut record_sub, mut record_ins, mut record_upd] = senders;
         connect_with_then(&ctr_for_test, test_name, |builder| builder, {
             move |ctx| {
                 let sender = ctx.identity();
                 subscribe_these_then(ctx, &["SELECT * FROM pk_identity WHERE i = :sender"], move |ctx| {
                     put_result(&mut record_sub, Ok(()));
-                    // Wait to insert until both client connections have been made
-                    ctr_for_subs.wait_for_all();
+                    // Trigger the writes from inside this caller's subscription-applied callback
+                    // so we know the parameterized query is active before the rows are created.
+                    // Callback code must stay non-blocking here because wasm delivers both the
+                    // subscription event and subsequent row callbacks on the same event loop.
                     PkIdentity::insert(ctx, sender, old);
                     PkIdentity::update(ctx, sender, new);
                 });
@@ -2552,24 +2859,13 @@ fn test_parameterized_subscription() {
                     put_result(&mut record_upd, Ok(()));
                 });
             }
-        });
+        })
+        .await;
     }
 
-    subscribe_and_update(
-        "client_0",
-        1,
-        2,
-        [ctr_for_test.clone(), ctr_for_subs.clone()],
-        [sub_0, insert_0, update_0],
-    );
-    subscribe_and_update(
-        "client_1",
-        3,
-        4,
-        [ctr_for_test.clone(), ctr_for_subs.clone()],
-        [sub_1, insert_1, update_1],
-    );
-    ctr_for_test.wait_for_all();
+    subscribe_and_update("client_0", 1, 2, ctr_for_test.clone(), [sub_0, insert_0, update_0]).await;
+    subscribe_and_update("client_1", 3, 4, ctr_for_test.clone(), [sub_1, insert_1, update_1]).await;
+    wait_for_all(&ctr_for_test).await;
 }
 
 /// In this test we have two clients subscribe to the `users` table.
@@ -2581,21 +2877,22 @@ fn test_parameterized_subscription() {
 /// );
 /// ```
 /// Hence each client should receive different rows.
-fn test_rls_subscription() {
+async fn test_rls_subscription() {
+    // Same principle as `test_parameterized_subscription`: the property under test is "what rows
+    // is this client allowed to observe once its subscription is active?", not "did two clients
+    // reach a synchronization barrier at the same instant?".
     let ctr_for_test = TestCounter::new();
-    let ctr_for_subs = TestCounter::new();
-    let sub_0 = Some(ctr_for_subs.add_test("sub_0"));
-    let sub_1 = Some(ctr_for_subs.add_test("sub_1"));
+    let sub_0 = Some(ctr_for_test.add_test("sub_0"));
+    let sub_1 = Some(ctr_for_test.add_test("sub_1"));
     let ins_0 = Some(ctr_for_test.add_test("insert_0"));
     let ins_1 = Some(ctr_for_test.add_test("insert_1"));
 
-    fn subscribe_and_update(
+    async fn subscribe_and_update(
         test_name: &str,
         user_name: &str,
-        waiters: [Arc<TestCounter>; 2],
+        ctr_for_test: Arc<TestCounter>,
         senders: [Option<ResultRecorder>; 2],
     ) {
-        let [ctr_for_test, ctr_for_subs] = waiters;
         let [mut record_sub, mut record_ins] = senders;
         let user_name = user_name.to_owned();
         let expected_name = user_name.to_owned();
@@ -2605,8 +2902,9 @@ fn test_rls_subscription() {
                 let expected_identity = sender;
                 subscribe_these_then(ctx, &["SELECT * FROM users"], move |ctx| {
                     put_result(&mut record_sub, Ok(()));
-                    // Wait to insert until both client connections have been made
-                    ctr_for_subs.wait_for_all();
+                    // Invoke the reducer only after this client's RLS-filtered subscription is
+                    // active. As above, callback code must remain non-blocking so wasm can keep
+                    // delivering websocket and row events on the same event loop.
                     ctx.reducers
                         .insert_user_then(user_name, sender, reducer_callback_assert_committed("insert_user"))
                         .unwrap();
@@ -2617,25 +2915,16 @@ fn test_rls_subscription() {
                     put_result(&mut record_ins, Ok(()));
                 });
             }
-        });
+        })
+        .await;
     }
 
-    subscribe_and_update(
-        "client_0",
-        "Alice",
-        [ctr_for_test.clone(), ctr_for_subs.clone()],
-        [sub_0, ins_0],
-    );
-    subscribe_and_update(
-        "client_1",
-        "Bob",
-        [ctr_for_test.clone(), ctr_for_subs.clone()],
-        [sub_1, ins_1],
-    );
-    ctr_for_test.wait_for_all();
+    subscribe_and_update("client_0", "Alice", ctr_for_test.clone(), [sub_0, ins_0]).await;
+    subscribe_and_update("client_1", "Bob", ctr_for_test.clone(), [sub_1, ins_1]).await;
+    wait_for_all(&ctr_for_test).await;
 }
 
-fn exec_pk_simple_enum() {
+async fn exec_pk_simple_enum() {
     let test_counter: Arc<TestCounter> = TestCounter::new();
     let mut updated = Some(test_counter.add_test("updated"));
     connect_then(&test_counter, move |ctx| {
@@ -2662,11 +2951,12 @@ fn exec_pk_simple_enum() {
                 .insert_pk_simple_enum_then(a, data1, reducer_callback_assert_committed("insert_pk_simple_enum"))
                 .unwrap();
         });
-    });
-    test_counter.wait_for_all();
+    })
+    .await;
+    wait_for_all(&test_counter).await;
 }
 
-fn exec_indexed_simple_enum() {
+async fn exec_indexed_simple_enum() {
     let test_counter: Arc<TestCounter> = TestCounter::new();
     let mut updated = Some(test_counter.add_test("updated"));
     connect_then(&test_counter, move |ctx| {
@@ -2695,8 +2985,9 @@ fn exec_indexed_simple_enum() {
                 )
                 .unwrap();
         });
-    });
-    test_counter.wait_for_all();
+    })
+    .await;
+    wait_for_all(&test_counter).await;
 }
 
 /// This tests for a bug we once had where the Rust client SDK would
@@ -2709,7 +3000,7 @@ fn exec_indexed_simple_enum() {
 /// but would then see incremental updates from all of the queries.
 ///
 /// A simple reproducer is available at [https://github.com/lavirlifiliol/spacetime-repro].
-fn exec_overlapping_subscriptions() {
+async fn exec_overlapping_subscriptions() {
     // First, a bit of setup: insert the row `{ n: 1, data: 0 }`,
     // and wait for it to be present.
     let setup_counter = TestCounter::new();
@@ -2728,9 +3019,10 @@ fn exec_overlapping_subscriptions() {
             let _ = status;
         });
         call_insert_result(insert_result.map_err(|e| e.into()));
-    });
+    })
+    .await;
 
-    setup_counter.wait_for_all();
+    wait_for_all(&setup_counter).await;
 
     let test_counter = TestCounter::new();
 
@@ -2780,5 +3072,5 @@ fn exec_overlapping_subscriptions() {
             .map_err(|e| e.into()),
     );
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }

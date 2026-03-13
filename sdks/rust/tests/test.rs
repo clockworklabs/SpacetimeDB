@@ -1,3 +1,55 @@
+#[cfg(feature = "sdk-tests-web-client")]
+use std::path::Path;
+
+use spacetimedb_testing::sdk::TestBuilder;
+
+fn configure_test_client_commands(
+    builder: TestBuilder,
+    client_project: &str,
+    run_selector: Option<&str>,
+) -> TestBuilder {
+    // Note: `run_selector` is intentionally interpreted differently by mode:
+    // - Native mode uses it as a CLI subcommand (`cargo run -- <selector>`), with `None` => `cargo run`.
+    // - Web mode forwards it to the wasm export `run(test_name)`, with `None` => empty string.
+    // This mirrors how `run_command` is consumed by the native vs web runners in `crates/testing/src/sdk.rs`.
+    #[cfg(feature = "sdk-tests-web-client")]
+    {
+        let package_name = Path::new(client_project)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("client project path should end in a UTF-8 directory name");
+        let artifact_name = package_name.replace('-', "_");
+
+        // Cargo workspace members emit into the workspace target directory, not each crate's local `./target`.
+        // Use CARGO_TARGET_DIR when set (e.g. in CI), otherwise fall back to `<workspace>/target`.
+        let target_dir = std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../target")
+                .to_string_lossy()
+                .into_owned()
+        });
+        let wasm_path = format!("{target_dir}/wasm32-unknown-unknown/debug/deps/{artifact_name}.wasm");
+        let bindgen_out_dir = format!("target/sdk-test-web-bindgen/{package_name}");
+
+        builder
+            .with_compile_command("cargo build --target wasm32-unknown-unknown --no-default-features --features web")
+            .with_run_command(run_selector.unwrap_or_default())
+            .with_web_client(wasm_path, bindgen_out_dir)
+    }
+
+    #[cfg(not(feature = "sdk-tests-web-client"))]
+    {
+        let run_command = match run_selector {
+            Some(subcommand) => format!("cargo run -- {}", subcommand),
+            None => "cargo run".to_owned(),
+        };
+
+        builder
+            .with_compile_command("cargo build")
+            .with_run_command(run_command)
+    }
+}
+
 macro_rules! declare_tests_with_suffix {
     ($lang:ident, $suffix:literal) => {
         mod $lang {
@@ -7,21 +59,23 @@ macro_rules! declare_tests_with_suffix {
             const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/test-client");
 
             fn make_test(subcommand: &str) -> Test {
-                Test::builder()
-                    .with_name(subcommand)
-                    .with_module(MODULE)
-                    .with_client(CLIENT)
-                    .with_language("rust")
-                    // We test against multiple modules in different languages,
-                    // and as of writing (pgoldman 2026-02-12),
-                    // some of those languages have not yet been updated to make scheduled and lifecycle reducers
-                    // private by default. As such, generating only public items results in different bindings
-                    // depending on which module is the source.
-                    .with_generate_private_items(true)
-                    .with_bindings_dir("src/module_bindings")
-                    .with_compile_command("cargo build")
-                    .with_run_command(format!("cargo run -- {}", subcommand))
-                    .build()
+                super::configure_test_client_commands(
+                    Test::builder()
+                        .with_name(subcommand)
+                        .with_module(MODULE)
+                        .with_client(CLIENT)
+                        .with_language("rust")
+                        // We test against multiple modules in different languages,
+                        // and as of writing (pgoldman 2026-02-12),
+                        // some of those languages have not yet been updated to make scheduled and lifecycle reducers
+                        // private by default. As such, generating only public items results in different bindings
+                        // depending on which module is the source.
+                        .with_generate_private_items(true)
+                        .with_bindings_dir("src/module_bindings"),
+                    CLIENT,
+                    Some(subcommand),
+                )
+                .build()
             }
 
             #[test]
@@ -197,25 +251,27 @@ macro_rules! declare_tests_with_suffix {
 
             #[test]
             fn connect_disconnect_callbacks() {
-                Test::builder()
-                    .with_name(concat!("connect-disconnect-callback-", stringify!($lang)))
-                    .with_module(concat!("sdk-test-connect-disconnect", $suffix))
-                    .with_client(concat!(
-                        env!("CARGO_MANIFEST_DIR"),
-                        "/tests/connect_disconnect_client"
-                    ))
-                    .with_language("rust")
-                    // We test against multiple modules in different languages,
-                    // and as of writing (pgoldman 2026-02-12),
-                    // some of those languages have not yet been updated to make scheduled and lifecycle reducers
-                    // private by default. As such, generating only public items results in different bindings
-                    // depending on which module is the source.
-                    .with_generate_private_items(true)
-                    .with_bindings_dir("src/module_bindings")
-                    .with_compile_command("cargo build")
-                    .with_run_command("cargo run")
-                    .build()
-                    .run();
+                const CONNECT_DISCONNECT_CLIENT: &str =
+                    concat!(env!("CARGO_MANIFEST_DIR"), "/tests/connect_disconnect_client");
+
+                super::configure_test_client_commands(
+                    Test::builder()
+                        .with_name(concat!("connect-disconnect-callback-", stringify!($lang)))
+                        .with_module(concat!("sdk-test-connect-disconnect", $suffix))
+                        .with_client(CONNECT_DISCONNECT_CLIENT)
+                        .with_language("rust")
+                        // We test against multiple modules in different languages,
+                        // and as of writing (pgoldman 2026-02-12),
+                        // some of those languages have not yet been updated to make scheduled and lifecycle reducers
+                        // private by default. As such, generating only public items results in different bindings
+                        // depending on which module is the source.
+                        .with_generate_private_items(true)
+                        .with_bindings_dir("src/module_bindings"),
+                    CONNECT_DISCONNECT_CLIENT,
+                    None,
+                )
+                .build()
+                .run();
             }
 
             #[test]
@@ -327,15 +383,17 @@ mod event_table_tests {
     const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/event-table-client");
 
     fn make_test(subcommand: &str) -> Test {
-        Test::builder()
-            .with_name(subcommand)
-            .with_module(MODULE)
-            .with_client(CLIENT)
-            .with_language("rust")
-            .with_bindings_dir("src/module_bindings")
-            .with_compile_command("cargo build")
-            .with_run_command(format!("cargo run -- {}", subcommand))
-            .build()
+        super::configure_test_client_commands(
+            Test::builder()
+                .with_name(subcommand)
+                .with_module(MODULE)
+                .with_client(CLIENT)
+                .with_language("rust")
+                .with_bindings_dir("src/module_bindings"),
+            CLIENT,
+            Some(subcommand),
+        )
+        .build()
     }
 
     #[test]
@@ -368,21 +426,23 @@ macro_rules! procedure_tests {
             const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/procedure-client");
 
             fn make_test(subcommand: &str) -> Test {
-                Test::builder()
-                    .with_name(subcommand)
-                    .with_module(MODULE)
-                    .with_client(CLIENT)
-                    .with_language("rust")
-                    // We test against multiple modules in different languages,
-                    // and as of writing (pgoldman 2026-02-12),
-                    // some of those languages have not yet been updated to make scheduled and lifecycle reducers
-                    // private by default. As such, generating only public items results in different bindings
-                    // depending on which module is the source.
-                    .with_generate_private_items(true)
-                    .with_bindings_dir("src/module_bindings")
-                    .with_compile_command("cargo build")
-                    .with_run_command(format!("cargo run -- {}", subcommand))
-                    .build()
+                super::configure_test_client_commands(
+                    Test::builder()
+                        .with_name(subcommand)
+                        .with_module(MODULE)
+                        .with_client(CLIENT)
+                        .with_language("rust")
+                        // We test against multiple modules in different languages,
+                        // and as of writing (pgoldman 2026-02-12),
+                        // some of those languages have not yet been updated to make scheduled and lifecycle reducers
+                        // private by default. As such, generating only public items results in different bindings
+                        // depending on which module is the source.
+                        .with_generate_private_items(true)
+                        .with_bindings_dir("src/module_bindings"),
+                    CLIENT,
+                    Some(subcommand),
+                )
+                .build()
             }
 
             #[test]
@@ -436,21 +496,23 @@ macro_rules! view_tests {
             const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/view-client");
 
             fn make_test(subcommand: &str) -> Test {
-                Test::builder()
-                    .with_name(subcommand)
-                    .with_module(MODULE)
-                    .with_client(CLIENT)
-                    .with_language("rust")
-                    // We test against multiple modules in different languages,
-                    // and as of writing (pgoldman 2026-02-12),
-                    // some of those languages have not yet been updated to make scheduled and lifecycle reducers
-                    // private by default. As such, generating only public items results in different bindings
-                    // depending on which module is the source.
-                    .with_generate_private_items(true)
-                    .with_bindings_dir("src/module_bindings")
-                    .with_compile_command("cargo build")
-                    .with_run_command(format!("cargo run -- {}", subcommand))
-                    .build()
+                super::configure_test_client_commands(
+                    Test::builder()
+                        .with_name(subcommand)
+                        .with_module(MODULE)
+                        .with_client(CLIENT)
+                        .with_language("rust")
+                        // We test against multiple modules in different languages,
+                        // and as of writing (pgoldman 2026-02-12),
+                        // some of those languages have not yet been updated to make scheduled and lifecycle reducers
+                        // private by default. As such, generating only public items results in different bindings
+                        // depending on which module is the source.
+                        .with_generate_private_items(true)
+                        .with_bindings_dir("src/module_bindings"),
+                    CLIENT,
+                    Some(subcommand),
+                )
+                .build()
             }
 
             #[test]
@@ -498,15 +560,17 @@ macro_rules! view_pk_tests {
             const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/view-pk-client");
 
             fn make_test(subcommand: &str) -> Test {
-                Test::builder()
-                    .with_name(subcommand)
-                    .with_module(MODULE)
-                    .with_client(CLIENT)
-                    .with_language("rust")
-                    .with_bindings_dir("src/module_bindings")
-                    .with_compile_command("cargo build")
-                    .with_run_command(format!("cargo run -- {}", subcommand))
-                    .build()
+                super::configure_test_client_commands(
+                    Test::builder()
+                        .with_name(subcommand)
+                        .with_module(MODULE)
+                        .with_client(CLIENT)
+                        .with_language("rust")
+                        .with_bindings_dir("src/module_bindings"),
+                    CLIENT,
+                    Some(subcommand),
+                )
+                .build()
             }
 
             #[test]

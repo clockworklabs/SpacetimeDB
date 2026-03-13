@@ -1,10 +1,10 @@
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::large_enum_variant)]
-mod module_bindings;
+pub(crate) mod module_bindings;
 
 use module_bindings::*;
 
-use spacetimedb_sdk::{DbContext, Event, EventTable};
+use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Event, EventTable};
 use std::sync::atomic::{AtomicU32, Ordering};
 use test_counter::TestCounter;
 
@@ -17,6 +17,7 @@ fn db_name_or_panic() -> String {
 /// Register a panic hook which will exit the process whenever any thread panics.
 ///
 /// This allows us to fail tests by panicking in callbacks.
+#[cfg(not(target_arch = "wasm32"))]
 fn exit_on_panic() {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
@@ -41,6 +42,7 @@ macro_rules! assert_eq_or_bail {
     }};
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     env_logger::init();
     exit_on_panic();
@@ -49,6 +51,10 @@ fn main() {
         .nth(1)
         .expect("Pass a test name as a command-line argument to the test client");
 
+    dispatch(&test);
+}
+
+pub(crate) fn dispatch(test: &str) {
     match &*test {
         "event-table" => exec_event_table(),
         "multiple-events" => exec_multiple_events(),
@@ -56,6 +62,16 @@ fn main() {
         "v1-rejects-event-table" => exec_v1_rejects_event_table(),
         _ => panic!("Unknown test: {test}"),
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+    builder.build().unwrap()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+    futures::executor::block_on(builder.build()).unwrap()
 }
 
 fn connect_then(
@@ -71,10 +87,12 @@ fn connect_then(
             callback(ctx);
             connected_result(Ok(()));
         })
-        .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"))
-        .build()
-        .unwrap();
+        .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
+    let conn = build_connection(conn);
+    #[cfg(not(target_arch = "wasm32"))]
     conn.run_threaded();
+    #[cfg(target_arch = "wasm32")]
+    conn.run_background_task();
     conn
 }
 

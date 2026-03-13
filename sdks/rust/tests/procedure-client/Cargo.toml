@@ -6,13 +6,41 @@ license-file = "LICENSE"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["native"]
+
+# Builds the existing CLI test client.
+native = [
+    "dep:env_logger",
+]
+
+# Builds the client for wasm32-unknown-unknown using the Rust SDK `web` backend.
+web = [
+    "spacetimedb-sdk/web",
+    "dep:wasm-bindgen",
+    "dep:wasm-bindgen-futures",
+    "dep:futures",
+]
+
+[[bin]]
+name = "procedure-client"
+path = "src/main.rs"
+required-features = ["native"]
+
 [dependencies]
 spacetimedb-sdk = { path = "../.." }
 spacetimedb-lib.workspace = true
 test-counter = { path = "../test-counter" }
 anyhow.workspace = true
-env_logger.workspace = true
+env_logger = { workspace = true, optional = true }
 serde_json.workspace = true
+futures = { workspace = true, optional = true }
+
+wasm-bindgen = { version = "0.2.100", optional = true }
+wasm-bindgen-futures = { version = "0.4.45", optional = true }
 
 [lints]
 workspace = true
