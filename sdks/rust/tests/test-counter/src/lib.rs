@@ -142,15 +142,20 @@ impl TestCounter {
             inner.outcomes.len() == inner.registered.len()
         };
 
+        let mut finished = false;
         for _ in 0..MAX_WAIT_ITERATIONS {
             if all_tests_finished() {
-                return;
+                // We still need the final outcome pass below. Returning here would incorrectly
+                // treat recorded `Err(...)` test outcomes as success, including harness tests that
+                // intentionally exercise the failure path.
+                finished = true;
+                break;
             }
             TimeoutFuture::new(WAIT_INTERVAL_MS).await;
         }
 
         let lock = self.inner.lock().expect("TestCounterInner Mutex is poisoned");
-        if lock.outcomes.len() != lock.registered.len() {
+        if !finished || lock.outcomes.len() != lock.registered.len() {
             let mut timeout_count = 0;
             let mut failed_count = 0;
             for test in lock.registered.iter() {
