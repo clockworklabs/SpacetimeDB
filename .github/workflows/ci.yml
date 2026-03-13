@@ -228,9 +228,6 @@ jobs:
         with:
           run_install: true
 
-      # Install native and wasm toolchains required by SDK tests:
-      # - `emcc` for C++ module compilation tests.
-      # - `wasm32-unknown-unknown` target for Rust web client tests.
       # Install cmake and emscripten for C++ module compilation tests.
       - name: Install cmake and emscripten
         run: |
