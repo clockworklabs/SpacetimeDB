@@ -1756,7 +1756,7 @@ class EdgeCaseTest {
         advanceUntilIdle()
 
         assertTrue(fired)
-        conn.disconnect()
+        // Connection auto-closes on identity mismatch (no manual disconnect needed)
     }
 
     // =========================================================================

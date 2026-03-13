@@ -514,7 +514,10 @@ public open class DbConnection internal constructor(
                         "Server returned unexpected identity: ${message.identity}, expected: $currentIdentity"
                     )
                     for (cb in _onConnectErrorCallbacks.value) runUserCallback { cb(this, error) }
-                    return
+                    // Throw so the receive loop's catch block transitions to CLOSED
+                    // and cleans up resources. Without this, the connection stays in
+                    // CONNECTED state with no identity — an inconsistent half-initialized state.
+                    throw error
                 }
 
                 _identity.value = message.identity

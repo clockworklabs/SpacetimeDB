@@ -937,19 +937,26 @@ class DbConnectionIntegrationTest {
     // --- Identity mismatch ---
 
     @Test
-    fun identityMismatchFiresOnConnectError() = runTest {
+    fun identityMismatchFiresOnConnectErrorAndDisconnects() = runTest {
         val transport = FakeTransport()
         var errorMsg: String? = null
-        val conn = buildTestConnection(transport, onConnectError = { _, err ->
-            errorMsg = err.message
-        })
+        var disconnectReason: Throwable? = null
+        var disconnected = false
+        val conn = buildTestConnection(
+            transport,
+            onConnectError = { _, err -> errorMsg = err.message },
+            onDisconnect = { _, reason ->
+                disconnected = true
+                disconnectReason = reason
+            },
+        )
 
         // First InitialConnection sets identity
         transport.sendToClient(initialConnectionMsg())
         advanceUntilIdle()
         assertEquals(testIdentity, conn.identity)
 
-        // Second InitialConnection with different identity triggers error
+        // Second InitialConnection with different identity triggers error and disconnect
         val differentIdentity = Identity(BigInteger.TEN)
         transport.sendToClient(
             ServerMessage.InitialConnection(
@@ -960,11 +967,15 @@ class DbConnectionIntegrationTest {
         )
         advanceUntilIdle()
 
+        // onConnectError fired
         assertNotNull(errorMsg)
         assertTrue(errorMsg!!.contains("unexpected identity"))
         // Identity should NOT have changed
         assertEquals(testIdentity, conn.identity)
-        conn.disconnect()
+        // Connection should have transitioned to CLOSED (not left in CONNECTED)
+        assertTrue(disconnected, "onDisconnect should have fired")
+        assertNotNull(disconnectReason, "disconnect reason should be the identity mismatch error")
+        assertTrue(disconnectReason!!.message!!.contains("unexpected identity"))
     }
 
     // --- SubscriptionError with null requestId triggers disconnect ---
