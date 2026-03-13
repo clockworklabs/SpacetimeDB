@@ -149,7 +149,7 @@ mod tests {
             .expect("Failed to create table");
 
         with_auto_commit(db, |tx| -> Result<(), DBError> {
-            for i in 0..10 {
+            for i in 0u64..10u64 {
                 insert(db, tx, table_id, &product![i % 5, i]).expect("failed to insert into table");
             }
             Ok(())
