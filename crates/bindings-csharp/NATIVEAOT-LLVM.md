@@ -97,16 +97,22 @@ For the module to work, we'll also need the `NuGet.Config` and `.csproj` files w
 
 ### Package source mapping enabled
 If you have **package source mapping** enabled in `NuGet.Config`, you must add mappings for the LLVM packages or restores will fail.
-
+Place the following in `NuGet.Config` inside the `configuration` section:
 ```xml
 <packageSourceMapping>
-  <packageSource key="dotnet-experimental">
-    <package pattern="Microsoft.DotNet.ILCompiler.LLVM" />
-    <package pattern="runtime.*.Microsoft.DotNet.ILCompiler.LLVM" />
-  </packageSource>
-  <packageSource key="nuget.org">
-    <package pattern="*" />
-  </packageSource>
+    <packageSource key="bsatn-runtime">
+        <package pattern="SpacetimeDB.BSATN.Runtime" />
+    </packageSource>
+    <packageSource key="SpacetimeDB.Runtime">
+        <package pattern="SpacetimeDB.Runtime" />
+    </packageSource>
+    <packageSource key="dotnet-experimental">
+        <package pattern="Microsoft.DotNet.ILCompiler.LLVM" />
+        <package pattern="runtime.*" />
+    </packageSource>
+    <packageSource key="nuget.org">
+        <package pattern="*" />
+    </packageSource>
 </packageSourceMapping>
 ```
 
