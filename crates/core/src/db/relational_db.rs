@@ -1,7 +1,6 @@
 use crate::db::durability::DurabilityWorker;
 use crate::db::MetricsRecorderQueue;
 use crate::error::{DBError, RestoreSnapshotError};
-use crate::messages::control_db::HostType;
 use crate::subscription::ExecutionCounters;
 use crate::util::asyncify;
 use crate::worker_metrics::WORKER_METRICS;
@@ -464,7 +463,7 @@ impl RelationalDB {
     /// The caller must ensure that:
     ///
     /// - `program.hash` is the [`Hash`] over `program.bytes`.
-    /// - `program.bytes` is a valid module acc. to `host_type`.
+    /// - `program.bytes` is a valid module acc. to `program.host_type`.
     /// - the schema updates contained in the module have been applied within
     ///   the transactional context `tx`.
     /// - the `__init__` reducer contained in the module has been executed
@@ -1861,6 +1860,7 @@ fn default_row_count_fn(db: Identity) -> RowCountFn {
 pub mod tests_utils {
     use crate::db::snapshot;
     use crate::db::snapshot::SnapshotWorker;
+    use crate::messages::control_db::HostType;
 
     use super::*;
     use core::ops::Deref;
