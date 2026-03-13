@@ -158,6 +158,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #reducerCallInfo = new Map<number, { name: string; args: object }>();
   #procedureCallbacks = new Map<number, ProcedureCallback>();
   #rowDeserializers: Record<string, Deserializer<any>>;
+  #rowIdMetadata: Record<
+    string,
+    { primaryKeyColName?: string; primaryKeyColType?: AlgebraicType }
+  >;
   #reducerArgsSerializers: Record<
     string,
     { serialize: Serializer<any>; deserialize: Deserializer<any> }
@@ -205,6 +209,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     this.#emitter = emitter;
 
     this.#rowDeserializers = Object.create(null);
+    this.#rowIdMetadata = Object.create(null);
     this.#sourceNameToTableDef = Object.create(null);
     for (const table of Object.values(remoteModule.tables)) {
       this.#rowDeserializers[table.sourceName] = ProductType.makeDeserializer(
@@ -213,6 +218,15 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       this.#sourceNameToTableDef[table.sourceName] = table as Values<
         RemoteModule['tables']
       >;
+      const primaryKeyColumn = Object.entries(table.columns).find(
+        ([, column]) => column.columnMetadata.isPrimaryKey
+      );
+      this.#rowIdMetadata[table.sourceName] = primaryKeyColumn
+        ? {
+            primaryKeyColName: primaryKeyColumn[0],
+            primaryKeyColType: primaryKeyColumn[1].typeBuilder.algebraicType,
+          }
+        : {};
     }
 
     this.#reducerArgsSerializers = Object.create(null);
@@ -428,20 +442,13 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     const rows: Operation[] = [];
 
     const deserializeRow = this.#rowDeserializers[tableName];
-    const table = this.#sourceNameToTableDef[tableName];
-    // TODO: performance
-    const columnsArray = Object.entries(table.columns);
-    const primaryKeyColumnEntry = columnsArray.find(
-      col => col[1].columnMetadata.isPrimaryKey
-    );
+    const { primaryKeyColName, primaryKeyColType } =
+      this.#rowIdMetadata[tableName];
     let previousOffset = 0;
     while (reader.remaining > 0) {
       const row = deserializeRow(reader);
       let rowId: ComparablePrimitive | undefined = undefined;
-      if (primaryKeyColumnEntry !== undefined) {
-        const primaryKeyColName = primaryKeyColumnEntry[0];
-        const primaryKeyColType =
-          primaryKeyColumnEntry[1].typeBuilder.algebraicType;
+      if (primaryKeyColName !== undefined && primaryKeyColType !== undefined) {
         rowId = AlgebraicType.intoMapKey(
           primaryKeyColType,
           row[primaryKeyColName]
