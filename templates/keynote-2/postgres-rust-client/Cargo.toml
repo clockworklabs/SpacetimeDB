@@ -1,0 +1,15 @@
+[workspace]
+
+[package]
+name = "postgres-rust-transfer-sim"
+version = "0.1.0"
+edition = "2021"
+description = "Rust client for Postgres transfer benchmark — direct binary protocol, no HTTP/JSON/Node.js"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+tokio-postgres = "0.7"
+clap = { version = "4", features = ["derive"] }
+rand = "0.8"
+rand_distr = "0.4"
+humantime = "2"
