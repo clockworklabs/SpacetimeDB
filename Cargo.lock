@@ -1094,9 +1094,12 @@ name = "connect_disconnect_client"
 version = "2.0.4"
 dependencies = [
  "anyhow",
+ "console_error_panic_hook",
  "futures",
+ "gloo-timers",
  "spacetimedb-sdk",
  "test-counter",
+ "tokio",
  "wasm-bindgen",
  "wasm-bindgen-futures",
 ]
@@ -9258,6 +9261,8 @@ name = "test-counter"
 version = "2.0.4"
 dependencies = [
  "anyhow",
+ "futures",
+ "gloo-timers",
  "spacetimedb-data-structures",
 ]
 

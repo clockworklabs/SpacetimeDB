@@ -13,5 +13,5 @@ use wasm_bindgen::prelude::wasm_bindgen;
 pub async fn run(test_name: String, db_name: String) {
     console_error_panic_hook::set_once();
     cli::set_web_db_name(db_name);
-    cli::dispatch_async(&test_name).await;
+    cli::dispatch(&test_name).await;
 }
