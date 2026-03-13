@@ -11,6 +11,7 @@ import type { ColumnBuilder, RowBuilder } from './type_builders';
 export type TableSchema<
   Row extends Record<string, ColumnBuilder<any, any, any>>,
   Idx extends readonly IndexOpts<keyof Row & string>[],
+  IsEvent extends boolean = boolean,
 > = {
   /**
    * The name of the table.
@@ -56,9 +57,15 @@ export type TableSchema<
     scheduleAtCol: number;
     reducer: () => ReducerExport<any, any> | ProcedureExport<any, any, any>;
   };
+
+  /**
+   * Whether this table is an event table.
+   */
+  readonly isEvent: IsEvent;
 };
 
 export type UntypedTableSchema = TableSchema<
   Record<string, ColumnBuilder<any, any, any>>,
-  readonly IndexOpts<string>[]
+  readonly IndexOpts<string>[],
+  boolean
 >;

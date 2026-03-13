@@ -17,7 +17,7 @@ import {
   type TypeBuilder,
 } from '../lib/type_builders';
 import { bsatnBaseSize, toPascalCase } from '../lib/util';
-import type { ReadonlyDbView } from './db_view';
+import type { NonEventSchema, ReadonlyDbView } from './db_view';
 import { type QueryBuilder, type RowTypedQuery } from './query';
 import {
   exportContext,
@@ -75,12 +75,12 @@ export function makeAnonViewExport<
 export type ViewCtx<S extends UntypedSchemaDef> = Readonly<{
   sender: Identity;
   db: ReadonlyDbView<S>;
-  from: QueryBuilder<S>;
+  from: QueryBuilder<NonEventSchema<S>>;
 }>;
 
 export type AnonymousViewCtx<S extends UntypedSchemaDef> = Readonly<{
   db: ReadonlyDbView<S>;
-  from: QueryBuilder<S>;
+  from: QueryBuilder<NonEventSchema<S>>;
 }>;
 
 export type ViewOpts = {

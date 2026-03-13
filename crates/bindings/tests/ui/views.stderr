@@ -181,13 +181,13 @@ error[E0599]: no method named `delete` found for struct `UniqueColumnReadOnly<Tb
   --> tests/ui/views.rs:50:30
    |
 50 |     read_only.db.test().id().delete(&0);
-   |                              ^^^^^^ method not found in `UniqueColumnReadOnly<test__TableHandle, u32, id>`
+   |                              ^^^^^^ method not found in `UniqueColumnReadOnly<test__TableHandle, u32, _::__indices::id>`
 
 error[E0599]: no method named `update` found for struct `UniqueColumnReadOnly<Tbl, ColType, Col>` in the current scope
   --> tests/ui/views.rs:57:30
    |
 57 |     read_only.db.test().id().update(Test { id: 0, x: 0 });
-   |                              ^^^^^^ method not found in `UniqueColumnReadOnly<test__TableHandle, u32, id>`
+   |                              ^^^^^^ method not found in `UniqueColumnReadOnly<test__TableHandle, u32, _::__indices::id>`
 
 error[E0599]: no method named `delete` found for struct `RangedIndexReadOnly<Tbl, IndexType, Idx>` in the current scope
   --> tests/ui/views.rs:64:29
@@ -336,8 +336,8 @@ help: the trait `SpacetimeType` is not implemented for `NotSpacetimeType`
               AlgebraicTypeRef
               Arc<T>
               ArrayType
+              AuditEvent
               Box<T>
-              ColumnAttribute
             and $N others
     = note: required for `Option<NotSpacetimeType>` to implement `ViewReturn`
 
@@ -405,8 +405,8 @@ help: the trait `SpacetimeType` is not implemented for `NotSpacetimeType`
               AlgebraicTypeRef
               Arc<T>
               ArrayType
+              AuditEvent
               Box<T>
-              ColumnAttribute
             and $N others
     = note: required for `Option<NotSpacetimeType>` to implement `SpacetimeType`
 
@@ -485,3 +485,55 @@ error[E0599]: no method named `xyz` found for struct `QueryBuilder` in the curre
     |
 202 |     ctx.from.xyz().build()
     |              ^^^ method not found in `QueryBuilder`
+
+error[E0599]: no method named `audit_event` found for struct `LocalReadOnly` in the current scope
+   --> tests/ui/views.rs:214:20
+    |
+214 |     let _ = ctx.db.audit_event();
+    |                    ^^^^^^^^^^^ method not found in `LocalReadOnly`
+    |
+    = help: items from traits can only be used if the trait is implemented and in scope
+note: `audit_event` defines an item `audit_event`, perhaps you need to implement it
+   --> tests/ui/views.rs:205:20
+    |
+205 | #[table(accessor = audit_event, event)]
+    |                    ^^^^^^^^^^^
+
+error[E0599]: no method named `audit_event` found for struct `LocalReadOnly` in the current scope
+   --> tests/ui/views.rs:221:20
+    |
+221 |     let _ = ctx.db.audit_event();
+    |                    ^^^^^^^^^^^ method not found in `LocalReadOnly`
+    |
+    = help: items from traits can only be used if the trait is implemented and in scope
+note: `audit_event` defines an item `audit_event`, perhaps you need to implement it
+   --> tests/ui/views.rs:205:20
+    |
+205 | #[table(accessor = audit_event, event)]
+    |                    ^^^^^^^^^^^
+
+error[E0599]: no method named `audit_event` found for struct `QueryBuilder` in the current scope
+   --> tests/ui/views.rs:228:14
+    |
+228 |     ctx.from.audit_event()
+    |              ^^^^^^^^^^^ method not found in `QueryBuilder`
+    |
+    = help: items from traits can only be used if the trait is implemented and in scope
+note: `audit_event` defines an item `audit_event`, perhaps you need to implement it
+   --> tests/ui/views.rs:205:20
+    |
+205 | #[table(accessor = audit_event, event)]
+    |                    ^^^^^^^^^^^
+
+error[E0599]: no method named `audit_event` found for struct `QueryBuilder` in the current scope
+   --> tests/ui/views.rs:234:14
+    |
+234 |     ctx.from.audit_event()
+    |              ^^^^^^^^^^^ method not found in `QueryBuilder`
+    |
+    = help: items from traits can only be used if the trait is implemented and in scope
+note: `audit_event` defines an item `audit_event`, perhaps you need to implement it
+   --> tests/ui/views.rs:205:20
+    |
+205 | #[table(accessor = audit_event, event)]
+    |                    ^^^^^^^^^^^
