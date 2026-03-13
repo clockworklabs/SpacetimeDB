@@ -27,7 +27,7 @@ pub trait Table: TableInternal + ExplicitNames {
     /// even though those modifications have not yet been committed or broadcast to clients.
     /// This applies generally to insertions, deletions, updates, and iteration as well.
     fn count(&self) -> u64 {
-        sys::datastore_table_row_count(Self::table_id()).expect("datastore_table_row_count() call failed")
+        count::<Self>()
     }
 
     /// Iterate over all rows of the table.
@@ -117,6 +117,12 @@ pub trait Table: TableInternal + ExplicitNames {
     // Re-integrates the BSATN of the `generated_cols` into `row`.
     #[doc(hidden)]
     fn integrate_generated_columns(row: &mut Self::Row, generated_cols: &[u8]);
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn count<Tbl: Table>() -> u64 {
+    sys::datastore_table_row_count(Tbl::table_id()).expect("datastore_table_row_count() call failed")
 }
 
 #[doc(hidden)]
