@@ -719,6 +719,16 @@ SPACETIMEDB_VIEW(std::optional<Player>, my_player, Public, ViewContext ctx) {
 SPACETIMEDB_VIEW(std::vector<Player>, top_players, Public, ViewContext ctx) {
     return ctx.db[player_score].filter(range_from(int32_t(1000))).collect();
 }
+
+struct PlayerCount {
+    uint64_t count;
+};
+SPACETIMEDB_STRUCT(PlayerCount, count)
+
+// Count rows in a table.
+SPACETIMEDB_VIEW(std::optional<PlayerCount>, player_count, Public, AnonymousViewContext ctx) {
+    return std::optional<PlayerCount>(PlayerCount{ctx.db[player].count()});
+}
 ```
 
 </TabItem>
