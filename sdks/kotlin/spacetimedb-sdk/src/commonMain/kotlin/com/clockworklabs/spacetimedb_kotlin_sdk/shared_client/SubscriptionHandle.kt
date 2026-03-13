@@ -59,11 +59,13 @@ public class SubscriptionHandle internal constructor(
         flags: UnsubscribeFlags,
         onEnd: ((EventContext.UnsubscribeApplied) -> Unit)? = null,
     ) {
-        check(_state.compareAndSet(SubscriptionState.ACTIVE, SubscriptionState.UNSUBSCRIBING)) {
-            "Cannot unsubscribe: subscription is ${_state.value}"
-        }
-        // Set callback after CAS succeeds — avoids orphaning it if the CAS fails
+        // Set callback BEFORE the CAS so handleEnd() can't race between
+        // the state transition and the callback assignment.
         if (onEnd != null) _onEndCallback.value = onEnd
+        if (!_state.compareAndSet(SubscriptionState.ACTIVE, SubscriptionState.UNSUBSCRIBING)) {
+            _onEndCallback.value = null
+            error("Cannot unsubscribe: subscription is ${_state.value}")
+        }
         connection.unsubscribe(this, flags)
     }
 
