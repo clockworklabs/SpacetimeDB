@@ -1793,7 +1793,7 @@ spacetime sql <database> "SELECT * FROM my_table"
 - [ ] Set your module's case conversion policy to `None`
 - [ ] Change `with_module_name` to `with_database_name`
 - [ ] Change `ctx.sender` to `ctx.sender()`
-  - Necessary in Rust modules and in C++ module code/docs after the C++ context migration.
+  - Only necessary in Rust and C++ modules.
 - [ ] Remove `update` calls on non-primary key unique indexes
   - When leaving the primary key value unchanged, update using the primary key index
   - When altering the primary key value, delete and insert
