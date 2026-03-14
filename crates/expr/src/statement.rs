@@ -58,22 +58,38 @@ impl DML {
     pub fn table_name(&self) -> &TableName {
         &self.table_schema().table_name
     }
+
+    /// Iterate over the projected column names and types
+    pub fn for_each_return_field(&self, f: impl FnMut(&str, &AlgebraicType)) {
+        match self {
+            Self::Insert(TableInsert { returning, .. })
+            | Self::Update(TableUpdate { returning, .. })
+            | Self::Delete(TableDelete { returning, .. }) => {
+                if let Some(returning) = returning {
+                    returning.for_each_return_field(f);
+                }
+            }
+        }
+    }
 }
 
 pub struct TableInsert {
     pub table: Arc<TableOrViewSchema>,
     pub rows: Box<[ProductValue]>,
+    pub returning: Option<ProjectList>,
 }
 
 pub struct TableDelete {
     pub table: Arc<TableOrViewSchema>,
     pub filter: Option<Expr>,
+    pub returning: Option<ProjectList>,
 }
 
 pub struct TableUpdate {
     pub table: Arc<TableOrViewSchema>,
     pub columns: Box<[(ColId, AlgebraicValue)]>,
     pub filter: Option<Expr>,
+    pub returning: Option<ProjectList>,
 }
 
 pub struct SetVar {
@@ -91,6 +107,7 @@ pub fn type_insert(insert: SqlInsert, tx: &impl SchemaView) -> TypingResult<Tabl
         table: SqlIdent(table_name),
         fields,
         values,
+        returning,
     } = insert;
 
     let schema = tx
@@ -153,9 +170,22 @@ pub fn type_insert(insert: SqlInsert, tx: &impl SchemaView) -> TypingResult<Tabl
         }
         rows.push(ProductValue::from(values));
     }
-    let into = schema;
+    let into = schema.clone();
     let rows = rows.into_boxed_slice();
-    Ok(TableInsert { table: into, rows })
+    let mut vars = Relvars::default();
+    vars.insert(table_name.clone(), into.clone());
+    let returning = returning
+        .map(|proj| type_proj(RelExpr::RelVar(Relvar {
+            schema: schema,
+            alias: ST_VAR_NAME.into(),
+            delta: None,
+        }), proj, &vars))
+        .transpose()?;
+    Ok(TableInsert {
+        table: into,
+        rows,
+        returning,
+    })
 }
 
 /// Type check a DELETE statement
@@ -163,6 +193,7 @@ pub fn type_delete(delete: SqlDelete, tx: &impl SchemaView) -> TypingResult<Tabl
     let SqlDelete {
         table: SqlIdent(query_table_name),
         filter,
+        returning,
     } = delete;
     let from = tx
         .schema(&query_table_name)
@@ -184,9 +215,17 @@ pub fn type_delete(delete: SqlDelete, tx: &impl SchemaView) -> TypingResult<Tabl
     let expr = filter
         .map(|expr| type_expr(&vars, expr, Some(&AlgebraicType::Bool)))
         .transpose()?;
+    let returning = returning
+        .map(|proj| type_proj(RelExpr::RelVar(Relvar {
+            schema: from.clone(),
+            alias: ST_VAR_NAME.into(),
+            delta: None,
+        }), proj, &vars))
+        .transpose()?;
     Ok(TableDelete {
         table: from,
         filter: expr,
+        returning,
     })
 }
 
@@ -196,6 +235,7 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
         table: SqlIdent(query_table_name),
         assignments,
         filter,
+        returning,
     } = update;
     let schema = tx
         .schema(&query_table_name)
@@ -249,10 +289,18 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
     let filter = filter
         .map(|expr| type_expr(&vars, expr, Some(&AlgebraicType::Bool)))
         .transpose()?;
+    let returning = returning
+        .map(|proj| type_proj(RelExpr::RelVar(Relvar {
+            schema: schema.clone(),
+            alias: ST_VAR_NAME.into(),
+            delta: None,
+        }), proj, &vars))
+        .transpose()?;
     Ok(TableUpdate {
         table: schema,
         columns: values,
         filter,
+        returning,
     })
 }
 
@@ -309,6 +357,7 @@ pub fn type_and_rewrite_set(set: SqlSet, tx: &impl SchemaView) -> TypingResult<T
             Ok(TableInsert {
                 table,
                 rows: Box::new([ProductValue::from_iter([var_name, sum_value])]),
+                returning: None,
             })
         }
     }
