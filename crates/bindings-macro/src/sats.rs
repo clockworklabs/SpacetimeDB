@@ -63,7 +63,39 @@ pub(crate) fn sats_type_from_derive(
             SatsTypeData::Product(fields.collect())
         }
         syn::Data::Enum(enu) => {
+            // Check if #[sats(allow_discriminants)] is set, which opts out of the
+            // discriminant check. This is used by internal enums that set discriminant
+            // values for non-codegen reasons (e.g. for `as u8` casts).
+            let allow_discriminants = input.attrs.iter().any(|attr| {
+                if !attr.path().is_ident("sats") {
+                    return false;
+                }
+                let mut found = false;
+                // Use parse_nested_meta with proper error handling for keyword paths
+                // like `crate = crate`. We consume unknown meta items gracefully.
+                let _ = attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("allow_discriminants") {
+                        found = true;
+                    } else if meta.input.peek(syn::Token![=]) {
+                        // Consume `= value` for other keys (e.g. `crate = crate`).
+                        meta.input.parse::<syn::Token![=]>()?;
+                        meta.input.parse::<proc_macro2::TokenTree>()?;
+                    }
+                    Ok(())
+                });
+                found
+            });
             let variants = enu.variants.iter().map(|var| {
+                if !allow_discriminants {
+                    if let Some((eq, _)) = &var.discriminant {
+                        return Err(syn::Error::new(
+                            eq.span(),
+                            "explicit discriminant values are not supported by SpacetimeDB; \
+                             SATS assigns variant tags by declaration order, so discriminant \
+                             values would be silently ignored",
+                        ));
+                    }
+                }
                 let (member, ty) = variant_data(var)?.unzip();
                 Ok(SatsVariant {
                     ident: &var.ident,
@@ -118,6 +150,8 @@ pub(crate) fn extract_sats_type<'a>(
                     let v = value.parse::<LitStr>()?;
                     name = Some(v);
                 }
+                // Parsed earlier in sats_type_from_derive; just accept and ignore here.
+                sym::allow_discriminants => {}
             });
             Ok(())
         })?;
