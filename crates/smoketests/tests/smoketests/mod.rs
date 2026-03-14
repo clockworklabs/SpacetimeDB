@@ -8,6 +8,7 @@ mod cli;
 mod client_connection_errors;
 mod confirmed_reads;
 mod connect_disconnect_from_cli;
+mod database_lock;
 mod create_project;
 mod csharp_module;
 mod default_module_clippy;
