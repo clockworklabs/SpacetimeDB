@@ -97,6 +97,7 @@ impl Lang for Kotlin {
         writeln!(out, "import {SDK_PKG}.ClientCache");
         writeln!(out, "import {SDK_PKG}.Col");
         writeln!(out, "import {SDK_PKG}.DbConnection");
+        writeln!(out, "import {SDK_PKG}.InternalSpacetimeApi");
         writeln!(out, "import {SDK_PKG}.EventContext");
         if has_ix_cols {
             writeln!(out, "import {SDK_PKG}.IxCol");
@@ -324,6 +325,7 @@ impl Lang for Kotlin {
         writeln!(out);
 
         // --- {Table}Cols class: typed column references for all fields ---
+        writeln!(out, "@OptIn(InternalSpacetimeApi::class)");
         writeln!(out, "class {table_name_pascal}Cols(tableName: String) {{");
         out.indent(1);
         for (ident, field_type) in product_def.elements.iter() {
@@ -344,6 +346,7 @@ impl Lang for Kotlin {
 
         // --- {Table}IxCols class: typed column references for indexed fields only ---
         if has_ix_cols {
+            writeln!(out, "@OptIn(InternalSpacetimeApi::class)");
             writeln!(out, "class {table_name_pascal}IxCols(tableName: String) {{");
             out.indent(1);
             for (i, (ident, field_type)) in product_def.elements.iter().enumerate() {

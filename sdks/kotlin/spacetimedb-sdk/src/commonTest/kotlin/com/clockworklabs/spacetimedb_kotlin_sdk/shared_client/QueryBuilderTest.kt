@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
+@OptIn(InternalSpacetimeApi::class)
 class QueryBuilderTest {
 
     // ---- SqlFormat ----

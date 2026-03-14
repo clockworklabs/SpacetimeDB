@@ -1,6 +1,5 @@
 ---
 source: crates/codegen/tests/codegen.rs
-assertion_line: 37
 expression: outfiles
 ---
 "AddPlayerReducer.kt" = '''
@@ -252,6 +251,7 @@ package module_bindings
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ClientCache
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Col
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.InternalSpacetimeApi
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.IxCol
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
@@ -326,12 +326,14 @@ class LoggedOutPlayerTableHandle internal constructor(
 
 }
 
+@OptIn(InternalSpacetimeApi::class)
 class LoggedOutPlayerCols(tableName: String) {
     val identity = Col<Player, Identity>(tableName, "identity")
     val playerId = Col<Player, ULong>(tableName, "player_id")
     val name = Col<Player, String>(tableName, "name")
 }
 
+@OptIn(InternalSpacetimeApi::class)
 class LoggedOutPlayerIxCols(tableName: String) {
     val identity = IxCol<Player, Identity>(tableName, "identity")
     val playerId = IxCol<Player, ULong>(tableName, "player_id")
@@ -525,6 +527,7 @@ package module_bindings
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ClientCache
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Col
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.InternalSpacetimeApi
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.RemotePersistentTable
@@ -589,6 +592,7 @@ class MyPlayerTableHandle internal constructor(
 
 }
 
+@OptIn(InternalSpacetimeApi::class)
 class MyPlayerCols(tableName: String) {
     val identity = Col<Player, Identity>(tableName, "identity")
     val playerId = Col<Player, ULong>(tableName, "player_id")
@@ -609,6 +613,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.BTreeIndex
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ClientCache
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Col
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.InternalSpacetimeApi
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.IxCol
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
@@ -680,12 +685,14 @@ class PersonTableHandle internal constructor(
 
 }
 
+@OptIn(InternalSpacetimeApi::class)
 class PersonCols(tableName: String) {
     val id = Col<Person, UInt>(tableName, "id")
     val name = Col<Person, String>(tableName, "name")
     val age = Col<Person, UByte>(tableName, "age")
 }
 
+@OptIn(InternalSpacetimeApi::class)
 class PersonIxCols(tableName: String) {
     val id = IxCol<Person, UInt>(tableName, "id")
     val age = IxCol<Person, UByte>(tableName, "age")
@@ -702,6 +709,7 @@ package module_bindings
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ClientCache
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Col
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.InternalSpacetimeApi
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.IxCol
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
@@ -776,12 +784,14 @@ class PlayerTableHandle internal constructor(
 
 }
 
+@OptIn(InternalSpacetimeApi::class)
 class PlayerCols(tableName: String) {
     val identity = Col<Player, Identity>(tableName, "identity")
     val playerId = Col<Player, ULong>(tableName, "player_id")
     val name = Col<Player, String>(tableName, "name")
 }
 
+@OptIn(InternalSpacetimeApi::class)
 class PlayerIxCols(tableName: String) {
     val identity = IxCol<Player, Identity>(tableName, "identity")
     val playerId = IxCol<Player, ULong>(tableName, "player_id")
@@ -1302,6 +1312,7 @@ package module_bindings
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ClientCache
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Col
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.InternalSpacetimeApi
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.RemotePersistentTable
@@ -1363,6 +1374,7 @@ class TestDTableHandle internal constructor(
 
 }
 
+@OptIn(InternalSpacetimeApi::class)
 class TestDCols(tableName: String) {
     val testC = Col<TestD, NamespaceTestC>(tableName, "test_c")
 }
@@ -1380,6 +1392,7 @@ package module_bindings
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ClientCache
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Col
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.InternalSpacetimeApi
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.RemotePersistentTable
@@ -1441,6 +1454,7 @@ class TestFTableHandle internal constructor(
 
 }
 
+@OptIn(InternalSpacetimeApi::class)
 class TestFCols(tableName: String) {
     val field = Col<TestFoobar, Foobar>(tableName, "field")
 }
