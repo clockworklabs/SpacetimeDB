@@ -8,6 +8,7 @@ import type {
 } from '../';
 import { ensureMinimumVersionOrThrow } from './version';
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter';
+import type { WebSocketFactory } from './ws';
 
 /**
  * The database client connection to a SpacetimeDB server.
@@ -23,10 +24,10 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
   #identity?: Identity;
   #token?: string;
   #emitter: EventEmitter<ConnectionEvent> = new EventEmitter();
-  #compression: 'gzip' | 'none' = 'gzip';
+  #compression: 'gzip' | 'brotli' | 'none' = 'gzip';
   #lightMode: boolean = false;
   #confirmedReads?: boolean;
-  #createWSFn: typeof WebsocketDecompressAdapter.createWebSocketFn;
+  #createWSFn: WebSocketFactory;
 
   /**
    * Creates a new `DbConnectionBuilder` database client and set the initial parameters.
@@ -42,7 +43,7 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
       config: DbConnectionConfig<RemoteModuleOf<DbConnection>>
     ) => DbConnection
   ) {
-    this.#createWSFn = WebsocketDecompressAdapter.createWebSocketFn;
+    this.#createWSFn = WebsocketDecompressAdapter.openWebSocket;
   }
 
   /**
@@ -82,9 +83,7 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
     return this;
   }
 
-  withWSFn(
-    createWSFn: typeof WebsocketDecompressAdapter.createWebSocketFn
-  ): this {
+  withWSFn(createWSFn: WebSocketFactory): this {
     this.#createWSFn = createWSFn;
     return this;
   }
@@ -94,7 +93,17 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
    *
    * @param compression The compression algorithm to use for the connection.
    */
-  withCompression(compression: 'gzip' | 'none'): this {
+  withCompression(compression: 'gzip' | 'brotli' | 'none'): this {
+    if (compression === 'brotli') {
+      try {
+        new DecompressionStream('brotli' as CompressionFormat);
+      } catch (e) {
+        throw new TypeError(
+          `Brotli compression is not supported by the runtime. Please choose a different compression method.`,
+          { cause: e }
+        );
+      }
+    }
     this.#compression = compression;
     return this;
   }

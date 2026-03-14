@@ -38,10 +38,6 @@ import {
   type TableUpdate as CacheTableUpdate,
 } from './table_cache.ts';
 import {
-  WebsocketDecompressAdapter,
-  type WebsocketAdapter,
-} from './websocket_decompress_adapter.ts';
-import {
   SubscriptionBuilderImpl,
   SubscriptionHandleImpl,
   SubscriptionManager,
@@ -60,6 +56,7 @@ import type { ProceduresView } from './procedures.ts';
 import type { Values } from '../lib/type_util.ts';
 import type { TransactionUpdate } from './client_api/types.ts';
 import { InternalError, SenderError } from '../lib/errors.ts';
+import type { WebSocketAdapter, WebSocketFactory } from './ws.ts';
 
 export {
   DbConnectionBuilder,
@@ -89,8 +86,8 @@ export type DbConnectionConfig<RemoteModule extends UntypedRemoteModule> = {
   identity?: Identity;
   token?: string;
   emitter: EventEmitter<ConnectionEvent>;
-  createWSFn: typeof WebsocketDecompressAdapter.createWebSocketFn;
-  compression: 'gzip' | 'none';
+  createWSFn: WebSocketFactory;
+  compression: 'gzip' | 'brotli' | 'none';
   lightMode: boolean;
   confirmedReads?: boolean;
   remoteModule: RemoteModule;
@@ -148,7 +145,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #eventId = 0;
   #emitter: EventEmitter<ConnectionEvent>;
   #messageQueue = Promise.resolve();
-  #outboundQueue: Uint8Array[] = [];
+  #outboundQueue: Uint8Array<ArrayBuffer>[] = [];
   #subscriptionManager = new SubscriptionManager<RemoteModule>();
   #remoteModule: RemoteModule;
   #reducerCallbacks = new Map<
@@ -173,8 +170,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   // private fields.
   // We use them in testing.
   private clientCache: ClientCache<RemoteModule>;
-  private ws?: WebsocketAdapter;
-  private wsPromise: Promise<WebsocketAdapter | undefined>;
+  private ws?: WebSocketAdapter;
+  private wsPromise: Promise<WebSocketAdapter | undefined>;
 
   constructor({
     uri,
@@ -541,7 +538,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     return this.#mergeTableUpdates(updates);
   }
 
-  #flushOutboundQueue(wsResolved: WebsocketAdapter): void {
+  #flushOutboundQueue(wsResolved: WebSocketAdapter): void {
     const pending = this.#outboundQueue.splice(0);
     for (const message of pending) {
       wsResolved.send(message);
