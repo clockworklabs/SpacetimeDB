@@ -94,15 +94,13 @@ impl Lang for Kotlin {
         if has_btree_index {
             writeln!(out, "import {SDK_PKG}.BTreeIndex");
         }
-        writeln!(out, "import {SDK_PKG}.ClientCache");
         writeln!(out, "import {SDK_PKG}.Col");
         writeln!(out, "import {SDK_PKG}.DbConnection");
-        writeln!(out, "import {SDK_PKG}.InternalSpacetimeApi");
         writeln!(out, "import {SDK_PKG}.EventContext");
+        writeln!(out, "import {SDK_PKG}.InternalSpacetimeApi");
         if has_ix_cols {
             writeln!(out, "import {SDK_PKG}.IxCol");
         }
-        writeln!(out, "import {SDK_PKG}.protocol.QueryResult");
         if is_event {
             writeln!(out, "import {SDK_PKG}.RemoteEventTable");
         } else if table.primary_key.is_some() {
@@ -114,7 +112,7 @@ impl Lang for Kotlin {
         if has_unique_index {
             writeln!(out, "import {SDK_PKG}.UniqueIndex");
         }
-        writeln!(out, "import {SDK_PKG}.bsatn.BsatnReader");
+        writeln!(out, "import {SDK_PKG}.protocol.QueryResult");
         gen_and_print_imports(module, out, product_def.element_types(), &[]);
 
         writeln!(out);
@@ -1246,7 +1244,6 @@ fn generate_remote_tables_file(module: &ModuleDef, options: &CodegenOptions) -> 
     writeln!(out, "import {SDK_PKG}.ClientCache");
     writeln!(out, "import {SDK_PKG}.DbConnection");
     writeln!(out, "import {SDK_PKG}.ModuleTables");
-    writeln!(out, "import {SDK_PKG}.TableCache");
     writeln!(out);
 
     writeln!(out, "class RemoteTables internal constructor(");
@@ -1494,12 +1491,16 @@ fn generate_remote_procedures_file(module: &ModuleDef, options: &CodegenOptions)
     // Collect all imports needed by procedure params and return types
     let mut imports = BTreeSet::new();
     imports.insert(format!("{SDK_PKG}.DbConnection"));
-    imports.insert(format!("{SDK_PKG}.EventContext"));
     imports.insert(format!("{SDK_PKG}.ModuleProcedures"));
-    imports.insert(format!("{SDK_PKG}.bsatn.BsatnWriter"));
-    imports.insert(format!("{SDK_PKG}.bsatn.BsatnReader"));
-    imports.insert(format!("{SDK_PKG}.protocol.ServerMessage"));
-    imports.insert(format!("{SDK_PKG}.protocol.ProcedureStatus"));
+
+    let has_procedures = iter_procedures(module, options.visibility).next().is_some();
+    if has_procedures {
+        imports.insert(format!("{SDK_PKG}.EventContext"));
+        imports.insert(format!("{SDK_PKG}.bsatn.BsatnWriter"));
+        imports.insert(format!("{SDK_PKG}.bsatn.BsatnReader"));
+        imports.insert(format!("{SDK_PKG}.protocol.ServerMessage"));
+        imports.insert(format!("{SDK_PKG}.protocol.ProcedureStatus"));
+    }
 
     for procedure in iter_procedures(module, options.visibility) {
         for (_, ty) in procedure.params_for_generate.elements.iter() {
