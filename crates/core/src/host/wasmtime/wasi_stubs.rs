@@ -1,28 +1,35 @@
 //! WASI Preview 1 stub implementations for languages that compile to `wasip1`.
 //!
-//! Languages like Go (used for the Go SDK) compile to `wasip1`, which requires
-//! WASI imports from `wasi_snapshot_preview1`. SpacetimeDB does not provide a full
-//! WASI implementation, so we provide minimal stubs that allow the module to run.
+//! Languages like Go, C#, and C++ compile to `wasip1`, which requires WASI imports
+//! from `wasi_snapshot_preview1`. SpacetimeDB does not provide a full WASI
+//! implementation, so we provide minimal stubs that allow the module to run.
 //!
-//! The C++ SDK handles this differently by embedding WASI shims in the compiled module
-//! (see `crates/bindings-cpp/src/abi/wasi_shims.cpp`). Go uses `//go:wasmimport`
-//! for WASI functions which must be satisfied by the host.
+//! These stubs are a superset of everything needed by Go, C#/.NET (Mono), and C++
+//! (Emscripten). When a module embeds its own WASI shims (as the C# and C++ SDKs
+//! currently do), the module-side definitions take precedence over host stubs.
 
 use super::wasm_instance_env::WasmInstanceEnv;
 use super::{Mem, MemView};
 use wasmtime::{Caller, Linker};
 
 const WASI_MODULE: &str = "wasi_snapshot_preview1";
+const ENV_MODULE: &str = "env";
 
 // WASI errno codes
 const ERRNO_SUCCESS: i32 = 0;
 const ERRNO_BADF: i32 = 8;
 const ERRNO_NOSYS: i32 = 52;
 
+// The dummy executable name provided via args_get/args_sizes_get.
+// Mono runtime crashes without argv[0].
+const EXECUTABLE_NAME: &[u8] = b"stdb.wasm\0";
+
 pub(super) fn link_wasi_stubs(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::Result<()> {
+    // =========================================================================
+    // fd_write — redirect stdout/stderr to host logger
+    // =========================================================================
+
     // fd_write(fd: i32, iovs_ptr: i32, iovs_len: i32, nwritten_ptr: i32) -> errno
-    //
-    // Redirect stdout/stderr writes to the host logger.
     linker.func_wrap(
         WASI_MODULE,
         "fd_write",
@@ -73,14 +80,25 @@ pub(super) fn link_wasi_stubs(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::R
         },
     )?;
 
+    // =========================================================================
+    // proc_exit — trap to cleanly abort execution
+    // =========================================================================
+
     // proc_exit(code: i32) -> !
+    //
+    // Trap to cleanly abort WASM execution. This is better than a no-op because
+    // it prevents the module from continuing in an undefined state after exit.
     linker.func_wrap(
         WASI_MODULE,
         "proc_exit",
-        |_caller: Caller<'_, WasmInstanceEnv>, _code: i32| {
-            // No-op. Only called on fatal errors.
+        |_caller: Caller<'_, WasmInstanceEnv>, code: i32| -> anyhow::Result<()> {
+            anyhow::bail!("proc_exit called with code {code}")
         },
     )?;
+
+    // =========================================================================
+    // poll_oneoff — pretend all subscriptions fired
+    // =========================================================================
 
     // poll_oneoff(in_ptr: i32, out_ptr: i32, nsubscriptions: i32, nevents_ptr: i32) -> errno
     linker.func_wrap(
@@ -101,6 +119,10 @@ pub(super) fn link_wasi_stubs(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::R
             ERRNO_SUCCESS
         },
     )?;
+
+    // =========================================================================
+    // Clock functions
+    // =========================================================================
 
     // clock_time_get(id: i32, precision: i64, time_ptr: i32) -> errno
     //
@@ -125,6 +147,28 @@ pub(super) fn link_wasi_stubs(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::R
         },
     )?;
 
+    // clock_res_get(id: i32, resolution_ptr: i32) -> errno
+    //
+    // Returns the resolution (precision) of a clock. Both C# and C++ need this.
+    // We return 1 nanosecond as the resolution.
+    linker.func_wrap(
+        WASI_MODULE,
+        "clock_res_get",
+        |mut caller: Caller<'_, WasmInstanceEnv>, _id: i32, resolution_ptr: i32| -> i32 {
+            if let Some(mem) = get_memory(&mut caller) {
+                let (mem_view, _) = mem.view_and_store_mut(&mut caller);
+                if let Ok(dest) = mem_view.deref_slice_mut(resolution_ptr as u32, 8) {
+                    dest.copy_from_slice(&1u64.to_le_bytes());
+                }
+            }
+            ERRNO_SUCCESS
+        },
+    )?;
+
+    // =========================================================================
+    // args — provide argv[0] = "stdb.wasm" (Mono crashes without it)
+    // =========================================================================
+
     // args_sizes_get(argc_ptr: i32, argv_buf_size_ptr: i32) -> errno
     linker.func_wrap(
         WASI_MODULE,
@@ -132,11 +176,13 @@ pub(super) fn link_wasi_stubs(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::R
         |mut caller: Caller<'_, WasmInstanceEnv>, argc_ptr: i32, argv_buf_size_ptr: i32| -> i32 {
             if let Some(mem) = get_memory(&mut caller) {
                 let (mem_view, _) = mem.view_and_store_mut(&mut caller);
+                // argc = 1
                 if let Ok(dest) = mem_view.deref_slice_mut(argc_ptr as u32, 4) {
-                    dest.copy_from_slice(&0u32.to_le_bytes());
+                    dest.copy_from_slice(&1u32.to_le_bytes());
                 }
+                // argv_buf_size = length of "stdb.wasm\0"
                 if let Ok(dest) = mem_view.deref_slice_mut(argv_buf_size_ptr as u32, 4) {
-                    dest.copy_from_slice(&0u32.to_le_bytes());
+                    dest.copy_from_slice(&(EXECUTABLE_NAME.len() as u32).to_le_bytes());
                 }
             }
             ERRNO_SUCCESS
@@ -144,15 +190,32 @@ pub(super) fn link_wasi_stubs(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::R
     )?;
 
     // args_get(argv_ptr: i32, argv_buf_ptr: i32) -> errno
+    //
+    // Write a pointer to the buffer in argv[0], then copy "stdb.wasm\0" into argv_buf.
     linker.func_wrap(
         WASI_MODULE,
         "args_get",
-        |_caller: Caller<'_, WasmInstanceEnv>, _argv_ptr: i32, _argv_buf_ptr: i32| -> i32 { ERRNO_SUCCESS },
+        |mut caller: Caller<'_, WasmInstanceEnv>, argv_ptr: i32, argv_buf_ptr: i32| -> i32 {
+            if let Some(mem) = get_memory(&mut caller) {
+                let (mem_view, _) = mem.view_and_store_mut(&mut caller);
+                // argv[0] = argv_buf_ptr
+                if let Ok(dest) = mem_view.deref_slice_mut(argv_ptr as u32, 4) {
+                    dest.copy_from_slice(&(argv_buf_ptr as u32).to_le_bytes());
+                }
+                // Copy "stdb.wasm\0" into argv_buf
+                if let Ok(dest) = mem_view.deref_slice_mut(argv_buf_ptr as u32, EXECUTABLE_NAME.len() as u32) {
+                    dest.copy_from_slice(EXECUTABLE_NAME);
+                }
+            }
+            ERRNO_SUCCESS
+        },
     )?;
 
+    // =========================================================================
+    // random_get — fill buffer with pseudo-random bytes
+    // =========================================================================
+
     // random_get(buf_ptr: i32, buf_len: i32) -> errno
-    //
-    // Fill buffer with random bytes using getrandom (available via std).
     linker.func_wrap(
         WASI_MODULE,
         "random_get",
@@ -177,7 +240,9 @@ pub(super) fn link_wasi_stubs(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::R
         },
     )?;
 
-    // Additional stubs that some WASI-targeting compilers may need.
+    // =========================================================================
+    // Environment stubs
+    // =========================================================================
 
     linker.func_wrap(
         WASI_MODULE,
@@ -201,6 +266,23 @@ pub(super) fn link_wasi_stubs(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::R
         "environ_get",
         |_caller: Caller<'_, WasmInstanceEnv>, _environ_ptr: i32, _environ_buf_ptr: i32| -> i32 { ERRNO_SUCCESS },
     )?;
+
+    // =========================================================================
+    // Scheduler
+    // =========================================================================
+
+    // sched_yield() -> errno
+    //
+    // Yield the processor. Standard Go's WASM runtime calls this during goroutine scheduling.
+    linker.func_wrap(
+        WASI_MODULE,
+        "sched_yield",
+        |_caller: Caller<'_, WasmInstanceEnv>| -> i32 { ERRNO_SUCCESS },
+    )?;
+
+    // =========================================================================
+    // File descriptor stubs
+    // =========================================================================
 
     linker.func_wrap(WASI_MODULE, "fd_close", |_caller: Caller<'_, WasmInstanceEnv>, _fd: i32| -> i32 {
         ERRNO_BADF
@@ -228,6 +310,13 @@ pub(super) fn link_wasi_stubs(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::R
         |_caller: Caller<'_, WasmInstanceEnv>, _fd: i32, _stat_ptr: i32| -> i32 { ERRNO_BADF },
     )?;
 
+    // fd_fdstat_set_flags(fd: i32, flags: i32) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "fd_fdstat_set_flags",
+        |_caller: Caller<'_, WasmInstanceEnv>, _fd: i32, _flags: i32| -> i32 { ERRNO_NOSYS },
+    )?;
+
     linker.func_wrap(
         WASI_MODULE,
         "fd_prestat_get",
@@ -240,22 +329,315 @@ pub(super) fn link_wasi_stubs(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::R
         |_caller: Caller<'_, WasmInstanceEnv>, _fd: i32, _path_ptr: i32, _path_len: i32| -> i32 { ERRNO_BADF },
     )?;
 
-    // sched_yield() -> errno
-    //
-    // Yield the processor. Standard Go's WASM runtime calls this during goroutine scheduling.
+    // --- New fd stubs needed by C#/C++ (all return ERRNO_NOSYS) ---
+
+    // fd_advise(fd, offset: i64, len: i64, advice) -> errno
     linker.func_wrap(
         WASI_MODULE,
-        "sched_yield",
-        |_caller: Caller<'_, WasmInstanceEnv>| -> i32 { ERRNO_SUCCESS },
+        "fd_advise",
+        |_caller: Caller<'_, WasmInstanceEnv>, _fd: i32, _offset: i64, _len: i64, _advice: i32| -> i32 {
+            ERRNO_NOSYS
+        },
     )?;
 
-    // fd_fdstat_set_flags(fd: i32, flags: i32) -> errno
-    //
-    // Set file descriptor flags. Standard Go's WASM runtime may call this during initialization.
+    // fd_allocate(fd, offset: i64, len: i64) -> errno
     linker.func_wrap(
         WASI_MODULE,
-        "fd_fdstat_set_flags",
-        |_caller: Caller<'_, WasmInstanceEnv>, _fd: i32, _flags: i32| -> i32 { ERRNO_NOSYS },
+        "fd_allocate",
+        |_caller: Caller<'_, WasmInstanceEnv>, _fd: i32, _offset: i64, _len: i64| -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // fd_datasync(fd) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "fd_datasync",
+        |_caller: Caller<'_, WasmInstanceEnv>, _fd: i32| -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // fd_fdstat_set_rights(fd, rights_base: i64, rights_inheriting: i64) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "fd_fdstat_set_rights",
+        |_caller: Caller<'_, WasmInstanceEnv>, _fd: i32, _rights_base: i64, _rights_inheriting: i64| -> i32 {
+            ERRNO_NOSYS
+        },
+    )?;
+
+    // fd_filestat_get(fd, stat_ptr) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "fd_filestat_get",
+        |_caller: Caller<'_, WasmInstanceEnv>, _fd: i32, _stat_ptr: i32| -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // fd_filestat_set_size(fd, size: i64) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "fd_filestat_set_size",
+        |_caller: Caller<'_, WasmInstanceEnv>, _fd: i32, _size: i64| -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // fd_filestat_set_times(fd, atim: i64, mtim: i64, fst_flags) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "fd_filestat_set_times",
+        |_caller: Caller<'_, WasmInstanceEnv>, _fd: i32, _atim: i64, _mtim: i64, _fst_flags: i32| -> i32 {
+            ERRNO_NOSYS
+        },
+    )?;
+
+    // fd_pread(fd, iovs_ptr, iovs_len, offset: i64, nread_ptr) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "fd_pread",
+        |_caller: Caller<'_, WasmInstanceEnv>,
+         _fd: i32,
+         _iovs_ptr: i32,
+         _iovs_len: i32,
+         _offset: i64,
+         _nread_ptr: i32|
+         -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // fd_pwrite(fd, iovs_ptr, iovs_len, offset: i64, nwritten_ptr) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "fd_pwrite",
+        |_caller: Caller<'_, WasmInstanceEnv>,
+         _fd: i32,
+         _iovs_ptr: i32,
+         _iovs_len: i32,
+         _offset: i64,
+         _nwritten_ptr: i32|
+         -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // fd_readdir(fd, buf_ptr, buf_len, cookie: i64, bufused_ptr) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "fd_readdir",
+        |_caller: Caller<'_, WasmInstanceEnv>,
+         _fd: i32,
+         _buf_ptr: i32,
+         _buf_len: i32,
+         _cookie: i64,
+         _bufused_ptr: i32|
+         -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // fd_renumber(from_fd, to_fd) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "fd_renumber",
+        |_caller: Caller<'_, WasmInstanceEnv>, _from_fd: i32, _to_fd: i32| -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // fd_sync(fd) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "fd_sync",
+        |_caller: Caller<'_, WasmInstanceEnv>, _fd: i32| -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // fd_tell(fd, offset_ptr) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "fd_tell",
+        |_caller: Caller<'_, WasmInstanceEnv>, _fd: i32, _offset_ptr: i32| -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // =========================================================================
+    // Path stubs (all return ERRNO_NOSYS)
+    // =========================================================================
+
+    // path_create_directory(fd, path_ptr, path_len) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "path_create_directory",
+        |_caller: Caller<'_, WasmInstanceEnv>, _fd: i32, _path_ptr: i32, _path_len: i32| -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // path_filestat_get(fd, flags, path_ptr, path_len, stat_ptr) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "path_filestat_get",
+        |_caller: Caller<'_, WasmInstanceEnv>,
+         _fd: i32,
+         _flags: i32,
+         _path_ptr: i32,
+         _path_len: i32,
+         _stat_ptr: i32|
+         -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // path_filestat_set_times(fd, flags, path_ptr, path_len, atim: i64, mtim: i64, fst_flags) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "path_filestat_set_times",
+        |_caller: Caller<'_, WasmInstanceEnv>,
+         _fd: i32,
+         _flags: i32,
+         _path_ptr: i32,
+         _path_len: i32,
+         _atim: i64,
+         _mtim: i64,
+         _fst_flags: i32|
+         -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // path_link(old_fd, old_flags, old_path_ptr, old_path_len, new_fd, new_path_ptr, new_path_len) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "path_link",
+        |_caller: Caller<'_, WasmInstanceEnv>,
+         _old_fd: i32,
+         _old_flags: i32,
+         _old_path_ptr: i32,
+         _old_path_len: i32,
+         _new_fd: i32,
+         _new_path_ptr: i32,
+         _new_path_len: i32|
+         -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // path_open(fd, dirflags, path_ptr, path_len, oflags, rights_base: i64, rights_inheriting: i64, fdflags, result_fd_ptr) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "path_open",
+        |_caller: Caller<'_, WasmInstanceEnv>,
+         _fd: i32,
+         _dirflags: i32,
+         _path_ptr: i32,
+         _path_len: i32,
+         _oflags: i32,
+         _rights_base: i64,
+         _rights_inheriting: i64,
+         _fdflags: i32,
+         _result_fd_ptr: i32|
+         -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // path_readlink(fd, path_ptr, path_len, buf_ptr, buf_len, bufused_ptr) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "path_readlink",
+        |_caller: Caller<'_, WasmInstanceEnv>,
+         _fd: i32,
+         _path_ptr: i32,
+         _path_len: i32,
+         _buf_ptr: i32,
+         _buf_len: i32,
+         _bufused_ptr: i32|
+         -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // path_remove_directory(fd, path_ptr, path_len) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "path_remove_directory",
+        |_caller: Caller<'_, WasmInstanceEnv>, _fd: i32, _path_ptr: i32, _path_len: i32| -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // path_rename(old_fd, old_path_ptr, old_path_len, new_fd, new_path_ptr, new_path_len) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "path_rename",
+        |_caller: Caller<'_, WasmInstanceEnv>,
+         _old_fd: i32,
+         _old_path_ptr: i32,
+         _old_path_len: i32,
+         _new_fd: i32,
+         _new_path_ptr: i32,
+         _new_path_len: i32|
+         -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // path_symlink(old_path_ptr, old_path_len, fd, new_path_ptr, new_path_len) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "path_symlink",
+        |_caller: Caller<'_, WasmInstanceEnv>,
+         _old_path_ptr: i32,
+         _old_path_len: i32,
+         _fd: i32,
+         _new_path_ptr: i32,
+         _new_path_len: i32|
+         -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // path_unlink_file(fd, path_ptr, path_len) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "path_unlink_file",
+        |_caller: Caller<'_, WasmInstanceEnv>, _fd: i32, _path_ptr: i32, _path_len: i32| -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // =========================================================================
+    // Socket stubs (all return ERRNO_NOSYS)
+    // =========================================================================
+
+    // sock_accept(fd, flags, result_fd_ptr) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "sock_accept",
+        |_caller: Caller<'_, WasmInstanceEnv>, _fd: i32, _flags: i32, _result_fd_ptr: i32| -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // sock_recv(fd, ri_data_ptr, ri_data_len, ri_flags, ro_datalen_ptr, ro_flags_ptr) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "sock_recv",
+        |_caller: Caller<'_, WasmInstanceEnv>,
+         _fd: i32,
+         _ri_data_ptr: i32,
+         _ri_data_len: i32,
+         _ri_flags: i32,
+         _ro_datalen_ptr: i32,
+         _ro_flags_ptr: i32|
+         -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // sock_send(fd, si_data_ptr, si_data_len, si_flags, so_datalen_ptr) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "sock_send",
+        |_caller: Caller<'_, WasmInstanceEnv>,
+         _fd: i32,
+         _si_data_ptr: i32,
+         _si_data_len: i32,
+         _si_flags: i32,
+         _so_datalen_ptr: i32|
+         -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // sock_shutdown(fd, how) -> errno
+    linker.func_wrap(
+        WASI_MODULE,
+        "sock_shutdown",
+        |_caller: Caller<'_, WasmInstanceEnv>, _fd: i32, _how: i32| -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // =========================================================================
+    // Non-WASI stubs under the "env" module
+    // =========================================================================
+
+    // sock_accept — rogue import from .NET/Mono that uses the "env" module
+    // instead of "wasi_snapshot_preview1".
+    // See: https://github.com/dotnet/runtime/blob/085ddb7f9b26f01ae1b6842db7eacb6b4042e031/src/mono/mono/component/mini-wasi-debugger.c#L12-L14
+    linker.func_wrap(
+        ENV_MODULE,
+        "sock_accept",
+        |_caller: Caller<'_, WasmInstanceEnv>, _fd: i32, _flags: i32, _result_fd_ptr: i32| -> i32 { ERRNO_NOSYS },
+    )?;
+
+    // emscripten_notify_memory_growth — Emscripten runtime callback invoked
+    // when linear memory grows. C++ modules built with Emscripten import this.
+    linker.func_wrap(
+        ENV_MODULE,
+        "emscripten_notify_memory_growth",
+        |_caller: Caller<'_, WasmInstanceEnv>, _memory_index: i32| {
+            // No-op — memory growth is handled by the Wasmtime runtime.
+        },
     )?;
 
     Ok(())
