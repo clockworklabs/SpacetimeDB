@@ -14,8 +14,8 @@ use crate::{
 use crate::{
     execution_context::ExecutionContext,
     system_tables::{
-        read_bytes_from_col, read_hash_from_col, read_identity_from_col, system_table_schema, ModuleKind, StClientRow,
-        StModuleFields, StModuleRow, StTableFields, ST_CLIENT_ID, ST_MODULE_ID, ST_TABLE_ID,
+        read_hash_from_col, read_identity_from_col, system_table_schema, StClientRow, StModuleFields, StModuleRow,
+        StTableFields, ST_CLIENT_ID, ST_MODULE_ID, ST_TABLE_ID,
     },
     traits::{
         DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, Program, RowTypeForTable, Tx, TxData, TxDatastore,
@@ -472,9 +472,17 @@ impl TxDatastore for Locking {
         self.iter_tx(tx, ST_MODULE_ID)?
             .next()
             .map(|row_ref| {
-                let hash = read_hash_from_col(row_ref, StModuleFields::ProgramHash)?;
-                let bytes = read_bytes_from_col(row_ref, StModuleFields::ProgramBytes)?;
-                Ok(Program { hash, bytes })
+                let StModuleRow {
+                    program_kind,
+                    program_hash,
+                    program_bytes,
+                    ..
+                } = row_ref.try_into()?;
+                Ok(Program {
+                    hash: program_hash,
+                    bytes: program_bytes,
+                    kind: program_kind,
+                })
             })
             .transpose()
     }
@@ -674,7 +682,7 @@ impl MutTxDatastore for Locking {
         tx.iter(ST_MODULE_ID)?.next().map(metadata_from_row).transpose()
     }
 
-    fn update_program(&self, tx: &mut Self::MutTx, program_kind: ModuleKind, program: Program) -> Result<()> {
+    fn update_program(&self, tx: &mut Self::MutTx, program: Program) -> Result<()> {
         let old = tx
             .iter(ST_MODULE_ID)?
             .next()
@@ -686,7 +694,7 @@ impl MutTxDatastore for Locking {
             .transpose()?;
         match old {
             Some((ptr, mut row)) => {
-                row.program_kind = program_kind;
+                row.program_kind = program.kind;
                 row.program_hash = program.hash;
                 row.program_bytes = program.bytes;
 

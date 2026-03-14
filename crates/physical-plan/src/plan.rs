@@ -575,6 +575,7 @@ impl PhysicalPlan {
                     rhs,
                     rhs_label,
                     rhs_index,
+                    rhs_prefix,
                     rhs_field,
                     unique,
                     lhs_field,
@@ -587,6 +588,7 @@ impl PhysicalPlan {
                     rhs,
                     rhs_label,
                     rhs_index,
+                    rhs_prefix,
                     rhs_field,
                     unique,
                     lhs_field,
@@ -1252,6 +1254,8 @@ pub struct IxJoin {
     pub rhs_label: Label,
     /// The index id
     pub rhs_index: IndexId,
+    /// Optional constant prefix values for multi-column index probes.
+    pub rhs_prefix: Vec<AlgebraicValue>,
     /// The index field
     pub rhs_field: ColId,
     /// Is the index a unique constraint index?
@@ -1498,7 +1502,7 @@ mod tests {
     ) -> TableOrViewSchema {
         TableOrViewSchema::from(Arc::new(TableSchema::new(
             table_id,
-            TableName::for_test(table_name),
+            TableName::new(Identifier::for_test(table_name)),
             None,
             columns
                 .iter()
