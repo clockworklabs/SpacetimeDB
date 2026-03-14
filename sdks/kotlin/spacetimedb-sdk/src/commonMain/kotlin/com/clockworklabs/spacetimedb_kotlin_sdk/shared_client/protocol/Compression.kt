@@ -17,6 +17,10 @@ public object Compression {
  * avoiding an unnecessary allocation.
  */
 public class DecompressedPayload(public val data: ByteArray, public val offset: Int = 0) {
+    init {
+        require(offset in 0..data.size) { "offset $offset out of bounds for data of size ${data.size}" }
+    }
+
     public val size: Int get() = data.size - offset
 }
 

@@ -3,6 +3,7 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.BsatnRowList
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.DecompressedPayload
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ProcedureStatus
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryRows
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ReducerOutcome
@@ -268,6 +269,43 @@ class ProtocolDecodeTest {
 
         assertFailsWith<IllegalStateException> {
             ProcedureStatus.decode(BsatnReader(writer.toByteArray()))
+        }
+    }
+
+    // ---- DecompressedPayload offset validation ----
+
+    @Test
+    fun decompressedPayloadValidOffset() {
+        val data = byteArrayOf(1, 2, 3, 4)
+        val payload = DecompressedPayload(data, 1)
+        assertEquals(3, payload.size)
+    }
+
+    @Test
+    fun decompressedPayloadZeroOffset() {
+        val data = byteArrayOf(1, 2, 3)
+        val payload = DecompressedPayload(data, 0)
+        assertEquals(3, payload.size)
+    }
+
+    @Test
+    fun decompressedPayloadOffsetAtEnd() {
+        val data = byteArrayOf(1, 2)
+        val payload = DecompressedPayload(data, 2)
+        assertEquals(0, payload.size)
+    }
+
+    @Test
+    fun decompressedPayloadNegativeOffsetRejects() {
+        assertFailsWith<IllegalArgumentException> {
+            DecompressedPayload(byteArrayOf(1, 2), -1)
+        }
+    }
+
+    @Test
+    fun decompressedPayloadOffsetBeyondSizeRejects() {
+        assertFailsWith<IllegalArgumentException> {
+            DecompressedPayload(byteArrayOf(1, 2), 3)
         }
     }
 }
