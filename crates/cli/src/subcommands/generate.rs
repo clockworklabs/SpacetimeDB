@@ -20,6 +20,7 @@ use crate::spacetime_config::{
     find_and_load_with_env, CommandConfig, CommandSchema, CommandSchemaBuilder, Key, LoadedConfig, SpacetimeConfig,
 };
 use crate::tasks::csharp::dotnet_format;
+use crate::tasks::kotlin::ktfmt;
 use crate::tasks::rust::rustfmt;
 use crate::util::{resolve_sibling_binary, y_or_n};
 use crate::Config;
@@ -715,9 +716,7 @@ impl Language {
         match self {
             Language::Rust => rustfmt(generated_files)?,
             Language::Csharp => dotnet_format(project_dir, generated_files)?,
-            Language::Kotlin => {
-                // TODO: implement formatting.
-            }
+            Language::Kotlin => ktfmt(generated_files)?,
             Language::TypeScript => {
                 // TODO: implement formatting.
             }

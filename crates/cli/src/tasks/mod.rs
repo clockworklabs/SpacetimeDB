@@ -60,4 +60,5 @@ pub fn build(
 pub mod cpp;
 pub mod csharp;
 pub mod javascript;
+pub mod kotlin;
 pub mod rust;
