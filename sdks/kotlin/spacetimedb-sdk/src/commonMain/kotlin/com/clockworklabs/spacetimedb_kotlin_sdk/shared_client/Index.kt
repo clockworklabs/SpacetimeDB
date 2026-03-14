@@ -6,6 +6,7 @@ import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.persistentHashMapOf
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toPersistentList
 
 /**
  * A client-side unique index backed by an atomic persistent map.
@@ -31,11 +32,11 @@ public class UniqueIndex<Row, Col>(
             _cache.update { it.remove(keyExtractor(row)) }
         }
         _cache.update {
-            var snapshot = it
+            val builder = it.builder()
             for (row in tableCache.iter()) {
-                snapshot = snapshot.put(keyExtractor(row), row)
+                builder[keyExtractor(row)] = row
             }
-            snapshot
+            builder.build()
         }
     }
 
@@ -71,13 +72,19 @@ public class BTreeIndex<Row, Col>(
                 if (updated.isEmpty()) current.remove(key) else current.put(key, updated)
             }
         }
-        _cache.update {
-            var snapshot = it
-            for (row in tableCache.iter()) {
-                val key = keyExtractor(row)
-                snapshot = snapshot.put(key, (snapshot[key] ?: persistentListOf()).add(row))
+        _cache.update { current ->
+            val groups = hashMapOf<Col, MutableList<Row>>()
+            for ((k, v) in current) {
+                groups[k] = v.toMutableList()
             }
-            snapshot
+            for (row in tableCache.iter()) {
+                groups.getOrPut(keyExtractor(row)) { mutableListOf() }.add(row)
+            }
+            val builder = persistentHashMapOf<Col, PersistentList<Row>>().builder()
+            for ((k, v) in groups) {
+                builder[k] = v.toPersistentList()
+            }
+            builder.build()
         }
     }
 
