@@ -6,6 +6,7 @@ use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use termcolor::{Buffer, Color, ColorChoice, ColorSpec, WriteColor};
 
 use crate::auto_migrate::formatter::ViewInfo;
+use crate::identifier::Identifier;
 
 use super::formatter::{
     AccessChangeInfo, Action, ColumnChange, ColumnChanges, ConstraintInfo, IndexInfo, MigrationFormatter, NewColumns,
@@ -226,6 +227,14 @@ impl MigrationFormatter for TermColorFormatter {
         }
 
         self.dedent();
+        self.write_line("")
+    }
+
+    fn format_remove_table(&mut self, table_name: &Identifier) -> io::Result<()> {
+        self.write_action_prefix(&Action::Removed)?;
+        self.buffer.write_all(b" table: ")?;
+        self.write_colored(table_name, Some(self.colors.table_name), true)?;
+        self.buffer.write_all(b"\n")?;
         self.write_line("")
     }
 
