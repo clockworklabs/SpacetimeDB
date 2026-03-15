@@ -2104,7 +2104,7 @@ class DbConnectionIntegrationTest {
         var callbackFired = false
         conn.callReducer("test", byteArrayOf(), "args", callback = { _ -> callbackFired = true })
         advanceUntilIdle()
-        assertEquals(1, conn.stats.reducerRequestTracker.getRequestsAwaitingResponse())
+        assertEquals(1, conn.stats.reducerRequestTracker.requestsAwaitingResponse)
 
         // Corrupt frame kills the connection
         rawTransport.sendRawToClient(byteArrayOf(0xFE.toByte()))
@@ -2366,11 +2366,11 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         val tracker = conn.stats.subscriptionRequestTracker
-        assertEquals(0, tracker.getSampleCount())
+        assertEquals(0, tracker.sampleCount)
 
         val handle = conn.subscribe(listOf("SELECT * FROM player"))
         // Request started but not yet finished
-        assertEquals(1, tracker.getRequestsAwaitingResponse())
+        assertEquals(1, tracker.requestsAwaitingResponse)
 
         transport.sendToClient(
             ServerMessage.SubscribeApplied(
@@ -2381,8 +2381,8 @@ class DbConnectionIntegrationTest {
         )
         advanceUntilIdle()
 
-        assertEquals(1, tracker.getSampleCount())
-        assertEquals(0, tracker.getRequestsAwaitingResponse())
+        assertEquals(1, tracker.sampleCount)
+        assertEquals(0, tracker.requestsAwaitingResponse)
         conn.disconnect()
     }
 
@@ -2394,11 +2394,11 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         val tracker = conn.stats.reducerRequestTracker
-        assertEquals(0, tracker.getSampleCount())
+        assertEquals(0, tracker.sampleCount)
 
         val requestId = conn.callReducer("add", byteArrayOf(), "args", callback = null)
         advanceUntilIdle()
-        assertEquals(1, tracker.getRequestsAwaitingResponse())
+        assertEquals(1, tracker.requestsAwaitingResponse)
 
         transport.sendToClient(
             ServerMessage.ReducerResultMsg(
@@ -2409,8 +2409,8 @@ class DbConnectionIntegrationTest {
         )
         advanceUntilIdle()
 
-        assertEquals(1, tracker.getSampleCount())
-        assertEquals(0, tracker.getRequestsAwaitingResponse())
+        assertEquals(1, tracker.sampleCount)
+        assertEquals(0, tracker.requestsAwaitingResponse)
         conn.disconnect()
     }
 
@@ -2422,11 +2422,11 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         val tracker = conn.stats.procedureRequestTracker
-        assertEquals(0, tracker.getSampleCount())
+        assertEquals(0, tracker.sampleCount)
 
         val requestId = conn.callProcedure("my_proc", byteArrayOf(), callback = null)
         advanceUntilIdle()
-        assertEquals(1, tracker.getRequestsAwaitingResponse())
+        assertEquals(1, tracker.requestsAwaitingResponse)
 
         transport.sendToClient(
             ServerMessage.ProcedureResultMsg(
@@ -2438,8 +2438,8 @@ class DbConnectionIntegrationTest {
         )
         advanceUntilIdle()
 
-        assertEquals(1, tracker.getSampleCount())
-        assertEquals(0, tracker.getRequestsAwaitingResponse())
+        assertEquals(1, tracker.sampleCount)
+        assertEquals(0, tracker.requestsAwaitingResponse)
         conn.disconnect()
     }
 
@@ -2451,11 +2451,11 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         val tracker = conn.stats.oneOffRequestTracker
-        assertEquals(0, tracker.getSampleCount())
+        assertEquals(0, tracker.sampleCount)
 
         val requestId = conn.oneOffQuery("SELECT 1") { _ -> }
         advanceUntilIdle()
-        assertEquals(1, tracker.getRequestsAwaitingResponse())
+        assertEquals(1, tracker.requestsAwaitingResponse)
 
         transport.sendToClient(
             ServerMessage.OneOffQueryResult(
@@ -2465,8 +2465,8 @@ class DbConnectionIntegrationTest {
         )
         advanceUntilIdle()
 
-        assertEquals(1, tracker.getSampleCount())
-        assertEquals(0, tracker.getRequestsAwaitingResponse())
+        assertEquals(1, tracker.sampleCount)
+        assertEquals(0, tracker.requestsAwaitingResponse)
         conn.disconnect()
     }
 
@@ -2479,7 +2479,7 @@ class DbConnectionIntegrationTest {
 
         val tracker = conn.stats.applyMessageTracker
         // InitialConnection is the first message processed
-        assertEquals(1, tracker.getSampleCount())
+        assertEquals(1, tracker.sampleCount)
 
         // Send a SubscribeApplied — second message
         val handle = conn.subscribe(listOf("SELECT * FROM player"))
@@ -2491,7 +2491,7 @@ class DbConnectionIntegrationTest {
             )
         )
         advanceUntilIdle()
-        assertEquals(2, tracker.getSampleCount())
+        assertEquals(2, tracker.sampleCount)
 
         // Send a ReducerResult — third message
         val reducerRequestId = conn.callReducer("add", byteArrayOf(), "args", callback = null)
@@ -2504,7 +2504,7 @@ class DbConnectionIntegrationTest {
             )
         )
         advanceUntilIdle()
-        assertEquals(3, tracker.getSampleCount())
+        assertEquals(3, tracker.sampleCount)
 
         conn.disconnect()
     }
@@ -2658,7 +2658,7 @@ class DbConnectionIntegrationTest {
         advanceUntilIdle()
 
         // Verify the reducer is pending
-        assertEquals(1, conn.stats.reducerRequestTracker.getRequestsAwaitingResponse())
+        assertEquals(1, conn.stats.reducerRequestTracker.requestsAwaitingResponse)
 
         // Disconnect before the server responds — simulates a "timeout" scenario
         conn.disconnect()
@@ -2689,7 +2689,7 @@ class DbConnectionIntegrationTest {
 
         // All IDs must be unique
         assertEquals(count, requestIds.size)
-        assertEquals(count, conn.stats.reducerRequestTracker.getRequestsAwaitingResponse())
+        assertEquals(count, conn.stats.reducerRequestTracker.requestsAwaitingResponse)
 
         // Respond to all in order
         for (id in requestIds) {
@@ -2703,8 +2703,8 @@ class DbConnectionIntegrationTest {
         }
         advanceUntilIdle()
 
-        assertEquals(0, conn.stats.reducerRequestTracker.getRequestsAwaitingResponse())
-        assertEquals(count, conn.stats.reducerRequestTracker.getSampleCount())
+        assertEquals(0, conn.stats.reducerRequestTracker.requestsAwaitingResponse)
+        assertEquals(count, conn.stats.reducerRequestTracker.sampleCount)
         conn.disconnect()
     }
 
@@ -2739,7 +2739,7 @@ class DbConnectionIntegrationTest {
         }
         advanceUntilIdle()
 
-        assertEquals(0, conn.stats.reducerRequestTracker.getRequestsAwaitingResponse())
+        assertEquals(0, conn.stats.reducerRequestTracker.requestsAwaitingResponse)
         conn.disconnect()
     }
 
@@ -2846,7 +2846,7 @@ class DbConnectionIntegrationTest {
         }
         advanceUntilIdle()
 
-        assertEquals(50, conn.stats.reducerRequestTracker.getRequestsAwaitingResponse())
+        assertEquals(50, conn.stats.reducerRequestTracker.requestsAwaitingResponse)
 
         conn.disconnect()
         advanceUntilIdle()

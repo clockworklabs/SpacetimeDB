@@ -372,8 +372,8 @@ class ConcurrencyStressTest {
             }
         }
 
-        assertEquals(totalOps, tracker.getSampleCount())
-        assertEquals(0, tracker.getRequestsAwaitingResponse())
+        assertEquals(totalOps, tracker.sampleCount)
+        assertEquals(0, tracker.requestsAwaitingResponse)
     }
 
     @Test
@@ -393,12 +393,11 @@ class ConcurrencyStressTest {
             }
         }
 
-        assertEquals(totalOps, tracker.getSampleCount())
+        assertEquals(totalOps, tracker.sampleCount)
         // Min must be 1ms (smallest sample), max must be OPS_PER_THREAD ms
-        val min = tracker.allTimeMin
-        val max = tracker.allTimeMax
-        assertTrue(min != null && min.duration == 1.milliseconds, "allTimeMin wrong: $min")
-        assertTrue(max != null && max.duration == OPS_PER_THREAD.milliseconds, "allTimeMax wrong: $max")
+        val result = tracker.allTimeMinMax
+        assertTrue(result != null && result.min.duration == 1.milliseconds, "allTimeMin wrong: ${result?.min}")
+        assertTrue(result != null && result.max.duration == OPS_PER_THREAD.milliseconds, "allTimeMax wrong: ${result?.max}")
     }
 
     // ---- Logger: concurrent level/handler read/write ----

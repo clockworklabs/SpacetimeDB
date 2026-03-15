@@ -22,25 +22,22 @@ public class NetworkRequestTracker internal constructor(
         private const val MAX_TRACKERS = 16
     }
 
-    public var allTimeMin: DurationSample? = null
-        get() = synchronized(this) { field }
-        private set
-    public var allTimeMax: DurationSample? = null
-        get() = synchronized(this) { field }
-        private set
+    private var allTimeMin: DurationSample? = null
+    private var allTimeMax: DurationSample? = null
 
     private val trackers = mutableMapOf<Int, WindowTracker>()
     private var totalSamples = 0
     private var nextRequestId = 0u
     private val requests = mutableMapOf<UInt, RequestEntry>()
 
-    public fun getAllTimeMinMax(): MinMaxResult? = synchronized(this) {
-        val min = allTimeMin ?: return null
-        val max = allTimeMax ?: return null
-        MinMaxResult(min, max)
-    }
+    public val allTimeMinMax: MinMaxResult?
+        get() = synchronized(this) {
+            val min = allTimeMin ?: return null
+            val max = allTimeMax ?: return null
+            MinMaxResult(min, max)
+        }
 
-    public fun getMinMaxTimes(lastSeconds: Int): MinMaxResult? = synchronized(this) {
+    public fun minMaxTimes(lastSeconds: Int): MinMaxResult? = synchronized(this) {
         val tracker = trackers.getOrPut(lastSeconds) {
             check(trackers.size < MAX_TRACKERS) {
                 "Cannot track more than $MAX_TRACKERS distinct window sizes"
@@ -50,9 +47,9 @@ public class NetworkRequestTracker internal constructor(
         tracker.getMinMax()
     }
 
-    public fun getSampleCount(): Int = synchronized(this) { totalSamples }
+    public val sampleCount: Int get() = synchronized(this) { totalSamples }
 
-    public fun getRequestsAwaitingResponse(): Int = synchronized(this) { requests.size }
+    public val requestsAwaitingResponse: Int get() = synchronized(this) { requests.size }
 
     internal fun startTrackingRequest(metadata: String = ""): UInt {
         synchronized(this) {

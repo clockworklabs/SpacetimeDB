@@ -31,28 +31,28 @@ class StatsTest {
     @Test
     fun sampleCountIncrementsAfterFinish() {
         val tracker = NetworkRequestTracker()
-        assertEquals(0, tracker.getSampleCount())
+        assertEquals(0, tracker.sampleCount)
 
         val id = tracker.startTrackingRequest()
         tracker.finishTrackingRequest(id)
 
-        assertEquals(1, tracker.getSampleCount())
+        assertEquals(1, tracker.sampleCount)
     }
 
     @Test
     fun requestsAwaitingResponseTracksActiveRequests() {
         val tracker = NetworkRequestTracker()
-        assertEquals(0, tracker.getRequestsAwaitingResponse())
+        assertEquals(0, tracker.requestsAwaitingResponse)
 
         val id1 = tracker.startTrackingRequest()
         val id2 = tracker.startTrackingRequest()
-        assertEquals(2, tracker.getRequestsAwaitingResponse())
+        assertEquals(2, tracker.requestsAwaitingResponse)
 
         tracker.finishTrackingRequest(id1)
-        assertEquals(1, tracker.getRequestsAwaitingResponse())
+        assertEquals(1, tracker.requestsAwaitingResponse)
 
         tracker.finishTrackingRequest(id2)
-        assertEquals(0, tracker.getRequestsAwaitingResponse())
+        assertEquals(0, tracker.requestsAwaitingResponse)
     }
 
     // ---- All-time min/max ----
@@ -60,26 +60,23 @@ class StatsTest {
     @Test
     fun allTimeMinMaxTracksExtremes() {
         val tracker = NetworkRequestTracker()
-        assertNull(tracker.allTimeMin)
-        assertNull(tracker.allTimeMax)
+        assertNull(tracker.allTimeMinMax)
 
         tracker.insertSample(100.milliseconds, "fast")
         tracker.insertSample(500.milliseconds, "slow")
         tracker.insertSample(200.milliseconds, "medium")
 
-        val min = assertNotNull(tracker.allTimeMin)
-        assertEquals(100.milliseconds, min.duration)
-        assertEquals("fast", min.metadata)
-
-        val max = assertNotNull(tracker.allTimeMax)
-        assertEquals(500.milliseconds, max.duration)
-        assertEquals("slow", max.metadata)
+        val result = assertNotNull(tracker.allTimeMinMax)
+        assertEquals(100.milliseconds, result.min.duration)
+        assertEquals("fast", result.min.metadata)
+        assertEquals(500.milliseconds, result.max.duration)
+        assertEquals("slow", result.max.metadata)
     }
 
     @Test
     fun getAllTimeMinMaxReturnsNullWhenEmpty() {
         val tracker = NetworkRequestTracker()
-        assertNull(tracker.getAllTimeMinMax())
+        assertNull(tracker.allTimeMinMax)
     }
 
     @Test
@@ -88,7 +85,7 @@ class StatsTest {
         tracker.insertSample(100.milliseconds, "fast")
         tracker.insertSample(500.milliseconds, "slow")
 
-        val result = assertNotNull(tracker.getAllTimeMinMax())
+        val result = assertNotNull(tracker.allTimeMinMax)
         assertEquals(100.milliseconds, result.min.duration)
         assertEquals("fast", result.min.metadata)
         assertEquals(500.milliseconds, result.max.duration)
@@ -100,7 +97,7 @@ class StatsTest {
         val tracker = NetworkRequestTracker()
         tracker.insertSample(250.milliseconds, "only")
 
-        val result = assertNotNull(tracker.getAllTimeMinMax())
+        val result = assertNotNull(tracker.allTimeMinMax)
         assertEquals(250.milliseconds, result.min.duration)
         assertEquals(250.milliseconds, result.max.duration)
     }
@@ -112,7 +109,7 @@ class StatsTest {
         val tracker = NetworkRequestTracker()
         tracker.insertSample(50.milliseconds)
         tracker.insertSample(100.milliseconds)
-        assertEquals(2, tracker.getSampleCount())
+        assertEquals(2, tracker.sampleCount)
     }
 
     // ---- Metadata passthrough ----
@@ -121,7 +118,7 @@ class StatsTest {
     fun metadataPassesThroughToSample() {
         val tracker = NetworkRequestTracker()
         tracker.insertSample(10.milliseconds, "reducer:AddPlayer")
-        assertEquals("reducer:AddPlayer", tracker.allTimeMin?.metadata)
+        assertEquals("reducer:AddPlayer", tracker.allTimeMinMax?.min?.metadata)
     }
 
     @Test
@@ -129,7 +126,7 @@ class StatsTest {
         val tracker = NetworkRequestTracker()
         val id = tracker.startTrackingRequest("original")
         tracker.finishTrackingRequest(id, "override")
-        assertEquals("override", tracker.allTimeMin?.metadata)
+        assertEquals("override", tracker.allTimeMinMax?.min?.metadata)
     }
 
     // ---- Windowed min/max ----
@@ -139,7 +136,7 @@ class StatsTest {
         val tracker = NetworkRequestTracker()
         tracker.insertSample(100.milliseconds)
         // The first window hasn't completed yet, so lastWindow is null
-        assertNull(tracker.getMinMaxTimes(10))
+        assertNull(tracker.minMaxTimes(10))
     }
 
     @Test
@@ -147,13 +144,13 @@ class StatsTest {
         val tracker = NetworkRequestTracker()
         // Just verify we can request multiple window sizes without error
         tracker.insertSample(100.milliseconds)
-        tracker.getMinMaxTimes(5)
-        tracker.getMinMaxTimes(10)
-        tracker.getMinMaxTimes(30)
+        tracker.minMaxTimes(5)
+        tracker.minMaxTimes(10)
+        tracker.minMaxTimes(30)
         // All return null initially (no completed window)
-        assertNull(tracker.getMinMaxTimes(5))
-        assertNull(tracker.getMinMaxTimes(10))
-        assertNull(tracker.getMinMaxTimes(30))
+        assertNull(tracker.minMaxTimes(5))
+        assertNull(tracker.minMaxTimes(10))
+        assertNull(tracker.minMaxTimes(30))
     }
 
     @Test
@@ -162,7 +159,7 @@ class StatsTest {
         val tracker = NetworkRequestTracker(ts)
 
         // Register a 1-second window tracker
-        assertNull(tracker.getMinMaxTimes(1))
+        assertNull(tracker.minMaxTimes(1))
 
         // Insert samples in the first window
         tracker.insertSample(100.milliseconds, "fast")
@@ -170,13 +167,13 @@ class StatsTest {
         tracker.insertSample(250.milliseconds, "mid")
 
         // Still within the first window — lastWindow has no data yet
-        assertNull(tracker.getMinMaxTimes(1))
+        assertNull(tracker.minMaxTimes(1))
 
         // Advance past the 1-second window boundary
         ts += 1.seconds
 
         // Now the previous window's data should be available
-        val result = assertNotNull(tracker.getMinMaxTimes(1))
+        val result = assertNotNull(tracker.minMaxTimes(1))
         assertEquals(100.milliseconds, result.min.duration)
         assertEquals("fast", result.min.metadata)
         assertEquals(500.milliseconds, result.max.duration)
@@ -189,7 +186,7 @@ class StatsTest {
         val tracker = NetworkRequestTracker(ts)
 
         // First window: samples 100ms and 500ms
-        tracker.getMinMaxTimes(1) // create tracker
+        tracker.minMaxTimes(1) // create tracker
         tracker.insertSample(100.milliseconds, "w1-fast")
         tracker.insertSample(500.milliseconds, "w1-slow")
 
@@ -201,14 +198,14 @@ class StatsTest {
         tracker.insertSample(300.milliseconds, "w2-slow")
 
         // getMinMax should return first window's data (100ms, 500ms)
-        val result1 = assertNotNull(tracker.getMinMaxTimes(1))
+        val result1 = assertNotNull(tracker.minMaxTimes(1))
         assertEquals(100.milliseconds, result1.min.duration)
         assertEquals(500.milliseconds, result1.max.duration)
 
         // Advance to third window — now second window becomes lastWindow
         ts += 1.seconds
 
-        val result2 = assertNotNull(tracker.getMinMaxTimes(1))
+        val result2 = assertNotNull(tracker.minMaxTimes(1))
         assertEquals(200.milliseconds, result2.min.duration)
         assertEquals("w2-fast", result2.min.metadata)
         assertEquals(300.milliseconds, result2.max.duration)
@@ -221,17 +218,17 @@ class StatsTest {
         val tracker = NetworkRequestTracker(ts)
 
         // Insert samples in the first window
-        tracker.getMinMaxTimes(1)
+        tracker.minMaxTimes(1)
         tracker.insertSample(100.milliseconds, "data")
 
         // Advance past one window — data visible
         ts += 1.seconds
-        assertNotNull(tracker.getMinMaxTimes(1))
+        assertNotNull(tracker.minMaxTimes(1))
 
         // Advance past two full windows with no new data —
         // the immediately preceding window is empty
         ts += 2.seconds
-        assertNull(tracker.getMinMaxTimes(1))
+        assertNull(tracker.minMaxTimes(1))
     }
 
     @Test
@@ -240,27 +237,27 @@ class StatsTest {
         val tracker = NetworkRequestTracker(ts)
 
         // First window: insert data
-        tracker.getMinMaxTimes(1)
+        tracker.minMaxTimes(1)
         tracker.insertSample(100.milliseconds)
 
         // Advance to second window, insert nothing
         ts += 1.seconds
 
         // First window data is available
-        assertNotNull(tracker.getMinMaxTimes(1))
+        assertNotNull(tracker.minMaxTimes(1))
 
         // Advance to third window — second window had no data
         ts += 1.seconds
 
         // lastWindow should be null since second window was empty
-        assertNull(tracker.getMinMaxTimes(1))
+        assertNull(tracker.minMaxTimes(1))
     }
 
     @Test
     fun windowMinMaxTracksExtremesWithinWindow() {
         val ts = TestTimeSource()
         val tracker = NetworkRequestTracker(ts)
-        tracker.getMinMaxTimes(1)
+        tracker.minMaxTimes(1)
 
         // Insert samples that get progressively larger and smaller
         tracker.insertSample(300.milliseconds, "mid")
@@ -270,7 +267,7 @@ class StatsTest {
 
         ts += 1.seconds
 
-        val result = assertNotNull(tracker.getMinMaxTimes(1))
+        val result = assertNotNull(tracker.minMaxTimes(1))
         assertEquals(100.milliseconds, result.min.duration)
         assertEquals("smallest", result.min.metadata)
         assertEquals(900.milliseconds, result.max.duration)
@@ -282,11 +279,11 @@ class StatsTest {
         val tracker = NetworkRequestTracker()
         // Register 16 distinct window sizes (the max)
         for (i in 1..16) {
-            tracker.getMinMaxTimes(i)
+            tracker.minMaxTimes(i)
         }
         // 17th should throw
         assertFailsWith<IllegalStateException> {
-            tracker.getMinMaxTimes(17)
+            tracker.minMaxTimes(17)
         }
     }
 
