@@ -2045,6 +2045,68 @@ class EdgeCaseTest {
     }
 
     @Test
+    fun disconnectClearsIndexesConsistentlyWithCache() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        val cache = createSampleCache()
+        conn.clientCache.register("sample", cache)
+
+        val uniqueIndex = UniqueIndex(cache) { it.id }
+        val btreeIndex = BTreeIndex(cache) { it.name }
+
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val handle = conn.subscribe(listOf("SELECT * FROM sample"))
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 1u,
+                querySetId = handle.querySetId,
+                rows = QueryRows(
+                    listOf(
+                        SingleTableRows(
+                            "sample",
+                            buildRowList(
+                                SampleRow(1, "Alice").encode(),
+                                SampleRow(2, "Bob").encode(),
+                            )
+                        )
+                    )
+                ),
+            )
+        )
+        advanceUntilIdle()
+        assertEquals(2, cache.count())
+        assertNotNull(uniqueIndex.find(1))
+        assertNotNull(uniqueIndex.find(2))
+        assertEquals(1, btreeIndex.filter("Alice").size)
+
+        // Send a transaction inserting a new row, then immediately disconnect.
+        // Before the fix, the receive loop could complete the CAS (adding the row
+        // and firing internal index listeners) but then disconnect() would clear
+        // _rows before the indexes were also cleared — leaving stale index entries.
+        transport.sendToClient(
+            transactionUpdateMsg(
+                handle.querySetId,
+                "sample",
+                inserts = buildRowList(SampleRow(3, "Charlie").encode()),
+            )
+        )
+        conn.disconnect()
+        advanceUntilIdle()
+
+        // After disconnect, cache and indexes must be consistent:
+        // either both have the row or neither does.
+        assertEquals(0, cache.count(), "Cache should be cleared after disconnect")
+        assertNull(uniqueIndex.find(1), "UniqueIndex should be cleared after disconnect")
+        assertNull(uniqueIndex.find(2), "UniqueIndex should be cleared after disconnect")
+        assertNull(uniqueIndex.find(3), "UniqueIndex should not have stale entries after disconnect")
+        assertTrue(btreeIndex.filter("Alice").isEmpty(), "BTreeIndex should be cleared after disconnect")
+        assertTrue(btreeIndex.filter("Bob").isEmpty(), "BTreeIndex should be cleared after disconnect")
+        assertTrue(btreeIndex.filter("Charlie").isEmpty(), "BTreeIndex should not have stale entries after disconnect")
+    }
+
+    @Test
     fun serverCloseFollowedByClientDisconnectDoesNotDoubleFailPending() = runTest {
         val transport = FakeTransport()
         var disconnectCount = 0

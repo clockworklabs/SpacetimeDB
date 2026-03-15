@@ -71,13 +71,45 @@ public enum class CompressionMode(internal val wireValue: String) {
 }
 
 /**
- * Connection lifecycle state (matches C#'s isClosing/connectionClosed pattern as a single enum).
+ * Connection lifecycle state machine.
+ *
+ * Each variant owns the resources created in that phase.
+ * [Connected] carries the coroutine jobs and exposes [Connected.shutdown]
+ * to cancel/join them before the cache is cleared — preventing the
+ * index-vs-_rows inconsistency that occurs when a CAS loop is still
+ * in flight.
+ *
+ * ```
+ * Disconnected ──▶ Connecting ──▶ Connected ──▶ Closed
+ *                       │                          ▲
+ *                       └──────────────────────────┘
+ * ```
  */
-public enum class ConnectionState {
-    DISCONNECTED,
-    CONNECTING,
-    CONNECTED,
-    CLOSED,
+public sealed interface ConnectionState {
+    public data object Disconnected : ConnectionState
+    public data object Connecting : ConnectionState
+
+    public class Connected internal constructor(
+        internal val receiveJob: Job,
+        internal val sendJob: Job,
+    ) : ConnectionState {
+        /**
+         * Cancel and await the active connection's coroutines.
+         * When called from within the receive loop (e.g. SubscriptionError
+         * with null requestId triggers disconnect()), [callerJob] matches
+         * [receiveJob] and both joins are skipped to avoid deadlock.
+         */
+        internal suspend fun shutdown(callerJob: Job?) {
+            receiveJob.cancel()
+            sendJob.cancel()
+            if (callerJob != receiveJob) {
+                receiveJob.join()
+                sendJob.join()
+            }
+        }
+    }
+
+    public data object Closed : ConnectionState
 }
 
 /**
@@ -133,11 +165,10 @@ public open class DbConnection internal constructor(
         get() = _token.value
         private set(value) { _token.value = value }
 
-    private val _state = atomic(ConnectionState.DISCONNECTED)
-    public override val isActive: Boolean get() = _state.value == ConnectionState.CONNECTED
+    private val _state = atomic<ConnectionState>(ConnectionState.Disconnected)
+    public override val isActive: Boolean get() = _state.value is ConnectionState.Connected
 
     private val sendChannel = Channel<ClientMessage>(Channel.UNLIMITED)
-    private val _sendJob = atomic<Job?>(null)
     private val _nextQuerySetId = atomic(0)
     private val subscriptions = atomic(persistentHashMapOf<UInt, SubscriptionHandle>())
     private val reducerCallbacks =
@@ -148,7 +179,6 @@ public open class DbConnection internal constructor(
     private val oneOffQueryCallbacks =
         atomic(persistentHashMapOf<UInt, (ServerMessage.OneOffQueryResult) -> Unit>())
     private val querySetIdToRequestId = atomic(persistentHashMapOf<UInt, UInt>())
-    private val _receiveJob = atomic<Job?>(null)
     private val _eventId = atomic(0L)
     private val _onConnectCallbacks = onConnectCallbacks.toList()
     private val _onDisconnectCallbacks = atomic(onDisconnectCallbacks.toPersistentList())
@@ -201,39 +231,41 @@ public open class DbConnection internal constructor(
      * Called internally by [Builder.build]. Not intended for direct use.
      *
      * If the transport fails to connect, [onConnectError] callbacks are fired
-     * and the connection transitions to [ConnectionState.CLOSED].
+     * and the connection transitions to [ConnectionState.Closed].
      * No exception is thrown — errors are reported via callbacks
      * (matching C# and TS SDK behavior).
      */
     internal suspend fun connect() {
-        check(_state.value != ConnectionState.CLOSED) {
-            "Connection is closed. Create a new DbConnection to reconnect."
-        }
-        check(_state.compareAndSet(ConnectionState.DISCONNECTED, ConnectionState.CONNECTING)) {
+        val disconnected = _state.value as? ConnectionState.Disconnected
+            ?: error(
+                if (_state.value is ConnectionState.Closed)
+                    "Connection is closed. Create a new DbConnection to reconnect."
+                else
+                    "connect() called in invalid state: ${_state.value}"
+            )
+        check(_state.compareAndSet(disconnected, ConnectionState.Connecting)) {
             "connect() called in invalid state: ${_state.value}"
         }
         Logger.info { "Connecting to SpacetimeDB..." }
         try {
             transport.connect()
         } catch (e: Exception) {
-            _state.value = ConnectionState.CLOSED
+            _state.value = ConnectionState.Closed
             httpClient.close()
             scope.cancel()
             for (cb in _onConnectErrorCallbacks.value) runUserCallback { cb(this, e) }
             return
         }
 
-        _state.value = ConnectionState.CONNECTED
-
         // Start sender coroutine — drains any buffered messages in FIFO order
-        _sendJob.value = scope.launch {
+        val sendJob = scope.launch {
             for (msg in sendChannel) {
                 transport.send(msg)
             }
         }
 
         // Start receive loop
-        _receiveJob.value = scope.launch {
+        val receiveJob = scope.launch {
             try {
                 transport.incoming().collect { message ->
                     val applyStart = kotlin.time.TimeSource.Monotonic.markNow()
@@ -241,7 +273,7 @@ public open class DbConnection internal constructor(
                     stats.applyMessageTracker.insertSample(applyStart.elapsedNow())
                 }
                 // Normal completion — server closed the connection
-                _state.value = ConnectionState.CLOSED
+                _state.value = ConnectionState.Closed
                 sendChannel.close()
                 failPendingOperations()
                 val cbs = _onDisconnectCallbacks.getAndSet(persistentListOf())
@@ -249,7 +281,7 @@ public open class DbConnection internal constructor(
             } catch (e: Exception) {
                 currentCoroutineContext().ensureActive()
                 Logger.error { "Connection error: ${e.message}" }
-                _state.value = ConnectionState.CLOSED
+                _state.value = ConnectionState.Closed
                 sendChannel.close()
                 failPendingOperations()
                 val cbs = _onDisconnectCallbacks.getAndSet(persistentListOf())
@@ -263,6 +295,8 @@ public open class DbConnection internal constructor(
                 }
             }
         }
+
+        _state.value = ConnectionState.Connected(receiveJob, sendJob)
     }
 
     /**
@@ -273,8 +307,8 @@ public open class DbConnection internal constructor(
      *               error-driven disconnects from graceful ones.
      */
     public override suspend fun disconnect(reason: Throwable?) {
-        val prev = _state.getAndSet(ConnectionState.CLOSED)
-        if (prev != ConnectionState.CONNECTED && prev != ConnectionState.CONNECTING) return
+        val prev = _state.getAndSet(ConnectionState.Closed)
+        if (prev is ConnectionState.Disconnected || prev is ConnectionState.Closed) return
         Logger.info { "Disconnecting from SpacetimeDB" }
         // Close the send channel FIRST so concurrent callReducer/oneOffQuery/etc.
         // calls fail immediately instead of enqueuing messages that will never
@@ -282,18 +316,13 @@ public open class DbConnection internal constructor(
         // and the channel close that previously lived in the receive job's finally block.
         // (Double-close is safe for Channels — it's a no-op.)
         sendChannel.close()
-        val receiveJob = _receiveJob.getAndSet(null)
-        val sendJob = _sendJob.getAndSet(null)
-        receiveJob?.cancel()
-        sendJob?.cancel()
+        if (prev is ConnectionState.Connected) {
+            prev.shutdown(currentCoroutineContext()[Job])
+        }
         failPendingOperations()
         clientCache.clear()
         val cbs = _onDisconnectCallbacks.getAndSet(persistentListOf())
         for (cb in cbs) runUserCallback { cb(this@DbConnection, reason) }
-        // Wait for the finally block to finish resource cleanup before returning,
-        // so callers can rely on resources being released when disconnect() completes.
-        receiveJob?.join()
-        sendJob?.join()
         scope.cancel()
     }
 
@@ -503,10 +532,8 @@ public open class DbConnection internal constructor(
     // --- Internal ---
 
     private fun sendMessage(message: ClientMessage) {
-        val result = sendChannel.trySend(message)
-        if (result.isClosed) {
-            throw IllegalStateException("Connection is closed; cannot send message: $message")
-        }
+        check(_state.value is ConnectionState.Connected) { "Connection is not active" }
+        sendChannel.trySend(message)
     }
 
     private suspend fun processMessage(message: ServerMessage) {
