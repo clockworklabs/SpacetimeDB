@@ -36,8 +36,13 @@ import { type UntypedSchemaDef } from '../lib/schema';
 import { type RowType, type Table, type TableMethods } from '../lib/table';
 import { hasOwn } from '../lib/util';
 import { type AnonymousViewCtx, type ViewCtx } from './views';
-import { isRowTypedQuery, makeQueryBuilder, toSql } from './query';
-import type { DbView } from './db_view';
+import {
+  isRowTypedQuery,
+  makeQueryBuilder,
+  toSql,
+  type QueryBuilder,
+} from './query';
+import type { DbView, NonEventSchema } from './db_view';
 import { getErrorConstructor, SenderError } from './errors';
 import { Range, type Bound } from './range';
 import { makeRandom, type Random } from './rng';
@@ -273,6 +278,9 @@ export const makeHooks = (schema: SchemaInner): ModuleHooks =>
 class ModuleHooksImpl implements ModuleHooks {
   #schema: SchemaInner;
   #dbView_: DbView<any> | undefined;
+  #viewSchema_: NonEventSchema<any> | undefined;
+  #viewDbView_: DbView<any> | undefined;
+  #viewFrom_: QueryBuilder<NonEventSchema<any>> | undefined;
   #reducerArgsDeserializers;
   /** Cache the `ReducerCtx` object to avoid allocating anew for ever reducer call. */
   #reducerCtx_: InstanceType<typeof ReducerCtxImpl> | undefined;
@@ -293,6 +301,25 @@ class ModuleHooksImpl implements ModuleHooks {
         ])
       )
     ));
+  }
+
+  get #viewSchema() {
+    return (this.#viewSchema_ ??= withoutEventTables(this.#schema.schemaType));
+  }
+
+  get #viewDbView() {
+    return (this.#viewDbView_ ??= freeze(
+      Object.fromEntries(
+        Object.values(this.#viewSchema.tables).map(table => [
+          table.accessorName,
+          makeTableView(this.#schema.typespace, table.tableDef),
+        ])
+      )
+    ));
+  }
+
+  get #viewFrom() {
+    return (this.#viewFrom_ ??= makeQueryBuilder(this.#viewSchema));
   }
 
   get #reducerCtx() {
@@ -356,8 +383,8 @@ class ModuleHooksImpl implements ModuleHooks {
       // this is the non-readonly DbView, but the typing for the user will be
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
-      db: this.#dbView,
-      from: makeQueryBuilder(moduleCtx.schemaType),
+      db: this.#viewDbView,
+      from: this.#viewFrom,
     });
     const args = deserializeParams(new BinaryReader(argsBuf));
     const ret = callUserFunction(fn, ctx, args);
@@ -380,8 +407,8 @@ class ModuleHooksImpl implements ModuleHooks {
       // this is the non-readonly DbView, but the typing for the user will be
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
-      db: this.#dbView,
-      from: makeQueryBuilder(moduleCtx.schemaType),
+      db: this.#viewDbView,
+      from: this.#viewFrom,
     });
     const args = deserializeParams(new BinaryReader(argsBuf));
     const ret = callUserFunction(fn, ctx, args);
@@ -417,6 +444,18 @@ class ModuleHooksImpl implements ModuleHooks {
 
 const BINARY_WRITER = new BinaryWriter(0);
 const BINARY_READER = new BinaryReader(new Uint8Array());
+
+function withoutEventTables<SchemaDef extends UntypedSchemaDef>(
+  schema: SchemaDef
+): NonEventSchema<SchemaDef> {
+  return {
+    tables: Object.fromEntries(
+      Object.values(schema.tables)
+        .filter(table => !table.isEvent)
+        .map(table => [table.accessorName, table])
+    ) as NonEventSchema<SchemaDef>['tables'],
+  };
+}
 
 function makeTableView(
   typespace: Typespace,
