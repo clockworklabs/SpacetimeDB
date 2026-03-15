@@ -132,7 +132,7 @@ public open class DbConnection internal constructor(
     onConnectErrorCallbacks: List<(DbConnectionView, Throwable) -> Unit>,
     private val clientConnectionId: ConnectionId,
     public val stats: Stats,
-    private val moduleDescriptor: ModuleDescriptor?,
+    internal val moduleDescriptor: ModuleDescriptor?,
     private val callbackDispatcher: CoroutineDispatcher?,
 ) : DbConnectionView {
     public val clientCache: ClientCache = ClientCache()
@@ -961,6 +961,8 @@ public data class ModuleAccessors(
  */
 public interface ModuleDescriptor {
     public val cliVersion: String
+    /** Names of persistent (subscribable) tables. Event tables are excluded. */
+    public val subscribableTableNames: List<String>
     public fun registerTables(cache: ClientCache)
     public fun createAccessors(conn: DbConnection): ModuleAccessors
     public fun handleReducerEvent(conn: DbConnection, ctx: EventContext.Reducer<*>)

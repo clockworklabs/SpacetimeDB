@@ -56,8 +56,9 @@ class EdgeCaseTest {
         onConnect: ((DbConnectionView, Identity, String) -> Unit)? = null,
         onDisconnect: ((DbConnectionView, Throwable?) -> Unit)? = null,
         onConnectError: ((DbConnectionView, Throwable) -> Unit)? = null,
+        moduleDescriptor: ModuleDescriptor? = null,
     ): DbConnection {
-        val conn = createTestConnection(transport, onConnect, onDisconnect, onConnectError)
+        val conn = createTestConnection(transport, onConnect, onDisconnect, onConnectError, moduleDescriptor = moduleDescriptor)
         conn.connect()
         return conn
     }
@@ -68,6 +69,7 @@ class EdgeCaseTest {
         onDisconnect: ((DbConnectionView, Throwable?) -> Unit)? = null,
         onConnectError: ((DbConnectionView, Throwable) -> Unit)? = null,
         exceptionHandler: CoroutineExceptionHandler? = null,
+        moduleDescriptor: ModuleDescriptor? = null,
     ): DbConnection {
         val context = SupervisorJob() + StandardTestDispatcher(testScheduler) +
                 (exceptionHandler ?: CoroutineExceptionHandler { _, _ -> })
@@ -80,7 +82,7 @@ class EdgeCaseTest {
             onConnectErrorCallbacks = listOfNotNull(onConnectError),
             clientConnectionId = ConnectionId.random(),
             stats = Stats(),
-            moduleDescriptor = null,
+            moduleDescriptor = moduleDescriptor,
             callbackDispatcher = null,
         )
     }
@@ -2260,5 +2262,59 @@ class EdgeCaseTest {
         assertEquals(row1, row2)
         assertEquals(row1.hashCode(), row2.hashCode())
         assertFalse(row1 == row3)
+    }
+
+    // =========================================================================
+    // subscribeToAllTables excludes event tables
+    // =========================================================================
+
+    @Test
+    fun subscribeToAllTablesUsesModuleDescriptorSubscribableNames() = runTest {
+        val transport = FakeTransport()
+        val descriptor = object : ModuleDescriptor {
+            override val subscribableTableNames = listOf("player", "inventory")
+            override val cliVersion = "2.0.0"
+            override fun registerTables(cache: ClientCache) {}
+            override fun createAccessors(conn: DbConnection) = ModuleAccessors(
+                object : ModuleTables {},
+                object : ModuleReducers {},
+                object : ModuleProcedures {},
+            )
+            override fun handleReducerEvent(conn: DbConnection, ctx: EventContext.Reducer<*>) {}
+        }
+
+        val conn = buildTestConnection(transport, moduleDescriptor = descriptor)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        conn.subscribeToAllTables()
+        advanceUntilIdle()
+
+        // The subscribe message should contain only the persistent table names
+        val subscribeMsg = transport.sentMessages.filterIsInstance<com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ClientMessage.Subscribe>().single()
+        assertEquals(2, subscribeMsg.queryStrings.size)
+        assertTrue(subscribeMsg.queryStrings.any { it.contains("player") })
+        assertTrue(subscribeMsg.queryStrings.any { it.contains("inventory") })
+
+        conn.disconnect()
+    }
+
+    @Test
+    fun subscribeToAllTablesFallsBackToCacheWhenNoDescriptor() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        val cache = createSampleCache()
+        conn.clientCache.register("sample", cache)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        conn.subscribeToAllTables()
+        advanceUntilIdle()
+
+        val subscribeMsg = transport.sentMessages.filterIsInstance<com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ClientMessage.Subscribe>().single()
+        assertEquals(1, subscribeMsg.queryStrings.size)
+        assertTrue(subscribeMsg.queryStrings.single().contains("sample"))
+
+        conn.disconnect()
     }
 }

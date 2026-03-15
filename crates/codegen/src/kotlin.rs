@@ -1675,6 +1675,21 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     writeln!(out, ")");
     writeln!(out);
 
+    // Subscribable (persistent) table names — excludes event tables
+    writeln!(
+        out,
+        "override val subscribableTableNames: List<String> = listOf("
+    );
+    out.indent(1);
+    for table in iter_tables(module, options.visibility) {
+        if !table.is_event {
+            writeln!(out, "\"{}\",", table.name.deref());
+        }
+    }
+    out.dedent(1);
+    writeln!(out, ")");
+    writeln!(out);
+
     // Reducer names list
     writeln!(out, "val reducerNames: List<String> = listOf(");
     out.indent(1);

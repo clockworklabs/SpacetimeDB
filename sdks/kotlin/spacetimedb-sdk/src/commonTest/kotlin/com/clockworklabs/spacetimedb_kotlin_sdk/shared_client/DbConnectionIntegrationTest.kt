@@ -1679,6 +1679,7 @@ class DbConnectionIntegrationTest {
     @Test
     fun builderRejectsOldCliVersion() = runTest {
         val oldModule = object : ModuleDescriptor {
+            override val subscribableTableNames = emptyList<String>()
             override val cliVersion = "1.0.0"
             override fun registerTables(cache: ClientCache) {}
             override fun createAccessors(conn: DbConnection) = ModuleAccessors(
@@ -1706,6 +1707,7 @@ class DbConnectionIntegrationTest {
         var tablesRegistered = false
 
         val descriptor = object : ModuleDescriptor {
+            override val subscribableTableNames = emptyList<String>()
             override val cliVersion = "2.0.0"
             override fun registerTables(cache: ClientCache) {
                 tablesRegistered = true
@@ -1742,6 +1744,7 @@ class DbConnectionIntegrationTest {
         var reducerEventName: String? = null
 
         val descriptor = object : ModuleDescriptor {
+            override val subscribableTableNames = emptyList<String>()
             override val cliVersion = "2.0.0"
             override fun registerTables(cache: ClientCache) {}
             override fun createAccessors(conn: DbConnection) = ModuleAccessors(
@@ -3530,6 +3533,7 @@ class DbConnectionIntegrationTest {
     @Test
     fun builderAcceptsExactMinimumVersion() = runTest {
         val module = object : ModuleDescriptor {
+            override val subscribableTableNames = emptyList<String>()
             override val cliVersion = "2.0.0"
             override fun registerTables(cache: ClientCache) {}
             override fun createAccessors(conn: DbConnection) = ModuleAccessors(
@@ -3548,6 +3552,7 @@ class DbConnectionIntegrationTest {
     @Test
     fun builderAcceptsNewerVersion() = runTest {
         val module = object : ModuleDescriptor {
+            override val subscribableTableNames = emptyList<String>()
             override val cliVersion = "3.1.0"
             override fun registerTables(cache: ClientCache) {}
             override fun createAccessors(conn: DbConnection) = ModuleAccessors(
@@ -3565,6 +3570,7 @@ class DbConnectionIntegrationTest {
     @Test
     fun builderAcceptsPreReleaseSuffix() = runTest {
         val module = object : ModuleDescriptor {
+            override val subscribableTableNames = emptyList<String>()
             override val cliVersion = "2.1.0-beta.1"
             override fun registerTables(cache: ClientCache) {}
             override fun createAccessors(conn: DbConnection) = ModuleAccessors(
@@ -3583,6 +3589,7 @@ class DbConnectionIntegrationTest {
     @Test
     fun builderRejectsOldMinorVersion() = runTest {
         val module = object : ModuleDescriptor {
+            override val subscribableTableNames = emptyList<String>()
             override val cliVersion = "1.9.9"
             override fun registerTables(cache: ClientCache) {}
             override fun createAccessors(conn: DbConnection) = ModuleAccessors(
