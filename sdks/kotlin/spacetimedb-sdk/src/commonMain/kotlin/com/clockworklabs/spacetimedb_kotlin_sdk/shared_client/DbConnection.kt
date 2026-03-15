@@ -603,8 +603,8 @@ public open class DbConnection internal constructor(
                     }
                 }
 
-                handle.handleEnd(ctx)
                 subscriptions.update { it.remove(message.querySetId.id) }
+                handle.handleEnd(ctx)
                 // Phase 3: Fire post-mutation callbacks
                 for (cb in callbacks) runUserCallback { cb.invoke() }
             }
