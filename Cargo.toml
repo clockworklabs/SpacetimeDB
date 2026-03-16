@@ -1,5 +1,5 @@
 [workspace]
-exclude = ["crates/smoketests/modules"]
+exclude = ["crates/smoketests/modules", "sdks/kotlin/integration-tests/spacetimedb"]
 members = [
   "crates/auth",
   "crates/bench",
