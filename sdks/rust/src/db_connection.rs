@@ -39,12 +39,14 @@ use http::Uri;
 use spacetimedb_client_api_messages::websocket::{self as ws, common::QuerySetId};
 use spacetimedb_lib::{bsatn, ser::Serialize, ConnectionId, Identity, Timestamp};
 use spacetimedb_sats::Deserialize;
-use std::fs::File;
 #[cfg(not(feature = "web"))]
 use std::fs::OpenOptions;
-use std::io::Write;
-use std::path::PathBuf;
-use std::sync::{atomic::AtomicU32, Arc, Mutex as StdMutex, OnceLock};
+use std::{
+    fs::File,
+    io::Write,
+    path::PathBuf,
+    sync::{atomic::AtomicU32, Arc, Mutex as StdMutex, OnceLock},
+};
 #[cfg(not(feature = "web"))]
 use tokio::{
     runtime::{self, Runtime},
@@ -133,7 +135,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     /// Process a parsed WebSocket message,
     /// applying its mutations to the client cache and invoking callbacks.
     fn process_message(&self, msg: ParsedMessage<M>) -> crate::Result<()> {
-        self.debug_log(|out| writeln!(out, "`process_message`: kind={}", msg.debug_kind()));
+        self.debug_log(|out| writeln!(out, "`process_message`: {msg:?}"));
         match msg {
             // Error: treat this as an erroneous disconnect.
             ParsedMessage::Error(e) => {
@@ -1252,6 +1254,7 @@ pub async fn get_lock_async<T>(mutex: &StdMutex<T>) -> std::sync::MutexGuard<'_,
     mutex.lock().unwrap()
 }
 
+#[derive(Debug)]
 enum ParsedMessage<M: SpacetimeModule> {
     TransactionUpdate(M::DbUpdate),
     IdentityToken(Identity, Box<str>, ConnectionId),
@@ -1277,24 +1280,6 @@ enum ParsedMessage<M: SpacetimeModule> {
         request_id: u32,
         result: Result<Bytes, InternalError>,
     },
-}
-
-impl<M: SpacetimeModule> ParsedMessage<M> {
-    // The debug logger must work for every generated module type. Logging just the
-    // variant name preserves the parse/process trace without forcing every module's
-    // update type to implement `Debug`.
-    fn debug_kind(&self) -> &'static str {
-        match self {
-            Self::TransactionUpdate(_) => "TransactionUpdate",
-            Self::IdentityToken(_, _, _) => "IdentityToken",
-            Self::SubscribeApplied { .. } => "SubscribeApplied",
-            Self::UnsubscribeApplied { .. } => "UnsubscribeApplied",
-            Self::SubscriptionError { .. } => "SubscriptionError",
-            Self::Error(_) => "Error",
-            Self::ReducerResult { .. } => "ReducerResult",
-            Self::ProcedureResult { .. } => "ProcedureResult",
-        }
-    }
 }
 
 #[cfg(not(feature = "web"))]
@@ -1455,7 +1440,7 @@ async fn parse_loop<M: SpacetimeModule>(
             },
         };
         debug_log(&extra_logging, |file| {
-            writeln!(file, "`parse_loop`: Parsed as kind={}", parsed.debug_kind())
+            writeln!(file, "`parse_loop`: Parsed as: {parsed:?}")
         });
         send.unbounded_send(parsed)
             .expect("Failed to send ParsedMessage to main thread");
