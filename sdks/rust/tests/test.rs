@@ -1,13 +1,10 @@
 #[cfg(feature = "sdk-tests-web-client")]
 use std::path::Path;
 
-use spacetimedb_testing::sdk::TestBuilder;
+use spacetimedb_testing::sdk::{Test, TestBuilder};
 
-fn configure_test_client_commands(
-    builder: TestBuilder,
-    client_project: &str,
-    run_selector: Option<&str>,
-) -> TestBuilder {
+fn platform_test_builder(client_project: &str, run_selector: Option<&str>) -> TestBuilder {
+    let builder = Test::builder();
     let builder = builder.with_client(client_project);
 
     // Note: `run_selector` is intentionally interpreted differently by mode:
@@ -61,22 +58,18 @@ macro_rules! declare_tests_with_suffix {
             const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/test-client");
 
             fn make_test(subcommand: &str) -> Test {
-                super::configure_test_client_commands(
-                    Test::builder()
-                        .with_name(subcommand)
-                        .with_module(MODULE)
-                        .with_language("rust")
-                        // We test against multiple modules in different languages,
-                        // and as of writing (pgoldman 2026-02-12),
-                        // some of those languages have not yet been updated to make scheduled and lifecycle reducers
-                        // private by default. As such, generating only public items results in different bindings
-                        // depending on which module is the source.
-                        .with_generate_private_items(true)
-                        .with_bindings_dir("src/module_bindings"),
-                    CLIENT,
-                    Some(subcommand),
-                )
-                .build()
+                super::platform_test_builder(CLIENT, Some(subcommand))
+                    .with_name(subcommand)
+                    .with_module(MODULE)
+                    .with_language("rust")
+                    // We test against multiple modules in different languages,
+                    // and as of writing (pgoldman 2026-02-12),
+                    // some of those languages have not yet been updated to make scheduled and lifecycle reducers
+                    // private by default. As such, generating only public items results in different bindings
+                    // depending on which module is the source.
+                    .with_generate_private_items(true)
+                    .with_bindings_dir("src/module_bindings")
+                    .build()
             }
 
             #[test]
@@ -255,23 +248,19 @@ macro_rules! declare_tests_with_suffix {
                 const CONNECT_DISCONNECT_CLIENT: &str =
                     concat!(env!("CARGO_MANIFEST_DIR"), "/tests/connect_disconnect_client");
 
-                super::configure_test_client_commands(
-                    Test::builder()
-                        .with_name(concat!("connect-disconnect-callback-", stringify!($lang)))
-                        .with_module(concat!("sdk-test-connect-disconnect", $suffix))
-                        .with_language("rust")
-                        // We test against multiple modules in different languages,
-                        // and as of writing (pgoldman 2026-02-12),
-                        // some of those languages have not yet been updated to make scheduled and lifecycle reducers
-                        // private by default. As such, generating only public items results in different bindings
-                        // depending on which module is the source.
-                        .with_generate_private_items(true)
-                        .with_bindings_dir("src/module_bindings"),
-                    CONNECT_DISCONNECT_CLIENT,
-                    None,
-                )
-                .build()
-                .run();
+                super::platform_test_builder(CONNECT_DISCONNECT_CLIENT, None)
+                    .with_name(concat!("connect-disconnect-callback-", stringify!($lang)))
+                    .with_module(concat!("sdk-test-connect-disconnect", $suffix))
+                    .with_language("rust")
+                    // We test against multiple modules in different languages,
+                    // and as of writing (pgoldman 2026-02-12),
+                    // some of those languages have not yet been updated to make scheduled and lifecycle reducers
+                    // private by default. As such, generating only public items results in different bindings
+                    // depending on which module is the source.
+                    .with_generate_private_items(true)
+                    .with_bindings_dir("src/module_bindings")
+                    .build()
+                    .run();
             }
 
             #[test]
@@ -383,16 +372,12 @@ mod event_table_tests {
     const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/event-table-client");
 
     fn make_test(subcommand: &str) -> Test {
-        super::configure_test_client_commands(
-            Test::builder()
-                .with_name(subcommand)
-                .with_module(MODULE)
-                .with_language("rust")
-                .with_bindings_dir("src/module_bindings"),
-            CLIENT,
-            Some(subcommand),
-        )
-        .build()
+        super::platform_test_builder(CLIENT, Some(subcommand))
+            .with_name(subcommand)
+            .with_module(MODULE)
+            .with_language("rust")
+            .with_bindings_dir("src/module_bindings")
+            .build()
     }
 
     #[test]
@@ -425,22 +410,18 @@ macro_rules! procedure_tests {
             const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/procedure-client");
 
             fn make_test(subcommand: &str) -> Test {
-                super::configure_test_client_commands(
-                    Test::builder()
-                        .with_name(subcommand)
-                        .with_module(MODULE)
-                        .with_language("rust")
-                        // We test against multiple modules in different languages,
-                        // and as of writing (pgoldman 2026-02-12),
-                        // some of those languages have not yet been updated to make scheduled and lifecycle reducers
-                        // private by default. As such, generating only public items results in different bindings
-                        // depending on which module is the source.
-                        .with_generate_private_items(true)
-                        .with_bindings_dir("src/module_bindings"),
-                    CLIENT,
-                    Some(subcommand),
-                )
-                .build()
+                super::platform_test_builder(CLIENT, Some(subcommand))
+                    .with_name(subcommand)
+                    .with_module(MODULE)
+                    .with_language("rust")
+                    // We test against multiple modules in different languages,
+                    // and as of writing (pgoldman 2026-02-12),
+                    // some of those languages have not yet been updated to make scheduled and lifecycle reducers
+                    // private by default. As such, generating only public items results in different bindings
+                    // depending on which module is the source.
+                    .with_generate_private_items(true)
+                    .with_bindings_dir("src/module_bindings")
+                    .build()
             }
 
             #[test]
@@ -494,22 +475,18 @@ macro_rules! view_tests {
             const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/view-client");
 
             fn make_test(subcommand: &str) -> Test {
-                super::configure_test_client_commands(
-                    Test::builder()
-                        .with_name(subcommand)
-                        .with_module(MODULE)
-                        .with_language("rust")
-                        // We test against multiple modules in different languages,
-                        // and as of writing (pgoldman 2026-02-12),
-                        // some of those languages have not yet been updated to make scheduled and lifecycle reducers
-                        // private by default. As such, generating only public items results in different bindings
-                        // depending on which module is the source.
-                        .with_generate_private_items(true)
-                        .with_bindings_dir("src/module_bindings"),
-                    CLIENT,
-                    Some(subcommand),
-                )
-                .build()
+                super::platform_test_builder(CLIENT, Some(subcommand))
+                    .with_name(subcommand)
+                    .with_module(MODULE)
+                    .with_language("rust")
+                    // We test against multiple modules in different languages,
+                    // and as of writing (pgoldman 2026-02-12),
+                    // some of those languages have not yet been updated to make scheduled and lifecycle reducers
+                    // private by default. As such, generating only public items results in different bindings
+                    // depending on which module is the source.
+                    .with_generate_private_items(true)
+                    .with_bindings_dir("src/module_bindings")
+                    .build()
             }
 
             #[test]
@@ -557,16 +534,12 @@ macro_rules! view_pk_tests {
             const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/view-pk-client");
 
             fn make_test(subcommand: &str) -> Test {
-                super::configure_test_client_commands(
-                    Test::builder()
-                        .with_name(subcommand)
-                        .with_module(MODULE)
-                        .with_language("rust")
-                        .with_bindings_dir("src/module_bindings"),
-                    CLIENT,
-                    Some(subcommand),
-                )
-                .build()
+                super::platform_test_builder(CLIENT, Some(subcommand))
+                    .with_name(subcommand)
+                    .with_module(MODULE)
+                    .with_language("rust")
+                    .with_bindings_dir("src/module_bindings")
+                    .build()
             }
 
             #[test]
