@@ -66,12 +66,10 @@ impl TestCounter {
     }
 
     pub async fn wait_for_all_async(&self) {
+        // wasm/web test clients run callbacks on a single-threaded event loop,
+        // so waiting must be async to allow callback tasks to make progress.
         #[cfg(target_arch = "wasm32")]
-        {
-            // wasm/web test clients run callbacks on a single-threaded event loop,
-            // so waiting must be async to allow callback tasks to make progress.
-            self.wait_for_all_wasm_async().await;
-        }
+        self.wait_for_all_wasm_async().await;
 
         #[cfg(not(target_arch = "wasm32"))]
         self.wait_for_all_native();

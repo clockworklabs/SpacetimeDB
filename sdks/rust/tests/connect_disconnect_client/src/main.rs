@@ -148,12 +148,9 @@ pub(crate) async fn dispatch() {
 }
 
 async fn wait_for_all(test_counter: &std::sync::Arc<TestCounter>) {
+    // wasm/web callbacks run on the JS event loop, so this wait must stay async.
     #[cfg(target_arch = "wasm32")]
-    {
-        // wasm/web callbacks run on the JS event loop, so this wait must stay async.
-        test_counter.wait_for_all_async().await;
-        return;
-    }
+    test_counter.wait_for_all_async().await;
 
     #[cfg(not(target_arch = "wasm32"))]
     test_counter.wait_for_all();
