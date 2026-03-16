@@ -1,13 +1,13 @@
 import 'dotenv/config';
 import { execSync } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { createConnection } from 'node:net';
 import { join } from 'node:path';
 import { ConnectorKey, CONNECTORS } from './connectors';
 import { runOne } from './core/runner';
 import { initConvex } from './init/init_convex';
 import { sh } from './init/utils';
-import * as fs from 'fs';
+import cac from 'cac';
 
 // Simple TCP ping - just check if something is listening on the port
 function ping(port: number, timeoutMs = 2000): Promise<boolean> {
@@ -43,40 +43,53 @@ function spacetimePing(): boolean {
 // CLI Arguments
 // ============================================================================
 
-const args = process.argv.slice(2);
+const parser = cac()
+  .option('--seconds <seconds>', 'Number of seconds to benchmark for', {
+    default: 10,
+  })
+  .option('--concurrency <concurrency>', 'Concurrent clients to run', {
+    default: 10,
+  })
+  .option('--alpha <alpha>', 'Alpha value', { default: 1.5 })
+  .option(
+    '--systems <systems>',
+    `The systems to run against (valid values: ${Object.keys(CONNECTORS).join(', ')})`,
+    {
+      default: 'convex,spacetimedb',
+      type: [
+        (s: string | string[]) =>
+          (Array.isArray(s) ? s : s.split(',')).map((s) => {
+            const x = s.trim();
+            if (!Object.prototype.hasOwnProperty.call(CONNECTORS, x)) {
+              throw new Error(`${x} is not a valid system`);
+            }
+            return x;
+          }),
+      ],
+    },
+  )
+  .option('--skip-prep', 'Skip prep')
+  .option('--no-animation', 'No animation')
+  .help()
+  .usage('[options]');
 
-function getArg(name: string, defaultValue: number): number {
-  const idx = args.findIndex(
-    (a) => a === `--${name}` || a.startsWith(`--${name}=`),
-  );
-  if (idx === -1) return defaultValue;
-  const arg = args[idx];
-  if (arg.includes('=')) return Number(arg.split('=')[1]);
-  return Number(args[idx + 1] ?? defaultValue);
+const args = parser.parse();
+
+parser.globalCommand.checkUnknownOptions();
+parser.globalCommand.checkOptionValue();
+parser.globalCommand.checkRequiredArgs();
+parser.globalCommand.checkUnusedArgs();
+
+if (args.options.help) {
+  process.exit(0);
 }
 
-function getStringArg(name: string, defaultValue: string): string {
-  const idx = args.findIndex(
-    (a) => a === `--${name}` || a.startsWith(`--${name}=`),
-  );
-  if (idx === -1) return defaultValue;
-  const arg = args[idx];
-  if (arg.includes('=')) return arg.split('=')[1];
-  return args[idx + 1] ?? defaultValue;
-}
-
-function hasFlag(name: string): boolean {
-  return args.includes(`--${name}`);
-}
-
-const seconds = getArg('seconds', 10);
-const concurrency = getArg('concurrency', 10);
-const alpha = getArg('alpha', 1.5);
-const systems = getStringArg('systems', 'convex,spacetimedb')
-  .split(',')
-  .map((s) => s.trim()) as ConnectorKey[];
-const skipPrep = hasFlag('skip-prep');
-const noAnimation = hasFlag('no-animation');
+const seconds = Number(args.options.seconds);
+const concurrency = Number(args.options.concurrency);
+const alpha = Number(args.options.alpha);
+const systems: ConnectorKey[] = args.options.systems.flat();
+const skipPrep: boolean = args.options.skipPrep;
+const noAnimation: boolean = !args.options.animation;
 
 const accounts = Number(process.env.SEED_ACCOUNTS ?? 100_000);
 const initialBalance = Number(process.env.SEED_INITIAL_BALANCE ?? 10_000_000);
@@ -340,7 +353,7 @@ async function runBenchmarkStdb(): Promise<BenchResult | null> {
     'spacetimedb-tps.tmp.log',
   ]);
 
-  const tpsStr = fs.readFileSync('spacetimedb-tps.tmp.log', 'utf-8').trim();
+  const tpsStr = (await readFile('spacetimedb-tps.tmp.log', 'utf-8')).trim();
   const tps = Number(tpsStr);
   if (isNaN(tps)) {
     console.warn(`[spacetimedb] Failed to parse TPS from file: ${tpsStr}`);
