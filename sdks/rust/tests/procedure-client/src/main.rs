@@ -153,6 +153,21 @@ async fn wait_for_all(test_counter: &std::sync::Arc<TestCounter>) {
     test_counter.wait_for_all();
 }
 
+async fn disconnect_connection(connection: &DbConnection) {
+    if connection.is_active() {
+        connection.disconnect().unwrap();
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        // wasm tests run inside a long-lived Node event loop. Once the expected callbacks have
+        // fired, the test must explicitly close its websocket and yield once so the background
+        // task can process that disconnect before `run()` returns. Native tests can rely on
+        // process teardown, but web tests will otherwise keep Node alive and appear to hang.
+        gloo_timers::future::TimeoutFuture::new(0).await;
+    }
+}
+
 /// A query that subscribes to all rows from all tables.
 const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM my_table;",
@@ -225,6 +240,7 @@ async fn exec_procedure_return_values() {
     .await;
 
     wait_for_all(&test_counter).await;
+    disconnect_connection(&_conn).await;
 }
 
 async fn exec_procedure_panic() {
@@ -247,6 +263,7 @@ async fn exec_procedure_panic() {
     .await;
 
     wait_for_all(&test_counter).await;
+    disconnect_connection(&_conn).await;
 }
 
 async fn exec_insert_with_tx_commit() {
@@ -284,6 +301,7 @@ async fn exec_insert_with_tx_commit() {
     .await;
 
     wait_for_all(&test_counter).await;
+    disconnect_connection(&_conn).await;
 }
 
 async fn exec_insert_with_tx_rollback() {
@@ -311,6 +329,7 @@ async fn exec_insert_with_tx_rollback() {
     .await;
 
     wait_for_all(&test_counter).await;
+    disconnect_connection(&_conn).await;
 }
 
 /// Test that a procedure can perform an HTTP request and return a string derived from the response.
@@ -348,6 +367,7 @@ async fn exec_procedure_http_ok() {
     })
     .await;
     wait_for_all(&test_counter).await;
+    disconnect_connection(&_conn).await;
 }
 
 /// Test that a procedure can perform an HTTP request, handle its failure and return a string derived from the error.
@@ -379,6 +399,7 @@ async fn exec_procedure_http_err() {
     .await;
 
     wait_for_all(&test_counter).await;
+    disconnect_connection(&_conn).await;
 }
 
 async fn exec_schedule_procedure() {
@@ -424,6 +445,7 @@ async fn exec_schedule_procedure() {
     .await;
 
     wait_for_all(&test_counter).await;
+    disconnect_connection(&_conn).await;
 }
 
 /// Test that a procedure can generate sorted UUIDs and insert them into a table
@@ -465,4 +487,5 @@ async fn exec_sorted_uuids_insert() {
     .await;
 
     wait_for_all(&test_counter).await;
+    disconnect_connection(&_conn).await;
 }

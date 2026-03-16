@@ -23,6 +23,7 @@ web = [
     "dep:wasm-bindgen-futures",
     "dep:console_error_panic_hook",
     "dep:futures",
+    "dep:gloo-timers",
 ]
 
 [[bin]]
@@ -37,6 +38,7 @@ anyhow.workspace = true
 env_logger = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
+gloo-timers = { version = "0.3.0", features = ["futures"], optional = true }
 
 wasm-bindgen = { version = "0.2.100", optional = true }
 wasm-bindgen-futures = { version = "0.4.45", optional = true }

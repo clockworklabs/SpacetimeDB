@@ -102,6 +102,21 @@ async fn wait_for_all(test_counter: &std::sync::Arc<TestCounter>) {
     test_counter.wait_for_all();
 }
 
+async fn disconnect_connection(connection: &DbConnection) {
+    if connection.is_active() {
+        connection.disconnect().unwrap();
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        // wasm tests run inside a long-lived Node event loop. Once the expected callbacks have
+        // fired, the test must explicitly close its websocket and yield once so the background
+        // task can process that disconnect before `run()` returns. Native tests can rely on
+        // process teardown, but web tests will otherwise keep Node alive and appear to hang.
+        gloo_timers::future::TimeoutFuture::new(0).await;
+    }
+}
+
 fn subscribe_these_then(
     ctx: &impl RemoteDbContext,
     queries: &[&str],
@@ -161,6 +176,7 @@ async fn exec_view_pk_on_update() {
     .await;
 
     wait_for_all(&test_counter).await;
+    disconnect_connection(&_conn).await;
 }
 
 /// Subscribe to a right semijoin whose rhs is a view with primary key.
@@ -239,6 +255,7 @@ async fn exec_view_pk_join_query_builder() {
     .await;
 
     wait_for_all(&test_counter).await;
+    disconnect_connection(&_conn).await;
 }
 
 /// Subscribe to a semijoin between two views with primary keys.
@@ -327,6 +344,7 @@ async fn exec_view_pk_semijoin_two_sender_views_query_builder() {
     .await;
 
     wait_for_all(&test_counter).await;
+    disconnect_connection(&_conn).await;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -346,7 +364,9 @@ pub(crate) async fn dispatch(test: &str) {
     match &*test {
         "view-pk-on-update" => exec_view_pk_on_update().await,
         "view-pk-join-query-builder" => exec_view_pk_join_query_builder().await,
-        "view-pk-semijoin-two-sender-views-query-builder" => exec_view_pk_semijoin_two_sender_views_query_builder().await,
+        "view-pk-semijoin-two-sender-views-query-builder" => {
+            exec_view_pk_semijoin_two_sender_views_query_builder().await
+        }
         _ => panic!("Unknown test: {test}"),
     }
 }

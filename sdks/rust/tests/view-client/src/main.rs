@@ -129,6 +129,21 @@ async fn wait_for_all(test_counter: &std::sync::Arc<TestCounter>) {
     test_counter.wait_for_all();
 }
 
+async fn disconnect_connection(connection: &DbConnection) {
+    if connection.is_active() {
+        connection.disconnect().unwrap();
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        // wasm tests run inside a long-lived Node event loop. Once the expected callbacks have
+        // fired, the test must explicitly close its websocket and yield once so the background
+        // task can process that disconnect before `run()` returns. Native tests can rely on
+        // process teardown, but web tests will otherwise keep Node alive and appear to hang.
+        gloo_timers::future::TimeoutFuture::new(0).await;
+    }
+}
+
 fn subscribe_these_then(
     ctx: &impl RemoteDbContext,
     queries: &[&str],
@@ -216,6 +231,7 @@ async fn exec_anonymous_subscribe() {
     })
     .await;
     wait_for_all(&test_counter).await;
+    disconnect_connection(&_conn).await;
 }
 
 async fn exec_anonymous_subscribe_with_query_builder() {
@@ -288,6 +304,7 @@ async fn exec_anonymous_subscribe_with_query_builder() {
     })
     .await;
     wait_for_all(&test_counter).await;
+    disconnect_connection(&_conn).await;
 }
 
 async fn exec_non_anonymous_subscribe() {
@@ -328,6 +345,7 @@ async fn exec_non_anonymous_subscribe() {
     })
     .await;
     wait_for_all(&test_counter).await;
+    disconnect_connection(&_conn).await;
 }
 
 async fn exec_non_table_return() {
@@ -370,6 +388,7 @@ async fn exec_non_table_return() {
     })
     .await;
     wait_for_all(&test_counter).await;
+    disconnect_connection(&_conn).await;
 }
 
 async fn exec_non_table_query_builder_return() {
@@ -417,6 +436,7 @@ async fn exec_non_table_query_builder_return() {
     })
     .await;
     wait_for_all(&test_counter).await;
+    disconnect_connection(&_conn).await;
 }
 
 async fn exec_subscription_update() {
@@ -482,4 +502,6 @@ async fn exec_subscription_update() {
     )
     .await;
     wait_for_all(&test_counter).await;
+    disconnect_connection(&_conn_0).await;
+    disconnect_connection(&_conn_1).await;
 }
