@@ -8,6 +8,8 @@ fn configure_test_client_commands(
     client_project: &str,
     run_selector: Option<&str>,
 ) -> TestBuilder {
+    let builder = builder.with_client(client_project);
+
     // Note: `run_selector` is intentionally interpreted differently by mode:
     // - Native mode uses it as a CLI subcommand (`cargo run -- <selector>`), with `None` => `cargo run`.
     // - Web mode forwards it to the wasm export `run(test_name)`, with `None` => empty string.
@@ -63,7 +65,6 @@ macro_rules! declare_tests_with_suffix {
                     Test::builder()
                         .with_name(subcommand)
                         .with_module(MODULE)
-                        .with_client(CLIENT)
                         .with_language("rust")
                         // We test against multiple modules in different languages,
                         // and as of writing (pgoldman 2026-02-12),
@@ -258,7 +259,6 @@ macro_rules! declare_tests_with_suffix {
                     Test::builder()
                         .with_name(concat!("connect-disconnect-callback-", stringify!($lang)))
                         .with_module(concat!("sdk-test-connect-disconnect", $suffix))
-                        .with_client(CONNECT_DISCONNECT_CLIENT)
                         .with_language("rust")
                         // We test against multiple modules in different languages,
                         // and as of writing (pgoldman 2026-02-12),
@@ -387,7 +387,6 @@ mod event_table_tests {
             Test::builder()
                 .with_name(subcommand)
                 .with_module(MODULE)
-                .with_client(CLIENT)
                 .with_language("rust")
                 .with_bindings_dir("src/module_bindings"),
             CLIENT,
@@ -430,7 +429,6 @@ macro_rules! procedure_tests {
                     Test::builder()
                         .with_name(subcommand)
                         .with_module(MODULE)
-                        .with_client(CLIENT)
                         .with_language("rust")
                         // We test against multiple modules in different languages,
                         // and as of writing (pgoldman 2026-02-12),
@@ -500,7 +498,6 @@ macro_rules! view_tests {
                     Test::builder()
                         .with_name(subcommand)
                         .with_module(MODULE)
-                        .with_client(CLIENT)
                         .with_language("rust")
                         // We test against multiple modules in different languages,
                         // and as of writing (pgoldman 2026-02-12),
@@ -564,7 +561,6 @@ macro_rules! view_pk_tests {
                     Test::builder()
                         .with_name(subcommand)
                         .with_module(MODULE)
-                        .with_client(CLIENT)
                         .with_language("rust")
                         .with_bindings_dir("src/module_bindings"),
                     CLIENT,
