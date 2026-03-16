@@ -837,6 +837,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                         : "null"
                     )}}};
 
+                /// <summary>
+                /// Returns the number of rows in this table.
+                ///
+                /// This reads datastore metadata, so it runs in constant time.
+                /// It also takes into account modifications by the current transaction.
+                /// </summary>
                 public ulong Count => {{{iTable}}}.DoCount();
                 public IEnumerable<{{{globalName}}}> Iter() => {{{iTable}}}.DoIter();
                 public {{{globalName}}} Insert({{{globalName}}} row) => {{{iTable}}}.DoInsert(row);
@@ -880,6 +886,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 {
                     internal {{{accessorIdentifier}}}ReadOnly() : base("{{{accessor.Name}}}") { }
 
+                    /// <summary>
+                    /// Returns the number of rows in this table.
+                    ///
+                    /// This reads datastore metadata, so it runs in constant time.
+                    /// It also takes into account modifications by the current transaction.
+                    /// </summary>
                     public ulong Count => DoCount();
 
                     {{{readOnlyIndexDecls}}}
@@ -1134,6 +1146,7 @@ record ViewDeclaration
     public readonly bool IsPublic;
     public readonly bool ReturnsQuery;
     public readonly TypeUse ReturnType;
+    public readonly TypeUse? QueryRowType;
     public readonly EquatableArray<MemberDeclaration> Parameters;
     public readonly Scope Scope;
 
@@ -1198,15 +1211,12 @@ record ViewDeclaration
         {
             ReturnsQuery = true;
             var rowType = TypeUse.Parse(method, queryRowType, diag);
-            var optType = queryRowType.IsValueType
-                ? "SpacetimeDB.BSATN.ValueOption"
-                : "SpacetimeDB.BSATN.RefOption";
-            var opt = $"{optType}<{rowType.Name}, {rowType.BSATNName}>";
-            // Match Rust semantics: Query<T> is described as a nullable row (T?).
-            ReturnType = new ReferenceUse(opt, opt);
+            QueryRowType = rowType;
+            ReturnType = rowType;
         }
         else
         {
+            QueryRowType = null;
             ReturnType = TypeUse.Parse(method, method.ReturnType, diag);
         }
         Scope = new Scope(methodSyntax.Parent as MemberDeclarationSyntax);
@@ -1223,9 +1233,10 @@ record ViewDeclaration
             diag.Report(ErrorDescriptor.ViewContextParam, methodSyntax);
         }
 
-        // Validate return type: must be List<T> or T?
+        // Validate return type: must be List<T>, T?, or IQuery<T>.
         if (
-            !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.ValueOption")
+            !ReturnsQuery
+            && !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.ValueOption")
             && !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.RefOption")
             && !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.List")
         )
@@ -1241,17 +1252,22 @@ record ViewDeclaration
         );
     }
 
-    public string GenerateViewDef(uint Index) =>
-        $$$"""
+    public string GenerateViewDef(uint Index)
+    {
+        var returnTypeExpr = ReturnsQuery
+            ? $"global::SpacetimeDB.BSATN.AlgebraicType.MakeQueryBuilderProductType(new {QueryRowType!.BSATNName}().GetAlgebraicType(registrar))"
+            : $"new {ReturnType.BSATNName}().GetAlgebraicType(registrar)";
+        return $$$"""
             new global::SpacetimeDB.Internal.RawViewDefV10(
                 SourceName: "{{{Name}}}",
                 Index: {{{Index}}},
                 IsPublic: {{{IsPublic.ToString().ToLower()}}},
                 IsAnonymous: {{{IsAnonymous.ToString().ToLower()}}},
                 Params: [{{{MemberDeclaration.GenerateDefs(Parameters)}}}],
-                ReturnType: new {{{ReturnType.BSATNName}}}().GetAlgebraicType(registrar)
+                ReturnType: {{{returnTypeExpr}}}
             );
             """;
+    }
 
     /// <summary>
     /// Generates the class responsible for evaluating a view.

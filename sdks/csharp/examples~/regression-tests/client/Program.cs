@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using RegressionTests.Shared;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 
@@ -19,46 +20,19 @@ const string UPDATED_WHERE_TEST_NAME = "this_name_was_updated";
 const string EXPECTED_TEST_EVENT_NAME = "hello";
 const ulong EXPECTED_TEST_EVENT_VALUE = 42;
 
-DbConnection ConnectToDB()
-{
-    DbConnection? conn = null;
-    conn = DbConnection
-        .Builder()
-        .WithUri(HOST)
-        .WithDatabaseName(DBNAME)
-        .OnConnect(OnConnected)
-        .OnConnectError(
-            (err) =>
-            {
-                throw err;
-            }
-        )
-        .OnDisconnect(
-            (conn, err) =>
-            {
-                if (err != null)
-                {
-                    throw err;
-                }
-                else
-                {
-                    throw new Exception("Unexpected disconnect");
-                }
-            }
-        )
-        .Build();
-    return conn;
-}
-
+DbConnection db = null!;
 uint waiting = 0;
-var applied = false;
-SubscriptionHandle? handle = null;
+var runComplete = false;
+SubscriptionHandle? mainHandle = null;
 uint testEventInsertCount = 0;
+long viewPkIdCounter = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 10;
+
+ulong NextViewPkId() => (ulong)Interlocked.Increment(ref viewPkIdCounter);
 
 void OnConnected(DbConnection conn, Identity identity, string authToken)
 {
     Log.Debug($"Connected to {DBNAME} on {HOST}");
-    handle = conn.SubscriptionBuilder()
+    mainHandle = conn.SubscriptionBuilder()
         .OnApplied(OnSubscriptionApplied)
         .OnError(
             (ctx, err) =>
@@ -284,6 +258,34 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
             !ctx.Db.TestEvent.Iter().Any(),
             "Event table iterator should remain empty after noop"
         );
+    };
+
+    conn.Reducers.OnInsertViewPkPlayer += (ctx, _, _) =>
+    {
+        Log.Info("Got InsertViewPkPlayer callback");
+        waiting--;
+        ValidateCommittedReducer("InsertViewPkPlayer", ctx);
+    };
+
+    conn.Reducers.OnUpdateViewPkPlayer += (ctx, _, _) =>
+    {
+        Log.Info("Got UpdateViewPkPlayer callback");
+        waiting--;
+        ValidateCommittedReducer("UpdateViewPkPlayer", ctx);
+    };
+
+    conn.Reducers.OnInsertViewPkMembership += (ctx, _, _) =>
+    {
+        Log.Info("Got InsertViewPkMembership callback");
+        waiting--;
+        ValidateCommittedReducer("InsertViewPkMembership", ctx);
+    };
+
+    conn.Reducers.OnInsertViewPkMembershipSecondary += (ctx, _, _) =>
+    {
+        Log.Info("Got InsertViewPkMembershipSecondary callback");
+        waiting--;
+        ValidateCommittedReducer("InsertViewPkMembershipSecondary", ctx);
     };
 }
 
@@ -541,10 +543,282 @@ void ValidateSemijoinSubscriptions(IRemoteDbContext conn, Identity identity)
     Debug.Assert(levels[0].Level == 1, $"Expected player_level.Level == 1, got {levels[0].Level}");
 }
 
+void ValidateCommittedReducer(string reducerName, ReducerEventContext ctx)
+{
+    switch (ctx.Event.Status)
+    {
+        case Status.Committed:
+            return;
+        case Status.Failed(var reason):
+            throw new Exception($"{reducerName} should commit, got failure: {reason}");
+        case Status.OutOfEnergy(var _):
+            throw new Exception($"{reducerName} ran out of energy");
+        default:
+            throw new Exception($"{reducerName} returned unexpected status: {ctx.Event.Status}");
+    }
+}
+
+void ExpectSingleViewPkPlayerUpdate(
+    string testName,
+    ref bool sawUpdate,
+    ulong expectedId,
+    string expectedOldName,
+    string expectedNewName,
+    ViewPkPlayer oldRow,
+    ViewPkPlayer newRow
+)
+{
+    Debug.Assert(!sawUpdate, $"Expected exactly one OnUpdate callback for {testName}");
+    Debug.Assert(oldRow.Id == expectedId, $"Expected oldRow.Id={expectedId}, got {oldRow.Id}");
+    Debug.Assert(
+        oldRow.Name == expectedOldName,
+        $"Expected oldRow.Name={expectedOldName}, got {oldRow.Name}"
+    );
+    Debug.Assert(newRow.Id == expectedId, $"Expected newRow.Id={expectedId}, got {newRow.Id}");
+    Debug.Assert(
+        newRow.Name == expectedNewName,
+        $"Expected newRow.Name={expectedNewName}, got {newRow.Name}"
+    );
+    sawUpdate = true;
+}
+
+/// Subscribe to a query builder view whose underlying table has a primary key.
+/// Ensures the C# SDK emits an `OnUpdate` callback and that the client receives the correct old and new rows.
+///
+/// Test:
+/// 1. Subscribe to: SELECT * FROM all_view_pk_players
+/// 2. Insert row:  (id=1, name="before")
+/// 3. Update row:  (id=1, name="after")
+///
+/// Expect:
+/// - `OnUpdate` is called for PK=1
+/// - `oldRow` should be the "before" value
+/// - `newRow` should be the "after" value
+void ExecViewPkOnUpdate()
+{
+    const string testName = "view-pk-on-update";
+    var playerId = NextViewPkId();
+    const string before = "before";
+    const string after = "after";
+    bool sawUpdate = false;
+    SubscriptionHandle? phaseHandle = null;
+
+    Log.Debug($"Starting {testName}");
+    phaseHandle = db
+        .SubscriptionBuilder()
+        .OnApplied(ctx =>
+        {
+            void OnAllViewPkPlayersUpdate(EventContext _, ViewPkPlayer oldRow, ViewPkPlayer newRow)
+            {
+                ctx.Db.AllViewPkPlayers.OnUpdate -= OnAllViewPkPlayersUpdate;
+                ExpectSingleViewPkPlayerUpdate(
+                    testName,
+                    ref sawUpdate,
+                    playerId,
+                    before,
+                    after,
+                    oldRow,
+                    newRow
+                );
+
+                waiting++;
+                phaseHandle?.UnsubscribeThen(_ =>
+                {
+                    Debug.Assert(sawUpdate, $"Expected an OnUpdate callback for {testName}");
+                    ExecViewPkJoinQueryBuilder();
+                    waiting--;
+                });
+            }
+
+            ctx.Db.AllViewPkPlayers.OnUpdate += OnAllViewPkPlayersUpdate;
+
+            waiting++;
+            ctx.Reducers.InsertViewPkPlayer(playerId, before);
+
+            waiting++;
+            ctx.Reducers.UpdateViewPkPlayer(playerId, after);
+        })
+        .OnError((_, err) =>
+        {
+            throw err;
+        })
+        .AddQuery(q => q.From.AllViewPkPlayers())
+        .Subscribe();
+}
+
+/// Subscribe to a right semijoin whose rhs is a view with primary key.
+///
+/// Ensures:
+/// 1. A semijoin subscription involving a view is valid
+/// 2. The C# SDK emits an `OnUpdate` callback and that the client receives the correct old and new rows
+///
+/// Query:
+///   SELECT player.*
+///   FROM view_pk_membership membership
+///   JOIN all_view_pk_players player ON membership.player_id = player.id
+///
+/// Test:
+/// 1. Insert player row (id=1, "before").
+/// 2. Insert membership row referencing player_id=1, allowing the semijoin match.
+/// 3. Update player row to (id=1, "after").
+///
+/// Expect:
+/// - `OnUpdate` is called for player PK=1
+/// - `oldRow` should be the "before" value
+/// - `newRow` should be the "after" value
+void ExecViewPkJoinQueryBuilder()
+{
+    const string testName = "view-pk-join-query-builder";
+    var playerId = NextViewPkId();
+    var membershipId = NextViewPkId();
+    const string before = "before";
+    const string after = "after";
+    bool sawUpdate = false;
+    SubscriptionHandle? phaseHandle = null;
+
+    Log.Debug($"Starting {testName}");
+    phaseHandle = db
+        .SubscriptionBuilder()
+        .OnApplied(ctx =>
+        {
+            void OnAllViewPkPlayersUpdate(EventContext _, ViewPkPlayer oldRow, ViewPkPlayer newRow)
+            {
+                ctx.Db.AllViewPkPlayers.OnUpdate -= OnAllViewPkPlayersUpdate;
+                ExpectSingleViewPkPlayerUpdate(
+                    testName,
+                    ref sawUpdate,
+                    playerId,
+                    before,
+                    after,
+                    oldRow,
+                    newRow
+                );
+
+                waiting++;
+                phaseHandle?.UnsubscribeThen(_ =>
+                {
+                    Debug.Assert(sawUpdate, $"Expected an OnUpdate callback for {testName}");
+                    ExecViewPkSemijoinTwoSenderViewsQueryBuilder();
+                    waiting--;
+                });
+            }
+
+            ctx.Db.AllViewPkPlayers.OnUpdate += OnAllViewPkPlayersUpdate;
+
+            waiting++;
+            ctx.Reducers.InsertViewPkPlayer(playerId, before);
+
+            waiting++;
+            ctx.Reducers.InsertViewPkMembership(membershipId, playerId);
+
+            waiting++;
+            ctx.Reducers.UpdateViewPkPlayer(playerId, after);
+        })
+        .OnError((_, err) =>
+        {
+            throw err;
+        })
+        .AddQuery(q =>
+            q.From.ViewPkMembership().RightSemijoin(
+                q.From.AllViewPkPlayers(),
+                (membership, player) => membership.PlayerId.Eq(player.Id)
+            )
+        )
+        .Subscribe();
+}
+
+/// Subscribe to a semijoin between two views with primary keys.
+///
+/// Ensures:
+/// 1. A semijoin subscription involving a view is valid
+/// 2. The C# SDK emits an `OnUpdate` callback and that the client receives the correct old and new rows
+///
+/// Query:
+///   SELECT b.*
+///   FROM sender_view_pk_players_a a
+///   JOIN sender_view_pk_players_b b ON a.id = b.id
+///
+/// Test:
+/// 1. Insert player row (id=1, "before").
+/// 2. Insert membership for sender view A.
+/// 3. Insert membership for sender view B.
+/// 4. Update player row to (id=1, "after").
+///
+/// Expect:
+/// - `OnUpdate` is called for player PK=1
+/// - `oldRow` should be the "before" value
+/// - `newRow` should be the "after" value
+void ExecViewPkSemijoinTwoSenderViewsQueryBuilder()
+{
+    const string testName = "view-pk-semijoin-two-sender-views-query-builder";
+    var playerId = NextViewPkId();
+    var membershipAId = NextViewPkId();
+    var membershipBId = NextViewPkId();
+    const string before = "before";
+    const string after = "after";
+    bool sawUpdate = false;
+    SubscriptionHandle? phaseHandle = null;
+
+    Log.Debug($"Starting {testName}");
+    phaseHandle = db
+        .SubscriptionBuilder()
+        .OnApplied(ctx =>
+        {
+            void OnSenderViewPkPlayersBUpdate(
+                EventContext _,
+                ViewPkPlayer oldRow,
+                ViewPkPlayer newRow
+            )
+            {
+                ctx.Db.SenderViewPkPlayersB.OnUpdate -= OnSenderViewPkPlayersBUpdate;
+                ExpectSingleViewPkPlayerUpdate(
+                    testName,
+                    ref sawUpdate,
+                    playerId,
+                    before,
+                    after,
+                    oldRow,
+                    newRow
+                );
+
+                waiting++;
+                phaseHandle?.UnsubscribeThen(_ =>
+                {
+                    Debug.Assert(sawUpdate, $"Expected an OnUpdate callback for {testName}");
+                    runComplete = true;
+                    waiting--;
+                });
+            }
+
+            ctx.Db.SenderViewPkPlayersB.OnUpdate += OnSenderViewPkPlayersBUpdate;
+
+            waiting++;
+            ctx.Reducers.InsertViewPkPlayer(playerId, before);
+
+            waiting++;
+            ctx.Reducers.InsertViewPkMembership(membershipAId, playerId);
+
+            waiting++;
+            ctx.Reducers.InsertViewPkMembershipSecondary(membershipBId, playerId);
+
+            waiting++;
+            ctx.Reducers.UpdateViewPkPlayer(playerId, after);
+        })
+        .OnError((_, err) =>
+        {
+            throw err;
+        })
+        .AddQuery(q =>
+            q.From.SenderViewPkPlayersA().RightSemijoin(
+                q.From.SenderViewPkPlayersB(),
+                (lhsView, rhsView) => lhsView.Id.Eq(rhsView.Id)
+            )
+        )
+        .Subscribe();
+}
+
 void OnSubscriptionApplied(SubscriptionEventContext context)
 {
-    applied = true;
-
     ValidateWhereSubscription(context);
     ValidateWhereTestViews(context);
     ValidateSemijoinSubscriptions(context, context.Identity!.Value);
@@ -1119,34 +1393,20 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     // Now unsubscribe and check that the unsubscribing is actually applied.
     Log.Debug("Calling Unsubscribe");
     waiting++;
-    handle?.UnsubscribeThen(
+    mainHandle?.UnsubscribeThen(
         (ctx) =>
         {
             Log.Debug("Received Unsubscribe");
             ValidateBTreeIndexes(ctx);
+            ExecViewPkOnUpdate();
             waiting--;
         }
     );
 }
 
-System.AppDomain.CurrentDomain.UnhandledException += (sender, args) =>
-{
-    Log.Exception($"Unhandled exception: {sender} {args}");
-    Environment.Exit(1);
-};
-var db = ConnectToDB();
-Log.Info("Starting timer");
+RegressionTestHarness.RegisterUnhandledExceptionExitHandler();
+db = RegressionTestHarness.ConnectToDatabase(HOST, DBNAME, OnConnected);
 const int TIMEOUT = 20; // seconds;
-var start = DateTime.Now;
-while (!applied || waiting > 0)
-{
-    db.FrameTick();
-    Thread.Sleep(100);
-    if ((DateTime.Now - start).Seconds > TIMEOUT)
-    {
-        Log.Error($"Timeout, all events should have elapsed in {TIMEOUT} seconds!");
-        Environment.Exit(1);
-    }
-}
+RegressionTestHarness.FrameTickUntilComplete(db, () => runComplete && waiting == 0, TIMEOUT);
 Log.Info("Success");
 Environment.Exit(0);
