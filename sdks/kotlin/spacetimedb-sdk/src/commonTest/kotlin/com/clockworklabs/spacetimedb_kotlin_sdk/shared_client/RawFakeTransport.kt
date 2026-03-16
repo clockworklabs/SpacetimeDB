@@ -25,8 +25,6 @@ class RawFakeTransport : Transport {
     private val _sent = atomic(persistentListOf<ClientMessage>())
     private var _connected = false
 
-    override val isConnected: Boolean get() = _connected
-
     override suspend fun connect() {
         _connected = true
     }

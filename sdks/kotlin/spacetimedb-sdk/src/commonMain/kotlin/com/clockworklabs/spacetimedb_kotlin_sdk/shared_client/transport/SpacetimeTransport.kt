@@ -26,7 +26,6 @@ import kotlinx.coroutines.flow.flow
  * Allows injecting a fake transport in tests.
  */
 public interface Transport {
-    public val isConnected: Boolean
     public suspend fun connect()
     public suspend fun send(message: ClientMessage)
     public fun incoming(): Flow<ServerMessage>
@@ -53,7 +52,7 @@ public class SpacetimeTransport(
         public const val WS_PROTOCOL: String = "v2.bsatn.spacetimedb"
     }
 
-    override val isConnected: Boolean get() = _session.value != null
+
 
     /**
      * Connects to the SpacetimeDB WebSocket endpoint.

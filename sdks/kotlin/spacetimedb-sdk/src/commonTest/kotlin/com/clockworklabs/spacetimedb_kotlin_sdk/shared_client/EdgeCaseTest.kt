@@ -1927,7 +1927,6 @@ class EdgeCaseTest {
     fun disconnectWhileConnectingDoesNotCrash() = runTest {
         // Use a transport that suspends forever in connect()
         val suspendingTransport = object : Transport {
-            override val isConnected: Boolean get() = false
             override suspend fun connect() {
                 kotlinx.coroutines.awaitCancellation()
             }

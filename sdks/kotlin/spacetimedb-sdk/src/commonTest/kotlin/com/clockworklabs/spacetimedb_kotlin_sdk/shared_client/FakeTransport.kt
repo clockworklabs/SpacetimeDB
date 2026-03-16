@@ -19,8 +19,6 @@ class FakeTransport(
     private val _sendError = atomic<Throwable?>(null)
     private var _connected = false
 
-    override val isConnected: Boolean get() = _connected
-
     override suspend fun connect() {
         connectError?.let { throw it }
         // Recreate channel on reconnect (closed channels can't be reused)
