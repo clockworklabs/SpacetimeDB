@@ -5,7 +5,7 @@
 use super::result_i_32_string_type::ResultI32String;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `result_i32_string`.
+/// Table handle for the table `result_i_32_string`.
 ///
 /// Obtain a handle from the [`ResultI32StringTableAccess::result_i_32_string`] method on [`super::RemoteTables`],
 /// like `ctx.db.result_i_32_string()`.
@@ -19,19 +19,19 @@ pub struct ResultI32StringTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `result_i32_string`.
+/// Extension trait for access to the table `result_i_32_string`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait ResultI32StringTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`ResultI32StringTableHandle`], which mediates access to the table `result_i32_string`.
+    /// Obtain a [`ResultI32StringTableHandle`], which mediates access to the table `result_i_32_string`.
     fn result_i_32_string(&self) -> ResultI32StringTableHandle<'_>;
 }
 
 impl ResultI32StringTableAccess for super::RemoteTables {
     fn result_i_32_string(&self) -> ResultI32StringTableHandle<'_> {
         ResultI32StringTableHandle {
-            imp: self.imp.get_table::<ResultI32String>("result_i32_string"),
+            imp: self.imp.get_table::<ResultI32String>("result_i_32_string"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,12 +80,12 @@ impl<'ctx> __sdk::Table for ResultI32StringTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<ResultI32String>("result_i32_string");
+    let _table = client_cache.get_or_make_table::<ResultI32String>("result_i_32_string");
 }
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
+    raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<ResultI32String>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<ResultI32String>", "TableUpdate")
@@ -98,14 +98,14 @@ pub(super) fn parse_table_update(
 /// Extension trait for query builder access to the table `ResultI32String`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait result_i32_stringQueryTableAccess {
+pub trait result_i_32_stringQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `ResultI32String`.
-    fn result_i32_string(&self) -> __sdk::__query_builder::Table<ResultI32String>;
+    fn result_i_32_string(&self) -> __sdk::__query_builder::Table<ResultI32String>;
 }
 
-impl result_i32_stringQueryTableAccess for __sdk::QueryTableAccessor {
-    fn result_i32_string(&self) -> __sdk::__query_builder::Table<ResultI32String> {
-        __sdk::__query_builder::Table::new("result_i32_string")
+impl result_i_32_stringQueryTableAccess for __sdk::QueryTableAccessor {
+    fn result_i_32_string(&self) -> __sdk::__query_builder::Table<ResultI32String> {
+        __sdk::__query_builder::Table::new("result_i_32_string")
     }
 }

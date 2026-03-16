@@ -5,7 +5,7 @@
 use super::option_i_32_type::OptionI32;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `option_i32`.
+/// Table handle for the table `option_i_32`.
 ///
 /// Obtain a handle from the [`OptionI32TableAccess::option_i_32`] method on [`super::RemoteTables`],
 /// like `ctx.db.option_i_32()`.
@@ -19,19 +19,19 @@ pub struct OptionI32TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `option_i32`.
+/// Extension trait for access to the table `option_i_32`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OptionI32TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OptionI32TableHandle`], which mediates access to the table `option_i32`.
+    /// Obtain a [`OptionI32TableHandle`], which mediates access to the table `option_i_32`.
     fn option_i_32(&self) -> OptionI32TableHandle<'_>;
 }
 
 impl OptionI32TableAccess for super::RemoteTables {
     fn option_i_32(&self) -> OptionI32TableHandle<'_> {
         OptionI32TableHandle {
-            imp: self.imp.get_table::<OptionI32>("option_i32"),
+            imp: self.imp.get_table::<OptionI32>("option_i_32"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,13 +80,11 @@ impl<'ctx> __sdk::Table for OptionI32TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<OptionI32>("option_i32");
+    let _table = client_cache.get_or_make_table::<OptionI32>("option_i_32");
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<OptionI32>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<OptionI32>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<OptionI32>", "TableUpdate")
             .with_cause(e)
@@ -98,14 +96,14 @@ pub(super) fn parse_table_update(
 /// Extension trait for query builder access to the table `OptionI32`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait option_i32QueryTableAccess {
+pub trait option_i_32QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `OptionI32`.
-    fn option_i32(&self) -> __sdk::__query_builder::Table<OptionI32>;
+    fn option_i_32(&self) -> __sdk::__query_builder::Table<OptionI32>;
 }
 
-impl option_i32QueryTableAccess for __sdk::QueryTableAccessor {
-    fn option_i32(&self) -> __sdk::__query_builder::Table<OptionI32> {
-        __sdk::__query_builder::Table::new("option_i32")
+impl option_i_32QueryTableAccess for __sdk::QueryTableAccessor {
+    fn option_i_32(&self) -> __sdk::__query_builder::Table<OptionI32> {
+        __sdk::__query_builder::Table::new("option_i_32")
     }
 }

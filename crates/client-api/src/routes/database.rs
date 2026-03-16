@@ -37,6 +37,7 @@ use spacetimedb_client_api_messages::name::{
     self, DatabaseName, DomainName, MigrationPolicy, PrePublishAutoMigrateResult, PrePublishManualMigrateResult,
     PrePublishResult, PrettyPrintStyle, PublishOp, PublishResult,
 };
+use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::{sats, AlgebraicValue, Hash, ProductValue, Timestamp};
 use spacetimedb_schema::auto_migrate::{
@@ -183,8 +184,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     };
 
     module
-        // We don't clear views or procedures after reducer calls
-        .call_identity_disconnected(caller_identity, connection_id, false)
+        .call_identity_disconnected(caller_identity, connection_id)
         .await
         .map_err(client_disconnected_error_to_response)?;
 
@@ -327,6 +327,8 @@ pub struct SchemaQueryParams {
 enum SchemaVersion {
     #[serde(rename = "9")]
     V9,
+    #[serde(rename = "10")]
+    V10,
 }
 
 pub async fn schema<S>(
@@ -338,12 +340,23 @@ pub async fn schema<S>(
 where
     S: ControlStateDelegate + NodeDelegate,
 {
-    let (module, _) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+    let (leader, _) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
+    // Wait for the module to finish loading rather than returning an immediate
+    // 500 error. The database may still be initializing (replaying the log,
+    // running init reducers, etc.).
+    let module = leader
+        .wait_for_module(std::time::Duration::from_secs(10))
+        .await
+        .map_err(log_and_500)?;
 
     let module_def = &module.info.module_def;
     let response_json = match version {
         SchemaVersion::V9 => {
-            let raw = RawModuleDefV9::from(module_def.clone());
+            let raw = RawModuleDefV9::from(module_def.as_ref().clone());
+            axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
+        }
+        SchemaVersion::V10 => {
+            let raw = RawModuleDefV10::from(module_def.as_ref().clone());
             axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
         }
     };
@@ -496,7 +509,7 @@ pub struct SqlQueryParams {
     /// If `true`, return the query result only after its transaction offset
     /// is confirmed to be durable.
     #[serde(default)]
-    pub confirmed: bool,
+    pub confirmed: Option<bool>,
 }
 
 pub async fn sql_direct<S>(
@@ -518,7 +531,8 @@ where
         .authorize_sql(caller_identity, database.database_identity)
         .await?;
 
-    host.exec_sql(auth, database, confirmed, sql).await
+    host.exec_sql(auth, database, confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS), sql)
+        .await
 }
 
 pub async fn sql<S>(
@@ -715,7 +729,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
     };
     let maybe_org_identity = match organization.as_ref() {
         None => None,
-        Some(org) => org.resolve(&ctx).await.map(Some)?,
+        Some(org) => org.resolve_namespace_owner(&ctx).await.map(Some)?,
     };
 
     // Check that the replication factor looks somewhat sane.
@@ -942,6 +956,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
             new_module_hash,
             breaks_client,
             plan,
+            major_version_upgrade,
         } => {
             info!(
                 "planned auto-migration of database {} from {} to {}",
@@ -958,12 +973,17 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
                 token,
                 migrate_plan: plan,
                 break_clients: breaks_client,
+                major_version_upgrade,
             }))
         }
-        MigratePlanResult::AutoMigrationError(e) => {
+        MigratePlanResult::AutoMigrationError {
+            error: e,
+            major_version_upgrade,
+        } => {
             info!("database {database_identity} needs manual migration");
             Ok(PrePublishResult::ManualMigrate(PrePublishManualMigrateResult {
                 reason: e.to_string(),
+                major_version_upgrade,
             }))
         }
     }
@@ -1087,7 +1107,7 @@ pub async fn set_names<S: ControlStateDelegate + Authorization>(
         })?;
 
     for name in &validated_names {
-        if ctx.lookup_identity(name.as_str()).await.unwrap().is_some() {
+        if ctx.lookup_database_identity(name.as_str()).await.unwrap().is_some() {
             return Ok((
                 StatusCode::BAD_REQUEST,
                 axum::Json(name::SetDomainsResult::OtherError(format!(

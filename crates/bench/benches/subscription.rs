@@ -1,18 +1,18 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use spacetimedb::client::consume_each_list::ConsumeEachBuffer;
+use spacetimedb::db::relational_db::RelationalDB;
 use spacetimedb::error::DBError;
 use spacetimedb::host::module_host::DatabaseTableUpdate;
 use spacetimedb::identity::AuthCtx;
-use spacetimedb::messages::websocket::BsatnFormat;
 use spacetimedb::sql::ast::SchemaViewer;
 use spacetimedb::subscription::query::compile_read_only_queryset;
 use spacetimedb::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use spacetimedb::subscription::subscription::ExecutionSet;
 use spacetimedb::subscription::tx::DeltaTx;
 use spacetimedb::subscription::{collect_table_update, TableUpdateType};
-use spacetimedb::{db::relational_db::RelationalDB, messages::websocket::Compression};
 use spacetimedb_bench::database::BenchDatabase as _;
 use spacetimedb_bench::spacetime_raw::SpacetimeRaw;
+use spacetimedb_client_api_messages::websocket::v1::{BsatnFormat, Compression};
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_primitives::{col_list, TableId};
@@ -55,7 +55,7 @@ fn create_table_footprint(db: &RelationalDB) -> Result<TableId, DBError> {
 fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
     DatabaseTableUpdate {
         table_id,
-        table_name: TableName::new_from_str(table_name),
+        table_name: TableName::for_test(table_name),
         inserts: [row].into(),
         deletes: [].into(),
     }

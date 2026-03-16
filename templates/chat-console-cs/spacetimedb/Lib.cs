@@ -2,7 +2,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [Table(Name = "User", Public = true)]
+    [Table(Accessor = "User", Public = true)]
     public partial class User
     {
         [PrimaryKey]
@@ -11,7 +11,7 @@ public static partial class Module
         public bool Online;
     }
 
-    [Table(Name = "Message", Public = true)]
+    [Table(Accessor = "Message", Public = true)]
     public partial class Message
     {
         public Identity Sender;

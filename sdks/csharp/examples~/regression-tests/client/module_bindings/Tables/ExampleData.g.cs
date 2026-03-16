@@ -54,8 +54,8 @@ namespace SpacetimeDB.Types
 
         public ExampleDataCols(string tableName)
         {
-            Id = new global::SpacetimeDB.Col<ExampleData, uint>(tableName, "Id");
-            Indexed = new global::SpacetimeDB.Col<ExampleData, uint>(tableName, "Indexed");
+            Id = new global::SpacetimeDB.Col<ExampleData, uint>(tableName, "id");
+            Indexed = new global::SpacetimeDB.Col<ExampleData, uint>(tableName, "indexed");
         }
     }
 
@@ -66,8 +66,8 @@ namespace SpacetimeDB.Types
 
         public ExampleDataIxCols(string tableName)
         {
-            Id = new global::SpacetimeDB.IxCol<ExampleData, uint>(tableName, "Id");
-            Indexed = new global::SpacetimeDB.IxCol<ExampleData, uint>(tableName, "Indexed");
+            Id = new global::SpacetimeDB.IxCol<ExampleData, uint>(tableName, "id");
+            Indexed = new global::SpacetimeDB.IxCol<ExampleData, uint>(tableName, "indexed");
         }
     }
 }

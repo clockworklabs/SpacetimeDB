@@ -19,5 +19,5 @@ To (re-)generate the `module_bindings`, from this directory, run:
 mkdir -p src/module_bindings
 spacetime generate --lang rust                                     \
     --out-dir src/module_bindings                                  \
-    --project-path ../../../../modules/sdk-test-connect-disconnect
+    --module-path ../../../../modules/sdk-test-connect-disconnect
 ```

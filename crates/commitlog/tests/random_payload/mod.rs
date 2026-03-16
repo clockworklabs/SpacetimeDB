@@ -1,5 +1,3 @@
-use std::num::NonZeroU16;
-
 use log::info;
 use spacetimedb_commitlog::tests::helpers::enable_logging;
 use spacetimedb_commitlog::{payload, Commitlog, Options};
@@ -18,7 +16,6 @@ fn smoke() {
         CommitLogDir::from_path_unchecked(root.path()),
         Options {
             max_segment_size: 8 * 1024,
-            max_records_in_commit: NonZeroU16::MIN,
             ..Options::default()
         },
         None,
@@ -27,18 +24,18 @@ fn smoke() {
 
     let n_txs = 500;
     let payload = gen_payload();
-    for _ in 0..n_txs {
-        clog.append_maybe_flush(payload).unwrap();
+    for i in 0..n_txs {
+        clog.commit([(i, payload)]).unwrap();
     }
     let committed_offset = clog.flush_and_sync().unwrap();
 
-    assert_eq!(n_txs - 1, committed_offset.unwrap() as usize);
+    assert_eq!(n_txs - 1, committed_offset.unwrap());
     assert_eq!(
-        n_txs,
+        n_txs as usize,
         clog.transactions(&payload::ArrayDecoder).map(Result::unwrap).count()
     );
     // We set max_records_in_commit to 1, so n_commits == n_txs
-    assert_eq!(n_txs, clog.commits().map(Result::unwrap).count());
+    assert_eq!(n_txs as usize, clog.commits().map(Result::unwrap).count());
 }
 
 #[test]
@@ -48,7 +45,6 @@ fn resets() {
         CommitLogDir::from_path_unchecked(root.path()),
         Options {
             max_segment_size: 512,
-            max_records_in_commit: NonZeroU16::MIN,
             ..Options::default()
         },
         None,
@@ -56,8 +52,8 @@ fn resets() {
     .unwrap();
 
     let payload = gen_payload();
-    for _ in 0..50 {
-        clog.append_maybe_flush(payload).unwrap();
+    for i in 0..50 {
+        clog.commit([(i, payload)]).unwrap();
     }
     clog.flush_and_sync().unwrap();
 
@@ -88,7 +84,6 @@ fn compression() {
         CommitLogDir::from_path_unchecked(root.path()),
         Options {
             max_segment_size: 8 * 1024,
-            max_records_in_commit: NonZeroU16::MIN,
             ..Options::default()
         },
         None,
@@ -98,8 +93,8 @@ fn compression() {
     // try to generate commitlogs that will be amenable to compression -
     // random data doesn't compress well, so try and have there be repetition
     let payloads = (0..4).map(|_| gen_payload()).cycle().take(1024).collect::<Vec<_>>();
-    for payload in &payloads {
-        clog.append_maybe_flush(*payload).unwrap();
+    for (i, payload) in payloads.iter().enumerate() {
+        clog.commit([(i as u64, *payload)]).unwrap();
     }
     clog.flush_and_sync().unwrap();
 

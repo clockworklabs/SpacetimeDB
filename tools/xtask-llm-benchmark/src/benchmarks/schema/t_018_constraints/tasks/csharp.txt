@@ -1,4 +1,4 @@
-﻿Write a SpacetimeDB backend module in C# that defines one table and seeds two rows.
+Write a SpacetimeDB backend module in C# that defines one table and seeds two rows.
 
 TABLE
 - Account (public)

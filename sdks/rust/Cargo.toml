@@ -10,6 +10,7 @@ rust-version.workspace = true
 
 [features]
 default = []
+allow_loopback_http_for_tests = ["spacetimedb-testing/allow_loopback_http_for_tests"]
 web = [
     "dep:getrandom",
     "dep:gloo-console",
@@ -61,6 +62,9 @@ web-sys = { version = "0.3.77", features = ["HtmlDocument"], optional = true }
 home.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
+# native-tls 0.2.17 fails to compile with Rust 1.93.0 due non-exhaustive
+# matching in upstream code. Pin until upstream ships a compatible release.
+native-tls = "=0.2.14"
 
 [dev-dependencies]
 # for quickstart-chat and cursive-chat examples

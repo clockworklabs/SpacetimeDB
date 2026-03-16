@@ -48,3 +48,5 @@ impl __sdk::__query_builder::HasIxCols for UniqueU256 {
         }
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for UniqueU256 {}

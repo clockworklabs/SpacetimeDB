@@ -2,7 +2,7 @@ use core::ops::AddAssign;
 use spacetimedb::{log_stopwatch::LogStopwatch, rand::Rng, reducer, table, DbContext, ReducerContext, Table};
 
 #[derive(Clone, Copy, Debug)]
-#[table(name = position, public)]
+#[table(accessor = position, public)]
 #[repr(C)]
 pub struct Position {
     #[primary_key]
@@ -14,7 +14,7 @@ pub struct Position {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[table(name = velocity, public)]
+#[table(accessor = velocity, public)]
 #[repr(C)]
 pub struct Velocity {
     #[primary_key]
@@ -42,8 +42,8 @@ fn init(ctx: &ReducerContext) {
     let db = ctx.db();
     let mut rng = ctx.rng();
     for id in 0..1_000_000 {
-        let (x, y, z) = rng.gen();
-        let (dx, dy, dz) = rng.gen();
+        let (x, y, z) = rng.r#gen();
+        let (dx, dy, dz) = rng.r#gen();
         db.position().insert(Position { id, x, y, z });
         db.velocity().insert(Velocity { id, dx, dy, dz });
     }

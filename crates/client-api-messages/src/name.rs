@@ -131,11 +131,13 @@ pub struct PrePublishAutoMigrateResult {
     pub migrate_plan: Box<str>,
     pub break_clients: bool,
     pub token: spacetimedb_lib::Hash,
+    pub major_version_upgrade: bool,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct PrePublishManualMigrateResult {
     pub reason: String,
+    pub major_version_upgrade: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

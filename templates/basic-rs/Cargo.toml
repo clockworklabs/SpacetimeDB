@@ -3,5 +3,8 @@ name = "spacetimedb-client"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+exclude = ["spacetimedb"]
+
 [dependencies]
 spacetimedb-sdk = { path = "../../sdks/rust" }

@@ -17,7 +17,7 @@ public:
     UDbConnectionBuilderBase* WithUriBase(const FString& InUri);
 
     /** Set the remote module/database name. */
-    UDbConnectionBuilderBase* WithModuleNameBase(const FString& InName);
+    UDbConnectionBuilderBase* WithDatabaseNameBase(const FString& InName);
 
     /** Provide an authentication token if available. */
     UDbConnectionBuilderBase* WithTokenBase(const FString& InToken);

@@ -70,7 +70,7 @@ namespace SpacetimeDB.Types
             {
             }
 
-            string IProcedureArgs.ProcedureName => "ReturnEnumA";
+            string IProcedureArgs.ProcedureName => "return_enum_a";
         }
 
     }

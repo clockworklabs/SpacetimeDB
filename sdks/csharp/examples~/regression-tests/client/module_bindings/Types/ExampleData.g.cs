@@ -13,9 +13,9 @@ namespace SpacetimeDB.Types
     [DataContract]
     public sealed partial class ExampleData
     {
-        [DataMember(Name = "Id")]
+        [DataMember(Name = "id")]
         public uint Id;
-        [DataMember(Name = "Indexed")]
+        [DataMember(Name = "indexed")]
         public uint Indexed;
 
         public ExampleData(

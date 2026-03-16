@@ -33,9 +33,9 @@ namespace SpacetimeDB.Types
 
         public ScoresPlayer123RangeCols(string tableName)
         {
-            PlayerId = new global::SpacetimeDB.Col<Score, uint>(tableName, "PlayerId");
-            Level = new global::SpacetimeDB.Col<Score, uint>(tableName, "Level");
-            Points = new global::SpacetimeDB.Col<Score, long>(tableName, "Points");
+            PlayerId = new global::SpacetimeDB.Col<Score, uint>(tableName, "player_id");
+            Level = new global::SpacetimeDB.Col<Score, uint>(tableName, "level");
+            Points = new global::SpacetimeDB.Col<Score, long>(tableName, "points");
         }
     }
 

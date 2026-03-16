@@ -4,7 +4,7 @@ class Dml(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb::table(name = t, public)]
+#[spacetimedb::table(accessor = t, public)]
 pub struct T {
     name: String,
 }

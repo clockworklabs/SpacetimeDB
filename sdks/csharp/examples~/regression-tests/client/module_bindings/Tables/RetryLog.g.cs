@@ -44,8 +44,8 @@ namespace SpacetimeDB.Types
 
         public RetryLogCols(string tableName)
         {
-            Id = new global::SpacetimeDB.Col<RetryLog, uint>(tableName, "Id");
-            Attempts = new global::SpacetimeDB.Col<RetryLog, uint>(tableName, "Attempts");
+            Id = new global::SpacetimeDB.Col<RetryLog, uint>(tableName, "id");
+            Attempts = new global::SpacetimeDB.Col<RetryLog, uint>(tableName, "attempts");
         }
     }
 
@@ -55,7 +55,7 @@ namespace SpacetimeDB.Types
 
         public RetryLogIxCols(string tableName)
         {
-            Id = new global::SpacetimeDB.IxCol<RetryLog, uint>(tableName, "Id");
+            Id = new global::SpacetimeDB.IxCol<RetryLog, uint>(tableName, "id");
         }
     }
 }

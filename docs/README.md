@@ -58,6 +58,71 @@ For more information on how to use Docusaurus, see the
 4. Run the development server: `pnpm dev`, which will start a local server and open a browser window.
    All changes you make to the markdown files will be reflected live in the browser.
 
+### Cutting Docs Versions
+
+Use Docusaurus versioning to snapshot the current docs into `versioned_docs`.
+
+1. From `docs/`, cut a version:
+
+```bash
+pnpm docusaurus docs:version <version-name>
+```
+
+Example:
+
+```bash
+pnpm docusaurus docs:version 1.12.0
+```
+
+This updates:
+
+- `docs/versions.json`
+- `docs/versioned_docs/version-<version-name>/`
+- `docs/versioned_sidebars/version-<version-name>-sidebars.json`
+
+After cutting, update `docs/docusaurus.config.ts` as needed:
+
+- `lastVersion` for the default version at `/docs`
+- `versions.current` label/path for prerelease docs
+- `versions['<version-name>']` label/banner for the stable snapshot
+
+### Re-cutting a Version From an Older Commit
+
+If you need a version snapshot from an old commit (instead of current `docs/docs`), use:
+
+```bash
+./docs/scripts/get-old-docs.sh <commit> <version-name>
+```
+
+Example:
+
+```bash
+./docs/scripts/get-old-docs.sh e45cf891c20d87b11976e1d54c04c0e4639dbe81 1.12.0
+```
+
+The script creates a temporary worktree, snapshots docs from that commit, and copies the generated `versioned_docs` artifacts back into your current branch.
+
+### Rewriting Absolute Links to Version-Safe Relative Links
+
+Absolute links like `/quickstarts/react` can resolve to the default docs version. To keep links inside the current version, rewrite internal links to relative paths.
+
+Dry run:
+
+```bash
+pnpm --dir docs rewrite-links
+```
+
+Apply changes:
+
+```bash
+pnpm --dir docs rewrite-links:write
+```
+
+This script rewrites internal absolute links in:
+
+- `docs/docs` (current/prerelease docs)
+- `docs/versioned_docs/version-*` (all version snapshots)
+
 ### Adding new pages
 
 All of our directory and file names are prefixed with a five-digit number which determines how they're sorted.

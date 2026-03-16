@@ -173,7 +173,7 @@ impl BenchDatabase for SQLite {
         value: AlgebraicValue,
     ) -> ResultBench<()> {
         let statement = memo_query(BenchName::Filter, table_id, || {
-            let column: Box<str> = T::product_type().elements[col_id.into().idx()].name.take().unwrap();
+            let column = T::product_type().elements[col_id.into().idx()].name.clone().unwrap();
             format!("SELECT * FROM {table_id} WHERE {column} = ?")
         });
 
@@ -227,10 +227,10 @@ fn memo_query<F: FnOnce() -> String>(bench_name: BenchName, table_id: &str, gene
     // fast path
     let queries = QUERIES.read().unwrap();
 
-    if let Some(bench_queries) = queries.get(&bench_name) {
-        if let Some(query) = bench_queries.get(table_id) {
-            return query.clone();
-        }
+    if let Some(bench_queries) = queries.get(&bench_name)
+        && let Some(query) = bench_queries.get(table_id)
+    {
+        return query.clone();
     }
 
     // slow path

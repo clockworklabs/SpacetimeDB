@@ -33,7 +33,6 @@ use derive_more::{Add, AddAssign, From, Sub, SubAssign};
 use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId};
-use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
     bsatn::{self, ser::BsatnError, BufReservedFill, DecodeError, ToBsatn},
@@ -49,8 +48,10 @@ use spacetimedb_sats::{
     layout::{AlgebraicTypeLayout, IncompatibleTypeLayoutError, PrimitiveType, RowTypeLayout, Size},
     Typespace,
 };
+use spacetimedb_sats::{memory_usage::MemoryUsage, raw_identifier::RawIdentifier};
 use spacetimedb_schema::{
     def::{BTreeAlgorithm, IndexAlgorithm},
+    identifier::Identifier,
     schema::{columns_to_row_type, ColumnSchema, IndexSchema, TableSchema},
     table_name::TableName,
 };
@@ -456,7 +457,7 @@ impl Table {
         self.validate_row_type_layout(&new_row_layout, new_columns)
             .map_err(|e| make_err(e.reason.into()))?;
 
-        // Validate that all new columns have default values and thier types match.
+        // Validate that all new columns have default values and their types match.
         for (idx, new_col) in new_columns.iter().skip(existing_columns.len()).enumerate() {
             let default_value = default_values
                 .get(idx)
@@ -2179,9 +2180,9 @@ impl<'a> Iterator for IndexScanRangeIter<'a> {
 #[derive(Error, Debug, PartialEq, Eq)]
 #[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, cols, value.to_satn())]
 pub struct UniqueConstraintViolation {
-    pub constraint_name: Box<str>,
+    pub constraint_name: RawIdentifier,
     pub table_name: TableName,
-    pub cols: Vec<Box<str>>,
+    pub cols: Vec<Identifier>,
     pub value: AlgebraicValue,
 }
 

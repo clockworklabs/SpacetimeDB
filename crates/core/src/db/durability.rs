@@ -7,7 +7,7 @@ use spacetimedb_commitlog::payload::{
     Txdata,
 };
 use spacetimedb_datastore::{execution_context::ReducerContext, traits::TxData};
-use spacetimedb_durability::{DurableOffset, TxOffset};
+use spacetimedb_durability::{DurableOffset, Transaction, TxOffset};
 use spacetimedb_lib::Identity;
 use tokio::{
     runtime,
@@ -35,20 +35,18 @@ type ShutdownReply = oneshot::Sender<OwnedNotified>;
 /// This exists to avoid holding a transaction lock while
 /// preparing the [TxData] for processing by the [Durability] layer.
 pub struct DurabilityWorker {
+    database: Identity,
     request_tx: UnboundedSender<DurabilityRequest>,
     shutdown: Sender<ShutdownReply>,
     durability: Arc<Durability>,
     runtime: runtime::Handle,
 }
 
-/// Those who run seem to have all the fun... 🎶
-const HUNG_UP: &str = "durability actor hung up / panicked";
-
 impl DurabilityWorker {
     /// Create a new [`DurabilityWorker`] using the given `durability` policy.
     ///
     /// Background tasks will be spawned onto to provided tokio `runtime`.
-    pub fn new(durability: Arc<Durability>, runtime: runtime::Handle) -> Self {
+    pub fn new(database: Identity, durability: Arc<Durability>, runtime: runtime::Handle) -> Self {
         let (request_tx, request_rx) = unbounded_channel();
         let (shutdown_tx, shutdown_rx) = channel(1);
 
@@ -61,6 +59,7 @@ impl DurabilityWorker {
         tokio::spawn(actor.run());
 
         Self {
+            database,
             request_tx,
             shutdown: shutdown_tx,
             durability,
@@ -94,7 +93,7 @@ impl DurabilityWorker {
                 reducer_context,
                 tx_data: tx_data.clone(),
             })
-            .expect(HUNG_UP);
+            .unwrap_or_else(|_| panic!("durability actor vanished database={}", self.database));
     }
 
     /// Get the [`DurableOffset`] of this database.
@@ -197,14 +196,14 @@ impl DurabilityWorkerActor {
     }
 
     pub fn do_durability(durability: &Durability, reducer_context: Option<ReducerContext>, tx_data: &TxData) {
-        if tx_data.tx_offset().is_none() {
-            let name = reducer_context.as_ref().map(|rcx| &*rcx.name);
+        let Some(tx_offset) = tx_data.tx_offset() else {
+            let name = reducer_context.as_ref().map(|rcx| &rcx.name);
             debug_assert!(
                 !tx_data.has_rows_or_connect_disconnect(name),
                 "tx_data has no rows but has connect/disconnect: `{name:?}`"
             );
             return;
-        }
+        };
 
         let mut inserts: Box<_> = tx_data
             .persistent_inserts()
@@ -241,9 +240,11 @@ impl DurabilityWorkerActor {
             }),
         };
 
-        // TODO: Should measure queuing time + actual write
         // This does not block, as per trait docs.
-        durability.append_tx(txdata);
+        durability.append_tx(Transaction {
+            offset: tx_offset,
+            txdata,
+        });
     }
 }
 
@@ -282,9 +283,9 @@ mod tests {
     impl spacetimedb_durability::Durability for CountingDurability {
         type TxData = Txdata;
 
-        fn append_tx(&self, _tx: Self::TxData) {
+        fn append_tx(&self, tx: Transaction<Self::TxData>) {
             self.appended.send_modify(|offset| {
-                *offset = offset.map(|x| x + 1).or(Some(0));
+                offset.replace(tx.offset);
             });
         }
 
@@ -312,13 +313,13 @@ mod tests {
     #[tokio::test]
     async fn shutdown_waits_until_durable() {
         let durability = Arc::new(CountingDurability::default());
-        let worker = DurabilityWorker::new(durability.clone(), runtime::Handle::current());
+        let worker = DurabilityWorker::new(Identity::ONE, durability.clone(), runtime::Handle::current());
 
         for i in 0..=10 {
             let mut txdata = TxData::default();
             txdata.set_tx_offset(i);
             // Ensure the transaction is non-empty.
-            txdata.set_inserts_for_table(4000.into(), &TableName::new_from_str("foo"), [product![42u8]].into());
+            txdata.set_inserts_for_table(4000.into(), &TableName::for_test("foo"), [product![42u8]].into());
 
             worker.request_durability(None, &Arc::new(txdata));
         }
