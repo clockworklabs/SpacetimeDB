@@ -46,8 +46,10 @@ async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConne
 }
 
 #[cfg(target_arch = "wasm32")]
-fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
-    futures::executor::block_on(builder.build()).unwrap()
+async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+    // Web builds use async connection setup, so awaiting here avoids blocking the event loop
+    // before websocket callbacks and subscription completions have a chance to run.
+    builder.build().await.unwrap()
 }
 
 fn put_result(result: &mut Option<ResultRecorder>, res: Result<(), anyhow::Error>) {
