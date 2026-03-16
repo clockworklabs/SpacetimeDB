@@ -4163,6 +4163,9 @@ fn get_array_element_type_name(module: &ModuleDef, elem: &AlgebraicTypeUse) -> S
         AlgebraicTypeUse::Timestamp => "Timestamp".to_string(),
         AlgebraicTypeUse::TimeDuration => "TimeDuration".to_string(),
         AlgebraicTypeUse::Uuid => "Uuid".to_string(),
+        AlgebraicTypeUse::HttpRequestAndBody | AlgebraicTypeUse::HttpResponseAndBody => {
+            unimplemented!("Http request/response types are not supported in Unreal output")
+        }
         AlgebraicTypeUse::ScheduleAt => "ScheduleAt".to_string(),
         AlgebraicTypeUse::Ref(r) => type_ref_name(module, *r),
         AlgebraicTypeUse::Option(nested_inner) => {
@@ -4203,6 +4206,9 @@ fn get_optional_type_name(module: &ModuleDef, inner: &AlgebraicTypeUse) -> Strin
         AlgebraicTypeUse::Timestamp => "OptionalTimestamp".to_string(),
         AlgebraicTypeUse::TimeDuration => "OptionalTimeDuration".to_string(),
         AlgebraicTypeUse::Uuid => "OptionalUuid".to_string(),
+        AlgebraicTypeUse::HttpRequestAndBody | AlgebraicTypeUse::HttpResponseAndBody => {
+            unimplemented!("Http request/response types are not supported in Unreal output")
+        }
         AlgebraicTypeUse::ScheduleAt => "OptionalScheduleAt".to_string(),
         AlgebraicTypeUse::Array(elem) => {
             // Generate specific optional array types based on element type
@@ -4523,6 +4529,9 @@ fn get_type_name_for_result(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String
         AlgebraicTypeUse::TimeDuration => "TimeDuration".to_string(),
         AlgebraicTypeUse::ScheduleAt => "ScheduleAt".to_string(),
         AlgebraicTypeUse::Uuid => "Uuid".to_string(),
+        AlgebraicTypeUse::HttpRequestAndBody | AlgebraicTypeUse::HttpResponseAndBody => {
+            unimplemented!("Http request/response types are not supported in Unreal output")
+        }
         AlgebraicTypeUse::Unit => "Unit".to_string(),
         AlgebraicTypeUse::Array(elem) => {
             // Generate specific array types based on element type
@@ -4918,6 +4927,9 @@ fn should_pass_by_value_in_delegate(_module: &ModuleDef, ty: &AlgebraicTypeUse) 
         AlgebraicTypeUse::Timestamp => false,    // FSpacetimeDBTimestamp is a USTRUCT
         AlgebraicTypeUse::TimeDuration => false, // FSpacetimeDBTimeDuration is a USTRUCT
         AlgebraicTypeUse::Uuid => false,         // FSpacetimeDBUuid is a USTRUCT
+        AlgebraicTypeUse::HttpRequestAndBody | AlgebraicTypeUse::HttpResponseAndBody => {
+            unimplemented!("Http request/response types are not supported in Unreal output")
+        }
         // Custom structs/enums use const references
         AlgebraicTypeUse::Ref(_) => false,
         AlgebraicTypeUse::Array(_) => false, // Arrays use const references
@@ -4961,6 +4973,9 @@ fn is_blueprintable(module: &ModuleDef, ty: &AlgebraicTypeUse) -> bool {
         AlgebraicTypeUse::Timestamp => true,
         AlgebraicTypeUse::TimeDuration => true,
         AlgebraicTypeUse::Uuid => true,
+        AlgebraicTypeUse::HttpRequestAndBody | AlgebraicTypeUse::HttpResponseAndBody => {
+            unimplemented!("Http request/response types are not supported in Unreal output")
+        }
         AlgebraicTypeUse::ScheduleAt => true, // ScheduleAt is blueprintable as a property (TObjectPtr)
         AlgebraicTypeUse::Unit => true,
         AlgebraicTypeUse::Ref(r) => {
@@ -5000,6 +5015,9 @@ fn is_type_blueprintable_for_delegates(module: &ModuleDef, ty: &AlgebraicTypeUse
         AlgebraicTypeUse::Timestamp => true,
         AlgebraicTypeUse::TimeDuration => true,
         AlgebraicTypeUse::Uuid => true,
+        AlgebraicTypeUse::HttpRequestAndBody | AlgebraicTypeUse::HttpResponseAndBody => {
+            unimplemented!("Http request/response types are not supported in Unreal output")
+        }
         AlgebraicTypeUse::ScheduleAt => true,
         AlgebraicTypeUse::Unit => true,
         AlgebraicTypeUse::Ref(r) => {
@@ -5428,6 +5446,9 @@ fn cpp_ty_fmt_impl<'a>(
         AlgebraicTypeUse::Timestamp => f.write_str("FSpacetimeDBTimestamp"),
         AlgebraicTypeUse::TimeDuration => f.write_str("FSpacetimeDBTimeDuration"),
         AlgebraicTypeUse::Uuid => f.write_str("FSpacetimeDBUuid"),
+        AlgebraicTypeUse::HttpRequestAndBody | AlgebraicTypeUse::HttpResponseAndBody => {
+            unimplemented!("Http request/response types are not supported in Unreal output")
+        }
         AlgebraicTypeUse::ScheduleAt => f.write_str("FSpacetimeDBScheduleAt"),
         AlgebraicTypeUse::Unit => f.write_str("FSpacetimeDBUnit"),
 
@@ -5497,6 +5518,9 @@ fn cpp_ty_init_fmt_impl(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
         AlgebraicTypeUse::TimeDuration => String::new(),
         AlgebraicTypeUse::ScheduleAt => String::new(),
         AlgebraicTypeUse::Uuid => String::new(),
+        AlgebraicTypeUse::HttpRequestAndBody | AlgebraicTypeUse::HttpResponseAndBody => {
+            unimplemented!("Http request/response types are not supported in Unreal output")
+        }
         AlgebraicTypeUse::Unit => String::new(),
         // --------- references to user-defined types ---------
         AlgebraicTypeUse::Ref(r) => {
@@ -5559,6 +5583,9 @@ fn collect_includes_for_type(module: &ModuleDef, ty: &AlgebraicTypeUse, out: &mu
         // Builtin types that require Builtins.h (also includes LargeIntegers.h)
         Identity | ConnectionId | Timestamp | TimeDuration | ScheduleAt | Uuid => {
             out.insert("Types/Builtins.h".to_string());
+        }
+        HttpRequestAndBody | HttpResponseAndBody => {
+            unimplemented!("Http request/response types are not supported in Unreal output")
         }
         // Large integer primitives also need Builtins.h (for LargeIntegers.h)
         Primitive(PrimitiveType::I128)

@@ -1231,6 +1231,9 @@ fn ty_fmt<'a>(module: &'a ModuleDef, ty: &'a AlgebraicTypeUse) -> impl fmt::Disp
             PrimitiveType::F32 => "float",
             PrimitiveType::F64 => "double",
         }),
+        AlgebraicTypeUse::HttpRequestAndBody | AlgebraicTypeUse::HttpResponseAndBody => {
+            unimplemented!("Http request/response types are not supported in C# output")
+        }
         AlgebraicTypeUse::Never => unimplemented!(),
     })
 }
@@ -1276,6 +1279,9 @@ fn ty_fmt_with_ns<'a>(module: &'a ModuleDef, ty: &'a AlgebraicTypeUse, namespace
             PrimitiveType::F32 => "float",
             PrimitiveType::F64 => "double",
         }),
+        AlgebraicTypeUse::HttpRequestAndBody | AlgebraicTypeUse::HttpResponseAndBody => {
+            unimplemented!("Http request/response types are not supported in C# output")
+        }
         AlgebraicTypeUse::Never => unimplemented!(),
     })
 }
@@ -1307,6 +1313,9 @@ fn default_init(ctx: &TypespaceForGenerate, ty: &AlgebraicTypeUse) -> Option<&'s
         | AlgebraicTypeUse::Timestamp
         | AlgebraicTypeUse::TimeDuration
         | AlgebraicTypeUse::Uuid => None,
+        AlgebraicTypeUse::HttpRequestAndBody | AlgebraicTypeUse::HttpResponseAndBody => {
+            unimplemented!("Http request/response types are not supported in C# output")
+        }
         AlgebraicTypeUse::Never => unimplemented!("never types are not yet supported in C# output"),
     }
 }

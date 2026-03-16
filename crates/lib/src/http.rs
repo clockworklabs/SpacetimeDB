@@ -18,7 +18,13 @@
 //! Instead, if/when we want to add new functionality which requires sending additional information,
 //! we'll define a new versioned ABI call which uses new types for interchange.
 
-use spacetimedb_sats::{time_duration::TimeDuration, SpacetimeType};
+use crate::de::Deserialize;
+use crate::ser::Serialize;
+use spacetimedb_sats::{
+    product_type::{HTTP_BODY_TAG, HTTP_REQUEST_TAG, HTTP_RESPONSE_TAG},
+    time_duration::TimeDuration,
+    AlgebraicType, SpacetimeType,
+};
 
 /// Represents an HTTP request which can be made from a procedure running in a SpacetimeDB database.
 #[derive(Clone, SpacetimeType)]
@@ -170,20 +176,36 @@ impl Response {
 ///
 /// This is used for incoming HTTP route handling where the body bytes are kept separate
 /// from the metadata-only [`Request`].
-#[derive(Clone, SpacetimeType)]
-#[sats(crate = crate, name = "HttpRequestAndBody")]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct RequestAndBody {
     pub request: Request,
     pub body: Box<[u8]>,
+}
+
+impl SpacetimeType for RequestAndBody {
+    fn make_type<S: spacetimedb_sats::typespace::TypespaceBuilder>(typespace: &mut S) -> AlgebraicType {
+        AlgebraicType::product([
+            (HTTP_REQUEST_TAG, Request::make_type(typespace)),
+            (HTTP_BODY_TAG, AlgebraicType::array(AlgebraicType::U8)),
+        ])
+    }
 }
 
 /// A response paired with its body bytes.
 ///
 /// This is used for HTTP route handling where the body bytes are kept separate
 /// from the metadata-only [`Response`].
-#[derive(Clone, SpacetimeType)]
-#[sats(crate = crate, name = "HttpResponseAndBody")]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ResponseAndBody {
     pub response: Response,
     pub body: Box<[u8]>,
+}
+
+impl SpacetimeType for ResponseAndBody {
+    fn make_type<S: spacetimedb_sats::typespace::TypespaceBuilder>(typespace: &mut S) -> AlgebraicType {
+        AlgebraicType::product([
+            (HTTP_RESPONSE_TAG, Response::make_type(typespace)),
+            (HTTP_BODY_TAG, AlgebraicType::array(AlgebraicType::U8)),
+        ])
+    }
 }

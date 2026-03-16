@@ -17,6 +17,36 @@ pub const OPTION_NONE_TAG: &str = "none";
 pub const RESULT_OK_TAG: &str = "ok";
 /// The tag used for the `err` variant of the special `result` sum type.
 pub const RESULT_ERR_TAG: &str = "err";
+/// The tag used for the `Extension` variant of the special HTTP method sum type.
+pub const HTTP_METHOD_EXTENSION_TAG: &str = "Extension";
+/// The tag used for the `Get` variant of the special HTTP method sum type.
+pub const HTTP_METHOD_GET_TAG: &str = "Get";
+/// The tag used for the `Head` variant of the special HTTP method sum type.
+pub const HTTP_METHOD_HEAD_TAG: &str = "Head";
+/// The tag used for the `Post` variant of the special HTTP method sum type.
+pub const HTTP_METHOD_POST_TAG: &str = "Post";
+/// The tag used for the `Put` variant of the special HTTP method sum type.
+pub const HTTP_METHOD_PUT_TAG: &str = "Put";
+/// The tag used for the `Delete` variant of the special HTTP method sum type.
+pub const HTTP_METHOD_DELETE_TAG: &str = "Delete";
+/// The tag used for the `Connect` variant of the special HTTP method sum type.
+pub const HTTP_METHOD_CONNECT_TAG: &str = "Connect";
+/// The tag used for the `Options` variant of the special HTTP method sum type.
+pub const HTTP_METHOD_OPTIONS_TAG: &str = "Options";
+/// The tag used for the `Trace` variant of the special HTTP method sum type.
+pub const HTTP_METHOD_TRACE_TAG: &str = "Trace";
+/// The tag used for the `Patch` variant of the special HTTP method sum type.
+pub const HTTP_METHOD_PATCH_TAG: &str = "Patch";
+/// The tag used for the `Http09` variant of the special HTTP version sum type.
+pub const HTTP_VERSION_09_TAG: &str = "Http09";
+/// The tag used for the `Http10` variant of the special HTTP version sum type.
+pub const HTTP_VERSION_10_TAG: &str = "Http10";
+/// The tag used for the `Http11` variant of the special HTTP version sum type.
+pub const HTTP_VERSION_11_TAG: &str = "Http11";
+/// The tag used for the `Http2` variant of the special HTTP version sum type.
+pub const HTTP_VERSION_2_TAG: &str = "Http2";
+/// The tag used for the `Http3` variant of the special HTTP version sum type.
+pub const HTTP_VERSION_3_TAG: &str = "Http3";
 
 /// A structural sum type.
 ///
@@ -193,9 +223,59 @@ impl SumType {
         }
     }
 
+    /// Return whether this sum type is the special HTTP method type.
+    /// Does not follow `Ref`s.
+    pub fn is_http_method(&self) -> bool {
+        match &*self.variants {
+            [get, head, post, put, delete, connect, options, trace, patch, extension] => {
+                get.has_name(HTTP_METHOD_GET_TAG)
+                    && get.is_unit()
+                    && head.has_name(HTTP_METHOD_HEAD_TAG)
+                    && head.is_unit()
+                    && post.has_name(HTTP_METHOD_POST_TAG)
+                    && post.is_unit()
+                    && put.has_name(HTTP_METHOD_PUT_TAG)
+                    && put.is_unit()
+                    && delete.has_name(HTTP_METHOD_DELETE_TAG)
+                    && delete.is_unit()
+                    && connect.has_name(HTTP_METHOD_CONNECT_TAG)
+                    && connect.is_unit()
+                    && options.has_name(HTTP_METHOD_OPTIONS_TAG)
+                    && options.is_unit()
+                    && trace.has_name(HTTP_METHOD_TRACE_TAG)
+                    && trace.is_unit()
+                    && patch.has_name(HTTP_METHOD_PATCH_TAG)
+                    && patch.is_unit()
+                    && extension.has_name(HTTP_METHOD_EXTENSION_TAG)
+                    && extension.algebraic_type == AlgebraicType::String
+            }
+            _ => false,
+        }
+    }
+
+    /// Return whether this sum type is the special HTTP version type.
+    /// Does not follow `Ref`s.
+    pub fn is_http_version(&self) -> bool {
+        match &*self.variants {
+            [http09, http10, http11, http2, http3] => {
+                http09.has_name(HTTP_VERSION_09_TAG)
+                    && http09.is_unit()
+                    && http10.has_name(HTTP_VERSION_10_TAG)
+                    && http10.is_unit()
+                    && http11.has_name(HTTP_VERSION_11_TAG)
+                    && http11.is_unit()
+                    && http2.has_name(HTTP_VERSION_2_TAG)
+                    && http2.is_unit()
+                    && http3.has_name(HTTP_VERSION_3_TAG)
+                    && http3.is_unit()
+            }
+            _ => false,
+        }
+    }
+
     /// Returns whether this sum type is a special known type, currently `Option`, `ScheduleAt`, or `Result`.
     pub fn is_special(&self) -> bool {
-        self.is_option() || self.is_schedule_at() || self.is_result()
+        self.is_option() || self.is_schedule_at() || self.is_result() || self.is_http_method() || self.is_http_version()
     }
 
     /// Returns whether this sum type is like on in C without data attached to the variants.

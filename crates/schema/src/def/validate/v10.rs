@@ -22,7 +22,6 @@ pub struct ExplicitNamesLookup {
     pub tables: HashMap<RawIdentifier, RawIdentifier>,
     pub functions: HashMap<RawIdentifier, RawIdentifier>,
     pub indexes: HashMap<RawIdentifier, RawIdentifier>,
-    pub enum_variants: HashMap<RawIdentifier, HashMap<RawIdentifier, RawIdentifier>>,
 }
 
 impl ExplicitNamesLookup {
@@ -30,7 +29,6 @@ impl ExplicitNamesLookup {
         let mut tables = HashMap::default();
         let mut functions = HashMap::default();
         let mut indexes = HashMap::default();
-        let mut enum_variants: HashMap<RawIdentifier, HashMap<RawIdentifier, RawIdentifier>> = HashMap::default();
 
         for entry in ex.into_entries() {
             match entry {
@@ -43,12 +41,6 @@ impl ExplicitNamesLookup {
                 ExplicitNameEntry::Index(m) => {
                     indexes.insert(m.source_name, m.canonical_name);
                 }
-                ExplicitNameEntry::EnumVariant(m) => {
-                    enum_variants
-                        .entry(m.enum_source_name)
-                        .or_default()
-                        .insert(m.variant_source_name, m.variant_canonical_name);
-                }
                 _ => {}
             }
         }
@@ -57,7 +49,6 @@ impl ExplicitNamesLookup {
             tables,
             functions,
             indexes,
-            enum_variants,
         }
     }
 }
@@ -86,12 +77,6 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
     let mut typespace = def.typespace().cloned().unwrap_or_else(|| Typespace::EMPTY.clone());
     let known_type_definitions = def.types().into_iter().flatten().map(|def| def.ty);
     let case_policy = def.case_conversion_policy().into();
-    let type_ref_names: HashMap<AlgebraicTypeRef, RawIdentifier> = def
-        .types()
-        .into_iter()
-        .flatten()
-        .map(|def| (def.ty, def.source_name.source_name.clone()))
-        .collect();
     let explicit_names = def
         .explicit_names()
         .cloned()
@@ -101,12 +86,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
     // Original `typespace` needs to be preserved to be assign `accesor_name`s to columns.
     let typespace_with_accessor_names = typespace.clone();
     // Apply case conversion to `typespace`.
-    CoreValidator::typespace_case_conversion(
-        case_policy,
-        &mut typespace,
-        &type_ref_names,
-        &explicit_names.enum_variants,
-    );
+    CoreValidator::typespace_case_conversion(case_policy, &mut typespace);
 
     let mut validator = ModuleValidatorV10 {
         core: CoreValidator {

@@ -138,24 +138,11 @@ pub struct NameMapping {
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, Ord, PartialOrd))]
-pub struct EnumVariantNameMapping {
-    /// The source name of the containing enum.
-    pub enum_source_name: RawIdentifier,
-    /// The source name of the variant.
-    pub variant_source_name: RawIdentifier,
-    /// The canonical name of the variant.
-    pub variant_canonical_name: RawIdentifier,
-}
-
-#[derive(Debug, Clone, SpacetimeType)]
-#[sats(crate = crate)]
-#[cfg_attr(feature = "test", derive(PartialEq, Eq, Ord, PartialOrd))]
 #[non_exhaustive]
 pub enum ExplicitNameEntry {
     Table(NameMapping),
     Function(NameMapping),
     Index(NameMapping),
-    EnumVariant(EnumVariantNameMapping),
 }
 
 #[derive(Debug, Default, Clone, SpacetimeType)]
@@ -193,19 +180,6 @@ impl ExplicitNames {
         self.insert(ExplicitNameEntry::Index(NameMapping {
             source_name: source_name.into(),
             canonical_name: canonical_name.into(),
-        }));
-    }
-
-    pub fn insert_enum_variant(
-        &mut self,
-        enum_source_name: impl Into<RawIdentifier>,
-        variant_source_name: impl Into<RawIdentifier>,
-        variant_canonical_name: impl Into<RawIdentifier>,
-    ) {
-        self.insert(ExplicitNameEntry::EnumVariant(EnumVariantNameMapping {
-            enum_source_name: enum_source_name.into(),
-            variant_source_name: variant_source_name.into(),
-            variant_canonical_name: variant_canonical_name.into(),
         }));
     }
 
@@ -1193,7 +1167,7 @@ impl TypespaceBuilder for RawModuleDefV10Builder {
         if let btree_map::Entry::Occupied(o) = self.type_map.entry(typeid) {
             AlgebraicType::Ref(*o.get())
         } else {
-            let (slot_ref, enum_source_name) = {
+            let slot_ref = {
                 let ts = self.typespace_mut();
                 // Bind a fresh alias to the unit type.
                 let slot_ref = ts.add(AlgebraicType::unit());
@@ -1201,10 +1175,8 @@ impl TypespaceBuilder for RawModuleDefV10Builder {
                 self.type_map.insert(typeid, slot_ref);
 
                 // Alias provided? Relate `name -> slot_ref`.
-                let enum_source_name = if let Some(sats_name) = source_name {
+                if let Some(sats_name) = source_name {
                     let source_name = sats_name_to_scoped_name_v10(sats_name);
-                    let enum_source_name =
-                        should_register_enum_variant_names(sats_name).then(|| source_name.source_name.clone());
 
                     self.types_mut().push(RawTypeDefV10 {
                         source_name,
@@ -1215,42 +1187,16 @@ impl TypespaceBuilder for RawModuleDefV10Builder {
                         // macro doesn't know about the default ordering yet.
                         custom_ordering: true,
                     });
-                    enum_source_name
-                } else {
-                    None
-                };
-                (slot_ref, enum_source_name)
+                }
+                slot_ref
             };
 
             // Borrow of `v` has ended here, so we can now convince the borrow checker.
             let ty = make_ty(self);
             self.typespace_mut()[slot_ref] = ty;
-            let enum_variants = match (&enum_source_name, &self.typespace_mut()[slot_ref]) {
-                (Some(enum_source_name), AlgebraicType::Sum(sum)) => Some((
-                    enum_source_name.clone(),
-                    sum.variants
-                        .iter()
-                        .filter_map(|variant| variant.name().cloned())
-                        .collect::<Vec<_>>(),
-                )),
-                _ => None,
-            };
-            if let Some((enum_source_name, variant_names)) = enum_variants {
-                for variant_name in variant_names {
-                    self.explicit_names_mut().insert_enum_variant(
-                        enum_source_name.clone(),
-                        variant_name.clone(),
-                        variant_name,
-                    );
-                }
-            }
             AlgebraicType::Ref(slot_ref)
         }
     }
-}
-
-fn should_register_enum_variant_names(sats_name: &str) -> bool {
-    matches!(sats_name, "HttpMethod" | "HttpVersion")
 }
 
 pub fn reducer_default_ok_return_type() -> AlgebraicType {

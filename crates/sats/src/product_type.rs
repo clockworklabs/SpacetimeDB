@@ -22,6 +22,12 @@ pub const TIME_DURATION_TAG: &str = "__time_duration_micros__";
 
 /// The tag used inside the special `UUID` product type.
 pub const UUID_TAG: &str = "__uuid__";
+/// The tag used inside the special HTTP request-and-body product type.
+pub const HTTP_REQUEST_TAG: &str = "__http_request__";
+/// The tag used inside the special HTTP response-and-body product type.
+pub const HTTP_RESPONSE_TAG: &str = "__http_response__";
+/// The tag used inside the special HTTP request/response body field.
+pub const HTTP_BODY_TAG: &str = "__http_body__";
 
 /// A structural product type  of the factors given by `elements`.
 ///
@@ -165,9 +171,60 @@ impl ProductType {
         tag_name == UUID_TAG
     }
 
+    /// Returns whether this is the special tag of an HTTP request field.
+    pub fn is_http_request_tag(tag_name: &str) -> bool {
+        tag_name == HTTP_REQUEST_TAG
+    }
+
+    /// Returns whether this is the special tag of an HTTP response field.
+    pub fn is_http_response_tag(tag_name: &str) -> bool {
+        tag_name == HTTP_RESPONSE_TAG
+    }
+
+    /// Returns whether this is the special tag of an HTTP body field.
+    pub fn is_http_body_tag(tag_name: &str) -> bool {
+        tag_name == HTTP_BODY_TAG
+    }
+
     /// Returns whether this is the special case of  [`crate::uuid::Uuid`].
     pub fn is_uuid(&self) -> bool {
         self.is_newtype_of(UUID_TAG, AlgebraicType::U128)
+    }
+
+    /// Returns whether this is the special case of an HTTP request paired with body bytes.
+    /// Does not follow `Ref`s.
+    pub fn is_http_request_and_body(&self) -> bool {
+        matches!(
+            &*self.elements,
+            [
+                ProductTypeElement {
+                    name: Some(request_name),
+                    ..
+                },
+                ProductTypeElement {
+                    name: Some(body_name),
+                    ..
+                }
+            ] if &**request_name == HTTP_REQUEST_TAG && &**body_name == HTTP_BODY_TAG
+        )
+    }
+
+    /// Returns whether this is the special case of an HTTP response paired with body bytes.
+    /// Does not follow `Ref`s.
+    pub fn is_http_response_and_body(&self) -> bool {
+        matches!(
+            &*self.elements,
+            [
+                ProductTypeElement {
+                    name: Some(response_name),
+                    ..
+                },
+                ProductTypeElement {
+                    name: Some(body_name),
+                    ..
+                }
+            ] if &**response_name == HTTP_RESPONSE_TAG && &**body_name == HTTP_BODY_TAG
+        )
     }
 
     /// Returns whether this is a special known `tag`,
@@ -179,6 +236,9 @@ impl ProductType {
             TIMESTAMP_TAG,
             TIME_DURATION_TAG,
             UUID_TAG,
+            HTTP_REQUEST_TAG,
+            HTTP_RESPONSE_TAG,
+            HTTP_BODY_TAG,
         ]
         .contains(&tag_name)
     }
@@ -192,6 +252,8 @@ impl ProductType {
             || self.is_timestamp()
             || self.is_time_duration()
             || self.is_uuid()
+            || self.is_http_request_and_body()
+            || self.is_http_response_and_body()
     }
 
     /// Returns whether this is a unit type, that is, has no elements.
