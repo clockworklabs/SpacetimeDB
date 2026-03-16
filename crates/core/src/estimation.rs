@@ -1,8 +1,36 @@
-use crate::db::relational_db::Tx;
+use crate::{
+    db::relational_db::{RelationalDB, Tx},
+    error::DBError,
+};
 use spacetimedb_datastore::locking_tx_datastore::{state_view::StateView as _, NumDistinctValues};
-use spacetimedb_lib::query::Delta;
+use spacetimedb_lib::{identity::AuthCtx, query::Delta};
 use spacetimedb_physical_plan::plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, Sarg, TableScan};
 use spacetimedb_primitives::{ColList, TableId};
+
+/// If the caller is not allowed to exceed the row limit,
+/// reject the request if the estimated cardinality exceeds the limit.
+pub fn check_row_limit<Query>(
+    queries: &[Query],
+    db: &RelationalDB,
+    tx: &Tx,
+    row_est: impl Fn(&Query, &Tx) -> u64,
+    auth: &AuthCtx,
+) -> Result<(), DBError> {
+    if !auth.exceed_row_limit()
+        && let Some(limit) = db.row_limit(tx)?
+    {
+        let mut estimate: u64 = 0;
+        for query in queries {
+            estimate = estimate.saturating_add(row_est(query, tx));
+        }
+        if estimate > limit {
+            return Err(DBError::Other(anyhow::anyhow!(
+                "Estimated cardinality ({estimate} rows) exceeds limit ({limit} rows)"
+            )));
+        }
+    }
+    Ok(())
+}
 
 /// Use cardinality estimates to predict the total number of rows scanned by a query.
 pub fn estimate_rows_scanned(tx: &Tx, plan: &PhysicalPlan) -> u64 {
