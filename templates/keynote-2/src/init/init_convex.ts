@@ -1,4 +1,4 @@
-﻿const DEFAULT_CONVEX_URL = 'http://127.0.0.1:3210';
+const DEFAULT_CONVEX_URL = 'http://127.0.0.1:3210';
 
 async function callConvexMutation(url: string, pathName: string, args: any) {
   const res = await fetch(`${url}/api/mutation?format=json`, {

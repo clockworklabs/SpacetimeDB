@@ -1,4 +1,4 @@
-﻿import { RpcConnector } from '../../core/connectors.ts';
+import { RpcConnector } from '../../core/connectors.ts';
 import { RpcRequest, RpcResponse } from './rpc_common.ts';
 
 export default function planetscale_pg_rpc(

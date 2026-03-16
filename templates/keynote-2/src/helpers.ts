@@ -1,4 +1,4 @@
-﻿export function poolMax(
+export function poolMax(
   workers: number | undefined,
   envName: string,
   fallbackEnvMax: number,

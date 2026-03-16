@@ -1,4 +1,4 @@
-﻿import 'dotenv/config';
+import 'dotenv/config';
 import { readdir, mkdir, writeFile } from 'node:fs/promises';
 import { CONNECTORS } from './connectors';
 import { runOne } from './core/runner';

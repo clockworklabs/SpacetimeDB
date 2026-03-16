@@ -1,4 +1,4 @@
-﻿import type { RpcConnector } from '../core/connectors.ts';
+import type { RpcConnector } from '../core/connectors.ts';
 
 export default function bun(
   url = process.env.BUN_URL || 'http://127.0.0.1:4000',

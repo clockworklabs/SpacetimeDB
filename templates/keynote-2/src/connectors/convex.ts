@@ -1,4 +1,4 @@
-﻿import type { RpcConnector } from '../core/connectors.ts';
+import type { RpcConnector } from '../core/connectors.ts';
 
 export default function convex(
   url = process.env.CONVEX_URL || 'http://127.0.0.1:3210',

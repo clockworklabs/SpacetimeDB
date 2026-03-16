@@ -1,4 +1,4 @@
-﻿import type { RpcConnector } from '../../core/connectors.ts';
+import type { RpcConnector } from '../../core/connectors.ts';
 import { RpcRequest, RpcResponse } from './rpc_common.ts';
 
 export default function cockroach_rpc(

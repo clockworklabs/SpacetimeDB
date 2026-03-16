@@ -1,4 +1,4 @@
-﻿type LabelFilter = Record<string, string>;
+type LabelFilter = Record<string, string>;
 
 export async function fetchMetrics(url: string): Promise<string> {
   const res = await fetch(url);
