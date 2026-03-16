@@ -3,6 +3,15 @@
 //! This module is internal, and may incompatibly change without warning.
 
 #[cfg(not(feature = "web"))]
+use bytes::Bytes;
+#[cfg(not(feature = "web"))]
+use futures::TryStreamExt;
+use futures::{SinkExt, StreamExt as _};
+use futures_channel::mpsc;
+use http::uri::{InvalidUri, Scheme, Uri};
+use spacetimedb_client_api_messages::websocket as ws;
+use spacetimedb_lib::{bsatn, ConnectionId};
+#[cfg(not(feature = "web"))]
 use std::fs::File;
 #[cfg(not(feature = "web"))]
 use std::io::Write;
@@ -13,16 +22,6 @@ use std::sync::Arc;
 use std::sync::Mutex;
 #[cfg(not(feature = "web"))]
 use std::time::Duration;
-
-#[cfg(not(feature = "web"))]
-use bytes::Bytes;
-#[cfg(not(feature = "web"))]
-use futures::TryStreamExt;
-use futures::{SinkExt, StreamExt as _};
-use futures_channel::mpsc;
-use http::uri::{InvalidUri, Scheme, Uri};
-use spacetimedb_client_api_messages::websocket as ws;
-use spacetimedb_lib::{bsatn, ConnectionId};
 use thiserror::Error;
 #[cfg(not(feature = "web"))]
 use tokio::{net::TcpStream, runtime, task::JoinHandle, time::Instant};
