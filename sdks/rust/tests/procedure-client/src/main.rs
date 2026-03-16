@@ -174,7 +174,7 @@ fn subscribe_these_then(
 async fn exec_procedure_return_values() {
     let test_counter = TestCounter::new();
 
-    connect_then(&test_counter, {
+    let _conn = connect_then(&test_counter, {
         let test_counter = test_counter.clone();
         move |ctx| {
             let return_primitive_result = test_counter.add_test("return_primitive");
@@ -226,7 +226,7 @@ async fn exec_procedure_return_values() {
 async fn exec_procedure_panic() {
     let test_counter = TestCounter::new();
 
-    connect_then(&test_counter, {
+    let _conn = connect_then(&test_counter, {
         let test_counter = test_counter.clone();
         move |ctx| {
             let will_panic_result = test_counter.add_test("will_panic");
@@ -258,7 +258,7 @@ async fn exec_insert_with_tx_commit() {
     let inspect_result = test_counter.add_test("insert_with_tx_commit_values");
     let mut callback_result = Some(test_counter.add_test("insert_with_tx_commit_callback"));
 
-    connect_then(&test_counter, {
+    let _conn = connect_then(&test_counter, {
         move |ctx| {
             ctx.db().my_table().on_insert(move |_, row| {
                 assert_eq!(row.field, expected());
@@ -287,7 +287,7 @@ async fn exec_insert_with_tx_rollback() {
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
     let inspect_result = test_counter.add_test("insert_with_tx_rollback_values");
 
-    connect_then(&test_counter, {
+    let _conn = connect_then(&test_counter, {
         move |ctx| {
             ctx.db()
                 .my_table()
@@ -316,7 +316,7 @@ async fn exec_insert_with_tx_rollback() {
 /// then (in the client) deserialize the response and assert that it contains a description of that procedure.
 async fn exec_procedure_http_ok() {
     let test_counter = TestCounter::new();
-    connect_then(&test_counter, {
+    let _conn = connect_then(&test_counter, {
         let test_counter = test_counter.clone();
         move |ctx| {
             let result = test_counter.add_test("invoke_http");
@@ -353,7 +353,7 @@ async fn exec_procedure_http_ok() {
 /// then (in the client) assert that the error message looks sane.
 async fn exec_procedure_http_err() {
     let test_counter = TestCounter::new();
-    connect_then(&test_counter, {
+    let _conn = connect_then(&test_counter, {
         let test_counter = test_counter.clone();
         move |ctx| {
             let result = test_counter.add_test("invoke_http");
@@ -383,7 +383,7 @@ async fn exec_schedule_procedure() {
 
     let mut callback_result = Some(test_counter.add_test("insert_with_tx_commit_callback"));
 
-    connect_then(&test_counter, {
+    let _conn = connect_then(&test_counter, {
         move |ctx| {
             ctx.db().proc_inserts_into().on_insert(move |_, row| {
                 assert_eq!(row.x, 42);
@@ -431,7 +431,7 @@ async fn exec_sorted_uuids_insert() {
     let test_counter = TestCounter::new();
     let sorted_uuids_insert_result = test_counter.add_test("sorted_uuids_insert");
 
-    connect_then(&test_counter, {
+    let _conn = connect_then(&test_counter, {
         move |ctx| {
             ctx.procedures.sorted_uuids_insert_then(move |ctx, res| {
                 sorted_uuids_insert_result(
