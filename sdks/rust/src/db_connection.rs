@@ -39,6 +39,11 @@ use http::Uri;
 use spacetimedb_client_api_messages::websocket::{self as ws, common::QuerySetId};
 use spacetimedb_lib::{bsatn, ser::Serialize, ConnectionId, Identity, Timestamp};
 use spacetimedb_sats::Deserialize;
+use std::fs::File;
+#[cfg(not(feature = "web"))]
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::PathBuf;
 use std::sync::{atomic::AtomicU32, Arc, Mutex as StdMutex, OnceLock};
 #[cfg(not(feature = "web"))]
 use tokio::{
@@ -128,7 +133,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     /// Process a parsed WebSocket message,
     /// applying its mutations to the client cache and invoking callbacks.
     fn process_message(&self, msg: ParsedMessage<M>) -> crate::Result<()> {
-        self.debug_log(|out| writeln!(out, "`process_message`: {msg:?}"));
+        self.debug_log(|out| writeln!(out, "`process_message`: kind={}", msg.debug_kind()));
         match msg {
             // Error: treat this as an erroneous disconnect.
             ParsedMessage::Error(e) => {
@@ -946,8 +951,10 @@ but you must call one of them, or else the connection will never progress.
             source: InternalError::new("Failed to initiate WebSocket connection").with_cause(source),
         })?;
 
-        let (_websocket_loop_handle, raw_msg_recv, raw_msg_send) = ws_connection.spawn_message_loop(&handle);
-        let (_parse_loop_handle, parsed_recv_chan) = spawn_parse_loop::<M>(raw_msg_recv, &handle);
+        let (_websocket_loop_handle, raw_msg_recv, raw_msg_send) =
+            ws_connection.spawn_message_loop(&handle, extra_logging.clone());
+        let (_parse_loop_handle, parsed_recv_chan) =
+            spawn_parse_loop::<M>(raw_msg_recv, &handle, extra_logging.clone());
         let parsed_recv_chan = Arc::new(TokioMutex::new(parsed_recv_chan));
 
         let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
@@ -962,6 +969,7 @@ but you must call one of them, or else the connection will never progress.
             pending_mutations_send,
             pending_mutations_recv,
             connection_id_override,
+            extra_logging,
         ))
     }
 
@@ -969,6 +977,11 @@ but you must call one of them, or else the connection will never progress.
     /// to construct a [`DbContextImpl`].
     #[cfg(feature = "web")]
     async fn build_impl(self) -> crate::Result<DbContextImpl<M>> {
+        // The wasm/web SDK target runs under `wasm32-unknown-unknown`, where we do not
+        // have the native file APIs that back `with_debug_to_file`. Keeping the
+        // shared `extra_logging` field as `None` lets the rest of the connection and
+        // cache code stay unified without pretending that file logging works on web.
+        let extra_logging = None;
         let connection_id_override = get_connection_id_override();
         let ws_connection = WsConnection::connect(
             self.uri.clone().unwrap(),
@@ -983,7 +996,7 @@ but you must call one of them, or else the connection will never progress.
         })?;
 
         let (raw_msg_recv, raw_msg_send) = ws_connection.spawn_message_loop();
-        let parsed_recv_chan = spawn_parse_loop::<M>(raw_msg_recv);
+        let parsed_recv_chan = spawn_parse_loop::<M>(raw_msg_recv, extra_logging.clone());
         let parsed_recv_chan = Arc::new(StdMutex::new(parsed_recv_chan));
 
         let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
@@ -997,6 +1010,7 @@ but you must call one of them, or else the connection will never progress.
             pending_mutations_send,
             pending_mutations_recv,
             connection_id_override,
+            extra_logging,
         ))
     }
 
@@ -1166,8 +1180,9 @@ fn build_db_ctx<M: SpacetimeModule>(
     pending_mutations_send: mpsc::UnboundedSender<PendingMutation<M>>,
     pending_mutations_recv: SharedAsyncCell<mpsc::UnboundedReceiver<PendingMutation<M>>>,
     connection_id: Option<ConnectionId>,
+    extra_logging: Option<SharedCell<File>>,
 ) -> DbContextImpl<M> {
-    let mut cache = ClientCache::default();
+    let mut cache = ClientCache::new(extra_logging.clone());
     M::register_tables(&mut cache);
     let cache = Arc::new(StdMutex::new(cache));
 
@@ -1182,6 +1197,7 @@ fn build_db_ctx<M: SpacetimeModule>(
         pending_mutations_recv,
         identity: Arc::new(StdMutex::new(None)),
         connection_id: Arc::new(StdMutex::new(connection_id)),
+        extra_logging,
     }
 }
 
@@ -1263,6 +1279,24 @@ enum ParsedMessage<M: SpacetimeModule> {
     },
 }
 
+impl<M: SpacetimeModule> ParsedMessage<M> {
+    // The debug logger must work for every generated module type. Logging just the
+    // variant name preserves the parse/process trace without forcing every module's
+    // update type to implement `Debug`.
+    fn debug_kind(&self) -> &'static str {
+        match self {
+            Self::TransactionUpdate(_) => "TransactionUpdate",
+            Self::IdentityToken(_, _, _) => "IdentityToken",
+            Self::SubscribeApplied { .. } => "SubscribeApplied",
+            Self::UnsubscribeApplied { .. } => "UnsubscribeApplied",
+            Self::SubscriptionError { .. } => "SubscriptionError",
+            Self::Error(_) => "Error",
+            Self::ReducerResult { .. } => "ReducerResult",
+            Self::ProcedureResult { .. } => "ProcedureResult",
+        }
+    }
+}
+
 #[cfg(not(feature = "web"))]
 fn spawn_parse_loop<M: SpacetimeModule>(
     raw_message_recv: mpsc::UnboundedReceiver<ws::v2::ServerMessage>,
@@ -1277,9 +1311,10 @@ fn spawn_parse_loop<M: SpacetimeModule>(
 #[cfg(feature = "web")]
 fn spawn_parse_loop<M: SpacetimeModule>(
     raw_message_recv: mpsc::UnboundedReceiver<ws::v2::ServerMessage>,
+    extra_logging: Option<SharedCell<File>>,
 ) -> mpsc::UnboundedReceiver<ParsedMessage<M>> {
     let (parsed_message_send, parsed_message_recv) = mpsc::unbounded();
-    wasm_bindgen_futures::spawn_local(parse_loop(raw_message_recv, parsed_message_send));
+    wasm_bindgen_futures::spawn_local(parse_loop(raw_message_recv, parsed_message_send, extra_logging));
     parsed_message_recv
 }
 
@@ -1420,7 +1455,7 @@ async fn parse_loop<M: SpacetimeModule>(
             },
         };
         debug_log(&extra_logging, |file| {
-            writeln!(file, "`parse_loop`: Parsed as: {parsed:?}")
+            writeln!(file, "`parse_loop`: Parsed as kind={}", parsed.debug_kind())
         });
         send.unbounded_send(parsed)
             .expect("Failed to send ParsedMessage to main thread");

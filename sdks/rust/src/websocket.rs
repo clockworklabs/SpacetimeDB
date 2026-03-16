@@ -2,10 +2,16 @@
 //!
 //! This module is internal, and may incompatibly change without warning.
 
+#[cfg(not(feature = "web"))]
 use std::fs::File;
+#[cfg(not(feature = "web"))]
 use std::io::Write;
+#[cfg(not(feature = "web"))]
 use std::mem;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+#[cfg(not(feature = "web"))]
+use std::sync::Mutex;
+#[cfg(not(feature = "web"))]
 use std::time::Duration;
 
 #[cfg(not(feature = "web"))]
@@ -31,6 +37,7 @@ use tokio_tungstenite::{
 use tokio_tungstenite_wasm::{Message as WebSocketMessage, WebSocketStream};
 
 use crate::compression::decompress_server_message;
+#[cfg(not(feature = "web"))]
 use crate::db_connection::debug_log;
 use crate::metrics::CLIENT_METRICS;
 

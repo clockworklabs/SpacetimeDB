@@ -342,7 +342,7 @@ pub struct ClientCache<M: SpacetimeModule + ?Sized> {
     /// "keyed" on the type `HashMap<&'static str, TableCache<Row>`.
     ///
     /// The strings are table names, since we may have multiple tables with the same row type.
-    tables: Map<dyn Any + Send + Sync>,
+    tables: TypeMap,
 
     /// Clone of the [`crate::db_connection::DbContextImpl::extra_logging`].
     extra_logging: Option<SharedCell<File>>,
@@ -383,7 +383,7 @@ impl TypeMap {
 impl<M: SpacetimeModule> ClientCache<M> {
     pub(crate) fn new(extra_logging: Option<SharedCell<File>>) -> Self {
         Self {
-            tables: Map::new(),
+            tables: TypeMap::default(),
             extra_logging,
             _module: PhantomData,
         }
