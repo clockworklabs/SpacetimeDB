@@ -1,11 +1,22 @@
 pub(crate) mod module_bindings;
 
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+use std::sync::OnceLock;
+
 use module_bindings::*;
 use spacetimedb_lib::Identity;
 use spacetimedb_sdk::{error::InternalError, DbConnectionBuilder, DbContext, Table};
 use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+static WEB_DB_NAME: OnceLock<String> = OnceLock::new();
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+pub(crate) fn set_web_db_name(db_name: String) {
+    WEB_DB_NAME.set(db_name).expect("WASM DB name was already initialized");
+}
 
 /// Register a panic hook which will exit the process whenever any thread panics.
 ///
@@ -37,24 +48,25 @@ fn main() {
         .nth(1)
         .expect("Pass a test name as a command-line argument to the test client");
 
-    dispatch(&test);
+    // Keep a single async execution path so native and wasm exercise the same harness logic.
+    tokio::runtime::Runtime::new().unwrap().block_on(dispatch(&test));
 }
 
-pub(crate) fn dispatch(test: &str) {
+pub(crate) async fn dispatch(test: &str) {
     match &*test {
-        "view-anonymous-subscribe" => exec_anonymous_subscribe(),
-        "view-anonymous-subscribe-with-query-builder" => exec_anonymous_subscribe_with_query_builder(),
-        "view-non-anonymous-subscribe" => exec_non_anonymous_subscribe(),
+        "view-anonymous-subscribe" => exec_anonymous_subscribe().await,
+        "view-anonymous-subscribe-with-query-builder" => exec_anonymous_subscribe_with_query_builder().await,
+        "view-non-anonymous-subscribe" => exec_non_anonymous_subscribe().await,
 
-        "view-non-table-return" => exec_non_table_return(),
-        "view-non-table-query-builder-return" => exec_non_table_query_builder_return(),
-        "view-subscription-update" => exec_subscription_update(),
+        "view-non-table-return" => exec_non_table_return().await,
+        "view-non-table-query-builder-return" => exec_non_table_query_builder_return().await,
+        "view-subscription-update" => exec_subscription_update().await,
         _ => panic!("Unknown test: {test}"),
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
     builder.build().unwrap()
 }
 
@@ -63,7 +75,7 @@ fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection 
     futures::executor::block_on(builder.build()).unwrap()
 }
 
-fn connect_with_then(
+async fn connect_with_then(
     test_counter: &std::sync::Arc<TestCounter>,
     on_connect_suffix: &str,
     with_builder: impl FnOnce(DbConnectionBuilder<RemoteModule>) -> DbConnectionBuilder<RemoteModule>,
@@ -79,7 +91,7 @@ fn connect_with_then(
             connected_result(Ok(()));
         })
         .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
-    let conn = build_connection(with_builder(builder));
+    let conn = build_connection(with_builder(builder)).await;
     #[cfg(not(target_arch = "wasm32"))]
     conn.run_threaded();
     #[cfg(target_arch = "wasm32")]
@@ -87,11 +99,21 @@ fn connect_with_then(
     conn
 }
 
-fn connect_then(
+async fn connect_then(
     test_counter: &std::sync::Arc<TestCounter>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
 ) -> DbConnection {
-    connect_with_then(test_counter, "", |x| x, callback)
+    connect_with_then(test_counter, "", |x| x, callback).await
+}
+
+async fn wait_for_all(test_counter: &std::sync::Arc<TestCounter>) {
+    // wasm/web callbacks run on the JS event loop, so the test harness must yield
+    // instead of blocking while it waits for all expected callback outcomes.
+    #[cfg(target_arch = "wasm32")]
+    test_counter.wait_for_all_async().await;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    test_counter.wait_for_all();
 }
 
 fn subscribe_these_then(
@@ -121,7 +143,7 @@ fn reducer_callback_assert_committed(
     }
 }
 
-fn exec_anonymous_subscribe() {
+async fn exec_anonymous_subscribe() {
     let test_counter = TestCounter::new();
     let mut insert_0 = Some(test_counter.add_test("insert_0"));
     let mut insert_1 = Some(test_counter.add_test("insert_1"));
@@ -178,11 +200,12 @@ fn exec_anonymous_subscribe() {
                 )
                 .unwrap();
         });
-    });
-    test_counter.wait_for_all();
+    })
+    .await;
+    wait_for_all(&test_counter).await;
 }
 
-fn exec_anonymous_subscribe_with_query_builder() {
+async fn exec_anonymous_subscribe_with_query_builder() {
     let test_counter = TestCounter::new();
     let mut insert_0 = Some(test_counter.add_test("insert_0"));
     let mut insert_1 = Some(test_counter.add_test("insert_1"));
@@ -249,11 +272,12 @@ fn exec_anonymous_subscribe_with_query_builder() {
                     .build()
             })
             .subscribe();
-    });
-    test_counter.wait_for_all();
+    })
+    .await;
+    wait_for_all(&test_counter).await;
 }
 
-fn exec_non_anonymous_subscribe() {
+async fn exec_non_anonymous_subscribe() {
     let test_counter = TestCounter::new();
     let mut insert = Some(test_counter.add_test("insert"));
     let mut delete = Some(test_counter.add_test("delete"));
@@ -288,11 +312,12 @@ fn exec_non_anonymous_subscribe() {
                 .delete_player_then(my_identity, reducer_callback_assert_committed("delete_player"))
                 .unwrap();
         });
-    });
-    test_counter.wait_for_all();
+    })
+    .await;
+    wait_for_all(&test_counter).await;
 }
 
-fn exec_non_table_return() {
+async fn exec_non_table_return() {
     let test_counter = TestCounter::new();
     let mut insert = Some(test_counter.add_test("insert"));
     let mut delete = Some(test_counter.add_test("delete"));
@@ -329,11 +354,12 @@ fn exec_non_table_return() {
                 .delete_player_then(my_identity, reducer_callback_assert_committed("delete_player"))
                 .unwrap();
         });
-    });
-    test_counter.wait_for_all();
+    })
+    .await;
+    wait_for_all(&test_counter).await;
 }
 
-fn exec_non_table_query_builder_return() {
+async fn exec_non_table_query_builder_return() {
     let test_counter = TestCounter::new();
     let mut insert = Some(test_counter.add_test("insert"));
     let mut delete = Some(test_counter.add_test("delete"));
@@ -375,11 +401,12 @@ fn exec_non_table_query_builder_return() {
             })
             .add_query(|q_ctx| q_ctx.from.my_player_and_level().filter(|p| p.level.eq(1)).build())
             .subscribe();
-    });
-    test_counter.wait_for_all();
+    })
+    .await;
+    wait_for_all(&test_counter).await;
 }
 
-fn exec_subscription_update() {
+async fn exec_subscription_update() {
     let test_counter = TestCounter::new();
 
     let mut insert_0 = Some(test_counter.add_test("insert_0"));
@@ -407,7 +434,8 @@ fn exec_subscription_update() {
                     .unwrap();
             });
         },
-    );
+    )
+    .await;
 
     let mut insert_1 = Some(test_counter.add_test("insert_1"));
     let mut delete_1 = Some(test_counter.add_test("delete_1"));
@@ -438,6 +466,7 @@ fn exec_subscription_update() {
                     .unwrap();
             });
         },
-    );
-    test_counter.wait_for_all();
+    )
+    .await;
+    wait_for_all(&test_counter).await;
 }

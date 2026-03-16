@@ -1,11 +1,22 @@
 pub(crate) mod module_bindings;
 
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+use std::sync::OnceLock;
+
 use module_bindings::*;
 use spacetimedb_sdk::TableWithPrimaryKey;
 use spacetimedb_sdk::{error::InternalError, DbConnectionBuilder, DbContext};
 use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+static WEB_DB_NAME: OnceLock<String> = OnceLock::new();
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+pub(crate) fn set_web_db_name(db_name: String) {
+    WEB_DB_NAME.set(db_name).expect("WASM DB name was already initialized");
+}
 
 type ResultRecorder = Box<dyn Send + FnOnce(Result<(), anyhow::Error>)>;
 
@@ -23,7 +34,7 @@ fn db_name_or_panic() -> String {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
     builder.build().unwrap()
 }
 
@@ -46,7 +57,7 @@ fn reducer_callback_assert_committed(
     }
 }
 
-fn connect_then(
+async fn connect_then(
     test_counter: &std::sync::Arc<TestCounter>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
 ) -> DbConnection {
@@ -60,12 +71,22 @@ fn connect_then(
             connected_result(Ok(()));
         })
         .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
-    let conn = build_connection(conn);
+    let conn = build_connection(conn).await;
     #[cfg(not(target_arch = "wasm32"))]
     conn.run_threaded();
     #[cfg(target_arch = "wasm32")]
     conn.run_background_task();
     conn
+}
+
+async fn wait_for_all(test_counter: &std::sync::Arc<TestCounter>) {
+    // wasm/web callbacks run on the JS event loop, so the test harness must yield
+    // instead of blocking while it waits for all expected callback outcomes.
+    #[cfg(target_arch = "wasm32")]
+    test_counter.wait_for_all_async().await;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    test_counter.wait_for_all();
 }
 
 fn subscribe_these_then(
@@ -91,7 +112,7 @@ fn subscribe_these_then(
 /// - `on_update` is called for PK=1
 /// - `old_row` should be the "before" value
 /// - `new_row` should be the "after" value
-fn exec_view_pk_on_update() {
+async fn exec_view_pk_on_update() {
     let test_counter = TestCounter::new();
     let mut on_update = Some(test_counter.add_test("on_update"));
 
@@ -123,9 +144,10 @@ fn exec_view_pk_on_update() {
                 )
                 .unwrap();
         });
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 /// Subscribe to a right semijoin whose rhs is a view with primary key.
@@ -148,7 +170,7 @@ fn exec_view_pk_on_update() {
 /// - `on_update` is called for player PK=1
 /// - `old_row` should be the "before" value
 /// - `new_row` should be the "after" value
-fn exec_view_pk_join_query_builder() {
+async fn exec_view_pk_join_query_builder() {
     let test_counter = TestCounter::new();
     let mut joined_update = Some(test_counter.add_test("join_update"));
 
@@ -200,9 +222,10 @@ fn exec_view_pk_join_query_builder() {
                     .build()
             })
             .subscribe();
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 /// Subscribe to a semijoin between two views with primary keys.
@@ -226,7 +249,7 @@ fn exec_view_pk_join_query_builder() {
 /// - `on_update` is called for player PK=1
 /// - `old_row` should be the "before" value
 /// - `new_row` should be the "after" value
-fn exec_view_pk_semijoin_two_sender_views_query_builder() {
+async fn exec_view_pk_semijoin_two_sender_views_query_builder() {
     let test_counter = TestCounter::new();
     let mut joined_update = Some(test_counter.add_test("join_update"));
 
@@ -287,9 +310,10 @@ fn exec_view_pk_semijoin_two_sender_views_query_builder() {
                     .build()
             })
             .subscribe();
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -301,14 +325,15 @@ fn main() {
         .nth(1)
         .expect("Pass a test name as a command-line argument to the test client");
 
-    dispatch(&test);
+    // Keep a single async execution path so native and wasm exercise the same harness logic.
+    tokio::runtime::Runtime::new().unwrap().block_on(dispatch(&test));
 }
 
-pub(crate) fn dispatch(test: &str) {
+pub(crate) async fn dispatch(test: &str) {
     match &*test {
-        "view-pk-on-update" => exec_view_pk_on_update(),
-        "view-pk-join-query-builder" => exec_view_pk_join_query_builder(),
-        "view-pk-semijoin-two-sender-views-query-builder" => exec_view_pk_semijoin_two_sender_views_query_builder(),
+        "view-pk-on-update" => exec_view_pk_on_update().await,
+        "view-pk-join-query-builder" => exec_view_pk_join_query_builder().await,
+        "view-pk-semijoin-two-sender-views-query-builder" => exec_view_pk_semijoin_two_sender_views_query_builder().await,
         _ => panic!("Unknown test: {test}"),
     }
 }

@@ -5703,12 +5703,14 @@ name = "procedure-client"
 version = "2.0.5"
 dependencies = [
  "anyhow",
+ "console_error_panic_hook",
  "env_logger 0.10.2",
  "futures",
  "serde_json",
  "spacetimedb-lib 2.0.5",
  "spacetimedb-sdk",
  "test-counter",
+ "tokio",
  "wasm-bindgen",
  "wasm-bindgen-futures",
 ]
@@ -10270,11 +10272,13 @@ name = "view-client"
 version = "2.0.5"
 dependencies = [
  "anyhow",
+ "console_error_panic_hook",
  "env_logger 0.10.2",
  "futures",
  "spacetimedb-lib 2.0.5",
  "spacetimedb-sdk",
  "test-counter",
+ "tokio",
  "wasm-bindgen",
  "wasm-bindgen-futures",
 ]
@@ -10284,10 +10288,12 @@ name = "view-pk-client"
 version = "2.0.5"
 dependencies = [
  "anyhow",
+ "console_error_panic_hook",
  "env_logger 0.10.2",
  "futures",
  "spacetimedb-sdk",
  "test-counter",
+ "tokio",
  "wasm-bindgen",
  "wasm-bindgen-futures",
 ]
