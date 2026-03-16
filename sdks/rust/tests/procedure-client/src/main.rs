@@ -1,6 +1,8 @@
 pub(crate) mod module_bindings;
 
 use core::time::Duration;
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+use std::sync::OnceLock;
 
 use anyhow::Context;
 use module_bindings::*;
@@ -9,6 +11,14 @@ use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Table};
 use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+static WEB_DB_NAME: OnceLock<String> = OnceLock::new();
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+pub(crate) fn set_web_db_name(db_name: String) {
+    WEB_DB_NAME.set(db_name).expect("WASM DB name was already initialized");
+}
 
 /// Register a panic hook which will exit the process whenever any thread panics.
 ///
@@ -28,6 +38,13 @@ fn exit_on_panic() {
 }
 
 fn db_name_or_panic() -> String {
+    #[cfg(all(target_arch = "wasm32", feature = "web"))]
+    WEB_DB_NAME
+        .get()
+        .cloned()
+        .expect("Failed to read db name from wasm runner")
+
+    #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
     std::env::var("SPACETIME_SDK_TEST_DB_NAME").expect("Failed to read db name from env")
 }
 
@@ -40,31 +57,34 @@ fn main() {
         .nth(1)
         .expect("Pass a test name as a command-line argument to the test client");
 
-    dispatch(&test);
+    // Keep a single async execution path so native and wasm exercise the same harness logic.
+    tokio::runtime::Runtime::new().unwrap().block_on(dispatch(&test));
 }
 
-pub(crate) fn dispatch(test: &str) {
+pub(crate) async fn dispatch(test: &str) {
     match &*test {
-        "procedure-return-values" => exec_procedure_return_values(),
-        "procedure-observe-panic" => exec_procedure_panic(),
-        "procedure-http-ok" => exec_procedure_http_ok(),
-        "procedure-http-err" => exec_procedure_http_err(),
-        "insert-with-tx-commit" => exec_insert_with_tx_commit(),
-        "insert-with-tx-rollback" => exec_insert_with_tx_rollback(),
-        "schedule-procedure" => exec_schedule_procedure(),
-        "sorted-uuids-insert" => exec_sorted_uuids_insert(),
+        "procedure-return-values" => exec_procedure_return_values().await,
+        "procedure-observe-panic" => exec_procedure_panic().await,
+        "procedure-http-ok" => exec_procedure_http_ok().await,
+        "procedure-http-err" => exec_procedure_http_err().await,
+        "insert-with-tx-commit" => exec_insert_with_tx_commit().await,
+        "insert-with-tx-rollback" => exec_insert_with_tx_rollback().await,
+        "schedule-procedure" => exec_schedule_procedure().await,
+        "sorted-uuids-insert" => exec_sorted_uuids_insert().await,
         _ => panic!("Unknown test: {test}"),
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
     builder.build().unwrap()
 }
 
 #[cfg(target_arch = "wasm32")]
-fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
-    futures::executor::block_on(builder.build()).unwrap()
+async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+    // Web builds use async connection setup, so awaiting here avoids blocking the event loop
+    // before websocket callbacks and subscription completions have a chance to run.
+    builder.build().await.unwrap()
 }
 
 fn assert_table_empty<T: Table>(tbl: T) -> anyhow::Result<()> {
@@ -88,7 +108,7 @@ fn assert_all_tables_empty(ctx: &impl RemoteDbContext) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn connect_with_then(
+async fn connect_with_then(
     test_counter: &std::sync::Arc<TestCounter>,
     on_connect_suffix: &str,
     with_builder: impl FnOnce(DbConnectionBuilder<RemoteModule>) -> DbConnectionBuilder<RemoteModule>,
@@ -104,7 +124,7 @@ fn connect_with_then(
             connected_result(Ok(()));
         })
         .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
-    let conn = build_connection(with_builder(builder));
+    let conn = build_connection(with_builder(builder)).await;
     #[cfg(not(target_arch = "wasm32"))]
     conn.run_threaded();
     #[cfg(target_arch = "wasm32")]
@@ -112,11 +132,21 @@ fn connect_with_then(
     conn
 }
 
-fn connect_then(
+async fn connect_then(
     test_counter: &std::sync::Arc<TestCounter>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
 ) -> DbConnection {
-    connect_with_then(test_counter, "", |x| x, callback)
+    connect_with_then(test_counter, "", |x| x, callback).await
+}
+
+async fn wait_for_all(test_counter: &std::sync::Arc<TestCounter>) {
+    // wasm/web callbacks run on the JS event loop, so the test harness must yield
+    // instead of blocking while it waits for all expected callback outcomes.
+    #[cfg(target_arch = "wasm32")]
+    test_counter.wait_for_all_async().await;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    test_counter.wait_for_all();
 }
 
 /// A query that subscribes to all rows from all tables.
@@ -141,7 +171,7 @@ fn subscribe_these_then(
         .subscribe(queries);
 }
 
-fn exec_procedure_return_values() {
+async fn exec_procedure_return_values() {
     let test_counter = TestCounter::new();
 
     connect_then(&test_counter, {
@@ -187,12 +217,13 @@ fn exec_procedure_return_values() {
                 }));
             });
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
-fn exec_procedure_panic() {
+async fn exec_procedure_panic() {
     let test_counter = TestCounter::new();
 
     connect_then(&test_counter, {
@@ -208,12 +239,13 @@ fn exec_procedure_panic() {
                 });
             });
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
-fn exec_insert_with_tx_commit() {
+async fn exec_insert_with_tx_commit() {
     fn expected() -> ReturnStruct {
         ReturnStruct {
             a: 42,
@@ -244,12 +276,13 @@ fn exec_insert_with_tx_commit() {
                 });
             });
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
-fn exec_insert_with_tx_rollback() {
+async fn exec_insert_with_tx_rollback() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
     let inspect_result = test_counter.add_test("insert_with_tx_rollback_values");
@@ -270,9 +303,10 @@ fn exec_insert_with_tx_rollback() {
                 });
             });
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 /// Test that a procedure can perform an HTTP request and return a string derived from the response.
@@ -280,7 +314,7 @@ fn exec_insert_with_tx_rollback() {
 /// Invoke the procedure `read_my_schema`,
 /// which does an HTTP request to the `/database/schema` route and returns a JSON-ified [`RawModuleDefV9`],
 /// then (in the client) deserialize the response and assert that it contains a description of that procedure.
-fn exec_procedure_http_ok() {
+async fn exec_procedure_http_ok() {
     let test_counter = TestCounter::new();
     connect_then(&test_counter, {
         let test_counter = test_counter.clone();
@@ -307,8 +341,9 @@ fn exec_procedure_http_ok() {
                 )
             })
         }
-    });
-    test_counter.wait_for_all();
+    })
+    .await;
+    wait_for_all(&test_counter).await;
 }
 
 /// Test that a procedure can perform an HTTP request, handle its failure and return a string derived from the error.
@@ -316,7 +351,7 @@ fn exec_procedure_http_ok() {
 /// Invoke the procedure `invalid_request`,
 /// which does an HTTP request to a reserved invalid URL and returns a string-ified error,
 /// then (in the client) assert that the error message looks sane.
-fn exec_procedure_http_err() {
+async fn exec_procedure_http_err() {
     let test_counter = TestCounter::new();
     connect_then(&test_counter, {
         let test_counter = test_counter.clone();
@@ -336,12 +371,13 @@ fn exec_procedure_http_err() {
                 )
             })
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
-fn exec_schedule_procedure() {
+async fn exec_schedule_procedure() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -380,9 +416,10 @@ fn exec_schedule_procedure() {
                     .unwrap();
             });
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
 }
 
 /// Test that a procedure can generate sorted UUIDs and insert them into a table
@@ -390,7 +427,7 @@ fn exec_schedule_procedure() {
 /// Invoke the procedure `sorted_uuids_insert`,
 /// which generates 1000 sorted UUIDv7 values and inserts them into the `pk_uuid` table,
 /// then (in the client) verify that the UUIDs in the table are sorted
-fn exec_sorted_uuids_insert() {
+async fn exec_sorted_uuids_insert() {
     let test_counter = TestCounter::new();
     let sorted_uuids_insert_result = test_counter.add_test("sorted_uuids_insert");
 
@@ -420,5 +457,8 @@ fn exec_sorted_uuids_insert() {
                 )
             });
         }
-    });
+    })
+    .await;
+
+    wait_for_all(&test_counter).await;
 }

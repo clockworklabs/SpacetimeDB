@@ -36,6 +36,13 @@ fn exit_on_panic() {
 }
 
 fn db_name_or_panic() -> String {
+    #[cfg(all(target_arch = "wasm32", feature = "web"))]
+    WEB_DB_NAME
+        .get()
+        .cloned()
+        .expect("Failed to read db name from wasm runner")
+
+    #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
     std::env::var("SPACETIME_SDK_TEST_DB_NAME").expect("Failed to read db name from env")
 }
 
