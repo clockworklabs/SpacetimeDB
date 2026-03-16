@@ -896,6 +896,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-views-count"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-views-drop-view"
 version = "0.1.0"
 dependencies = [
