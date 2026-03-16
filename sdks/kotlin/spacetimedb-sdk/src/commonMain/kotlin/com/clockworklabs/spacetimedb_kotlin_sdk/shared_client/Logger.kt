@@ -53,7 +53,7 @@ public object Logger {
         set(value) { _handler.value = value }
 
     public fun exception(throwable: Throwable) {
-        if (LogLevel.EXCEPTION.shouldLog(level)) handler.log(LogLevel.EXCEPTION, throwable.stackTraceToString())
+        if (LogLevel.EXCEPTION.shouldLog(level)) handler.log(LogLevel.EXCEPTION, redactSensitive(throwable.stackTraceToString()))
     }
 
     public fun exception(message: () -> String) {
