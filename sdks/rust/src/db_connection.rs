@@ -1168,6 +1168,7 @@ fn build_db_ctx_inner<M: SpacetimeModule>(
     }))
 }
 
+#[allow(clippy::too_many_arguments)]
 /// Assemble and return a [`DbContextImpl`] from the provided [`DbContextImplInner`], and channels.
 fn build_db_ctx<M: SpacetimeModule>(
     #[cfg(not(feature = "web"))] runtime_handle: runtime::Handle,
