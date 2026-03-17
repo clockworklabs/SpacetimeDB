@@ -6,6 +6,7 @@
 //! It allows easier future extensibility to add new kinds of definitions.
 
 use crate::db::raw_def::v9::{Lifecycle, RawIndexAlgorithm, TableAccess, TableType};
+use crate::db::view::extract_view_return_product_type_ref;
 use core::fmt;
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
@@ -69,6 +70,12 @@ pub enum RawModuleDefV10Section {
 
     /// View definitions.
     Views(Vec<RawViewDefV10>),
+
+    /// Extended view definitions.
+    ///
+    /// This preserves the original `Views` section for backwards compatibility while
+    /// allowing richer schema metadata for views.
+    ViewsV11(Vec<RawViewDefV11>),
 
     /// Schedule definitions.
     ///
@@ -509,6 +516,55 @@ pub struct RawViewDefV10 {
     pub return_type: AlgebraicType,
 }
 
+/// An extended view definition.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawViewDefV11 {
+    /// The name of the view function as defined in the module
+    pub source_name: RawIdentifier,
+
+    /// The index of the view in the module's list of views.
+    pub index: u32,
+
+    /// Is this a public or a private view?
+    /// Currently only public views are supported.
+    /// Private views may be supported in the future.
+    pub is_public: bool,
+
+    /// Is this view anonymous?
+    /// An anonymous view does not know who called it.
+    /// Specifically, it is a view that has an `AnonymousViewContext` as its first argument.
+    /// This type does not have access to the `Identity` of the caller.
+    pub is_anonymous: bool,
+
+    /// The types and optional names of the parameters, in order.
+    /// This `ProductType` need not be registered in the typespace.
+    pub params: ProductType,
+
+    /// The return type of the view.
+    /// Either `T`, `Option<T>`, or `Vec<T>` where `T` is a `SpacetimeType`.
+    ///
+    /// More strictly `T` must be a SATS `ProductType`,
+    /// however this will be validated by the server on publish.
+    ///
+    /// This is the single source of truth for the views's columns.
+    /// All elements of the inner `ProductType` must have names.
+    /// This again will be validated by the server on publish.
+    pub return_type: AlgebraicType,
+
+    /// The primary key columns of the view, if present.
+    ///
+    /// A list of length 0 means no primary key. Currently, a list of length >1 is not supported.
+    pub primary_key: ColList,
+
+    /// The indices of the view.
+    pub indexes: Vec<RawIndexDefV10>,
+
+    /// Any constraints on the view.
+    pub constraints: Vec<RawConstraintDefV10>,
+}
+
 impl RawModuleDefV10 {
     /// Get the types section, if present.
     pub fn types(&self) -> Option<&Vec<RawTypeDefV10>> {
@@ -554,6 +610,14 @@ impl RawModuleDefV10 {
     pub fn views(&self) -> Option<&Vec<RawViewDefV10>> {
         self.sections.iter().find_map(|s| match s {
             RawModuleDefV10Section::Views(views) => Some(views),
+            _ => None,
+        })
+    }
+
+    /// Get the extended views section, if present.
+    pub fn views_v11(&self) -> Option<&Vec<RawViewDefV11>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::ViewsV11(views) => Some(views),
             _ => None,
         })
     }
@@ -699,6 +763,24 @@ impl RawModuleDefV10Builder {
         match &mut self.module.sections[idx] {
             RawModuleDefV10Section::Views(views) => views,
             _ => unreachable!("Just ensured Views section exists"),
+        }
+    }
+
+    /// Get mutable access to the extended views section, creating it if missing.
+    fn views_v11_mut(&mut self) -> &mut Vec<RawViewDefV11> {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::ViewsV11(_)))
+            .unwrap_or_else(|| {
+                self.module.sections.push(RawModuleDefV10Section::ViewsV11(Vec::new()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::ViewsV11(views) => views,
+            _ => unreachable!("Just ensured ViewsV11 section exists"),
         }
     }
 
@@ -994,6 +1076,95 @@ impl RawModuleDefV10Builder {
             params,
             return_type,
         });
+    }
+
+    /// Add an extended view to the in-progress module.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_view_v11(
+        &mut self,
+        source_name: impl Into<RawIdentifier>,
+        index: usize,
+        is_public: bool,
+        is_anonymous: bool,
+        params: ProductType,
+        return_type: AlgebraicType,
+        primary_key: ColList,
+        indexes: Vec<RawIndexDefV10>,
+        constraints: Vec<RawConstraintDefV10>,
+    ) {
+        self.views_v11_mut().push(RawViewDefV11 {
+            source_name: source_name.into(),
+            index: index as u32,
+            is_public,
+            is_anonymous,
+            params,
+            return_type,
+            primary_key,
+            indexes,
+            constraints,
+        });
+    }
+
+    /// Add an extended view to the in-progress module, resolving named primary key columns
+    /// against the view's return row type.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_view_with_primary_key_columns(
+        &mut self,
+        source_name: impl Into<RawIdentifier>,
+        index: usize,
+        is_public: bool,
+        is_anonymous: bool,
+        params: ProductType,
+        return_type: AlgebraicType,
+        primary_key_columns: &[&str],
+    ) {
+        let primary_key = self.resolve_view_primary_key_columns(&return_type, primary_key_columns);
+        self.add_view_v11(
+            source_name,
+            index,
+            is_public,
+            is_anonymous,
+            params,
+            return_type,
+            primary_key,
+            Vec::new(),
+            Vec::new(),
+        );
+    }
+
+    fn resolve_view_primary_key_columns(&self, return_type: &AlgebraicType, primary_key_columns: &[&str]) -> ColList {
+        if primary_key_columns.is_empty() {
+            return ColList::empty();
+        }
+
+        let Some((product_type_ref, _)) = extract_view_return_product_type_ref(return_type) else {
+            panic!("view primary key must refer to a product return type");
+        };
+        let Some(product) = self.lookup_product_type_in_return(product_type_ref) else {
+            panic!("view primary key must refer to a product return type");
+        };
+
+        let cols = primary_key_columns
+            .iter()
+            .map(|name| {
+                product
+                    .elements
+                    .iter()
+                    .position(|element| element.name.as_deref() == Some(*name))
+                    .unwrap_or_else(|| panic!("view primary key column `{name}` not found in return type"))
+                    as u16
+            })
+            .map(ColId)
+            .collect::<Vec<_>>();
+
+        cols.into_iter().collect()
+    }
+
+    fn lookup_product_type_in_return(&self, product_type_ref: AlgebraicTypeRef) -> Option<&ProductType> {
+        self.module
+            .typespace()
+            .and_then(|typespace| typespace.get(product_type_ref))
+            .and_then(AlgebraicType::as_product)
     }
 
     /// Add a lifecycle reducer assignment to the module.

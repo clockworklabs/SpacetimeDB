@@ -47,6 +47,7 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{bsatn, ConnectionId, Hash, ProductType, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
+use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, Deserialize, ProductValue, Typespace, WithTypespace};
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use spacetimedb_schema::def::deserialize::FunctionDef;
@@ -54,6 +55,7 @@ use spacetimedb_schema::def::{ModuleDef, ViewDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_subscription::SubscriptionPlan;
+use spacetimedb_table::table::UniqueConstraintViolation;
 use std::sync::Arc;
 use tracing::span::EnteredSpan;
 
@@ -1272,7 +1274,17 @@ impl InstanceCommon {
                         None => stdb.materialize_anonymous_view(&mut tx, table_id, rows),
                     };
 
-                    res.context("Error materializing view")?;
+                    match res {
+                        Ok(()) => {}
+                        Err(DBError::Datastore(DatastoreError::Index(
+                            crate::error::IndexError::UniqueConstraintViolation(violation),
+                        ))) => {
+                            return Ok(ViewOutcome::Failed(format_view_unique_constraint_violation(
+                                &view_name, violation,
+                            )));
+                        }
+                        Err(err) => return Err(anyhow::Error::new(err).context("Error materializing view")),
+                    }
 
                     Ok(ViewOutcome::Success)
                 })();
@@ -1309,6 +1321,7 @@ impl InstanceCommon {
     ) -> anyhow::Result<Vec<ProductValue>> {
         run_query_for_view(tx, the_query, expected_row_type, call_info, self.info.database_identity)
     }
+
     /// A [`MutTxId`] knows which views must be updated (re-evaluated).
     /// This method re-evaluates them and updates their backing tables.
     pub(crate) fn call_views_with_tx<I: WasmInstance>(
@@ -1367,6 +1380,31 @@ impl InstanceCommon {
         inst: &mut I,
     ) -> (CallScheduledFunctionResult, bool) {
         crate::host::scheduler::call_scheduled_function(&self.info.clone(), params, self, inst).await
+    }
+}
+
+fn format_view_unique_constraint_violation(view_name: &Identifier, violation: UniqueConstraintViolation) -> String {
+    let visible_cols = violation
+        .cols
+        .iter()
+        .filter(|col| {
+            let col = col.to_string();
+            col != "sender" && col != "arg_id"
+        })
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+
+    if visible_cols.is_empty() {
+        format!(
+            "view `{view_name}` violated a unique constraint while materializing: {}",
+            violation.value.to_satn()
+        )
+    } else {
+        let columns = visible_cols.join(", ");
+        format!(
+            "view `{view_name}` violated declared primary key [{columns}]: duplicate key {}",
+            violation.value.to_satn()
+        )
     }
 }
 

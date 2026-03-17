@@ -328,12 +328,14 @@ impl ModuleSubscriptions {
         match version {
             RawModuleDefVersion::V9OrEarlier => 0,
             RawModuleDefVersion::V10 => 1,
+            RawModuleDefVersion::V11 => 2,
         }
     }
 
     fn decode_module_def_version(version: u8) -> RawModuleDefVersion {
         match version {
             1 => RawModuleDefVersion::V10,
+            2 => RawModuleDefVersion::V11,
             _ => RawModuleDefVersion::V9OrEarlier,
         }
     }
@@ -1688,6 +1690,7 @@ impl ModuleSubscriptions {
                 }
             }
         }
+
         read_tx.metrics.merge(update_metrics);
         Ok(Ok(CommitAndBroadcastEventSuccess {
             tx_offset: extra_tx_offset,

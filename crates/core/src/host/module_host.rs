@@ -1888,6 +1888,14 @@ impl ModuleHost {
                 let (res, trapped) =
                     Self::call_view(instance, tx, &view_name, view_id, table_id, Nullary, caller, sender)?;
                 tx = res.tx;
+                if let ViewOutcome::Failed(err) = res.outcome {
+                    return Err(ViewCallError::InternalError(err));
+                }
+                if matches!(res.outcome, ViewOutcome::BudgetExceeded) {
+                    return Err(ViewCallError::InternalError(
+                        "view materialization ran out of energy".into(),
+                    ));
+                }
                 if trapped {
                     return Ok((tx, true));
                 }

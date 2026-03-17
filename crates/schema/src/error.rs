@@ -84,6 +84,10 @@ pub enum ValidationError {
         view: RawIdentifier,
         ty: PrettyAlgebraicType,
     },
+    #[error("view `{view}` cannot declare a primary key because query-builder views infer primary keys automatically")]
+    QueryViewDeclaredPrimaryKey { view: RawIdentifier },
+    #[error("view `{view}` has an unsupported multi-column primary key declaration: {columns:?}")]
+    UnsupportedViewPrimaryKey { view: RawIdentifier, columns: ColList },
     #[error("Table {table} has invalid product_type_ref {ref_}")]
     InvalidProductTypeRef {
         table: RawIdentifier,

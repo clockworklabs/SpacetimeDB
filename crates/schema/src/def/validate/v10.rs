@@ -3,6 +3,7 @@ use spacetimedb_lib::bsatn::Deserializer;
 use spacetimedb_lib::db::raw_def::v10::*;
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::de::DeserializeSeed as _;
+use spacetimedb_primitives::ColList;
 use spacetimedb_sats::{Typespace, WithTypespace};
 
 use crate::def::validate::v9::{
@@ -136,11 +137,22 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         // Later on, in `check_function_names_are_unique`, we'll transform this into an `IndexMap`.
         .collect_all_errors::<Vec<_>>();
 
-    let views = def
+    let raw_module_def_version = if def.views_v11().is_some() {
+        RawModuleDefVersion::V11
+    } else {
+        RawModuleDefVersion::V10
+    };
+
+    let raw_views = def
         .views()
         .cloned()
         .into_iter()
         .flatten()
+        .map(Into::into)
+        .chain(def.views_v11().cloned().into_iter().flatten().map(Into::into))
+        .collect::<Vec<RawViewDefForValidation>>();
+    let views = raw_views
+        .into_iter()
         .map(|view| {
             validator
                 .validate_view_def(view, &typespace_with_accessor_names)
@@ -280,7 +292,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         row_level_security_raw,
         lifecycle_reducers,
         procedures,
-        raw_module_def_version: RawModuleDefVersion::V10,
+        raw_module_def_version,
     })
 }
 
@@ -330,6 +342,23 @@ fn change_scheduled_functions_and_lifetimes_visibility(
 
 struct ModuleValidatorV10<'a> {
     core: CoreValidator<'a>,
+}
+
+enum RawViewDefForValidation {
+    V10(RawViewDefV10),
+    V11(RawViewDefV11),
+}
+
+impl From<RawViewDefV10> for RawViewDefForValidation {
+    fn from(value: RawViewDefV10) -> Self {
+        Self::V10(value)
+    }
+}
+
+impl From<RawViewDefV11> for RawViewDefForValidation {
+    fn from(value: RawViewDefV11) -> Self {
+        Self::V11(value)
+    }
 }
 
 impl<'a> ModuleValidatorV10<'a> {
@@ -669,15 +698,49 @@ impl<'a> ModuleValidatorV10<'a> {
         })
     }
 
-    fn validate_view_def(&mut self, view_def: RawViewDefV10, typespace_with_accessor: &Typespace) -> Result<ViewDef> {
-        let RawViewDefV10 {
-            source_name: accessor_name,
-            is_public,
-            is_anonymous,
-            params,
-            return_type,
-            index,
-        } = view_def;
+    fn validate_view_def(
+        &mut self,
+        view_def: RawViewDefForValidation,
+        typespace_with_accessor: &Typespace,
+    ) -> Result<ViewDef> {
+        let (accessor_name, is_public, is_anonymous, params, return_type, index, declared_primary_key) = match view_def
+        {
+            RawViewDefForValidation::V10(RawViewDefV10 {
+                source_name,
+                is_public,
+                is_anonymous,
+                params,
+                return_type,
+                index,
+            }) => (
+                source_name,
+                is_public,
+                is_anonymous,
+                params,
+                return_type,
+                index,
+                ColList::empty(),
+            ),
+            RawViewDefForValidation::V11(RawViewDefV11 {
+                source_name,
+                is_public,
+                is_anonymous,
+                params,
+                return_type,
+                index,
+                primary_key,
+                indexes: _,
+                constraints: _,
+            }) => (
+                source_name,
+                is_public,
+                is_anonymous,
+                params,
+                return_type,
+                index,
+                primary_key,
+            ),
+        };
 
         let invalid_return_type = || {
             ValidationErrors::from(ValidationError::InvalidViewReturnType {
@@ -688,6 +751,23 @@ impl<'a> ModuleValidatorV10<'a> {
 
         let (product_type_ref, return_kind) =
             extract_view_return_product_type_ref(&return_type).ok_or_else(invalid_return_type)?;
+
+        let declared_primary_key = match return_kind {
+            ViewKind::Query if !declared_primary_key.is_empty() => {
+                return Err(ValidationError::QueryViewDeclaredPrimaryKey {
+                    view: accessor_name.clone(),
+                }
+                .into());
+            }
+            _ if declared_primary_key.len() > 1 => {
+                return Err(ValidationError::UnsupportedViewPrimaryKey {
+                    view: accessor_name.clone(),
+                    columns: declared_primary_key,
+                }
+                .into());
+            }
+            _ => declared_primary_key,
+        };
 
         let product_type = self
             .core
@@ -774,7 +854,10 @@ impl<'a> ModuleValidatorV10<'a> {
             return_type,
             return_type_for_generate,
             product_type_ref,
-            primary_key: None,
+            primary_key: declared_primary_key.head(),
+            declared_primary_key,
+            indexes: Default::default(),
+            constraints: Default::default(),
             return_columns,
             param_columns,
         })
@@ -854,7 +937,7 @@ fn assign_query_view_primary_keys(tables: &IdentifierMap<TableDef>, views: &mut 
 
     for view in views.values_mut() {
         view.primary_key = match extract_view_return_product_type_ref(&view.return_type) {
-            Some((_, ViewKind::Procedural)) => None,
+            Some((_, ViewKind::Procedural)) => view.declared_primary_key.head(),
             Some((product_type_ref, ViewKind::Query)) => primary_key_for_product_type_ref(product_type_ref),
             None => None,
         };

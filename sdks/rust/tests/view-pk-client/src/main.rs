@@ -115,6 +115,131 @@ fn exec_view_pk_on_update() {
     test_counter.wait_for_all();
 }
 
+/// Subscribe to a procedural view with an explicit primary key declaration.
+/// Ensures the rust sdk emits an `on_update` callback and that the client receives the correct old and new rows.
+///
+/// Test:
+/// 1. Subscribe to: SELECT * FROM procedural_all_view_pk_players
+/// 2. Insert row:  (id=1, name="before")
+/// 3. Update row:  (id=1, name="after")
+///
+/// Expect:
+/// - `on_update` is called for PK=1
+/// - `old_row` should be the "before" value
+/// - `new_row` should be the "after" value
+fn exec_procedural_view_pk_on_update() {
+    let test_counter = TestCounter::new();
+    let mut on_update = Some(test_counter.add_test("on_update"));
+
+    connect_then(&test_counter, move |ctx| {
+        subscribe_these_then(ctx, &["SELECT * FROM procedural_all_view_pk_players"], move |ctx| {
+            ctx.db
+                .procedural_all_view_pk_players()
+                .on_update(move |_, old_row, new_row| {
+                    assert_eq!(old_row.id, 1);
+                    assert_eq!(old_row.name, "before");
+                    assert_eq!(new_row.id, 1);
+                    assert_eq!(new_row.name, "after");
+                    put_result(&mut on_update, Ok(()));
+                });
+
+            ctx.reducers()
+                .insert_view_pk_player_then(
+                    1,
+                    "before".to_string(),
+                    reducer_callback_assert_committed("insert_view_pk_player"),
+                )
+                .unwrap();
+
+            ctx.reducers()
+                .update_view_pk_player_then(
+                    1,
+                    "after".to_string(),
+                    reducer_callback_assert_committed("update_view_pk_player"),
+                )
+                .unwrap();
+        });
+    });
+
+    test_counter.wait_for_all();
+}
+
+/// Subscribe to a right semijoin whose rhs is a procedural view with a declared primary key.
+///
+/// Ensures:
+/// 1. A semijoin subscription involving a procedural view is valid
+/// 2. The rust sdk emits an `on_update` callback and that the client receives the correct old and new rows
+///
+/// Query:
+///   SELECT player.*
+///   FROM view_pk_membership membership
+///   JOIN procedural_all_view_pk_players player ON membership.player_id = player.id
+///
+/// Test:
+/// 1. Insert player row (id=1, "before").
+/// 2. Insert membership row referencing player_id=1, allowing the semijoin match.
+/// 3. Update player row to (id=1, "after").
+///
+/// Expect:
+/// - `on_update` is called for player PK=1
+/// - `old_row` should be the "before" value
+/// - `new_row` should be the "after" value
+fn exec_procedural_view_pk_join_query_builder() {
+    let test_counter = TestCounter::new();
+    let mut joined_update = Some(test_counter.add_test("join_update"));
+
+    connect_then(&test_counter, move |ctx| {
+        ctx.subscription_builder()
+            .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
+            .on_applied(move |ctx| {
+                ctx.db
+                    .procedural_all_view_pk_players()
+                    .on_update(move |_, old_row, new_row| {
+                        assert_eq!(old_row.id, 1);
+                        assert_eq!(old_row.name, "before");
+                        assert_eq!(new_row.id, 1);
+                        assert_eq!(new_row.name, "after");
+                        put_result(&mut joined_update, Ok(()));
+                    });
+
+                ctx.reducers()
+                    .insert_view_pk_player_then(
+                        1,
+                        "before".to_string(),
+                        reducer_callback_assert_committed("insert_view_pk_player"),
+                    )
+                    .unwrap();
+
+                ctx.reducers()
+                    .insert_view_pk_membership_then(
+                        1,
+                        1,
+                        reducer_callback_assert_committed("insert_view_pk_membership"),
+                    )
+                    .unwrap();
+
+                ctx.reducers()
+                    .update_view_pk_player_then(
+                        1,
+                        "after".to_string(),
+                        reducer_callback_assert_committed("update_view_pk_player"),
+                    )
+                    .unwrap();
+            })
+            .add_query(|q| {
+                q.from
+                    .view_pk_membership()
+                    .right_semijoin(q.from.procedural_all_view_pk_players(), |membership, player| {
+                        membership.player_id.eq(player.id)
+                    })
+                    .build()
+            })
+            .subscribe();
+    });
+
+    test_counter.wait_for_all();
+}
+
 /// Subscribe to a right semijoin whose rhs is a view with primary key.
 ///
 /// Ensures:
@@ -183,6 +308,91 @@ fn exec_view_pk_join_query_builder() {
                     .view_pk_membership()
                     .right_semijoin(q.from.all_view_pk_players(), |membership, player| {
                         membership.player_id.eq(player.id)
+                    })
+                    .build()
+            })
+            .subscribe();
+    });
+
+    test_counter.wait_for_all();
+}
+
+/// Subscribe to a semijoin between two procedural views with declared primary keys.
+///
+/// Ensures:
+/// 1. A semijoin subscription involving procedural views is valid
+/// 2. The rust sdk emits an `on_update` callback and that the client receives the correct old and new rows
+///
+/// Query:
+///   SELECT b.*
+///   FROM procedural_sender_view_pk_players_a a
+///   JOIN procedural_sender_view_pk_players_b b ON a.id = b.id
+///
+/// Test:
+/// 1. Insert player row (id=1, "before").
+/// 2. Insert membership for sender view A.
+/// 3. Insert membership for sender view B.
+/// 4. Update player row to (id=1, "after").
+///
+/// Expect:
+/// - `on_update` is called for player PK=1
+/// - `old_row` should be the "before" value
+/// - `new_row` should be the "after" value
+fn exec_procedural_view_pk_semijoin_two_sender_views_query_builder() {
+    let test_counter = TestCounter::new();
+    let mut joined_update = Some(test_counter.add_test("join_update"));
+
+    connect_then(&test_counter, move |ctx| {
+        ctx.subscription_builder()
+            .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
+            .on_applied(move |ctx| {
+                ctx.db
+                    .procedural_sender_view_pk_players_b()
+                    .on_update(move |_, old_row, new_row| {
+                        assert_eq!(old_row.id, 1);
+                        assert_eq!(old_row.name, "before");
+                        assert_eq!(new_row.id, 1);
+                        assert_eq!(new_row.name, "after");
+                        put_result(&mut joined_update, Ok(()));
+                    });
+
+                ctx.reducers()
+                    .insert_view_pk_player_then(
+                        1,
+                        "before".to_string(),
+                        reducer_callback_assert_committed("insert_view_pk_player"),
+                    )
+                    .unwrap();
+
+                ctx.reducers()
+                    .insert_view_pk_membership_then(
+                        1,
+                        1,
+                        reducer_callback_assert_committed("insert_view_pk_membership"),
+                    )
+                    .unwrap();
+
+                ctx.reducers()
+                    .insert_view_pk_membership_secondary_then(
+                        1,
+                        1,
+                        reducer_callback_assert_committed("insert_view_pk_membership_secondary"),
+                    )
+                    .unwrap();
+
+                ctx.reducers()
+                    .update_view_pk_player_then(
+                        1,
+                        "after".to_string(),
+                        reducer_callback_assert_committed("update_view_pk_player"),
+                    )
+                    .unwrap();
+            })
+            .add_query(|q| {
+                q.from
+                    .procedural_sender_view_pk_players_a()
+                    .right_semijoin(q.from.procedural_sender_view_pk_players_b(), |lhs_view, rhs_view| {
+                        lhs_view.id.eq(rhs_view.id)
                     })
                     .build()
             })
@@ -289,6 +499,11 @@ fn main() {
 
     match &*test {
         "view-pk-on-update" => exec_view_pk_on_update(),
+        "procedural-view-pk-on-update" => exec_procedural_view_pk_on_update(),
+        "procedural-view-pk-join-query-builder" => exec_procedural_view_pk_join_query_builder(),
+        "procedural-view-pk-semijoin-two-sender-views-query-builder" => {
+            exec_procedural_view_pk_semijoin_two_sender_views_query_builder()
+        }
         "view-pk-join-query-builder" => exec_view_pk_join_query_builder(),
         "view-pk-semijoin-two-sender-views-query-builder" => exec_view_pk_semijoin_two_sender_views_query_builder(),
         _ => panic!("Unknown test: {test}"),

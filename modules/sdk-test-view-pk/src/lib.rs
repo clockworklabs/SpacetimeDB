@@ -1,10 +1,18 @@
-use spacetimedb::{reducer, table, view, Query, ReducerContext, Table, ViewContext};
+use spacetimedb::{reducer, table, view, AnonymousViewContext, Query, ReducerContext, Table, ViewContext};
 
 #[table(accessor = view_pk_player, public)]
 pub struct ViewPkPlayer {
     #[primary_key]
     pub id: u64,
     pub name: String,
+}
+
+#[table(accessor = view_pk_player_scan)]
+pub struct ViewPkPlayerScan {
+    #[primary_key]
+    pub id: u64,
+    #[index(btree)]
+    pub scan_id: u64,
 }
 
 #[table(accessor = view_pk_membership, public)]
@@ -26,6 +34,9 @@ pub struct ViewPkMembershipSecondary {
 #[reducer]
 pub fn insert_view_pk_player(ctx: &ReducerContext, id: u64, name: String) {
     ctx.db.view_pk_player().insert(ViewPkPlayer { id, name });
+    ctx.db
+        .view_pk_player_scan()
+        .insert(ViewPkPlayerScan { id, scan_id: id });
 }
 
 #[reducer]
@@ -48,6 +59,45 @@ pub fn insert_view_pk_membership_secondary(ctx: &ReducerContext, id: u64, player
 #[view(accessor = all_view_pk_players, public)]
 pub fn all_view_pk_players(ctx: &ViewContext) -> impl Query<ViewPkPlayer> {
     ctx.from.view_pk_player()
+}
+
+#[view(accessor = procedural_all_view_pk_players, public, primary_key(columns = [id]))]
+pub fn procedural_all_view_pk_players(ctx: &AnonymousViewContext) -> Vec<ViewPkPlayer> {
+    ctx.db
+        .view_pk_player_scan()
+        .scan_id()
+        .filter(0u64..)
+        .filter_map(|scan| ctx.db.view_pk_player().id().find(scan.id))
+        .collect()
+}
+
+#[view(accessor = procedural_sender_view_pk_players_a, public, primary_key(columns = [id]))]
+pub fn procedural_sender_view_pk_players_a(ctx: &ViewContext) -> Vec<ViewPkPlayer> {
+    ctx.db
+        .view_pk_player_scan()
+        .scan_id()
+        .filter(0u64..)
+        .filter(|scan| ctx.db.view_pk_membership().player_id().filter(scan.id).next().is_some())
+        .filter_map(|scan| ctx.db.view_pk_player().id().find(scan.id))
+        .collect()
+}
+
+#[view(accessor = procedural_sender_view_pk_players_b, public, primary_key(columns = [id]))]
+pub fn procedural_sender_view_pk_players_b(ctx: &ViewContext) -> Vec<ViewPkPlayer> {
+    ctx.db
+        .view_pk_player_scan()
+        .scan_id()
+        .filter(0u64..)
+        .filter(|scan| {
+            ctx.db
+                .view_pk_membership_secondary()
+                .player_id()
+                .filter(scan.id)
+                .next()
+                .is_some()
+        })
+        .filter_map(|scan| ctx.db.view_pk_player().id().find(scan.id))
+        .collect()
 }
 
 #[view(accessor = sender_view_pk_players_a, public)]

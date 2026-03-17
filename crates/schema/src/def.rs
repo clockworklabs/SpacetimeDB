@@ -34,7 +34,7 @@ use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v10::{
     ExplicitNames, RawConstraintDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10,
     RawModuleDefV10Section, RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10,
-    RawScopedTypeNameV10, RawSequenceDefV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10,
+    RawScopedTypeNameV10, RawSequenceDefV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10, RawViewDefV11,
 };
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
@@ -159,6 +159,8 @@ pub enum RawModuleDefVersion {
     V9OrEarlier,
     /// Represents [`RawModuleDefV10`].
     V10,
+    /// Represents [`RawModuleDefV10`] modules using the extended `ViewsV11` section.
+    V11,
 }
 
 impl ModuleDef {
@@ -575,18 +577,24 @@ impl From<ModuleDef> for RawModuleDefV10 {
         }
 
         // Collect ExplicitNames for views: accessor_name → source_name, name → canonical_name.
-        let raw_views: Vec<RawViewDefV10> = views
+        let (raw_views_v10, raw_views_v11): (Vec<_>, Vec<_>) = views
             .into_values()
-            .map(|vd| {
+            .inspect(|vd| {
                 explicit_names.insert_function(
                     RawIdentifier::from(vd.accessor_name.clone()),
                     RawIdentifier::from(vd.name.clone()),
                 );
-                vd.into()
             })
-            .collect();
-        if !raw_views.is_empty() {
-            sections.push(RawModuleDefV10Section::Views(raw_views));
+            .partition(|vd| vd.declared_primary_key.is_empty() && vd.indexes.is_empty() && vd.constraints.is_empty());
+        if !raw_views_v10.is_empty() {
+            sections.push(RawModuleDefV10Section::Views(
+                raw_views_v10.into_iter().map(Into::into).collect(),
+            ));
+        }
+        if !raw_views_v11.is_empty() {
+            sections.push(RawModuleDefV10Section::ViewsV11(
+                raw_views_v11.into_iter().map(Into::into).collect(),
+            ));
         }
 
         if !schedules.is_empty() {
@@ -1533,6 +1541,17 @@ pub struct ViewDef {
     /// The database engine does not actually care about this, but client code generation does.
     pub primary_key: Option<ColId>,
 
+    /// The explicitly declared primary key of the view.
+    ///
+    /// This is only populated for procedural views that opt into a primary key declaration.
+    pub declared_primary_key: ColList,
+
+    /// The indexes on the view, indexed by name.
+    pub indexes: StrMap<IndexDef>,
+
+    /// The constraints on the view, indexed by name.
+    pub constraints: StrMap<ConstraintDef>,
+
     /// The return columns of this view.
     /// The same information is stored in `product_type_ref`.
     /// This is just a more convenient-to-access format.
@@ -1596,6 +1615,34 @@ impl From<ViewDef> for RawViewDefV10 {
             is_anonymous,
             params,
             return_type,
+        }
+    }
+}
+
+impl From<ViewDef> for RawViewDefV11 {
+    fn from(val: ViewDef) -> Self {
+        let ViewDef {
+            accessor_name,
+            is_anonymous,
+            is_public,
+            params,
+            return_type,
+            fn_ptr,
+            declared_primary_key,
+            indexes,
+            constraints,
+            ..
+        } = val;
+        RawViewDefV11 {
+            source_name: accessor_name.into(),
+            index: fn_ptr.into(),
+            is_public,
+            is_anonymous,
+            params,
+            return_type,
+            primary_key: declared_primary_key,
+            indexes: indexes.into_values().map(Into::into).collect(),
+            constraints: constraints.into_values().map(Into::into).collect(),
         }
     }
 }

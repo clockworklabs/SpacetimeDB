@@ -773,9 +773,12 @@ impl TableSchema {
             .map(|(i, schema)| (ColId::from(i), schema))
             .map(|(col_pos, schema)| ColumnSchema { col_pos, ..schema })
             .collect();
-        let view_primary_key = (module_def.raw_module_def_version() == RawModuleDefVersion::V10)
-            .then_some(*primary_key)
-            .flatten();
+        let view_primary_key = matches!(
+            module_def.raw_module_def_version(),
+            RawModuleDefVersion::V10 | RawModuleDefVersion::V11
+        )
+        .then_some(*primary_key)
+        .flatten();
 
         let table_access = if *is_public {
             StAccess::Public
@@ -914,31 +917,28 @@ impl TableSchema {
         };
 
         let mut constraints = vec![];
-        let view_primary_key = (module_def.raw_module_def_version() == RawModuleDefVersion::V10)
-            .then_some(primary_key.map(|pk| ColId::from(meta_cols + pk.idx())))
-            .flatten();
+        let view_primary_key = matches!(
+            module_def.raw_module_def_version(),
+            RawModuleDefVersion::V10 | RawModuleDefVersion::V11
+        )
+        .then_some(primary_key.map(|pk| ColId::from(meta_cols + pk.idx())))
+        .flatten();
 
-        if *is_anonymous {
-            if let Some(pk_col) = view_primary_key {
-                let cols = col_list![pk_col];
-                constraints.push(ConstraintSchema {
-                    table_id: TableId::SENTINEL,
-                    constraint_id: ConstraintId::SENTINEL,
-                    constraint_name: make_constraint_name(&cols),
-                    data: ConstraintData::Unique(UniqueConstraintData {
-                        columns: ColSet::from(cols.clone()),
-                    }),
-                });
-                indexes.push(IndexSchema {
-                    index_id: IndexId::SENTINEL,
-                    table_id: TableId::SENTINEL,
-                    index_name: make_index_name(&cols),
-                    index_algorithm: IndexAlgorithm::BTree(cols.into()),
-                    alias: None,
-                });
-            }
-        } else if let Some(pk_col) = view_primary_key {
-            let cols = col_list![ColId(0), pk_col];
+        if let Some(pk_col) = view_primary_key {
+            let cols = (!is_anonymous)
+                .then_some(ColId::from(0))
+                .into_iter()
+                .chain(std::iter::once(pk_col))
+                .collect::<ColList>();
+
+            constraints.push(ConstraintSchema {
+                table_id: TableId::SENTINEL,
+                constraint_id: ConstraintId::SENTINEL,
+                constraint_name: make_constraint_name(&cols),
+                data: ConstraintData::Unique(UniqueConstraintData {
+                    columns: ColSet::from(cols.clone()),
+                }),
+            });
             indexes.push(IndexSchema {
                 index_id: IndexId::SENTINEL,
                 table_id: TableId::SENTINEL,
@@ -971,7 +971,7 @@ impl TableSchema {
             StTableType::User,
             table_access,
             None,
-            if *is_anonymous { view_primary_key } else { None },
+            if meta_cols == 0 { view_primary_key } else { None },
             false,
             Some(accessor_name.clone()),
         )

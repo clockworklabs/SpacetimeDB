@@ -1968,7 +1968,8 @@ impl SendWorker {
         }
 
         // Send all the other updates.
-        let hide_reducer_info_for_non_callers = matches!(module_def_version, RawModuleDefVersion::V10);
+        let hide_reducer_info_for_non_callers =
+            matches!(module_def_version, RawModuleDefVersion::V10 | RawModuleDefVersion::V11);
 
         for (id, update) in client_id_updates.drain() {
             let database_update = SubscriptionUpdateMessage::from_event_and_update(&event, update);

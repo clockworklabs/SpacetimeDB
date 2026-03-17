@@ -2723,6 +2723,7 @@ mod tests {
 
         Ok(())
     }
+
     #[test]
     fn test_table_name() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
