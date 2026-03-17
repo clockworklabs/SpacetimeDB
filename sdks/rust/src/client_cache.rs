@@ -2,6 +2,7 @@
 //!
 //! This module is internal, and may incompatibly change without warning.
 
+use anymap3::Map;
 use crate::callbacks::CallbackId;
 use crate::db_connection::{debug_log, PendingMutation, SharedCell};
 use crate::spacetime_module::{InModule, SpacetimeModule, TableUpdate, WithBsatn};
