@@ -24,7 +24,7 @@ const DURATION: &str = "5s";
 const ALPHA: f32 = 1.5;
 const CONNECTIONS: usize = 10;
 const INIT_BALANCE: i64 = 1_000_000;
-const AMOUNT: u32 = 1;
+const AMOUNT: i64 = 1;
 const ACCOUNTS: u32 = 100_000;
 const CONFIRMED_READS: bool = true;
 // Max inflight reducer calls imposed by the server.
@@ -292,7 +292,7 @@ struct Bench {
     alpha: f32,
 
     #[arg(long, default_value_t = AMOUNT)]
-    amount: u32,
+    amount: i64,
 
     #[arg(short, long, default_value_t = CONNECTIONS)]
     connections: usize,

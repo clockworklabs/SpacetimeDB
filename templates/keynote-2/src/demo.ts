@@ -260,6 +260,8 @@ async function prepSystem(system: ConnectorKey): Promise<void> {
       // Publish module (creates DB if needed, updates if exists)
       await sh('spacetime', [
         'publish',
+        '-c',
+        '-y',
         '--server',
         server,
         moduleName,

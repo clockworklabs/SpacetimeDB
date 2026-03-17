@@ -45,6 +45,7 @@ export async function initSpacetime() {
     outDir,
     '--module-path',
     modulePath,
+    '-y',
   ]);
 
   // 3) Seed
