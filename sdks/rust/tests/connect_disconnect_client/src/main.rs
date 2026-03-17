@@ -143,12 +143,6 @@ pub(crate) async fn dispatch() {
     new_connection.run_background_task();
 
     reconnect_test_counter.wait_for_all().await;
-
-    // The second connection has no disconnect assertion, but it still needs an explicit
-    // shutdown on wasm so the background task releases its websocket before the test exits.
-    disconnect_connection(&new_connection).await;
-    #[cfg(not(target_arch = "wasm32"))]
-    reconnect_join_handle.join().unwrap();
 }
 
 #[cfg(not(target_arch = "wasm32"))]
