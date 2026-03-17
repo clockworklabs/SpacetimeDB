@@ -144,7 +144,7 @@ async fn exec_view_pk_on_update() {
     let test_counter = TestCounter::new();
     let mut on_update = Some(test_counter.add_test("on_update"));
 
-    let _conn = connect_then(&test_counter, move |ctx| {
+    let conn = connect_then(&test_counter, move |ctx| {
         subscribe_these_then(ctx, &["SELECT * FROM all_view_pk_players"], move |ctx| {
             ctx.db.all_view_pk_players().on_update(move |_, old_row, new_row| {
                 assert_eq!(old_row.id, 1);
@@ -176,7 +176,7 @@ async fn exec_view_pk_on_update() {
     .await;
 
     wait_for_all(&test_counter).await;
-    disconnect_connection(&_conn).await;
+    disconnect_connection(&conn).await;
 }
 
 /// Subscribe to a right semijoin whose rhs is a view with primary key.
@@ -203,7 +203,7 @@ async fn exec_view_pk_join_query_builder() {
     let test_counter = TestCounter::new();
     let mut joined_update = Some(test_counter.add_test("join_update"));
 
-    let _conn = connect_then(&test_counter, move |ctx| {
+    let conn = connect_then(&test_counter, move |ctx| {
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
             .on_applied(move |ctx| {
@@ -255,7 +255,7 @@ async fn exec_view_pk_join_query_builder() {
     .await;
 
     wait_for_all(&test_counter).await;
-    disconnect_connection(&_conn).await;
+    disconnect_connection(&conn).await;
 }
 
 /// Subscribe to a semijoin between two views with primary keys.
@@ -283,7 +283,7 @@ async fn exec_view_pk_semijoin_two_sender_views_query_builder() {
     let test_counter = TestCounter::new();
     let mut joined_update = Some(test_counter.add_test("join_update"));
 
-    let _conn = connect_then(&test_counter, move |ctx| {
+    let conn = connect_then(&test_counter, move |ctx| {
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
             .on_applied(move |ctx| {
@@ -344,7 +344,7 @@ async fn exec_view_pk_semijoin_two_sender_views_query_builder() {
     .await;
 
     wait_for_all(&test_counter).await;
-    disconnect_connection(&_conn).await;
+    disconnect_connection(&conn).await;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
