@@ -68,16 +68,8 @@ fn retain_connection_until_wait(connection: &ManagedConnection) {
     RETAINED_WASM_CONNECTIONS.with(|connections| connections.borrow_mut().push(connection.clone()));
 }
 
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-fn release_retained_connections() {
-    RETAINED_WASM_CONNECTIONS.with(|connections| connections.borrow_mut().clear());
-}
-
 #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
 fn retain_connection_until_wait(_: &ManagedConnection) {}
-
-#[cfg(not(all(target_arch = "wasm32", feature = "web")))]
-fn release_retained_connections() {}
 
 // `ManagedConnection` exists to separate test logic from connection-lifetime mechanics.
 // The generated `DbConnection` is a single owned handle, but this harness now needs two extra
@@ -586,14 +578,6 @@ async fn connect_then(
 
 async fn connect(test_counter: &std::sync::Arc<TestCounter>) -> ManagedConnection {
     connect_then(test_counter, |_| {}).await
-}
-
-async fn wait_for_all(test_counter: &std::sync::Arc<TestCounter>) {
-    // Use one shared async wait entrypoint even on native. The TestCounter implementation hides
-    // the native blocking wait vs wasm event-loop-friendly poll, which keeps test bodies uniform.
-    test_counter.wait_for_all_async().await;
-    // This is a no-op on native and the wasm-side lifetime release point on web.
-    release_retained_connections();
 }
 
 #[cfg(not(target_arch = "wasm32"))]
