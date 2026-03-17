@@ -435,7 +435,7 @@ fn run_client(runner: &ClientRunner, run_command: &str, client_project: &str, db
 
             create_dir_all(&bindgen_out_dir).expect("Failed to create wasm-bindgen out dir");
 
-            // TODO: Add a browser-faithful wasm runner alongside this Node-based path.
+            // TODO: Make a browser-faithful wasm runner.
             // `--target nodejs` is good enough for websocket and callback coverage, but it
             // does not exercise browser-only behavior such as cookies, `LocalStorage`, or
             // `SessionStorage`. Tests whose point is persisted web auth state should run in
