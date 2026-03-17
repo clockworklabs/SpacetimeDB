@@ -1,4 +1,7 @@
-use std::{fmt, io};
+use std::{
+    fmt,
+    io::{self, Seek},
+};
 
 use log::{debug, warn};
 
@@ -52,8 +55,14 @@ pub trait SegmentLen: io::Seek {
     }
 }
 
-pub trait SegmentReader: io::BufRead + SegmentLen + Send + Sync {}
-impl<T: io::BufRead + SegmentLen + Send + Sync> SegmentReader for T {}
+pub trait SegmentReader: io::BufRead + SegmentLen + Send + Sync {
+    /// Whether the segment is considered immutable.
+    ///
+    /// Currently, this is true when the segment is compressed.
+    /// [resume_segment_writer] uses this method to indicate that a new segment
+    /// should be created when opening a commitlog.
+    fn sealed(&self) -> bool;
+}
 
 pub trait SegmentWriter: FileLike + io::Read + io::Write + SegmentLen + Send + Sync {}
 impl<T: FileLike + io::Read + io::Write + SegmentLen + Send + Sync> SegmentWriter for T {}
@@ -243,21 +252,9 @@ pub fn resume_segment_writer<R: Repo>(
     opts: Options,
     offset: u64,
 ) -> io::Result<Result<Writer<R::SegmentWriter>, Metadata>> {
-    let mut storage = repo.open_segment_writer(offset)?;
-    // Ensure we have enough space for this segment.
-    // The segment could have been created without the `fallocate` feature
-    // enabled, so we call this here again to ensure writes can't fail due to
-    // ENOSPC.
-    fallocate(&mut storage, &opts)?;
+    let mut reader = repo.open_segment_reader(offset)?;
     let offset_index = repo.get_offset_index(offset).ok();
-    let Metadata {
-        header,
-        tx_range,
-        size_in_bytes,
-        max_epoch,
-        max_commit_offset: _,
-        max_commit: _,
-    } = match Metadata::extract(offset, &mut storage, offset_index.as_ref()) {
+    let meta = match Metadata::extract(offset, &mut reader, offset_index.as_ref()) {
         Err(error::SegmentMetadata::InvalidCommit { sofar, source }) => {
             warn!("invalid commit in segment {offset}: {source}");
             debug!("sofar={sofar:?}");
@@ -266,34 +263,55 @@ pub fn resume_segment_writer<R: Repo>(
         Err(error::SegmentMetadata::Io(e)) => return Err(e),
         Ok(meta) => meta,
     };
-    header
+    meta.header
         .ensure_compatible(opts.log_format_version, Commit::CHECKSUM_ALGORITHM)
         .map_err(|msg| io::Error::new(io::ErrorKind::InvalidData, msg))?;
     // When resuming, the log format version must be equal.
-    if header.log_format_version != opts.log_format_version {
+    if meta.header.log_format_version != opts.log_format_version {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!(
                 "log format version mismatch: current={} segment={}",
-                opts.log_format_version, header.log_format_version
+                opts.log_format_version, meta.header.log_format_version
             ),
         ));
     }
 
-    Ok(Ok(Writer {
-        commit: Commit {
-            min_tx_offset: tx_range.end,
-            n: 0,
-            records: Vec::new(),
-            epoch: max_epoch,
-        },
-        inner: io::BufWriter::new(storage),
+    if reader.sealed() {
+        Ok(Err(meta))
+    } else {
+        let Metadata {
+            header: _,
+            tx_range,
+            size_in_bytes,
+            max_epoch,
+            max_commit_offset: _,
+            max_commit: _,
+        } = meta;
+        let mut writer = repo.open_segment_writer(offset)?;
+        // Ensure we have enough space for this segment.
+        // The segment could have been created without the `fallocate` feature
+        // enabled, so we call this here again to ensure writes can't fail due
+        // to ENOSPC.
+        fallocate(&mut writer, &opts)?;
+        // We use `O_APPEND`, but make the file offset consistent regardless.
+        writer.seek(io::SeekFrom::End(0))?;
 
-        min_tx_offset: tx_range.start,
-        bytes_written: size_in_bytes,
+        Ok(Ok(Writer {
+            commit: Commit {
+                min_tx_offset: tx_range.end,
+                n: 0,
+                records: Vec::new(),
+                epoch: max_epoch,
+            },
+            inner: io::BufWriter::new(writer),
 
-        offset_index_head: create_offset_index_writer(repo, offset, opts),
-    }))
+            min_tx_offset: tx_range.start,
+            bytes_written: size_in_bytes,
+
+            offset_index_head: create_offset_index_writer(repo, offset, opts),
+        }))
+    }
 }
 
 /// Open the existing segment at `offset` for reading.

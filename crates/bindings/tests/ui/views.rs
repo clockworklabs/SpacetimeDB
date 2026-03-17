@@ -16,13 +16,6 @@ fn view_handle_no_iter(ctx: &ReducerContext) {
 }
 
 #[reducer]
-fn view_handle_no_count(ctx: &ReducerContext) {
-    let read_only = ctx.as_read_only();
-    // Should not compile: ViewHandle does not expose `count()`
-    let _ = read_only.db.test().count();
-}
-
-#[reducer]
 fn view_handle_no_insert(ctx: &ReducerContext) {
     let read_only = ctx.as_read_only();
     // Should not compile: ViewHandle does not expose `insert()`

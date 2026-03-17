@@ -822,6 +822,11 @@ pub use spacetimedb_bindings_macro::procedure;
 ///     id: u64,
 /// }
 ///
+/// #[derive(SpacetimeType)]
+/// struct PlayerCount {
+///     count: u64,
+/// }
+///
 /// #[table(accessor = location, index(accessor = coordinates, btree(columns = [x, y])))]
 /// struct Location {
 ///     #[unique]
@@ -848,6 +853,14 @@ pub use spacetimedb_bindings_macro::procedure;
 /// #[view(accessor = my_player_id, public)]
 /// fn my_player_id(ctx: &ViewContext) -> Option<PlayerId> {
 ///     ctx.db.player().identity().find(ctx.sender()).map(|Player { id, .. }| PlayerId { id })
+/// }
+///
+/// // A view that counts the number of rows in a table
+/// #[view(accessor = player_count, public)]
+/// fn player_count(ctx: &AnonymousViewContext) -> Option<PlayerCount> {
+///     Some(PlayerCount {
+///         count: ctx.db.player().count(),
+///     })
 /// }
 ///
 /// // An example that is analogous to a semijoin in sql

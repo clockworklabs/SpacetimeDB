@@ -1302,6 +1302,11 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             }
 
             impl #viewhandle_ident {
+                #[inline]
+                pub fn count(&self) -> u64 {
+                    spacetimedb::table::count::<#tablehandle_ident>()
+                }
+
                 #(#index_accessors_ro)*
             }
 

@@ -226,7 +226,7 @@ const testDirPath = fileURLToPath(testDirUrl);
 
     if (connectors && !connectors.includes(tc.system)) continue;
 
-    const makeConnector = (CONNECTORS as any)[tc.system];
+    const makeConnector = CONNECTORS[tc.system];
     if (!makeConnector) throw new Error(`Unknown connector ${tc.system}`);
 
     const connector = makeConnector();
