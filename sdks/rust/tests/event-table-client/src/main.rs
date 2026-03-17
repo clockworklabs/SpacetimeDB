@@ -2,6 +2,9 @@
 #[allow(clippy::large_enum_variant)]
 pub(crate) mod module_bindings;
 
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+use std::sync::OnceLock;
+
 use module_bindings::*;
 
 use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Event, EventTable};
@@ -10,8 +13,27 @@ use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";
 
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+static WEB_DB_NAME: OnceLock<String> = OnceLock::new();
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+pub(crate) fn set_web_db_name(db_name: String) {
+    WEB_DB_NAME.set(db_name).expect("WASM DB name was already initialized");
+}
+
 fn db_name_or_panic() -> String {
-    std::env::var("SPACETIME_SDK_TEST_DB_NAME").expect("Failed to read db name from env")
+    #[cfg(all(target_arch = "wasm32", feature = "web"))]
+    {
+        return WEB_DB_NAME
+            .get()
+            .cloned()
+            .expect("Failed to read db name from wasm runner");
+    }
+
+    #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
+    {
+        std::env::var("SPACETIME_SDK_TEST_DB_NAME").expect("Failed to read db name from env")
+    }
 }
 
 /// Register a panic hook which will exit the process whenever any thread panics.
@@ -51,30 +73,33 @@ fn main() {
         .nth(1)
         .expect("Pass a test name as a command-line argument to the test client");
 
-    dispatch(&test);
+    // Keep a single async execution path so native and wasm exercise the same harness logic.
+    tokio::runtime::Runtime::new().unwrap().block_on(dispatch(&test));
 }
 
-pub(crate) fn dispatch(test: &str) {
+pub(crate) async fn dispatch(test: &str) {
     match &*test {
-        "event-table" => exec_event_table(),
-        "multiple-events" => exec_multiple_events(),
-        "events-dont-persist" => exec_events_dont_persist(),
-        "v1-rejects-event-table" => exec_v1_rejects_event_table(),
+        "event-table" => exec_event_table().await,
+        "multiple-events" => exec_multiple_events().await,
+        "events-dont-persist" => exec_events_dont_persist().await,
+        "v1-rejects-event-table" => exec_v1_rejects_event_table().await,
         _ => panic!("Unknown test: {test}"),
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
     builder.build().unwrap()
 }
 
 #[cfg(target_arch = "wasm32")]
-fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
-    futures::executor::block_on(builder.build()).unwrap()
+async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+    // Web builds use async connection setup, so awaiting here avoids blocking the event loop
+    // before websocket callbacks and subscription completions have a chance to run.
+    builder.build().await.unwrap()
 }
 
-fn connect_then(
+async fn connect_then(
     test_counter: &std::sync::Arc<TestCounter>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
 ) -> DbConnection {
@@ -88,7 +113,7 @@ fn connect_then(
             connected_result(Ok(()));
         })
         .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
-    let conn = build_connection(conn);
+    let conn = build_connection(conn).await;
     #[cfg(not(target_arch = "wasm32"))]
     conn.run_threaded();
     #[cfg(target_arch = "wasm32")]
@@ -107,13 +132,38 @@ fn subscribe_these_then(
         .subscribe(queries);
 }
 
-fn exec_event_table() {
+async fn wait_for_all(test_counter: &std::sync::Arc<TestCounter>) {
+    // wasm/web callbacks run on the JS event loop, so the test harness must yield
+    // instead of blocking while it waits for all expected callback outcomes.
+    #[cfg(target_arch = "wasm32")]
+    test_counter.wait_for_all_async().await;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    test_counter.wait_for_all();
+}
+
+async fn disconnect_connection(connection: &DbConnection) {
+    if connection.is_active() {
+        connection.disconnect().unwrap();
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        // wasm tests run inside a long-lived Node event loop. Once the expected callbacks have
+        // fired, the test must explicitly close its websocket and yield once so the background
+        // task can process that disconnect before `run()` returns. Native tests can rely on
+        // process teardown, but web tests will otherwise keep Node alive and appear to hang.
+        gloo_timers::future::TimeoutFuture::new(0).await;
+    }
+}
+
+async fn exec_event_table() {
     let test_counter = TestCounter::new();
     let sub_applied_result = test_counter.add_test("subscription_applied");
     let on_insert_result = test_counter.add_test("event-table-on-insert");
     let on_insert_result = std::sync::Mutex::new(Some(on_insert_result));
 
-    connect_then(&test_counter, {
+    let conn = connect_then(&test_counter, {
         move |ctx| {
             subscribe_these_then(ctx, &["SELECT * FROM test_event;"], move |ctx| {
                 // Event table should be empty on subscription applied
@@ -148,19 +198,21 @@ fn exec_event_table() {
                 ctx.reducers.emit_test_event("hello".to_string(), 42).unwrap();
             });
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
+    disconnect_connection(&conn).await;
 }
 
 /// Test that multiple events emitted in a single reducer call all arrive as inserts.
-fn exec_multiple_events() {
+async fn exec_multiple_events() {
     let test_counter = TestCounter::new();
     let sub_applied_result = test_counter.add_test("subscription_applied");
     let result = test_counter.add_test("multiple-events");
     let result = std::sync::Mutex::new(Some(result));
 
-    connect_then(&test_counter, {
+    let conn = connect_then(&test_counter, {
         move |ctx| {
             subscribe_these_then(ctx, &["SELECT * FROM test_event;"], move |ctx| {
                 assert_eq!(0usize, ctx.db.test_event().iter().count());
@@ -182,21 +234,23 @@ fn exec_multiple_events() {
                 ctx.reducers.emit_multiple_test_events().unwrap();
             });
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
+    disconnect_connection(&conn).await;
 }
 
 /// Test that event table rows don't persist across transactions.
 /// Emit events, then call a no-op reducer. After the no-op completes,
 /// verify we didn't receive any additional event inserts.
-fn exec_events_dont_persist() {
+async fn exec_events_dont_persist() {
     let test_counter = TestCounter::new();
     let sub_applied_result = test_counter.add_test("subscription_applied");
     let noop_result = test_counter.add_test("events-dont-persist");
     let noop_result = std::sync::Mutex::new(Some(noop_result));
 
-    connect_then(&test_counter, {
+    let conn = connect_then(&test_counter, {
         move |ctx| {
             subscribe_these_then(ctx, &["SELECT * FROM test_event;"], move |ctx| {
                 assert_eq!(0usize, ctx.db.test_event().iter().count());
@@ -231,17 +285,19 @@ fn exec_events_dont_persist() {
                     .unwrap();
             });
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
+    disconnect_connection(&conn).await;
 }
 
 /// Test that v1 WebSocket clients are rejected when subscribing to event tables.
 /// The server should return a subscription error directing the developer to upgrade.
-fn exec_v1_rejects_event_table() {
+async fn exec_v1_rejects_event_table() {
     let test_counter = TestCounter::new();
 
-    connect_then(&test_counter, {
+    let conn = connect_then(&test_counter, {
         let test_counter = test_counter.clone();
         move |ctx| {
             let error_result = test_counter.add_test("v1-rejects-event-table");
@@ -260,7 +316,9 @@ fn exec_v1_rejects_event_table() {
                 })
                 .subscribe(["SELECT * FROM test_event;"]);
         }
-    });
+    })
+    .await;
 
-    test_counter.wait_for_all();
+    wait_for_all(&test_counter).await;
+    disconnect_connection(&conn).await;
 }

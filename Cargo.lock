@@ -2105,10 +2105,13 @@ name = "event-table-client"
 version = "2.0.5"
 dependencies = [
  "anyhow",
+ "console_error_panic_hook",
  "env_logger 0.10.2",
  "futures",
+ "gloo-timers",
  "spacetimedb-sdk",
  "test-counter",
+ "tokio",
  "wasm-bindgen",
  "wasm-bindgen-futures",
 ]
