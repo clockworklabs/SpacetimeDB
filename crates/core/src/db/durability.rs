@@ -20,6 +20,7 @@ use tokio::{
 };
 
 use crate::db::persistence::Durability;
+use crate::worker_metrics::WORKER_METRICS;
 
 /// A request to persist a transaction or to terminate the actor.
 pub struct DurabilityRequest {
@@ -96,7 +97,7 @@ impl DurabilityWorker {
         // block the execution of the local set.
         // This is what we want: exert backpressure on the transactional
         // engine when the durability layer is unable to keep up.
-        
+
         // We first try to send it without blocking.
         match self.request_tx.try_reserve() {
             Ok(permit) => {
@@ -111,11 +112,18 @@ impl DurabilityWorker {
             }
             Err(mpsc::error::TrySendError::Full(_)) => {
                 // If the channel was full, we use the blocking version.
+                let start = std::time::Instant::now();
                 futures::executor::block_on(self.request_tx.send(DurabilityRequest {
                     reducer_context,
                     tx_data: tx_data.clone(),
                 }))
                 .unwrap_or_else(|_| panic!("durability actor vanished database={}", self.database));
+                // We could cache this metric, but if we are already in the blocking code path,
+                // the extra time of looking up the metric is probably negligible.
+                WORKER_METRICS
+                    .durability_blocking_send_duration
+                    .with_label_values(&self.database)
+                    .observe(start.elapsed().as_secs_f64());
             }
         }
     }
