@@ -198,7 +198,7 @@ macro_rules! memoized {
 
         MEMOIZED
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap()
             .get_or_insert_default()
             .entry(($($key_tuple,)*))
             .or_insert_with_key(|($($key_tuple,)*)| -> $value_ty { $body })
