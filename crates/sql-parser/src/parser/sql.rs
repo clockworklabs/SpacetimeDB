@@ -130,7 +130,7 @@
 use sqlparser::{
     ast::{
         Assignment, Expr, GroupByExpr, ObjectName, Query, Select, SetExpr, Statement, TableFactor, TableWithJoins,
-        Value, Values,
+        UnaryOperator, Value, Values,
     },
     dialect::PostgreSqlDialect,
     parser::Parser,
@@ -138,7 +138,7 @@ use sqlparser::{
 
 use crate::ast::{
     sql::{SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlShow, SqlUpdate, SqlValues},
-    SqlIdent,
+    SqlIdent, SqlLiteral,
 };
 
 use super::{
@@ -242,11 +242,7 @@ fn parse_values(values: Query) -> SqlParseResult<SqlValues> {
                 for row in rows {
                     let mut literals = Vec::new();
                     for expr in row {
-                        if let Expr::Value(value) = expr {
-                            literals.push(parse_literal(value)?);
-                        } else {
-                            return Err(SqlUnsupported::InsertValue(expr).into());
-                        }
+                        literals.push(parse_insert_value(expr)?);
                     }
                     row_literals.push(literals);
                 }
@@ -264,6 +260,37 @@ fn parse_values(values: Query) -> SqlParseResult<SqlValues> {
             .into()),
         },
         _ => Err(SqlUnsupported::Insert(values).into()),
+    }
+}
+
+/// Parse a single INSERT value expression.
+/// Handles plain values and signed numbers (e.g., -24.0, +100).
+fn parse_insert_value(expr: Expr) -> SqlParseResult<SqlLiteral> {
+    match expr {
+        Expr::Value(value) => parse_literal(value),
+        Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            expr,
+        } => match *expr {
+            Expr::Value(Value::Number(n, _)) => Ok(SqlLiteral::Num(format!("-{}", n).into_boxed_str())),
+            _ => Err(SqlUnsupported::InsertValue(Expr::UnaryOp {
+                op: UnaryOperator::Minus,
+                expr,
+            })
+            .into()),
+        },
+        Expr::UnaryOp {
+            op: UnaryOperator::Plus,
+            expr,
+        } => match *expr {
+            Expr::Value(Value::Number(n, _)) => Ok(SqlLiteral::Num(format!("+{}", n).into_boxed_str())),
+            _ => Err(SqlUnsupported::InsertValue(Expr::UnaryOp {
+                op: UnaryOperator::Plus,
+                expr,
+            })
+            .into()),
+        },
+        _ => Err(SqlUnsupported::InsertValue(expr).into()),
     }
 }
 
