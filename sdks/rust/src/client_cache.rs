@@ -2,10 +2,10 @@
 //!
 //! This module is internal, and may incompatibly change without warning.
 
-use anymap3::Map;
 use crate::callbacks::CallbackId;
 use crate::db_connection::{debug_log, PendingMutation, SharedCell};
 use crate::spacetime_module::{InModule, SpacetimeModule, TableUpdate, WithBsatn};
+use anymap3::Map;
 use bytes::Bytes;
 use core::any::type_name;
 use core::hash::Hash;
@@ -16,7 +16,7 @@ use std::fs::File;
 use std::io::Write;
 use std::marker::PhantomData;
 use std::sync::Arc;
-use std::{any::Any, boxed::Box};
+use std::any::Any;
 
 /// A local mirror of the subscribed rows of one table in the database.
 pub struct TableCache<Row> {
