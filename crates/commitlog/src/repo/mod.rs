@@ -289,6 +289,12 @@ pub fn resume_segment_writer<R: Repo>(
             max_commit: _,
         } = meta;
         let mut writer = repo.open_segment_writer(offset)?;
+        // Ensure we have enough space for this segment.
+        // The segment could have been created without the `fallocate` feature
+        // enabled, so we call this here again to ensure writes can't fail due
+        // to ENOSPC.
+        fallocate(&mut writer, &opts)?;
+        // We use `O_APPEND`, but make the file offset consistent regardless.
         writer.seek(io::SeekFrom::End(0))?;
 
         Ok(Ok(Writer {
