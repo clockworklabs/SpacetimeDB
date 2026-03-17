@@ -158,14 +158,3 @@ async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConne
     // before websocket callbacks have a chance to run.
     builder.build().await.unwrap()
 }
-
-async fn disconnect_connection(connection: &DbConnection) {
-    connection.disconnect().unwrap();
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        // Yield once so the queued disconnect mutation is processed by the background task
-        // before the wasm test function returns to Node.
-        gloo_timers::future::TimeoutFuture::new(0).await;
-    }
-}
