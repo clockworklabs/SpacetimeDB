@@ -475,7 +475,7 @@ fn run_client(runner: &ClientRunner, run_command: &str, client_project: &str, db
                 .to_owned();
 
             let node_script = format!(
-                "(async () => {{\n  const m = require({js_module:?});\n  if (m.default) {{ await m.default(); }}\n  const run = m.run || m.main || m.start;\n  if (!run) throw new Error('No exported run/main/start function from wasm module');\n  const runSelector = process.env.{TEST_RUN_SELECTOR_ENV_VAR} ?? '';\n  const dbName = process.env.{TEST_DB_NAME_ENV_VAR};\n  if (!dbName) throw new Error('Missing {TEST_DB_NAME_ENV_VAR}');\n  await run(runSelector, dbName);\n}})().catch((e) => {{ console.error(e); process.exit(1); }});"
+                "(async () => {{\n  const m = require({js_module:?});\n  if (m.default) {{ await m.default(); }}\n  const run = m.run || m.main || m.start;\n  if (!run) throw new Error('No exported run/main/start function from wasm module');\n  const runSelector = process.env.{TEST_RUN_SELECTOR_ENV_VAR} ?? '';\n  const dbName = process.env.{TEST_DB_NAME_ENV_VAR};\n  if (!dbName) throw new Error('Missing {TEST_DB_NAME_ENV_VAR}');\n  await run(runSelector, dbName);\n  // These wasm clients run under Node rather than a browser. Some tests intentionally leave\n  // websocket/event-loop work alive once their assertions are complete, so exit here to keep\n  // non-lifecycle tests from hanging on leftover handles after `run()` has finished.\n  process.exit(0);\n}})().catch((e) => {{ console.error(e); process.exit(1); }});"
             );
 
             let node_args: Vec<String> = vec!["--experimental-websocket".to_owned(), "-e".to_owned(), node_script];

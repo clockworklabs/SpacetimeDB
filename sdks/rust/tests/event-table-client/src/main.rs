@@ -142,28 +142,13 @@ async fn wait_for_all(test_counter: &std::sync::Arc<TestCounter>) {
     test_counter.wait_for_all();
 }
 
-async fn disconnect_connection(connection: &DbConnection) {
-    if connection.is_active() {
-        connection.disconnect().unwrap();
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        // wasm tests run inside a long-lived Node event loop. Once the expected callbacks have
-        // fired, the test must explicitly close its websocket and yield once so the background
-        // task can process that disconnect before `run()` returns. Native tests can rely on
-        // process teardown, but web tests will otherwise keep Node alive and appear to hang.
-        gloo_timers::future::TimeoutFuture::new(0).await;
-    }
-}
-
 async fn exec_event_table() {
     let test_counter = TestCounter::new();
     let sub_applied_result = test_counter.add_test("subscription_applied");
     let on_insert_result = test_counter.add_test("event-table-on-insert");
     let on_insert_result = std::sync::Mutex::new(Some(on_insert_result));
 
-    let conn = connect_then(&test_counter, {
+    let _conn = connect_then(&test_counter, {
         move |ctx| {
             subscribe_these_then(ctx, &["SELECT * FROM test_event;"], move |ctx| {
                 // Event table should be empty on subscription applied
@@ -202,7 +187,6 @@ async fn exec_event_table() {
     .await;
 
     wait_for_all(&test_counter).await;
-    disconnect_connection(&conn).await;
 }
 
 /// Test that multiple events emitted in a single reducer call all arrive as inserts.
@@ -212,7 +196,7 @@ async fn exec_multiple_events() {
     let result = test_counter.add_test("multiple-events");
     let result = std::sync::Mutex::new(Some(result));
 
-    let conn = connect_then(&test_counter, {
+    let _conn = connect_then(&test_counter, {
         move |ctx| {
             subscribe_these_then(ctx, &["SELECT * FROM test_event;"], move |ctx| {
                 assert_eq!(0usize, ctx.db.test_event().iter().count());
@@ -238,7 +222,6 @@ async fn exec_multiple_events() {
     .await;
 
     wait_for_all(&test_counter).await;
-    disconnect_connection(&conn).await;
 }
 
 /// Test that event table rows don't persist across transactions.
@@ -250,7 +233,7 @@ async fn exec_events_dont_persist() {
     let noop_result = test_counter.add_test("events-dont-persist");
     let noop_result = std::sync::Mutex::new(Some(noop_result));
 
-    let conn = connect_then(&test_counter, {
+    let _conn = connect_then(&test_counter, {
         move |ctx| {
             subscribe_these_then(ctx, &["SELECT * FROM test_event;"], move |ctx| {
                 assert_eq!(0usize, ctx.db.test_event().iter().count());
@@ -289,7 +272,6 @@ async fn exec_events_dont_persist() {
     .await;
 
     wait_for_all(&test_counter).await;
-    disconnect_connection(&conn).await;
 }
 
 /// Test that v1 WebSocket clients are rejected when subscribing to event tables.
@@ -297,7 +279,7 @@ async fn exec_events_dont_persist() {
 async fn exec_v1_rejects_event_table() {
     let test_counter = TestCounter::new();
 
-    let conn = connect_then(&test_counter, {
+    let _conn = connect_then(&test_counter, {
         let test_counter = test_counter.clone();
         move |ctx| {
             let error_result = test_counter.add_test("v1-rejects-event-table");
@@ -320,5 +302,4 @@ async fn exec_v1_rejects_event_table() {
     .await;
 
     wait_for_all(&test_counter).await;
-    disconnect_connection(&conn).await;
 }
