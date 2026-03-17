@@ -94,7 +94,11 @@ pub(crate) async fn dispatch() {
 
     connect_test_counter.wait_for_all().await;
 
-    disconnect_connection(&connection).await;
+    connection.disconnect().unwrap();
+    // Yield once so the queued disconnect mutation is processed by the background task
+    // before the wasm test function returns to Node.
+    #[cfg(target_arch = "wasm32")]
+    gloo_timers::future::TimeoutFuture::new(0).await;
     #[cfg(not(target_arch = "wasm32"))]
     join_handle.join().unwrap();
 
@@ -157,15 +161,4 @@ async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConne
     // Web builds use async connection setup, so awaiting here avoids blocking the event loop
     // before websocket callbacks have a chance to run.
     builder.build().await.unwrap()
-}
-
-async fn disconnect_connection(connection: &DbConnection) {
-    connection.disconnect().unwrap();
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        // Yield once so the queued disconnect mutation is processed by the background task
-        // before the wasm test function returns to Node.
-        gloo_timers::future::TimeoutFuture::new(0).await;
-    }
 }
