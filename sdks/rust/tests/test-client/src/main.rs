@@ -2671,37 +2671,29 @@ async fn exec_two_different_compression_algos() {
 /// These subscriptions are identical syntactically but not semantically,
 /// because they are parameterized by `:sender` - the caller's identity.
 async fn test_parameterized_subscription() {
-    // This test cares about per-client query parameterization, not about both clients reaching a
-    // global barrier at exactly the same moment. Each client only mutates state after its own
-    // subscription is applied, which is the point at which that client's visibility guarantee
-    // becomes meaningful on both native and wasm runtimes.
     let ctr_for_test = TestCounter::new();
-    let sub_0 = Some(ctr_for_test.add_test("sub_0"));
-    let sub_1 = Some(ctr_for_test.add_test("sub_1"));
+    let ctr_for_subs = TestCounter::new();
+    let sub_0 = Some(ctr_for_subs.add_test("sub_0"));
+    let sub_1 = Some(ctr_for_subs.add_test("sub_1"));
     let insert_0 = Some(ctr_for_test.add_test("insert_0"));
     let insert_1 = Some(ctr_for_test.add_test("insert_1"));
     let update_0 = Some(ctr_for_test.add_test("update_0"));
     let update_1 = Some(ctr_for_test.add_test("update_1"));
 
-    async fn subscribe_and_update(
+    async fn subscribe_and_prepare(
         test_name: &str,
         old: i32,
         new: i32,
-        ctr_for_test: Arc<TestCounter>,
+        waiters: [Arc<TestCounter>; 2],
         senders: [Option<ResultRecorder>; 3],
-    ) {
+    ) -> DbConnection {
+        let [ctr_for_test, _ctr_for_subs] = waiters;
         let [mut record_sub, mut record_ins, mut record_upd] = senders;
         connect_with_then(&ctr_for_test, test_name, |builder| builder, {
             move |ctx| {
                 let sender = ctx.identity();
-                subscribe_these_then(ctx, &["SELECT * FROM pk_identity WHERE i = :sender"], move |ctx| {
+                subscribe_these_then(ctx, &["SELECT * FROM pk_identity WHERE i = :sender"], move |_ctx| {
                     put_result(&mut record_sub, Ok(()));
-                    // Trigger the writes from inside this caller's subscription-applied callback
-                    // so we know the parameterized query is active before the rows are created.
-                    // Callback code must stay non-blocking here because wasm delivers both the
-                    // subscription event and subsequent row callbacks on the same event loop.
-                    PkIdentity::insert(ctx, sender, old);
-                    PkIdentity::update(ctx, sender, new);
                 });
                 PkIdentity::on_insert(ctx, move |_, row| {
                     assert_eq!(row.i, sender);
@@ -2717,11 +2709,35 @@ async fn test_parameterized_subscription() {
                 });
             }
         })
-        .await;
+        .await
     }
 
-    subscribe_and_update("client_0", 1, 2, ctr_for_test.clone(), [sub_0, insert_0, update_0]).await;
-    subscribe_and_update("client_1", 3, 4, ctr_for_test.clone(), [sub_1, insert_1, update_1]).await;
+    let conn_0 = subscribe_and_prepare(
+        "client_0",
+        1,
+        2,
+        [ctr_for_test.clone(), ctr_for_subs.clone()],
+        [sub_0, insert_0, update_0],
+    )
+    .await;
+    let conn_1 = subscribe_and_prepare(
+        "client_1",
+        3,
+        4,
+        [ctr_for_test.clone(), ctr_for_subs.clone()],
+        [sub_1, insert_1, update_1],
+    )
+    .await;
+
+    // The original native test waited until both subscriptions had been applied before either
+    // client wrote any rows. Keep that coordination point here, but do the actual wait in the
+    // outer async test body so wasm does not block the callback/event loop inside `on_applied`.
+    ctr_for_subs.wait_for_all().await;
+    PkIdentity::insert(&conn_0, conn_0.identity(), 1);
+    PkIdentity::update(&conn_0, conn_0.identity(), 2);
+    PkIdentity::insert(&conn_1, conn_1.identity(), 3);
+    PkIdentity::update(&conn_1, conn_1.identity(), 4);
+
     ctr_for_test.wait_for_all().await;
 }
 
@@ -2735,36 +2751,28 @@ async fn test_parameterized_subscription() {
 /// ```
 /// Hence each client should receive different rows.
 async fn test_rls_subscription() {
-    // Same principle as `test_parameterized_subscription`: the property under test is "what rows
-    // is this client allowed to observe once its subscription is active?", not "did two clients
-    // reach a synchronization barrier at the same instant?".
     let ctr_for_test = TestCounter::new();
-    let sub_0 = Some(ctr_for_test.add_test("sub_0"));
-    let sub_1 = Some(ctr_for_test.add_test("sub_1"));
+    let ctr_for_subs = TestCounter::new();
+    let sub_0 = Some(ctr_for_subs.add_test("sub_0"));
+    let sub_1 = Some(ctr_for_subs.add_test("sub_1"));
     let ins_0 = Some(ctr_for_test.add_test("insert_0"));
     let ins_1 = Some(ctr_for_test.add_test("insert_1"));
 
-    async fn subscribe_and_update(
+    async fn subscribe_and_prepare(
         test_name: &str,
         user_name: &str,
-        ctr_for_test: Arc<TestCounter>,
+        waiters: [Arc<TestCounter>; 2],
         senders: [Option<ResultRecorder>; 2],
-    ) {
+    ) -> DbConnection {
+        let [ctr_for_test, _ctr_for_subs] = waiters;
         let [mut record_sub, mut record_ins] = senders;
-        let user_name = user_name.to_owned();
         let expected_name = user_name.to_owned();
         connect_with_then(&ctr_for_test, test_name, |builder| builder, {
             move |ctx| {
                 let sender = ctx.identity();
                 let expected_identity = sender;
-                subscribe_these_then(ctx, &["SELECT * FROM users"], move |ctx| {
+                subscribe_these_then(ctx, &["SELECT * FROM users"], move |_ctx| {
                     put_result(&mut record_sub, Ok(()));
-                    // Invoke the reducer only after this client's RLS-filtered subscription is
-                    // active. As above, callback code must remain non-blocking so wasm can keep
-                    // delivering websocket and row events on the same event loop.
-                    ctx.reducers
-                        .insert_user_then(user_name, sender, reducer_callback_assert_committed("insert_user"))
-                        .unwrap();
                 });
                 ctx.db.users().on_insert(move |_, user| {
                     assert_eq!(user.name, expected_name);
@@ -2773,11 +2781,45 @@ async fn test_rls_subscription() {
                 });
             }
         })
-        .await;
+        .await
     }
 
-    subscribe_and_update("client_0", "Alice", ctr_for_test.clone(), [sub_0, ins_0]).await;
-    subscribe_and_update("client_1", "Bob", ctr_for_test.clone(), [sub_1, ins_1]).await;
+    let conn_0 = subscribe_and_prepare(
+        "client_0",
+        "Alice",
+        [ctr_for_test.clone(), ctr_for_subs.clone()],
+        [sub_0, ins_0],
+    )
+    .await;
+    let conn_1 = subscribe_and_prepare(
+        "client_1",
+        "Bob",
+        [ctr_for_test.clone(), ctr_for_subs.clone()],
+        [sub_1, ins_1],
+    )
+    .await;
+
+    // Preserve the original test's "both subscriptions are live before either insert happens"
+    // behavior. The only change is where the wait occurs: wasm cannot block inside the
+    // `on_applied` callback, so we synchronize here and then issue the reducer calls explicitly.
+    ctr_for_subs.wait_for_all().await;
+    conn_0
+        .reducers
+        .insert_user_then(
+            "Alice".to_owned(),
+            conn_0.identity(),
+            reducer_callback_assert_committed("insert_user"),
+        )
+        .unwrap();
+    conn_1
+        .reducers
+        .insert_user_then(
+            "Bob".to_owned(),
+            conn_1.identity(),
+            reducer_callback_assert_committed("insert_user"),
+        )
+        .unwrap();
+
     ctr_for_test.wait_for_all().await;
 }
 
