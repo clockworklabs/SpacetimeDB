@@ -3,7 +3,7 @@
 pub(crate) mod module_bindings;
 
 use core::fmt::Display;
-use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use module_bindings::*;
@@ -2584,15 +2584,14 @@ async fn exec_two_different_compression_algos() {
     // All should get back `bytes`.
     async fn connect_with_compression(
         test_counter: &Arc<TestCounter>,
+        subscription_counter: &Arc<TestCounter>,
         compression_name: &str,
         compression: Compression,
         mut recorder: Option<ResultRecorder>,
-        subscribed_clients: Arc<AtomicUsize>,
-        row_inserted: Arc<AtomicBool>,
         expected: &Arc<[u8]>,
-    ) {
+    ) -> DbConnection {
         let expected1 = expected.clone();
-        let expected2 = expected1.clone();
+        let subscribed = subscription_counter.add_test(format!("subscribed_{compression_name}"));
         connect_with_then(
             test_counter,
             compression_name,
@@ -2610,60 +2609,38 @@ async fn exec_two_different_compression_algos() {
                         };
                         put_result(&mut recorder, res)
                     });
-
-                    // We cannot block inside wasm callbacks (e.g. with `Barrier::wait`),
-                    // because that stalls the event loop and prevents other subscriptions
-                    // from applying. Instead we atomically gate on the third subscriber.
-                    // All three subscriptions must be live before any client inserts the row under
-                    // test, otherwise the last client could miss the only insert. We coordinate
-                    // with atomics instead of a blocking barrier because callback code shares the
-                    // single-threaded wasm event loop with subscription delivery.
-                    if subscribed_clients.fetch_add(1, Ordering::SeqCst) + 1 == 3
-                        && !row_inserted.swap(true, Ordering::SeqCst)
-                    {
-                        VecU8::insert(ctx, expected2.to_vec());
-                    }
+                    subscribed(Ok(()));
                 })
             },
         )
-        .await;
+        .await
     }
     let test_counter: Arc<TestCounter> = TestCounter::new();
-    let subscribed_clients = Arc::new(AtomicUsize::new(0));
-    let row_inserted = Arc::new(AtomicBool::new(false));
+    let subscription_counter = TestCounter::new();
     let got_brotli = Some(test_counter.add_test("got_right_row_brotli"));
     let got_gzip = Some(test_counter.add_test("got_right_row_gzip"));
     let got_none = Some(test_counter.add_test("got_right_row_none"));
-    connect_with_compression(
+    let _brotli_conn = connect_with_compression(
         &test_counter,
+        &subscription_counter,
         "brotli",
         Brotli,
         got_brotli,
-        subscribed_clients.clone(),
-        row_inserted.clone(),
         &bytes,
     )
     .await;
-    connect_with_compression(
-        &test_counter,
-        "gzip",
-        Gzip,
-        got_gzip,
-        subscribed_clients.clone(),
-        row_inserted.clone(),
-        &bytes,
-    )
-    .await;
-    connect_with_compression(
-        &test_counter,
-        "none",
-        None,
-        got_none,
-        subscribed_clients,
-        row_inserted,
-        &bytes,
-    )
-    .await;
+    let _gzip_conn =
+        connect_with_compression(&test_counter, &subscription_counter, "gzip", Gzip, got_gzip, &bytes).await;
+    let none_conn =
+        connect_with_compression(&test_counter, &subscription_counter, "none", None, got_none, &bytes).await;
+
+    // The original test's barrier existed solely to ensure that every client had finished
+    // subscribing and installing its `on_insert` handler before the single insert happened. Keep
+    // that rule here, but perform the wait in the outer async test body so wasm does not block the
+    // callback/event loop inside `on_applied`.
+    subscription_counter.wait_for_all().await;
+    VecU8::insert(&none_conn, bytes.to_vec());
+
     test_counter.wait_for_all().await;
 }
 
