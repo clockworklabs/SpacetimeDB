@@ -38,14 +38,6 @@ fn fixed_test_timestamp() -> Timestamp {
     Timestamp::from_micros_since_unix_epoch(1_706_000_000_000_000)
 }
 
-// ---- Test harness platform shim layer ----
-//
-// Keep all intentional native-vs-wasm differences concentrated here so reviewers can reason
-// about the rest of the file as ordinary shared test logic. The desired high-level behavior is:
-// - all tests call the same async `connect*` and `wait_for_all` helpers
-// - native keeps using its existing threaded SDK runtime
-// - wasm keeps the JS event loop unblocked and preserves native-style connection lifetimes
-
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
 static WEB_DB_NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
