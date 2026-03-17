@@ -2762,9 +2762,6 @@ async fn test_rls_subscription() {
     )
     .await;
 
-    // Preserve the original test's "both subscriptions are live before either insert happens"
-    // behavior. The only change is where the wait occurs: wasm cannot block inside the
-    // `on_applied` callback, so we synchronize here and then issue the reducer calls explicitly.
     ctr_for_subs.wait_for_all().await;
     conn_0
         .reducers
