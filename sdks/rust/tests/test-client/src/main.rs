@@ -4,8 +4,6 @@ pub(crate) mod module_bindings;
 
 use core::fmt::Display;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-#[cfg(target_arch = "wasm32")]
-use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 
 use module_bindings::*;
@@ -46,112 +44,6 @@ pub(crate) fn set_web_db_name(db_name: String) {
     WEB_DB_NAME.set(db_name).expect("WASM DB name was already initialized");
 }
 
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-thread_local! {
-    // Why wasm needs extra lifetime plumbing:
-    // - Native test clients call `run_threaded()`, so SDK websocket work keeps progressing on a
-    //   dedicated background thread even if the test thread blocks in `wait_for_all()`.
-    // - wasm/web runs the client and its websocket callbacks on the same single-threaded JS event
-    //   loop as the test body. There is no equivalent background OS thread here.
-    // - That means an early last-handle drop disconnects the websocket immediately, and a blocking
-    //   wait would freeze the very event loop that is supposed to deliver the remaining callbacks.
-    // Retain connections until the async wait completes so wasm observes the same logical lifetime
-    // that the native tests were implicitly relying on.
-    // Many native-first tests intentionally ignore the returned connection and rely on the
-    // background message loop to stay alive until `wait_for_all()` finishes. Retain a clone on
-    // wasm so the final-drop disconnect cleanup does not self-terminate those tests early.
-    static RETAINED_WASM_CONNECTIONS: RefCell<Vec<ManagedConnection>> = const { RefCell::new(Vec::new()) };
-}
-
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-fn retain_connection_until_wait(connection: &ManagedConnection) {
-    RETAINED_WASM_CONNECTIONS.with(|connections| connections.borrow_mut().push(connection.clone()));
-}
-
-#[cfg(not(all(target_arch = "wasm32", feature = "web")))]
-fn retain_connection_until_wait(_: &ManagedConnection) {}
-
-// `ManagedConnection` exists to separate test logic from connection-lifetime mechanics.
-// The generated `DbConnection` is a single owned handle, but this harness now needs two extra
-// properties:
-// - shared ownership, so wasm can retain a connection until `wait_for_all()` even when the test
-//   itself ignores the returned value, and
-// - final-owner disconnect semantics, so only the last live handle shuts down the websocket.
-// Wrapping the connection in an `Arc` and re-exposing `DbContext` here keeps those lifecycle rules
-// local to the shim layer instead of forcing the individual tests to reason about them.
-#[derive(Clone)]
-struct ManagedConnection(Arc<DbConnection>);
-
-impl ManagedConnection {
-    fn new(connection: DbConnection) -> Self {
-        Self(Arc::new(connection))
-    }
-}
-
-impl core::ops::Deref for ManagedConnection {
-    type Target = DbConnection;
-
-    fn deref(&self) -> &Self::Target {
-        self.0.as_ref()
-    }
-}
-
-impl DbContext for ManagedConnection {
-    type DbView = <DbConnection as DbContext>::DbView;
-    type Reducers = <DbConnection as DbContext>::Reducers;
-    type Procedures = <DbConnection as DbContext>::Procedures;
-    type SubscriptionBuilder = <DbConnection as DbContext>::SubscriptionBuilder;
-
-    fn db(&self) -> &Self::DbView {
-        &self.0.db
-    }
-
-    fn reducers(&self) -> &Self::Reducers {
-        &self.0.reducers
-    }
-
-    fn procedures(&self) -> &Self::Procedures {
-        &self.0.procedures
-    }
-
-    fn is_active(&self) -> bool {
-        self.0.is_active()
-    }
-
-    fn disconnect(&self) -> spacetimedb_sdk::Result<()> {
-        self.0.disconnect()
-    }
-
-    fn subscription_builder(&self) -> Self::SubscriptionBuilder {
-        self.0.subscription_builder()
-    }
-
-    fn try_identity(&self) -> Option<Identity> {
-        self.0.try_identity()
-    }
-
-    fn connection_id(&self) -> ConnectionId {
-        self.0.connection_id()
-    }
-
-    fn try_connection_id(&self) -> Option<ConnectionId> {
-        self.0.try_connection_id()
-    }
-}
-
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-impl Drop for ManagedConnection {
-    fn drop(&mut self) {
-        if Arc::strong_count(&self.0) == 1 {
-            // Only the final owner should disconnect. wasm tests now clone connections into a
-            // temporary retention list so ignored return values stay alive until `wait_for_all()`.
-            // Disconnecting from any earlier clone drop would let the websocket shut down while
-            // the test still expects subscription or reducer callbacks to arrive.
-            let _ = self.0.disconnect();
-        }
-    }
-}
-
 /// Read the per-test database name from the native process environment or the wasm runner shim.
 /// Keeping this lookup centralized avoids sprinkling target-specific configuration through tests.
 fn db_name_or_panic() -> String {
@@ -167,23 +59,6 @@ fn db_name_or_panic() -> String {
     {
         std::env::var("SPACETIME_SDK_TEST_DB_NAME").expect("Failed to read db name from env")
     }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn start_connection_runtime(connection: &ManagedConnection) {
-    // Native keeps websocket/callback work on a dedicated SDK thread, so the test body can block
-    // later without preventing callbacks from being delivered.
-    connection.run_threaded();
-    retain_connection_until_wait(connection);
-}
-
-#[cfg(target_arch = "wasm32")]
-fn start_connection_runtime(connection: &ManagedConnection) {
-    // wasm/web has no background OS thread in this harness. Start the async message loop and keep
-    // the connection retained until `wait_for_all()` so native-style ignored return values do not
-    // disconnect the websocket before the expected callbacks have run.
-    connection.run_background_task();
-    retain_connection_until_wait(connection);
 }
 
 /// Register a panic hook which will exit the process whenever any thread panics.
@@ -553,7 +428,7 @@ async fn connect_with_then(
     on_connect_suffix: &str,
     with_builder: impl FnOnce(DbConnectionBuilder<RemoteModule>) -> DbConnectionBuilder<RemoteModule>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
-) -> ManagedConnection {
+) -> DbConnection {
     let connected_result = test_counter.add_test(format!("on_connect_{on_connect_suffix}"));
     let name = db_name_or_panic();
     let builder = DbConnection::builder()
@@ -565,37 +440,40 @@ async fn connect_with_then(
         })
         .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
     let conn = build_connection(with_builder(builder)).await;
-    start_connection_runtime(&conn);
+    #[cfg(not(target_arch = "wasm32"))]
+    conn.run_threaded();
+    #[cfg(target_arch = "wasm32")]
+    conn.run_background_task();
     conn
 }
 
 async fn connect_then(
     test_counter: &std::sync::Arc<TestCounter>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
-) -> ManagedConnection {
+) -> DbConnection {
     connect_with_then(test_counter, "", |x| x, callback).await
 }
 
-async fn connect(test_counter: &std::sync::Arc<TestCounter>) -> ManagedConnection {
+async fn connect(test_counter: &std::sync::Arc<TestCounter>) -> DbConnection {
     connect_then(test_counter, |_| {}).await
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> ManagedConnection {
+async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
     // Keep the helper async even though native `build()` is synchronous so shared callers do not
     // need target-specific branches.
-    ManagedConnection::new(builder.build().unwrap())
+    builder.build().unwrap()
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> ManagedConnection {
+async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
     // Why this differs from native:
     // - In the SDK, `DbConnectionBuilder::build` is sync on non-web builds,
     //   but async on `feature = "web"` because the websocket/token setup uses
     //   wasm/web async primitives.
     // - We therefore keep the helper async and await directly so wasm stays
     //   non-blocking and can make forward progress on the JS event loop.
-    ManagedConnection::new(builder.build().await.unwrap())
+    builder.build().await.unwrap()
 }
 
 fn subscribe_all_then(ctx: &impl RemoteDbContext, callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static) {
@@ -2177,7 +2055,7 @@ async fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
         who: &'static str,
         pre_ins_counter: &Arc<TestCounter>,
         counter: &Arc<TestCounter>,
-    ) -> ManagedConnection {
+    ) -> DbConnection {
         let conn = connect_with_then(pre_ins_counter, who, |b| b, |_| {}).await;
         let sub_applied = pre_ins_counter.add_test(format!("sub_applied_{who}"));
         let counter = counter.clone();
