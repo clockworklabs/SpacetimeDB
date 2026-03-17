@@ -2692,9 +2692,6 @@ async fn test_parameterized_subscription() {
     )
     .await;
 
-    // The original native test waited until both subscriptions had been applied before either
-    // client wrote any rows. Keep that coordination point here, but do the actual wait in the
-    // outer async test body so wasm does not block the callback/event loop inside `on_applied`.
     ctr_for_subs.wait_for_all().await;
     PkIdentity::insert(&conn_0, conn_0.identity(), 1);
     PkIdentity::update(&conn_0, conn_0.identity(), 2);
