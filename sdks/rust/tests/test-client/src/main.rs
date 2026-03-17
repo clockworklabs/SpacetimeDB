@@ -2570,15 +2570,15 @@ async fn exec_two_different_compression_algos() {
     // All should get back `bytes`.
     async fn connect_with_compression(
         test_counter: &Arc<TestCounter>,
-        subscription_counter: &Arc<TestCounter>,
         compression_name: &str,
         compression: Compression,
         mut recorder: Option<ResultRecorder>,
+        barrier: &Arc<TestCounter>,
         expected: &Arc<[u8]>,
     ) -> DbConnection {
         let expected1 = expected.clone();
-        let subscribed = subscription_counter.add_test(format!("subscribed_{compression_name}"));
-        connect_with_then(
+        let subscribed = barrier.add_test(format!("subscribed_{compression_name}"));
+        let conn = connect_with_then(
             test_counter,
             compression_name,
             |b| b.with_compression(compression),
@@ -2595,38 +2595,26 @@ async fn exec_two_different_compression_algos() {
                         };
                         put_result(&mut recorder, res)
                     });
+
                     subscribed(Ok(()));
                 })
             },
         )
-        .await
+        .await;
+        conn
     }
     let test_counter: Arc<TestCounter> = TestCounter::new();
-    let subscription_counter = TestCounter::new();
+    let barrier = TestCounter::new();
     let got_brotli = Some(test_counter.add_test("got_right_row_brotli"));
     let got_gzip = Some(test_counter.add_test("got_right_row_gzip"));
     let got_none = Some(test_counter.add_test("got_right_row_none"));
-    let _brotli_conn = connect_with_compression(
-        &test_counter,
-        &subscription_counter,
-        "brotli",
-        Brotli,
-        got_brotli,
-        &bytes,
-    )
-    .await;
-    let _gzip_conn =
-        connect_with_compression(&test_counter, &subscription_counter, "gzip", Gzip, got_gzip, &bytes).await;
-    let none_conn =
-        connect_with_compression(&test_counter, &subscription_counter, "none", None, got_none, &bytes).await;
-
-    // The original test's barrier existed solely to ensure that every client had finished
-    // subscribing and installing its `on_insert` handler before the single insert happened. Keep
-    // that rule here, but perform the wait in the outer async test body so wasm does not block the
-    // callback/event loop inside `on_applied`.
-    subscription_counter.wait_for_all().await;
+    let _brotli_conn = connect_with_compression(&test_counter, "brotli", Brotli, got_brotli, &barrier, &bytes).await;
+    let _gzip_conn = connect_with_compression(&test_counter, "gzip", Gzip, got_gzip, &barrier, &bytes).await;
+    let none_conn = connect_with_compression(&test_counter, "none", None, got_none, &barrier, &bytes).await;
+    // Preserve the original "all clients are subscribed before any insert happens" rule without
+    // blocking the wasm event loop inside `on_applied`.
+    barrier.wait_for_all().await;
     VecU8::insert(&none_conn, bytes.to_vec());
-
     test_counter.wait_for_all().await;
 }
 
