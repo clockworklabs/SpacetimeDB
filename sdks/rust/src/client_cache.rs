@@ -15,10 +15,7 @@ use std::fs::File;
 use std::io::Write;
 use std::marker::PhantomData;
 use std::sync::Arc;
-use std::{
-    any::{Any, TypeId},
-    boxed::Box,
-};
+use std::{any::Any, boxed::Box};
 
 /// A local mirror of the subscribed rows of one table in the database.
 pub struct TableCache<Row> {
@@ -342,7 +339,7 @@ pub struct ClientCache<M: SpacetimeModule + ?Sized> {
     /// "keyed" on the type `HashMap<&'static str, TableCache<Row>`.
     ///
     /// The strings are table names, since we may have multiple tables with the same row type.
-    tables: TypeMap,
+    tables: Map<dyn Any + Send + Sync>,
 
     /// Clone of the [`crate::db_connection::DbContextImpl::extra_logging`].
     extra_logging: Option<SharedCell<File>>,
@@ -350,40 +347,10 @@ pub struct ClientCache<M: SpacetimeModule + ?Sized> {
     _module: PhantomData<M>,
 }
 
-// We intentionally avoid `anymap` here.
-//
-// In wasm test-client runs (`wasm32-unknown-unknown` under Node),
-// `anymap`'s TypeId hasher path can trigger an alignment-UB check panic:
-// `ptr::copy_nonoverlapping requires aligned pointers`.
-// Using this local `TypeId -> Box<dyn Any + Send + Sync>` map preserves the
-// required functionality without that runtime failure.
-#[derive(Default)]
-struct TypeMap {
-    values: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
-}
-
-impl TypeMap {
-    fn get<T: Any + Send + Sync + 'static>(&self) -> Option<&T> {
-        self.values
-            .get(&TypeId::of::<T>())
-            .and_then(|value| value.downcast_ref::<T>())
-    }
-
-    fn get_or_insert_with<T: Any + Send + Sync + 'static>(&mut self, make: impl FnOnce() -> T) -> &mut T {
-        let value = match self.values.entry(TypeId::of::<T>()) {
-            Entry::Occupied(entry) => entry.into_mut(),
-            Entry::Vacant(entry) => entry.insert(Box::new(make())),
-        };
-        value
-            .downcast_mut::<T>()
-            .expect("TypeMap entry did not match stored TypeId")
-    }
-}
-
 impl<M: SpacetimeModule> ClientCache<M> {
     pub(crate) fn new(extra_logging: Option<SharedCell<File>>) -> Self {
         Self {
-            tables: TypeMap::default(),
+            tables: Map::new(),
             extra_logging,
             _module: PhantomData,
         }
@@ -406,7 +373,8 @@ impl<M: SpacetimeModule> ClientCache<M> {
         table_name: &'static str,
     ) -> &mut TableCache<Row> {
         self.tables
-            .get_or_insert_with::<HashMap<&'static str, TableCache<Row>>>(Default::default)
+            .entry::<HashMap<&'static str, TableCache<Row>>>()
+            .or_insert_with(Default::default)
             .entry(table_name)
             .or_insert_with(|| TableCache::new(self.extra_logging.clone()))
     }

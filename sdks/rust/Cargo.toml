@@ -34,6 +34,7 @@ spacetimedb-query-builder.workspace = true
 spacetimedb-schema.workspace = true
 
 thiserror.workspace = true
+anymap3 = "1.0.1"
 base64.workspace = true
 brotli.workspace = true
 bytes.workspace = true
