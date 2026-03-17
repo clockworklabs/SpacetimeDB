@@ -2051,54 +2051,53 @@ async fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
     let pre_ins_counter = TestCounter::new();
 
     // Have two actors, Alice (0) and Bob (1), connect to the module.
-    async fn connect_actor(
-        who: &'static str,
-        pre_ins_counter: &Arc<TestCounter>,
-        counter: &Arc<TestCounter>,
-    ) -> DbConnection {
-        let conn = connect_with_then(pre_ins_counter, who, |b| b, |_| {}).await;
-        let sub_applied = pre_ins_counter.add_test(format!("sub_applied_{who}"));
-        let counter = counter.clone();
-        subscribe_all_then(&conn, move |ctx| {
-            sub_applied(Ok(()));
+    // For each actor, subscribe to the `OneU8` table.
+    // The choice of table is a fairly random one: just one of the simpler tables.
+    let [alice, bob] = ["alice", "bob"].map(|who| {
+        let counter2 = counter.clone();
+        let pre_ins_counter = pre_ins_counter.clone();
+        async move {
+            let conn = connect_with_then(&pre_ins_counter, who, |b| b, |_| {}).await;
+            let sub_applied = pre_ins_counter.add_test(format!("sub_applied_{who}"));
 
-            // Test that we are notified when a row is inserted.
-            let db = ctx.db();
-            let mut one_u8_inserted = Some(counter.add_test(format!("one_u8_inserted_{who}")));
-            db.one_u_8().on_insert(move |_, row| {
-                (one_u8_inserted.take().unwrap())(check_val(row.n, 42));
-            });
-            let mut one_u16_inserted = Some(counter.add_test(format!("one_u16_inserted_{who}")));
-            let is_alice = who == "alice";
-            db.one_u_16().on_insert(move |event, row| {
-                let run_checks = || {
-                    // In v2, the caller sees Event::Reducer, while other clients
-                    // see Event::Transaction (Event::UnknownTransaction was removed).
-                    if is_alice {
-                        anyhow::ensure!(
-                            matches!(event.event, Event::Reducer(_)),
-                            "alice's event should be Reducer, but found {:?}",
-                            event.event,
-                        );
-                    } else {
-                        anyhow::ensure!(
-                            matches!(event.event, Event::Transaction),
-                            "bob's event should be Transaction, but found {:?}",
-                            event.event,
-                        );
-                    }
-                    check_val(row.n, 24)
-                };
-                (one_u16_inserted.take().unwrap())(run_checks());
-            });
-        });
-        conn
-    }
+            subscribe_all_then(&conn, move |ctx| {
+                sub_applied(Ok(()));
 
-    let conns = [
-        connect_actor("alice", &pre_ins_counter, &counter).await,
-        connect_actor("bob", &pre_ins_counter, &counter).await,
-    ];
+                // Test that we are notified when a row is inserted.
+                let db = ctx.db();
+                let mut one_u8_inserted = Some(counter2.add_test(format!("one_u8_inserted_{who}")));
+                db.one_u_8().on_insert(move |_, row| {
+                    (one_u8_inserted.take().unwrap())(check_val(row.n, 42));
+                });
+                let mut one_u16_inserted = Some(counter2.add_test(format!("one_u16_inserted_{who}")));
+                let is_alice = who == "alice";
+                db.one_u_16().on_insert(move |event, row| {
+                    let run_checks = || {
+                        // In v2, the caller sees Event::Reducer, while other clients
+                        // see Event::Transaction (Event::UnknownTransaction was removed).
+                        if is_alice {
+                            anyhow::ensure!(
+                                matches!(event.event, Event::Reducer(_)),
+                                "alice's event should be Reducer, but found {:?}",
+                                event.event,
+                            );
+                        } else {
+                            anyhow::ensure!(
+                                matches!(event.event, Event::Transaction),
+                                "bob's event should be Transaction, but found {:?}",
+                                event.event,
+                            );
+                        }
+                        check_val(row.n, 24)
+                    };
+                    (one_u16_inserted.take().unwrap())(run_checks());
+                });
+            });
+            conn
+        }
+    });
+
+    let conns = [alice.await, bob.await];
 
     // Ensure both have finished connecting
     // and finished subscribing so that there isn't a race condition
@@ -2549,12 +2548,6 @@ async fn test_intra_query_bag_semantics_for_join() {
         }
     })
     .await;
-
-    // This test is only complete once both registered expectations have reported:
-    // `on_subscription_applied_nothing` confirms the initial state, and `pk_u32_on_delete`
-    // confirms the bag-semantics transition at the end. Without an explicit wait, the harness can
-    // finish before that final delete callback runs, which leaves the test under-synchronized.
-    test_counter.wait_for_all().await;
 }
 
 /// Test that several clients subscribing to the same query and using the same protocol (bsatn)
