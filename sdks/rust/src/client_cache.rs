@@ -375,7 +375,7 @@ impl<M: SpacetimeModule> ClientCache<M> {
     ) -> &mut TableCache<Row> {
         self.tables
             .entry::<HashMap<&'static str, TableCache<Row>>>()
-            .or_insert_with(Default::default)
+            .or_default()
             .entry(table_name)
             .or_insert_with(|| TableCache::new(self.extra_logging.clone()))
     }
