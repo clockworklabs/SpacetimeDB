@@ -96,11 +96,28 @@ impl DurabilityWorker {
         // block the execution of the local set.
         // This is what we want: exert backpressure on the transactional
         // engine when the durability layer is unable to keep up.
-        futures::executor::block_on(self.request_tx.send(DurabilityRequest {
-            reducer_context,
-            tx_data: tx_data.clone(),
-        }))
-        .unwrap_or_else(|_| panic!("durability actor vanished database={}", self.database));
+        
+        // We first try to send it without blocking.
+        match self.request_tx.try_reserve() {
+            Ok(permit) => {
+                permit.send(DurabilityRequest {
+                    reducer_context,
+                    tx_data: tx_data.clone(),
+                });
+                return;
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                panic!("durability actor vanished database={}", self.database);
+            }
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                // If the channel was full, we use the blocking version.
+                futures::executor::block_on(self.request_tx.send(DurabilityRequest {
+                    reducer_context,
+                    tx_data: tx_data.clone(),
+                }))
+                .unwrap_or_else(|_| panic!("durability actor vanished database={}", self.database));
+            }
+        }
     }
 
     /// Get the [`DurableOffset`] of this database.
