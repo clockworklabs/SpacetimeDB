@@ -7,7 +7,7 @@ use std::{
 use crate::{
     repo::{
         mem::{SpaceOnDevice, PAGE_SIZE},
-        SegmentLen,
+        SegmentLen, SegmentReader,
     },
     segment::FileLike,
 };
@@ -318,3 +318,50 @@ mod async_impls {
         }
     }
 }
+
+pub struct ReadOnlySegment {
+    inner: io::BufReader<Segment>,
+}
+
+impl From<Segment> for ReadOnlySegment {
+    fn from(inner: Segment) -> Self {
+        Self {
+            inner: io::BufReader::new(inner),
+        }
+    }
+}
+
+impl SegmentReader for ReadOnlySegment {
+    /// Memory segments dont' support compression, so are never sealed.
+    fn sealed(&self) -> bool {
+        false
+    }
+}
+
+impl io::Read for ReadOnlySegment {
+    #[inline]
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.inner.read(buf)
+    }
+}
+
+impl io::BufRead for ReadOnlySegment {
+    #[inline]
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        self.inner.fill_buf()
+    }
+
+    #[inline]
+    fn consume(&mut self, amount: usize) {
+        self.inner.consume(amount);
+    }
+}
+
+impl io::Seek for ReadOnlySegment {
+    #[inline]
+    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
+        self.inner.seek(pos)
+    }
+}
+
+impl SegmentLen for ReadOnlySegment {}
