@@ -119,16 +119,6 @@ async fn connect_then(
     connect_with_then(test_counter, "", |x| x, callback).await
 }
 
-async fn wait_for_all(test_counter: &std::sync::Arc<TestCounter>) {
-    // wasm/web callbacks run on the JS event loop, so the test harness must yield
-    // instead of blocking while it waits for all expected callback outcomes.
-    #[cfg(target_arch = "wasm32")]
-    test_counter.wait_for_all_async().await;
-
-    #[cfg(not(target_arch = "wasm32"))]
-    test_counter.wait_for_all();
-}
-
 fn subscribe_these_then(
     ctx: &impl RemoteDbContext,
     queries: &[&str],
@@ -161,7 +151,7 @@ async fn exec_anonymous_subscribe() {
     let mut insert_0 = Some(test_counter.add_test("insert_0"));
     let mut insert_1 = Some(test_counter.add_test("insert_1"));
     let mut delete_1 = Some(test_counter.add_test("delete_1"));
-    let _conn = connect_then(&test_counter, move |ctx| {
+    connect_then(&test_counter, move |ctx| {
         subscribe_these_then(ctx, &["SELECT * FROM players_at_level_0"], move |ctx| {
             ctx.db.players_at_level_0().on_insert(move |_, player| {
                 if player.identity == Identity::from_byte_array([2; 32]) {
@@ -215,7 +205,7 @@ async fn exec_anonymous_subscribe() {
         });
     })
     .await;
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 async fn exec_anonymous_subscribe_with_query_builder() {
@@ -223,7 +213,7 @@ async fn exec_anonymous_subscribe_with_query_builder() {
     let mut insert_0 = Some(test_counter.add_test("insert_0"));
     let mut insert_1 = Some(test_counter.add_test("insert_1"));
     let mut delete_1 = Some(test_counter.add_test("delete_1"));
-    let _conn = connect_then(&test_counter, move |ctx| {
+    connect_then(&test_counter, move |ctx| {
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
             .on_applied(move |ctx| {
@@ -287,14 +277,14 @@ async fn exec_anonymous_subscribe_with_query_builder() {
             .subscribe();
     })
     .await;
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 async fn exec_non_anonymous_subscribe() {
     let test_counter = TestCounter::new();
     let mut insert = Some(test_counter.add_test("insert"));
     let mut delete = Some(test_counter.add_test("delete"));
-    let _conn = connect_then(&test_counter, move |ctx| {
+    connect_then(&test_counter, move |ctx| {
         subscribe_these_then(ctx, &["SELECT * FROM my_player"], move |ctx| {
             let my_identity = ctx.identity();
             ctx.db.my_player().on_insert(move |_, player| {
@@ -327,14 +317,14 @@ async fn exec_non_anonymous_subscribe() {
         });
     })
     .await;
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 async fn exec_non_table_return() {
     let test_counter = TestCounter::new();
     let mut insert = Some(test_counter.add_test("insert"));
     let mut delete = Some(test_counter.add_test("delete"));
-    let _conn = connect_then(&test_counter, move |ctx| {
+    connect_then(&test_counter, move |ctx| {
         subscribe_these_then(ctx, &["SELECT * FROM my_player_and_level"], move |ctx| {
             let my_identity = ctx.identity();
             ctx.db.my_player_and_level().on_insert(move |_, player| {
@@ -369,14 +359,14 @@ async fn exec_non_table_return() {
         });
     })
     .await;
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 async fn exec_non_table_query_builder_return() {
     let test_counter = TestCounter::new();
     let mut insert = Some(test_counter.add_test("insert"));
     let mut delete = Some(test_counter.add_test("delete"));
-    let _conn = connect_then(&test_counter, move |ctx| {
+    connect_then(&test_counter, move |ctx| {
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
             .on_applied(move |ctx| {
@@ -416,7 +406,7 @@ async fn exec_non_table_query_builder_return() {
             .subscribe();
     })
     .await;
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 async fn exec_subscription_update() {
@@ -425,7 +415,7 @@ async fn exec_subscription_update() {
     let mut insert_0 = Some(test_counter.add_test("insert_0"));
     let mut delete_0 = Some(test_counter.add_test("delete_0"));
 
-    let _conn_0 = connect_with_then(
+    connect_with_then(
         &test_counter,
         "0",
         |builder| builder,
@@ -453,7 +443,7 @@ async fn exec_subscription_update() {
     let mut insert_1 = Some(test_counter.add_test("insert_1"));
     let mut delete_1 = Some(test_counter.add_test("delete_1"));
 
-    let _conn_1 = connect_with_then(
+    connect_with_then(
         &test_counter,
         "1",
         |builder| builder,
@@ -481,5 +471,5 @@ async fn exec_subscription_update() {
         },
     )
     .await;
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }

@@ -668,7 +668,7 @@ async fn exec_subscribe_and_cancel() {
         }
     })
     .await;
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 async fn exec_subscribe_and_unsubscribe() {
@@ -707,7 +707,7 @@ async fn exec_subscribe_and_unsubscribe() {
         }
     })
     .await;
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 async fn exec_subscription_error_smoke_test() {
@@ -727,7 +727,7 @@ async fn exec_subscription_error_smoke_test() {
         }
     })
     .await;
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// This tests that we can:
@@ -770,7 +770,7 @@ async fn exec_insert_primitive() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// This tests that we can observe `on_delete` callbacks.
@@ -806,7 +806,7 @@ async fn exec_delete_primitive() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 
     assert_all_tables_empty(&connection).unwrap();
 }
@@ -844,7 +844,7 @@ async fn exec_update_primitive() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 
     assert_all_tables_empty(&connection).unwrap();
 }
@@ -870,7 +870,7 @@ async fn exec_insert_identity() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// This tests that we can retrieve and use the caller's `Identity` from the reducer context.
@@ -895,7 +895,7 @@ async fn exec_insert_caller_identity() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// This test doesn't add much alongside `exec_insert_identity` and `exec_delete_primitive`,
@@ -916,7 +916,7 @@ async fn exec_delete_identity() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 
     assert_all_tables_empty(&connection).unwrap();
 }
@@ -939,7 +939,7 @@ async fn exec_update_identity() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 
     assert_all_tables_empty(&connection).unwrap();
 }
@@ -961,7 +961,7 @@ async fn exec_insert_connection_id() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// This tests that we can serialize and deserialize `ConnectionId` in various contexts.
@@ -987,7 +987,7 @@ async fn exec_insert_caller_connection_id() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// This test doesn't add much alongside `exec_insert_connection_id` and `exec_delete_primitive`,
@@ -1008,7 +1008,7 @@ async fn exec_delete_connection_id() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 
     assert_all_tables_empty(&connection).unwrap();
 }
@@ -1036,7 +1036,7 @@ async fn exec_update_connection_id() {
         }
     });
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 
     assert_all_tables_empty(&connection).unwrap();
 }
@@ -1057,7 +1057,7 @@ async fn exec_insert_timestamp() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 async fn exec_insert_call_timestamp() {
@@ -1101,7 +1101,7 @@ async fn exec_insert_call_timestamp() {
         }
     })
     .await;
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// This tests that we can serialize and deserialize `Uuid` in various contexts.
@@ -1121,7 +1121,7 @@ async fn exec_insert_uuid() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// This tests that we can serialize and deserialize `Uuid` in various contexts.
@@ -1142,7 +1142,7 @@ async fn exec_insert_caller_uuid_v4() {
         }
     });
 
-    wait_for_all(&test_counter).await;*/
+    test_counter.wait_for_all().await;*/
 }
 
 /// This tests that we can serialize and deserialize `Uuid` in various contexts.
@@ -1166,7 +1166,7 @@ async fn exec_delete_uuid() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 
     assert_all_tables_empty(&connection).unwrap();
 }
@@ -1188,7 +1188,7 @@ async fn exec_update_uuid() {
         }
     });
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 
     assert_all_tables_empty(&connection).unwrap();
 }
@@ -1239,7 +1239,7 @@ async fn exec_on_reducer() {
             .unwrap();
     });
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// This tests that we can observe reducer callbacks for failed reducers.
@@ -1339,7 +1339,7 @@ async fn exec_fail_reducer() {
             .unwrap();
     });
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// This tests that we can serialize and deserialize `Vec<?>` in various contexts.
@@ -1382,7 +1382,7 @@ async fn exec_insert_vec() {
         }
     });
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 fn every_primitive_struct() -> EveryPrimitiveStruct {
@@ -1497,7 +1497,7 @@ async fn exec_insert_option_some() {
         }
     });
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// This tests that we can serialize and deserialize `Option`s of various payload types which are `None`.
@@ -1524,7 +1524,7 @@ async fn exec_insert_option_none() {
         }
     });
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// This tests that we can serialize and deserialize structs in various contexts.
@@ -1551,7 +1551,7 @@ async fn exec_insert_struct() {
         }
     });
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// This tests that we can serialize and deserialize C-style enums in various contexts.
@@ -1575,7 +1575,7 @@ async fn exec_insert_simple_enum() {
         }
     });
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// This tests that we can serialize and deserialize sum types in various contexts.
@@ -1625,7 +1625,7 @@ async fn exec_insert_enum_with_payload() {
         }
     });
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// This tests that the test machinery itself is functional and can detect failures.
@@ -1633,7 +1633,7 @@ async fn exec_should_fail() {
     let test_counter = TestCounter::new();
     let fail = test_counter.add_test("should-fail");
     fail(Err(anyhow::anyhow!("This is an intentional failure")));
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// This test invokes a reducer with many arguments of many types,
@@ -1748,7 +1748,7 @@ async fn exec_insert_delete_large_table() {
         }
     });
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 async fn exec_insert_primitives_as_strings() {
@@ -1817,7 +1817,7 @@ async fn exec_insert_primitives_as_strings() {
         }
     });
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 // /// This tests the behavior of re-subscribing
@@ -1843,7 +1843,7 @@ async fn exec_insert_primitives_as_strings() {
 //     connect_result(connect(LOCALHOST, &name, None));
 
 //     // Wait for all previous checks before continuing.
-//     wait_for_all(&test_counter).await;
+//     test_counter.wait_for_all().await;
 
 //     // Insert 256 rows of `OneU8`.
 //     // At this point, we should be subscribed to all of them.
@@ -1859,7 +1859,7 @@ async fn exec_insert_primitives_as_strings() {
 //         insert_one_u_8(n as u8);
 //     }
 //     // Wait for all previous checks before continuing,
-//     wait_for_all(&test_counter).await;
+//     test_counter.wait_for_all().await;
 //     // and remove the callback now that we're done with it.
 //     OneU8::remove_on_insert(on_insert_u8);
 //     // Re-subscribe with a query that excludes the lower half of the `OneU8` rows,
@@ -1891,7 +1891,7 @@ async fn exec_insert_primitives_as_strings() {
 //     let subscribe_result = test_counter.add_test("resubscribe");
 //     subscribe_result(subscribe(&["SELECT * FROM OneU8 WHERE n > 127"]));
 //     // Wait before continuing, and remove callbacks.
-//     wait_for_all(&test_counter).await;
+//     test_counter.wait_for_all().await;
 //     OneU8::remove_on_delete(on_delete_verify);
 //     OneU8::remove_on_insert(on_insert_panic);
 
@@ -1920,7 +1920,7 @@ async fn exec_insert_primitives_as_strings() {
 //     });
 //     let subscribe_result = test_counter.add_test("resubscribe-again");
 //     subscribe_result(subscribe(&["SELECT * FROM OneU8"]));
-//     wait_for_all(&test_counter).await;
+//     test_counter.wait_for_all().await;
 // }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1949,7 +1949,7 @@ async fn exec_reauth_part_1() {
         .unwrap()
         .run_threaded();
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// Part of the `reauth` test, this loads credentials from a file,
@@ -1985,7 +1985,7 @@ async fn exec_reauth_part_2() {
         .unwrap()
         .run_threaded();
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -2030,13 +2030,13 @@ async fn exec_reconnect_different_connection_id() {
     #[cfg(target_arch = "wasm32")]
     initial_connection.run_background_task();
 
-    wait_for_all(&initial_test_counter).await;
+    initial_test_counter.wait_for_all().await;
 
     let my_connection_id = initial_connection.connection_id();
 
     initial_connection.disconnect().unwrap();
 
-    wait_for_all(&disconnect_test_counter).await;
+    disconnect_test_counter.wait_for_all().await;
 
     let reconnect_test_counter = TestCounter::new();
     let reconnect_result = reconnect_test_counter.add_test("reconnect");
@@ -2063,7 +2063,7 @@ async fn exec_reconnect_different_connection_id() {
     #[cfg(target_arch = "wasm32")]
     re_connection.run_background_task();
 
-    wait_for_all(&reconnect_test_counter).await;
+    reconnect_test_counter.wait_for_all().await;
 }
 
 async fn exec_caller_always_notified() {
@@ -2094,7 +2094,7 @@ async fn exec_caller_always_notified() {
         })
         .unwrap();
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// Duplicates the test `insert_primitive`,
@@ -2138,7 +2138,7 @@ async fn exec_subscribe_all_select_star() {
         .on_error(|_, e| panic!("Subscription error: {e:?}"))
         .subscribe_to_all_tables();
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 async fn exec_sorted_uuids_insert() {
@@ -2175,7 +2175,7 @@ async fn exec_sorted_uuids_insert() {
         }
     });
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 async fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
@@ -2249,7 +2249,7 @@ async fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
     // and finished subscribing so that there isn't a race condition
     // between Alice executing the reducer and Bob being connected
     // or Alice executing the reducer and either having subscriptions applied.
-    wait_for_all(&pre_ins_counter).await;
+    pre_ins_counter.wait_for_all().await;
 
     // Alice executes a reducer.
     // This should cause a row callback to be received by Alice and Bob.
@@ -2272,7 +2272,7 @@ async fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
         .insert_one_u_16_then(24, reducer_callback_assert_committed("insert_one_u_16"))
         .unwrap();
 
-    wait_for_all(&counter).await;
+    counter.wait_for_all().await;
 
     // For the integrity of the test, ensure that Alice != Bob.
     // We do this after `run_threaded` so that the ids have been filled.
@@ -2345,7 +2345,7 @@ async fn exec_row_deduplication() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 
     // Ensure we're not double counting anything.
     let table = conn.db.pk_u_32();
@@ -2417,7 +2417,7 @@ async fn exec_row_deduplication_join_r_and_s() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 async fn exec_row_deduplication_r_join_s_and_r_join_t() {
@@ -2478,7 +2478,7 @@ async fn exec_row_deduplication_r_join_s_and_r_join_t() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 
     assert_eq!(count_unique_u32_on_insert.load(Ordering::SeqCst), 1);
 }
@@ -2530,7 +2530,7 @@ async fn test_lhs_join_update() {
 
     // Wait for the subscription to be updated,
     // then update one of the pk_u32 rows.
-    wait_for_all(&insert_counter).await;
+    insert_counter.wait_for_all().await;
     conn.reducers
         .update_pk_u_32_then(2, 1, move |ctx, outcome| {
             assert_outcome_committed("update_pk_u_32", outcome);
@@ -2546,7 +2546,7 @@ async fn test_lhs_join_update() {
         .unwrap();
 
     // Wait for the second row update for pk_u32
-    wait_for_all(&update_counter).await;
+    update_counter.wait_for_all().await;
 }
 
 /// This test asserts that the correct callbacks are invoked when updating the lhs table of a join
@@ -2590,7 +2590,7 @@ async fn test_lhs_join_update_disjoint_queries() {
 
     // Wait for the subscription to be updated,
     // then update one of the pk_u32 rows.
-    wait_for_all(&insert_counter).await;
+    insert_counter.wait_for_all().await;
     conn.reducers
         .update_pk_u_32_then(2, 1, move |ctx, outcome| {
             assert_outcome_committed("update_pk_u_32", outcome);
@@ -2606,7 +2606,7 @@ async fn test_lhs_join_update_disjoint_queries() {
         .unwrap();
 
     // Wait for the second row update for pk_u32
-    wait_for_all(&update_counter).await;
+    update_counter.wait_for_all().await;
 }
 
 /// Test that when subscribing to a single join query,
@@ -2699,7 +2699,7 @@ async fn test_intra_query_bag_semantics_for_join() {
     // `on_subscription_applied_nothing` confirms the initial state, and `pk_u32_on_delete`
     // confirms the bag-semantics transition at the end. Without an explicit wait, the harness can
     // finish before that final delete callback runs, which leaves the test under-synchronized.
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// Test that several clients subscribing to the same query and using the same protocol (bsatn)
@@ -2802,7 +2802,7 @@ async fn exec_two_different_compression_algos() {
         &bytes,
     )
     .await;
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// In this test we have two clients issue parameterized subscriptions.
@@ -2860,7 +2860,7 @@ async fn test_parameterized_subscription() {
 
     subscribe_and_update("client_0", 1, 2, ctr_for_test.clone(), [sub_0, insert_0, update_0]).await;
     subscribe_and_update("client_1", 3, 4, ctr_for_test.clone(), [sub_1, insert_1, update_1]).await;
-    wait_for_all(&ctr_for_test).await;
+    ctr_for_test.wait_for_all().await;
 }
 
 /// In this test we have two clients subscribe to the `users` table.
@@ -2916,7 +2916,7 @@ async fn test_rls_subscription() {
 
     subscribe_and_update("client_0", "Alice", ctr_for_test.clone(), [sub_0, ins_0]).await;
     subscribe_and_update("client_1", "Bob", ctr_for_test.clone(), [sub_1, ins_1]).await;
-    wait_for_all(&ctr_for_test).await;
+    ctr_for_test.wait_for_all().await;
 }
 
 async fn exec_pk_simple_enum() {
@@ -2948,7 +2948,7 @@ async fn exec_pk_simple_enum() {
         });
     })
     .await;
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 async fn exec_indexed_simple_enum() {
@@ -2982,7 +2982,7 @@ async fn exec_indexed_simple_enum() {
         });
     })
     .await;
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// This tests for a bug we once had where the Rust client SDK would
@@ -3017,7 +3017,7 @@ async fn exec_overlapping_subscriptions() {
     })
     .await;
 
-    wait_for_all(&setup_counter).await;
+    setup_counter.wait_for_all().await;
 
     let test_counter = TestCounter::new();
 
@@ -3067,5 +3067,5 @@ async fn exec_overlapping_subscriptions() {
             .map_err(|e| e.into()),
     );
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }

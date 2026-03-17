@@ -54,18 +54,7 @@ impl TestCounter {
         })
     }
 
-    // Keep this legacy sync API for existing native-first callers.
-    // wasm callers should prefer `wait_for_all_async` so we do not
-    // block the JS event loop while waiting for callbacks.
-    pub fn wait_for_all(&self) {
-        #[cfg(target_arch = "wasm32")]
-        futures::executor::block_on(self.wait_for_all_wasm_async());
-
-        #[cfg(not(target_arch = "wasm32"))]
-        self.wait_for_all_native();
-    }
-
-    pub async fn wait_for_all_async(&self) {
+    pub async fn wait_for_all(&self) {
         // wasm/web test clients run callbacks on a single-threaded event loop,
         // so waiting must be async to allow callback tasks to make progress.
         #[cfg(target_arch = "wasm32")]

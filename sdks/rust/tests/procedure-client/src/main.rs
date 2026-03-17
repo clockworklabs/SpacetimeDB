@@ -143,16 +143,6 @@ async fn connect_then(
     connect_with_then(test_counter, "", |x| x, callback).await
 }
 
-async fn wait_for_all(test_counter: &std::sync::Arc<TestCounter>) {
-    // wasm/web callbacks run on the JS event loop, so the test harness must yield
-    // instead of blocking while it waits for all expected callback outcomes.
-    #[cfg(target_arch = "wasm32")]
-    test_counter.wait_for_all_async().await;
-
-    #[cfg(not(target_arch = "wasm32"))]
-    test_counter.wait_for_all();
-}
-
 /// A query that subscribes to all rows from all tables.
 const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM my_table;",
@@ -178,7 +168,7 @@ fn subscribe_these_then(
 async fn exec_procedure_return_values() {
     let test_counter = TestCounter::new();
 
-    let _conn = connect_then(&test_counter, {
+    connect_then(&test_counter, {
         let test_counter = test_counter.clone();
         move |ctx| {
             let return_primitive_result = test_counter.add_test("return_primitive");
@@ -224,13 +214,13 @@ async fn exec_procedure_return_values() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 async fn exec_procedure_panic() {
     let test_counter = TestCounter::new();
 
-    let _conn = connect_then(&test_counter, {
+    connect_then(&test_counter, {
         let test_counter = test_counter.clone();
         move |ctx| {
             let will_panic_result = test_counter.add_test("will_panic");
@@ -246,7 +236,7 @@ async fn exec_procedure_panic() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 async fn exec_insert_with_tx_commit() {
@@ -262,7 +252,7 @@ async fn exec_insert_with_tx_commit() {
     let inspect_result = test_counter.add_test("insert_with_tx_commit_values");
     let mut callback_result = Some(test_counter.add_test("insert_with_tx_commit_callback"));
 
-    let _conn = connect_then(&test_counter, {
+    connect_then(&test_counter, {
         move |ctx| {
             ctx.db().my_table().on_insert(move |_, row| {
                 assert_eq!(row.field, expected());
@@ -283,7 +273,7 @@ async fn exec_insert_with_tx_commit() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 async fn exec_insert_with_tx_rollback() {
@@ -291,7 +281,7 @@ async fn exec_insert_with_tx_rollback() {
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
     let inspect_result = test_counter.add_test("insert_with_tx_rollback_values");
 
-    let _conn = connect_then(&test_counter, {
+    connect_then(&test_counter, {
         move |ctx| {
             ctx.db()
                 .my_table()
@@ -310,7 +300,7 @@ async fn exec_insert_with_tx_rollback() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// Test that a procedure can perform an HTTP request and return a string derived from the response.
@@ -320,7 +310,7 @@ async fn exec_insert_with_tx_rollback() {
 /// then (in the client) deserialize the response and assert that it contains a description of that procedure.
 async fn exec_procedure_http_ok() {
     let test_counter = TestCounter::new();
-    let _conn = connect_then(&test_counter, {
+    connect_then(&test_counter, {
         let test_counter = test_counter.clone();
         move |ctx| {
             let result = test_counter.add_test("invoke_http");
@@ -347,7 +337,7 @@ async fn exec_procedure_http_ok() {
         }
     })
     .await;
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// Test that a procedure can perform an HTTP request, handle its failure and return a string derived from the error.
@@ -357,7 +347,7 @@ async fn exec_procedure_http_ok() {
 /// then (in the client) assert that the error message looks sane.
 async fn exec_procedure_http_err() {
     let test_counter = TestCounter::new();
-    let _conn = connect_then(&test_counter, {
+    connect_then(&test_counter, {
         let test_counter = test_counter.clone();
         move |ctx| {
             let result = test_counter.add_test("invoke_http");
@@ -378,7 +368,7 @@ async fn exec_procedure_http_err() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 async fn exec_schedule_procedure() {
@@ -387,7 +377,7 @@ async fn exec_schedule_procedure() {
 
     let mut callback_result = Some(test_counter.add_test("insert_with_tx_commit_callback"));
 
-    let _conn = connect_then(&test_counter, {
+    connect_then(&test_counter, {
         move |ctx| {
             ctx.db().proc_inserts_into().on_insert(move |_, row| {
                 assert_eq!(row.x, 42);
@@ -423,7 +413,7 @@ async fn exec_schedule_procedure() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }
 
 /// Test that a procedure can generate sorted UUIDs and insert them into a table
@@ -435,7 +425,7 @@ async fn exec_sorted_uuids_insert() {
     let test_counter = TestCounter::new();
     let sorted_uuids_insert_result = test_counter.add_test("sorted_uuids_insert");
 
-    let _conn = connect_then(&test_counter, {
+    connect_then(&test_counter, {
         move |ctx| {
             ctx.procedures.sorted_uuids_insert_then(move |ctx, res| {
                 sorted_uuids_insert_result(
@@ -464,5 +454,5 @@ async fn exec_sorted_uuids_insert() {
     })
     .await;
 
-    wait_for_all(&test_counter).await;
+    test_counter.wait_for_all().await;
 }

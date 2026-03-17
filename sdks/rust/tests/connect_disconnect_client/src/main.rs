@@ -92,13 +92,13 @@ pub(crate) async fn dispatch() {
     #[cfg(target_arch = "wasm32")]
     connection.run_background_task();
 
-    wait_for_all(&connect_test_counter).await;
+    connect_test_counter.wait_for_all().await;
 
     disconnect_connection(&connection).await;
     #[cfg(not(target_arch = "wasm32"))]
     join_handle.join().unwrap();
 
-    wait_for_all(&disconnect_test_counter).await;
+    disconnect_test_counter.wait_for_all().await;
 
     let reconnect_test_counter = TestCounter::new();
     let reconnected_result = reconnect_test_counter.add_test("on_reconnect");
@@ -138,22 +138,13 @@ pub(crate) async fn dispatch() {
     #[cfg(target_arch = "wasm32")]
     new_connection.run_background_task();
 
-    wait_for_all(&reconnect_test_counter).await;
+    reconnect_test_counter.wait_for_all().await;
 
     // The second connection has no disconnect assertion, but it still needs an explicit
     // shutdown on wasm so the background task releases its websocket before the test exits.
     disconnect_connection(&new_connection).await;
     #[cfg(not(target_arch = "wasm32"))]
     reconnect_join_handle.join().unwrap();
-}
-
-async fn wait_for_all(test_counter: &std::sync::Arc<TestCounter>) {
-    // wasm/web callbacks run on the JS event loop, so this wait must stay async.
-    #[cfg(target_arch = "wasm32")]
-    test_counter.wait_for_all_async().await;
-
-    #[cfg(not(target_arch = "wasm32"))]
-    test_counter.wait_for_all();
 }
 
 #[cfg(not(target_arch = "wasm32"))]
