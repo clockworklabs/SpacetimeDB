@@ -11,12 +11,12 @@ use core::any::type_name;
 use core::hash::Hash;
 use futures_channel::mpsc;
 use spacetimedb_data_structures::map::{hash_map::Entry, HashCollectionExt, HashMap};
+use std::any::Any;
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::Write;
 use std::marker::PhantomData;
 use std::sync::Arc;
-use std::any::Any;
 
 /// A local mirror of the subscribed rows of one table in the database.
 pub struct TableCache<Row> {
