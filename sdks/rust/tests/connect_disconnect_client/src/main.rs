@@ -22,10 +22,10 @@ pub(crate) fn set_web_db_name(db_name: String) {
 fn db_name_or_panic() -> String {
     #[cfg(all(target_arch = "wasm32", feature = "web"))]
     {
-        return WEB_DB_NAME
+        WEB_DB_NAME
             .get()
             .cloned()
-            .expect("Failed to read db name from wasm runner");
+            .expect("Failed to read db name from wasm runner")
     }
 
     #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
@@ -138,7 +138,7 @@ pub(crate) async fn dispatch() {
         .subscribe("SELECT * FROM disconnected");
 
     #[cfg(not(target_arch = "wasm32"))]
-    let reconnect_join_handle = new_connection.run_threaded();
+    let _reconnect_join_handle = new_connection.run_threaded();
     #[cfg(target_arch = "wasm32")]
     new_connection.run_background_task();
 

@@ -38,10 +38,10 @@ fn exit_on_panic() {
 fn db_name_or_panic() -> String {
     #[cfg(all(target_arch = "wasm32", feature = "web"))]
     {
-        return WEB_DB_NAME
+        WEB_DB_NAME
             .get()
             .cloned()
-            .expect("Failed to read db name from wasm runner");
+            .expect("Failed to read db name from wasm runner")
     }
 
     #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
@@ -64,7 +64,7 @@ fn main() {
 }
 
 pub(crate) async fn dispatch(test: &str) {
-    match &*test {
+    match test {
         "view-anonymous-subscribe" => exec_anonymous_subscribe().await,
         "view-anonymous-subscribe-with-query-builder" => exec_anonymous_subscribe_with_query_builder().await,
         "view-non-anonymous-subscribe" => exec_non_anonymous_subscribe().await,

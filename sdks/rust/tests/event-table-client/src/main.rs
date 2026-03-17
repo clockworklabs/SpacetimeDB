@@ -24,10 +24,10 @@ pub(crate) fn set_web_db_name(db_name: String) {
 fn db_name_or_panic() -> String {
     #[cfg(all(target_arch = "wasm32", feature = "web"))]
     {
-        return WEB_DB_NAME
+        WEB_DB_NAME
             .get()
             .cloned()
-            .expect("Failed to read db name from wasm runner");
+            .expect("Failed to read db name from wasm runner")
     }
 
     #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
@@ -78,7 +78,7 @@ fn main() {
 }
 
 pub(crate) async fn dispatch(test: &str) {
-    match &*test {
+    match test {
         "event-table" => exec_event_table().await,
         "multiple-events" => exec_multiple_events().await,
         "events-dont-persist" => exec_events_dont_persist().await,

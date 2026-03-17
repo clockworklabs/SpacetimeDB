@@ -1,5 +1,8 @@
 #![allow(clippy::disallowed_macros)]
 
+// The shared client implementation lives in `main.rs`, but only the wasm build
+// needs to compile it as a library module. Native uses the binary entrypoint.
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
 #[path = "main.rs"]
 mod cli;
 

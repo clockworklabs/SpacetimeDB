@@ -40,10 +40,10 @@ fn exit_on_panic() {
 fn db_name_or_panic() -> String {
     #[cfg(all(target_arch = "wasm32", feature = "web"))]
     {
-        return WEB_DB_NAME
+        WEB_DB_NAME
             .get()
             .cloned()
-            .expect("Failed to read db name from wasm runner");
+            .expect("Failed to read db name from wasm runner")
     }
 
     #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
@@ -66,7 +66,7 @@ fn main() {
 }
 
 pub(crate) async fn dispatch(test: &str) {
-    match &*test {
+    match test {
         "procedure-return-values" => exec_procedure_return_values().await,
         "procedure-observe-panic" => exec_procedure_panic().await,
         "procedure-http-ok" => exec_procedure_http_ok().await,

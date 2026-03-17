@@ -49,10 +49,10 @@ pub(crate) fn set_web_db_name(db_name: String) {
 fn db_name_or_panic() -> String {
     #[cfg(all(target_arch = "wasm32", feature = "web"))]
     {
-        return WEB_DB_NAME
+        WEB_DB_NAME
             .get()
             .cloned()
-            .expect("Failed to read db name from wasm runner");
+            .expect("Failed to read db name from wasm runner")
     }
 
     #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
@@ -2578,7 +2578,7 @@ async fn exec_two_different_compression_algos() {
     ) -> DbConnection {
         let expected1 = expected.clone();
         let subscribed = barrier.add_test(format!("subscribed_{compression_name}"));
-        let conn = connect_with_then(
+        connect_with_then(
             test_counter,
             compression_name,
             |b| b.with_compression(compression),
@@ -2600,8 +2600,7 @@ async fn exec_two_different_compression_algos() {
                 })
             },
         )
-        .await;
-        conn
+        .await
     }
     let test_counter: Arc<TestCounter> = TestCounter::new();
     let barrier = TestCounter::new();
