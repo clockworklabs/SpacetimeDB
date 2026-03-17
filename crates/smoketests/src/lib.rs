@@ -261,6 +261,65 @@ pub fn allow_dotnet() -> bool {
     }
 }
 
+/// Returns the path to the Gradle wrapper (`gradlew`) in the Kotlin SDK directory.
+///
+/// Returns `None` if the wrapper is not found.
+pub fn gradlew_path() -> Option<PathBuf> {
+    static GRADLEW_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
+    GRADLEW_PATH
+        .get_or_init(|| {
+            let gradlew = workspace_root().join("sdks/kotlin/gradlew");
+            if gradlew.exists() {
+                Some(gradlew)
+            } else {
+                None
+            }
+        })
+        .clone()
+}
+
+/// Returns true if a JDK is available on the system.
+pub fn have_java() -> bool {
+    static HAVE_JAVA: OnceLock<bool> = OnceLock::new();
+    *HAVE_JAVA.get_or_init(|| {
+        Command::new("javac")
+            .args(["--version"])
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+    })
+}
+
+/// Returns true if tests are configured to allow Gradle (Kotlin SDK) tests.
+pub fn allow_gradle() -> bool {
+    let Ok(s) = std::env::var("SMOKETESTS_GRADLE") else {
+        return true;
+    };
+    match s.as_str() {
+        "" | "0" => false,
+        s => s.to_lowercase() != "false",
+    }
+}
+
+#[macro_export]
+macro_rules! require_gradle {
+    () => {
+        if !$crate::allow_gradle() {
+            #[allow(clippy::disallowed_macros)]
+            {
+                eprintln!("Skipping gradle test");
+            }
+            return;
+        }
+        if $crate::gradlew_path().is_none() {
+            panic!("gradlew not found in sdks/kotlin/");
+        }
+        if !$crate::have_java() {
+            panic!("JDK not found (javac not on PATH)");
+        }
+    };
+}
+
 /// Returns true if psql (PostgreSQL client) is available on the system.
 pub fn have_psql() -> bool {
     static HAVE_PSQL: OnceLock<bool> = OnceLock::new();
