@@ -699,14 +699,15 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             var members = index.Columns.Select(c => Members[c.Index]).ToArray();
             var standardIndexName = index.StandardIndexName(tableAccessor);
             var name = index.AccessorName;
+            var identifierName = index.AccessorIdentifier;
 
             var blocks = new List<string>
             {
                 $$$"""
-                    public sealed class {{{name}}}Index
+                    public sealed class {{{identifierName}}}Index
                     : global::SpacetimeDB.Internal.ReadOnlyIndexBase<{{{globalName}}}>
                     {
-                    internal {{{name}}}Index() : base("{{{standardIndexName}}}") {}
+                    internal {{{identifierName}}}Index() : base("{{{standardIndexName}}}") {}
                     """,
             };
 
@@ -750,7 +751,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 );
             }
 
-            blocks.Add($"}}\n{vis} {name}Index {name} => new();");
+            blocks.Add($"}}\n{vis} {identifierName}Index {identifierName} => new();");
             yield return string.Join("\n", blocks);
         }
     }
@@ -789,7 +790,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
             var globalName = $"global::{FullName}";
             var accessorIdentifier = v.Identifier;
-            var iTable = $"global::SpacetimeDB.Internal.ITableView<{accessorIdentifier}, {globalName}>";
+            var iTable =
+                $"global::SpacetimeDB.Internal.ITableView<{accessorIdentifier}, {globalName}>";
             yield return new(
                 v.Name,
                 globalName,
@@ -924,9 +926,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 var typeName = col.Type.Name;
                 var isNullable = typeName.EndsWith("?", StringComparison.Ordinal);
                 var valueTypeName = isNullable ? typeName[..^1] : typeName;
-                var colType = isNullable
-                    ? "global::SpacetimeDB.Col"
-                    : "global::SpacetimeDB.Col";
+                var colType = isNullable ? "global::SpacetimeDB.Col" : "global::SpacetimeDB.Col";
                 return $"public readonly {colType}<{globalRowName}, {valueTypeName}> {col.Identifier};";
             }
 
@@ -935,9 +935,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 var typeName = col.Type.Name;
                 var isNullable = typeName.EndsWith("?", StringComparison.Ordinal);
                 var valueTypeName = isNullable ? typeName[..^1] : typeName;
-                var colType = isNullable
-                    ? "global::SpacetimeDB.Col"
-                    : "global::SpacetimeDB.Col";
+                var colType = isNullable ? "global::SpacetimeDB.Col" : "global::SpacetimeDB.Col";
                 return $"{col.Identifier} = new {colType}<{globalRowName}, {valueTypeName}>(tableName, \"{col.Name}\");";
             }
 
@@ -1574,9 +1572,7 @@ record ProcedureDeclaration
     public string GenerateClass()
     {
         var invocationArgs =
-            Args.Length == 0
-                ? ""
-                : ", " + string.Join(", ", Args.Select(a => a.Identifier));
+            Args.Length == 0 ? "" : ", " + string.Join(", ", Args.Select(a => a.Identifier));
         var invocation = $"{FullName}((SpacetimeDB.ProcedureContext)ctx{invocationArgs})";
 
         var txPayload = TxPayloadType ?? ReturnType;

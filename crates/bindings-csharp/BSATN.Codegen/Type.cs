@@ -464,6 +464,12 @@ public abstract record BaseTypeDeclaration<M>
     public readonly TypeKind Kind;
     public readonly EquatableArray<M> Members;
 
+    /// <summary>
+    /// Returns the escaped version of ShortName for use in generated C# code where the type name
+    /// appears as an identifier (e.g., in IEquatable&lt;T&gt; or as a base type reference).
+    /// </summary>
+    public string ShortNameIdentifier => EscapeIdentifier(ShortName);
+
     protected abstract M ConvertMember(int index, IFieldSymbol field, DiagReporter diag);
 
     public BaseTypeDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
@@ -559,7 +565,7 @@ public abstract record BaseTypeDeclaration<M>
 
         var bsatnDecls = Members.Cast<MemberDeclaration>();
 
-        extensions.BaseTypes.Add($"System.IEquatable<{ShortName}>");
+        extensions.BaseTypes.Add($"System.IEquatable<{ShortNameIdentifier}>");
 
         if (Kind is TypeKind.Sum)
         {
@@ -571,7 +577,7 @@ public abstract record BaseTypeDeclaration<M>
                         // To avoid this, we append an underscore to the field name.
                         // In most cases the field name shouldn't matter anyway as you'll idiomatically use pattern matching to extract the value.
                         $$"""
-                            public sealed record {{m.Identifier}}({{m.Type.Name}} {{m.Identifier}}_) : {{ShortName}}
+                            public sealed record {{m.Identifier}}({{m.Type.Name}} {{m.Identifier}}_) : {{ShortNameIdentifier}}
                             {
                                 public override string ToString() =>
                                     $"{{m.Name}}({ SpacetimeDB.BSATN.StringUtil.GenericToString({{m.Identifier}}_) })";

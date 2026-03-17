@@ -261,8 +261,7 @@ public static class GeneratorSnapshotTests
     {
         var fixture = await Fixture.Compile("server");
 
-        const string source =
-            """
+        const string source = """
             using SpacetimeDB;
 
             [SpacetimeDB.Table]
@@ -274,11 +273,11 @@ public static class GeneratorSnapshotTests
                 public int @params;
             }
 
-            [SpacetimeDB.Table(Accessor = "class")]
+            [SpacetimeDB.Table(Accessor = "event")]
             public partial struct AccessorKeywordTable
             {
                 [SpacetimeDB.PrimaryKey]
-                [SpacetimeDB.Index.BTree(Accessor = "class")]
+                [SpacetimeDB.Index.BTree(Accessor = "params")]
                 public int Id;
             }
 
@@ -321,7 +320,10 @@ public static class GeneratorSnapshotTests
         var compilation = fixture.SampleCompilation.AddSyntaxTrees(tree);
 
         var driver = CSharpGeneratorDriver.Create(
-            [new SpacetimeDB.Codegen.Type().AsSourceGenerator(), new SpacetimeDB.Codegen.Module().AsSourceGenerator()],
+            [
+                new SpacetimeDB.Codegen.Type().AsSourceGenerator(),
+                new SpacetimeDB.Codegen.Module().AsSourceGenerator(),
+            ],
             driverOptions: new(
                 disabledOutputs: IncrementalGeneratorOutputKind.None,
                 trackIncrementalGeneratorSteps: true
