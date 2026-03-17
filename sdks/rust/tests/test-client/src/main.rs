@@ -1998,13 +1998,16 @@ async fn exec_reauth_part_2() {
 
 #[cfg(target_arch = "wasm32")]
 async fn exec_reauth_part_1() {
-    // Native-only: requires file-backed credentials via `credentials::File`,
-    // which is unavailable in wasm/web.
+    // TODO: Re-enable this once the wasm runner grows the browser-faithful mode
+    // described in `crates/testing/src/sdk.rs`. This test is about persisting web
+    // credentials across separate runs, and the current Node-based wasm harness does
+    // not exercise the browser cookie/storage APIs that web reauth depends on.
 }
 
 #[cfg(target_arch = "wasm32")]
 async fn exec_reauth_part_2() {
-    // Native-only: requires persisted credentials from `exec_reauth_part_1`.
+    // See the TODO above and in `crates/testing/src/sdk.rs`: this is disabled for the
+    // current Node-based wasm harness for the same reason as `exec_reauth_part_1`.
 }
 
 // Ensure a new connection gets a different connection id.
