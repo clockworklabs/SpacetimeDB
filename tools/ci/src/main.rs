@@ -345,7 +345,7 @@ fn main() -> Result<()> {
                 "-p",
                 "spacetimedb-sdk",
                 "--features",
-                "allow_loopback_http_for_tests,sdk-tests-web-client",
+                "allow_loopback_http_for_tests,web",
                 "--",
                 "--test-threads=2",
                 "--skip",

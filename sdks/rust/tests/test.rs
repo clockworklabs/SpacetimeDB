@@ -1,4 +1,4 @@
-#[cfg(feature = "sdk-tests-web-client")]
+#[cfg(feature = "web")]
 use std::path::Path;
 
 use spacetimedb_testing::sdk::{Test, TestBuilder};
@@ -11,7 +11,7 @@ fn platform_test_builder(client_project: &str, run_selector: Option<&str>) -> Te
     // - Native mode uses it as a CLI subcommand (`cargo run -- <selector>`), with `None` => `cargo run`.
     // - Web mode forwards it to the wasm export `run(test_name)`, with `None` => empty string.
     // This mirrors how `run_command` is consumed by the native vs web runners in `crates/testing/src/sdk.rs`.
-    #[cfg(feature = "sdk-tests-web-client")]
+    #[cfg(feature = "web")]
     {
         let package_name = Path::new(client_project)
             .file_name()
@@ -36,7 +36,7 @@ fn platform_test_builder(client_project: &str, run_selector: Option<&str>) -> Te
             .with_web_client(wasm_path, bindgen_out_dir)
     }
 
-    #[cfg(not(feature = "sdk-tests-web-client"))]
+    #[cfg(not(feature = "web"))]
     {
         let run_command = match run_selector {
             Some(subcommand) => format!("cargo run -- {}", subcommand),
