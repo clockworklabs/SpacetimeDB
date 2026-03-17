@@ -41,12 +41,16 @@ impl<'a, 'de, R: BufReader<'de>> Deserializer<'a, R> {
 
 impl de::Error for DecodeError {
     fn custom(msg: impl std::fmt::Display) -> Self {
-        DecodeError::Other(msg.to_string())
+        Self::Other(msg.to_string())
     }
 
     fn unknown_variant_tag<'de, T: de::SumVisitor<'de>>(tag: u8, expected: &T) -> Self {
         let sum_name = expected.sum_name().map(|x| x.to_owned());
-        DecodeError::InvalidTag { tag, sum_name }
+        Self::InvalidTag { tag, sum_name }
+    }
+
+    fn allocation_failed(size: usize) -> Self {
+        Self::AllocationFailed(size)
     }
 }
 

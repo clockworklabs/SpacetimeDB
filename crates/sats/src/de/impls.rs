@@ -991,8 +991,8 @@ impl_deserialize!([] spacetimedb_primitives::ColId, de => u16::deserialize(de).m
 impl_deserialize!([] spacetimedb_primitives::ScheduleId, de => u32::deserialize(de).map(Self));
 
 impl GrowingVec<ColId> for ColList {
-    fn with_capacity(cap: usize) -> Self {
-        Self::with_capacity(cap as u16)
+    fn try_with_capacity<E: Error>(cap: usize) -> Result<Self, E> {
+        Ok(Self::with_capacity(cap as u16))
     }
     fn push(&mut self, elem: ColId) {
         self.push(elem);

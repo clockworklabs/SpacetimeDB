@@ -25,6 +25,8 @@ pub enum DecodeError {
     InvalidUtf8,
     /// Expected the byte to be 0 or 1 to be a valid bool.
     InvalidBool(u8),
+    /// Allocation of `size` elements failed.
+    AllocationFailed(usize),
     /// Custom error not in the other variants of `DecodeError`.
     Other(String),
 }
@@ -34,24 +36,25 @@ pub type DecodeResult<T> = Result<T, DecodeError>;
 impl fmt::Display for DecodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DecodeError::BufferLength {
+            Self::BufferLength {
                 for_type,
                 expected,
                 given,
             } => write!(f, "data too short for {for_type}: Expected {expected}, given {given}"),
-            DecodeError::InvalidLen { expected, given } => {
+            Self::InvalidLen { expected, given } => {
                 write!(f, "unexpected data length: Expected {expected}, given {given}")
             }
-            DecodeError::InvalidTag { tag, sum_name } => {
+            Self::InvalidTag { tag, sum_name } => {
                 write!(
                     f,
                     "unknown tag {tag:#x} for sum type {}",
                     sum_name.as_deref().unwrap_or("<unknown>")
                 )
             }
-            DecodeError::InvalidUtf8 => f.write_str("invalid utf8"),
-            DecodeError::InvalidBool(byte) => write!(f, "byte {byte} not valid as `bool` (must be 0 or 1)"),
-            DecodeError::Other(err) => f.write_str(err),
+            Self::InvalidUtf8 => f.write_str("invalid utf8"),
+            Self::InvalidBool(byte) => write!(f, "byte {byte} not valid as `bool` (must be 0 or 1)"),
+            Self::AllocationFailed(size) => write!(f, "allocation of {size} elements failed"),
+            Self::Other(err) => f.write_str(err),
         }
     }
 }

@@ -260,6 +260,11 @@ pub trait Error: Sized {
             _ => Self::custom(format_args!("unknown variant `{name}`, there are no variants")),
         }
     }
+
+    /// An allocation of `size` elements failed during deserialization.
+    fn allocation_failed(size: usize) -> Self {
+        Self::custom(format_args!("allocation of {size} elements failed"))
+    }
 }
 
 /// Turns a closure `impl Fn(&mut Formatter) -> Result` into a `Display`able object.
@@ -728,15 +733,22 @@ impl<'de, T: Deserialize<'de>> DeserializeSeed<'de> for PhantomData<T> {
 /// A vector with two operations: `with_capacity` and `push`.
 pub trait GrowingVec<T> {
     /// Create the collection with the given capacity.
-    fn with_capacity(cap: usize) -> Self;
+    fn try_with_capacity<E: Error>(cap: usize) -> Result<Self, E>
+    where
+        Self: Sized;
 
     /// Push to the vector the `elem`.
     fn push(&mut self, elem: T);
 }
 
 impl<T> GrowingVec<T> for Vec<T> {
-    fn with_capacity(cap: usize) -> Self {
-        Self::with_capacity(cap)
+    fn try_with_capacity<E: Error>(cap: usize) -> Result<Self, E>
+    where
+        Self: Sized,
+    {
+        let mut vec = Vec::new();
+        vec.try_reserve_exact(cap).map_err(|_| E::allocation_failed(cap))?;
+        Ok(vec)
     }
     fn push(&mut self, elem: T) {
         self.push(elem)
@@ -744,8 +756,13 @@ impl<T> GrowingVec<T> for Vec<T> {
 }
 
 impl<T, const N: usize> GrowingVec<T> for SmallVec<[T; N]> {
-    fn with_capacity(cap: usize) -> Self {
-        Self::with_capacity(cap)
+    fn try_with_capacity<E: Error>(cap: usize) -> Result<Self, E>
+    where
+        Self: Sized,
+    {
+        let mut vec = Self::new();
+        vec.try_reserve_exact(cap).map_err(|_| E::allocation_failed(cap))?;
+        Ok(vec)
     }
     fn push(&mut self, elem: T) {
         self.push(elem)
@@ -754,7 +771,7 @@ impl<T, const N: usize> GrowingVec<T> for SmallVec<[T; N]> {
 
 /// A basic implementation of `ArrayVisitor::visit` using the provided size hint.
 pub fn array_visit<'de, A: ArrayAccess<'de>, V: GrowingVec<A::Element>>(mut access: A) -> Result<V, A::Error> {
-    let mut v = V::with_capacity(access.size_hint().unwrap_or(0));
+    let mut v = V::try_with_capacity(access.size_hint().unwrap_or(0))?;
     while let Some(x) = access.next_element()? {
         v.push(x)
     }
@@ -763,7 +780,7 @@ pub fn array_visit<'de, A: ArrayAccess<'de>, V: GrowingVec<A::Element>>(mut acce
 
 /// A basic implementation of `ArrayVisitor::validate`.
 pub fn array_validate<'de, A: ArrayAccess<'de>>(mut access: A) -> Result<(), A::Error> {
-    while access.next_element()?.is_some() {}
+    while access.validate_next_element()?.is_some() {}
     Ok(())
 }
 
