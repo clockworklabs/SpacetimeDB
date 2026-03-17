@@ -2060,6 +2060,8 @@ async fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
         let sub_applied = pre_ins_counter.add_test(format!("sub_applied_{who}"));
         let counter = counter.clone();
         subscribe_all_then(&conn, move |ctx| {
+            sub_applied(Ok(()));
+
             // Test that we are notified when a row is inserted.
             let db = ctx.db();
             let mut one_u8_inserted = Some(counter.add_test(format!("one_u8_inserted_{who}")));
@@ -2089,15 +2091,6 @@ async fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
                 };
                 (one_u16_inserted.take().unwrap())(run_checks());
             });
-
-            // Mark subscription readiness only after callback handlers are installed.
-            // On wasm this prevents a race where reducer calls can run before handlers
-            // are fully registered in the single-threaded event loop.
-            // The test uses `pre_ins_counter` as the "both clients are safe to use now" barrier.
-            // In this harness, "safe" must mean the handlers under test are already installed.
-            // Signalling readiness any earlier would allow Alice to fire the reducer while Bob's
-            // callbacks still do not exist, which would turn the test into an event-loop race.
-            sub_applied(Ok(()));
         });
         conn
     }
