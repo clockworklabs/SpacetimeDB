@@ -62,8 +62,8 @@ class IndexTest {
         val index = BTreeIndex(cache) { it.name }
         val alices = index.filter("alice").sortedBy { it.id }
         assertEquals(listOf(alice, charlie), alices)
-        assertEquals(listOf(bob), index.filter("bob"))
-        assertEquals(emptyList(), index.filter("nobody"))
+        assertEquals(setOf(bob), index.filter("bob"))
+        assertEquals(emptySet(), index.filter("nobody"))
     }
 
     @Test
@@ -83,12 +83,12 @@ class IndexTest {
         val cache = createSampleCache()
         val index = BTreeIndex(cache) { it.name }
 
-        assertEquals(emptyList(), index.filter("alice"))
+        assertEquals(emptySet(), index.filter("alice"))
 
         val alice = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(alice.encode()))
 
-        assertEquals(listOf(alice), index.filter("alice"))
+        assertEquals(setOf(alice), index.filter("alice"))
     }
 
     @Test
@@ -98,12 +98,12 @@ class IndexTest {
         cache.applyInserts(STUB_CTX, buildRowList(alice.encode()))
 
         val index = BTreeIndex(cache) { it.name }
-        assertEquals(listOf(alice), index.filter("alice"))
+        assertEquals(setOf(alice), index.filter("alice"))
 
         val parsed = cache.parseDeletes(buildRowList(alice.encode()))
         cache.applyDeletes(STUB_CTX, parsed)
 
-        assertEquals(emptyList(), index.filter("alice"))
+        assertEquals(emptySet(), index.filter("alice"))
     }
 
     @Test
@@ -150,8 +150,8 @@ class IndexTest {
 
         // Key extractor returns null for id == 0
         val index = BTreeIndex<SampleRow, Int?>(cache) { if (it.id == 0) null else it.id }
-        assertEquals(listOf(r1), index.filter(null))
-        assertEquals(listOf(r2), index.filter(1))
-        assertEquals(emptyList(), index.filter(99))
+        assertEquals(setOf(r1), index.filter(null))
+        assertEquals(setOf(r2), index.filter(1))
+        assertEquals(emptySet(), index.filter(99))
     }
 }

@@ -2,11 +2,9 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.update
-import kotlinx.collections.immutable.PersistentList
-import kotlinx.collections.immutable.PersistentMap
+import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentHashMapOf
-import kotlinx.collections.immutable.persistentListOf
-import kotlinx.collections.immutable.toPersistentList
+import kotlinx.collections.immutable.persistentHashSetOf
 
 /**
  * A client-side unique index backed by an atomic persistent map.
@@ -44,9 +42,13 @@ public class UniqueIndex<Row, Col>(
 }
 
 /**
- * A client-side non-unique index backed by an atomic persistent map of persistent lists.
+ * A client-side non-unique index backed by an atomic persistent map of persistent sets.
  * Provides lookup for all rows matching a given column value.
  * Thread-safe: reads return a consistent snapshot.
+ *
+ * Uses [PersistentSet] (not List) so that add is idempotent — if the listener
+ * and the population loop both add the same row during init, no duplicate is produced.
+ * This matches C#'s `HashSet<Row>` approach.
  *
  * Subscribes to the TableCache's internal insert/delete hooks
  * to stay synchronized with the cache contents.
@@ -55,38 +57,32 @@ public class BTreeIndex<Row, Col>(
     tableCache: TableCache<Row, *>,
     private val keyExtractor: (Row) -> Col,
 ) {
-    private val _cache = atomic(persistentHashMapOf<Col, PersistentList<Row>>())
+    private val _cache = atomic(persistentHashMapOf<Col, PersistentSet<Row>>())
 
     init {
         tableCache.addInternalInsertListener { row ->
             val key = keyExtractor(row)
             _cache.update { current ->
-                current.put(key, (current[key] ?: persistentListOf()).add(row))
+                current.put(key, (current[key] ?: persistentHashSetOf()).add(row))
             }
         }
         tableCache.addInternalDeleteListener { row ->
             val key = keyExtractor(row)
             _cache.update { current ->
-                val list = current[key] ?: return@update current
-                val updated = list.remove(row)
+                val set = current[key] ?: return@update current
+                val updated = set.remove(row)
                 if (updated.isEmpty()) current.remove(key) else current.put(key, updated)
             }
         }
         _cache.update { current ->
-            val groups = hashMapOf<Col, MutableList<Row>>()
-            for ((k, v) in current) {
-                groups[k] = v.toMutableList()
-            }
+            val builder = current.builder()
             for (row in tableCache.iter()) {
-                groups.getOrPut(keyExtractor(row)) { mutableListOf() }.add(row)
-            }
-            val builder = persistentHashMapOf<Col, PersistentList<Row>>().builder()
-            for ((k, v) in groups) {
-                builder[k] = v.toPersistentList()
+                val key = keyExtractor(row)
+                builder[key] = (builder[key] ?: persistentHashSetOf()).add(row)
             }
             builder.build()
         }
     }
 
-    public fun filter(value: Col): List<Row> = _cache.value[value] ?: emptyList()
+    public fun filter(value: Col): Set<Row> = _cache.value[value] ?: emptySet()
 }
