@@ -9,31 +9,59 @@ fn platform_test_builder(client_project: &str, run_selector: Option<&str>) -> Te
 
     // Note: `run_selector` is intentionally interpreted differently by mode:
     // - Native mode uses it as a CLI subcommand (`cargo run -- <selector>`), with `None` => `cargo run`.
-    // - Web mode forwards it to the wasm export `run(test_name)`, with `None` => empty string.
-    // This mirrors how `run_command` is consumed by the native vs web runners in `crates/testing/src/sdk.rs`.
+    // - Web mode assembles the Node/wasm-bindgen commands directly in this test harness so the
+    //   `crates/testing` framework stays generic and unaware of Rust SDK web-client details.
     #[cfg(feature = "web")]
     {
         let package_name = Path::new(client_project)
             .file_name()
             .and_then(|name| name.to_str())
-            .expect("client project path should end in a UTF-8 directory name");
+            .expect("client project path should end in a UTF-8 directory name")
+            .to_owned();
         let artifact_name = package_name.replace('-', "_");
-
-        // Cargo workspace members emit into the workspace target directory, not each crate's local `./target`.
-        // Use CARGO_TARGET_DIR when set (e.g. in CI), otherwise fall back to `<workspace>/target`.
         let target_dir = std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| {
+            // Cargo workspace members emit into the workspace target directory, not each crate's
+            // local `./target`. Use `CARGO_TARGET_DIR` when set, otherwise fall back to the
+            // workspace target.
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../target")
                 .to_string_lossy()
                 .into_owned()
         });
+        let bindgen_out_dir = format!("{client_project}/target/sdk-test-web-bindgen/{package_name}");
         let wasm_path = format!("{target_dir}/wasm32-unknown-unknown/debug/deps/{artifact_name}.wasm");
-        let bindgen_out_dir = format!("target/sdk-test-web-bindgen/{package_name}");
+        let js_module = format!("{bindgen_out_dir}/{artifact_name}.js");
+        let js_module_cjs = format!("{bindgen_out_dir}/{artifact_name}.cjs");
+        let compile_command = format!(concat!(
+            "/bin/bash -lc ",
+            "\"cargo build --target wasm32-unknown-unknown --no-default-features --features web",
+            " && mkdir -p {bindgen_out_dir}",
+            " && wasm-bindgen --target nodejs --out-dir {bindgen_out_dir} {wasm_path}",
+            " && cp {js_module} {js_module_cjs}\"",
+        ),);
+        let js_module = format!("{bindgen_out_dir}/{artifact_name}.cjs");
+        let run_selector = run_selector.unwrap_or_default();
+        let node_script = format!(concat!(
+            "(async () => {{ ",
+            "  const m = require({js_module:?}); ",
+            "  if (m.default) {{ await m.default(); }} ",
+            "  const run = m.run || m.main || m.start; ",
+            "  if (!run) throw new Error(\"No exported run/main/start function from wasm module\"); ",
+            "  const dbName = process.env.SPACETIME_SDK_TEST_DB_NAME; ",
+            "  if (!dbName) throw new Error(\"Missing SPACETIME_SDK_TEST_DB_NAME\"); ",
+            "  await run({run_selector:?}, dbName); ",
+            // These wasm clients run under Node rather than a browser. Some tests intentionally leave
+            // websocket/event-loop work alive once their assertions are complete, so exit here to keep
+            // non-lifecycle tests from hanging on leftover handles after `run()` has finished.
+            "  process.exit(0); ",
+            "}})().catch((e) => {{ console.error(e); process.exit(1); }});",
+        ),);
+        let node_script = node_script.replace('\\', r"\\").replace('"', "\\\"");
+        let run_command = format!("/bin/bash -lc 'node --experimental-websocket -e \"{node_script}\"'");
 
         builder
-            .with_compile_command("cargo build --target wasm32-unknown-unknown --no-default-features --features web")
-            .with_run_command(run_selector.unwrap_or_default())
-            .with_web_client(wasm_path, bindgen_out_dir)
+            .with_compile_command(compile_command)
+            .with_run_command(run_command)
     }
 
     #[cfg(not(feature = "web"))]
