@@ -3,6 +3,7 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 
 @OptIn(InternalSpacetimeApi::class)
 class QueryBuilderTest {
@@ -79,6 +80,18 @@ class QueryBuilderTest {
     @Test
     fun finiteDoubleSucceeds() {
         assertEquals("2.718", SqlLit.double(2.718).sql)
+    }
+
+    @Test
+    fun floatScientificNotationProducesPlainDecimal() {
+        val sql = SqlLit.float(1.0E-7f).sql
+        assertFalse(sql.contains("E", ignoreCase = true), "Expected plain decimal, got: $sql")
+    }
+
+    @Test
+    fun doubleScientificNotationProducesPlainDecimal() {
+        val sql = SqlLit.double(1.0E-7).sql
+        assertFalse(sql.contains("E", ignoreCase = true), "Expected plain decimal, got: $sql")
     }
 
     // ---- BoolExpr ----

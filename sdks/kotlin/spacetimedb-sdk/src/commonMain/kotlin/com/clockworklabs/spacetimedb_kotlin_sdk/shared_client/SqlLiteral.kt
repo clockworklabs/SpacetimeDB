@@ -3,6 +3,7 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.SpacetimeUuid
+import com.ionspin.kotlin.bignum.decimal.BigDecimal
 
 /**
  * A type-safe wrapper around a SQL literal string.
@@ -32,12 +33,12 @@ public object SqlLit {
     public fun ulong(value: ULong): SqlLiteral<ULong> = SqlLiteral(value.toString())
     public fun float(value: Float): SqlLiteral<Float> {
         require(value.isFinite()) { "SQL literals do not support NaN or Infinity" }
-        return SqlLiteral(value.toString())
+        return SqlLiteral(BigDecimal.fromFloat(value).toPlainString())
     }
 
     public fun double(value: Double): SqlLiteral<Double> {
         require(value.isFinite()) { "SQL literals do not support NaN or Infinity" }
-        return SqlLiteral(value.toString())
+        return SqlLiteral(BigDecimal.fromDouble(value).toPlainString())
     }
 
     public fun identity(value: Identity): SqlLiteral<Identity> =
