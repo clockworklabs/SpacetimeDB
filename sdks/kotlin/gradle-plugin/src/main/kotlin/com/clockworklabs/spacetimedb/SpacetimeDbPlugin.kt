@@ -2,6 +2,7 @@ package com.clockworklabs.spacetimedb
 
 import org.gradle.api.Plugin
 import org.gradle.api.Project
+import org.gradle.api.tasks.Delete
 import org.gradle.api.tasks.SourceSetContainer
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 
@@ -13,6 +14,14 @@ class SpacetimeDbPlugin : Plugin<Project> {
         ext.modulePath.convention(project.layout.projectDirectory.dir("spacetimedb"))
 
         val generatedDir = project.layout.buildDirectory.dir("generated/spacetimedb")
+
+        // Clean the Rust target directory when running `gradle clean`
+        project.tasks.register("cleanSpacetimeModule", Delete::class.java) {
+            it.group = "spacetimedb"
+            it.description = "Clean SpacetimeDB module build artifacts"
+            it.delete(ext.modulePath.map { dir -> dir.dir("target") })
+        }
+        project.tasks.named("clean") { it.dependsOn("cleanSpacetimeModule") }
 
         val generateTask = project.tasks.register("generateSpacetimeBindings", GenerateBindingsTask::class.java) {
             it.cli.set(ext.cli)
