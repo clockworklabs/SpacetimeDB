@@ -39,7 +39,7 @@ class SpacetimeDbPlugin : Plugin<Project> {
                 .kotlin
                 .srcDir(generatedDir)
 
-            project.tasks.matching { it.name.startsWith("compileKotlin") }.configureEach {
+            project.tasks.matching { it.name.startsWith("compile") }.configureEach {
                 it.dependsOn(generateTask)
             }
         }
