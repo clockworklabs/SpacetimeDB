@@ -72,6 +72,7 @@ hex.workspace = true
 # for cursive-chat example
 cursive.workspace = true
 futures-channel.workspace = true
+shlex = "1.3.0"
 
 # for tests
 spacetimedb-testing = { path = "../../crates/testing" }

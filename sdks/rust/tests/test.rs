@@ -32,32 +32,47 @@ fn platform_test_builder(client_project: &str, run_selector: Option<&str>) -> Te
         let wasm_path = format!("{target_dir}/wasm32-unknown-unknown/debug/deps/{artifact_name}.wasm");
         let js_module = format!("{bindgen_out_dir}/{artifact_name}.js");
         let js_module_cjs = format!("{bindgen_out_dir}/{artifact_name}.cjs");
-        let compile_command = format!(concat!(
-            "/bin/bash -lc ",
-            "\"cargo build --target wasm32-unknown-unknown --no-default-features --features web",
-            " && mkdir -p {bindgen_out_dir}",
-            " && wasm-bindgen --target nodejs --out-dir {bindgen_out_dir} {wasm_path}",
-            " && cp {js_module} {js_module_cjs}\"",
-        ),);
+        let build_command = "cargo build --target wasm32-unknown-unknown --no-default-features --features web";
+        let mkdir_command = shlex::try_join(["mkdir", "-p", bindgen_out_dir.as_str()])
+            .expect("bindgen output path should be shell-quotable");
+        let bindgen_command = shlex::try_join([
+            "wasm-bindgen",
+            "--target",
+            "nodejs",
+            "--out-dir",
+            bindgen_out_dir.as_str(),
+            wasm_path.as_str(),
+        ])
+        .expect("wasm-bindgen command should be shell-quotable");
+        let cp_command = shlex::try_join(["cp", js_module.as_str(), js_module_cjs.as_str()])
+            .expect("bindgen JS output paths should be shell-quotable");
+        let compile_command = format!(
+            "/bin/bash -lc \
+             \"{build_command} \
+             && {mkdir_command} \
+             && {bindgen_command} \
+             && {cp_command}\""
+        );
         let js_module = format!("{bindgen_out_dir}/{artifact_name}.cjs");
         let run_selector = run_selector.unwrap_or_default();
-        let node_script = format!(concat!(
-            "(async () => {{ ",
-            "  const m = require({js_module:?}); ",
-            "  if (m.default) {{ await m.default(); }} ",
-            "  const run = m.run || m.main || m.start; ",
-            "  if (!run) throw new Error(\"No exported run/main/start function from wasm module\"); ",
-            "  const dbName = process.env.SPACETIME_SDK_TEST_DB_NAME; ",
-            "  if (!dbName) throw new Error(\"Missing SPACETIME_SDK_TEST_DB_NAME\"); ",
-            "  await run({run_selector:?}, dbName); ",
-            // These wasm clients run under Node rather than a browser. Some tests intentionally leave
-            // websocket/event-loop work alive once their assertions are complete, so exit here to keep
-            // non-lifecycle tests from hanging on leftover handles after `run()` has finished.
-            "  process.exit(0); ",
-            "}})().catch((e) => {{ console.error(e); process.exit(1); }});",
-        ),);
-        let node_script = node_script.replace('\\', r"\\").replace('"', "\\\"");
-        let run_command = format!("/bin/bash -lc 'node --experimental-websocket -e \"{node_script}\"'");
+        let process_exit = {};
+        let node_script = format!(
+            "(async () => {{ \
+              const m = require({js_module:?}); \
+              if (m.default) {{ await m.default(); }} \
+              const run = m.run || m.main || m.start; \
+              if (!run) throw new Error(\"No exported run/main/start function from wasm module\"); \
+              const dbName = process.env.SPACETIME_SDK_TEST_DB_NAME; \
+              if (!dbName) throw new Error(\"Missing SPACETIME_SDK_TEST_DB_NAME\"); \
+              await run({run_selector:?}, dbName); \
+              // These wasm clients run under Node rather than a browser. Some tests intentionally leave
+              // websocket/event-loop work alive once their assertions are complete, so exit here to keep
+              // non-lifecycle tests from hanging on leftover handles after `run()` has finished.
+              process.exit(0);
+            }})().catch((e) => {{ console.error(e); process.exit(1); }});"
+        );
+        let node_script = shlex::try_quote(&node_script).expect("inline Node script should be shell-quotable");
+        let run_command = format!("node --experimental-websocket -e {node_script}");
 
         builder
             .with_compile_command(compile_command)

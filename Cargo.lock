@@ -8535,6 +8535,7 @@ dependencies = [
  "once_cell",
  "prometheus",
  "rand 0.9.2",
+ "shlex",
  "spacetimedb-client-api-messages",
  "spacetimedb-data-structures",
  "spacetimedb-lib 2.0.5",
