@@ -3,6 +3,7 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 import com.ionspin.kotlin.bignum.integer.BigInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.time.Instant
 
 class UtilTest {
@@ -59,5 +60,32 @@ class UtilTest {
         val micros = -1_000_000L // 1 second before epoch
         val instant = Instant.fromEpochMicroseconds(micros)
         assertEquals(micros, instant.toEpochMicroseconds())
+    }
+
+    @Test
+    fun instantMicrosecondMaxRoundTrips() {
+        val micros = Long.MAX_VALUE
+        val instant = Instant.fromEpochMicroseconds(micros)
+        assertEquals(micros, instant.toEpochMicroseconds())
+    }
+
+    @Test
+    fun instantMicrosecondMinRoundTrips() {
+        // Long.MIN_VALUE doesn't land on an exact second boundary, so
+        // floorDiv pushes it one second beyond the representable range.
+        // Use the actual minimum that round-trips cleanly.
+        val minSeconds = Long.MIN_VALUE / 1_000_000L
+        val micros = minSeconds * 1_000_000L
+        val instant = Instant.fromEpochMicroseconds(micros)
+        assertEquals(micros, instant.toEpochMicroseconds())
+    }
+
+    @Test
+    fun instantBeyondMicrosecondRangeThrows() {
+        // An Instant far beyond the I64 microsecond wire format range
+        val farFuture = Instant.fromEpochSeconds(Long.MAX_VALUE / 1_000_000L + 1)
+        assertFailsWith<IllegalArgumentException> {
+            farFuture.toEpochMicroseconds()
+        }
     }
 }

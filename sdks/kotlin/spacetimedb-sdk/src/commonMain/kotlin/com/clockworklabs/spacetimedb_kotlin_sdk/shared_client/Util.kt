@@ -22,6 +22,12 @@ internal fun Instant.Companion.fromEpochMicroseconds(micros: Long): Instant {
     return fromEpochSeconds(seconds, nanos)
 }
 
+private const val MAX_EPOCH_SECONDS_FOR_MICROS = Long.MAX_VALUE / 1_000_000L
+private const val MIN_EPOCH_SECONDS_FOR_MICROS = Long.MIN_VALUE / 1_000_000L
+
 internal fun Instant.toEpochMicroseconds(): Long {
+    require(epochSeconds in MIN_EPOCH_SECONDS_FOR_MICROS..MAX_EPOCH_SECONDS_FOR_MICROS) {
+        "Timestamp $this is outside the representable microsecond range"
+    }
     return epochSeconds * 1_000_000L + (nanosecondsOfSecond / 1_000)
 }
