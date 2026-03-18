@@ -1580,8 +1580,12 @@ mod tests {
         datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests)
     }
 
-    fn commit(datastore: &Locking, tx: MutTxId) -> ResultTest<TxData> {
-        let (_, tx_data, _, _) = datastore.commit_mut_tx(tx)?.expect("commit should produce `TxData`");
+    fn noop(_: &Arc<TxData>) {}
+
+    fn commit(datastore: &Locking, tx: MutTxId) -> ResultTest<Arc<TxData>> {
+        let (_, tx_data, _, _) = datastore
+            .commit_mut_tx(tx, noop)?
+            .expect("commit should produce `TxData`");
         Ok(tx_data)
     }
 
@@ -2042,7 +2046,7 @@ mod tests {
     #[test]
     fn test_create_table_post_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
-        datastore.commit_mut_tx(tx)?;
+        datastore.commit_mut_tx(tx, noop)?;
         let tx = begin_mut_tx(&datastore);
         let query = query_st_tables(&tx);
 
@@ -2098,7 +2102,7 @@ mod tests {
     #[test]
     fn test_schema_for_table_post_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
-        datastore.commit_mut_tx(tx)?;
+        datastore.commit_mut_tx(tx, noop)?;
         let mut tx = begin_mut_tx(&datastore);
         verify_schemas_consistent(&mut tx, table_id);
         let schema = &*datastore.schema_for_table_mut_tx(&tx, table_id)?;
@@ -2111,7 +2115,7 @@ mod tests {
     #[test]
     fn test_schema_for_table_alter_indexes() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
-        datastore.commit_mut_tx(tx)?;
+        datastore.commit_mut_tx(tx, noop)?;
 
         let mut tx = begin_mut_tx(&datastore);
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?;
@@ -2134,7 +2138,7 @@ mod tests {
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes.is_empty(),
             "no indexes should be left in the schema pre-commit"
         );
-        datastore.commit_mut_tx(tx)?;
+        datastore.commit_mut_tx(tx, noop)?;
 
         let mut tx = begin_mut_tx(&datastore);
         assert_eq!(tx.pending_schema_changes(), []);
@@ -2177,7 +2181,7 @@ mod tests {
             "created index should be present in schema pre-commit"
         );
 
-        datastore.commit_mut_tx(tx)?;
+        datastore.commit_mut_tx(tx, noop)?;
 
         let tx = begin_mut_tx(&datastore);
         assert_eq!(tx.pending_schema_changes(), []);
@@ -2187,7 +2191,7 @@ mod tests {
             "created index should be present in schema post-commit"
         );
 
-        datastore.commit_mut_tx(tx)?;
+        datastore.commit_mut_tx(tx, noop)?;
 
         Ok(())
     }
@@ -2229,7 +2233,7 @@ mod tests {
         let (datastore, mut tx, table_id) = setup_table()?;
         // 0 will be ignored.
         insert(&datastore, &mut tx, table_id, &u32_str_u32(0, "Foo", 18))?;
-        datastore.commit_mut_tx(tx)?;
+        datastore.commit_mut_tx(tx, noop)?;
         let tx = begin_mut_tx(&datastore);
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
@@ -2240,7 +2244,7 @@ mod tests {
     fn test_insert_post_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         let row = u32_str_u32(15, "Foo", 18); // 15 is ignored.
-        datastore.commit_mut_tx(tx)?;
+        datastore.commit_mut_tx(tx, noop)?;
         let mut tx = begin_mut_tx(&datastore);
         insert(&datastore, &mut tx, table_id, &row)?;
         let _ = datastore.rollback_mut_tx(tx);
@@ -2255,7 +2259,7 @@ mod tests {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         insert(&datastore, &mut tx, table_id, &row)?;
-        datastore.commit_mut_tx(tx)?;
+        datastore.commit_mut_tx(tx, noop)?;
         let mut tx = begin_mut_tx(&datastore);
         let created_row = u32_str_u32(1, "Foo", 18);
         let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, [created_row]);
@@ -2319,7 +2323,7 @@ mod tests {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         insert(&datastore, &mut tx, table_id, &row)?;
-        datastore.commit_mut_tx(tx)?;
+        datastore.commit_mut_tx(tx, noop)?;
         let mut tx = begin_mut_tx(&datastore);
         let result = insert(&datastore, &mut tx, table_id, &row);
         match result {
@@ -2488,7 +2492,7 @@ mod tests {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         insert(&datastore, &mut tx, table_id, &row)?;
-        datastore.commit_mut_tx(tx)?;
+        datastore.commit_mut_tx(tx, noop)?;
         let mut tx = begin_mut_tx(&datastore);
         create_foo_age_idx_btree(&datastore, &mut tx, table_id)?;
 
@@ -2623,7 +2627,7 @@ mod tests {
                                              // Because of auto_inc columns, we will get a slightly different
                                              // value than the one we inserted.
         let row = insert(&datastore, &mut tx, table_id, &row)?.1.to_product_value();
-        datastore.commit_mut_tx(tx)?;
+        datastore.commit_mut_tx(tx, noop)?;
 
         let all_rows_col_0_eq_1 = |tx: &MutTxId| {
             datastore
@@ -2654,7 +2658,7 @@ mod tests {
         // second transaction, and see exactly one row.
         assert_eq!(all_rows_col_0_eq_1(&tx).len(), 1);
 
-        datastore.commit_mut_tx(tx)?;
+        datastore.commit_mut_tx(tx, noop)?;
 
         Ok(())
     }
@@ -3111,7 +3115,7 @@ mod tests {
         insert(&datastore, &mut tx, table_id, &row1)?;
         let row2 = u32_str_u32(2, "Bar", 20);
         insert(&datastore, &mut tx, table_id, &row2)?;
-        datastore.commit_mut_tx(tx)?;
+        datastore.commit_mut_tx(tx, noop)?;
 
         // create multiple read only tx, and use them together.
         let read_tx_1 = begin_tx(&datastore);
@@ -3192,7 +3196,7 @@ mod tests {
         let datastore = get_datastore()?;
         let mut tx = begin_mut_tx(&datastore);
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
-        datastore.commit_mut_tx(tx)?;
+        datastore.commit_mut_tx(tx, noop)?;
         Ok((datastore, table_id))
     }
 
@@ -3757,7 +3761,7 @@ mod tests {
         let datastore = get_datastore()?;
 
         let tx = begin_mut_tx(&datastore);
-        let (_, _, metrics, _) = tx.commit();
+        let (_, _, metrics, _) = tx.commit(noop);
         assert!(metrics.committed);
 
         let tx = begin_mut_tx(&datastore);
