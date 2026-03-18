@@ -8,15 +8,19 @@ const LOCALHOST: &str = "http://localhost:3000";
 type ResultRecorder = Box<dyn Send + FnOnce(Result<(), anyhow::Error>)>;
 
 #[cfg(not(target_arch = "wasm32"))]
-async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
-    builder.build().unwrap()
+async fn build_and_run(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+    let conn = builder.build().unwrap();
+    conn.run_threaded();
+    conn
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+async fn build_and_run(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
     // Web builds use async connection setup, so awaiting here avoids blocking the event loop
     // before websocket callbacks and subscription completions have a chance to run.
-    builder.build().await.unwrap()
+    let conn = builder.build().await.unwrap();
+    conn.run_background_task();
+    conn
 }
 
 fn put_result(result: &mut Option<ResultRecorder>, res: Result<(), anyhow::Error>) {

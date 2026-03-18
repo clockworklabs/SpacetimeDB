@@ -33,15 +33,19 @@ pub(crate) async fn dispatch(test: &str, db_name: &str) {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
-    builder.build().unwrap()
+async fn build_and_run(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+    let conn = builder.build().unwrap();
+    conn.run_threaded();
+    conn
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+async fn build_and_run(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
     // Web builds use async connection setup, so awaiting here avoids blocking the event loop
     // before websocket callbacks and subscription completions have a chance to run.
-    builder.build().await.unwrap()
+    let conn = builder.build().await.unwrap();
+    conn.run_background_task();
+    conn
 }
 
 async fn connect_then(

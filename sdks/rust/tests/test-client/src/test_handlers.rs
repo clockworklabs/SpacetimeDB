@@ -399,21 +399,23 @@ async fn connect(db_name: &str, test_counter: &std::sync::Arc<TestCounter>) -> D
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
-    // Keep the helper async even though native `build()` is synchronous so shared callers do not
-    // need target-specific branches.
-    builder.build().unwrap()
+async fn build_and_run(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+    let conn = builder.build().unwrap();
+    conn.run_threaded();
+    conn
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
+async fn build_and_run(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
     // Why this differs from native:
     // - In the SDK, `DbConnectionBuilder::build` is sync on non-web builds,
     //   but async on `feature = "web"` because the websocket/token setup uses
     //   wasm/web async primitives.
     // - We therefore keep the helper async and await directly so wasm stays
     //   non-blocking and can make forward progress on the JS event loop.
-    builder.build().await.unwrap()
+    let conn = builder.build().await.unwrap();
+    conn.run_background_task();
+    conn
 }
 
 fn subscribe_all_then(ctx: &impl RemoteDbContext, callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static) {
