@@ -169,7 +169,10 @@ public class BsatnWriter(initialCapacity: Int = 256) {
 
     public fun writeSumTag(tag: UByte): Unit = writeU8(tag)
 
-    public fun writeArrayLen(length: Int): Unit = writeU32(length.toUInt())
+    public fun writeArrayLen(length: Int) {
+        require(length >= 0) { "Array length must be non-negative, got $length" }
+        writeU32(length.toUInt())
+    }
 
     /** Return the written buffer up to current offset */
     public fun toByteArray(): ByteArray = buffer.buffer.copyOf(offset)

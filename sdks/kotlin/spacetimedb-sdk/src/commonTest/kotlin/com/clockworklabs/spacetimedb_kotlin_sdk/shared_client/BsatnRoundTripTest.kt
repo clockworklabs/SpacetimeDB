@@ -422,6 +422,14 @@ class BsatnRoundTripTest {
         }
     }
 
+    @Test
+    fun arrayLenRejectsNegative() {
+        val writer = BsatnWriter()
+        assertFailsWith<IllegalArgumentException> {
+            writer.writeArrayLen(-1)
+        }
+    }
+
     // ---- Overflow checks ----
 
     @Test
