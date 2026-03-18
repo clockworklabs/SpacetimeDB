@@ -289,6 +289,15 @@ pub enum AutoMigrateStep<'def> {
     /// Change the access of a table.
     ChangeAccess(<TableDef as ModuleDefLookup>::Key<'def>),
 
+    /// Change the primary key of a table.
+    ///
+    /// This updates the `table_primary_key` field in `st_table`
+    /// to match the new module definition.
+    /// Without this step, a stale primary key in the stored schema
+    /// causes `check_compatible` to fail on the next publish.
+    /// See: <https://github.com/clockworklabs/SpacetimeDB/issues/3934>
+    ChangePrimaryKey(<TableDef as ModuleDefLookup>::Key<'def>),
+
     /// Recompute a view, update its backing table, and push updates to clients
     UpdateView(<ViewDef as ModuleDefLookup>::Key<'def>),
 
@@ -663,6 +672,9 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
     };
     if old.table_access != new.table_access {
         plan.steps.push(AutoMigrateStep::ChangeAccess(key));
+    }
+    if old.primary_key != new.primary_key {
+        plan.steps.push(AutoMigrateStep::ChangePrimaryKey(key));
     }
     if old.schedule != new.schedule {
         // Note: this handles the case where there's an altered ScheduleDef for some reason.
