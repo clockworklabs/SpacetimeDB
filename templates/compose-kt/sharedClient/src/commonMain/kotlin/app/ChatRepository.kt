@@ -38,6 +38,7 @@ data class NoteData(
 
 class ChatRepository(
     private val httpClient: HttpClient,
+    private val tokenStore: TokenStore,
 ) {
     private var conn: DbConnection? = null
     private var mainSubHandle: SubscriptionHandle? = null
@@ -73,11 +74,11 @@ class ChatRepository(
             .withHttpClient(httpClient)
             .withUri(HOST)
             .withDatabaseName(DB_NAME)
-            .withToken(loadToken(clientId))
+            .withToken(tokenStore.load(clientId))
             .withModuleBindings()
             .onConnect { c, identity, token ->
                 localIdentity = identity
-                saveToken(clientId, token)
+                tokenStore.save(clientId, token)
                 log("Identity: ${identity.toHexString().take(16)}...")
 
                 registerTableCallbacks(c)

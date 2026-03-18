@@ -1,4 +1,6 @@
 package app
 
-expect fun loadToken(clientId: String): String?
-expect fun saveToken(clientId: String, token: String)
+expect class TokenStore {
+    fun load(clientId: String): String?
+    fun save(clientId: String, token: String)
+}

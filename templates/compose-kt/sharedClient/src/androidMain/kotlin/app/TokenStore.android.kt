@@ -1,15 +1,19 @@
 package app
 
+import android.content.Context
 import java.io.File
 
-private val tokenDir = File(System.getProperty("user.home", "."), ".spacetimedb/tokens")
+actual class TokenStore(private val context: Context) {
+    private val tokenDir: File
+        get() = File(context.filesDir, "spacetimedb/tokens")
 
-actual fun loadToken(clientId: String): String? {
-    val file = File(tokenDir, clientId)
-    return if (file.exists()) file.readText().trim() else null
-}
+    actual fun load(clientId: String): String? {
+        val file = File(tokenDir, clientId)
+        return if (file.exists()) file.readText().trim() else null
+    }
 
-actual fun saveToken(clientId: String, token: String) {
-    tokenDir.mkdirs()
-    File(tokenDir, clientId).writeText(token)
+    actual fun save(clientId: String, token: String) {
+        tokenDir.mkdirs()
+        File(tokenDir, clientId).writeText(token)
+    }
 }
