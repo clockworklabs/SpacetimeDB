@@ -831,6 +831,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                         : "null"
                     )}}};
 
+                /// <summary>
+                /// Returns the number of rows in this table.
+                ///
+                /// This reads datastore metadata, so it runs in constant time.
+                /// It also takes into account modifications by the current transaction.
+                /// </summary>
                 public ulong Count => {{{iTable}}}.DoCount();
                 public IEnumerable<{{{globalName}}}> Iter() => {{{iTable}}}.DoIter();
                 public {{{globalName}}} Insert({{{globalName}}} row) => {{{iTable}}}.DoInsert(row);
@@ -873,6 +879,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 {
                     internal {{{accessor.Name}}}ReadOnly() : base("{{{accessor.Name}}}") { }
 
+                    /// <summary>
+                    /// Returns the number of rows in this table.
+                    ///
+                    /// This reads datastore metadata, so it runs in constant time.
+                    /// It also takes into account modifications by the current transaction.
+                    /// </summary>
                     public ulong Count => DoCount();
 
                     {{{readOnlyIndexDecls}}}
