@@ -11,7 +11,7 @@ use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::hash::Hash;
 use crate::host::host_controller::CallProcedureReturn;
-use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
+use crate::host::scheduler::{CallScheduledFunctionError, CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::v8::JsInstance;
 pub use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
 use crate::host::wasmtime::ModuleInstance;
@@ -358,7 +358,9 @@ struct WasmtimeModuleHost {
 }
 
 struct V8ModuleHost {
-    instance_manager: ModuleInstanceManager<super::v8::JsModule>,
+    module: super::v8::JsModule,
+    instance_lane: super::v8::JsInstanceLane,
+    procedure_instances: ModuleInstanceManager<super::v8::JsModule>,
 }
 
 /// A module; used as a bound on `InstanceManager`.
@@ -800,6 +802,23 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
         }
     }
 
+    fn new_empty(module: M, database_identity: Identity) -> Self {
+        let host_type = module.host_type();
+        let create_instance_time_metric = CreateInstanceTimeMetric {
+            metric: WORKER_METRICS
+                .module_create_instance_time_seconds
+                .with_label_values(&database_identity, &host_type),
+            host_type,
+            database_identity,
+        };
+
+        Self {
+            instances: Mutex::new(VecDeque::new()),
+            module,
+            create_instance_time_metric,
+        }
+    }
+
     async fn with_instance<R>(&self, f: impl AsyncFnOnce(M::Instance) -> (R, M::Instance)) -> R {
         let inst = self.get_instance().await;
         let (res, inst) = f(inst).await;
@@ -891,6 +910,8 @@ pub enum ReducerCallError {
     Args(#[from] InvalidReducerArguments),
     #[error(transparent)]
     NoSuchModule(#[from] NoSuchModule),
+    #[error("The reducer worker encountered a fatal error: {0}")]
+    WorkerError(String),
     #[error("no such reducer")]
     NoSuchReducer,
     #[error("no such scheduled reducer")]
@@ -1028,8 +1049,13 @@ impl ModuleHost {
             }
             ModuleWithInstance::Js { module, init_inst } => {
                 info = module.info();
-                let instance_manager = ModuleInstanceManager::new(module, init_inst, database_identity);
-                Arc::new(ModuleHostInner::Js(V8ModuleHost { instance_manager }))
+                let instance_lane = super::v8::JsInstanceLane::new(module.clone(), init_inst);
+                let procedure_instances = ModuleInstanceManager::new_empty(module.clone(), database_identity);
+                Arc::new(ModuleHostInner::Js(V8ModuleHost {
+                    module,
+                    instance_lane,
+                    procedure_instances,
+                }))
             }
         };
         let on_panic = Arc::new(on_panic);
@@ -1097,18 +1123,13 @@ impl ModuleHost {
                     })
                     .await
             }
-            ModuleHostInner::Js(V8ModuleHost { instance_manager }) => {
-                instance_manager
-                    .with_instance(async |mut inst| {
-                        let res = inst
-                            .run_on_thread(async move || {
-                                drop(timer_guard);
-                                f().await
-                            })
-                            .await;
-                        (res, inst)
+            ModuleHostInner::Js(V8ModuleHost { instance_lane, .. }) => {
+                instance_lane
+                    .run_on_thread(async move || {
+                        drop(timer_guard);
+                        f().await
                     })
-                    .await
+                    .await?
             }
         })
     }
@@ -1147,7 +1168,7 @@ impl ModuleHost {
         arg: A,
         timer: impl FnOnce(&str) -> Guard,
         work_wasm: impl AsyncFnOnce(Guard, &SingleCoreExecutor, Box<ModuleInstance>, A) -> (R, Box<ModuleInstance>),
-        work_js: impl AsyncFnOnce(Guard, &mut JsInstance, A) -> R,
+        work_js: impl AsyncFnOnce(Guard, &super::v8::JsInstanceLane, A) -> R,
     ) -> Result<R, NoSuchModule> {
         self.guard_closed()?;
         let timer_guard = timer(label);
@@ -1174,11 +1195,7 @@ impl ModuleHost {
                     .with_instance(async |inst| work_wasm(timer_guard, executor, inst, arg).await)
                     .await
             }
-            ModuleHostInner::Js(V8ModuleHost { instance_manager }) => {
-                instance_manager
-                    .with_instance(async |mut inst| (work_js(timer_guard, &mut inst, arg).await, inst))
-                    .await
-            }
+            ModuleHostInner::Js(V8ModuleHost { instance_lane, .. }) => work_js(timer_guard, instance_lane, arg).await,
         })
     }
 
@@ -1191,7 +1208,7 @@ impl ModuleHost {
         label: &str,
         arg: A,
         wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
-        js: impl AsyncFnOnce(A, &mut JsInstance) -> R,
+        js: impl AsyncFnOnce(A, &super::v8::JsInstanceLane) -> R,
     ) -> Result<R, NoSuchModule>
     where
         R: Send + 'static,
@@ -1221,6 +1238,45 @@ impl ModuleHost {
             },
         )
         .await
+    }
+
+    async fn with_js_pooled_instance<R>(
+        &self,
+        label: &str,
+        f: impl AsyncFnOnce(&JsInstance) -> R,
+    ) -> Result<R, NoSuchModule> {
+        self.guard_closed()?;
+        let timer_guard = self.start_call_timer(label);
+
+        scopeguard::defer_on_unwind!({
+            log::warn!("pooled JS instance operation {label} panicked");
+            (self.on_panic)();
+        });
+
+        Ok(match &*self.inner {
+            ModuleHostInner::Wasm(_) => unreachable!("WASM should not use the pooled JS instance path"),
+            ModuleHostInner::Js(V8ModuleHost {
+                procedure_instances, ..
+            }) => {
+                procedure_instances
+                    .with_instance(async |inst| {
+                        drop(timer_guard);
+                        let res = f(&inst).await;
+                        (res, inst)
+                    })
+                    .await
+            }
+        })
+    }
+
+    async fn call_view_command(&self, label: &str, cmd: ViewCommand) -> Result<ViewCommandResult, ViewCallError> {
+        self.call(
+            label,
+            cmd,
+            async |cmd, inst| Ok(inst.call_view(cmd)),
+            async |cmd, inst| inst.call_view(cmd).await,
+        )
+        .await?
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
@@ -1490,14 +1546,13 @@ impl ModuleHost {
             args,
         };
 
-        Ok(self
-            .call(
-                &reducer_def.name,
-                call_reducer_params,
-                async |p, inst| inst.call_reducer(p),
-                async |p, inst| inst.call_reducer(p).await,
-            )
-            .await?)
+        self.call(
+            &reducer_def.name,
+            call_reducer_params,
+            async |p, inst| Ok(inst.call_reducer(p)),
+            async |p, inst| inst.call_reducer(p).await,
+        )
+        .await?
     }
 
     pub async fn call_reducer(
@@ -1565,12 +1620,7 @@ impl ModuleHost {
         };
 
         let res = self
-            .call(
-                "call_view_add_single_subscription",
-                cmd,
-                async |cmd, inst| inst.call_view(cmd),
-                async |cmd, inst| inst.call_view(cmd).await,
-            )
+            .call_view_command("call_view_add_single_subscription", cmd)
             .await
             //TODO: handle error better
             .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
@@ -1598,12 +1648,7 @@ impl ModuleHost {
         };
 
         let res = self
-            .call(
-                "call_view_add_multi_subscription",
-                cmd,
-                async |cmd, inst| inst.call_view(cmd),
-                async |cmd, inst| inst.call_view(cmd).await,
-            )
+            .call_view_command("call_view_add_multi_subscription", cmd)
             .await
             //TODO: handle error better
             .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
@@ -1631,12 +1676,7 @@ impl ModuleHost {
         };
 
         let res = self
-            .call(
-                "call_view_remove_v2_subscription",
-                cmd,
-                async |cmd, inst| inst.call_view(cmd),
-                async |cmd, inst| inst.call_view(cmd).await,
-            )
+            .call_view_command("call_view_remove_v2_subscription", cmd)
             .await
             .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
 
@@ -1663,12 +1703,7 @@ impl ModuleHost {
         };
 
         let res = self
-            .call(
-                "call_view_add_multi_subscription",
-                cmd,
-                async |cmd, inst| inst.call_view(cmd),
-                async |cmd, inst| inst.call_view(cmd).await,
-            )
+            .call_view_command("call_view_add_multi_subscription", cmd)
             .await
             //TODO: handle error better
             .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
@@ -1696,12 +1731,7 @@ impl ModuleHost {
         };
 
         let res = self
-            .call(
-                "call_view_add_legacy_subscription",
-                cmd,
-                async |cmd, inst| inst.call_view(cmd),
-                async |cmd, inst| inst.call_view(cmd).await,
-            )
+            .call_view_command("call_view_add_legacy_subscription", cmd)
             .await
             //TODO: handle error better
             .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
@@ -1730,12 +1760,7 @@ impl ModuleHost {
         };
 
         let res = self
-            .call(
-                "call_view_sql",
-                cmd,
-                async |cmd, inst| inst.call_view(cmd),
-                async |cmd, inst| inst.call_view(cmd).await,
-            )
+            .call_view_command("call_view_sql", cmd)
             .await
             //TODO: handle error better
             .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
@@ -1839,26 +1864,63 @@ impl ModuleHost {
         name: &str,
         params: CallProcedureParams,
     ) -> Result<CallProcedureReturn, NoSuchModule> {
-        self.call(
-            name,
-            params,
-            async move |params, inst| inst.call_procedure(params).await,
-            async move |params, inst| inst.call_procedure(params).await,
-        )
-        .await
+        match &*self.inner {
+            ModuleHostInner::Wasm(_) => {
+                self.call(
+                    name,
+                    params,
+                    async move |params, inst| inst.call_procedure(params).await,
+                    async move |_params, _inst| unreachable!("JS procedure lane is not used for WASM modules"),
+                )
+                .await
+            }
+            ModuleHostInner::Js(_) => {
+                self.with_js_pooled_instance(name, async move |inst| inst.call_procedure(params).await)
+                    .await
+            }
+        }
     }
 
     pub(super) async fn call_scheduled_function(
         &self,
         params: ScheduledFunctionParams,
-    ) -> Result<CallScheduledFunctionResult, NoSuchModule> {
-        self.call(
-            "unknown scheduled function",
-            params,
-            async move |params, inst| inst.call_scheduled_function(params).await,
-            async move |params, inst| inst.call_scheduled_function(params).await,
-        )
-        .await
+    ) -> Result<CallScheduledFunctionResult, CallScheduledFunctionError> {
+        match &*self.inner {
+            ModuleHostInner::Wasm(_) => {
+                self.call(
+                    "unknown scheduled function",
+                    params,
+                    async move |params, inst| Ok(inst.call_scheduled_function(params).await),
+                    async move |_params, _inst| unreachable!("JS scheduled-function lane is not used for WASM modules"),
+                )
+                .await?
+            }
+            ModuleHostInner::Js(V8ModuleHost { module, .. }) => {
+                let use_procedure_lane =
+                    match params.uses_procedure_lane(&self.info, module.replica_ctx().relational_db.as_ref()) {
+                        Ok(use_procedure_lane) => use_procedure_lane,
+                        Err(err) => {
+                            log::error!("failed to classify scheduled JS function; routing to procedure lane: {err:#}");
+                            true
+                        }
+                    };
+                if use_procedure_lane {
+                    Ok(self
+                        .with_js_pooled_instance("unknown scheduled function", async move |inst| {
+                            inst.call_scheduled_function(params).await
+                        })
+                        .await?)
+                } else {
+                    self.call(
+                        "unknown scheduled function",
+                        params,
+                        async move |params, inst| Ok(inst.call_scheduled_function(params).await),
+                        async move |params, inst| inst.call_scheduled_function(params).await,
+                    )
+                    .await?
+                }
+            }
+        }
     }
 
     /// Materializes the views return by the `view_collector`, if not already materialized,
@@ -2421,14 +2483,14 @@ impl ModuleHost {
     pub(crate) fn replica_ctx(&self) -> &ReplicaContext {
         match &*self.inner {
             ModuleHostInner::Wasm(wasm) => wasm.instance_manager.module.replica_ctx(),
-            ModuleHostInner::Js(js) => js.instance_manager.module.replica_ctx(),
+            ModuleHostInner::Js(js) => js.module.replica_ctx(),
         }
     }
 
     fn scheduler(&self) -> &Scheduler {
         match &*self.inner {
             ModuleHostInner::Wasm(wasm) => wasm.instance_manager.module.scheduler(),
-            ModuleHostInner::Js(js) => js.instance_manager.module.scheduler(),
+            ModuleHostInner::Js(js) => js.module.scheduler(),
         }
     }
 }
