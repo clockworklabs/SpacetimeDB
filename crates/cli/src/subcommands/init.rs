@@ -86,6 +86,7 @@ pub enum ClientLanguage {
     Rust,
     Csharp,
     TypeScript,
+    Kotlin,
 }
 
 impl ClientLanguage {
@@ -94,6 +95,7 @@ impl ClientLanguage {
             ClientLanguage::Rust => "rust",
             ClientLanguage::Csharp => "csharp",
             ClientLanguage::TypeScript => "typescript",
+            ClientLanguage::Kotlin => "kotlin",
         }
     }
 
@@ -102,6 +104,7 @@ impl ClientLanguage {
             "rust" => Ok(Some(ClientLanguage::Rust)),
             "csharp" | "c#" => Ok(Some(ClientLanguage::Csharp)),
             "typescript" => Ok(Some(ClientLanguage::TypeScript)),
+            "kotlin" | "kt" => Ok(Some(ClientLanguage::Kotlin)),
             _ => Err(anyhow!("Unknown client language: {}", s)),
         }
     }
@@ -1119,6 +1122,42 @@ pub fn update_csproj_client_to_nuget(dir: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Sets up a Kotlin client project: updates the project name, writes the Gradle wrapper jar,
+/// and makes gradlew executable.
+fn setup_kotlin_client(dir: &Path, project_name: &str) -> anyhow::Result<()> {
+    let settings_path = dir.join("settings.gradle.kts");
+    if settings_path.exists() {
+        let original = fs::read_to_string(&settings_path)?;
+        let updated = original.replace(
+            "rootProject.name = \"basic-kt\"",
+            &format!("rootProject.name = \"{}\"", project_name),
+        );
+        if updated != original {
+            fs::write(&settings_path, updated)?;
+        }
+    }
+
+    // Write the Gradle wrapper jar (binary file — skipped by the template's include_str! embedding)
+    let wrapper_dir = dir.join("gradle/wrapper");
+    fs::create_dir_all(&wrapper_dir)?;
+    fs::write(
+        wrapper_dir.join("gradle-wrapper.jar"),
+        include_bytes!("../../../../templates/basic-kt/gradle/wrapper/gradle-wrapper.jar"),
+    )?;
+
+    // Make gradlew executable (template system doesn't preserve permissions)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let gradlew = dir.join("gradlew");
+        if gradlew.exists() {
+            fs::set_permissions(&gradlew, fs::Permissions::from_mode(0o755))?;
+        }
+    }
+
+    Ok(())
+}
+
 // Helpers
 
 fn write_if_changed(path: PathBuf, original: String, root: Element) -> anyhow::Result<()> {
@@ -1353,6 +1392,9 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path, is_server_only: bo
             Some(ClientLanguage::Csharp) => {
                 update_csproj_client_to_nuget(project_path)?;
             }
+            Some(ClientLanguage::Kotlin) => {
+                setup_kotlin_client(project_path, &config.project_name)?;
+            }
             None => {}
         }
     }
@@ -1511,6 +1553,14 @@ fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Re
                 config.project_name
             );
             println!("  spacetime generate --lang csharp --out-dir module_bindings --module-path spacetimedb");
+        }
+        (TemplateType::Builtin, Some(ServerLanguage::Rust), Some(ClientLanguage::Kotlin)) => {
+            println!(
+                "  spacetime publish --module-path spacetimedb {}{}",
+                if config.use_local { "--server local " } else { "" },
+                config.project_name
+            );
+            println!("  ./gradlew run");
         }
         (TemplateType::Empty, _, Some(ClientLanguage::TypeScript)) => {
             println!("  npm install");

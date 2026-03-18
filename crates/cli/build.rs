@@ -386,6 +386,10 @@ fn generate_template_entry(code: &mut String, template_path: &Path, source: &str
             // Example include_path (inside crate): "templates/basic-rs/server/src/lib.rs"
             // Example include_path (outside crate): ".templates/parent_parent_modules_chat-console-rs/src/lib.rs"
             // Example relative_str: "src/lib.rs"
+            // Skip binary files — they can't be embedded via include_str!
+            if relative_str.ends_with(".jar") {
+                continue;
+            }
             code.push_str(&format!(
                 "        files.insert(\"{}\", include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/{}\")));\n",
                 relative_str, include_path
