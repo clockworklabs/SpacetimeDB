@@ -409,6 +409,19 @@ fn main() -> Result<()> {
                 "warnings",
             )
             .run()?;
+            cmd!(
+                "cargo",
+                "clippy",
+                "--no-default-features",
+                "--features=web",
+                "-pspacetimedb-sdk",
+                "--tests",
+                "--benches",
+                "--",
+                "-D",
+                "warnings",
+            )
+            .run()?;
             cmd!("dotnet", "tool", "restore").dir("crates/bindings-csharp").run()?;
             cmd!("dotnet", "csharpier", "--check", ".")
                 .dir("crates/bindings-csharp")
