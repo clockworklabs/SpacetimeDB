@@ -69,7 +69,7 @@
 
 SpacetimeDB is a relational database that is also a server. You upload your application logic directly into the database, and clients connect to it without any server in between.
 
-Write your schema and business logic as a **module** in [Rust](https://spacetimedb.com/docs/quickstarts/rust), [C#](https://spacetimedb.com/docs/quickstarts/c-sharp), [TypeScript](https://spacetimedb.com/docs/quickstarts/typescript), or [C++](https://spacetimedb.com/docs/quickstarts/cpp). SpacetimeDB compiles it, runs it inside the database, and automatically synchronizes state to connected clients in real-time.
+Write your schema and business logic as a **module** in [Rust](https://spacetimedb.com/docs/quickstarts/rust), [C#](https://spacetimedb.com/docs/quickstarts/c-sharp), [TypeScript](https://spacetimedb.com/docs/quickstarts/typescript), or [C++](https://spacetimedb.com/docs/quickstarts/c-plus-plus). SpacetimeDB compiles it, runs it inside the database, and automatically synchronizes state to connected clients in real-time.
 
 Instead of deploying a web or game server that sits in between your clients and your database, your clients connect directly to the database and execute your application logic in your module. You can write all of your permission and authorization logic right inside your module just as you would in a normal server.
 
@@ -157,7 +157,7 @@ Write your database logic in any of these languages:
 | **Rust** | [Get started](https://spacetimedb.com/docs/quickstarts/rust) |
 | **C#** | [Get started](https://spacetimedb.com/docs/quickstarts/c-sharp) |
 | **TypeScript** | [Get started](https://spacetimedb.com/docs/quickstarts/typescript) |
-| **C++** | [Get started](https://spacetimedb.com/docs/quickstarts/cpp) |
+| **C++** | [Get started](https://spacetimedb.com/docs/quickstarts/c-plus-plus) |
 
 ### Client SDKs
 
@@ -168,7 +168,7 @@ Connect from any of these platforms:
 | **TypeScript** (React, Next.js, Vue, Svelte, Angular, Node.js, Bun, Deno) | [Get started](https://spacetimedb.com/docs/quickstarts/react) |
 | **Rust** | [Get started](https://spacetimedb.com/docs/quickstarts/rust) |
 | **C#** (standalone and Unity) | [Get started](https://spacetimedb.com/docs/quickstarts/c-sharp) |
-| **C++** (Unreal Engine) | [Get started](https://spacetimedb.com/docs/quickstarts/cpp) |
+| **C++** (Unreal Engine) | [Get started](https://spacetimedb.com/docs/quickstarts/c-plus-plus) |
 
 ## Running with Docker
 
