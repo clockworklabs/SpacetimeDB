@@ -947,7 +947,7 @@ impl InstanceCommon {
 
         // Only re-evaluate and update views if the reducer's execution was successful
         let (out, trapped) = if !trapped && matches!(status, EventStatus::Committed(_)) {
-            self.call_views_with_tx(tx, caller_identity, &info.module_def, inst, timestamp)
+            self.call_views_with_tx(tx, caller_identity, inst, timestamp)
         } else {
             (ViewCallResult::default(tx), trapped)
         };
@@ -1315,32 +1315,14 @@ impl InstanceCommon {
         &mut self,
         tx: MutTxId,
         caller: Identity,
-        module_def: &ModuleDef,
         inst: &mut I,
         timestamp: Timestamp,
     ) -> (ViewCallResult, bool) {
-        let view_calls = tx
-            .views_for_refresh()
-            .map(|info| {
-                let view_def = module_def
-                    .get_view_by_id(info.fn_ptr, info.sender.is_none())
-                    .unwrap_or_else(|| panic!("view with fn_ptr `{}` not found", info.fn_ptr));
-
-                CallViewParams {
-                    view_name: view_def.name.clone(),
-                    view_id: info.view_id,
-                    table_id: info.table_id,
-                    fn_ptr: view_def.fn_ptr,
-                    caller,
-                    sender: info.sender,
-                    args: ArgsTuple::nullary(),
-                    row_type: view_def.product_type_ref,
-                    timestamp,
-                }
-            })
-            .collect::<Vec<_>>();
-
-        self.execute_view_calls(tx, view_calls, inst)
+        let mut instance = RefInstance {
+            common: self,
+            instance: inst,
+        };
+        ModuleHost::call_views_with_tx_at(tx, &mut instance, caller, timestamp)
     }
 
     /// Executes view calls and accumulate results.
