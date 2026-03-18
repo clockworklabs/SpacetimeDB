@@ -2032,7 +2032,10 @@ impl MutTxId {
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
-    pub(super) fn commit(mut self) -> (TxOffset, TxData, TxMetrics, Option<ReducerName>) {
+    pub(super) fn commit(
+        mut self,
+        before_release: impl FnOnce(&Arc<TxData>),
+    ) -> (TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>) {
         let tx_offset = self.committed_state_write_lock.next_tx_offset;
         let tx_data = self
             .committed_state_write_lock
@@ -2066,6 +2069,9 @@ impl MutTxId {
             tx_offset
         };
 
+        let tx_data = Arc::new(tx_data);
+        before_release(&tx_data);
+
         (tx_offset, tx_data, tx_metrics, reducer)
     }
 
@@ -2082,7 +2088,11 @@ impl MutTxId {
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - [`TxId`], a read-only transaction with a shared lock on the committed state.
-    pub(super) fn commit_downgrade(mut self, workload: Workload) -> (TxData, TxMetrics, TxId) {
+    pub(super) fn commit_downgrade(
+        mut self,
+        workload: Workload,
+        before_downgrade: impl FnOnce(&Arc<TxData>),
+    ) -> (Arc<TxData>, TxMetrics, TxId) {
         let tx_data = self
             .committed_state_write_lock
             .merge(self.tx_state, self.read_sets, &self.ctx);
@@ -2100,6 +2110,9 @@ impl MutTxId {
             Some(&tx_data),
             &self.committed_state_write_lock,
         );
+
+        let tx_data = Arc::new(tx_data);
+        before_downgrade(&tx_data);
 
         // Update the workload type of the execution context
         self.ctx.workload = workload.workload_type();

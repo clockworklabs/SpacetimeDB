@@ -808,16 +808,16 @@ impl RelationalDB {
 
         let reducer_context = tx.ctx.reducer_context().cloned();
         // TODO: Never returns `None` -- should it?
-        let Some((tx_offset, tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx(tx)? else {
+        let Some((tx_offset, tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx(tx, |tx_data| {
+            if let Some(durability) = &self.durability {
+                durability.request_durability(reducer_context, tx_data);
+            }
+        })?
+        else {
             return Ok(None);
         };
 
         self.maybe_do_snapshot(&tx_data);
-
-        let tx_data = Arc::new(tx_data);
-        if let Some(durability) = &self.durability {
-            durability.request_durability(reducer_context, &tx_data);
-        }
 
         Ok(Some((tx_offset, tx_data, tx_metrics, reducer)))
     }
@@ -826,14 +826,14 @@ impl RelationalDB {
     pub fn commit_tx_downgrade(&self, tx: MutTx, workload: Workload) -> (Arc<TxData>, TxMetrics, Tx) {
         log::trace!("COMMIT MUT TX");
 
-        let (tx_data, tx_metrics, tx) = self.inner.commit_mut_tx_downgrade(tx, workload);
+        let reducer_context = tx.ctx.reducer_context().cloned();
+        let (tx_data, tx_metrics, tx) = self.inner.commit_mut_tx_downgrade(tx, workload, |tx_data| {
+            if let Some(durability) = &self.durability {
+                durability.request_durability(reducer_context, tx_data);
+            }
+        });
 
         self.maybe_do_snapshot(&tx_data);
-
-        let tx_data = Arc::new(tx_data);
-        if let Some(durability) = &self.durability {
-            durability.request_durability(tx.ctx.reducer_context().cloned(), &tx_data);
-        }
 
         (tx_data, tx_metrics, tx)
     }

@@ -240,6 +240,7 @@ pub struct TxData {
 impl TxData {
     /// Set `tx_offset` as the expected on-disk transaction offset of this transaction.
     pub fn set_tx_offset(&mut self, tx_offset: u64) {
+        assert!(self.tx_offset.is_none());
         self.tx_offset = Some(tx_offset);
     }
 
@@ -478,7 +479,11 @@ pub trait MutTx {
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `ReducerName`, the name of the reducer which ran during this transaction.
     #[allow(clippy::type_complexity)]
-    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, Option<ReducerName>)>>;
+    fn commit_mut_tx(
+        &self,
+        tx: Self::MutTx,
+        before_release: impl FnOnce(&Arc<TxData>),
+    ) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>)>>;
 
     /// Rolls back this transaction, discarding its changes.
     ///

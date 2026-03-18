@@ -953,8 +953,12 @@ impl MutTx for Locking {
 
     /// This method only updates the in-memory `committed_state`.
     /// For durability, see `RelationalDB::commit_tx`.
-    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, Option<ReducerName>)>> {
-        Ok(Some(tx.commit()))
+    fn commit_mut_tx(
+        &self,
+        tx: Self::MutTx,
+        before_release: impl FnOnce(&Arc<TxData>),
+    ) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>)>> {
+        Ok(Some(tx.commit(before_release)))
     }
 }
 
@@ -965,8 +969,13 @@ impl Locking {
 
     /// This method only updates the in-memory `committed_state`.
     /// For durability, see `RelationalDB::commit_tx_downgrade`.
-    pub fn commit_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> (TxData, TxMetrics, TxId) {
-        tx.commit_downgrade(workload)
+    pub fn commit_mut_tx_downgrade(
+        &self,
+        tx: MutTxId,
+        workload: Workload,
+        before_downgrade: impl FnOnce(&Arc<TxData>),
+    ) -> (Arc<TxData>, TxMetrics, TxId) {
+        tx.commit_downgrade(workload, before_downgrade)
     }
 }
 
