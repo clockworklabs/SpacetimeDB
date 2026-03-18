@@ -1883,7 +1883,12 @@ impl ModuleHost {
             let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
             let is_anonymous = st_view_row.is_anonymous;
             let sender = if is_anonymous { None } else { Some(caller) };
-            if !tx.is_view_materialized(view_id, ArgId::SENTINEL, caller)? {
+            let is_materialized = if is_anonymous {
+                tx.is_anonymous_view_materialized(view_id)?
+            } else {
+                tx.is_view_materialized(view_id, ArgId::SENTINEL, caller)?
+            };
+            if !is_materialized {
                 let (res, trapped) =
                     Self::call_view(instance, tx, &view_name, view_id, table_id, Nullary, caller, sender)?;
                 tx = res.tx;
