@@ -213,6 +213,31 @@ class ReducerIntegrationTest {
         conn.disconnect()
     }
 
+    @Test
+    fun reducerResultBeforeIdentityCleansUpCallInfoAndCallbacks() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        // Do NOT send InitialConnection — identity stays null
+
+        // Manually inject a pending reducer result as if the server responded
+        // before InitialConnection arrived. The requestId=1u won't match a real
+        // callReducer (which requires Connected + identity), but the cleanup
+        // path must still remove any stale entries and finish tracking.
+        transport.sendToClient(
+            ServerMessage.ReducerResultMsg(
+                requestId = 1u,
+                timestamp = Timestamp.UNIX_EPOCH,
+                result = ReducerOutcome.OkEmpty,
+            )
+        )
+        advanceUntilIdle()
+
+        // The stats tracker should have finished tracking (not leaked)
+        assertEquals(0, conn.stats.reducerRequestTracker.requestsAwaitingResponse)
+        assertTrue(conn.isActive)
+        conn.disconnect()
+    }
+
     // --- decodeReducerError with corrupted BSATN ---
 
     @Test

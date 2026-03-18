@@ -646,11 +646,6 @@ public open class DbConnection internal constructor(
             }
 
             is ServerMessage.ReducerResultMsg -> {
-                val callerIdentity = identity ?: run {
-                    Logger.error { "Received ReducerResultMsg before identity was set" }
-                    return
-                }
-                val callerConnId = connectionId
                 val result = message.result
                 var info: ReducerCallInfo? = null
                 reducerCallInfo.getAndUpdate { map ->
@@ -658,6 +653,12 @@ public open class DbConnection internal constructor(
                     map.remove(message.requestId)
                 }
                 stats.reducerRequestTracker.finishTrackingRequest(message.requestId)
+                val callerIdentity = identity ?: run {
+                    Logger.error { "Received ReducerResultMsg before identity was set" }
+                    reducerCallbacks.update { it.remove(message.requestId) }
+                    return
+                }
+                val callerConnId = connectionId
                 val capturedInfo = info
 
                 when (result) {
@@ -738,17 +739,17 @@ public open class DbConnection internal constructor(
             }
 
             is ServerMessage.ProcedureResultMsg -> {
-                val procIdentity = identity ?: run {
-                    Logger.error { "Received ProcedureResultMsg before identity was set" }
-                    return
-                }
-                val procConnId = connectionId
                 stats.procedureRequestTracker.finishTrackingRequest(message.requestId)
                 var cb: ((EventContext.Procedure, ServerMessage.ProcedureResultMsg) -> Unit)? = null
                 procedureCallbacks.getAndUpdate { map ->
                     cb = map[message.requestId]
                     map.remove(message.requestId)
                 }
+                val procIdentity = identity ?: run {
+                    Logger.error { "Received ProcedureResultMsg before identity was set" }
+                    return
+                }
+                val procConnId = connectionId
                 cb?.let {
                     val procedureEvent = ProcedureEvent(
                         timestamp = message.timestamp,
