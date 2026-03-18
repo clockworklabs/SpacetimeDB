@@ -14,6 +14,5 @@ pub async fn run(_test_name: String, db_name: String) {
     console_error_panic_hook::set_once();
     // The shared wasm test harness always passes `(test_name, db_name)`, even for
     // fixed-flow clients like this one that ignore the selector.
-    test_handlers::set_web_db_name(db_name);
-    test_handlers::dispatch().await;
+    test_handlers::dispatch(&db_name).await;
 }

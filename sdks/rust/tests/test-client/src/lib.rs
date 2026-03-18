@@ -20,6 +20,5 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[wasm_bindgen]
 pub async fn run(test_name: String, db_name: String) {
     console_error_panic_hook::set_once();
-    test_handlers::set_web_db_name(db_name);
-    test_handlers::dispatch(&test_name).await;
+    test_handlers::dispatch(&test_name, &db_name).await;
 }
