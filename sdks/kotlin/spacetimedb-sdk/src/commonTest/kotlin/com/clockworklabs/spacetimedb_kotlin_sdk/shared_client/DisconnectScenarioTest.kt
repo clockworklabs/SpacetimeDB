@@ -434,4 +434,77 @@ class DisconnectScenarioTest {
         assertEquals(0, cache2.count())
         conn2.disconnect()
     }
+
+    // =========================================================================
+    // trySend result check — silent message loss prevention
+    // =========================================================================
+
+    @Test
+    fun sendMessageAfterDisconnectThrowsInsteadOfSilentDrop() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+        assertTrue(conn.isActive)
+
+        conn.disconnect()
+        advanceUntilIdle()
+        assertFalse(conn.isActive)
+
+        // Attempting to send after disconnect must throw, not silently drop
+        val ex = kotlin.test.assertFailsWith<IllegalStateException> {
+            conn.callReducer("add", byteArrayOf(), "args")
+        }
+        assertTrue(ex.message!!.contains("not active"))
+    }
+
+    @Test
+    fun sendMessageOnClosedChannelThrowsInsteadOfSilentDrop() = runTest {
+        // Simulate the TOCTOU race: state is Connected but channel is already closed.
+        // We achieve this by using a custom transport that closes the incoming flow
+        // (triggering the receive loop's finally block which closes the send channel)
+        // while the state may still briefly be Connected.
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+        assertTrue(conn.isActive)
+
+        // Server closes the connection — receive loop closes sendChannel
+        transport.closeFromServer()
+        advanceUntilIdle()
+
+        // After server close, the connection is in Closed state.
+        // Any send attempt must throw — not silently drop.
+        val ex = kotlin.test.assertFailsWith<IllegalStateException> {
+            conn.oneOffQuery("SELECT 1") {}
+        }
+        assertTrue(
+            ex.message!!.contains("not active") || ex.message!!.contains("closed"),
+            "Expected 'not active' or 'closed' but got: ${ex.message}"
+        )
+    }
+
+    @Test
+    fun reducerCallbacksNotOrphanedOnSendFailure() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        conn.disconnect()
+        advanceUntilIdle()
+
+        // callReducer should throw — the callback should never hang
+        var callbackFired = false
+        kotlin.test.assertFailsWith<IllegalStateException> {
+            conn.callReducer("add", byteArrayOf(), "args", callback = { _ ->
+                callbackFired = true
+            })
+        }
+        advanceUntilIdle()
+
+        // The callback must NOT have been invoked (it was never sent)
+        assertFalse(callbackFired)
+    }
 }
