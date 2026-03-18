@@ -21,7 +21,6 @@ import {
   stdbConfirmedReads,
   stdbModule,
   stdbModulePath,
-  stdbServer,
   stdbUrl,
   systems,
 } from './opts';
@@ -36,9 +35,9 @@ function ping(port: number, timeout = 2000): Promise<boolean> {
 }
 
 // Use spacetime CLI to ping the server
-function spacetimePing(): boolean {
+async function spacetimePing(): Promise<boolean> {
   try {
-    execSync('spacetime server ping local', { stdio: 'ignore' });
+    execSync('spacetime server ping ' + stdbUrl, { stdio: 'ignore' });
     return true;
   } catch {
     return false;
@@ -106,12 +105,12 @@ interface ServiceConfig {
 const serviceConfigs: Record<string, ServiceConfig> = {
   spacetimedb: {
     name: 'SpacetimeDB',
-    healthCheck: async () => spacetimePing(),
+    healthCheck: spacetimePing,
     startCmd: 'spacetime start',
   },
   spacetimedbRustClient: {
     name: 'SpacetimeDB',
-    healthCheck: async () => spacetimePing(),
+    healthCheck: spacetimePing,
     startCmd: 'spacetime start',
   },
   convex: {
@@ -197,29 +196,23 @@ async function prepSystem(system: ConnectorKey): Promise<void> {
         '-c',
         '-y',
         '--server',
-        stdbServer,
+        stdbUrl,
         stdbModule,
         '--module-path',
         stdbModulePath,
       ]);
-      // await sleep(5000);
-      await sh('spacetime', [
-        'call',
-        '--server',
-        stdbServer,
-        stdbModule,
-        'seed',
-        String(accounts),
-        String(initialBalance),
-      ]);
-      console.log('[spacetimedb] seed complete.');
-    } else if (system === 'convex') {
+    }
+
+    if (system === 'convex') {
       await initConvex();
     } else {
       const conn = connector();
       await conn.open();
-      await conn.call('seed', { accounts, initialBalance });
-      await conn.close();
+      try {
+        await conn.call('seed', { accounts, initialBalance });
+      } finally {
+        await conn.close();
+      }
     }
     spinner.stop(c('green', '✓ READY'));
   } catch (err: any) {
@@ -275,7 +268,7 @@ async function runBenchmarkStdb(): Promise<BenchResult | null> {
     'bench',
     //"--quiet",
     '--server',
-    stdbUrl,
+    'ws://' + stdbUrl,
     '--module',
     stdbModule,
     '--duration',

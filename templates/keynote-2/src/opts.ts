@@ -164,12 +164,7 @@ const args = new CLIParser()
   .option(
     '--stdb-url <url>',
     'SpacetimeDB url',
-    str('ws://127.0.0.1:3000', 'STDB_URL'),
-  )
-  .option(
-    '--stdb-server <server>',
-    'SpacetimeDB server name',
-    str('local', 'STDB_SERVER'),
+    str('127.0.0.1:3000', 'STDB_URL'),
   )
   .option(
     '--stdb-module <name>',
@@ -239,7 +234,6 @@ const args = new CLIParser()
   .parse();
 
 const opts = args.options;
-console.log(opts);
 
 export const seconds: number = opts.seconds;
 export const concurrency: number = opts.concurrency;
@@ -251,8 +245,7 @@ export const noAnimation: boolean = !opts.animation;
 export const accounts: number = opts.accounts;
 export const initialBalance: number = opts.initialBalance;
 
-export const stdbServer: string = opts.stdbServer;
-export const stdbUrl: string = opts.stdbUrl;
+export const stdbUrl: string = opts.stdbUrl.replace(/^(http|ws)s:\/\//, '');
 export const stdbModule: string = opts.stdbModule;
 export const stdbModulePath: string = opts.stdbModulePath;
 export const stdbConfirmedReads: boolean = opts.stdbConfirmedReads;

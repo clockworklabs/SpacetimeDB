@@ -31,7 +31,7 @@ export function spacetimedb(
     if (subscriptions.length === 0) subscribed.resolve();
 
     const builder = Db.builder()
-      .withUri(url)
+      .withUri('ws://' + url)
       .withDatabaseName(moduleName)
       .withConfirmedReads(stdbConfirmedReads)
       .onConnect((ctx) => {
@@ -115,7 +115,7 @@ export function spacetimedb(
         case 'seed': {
           return conn.reducers.seed({
             n: args.accounts,
-            initialBalance: args.initialBalance,
+            initialBalance: BigInt(args.initialBalance),
           });
         }
 
