@@ -3,30 +3,36 @@ import { execSync } from 'node:child_process';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { createConnection } from 'node:net';
 import { join } from 'node:path';
-import { ConnectorKey, CONNECTORS } from './connectors';
+import { CONNECTORS } from './connectors';
 import { runOne } from './core/runner';
 import { initConvex } from './init/init_convex';
 import { sh } from './init/utils';
-import cac from 'cac';
+import { setTimeout as sleep } from 'node:timers/promises';
+import EventEmitter from 'node:events';
+import {
+  accounts,
+  alpha,
+  concurrency,
+  ConnectorKey,
+  initialBalance,
+  noAnimation,
+  seconds,
+  skipPrep,
+  stdbConfirmedReads,
+  stdbModule,
+  stdbModulePath,
+  stdbServer,
+  stdbUrl,
+  systems,
+} from './opts';
 
 // Simple TCP ping - just check if something is listening on the port
-function ping(port: number, timeoutMs = 2000): Promise<boolean> {
-  return new Promise((resolve) => {
-    const socket = createConnection({ host: '127.0.0.1', port });
-    const timer = setTimeout(() => {
-      socket.destroy();
-      resolve(false);
-    }, timeoutMs);
-    socket.on('connect', () => {
-      clearTimeout(timer);
-      socket.destroy();
-      resolve(true);
-    });
-    socket.on('error', () => {
-      clearTimeout(timer);
-      resolve(false);
-    });
-  });
+function ping(port: number, timeout = 2000): Promise<boolean> {
+  const socket = createConnection({ host: '127.0.0.1', port, timeout });
+  return EventEmitter.once(socket, 'connect').then(
+    () => true,
+    () => false,
+  );
 }
 
 // Use spacetime CLI to ping the server
@@ -38,69 +44,6 @@ function spacetimePing(): boolean {
     return false;
   }
 }
-
-// ============================================================================
-// CLI Arguments
-// ============================================================================
-
-const parser = cac()
-  .option('--seconds <seconds>', 'Number of seconds to benchmark for', {
-    default: 10,
-  })
-  .option('--concurrency <concurrency>', 'Concurrent clients to run', {
-    default: 10,
-  })
-  .option('--alpha <alpha>', 'Alpha value', { default: 1.5 })
-  .option(
-    '--systems <systems>',
-    `The systems to run against (valid values: ${Object.keys(CONNECTORS).join(', ')})`,
-    {
-      default: 'convex,spacetimedb',
-      type: [
-        (s: string | string[]) =>
-          (Array.isArray(s) ? s : s.split(',')).map((s) => {
-            const x = s.trim();
-            if (!Object.prototype.hasOwnProperty.call(CONNECTORS, x)) {
-              throw new Error(`${x} is not a valid system`);
-            }
-            return x;
-          }),
-      ],
-    },
-  )
-  .option('--skip-prep', 'Skip prep')
-  .option('--no-animation', 'No animation')
-  .help()
-  .usage('[options]');
-
-const args = parser.parse();
-
-parser.globalCommand.checkUnknownOptions();
-parser.globalCommand.checkOptionValue();
-parser.globalCommand.checkRequiredArgs();
-parser.globalCommand.checkUnusedArgs();
-
-if (args.options.help) {
-  process.exit(0);
-}
-
-const seconds = Number(args.options.seconds);
-const concurrency = Number(args.options.concurrency);
-const alpha = Number(args.options.alpha);
-const systems: ConnectorKey[] = args.options.systems.flat();
-const skipPrep: boolean = args.options.skipPrep;
-const noAnimation: boolean = !args.options.animation;
-
-const accounts = Number(process.env.SEED_ACCOUNTS ?? 100_000);
-const initialBalance = Number(process.env.SEED_INITIAL_BALANCE ?? 10_000_000);
-
-// Force non-Docker mode and use metrics endpoint for TPS counting
-process.env.USE_DOCKER = '0';
-process.env.USE_SPACETIME_METRICS_ENDPOINT = '1';
-
-// Set default SpacetimeDB config if not set
-if (!process.env.STDB_URL) process.env.STDB_URL = 'ws://127.0.0.1:3000';
-if (!process.env.STDB_MODULE) process.env.STDB_MODULE = 'test-1';
 
 // ============================================================================
 // ANSI Colors & Animation
@@ -147,10 +90,6 @@ function createSpinner(label: string): { stop: (finalText: string) => void } {
       process.stdout.write(`\r  ${label}... ${finalText}          \n`);
     },
   };
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // ============================================================================
@@ -252,27 +191,23 @@ async function prepSystem(system: ConnectorKey): Promise<void> {
 
   try {
     if (system === 'spacetimedb' || system == 'spacetimedbRustClient') {
-      const moduleName = process.env.STDB_MODULE || 'test-1';
-      const server = process.env.STDB_SERVER || 'local';
-      // const server2 = process.env.STDB_SERVER || 'http://localhost:3000';
-      const modulePath = process.env.STDB_MODULE_PATH || './spacetimedb';
-
       // Publish module (creates DB if needed, updates if exists)
       await sh('spacetime', [
         'publish',
         '-c',
         '-y',
         '--server',
-        server,
-        moduleName,
+        stdbServer,
+        stdbModule,
         '--module-path',
-        modulePath,
+        stdbModulePath,
       ]);
+      // await sleep(5000);
       await sh('spacetime', [
         'call',
         '--server',
-        server,
-        moduleName,
+        stdbServer,
+        stdbModule,
         'seed',
         String(accounts),
         String(initialBalance),
@@ -289,6 +224,7 @@ async function prepSystem(system: ConnectorKey): Promise<void> {
     spinner.stop(c('green', '✓ READY'));
   } catch (err: any) {
     spinner.stop(c('red', `✗ ${err.message}`));
+    throw err;
   }
 }
 
@@ -330,9 +266,6 @@ async function runBenchmarkOther(
 }
 
 async function runBenchmarkStdb(): Promise<BenchResult | null> {
-  const moduleName = process.env.STDB_MODULE || 'test-1';
-  const server2 = process.env.STDB_SERVER || 'http://localhost:3000';
-
   await sh('cargo', [
     'run',
     //"--quiet",
@@ -342,9 +275,9 @@ async function runBenchmarkStdb(): Promise<BenchResult | null> {
     'bench',
     //"--quiet",
     '--server',
-    server2,
+    stdbUrl,
     '--module',
-    moduleName,
+    stdbModule,
     '--duration',
     `${seconds}s`,
     '--connections',
@@ -353,6 +286,8 @@ async function runBenchmarkStdb(): Promise<BenchResult | null> {
     String(alpha),
     '--tps-write-path',
     'spacetimedb-tps.tmp.log',
+    '--confirmed-reads',
+    String(stdbConfirmedReads),
   ]);
 
   const tpsStr = (await readFile('spacetimedb-tps.tmp.log', 'utf-8')).trim();

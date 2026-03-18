@@ -1,8 +1,7 @@
 import type { RpcConnector } from '../core/connectors.ts';
+import { bunUrl } from '../opts.ts';
 
-export default function bun(
-  url = process.env.BUN_URL || 'http://127.0.0.1:4000',
-): RpcConnector {
+export default function bun(url = bunUrl): RpcConnector {
   if (!url) throw new Error('BUN_URL not set');
 
   const baseUrl = url.replace(/\/+$/, '');

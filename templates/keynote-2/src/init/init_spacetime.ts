@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { ACC, BAL, sh } from './utils.ts';
+import { stdbModule, stdbModulePath } from '../opts.ts';
 
 export async function initSpacetime() {
   const useMaincloud = process.env.STDB_MAINCLOUD === '1';
@@ -7,8 +8,8 @@ export async function initSpacetime() {
     ? 'maincloud'
     : process.env.STDB_SERVER || 'local';
 
-  const dbName = process.env.STDB_MODULE!;
-  const modulePath = process.env.STDB_MODULE_PATH!;
+  const dbName = stdbModule;
+  const modulePath = stdbModulePath;
 
   if (!dbName || !modulePath) {
     console.log('[spacetimedb] missing STDB_MODULE/STDB_MODULE_PATH; skipping');

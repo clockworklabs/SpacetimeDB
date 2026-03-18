@@ -5,7 +5,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { pgTable, integer, bigint as pgBigint } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { RpcRequest, RpcResponse } from '../connectors/rpc/rpc_common.ts';
-import { poolMaxFromEnv } from '../helpers.ts';
+import { poolMax } from '../opts.ts';
 
 const PG_URL = process.env.PG_URL;
 if (!PG_URL) {
@@ -20,7 +20,7 @@ const accounts = pgTable('accounts', {
 const pool = new Pool({
   connectionString: PG_URL,
   application_name: 'pg-rpc-drizzle',
-  max: poolMaxFromEnv(),
+  max: poolMax,
 });
 
 const db = drizzle(pool, { schema: { accounts } });
