@@ -1128,10 +1128,11 @@ fn setup_kotlin_client(dir: &Path, project_name: &str) -> anyhow::Result<()> {
     let settings_path = dir.join("settings.gradle.kts");
     if settings_path.exists() {
         let original = fs::read_to_string(&settings_path)?;
-        let updated = original.replace(
-            "rootProject.name = \"basic-kt\"",
-            &format!("rootProject.name = \"{}\"", project_name),
-        );
+        // Replace the template's rootProject.name with the user's project name
+        let re = regex::Regex::new(r#"rootProject\.name\s*=\s*"[^"]*""#).unwrap();
+        let updated = re
+            .replace(&original, &format!("rootProject.name = \"{}\"", project_name))
+            .to_string();
         if updated != original {
             fs::write(&settings_path, updated)?;
         }

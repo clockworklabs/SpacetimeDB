@@ -1,0 +1,5 @@
+{
+  "description": "A Compose Multiplatform (Android + Desktop) chat client with a Rust server",
+  "client_lang": "kotlin",
+  "server_lang": "rust"
+}
