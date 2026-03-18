@@ -378,12 +378,7 @@ async fn connect_with_then(
             connected_result(Ok(()));
         })
         .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
-    let conn = build_connection(with_builder(builder)).await;
-    #[cfg(not(target_arch = "wasm32"))]
-    conn.run_threaded();
-    #[cfg(target_arch = "wasm32")]
-    conn.run_background_task();
-    conn
+    build_and_run(with_builder(builder)).await
 }
 
 async fn connect_then(
@@ -1815,7 +1810,7 @@ async fn exec_reconnect_different_connection_id(db_name: &str) {
     let disconnect_test_counter = TestCounter::new();
     let disconnect_result = disconnect_test_counter.add_test("disconnect");
 
-    let initial_connection = build_connection(
+    let initial_connection = build_and_run(
         DbConnection::builder()
             .with_database_name(db_name)
             .with_uri(LOCALHOST)
@@ -1830,11 +1825,6 @@ async fn exec_reconnect_different_connection_id(db_name: &str) {
     )
     .await;
 
-    #[cfg(not(target_arch = "wasm32"))]
-    initial_connection.run_threaded();
-    #[cfg(target_arch = "wasm32")]
-    initial_connection.run_background_task();
-
     initial_test_counter.wait_for_all().await;
 
     let my_connection_id = initial_connection.connection_id();
@@ -1847,7 +1837,7 @@ async fn exec_reconnect_different_connection_id(db_name: &str) {
     let reconnect_result = reconnect_test_counter.add_test("reconnect");
     let addr_after_reconnect_result = reconnect_test_counter.add_test("addr_after_reconnect");
 
-    let re_connection = build_connection(
+    let _re_connection = build_and_run(
         DbConnection::builder()
             .with_database_name(db_name)
             .with_uri(LOCALHOST)
@@ -1863,11 +1853,6 @@ async fn exec_reconnect_different_connection_id(db_name: &str) {
             }),
     )
     .await;
-    #[cfg(not(target_arch = "wasm32"))]
-    re_connection.run_threaded();
-    #[cfg(target_arch = "wasm32")]
-    re_connection.run_background_task();
-
     reconnect_test_counter.wait_for_all().await;
 }
 
@@ -2522,7 +2507,8 @@ async fn exec_two_different_compression_algos(db_name: &str) {
     ) -> DbConnection {
         let expected1 = expected.clone();
         let subscribed = barrier.add_test(format!("subscribed_{compression_name}"));
-        connect_with_then(db_name, 
+        connect_with_then(
+            db_name,
             test_counter,
             compression_name,
             |b| b.with_compression(compression),
@@ -2553,8 +2539,7 @@ async fn exec_two_different_compression_algos(db_name: &str) {
     let got_none = Some(test_counter.add_test("got_right_row_none"));
     let _brotli_conn =
         connect_with_compression(db_name, &test_counter, "brotli", Brotli, got_brotli, &barrier, &bytes).await;
-    let _gzip_conn =
-        connect_with_compression(db_name, &test_counter, "gzip", Gzip, got_gzip, &barrier, &bytes).await;
+    let _gzip_conn = connect_with_compression(db_name, &test_counter, "gzip", Gzip, got_gzip, &barrier, &bytes).await;
     let none_conn = connect_with_compression(db_name, &test_counter, "none", None, got_none, &barrier, &bytes).await;
     // Preserve the original "all clients are subscribed before any insert happens" rule without
     // blocking the wasm event loop inside `on_applied`.

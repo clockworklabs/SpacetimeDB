@@ -1,6 +1,6 @@
-use core::time::Duration;
 use crate::module_bindings::*;
 use anyhow::Context;
+use core::time::Duration;
 use spacetimedb_lib::db::raw_def::v9::{RawMiscModuleExportV9, RawModuleDefV9};
 use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Table};
 use test_counter::TestCounter;
@@ -75,12 +75,7 @@ async fn connect_with_then(
             connected_result(Ok(()));
         })
         .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
-    let conn = build_connection(with_builder(builder)).await;
-    #[cfg(not(target_arch = "wasm32"))]
-    conn.run_threaded();
-    #[cfg(target_arch = "wasm32")]
-    conn.run_background_task();
-    conn
+    build_and_run(with_builder(builder)).await
 }
 
 async fn connect_then(

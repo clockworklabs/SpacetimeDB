@@ -51,12 +51,7 @@ async fn connect_with_then(
             connected_result(Ok(()));
         })
         .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
-    let conn = build_connection(with_builder(builder)).await;
-    #[cfg(not(target_arch = "wasm32"))]
-    conn.run_threaded();
-    #[cfg(target_arch = "wasm32")]
-    conn.run_background_task();
-    conn
+    build_and_run(with_builder(builder)).await
 }
 
 async fn connect_then(
@@ -363,7 +358,8 @@ async fn exec_subscription_update(db_name: &str) {
     let mut insert_0 = Some(test_counter.add_test("insert_0"));
     let mut delete_0 = Some(test_counter.add_test("delete_0"));
 
-    connect_with_then(db_name, 
+    connect_with_then(
+        db_name,
         &test_counter,
         "0",
         |builder| builder,
@@ -391,7 +387,8 @@ async fn exec_subscription_update(db_name: &str) {
     let mut insert_1 = Some(test_counter.add_test("insert_1"));
     let mut delete_1 = Some(test_counter.add_test("delete_1"));
 
-    connect_with_then(db_name, 
+    connect_with_then(
+        db_name,
         &test_counter,
         "1",
         |builder| builder,
