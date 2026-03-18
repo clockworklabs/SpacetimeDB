@@ -1932,12 +1932,28 @@ async fn exec_subscribe_all_select_star(db_name: &str) {
 async fn exec_sorted_uuids_insert(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("sorted-uuids-insert");
+    let rows_drained = Arc::new(AtomicUsize::new(0));
+    let rows_drained_result = Arc::new(Mutex::new(Some(
+        test_counter.add_test("sorted-uuids-insert-rows-drained"),
+    )));
 
     let connection = connect(db_name, &test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
+        let rows_drained = rows_drained.clone();
+        let rows_drained_result = rows_drained_result.clone();
         move |ctx| {
+            // The reducer callback can arrive before the client has finished draining the 1000
+            // row subscription burst. Waiting for the final insert keeps teardown from racing the
+            // websocket stream, which is what shows up as CI-only aborted socket failures.
+            ctx.db.pk_uuid().on_insert(move |_, _| {
+                if rows_drained.fetch_add(1, Ordering::SeqCst) + 1 == 1000
+                    && let Some(done) = rows_drained_result.lock().unwrap().take()
+                {
+                    done(Ok(()));
+                }
+            });
             ctx.reducers
                 .sorted_uuids_insert_then(move |ctx, status| {
                     // FIXME(pgoldman 2026-02-19): What's the deal with this test?
