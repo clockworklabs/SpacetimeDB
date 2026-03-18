@@ -169,6 +169,9 @@ pub trait FnInfo: ExplicitNames {
     /// The function to invoke.
     const INVOKE: Self::Invoke;
 
+    /// Explicit primary key column names for procedural views.
+    const VIEW_PRIMARY_KEY_COLUMNS: &'static [&'static str] = &[];
+
     /// The return type of this function.
     /// Currently only implemented for views.
     fn return_type(_ts: &mut impl TypespaceBuilder) -> Option<AlgebraicType> {
@@ -823,9 +826,21 @@ where
     register_describer(|module| {
         let params = A::schema::<I>(&mut module.inner);
         let return_type = I::return_type(&mut module.inner).unwrap();
-        module
-            .inner
-            .add_view(I::NAME, module.views.len(), true, false, params, return_type);
+        if I::VIEW_PRIMARY_KEY_COLUMNS.is_empty() {
+            module
+                .inner
+                .add_view(I::NAME, module.views.len(), true, false, params, return_type);
+        } else {
+            module.inner.add_view_with_primary_key_columns(
+                I::NAME,
+                module.views.len(),
+                true,
+                false,
+                params,
+                return_type,
+                I::VIEW_PRIMARY_KEY_COLUMNS,
+            );
+        }
         module.views.push(I::INVOKE);
 
         module.inner.add_explicit_names(I::explicit_names());
@@ -842,9 +857,21 @@ where
     register_describer(|module| {
         let params = A::schema::<I>(&mut module.inner);
         let return_type = I::return_type(&mut module.inner).unwrap();
-        module
-            .inner
-            .add_view(I::NAME, module.views_anon.len(), true, true, params, return_type);
+        if I::VIEW_PRIMARY_KEY_COLUMNS.is_empty() {
+            module
+                .inner
+                .add_view(I::NAME, module.views_anon.len(), true, true, params, return_type);
+        } else {
+            module.inner.add_view_with_primary_key_columns(
+                I::NAME,
+                module.views_anon.len(),
+                true,
+                true,
+                params,
+                return_type,
+                I::VIEW_PRIMARY_KEY_COLUMNS,
+            );
+        }
         module.views_anon.push(I::INVOKE);
 
         module.inner.add_explicit_names(I::explicit_names());

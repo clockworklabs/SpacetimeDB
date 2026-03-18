@@ -1258,7 +1258,10 @@ impl Host {
                 old_module.module_def.raw_module_def_version(),
                 module_def.raw_module_def_version()
             ),
-            (RawModuleDefVersion::V9OrEarlier, RawModuleDefVersion::V10)
+            (
+                RawModuleDefVersion::V9OrEarlier,
+                RawModuleDefVersion::V10 | RawModuleDefVersion::V11
+            )
         );
 
         let res = match ponder_migrate(&old_module.module_def, &module_def) {

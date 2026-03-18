@@ -2,8 +2,10 @@ use heck::ToSnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use syn::ext::IdentExt;
+use syn::meta::ParseNestedMeta;
 use syn::parse::Parser;
-use syn::{FnArg, ItemFn, LitStr};
+use syn::punctuated::Punctuated;
+use syn::{FnArg, ItemFn, LitStr, Token};
 
 use crate::reducer::generate_explicit_names_impl;
 use crate::sym;
@@ -14,14 +16,37 @@ pub(crate) struct ViewArgs {
     accessor: Ident,
     #[allow(unused)]
     public: bool,
+    primary_key_columns: Vec<Ident>,
 }
 
 impl ViewArgs {
+    fn parse_columns(meta: &ParseNestedMeta) -> syn::Result<Option<Vec<Ident>>> {
+        let mut columns = None;
+        meta.parse_nested_meta(|meta| {
+            match_meta!(match meta {
+                sym::columns => {
+                    check_duplicate_msg(&columns, &meta, "`columns` already specified")?;
+                    let value = meta.value()?;
+                    let inner;
+                    syn::bracketed!(inner in value);
+                    columns = Some(
+                        Punctuated::<Ident, Token![,]>::parse_terminated(&inner)?
+                            .into_iter()
+                            .collect::<Vec<_>>(),
+                    );
+                }
+            });
+            Ok(())
+        })?;
+        Ok(columns)
+    }
+
     /// Parse `#[view(accessor = ..., public)]` where both `name` and `public` are required.
     pub(crate) fn parse(input: TokenStream, func_ident: &Ident) -> syn::Result<Self> {
         let mut name = None;
         let mut accessor = None;
         let mut public = None;
+        let mut primary_key_columns = None;
         syn::meta::parser(|meta| {
             match_meta!(match meta {
                 sym::name => {
@@ -35,6 +60,12 @@ impl ViewArgs {
                 sym::accessor => {
                     check_duplicate_msg(&accessor, &meta, "`accessor` already specified")?;
                     accessor = Some(meta.value()?.parse()?);
+                }
+                sym::primary_key => {
+                    check_duplicate_msg(&primary_key_columns, &meta, "`primary_key` already specified")?;
+                    primary_key_columns = Some(Self::parse_columns(&meta)?.ok_or_else(|| {
+                        meta.error("must specify primary key columns, e.g. `primary_key(columns = [id])`")
+                    })?);
                 }
             });
             Ok(())
@@ -53,6 +84,7 @@ impl ViewArgs {
             name,
             public: true,
             accessor,
+            primary_key_columns: primary_key_columns.unwrap_or_default(),
         })
     }
 }
@@ -165,14 +197,25 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
         }
     };
 
-    let explicit_name = args.name.as_ref();
-    let generate_explicit_names = generate_explicit_names_impl(&view_name, func_name, explicit_name);
-
     let original_attrs = &original_function.attrs;
     let original_body = &original_function.block;
 
     // Detect `impl Query<T>` return type and extract `T`.
     let impl_query_inner = extract_impl_query_inner(ret_ty);
+    if impl_query_inner.is_some() && !args.primary_key_columns.is_empty() {
+        return Err(syn::Error::new_spanned(
+            &original_function.sig.output,
+            "query-builder views infer primary keys and cannot declare `primary_key(columns = [...])`",
+        ));
+    }
+
+    let explicit_name = args.name.as_ref();
+    let generate_explicit_names = generate_explicit_names_impl(&view_name, func_name, explicit_name);
+    let view_primary_key_columns = args
+        .primary_key_columns
+        .iter()
+        .map(|col| LitStr::new(&col.to_string(), col.span()))
+        .collect::<Vec<_>>();
 
     // When the return type is `impl Query<T>`:
     //   - Rewrite the function to return `RawQuery<T>`
@@ -265,6 +308,9 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
 
             /// The pointer for invoking this function
             const INVOKE: Self::Invoke = #func_name::invoke;
+
+            /// Explicit primary key columns for this view.
+            const VIEW_PRIMARY_KEY_COLUMNS: &'static [&'static str] = &[#(#view_primary_key_columns),*];
 
             /// The return type of this function
             fn return_type(

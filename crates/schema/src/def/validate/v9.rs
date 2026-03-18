@@ -12,7 +12,7 @@ use spacetimedb_lib::db::raw_def::v10::{reducer_default_err_return_type, reducer
 use spacetimedb_lib::db::raw_def::v9::RawViewDefV9;
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::ProductType;
-use spacetimedb_primitives::col_list;
+use spacetimedb_primitives::{col_list, ColList};
 use spacetimedb_sats::{bsatn::de::Deserializer, de::DeserializeSeed, WithTypespace};
 
 /// Validate a `RawModuleDefV9` and convert it into a `ModuleDef`,
@@ -525,6 +525,9 @@ impl ModuleValidatorV9<'_> {
             return_type_for_generate,
             product_type_ref,
             primary_key: None,
+            declared_primary_key: ColList::empty(),
+            indexes: Default::default(),
+            constraints: Default::default(),
             return_columns,
             param_columns,
             accessor_name: name,

@@ -534,3 +534,37 @@ macro_rules! view_pk_tests {
 
 view_pk_tests!(rust_view_pk, "");
 view_pk_tests!(csharp_view_pk, "-cs");
+
+mod rust_procedural_view_pk {
+    use spacetimedb_testing::sdk::Test;
+
+    const MODULE: &str = "sdk-test-view-pk";
+    const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/view-pk-client");
+
+    fn make_test(subcommand: &str) -> Test {
+        Test::builder()
+            .with_name(subcommand)
+            .with_module(MODULE)
+            .with_client(CLIENT)
+            .with_language("rust")
+            .with_bindings_dir("src/module_bindings")
+            .with_compile_command("cargo build")
+            .with_run_command(format!("cargo run -- {}", subcommand))
+            .build()
+    }
+
+    #[test]
+    fn procedural_view_with_declared_pk_on_update_callback() {
+        make_test("procedural-view-pk-on-update").run()
+    }
+
+    #[test]
+    fn procedural_join_table_with_view_pk() {
+        make_test("procedural-view-pk-join-query-builder").run()
+    }
+
+    #[test]
+    fn procedural_semijoin_two_sender_views_with_pk() {
+        make_test("procedural-view-pk-semijoin-two-sender-views-query-builder").run()
+    }
+}
