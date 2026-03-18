@@ -387,7 +387,7 @@ class ChatRepository(
     }
 
     companion object {
-        const val HOST = "ws://localhost:3000"
+        val HOST = "ws://$defaultHost:3000"
         const val DB_NAME = "compose-kt"
 
         private fun userNameOrIdentity(user: User): String =
