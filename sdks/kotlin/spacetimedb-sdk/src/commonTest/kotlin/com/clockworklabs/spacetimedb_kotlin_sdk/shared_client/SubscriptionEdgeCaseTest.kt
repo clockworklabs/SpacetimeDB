@@ -444,4 +444,50 @@ class SubscriptionEdgeCaseTest {
 
         conn.disconnect()
     }
+
+    // =========================================================================
+    // doUnsubscribe callback-vs-CAS race
+    // =========================================================================
+
+    @Test
+    fun unsubscribeOnEndedSubscriptionDoesNotLeakCallback() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val handle = conn.subscribe(listOf("SELECT * FROM t"))
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 1u,
+                querySetId = handle.querySetId,
+                rows = emptyQueryRows(),
+            )
+        )
+        advanceUntilIdle()
+        assertEquals(SubscriptionState.ACTIVE, handle.state)
+
+        // Server ends the subscription (e.g. SubscriptionError with null requestId triggers disconnect)
+        transport.sendToClient(
+            ServerMessage.UnsubscribeApplied(
+                requestId = 2u,
+                querySetId = handle.querySetId,
+                rows = null,
+            )
+        )
+        advanceUntilIdle()
+        assertEquals(SubscriptionState.ENDED, handle.state)
+
+        // User tries to unsubscribe with a callback on the already-ended subscription.
+        // The callback must NOT fire — the CAS should fail and throw.
+        var callbackFired = false
+        assertFailsWith<IllegalStateException> {
+            handle.unsubscribeThen {
+                callbackFired = true
+            }
+        }
+        advanceUntilIdle()
+        kotlin.test.assertFalse(callbackFired, "onEnd callback must not fire when CAS fails")
+        conn.disconnect()
+    }
 }

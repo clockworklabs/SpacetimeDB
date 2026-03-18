@@ -59,13 +59,12 @@ public class SubscriptionHandle internal constructor(
         flags: UnsubscribeFlags,
         onEnd: ((EventContext.UnsubscribeApplied) -> Unit)? = null,
     ) {
-        // Set callback BEFORE the CAS so handleEnd() can't race between
-        // the state transition and the callback assignment.
-        if (onEnd != null) _onEndCallback.value = onEnd
         if (!_state.compareAndSet(SubscriptionState.ACTIVE, SubscriptionState.UNSUBSCRIBING)) {
-            _onEndCallback.value = null
             error("Cannot unsubscribe: subscription is ${_state.value}")
         }
+        // Set callback AFTER the CAS succeeds. This is safe because handleEnd()
+        // only fires after the server receives our Unsubscribe message (sent below).
+        if (onEnd != null) _onEndCallback.value = onEnd
         connection.unsubscribe(this, flags)
     }
 
