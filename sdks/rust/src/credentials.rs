@@ -202,10 +202,10 @@ mod web_mod {
                 let all = doc.cookie().map_err(CookieError::Get)?;
                 for cookie in all.split(';') {
                     let cookie = cookie.trim();
-                    if let Some((k, v)) = cookie.split_once('=') {
-                        if k == name {
-                            return Ok(Some(v.to_string()));
-                        }
+                    if let Some((k, v)) = cookie.split_once('=')
+                        && k == name
+                    {
+                        return Ok(Some(v.to_string()));
                     }
                 }
 
