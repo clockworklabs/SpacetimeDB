@@ -443,6 +443,11 @@ public class ClientCache {
 
     @Suppress("UNCHECKED_CAST")
     public fun <Row> getOrCreateTable(tableName: String, factory: () -> TableCache<Row, *>): TableCache<Row, *> {
+        // Fast path: already registered
+        _tables.value[tableName]?.let { return it as TableCache<Row, *> }
+
+        // Create once outside the CAS loop so factory() is never called on retry
+        val created = factory()
         var result: TableCache<Row, *>? = null
         _tables.update { map ->
             val existing = map[tableName]
@@ -450,7 +455,6 @@ public class ClientCache {
                 result = existing as TableCache<Row, *>
                 map
             } else {
-                val created = factory()
                 result = created
                 map.put(tableName, created)
             }

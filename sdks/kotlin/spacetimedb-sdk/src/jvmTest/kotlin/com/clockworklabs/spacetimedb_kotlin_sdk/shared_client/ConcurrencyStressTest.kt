@@ -347,9 +347,9 @@ class ConcurrencyStressTest {
         for (table in results) {
             assertTrue(first === table, "Different table instance returned by getOrCreateTable")
         }
-        // Factory should only be called once (though CAS retries may call it more,
-        // only one result wins). At least one call must have happened.
-        assertTrue(creationCount.get() >= 1, "Factory never called")
+        // Factory is called once per thread that passes the fast path (at most THREAD_COUNT).
+        // CAS retries never re-invoke factory — it's hoisted outside the loop.
+        assertTrue(creationCount.get() in 1..THREAD_COUNT, "Unexpected factory call count: ${creationCount.get()}")
     }
 
     // ---- NetworkRequestTracker: concurrent start/finish ----
