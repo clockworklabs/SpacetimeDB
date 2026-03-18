@@ -119,7 +119,7 @@ class ConnectionStateTransitionTest {
     // =========================================================================
 
     @Test
-    fun callReducerAfterDisconnectThrows() = runTest {
+    fun callReducerAfterDisconnectDoesNotCrash() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -128,13 +128,12 @@ class ConnectionStateTransitionTest {
         conn.disconnect()
         advanceUntilIdle()
 
-        assertFailsWith<IllegalStateException> {
-            conn.callReducer("add", byteArrayOf(), "args")
-        }
+        // Graceful no-op — logs warning, does not throw
+        conn.callReducer("add", byteArrayOf(), "args")
     }
 
     @Test
-    fun callProcedureAfterDisconnectThrows() = runTest {
+    fun callProcedureAfterDisconnectDoesNotCrash() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -143,13 +142,12 @@ class ConnectionStateTransitionTest {
         conn.disconnect()
         advanceUntilIdle()
 
-        assertFailsWith<IllegalStateException> {
-            conn.callProcedure("proc", byteArrayOf())
-        }
+        // Graceful no-op — logs warning, does not throw
+        conn.callProcedure("proc", byteArrayOf())
     }
 
     @Test
-    fun oneOffQueryAfterDisconnectThrows() = runTest {
+    fun oneOffQueryAfterDisconnectDoesNotCrash() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -158,9 +156,8 @@ class ConnectionStateTransitionTest {
         conn.disconnect()
         advanceUntilIdle()
 
-        assertFailsWith<IllegalStateException> {
-            conn.oneOffQuery("SELECT 1") {}
-        }
+        // Graceful no-op — logs warning, does not throw
+        conn.oneOffQuery("SELECT 1") {}
     }
 
     // =========================================================================

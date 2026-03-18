@@ -273,7 +273,7 @@ class ConnectionLifecycleTest {
     // --- sendMessage after close ---
 
     @Test
-    fun subscribeAfterCloseThrows() = runTest {
+    fun subscribeAfterCloseDoesNotCrash() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -282,11 +282,9 @@ class ConnectionLifecycleTest {
         conn.disconnect()
         advanceUntilIdle()
 
-        // Calling subscribe on a closed connection should throw
-        // so the caller knows the message was not sent
-        assertFailsWith<IllegalStateException> {
-            conn.subscribe(listOf("SELECT * FROM player"))
-        }
+        // Calling subscribe on a closed connection is a graceful no-op
+        // (logs warning, does not throw — matching C# SDK behavior)
+        conn.subscribe(listOf("SELECT * FROM player"))
     }
 
     // --- Disconnect race conditions ---
