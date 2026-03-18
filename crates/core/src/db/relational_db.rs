@@ -2299,9 +2299,7 @@ mod tests {
 
     use super::tests_utils::begin_mut_tx;
     use super::*;
-    use crate::db::relational_db::tests_utils::{
-        begin_tx, create_view_for_test, insert, make_snapshot, with_auto_commit, with_read_only, TestDB,
-    };
+    use crate::db::relational_db::tests_utils::{begin_tx, create_view_for_test, insert, make_snapshot, TestDB};
     use anyhow::bail;
     use bytes::Bytes;
     use commitlog::payload::txdata;
