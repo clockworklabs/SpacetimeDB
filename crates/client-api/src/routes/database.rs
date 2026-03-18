@@ -1107,7 +1107,12 @@ pub async fn set_names<S: ControlStateDelegate + Authorization>(
         })?;
 
     for name in &validated_names {
-        if ctx.lookup_database_identity(name.as_str()).await.map_err(log_and_500)?.is_some() {
+        if ctx
+            .lookup_database_identity(name.as_str())
+            .await
+            .map_err(log_and_500)?
+            .is_some()
+        {
             return Ok((
                 StatusCode::BAD_REQUEST,
                 axum::Json(name::SetDomainsResult::OtherError(format!(
