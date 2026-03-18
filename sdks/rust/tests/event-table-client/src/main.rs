@@ -1,9 +1,18 @@
 mod module_bindings;
 mod test_handlers;
 
+/// Register a panic hook which will exit the process whenever any thread panics.
+fn exit_on_panic() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        default_hook(panic_info);
+        std::process::exit(1);
+    }));
+}
+
 fn main() {
     env_logger::init();
-    test_handlers::exit_on_panic();
+    exit_on_panic();
 
     let test = std::env::args()
         .nth(1)

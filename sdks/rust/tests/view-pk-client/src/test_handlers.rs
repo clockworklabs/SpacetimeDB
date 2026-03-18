@@ -8,15 +8,6 @@ const LOCALHOST: &str = "http://localhost:3000";
 type ResultRecorder = Box<dyn Send + FnOnce(Result<(), anyhow::Error>)>;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn exit_on_panic() {
-    let default_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |panic_info| {
-        default_hook(panic_info);
-        std::process::exit(1);
-    }));
-}
-
-#[cfg(not(target_arch = "wasm32"))]
 async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
     builder.build().unwrap()
 }

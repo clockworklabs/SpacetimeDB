@@ -7,23 +7,6 @@ use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";
 
-/// Register a panic hook which will exit the process whenever any thread panics.
-///
-/// This allows us to fail tests by panicking in callbacks.
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn exit_on_panic() {
-    // The default panic hook is responsible for printing the panic message and backtrace to stderr.
-    // Grab a handle on it, and invoke it in our custom hook before exiting.
-    let default_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |panic_info| {
-        // Print panic information
-        default_hook(panic_info);
-
-        // Exit the process with a non-zero code to denote failure.
-        std::process::exit(1);
-    }));
-}
-
 pub(crate) async fn dispatch(test: &str, db_name: &str) {
     match test {
         "procedure-return-values" => exec_procedure_return_values(db_name).await,

@@ -6,9 +6,23 @@ mod simple_test_table;
 mod test_handlers;
 mod unique_test_table;
 
+/// Register a panic hook which will exit the process whenever any thread panics.
+fn exit_on_panic() {
+    // The default panic hook is responsible for printing the panic message and backtrace to stderr.
+    // Grab a handle on it, and invoke it in our custom hook before exiting.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        // Print panic information
+        default_hook(panic_info);
+
+        // Exit the process with a non-zero code to denote failure.
+        std::process::exit(1);
+    }));
+}
+
 fn main() {
     env_logger::init();
-    test_handlers::exit_on_panic();
+    exit_on_panic();
 
     let test = std::env::args()
         .nth(1)
