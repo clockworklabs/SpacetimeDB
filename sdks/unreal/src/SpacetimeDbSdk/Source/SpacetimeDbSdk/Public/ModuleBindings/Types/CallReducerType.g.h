@@ -11,21 +11,21 @@ struct SPACETIMEDBSDK_API FCallReducerType
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    FString Reducer;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    TArray<uint8> Args;
-
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
     uint32 RequestId = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     uint8 Flags = 0;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
+    FString Reducer;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
+    TArray<uint8> Args;
+
     FORCEINLINE bool operator==(const FCallReducerType& Other) const
     {
-        return Reducer == Other.Reducer && Args == Other.Args && RequestId == Other.RequestId && Flags == Other.Flags;
+        return RequestId == Other.RequestId && Flags == Other.Flags && Reducer == Other.Reducer && Args == Other.Args;
     }
 
     FORCEINLINE bool operator!=(const FCallReducerType& Other) const
@@ -42,10 +42,10 @@ struct SPACETIMEDBSDK_API FCallReducerType
  */
 FORCEINLINE uint32 GetTypeHash(const FCallReducerType& CallReducerType)
 {
-    uint32 Hash = GetTypeHash(CallReducerType.Reducer);
-    Hash = HashCombine(Hash, GetTypeHash(CallReducerType.Args));
-    Hash = HashCombine(Hash, GetTypeHash(CallReducerType.RequestId));
+    uint32 Hash = GetTypeHash(CallReducerType.RequestId);
     Hash = HashCombine(Hash, GetTypeHash(CallReducerType.Flags));
+    Hash = HashCombine(Hash, GetTypeHash(CallReducerType.Reducer));
+    Hash = HashCombine(Hash, GetTypeHash(CallReducerType.Args));
     return Hash;
 }
 
@@ -53,5 +53,5 @@ namespace UE::SpacetimeDB
 {
     UE_SPACETIMEDB_ENABLE_TARRAY(FCallReducerType);
 
-    UE_SPACETIMEDB_STRUCT(FCallReducerType, Reducer, Args, RequestId, Flags);
+    UE_SPACETIMEDB_STRUCT(FCallReducerType, RequestId, Flags, Reducer, Args);
 }

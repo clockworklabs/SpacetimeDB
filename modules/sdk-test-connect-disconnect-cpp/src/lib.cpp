@@ -22,11 +22,11 @@ SPACETIMEDB_TABLE(Disconnected, disconnected, Public)
 // Reducers: client lifecycle callbacks
 
 SPACETIMEDB_CLIENT_CONNECTED(identity_connected, ReducerContext ctx) {
-	ctx.db[connected].insert(Connected{ ctx.sender });
+	ctx.db[connected].insert(Connected{ ctx.sender() });
 	return Ok();
 }
 
 SPACETIMEDB_CLIENT_DISCONNECTED(identity_disconnected, ReducerContext ctx) {
-	ctx.db[disconnected].insert(Disconnected{ ctx.sender });
+	ctx.db[disconnected].insert(Disconnected{ ctx.sender() });
 	return Ok();
 }
