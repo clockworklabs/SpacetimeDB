@@ -500,4 +500,39 @@ class ReducerIntegrationTest {
         assertEquals("server crash", (results["internal_err"] as Status.Failed).message)
         conn.disconnect()
     }
+
+    // --- typedArgs round-trip through ReducerCallInfo ---
+
+    @Test
+    fun callReducerTypedArgsRoundTripThroughCallInfo() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        data class MyArgs(val x: Int, val y: String)
+        val original = MyArgs(42, "hello")
+        var receivedArgs: MyArgs? = null
+        val requestId = conn.callReducer(
+            reducerName = "typed_op",
+            encodedArgs = byteArrayOf(),
+            typedArgs = original,
+            callback = { ctx -> receivedArgs = ctx.args },
+        )
+        advanceUntilIdle()
+
+        transport.sendToClient(
+            ServerMessage.ReducerResultMsg(
+                requestId = requestId,
+                timestamp = Timestamp.UNIX_EPOCH,
+                result = ReducerOutcome.OkEmpty,
+            )
+        )
+        advanceUntilIdle()
+
+        // The typed args must survive the round-trip through ReducerCallInfo(Any)
+        // back to EventContext.Reducer<MyArgs>.args without corruption.
+        assertEquals(original, receivedArgs)
+        conn.disconnect()
+    }
 }

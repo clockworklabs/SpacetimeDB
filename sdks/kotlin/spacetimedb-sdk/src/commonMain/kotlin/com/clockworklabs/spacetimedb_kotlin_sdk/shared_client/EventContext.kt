@@ -103,7 +103,7 @@ public sealed interface EventContext {
         override val connection: DbConnection,
     ) : EventContext
 
-    public class Reducer<A>(
+    public class Reducer<A : Any>(
         override val id: String,
         override val connection: DbConnection,
         public val timestamp: Timestamp,

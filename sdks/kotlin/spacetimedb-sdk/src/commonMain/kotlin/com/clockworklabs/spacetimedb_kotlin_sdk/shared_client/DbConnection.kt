@@ -430,7 +430,7 @@ public open class DbConnection internal constructor(
      * The encodedArgs should be BSATN-encoded reducer arguments.
      * The typedArgs is the typed args object stored for the event context.
      */
-    public fun <A> callReducer(
+    public fun <A : Any> callReducer(
         reducerName: String,
         encodedArgs: ByteArray,
         typedArgs: A,
