@@ -1,20 +1,9 @@
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-use std::sync::OnceLock;
-
 use crate::module_bindings::*;
 use spacetimedb_sdk::TableWithPrimaryKey;
 use spacetimedb_sdk::{error::InternalError, DbConnectionBuilder, DbContext};
 use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";
-
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-static WEB_DB_NAME: OnceLock<String> = OnceLock::new();
-
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-pub(crate) fn set_web_db_name(db_name: String) {
-    WEB_DB_NAME.set(db_name).expect("WASM DB name was already initialized");
-}
 
 type ResultRecorder = Box<dyn Send + FnOnce(Result<(), anyhow::Error>)>;
 
@@ -25,21 +14,6 @@ pub(crate) fn exit_on_panic() {
         default_hook(panic_info);
         std::process::exit(1);
     }));
-}
-
-fn db_name_or_panic() -> String {
-    #[cfg(all(target_arch = "wasm32", feature = "web"))]
-    {
-        WEB_DB_NAME
-            .get()
-            .cloned()
-            .expect("Failed to read db name from wasm runner")
-    }
-
-    #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
-    {
-        std::env::var("SPACETIME_SDK_TEST_DB_NAME").expect("Failed to read db name from env")
-    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -69,11 +43,12 @@ fn reducer_callback_assert_committed(
 }
 
 async fn connect_then(
+    db_name: &str,
     test_counter: &std::sync::Arc<TestCounter>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
 ) -> DbConnection {
     let connected_result = test_counter.add_test("on_connect");
-    let name = db_name_or_panic();
+    let name = db_name.to_owned();
     let conn = DbConnection::builder()
         .with_database_name(name)
         .with_uri(LOCALHOST)
@@ -113,11 +88,11 @@ fn subscribe_these_then(
 /// - `on_update` is called for PK=1
 /// - `old_row` should be the "before" value
 /// - `new_row` should be the "after" value
-async fn exec_view_pk_on_update() {
+async fn exec_view_pk_on_update(db_name: &str) {
     let test_counter = TestCounter::new();
     let mut on_update = Some(test_counter.add_test("on_update"));
 
-    connect_then(&test_counter, move |ctx| {
+    connect_then(db_name, &test_counter, move |ctx| {
         subscribe_these_then(ctx, &["SELECT * FROM all_view_pk_players"], move |ctx| {
             ctx.db.all_view_pk_players().on_update(move |_, old_row, new_row| {
                 assert_eq!(old_row.id, 1);
@@ -171,11 +146,11 @@ async fn exec_view_pk_on_update() {
 /// - `on_update` is called for player PK=1
 /// - `old_row` should be the "before" value
 /// - `new_row` should be the "after" value
-async fn exec_view_pk_join_query_builder() {
+async fn exec_view_pk_join_query_builder(db_name: &str) {
     let test_counter = TestCounter::new();
     let mut joined_update = Some(test_counter.add_test("join_update"));
 
-    connect_then(&test_counter, move |ctx| {
+    connect_then(db_name, &test_counter, move |ctx| {
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
             .on_applied(move |ctx| {
@@ -250,11 +225,11 @@ async fn exec_view_pk_join_query_builder() {
 /// - `on_update` is called for player PK=1
 /// - `old_row` should be the "before" value
 /// - `new_row` should be the "after" value
-async fn exec_view_pk_semijoin_two_sender_views_query_builder() {
+async fn exec_view_pk_semijoin_two_sender_views_query_builder(db_name: &str) {
     let test_counter = TestCounter::new();
     let mut joined_update = Some(test_counter.add_test("join_update"));
 
-    connect_then(&test_counter, move |ctx| {
+    connect_then(db_name, &test_counter, move |ctx| {
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
             .on_applied(move |ctx| {
@@ -317,12 +292,12 @@ async fn exec_view_pk_semijoin_two_sender_views_query_builder() {
     test_counter.wait_for_all().await;
 }
 
-pub(crate) async fn dispatch(test: &str) {
+pub(crate) async fn dispatch(test: &str, db_name: &str) {
     match test {
-        "view-pk-on-update" => exec_view_pk_on_update().await,
-        "view-pk-join-query-builder" => exec_view_pk_join_query_builder().await,
+        "view-pk-on-update" => exec_view_pk_on_update(db_name).await,
+        "view-pk-join-query-builder" => exec_view_pk_join_query_builder(db_name).await,
         "view-pk-semijoin-two-sender-views-query-builder" => {
-            exec_view_pk_semijoin_two_sender_views_query_builder().await
+            exec_view_pk_semijoin_two_sender_views_query_builder(db_name).await
         }
         _ => panic!("Unknown test: {test}"),
     }

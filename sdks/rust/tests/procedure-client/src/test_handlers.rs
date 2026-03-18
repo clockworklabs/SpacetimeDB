@@ -1,7 +1,4 @@
 use core::time::Duration;
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-use std::sync::OnceLock;
-
 use crate::module_bindings::*;
 use anyhow::Context;
 use spacetimedb_lib::db::raw_def::v9::{RawMiscModuleExportV9, RawModuleDefV9};
@@ -9,14 +6,6 @@ use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Table};
 use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";
-
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-static WEB_DB_NAME: OnceLock<String> = OnceLock::new();
-
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-pub(crate) fn set_web_db_name(db_name: String) {
-    WEB_DB_NAME.set(db_name).expect("WASM DB name was already initialized");
-}
 
 /// Register a panic hook which will exit the process whenever any thread panics.
 ///
@@ -35,31 +24,16 @@ pub(crate) fn exit_on_panic() {
     }));
 }
 
-fn db_name_or_panic() -> String {
-    #[cfg(all(target_arch = "wasm32", feature = "web"))]
-    {
-        WEB_DB_NAME
-            .get()
-            .cloned()
-            .expect("Failed to read db name from wasm runner")
-    }
-
-    #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
-    {
-        std::env::var("SPACETIME_SDK_TEST_DB_NAME").expect("Failed to read db name from env")
-    }
-}
-
-pub(crate) async fn dispatch(test: &str) {
+pub(crate) async fn dispatch(test: &str, db_name: &str) {
     match test {
-        "procedure-return-values" => exec_procedure_return_values().await,
-        "procedure-observe-panic" => exec_procedure_panic().await,
-        "procedure-http-ok" => exec_procedure_http_ok().await,
-        "procedure-http-err" => exec_procedure_http_err().await,
-        "insert-with-tx-commit" => exec_insert_with_tx_commit().await,
-        "insert-with-tx-rollback" => exec_insert_with_tx_rollback().await,
-        "schedule-procedure" => exec_schedule_procedure().await,
-        "sorted-uuids-insert" => exec_sorted_uuids_insert().await,
+        "procedure-return-values" => exec_procedure_return_values(db_name).await,
+        "procedure-observe-panic" => exec_procedure_panic(db_name).await,
+        "procedure-http-ok" => exec_procedure_http_ok(db_name).await,
+        "procedure-http-err" => exec_procedure_http_err(db_name).await,
+        "insert-with-tx-commit" => exec_insert_with_tx_commit(db_name).await,
+        "insert-with-tx-rollback" => exec_insert_with_tx_rollback(db_name).await,
+        "schedule-procedure" => exec_schedule_procedure(db_name).await,
+        "sorted-uuids-insert" => exec_sorted_uuids_insert(db_name).await,
         _ => panic!("Unknown test: {test}"),
     }
 }
@@ -98,13 +72,14 @@ fn assert_all_tables_empty(ctx: &impl RemoteDbContext) -> anyhow::Result<()> {
 }
 
 async fn connect_with_then(
+    db_name: &str,
     test_counter: &std::sync::Arc<TestCounter>,
     on_connect_suffix: &str,
     with_builder: impl FnOnce(DbConnectionBuilder<RemoteModule>) -> DbConnectionBuilder<RemoteModule>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
 ) -> DbConnection {
     let connected_result = test_counter.add_test(format!("on_connect_{on_connect_suffix}"));
-    let name = db_name_or_panic();
+    let name = db_name.to_owned();
     let builder = DbConnection::builder()
         .with_database_name(name)
         .with_uri(LOCALHOST)
@@ -122,10 +97,11 @@ async fn connect_with_then(
 }
 
 async fn connect_then(
+    db_name: &str,
     test_counter: &std::sync::Arc<TestCounter>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
 ) -> DbConnection {
-    connect_with_then(test_counter, "", |x| x, callback).await
+    connect_with_then(db_name, test_counter, "", |x| x, callback).await
 }
 
 /// A query that subscribes to all rows from all tables.
@@ -150,10 +126,10 @@ fn subscribe_these_then(
         .subscribe(queries);
 }
 
-async fn exec_procedure_return_values() {
+async fn exec_procedure_return_values(db_name: &str) {
     let test_counter = TestCounter::new();
 
-    connect_then(&test_counter, {
+    connect_then(db_name, &test_counter, {
         let test_counter = test_counter.clone();
         move |ctx| {
             let return_primitive_result = test_counter.add_test("return_primitive");
@@ -202,10 +178,10 @@ async fn exec_procedure_return_values() {
     test_counter.wait_for_all().await;
 }
 
-async fn exec_procedure_panic() {
+async fn exec_procedure_panic(db_name: &str) {
     let test_counter = TestCounter::new();
 
-    connect_then(&test_counter, {
+    connect_then(db_name, &test_counter, {
         let test_counter = test_counter.clone();
         move |ctx| {
             let will_panic_result = test_counter.add_test("will_panic");
@@ -224,7 +200,7 @@ async fn exec_procedure_panic() {
     test_counter.wait_for_all().await;
 }
 
-async fn exec_insert_with_tx_commit() {
+async fn exec_insert_with_tx_commit(db_name: &str) {
     fn expected() -> ReturnStruct {
         ReturnStruct {
             a: 42,
@@ -237,7 +213,7 @@ async fn exec_insert_with_tx_commit() {
     let inspect_result = test_counter.add_test("insert_with_tx_commit_values");
     let mut callback_result = Some(test_counter.add_test("insert_with_tx_commit_callback"));
 
-    connect_then(&test_counter, {
+    connect_then(db_name, &test_counter, {
         move |ctx| {
             ctx.db().my_table().on_insert(move |_, row| {
                 assert_eq!(row.field, expected());
@@ -261,12 +237,12 @@ async fn exec_insert_with_tx_commit() {
     test_counter.wait_for_all().await;
 }
 
-async fn exec_insert_with_tx_rollback() {
+async fn exec_insert_with_tx_rollback(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
     let inspect_result = test_counter.add_test("insert_with_tx_rollback_values");
 
-    connect_then(&test_counter, {
+    connect_then(db_name, &test_counter, {
         move |ctx| {
             ctx.db()
                 .my_table()
@@ -293,9 +269,9 @@ async fn exec_insert_with_tx_rollback() {
 /// Invoke the procedure `read_my_schema`,
 /// which does an HTTP request to the `/database/schema` route and returns a JSON-ified [`RawModuleDefV9`],
 /// then (in the client) deserialize the response and assert that it contains a description of that procedure.
-async fn exec_procedure_http_ok() {
+async fn exec_procedure_http_ok(db_name: &str) {
     let test_counter = TestCounter::new();
-    connect_then(&test_counter, {
+    connect_then(db_name, &test_counter, {
         let test_counter = test_counter.clone();
         move |ctx| {
             let result = test_counter.add_test("invoke_http");
@@ -330,9 +306,9 @@ async fn exec_procedure_http_ok() {
 /// Invoke the procedure `invalid_request`,
 /// which does an HTTP request to a reserved invalid URL and returns a string-ified error,
 /// then (in the client) assert that the error message looks sane.
-async fn exec_procedure_http_err() {
+async fn exec_procedure_http_err(db_name: &str) {
     let test_counter = TestCounter::new();
-    connect_then(&test_counter, {
+    connect_then(db_name, &test_counter, {
         let test_counter = test_counter.clone();
         move |ctx| {
             let result = test_counter.add_test("invoke_http");
@@ -356,13 +332,13 @@ async fn exec_procedure_http_err() {
     test_counter.wait_for_all().await;
 }
 
-async fn exec_schedule_procedure() {
+async fn exec_schedule_procedure(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
     let mut callback_result = Some(test_counter.add_test("insert_with_tx_commit_callback"));
 
-    connect_then(&test_counter, {
+    connect_then(db_name, &test_counter, {
         move |ctx| {
             ctx.db().proc_inserts_into().on_insert(move |_, row| {
                 assert_eq!(row.x, 42);
@@ -406,11 +382,11 @@ async fn exec_schedule_procedure() {
 /// Invoke the procedure `sorted_uuids_insert`,
 /// which generates 1000 sorted UUIDv7 values and inserts them into the `pk_uuid` table,
 /// then (in the client) verify that the UUIDs in the table are sorted
-async fn exec_sorted_uuids_insert() {
+async fn exec_sorted_uuids_insert(db_name: &str) {
     let test_counter = TestCounter::new();
     let sorted_uuids_insert_result = test_counter.add_test("sorted_uuids_insert");
 
-    connect_then(&test_counter, {
+    connect_then(db_name, &test_counter, {
         move |ctx| {
             ctx.procedures.sorted_uuids_insert_then(move |ctx, res| {
                 sorted_uuids_insert_result(

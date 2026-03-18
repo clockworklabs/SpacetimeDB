@@ -1,20 +1,9 @@
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-use std::sync::OnceLock;
-
 use crate::module_bindings::*;
 use spacetimedb_lib::Identity;
 use spacetimedb_sdk::{error::InternalError, DbConnectionBuilder, DbContext, Table};
 use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";
-
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-static WEB_DB_NAME: OnceLock<String> = OnceLock::new();
-
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-pub(crate) fn set_web_db_name(db_name: String) {
-    WEB_DB_NAME.set(db_name).expect("WASM DB name was already initialized");
-}
 
 /// Register a panic hook which will exit the process whenever any thread panics.
 ///
@@ -33,30 +22,15 @@ pub(crate) fn exit_on_panic() {
     }));
 }
 
-fn db_name_or_panic() -> String {
-    #[cfg(all(target_arch = "wasm32", feature = "web"))]
-    {
-        WEB_DB_NAME
-            .get()
-            .cloned()
-            .expect("Failed to read db name from wasm runner")
-    }
-
-    #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
-    {
-        std::env::var("SPACETIME_SDK_TEST_DB_NAME").expect("Failed to read db name from env")
-    }
-}
-
-pub(crate) async fn dispatch(test: &str) {
+pub(crate) async fn dispatch(test: &str, db_name: &str) {
     match test {
-        "view-anonymous-subscribe" => exec_anonymous_subscribe().await,
-        "view-anonymous-subscribe-with-query-builder" => exec_anonymous_subscribe_with_query_builder().await,
-        "view-non-anonymous-subscribe" => exec_non_anonymous_subscribe().await,
+        "view-anonymous-subscribe" => exec_anonymous_subscribe(db_name).await,
+        "view-anonymous-subscribe-with-query-builder" => exec_anonymous_subscribe_with_query_builder(db_name).await,
+        "view-non-anonymous-subscribe" => exec_non_anonymous_subscribe(db_name).await,
 
-        "view-non-table-return" => exec_non_table_return().await,
-        "view-non-table-query-builder-return" => exec_non_table_query_builder_return().await,
-        "view-subscription-update" => exec_subscription_update().await,
+        "view-non-table-return" => exec_non_table_return(db_name).await,
+        "view-non-table-query-builder-return" => exec_non_table_query_builder_return(db_name).await,
+        "view-subscription-update" => exec_subscription_update(db_name).await,
         _ => panic!("Unknown test: {test}"),
     }
 }
@@ -74,13 +48,14 @@ async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConne
 }
 
 async fn connect_with_then(
+    db_name: &str,
     test_counter: &std::sync::Arc<TestCounter>,
     on_connect_suffix: &str,
     with_builder: impl FnOnce(DbConnectionBuilder<RemoteModule>) -> DbConnectionBuilder<RemoteModule>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
 ) -> DbConnection {
     let connected_result = test_counter.add_test(format!("on_connect_{on_connect_suffix}"));
-    let name = db_name_or_panic();
+    let name = db_name.to_owned();
     let builder = DbConnection::builder()
         .with_database_name(name)
         .with_uri(LOCALHOST)
@@ -98,10 +73,11 @@ async fn connect_with_then(
 }
 
 async fn connect_then(
+    db_name: &str,
     test_counter: &std::sync::Arc<TestCounter>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
 ) -> DbConnection {
-    connect_with_then(test_counter, "", |x| x, callback).await
+    connect_with_then(db_name, test_counter, "", |x| x, callback).await
 }
 
 fn subscribe_these_then(
@@ -131,12 +107,12 @@ fn reducer_callback_assert_committed(
     }
 }
 
-async fn exec_anonymous_subscribe() {
+async fn exec_anonymous_subscribe(db_name: &str) {
     let test_counter = TestCounter::new();
     let mut insert_0 = Some(test_counter.add_test("insert_0"));
     let mut insert_1 = Some(test_counter.add_test("insert_1"));
     let mut delete_1 = Some(test_counter.add_test("delete_1"));
-    connect_then(&test_counter, move |ctx| {
+    connect_then(db_name, &test_counter, move |ctx| {
         subscribe_these_then(ctx, &["SELECT * FROM players_at_level_0"], move |ctx| {
             ctx.db.players_at_level_0().on_insert(move |_, player| {
                 if player.identity == Identity::from_byte_array([2; 32]) {
@@ -193,12 +169,12 @@ async fn exec_anonymous_subscribe() {
     test_counter.wait_for_all().await;
 }
 
-async fn exec_anonymous_subscribe_with_query_builder() {
+async fn exec_anonymous_subscribe_with_query_builder(db_name: &str) {
     let test_counter = TestCounter::new();
     let mut insert_0 = Some(test_counter.add_test("insert_0"));
     let mut insert_1 = Some(test_counter.add_test("insert_1"));
     let mut delete_1 = Some(test_counter.add_test("delete_1"));
-    connect_then(&test_counter, move |ctx| {
+    connect_then(db_name, &test_counter, move |ctx| {
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
             .on_applied(move |ctx| {
@@ -265,11 +241,11 @@ async fn exec_anonymous_subscribe_with_query_builder() {
     test_counter.wait_for_all().await;
 }
 
-async fn exec_non_anonymous_subscribe() {
+async fn exec_non_anonymous_subscribe(db_name: &str) {
     let test_counter = TestCounter::new();
     let mut insert = Some(test_counter.add_test("insert"));
     let mut delete = Some(test_counter.add_test("delete"));
-    connect_then(&test_counter, move |ctx| {
+    connect_then(db_name, &test_counter, move |ctx| {
         subscribe_these_then(ctx, &["SELECT * FROM my_player"], move |ctx| {
             let my_identity = ctx.identity();
             ctx.db.my_player().on_insert(move |_, player| {
@@ -305,11 +281,11 @@ async fn exec_non_anonymous_subscribe() {
     test_counter.wait_for_all().await;
 }
 
-async fn exec_non_table_return() {
+async fn exec_non_table_return(db_name: &str) {
     let test_counter = TestCounter::new();
     let mut insert = Some(test_counter.add_test("insert"));
     let mut delete = Some(test_counter.add_test("delete"));
-    connect_then(&test_counter, move |ctx| {
+    connect_then(db_name, &test_counter, move |ctx| {
         subscribe_these_then(ctx, &["SELECT * FROM my_player_and_level"], move |ctx| {
             let my_identity = ctx.identity();
             ctx.db.my_player_and_level().on_insert(move |_, player| {
@@ -347,11 +323,11 @@ async fn exec_non_table_return() {
     test_counter.wait_for_all().await;
 }
 
-async fn exec_non_table_query_builder_return() {
+async fn exec_non_table_query_builder_return(db_name: &str) {
     let test_counter = TestCounter::new();
     let mut insert = Some(test_counter.add_test("insert"));
     let mut delete = Some(test_counter.add_test("delete"));
-    connect_then(&test_counter, move |ctx| {
+    connect_then(db_name, &test_counter, move |ctx| {
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
             .on_applied(move |ctx| {
@@ -394,13 +370,13 @@ async fn exec_non_table_query_builder_return() {
     test_counter.wait_for_all().await;
 }
 
-async fn exec_subscription_update() {
+async fn exec_subscription_update(db_name: &str) {
     let test_counter = TestCounter::new();
 
     let mut insert_0 = Some(test_counter.add_test("insert_0"));
     let mut delete_0 = Some(test_counter.add_test("delete_0"));
 
-    connect_with_then(
+    connect_with_then(db_name, 
         &test_counter,
         "0",
         |builder| builder,
@@ -428,7 +404,7 @@ async fn exec_subscription_update() {
     let mut insert_1 = Some(test_counter.add_test("insert_1"));
     let mut delete_1 = Some(test_counter.add_test("delete_1"));
 
-    connect_with_then(
+    connect_with_then(db_name, 
         &test_counter,
         "1",
         |builder| builder,

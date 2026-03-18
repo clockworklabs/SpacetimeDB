@@ -1,6 +1,3 @@
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-use std::sync::OnceLock;
-
 use crate::module_bindings::*;
 
 use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Event, EventTable};
@@ -8,29 +5,6 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";
-
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-static WEB_DB_NAME: OnceLock<String> = OnceLock::new();
-
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-pub(crate) fn set_web_db_name(db_name: String) {
-    WEB_DB_NAME.set(db_name).expect("WASM DB name was already initialized");
-}
-
-fn db_name_or_panic() -> String {
-    #[cfg(all(target_arch = "wasm32", feature = "web"))]
-    {
-        WEB_DB_NAME
-            .get()
-            .cloned()
-            .expect("Failed to read db name from wasm runner")
-    }
-
-    #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
-    {
-        std::env::var("SPACETIME_SDK_TEST_DB_NAME").expect("Failed to read db name from env")
-    }
-}
 
 /// Register a panic hook which will exit the process whenever any thread panics.
 ///
@@ -60,12 +34,12 @@ macro_rules! assert_eq_or_bail {
     }};
 }
 
-pub(crate) async fn dispatch(test: &str) {
+pub(crate) async fn dispatch(test: &str, db_name: &str) {
     match test {
-        "event-table" => exec_event_table().await,
-        "multiple-events" => exec_multiple_events().await,
-        "events-dont-persist" => exec_events_dont_persist().await,
-        "v1-rejects-event-table" => exec_v1_rejects_event_table().await,
+        "event-table" => exec_event_table(db_name).await,
+        "multiple-events" => exec_multiple_events(db_name).await,
+        "events-dont-persist" => exec_events_dont_persist(db_name).await,
+        "v1-rejects-event-table" => exec_v1_rejects_event_table(db_name).await,
         _ => panic!("Unknown test: {test}"),
     }
 }
@@ -83,11 +57,12 @@ async fn build_connection(builder: DbConnectionBuilder<RemoteModule>) -> DbConne
 }
 
 async fn connect_then(
+    db_name: &str,
     test_counter: &std::sync::Arc<TestCounter>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
 ) -> DbConnection {
     let connected_result = test_counter.add_test("on_connect");
-    let name = db_name_or_panic();
+    let name = db_name.to_owned();
     let conn = DbConnection::builder()
         .with_database_name(name)
         .with_uri(LOCALHOST)
@@ -115,13 +90,13 @@ fn subscribe_these_then(
         .subscribe(queries);
 }
 
-async fn exec_event_table() {
+async fn exec_event_table(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_result = test_counter.add_test("subscription_applied");
     let on_insert_result = test_counter.add_test("event-table-on-insert");
     let on_insert_result = std::sync::Mutex::new(Some(on_insert_result));
 
-    connect_then(&test_counter, {
+    connect_then(db_name, &test_counter, {
         move |ctx| {
             subscribe_these_then(ctx, &["SELECT * FROM test_event;"], move |ctx| {
                 // Event table should be empty on subscription applied
@@ -163,13 +138,13 @@ async fn exec_event_table() {
 }
 
 /// Test that multiple events emitted in a single reducer call all arrive as inserts.
-async fn exec_multiple_events() {
+async fn exec_multiple_events(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_result = test_counter.add_test("subscription_applied");
     let result = test_counter.add_test("multiple-events");
     let result = std::sync::Mutex::new(Some(result));
 
-    connect_then(&test_counter, {
+    connect_then(db_name, &test_counter, {
         move |ctx| {
             subscribe_these_then(ctx, &["SELECT * FROM test_event;"], move |ctx| {
                 assert_eq!(0usize, ctx.db.test_event().iter().count());
@@ -200,13 +175,13 @@ async fn exec_multiple_events() {
 /// Test that event table rows don't persist across transactions.
 /// Emit events, then call a no-op reducer. After the no-op completes,
 /// verify we didn't receive any additional event inserts.
-async fn exec_events_dont_persist() {
+async fn exec_events_dont_persist(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_result = test_counter.add_test("subscription_applied");
     let noop_result = test_counter.add_test("events-dont-persist");
     let noop_result = std::sync::Mutex::new(Some(noop_result));
 
-    connect_then(&test_counter, {
+    connect_then(db_name, &test_counter, {
         move |ctx| {
             subscribe_these_then(ctx, &["SELECT * FROM test_event;"], move |ctx| {
                 assert_eq!(0usize, ctx.db.test_event().iter().count());
@@ -249,10 +224,10 @@ async fn exec_events_dont_persist() {
 
 /// Test that v1 WebSocket clients are rejected when subscribing to event tables.
 /// The server should return a subscription error directing the developer to upgrade.
-async fn exec_v1_rejects_event_table() {
+async fn exec_v1_rejects_event_table(db_name: &str) {
     let test_counter = TestCounter::new();
 
-    connect_then(&test_counter, {
+    connect_then(db_name, &test_counter, {
         let test_counter = test_counter.clone();
         move |ctx| {
             let error_result = test_counter.add_test("v1-rejects-event-table");

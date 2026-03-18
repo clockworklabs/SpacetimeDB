@@ -1,6 +1,3 @@
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-use std::sync::OnceLock;
-
 use crate::module_bindings::*;
 
 use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Table};
@@ -9,30 +6,7 @@ use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";
 
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-static WEB_DB_NAME: OnceLock<String> = OnceLock::new();
-
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-pub(crate) fn set_web_db_name(db_name: String) {
-    WEB_DB_NAME.set(db_name).expect("WASM DB name was already initialized");
-}
-
-fn db_name_or_panic() -> String {
-    #[cfg(all(target_arch = "wasm32", feature = "web"))]
-    {
-        WEB_DB_NAME
-            .get()
-            .cloned()
-            .expect("Failed to read db name from wasm runner")
-    }
-
-    #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
-    {
-        std::env::var("SPACETIME_SDK_TEST_DB_NAME").expect("Failed to read db name from env")
-    }
-}
-
-pub(crate) async fn dispatch() {
+pub(crate) async fn dispatch(db_name: &str) {
     let disconnect_test_counter = TestCounter::new();
     let disconnect_result = disconnect_test_counter.add_test("disconnect");
 
@@ -41,7 +15,7 @@ pub(crate) async fn dispatch() {
     let sub_applied_one_row_result = connect_test_counter.add_test("connected_row");
 
     let connection = DbConnection::builder()
-        .with_database_name(db_name_or_panic())
+        .with_database_name(db_name)
         .with_uri(LOCALHOST)
         .on_connect_error(|_ctx, error| panic!("on_connect_error: {error:?}"))
         .on_connect(move |ctx, _, _| {
@@ -105,7 +79,7 @@ pub(crate) async fn dispatch() {
         .on_connect(move |_ctx, _, _| {
             reconnected_result(Ok(()));
         })
-        .with_database_name(db_name_or_panic())
+        .with_database_name(db_name)
         .with_uri(LOCALHOST);
     let new_connection = build_connection(new_connection).await;
 
