@@ -55,7 +55,6 @@ fn platform_test_builder(client_project: &str, run_selector: Option<&str>) -> Te
         );
         let js_module = format!("{bindgen_out_dir}/{artifact_name}.cjs");
         let run_selector = run_selector.unwrap_or_default();
-        let process_exit = {};
         let node_script = format!(
             "(async () => {{ \
               const m = require({js_module:?}); \
