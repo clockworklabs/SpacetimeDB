@@ -1,4 +1,4 @@
-use serde_json::json;
+use serde_json::{json, Value};
 use spacetimedb_smoketests::{require_dotnet, require_pnpm, Smoketest};
 
 const TS_VIEWS_SUBSCRIBE_MODULE: &str = r#"import { schema, t, table } from "spacetimedb/server";
@@ -76,6 +76,171 @@ public static partial class Module
     }
 }
 "#;
+
+const CS_COUNT_VIEW_MODULE: &str = r#"using SpacetimeDB;
+
+[SpacetimeDB.Type]
+public partial struct ItemCount
+{
+    public ulong count;
+}
+
+public static partial class Module
+{
+    [Table(Accessor = "item", Public = true)]
+    public partial struct Item
+    {
+        [PrimaryKey]
+        public uint id;
+        public uint value;
+    }
+
+    [View(Accessor = "sender_table_count", Public = true)]
+    public static ItemCount? sender_table_count(ViewContext ctx)
+    {
+        return new ItemCount { count = ctx.Db.item.Count };
+    }
+
+    [View(Accessor = "anon_table_count", Public = true)]
+    public static ItemCount? anon_table_count(AnonymousViewContext ctx)
+    {
+        return new ItemCount { count = ctx.Db.item.Count };
+    }
+
+    [Reducer]
+    public static void insert_item(ReducerContext ctx, uint id, uint value)
+    {
+        ctx.Db.item.Insert(new Item { id = id, value = value });
+    }
+
+    [Reducer]
+    public static void replace_item(ReducerContext ctx, uint id, uint value)
+    {
+        ctx.Db.item.id.Delete(id);
+        ctx.Db.item.Insert(new Item { id = id, value = value });
+    }
+
+    [Reducer]
+    public static void delete_item(ReducerContext ctx, uint id)
+    {
+        ctx.Db.item.id.Delete(id);
+    }
+}
+"#;
+
+const TS_COUNT_VIEW_MODULE: &str = r#"import { schema, t, table } from "spacetimedb/server";
+
+const item = table(
+  { name: "item" },
+  {
+    id: t.u32().primaryKey(),
+    value: t.u32(),
+  }
+);
+
+const itemCount = t.object("ItemCountRow", {
+  count: t.u64(),
+});
+
+const spacetimedb = schema({ item });
+export default spacetimedb;
+
+export const sender_table_count = spacetimedb.view(
+  { public: true },
+  t.option(itemCount),
+  ctx => ({ count: ctx.db.item.count() })
+);
+
+export const anon_table_count = spacetimedb.anonymousView(
+  { public: true },
+  t.option(itemCount),
+  ctx => ({ count: ctx.db.item.count() })
+);
+
+export const insert_item = spacetimedb.reducer(
+  { id: t.u32(), value: t.u32() },
+  (ctx, { id, value }) => {
+    ctx.db.item.insert({ id, value });
+  }
+);
+
+export const replace_item = spacetimedb.reducer(
+  { id: t.u32(), value: t.u32() },
+  (ctx, { id, value }) => {
+    ctx.db.item.id.delete(id);
+    ctx.db.item.insert({ id, value });
+  }
+);
+
+export const delete_item = spacetimedb.reducer(
+  { id: t.u32() },
+  (ctx, { id }) => {
+    ctx.db.item.id.delete(id);
+  }
+);
+"#;
+
+fn project_fields(events: Vec<Value>, view_name: &str, projected_fields: &[&str]) -> Vec<Value> {
+    let project_row = |row: &Value| {
+        if projected_fields.is_empty() {
+            row.clone()
+        } else {
+            let mut projected = serde_json::Map::new();
+            for field in projected_fields {
+                if let Some(value) = row.get(*field) {
+                    projected.insert((*field).to_string(), value.clone());
+                }
+            }
+            Value::Object(projected)
+        }
+    };
+
+    events
+        .into_iter()
+        .map(|event| {
+            json!({
+                view_name: {
+                    "deletes": event[view_name]["deletes"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(&project_row)
+                        .collect::<Vec<_>>(),
+                    "inserts": event[view_name]["inserts"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(&project_row)
+                        .collect::<Vec<_>>()
+                }
+            })
+        })
+        .collect()
+}
+
+fn assert_count_view_refresh_behavior(test: &Smoketest, view_name: &str, id: &str, value: &str, updated_value: &str) {
+    let query = format!("select * from {view_name}");
+    let sub = test.subscribe_background(&[&query], 2).unwrap();
+
+    test.call("insert_item", &[id, value]).unwrap();
+    test.call("replace_item", &[id, updated_value]).unwrap();
+    test.call("delete_item", &[id]).unwrap();
+
+    let events = sub.collect().unwrap();
+    let projection = project_fields(events, view_name, &["count"]);
+    assert_eq!(
+        serde_json::json!(projection),
+        serde_json::json!([
+            {view_name: {"deletes": [{"count": 0}], "inserts": [{"count": 1}]}},
+            {view_name: {"deletes": [{"count": 1}], "inserts": [{"count": 0}]}}
+        ])
+    );
+}
+
+fn assert_all_count_view_refreshes(test: &Smoketest) {
+    assert_count_view_refresh_behavior(test, "sender_table_count", "1", "10", "11");
+    assert_count_view_refresh_behavior(test, "anon_table_count", "2", "20", "21");
+}
 
 /// Tests that views populate the st_view_* system tables
 #[test]
@@ -404,25 +569,7 @@ fn test_subscribing_with_different_identities() {
     test.call("insert_player", &["Bob"]).unwrap();
     let events = sub.collect().unwrap();
 
-    let projection: Vec<serde_json::Value> = events
-        .into_iter()
-        .map(|event| {
-            let deletes = event["my_player"]["deletes"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            let inserts = event["my_player"]["inserts"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            json!({"my_player": {"deletes": deletes, "inserts": inserts}})
-        })
-        .collect();
-
+    let projection = project_fields(events, "my_player", &["name"]);
     assert_eq!(
         serde_json::json!(projection),
         serde_json::json!([
@@ -500,26 +647,7 @@ fn test_procedure_triggers_subscription_updates() {
     let sub = test.subscribe_background(&["select * from my_player"], 1).unwrap();
     test.call("insert_player_proc", &["Alice"]).unwrap();
     let events = sub.collect().unwrap();
-
-    let projection: Vec<serde_json::Value> = events
-        .into_iter()
-        .map(|event| {
-            let deletes = event["my_player"]["deletes"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            let inserts = event["my_player"]["inserts"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            json!({"my_player": {"deletes": deletes, "inserts": inserts}})
-        })
-        .collect();
-
+    let projection = project_fields(events, "my_player", &["name"]);
     assert_eq!(
         serde_json::json!(projection),
         serde_json::json!([
@@ -543,30 +671,109 @@ fn test_typescript_procedure_triggers_subscription_updates() {
     test.call("insert_player_proc", &["Alice"]).unwrap();
     let events = sub.collect().unwrap();
 
-    let projection: Vec<serde_json::Value> = events
-        .into_iter()
-        .map(|event| {
-            let deletes = event["my_player"]["deletes"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            let inserts = event["my_player"]["inserts"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| json!({"name": row["name"]}))
-                .collect::<Vec<_>>();
-            json!({"my_player": {"deletes": deletes, "inserts": inserts}})
-        })
-        .collect();
-
+    let projection = project_fields(events, "my_player", &["name"]);
     assert_eq!(
         serde_json::json!(projection),
         serde_json::json!([
             {"my_player": {"deletes": [], "inserts": [{"name": "Alice"}]}}
         ])
+    );
+}
+
+#[test]
+fn test_rust_count_view_subscription_refreshes() {
+    let test = Smoketest::builder().precompiled_module("views-count").build();
+    assert_all_count_view_refreshes(&test);
+}
+
+#[test]
+fn test_csharp_count_view_subscription_refreshes() {
+    require_dotnet!();
+
+    let mut test = Smoketest::builder().autopublish(false).build();
+    test.publish_csharp_module_source("views-count-csharp", "views-count-csharp", CS_COUNT_VIEW_MODULE)
+        .unwrap();
+
+    assert_all_count_view_refreshes(&test);
+}
+
+#[test]
+fn test_typescript_count_view_subscription_refreshes() {
+    require_pnpm!();
+
+    let mut test = Smoketest::builder().autopublish(false).build();
+    test.publish_typescript_module_source("views-count-typescript", "views-count-typescript", TS_COUNT_VIEW_MODULE)
+        .unwrap();
+
+    assert_all_count_view_refreshes(&test);
+}
+
+#[test]
+fn test_disconnect_does_not_break_sender_view() {
+    let test = Smoketest::builder().precompiled_module("views-sql").build();
+
+    test.call("set_player_state", &["42", "1"]).unwrap();
+
+    // Two connections subscribe to the same view.
+    let sub_keep = test.subscribe_background(&["SELECT * FROM player"], 2).unwrap();
+    let sub_drop = test.subscribe_background(&["SELECT * FROM player"], 1).unwrap();
+
+    // Both connections should receive the first update.
+    // After one connection disconnects, the other should still receive updates.
+    test.call("set_player_state", &["42", "2"]).unwrap();
+    let _ = sub_drop.collect().unwrap();
+    test.call("set_player_state", &["42", "3"]).unwrap();
+
+    let events = sub_keep.collect().unwrap();
+
+    assert_eq!(events.len(), 2, "Expected two updates for player, got: {events:?}");
+    let inserts = events[1]["player"]["inserts"]
+        .as_array()
+        .expect("Expected inserts array on player update");
+    assert!(
+        inserts
+            .iter()
+            .any(|row| row["id"] == json!(42) && row["level"] == json!(3)),
+        "Expected player id=42 level=3 insert after disconnect, got: {events:?}"
+    );
+}
+
+#[test]
+fn test_disconnect_does_not_break_anonymous_view() {
+    let test = Smoketest::builder().precompiled_module("views-sql").build();
+
+    // Seed a row in the anonymous-view source table.
+    test.call("add_player_level", &["0", "2"]).unwrap();
+
+    // Two connections subscribe to the same anonymous view.
+    let sub_keep = test
+        .subscribe_background(&["SELECT * FROM player_and_level"], 2)
+        .unwrap();
+    let sub_drop = test
+        .subscribe_background(&["SELECT * FROM player_and_level"], 1)
+        .unwrap();
+
+    // Both connections should receive the first update.
+    // After one connection disconnects, the other should still receive updates.
+    test.call("add_player_level", &["1", "2"]).unwrap();
+    let _ = sub_drop.collect().unwrap();
+    test.call("add_player_level", &["2", "2"]).unwrap();
+
+    let events = sub_keep.collect().unwrap();
+
+    assert_eq!(
+        events.len(),
+        2,
+        "Expected two updates for player_and_level, got: {events:?}"
+    );
+    let inserts = events[1]["player_and_level"]["inserts"]
+        .as_array()
+        .expect("Expected inserts array on player_and_level update");
+    assert!(
+        inserts
+            .iter()
+            .any(|row| row["id"] == json!(2) && row["level"] == json!(2)),
+        "Expected player id=2 level=2 insert after disconnect, got: {events:?}"
     );
 }
 
@@ -607,5 +814,184 @@ fn test_csharp_query_builder_view_query() {
         r#" value | alive
 -------+-------
  1     | true"#,
+    );
+}
+
+enum PkJoinMutation {
+    UpdateLhs { id: u64, ok: bool },
+    UpdateRhs { id: u64, ok: bool },
+    DeleteLhs { id: u64 },
+}
+
+fn apply_pk_join_mutation(test: &Smoketest, mutation: &PkJoinMutation) {
+    match mutation {
+        PkJoinMutation::UpdateLhs { id, ok } => {
+            let id = id.to_string();
+            let ok = if *ok { "true" } else { "false" };
+            test.call("update_pk_join_lhs", &[id.as_str(), ok]).unwrap();
+        }
+        PkJoinMutation::UpdateRhs { id, ok } => {
+            let id = id.to_string();
+            let ok = if *ok { "true" } else { "false" };
+            test.call("update_pk_join_rhs", &[id.as_str(), ok]).unwrap();
+        }
+        PkJoinMutation::DeleteLhs { id } => {
+            let id = id.to_string();
+            test.call("delete_pk_join_lhs", &[id.as_str()]).unwrap();
+        }
+    }
+}
+
+fn expected_pk_join_projection(view_name: &str) -> Value {
+    let mk_event = |deletes: Vec<Value>, inserts: Vec<Value>| {
+        let mut event_payload = serde_json::Map::new();
+        event_payload.insert("deletes".to_string(), Value::Array(deletes));
+        event_payload.insert("inserts".to_string(), Value::Array(inserts));
+
+        let mut event = serde_json::Map::new();
+        event.insert(view_name.to_string(), Value::Object(event_payload));
+        Value::Object(event)
+    };
+
+    Value::Array(vec![
+        mk_event(vec![], vec![json!({"id": 1, "ok": true})]),
+        mk_event(vec![json!({"id": 1, "ok": true})], vec![]),
+        mk_event(vec![], vec![json!({"id": 2, "ok": true})]),
+        mk_event(vec![json!({"id": 2, "ok": true})], vec![]),
+    ])
+}
+
+fn run_pk_join_subscription_test(query: &str, projected_view_name: &str, mutations: &[PkJoinMutation]) {
+    let test = Smoketest::builder().precompiled_module("views-query").build();
+
+    // Seed rows for identity A in both underlying tables.
+    test.call("update_pk_join_lhs", &["200", "true"]).unwrap();
+    test.call("update_pk_join_rhs", &["200", "true"]).unwrap();
+
+    // Switch to identity B so each underlying table has rows for 2 identities.
+    test.new_identity().unwrap();
+
+    let sub = test.subscribe_background(&[query], 4).unwrap();
+
+    for mutation in mutations {
+        apply_pk_join_mutation(&test, mutation);
+    }
+
+    let update_events = sub.collect().unwrap();
+    assert_eq!(
+        serde_json::json!(project_fields(update_events, projected_view_name, &["id", "ok"])),
+        expected_pk_join_projection(projected_view_name)
+    );
+}
+
+#[test]
+fn test_subscribe_join_pk_views_with_filters_on_both_sides() {
+    let query = "SELECT pk_join_lhs_sender_view.* \
+                 FROM pk_join_lhs_sender_view \
+                 JOIN pk_join_rhs_sender_view \
+                 ON pk_join_lhs_sender_view.id = pk_join_rhs_sender_view.id \
+                 WHERE pk_join_lhs_sender_view.ok = true \
+                 AND pk_join_rhs_sender_view.ok = true";
+
+    run_pk_join_subscription_test(
+        query,
+        "pk_join_lhs_sender_view",
+        &[
+            PkJoinMutation::UpdateLhs { id: 1, ok: true },
+            PkJoinMutation::UpdateRhs { id: 1, ok: true },
+            PkJoinMutation::UpdateRhs { id: 1, ok: false },
+            PkJoinMutation::UpdateRhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: false },
+        ],
+    );
+}
+
+#[test]
+fn test_subscribe_join_anon_pk_views_with_filters_on_both_sides() {
+    let query = "SELECT pk_join_lhs_view.* \
+                 FROM pk_join_lhs_view \
+                 JOIN pk_join_rhs_view \
+                 ON pk_join_lhs_view.id = pk_join_rhs_view.id \
+                 WHERE pk_join_lhs_view.ok = true \
+                 AND pk_join_rhs_view.ok = true";
+
+    run_pk_join_subscription_test(
+        query,
+        "pk_join_lhs_view",
+        &[
+            PkJoinMutation::UpdateLhs { id: 1, ok: true },
+            PkJoinMutation::UpdateRhs { id: 1, ok: true },
+            PkJoinMutation::UpdateRhs { id: 1, ok: false },
+            PkJoinMutation::UpdateRhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: false },
+        ],
+    );
+}
+
+#[test]
+fn test_subscribe_join_anon_pk_view_with_table_and_filter() {
+    let query = "SELECT pk_join_lhs_view.* \
+                 FROM pk_join_lhs_view \
+                 JOIN pk_join_rhs \
+                 ON pk_join_lhs_view.id = pk_join_rhs.id \
+                 WHERE pk_join_lhs_view.ok = true \
+                 AND pk_join_rhs.identity = :sender";
+
+    run_pk_join_subscription_test(
+        query,
+        "pk_join_lhs_view",
+        &[
+            PkJoinMutation::UpdateLhs { id: 1, ok: true },
+            PkJoinMutation::UpdateRhs { id: 1, ok: true },
+            PkJoinMutation::UpdateLhs { id: 1, ok: false },
+            PkJoinMutation::UpdateRhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: false },
+        ],
+    );
+}
+
+#[test]
+fn test_subscribe_join_anon_pk_view_with_table() {
+    let query = "SELECT pk_join_lhs_view.* \
+                 FROM pk_join_lhs_view \
+                 JOIN pk_join_rhs \
+                 ON pk_join_lhs_view.id = pk_join_rhs.id \
+                 WHERE pk_join_rhs.identity = :sender";
+
+    run_pk_join_subscription_test(
+        query,
+        "pk_join_lhs_view",
+        &[
+            PkJoinMutation::UpdateLhs { id: 1, ok: true },
+            PkJoinMutation::UpdateRhs { id: 1, ok: true },
+            PkJoinMutation::DeleteLhs { id: 1 },
+            PkJoinMutation::UpdateRhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: true },
+            PkJoinMutation::DeleteLhs { id: 2 },
+        ],
+    );
+}
+
+#[test]
+fn test_subscribe_join_pk_view_with_table() {
+    let query = "SELECT pk_join_lhs_sender_view.* \
+                 FROM pk_join_lhs_sender_view \
+                 JOIN pk_join_rhs \
+                 ON pk_join_lhs_sender_view.id = pk_join_rhs.id";
+
+    run_pk_join_subscription_test(
+        query,
+        "pk_join_lhs_sender_view",
+        &[
+            PkJoinMutation::UpdateLhs { id: 1, ok: true },
+            PkJoinMutation::UpdateRhs { id: 1, ok: true },
+            PkJoinMutation::DeleteLhs { id: 1 },
+            PkJoinMutation::UpdateRhs { id: 2, ok: true },
+            PkJoinMutation::UpdateLhs { id: 2, ok: true },
+            PkJoinMutation::DeleteLhs { id: 2 },
+        ],
     );
 }

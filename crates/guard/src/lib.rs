@@ -196,6 +196,12 @@ impl SpacetimeDbGuard {
             child.id(),
             host_url
         );
+        // Ensure logs from the killed server are retained.
+        {
+            let mut new_logs = logs.lock().unwrap();
+            let old_logs = self.logs.lock().unwrap();
+            new_logs.insert_str(0, old_logs.as_str());
+        }
 
         self.child = child;
         self.logs = logs;
