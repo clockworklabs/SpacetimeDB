@@ -839,7 +839,7 @@ async fn exec_update_connection_id(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter).await;
+    let connection = connect(db_name, &test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -945,7 +945,7 @@ async fn exec_insert_uuid(db_name: &str) {
 }
 
 /// This tests that we can serialize and deserialize `Uuid` in various contexts.
-async fn exec_insert_caller_uuid_v4(db_name: &str) {
+async fn exec_insert_caller_uuid_v4(_db_name: &str) {
     /*    let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -966,7 +966,7 @@ async fn exec_insert_caller_uuid_v4(db_name: &str) {
 }
 
 /// This tests that we can serialize and deserialize `Uuid` in various contexts.
-async fn exec_insert_caller_uuid_v7(db_name: &str) {}
+async fn exec_insert_caller_uuid_v7(_db_name: &str) {}
 
 /// This test doesn't add much alongside `exec_insert_uuid` and `exec_delete_primitive`,
 /// but it's here for symmetry.
@@ -997,7 +997,7 @@ async fn exec_update_uuid(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter).await;
+    let connection = connect(db_name, &test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1018,7 +1018,7 @@ async fn exec_on_reducer(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter).await;
+    let connection = connect(db_name, &test_counter).await;
 
     let reducer_result = test_counter.add_test("reducer-callback");
 
@@ -1069,7 +1069,7 @@ async fn exec_fail_reducer(db_name: &str) {
     let reducer_success_result = test_counter.add_test("reducer-callback-success");
     let reducer_fail_result = test_counter.add_test("reducer-callback-failure");
 
-    let connection = connect(&test_counter).await;
+    let connection = connect(db_name, &test_counter).await;
 
     let key = 128;
     let initial_data = 0xbeef;
@@ -1167,7 +1167,7 @@ async fn exec_insert_vec(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter).await;
+    let connection = connect(db_name, &test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1301,7 +1301,7 @@ async fn exec_insert_option_some(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter).await;
+    let connection = connect(db_name, &test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1328,7 +1328,7 @@ async fn exec_insert_option_none(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter).await;
+    let connection = connect(db_name, &test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1352,7 +1352,7 @@ async fn exec_insert_struct(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter).await;
+    let connection = connect(db_name, &test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1379,7 +1379,7 @@ async fn exec_insert_simple_enum(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter).await;
+    let connection = connect(db_name, &test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1403,7 +1403,7 @@ async fn exec_insert_enum_with_payload(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter).await;
+    let connection = connect(db_name, &test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1449,7 +1449,7 @@ async fn exec_insert_enum_with_payload(db_name: &str) {
 }
 
 /// This tests that the test machinery itself is functional and can detect failures.
-async fn exec_should_fail(db_name: &str) {
+async fn exec_should_fail(_db_name: &str) {
     let test_counter = TestCounter::new();
     let fail = test_counter.add_test("should-fail");
     fail(Err(anyhow::anyhow!("This is an intentional failure")));
@@ -1462,7 +1462,7 @@ async fn exec_insert_delete_large_table(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter).await;
+    let connection = connect(db_name, &test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1575,7 +1575,7 @@ async fn exec_insert_primitives_as_strings(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter).await;
+    let connection = connect(db_name, &test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1809,7 +1809,7 @@ async fn exec_reauth_part_2(db_name: &str) {
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn exec_reauth_part_1(db_name: &str) {
+async fn exec_reauth_part_1(_db_name: &str) {
     // TODO: Re-enable this once the wasm runner grows the browser-faithful mode
     // described in `crates/testing/src/sdk.rs`. This test is about persisting web
     // credentials across separate runs, and the current Node-based wasm harness does
@@ -1817,7 +1817,7 @@ async fn exec_reauth_part_1(db_name: &str) {
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn exec_reauth_part_2(db_name: &str) {
+async fn exec_reauth_part_2(_db_name: &str) {
     // See the TODO above and in `crates/testing/src/sdk.rs`: this is disabled for the
     // current Node-based wasm harness for the same reason as `exec_reauth_part_1`.
 }
@@ -1891,7 +1891,7 @@ async fn exec_caller_always_notified(db_name: &str) {
 
     let no_op_result = test_counter.add_test("notified_of_no_op_reducer");
 
-    let connection = connect(&test_counter).await;
+    let connection = connect(db_name, &test_counter).await;
 
     connection
         .reducers
@@ -1924,7 +1924,7 @@ async fn exec_subscribe_all_select_star(db_name: &str) {
 
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect(&test_counter).await;
+    let connection = connect(db_name, &test_counter).await;
 
     connection
         .subscription_builder()
@@ -1965,7 +1965,7 @@ async fn exec_sorted_uuids_insert(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("sorted-uuids-insert");
 
-    let connection = connect(&test_counter).await;
+    let connection = connect(db_name, &test_counter).await;
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
