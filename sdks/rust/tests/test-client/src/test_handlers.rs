@@ -23,9 +23,9 @@ use crate::unique_test_table::{insert_then_delete_one, UniqueTestTable};
 
 const LOCALHOST: &str = "http://localhost:3000";
 
+/// `Timestamp::now()` is stubbed on `wasm32-unknown-unknown`, so client-side tests
+/// that need a timestamp value must use a deterministic literal instead of wall-clock time.
 fn fixed_test_timestamp() -> Timestamp {
-    // `Timestamp::now()` is stubbed on `wasm32-unknown-unknown`, so client-side tests
-    // that need a timestamp value must use a deterministic literal instead of wall-clock time.
     Timestamp::from_micros_since_unix_epoch(1_706_000_000_000_000)
 }
 
@@ -1788,19 +1788,17 @@ async fn exec_reauth_part_2(db_name: &str) {
     test_counter.wait_for_all().await;
 }
 
+/// TODO: Re-enable this once the wasm runner grows the browser-faithful mode
+/// described in `crates/testing/src/sdk.rs`. This test is about persisting web
+/// credentials across separate runs, and the current Node-based wasm harness does
+/// not exercise the browser cookie/storage APIs that web reauth depends on.
 #[cfg(target_arch = "wasm32")]
-async fn exec_reauth_part_1(_db_name: &str) {
-    // TODO: Re-enable this once the wasm runner grows the browser-faithful mode
-    // described in `crates/testing/src/sdk.rs`. This test is about persisting web
-    // credentials across separate runs, and the current Node-based wasm harness does
-    // not exercise the browser cookie/storage APIs that web reauth depends on.
-}
+async fn exec_reauth_part_1(_db_name: &str) {}
 
+/// See the TODO above and in `crates/testing/src/sdk.rs`: this is disabled for the
+/// current Node-based wasm harness for the same reason as `exec_reauth_part_1`.
 #[cfg(target_arch = "wasm32")]
-async fn exec_reauth_part_2(_db_name: &str) {
-    // See the TODO above and in `crates/testing/src/sdk.rs`: this is disabled for the
-    // current Node-based wasm harness for the same reason as `exec_reauth_part_1`.
-}
+async fn exec_reauth_part_2(_db_name: &str) {}
 
 // Ensure a new connection gets a different connection id.
 async fn exec_reconnect_different_connection_id(db_name: &str) {
