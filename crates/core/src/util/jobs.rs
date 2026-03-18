@@ -11,6 +11,8 @@ use tokio::runtime;
 use tokio::sync::{mpsc, oneshot, watch};
 use tracing::Instrument;
 
+use crate::util::thread_scheduling::apply_compute_thread_hint;
+
 /// A handle to a pool of Tokio executors for running database WASM code on.
 ///
 /// Each database has a [`SingleCoreExecutor`],
@@ -239,7 +241,7 @@ impl CorePinner {
     #[inline]
     fn do_pin(move_core_rx: &mut watch::Receiver<CoreId>) {
         let core_id = *move_core_rx.borrow_and_update();
-        core_affinity::set_for_current(core_id);
+        apply_compute_thread_hint(Some(core_id));
     }
 
     /// Pin the current thread to the appropriate core.
