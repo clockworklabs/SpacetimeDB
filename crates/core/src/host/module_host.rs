@@ -1884,7 +1884,12 @@ impl ModuleHost {
             let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
             let is_anonymous = st_view_row.is_anonymous;
             let sender = if is_anonymous { None } else { Some(caller) };
-            if !tx.is_view_materialized(view_id, ArgId::SENTINEL, caller)? {
+            let is_materialized = if is_anonymous {
+                tx.is_anonymous_view_materialized(view_id)?
+            } else {
+                tx.is_view_materialized(view_id, ArgId::SENTINEL, caller)?
+            };
+            if !is_materialized {
                 let (res, trapped) =
                     Self::call_view(instance, tx, &view_name, view_id, table_id, Nullary, caller, sender)?;
                 tx = res.tx;
@@ -1904,51 +1909,91 @@ impl ModuleHost {
         Ok((tx, false))
     }
 
+    /// Refreshes every view made stale by `tx`.
+    ///
+    /// The returned transaction contains both the original writes and any backing-table
+    /// updates produced by re-materializing the affected views.
     pub fn call_views_with_tx<I: WasmInstance>(
         tx: MutTxId,
         instance: &mut RefInstance<'_, I>,
         caller: Identity,
-    ) -> Result<(ViewCallResult, bool), ViewCallError> {
-        let mut out = ViewCallResult::default(tx);
+    ) -> (ViewCallResult, bool) {
+        Self::call_views_with_tx_at(tx, instance, caller, Timestamp::now())
+    }
+
+    /// Refreshes every view made stale by `tx`.
+    ///
+    /// This is the shared host-side path for finishing a transaction after writes have
+    /// invalidated one or more materialized views.
+    pub fn call_views_with_tx_at<I: WasmInstance>(
+        tx: MutTxId,
+        instance: &mut RefInstance<'_, I>,
+        caller: Identity,
+        timestamp: Timestamp,
+    ) -> (ViewCallResult, bool) {
+        let mut tx = tx;
         let module_def = &instance.common.info().module_def;
+        let mut outcome = ViewOutcome::Success;
+        let mut energy_used = FunctionBudget::ZERO;
+        let mut total_duration = Duration::ZERO;
+        let mut abi_duration = Duration::ZERO;
         let mut trapped = false;
-        use FunctionArgs::Nullary;
         for ViewCallInfo {
             view_id,
             table_id,
             fn_ptr,
             sender,
-        } in out.tx.views_for_refresh().cloned().collect::<Vec<_>>()
+        } in tx.views_for_refresh().cloned().collect::<Vec<_>>()
         {
-            let view_def = module_def
-                .get_view_by_id(fn_ptr, sender.is_none())
-                .ok_or(ViewCallError::NoSuchView)?;
+            let Some(view_def) = module_def.get_view_by_id(fn_ptr, sender.is_none()) else {
+                outcome = ViewOutcome::Failed(format!("view with fn_ptr `{fn_ptr}` not found"));
+                break;
+            };
+            let args = match FunctionArgs::Nullary.into_tuple_for_def(module_def, view_def) {
+                Ok(args) => args,
+                Err(err) => {
+                    outcome = ViewOutcome::Failed(format!("failed to build view args: {err}"));
+                    break;
+                }
+            };
 
-            let (result, trap) = Self::call_view(
+            let (result, trap) = Self::call_view_inner(
                 instance,
-                out.tx,
+                tx,
                 &view_def.name,
                 view_id,
                 table_id,
-                Nullary,
+                view_def.fn_ptr,
                 caller,
                 sender,
-            )?;
+                args,
+                view_def.product_type_ref,
+                timestamp,
+            );
 
             // Increment execution stats
-            out.tx = result.tx;
-            out.outcome = result.outcome;
-            out.energy_used += result.energy_used;
-            out.total_duration += result.total_duration;
-            out.abi_duration += result.abi_duration;
+            tx = result.tx;
+            outcome = result.outcome;
+            energy_used += result.energy_used;
+            total_duration += result.total_duration;
+            abi_duration += result.abi_duration;
             trapped |= trap;
 
             // Terminate early if execution failed
-            if !matches!(out.outcome, ViewOutcome::Success) || trapped {
+            if !matches!(outcome, ViewOutcome::Success) || trapped {
                 break;
             }
         }
-        Ok((out, trapped))
+        (
+            ViewCallResult {
+                outcome,
+                tx,
+                energy_used,
+                total_duration,
+                abi_duration,
+            },
+            trapped,
+        )
     }
 
     fn call_view<I: WasmInstance>(
@@ -1961,6 +2006,30 @@ impl ModuleHost {
         caller: Identity,
         sender: Option<Identity>,
     ) -> Result<(ViewCallResult, bool), ViewCallError> {
+        Self::call_view_at(
+            instance,
+            tx,
+            view_name,
+            view_id,
+            table_id,
+            args,
+            caller,
+            sender,
+            Timestamp::now(),
+        )
+    }
+
+    fn call_view_at<I: WasmInstance>(
+        instance: &mut RefInstance<'_, I>,
+        tx: MutTxId,
+        view_name: &Identifier,
+        view_id: ViewId,
+        table_id: TableId,
+        args: FunctionArgs,
+        caller: Identity,
+        sender: Option<Identity>,
+        timestamp: Timestamp,
+    ) -> Result<(ViewCallResult, bool), ViewCallError> {
         let module_def = &instance.common.info().module_def;
         let view_def = module_def.view(view_name).ok_or(ViewCallError::NoSuchView)?;
         let fn_ptr = view_def.fn_ptr;
@@ -1969,21 +2038,9 @@ impl ModuleHost {
             .into_tuple_for_def(module_def, view_def)
             .map_err(InvalidViewArguments)?;
 
-        match Self::call_view_inner(
-            instance, tx, view_name, view_id, table_id, fn_ptr, caller, sender, args, row_type,
-        ) {
-            err @ Err(ViewCallError::NoSuchView) => {
-                let _log_message = no_such_function_log_message("view", view_name);
-                //   self.inject_logs(LogLevel::Error, view_name, &log_message);
-                err
-            }
-            err @ Err(ViewCallError::Args(_)) => {
-                let _log_message = args_error_log_message("view", view_name);
-                // self.inject_logs(LogLevel::Error, view_name, &log_message);
-                err
-            }
-            res => res,
-        }
+        Ok(Self::call_view_inner(
+            instance, tx, view_name, view_id, table_id, fn_ptr, caller, sender, args, row_type, timestamp,
+        ))
     }
 
     fn call_view_inner<I: WasmInstance>(
@@ -1997,10 +2054,11 @@ impl ModuleHost {
         sender: Option<Identity>,
         args: ArgsTuple,
         row_type: AlgebraicTypeRef,
-    ) -> Result<(ViewCallResult, bool), ViewCallError> {
+        timestamp: Timestamp,
+    ) -> (ViewCallResult, bool) {
         let view_name = name.clone();
         let params = CallViewParams {
-            timestamp: Timestamp::now(),
+            timestamp,
             view_name,
             view_id,
             table_id,
@@ -2011,7 +2069,7 @@ impl ModuleHost {
             row_type,
         };
 
-        Ok(instance.common.call_view_with_tx(tx, params, instance.instance))
+        instance.common.call_view_with_tx(tx, params, instance.instance)
     }
 
     pub async fn init_database(&self, program: Program) -> Result<Option<ReducerCallResult>, InitDatabaseError> {

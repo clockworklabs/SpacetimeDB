@@ -482,6 +482,11 @@ macro_rules! view_tests {
             fn subscription_updates_for_view() {
                 make_test("view-subscription-update").run()
             }
+
+            #[test]
+            fn disconnect_does_not_break_sender_view_updates() {
+                make_test("view-disconnect-does-not-break-sender-updates").run()
+            }
         }
     };
 }

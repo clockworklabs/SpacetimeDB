@@ -299,7 +299,7 @@ fn run_inner<I: WasmInstance>(
 
             // Update views
             let (result, trapped) = match instance {
-                Some(instance) => ModuleHost::call_views_with_tx(tx, instance, auth.caller())?,
+                Some(instance) => ModuleHost::call_views_with_tx(tx, instance, auth.caller()),
                 None => (ViewCallResult::default(tx), false),
             };
 
