@@ -644,9 +644,7 @@ fn create_default_spacetime_config_if_missing(
     }
 
     if native_aot {
-        config
-            .additional_fields
-            .insert("native-aot".to_string(), json!(true));
+        config.additional_fields.insert("native-aot".to_string(), json!(true));
     }
 
     Ok(Some(config.save_to_dir(project_path)?))
@@ -1681,16 +1679,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathB
 
     // Validate that --native-aot is only used with C# projects
     if options.native_aot {
-        if let Some(lang) = server_lang {
-            if lang.to_lowercase() != "csharp" && lang.to_lowercase() != "c#" {
-                anyhow::bail!("--native-aot is only supported for C# projects (--lang csharp)");
-            }
+        if let Some(lang) = server_lang
+            && lang.to_lowercase() != "csharp"
+            && lang.to_lowercase() != "c#"
+        {
+            anyhow::bail!("--native-aot is only supported for C# projects (--lang csharp)");
         }
         // Print warning about Windows-only support
         println!(
             "{}",
-            "Note: NativeAOT-LLVM is experimental and currently only supported for Windows server modules."
-                .yellow()
+            "Note: NativeAOT-LLVM is experimental and currently only supported for Windows server modules.".yellow()
         );
     }
 
@@ -1764,10 +1762,7 @@ pub fn init_csharp_project(project_path: &Path) -> anyhow::Result<()> {
 fn add_native_aot_packages_to_csproj(project_path: &Path) -> anyhow::Result<()> {
     let csproj_path = project_path.join("StdbModule.csproj");
     if !csproj_path.exists() {
-        anyhow::bail!(
-            "Could not find StdbModule.csproj at {}",
-            csproj_path.display()
-        );
+        anyhow::bail!("Could not find StdbModule.csproj at {}", csproj_path.display());
     }
 
     let content = std::fs::read_to_string(&csproj_path)?;
