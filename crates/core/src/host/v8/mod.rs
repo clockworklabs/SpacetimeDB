@@ -609,12 +609,12 @@ struct JsInstanceLaneState {
     replace_lock: AsyncMutex<()>,
 }
 
-#[derive(Clone)]
 /// A single serialized execution lane for JS module work.
 ///
 /// Callers share one active [`JsInstance`] so hot requests stay on the same
 /// worker thread for locality. The lane only steps in on the rare path, where
 /// a trap or disconnect forces that active worker to be replaced.
+#[derive(Clone)]
 pub struct JsInstanceLane {
     module: JsModule,
     state: Arc<JsInstanceLaneState>,
