@@ -1,7 +1,10 @@
 use serde_json::{json, Value};
-use spacetimedb_smoketests::{require_dotnet, require_pnpm, Smoketest};
+use spacetimedb_smoketests::{
+    build_typescript_sdk, pnpm, random_string, require_dotnet, require_pnpm, run_cmd, workspace_root, Smoketest,
+};
+use std::fs;
 
-const TS_VIEWS_SUBSCRIBE_MODULE: &str = r#"import { schema, t, table } from "spacetimedb/server";
+const TS_VIEWS_SUBSCRIBE_MODULE: &str = r#"import { not, schema, t, table } from "spacetimedb/server";
 
 const playerState = table(
   { name: "player_state" },
@@ -36,7 +39,7 @@ export const online_players = spacetimedb.anonymousView(
 export const offline_players = spacetimedb.anonymousView(
   { public: true },
   t.array(playerState.rowType),
-  ctx => ctx.from.playerState.where(row => row.online.eq(true).not())
+  ctx => ctx.from.playerState.where(row => not(row.online.eq(true)))
 );
 
 export const insert_player_proc = spacetimedb.procedure(
@@ -62,6 +65,23 @@ export const insert_offline_player_proc = spacetimedb.procedure(
     return {};
   }
 );
+"#;
+
+const TS_CLIENT_QUERY_NOT_MODULE: &str = r#"use spacetimedb::{ReducerContext, Table, reducer, table};
+
+#[table(accessor = player, public)]
+pub struct Player {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    name: String,
+    online: bool,
+}
+
+#[reducer]
+pub fn insert_player(ctx: &ReducerContext, name: String, online: bool) {
+    ctx.db.player().insert(Player { id: 0, name, online });
+}
 "#;
 
 const CS_VIEWS_QUERY_BUILDER_MODULE: &str = r#"using SpacetimeDB;
@@ -264,6 +284,182 @@ fn assert_count_view_refresh_behavior(test: &Smoketest, view_name: &str, id: &st
 fn assert_all_count_view_refreshes(test: &Smoketest) {
     assert_count_view_refresh_behavior(test, "sender_table_count", "1", "10", "11");
     assert_count_view_refresh_behavior(test, "anon_table_count", "2", "20", "21");
+}
+
+fn run_typescript_client_query_builder_not_smoke(test: &Smoketest, db_name: &str) {
+    let client_dir = test.project_dir.path().join("ts-client-query-builder-not");
+    let client_src_dir = client_dir.join("src");
+    let generated_dir = client_src_dir.join("module_bindings");
+    fs::create_dir_all(&client_src_dir).unwrap();
+
+    fs::write(
+        client_dir.join("package.json"),
+        r#"{
+  "name": "ts-client-query-builder-not",
+  "private": true,
+  "type": "module"
+}
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        client_dir.join("tsconfig.json"),
+        r#"{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["src/**/*.ts"]
+}
+"#,
+    )
+    .unwrap();
+
+    let client_source = format!(
+        r#"import {{ not }} from 'spacetimedb';
+import {{ DbConnection, tables }} from './module_bindings/index';
+
+type Deferred<T> = {{
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+}};
+
+function deferred<T>(): Deferred<T> {{
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {{
+    resolve = res;
+    reject = rej;
+  }});
+  return {{ promise, resolve, reject }};
+}}
+
+async function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {{
+  return await Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(label)), 10_000)
+    ),
+  ]);
+}}
+
+async function waitFor(predicate: () => boolean, label: string): Promise<void> {{
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {{
+    if (predicate()) {{
+      return;
+    }}
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }}
+  throw new Error(label);
+}}
+
+const connected = deferred<DbConnection>();
+const connectError = deferred<never>();
+const subscriptionApplied = deferred<void>();
+const subscriptionError = deferred<never>();
+
+const connection = DbConnection.builder()
+  .withUri('{server_url}')
+  .withDatabaseName('{db_name}')
+  .onConnect(conn => connected.resolve(conn))
+  .onConnectError((_ctx, error) => connectError.reject(error))
+  .build();
+
+await withTimeout(
+  Promise.race([connected.promise, connectError.promise]),
+  'connection timed out'
+);
+
+connection
+  .subscriptionBuilder()
+  .onApplied(() => subscriptionApplied.resolve())
+  .onError(ctx =>
+    subscriptionError.reject(new Error(ctx.event?.message ?? 'subscription failed'))
+  )
+  .subscribe(tables.player.where(row => not(row.online.eq(true))).build());
+
+await withTimeout(
+  Promise.race([subscriptionApplied.promise, subscriptionError.promise]),
+  'subscription timed out'
+);
+
+await connection.reducers.insertPlayer({{ name: 'Alice', online: false }});
+await connection.reducers.insertPlayer({{ name: 'Bob', online: true }});
+
+await waitFor(
+  () => connection.db.player.count() === 1n,
+  'expected filtered cache to contain exactly one row'
+);
+
+const rows = Array.from(connection.db.player.iter());
+if (rows.length !== 1) {{
+  throw new Error(`expected one row in cache, got ${{rows.length}}`);
+}}
+if (rows[0]?.name !== 'Alice') {{
+  throw new Error(`expected Alice in cache, got ${{rows[0]?.name}}`);
+}}
+if (rows[0]?.online !== false) {{
+  throw new Error(`expected cached row to be offline, got ${{rows[0]?.online}}`);
+}}
+
+connection.disconnect();
+await new Promise(resolve => setTimeout(resolve, 100));
+"#,
+        server_url = test.server_url,
+        db_name = db_name,
+    );
+    fs::write(client_src_dir.join("client.ts"), client_source).unwrap();
+
+    build_typescript_sdk().unwrap();
+    let ts_bindings = workspace_root().join("crates/bindings-typescript");
+    let ts_bindings_path = ts_bindings.to_str().unwrap();
+    pnpm(&["install", ts_bindings_path], &client_dir).unwrap();
+
+    let module_path = test.project_dir.path();
+    test.spacetime(&[
+        "generate",
+        "--yes",
+        "--lang",
+        "typescript",
+        "--module-path",
+        module_path.to_str().unwrap(),
+        "--out-dir",
+        generated_dir.to_str().unwrap(),
+    ])
+    .unwrap();
+
+    let tsc = ts_bindings.join("node_modules/.bin/tsc");
+    run_cmd(
+        &[
+            tsc.to_str().unwrap(),
+            "-p",
+            client_dir.join("tsconfig.json").to_str().unwrap(),
+        ],
+        &client_dir,
+    )
+    .unwrap();
+    let ts_node_loader = ts_bindings.join("node_modules/ts-node/esm.mjs");
+    run_cmd(
+        &[
+            "node",
+            "--experimental-specifier-resolution=node",
+            "--loader",
+            ts_node_loader.to_str().unwrap(),
+            client_src_dir.join("client.ts").to_str().unwrap(),
+        ],
+        &client_dir,
+    )
+    .unwrap();
 }
 
 /// Tests that views populate the st_view_* system tables
@@ -841,6 +1037,20 @@ fn test_typescript_query_builder_view_query() {
 -------
  "Bob""#,
     );
+}
+
+#[test]
+fn test_typescript_client_query_builder_not() {
+    require_pnpm!();
+
+    let db_name = format!("views-ts-client-not-{}", random_string());
+    let mut test = Smoketest::builder()
+        .module_code(TS_CLIENT_QUERY_NOT_MODULE)
+        .autopublish(false)
+        .build();
+    test.publish_module_named(&db_name, true).unwrap();
+
+    run_typescript_client_query_builder_not_smoke(&test, &db_name);
 }
 
 #[test]

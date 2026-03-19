@@ -240,7 +240,7 @@ fn parse_expr(expr: Expr, depth: usize) -> SqlParseResult<SqlExpr> {
         Expr::UnaryOp {
             op: UnaryOperator::Not,
             expr,
-        } => Ok(parse_expr(*expr, depth + 1)?.negate()),
+        } => Ok(SqlExpr::Not(Box::new(parse_expr(*expr, depth + 1)?))),
         Expr::Identifier(ident) => Ok(SqlExpr::Var(ident.into())),
         Expr::CompoundIdentifier(mut idents) if idents.len() == 2 => {
             let table = idents.swap_remove(0).into();

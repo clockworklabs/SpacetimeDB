@@ -117,21 +117,11 @@ pub enum SqlExpr {
     Bin(Box<SqlExpr>, Box<SqlExpr>, BinOp),
     /// A binary logic expression
     Log(Box<SqlExpr>, Box<SqlExpr>, LogOp),
+    /// A unary logical negation expression
+    Not(Box<SqlExpr>),
 }
 
 impl SqlExpr {
-    pub fn negate(self) -> Self {
-        match self {
-            Self::Lit(SqlLiteral::Bool(v)) => Self::Lit(SqlLiteral::Bool(!v)),
-            Self::Bin(a, b, op) => Self::Bin(a, b, op.negate()),
-            Self::Log(a, b, LogOp::And) => Self::Log(Box::new(a.negate()), Box::new(b.negate()), LogOp::Or),
-            Self::Log(a, b, LogOp::Or) => Self::Log(Box::new(a.negate()), Box::new(b.negate()), LogOp::And),
-            expr @ (Self::Lit(_) | Self::Var(_) | Self::Param(_) | Self::Field(..)) => {
-                Self::Bin(Box::new(expr), Box::new(Self::Lit(SqlLiteral::Bool(false))), BinOp::Eq)
-            }
-        }
-    }
-
     pub fn qualify_vars(self, with: SqlIdent) -> Self {
         match self {
             Self::Var(name) => Self::Field(with, name),
@@ -146,6 +136,7 @@ impl SqlExpr {
                 Box::new(b.qualify_vars(with)),
                 op,
             ),
+            Self::Not(expr) => Self::Not(Box::new(expr.qualify_vars(with))),
         }
     }
 
@@ -153,6 +144,7 @@ impl SqlExpr {
         match self {
             Self::Var(_) => true,
             Self::Bin(a, b, _) | Self::Log(a, b, _) => a.has_unqualified_vars() || b.has_unqualified_vars(),
+            Self::Not(expr) => expr.has_unqualified_vars(),
             _ => false,
         }
     }
@@ -164,6 +156,7 @@ impl SqlExpr {
             Self::Lit(_) | Self::Var(_) | Self::Field(..) => false,
             Self::Param(Parameter::Sender) => true,
             Self::Bin(a, b, _) | Self::Log(a, b, _) => a.has_parameter() || b.has_parameter(),
+            Self::Not(expr) => expr.has_parameter(),
         }
     }
 
@@ -185,6 +178,7 @@ impl SqlExpr {
                 Box::new(b.resolve_sender(sender_identity)),
                 op,
             ),
+            Self::Not(expr) => Self::Not(Box::new(expr.resolve_sender(sender_identity))),
         }
     }
 }
@@ -241,19 +235,6 @@ impl Display for BinOp {
             Self::Gt => write!(f, ">"),
             Self::Lte => write!(f, "<="),
             Self::Gte => write!(f, ">="),
-        }
-    }
-}
-
-impl BinOp {
-    pub const fn negate(self) -> Self {
-        match self {
-            Self::Eq => Self::Ne,
-            Self::Ne => Self::Eq,
-            Self::Lt => Self::Gte,
-            Self::Gt => Self::Lte,
-            Self::Lte => Self::Gt,
-            Self::Gte => Self::Lt,
         }
     }
 }

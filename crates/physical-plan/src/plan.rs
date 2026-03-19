@@ -1282,6 +1282,8 @@ pub enum Semi {
 pub enum PhysicalExpr {
     /// An n-ary logic expression
     LogOp(LogOp, Vec<PhysicalExpr>),
+    /// A unary logical negation expression
+    Not(Box<PhysicalExpr>),
     /// A binary expression
     BinOp(BinOp, Box<PhysicalExpr>, Box<PhysicalExpr>),
     /// A constant algebraic value
@@ -1319,6 +1321,7 @@ impl PhysicalExpr {
                 a.visit(f);
                 b.visit(f);
             }
+            Self::Not(expr) => expr.visit(f),
             Self::LogOp(_, exprs) => {
                 for expr in exprs {
                     expr.visit(f);
@@ -1336,6 +1339,7 @@ impl PhysicalExpr {
                 a.visit_mut(f);
                 b.visit_mut(f);
             }
+            Self::Not(expr) => expr.visit_mut(f),
             Self::LogOp(_, exprs) => {
                 for expr in exprs {
                     expr.visit_mut(f);
@@ -1350,6 +1354,7 @@ impl PhysicalExpr {
         match f(self) {
             value @ Self::Value(..) => value,
             field @ Self::Field(..) => field,
+            Self::Not(expr) => Self::Not(Box::new(expr.map(f))),
             Self::BinOp(op, a, b) => Self::BinOp(op, Box::new(a.map(f)), Box::new(b.map(f))),
             Self::LogOp(op, exprs) => Self::LogOp(op, exprs.into_iter().map(|expr| expr.map(f)).collect()),
         }
@@ -1387,6 +1392,7 @@ impl PhysicalExpr {
         }
         let into = |b| Cow::Owned(AlgebraicValue::Bool(b));
         match self {
+            Self::Not(expr) => into(!expr.eval_bool_with_metrics(row, bytes_scanned)),
             Self::BinOp(op, a, b) => into(eval_bin_op(
                 *op,
                 &a.eval_with_metrics(row, bytes_scanned),
@@ -1427,6 +1433,7 @@ impl PhysicalExpr {
                     })
                     .collect(),
             ),
+            Self::Not(expr) => Self::Not(Box::new(expr.flatten())),
             Self::BinOp(op, a, b) => Self::BinOp(op, Box::new(a.flatten()), Box::new(b.flatten())),
             Self::Field(..) | Self::Value(..) => self,
         }

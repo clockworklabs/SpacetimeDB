@@ -19,8 +19,7 @@ use spacetimedb_vm::operator::{OpCmp, OpLogic, OpQuery};
 use spacetimedb_vm::ops::parse::{parse, parse_simple_enum};
 use sqlparser::ast::{
     Assignment, BinaryOperator, Expr as SqlExpr, HiveDistributionStyle, Ident, JoinConstraint, JoinOperator,
-    ObjectName, Query, Select, SelectItem, SetExpr, Statement, TableFactor, TableWithJoins, UnaryOperator, Value,
-    Values,
+    ObjectName, Query, Select, SelectItem, SetExpr, Statement, TableFactor, TableWithJoins, Value, Values,
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
@@ -357,52 +356,13 @@ fn compile_expr_value<'a>(
     field: Option<&'a AlgebraicType>,
     of: SqlExpr,
 ) -> Result<FieldOp, PlanError> {
-    fn negate_cmp(op: OpCmp) -> OpCmp {
-        match op {
-            OpCmp::Eq => OpCmp::NotEq,
-            OpCmp::NotEq => OpCmp::Eq,
-            OpCmp::Lt => OpCmp::GtEq,
-            OpCmp::LtEq => OpCmp::Gt,
-            OpCmp::Gt => OpCmp::LtEq,
-            OpCmp::GtEq => OpCmp::Lt,
-        }
-    }
-
-    fn negate_field_op(op: FieldOp) -> FieldOp {
-        match op {
-            FieldOp::Field(FieldExpr::Value(AlgebraicValue::Bool(value))) => {
-                FieldExpr::Value(AlgebraicValue::Bool(!value)).into()
-            }
-            FieldOp::Field(field) => FieldOp::new(
-                OpCmp::Eq.into(),
-                FieldOp::Field(field),
-                FieldExpr::Value(AlgebraicValue::Bool(false)).into(),
-            ),
-            FieldOp::Cmp {
-                op: OpQuery::Cmp(op),
-                lhs,
-                rhs,
-            } => FieldOp::new(negate_cmp(op).into(), *lhs, *rhs),
-            FieldOp::Cmp {
-                op: OpQuery::Logic(OpLogic::And),
-                lhs,
-                rhs,
-            } => FieldOp::new(OpLogic::Or.into(), negate_field_op(*lhs), negate_field_op(*rhs)),
-            FieldOp::Cmp {
-                op: OpQuery::Logic(OpLogic::Or),
-                lhs,
-                rhs,
-            } => FieldOp::new(OpLogic::And.into(), negate_field_op(*lhs), negate_field_op(*rhs)),
-        }
-    }
-
-    match of {
-        SqlExpr::Identifier(name) => Ok(FieldExpr::Name(find_field(tables, &name.value)?.0).into()),
+    Ok(FieldOp::Field(match of {
+        SqlExpr::Identifier(name) => FieldExpr::Name(find_field(tables, &name.value)?.0),
         SqlExpr::CompoundIdentifier(ident) => {
             let col_name = compound_ident(&ident);
-            Ok(FieldExpr::Name(find_field(tables, &col_name)?.0).into())
+            FieldExpr::Name(find_field(tables, &col_name)?.0)
         }
-        SqlExpr::Value(x) => Ok(FieldExpr::Value(match x {
+        SqlExpr::Value(x) => FieldExpr::Value(match x {
             Value::Number(value, is_long) => infer_number(field, &value, is_long)?,
             Value::SingleQuotedString(s) => infer_str_or_enum(field, s)?,
             Value::DoubleQuotedString(s) => AlgebraicValue::String(s.into()),
@@ -414,26 +374,21 @@ fn compile_expr_value<'a>(
                     feature: format!("Unsupported value: {x}."),
                 });
             }
-        })
-        .into()),
+        }),
         SqlExpr::BinaryOp { left, op, right } => {
             let (op, lhs, rhs) = compile_bin_op(tables, op, left, right)?;
-            Ok(FieldOp::new(op, lhs, rhs))
+
+            return Ok(FieldOp::new(op, lhs, rhs));
         }
-        SqlExpr::UnaryOp {
-            op: UnaryOperator::Not,
-            expr,
-        } => {
-            let inner_field = extract_field(tables.clone(), &expr)?;
-            let inner = compile_expr_value(tables, inner_field, *expr)?;
-            Ok(negate_field_op(inner))
+        SqlExpr::Nested(x) => {
+            return compile_expr_value(tables, field, *x);
         }
-        SqlExpr::Nested(x) => compile_expr_value(tables, field, *x),
-        x => Err(PlanError::Unsupported {
-            feature: format!("Unsupported expression: {x}"),
-        }),
-    }
-    .map(FieldOp::from)
+        x => {
+            return Err(PlanError::Unsupported {
+                feature: format!("Unsupported expression: {x}"),
+            });
+        }
+    }))
 }
 
 fn compile_expr_field(table: &From, field: Option<&AlgebraicType>, of: SqlExpr) -> Result<FieldExpr, PlanError> {
@@ -500,8 +455,17 @@ fn compile_bin_op<'a>(
 }
 
 fn _compile_where(table: &From, filter: SqlExpr) -> Result<Option<Selection>, PlanError> {
-    let clause = compile_expr_value(table.iter_tables(), None, filter)?;
-    Ok(Some(Selection { clause }))
+    match filter {
+        SqlExpr::BinaryOp { left, op, right } => {
+            let (op, lhs, rhs) = compile_bin_op(table.iter_tables(), op, left, right)?;
+
+            Ok(Some(Selection::with_cmp(op, lhs, rhs)))
+        }
+        SqlExpr::Nested(x) => _compile_where(table, *x),
+        x => Err(PlanError::Unsupported {
+            feature: format!("Unsupported in WHERE: {x}."),
+        }),
+    }
 }
 
 /// Compiles the `WHERE` clause

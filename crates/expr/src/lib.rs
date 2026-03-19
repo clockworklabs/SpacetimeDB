@@ -123,6 +123,10 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
             let b = _type_expr(vars, *b, Some(&AlgebraicType::Bool), depth + 1)?;
             Ok(Expr::LogOp(op, Box::new(a), Box::new(b)))
         }
+        (SqlExpr::Not(expr), None | Some(AlgebraicType::Bool)) => {
+            let expr = _type_expr(vars, *expr, Some(&AlgebraicType::Bool), depth + 1)?;
+            Ok(Expr::Not(Box::new(expr)))
+        }
         (SqlExpr::Bin(a, b, op), None | Some(AlgebraicType::Bool)) if matches!(&*a, SqlExpr::Lit(_)) => {
             let b = _type_expr(vars, *b, None, depth + 1)?;
             let a = _type_expr(vars, *a, Some(b.ty()), depth + 1)?;
@@ -139,7 +143,9 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
             }
             Ok(Expr::BinOp(op, Box::new(a), Box::new(b)))
         }
-        (SqlExpr::Bin(..) | SqlExpr::Log(..), Some(ty)) => Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into()),
+        (SqlExpr::Bin(..) | SqlExpr::Log(..) | SqlExpr::Not(..), Some(ty)) => {
+            Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into())
+        }
         // Both unqualified names as well as parameters are syntactic constructs.
         // Unqualified names are qualified and parameters are resolved before type checking.
         (SqlExpr::Var(_) | SqlExpr::Param(_), _) => unreachable!(),

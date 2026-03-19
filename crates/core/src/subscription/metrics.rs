@@ -64,6 +64,7 @@ fn extract_columns(
                 extract_columns(expr, schema, columns);
             }
         }
+        PhysicalExpr::Not(expr) => extract_columns(expr, schema, columns),
         PhysicalExpr::Value(_) => {}
     }
 }

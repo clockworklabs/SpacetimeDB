@@ -381,6 +381,8 @@ pub enum Expr {
     BinOp(BinOp, Box<Expr>, Box<Expr>),
     /// A binary logic expression
     LogOp(LogOp, Box<Expr>, Box<Expr>),
+    /// A unary logical negation expression
+    Not(Box<Expr>),
     /// A typed literal expression
     Value(AlgebraicValue, AlgebraicType),
     /// A field projection
@@ -396,6 +398,7 @@ impl Expr {
                 a.visit(f);
                 b.visit(f);
             }
+            Self::Not(expr) => expr.visit(f),
             Self::Value(..) | Self::Field(..) => {}
         }
     }
@@ -408,6 +411,7 @@ impl Expr {
                 a.visit_mut(f);
                 b.visit_mut(f);
             }
+            Self::Not(expr) => expr.visit_mut(f),
             Self::Value(..) | Self::Field(..) => {}
         }
     }
@@ -425,7 +429,7 @@ impl Expr {
     /// The [AlgebraicType] of this scalar expression
     pub fn ty(&self) -> &AlgebraicType {
         match self {
-            Self::BinOp(..) | Self::LogOp(..) => &AlgebraicType::Bool,
+            Self::BinOp(..) | Self::LogOp(..) | Self::Not(..) => &AlgebraicType::Bool,
             Self::Value(_, ty) | Self::Field(FieldProject { ty, .. }) => ty,
         }
     }

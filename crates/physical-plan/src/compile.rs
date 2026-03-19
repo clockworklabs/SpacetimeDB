@@ -15,6 +15,7 @@ pub trait VarLabel {
 fn compile_expr(expr: Expr, var: &mut impl VarLabel) -> PhysicalExpr {
     match expr {
         Expr::LogOp(op, a, b) => PhysicalExpr::LogOp(op, vec![compile_expr(*a, var), compile_expr(*b, var)]),
+        Expr::Not(expr) => PhysicalExpr::Not(Box::new(compile_expr(*expr, var))),
         Expr::BinOp(op, a, b) => {
             let a = Box::new(compile_expr(*a, var));
             let b = Box::new(compile_expr(*b, var));
