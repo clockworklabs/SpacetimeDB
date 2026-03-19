@@ -1,10 +1,7 @@
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::large_enum_variant)]
-mod module_bindings;
-mod pk_test_table;
-mod simple_test_table;
-mod test_handlers;
-mod unique_test_table;
+mod lib;
+use lib::test_handlers;
 
 /// Register a panic hook which will exit the process whenever any thread panics.
 fn exit_on_panic() {

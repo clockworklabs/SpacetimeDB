@@ -1,8 +1,6 @@
 #![allow(clippy::disallowed_macros)]
 
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
 mod module_bindings;
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
 mod test_handlers;
 
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
