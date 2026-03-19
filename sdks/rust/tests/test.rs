@@ -464,6 +464,11 @@ macro_rules! view_tests {
             }
 
             #[test]
+            fn subscribe_anonymous_view_query_builder_not() {
+                make_test("view-anonymous-subscribe-with-query-builder-not").run()
+            }
+
+            #[test]
             fn subscribe_non_anonymous_view() {
                 make_test("view-non-anonymous-subscribe").run()
             }
@@ -527,6 +532,11 @@ macro_rules! view_pk_tests {
             #[test]
             fn query_builder_semijoin_two_sender_views_with_pk() {
                 make_test("view-pk-semijoin-two-sender-views-query-builder").run()
+            }
+
+            #[test]
+            fn query_builder_not_filter_on_view_with_pk() {
+                make_test("view-pk-not-query-builder").run()
             }
         }
     };

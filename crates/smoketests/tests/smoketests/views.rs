@@ -33,6 +33,12 @@ export const online_players = spacetimedb.anonymousView(
   ctx => ctx.from.playerState.where(row => row.online)
 );
 
+export const offline_players = spacetimedb.anonymousView(
+  { public: true },
+  t.array(playerState.rowType),
+  ctx => ctx.from.playerState.where(row => row.online.eq(true).not())
+);
+
 export const insert_player_proc = spacetimedb.procedure(
   { name: t.string() },
   t.unit(),
@@ -40,6 +46,18 @@ export const insert_player_proc = spacetimedb.procedure(
     const sender = ctx.sender;
     ctx.withTx(tx => {
       tx.db.playerState.insert({ name, identity: sender, online: true });
+    });
+    return {};
+  }
+);
+
+export const insert_offline_player_proc = spacetimedb.procedure(
+  { name: t.string() },
+  t.unit(),
+  (ctx, { name }) => {
+    const sender = ctx.sender;
+    ctx.withTx(tx => {
+      tx.db.playerState.insert({ name, identity: sender, online: false });
     });
     return {};
   }
@@ -73,6 +91,12 @@ public static partial class Module
     public static IQuery<Table> Some(ViewContext ctx)
     {
         return ctx.From.Table().Where(Row => Row.Alive);
+    }
+
+    [View(Accessor = "not_alive", Public = true)]
+    public static IQuery<Table> NotAlive(ViewContext ctx)
+    {
+        return ctx.From.Table().Where(Row => Row.Alive.Eq(true).Not());
     }
 }
 "#;
@@ -590,6 +614,18 @@ fn test_query_view() {
 }
 
 #[test]
+fn test_query_not_view() {
+    let test = Smoketest::builder().precompiled_module("views-query").build();
+    test.assert_sql(
+        "SELECT * FROM offline_users_via_not",
+        r#" identity | name  | online
+----------+-------+--------
+ 2        | "BOB" | false
+ 3        | "POP" | false"#,
+    );
+}
+
+#[test]
 fn test_query_right_semijoin_view() {
     let test = Smoketest::builder().precompiled_module("views-query").build();
     test.assert_sql(
@@ -789,12 +825,21 @@ fn test_typescript_query_builder_view_query() {
     .unwrap();
 
     test.call("insert_player_proc", &["Alice"]).unwrap();
+    test.new_identity().unwrap();
+    test.call("insert_offline_player_proc", &["Bob"]).unwrap();
 
     test.assert_sql(
         "SELECT name FROM online_players",
         r#" name
 ---------
  "Alice""#,
+    );
+
+    test.assert_sql(
+        "SELECT name FROM offline_players",
+        r#" name
+-------
+ "Bob""#,
     );
 }
 
@@ -814,6 +859,31 @@ fn test_csharp_query_builder_view_query() {
         r#" value | alive
 -------+-------
  1     | true"#,
+    );
+
+    test.assert_sql(
+        "SELECT * FROM not_alive",
+        r#" value | alive
+-------+-------
+ 0     | false
+ 2     | false"#,
+    );
+}
+
+#[test]
+fn test_sql_not_predicate() {
+    let test = Smoketest::builder().precompiled_module("views-sql").build();
+
+    test.call("set_player_state", &["1", "1"]).unwrap();
+    test.call("set_player_state", &["2", "2"]).unwrap();
+    test.call("set_player_state", &["3", "3"]).unwrap();
+
+    test.assert_sql(
+        "SELECT * FROM player_state WHERE NOT (player_state.level = 2)",
+        r#" id | level
+----+-------
+ 1  | 1
+ 3  | 3"#,
     );
 }
 

@@ -2,7 +2,7 @@ mod module_bindings;
 
 use module_bindings::*;
 use spacetimedb_sdk::TableWithPrimaryKey;
-use spacetimedb_sdk::{error::InternalError, DbContext};
+use spacetimedb_sdk::{error::InternalError, DbContext, Table};
 use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";
@@ -279,6 +279,53 @@ fn exec_view_pk_semijoin_two_sender_views_query_builder() {
     test_counter.wait_for_all();
 }
 
+fn exec_view_pk_not_query_builder() {
+    let test_counter = TestCounter::new();
+    let mut allowed_insert = Some(test_counter.add_test("allowed_insert"));
+
+    connect_then(&test_counter, move |ctx| {
+        ctx.subscription_builder()
+            .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
+            .on_applied(move |ctx| {
+                ctx.db.all_view_pk_players().on_insert(move |ctx, row| {
+                    assert_eq!(row.id, 2);
+                    assert_eq!(row.name, "allowed");
+
+                    let rows = ctx.db.all_view_pk_players().iter().collect::<Vec<_>>();
+                    assert_eq!(rows.len(), 1);
+                    assert_eq!(rows[0].id, 2);
+                    assert_eq!(rows[0].name, "allowed");
+
+                    put_result(&mut allowed_insert, Ok(()));
+                });
+
+                ctx.reducers()
+                    .insert_view_pk_player_then(
+                        1,
+                        "blocked".to_string(),
+                        reducer_callback_assert_committed("insert_view_pk_player"),
+                    )
+                    .unwrap();
+                ctx.reducers()
+                    .insert_view_pk_player_then(
+                        2,
+                        "allowed".to_string(),
+                        reducer_callback_assert_committed("insert_view_pk_player"),
+                    )
+                    .unwrap();
+            })
+            .add_query(|q| {
+                q.from
+                    .all_view_pk_players()
+                    .filter(|player| player.name.eq("blocked".to_string()).not())
+                    .build()
+            })
+            .subscribe();
+    });
+
+    test_counter.wait_for_all();
+}
+
 fn main() {
     env_logger::init();
     exit_on_panic();
@@ -291,6 +338,7 @@ fn main() {
         "view-pk-on-update" => exec_view_pk_on_update(),
         "view-pk-join-query-builder" => exec_view_pk_join_query_builder(),
         "view-pk-semijoin-two-sender-views-query-builder" => exec_view_pk_semijoin_two_sender_views_query_builder(),
+        "view-pk-not-query-builder" => exec_view_pk_not_query_builder(),
         _ => panic!("Unknown test: {test}"),
     }
 }

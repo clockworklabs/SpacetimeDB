@@ -120,6 +120,18 @@ pub enum SqlExpr {
 }
 
 impl SqlExpr {
+    pub fn negate(self) -> Self {
+        match self {
+            Self::Lit(SqlLiteral::Bool(v)) => Self::Lit(SqlLiteral::Bool(!v)),
+            Self::Bin(a, b, op) => Self::Bin(a, b, op.negate()),
+            Self::Log(a, b, LogOp::And) => Self::Log(Box::new(a.negate()), Box::new(b.negate()), LogOp::Or),
+            Self::Log(a, b, LogOp::Or) => Self::Log(Box::new(a.negate()), Box::new(b.negate()), LogOp::And),
+            expr @ (Self::Lit(_) | Self::Var(_) | Self::Param(_) | Self::Field(..)) => {
+                Self::Bin(Box::new(expr), Box::new(Self::Lit(SqlLiteral::Bool(false))), BinOp::Eq)
+            }
+        }
+    }
+
     pub fn qualify_vars(self, with: SqlIdent) -> Self {
         match self {
             Self::Var(name) => Self::Field(with, name),
@@ -229,6 +241,19 @@ impl Display for BinOp {
             Self::Gt => write!(f, ">"),
             Self::Lte => write!(f, "<="),
             Self::Gte => write!(f, ">="),
+        }
+    }
+}
+
+impl BinOp {
+    pub const fn negate(self) -> Self {
+        match self {
+            Self::Eq => Self::Ne,
+            Self::Ne => Self::Eq,
+            Self::Lt => Self::Gte,
+            Self::Gt => Self::Lte,
+            Self::Lte => Self::Gt,
+            Self::Gte => Self::Lt,
         }
     }
 }

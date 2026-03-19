@@ -530,6 +530,9 @@ mod tests {
             "select str, arr from t",
             "select t.str, arr from t",
             "select * from t limit 5",
+            "select str from t where not (u32 = 1)",
+            "delete from t where not (u32 = 1)",
+            "update t set u32 = 1 where not (u32 = 2)",
         ] {
             let result = parse_and_type_sql(sql, &tx);
             assert!(result.is_ok());

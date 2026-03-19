@@ -237,6 +237,10 @@ fn parse_expr(expr: Expr, depth: usize) -> SqlParseResult<SqlExpr> {
         } if matches!(&*expr, Expr::Value(Value::Number(..))) => {
             signed_num("-", *expr).map_err(SqlParseError::SqlUnsupported)
         }
+        Expr::UnaryOp {
+            op: UnaryOperator::Not,
+            expr,
+        } => Ok(parse_expr(*expr, depth + 1)?.negate()),
         Expr::Identifier(ident) => Ok(SqlExpr::Var(ident.into())),
         Expr::CompoundIdentifier(mut idents) if idents.len() == 2 => {
             let table = idents.swap_remove(0).into();

@@ -76,6 +76,7 @@
 //!
 //! predicate
 //!     = expr
+//!     | NOT predicate
 //!     | predicate AND predicate
 //!     | predicate OR  predicate
 //!     ;
@@ -440,14 +441,17 @@ mod tests {
         for sql in [
             "select a from t",
             "select a from t where x = :sender",
+            "select a from t where not (x = 1)",
             "select count(*) as n from t",
             "select count(*) as n from t join s on t.id = s.id where s.x = 1",
             "insert into t values (1, 2)",
             "delete from t",
             "delete from t where a = 1",
+            "delete from t where not (a = 1)",
             "delete from t where x = :sender",
             "update t set a = 1, b = 2",
             "update t set a = 1, b = 2 where c = 3",
+            "update t set a = 1, b = 2 where not (c = 3)",
             "update t set a = 1, b = 2 where x = :sender",
         ] {
             assert!(parse_sql(sql).is_ok());

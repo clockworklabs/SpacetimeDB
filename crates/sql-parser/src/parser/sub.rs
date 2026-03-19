@@ -18,6 +18,7 @@
 //!
 //! predicate
 //!     = expr
+//!     | NOT predicate
 //!     | predicate AND predicate
 //!     | predicate OR  predicate
 //!     ;
@@ -172,6 +173,7 @@ mod tests {
         for sql in [
             "select * from t",
             "select * from t where a = 1",
+            "select * from t where not (a = 1)",
             "select * from t where a <> 1",
             "select * from t where a = 1 or a = 2",
             "select t.* from t join s",
