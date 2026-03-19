@@ -2638,7 +2638,7 @@ async fn test_parameterized_subscription(db_name: &str) {
 
 /// In this test we have two clients subscribe to the `users` table.
 /// Access to this table is controlled using the following RLS rule:
-/// ```rust
+/// ```rust,ignore
 /// #[spacetimedb::client_visibility_filter]
 /// const USERS_FILTER: spacetimedb::Filter = spacetimedb::Filter::Sql(
 ///     "SELECT * FROM users WHERE identity = :sender"
