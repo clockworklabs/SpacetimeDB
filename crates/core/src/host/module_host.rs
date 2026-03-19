@@ -781,7 +781,7 @@ impl CreateInstanceTimeMetric {
 }
 
 impl<M: GenericModule> ModuleInstanceManager<M> {
-    fn new(module: M, init_inst: M::Instance, database_identity: Identity) -> Self {
+    fn new(module: M, init_inst: Option<M::Instance>, database_identity: Identity) -> Self {
         let host_type = module.host_type();
         let create_instance_time_metric = CreateInstanceTimeMetric {
             metric: WORKER_METRICS
@@ -791,29 +791,11 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             database_identity,
         };
 
-        // Add the first instance.
         let mut instances = VecDeque::new();
-        instances.push_front(init_inst);
+        instances.extend(init_inst);
 
         Self {
             instances: Mutex::new(instances),
-            module,
-            create_instance_time_metric,
-        }
-    }
-
-    fn new_empty(module: M, database_identity: Identity) -> Self {
-        let host_type = module.host_type();
-        let create_instance_time_metric = CreateInstanceTimeMetric {
-            metric: WORKER_METRICS
-                .module_create_instance_time_seconds
-                .with_label_values(&database_identity, &host_type),
-            host_type,
-            database_identity,
-        };
-
-        Self {
-            instances: Mutex::new(VecDeque::new()),
             module,
             create_instance_time_metric,
         }
@@ -1041,7 +1023,7 @@ impl ModuleHost {
                 init_inst,
             } => {
                 info = module.info();
-                let instance_manager = ModuleInstanceManager::new(module, init_inst, database_identity);
+                let instance_manager = ModuleInstanceManager::new(module, Some(init_inst), database_identity);
                 Arc::new(ModuleHostInner::Wasm(WasmtimeModuleHost {
                     executor,
                     instance_manager,
@@ -1050,7 +1032,7 @@ impl ModuleHost {
             ModuleWithInstance::Js { module, init_inst } => {
                 info = module.info();
                 let instance_lane = super::v8::JsInstanceLane::new(module.clone(), init_inst);
-                let procedure_instances = ModuleInstanceManager::new_empty(module.clone(), database_identity);
+                let procedure_instances = ModuleInstanceManager::new(module.clone(), None, database_identity);
                 Arc::new(ModuleHostInner::Js(V8ModuleHost {
                     module,
                     instance_lane,

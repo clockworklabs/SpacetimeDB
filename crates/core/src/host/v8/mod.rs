@@ -349,6 +349,11 @@ impl JsInstanceEnv {
 /// and friends.
 #[derive(Clone)]
 pub struct JsInstance {
+    /// Stable identifier for the underlying worker generation.
+    ///
+    /// All clones of the same handle share the same `id`. The instance lane uses
+    /// it to tell whether the currently active worker has already been replaced
+    /// after a trap or disconnect.
     id: u64,
     request_tx: flume::Sender<JsWorkerRequest>,
     trapped: Arc<AtomicBool>,
@@ -519,44 +524,57 @@ type JsReplyTx<T> = oneshot::Sender<JsWorkerReply<T>>;
 /// executes the request there, and then has to send both the typed result and
 /// the worker's trapped-bit back to the async caller.
 enum JsWorkerRequest {
+    /// See [`JsInstance::run_on_thread`].
+    ///
+    /// This variant does not expect a [`JsWorkerReply`].
     RunFunction(Box<dyn FnOnce() -> LocalBoxFuture<'static, ()> + Send>),
+    /// See [`JsInstance::update_database`].
     UpdateDatabase {
         reply_tx: JsReplyTx<anyhow::Result<UpdateDatabaseResult>>,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
     },
+    /// See [`JsInstance::call_reducer`].
     CallReducer {
         reply_tx: JsReplyTx<ReducerCallResult>,
         params: CallReducerParams,
     },
+    /// See [`JsInstance::call_view`].
     CallView {
         reply_tx: JsReplyTx<ViewCommandResult>,
         cmd: ViewCommand,
     },
+    /// See [`JsInstance::call_procedure`].
     CallProcedure {
         reply_tx: JsReplyTx<CallProcedureReturn>,
         params: CallProcedureParams,
     },
+    /// See [`JsInstance::clear_all_clients`].
     ClearAllClients(JsReplyTx<anyhow::Result<()>>),
+    /// See [`JsInstance::call_identity_connected`].
     CallIdentityConnected {
         reply_tx: JsReplyTx<Result<(), ClientConnectedError>>,
         caller_auth: ConnectionAuthCtx,
         caller_connection_id: ConnectionId,
     },
+    /// See [`JsInstance::call_identity_disconnected`].
     CallIdentityDisconnected {
         reply_tx: JsReplyTx<Result<(), ReducerCallError>>,
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
     },
+    /// See [`JsInstance::disconnect_client`].
     DisconnectClient {
         reply_tx: JsReplyTx<Result<(), ReducerCallError>>,
         client_id: ClientActorId,
     },
+    /// See [`JsInstance::init_database`].
     InitDatabase {
         reply_tx: JsReplyTx<anyhow::Result<Option<ReducerCallResult>>>,
         program: Program,
     },
+    /// See [`JsInstance::call_scheduled_function`].
     CallScheduledFunction {
         reply_tx: JsReplyTx<CallScheduledFunctionResult>,
         params: ScheduledFunctionParams,
@@ -592,6 +610,11 @@ struct JsInstanceLaneState {
 }
 
 #[derive(Clone)]
+/// A single serialized execution lane for JS module work.
+///
+/// Callers share one active [`JsInstance`] so hot requests stay on the same
+/// worker thread for locality. The lane only steps in on the rare path, where
+/// a trap or disconnect forces that active worker to be replaced.
 pub struct JsInstanceLane {
     module: JsModule,
     state: Arc<JsInstanceLaneState>,
