@@ -54,7 +54,7 @@ Byte  7:    Checksum algo   "0"       — CRC32C
 Bytes 8-9:  Reserved        "00"
 ```
 
-Format version 0 is the original format defined in proposal 0003. Format version 1 adds the `epoch` field to each commit (proposal 0027). Software must reject segments with a format version higher than what it supports.
+Format version 0 is the original format, which does not include an `epoch` field in commits. Format version 1 (the current default) adds the `epoch` field to each commit. Software must reject segments with a format version higher than what it supports. Because `epoch` has a default value of zero, software supporting version 1 can also read version 0 segments.
 
 ## Commit Format
 
@@ -72,7 +72,7 @@ All integers are encoded in little-endian byte order.
 | Field | Size | Description |
 |-------|------|-------------|
 | `min-tx-offset` | 8 bytes | The transaction offset of the first record in this commit. Starts at zero and increments by `n` for each successive commit. |
-| `epoch` | 8 bytes | The replication leader epoch (term). Zero indicates single-node mode. Added in format version 1. |
+| `epoch` | 8 bytes | The replication leader epoch (term). Zero indicates single-node mode. Present only in format version 1 and later; in version 0, the epoch is implicitly zero and the commit header is 8 bytes shorter. |
 | `n` | 2 bytes | The number of transaction records in this commit. |
 | `len` | 4 bytes | The byte length of the `records` payload. Allows skipping over the payload without decoding it. |
 | `records` | `len` bytes | The encoded transaction data. See [Transaction Records](#transaction-records). |
@@ -101,14 +101,14 @@ The `records` payload of a commit contains `n` transaction records. Each record 
 └───────┴──────────┴─────────┴───────────┘
 ```
 
-The `flags` byte is a bitfield:
+The `flags` byte is a bitfield. The high bits indicate which sections are present:
 
 | Bit | Meaning |
 |-----|---------|
-| 0 | Inputs present |
-| 1 | Outputs present |
-| 2 | Mutations present |
-| 3-7 | Reserved |
+| 7 | Inputs present |
+| 6 | Outputs present |
+| 5 | Mutations present |
+| 0-4 | Reserved |
 
 Each section is present only if its corresponding bit is set.
 
@@ -117,20 +117,16 @@ Each section is present only if its corresponding bit is set.
 The inputs section records the reducer call that produced this transaction:
 
 ```
-inputs = len reducer-name reducer-args
+inputs = len(u32) slen(u8) slen(reducer-name) reducer-args
 ```
 
-The reducer name is encoded as a length-prefixed UTF-8 string (1-byte length prefix, maximum 255 bytes). The reducer arguments are encoded as a contiguous BSATN byte string in the following order:
+The section starts with a 4-byte (`u32`) length prefix covering the entire inputs payload (excluding the length prefix itself). Within this payload, the reducer name is encoded as a length-prefixed UTF-8 string with a 1-byte (`u8`) length prefix (maximum 255 bytes). The remaining bytes after the reducer name are the reducer arguments, encoded as a contiguous BSATN byte string.
 
-```
-caller_identity || caller_address || timestamp || arguments
-```
-
-The fields of `ReducerContext` are encoded in order of increasing variance. The arguments can only be decoded using a runtime representation of the WASM module in effect at that transaction offset.
+The arguments can only be decoded using a runtime representation of the WASM module in effect at that transaction offset, as the argument types are determined by the reducer signature.
 
 ### Outputs
 
-The outputs section consists of a length-prefixed string representing an error result from the reducer, if any.
+The outputs section consists of a length-prefixed UTF-8 string (1-byte length prefix, maximum 255 bytes) representing an error result from the reducer, if any.
 
 ### Mutations
 
@@ -140,11 +136,11 @@ The mutations section records the database state modifications that constitute t
 mutations = inserts deletes truncates
 ```
 
-Each sub-section uses varint-encoded (protobuf zig-zag) counts:
+Each sub-section uses varint-encoded counts (variable-length unsigned integers):
 
-- **Inserts**: Grouped by table ID. Each group contains one or more rows encoded as BSATN.
-- **Deletes**: Grouped by table ID. Each group contains one or more whole rows encoded as BSATN.
-- **Truncates**: A list of table IDs whose contents were cleared.
+- **Inserts**: A varint count of table groups, then for each group: a `u32` table ID, a varint row count, and then that many rows encoded as BSATN.
+- **Deletes**: Same structure as inserts. Each row is encoded in full (whole-row content, not pointers).
+- **Truncates**: A varint count followed by that many `u32` table IDs whose contents were cleared.
 
 Delete operations store the full row content rather than row pointers, because row IDs are not stable across restarts.
 
