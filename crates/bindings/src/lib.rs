@@ -938,8 +938,8 @@ impl ViewContext {
         self.sender
     }
 
-    /// Obtain an [`AnonymousViewContext`] for easier code reuse.
-    pub fn as_anonymous_read_only(&self) -> AnonymousViewContext {
+    /// Obtain an [`AnonymousViewContext`] by dropping `sender`.
+    pub fn as_anonymous(&self) -> AnonymousViewContext {
         AnonymousViewContext::default()
     }
 }
