@@ -39,6 +39,7 @@ data class NoteData(
 class ChatRepository(
     private val httpClient: HttpClient,
     private val tokenStore: TokenStore,
+    private val host: String,
 ) {
     private var conn: DbConnection? = null
     private var mainSubHandle: SubscriptionHandle? = null
@@ -72,7 +73,7 @@ class ChatRepository(
         this.clientId = clientId
         val connection = DbConnection.Builder()
             .withHttpClient(httpClient)
-            .withUri(HOST)
+            .withUri(host)
             .withDatabaseName(DB_NAME)
             .withToken(tokenStore.load(clientId))
             .withModuleBindings()
@@ -388,7 +389,6 @@ class ChatRepository(
     }
 
     companion object {
-        val HOST = "ws://$defaultHost:3000"
         const val DB_NAME = "compose-kt"
 
         private fun userNameOrIdentity(user: User): String =

@@ -16,10 +16,6 @@ kotlin {
     jvm()
 
     sourceSets {
-        androidMain.dependencies {
-            implementation(libs.ktor.client.okhttp)
-        }
-
         commonMain.dependencies {
             implementation(libs.androidx.lifecycle.runtime.compose)
             implementation(libs.androidx.lifecycle.viewmodel)
@@ -28,12 +24,7 @@ kotlin {
             implementation(libs.kotlinx.collections.immutable)
             implementation(libs.kotlinx.datetime)
             implementation(libs.ktor.client.core)
-            implementation(libs.ktor.client.websockets)
             implementation(libs.material3)
-        }
-
-        jvmMain.dependencies {
-            implementation(libs.ktor.client.okhttp)
         }
     }
 }

@@ -26,4 +26,6 @@ android {
 dependencies {
     implementation(projects.sharedClient)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.ktor.client.okhttp)
+    implementation(libs.ktor.client.websockets)
 }
