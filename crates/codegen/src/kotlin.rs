@@ -12,7 +12,6 @@ use std::ops::Deref;
 
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
-use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_lib::version::spacetimedb_lib_version;
 use spacetimedb_primitives::ColId;
 use spacetimedb_schema::def::{IndexAlgorithm, ModuleDef, ReducerDef, TableDef, TypeDef};
@@ -113,7 +112,7 @@ impl Lang for Kotlin {
             writeln!(out, "import {SDK_PKG}.UniqueIndex");
         }
         writeln!(out, "import {SDK_PKG}.protocol.QueryResult");
-        gen_and_print_imports(module, out, product_def.element_types(), &[]);
+        gen_and_print_imports(module, out, product_def.element_types());
 
         writeln!(out);
 
@@ -339,7 +338,7 @@ impl Lang for Kotlin {
         // Imports
         writeln!(out, "import {SDK_PKG}.bsatn.BsatnReader");
         writeln!(out, "import {SDK_PKG}.bsatn.BsatnWriter");
-        gen_and_print_imports(module, out, reducer.params_for_generate.element_types(), &[]);
+        gen_and_print_imports(module, out, reducer.params_for_generate.element_types());
 
         writeln!(out);
 
@@ -436,7 +435,6 @@ impl Lang for Kotlin {
                 .params_for_generate
                 .element_types()
                 .chain([&procedure.return_type_for_generate]),
-            &[],
         );
 
         let procedure_name_pascal = procedure.accessor_name.deref().to_case(Case::Pascal);
@@ -817,15 +815,11 @@ fn gen_and_print_imports<'a>(
     module: &ModuleDef,
     out: &mut Indenter,
     roots: impl Iterator<Item = &'a AlgebraicTypeUse>,
-    dont_import: &[AlgebraicTypeRef],
 ) {
     let mut imports = BTreeSet::new();
 
     for ty in roots {
         collect_type_imports(module, ty, &mut imports);
-    }
-    for skip in dont_import {
-        let _ = skip;
     }
 
     if !imports.is_empty() {
