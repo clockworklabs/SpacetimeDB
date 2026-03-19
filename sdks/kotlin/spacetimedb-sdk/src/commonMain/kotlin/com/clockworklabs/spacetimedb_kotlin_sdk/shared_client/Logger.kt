@@ -18,7 +18,7 @@ public fun interface LogHandler {
     public fun log(level: LogLevel, message: String)
 }
 
-private val SENSITIVE_KEYS = listOf("token", "authtoken", "auth_token", "password", "secret", "credential")
+private val SENSITIVE_KEYS = listOf("token", "authtoken", "auth_token", "password", "secret", "credential", "api_key", "apikey", "bearer")
 
 private val SENSITIVE_PATTERNS: List<Regex> by lazy {
     SENSITIVE_KEYS.map { key ->
