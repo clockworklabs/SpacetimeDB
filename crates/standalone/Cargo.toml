@@ -46,7 +46,6 @@ hostname.workspace = true
 http.workspace = true
 log.workspace = true
 netstat2.workspace = true
-openssl.workspace = true
 parse-size.workspace = true
 prometheus.workspace = true
 scopeguard.workspace = true
