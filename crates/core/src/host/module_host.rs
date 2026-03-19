@@ -837,7 +837,6 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
         let mut instances = VecDeque::new();
         instances.push_front(init_inst);
 
-        
         Self {
             instances: Mutex::new(instances),
             module,
