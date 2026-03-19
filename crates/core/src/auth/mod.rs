@@ -92,10 +92,10 @@ impl EcKeyPair {
         // Generate a new key pair for the P-256 curve (equivalent to `Nid::X9_62_PRIME256V1`).
         let key_pair = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256)?;
 
-        // Get the private key in PKCS#8 PEM format & write it.
+        // Get the public key in PEM format.
         let public_key_bytes = key_pair.public_key_pem().into_bytes();
 
-        // Get the public key in PEM format & write it.
+        // Get the private key in PKCS#8 PEM format.
         let private_key_bytes = key_pair.serialize_pem().into_bytes();
 
         Ok(Self {
@@ -108,5 +108,120 @@ impl EcKeyPair {
         public_key_path.write(&self.public_key_bytes)?;
         private_key_path.write(&self.private_key_bytes)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jsonwebtoken::{Algorithm, Header, Validation};
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    struct TestClaims {
+        sub: String,
+        exp: u64,
+    }
+
+    #[test]
+    fn generate_produces_valid_pem_headers() {
+        let pair = EcKeyPair::generate().expect("key generation should succeed");
+
+        let pub_str = std::str::from_utf8(&pair.public_key_bytes).expect("public key should be valid UTF-8");
+        let priv_str = std::str::from_utf8(&pair.private_key_bytes).expect("private key should be valid UTF-8");
+
+        assert!(
+            pub_str.contains("-----BEGIN PUBLIC KEY-----"),
+            "public key should be SPKI PEM format, got: {pub_str}"
+        );
+        assert!(
+            priv_str.contains("-----BEGIN PRIVATE KEY-----"),
+            "private key should be PKCS#8 PEM format, got: {priv_str}"
+        );
+    }
+
+    #[test]
+    fn generate_roundtrip_sign_verify() {
+        let pair = EcKeyPair::generate().expect("key generation should succeed");
+        let jwt_keys = JwtKeys::try_from(pair).expect("JwtKeys conversion should succeed");
+
+        let claims = TestClaims {
+            sub: "test-user".to_string(),
+            exp: u64::MAX,
+        };
+
+        let token = jsonwebtoken::encode(&Header::new(Algorithm::ES256), &claims, &jwt_keys.private)
+            .expect("JWT signing should succeed");
+
+        let mut validation = Validation::new(Algorithm::ES256);
+        validation.required_spec_claims.clear();
+        let decoded = jsonwebtoken::decode::<TestClaims>(&token, &jwt_keys.public, &validation)
+            .expect("JWT verification should succeed");
+
+        assert_eq!(decoded.claims, claims);
+    }
+
+    #[test]
+    fn generate_produces_unique_keys() {
+        let pair1 = EcKeyPair::generate().expect("first key generation should succeed");
+        let pair2 = EcKeyPair::generate().expect("second key generation should succeed");
+
+        assert_ne!(
+            pair1.private_key_bytes, pair2.private_key_bytes,
+            "two generated key pairs should have different private keys"
+        );
+    }
+
+    #[test]
+    fn generated_keys_cross_verify_fails() {
+        let pair1 = EcKeyPair::generate().expect("first key generation should succeed");
+        let pair2 = EcKeyPair::generate().expect("second key generation should succeed");
+        let keys1 = JwtKeys::try_from(pair1).unwrap();
+        let keys2 = JwtKeys::try_from(pair2).unwrap();
+
+        let claims = TestClaims {
+            sub: "test".to_string(),
+            exp: u64::MAX,
+        };
+
+        // Sign with key1's private key.
+        let token = jsonwebtoken::encode(&Header::new(Algorithm::ES256), &claims, &keys1.private).unwrap();
+
+        // Verify with key2's public key should fail.
+        let mut validation = Validation::new(Algorithm::ES256);
+        validation.required_spec_claims.clear();
+        let result = jsonwebtoken::decode::<TestClaims>(&token, &keys2.public, &validation);
+
+        assert!(result.is_err(), "verification with wrong public key should fail");
+    }
+
+    #[test]
+    fn write_read_roundtrip() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let pub_path = dir.path().join("pub.pem");
+        let priv_path = dir.path().join("priv.pem");
+
+        let pair = EcKeyPair::generate().expect("key generation should succeed");
+        std::fs::write(&pub_path, &pair.public_key_bytes).unwrap();
+        std::fs::write(&priv_path, &pair.private_key_bytes).unwrap();
+
+        // Read back and create JwtKeys.
+        let pub_bytes = std::fs::read(&pub_path).unwrap();
+        let priv_bytes = std::fs::read(&priv_path).unwrap();
+        let reloaded = EcKeyPair::new(pub_bytes, priv_bytes);
+        let jwt_keys = JwtKeys::try_from(reloaded).expect("reloaded keys should produce valid JwtKeys");
+
+        // Verify signing still works after read-back.
+        let claims = TestClaims {
+            sub: "roundtrip".to_string(),
+            exp: u64::MAX,
+        };
+        let token =
+            jsonwebtoken::encode(&Header::new(Algorithm::ES256), &claims, &jwt_keys.private).expect("signing failed");
+
+        let mut validation = Validation::new(Algorithm::ES256);
+        validation.required_spec_claims.clear();
+        jsonwebtoken::decode::<TestClaims>(&token, &jwt_keys.public, &validation)
+            .expect("verification after read-back failed");
     }
 }
