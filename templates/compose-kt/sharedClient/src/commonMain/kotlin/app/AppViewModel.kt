@@ -61,6 +61,10 @@ class AppViewModel(
             updateLogin { copy(error = "Client ID cannot be empty") }
             return
         }
+        if (!clientId.all { it.isLetterOrDigit() || it == '-' || it == '_' }) {
+            updateLogin { copy(error = "Client ID may only contain letters, digits, '-', or '_'") }
+            return
+        }
 
         _state.update { AppState.Chat(dbName = ChatRepository.DB_NAME) }
         observeRepository()
