@@ -263,7 +263,7 @@ rayon = "1.8"
 rayon-core = "1.11.0"
 rcgen = { version = "0.14.5", features = ["pem", "x509-parser", "crypto", "ring"] }
 regex = "1"
-reqwest = { version = "0.12", features = ["stream", "json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["stream", "json", "rustls-tls", "http2"] }
 rolldown = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-rc.3" }
 rolldown_common = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-rc.3" }
 rolldown_error = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-rc.3" }
