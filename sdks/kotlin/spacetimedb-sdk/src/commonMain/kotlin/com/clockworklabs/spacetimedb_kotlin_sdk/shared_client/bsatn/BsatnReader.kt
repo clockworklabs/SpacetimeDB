@@ -28,7 +28,7 @@ public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private 
     }
 
     private fun ensure(n: Int) {
-        check(remaining >= n) { "BsatnReader: need $n bytes but only $remaining remain" }
+        check(n >= 0 && remaining >= n) { "BsatnReader: need $n bytes but only $remaining remain" }
     }
 
     public fun readBool(): Boolean {

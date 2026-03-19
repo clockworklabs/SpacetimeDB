@@ -44,7 +44,9 @@ public class BsatnRowList(
     public companion object {
         public fun decode(reader: BsatnReader): BsatnRowList {
             val sizeHint = RowSizeHint.decode(reader)
-            val len = reader.readU32().toInt()
+            val rawLen = reader.readU32()
+            check(rawLen <= Int.MAX_VALUE.toUInt()) { "BsatnRowList length $rawLen exceeds maximum supported size" }
+            val len = rawLen.toInt()
             val data = reader.data
             val offset = reader.offset
             reader.skip(len)

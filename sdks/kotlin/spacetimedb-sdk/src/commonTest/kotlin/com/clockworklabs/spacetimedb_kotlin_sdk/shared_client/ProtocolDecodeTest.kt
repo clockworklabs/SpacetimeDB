@@ -91,6 +91,21 @@ class ProtocolDecodeTest {
         assertEquals(9, rowList.rowsSize)
     }
 
+    @Test
+    fun bsatnRowListDecodeOverflowLengthThrows() {
+        val writer = BsatnWriter()
+        // RowSizeHint::FixedSize(4)
+        writer.writeSumTag(0u)
+        writer.writeU16(4u)
+        // Length that overflows Int: 0x80000000 (2,147,483,648)
+        writer.writeU32(0x8000_0000u)
+        // No actual row data — the check should fire before reading
+
+        assertFailsWith<IllegalStateException> {
+            BsatnRowList.decode(BsatnReader(writer.toByteArray()))
+        }
+    }
+
     // ---- SingleTableRows ----
 
     @Test
