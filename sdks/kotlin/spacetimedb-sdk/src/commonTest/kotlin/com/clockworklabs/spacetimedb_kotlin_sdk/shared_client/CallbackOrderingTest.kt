@@ -178,10 +178,13 @@ class CallbackOrderingTest {
         val callbacks = cache.applyUpdate(STUB_CTX, parsed)
         for (cb in callbacks) cb.invoke()
 
-        // Should contain update, insert, and delete events
-        assertTrue(events.contains("update:Old->New"))
-        assertTrue(events.contains("insert:Fresh"))
-        assertTrue(events.contains("delete:Delete Me"))
+        // Must contain all events in the correct order:
+        // updates and inserts fire first (from the insert processing loop),
+        // then pure deletes (from the remaining-deletes loop).
+        assertEquals(
+            listOf("update:Old->New", "insert:Fresh", "delete:Delete Me"),
+            events,
+        )
     }
 
     // =========================================================================

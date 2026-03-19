@@ -70,13 +70,12 @@ class DisconnectScenarioTest {
         conn.disconnect()
         advanceUntilIdle()
 
-        // The suspended query should have been resolved with error result
-        // (via failPendingOperations callback invocation which resumes the coroutine)
-        val result = queryResult
-        if (result != null) {
-            assertTrue(result.result is QueryResult.Err)
-        }
-        // If the coroutine was cancelled, that's also acceptable
+        // One of these must be non-null — the query must not hang silently.
+        // Either failPendingOperations delivered an error result, or the
+        // coroutine was cancelled.
+        assertTrue(queryResult != null || queryError != null,
+            "Suspended oneOffQuery must resolve on disconnect — got neither result nor error")
+        queryResult?.let { assertTrue(it.result is QueryResult.Err) }
         conn.disconnect()
     }
 

@@ -141,16 +141,38 @@ class StatsTest {
 
     @Test
     fun multipleWindowSizesWorkIndependently() {
-        val tracker = NetworkRequestTracker()
-        // Just verify we can request multiple window sizes without error
+        val ts = TestTimeSource()
+        val tracker = NetworkRequestTracker(ts)
+
+        // Register two window sizes
+        assertNull(tracker.minMaxTimes(1))  // 1-second window
+        assertNull(tracker.minMaxTimes(3))  // 3-second window
+
+        // Window 1 (0s–1s): insert 100ms and 200ms
         tracker.insertSample(100.milliseconds)
-        tracker.minMaxTimes(5)
-        tracker.minMaxTimes(10)
-        tracker.minMaxTimes(30)
-        // All return null initially (no completed window)
-        assertNull(tracker.minMaxTimes(5))
-        assertNull(tracker.minMaxTimes(10))
-        assertNull(tracker.minMaxTimes(30))
+        tracker.insertSample(200.milliseconds)
+        ts += 1.seconds
+
+        // 1s window should have data; 3s window still pending
+        val w1 = assertNotNull(tracker.minMaxTimes(1))
+        assertEquals(100.milliseconds, w1.min.duration)
+        assertEquals(200.milliseconds, w1.max.duration)
+        assertNull(tracker.minMaxTimes(3))
+
+        // Window 2 (1s–2s): insert 500ms only
+        tracker.insertSample(500.milliseconds)
+        ts += 1.seconds
+
+        // 1s window rotated to new data; 3s window still pending
+        val w2 = assertNotNull(tracker.minMaxTimes(1))
+        assertEquals(500.milliseconds, w2.min.duration)
+        assertNull(tracker.minMaxTimes(3))
+
+        // Advance to 3s — now the 3s window should have data from all samples
+        ts += 1.seconds
+        val w3 = assertNotNull(tracker.minMaxTimes(3))
+        assertEquals(100.milliseconds, w3.min.duration)
+        assertEquals(500.milliseconds, w3.max.duration)
     }
 
     @Test
