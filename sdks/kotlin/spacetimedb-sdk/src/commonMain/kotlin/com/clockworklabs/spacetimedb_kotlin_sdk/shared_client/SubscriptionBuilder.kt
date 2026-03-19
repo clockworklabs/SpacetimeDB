@@ -48,15 +48,4 @@ public class SubscriptionBuilder internal constructor(
         return connection.subscribe(queries, onApplied = onAppliedCallbacks, onError = onErrorCallbacks)
     }
 
-    /**
-     * Subscribe to all persistent (subscribable) tables by generating
-     * `SELECT * FROM <table>` for each one. Event tables are excluded
-     * because the server does not support subscribing to them.
-     */
-    public fun subscribeToAllTables(): SubscriptionHandle {
-        val tableNames = connection.moduleDescriptor?.subscribableTableNames
-            ?: connection.clientCache.tableNames().toList()
-        val queries = tableNames.map { "SELECT * FROM ${SqlFormat.quoteIdent(it)}" }
-        return subscribe(queries)
-    }
 }

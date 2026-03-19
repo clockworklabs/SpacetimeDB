@@ -367,15 +367,6 @@ public open class DbConnection internal constructor(
 
     public override fun subscriptionBuilder(): SubscriptionBuilder = SubscriptionBuilder(this)
 
-    public override fun subscribeToAllTables(
-        onApplied: ((EventContext.SubscribeApplied) -> Unit)?,
-        onError: ((EventContext.Error, Throwable) -> Unit)?,
-    ): SubscriptionHandle {
-        val builder = subscriptionBuilder()
-        onApplied?.let { builder.onApplied(it) }
-        onError?.let { builder.onError(it) }
-        return builder.subscribeToAllTables()
-    }
 
     // --- Subscriptions ---
 

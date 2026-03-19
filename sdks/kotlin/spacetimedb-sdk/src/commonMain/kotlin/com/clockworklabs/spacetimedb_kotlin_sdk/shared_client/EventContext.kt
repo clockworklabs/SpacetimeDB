@@ -46,10 +46,6 @@ public interface DbConnectionView {
     public val moduleProcedures: ModuleProcedures?
 
     public fun subscriptionBuilder(): SubscriptionBuilder
-    public fun subscribeToAllTables(
-        onApplied: ((EventContext.SubscribeApplied) -> Unit)? = null,
-        onError: ((EventContext.Error, Throwable) -> Unit)? = null,
-    ): SubscriptionHandle
     public fun subscribe(
         queries: List<String>,
         onApplied: List<(EventContext.SubscribeApplied) -> Unit> = emptyList(),

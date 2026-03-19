@@ -391,59 +391,6 @@ class SubscriptionEdgeCaseTest {
         conn.disconnect()
     }
 
-    // =========================================================================
-    // subscribeToAllTables excludes event tables
-    // =========================================================================
-
-    @Test
-    fun subscribeToAllTablesUsesModuleDescriptorSubscribableNames() = runTest {
-        val transport = FakeTransport()
-        val descriptor = object : ModuleDescriptor {
-            override val subscribableTableNames = listOf("player", "inventory")
-            override val cliVersion = "2.0.0"
-            override fun registerTables(cache: ClientCache) {}
-            override fun createAccessors(conn: DbConnection) = ModuleAccessors(
-                object : ModuleTables {},
-                object : ModuleReducers {},
-                object : ModuleProcedures {},
-            )
-            override fun handleReducerEvent(conn: DbConnection, ctx: EventContext.Reducer<*>) {}
-        }
-
-        val conn = buildTestConnection(transport, moduleDescriptor = descriptor, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
-        transport.sendToClient(initialConnectionMsg())
-        advanceUntilIdle()
-
-        conn.subscribeToAllTables()
-        advanceUntilIdle()
-
-        // The subscribe message should contain only the persistent table names
-        val subscribeMsg = transport.sentMessages.filterIsInstance<com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ClientMessage.Subscribe>().single()
-        assertEquals(2, subscribeMsg.queryStrings.size)
-        assertTrue(subscribeMsg.queryStrings.any { it.contains("player") })
-        assertTrue(subscribeMsg.queryStrings.any { it.contains("inventory") })
-
-        conn.disconnect()
-    }
-
-    @Test
-    fun subscribeToAllTablesFallsBackToCacheWhenNoDescriptor() = runTest {
-        val transport = FakeTransport()
-        val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
-        val cache = createSampleCache()
-        conn.clientCache.register("sample", cache)
-        transport.sendToClient(initialConnectionMsg())
-        advanceUntilIdle()
-
-        conn.subscribeToAllTables()
-        advanceUntilIdle()
-
-        val subscribeMsg = transport.sentMessages.filterIsInstance<com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ClientMessage.Subscribe>().single()
-        assertEquals(1, subscribeMsg.queryStrings.size)
-        assertTrue(subscribeMsg.queryStrings.single().contains("sample"))
-
-        conn.disconnect()
-    }
 
     // =========================================================================
     // doUnsubscribe callback-vs-CAS race

@@ -1906,6 +1906,25 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     writeln!(out, "return addQuery(build(QueryBuilder()).toSql())");
     out.dedent(1);
     writeln!(out, "}}");
+    writeln!(out);
+
+    // Generated subscribeToAllTables with baked-in queries via QueryBuilder
+    writeln!(out, "/**");
+    writeln!(out, " * Subscribe to all persistent tables in this module.");
+    writeln!(out, " * Event tables are excluded because the server does not support subscribing to them.");
+    writeln!(out, " */");
+    writeln!(out, "fun SubscriptionBuilder.subscribeToAllTables(): {SDK_PKG}.SubscriptionHandle {{");
+    out.indent(1);
+    writeln!(out, "val qb = QueryBuilder()");
+    for table in iter_tables(module, options.visibility) {
+        if !table.is_event {
+            let method_name = kotlin_ident(table.accessor_name.deref().to_case(Case::Camel));
+            writeln!(out, "addQuery(qb.{method_name}().toSql())");
+        }
+    }
+    writeln!(out, "return subscribe()");
+    out.dedent(1);
+    writeln!(out, "}}");
 
     OutputFile {
         filename: "Module.kt".to_string(),
