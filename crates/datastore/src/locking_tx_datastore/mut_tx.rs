@@ -2283,18 +2283,36 @@ impl MutTxId {
         Ok(self.iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?.next().is_some())
     }
 
+    /// Does any `st_view_sub` row exist for this anonymous view?
+    pub fn is_anonymous_view_materialized(&self, view_id: ViewId) -> Result<bool> {
+        let cols = StViewSubFields::ViewId;
+        let value = view_id.into();
+        Ok(self.iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?.next().is_some())
+    }
+
     /// Updates the `last_called` timestamp in `st_view_sub`.
     /// Inserts a row into `st_view_sub` with no subscribers if the row does not exist.
     ///
     /// This is invoked when calling a view, but not subscribing to it.
     /// Such is the case for the sql http api.
     pub fn update_view_timestamp(&mut self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<()> {
+        self.update_view_timestamp_at(view_id, arg_id, sender, Timestamp::now())
+    }
+
+    /// Updates the `last_called` timestamp in `st_view_sub` to an explicit value.
+    pub fn update_view_timestamp_at(
+        &mut self,
+        view_id: ViewId,
+        arg_id: ArgId,
+        sender: Identity,
+        last_called: Timestamp,
+    ) -> Result<()> {
         use StViewSubFields::*;
 
         let identity = IdentityViaU256(sender);
         let cols = col_list![ViewId, ArgId, Identity];
         let value = AlgebraicValue::product([view_id.into(), arg_id.into(), identity.into()]);
-        let last_called = Timestamp::now().into();
+        let last_called = last_called.into();
 
         // Update `last_called` of `st_view_sub` row
         if let Some((row, ptr)) = self
@@ -2374,18 +2392,18 @@ impl MutTxId {
     /// - `has_subscribers == false`, `num_subscribers == 0`.
     /// - `last_called` is older than `expiration_duration`.
     ///
-    /// For each such expired view:
-    /// 1. It clears the backing table,
-    /// 2. Removes the view from the committed read set, and
-    /// 3. Deletes the subscription row.
+    /// For each such expired row:
+    /// 1. It deletes the expired `st_view_sub` row.
+    /// 2. If that row was the last remaining materialization entry for the view,
+    ///    it clears the backing table and removes the view from the committed read set.
     ///
     /// The cleanup is bounded by a total `max_duration`. The function stops when either:
     /// - all expired views have been processed, or
     /// - the `max_duration` budget is reached.
     ///
     /// Returns a tuple `(cleaned, total_expired)`:
-    /// - `cleaned`: Number of views actually cleaned (deleted) in this run.
-    /// - `total_expired`: Total number of expired views found (even if not all were cleaned due to time budget).
+    /// - `cleaned`: Number of expired `st_view_sub` rows deleted in this run.
+    /// - `total_expired`: Total number of expired rows found (even if not all were cleaned due to time budget).
     pub fn clear_expired_views(
         &mut self,
         expiration_duration: Duration,
@@ -2416,7 +2434,8 @@ impl MutTxId {
 
         let total_expired = expired_items.len();
 
-        // For each expired view subscription, clear the backing table and delete the subscription
+        // For each expired subscription row, clear the backing table only if that row
+        // was the last remaining entry for the shared materialization.
         for (view_id, sender, sub_row_ptr) in expired_items {
             // Check if we've exceeded our time budget
             if start.elapsed() >= max_duration {
@@ -2429,8 +2448,10 @@ impl MutTxId {
             let table_id = table_id.expect("views have backing table");
 
             if is_anonymous {
-                self.clear_table(table_id)?;
-                self.drop_view_from_committed_read_set(view_id);
+                if !self.has_other_st_view_sub_entries(view_id, sub_row_ptr)? {
+                    self.clear_table(table_id)?;
+                    self.drop_view_from_committed_read_set(view_id);
+                }
             } else {
                 let rows_to_delete = self
                     .iter_by_col_eq(table_id, 0, &sender.into())?
@@ -2546,6 +2567,16 @@ impl MutTxId {
         self.iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
             .map(StViewSubRow::try_from)
             .collect::<Result<Vec<_>>>()
+    }
+
+    /// Does this `view_id` have other entries in `st_view_sub` besides `current_ptr`?
+    /// Can be true for anonymous views with multiple subscribers.
+    fn has_other_st_view_sub_entries(&self, view_id: ViewId, current_ptr: RowPointer) -> Result<bool> {
+        let cols = StViewSubFields::ViewId;
+        let value = view_id.into();
+        Ok(self
+            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
+            .any(|row_ref| row_ref.pointer() != current_ptr))
     }
 
     /// Lookup a row in `st_view` by its primary key
