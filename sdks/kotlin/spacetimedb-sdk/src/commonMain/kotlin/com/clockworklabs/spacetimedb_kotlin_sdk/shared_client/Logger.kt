@@ -18,15 +18,20 @@ public fun interface LogHandler {
     public fun log(level: LogLevel, message: String)
 }
 
-private val SENSITIVE_PATTERNS: List<Regex> =
-    listOf("token", "authToken", "auth_token", "password", "secret", "credential").map { key ->
+private val SENSITIVE_KEYS = listOf("token", "authtoken", "auth_token", "password", "secret", "credential")
+
+private val SENSITIVE_PATTERNS: List<Regex> by lazy {
+    SENSITIVE_KEYS.map { key ->
         Regex("""($key\s*[=:]\s*)\S+""", RegexOption.IGNORE_CASE)
     }
+}
 
 /**
  * Redact sensitive key-value pairs from a message string.
  */
 private fun redactSensitive(message: String): String {
+    val lower = message.lowercase()
+    if (SENSITIVE_KEYS.none { it in lower }) return message
     var result = message
     for (pattern in SENSITIVE_PATTERNS) {
         result = result.replace(pattern, "$1[REDACTED]")
