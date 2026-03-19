@@ -402,14 +402,27 @@ impl ApiResponse {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct PublishOptions {
     pub clear: bool,
     pub break_clients: bool,
     pub num_replicas: Option<u32>,
     pub organization: Option<String>,
     pub force: bool,
-    pub stdin_input: Option<&str>,
+    pub stdin_input: Option<String>,
+}
+
+impl Default for PublishOptions {
+    fn default() -> Self {
+        Self {
+            clear: false,
+            break_clients: false,
+            num_replicas: None,
+            organization: None,
+            force: true,
+            stdin_input: None,
+        }
+    }
 }
 
 /// Builder for creating `Smoketest` instances.
@@ -1059,7 +1072,7 @@ log = "0.4"
 
     /// Publishes the module with name, clear, and break_clients options.
     pub fn publish_module_with_options(&mut self, name: &str, clear: bool, break_clients: bool) -> Result<String> {
-        self.publish_module_internal(Some(name), clear, break_clients, true, None)
+        self.publish_module_internal(Some(name), clear, break_clients)
     }
 
     /// Publishes the module and allows supplying stdin input to the CLI.
@@ -1067,12 +1080,25 @@ log = "0.4"
     /// Useful for interactive publish prompts which require typed acknowledgements.
     /// Note: does NOT pass `--yes` so that interactive prompts are not suppressed.
     pub fn publish_module_with_stdin(&mut self, name: &str, stdin_input: &str) -> Result<String> {
-        self.publish_module_internal(Some(name), false, false, false, Some(stdin_input))
+        self.publish_module_internal_ext(
+            Some(name),
+            PublishOptions {
+                force: false,
+                stdin_input: Some(stdin_input.to_string()),
+                ..PublishOptions::default()
+            },
+        )
     }
 
     /// Publishes the module without passing `--yes`, so interactive prompts are not suppressed.
     pub fn publish_module_named_no_force(&mut self, name: &str) -> Result<String> {
-        self.publish_module_internal(Some(name), false, false, false, None)
+        self.publish_module_internal_ext(
+            Some(name),
+            PublishOptions {
+                force: false,
+                ..PublishOptions::default()
+            },
+        )
     }
 
     pub fn publish_module_with_options_ext(&mut self, name: &str, opts: PublishOptions) -> Result<String> {
@@ -1081,7 +1107,7 @@ log = "0.4"
 
     /// Internal helper for publishing with options.
     fn publish_module_opts(&mut self, name: Option<&str>, clear: bool) -> Result<String> {
-        self.publish_module_internal(name, clear, false, true, None)
+        self.publish_module_internal(name, clear, false)
     }
 
     /// Internal helper for publishing with all options.
@@ -1139,7 +1165,7 @@ log = "0.4"
         let publish_start = Instant::now();
         let mut args = vec!["publish", "--server", &self.server_url, "--bin-path", &wasm_path_str];
 
-        if force {
+        if opts.force {
             args.push("--yes");
         }
 
@@ -1171,7 +1197,7 @@ log = "0.4"
             args.push(&name_owned);
         }
 
-        let output = match stdin_input {
+        let output = match opts.stdin_input.as_deref() {
             Some(stdin_input) => self.spacetime_with_stdin(&args, stdin_input)?,
             None => self.spacetime(&args)?,
         };
@@ -1454,7 +1480,7 @@ log = "0.4"
     }
 
     pub fn subscribe_on(&self, database: &str, queries: &[&str], n: usize) -> Result<Vec<serde_json::Value>> {
-        self.subscribe_on_opts(database, queries, n, false)
+        self.subscribe_on_opts(database, queries, n, Some(false))
     }
 
     /// Starts a subscription with --confirmed flag and waits for N updates.
@@ -1463,7 +1489,7 @@ log = "0.4"
     }
 
     pub fn subscribe_on_confirmed(&self, database: &str, queries: &[&str], n: usize) -> Result<Vec<serde_json::Value>> {
-        self.subscribe_on_opts(database, queries, n, true)
+        self.subscribe_on_opts(database, queries, n, Some(true))
     }
 
     /// Internal helper for subscribe with options.
@@ -1544,7 +1570,7 @@ log = "0.4"
     }
 
     pub fn subscribe_background_on(&self, database: &str, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
-        self.subscribe_background_on_opts(database, queries, n, false)
+        self.subscribe_background_on_opts(database, queries, n, Some(false))
     }
 
     /// Starts a subscription in the background with --confirmed flag.
@@ -1563,7 +1589,7 @@ log = "0.4"
         queries: &[&str],
         n: usize,
     ) -> Result<SubscriptionHandle> {
-        self.subscribe_background_on_opts(database, queries, n, true)
+        self.subscribe_background_on_opts(database, queries, n, Some(true))
     }
 
     /// Internal helper for background subscribe with options.
