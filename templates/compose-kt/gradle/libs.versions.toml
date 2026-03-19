@@ -35,4 +35,5 @@ kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "compose-multiplatform" }
 composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+# TODO: Add version.ref = "spacetimedb-sdk" after publishing to Maven Central
 spacetimedb = { id = "com.clockworklabs.spacetimedb" }
