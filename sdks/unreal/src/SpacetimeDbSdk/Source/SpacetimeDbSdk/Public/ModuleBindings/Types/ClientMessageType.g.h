@@ -4,27 +4,21 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
-#include "ModuleBindings/Types/SubscribeMultiType.g.h"
-#include "ModuleBindings/Types/CallReducerType.g.h"
-#include "ModuleBindings/Types/OneOffQueryType.g.h"
-#include "ModuleBindings/Types/CallProcedureType.g.h"
 #include "ModuleBindings/Types/UnsubscribeType.g.h"
+#include "ModuleBindings/Types/CallReducerType.g.h"
+#include "ModuleBindings/Types/CallProcedureType.g.h"
 #include "ModuleBindings/Types/SubscribeType.g.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
-#include "ModuleBindings/Types/SubscribeSingleType.g.h"
-#include "ModuleBindings/Types/UnsubscribeMultiType.g.h"
+#include "ModuleBindings/Types/OneOffQueryType.g.h"
 #include "ClientMessageType.g.generated.h"
 
 UENUM(BlueprintType)
 enum class EClientMessageTag : uint8
 {
-    CallReducer,
     Subscribe,
-    OneOffQuery,
-    SubscribeSingle,
-    SubscribeMulti,
     Unsubscribe,
-    UnsubscribeMulti,
+    OneOffQuery,
+    CallReducer,
     CallProcedure
 };
 
@@ -36,48 +30,16 @@ struct SPACETIMEDBSDK_API FClientMessageType
 public:
     FClientMessageType() = default;
 
-    TVariant<FUnsubscribeMultiType, FSubscribeMultiType, FSubscribeType, FCallReducerType, FCallProcedureType, FOneOffQueryType, FUnsubscribeType, FSubscribeSingleType> MessageData;
+    TVariant<FCallProcedureType, FOneOffQueryType, FSubscribeType, FUnsubscribeType, FCallReducerType> MessageData;
 
-    UPROPERTY(BlueprintReadOnly, Category = "SpacetimeDB")
+    UPROPERTY(BlueprintReadOnly)
     EClientMessageTag Tag = static_cast<EClientMessageTag>(0);
-
-    static FClientMessageType CallReducer(const FCallReducerType& Value)
-    {
-        FClientMessageType Obj;
-        Obj.Tag = EClientMessageTag::CallReducer;
-        Obj.MessageData.Set<FCallReducerType>(Value);
-        return Obj;
-    }
 
     static FClientMessageType Subscribe(const FSubscribeType& Value)
     {
         FClientMessageType Obj;
         Obj.Tag = EClientMessageTag::Subscribe;
         Obj.MessageData.Set<FSubscribeType>(Value);
-        return Obj;
-    }
-
-    static FClientMessageType OneOffQuery(const FOneOffQueryType& Value)
-    {
-        FClientMessageType Obj;
-        Obj.Tag = EClientMessageTag::OneOffQuery;
-        Obj.MessageData.Set<FOneOffQueryType>(Value);
-        return Obj;
-    }
-
-    static FClientMessageType SubscribeSingle(const FSubscribeSingleType& Value)
-    {
-        FClientMessageType Obj;
-        Obj.Tag = EClientMessageTag::SubscribeSingle;
-        Obj.MessageData.Set<FSubscribeSingleType>(Value);
-        return Obj;
-    }
-
-    static FClientMessageType SubscribeMulti(const FSubscribeMultiType& Value)
-    {
-        FClientMessageType Obj;
-        Obj.Tag = EClientMessageTag::SubscribeMulti;
-        Obj.MessageData.Set<FSubscribeMultiType>(Value);
         return Obj;
     }
 
@@ -89,11 +51,19 @@ public:
         return Obj;
     }
 
-    static FClientMessageType UnsubscribeMulti(const FUnsubscribeMultiType& Value)
+    static FClientMessageType OneOffQuery(const FOneOffQueryType& Value)
     {
         FClientMessageType Obj;
-        Obj.Tag = EClientMessageTag::UnsubscribeMulti;
-        Obj.MessageData.Set<FUnsubscribeMultiType>(Value);
+        Obj.Tag = EClientMessageTag::OneOffQuery;
+        Obj.MessageData.Set<FOneOffQueryType>(Value);
+        return Obj;
+    }
+
+    static FClientMessageType CallReducer(const FCallReducerType& Value)
+    {
+        FClientMessageType Obj;
+        Obj.Tag = EClientMessageTag::CallReducer;
+        Obj.MessageData.Set<FCallReducerType>(Value);
         return Obj;
     }
 
@@ -105,44 +75,12 @@ public:
         return Obj;
     }
 
-    FORCEINLINE bool IsCallReducer() const { return Tag == EClientMessageTag::CallReducer; }
-
-    FORCEINLINE FCallReducerType GetAsCallReducer() const
-    {
-        ensureMsgf(IsCallReducer(), TEXT("MessageData does not hold CallReducer!"));
-        return MessageData.Get<FCallReducerType>();
-    }
-
     FORCEINLINE bool IsSubscribe() const { return Tag == EClientMessageTag::Subscribe; }
 
     FORCEINLINE FSubscribeType GetAsSubscribe() const
     {
         ensureMsgf(IsSubscribe(), TEXT("MessageData does not hold Subscribe!"));
         return MessageData.Get<FSubscribeType>();
-    }
-
-    FORCEINLINE bool IsOneOffQuery() const { return Tag == EClientMessageTag::OneOffQuery; }
-
-    FORCEINLINE FOneOffQueryType GetAsOneOffQuery() const
-    {
-        ensureMsgf(IsOneOffQuery(), TEXT("MessageData does not hold OneOffQuery!"));
-        return MessageData.Get<FOneOffQueryType>();
-    }
-
-    FORCEINLINE bool IsSubscribeSingle() const { return Tag == EClientMessageTag::SubscribeSingle; }
-
-    FORCEINLINE FSubscribeSingleType GetAsSubscribeSingle() const
-    {
-        ensureMsgf(IsSubscribeSingle(), TEXT("MessageData does not hold SubscribeSingle!"));
-        return MessageData.Get<FSubscribeSingleType>();
-    }
-
-    FORCEINLINE bool IsSubscribeMulti() const { return Tag == EClientMessageTag::SubscribeMulti; }
-
-    FORCEINLINE FSubscribeMultiType GetAsSubscribeMulti() const
-    {
-        ensureMsgf(IsSubscribeMulti(), TEXT("MessageData does not hold SubscribeMulti!"));
-        return MessageData.Get<FSubscribeMultiType>();
     }
 
     FORCEINLINE bool IsUnsubscribe() const { return Tag == EClientMessageTag::Unsubscribe; }
@@ -153,12 +91,20 @@ public:
         return MessageData.Get<FUnsubscribeType>();
     }
 
-    FORCEINLINE bool IsUnsubscribeMulti() const { return Tag == EClientMessageTag::UnsubscribeMulti; }
+    FORCEINLINE bool IsOneOffQuery() const { return Tag == EClientMessageTag::OneOffQuery; }
 
-    FORCEINLINE FUnsubscribeMultiType GetAsUnsubscribeMulti() const
+    FORCEINLINE FOneOffQueryType GetAsOneOffQuery() const
     {
-        ensureMsgf(IsUnsubscribeMulti(), TEXT("MessageData does not hold UnsubscribeMulti!"));
-        return MessageData.Get<FUnsubscribeMultiType>();
+        ensureMsgf(IsOneOffQuery(), TEXT("MessageData does not hold OneOffQuery!"));
+        return MessageData.Get<FOneOffQueryType>();
+    }
+
+    FORCEINLINE bool IsCallReducer() const { return Tag == EClientMessageTag::CallReducer; }
+
+    FORCEINLINE FCallReducerType GetAsCallReducer() const
+    {
+        ensureMsgf(IsCallReducer(), TEXT("MessageData does not hold CallReducer!"));
+        return MessageData.Get<FCallReducerType>();
     }
 
     FORCEINLINE bool IsCallProcedure() const { return Tag == EClientMessageTag::CallProcedure; }
@@ -176,20 +122,14 @@ public:
 
         switch (Tag)
         {
-            case EClientMessageTag::CallReducer:
-                return GetAsCallReducer() == Other.GetAsCallReducer();
             case EClientMessageTag::Subscribe:
                 return GetAsSubscribe() == Other.GetAsSubscribe();
-            case EClientMessageTag::OneOffQuery:
-                return GetAsOneOffQuery() == Other.GetAsOneOffQuery();
-            case EClientMessageTag::SubscribeSingle:
-                return GetAsSubscribeSingle() == Other.GetAsSubscribeSingle();
-            case EClientMessageTag::SubscribeMulti:
-                return GetAsSubscribeMulti() == Other.GetAsSubscribeMulti();
             case EClientMessageTag::Unsubscribe:
                 return GetAsUnsubscribe() == Other.GetAsUnsubscribe();
-            case EClientMessageTag::UnsubscribeMulti:
-                return GetAsUnsubscribeMulti() == Other.GetAsUnsubscribeMulti();
+            case EClientMessageTag::OneOffQuery:
+                return GetAsOneOffQuery() == Other.GetAsOneOffQuery();
+            case EClientMessageTag::CallReducer:
+                return GetAsCallReducer() == Other.GetAsCallReducer();
             case EClientMessageTag::CallProcedure:
                 return GetAsCallProcedure() == Other.GetAsCallProcedure();
             default:
@@ -214,13 +154,10 @@ FORCEINLINE uint32 GetTypeHash(const FClientMessageType& ClientMessage)
     const uint32 TagHash = GetTypeHash(static_cast<uint8>(ClientMessage.Tag));
     switch (ClientMessage.Tag)
     {
-        case EClientMessageTag::CallReducer: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsCallReducer()));
         case EClientMessageTag::Subscribe: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsSubscribe()));
-        case EClientMessageTag::OneOffQuery: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsOneOffQuery()));
-        case EClientMessageTag::SubscribeSingle: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsSubscribeSingle()));
-        case EClientMessageTag::SubscribeMulti: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsSubscribeMulti()));
         case EClientMessageTag::Unsubscribe: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsUnsubscribe()));
-        case EClientMessageTag::UnsubscribeMulti: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsUnsubscribeMulti()));
+        case EClientMessageTag::OneOffQuery: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsOneOffQuery()));
+        case EClientMessageTag::CallReducer: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsCallReducer()));
         case EClientMessageTag::CallProcedure: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsCallProcedure()));
         default: return TagHash;
     }
@@ -234,13 +171,10 @@ namespace UE::SpacetimeDB
         FClientMessageType,
         EClientMessageTag,
         MessageData,
-        CallReducer, FCallReducerType,
         Subscribe, FSubscribeType,
-        OneOffQuery, FOneOffQueryType,
-        SubscribeSingle, FSubscribeSingleType,
-        SubscribeMulti, FSubscribeMultiType,
         Unsubscribe, FUnsubscribeType,
-        UnsubscribeMulti, FUnsubscribeMultiType,
+        OneOffQuery, FOneOffQueryType,
+        CallReducer, FCallReducerType,
         CallProcedure, FCallProcedureType
     );
 }
@@ -251,21 +185,6 @@ class SPACETIMEDBSDK_API UClientMessageBpLib : public UBlueprintFunctionLibrary
     GENERATED_BODY()
 
 private:
-    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ClientMessage")
-    static FClientMessageType CallReducer(const FCallReducerType& InValue)
-    {
-        return FClientMessageType::CallReducer(InValue);
-    }
-
-    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ClientMessage")
-    static bool IsCallReducer(const FClientMessageType& InValue) { return InValue.IsCallReducer(); }
-
-    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ClientMessage")
-    static FCallReducerType GetAsCallReducer(const FClientMessageType& InValue)
-    {
-        return InValue.GetAsCallReducer();
-    }
-
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ClientMessage")
     static FClientMessageType Subscribe(const FSubscribeType& InValue)
     {
@@ -279,51 +198,6 @@ private:
     static FSubscribeType GetAsSubscribe(const FClientMessageType& InValue)
     {
         return InValue.GetAsSubscribe();
-    }
-
-    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ClientMessage")
-    static FClientMessageType OneOffQuery(const FOneOffQueryType& InValue)
-    {
-        return FClientMessageType::OneOffQuery(InValue);
-    }
-
-    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ClientMessage")
-    static bool IsOneOffQuery(const FClientMessageType& InValue) { return InValue.IsOneOffQuery(); }
-
-    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ClientMessage")
-    static FOneOffQueryType GetAsOneOffQuery(const FClientMessageType& InValue)
-    {
-        return InValue.GetAsOneOffQuery();
-    }
-
-    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ClientMessage")
-    static FClientMessageType SubscribeSingle(const FSubscribeSingleType& InValue)
-    {
-        return FClientMessageType::SubscribeSingle(InValue);
-    }
-
-    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ClientMessage")
-    static bool IsSubscribeSingle(const FClientMessageType& InValue) { return InValue.IsSubscribeSingle(); }
-
-    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ClientMessage")
-    static FSubscribeSingleType GetAsSubscribeSingle(const FClientMessageType& InValue)
-    {
-        return InValue.GetAsSubscribeSingle();
-    }
-
-    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ClientMessage")
-    static FClientMessageType SubscribeMulti(const FSubscribeMultiType& InValue)
-    {
-        return FClientMessageType::SubscribeMulti(InValue);
-    }
-
-    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ClientMessage")
-    static bool IsSubscribeMulti(const FClientMessageType& InValue) { return InValue.IsSubscribeMulti(); }
-
-    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ClientMessage")
-    static FSubscribeMultiType GetAsSubscribeMulti(const FClientMessageType& InValue)
-    {
-        return InValue.GetAsSubscribeMulti();
     }
 
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ClientMessage")
@@ -342,18 +216,33 @@ private:
     }
 
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ClientMessage")
-    static FClientMessageType UnsubscribeMulti(const FUnsubscribeMultiType& InValue)
+    static FClientMessageType OneOffQuery(const FOneOffQueryType& InValue)
     {
-        return FClientMessageType::UnsubscribeMulti(InValue);
+        return FClientMessageType::OneOffQuery(InValue);
     }
 
     UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ClientMessage")
-    static bool IsUnsubscribeMulti(const FClientMessageType& InValue) { return InValue.IsUnsubscribeMulti(); }
+    static bool IsOneOffQuery(const FClientMessageType& InValue) { return InValue.IsOneOffQuery(); }
 
     UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ClientMessage")
-    static FUnsubscribeMultiType GetAsUnsubscribeMulti(const FClientMessageType& InValue)
+    static FOneOffQueryType GetAsOneOffQuery(const FClientMessageType& InValue)
     {
-        return InValue.GetAsUnsubscribeMulti();
+        return InValue.GetAsOneOffQuery();
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ClientMessage")
+    static FClientMessageType CallReducer(const FCallReducerType& InValue)
+    {
+        return FClientMessageType::CallReducer(InValue);
+    }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ClientMessage")
+    static bool IsCallReducer(const FClientMessageType& InValue) { return InValue.IsCallReducer(); }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ClientMessage")
+    static FCallReducerType GetAsCallReducer(const FClientMessageType& InValue)
+    {
+        return InValue.GetAsCallReducer();
     }
 
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ClientMessage")

@@ -21,13 +21,12 @@ pub trait Table: TableInternal + ExplicitNames {
     /// The type of rows stored in this table.
     type Row: SpacetimeType + Serialize + DeserializeOwned + Sized + 'static;
 
-    /// Returns the number of rows of this table.
+    /// Returns the number of rows in this table.
     ///
-    /// This takes into account modifications by the current transaction,
-    /// even though those modifications have not yet been committed or broadcast to clients.
-    /// This applies generally to insertions, deletions, updates, and iteration as well.
+    /// This reads datastore metadata, so it runs in constant time.
+    /// It also takes into account modifications by the current transaction.
     fn count(&self) -> u64 {
-        sys::datastore_table_row_count(Self::table_id()).expect("datastore_table_row_count() call failed")
+        count::<Self>()
     }
 
     /// Iterate over all rows of the table.
@@ -117,6 +116,12 @@ pub trait Table: TableInternal + ExplicitNames {
     // Re-integrates the BSATN of the `generated_cols` into `row`.
     #[doc(hidden)]
     fn integrate_generated_columns(row: &mut Self::Row, generated_cols: &[u8]);
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn count<Tbl: Table>() -> u64 {
+    sys::datastore_table_row_count(Tbl::table_id()).expect("datastore_table_row_count() call failed")
 }
 
 #[doc(hidden)]
@@ -577,7 +582,7 @@ impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndex<Tbl, IndexType, Idx>
     /// }
     /// # }
     /// ```
-    pub fn filter<P, K>(&self, point: P) -> impl Iterator<Item = Tbl::Row>
+    pub fn filter<P, K>(&self, point: P) -> impl Iterator<Item = Tbl::Row> + use<P, K, Tbl, IndexType, Idx>
     where
         P: WithPointArg<K>,
     {
@@ -665,7 +670,7 @@ impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndexReadOnly<Tbl, IndexTy
     #[doc(hidden)]
     pub const __NEW: Self = Self { _marker: PhantomData };
 
-    pub fn filter<P, K>(&self, point: P) -> impl Iterator<Item = Tbl::Row>
+    pub fn filter<P, K>(&self, point: P) -> impl Iterator<Item = Tbl::Row> + use<P, K, Tbl, IndexType, Idx>
     where
         P: WithPointArg<K>,
     {
@@ -857,7 +862,7 @@ impl<Tbl: Table, IndexType, Idx: IndexIsRanged> RangedIndex<Tbl, IndexType, Idx>
     /// >     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RangedIndex::<Tbl, IndexType, Idx>::filter`
     /// > ```
     /// <!-- TODO: check if that error is up to date! -->
-    pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row>
+    pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row> + use<B, K, Tbl, IndexType, Idx>
     where
         B: IndexScanRangeBounds<IndexType, K>,
     {
@@ -998,7 +1003,7 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndexReadOnly<Tbl, IndexType, Idx>
     #[doc(hidden)]
     pub const __NEW: Self = Self { _marker: PhantomData };
 
-    pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row>
+    pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row> + use<B, K, Tbl, IndexType, Idx>
     where
         B: IndexScanRangeBounds<IndexType, K>,
     {

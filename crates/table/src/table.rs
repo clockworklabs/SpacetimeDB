@@ -457,7 +457,7 @@ impl Table {
         self.validate_row_type_layout(&new_row_layout, new_columns)
             .map_err(|e| make_err(e.reason.into()))?;
 
-        // Validate that all new columns have default values and thier types match.
+        // Validate that all new columns have default values and their types match.
         for (idx, new_col) in new_columns.iter().skip(existing_columns.len()).enumerate() {
             let default_value = default_values
                 .get(idx)

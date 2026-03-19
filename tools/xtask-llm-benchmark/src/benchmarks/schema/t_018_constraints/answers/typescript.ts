@@ -1,6 +1,6 @@
 import { table, schema, t } from 'spacetimedb/server';
 
-export const account = table({
+const account = table({
   name: 'account',
   indexes: [{ name: 'byName', algorithm: 'btree', columns: ['name'] }],
 }, {

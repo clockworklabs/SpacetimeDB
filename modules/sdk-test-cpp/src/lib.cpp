@@ -654,7 +654,7 @@ struct IndexedTable2 {
 };
 SPACETIMEDB_STRUCT(IndexedTable2, player_id, player_snazz)
 SPACETIMEDB_TABLE(IndexedTable2, indexed_table_2, Private)  // Remove constraint from table macro
-// FIELD_NamedMultiColumnIndex(indexed_table_2, player_id_snazz_index, player_id, player_snazz);
+FIELD_MultiColumnIndex(indexed_table_2, player_id_snazz_index, player_id, player_snazz);
 
 struct BTreeU32 {
     uint32_t n;
@@ -1882,25 +1882,25 @@ SPACETIMEDB_REDUCER(insert_table_holds_table, ReducerContext ctx, OneU8 a, VecU8
 
 SPACETIMEDB_REDUCER(insert_caller_one_identity, ReducerContext ctx)
 {
-    ctx.db[one_identity].insert(OneIdentity{ctx.sender});
+    ctx.db[one_identity].insert(OneIdentity{ctx.sender()});
     return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_caller_vec_identity, ReducerContext ctx)
 {
-    ctx.db[vec_identity].insert(VecIdentity{{ctx.sender}});
+    ctx.db[vec_identity].insert(VecIdentity{{ctx.sender()}});
     return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_caller_unique_identity, ReducerContext ctx, int32_t data)
 {
-    ctx.db[unique_identity].insert(UniqueIdentity{ctx.sender, data});
+    ctx.db[unique_identity].insert(UniqueIdentity{ctx.sender(), data});
     return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_caller_pk_identity, ReducerContext ctx, int32_t data)
 {
-    ctx.db[pk_identity].insert(PkIdentity{ctx.sender, data});
+    ctx.db[pk_identity].insert(PkIdentity{ctx.sender(), data});
     return Ok();
 }
 
@@ -2072,7 +2072,7 @@ SPACETIMEDB_REDUCER(send_scheduled_message, ReducerContext ctx, ScheduledTable a
 
 SPACETIMEDB_CLIENT_VISIBILITY_FILTER(
     one_u8_visible,
-    "SELECT * FROM one_u8"
+    "SELECT * FROM one_u_8"
 )
 
 SPACETIMEDB_CLIENT_VISIBILITY_FILTER(

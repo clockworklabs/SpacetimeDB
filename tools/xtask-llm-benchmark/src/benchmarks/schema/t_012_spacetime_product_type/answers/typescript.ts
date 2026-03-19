@@ -1,11 +1,11 @@
 import { table, schema, t } from 'spacetimedb/server';
 
-export const Score = t.object('Score', {
+const Score = t.object('Score', {
   left: t.i32(),
   right: t.i32(),
 });
 
-export const result = table({
+const result = table({
   name: 'result',
 }, {
   id: t.i32().primaryKey(),

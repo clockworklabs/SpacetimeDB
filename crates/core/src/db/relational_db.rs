@@ -1,9 +1,8 @@
 use crate::db::durability::DurabilityWorker;
 use crate::db::MetricsRecorderQueue;
 use crate::error::{DBError, RestoreSnapshotError};
-use crate::messages::control_db::HostType;
 use crate::subscription::ExecutionCounters;
-use crate::util::{asyncify, spawn_rayon};
+use crate::util::asyncify;
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, Context};
 use enum_map::EnumMap;
@@ -403,7 +402,7 @@ impl RelationalDB {
     /// It is an error to call this method on an already-initialized database.
     ///
     /// See [`Self::open`] for further information.
-    pub fn set_initialized(&self, tx: &mut MutTx, host_type: HostType, program: Program) -> Result<(), DBError> {
+    pub fn set_initialized(&self, tx: &mut MutTx, program: Program) -> Result<(), DBError> {
         log::trace!(
             "[{}] DATABASE: set initialized owner={} program_hash={}",
             self.database_identity,
@@ -426,7 +425,7 @@ impl RelationalDB {
             database_identity: self.database_identity.into(),
             owner_identity: self.owner_identity.into(),
 
-            program_kind: host_type.into(),
+            program_kind: program.kind,
             program_hash: program.hash,
             program_bytes: program.bytes,
             module_version: ONLY_MODULE_VERSION.into(),
@@ -464,13 +463,13 @@ impl RelationalDB {
     /// The caller must ensure that:
     ///
     /// - `program.hash` is the [`Hash`] over `program.bytes`.
-    /// - `program.bytes` is a valid module acc. to `host_type`.
+    /// - `program.bytes` is a valid module acc. to `program.host_type`.
     /// - the schema updates contained in the module have been applied within
     ///   the transactional context `tx`.
     /// - the `__init__` reducer contained in the module has been executed
     ///   within the transactional context `tx`.
-    pub fn update_program(&self, tx: &mut MutTx, host_type: HostType, program: Program) -> Result<(), DBError> {
-        Ok(self.inner.update_program(tx, host_type.into(), program)?)
+    pub fn update_program(&self, tx: &mut MutTx, program: Program) -> Result<(), DBError> {
+        Ok(self.inner.update_program(tx, program)?)
     }
 
     fn restore_from_snapshot_or_bootstrap(
@@ -864,12 +863,11 @@ impl RelationalDB {
     /// This requires a small amount of additional logic when restoring from a snapshot
     /// to ensure we don't restore a snapshot more recent than the durable TX offset.
     fn maybe_do_snapshot(&self, tx_data: &TxData) {
-        if let Some(snapshot_worker) = &self.snapshot_worker {
-            if let Some(tx_offset) = tx_data.tx_offset() {
-                if tx_offset % SNAPSHOT_FREQUENCY == 0 {
-                    snapshot_worker.request_snapshot();
-                }
-            }
+        if let Some(snapshot_worker) = &self.snapshot_worker
+            && let Some(tx_offset) = tx_data.tx_offset()
+            && tx_offset % SNAPSHOT_FREQUENCY == 0
+        {
+            snapshot_worker.request_snapshot();
         }
     }
 
@@ -1404,7 +1402,7 @@ impl RelationalDB {
             TableId,
             Bound<AlgebraicValue>,
             Bound<AlgebraicValue>,
-            impl Iterator<Item = RowRef<'a>>,
+            impl Iterator<Item = RowRef<'a>> + use<'a>,
         ),
         DBError,
     > {
@@ -1416,7 +1414,7 @@ impl RelationalDB {
         tx: &'a MutTx,
         index_id: IndexId,
         point: &[u8],
-    ) -> Result<(TableId, AlgebraicValue, impl Iterator<Item = RowRef<'a>>), DBError> {
+    ) -> Result<(TableId, AlgebraicValue, impl Iterator<Item = RowRef<'a>> + use<'a>), DBError> {
         Ok(tx.index_scan_point(index_id, point)?)
     }
 
@@ -1741,7 +1739,6 @@ pub async fn local_durability(
     snapshot_worker: Option<&SnapshotWorker>,
 ) -> Result<(LocalDurability, DiskSizeFn), DBError> {
     let rt = tokio::runtime::Handle::current();
-    // TODO: Should this better be spawn_blocking?
     let on_new_segment = snapshot_worker.map(|snapshot_worker| {
         let snapshot_worker = snapshot_worker.clone();
         Arc::new(move || {
@@ -1750,17 +1747,11 @@ pub async fn local_durability(
             snapshot_worker.request_snapshot_ignore_closed();
         }) as Arc<OnNewSegmentFn>
     });
-    let local = spawn_rayon(move || {
+    let local = asyncify(move || {
         durability::Local::open(
             replica_dir.clone(),
             rt,
-            durability::local::Options {
-                commitlog: commitlog::Options {
-                    max_records_in_commit: 1.try_into().unwrap(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
+            <_>::default(),
             // Give the durability a handle to request a new snapshot run,
             // which it will send down whenever we rotate commitlog segments.
             on_new_segment,
@@ -1779,7 +1770,7 @@ pub async fn local_durability(
 /// Open a [History] for replay from the local durable state.
 ///
 /// Currently, this is simply a read-only copy of the commitlog.
-pub async fn local_history(replica_dir: &ReplicaDir) -> io::Result<impl History<TxData = Txdata>> {
+pub async fn local_history(replica_dir: &ReplicaDir) -> io::Result<impl History<TxData = Txdata> + use<>> {
     let commitlog_dir = replica_dir.commit_log();
     asyncify(move || Commitlog::open(commitlog_dir, <_>::default(), None)).await
 }
@@ -1799,10 +1790,10 @@ pub async fn snapshot_watching_commitlog_compressor(
         let snapshot_offset = *snapshot_rx.borrow_and_update();
         let durability = durability.clone();
 
-        if let Some(snap_tx) = &mut snap_tx {
-            if let Err(err) = snap_tx.try_send(snapshot_offset) {
-                tracing::warn!("failed to send offset {snapshot_offset} after snapshot creation: {err}");
-            }
+        if let Some(snap_tx) = &mut snap_tx
+            && let Err(err) = snap_tx.try_send(snapshot_offset)
+        {
+            tracing::warn!("failed to send offset {snapshot_offset} after snapshot creation: {err}");
         }
 
         let res: io::Result<_> = asyncify(move || {
@@ -1835,10 +1826,10 @@ pub async fn snapshot_watching_commitlog_compressor(
         };
         prev_snapshot_offset = snapshot_offset;
 
-        if let Some((clog_tx, last_compressed_segment)) = clog_tx.as_mut().zip(last_compressed_segment) {
-            if let Err(err) = clog_tx.try_send(last_compressed_segment) {
-                tracing::warn!("failed to send offset {last_compressed_segment} after compression: {err}");
-            }
+        if let Some((clog_tx, last_compressed_segment)) = clog_tx.as_mut().zip(last_compressed_segment)
+            && let Err(err) = clog_tx.try_send(last_compressed_segment)
+        {
+            tracing::warn!("failed to send offset {last_compressed_segment} after compression: {err}");
         }
     }
 }
@@ -1869,6 +1860,7 @@ fn default_row_count_fn(db: Identity) -> RowCountFn {
 pub mod tests_utils {
     use crate::db::snapshot;
     use crate::db::snapshot::SnapshotWorker;
+    use crate::messages::control_db::HostType;
 
     use super::*;
     use core::ops::Deref;
@@ -2182,7 +2174,7 @@ pub mod tests_utils {
             assert_eq!(connected_clients.len(), expected_num_clients);
             let db = db.with_row_count(Self::row_count_fn());
             db.with_auto_commit(Workload::Internal, |tx| {
-                db.set_initialized(tx, HostType::Wasm, Program::empty())
+                db.set_initialized(tx, Program::empty(HostType::Wasm.into()))
             })?;
             Ok(db)
         }
@@ -2357,12 +2349,12 @@ mod tests {
     use std::fs::OpenOptions;
     use std::path::PathBuf;
     use std::rc::Rc;
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
 
     use super::tests_utils::begin_mut_tx;
     use super::*;
     use crate::db::relational_db::tests_utils::{
-        begin_tx, insert, make_snapshot, with_auto_commit, with_read_only, TestDB,
+        begin_tx, create_view_for_test, insert, make_snapshot, with_auto_commit, with_read_only, TestDB,
     };
     use anyhow::bail;
     use bytes::Bytes;
@@ -2526,6 +2518,15 @@ mod tests {
         Ok((view_id, table_id, module_def.clone(), view_def.clone()))
     }
 
+    fn setup_anonymous_view(stdb: &TestDB) -> ResultTest<(ViewId, TableId)> {
+        Ok(create_view_for_test(
+            stdb,
+            "my_anonymous_view",
+            &[("b", AlgebraicType::U8)],
+            true,
+        )?)
+    }
+
     fn insert_view_row(stdb: &TestDB, view_id: ViewId, table_id: TableId, sender: Identity, v: u8) -> ResultTest<()> {
         let row_pv = |v: u8| product![v];
 
@@ -2549,6 +2550,22 @@ mod tests {
                 }
             })
             .collect()
+    }
+
+    fn project_anonymous_views(stdb: &TestDB, table_id: TableId) -> Vec<ProductValue> {
+        let tx = begin_tx(stdb);
+
+        stdb.iter(&tx, table_id)
+            .unwrap()
+            .map(|row| row.to_product_value())
+            .collect()
+    }
+
+    fn update_last_called(stdb: &TestDB, view_id: ViewId, sender: Identity, last_called: Timestamp) -> ResultTest<()> {
+        let mut tx = begin_mut_tx(stdb);
+        tx.update_view_timestamp_at(view_id, ArgId::SENTINEL, sender, last_called)?;
+        stdb.commit_tx(tx)?;
+        Ok(())
     }
 
     #[test]
@@ -2728,6 +2745,99 @@ mod tests {
         let st_after = tx.lookup_st_view_subs(view_id)?;
         assert_eq!(st_after.len(), 1);
         assert_eq!(st_after[0].identity.0, sender2);
+
+        Ok(())
+    }
+
+    /// Regression test for anonymous-view cleanup.
+    ///
+    /// If one subscriber row has expired but another subscriber for the same anonymous
+    /// view is still live, cleanup must delete only the stale bookkeeping row and keep
+    /// the shared materialized backing table intact.
+    #[test]
+    fn test_anonymous_view_cleanup_keeps_rows_for_live_subscribers() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+        let (view_id, table_id) = setup_anonymous_view(&stdb)?;
+
+        let stale_sender = Identity::ONE;
+        let live_sender = Identity::ZERO;
+
+        let mut tx = begin_mut_tx(&stdb);
+        tx.subscribe_view(view_id, ArgId::SENTINEL, stale_sender)?;
+        tx.subscribe_view(view_id, ArgId::SENTINEL, live_sender)?;
+        stdb.materialize_anonymous_view(&mut tx, table_id, vec![product![42u8]])?;
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        tx.unsubscribe_view(view_id, ArgId::SENTINEL, stale_sender)?;
+        stdb.commit_tx(tx)?;
+
+        // Make one row definitely expired without relying on wall-clock sleeps.
+        update_last_called(&stdb, view_id, stale_sender, Timestamp::UNIX_EPOCH)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        tx.update_view_timestamp(view_id, ArgId::SENTINEL, live_sender)?;
+        stdb.commit_tx(tx)?;
+
+        // Cleanup should remove only the stale subscriber row and keep the shared
+        // anonymous materialization because another subscriber is still live.
+        let mut tx = begin_mut_tx(&stdb);
+        let (_cleaned, _total_expired) = tx.clear_expired_views(Duration::from_secs(1), VIEW_CLEANUP_BUDGET)?;
+        stdb.commit_tx(tx)?;
+
+        assert_eq!(
+            project_anonymous_views(&stdb, table_id),
+            vec![product![42u8]],
+            "anonymous view rows should survive cleanup while another identity is still subscribed"
+        );
+
+        let tx = begin_mut_tx(&stdb);
+        let st_after = tx.lookup_st_view_subs(view_id)?;
+        assert_eq!(st_after.len(), 1);
+        assert_eq!(st_after[0].identity.0, live_sender);
+        assert!(st_after[0].has_subscribers);
+        assert_eq!(st_after[0].num_subscribers, 1);
+
+        Ok(())
+    }
+
+    /// Regression test for anonymous-view cleanup.
+    ///
+    /// Once the final subscriber row for an anonymous view has expired, cleanup must
+    /// remove both the stale bookkeeping row and the shared materialized backing table.
+    #[test]
+    fn test_anonymous_view_cleanup_clears_rows_when_unused() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+        let (view_id, table_id) = setup_anonymous_view(&stdb)?;
+
+        let sender = Identity::ONE;
+
+        let mut tx = begin_mut_tx(&stdb);
+        tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
+        stdb.materialize_anonymous_view(&mut tx, table_id, vec![product![42u8]])?;
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        tx.unsubscribe_view(view_id, ArgId::SENTINEL, sender)?;
+        stdb.commit_tx(tx)?;
+
+        // Mark the unsubscribed row as expired so cleanup can process it immediately.
+        update_last_called(&stdb, view_id, sender, Timestamp::UNIX_EPOCH)?;
+
+        // With no remaining subscriber rows, cleanup should drop the shared
+        // anonymous materialization and remove the bookkeeping row.
+        let mut tx = begin_mut_tx(&stdb);
+        let (_cleaned, _total_expired) = tx.clear_expired_views(Duration::from_secs(1), VIEW_CLEANUP_BUDGET)?;
+        stdb.commit_tx(tx)?;
+
+        assert!(
+            project_anonymous_views(&stdb, table_id).is_empty(),
+            "anonymous view rows should be cleared once no entries remain"
+        );
+
+        let tx = begin_mut_tx(&stdb);
+        let st_after = tx.lookup_st_view_subs(view_id)?;
+        assert!(st_after.is_empty());
 
         Ok(())
     }
