@@ -67,6 +67,25 @@ class TypeRoundTripTest {
         assertTrue(ConnectionId.nullIfZero(ConnectionId.random()) != null)
     }
 
+    @Test
+    fun connectionIdMaxValueRoundTrip() {
+        // U128 max = 2^128 - 1 (all bits set)
+        val maxU128 = BigInteger.ONE.shl(128) - BigInteger.ONE
+        val id = ConnectionId(maxU128)
+        val decoded = encodeDecode({ id.encode(it) }, { ConnectionId.decode(it) })
+        assertEquals(id, decoded)
+        assertEquals("f".repeat(32), decoded.toHexString())
+    }
+
+    @Test
+    fun connectionIdHighBitSetRoundTrip() {
+        // Value with MSB set — tests BigInteger sign handling
+        val highBit = BigInteger.ONE.shl(127)
+        val id = ConnectionId(highBit)
+        val decoded = encodeDecode({ id.encode(it) }, { ConnectionId.decode(it) })
+        assertEquals(id, decoded)
+    }
+
     // ---- Identity ----
 
     @Test
@@ -101,6 +120,25 @@ class TypeRoundTripTest {
         for (i in 1 until 32) {
             assertEquals(0.toByte(), bytes[i], "Byte at index $i should be 0")
         }
+    }
+
+    @Test
+    fun identityMaxValueRoundTrip() {
+        // U256 max = 2^256 - 1 (all bits set)
+        val maxU256 = BigInteger.ONE.shl(256) - BigInteger.ONE
+        val id = Identity(maxU256)
+        val decoded = encodeDecode({ id.encode(it) }, { Identity.decode(it) })
+        assertEquals(id, decoded)
+        assertEquals("f".repeat(64), decoded.toHexString())
+    }
+
+    @Test
+    fun identityHighBitSetRoundTrip() {
+        // Value with MSB set — tests BigInteger sign handling
+        val highBit = BigInteger.ONE.shl(255)
+        val id = Identity(highBit)
+        val decoded = encodeDecode({ id.encode(it) }, { Identity.decode(it) })
+        assertEquals(id, decoded)
     }
 
     @Test
