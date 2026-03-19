@@ -5,6 +5,7 @@ use spacetimedb::{reducer, ReducerContext, Table};
 #[derive(Debug, Clone)]
 pub struct Accounts {
     #[primary_key]
+    #[index(hash)]
     pub id: u32,
     pub balance: i64,
 }
@@ -31,21 +32,7 @@ pub fn seed(ctx: &ReducerContext, n: u32, initial_balance: i64) -> Result<(), St
 }
 
 #[reducer]
-pub fn create_account(ctx: &ReducerContext, id: u32, balance: i64) -> Result<(), String> {
-    let accounts = ctx.db.accounts();
-    let by_id = accounts.id();
-
-    if let Some(mut row) = by_id.find(&id) {
-        row.balance = balance;
-        by_id.update(row);
-    } else {
-        accounts.insert(Accounts { id, balance });
-    }
-    Ok(())
-}
-
-#[reducer]
-pub fn transfer(ctx: &ReducerContext, from: u32, to: u32, amount: i64, _client_txn_id: u64) -> Result<(), String> {
+pub fn transfer(ctx: &ReducerContext, from: u32, to: u32, amount: i64) -> Result<(), String> {
     if from == to {
         return Err("same_account".into());
     }

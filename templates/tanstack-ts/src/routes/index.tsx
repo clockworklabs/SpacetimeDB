@@ -1,13 +1,32 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { createServerFn } from '@tanstack/react-start';
 import { useState } from 'react';
 import { tables, reducers } from '../module_bindings';
 import {
+  spacetimeDBQuery,
   useSpacetimeDB,
   useReducer,
   useSpacetimeDBQuery,
 } from 'spacetimedb/tanstack';
+import { fetchPeople } from '../lib/spacetimedb-server';
+
+const getPeople = createServerFn({ method: 'GET' }).handler(async () => {
+  try {
+    return await fetchPeople();
+  } catch (error) {
+    console.error('Failed to prefetch people:', error);
+    return [];
+  }
+});
 
 export const Route = createFileRoute('/')({
+  loader: async ({ context }) => {
+    // Seed React Query cache with server fetched data, fetches if cache is empty
+    await context.queryClient.ensureQueryData({
+      ...spacetimeDBQuery(tables.person),
+      queryFn: () => getPeople(),
+    });
+  },
   component: App,
 });
 

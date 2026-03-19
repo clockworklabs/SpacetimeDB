@@ -826,7 +826,7 @@ impl InstanceEnv {
         &mut self,
         request: st_http::Request,
         body: bytes::Bytes,
-    ) -> Result<impl Future<Output = Result<(st_http::Response, bytes::Bytes), NodesError>>, NodesError> {
+    ) -> Result<impl Future<Output = Result<(st_http::Response, bytes::Bytes), NodesError>> + use<>, NodesError> {
         if self.in_tx() {
             // If we're holding a transaction open, refuse to perform this blocking operation.
             return Err(NodesError::WouldBlockTransaction(super::AbiCall::ProcedureHttpRequest));
@@ -857,8 +857,18 @@ impl InstanceEnv {
             err
         }
 
-        fn http_error<E: ToString>(err: E) -> NodesError {
-            NodesError::HttpError(err.to_string())
+        fn http_error<E: std::error::Error>(err: E) -> NodesError {
+            // Include the full error chain, not just the top-level message.
+            // `reqwest::Error` wraps underlying causes (DNS failure, connection refused,
+            // timeout, TLS errors, etc.) which are essential for debugging.
+            use std::fmt::Write;
+            let mut message = err.to_string();
+            let mut source = err.source();
+            while let Some(cause) = source {
+                write!(message, ": {cause}").unwrap();
+                source = cause.source();
+            }
+            NodesError::HttpError(message)
         }
 
         // Then convert the request into an `http::Request`, a semi-standard "lingua franca" type in the Rust ecosystem,
@@ -888,7 +898,7 @@ impl InstanceEnv {
 
         // Check if we have a blocked IP address, since IP literals bypass DNS resolution.
         if is_blocked_ip_literal(reqwest.url()) {
-            return Err(http_error(BLOCKED_HTTP_ADDRESS_ERROR));
+            return Err(NodesError::HttpError(BLOCKED_HTTP_ADDRESS_ERROR.to_string()));
         }
 
         let redirect_policy = reqwest::redirect::Policy::custom(|attempt| {
@@ -970,12 +980,16 @@ impl InstanceEnv {
 
 /// Default timeout for HTTP requests performed by [`InstanceEnv::http_request`].
 ///
-/// Value chosen arbitrarily by pgoldman 2025-11-18, based on little more than a vague guess.
-const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
+/// Applied when the module does not specify a timeout.
+/// 30 seconds is generous enough for most external API calls (including LLM APIs)
+/// without silently hanging forever on a broken endpoint.
+const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 /// Maximum timeout for HTTP requests performed by [`InstanceEnv::http_request`].
 ///
 /// If the user requests a timeout longer than this, we will clamp to this value.
-const HTTP_MAX_TIMEOUT: Duration = Duration::from_secs(10);
+/// 180 seconds accommodates long-running LLM and AI API calls,
+/// which routinely take 30-120 seconds for complex requests.
+const HTTP_MAX_TIMEOUT: Duration = Duration::from_secs(180);
 const BLOCKED_HTTP_ADDRESS_ERROR: &str = "refusing to connect to private or special-purpose addresses";
 
 struct FilteredDnsResolver;

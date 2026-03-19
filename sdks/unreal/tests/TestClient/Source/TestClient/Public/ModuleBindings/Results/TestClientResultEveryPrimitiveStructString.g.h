@@ -16,10 +16,10 @@ struct TESTCLIENT_API FTestClientResultEveryPrimitiveStructString
     bool bIsOk = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB", meta = (EditCondition = "bIsOk"))
-    FEveryPrimitiveStructType OkValue;
+    FEveryPrimitiveStructType OkValue = {};
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB", meta = (EditCondition = "!bIsOk"))
-    FString ErrValue;
+    FString ErrValue = {};
 
     FTestClientResultEveryPrimitiveStructString() = default;
 

@@ -50,6 +50,7 @@
 //! }
 //! ```
 
+mod csharp;
 pub mod modules;
 
 use anyhow::{bail, Context, Result};
@@ -771,6 +772,8 @@ impl Smoketest {
 
     /// Initializes, writes, and publishes a TypeScript module from source.
     ///
+    /// Will publish with the `--clear-database` flag.
+    ///
     /// The module is initialized at `<test_project_dir>/<project_dir_name>/spacetimedb`.
     /// On success this updates `self.database_identity`.
     pub fn publish_typescript_module_source(
@@ -778,6 +781,22 @@ impl Smoketest {
         project_dir_name: &str,
         module_name: &str,
         module_source: &str,
+    ) -> Result<String> {
+        self.publish_typescript_module_source_clear(project_dir_name, module_name, module_source, true)
+    }
+
+    /// Initializes, writes, and publishes a TypeScript module from source.
+    ///
+    /// If `clear` is `true`, this will publish with the `--clear-database` flag.
+    ///
+    /// The module is initialized at `<test_project_dir>/<project_dir_name>/spacetimedb`.
+    /// On success this updates `self.database_identity`.
+    pub fn publish_typescript_module_source_clear(
+        &mut self,
+        project_dir_name: &str,
+        module_name: &str,
+        module_source: &str,
+        clear: bool,
     ) -> Result<String> {
         let module_root = self.project_dir.path().join(project_dir_name);
         let module_root_str = module_root.to_str().context("Invalid TypeScript project path")?;
@@ -802,6 +821,58 @@ impl Smoketest {
         pnpm(&["install", ts_bindings_path], &module_path)?;
 
         let module_path_str = module_path.to_str().context("Invalid TypeScript module path")?;
+        let mut publish_args = vec![
+            "publish",
+            "--server",
+            &self.server_url,
+            "--module-path",
+            module_path_str,
+            "--yes",
+        ];
+        if clear {
+            publish_args.push("--clear-database");
+        }
+        publish_args.push(module_name);
+        let publish_output = self.spacetime(&publish_args)?;
+
+        let re = Regex::new(r"identity: ([0-9a-fA-F]+)").unwrap();
+        let identity = re
+            .captures(&publish_output)
+            .and_then(|caps| caps.get(1))
+            .map(|m| m.as_str().to_string())
+            .context("Failed to parse database identity from publish output")?;
+        self.database_identity = Some(identity.clone());
+
+        Ok(identity)
+    }
+
+    /// Initializes, writes, and publishes a C# module from source.
+    ///
+    /// The module is initialized at `<test_project_dir>/<project_dir_name>/spacetimedb`.
+    /// On success this updates `self.database_identity`.
+    pub fn publish_csharp_module_source(
+        &mut self,
+        project_dir_name: &str,
+        module_name: &str,
+        module_source: &str,
+    ) -> Result<String> {
+        let module_root = self.project_dir.path().join(project_dir_name);
+        let module_root_str = module_root.to_str().context("Invalid C# project path")?;
+        self.spacetime(&[
+            "init",
+            "--non-interactive",
+            "--lang",
+            "csharp",
+            "--project-path",
+            module_root_str,
+            module_name,
+        ])?;
+
+        let module_path = module_root.join("spacetimedb");
+        fs::write(module_path.join("Lib.cs"), module_source).context("Failed to write C# module code")?;
+        csharp::prepare_csharp_module(&module_path)?;
+
+        let module_path_str = module_path.to_str().context("Invalid C# module path")?;
         let publish_output = self.spacetime(&[
             "publish",
             "--server",
@@ -812,6 +883,7 @@ impl Smoketest {
             "--clear-database",
             module_name,
         ])?;
+        csharp::verify_csharp_module_restore(&module_path)?;
 
         let re = Regex::new(r"identity: ([0-9a-fA-F]+)").unwrap();
         let identity = re
@@ -952,19 +1024,25 @@ log = "0.4"
 
     /// Publishes the module with name, clear, and break_clients options.
     pub fn publish_module_with_options(&mut self, name: &str, clear: bool, break_clients: bool) -> Result<String> {
-        self.publish_module_internal(Some(name), clear, break_clients, None)
+        self.publish_module_internal(Some(name), clear, break_clients, true, None)
     }
 
     /// Publishes the module and allows supplying stdin input to the CLI.
     ///
     /// Useful for interactive publish prompts which require typed acknowledgements.
+    /// Note: does NOT pass `--yes` so that interactive prompts are not suppressed.
     pub fn publish_module_with_stdin(&mut self, name: &str, stdin_input: &str) -> Result<String> {
-        self.publish_module_internal(Some(name), false, false, Some(stdin_input))
+        self.publish_module_internal(Some(name), false, false, false, Some(stdin_input))
+    }
+
+    /// Publishes the module without passing `--yes`, so interactive prompts are not suppressed.
+    pub fn publish_module_named_no_force(&mut self, name: &str) -> Result<String> {
+        self.publish_module_internal(Some(name), false, false, false, None)
     }
 
     /// Internal helper for publishing with options.
     fn publish_module_opts(&mut self, name: Option<&str>, clear: bool) -> Result<String> {
-        self.publish_module_internal(name, clear, false, None)
+        self.publish_module_internal(name, clear, false, true, None)
     }
 
     /// Internal helper for publishing with all options.
@@ -973,6 +1051,7 @@ log = "0.4"
         name: Option<&str>,
         clear: bool,
         break_clients: bool,
+        force: bool,
         stdin_input: Option<&str>,
     ) -> Result<String> {
         let start = Instant::now();
@@ -1015,14 +1094,11 @@ log = "0.4"
 
         // Now publish with --bin-path to skip rebuild
         let publish_start = Instant::now();
-        let mut args = vec![
-            "publish",
-            "--server",
-            &self.server_url,
-            "--bin-path",
-            &wasm_path_str,
-            "--yes",
-        ];
+        let mut args = vec!["publish", "--server", &self.server_url, "--bin-path", &wasm_path_str];
+
+        if force {
+            args.push("--yes");
+        }
 
         if clear {
             args.push("--clear-database");

@@ -40,12 +40,12 @@ namespace SpacetimeDB.Types
     public sealed class NullStringNullableCols
     {
         public global::SpacetimeDB.Col<NullStringNullable, ulong> Id { get; }
-        public global::SpacetimeDB.NullableCol<NullStringNullable, string> Name { get; }
+        public global::SpacetimeDB.Col<NullStringNullable, string> Name { get; }
 
         public NullStringNullableCols(string tableName)
         {
             Id = new global::SpacetimeDB.Col<NullStringNullable, ulong>(tableName, "id");
-            Name = new global::SpacetimeDB.NullableCol<NullStringNullable, string>(tableName, "name");
+            Name = new global::SpacetimeDB.Col<NullStringNullable, string>(tableName, "name");
         }
     }
 

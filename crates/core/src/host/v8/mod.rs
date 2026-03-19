@@ -410,11 +410,10 @@ impl JsInstance {
         &mut self,
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
-        drop_view_subscribers: bool,
     ) -> Result<(), ReducerCallError> {
         self.send_recv(
             JsWorkerReply::into_call_identity_disconnected,
-            JsWorkerRequest::CallIdentityDisconnected(caller_identity, caller_connection_id, drop_view_subscribers),
+            JsWorkerRequest::CallIdentityDisconnected(caller_identity, caller_connection_id),
         )
         .await
     }
@@ -505,7 +504,7 @@ enum JsWorkerRequest {
     /// See [`JsInstance::call_identity_connected`].
     CallIdentityConnected(ConnectionAuthCtx, ConnectionId),
     /// See [`JsInstance::call_identity_disconnected`].
-    CallIdentityDisconnected(Identity, ConnectionId, bool),
+    CallIdentityDisconnected(Identity, ConnectionId),
     /// See [`JsInstance::disconnect_client`].
     DisconnectClient(ClientActorId),
     /// See [`JsInstance::init_database`].
@@ -718,17 +717,12 @@ async fn spawn_instance_worker(
                         call_identity_connected(caller_auth, caller_connection_id, info, call_reducer, &mut trapped);
                     reply("call_identity_connected", CallIdentityConnected(res), trapped);
                 }
-                JsWorkerRequest::CallIdentityDisconnected(
-                    caller_identity,
-                    caller_connection_id,
-                    drop_view_subcribers,
-                ) => {
+                JsWorkerRequest::CallIdentityDisconnected(caller_identity, caller_connection_id) => {
                     let mut trapped = false;
                     let res = ModuleHost::call_identity_disconnected_inner(
                         caller_identity,
                         caller_connection_id,
                         info,
-                        drop_view_subcribers,
                         call_reducer,
                         &mut trapped,
                     );
@@ -934,13 +928,13 @@ where
     let call_result = call(scope, op).map_err(|mut e| {
         if let ErrorOrException::Exception(_) = e {
             // If we're terminating execution, don't try to check `instanceof`.
-            if scope.can_continue() {
-                if let Some(exc) = scope.exception() {
-                    match process_thrown_exception(scope, hooks, exc) {
-                        Ok(Some(err)) => return err,
-                        Ok(None) => {}
-                        Err(exc) => e = ErrorOrException::Exception(exc),
-                    }
+            if scope.can_continue()
+                && let Some(exc) = scope.exception()
+            {
+                match process_thrown_exception(scope, hooks, exc) {
+                    Ok(Some(err)) => return err,
+                    Ok(None) => {}
+                    Err(exc) => e = ErrorOrException::Exception(exc),
                 }
             }
         }

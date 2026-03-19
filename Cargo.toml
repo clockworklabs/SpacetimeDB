@@ -50,12 +50,14 @@ members = [
   "modules/sdk-test-connect-disconnect",
   "modules/sdk-test-procedure",
   "modules/sdk-test-view",
+  "modules/sdk-test-view-pk",
   "modules/sdk-test-event-table",
   "sdks/rust/tests/test-client",
   "sdks/rust/tests/test-counter",
   "sdks/rust/tests/connect_disconnect_client",
   "sdks/rust/tests/procedure-client",
   "sdks/rust/tests/view-client",
+  "sdks/rust/tests/view-pk-client",
   "sdks/rust/tests/event-table-client",
   "tools/ci",
   "tools/upgrade-version",
@@ -106,46 +108,46 @@ inherits = "release"
 debug = true
 
 [workspace.package]
-version = "2.0.2"
-edition = "2021"
+version = "2.0.5"
+edition = "2024"
 # update rust-toolchain.toml too!
 rust-version = "1.93.0"
 
 [workspace.dependencies]
-spacetimedb = { path = "crates/bindings", version = "=2.0.2" }
-spacetimedb-auth = { path = "crates/auth", version = "=2.0.2" }
-spacetimedb-bindings-macro = { path = "crates/bindings-macro", version = "=2.0.2" }
-spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "=2.0.2" }
-spacetimedb-cli = { path = "crates/cli", version = "=2.0.2" }
-spacetimedb-client-api = { path = "crates/client-api", version = "=2.0.2" }
-spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "=2.0.2" }
-spacetimedb-codegen = { path = "crates/codegen", version = "=2.0.2" }
-spacetimedb-commitlog = { path = "crates/commitlog", version = "=2.0.2" }
-spacetimedb-core = { path = "crates/core", version = "=2.0.2" }
-spacetimedb-data-structures = { path = "crates/data-structures", version = "=2.0.2" }
-spacetimedb-datastore = { path = "crates/datastore", version = "=2.0.2" }
-spacetimedb-durability = { path = "crates/durability", version = "=2.0.2" }
-spacetimedb-execution = { path = "crates/execution", version = "=2.0.2" }
-spacetimedb-expr = { path = "crates/expr", version = "=2.0.2" }
-spacetimedb-guard = { path = "crates/guard", version = "=2.0.2" }
-spacetimedb-lib = { path = "crates/lib", default-features = false, version = "=2.0.2" }
-spacetimedb-memory-usage = { path = "crates/memory-usage", version = "=2.0.2", default-features = false }
-spacetimedb-metrics = { path = "crates/metrics", version = "=2.0.2" }
-spacetimedb-paths = { path = "crates/paths", version = "=2.0.2" }
-spacetimedb-pg = { path = "crates/pg", version = "=2.0.2" }
-spacetimedb-physical-plan = { path = "crates/physical-plan", version = "=2.0.2" }
-spacetimedb-primitives = { path = "crates/primitives", version = "=2.0.2" }
-spacetimedb-query = { path = "crates/query", version = "=2.0.2" }
-spacetimedb-sats = { path = "crates/sats", version = "=2.0.2" }
-spacetimedb-schema = { path = "crates/schema", version = "=2.0.2" }
-spacetimedb-standalone = { path = "crates/standalone", version = "=2.0.2" }
-spacetimedb-sql-parser = { path = "crates/sql-parser", version = "=2.0.2" }
-spacetimedb-table = { path = "crates/table", version = "=2.0.2" }
-spacetimedb-vm = { path = "crates/vm", version = "=2.0.2" }
-spacetimedb-fs-utils = { path = "crates/fs-utils", version = "=2.0.2" }
-spacetimedb-snapshot = { path = "crates/snapshot", version = "=2.0.2" }
-spacetimedb-subscription = { path = "crates/subscription", version = "=2.0.2" }
-spacetimedb-query-builder = { path = "crates/query-builder", version = "=2.0.2" }
+spacetimedb = { path = "crates/bindings", version = "=2.0.5" }
+spacetimedb-auth = { path = "crates/auth", version = "=2.0.5" }
+spacetimedb-bindings-macro = { path = "crates/bindings-macro", version = "=2.0.5" }
+spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "=2.0.5" }
+spacetimedb-cli = { path = "crates/cli", version = "=2.0.5" }
+spacetimedb-client-api = { path = "crates/client-api", version = "=2.0.5" }
+spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "=2.0.5" }
+spacetimedb-codegen = { path = "crates/codegen", version = "=2.0.5" }
+spacetimedb-commitlog = { path = "crates/commitlog", version = "=2.0.5" }
+spacetimedb-core = { path = "crates/core", version = "=2.0.5" }
+spacetimedb-data-structures = { path = "crates/data-structures", version = "=2.0.5" }
+spacetimedb-datastore = { path = "crates/datastore", version = "=2.0.5" }
+spacetimedb-durability = { path = "crates/durability", version = "=2.0.5" }
+spacetimedb-execution = { path = "crates/execution", version = "=2.0.5" }
+spacetimedb-expr = { path = "crates/expr", version = "=2.0.5" }
+spacetimedb-guard = { path = "crates/guard", version = "=2.0.5" }
+spacetimedb-lib = { path = "crates/lib", default-features = false, version = "=2.0.5" }
+spacetimedb-memory-usage = { path = "crates/memory-usage", version = "=2.0.5", default-features = false }
+spacetimedb-metrics = { path = "crates/metrics", version = "=2.0.5" }
+spacetimedb-paths = { path = "crates/paths", version = "=2.0.5" }
+spacetimedb-pg = { path = "crates/pg", version = "=2.0.5" }
+spacetimedb-physical-plan = { path = "crates/physical-plan", version = "=2.0.5" }
+spacetimedb-primitives = { path = "crates/primitives", version = "=2.0.5" }
+spacetimedb-query = { path = "crates/query", version = "=2.0.5" }
+spacetimedb-sats = { path = "crates/sats", version = "=2.0.5" }
+spacetimedb-schema = { path = "crates/schema", version = "=2.0.5" }
+spacetimedb-standalone = { path = "crates/standalone", version = "=2.0.5" }
+spacetimedb-sql-parser = { path = "crates/sql-parser", version = "=2.0.5" }
+spacetimedb-table = { path = "crates/table", version = "=2.0.5" }
+spacetimedb-vm = { path = "crates/vm", version = "=2.0.5" }
+spacetimedb-fs-utils = { path = "crates/fs-utils", version = "=2.0.5" }
+spacetimedb-snapshot = { path = "crates/snapshot", version = "=2.0.5" }
+spacetimedb-subscription = { path = "crates/subscription", version = "=2.0.5" }
+spacetimedb-query-builder = { path = "crates/query-builder", version = "=2.0.5" }
 
 # Prevent `ahash` from pulling in `getrandom` by disabling default features.
 # Modules use `getrandom02` and we need to prevent an incompatible version
@@ -247,7 +249,7 @@ pgwire = { version = "0.37", default-features = false, features = ["server-api",
 postgres-types = "0.2.5"
 pretty_assertions = { version = "1.4", features = ["unstable"] }
 proc-macro2 = "1.0"
-prometheus = "0.13.0"
+prometheus = "0.14.0"
 proptest = "1.4"
 proptest-derive = "0.5"
 quick-junit = { version = "0.3.2" }
