@@ -8,10 +8,25 @@ import kotlinx.coroutines.withTimeout
 import module_bindings.db
 import module_bindings.reducers
 import module_bindings.withModuleBindings
+import java.net.Socket
 
 val HOST: String = System.getenv("SPACETIMEDB_HOST") ?: "ws://localhost:3000"
 val DB_NAME: String = System.getenv("SPACETIMEDB_DB_NAME") ?: "chat-all"
 const val DEFAULT_TIMEOUT_MS = 10_000L
+
+private fun checkServerReachable() {
+    val url = java.net.URI(HOST.replace("ws://", "http://").replace("wss://", "https://"))
+    val host = url.host ?: "localhost"
+    val port = if (url.port > 0) url.port else 3000
+    try {
+        Socket().use { it.connect(java.net.InetSocketAddress(host, port), 2000) }
+    } catch (_: Exception) {
+        throw AssertionError(
+            "SpacetimeDB server is not reachable at $host:$port. " +
+            "Start it with: spacetimedb-cli start"
+        )
+    }
+}
 
 fun createTestHttpClient(): HttpClient = HttpClient(OkHttp) {
     install(WebSockets)
@@ -24,6 +39,7 @@ data class ConnectedClient(
 )
 
 suspend fun connectToDb(token: String? = null): ConnectedClient {
+    checkServerReachable()
     val identityDeferred = CompletableDeferred<Pair<Identity, String>>()
 
     val connection = DbConnection.Builder()

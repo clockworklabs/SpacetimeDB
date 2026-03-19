@@ -18,7 +18,5 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
-    // Integration tests need a running SpacetimeDB server.
-    // Skip by default; run explicitly with: ./gradlew :integration-tests:test -PintegrationTests
-    enabled = System.getenv("SPACETIMEDB_HOST") != null || project.hasProperty("integrationTests")
+    testLogging.exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
 }

@@ -490,4 +490,99 @@ class SubscriptionEdgeCaseTest {
         kotlin.test.assertFalse(callbackFired, "onEnd callback must not fire when CAS fails")
         conn.disconnect()
     }
+
+    // =========================================================================
+    // Concurrent subscribe + unsubscribe
+    // =========================================================================
+
+    @Test
+    fun subscribeAndImmediateUnsubscribeTransitionsCorrectly() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        var appliedFired = false
+        var endFired = false
+        val handle = conn.subscribe(
+            queries = listOf("SELECT * FROM t"),
+            onApplied = listOf { _ -> appliedFired = true },
+        )
+        assertEquals(SubscriptionState.PENDING, handle.state)
+
+        // Server confirms subscription
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 1u,
+                querySetId = handle.querySetId,
+                rows = emptyQueryRows(),
+            )
+        )
+        advanceUntilIdle()
+        assertTrue(appliedFired)
+        assertEquals(SubscriptionState.ACTIVE, handle.state)
+
+        // Immediately unsubscribe
+        handle.unsubscribeThen { _ -> endFired = true }
+        assertEquals(SubscriptionState.UNSUBSCRIBING, handle.state)
+
+        // Server confirms unsubscribe
+        transport.sendToClient(
+            ServerMessage.UnsubscribeApplied(
+                requestId = 2u,
+                querySetId = handle.querySetId,
+                rows = null,
+            )
+        )
+        advanceUntilIdle()
+        assertTrue(endFired)
+        assertEquals(SubscriptionState.ENDED, handle.state)
+        conn.disconnect()
+    }
+
+    @Test
+    fun unsubscribeBeforeAppliedThrows() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val handle = conn.subscribe(listOf("SELECT * FROM t"))
+        assertEquals(SubscriptionState.PENDING, handle.state)
+
+        // Unsubscribe while still PENDING — CAS(ACTIVE→UNSUBSCRIBING) must fail
+        assertFailsWith<IllegalStateException> {
+            handle.unsubscribe()
+        }
+        assertEquals(SubscriptionState.PENDING, handle.state)
+        conn.disconnect()
+    }
+
+    @Test
+    fun doubleUnsubscribeThrows() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        val handle = conn.subscribe(listOf("SELECT * FROM t"))
+        transport.sendToClient(
+            ServerMessage.SubscribeApplied(
+                requestId = 1u,
+                querySetId = handle.querySetId,
+                rows = emptyQueryRows(),
+            )
+        )
+        advanceUntilIdle()
+        assertEquals(SubscriptionState.ACTIVE, handle.state)
+
+        handle.unsubscribe()
+        assertEquals(SubscriptionState.UNSUBSCRIBING, handle.state)
+
+        // Second unsubscribe — state is UNSUBSCRIBING, not ACTIVE
+        assertFailsWith<IllegalStateException> {
+            handle.unsubscribe()
+        }
+        conn.disconnect()
+    }
 }
