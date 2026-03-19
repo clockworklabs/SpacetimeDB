@@ -45,7 +45,7 @@ macro_rules! assert_eq_or_bail {
     }};
 }
 
-pub(crate) async fn dispatch(test: &str, db_name: &str) {
+pub async fn dispatch(test: &str, db_name: &str) {
     match test {
         "insert-primitive" => exec_insert_primitive(db_name).await,
         "subscribe-and-cancel" => exec_subscribe_and_cancel(db_name).await,

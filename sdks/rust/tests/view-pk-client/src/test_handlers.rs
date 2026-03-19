@@ -282,7 +282,7 @@ async fn exec_view_pk_semijoin_two_sender_views_query_builder(db_name: &str) {
     test_counter.wait_for_all().await;
 }
 
-pub(crate) async fn dispatch(test: &str, db_name: &str) {
+pub async fn dispatch(test: &str, db_name: &str) {
     match test {
         "view-pk-on-update" => exec_view_pk_on_update(db_name).await,
         "view-pk-join-query-builder" => exec_view_pk_join_query_builder(db_name).await,

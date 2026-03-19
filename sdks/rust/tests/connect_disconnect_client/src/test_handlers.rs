@@ -6,7 +6,7 @@ use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";
 
-pub(crate) async fn dispatch(db_name: &str) {
+pub async fn dispatch(db_name: &str) {
     let disconnect_test_counter = TestCounter::new();
     let disconnect_result = disconnect_test_counter.add_test("disconnect");
 

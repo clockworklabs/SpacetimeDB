@@ -1,7 +1,4 @@
-#[allow(clippy::too_many_arguments)]
-#[allow(clippy::large_enum_variant)]
-mod lib;
-use lib::test_handlers;
+use test_client::test_handlers;
 
 /// Register a panic hook which will exit the process whenever any thread panics.
 fn exit_on_panic() {

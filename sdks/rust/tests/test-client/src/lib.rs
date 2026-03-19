@@ -5,7 +5,7 @@
 mod module_bindings;
 mod pk_test_table;
 mod simple_test_table;
-mod test_handlers;
+pub mod test_handlers;
 mod unique_test_table;
 
 #[cfg(all(target_arch = "wasm32", feature = "web"))]

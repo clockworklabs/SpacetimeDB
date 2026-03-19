@@ -7,7 +7,7 @@ use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";
 
-pub(crate) async fn dispatch(test: &str, db_name: &str) {
+pub async fn dispatch(test: &str, db_name: &str) {
     match test {
         "procedure-return-values" => exec_procedure_return_values(db_name).await,
         "procedure-observe-panic" => exec_procedure_panic(db_name).await,

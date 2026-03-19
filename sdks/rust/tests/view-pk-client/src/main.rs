@@ -1,5 +1,4 @@
-mod lib;
-use lib::test_handlers;
+use view_pk_client::test_handlers;
 
 /// Register a panic hook which will exit the process whenever any thread panics.
 fn exit_on_panic() {

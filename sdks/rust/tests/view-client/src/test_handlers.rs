@@ -5,7 +5,7 @@ use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";
 
-pub(crate) async fn dispatch(test: &str, db_name: &str) {
+pub async fn dispatch(test: &str, db_name: &str) {
     match test {
         "view-anonymous-subscribe" => exec_anonymous_subscribe(db_name).await,
         "view-anonymous-subscribe-with-query-builder" => exec_anonymous_subscribe_with_query_builder(db_name).await,

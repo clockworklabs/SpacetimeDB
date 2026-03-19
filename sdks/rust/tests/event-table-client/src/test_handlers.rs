@@ -22,7 +22,7 @@ macro_rules! assert_eq_or_bail {
     }};
 }
 
-pub(crate) async fn dispatch(test: &str, db_name: &str) {
+pub async fn dispatch(test: &str, db_name: &str) {
     match test {
         "event-table" => exec_event_table(db_name).await,
         "multiple-events" => exec_multiple_events(db_name).await,

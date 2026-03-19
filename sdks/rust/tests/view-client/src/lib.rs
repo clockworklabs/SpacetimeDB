@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 
 mod module_bindings;
-mod test_handlers;
+pub mod test_handlers;
 
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
 use wasm_bindgen::prelude::wasm_bindgen;
