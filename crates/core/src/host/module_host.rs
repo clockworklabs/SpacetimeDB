@@ -1233,6 +1233,7 @@ impl ModuleHost {
                     .await
             },
             async move |timer_guard, inst, arg| {
+                super::v8::assert_not_on_js_module_thread(label);
                 drop(timer_guard);
                 js(arg, inst).await
             },
@@ -1270,13 +1271,21 @@ impl ModuleHost {
     }
 
     async fn call_view_command(&self, label: &str, cmd: ViewCommand) -> Result<ViewCommandResult, ViewCallError> {
-        self.call(
-            label,
-            cmd,
-            async |cmd, inst| Ok(inst.call_view(cmd)),
-            async |cmd, inst| inst.call_view(cmd).await,
-        )
-        .await?
+        Ok(match &*self.inner {
+            ModuleHostInner::Wasm(_) => {
+                self.call(
+                    label,
+                    cmd,
+                    async |cmd, inst| Ok::<_, ViewCallError>(inst.call_view(cmd)),
+                    async |_cmd, _inst| unreachable!("WASM should not use the JS call_view path"),
+                )
+                .await??
+            }
+            ModuleHostInner::Js(_) => {
+                self.with_js_pooled_instance(label, async |inst| inst.call_view(cmd).await)
+                    .await?
+            }
+        })
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {

@@ -46,6 +46,7 @@ use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_table::static_assert_size;
+use std::cell::Cell;
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock};
@@ -95,6 +96,52 @@ impl V8Runtime {
 
 static V8_RUNTIME_GLOBAL: LazyLock<V8RuntimeInner> = LazyLock::new(V8RuntimeInner::init);
 static NEXT_JS_INSTANCE_ID: AtomicU64 = AtomicU64::new(1);
+
+thread_local! {
+    // Note, `on_module_thread` runs host closures on a single JS module thread.
+    // Enqueuing more JS module-thread work from one of those closures waits on the
+    // same worker thread that is already busy running the current closure.
+    // And this deadlocks.
+    static ON_JS_MODULE_THREAD: Cell<bool> = const { Cell::new(false) };
+}
+
+struct EnteredJsModuleThread;
+
+impl EnteredJsModuleThread {
+    fn new() -> Self {
+        ON_JS_MODULE_THREAD.with(|entered| {
+            assert!(
+                !entered.get(),
+                "reentrancy into the JS module thread; this would deadlock. \
+                 Do not enqueue onto this worker from inside `on_module_thread` work."
+            );
+            entered.set(true);
+        });
+        Self
+    }
+}
+
+impl Drop for EnteredJsModuleThread {
+    fn drop(&mut self) {
+        ON_JS_MODULE_THREAD.with(|entered| {
+            debug_assert!(
+                entered.get(),
+                "JS module thread marker should only be cleared after entry"
+            );
+            entered.set(false);
+        });
+    }
+}
+
+pub(crate) fn assert_not_on_js_module_thread(label: &str) {
+    ON_JS_MODULE_THREAD.with(|entered| {
+        assert!(
+            !entered.get(),
+            "{label} attempted to re-enter the JS module thread from code already \
+             running on that thread; this would deadlock"
+        );
+    });
+}
 
 /// The actual V8 runtime, with initialization of V8.
 struct V8RuntimeInner {
@@ -604,6 +651,8 @@ impl JsInstanceLane {
         label: &'static str,
         work: impl AsyncFnOnce(JsInstance) -> Result<R, WorkerDisconnected>,
     ) -> Result<R, WorkerDisconnected> {
+        assert_not_on_js_module_thread(label);
+
         let active = self.active_instance();
         let result = work(active.clone()).await;
         match result {
@@ -636,6 +685,7 @@ impl JsInstanceLane {
             inst.request_tx
                 .send_async(JsWorkerRequest::RunFunction(Box::new(move || {
                     async move {
+                        let _on_js_module_thread = EnteredJsModuleThread::new();
                         let result = AssertUnwindSafe(f().instrument(span)).catch_unwind().await;
                         if let Err(Err(_panic)) = tx.send(result) {
                             tracing::warn!("uncaught panic on `SingleCoreExecutor`")
