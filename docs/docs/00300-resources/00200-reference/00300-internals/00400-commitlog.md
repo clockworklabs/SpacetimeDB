@@ -1,6 +1,6 @@
 ---
 title: Commitlog
-slug: /databases/commitlog
+slug: /reference/internals/commitlog
 ---
 
 # Commitlog
