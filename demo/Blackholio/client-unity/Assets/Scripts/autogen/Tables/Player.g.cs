@@ -26,9 +26,9 @@ namespace SpacetimeDB.Types
 
             public readonly IdentityUniqueIndex Identity;
 
-            public sealed class PlayerIdUniqueIndex : UniqueIndexBase<uint>
+            public sealed class PlayerIdUniqueIndex : UniqueIndexBase<int>
             {
-                protected override uint GetKey(Player row) => row.PlayerId;
+                protected override int GetKey(Player row) => row.PlayerId;
 
                 public PlayerIdUniqueIndex(PlayerHandle table) : base(table) { }
             }
@@ -45,5 +45,31 @@ namespace SpacetimeDB.Types
         }
 
         public readonly PlayerHandle Player;
+    }
+
+    public sealed class PlayerCols
+    {
+        public global::SpacetimeDB.Col<Player, SpacetimeDB.Identity> Identity { get; }
+        public global::SpacetimeDB.Col<Player, int> PlayerId { get; }
+        public global::SpacetimeDB.Col<Player, string> Name { get; }
+
+        public PlayerCols(string tableName)
+        {
+            Identity = new global::SpacetimeDB.Col<Player, SpacetimeDB.Identity>(tableName, "identity");
+            PlayerId = new global::SpacetimeDB.Col<Player, int>(tableName, "player_id");
+            Name = new global::SpacetimeDB.Col<Player, string>(tableName, "name");
+        }
+    }
+
+    public sealed class PlayerIxCols
+    {
+        public global::SpacetimeDB.IxCol<Player, SpacetimeDB.Identity> Identity { get; }
+        public global::SpacetimeDB.IxCol<Player, int> PlayerId { get; }
+
+        public PlayerIxCols(string tableName)
+        {
+            Identity = new global::SpacetimeDB.IxCol<Player, SpacetimeDB.Identity>(tableName, "identity");
+            PlayerId = new global::SpacetimeDB.IxCol<Player, int>(tableName, "player_id");
+        }
     }
 }

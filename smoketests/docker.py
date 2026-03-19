@@ -26,9 +26,13 @@ def restart_docker():
 
     # Ensure all nodes are running.
     attempts = 0
-    while attempts < 5:
+    while attempts < 10:
         attempts += 1
-        if all(container.is_running(docker, spacetimedb_ping_url) for container in containers):
+        containers_alive = {
+            container.name: container.is_running(docker, spacetimedb_ping_url)
+            for container in containers
+        }
+        if all(containers_alive.values()):
             # sleep a bit more to allow for leader election etc
             # TODO: make ping endpoint consider all server state
             time.sleep(2)
@@ -36,7 +40,7 @@ def restart_docker():
         else:
             time.sleep(1)
 
-    raise Exception("Not all containers are up and running")
+    raise Exception(f"Not all containers are up and running: {containers_alive!r}")
 
 def spacetimedb_ping_url(port: int) -> str:
     return f"http://127.0.0.1:{port}/v1/ping"

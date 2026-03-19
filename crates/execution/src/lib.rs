@@ -1,75 +1,55 @@
-use std::{
-    hash::{Hash, Hasher},
-    ops::RangeBounds,
-};
-
-use anyhow::{anyhow, Result};
-use iter::PlanIter;
-use spacetimedb_lib::{
-    bsatn::{EncodeError, ToBsatn},
-    query::Delta,
-    sats::impl_serialize,
-    AlgebraicValue, ProductValue,
-};
-use spacetimedb_physical_plan::plan::{ProjectField, ProjectPlan, TupleField};
-use spacetimedb_primitives::{IndexId, TableId};
-use spacetimedb_table::{
-    blob_store::BlobStore,
-    static_assert_size,
-    table::{IndexScanPointIter, IndexScanRangeIter, RowRef, Table, TableScanIter},
-};
+use anyhow::Result;
+use core::hash::{Hash, Hasher};
+use core::ops::RangeBounds;
+use spacetimedb_lib::query::Delta;
+use spacetimedb_physical_plan::plan::{ProjectField, TupleField};
+use spacetimedb_primitives::{ColList, IndexId, TableId};
+use spacetimedb_sats::bsatn::{BufReservedFill, EncodeError, ToBsatn};
+use spacetimedb_sats::buffer::BufWriter;
+use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_sats::{impl_serialize, AlgebraicValue, ProductValue};
+use spacetimedb_table::{static_assert_size, table::RowRef};
 
 pub mod dml;
-pub mod iter;
 pub mod pipelined;
 
-/// The datastore interface required for building an executor
 pub trait Datastore {
-    fn table(&self, table_id: TableId) -> Option<&Table>;
-    fn blob_store(&self) -> &dyn BlobStore;
+    /// Iterator type for table scans
+    type TableIter<'a>: Iterator<Item = RowRef<'a>> + 'a
+    where
+        Self: 'a;
 
-    fn table_or_err(&self, table_id: TableId) -> Result<&Table> {
-        self.table(table_id)
-            .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
-    }
+    /// Iterator type for ranged index scans.
+    type RangeIndexIter<'a>: Iterator<Item = RowRef<'a>> + 'a
+    where
+        Self: 'a;
 
-    fn table_scan(&self, table_id: TableId) -> Result<TableScanIter<'_>> {
-        self.table(table_id)
-            .map(|table| table.scan_rows(self.blob_store()))
-            .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
-    }
+    /// Iterator type for point index scans.
+    type PointIndexIter<'a>: Iterator<Item = RowRef<'a>> + 'a
+    where
+        Self: 'a;
 
-    fn index_scan_point(
-        &self,
-        table_id: TableId,
-        index_id: IndexId,
-        key: &AlgebraicValue,
-    ) -> Result<IndexScanPointIter<'_>> {
-        self.table(table_id)
-            .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
-            .and_then(|table| {
-                table
-                    .get_index_by_id_with_table(self.blob_store(), index_id)
-                    .map(|i| i.seek_point(key))
-                    .ok_or_else(|| anyhow!("IndexId `{index_id}` does not exist"))
-            })
-    }
+    /// Returns the number of rows in this table
+    fn row_count(&self, table_id: TableId) -> u64;
 
-    fn index_scan_range(
-        &self,
+    /// Scans and returns all of the rows in a table
+    fn table_scan<'a>(&'a self, table_id: TableId) -> Result<Self::TableIter<'a>>;
+
+    /// Scans a range of keys from an index returning a [`RowRef`] iterator.
+    fn index_scan_range<'a>(
+        &'a self,
         table_id: TableId,
         index_id: IndexId,
         range: &impl RangeBounds<AlgebraicValue>,
-    ) -> Result<IndexScanRangeIter<'_>> {
-        self.table(table_id)
-            .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
-            .and_then(|table| {
-                table
-                    .get_index_by_id_with_table(self.blob_store(), index_id)
-                    .map(|i| i.seek_range(range))
-                    .ok_or_else(|| anyhow!("IndexId `{index_id}` does not exist"))
-            })
-    }
+    ) -> Result<Self::RangeIndexIter<'a>>;
+
+    /// Scans a key from an index returning a [`RowRef`] iterator.
+    fn index_scan_point<'a>(
+        &'a self,
+        table_id: TableId,
+        index_id: IndexId,
+        point: &AlgebraicValue,
+    ) -> Result<Self::PointIndexIter<'a>>;
 }
 
 pub trait DeltaStore {
@@ -150,6 +130,13 @@ impl Row<'_> {
             Self::Ref(val) => (*val).clone(),
         }
     }
+
+    pub fn project_product(self, cols: &ColList) -> Result<ProductValue, InvalidFieldError> {
+        match self {
+            Self::Ptr(ptr) => ptr.project_product(cols),
+            Self::Ref(val) => val.project_product(cols),
+        }
+    }
 }
 
 impl_serialize!(['a] Row<'a>, (self, ser) => match self {
@@ -165,7 +152,7 @@ impl ToBsatn for Row<'_> {
         }
     }
 
-    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> std::result::Result<(), EncodeError> {
+    fn to_bsatn_extend(&self, buf: &mut (impl BufWriter + BufReservedFill)) -> std::result::Result<(), EncodeError> {
         match self {
             Self::Ptr(ptr) => ptr.to_bsatn_extend(buf),
             Self::Ref(val) => val.to_bsatn_extend(buf),
@@ -251,13 +238,4 @@ impl<'a> Iterator for DeltaScanIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.as_mut().and_then(|iter| iter.next())
     }
-}
-
-/// Execute a query plan.
-/// The actual execution is driven by `f`.
-pub fn execute_plan<T, R>(plan: &ProjectPlan, tx: &T, f: impl Fn(PlanIter<'_>) -> R) -> Result<R>
-where
-    T: Datastore + DeltaStore,
-{
-    PlanIter::build(plan, tx).map(f)
 }

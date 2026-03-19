@@ -24,14 +24,17 @@ public class GameManager : MonoBehaviour
     public static Identity LocalIdentity { get; private set; }
     public static DbConnection Conn { get; private set; }
 
-    public static Dictionary<uint, EntityController> Entities = new Dictionary<uint, EntityController>();
-    public static Dictionary<uint, PlayerController> Players = new Dictionary<uint, PlayerController>();
+    public static Dictionary<int, EntityController> Entities = new Dictionary<int, EntityController>();
+    public static Dictionary<int, PlayerController> Players = new Dictionary<int, PlayerController>();
+
+    private static HashSet<int> _pendingConsumeAnimations = new();
 
     private void Start()
     {
         // Clear game state in case we've disconnected and reconnected
         Entities.Clear();
         Players.Clear();
+        _pendingConsumeAnimations.Clear();
         Instance = this;
         Application.targetFrameRate = 60;
 
@@ -42,7 +45,7 @@ public class GameManager : MonoBehaviour
             .OnConnectError(HandleConnectError)
             .OnDisconnect(HandleDisconnect)
             .WithUri(SERVER_URL)
-            .WithModuleName(MODULE_NAME);
+            .WithDatabaseName(MODULE_NAME);
 
         // If the user has a SpacetimeDB auth token stored in the Unity PlayerPrefs,
         // we can use it to authenticate the connection.
@@ -75,6 +78,7 @@ public class GameManager : MonoBehaviour
         conn.Db.Food.OnInsert += FoodOnInsert;
         conn.Db.Player.OnInsert += PlayerOnInsert;
         conn.Db.Player.OnDelete += PlayerOnDelete;
+        conn.Db.ConsumeEntityEvent.OnInsert += ConsumeEntityEventOnInsert;
 
         OnConnected?.Invoke();
 
@@ -102,19 +106,19 @@ public class GameManager : MonoBehaviour
     {
         Debug.Log("Subscription applied!");
         OnSubscriptionApplied?.Invoke();
-        
+
         // Once we have the initial subscription sync'd to the client cache
         // Get the world size from the config table and set up the arena
         var worldSize = Conn.Db.Config.Id.Find(0).WorldSize;
         SetupArena(worldSize);
-        
+
         // Check to see if we already have a player, if we don't we'll need to create one
         var player = ctx.Db.Player.Identity.Find(LocalIdentity);
         if (string.IsNullOrEmpty(player.Name))
         {
             // The player has to choose a username
             UIUsernameChooser.Instance.Show(true);
-            
+
             // When our username is updated, hide the username chooser
             Conn.Db.Player.OnUpdate += (_, _, newPlayer) =>
             {
@@ -123,14 +127,18 @@ public class GameManager : MonoBehaviour
                     UIUsernameChooser.Instance.Show(false);
                 }
             };
-        } else {
+        }
+        else
+        {
             // We already have a player
             if (ctx.Db.Circle.PlayerId.Filter(player.PlayerId).Any())
             {
                 // We already have at least one circle, we should just be able to start
                 // playing immediately.
                 UIUsernameChooser.Instance.Show(false);
-            } else {
+            }
+            else
+            {
                 // Create a new circle for our player.
                 ctx.Reducers.EnterGame(player.Name);
             }
@@ -186,7 +194,22 @@ public class GameManager : MonoBehaviour
     {
         if (Entities.Remove(oldEntity.EntityId, out var entityController))
         {
+            if (_pendingConsumeAnimations.Remove(oldEntity.EntityId))
+            {
+                // Already being animated by ConsumeEntityEventOnInsert — don't destroy yet
+                return;
+            }
             entityController.OnDelete(context);
+        }
+    }
+
+    private static void ConsumeEntityEventOnInsert(EventContext context, ConsumeEntityEvent evt)
+    {
+        if (Entities.TryGetValue(evt.ConsumedEntityId, out var consumedEntity) &&
+            Entities.TryGetValue(evt.ConsumerEntityId, out var consumerEntity))
+        {
+            _pendingConsumeAnimations.Add(evt.ConsumedEntityId);
+            consumedEntity.StartCoroutine(consumedEntity.DespawnCoroutine(consumerEntity.transform));
         }
     }
 
@@ -209,7 +232,7 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    private static PlayerController GetOrCreatePlayer(uint playerId)
+    private static PlayerController GetOrCreatePlayer(int playerId)
     {
         if (!Players.TryGetValue(playerId, out var playerController))
         {

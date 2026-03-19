@@ -4,17 +4,19 @@ use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateRelValue, UpdatesRelValue};
-use crate::messages::websocket::TableUpdate;
-use crate::subscription::websocket_building::BuildableWebsocketFormat;
+use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
-use spacetimedb_client_api_messages::websocket::{Compression, QueryUpdate, RowListLen as _, SingleQueryUpdate};
+use spacetimedb_client_api_messages::websocket::common::RowListLen as _;
+use spacetimedb_client_api_messages::websocket::v1::{self as ws_v1};
 use spacetimedb_datastore::locking_tx_datastore::TxId;
+use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{u256, ProductValue};
 use spacetimedb_schema::def::error::AuthError;
 use spacetimedb_schema::relation::DbTable;
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::{AuthAccess, NoInMemUsed, Query, QueryExpr, SourceExpr, SourceId};
 use spacetimedb_vm::rel_ops::RelOps;
@@ -201,8 +203,8 @@ impl ExecutionUnit {
         self.return_db_table().table_id
     }
 
-    pub fn return_name(&self) -> Box<str> {
-        self.return_db_table().head.table_name.clone()
+    pub fn return_name(&self) -> &TableName {
+        &self.return_db_table().head.table_name
     }
 
     /// The table on which this query filters rows.
@@ -239,26 +241,27 @@ impl ExecutionUnit {
         &self,
         db: &RelationalDB,
         tx: &Tx,
+        rlb_pool: &impl RowListBuilderSource<F>,
         sql: &str,
         slow_query_threshold: Option<Duration>,
-        compression: Compression,
-    ) -> Option<TableUpdate<F>> {
+        compression: ws_v1::Compression,
+    ) -> Option<ws_v1::TableUpdate<F>> {
         let _slow_query = SlowQueryLogger::new(sql, slow_query_threshold, tx.ctx.workload()).log_guard();
 
         // Build & execute the query and then encode it to a row list.
         let tx = &tx.into();
         let mut inserts = build_query(db, tx, &self.eval_plan, &mut NoInMemUsed);
         let inserts = inserts.iter();
-        let (inserts, num_rows) = F::encode_list(inserts);
+        let (inserts, num_rows) = F::encode_list(rlb_pool.take_row_list_builder(), inserts);
 
         (!inserts.is_empty()).then(|| {
             let deletes = F::List::default();
-            let qu = QueryUpdate { deletes, inserts };
+            let qu = ws_v1::QueryUpdate { deletes, inserts };
             let update = F::into_query_update(qu, compression);
-            TableUpdate::new(
+            ws_v1::TableUpdate::new(
                 self.return_table(),
-                self.return_name(),
-                SingleQueryUpdate { update, num_rows },
+                self.return_name().clone().into(),
+                ws_v1::SingleQueryUpdate { update, num_rows },
             )
         })
     }
@@ -280,7 +283,7 @@ impl ExecutionUnit {
 
         updates.has_updates().then(|| DatabaseTableUpdateRelValue {
             table_id: self.return_table(),
-            table_name: self.return_name(),
+            table_name: self.return_name().clone(),
             updates,
         })
     }
@@ -335,7 +338,7 @@ impl ExecutionUnit {
 }
 
 impl AuthAccess for ExecutionUnit {
-    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-        self.eval_plan.check_auth(owner, caller)
+    fn check_auth(&self, auth: &AuthCtx) -> Result<(), AuthError> {
+        self.eval_plan.check_auth(auth)
     }
 }

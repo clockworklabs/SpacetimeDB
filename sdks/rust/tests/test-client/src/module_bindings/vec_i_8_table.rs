@@ -5,7 +5,7 @@
 use super::vec_i_8_type::VecI8;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `vec_i8`.
+/// Table handle for the table `vec_i_8`.
 ///
 /// Obtain a handle from the [`VecI8TableAccess::vec_i_8`] method on [`super::RemoteTables`],
 /// like `ctx.db.vec_i_8()`.
@@ -19,19 +19,19 @@ pub struct VecI8TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `vec_i8`.
+/// Extension trait for access to the table `vec_i_8`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait VecI8TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`VecI8TableHandle`], which mediates access to the table `vec_i8`.
+    /// Obtain a [`VecI8TableHandle`], which mediates access to the table `vec_i_8`.
     fn vec_i_8(&self) -> VecI8TableHandle<'_>;
 }
 
 impl VecI8TableAccess for super::RemoteTables {
     fn vec_i_8(&self) -> VecI8TableHandle<'_> {
         VecI8TableHandle {
-            imp: self.imp.get_table::<VecI8>("vec_i8"),
+            imp: self.imp.get_table::<VecI8>("vec_i_8"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,16 +80,30 @@ impl<'ctx> __sdk::Table for VecI8TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<VecI8>("vec_i8");
+    let _table = client_cache.get_or_make_table::<VecI8>("vec_i_8");
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<VecI8>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<VecI8>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<VecI8>", "TableUpdate")
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `VecI8`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait vec_i_8QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `VecI8`.
+    fn vec_i_8(&self) -> __sdk::__query_builder::Table<VecI8>;
+}
+
+impl vec_i_8QueryTableAccess for __sdk::QueryTableAccessor {
+    fn vec_i_8(&self) -> __sdk::__query_builder::Table<VecI8> {
+        __sdk::__query_builder::Table::new("vec_i_8")
+    }
 }

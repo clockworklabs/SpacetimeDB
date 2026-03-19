@@ -1,4 +1,4 @@
-﻿namespace SpacetimeDB
+namespace SpacetimeDB
 {
     namespace Internal
     {
@@ -41,6 +41,9 @@
     [AttributeUsage(AttributeTargets.Field)]
     public sealed class ClientVisibilityFilterAttribute : Attribute { }
 
+    [AttributeUsage(AttributeTargets.Field)]
+    public sealed class SettingsAttribute : Attribute { }
+
     /// <summary>
     /// Registers a type as the row structure of a SpacetimeDB table, enabling codegen for it.
     ///
@@ -58,6 +61,8 @@
         ///
         /// <para>Defaults to the <c>nameof</c> of the target type.</para>
         /// </summary>
+        public string? Accessor { get; init; }
+
         public string? Name { get; init; }
 
         /// <summary>
@@ -66,6 +71,8 @@
         /// <para>Defaults to the table only being visible to its owner.</para>
         /// </summary>
         public bool Public { get; init; } = false;
+
+        public bool Event { get; init; } = false;
 
         /// <summary>
         /// If set, the name of the reducer that will be invoked when the scheduled time is reached.
@@ -80,6 +87,26 @@
         public string ScheduledAt { get; init; } = "ScheduledAt";
     }
 
+    /// <summary>
+    /// Registers a method as a SpacetimeDB view, enabling codegen for it.
+    /// Views are pure, read-only queries that run with a view context instead of a reducer context.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Method, Inherited = false)]
+    public sealed class ViewAttribute : Attribute
+    {
+        /// <summary>
+        /// Views must have an explicit name.
+        /// </summary>
+        public string? Accessor { get; init; }
+
+        public string? Name { get; init; }
+
+        /// <summary>
+        /// Marks the view as callable by any client. Leave false to restrict to the module owner.
+        /// </summary>
+        public bool Public { get; init; } = false;
+    }
+
     [AttributeUsage(
         AttributeTargets.Struct | AttributeTargets.Class | AttributeTargets.Field,
         AllowMultiple = true
@@ -87,6 +114,8 @@
     public abstract class Index : Attribute
     {
         public string? Table { get; init; }
+
+        public string? Accessor { get; init; }
 
         public string? Name { get; init; }
 
@@ -136,14 +165,14 @@
                 }
                 if (value is bool)
                 {
-                    return value.ToString()?.ToLower();
+                    return value.ToString()?.ToLower()!;
                 }
                 var str = value.ToString();
                 if (value is string)
                 {
                     str = $"\"{str}\"";
                 }
-                return str;
+                return str!;
             }
         }
 
@@ -165,5 +194,13 @@
     public sealed class ReducerAttribute(ReducerKind kind = ReducerKind.UserDefined) : Attribute
     {
         public ReducerKind Kind => kind;
+
+        public string? Name { get; init; }
+    }
+
+    [AttributeUsage(AttributeTargets.Method, Inherited = false)]
+    public sealed class ProcedureAttribute() : Attribute
+    {
+        public string? Name { get; init; }
     }
 }

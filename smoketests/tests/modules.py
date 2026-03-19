@@ -9,7 +9,7 @@ class UpdateModule(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -31,7 +31,7 @@ pub fn say_hello(ctx: &ReducerContext) {
 }
 """
     MODULE_CODE_B = """
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -44,7 +44,7 @@ pub struct Person {
     MODULE_CODE_C = """
 use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -52,7 +52,7 @@ pub struct Person {
     name: String,
 }
 
-#[spacetimedb::table(name = pets)]
+#[spacetimedb::table(accessor = pets)]
 pub struct Pet {
     species: String,
 }
@@ -65,7 +65,7 @@ pub fn are_we_updated_yet(ctx: &ReducerContext) {
 
 
     def test_module_update(self):
-        """Test publishing a module without the --clear-database option"""
+        """Test publishing a module without the --delete-data option"""
 
         name = random_string()
 
@@ -88,7 +88,7 @@ pub fn are_we_updated_yet(ctx: &ReducerContext) {
         self.write_module_code(self.MODULE_CODE_B)
         with self.assertRaises(CalledProcessError) as cm:
             self.publish_module(name, clear=False)
-        self.assertIn("Error: Pre-publish check failed", cm.exception.stderr)
+        self.assertIn("Error: Aborting because publishing would require manual migration", cm.exception.stderr)
 
         # Check that the old module is still running by calling say_hello
         self.call("say_hello")
@@ -104,7 +104,7 @@ class UploadModule1(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     name: String,
 }
@@ -142,7 +142,7 @@ class UploadModule2(Smoketest):
 use spacetimedb::{log, duration, ReducerContext, Table, Timestamp};
 
 
-#[spacetimedb::table(name = scheduled_message, public, scheduled(my_repeating_reducer))]
+#[spacetimedb::table(accessor = scheduled_message, public, scheduled(my_repeating_reducer))]
 pub struct ScheduledMessage {
     #[primary_key]
     #[auto_inc]
@@ -177,7 +177,7 @@ class HotswapModule(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -194,7 +194,7 @@ pub fn add_person(ctx: &ReducerContext, name: String) {
     MODULE_CODE_B = """
 use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -207,7 +207,7 @@ pub fn add_person(ctx: &ReducerContext, name: String) {
     ctx.db.person().insert(Person { id: 0, name });
 }
 
-#[spacetimedb::table(name = pet)]
+#[spacetimedb::table(accessor = pet)]
 pub struct Pet {
     #[primary_key]
     species: String,

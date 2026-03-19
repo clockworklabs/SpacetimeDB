@@ -45,7 +45,7 @@ void AChatClientActor::BeginPlay()
 	// Build the connection using the fluent builder API
 	Conn = UDbConnection::Builder()
 		->WithUri(Host)                // Host address to connect to
-		->WithModuleName(DbName)        // Database/module name
+		->WithDatabaseName(DbName)        // Database/module name
 		->WithToken(SavedToken)         // Optional authentication token
 		->WithCompression(ESpacetimeDBCompression::Gzip) // Enable gzip compression
 		->OnConnect(ConnectDelegate)    // Bind connect handler
@@ -90,11 +90,9 @@ void AChatClientActor::RegisterCallbacks()
 	// Conn->Db->Message->OnDelete.RemoveAll(this);
 	// UNBIND_DELEGATE_SAFE(Conn->Db->Message->OnDelete, this, AChatClientActor, OnMessageDelete);
 
-	// Opt in to receive the reducer result and any table updates
-	Conn->SetReducerFlags->SendMessage(ECallReducerFlags::FullUpdate);
+	// Bind reducer callbacks.
 	Conn->Reducers->OnSendMessage.AddDynamic(this, &AChatClientActor::OnReducerOnSendMessage);
 
-	Conn->SetReducerFlags->SetName(ECallReducerFlags::FullUpdate);
 	Conn->Reducers->OnSetName.AddDynamic(this, &AChatClientActor::OnReducerOnSetName);
 
 	// Hook error delegate for any reducers without explicit bindings

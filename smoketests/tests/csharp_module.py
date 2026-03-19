@@ -23,7 +23,16 @@ class CreateProject(unittest.TestCase):
             run_cmd("dotnet", "pack", cwd=bindings, capture_stderr=True)
 
             with tempfile.TemporaryDirectory() as tmpdir:
-                spacetime("init", "--lang=csharp", tmpdir)
+                spacetime(
+                    "init",
+                    "--non-interactive",
+                    "--lang=csharp",
+                    "--project-path",
+                    tmpdir,
+                    "csharp-project",
+                )
+
+                server_path = Path(tmpdir) / "spacetimedb"
 
                 packed_projects = ["BSATN.Runtime", "Runtime"]
 
@@ -59,11 +68,11 @@ class CreateProject(unittest.TestCase):
                 print("Writing `nuget.config` contents:")
                 print(config)
 
-                config_path = Path(tmpdir) / "nuget.config"
+                config_path = server_path / "nuget.config"
                 with open(config_path, "w") as f:
                     f.write(config)
 
-                run_cmd("dotnet", "publish", cwd=tmpdir, capture_stderr=True)
+                run_cmd("dotnet", "publish", cwd=server_path, capture_stderr=True)
 
         except subprocess.CalledProcessError as e:
             print(e)

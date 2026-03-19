@@ -50,6 +50,7 @@ enum-as-inner.workspace = true
 ethnum.workspace = true
 hex.workspace = true
 itertools.workspace = true
+lean_string.workspace = true
 # For the 'proptest' feature.
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
@@ -58,6 +59,11 @@ second-stack.workspace = true
 serde = { workspace = true, optional = true }
 smallvec.workspace = true
 thiserror.workspace = true
+uuid.workspace = true
+
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+uuid = { workspace = true, features = ["v4", "v7"] }
+rand = { workspace = true, features = ["std"] }
 
 # For the `blake3` feature.
 blake3 = { workspace = true, optional = true }

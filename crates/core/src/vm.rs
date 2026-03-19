@@ -3,7 +3,7 @@
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
-use core::ops::{Bound, RangeBounds};
+use core::ops::{Bound, Deref, RangeBounds};
 use itertools::Itertools;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::execution_context::ExecutionContext;
@@ -466,17 +466,17 @@ pub fn check_row_limit<Query>(
     row_est: impl Fn(&Query, &TxId) -> u64,
     auth: &AuthCtx,
 ) -> Result<(), DBError> {
-    if auth.caller != auth.owner {
-        if let Some(limit) = db.row_limit(tx)? {
-            let mut estimate: u64 = 0;
-            for query in queries {
-                estimate = estimate.saturating_add(row_est(query, tx));
-            }
-            if estimate > limit {
-                return Err(DBError::Other(anyhow::anyhow!(
-                    "Estimated cardinality ({estimate} rows) exceeds limit ({limit} rows)"
-                )));
-            }
+    if !auth.exceed_row_limit()
+        && let Some(limit) = db.row_limit(tx)?
+    {
+        let mut estimate: u64 = 0;
+        for query in queries {
+            estimate = estimate.saturating_add(row_est(query, tx));
+        }
+        if estimate > limit {
+            return Err(DBError::Other(anyhow::anyhow!(
+                "Estimated cardinality ({estimate} rows) exceeds limit ({limit} rows)"
+            )));
         }
     }
     Ok(())
@@ -499,7 +499,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         }
 
         let table_access = query.source.table_access();
-        tracing::trace!(table = query.source.table_name());
+        tracing::trace!(table = query.source.table_name().deref());
 
         let head = query.head().clone();
         let rows = build_query(self.db, self.tx, query, &mut |id| {
@@ -627,7 +627,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
 impl ProgramVm for DbProgram<'_, '_> {
     // Safety: For DbProgram with tx = TxMode::Tx variant, all queries must match to CrudCode::Query and no other branch.
     fn eval_query<const N: usize>(&mut self, query: CrudExpr, sources: Sources<'_, N>) -> Result<Code, ErrorVm> {
-        query.check_auth(self.auth.owner, self.auth.caller)?;
+        query.check_auth(&self.auth)?;
 
         match query {
             CrudExpr::Query(query) => self._eval_query(&query, sources),
@@ -652,10 +652,13 @@ pub(crate) mod tests {
     };
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
     use spacetimedb_schema::def::{BTreeAlgorithm, IndexAlgorithm};
+    use spacetimedb_schema::identifier::Identifier;
     use spacetimedb_schema::relation::{FieldName, Header};
     use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, TableSchema};
+    use spacetimedb_schema::table_name::TableName;
     use spacetimedb_vm::eval::run_ast;
     use spacetimedb_vm::eval::test_helpers::{mem_table, mem_table_one_u64, scalar};
     use spacetimedb_vm::operator::OpCmp;
@@ -672,12 +675,14 @@ pub(crate) mod tests {
         let columns = schema
             .elements
             .iter()
+            .cloned()
             .enumerate()
             .map(|(i, element)| ColumnSchema {
                 table_id: TableId::SENTINEL,
-                col_name: element.name.as_ref().unwrap().clone(),
-                col_type: element.algebraic_type.clone(),
+                col_name: Identifier::new(element.name.unwrap()).unwrap(),
+                col_type: element.algebraic_type,
                 col_pos: ColId(i as _),
+                alias: None,
             })
             .collect();
 
@@ -685,7 +690,8 @@ pub(crate) mod tests {
             tx,
             TableSchema::new(
                 TableId::SENTINEL,
-                table_name.into(),
+                TableName::for_test(table_name),
+                None,
                 columns,
                 vec![],
                 vec![],
@@ -693,6 +699,8 @@ pub(crate) mod tests {
                 StTableType::User,
                 access,
                 None,
+                None,
+                false,
                 None,
             ),
         )?;
@@ -797,7 +805,7 @@ pub(crate) mod tests {
             .unwrap();
         let st_table_row = StTableRow {
             table_id: ST_TABLE_ID,
-            table_name: ST_TABLE_NAME.into(),
+            table_name: TableName::for_test(ST_TABLE_NAME),
             table_type: StTableType::System,
             table_access: StAccess::Public,
             table_primary_key: Some(StTableFields::TableId.into()),
@@ -845,16 +853,17 @@ pub(crate) mod tests {
         let (schema, _) = with_auto_commit(&db, |tx| create_inv_table(&db, tx))?;
         let table_id = schema.table_id;
         let columns = ColList::from(ColId(0));
-        let index_name = "idx_1";
+        let index_name: RawIdentifier = "idx_1".into();
         let is_unique = false;
 
         let index = IndexSchema {
             table_id,
             index_id: IndexId::SENTINEL,
-            index_name: index_name.into(),
+            index_name: index_name.clone(),
             index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
                 columns: columns.clone(),
             }),
+            alias: None,
         };
         let index_id = with_auto_commit(&db, |tx| db.create_index(tx, index, is_unique))?;
 
@@ -863,13 +872,13 @@ pub(crate) mod tests {
             .with_select_cmp(
                 OpCmp::Eq,
                 FieldName::new(ST_INDEX_ID, StIndexFields::IndexName.into()),
-                scalar(index_name),
+                scalar(&*index_name),
             )
             .unwrap();
 
         let st_index_row = StIndexRow {
             index_id,
-            index_name: index_name.into(),
+            index_name: index_name.clone(),
             table_id,
             index_algorithm: StIndexAlgorithm::BTree { columns },
         }

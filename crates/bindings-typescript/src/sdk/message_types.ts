@@ -1,66 +1,46 @@
-import { ConnectionId } from '../';
-import type { UpdateStatus } from './client_api/index.ts';
-import { Identity } from '../';
 import type { TableUpdate } from './table_cache.ts';
-import { Timestamp } from '../';
+import type { UntypedTableDef } from '../lib/table.ts';
+import type { ReducerOutcome } from './client_api/types';
 
-export type InitialSubscriptionMessage<RowType extends Record<string, any>> = {
-  tag: 'InitialSubscription';
-  tableUpdates: TableUpdate<RowType>[];
-};
-
-export type TransactionUpdateMessage<RowType extends Record<string, any>> = {
+export type TransactionUpdateMessage = {
   tag: 'TransactionUpdate';
-  tableUpdates: TableUpdate<RowType>[];
-  identity: Identity;
-  connectionId: ConnectionId | null;
-  reducerInfo?: {
-    reducerName: string;
-    args: Uint8Array;
-  };
-  status: UpdateStatus;
-  message: string;
-  timestamp: Timestamp;
-  energyConsumed: bigint;
+  tableUpdates: TableUpdate<UntypedTableDef>[];
 };
 
-export type TransactionUpdateLightMessage<RowType extends Record<string, any>> =
-  {
-    tag: 'TransactionUpdateLight';
-    tableUpdates: TableUpdate<RowType>[];
-  };
-
-export type IdentityTokenMessage = {
-  tag: 'IdentityToken';
-  identity: Identity;
-  token: string;
-  connectionId: ConnectionId;
-};
-
-export type SubscribeAppliedMessage<RowType extends Record<string, any>> = {
+export type SubscribeAppliedMessage = {
   tag: 'SubscribeApplied';
-  queryId: number;
-  tableUpdates: TableUpdate<RowType>[];
+  querySetId: number;
+  tableUpdates: TableUpdate<UntypedTableDef>[];
 };
 
-export type UnsubscribeAppliedMessage<RowType extends Record<string, any>> = {
+export type UnsubscribeAppliedMessage = {
   tag: 'UnsubscribeApplied';
-  queryId: number;
-  tableUpdates: TableUpdate<RowType>[];
+  querySetId: number;
+  tableUpdates: TableUpdate<UntypedTableDef>[];
 };
 
 export type SubscriptionError = {
   tag: 'SubscriptionError';
-  queryId?: number;
+  querySetId: number;
   error: string;
 };
 
-export type Message<RowType extends Record<string, any> = Record<string, any>> =
+export type ReducerResultMessage = {
+  tag: 'ReducerResult';
+  requestId: number;
+  result: ReducerOutcome;
+};
 
-    | InitialSubscriptionMessage<RowType>
-    | TransactionUpdateMessage<RowType>
-    | TransactionUpdateLightMessage<RowType>
-    | IdentityTokenMessage
-    | SubscribeAppliedMessage<RowType>
-    | UnsubscribeAppliedMessage<RowType>
-    | SubscriptionError;
+export type ProcedureResultMessage = {
+  tag: 'ProcedureResult';
+  requestId: number;
+  result: { tag: 'Ok'; value: Uint8Array } | { tag: 'Err'; value: string };
+};
+
+export type Message =
+  | TransactionUpdateMessage
+  | SubscribeAppliedMessage
+  | UnsubscribeAppliedMessage
+  | SubscriptionError
+  | ReducerResultMessage
+  | ProcedureResultMessage;

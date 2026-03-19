@@ -5,9 +5,9 @@ use spacetimedb_expr::{
     expr::{ProjectName, RelExpr, Relvar},
     statement::{TableDelete, TableInsert, TableUpdate},
 };
-use spacetimedb_lib::{AlgebraicValue, ProductValue};
+use spacetimedb_lib::{identity::AuthCtx, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::ColId;
-use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::schema::TableOrViewSchema;
 
 use crate::{compile::compile_select, plan::ProjectPlan};
 
@@ -20,18 +20,18 @@ pub enum MutationPlan {
 
 impl MutationPlan {
     /// Optimizes the filters in updates and deletes
-    pub fn optimize(self) -> Result<Self> {
+    pub fn optimize(self, auth: &AuthCtx) -> Result<Self> {
         match self {
             Self::Insert(..) => Ok(self),
-            Self::Delete(plan) => Ok(Self::Delete(plan.optimize()?)),
-            Self::Update(plan) => Ok(Self::Update(plan.optimize()?)),
+            Self::Delete(plan) => Ok(Self::Delete(plan.optimize(auth)?)),
+            Self::Update(plan) => Ok(Self::Update(plan.optimize(auth)?)),
         }
     }
 }
 
 /// A plan for inserting rows into a table
 pub struct InsertPlan {
-    pub table: Arc<TableSchema>,
+    pub table: Arc<TableOrViewSchema>,
     pub rows: Vec<ProductValue>,
 }
 
@@ -45,15 +45,15 @@ impl From<TableInsert> for InsertPlan {
 
 /// A plan for deleting rows from a table
 pub struct DeletePlan {
-    pub table: Arc<TableSchema>,
+    pub table: Arc<TableOrViewSchema>,
     pub filter: ProjectPlan,
 }
 
 impl DeletePlan {
     /// Optimize the filter part of the delete
-    fn optimize(self) -> Result<Self> {
+    fn optimize(self, auth: &AuthCtx) -> Result<Self> {
         let Self { table, filter } = self;
-        let filter = filter.optimize()?;
+        let filter = filter.optimize(auth)?;
         Ok(Self { table, filter })
     }
 
@@ -61,7 +61,7 @@ impl DeletePlan {
     pub(crate) fn compile(delete: TableDelete) -> Self {
         let TableDelete { table, filter } = delete;
         let schema = table.clone();
-        let alias = table.table_name.clone();
+        let alias = table.table_name.clone().into();
         let relvar = RelExpr::RelVar(Relvar {
             schema,
             alias,
@@ -78,16 +78,16 @@ impl DeletePlan {
 
 /// A plan for updating rows in a table
 pub struct UpdatePlan {
-    pub table: Arc<TableSchema>,
+    pub table: Arc<TableOrViewSchema>,
     pub columns: Vec<(ColId, AlgebraicValue)>,
     pub filter: ProjectPlan,
 }
 
 impl UpdatePlan {
     /// Optimize the filter part of the update
-    fn optimize(self) -> Result<Self> {
+    fn optimize(self, auth: &AuthCtx) -> Result<Self> {
         let Self { table, columns, filter } = self;
-        let filter = filter.optimize()?;
+        let filter = filter.optimize(auth)?;
         Ok(Self { columns, table, filter })
     }
 
@@ -95,7 +95,7 @@ impl UpdatePlan {
     pub(crate) fn compile(update: TableUpdate) -> Self {
         let TableUpdate { table, columns, filter } = update;
         let schema = table.clone();
-        let alias = table.table_name.clone();
+        let alias = table.table_name.clone().into();
         let relvar = RelExpr::RelVar(Relvar {
             schema,
             alias,

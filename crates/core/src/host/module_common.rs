@@ -24,15 +24,16 @@ pub fn build_common_module_from_raw(
     let def: ModuleDef = raw_def.try_into()?;
 
     let replica_ctx = mcc.replica_ctx;
-    let log_tx = replica_ctx.logger.tx.clone();
+    replica_ctx
+        .subscriptions
+        .set_module_def_version(def.raw_module_def_version());
 
     // Note: assigns Reducer IDs based on the alphabetical order of reducer names.
     let info = ModuleInfo::new(
         def,
         replica_ctx.owner_identity,
         replica_ctx.database_identity,
-        mcc.program.hash,
-        log_tx,
+        mcc.program_hash,
         replica_ctx.subscriptions.clone(),
     );
 

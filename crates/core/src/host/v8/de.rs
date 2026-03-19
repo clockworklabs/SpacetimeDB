@@ -250,7 +250,7 @@ pub(super) fn intern_field_name<'scope>(
 /// Returns the property for `key` on `object`.
 pub(super) fn property<'scope>(
     scope: &PinScope<'scope, '_>,
-    object: Local<'scope, Object>,
+    object: Local<'_, Object>,
     key: impl Into<Local<'scope, Value>>,
 ) -> FnRet<'scope> {
     object.get(scope, key.into()).ok_or_else(exception_already_thrown)

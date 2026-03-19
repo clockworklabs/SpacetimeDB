@@ -40,10 +40,11 @@ impl TimeDuration {
     /// Returns `Err(abs(self) as Duration)` if `self` is negative.
     pub fn to_duration(self) -> Result<Duration, Duration> {
         let micros = self.to_micros();
+        let duration = Duration::from_micros(micros.unsigned_abs());
         if micros >= 0 {
-            Ok(Duration::from_micros(micros as u64))
+            Ok(duration)
         } else {
-            Err(Duration::from_micros((-micros) as u64))
+            Err(duration)
         }
     }
 
@@ -54,6 +55,11 @@ impl TimeDuration {
         match self.to_duration() {
             Ok(dur) | Err(dur) => dur,
         }
+    }
+
+    /// Converts `self` to `Duration`, clamping to 0 if negative.
+    pub fn to_duration_saturating(self) -> Duration {
+        self.to_duration().unwrap_or(Duration::ZERO)
     }
 
     /// Returns a positive `TimeDuration` with the magnitude of `self`.

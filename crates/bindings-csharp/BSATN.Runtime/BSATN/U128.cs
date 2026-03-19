@@ -3,6 +3,7 @@
 
 namespace SpacetimeDB;
 
+using System.Buffers.Binary;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
@@ -32,6 +33,33 @@ public readonly record struct U128 : IEquatable<U128>, IComparable, IComparable<
     internal ulong Lower => _lower;
 
     internal ulong Upper => _upper;
+
+    /// Returns a <see cref="U128" /> from a big-endian byte array.
+    public static U128 FromBytesBigEndian(ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.Length != Size)
+        {
+            throw new ArgumentException(
+                $"Byte array must be exactly {Size} bytes long.",
+                nameof(bytes)
+            );
+        }
+
+        var upper = BinaryPrimitives.ReadUInt64BigEndian(bytes.Slice(0, 8));
+        var lower = BinaryPrimitives.ReadUInt64BigEndian(bytes.Slice(8, 8));
+
+        return new U128(upper, lower);
+    }
+
+    public byte[] ToBytesBigEndian()
+    {
+        var bytes = new byte[Size];
+
+        BinaryPrimitives.WriteUInt64BigEndian(bytes.AsSpan(0, 8), _upper);
+        BinaryPrimitives.WriteUInt64BigEndian(bytes.AsSpan(8, 8), _lower);
+
+        return bytes;
+    }
 
     /// <inheritdoc cref="IComparable.CompareTo(object)" />
     public int CompareTo(object? value)
@@ -90,4 +118,11 @@ public readonly record struct U128 : IEquatable<U128>, IComparable, IComparable<
 
     /// <inheritdoc cref="object.ToString()" />
     public override string ToString() => AsBigInt().ToString();
+
+    public static U128 FromGuid(Guid guid)
+    {
+        Span<byte> bytes = stackalloc byte[16];
+        guid.TryWriteBytes(bytes);
+        return FromBytesBigEndian(bytes);
+    }
 }

@@ -3,15 +3,15 @@ use core::ops::RangeBounds;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
-use spacetimedb_sats::AlgebraicValue;
+use spacetimedb_sats::{memory_usage::MemoryUsage, AlgebraicValue};
 use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
     pointer_map::PointerMap,
     static_assert_size,
-    table::{IndexScanRangeIter, RowRef, Table, TableAndIndex},
-    table_index::TableIndex,
+    table::{IndexScanPointIter, IndexScanRangeIter, RowRef, Table, TableAndIndex},
+    table_index::{IndexSeekRangeResult, TableIndex},
 };
 use std::collections::{btree_map, BTreeMap};
 use thin_vec::ThinVec;
@@ -77,6 +77,23 @@ pub(super) struct TxState {
     pub(super) pending_schema_changes: ThinVec<PendingSchemaChange>,
 }
 
+static_assert_size!(TxState, 88);
+
+impl MemoryUsage for TxState {
+    fn heap_usage(&self) -> usize {
+        let Self {
+            insert_tables,
+            delete_tables,
+            blob_store,
+            pending_schema_changes,
+        } = self;
+        insert_tables.heap_usage()
+            + delete_tables.heap_usage()
+            + blob_store.heap_usage()
+            + pending_schema_changes.heap_usage()
+    }
+}
+
 /// A pending schema change is a change to a `TableSchema`
 /// that has been applied immediately to the [`CommittedState`](super::committed_state::CommittedState)
 /// and which need to be reverted if the transaction fails.
@@ -117,7 +134,30 @@ pub enum PendingSchemaChange {
     SequenceAdded(TableId, SequenceId),
 }
 
-static_assert_size!(TxState, 88);
+impl MemoryUsage for PendingSchemaChange {
+    fn heap_usage(&self) -> usize {
+        match self {
+            Self::IndexRemoved(table_id, index_id, table_index, index_schema) => {
+                table_id.heap_usage() + index_id.heap_usage() + table_index.heap_usage() + index_schema.heap_usage()
+            }
+            Self::IndexAdded(table_id, index_id, pointer_map) => {
+                table_id.heap_usage() + index_id.heap_usage() + pointer_map.heap_usage()
+            }
+            Self::TableRemoved(table_id, table) => table_id.heap_usage() + table.heap_usage(),
+            Self::TableAdded(table_id) => table_id.heap_usage(),
+            Self::TableAlterAccess(table_id, st_access) => table_id.heap_usage() + st_access.heap_usage(),
+            Self::TableAlterRowType(table_id, column_schemas) => table_id.heap_usage() + column_schemas.heap_usage(),
+            Self::ConstraintRemoved(table_id, constraint_schema) => {
+                table_id.heap_usage() + constraint_schema.heap_usage()
+            }
+            Self::ConstraintAdded(table_id, constraint_id) => table_id.heap_usage() + constraint_id.heap_usage(),
+            Self::SequenceRemoved(table_id, sequence, sequence_schema) => {
+                table_id.heap_usage() + sequence.heap_usage() + sequence_schema.heap_usage()
+            }
+            Self::SequenceAdded(table_id, sequence_id) => table_id.heap_usage() + sequence_id.heap_usage(),
+        }
+    }
+}
 
 impl TxState {
     /// Returns the row count in insert tables
@@ -134,18 +174,39 @@ impl TxState {
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
     ///
-    /// For a unique index this will always yield at most one `RowRef`.
+    /// For a unique index this will always yield at most one `RowRef`
+    /// when `range` is a point.
     /// When there is no index this returns `None`.
-    pub(super) fn index_seek_by_cols<'a>(
+    pub(super) fn index_seek_range_by_cols<'a>(
         &'a self,
         table_id: TableId,
         cols: &ColList,
         range: &impl RangeBounds<AlgebraicValue>,
-    ) -> Option<IndexScanRangeIter<'a>> {
+    ) -> Option<IndexSeekRangeResult<IndexScanRangeIter<'a>>> {
         self.insert_tables
             .get(&table_id)?
             .get_index_by_cols_with_table(&self.blob_store, cols)
             .map(|i| i.seek_range(range))
+    }
+
+    /// When there's an index on `cols`,
+    /// returns an iterator over the `TableIndex` that yields all the [`RowRef`]s
+    /// that match the specified `range` in the indexed column.
+    ///
+    /// Matching is defined by `Eq for AlgebraicValue`.
+    ///
+    /// For a unique index this will always yield at most one `RowRef`.
+    /// When there is no index this returns `None`.
+    pub(super) fn index_seek_point_by_cols<'a>(
+        &'a self,
+        table_id: TableId,
+        cols: &ColList,
+        point: &AlgebraicValue,
+    ) -> Option<IndexScanPointIter<'a>> {
+        self.insert_tables
+            .get(&table_id)?
+            .get_index_by_cols_with_table(&self.blob_store, cols)
+            .map(|i| i.seek_point(point))
     }
 
     /// Returns the table for `table_id` combined with the index for `index_id`, if both exist.

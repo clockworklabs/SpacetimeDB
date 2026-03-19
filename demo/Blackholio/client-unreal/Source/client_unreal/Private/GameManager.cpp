@@ -7,6 +7,7 @@
 #include "Connection/Credentials.h"
 #include "ModuleBindings/Tables/CircleTable.g.h"
 #include "ModuleBindings/Tables/ConfigTable.g.h"
+#include "ModuleBindings/Tables/ConsumeEntityEventTable.g.h"
 #include "ModuleBindings/Tables/EntityTable.g.h"
 #include "ModuleBindings/Tables/FoodTable.g.h"
 #include "ModuleBindings/Tables/PlayerTable.g.h"
@@ -31,7 +32,7 @@ AGameManager::AGameManager()
 	}
 }
 
-AEntity* AGameManager::GetEntity(uint32 EntityId) const
+AEntity* AGameManager::GetEntity(int32 EntityId) const
 {
 	if (const TWeakObjectPtr<AEntity>* WeakEntity = EntityMap.Find(EntityId))
 	{
@@ -58,14 +59,14 @@ void AGameManager::BeginPlay()
 	FOnDisconnectDelegate DisconnectDelegate;
 	BIND_DELEGATE_SAFE(DisconnectDelegate, this, AGameManager, HandleDisconnect);
 	FOnConnectErrorDelegate ConnectErrorDelegate;
-	BIND_DELEGATE_SAFE(ConnectErrorDelegate, this, AGameManager, HandleConnect);
+	BIND_DELEGATE_SAFE(ConnectErrorDelegate, this, AGameManager, HandleConnectError);
 
 	UCredentials::Init(FString::Printf(TEXT("%s-%s"), *TokenFilePath, *ServerUri));
 	FString Token = UCredentials::LoadToken();
 
 	UDbConnectionBuilder* Builder = UDbConnection::Builder()
 	                                            ->WithUri(ServerUri)
-	                                            ->WithModuleName(ModuleName)
+	                                            ->WithDatabaseName(ModuleName)
 	                                            ->OnConnect(ConnectDelegate)
 	                                            ->OnDisconnect(DisconnectDelegate)
 	                                            ->OnConnectError(ConnectErrorDelegate);
@@ -103,6 +104,7 @@ void AGameManager::HandleConnect(UDbConnection* InConn, FSpacetimeDBIdentity Ide
 	LocalIdentity = Identity;
 
 	Conn->Db->Circle->OnInsert.AddDynamic(this, &AGameManager::OnCircleInsert);
+	Conn->Db->ConsumeEntityEvent->OnInsert.AddDynamic(this, &AGameManager::OnConsumeEntityEventInsert);
 	Conn->Db->Entity->OnUpdate.AddDynamic(this, &AGameManager::OnEntityUpdate);
 	Conn->Db->Entity->OnDelete.AddDynamic(this, &AGameManager::OnEntityDelete);
 	Conn->Db->Food->OnInsert.AddDynamic(this, &AGameManager::OnFoodInsert);
@@ -137,7 +139,7 @@ void AGameManager::HandleSubscriptionApplied(FSubscriptionEventContext& Context)
 	
 	// Once we have the initial subscription sync'd to the client cache
 	// Get the world size from the config table and set up the arena
-	uint64 WorldSize = Conn->Db->Config->Id->Find(0).WorldSize;
+	int64 WorldSize = Conn->Db->Config->Id->Find(0).WorldSize;
 	SetupArena(WorldSize);
 
 	FPlayerType Player = Context.Db->Player->Identity->Find(LocalIdentity);
@@ -151,7 +153,7 @@ void AGameManager::HandleSubscriptionApplied(FSubscriptionEventContext& Context)
 	}
 }
 
-void AGameManager::SetupArena(uint64 WorldSizeMeters)
+void AGameManager::SetupArena(int64 WorldSizeMeters)
 {
 	if (!BorderISM || !CubeMesh) return;
 
@@ -162,7 +164,7 @@ void AGameManager::SetupArena(uint64 WorldSizeMeters)
 		BorderISM->SetMaterial(0, BorderMaterial);
 	}
 
-	// Convert from meters (uint64) → centimeters (double for precision)
+	// Convert from meters (int64) → centimeters (double for precision)
 	const double worldSizeCmDouble = static_cast<double>(WorldSizeMeters) * 100.0;
 
 	// Clamp to avoid float overflow in transforms
@@ -252,6 +254,18 @@ void AGameManager::OnFoodInsert(const FEventContext& Context, const FFoodType& N
 {
     if (EntityMap.Contains(NewRow.EntityId)) return;
     SpawnFood(NewRow);
+}
+
+void AGameManager::OnConsumeEntityEventInsert(const FEventContext& Context, const FConsumeEntityEventType& NewRow)
+{
+	AEntity* ConsumedEntity = GetEntity(NewRow.ConsumedEntityId);
+	AEntity* ConsumerEntity = GetEntity(NewRow.ConsumerEntityId);
+	if (!ConsumedEntity || !ConsumerEntity)
+	{
+		return;
+	}
+
+	ConsumedEntity->StartConsumeDespawn(ConsumerEntity);
 }
 
 void AGameManager::OnPlayerInsert(const FEventContext& Context, const FPlayerType& NewRow)

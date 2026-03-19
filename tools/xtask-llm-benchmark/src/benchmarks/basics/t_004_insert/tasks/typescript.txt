@@ -1,0 +1,13 @@
+Write a SpacetimeDB backend module in TypeScript that defines one table and a reducer that inserts a row.
+
+TABLE
+- user
+  - Fields:
+    - id: number (i32, primary key)
+    - name: string
+    - age: number (i32)
+    - active: boolean
+
+REDUCERS
+- insertUser: given id:number, name:string, age:number, active:boolean, insert exactly one row into user
+  - (id=id, name=name, age=age, active=active)

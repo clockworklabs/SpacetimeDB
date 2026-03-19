@@ -26,29 +26,29 @@ use super::query;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdateRelValue, UpdatesRelValue};
-use crate::messages::websocket as ws;
 use crate::sql::ast::SchemaViewer;
-use crate::subscription::websocket_building::BuildableWebsocketFormat;
+use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::vm::{build_query, TxMode};
 use anyhow::Context;
 use itertools::Either;
-use spacetimedb_client_api_messages::websocket::Compression;
+use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_data_structures::map::HashSet;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::TxId;
-use spacetimedb_lib::db::auth::{StAccess, StTableType};
+use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::ProductValue;
 use spacetimedb_schema::def::error::AuthError;
 use spacetimedb_schema::relation::DbTable;
+use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_subscription::SubscriptionPlan;
 use spacetimedb_vm::expr::{self, AuthAccess, IndexJoin, Query, QueryExpr, SourceExpr, SourceProvider, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::hash::Hash;
 use std::iter;
-use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -81,8 +81,8 @@ impl SupportedQuery {
         self.expr.source.get_db_table().unwrap().table_id
     }
 
-    pub fn return_name(&self) -> String {
-        self.expr.source.table_name().to_owned()
+    pub fn return_name(&self) -> &TableName {
+        self.expr.source.table_name()
     }
 
     /// This is the same as the return table unless this is a join.
@@ -517,17 +517,18 @@ impl ExecutionSet {
         &self,
         db: &RelationalDB,
         tx: &Tx,
+        rlb_pool: &impl RowListBuilderSource<F>,
         slow_query_threshold: Option<Duration>,
-        compression: Compression,
-    ) -> ws::DatabaseUpdate<F> {
+        compression: ws_v1::Compression,
+    ) -> ws_v1::DatabaseUpdate<F> {
         // evaluate each of the execution units in this ExecutionSet in parallel
         let tables = self
             .exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
             .iter()
-            .filter_map(|unit| unit.eval(db, tx, &unit.sql, slow_query_threshold, compression))
+            .filter_map(|unit| unit.eval(db, tx, rlb_pool, &unit.sql, slow_query_threshold, compression))
             .collect();
-        ws::DatabaseUpdate { tables }
+        ws_v1::DatabaseUpdate { tables }
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -603,20 +604,27 @@ impl From<Vec<SupportedQuery>> for ExecutionSet {
 }
 
 impl AuthAccess for ExecutionSet {
-    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-        self.exec_units.iter().try_for_each(|eu| eu.check_auth(owner, caller))
+    fn check_auth(&self, auth: &AuthCtx) -> Result<(), AuthError> {
+        self.exec_units.iter().try_for_each(|eu| eu.check_auth(auth))
     }
 }
 
-/// Queries all the [`StTableType::User`] tables *right now*
+/// Querieshttps://github.com/clockworklabs/SpacetimeDBPrivate/pull/2207 all the [`StTableType::User`] tables *right now*
 /// and turns them into [`QueryExpr`],
 /// the moral equivalent of `SELECT * FROM table`.
-pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> Result<Vec<Plan>, DBError> {
-    Ok(relational_db
-        .get_all_tables(tx)?
-        .iter()
-        .map(Deref::deref)
-        .filter(|t| t.table_type == StTableType::User && (auth.is_owner() || t.table_access == StAccess::Public))
+pub(crate) fn get_all<T, F, I>(
+    get_all_tables: F,
+    relational_db: &RelationalDB,
+    tx: &T,
+    auth: &AuthCtx,
+) -> Result<Vec<Plan>, DBError>
+where
+    T: StateView,
+    F: Fn(&RelationalDB, &T) -> Result<I, DBError>,
+    I: Iterator<Item = Arc<TableSchema>>,
+{
+    Ok(get_all_tables(relational_db, tx)?
+        .filter(|t| t.table_type == StTableType::User && auth.has_read_access(t.table_access) && !t.is_event)
         .map(|schema| {
             let sql = format!("SELECT * FROM {}", schema.table_name);
             let tx = SchemaViewer::new(tx, auth);
@@ -625,12 +633,12 @@ pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> 
                     plans,
                     QueryHash::from_string(
                         &sql,
-                        auth.caller,
+                        auth.caller(),
                         // Note that when generating hashes for queries from owners,
                         // we always treat them as if they were parameterized by :sender.
                         // This is because RLS is not applicable to owners.
                         // Hence owner hashes must never overlap with client hashes.
-                        auth.is_owner() || has_param,
+                        auth.bypass_rls() || has_param,
                     ),
                     sql,
                 )
@@ -648,11 +656,13 @@ pub(crate) fn legacy_get_all(
     tx: &Tx,
     auth: &AuthCtx,
 ) -> Result<Vec<SupportedQuery>, DBError> {
+    use std::ops::Deref;
+
     Ok(relational_db
         .get_all_tables(tx)?
         .iter()
         .map(Deref::deref)
-        .filter(|t| t.table_type == StTableType::User && (auth.is_owner() || t.table_access == StAccess::Public))
+        .filter(|t| t.table_type == StTableType::User && auth.has_read_access(t.table_access) && !t.is_event)
         .map(|src| SupportedQuery {
             kind: query::Supported::Select,
             expr: QueryExpr::new(src),
@@ -701,7 +711,7 @@ mod tests {
             panic!("unexpected result from compilation: {exp:#?}");
         };
 
-        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(&**expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
 
         let join = expr.query.pop().unwrap();
@@ -716,7 +726,7 @@ mod tests {
         let (expr, _sources) = with_delta_table(join, Some(delta), None);
         let expr: QueryExpr = expr.into();
         let mut expr = expr.optimize(&|_, _| i64::MAX);
-        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(&**expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
 
         let join = expr.query.pop().unwrap();
@@ -781,7 +791,7 @@ mod tests {
             panic!("unexpected result from compilation: {exp:#?}");
         };
 
-        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(&**expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
 
         let join = expr.query.pop().unwrap();
@@ -797,7 +807,7 @@ mod tests {
         let expr = QueryExpr::from(expr);
         let mut expr = expr.optimize(&|_, _| i64::MAX);
 
-        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(&**expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
         assert!(expr.source.is_db_table());
 
@@ -868,7 +878,7 @@ mod tests {
             panic!("unexpected result from compilation: {exp:#?}");
         };
 
-        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(&**expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
 
         let src_join = &expr.query[0];
@@ -886,7 +896,7 @@ mod tests {
         assert_eq!(virtual_plan.head(), expr.head());
         assert_eq!(virtual_plan.query.len(), 1);
         let incr_join = &virtual_plan.query[0];
-        let Query::JoinInner(ref incr_join) = incr_join else {
+        let Query::JoinInner(incr_join) = incr_join else {
             panic!("expected an inner semijoin, but got {incr_join:#?}");
         };
         assert!(incr_join.rhs.source.is_mem_table());

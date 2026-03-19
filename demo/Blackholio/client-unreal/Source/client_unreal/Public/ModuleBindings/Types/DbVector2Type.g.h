@@ -12,10 +12,10 @@ struct CLIENT_UNREAL_API FDbVector2Type
     GENERATED_BODY()
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    float X = 0.f;
+    float X = 0.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    float Y = 0.f;
+    float Y = 0.0f;
 
     FORCEINLINE bool operator==(const FDbVector2Type& Other) const
     {

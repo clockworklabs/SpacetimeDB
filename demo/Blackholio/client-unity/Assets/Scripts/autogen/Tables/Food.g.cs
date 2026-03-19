@@ -17,9 +17,9 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "food";
 
-            public sealed class EntityIdUniqueIndex : UniqueIndexBase<uint>
+            public sealed class EntityIdUniqueIndex : UniqueIndexBase<int>
             {
-                protected override uint GetKey(Food row) => row.EntityId;
+                protected override int GetKey(Food row) => row.EntityId;
 
                 public EntityIdUniqueIndex(FoodHandle table) : base(table) { }
             }
@@ -35,5 +35,25 @@ namespace SpacetimeDB.Types
         }
 
         public readonly FoodHandle Food;
+    }
+
+    public sealed class FoodCols
+    {
+        public global::SpacetimeDB.Col<Food, int> EntityId { get; }
+
+        public FoodCols(string tableName)
+        {
+            EntityId = new global::SpacetimeDB.Col<Food, int>(tableName, "entity_id");
+        }
+    }
+
+    public sealed class FoodIxCols
+    {
+        public global::SpacetimeDB.IxCol<Food, int> EntityId { get; }
+
+        public FoodIxCols(string tableName)
+        {
+            EntityId = new global::SpacetimeDB.IxCol<Food, int>(tableName, "entity_id");
+        }
     }
 }

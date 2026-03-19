@@ -102,18 +102,21 @@ impl_to_value!(i256, (val, scope) => {
 
 #[cfg(test)]
 pub(in super::super) mod test {
-    use super::super::from_value::FromValue;
-    use super::super::V8Runtime;
+    use super::super::{from_value::FromValue, new_isolate, V8Runtime};
     use super::*;
     use core::fmt::Debug;
     use proptest::prelude::*;
     use spacetimedb_sats::proptest::{any_i256, any_u256};
-    use v8::Isolate;
+    use v8::{scope_with_context, Context};
 
     /// Sets up V8 and runs `logic` with a [`PinScope`].
     pub(in super::super) fn with_scope<R>(logic: impl FnOnce(&mut PinScope<'_, '_>) -> R) -> R {
         V8Runtime::init_for_test();
-        super::super::with_scope(&mut Isolate::new(<_>::default()), logic)
+
+        let mut isolate = new_isolate();
+        scope_with_context!(let scope, &mut isolate, Context::new(scope, Default::default()));
+
+        logic(scope)
     }
 
     /// Roundtrips `rust_val` via `ToValue` to the V8 representation

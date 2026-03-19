@@ -1,24 +1,19 @@
 import type { DbConnectionImpl } from './db_connection_impl';
+import { INTERNAL_REMOTE_MODULE } from './internal';
 import type {
   ErrorContextInterface,
   SubscriptionEventContextInterface,
 } from './event_context';
 import { EventEmitter } from './event_emitter';
+import type { UntypedRemoteModule } from './spacetime_module';
+import { isRowTypedQuery, toSql, type RowTypedQuery } from '../lib/query';
+import type { Values } from '../lib/type_util';
 
-export class SubscriptionBuilderImpl<
-  DBView = any,
-  Reducers = any,
-  SetReducerFlags = any,
-> {
-  #onApplied?: (
-    ctx: SubscriptionEventContextInterface<DBView, Reducers, SetReducerFlags>
-  ) => void = undefined;
-  #onError?: (
-    ctx: ErrorContextInterface<DBView, Reducers, SetReducerFlags>
-  ) => void = undefined;
-  constructor(
-    private db: DbConnectionImpl<DBView, Reducers, SetReducerFlags>
-  ) {}
+export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
+  #onApplied?: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void =
+    undefined;
+  #onError?: (ctx: ErrorContextInterface<RemoteModule>) => void = undefined;
+  constructor(private db: DbConnectionImpl<RemoteModule>) {}
 
   /**
    * Registers `callback` to run when this query is successfully added to our subscribed set,
@@ -36,10 +31,8 @@ export class SubscriptionBuilderImpl<
    * @returns The current `SubscriptionBuilder` instance.
    */
   onApplied(
-    cb: (
-      ctx: SubscriptionEventContextInterface<DBView, Reducers, SetReducerFlags>
-    ) => void
-  ): SubscriptionBuilderImpl<DBView, Reducers, SetReducerFlags> {
+    cb: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void
+  ): SubscriptionBuilderImpl<RemoteModule> {
     this.#onApplied = cb;
     return this;
   }
@@ -65,8 +58,8 @@ export class SubscriptionBuilderImpl<
    * @returns The current `SubscriptionBuilder` instance.
    */
   onError(
-    cb: (ctx: ErrorContextInterface<DBView, Reducers, SetReducerFlags>) => void
-  ): SubscriptionBuilderImpl<DBView, Reducers, SetReducerFlags> {
+    cb: (ctx: ErrorContextInterface<RemoteModule>) => void
+  ): SubscriptionBuilderImpl<RemoteModule> {
     this.#onError = cb;
     return this;
   }
@@ -88,15 +81,42 @@ export class SubscriptionBuilderImpl<
    * ```
    */
   subscribe(
-    query_sql: string | string[]
-  ): SubscriptionHandleImpl<DBView, Reducers, SetReducerFlags> {
-    const queries = Array.isArray(query_sql) ? query_sql : [query_sql];
+    query_sql: string | RowTypedQuery<any, any>
+  ): SubscriptionHandleImpl<RemoteModule>;
+  subscribe(
+    query_sql: Array<string | RowTypedQuery<any, any>>
+  ): SubscriptionHandleImpl<RemoteModule>;
+  subscribe(
+    queryFn: (
+      tables: Values<RemoteModule['tables']>
+    ) => RowTypedQuery<any, any> | RowTypedQuery<any, any>[]
+  ): SubscriptionHandleImpl<RemoteModule>;
+  subscribe(
+    query_sql:
+      | string
+      | RowTypedQuery<any, any>
+      | Array<string | RowTypedQuery<any, any>>
+      | ((tables: any) => RowTypedQuery<any, any> | RowTypedQuery<any, any>[])
+  ): SubscriptionHandleImpl<RemoteModule> {
+    let queries: Array<string | RowTypedQuery<any, any>>;
+    if (typeof query_sql === 'function') {
+      const tablesMap = this.db.getTablesMap?.();
+      const result = query_sql(tablesMap);
+      queries = Array.isArray(result) ? result : [result];
+    } else {
+      queries = Array.isArray(query_sql) ? query_sql : [query_sql];
+    }
     if (queries.length === 0) {
       throw new Error('Subscriptions must have at least one query');
     }
+    const queryStrings = queries.map(q => {
+      if (typeof q === 'string') return q;
+      if (isRowTypedQuery(q)) return toSql(q);
+      throw new Error('Subscriptions must be SQL strings or typed queries');
+    });
     return new SubscriptionHandleImpl(
       this.db,
-      queries,
+      queryStrings,
       this.#onApplied,
       this.#onError
     );
@@ -120,25 +140,28 @@ export class SubscriptionBuilderImpl<
    * including dropping subscriptions, corrupting the client cache, or throwing errors.
    */
   subscribeToAllTables(): void {
-    this.subscribe('SELECT * FROM *');
+    const remoteModule = this.db[INTERNAL_REMOTE_MODULE]();
+    const queries = Object.values(remoteModule.tables).map(
+      table => `SELECT * FROM ${table.sourceName}`
+    );
+    this.subscribe(queries);
   }
 }
 
 export type SubscribeEvent = 'applied' | 'error' | 'end';
 
-export class SubscriptionManager {
+export class SubscriptionManager<RemoteModule extends UntypedRemoteModule> {
   subscriptions: Map<
     number,
-    { handle: SubscriptionHandleImpl; emitter: EventEmitter<SubscribeEvent> }
+    {
+      handle: SubscriptionHandleImpl<RemoteModule>;
+      emitter: EventEmitter<SubscribeEvent>;
+    }
   > = new Map();
 }
 
-export class SubscriptionHandleImpl<
-  DBView = any,
-  Reducers = any,
-  SetReducerFlags = any,
-> {
-  #queryId: number;
+export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
+  #querySetId: number;
   #unsubscribeCalled: boolean = false;
   #endedState: boolean = false;
   #activeState: boolean = false;
@@ -146,25 +169,14 @@ export class SubscriptionHandleImpl<
     new EventEmitter();
 
   constructor(
-    private db: DbConnectionImpl<DBView, Reducers, SetReducerFlags>,
+    private db: DbConnectionImpl<RemoteModule>,
     querySql: string[],
-    onApplied?: (
-      ctx: SubscriptionEventContextInterface<DBView, Reducers, SetReducerFlags>
-    ) => void,
-    onError?: (
-      ctx: ErrorContextInterface<DBView, Reducers, SetReducerFlags>,
-      error: Error
-    ) => void
+    onApplied?: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void,
+    onError?: (ctx: ErrorContextInterface<RemoteModule>, error: Error) => void
   ) {
     this.#emitter.on(
       'applied',
-      (
-        ctx: SubscriptionEventContextInterface<
-          DBView,
-          Reducers,
-          SetReducerFlags
-        >
-      ) => {
+      (ctx: SubscriptionEventContextInterface<RemoteModule>) => {
         this.#activeState = true;
         if (onApplied) {
           onApplied(ctx);
@@ -173,10 +185,7 @@ export class SubscriptionHandleImpl<
     );
     this.#emitter.on(
       'error',
-      (
-        ctx: ErrorContextInterface<DBView, Reducers, SetReducerFlags>,
-        error: Error
-      ) => {
+      (ctx: ErrorContextInterface<RemoteModule>, error: Error) => {
         this.#activeState = false;
         this.#endedState = true;
         if (onError) {
@@ -184,7 +193,11 @@ export class SubscriptionHandleImpl<
         }
       }
     );
-    this.#queryId = this.db.registerSubscription(this, this.#emitter, querySql);
+    this.#querySetId = this.db.registerSubscription(
+      this,
+      this.#emitter,
+      querySql
+    );
   }
 
   /**
@@ -197,16 +210,10 @@ export class SubscriptionHandleImpl<
       throw new Error('Unsubscribe has already been called');
     }
     this.#unsubscribeCalled = true;
-    this.db.unregisterSubscription(this.#queryId);
+    this.db.unregisterSubscription(this.#querySetId);
     this.#emitter.on(
       'end',
-      (
-        _ctx: SubscriptionEventContextInterface<
-          DBView,
-          Reducers,
-          SetReducerFlags
-        >
-      ) => {
+      (_ctx: SubscriptionEventContextInterface<RemoteModule>) => {
         this.#endedState = true;
         this.#activeState = false;
       }
@@ -224,9 +231,7 @@ export class SubscriptionHandleImpl<
    * @param onEnd - Callback to run upon successful unsubscribe.
    */
   unsubscribeThen(
-    onEnd: (
-      ctx: SubscriptionEventContextInterface<DBView, Reducers, SetReducerFlags>
-    ) => void
+    onEnd: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void
   ): void {
     if (this.#endedState) {
       throw new Error('Subscription has already ended');
@@ -235,16 +240,10 @@ export class SubscriptionHandleImpl<
       throw new Error('Unsubscribe has already been called');
     }
     this.#unsubscribeCalled = true;
-    this.db.unregisterSubscription(this.#queryId);
+    this.db.unregisterSubscription(this.#querySetId);
     this.#emitter.on(
       'end',
-      (
-        ctx: SubscriptionEventContextInterface<
-          DBView,
-          Reducers,
-          SetReducerFlags
-        >
-      ) => {
+      (ctx: SubscriptionEventContextInterface<RemoteModule>) => {
         this.#endedState = true;
         this.#activeState = false;
         onEnd(ctx);

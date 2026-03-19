@@ -7,11 +7,15 @@ import os
 import re
 import fnmatch
 import json
-from . import TEST_DIR, SPACETIME_BIN, exe_suffix, build_template_target
+from . import TEST_DIR, SPACETIME_BIN, BASE_STDB_CONFIG_PATH, exe_suffix, build_template_target
 import smoketests
 import sys
 import logging
 import itertools
+import tempfile
+from pathlib import Path
+import shutil
+import traceback
 
 def check_docker():
     docker_ps = smoketests.run_cmd("docker", "ps", "--format=json")
@@ -54,6 +58,15 @@ def _convert_select_pattern(pattern):
 
 
 TESTPREFIX = "smoketests.tests."
+
+def _iter_all_tests(suite_or_case):
+    """Yield all individual tests from possibly nested TestSuite structures."""
+    if isinstance(suite_or_case, unittest.TestSuite):
+        for t in suite_or_case:
+            yield from _iter_all_tests(t)
+    else:
+        yield suite_or_case
+
 def main():
     tests = [fname.removesuffix(".py") for fname in os.listdir(TEST_DIR / "tests") if fname.endswith(".py") and fname != "__init__.py"]
 
@@ -76,30 +89,6 @@ def main():
     parser.add_argument("--spacetime-login", action="store_true", help="Use `spacetime login` for these tests (and disable tests that don't work with that)")
     args = parser.parse_args()
 
-    if not args.no_build_cli:
-        logging.info("Compiling spacetime cli...")
-        smoketests.run_cmd("cargo", "build", cwd=TEST_DIR.parent, capture_stderr=False)
-
-    update_bin_name = "spacetimedb-update" + exe_suffix
-    try:
-        bin_is_symlink = SPACETIME_BIN.readlink() == update_bin_name
-    except OSError:
-        bin_is_symlink = False
-    if not bin_is_symlink:
-        try:
-            os.remove(SPACETIME_BIN)
-        except FileNotFoundError:
-            pass
-        try:
-            os.symlink(update_bin_name, SPACETIME_BIN)
-        except OSError:
-            import shutil
-            shutil.copyfile(SPACETIME_BIN.with_name(update_bin_name), SPACETIME_BIN)
-
-    os.environ["SPACETIME_SKIP_CLIPPY"] = "1"
-
-    build_template_target()
-
     if args.docker:
         # have docker logs print concurrently with the test output
         if args.compose_file:
@@ -111,17 +100,6 @@ def main():
                 docker_container = check_docker()
                 subprocess.Popen(["docker", "logs", "-f", docker_container])
         smoketests.HAVE_DOCKER = True
-
-    if args.remote_server is not None:
-        smoketests.spacetime("--config-path", TEST_DIR / 'config.toml', "server", "edit", "localhost", "--url", args.remote_server, "--yes")
-        smoketests.REMOTE_SERVER = True
-
-    if args.spacetime_login:
-        smoketests.spacetime("--config-path", TEST_DIR / 'config.toml', "logout")
-        smoketests.spacetime("--config-path", TEST_DIR / 'config.toml', "login")
-        smoketests.USE_SPACETIME_LOGIN = True
-    else:
-        smoketests.new_identity(TEST_DIR / 'config.toml')
 
     if not args.skip_dotnet:
         smoketests.HAVE_DOTNET = check_dotnet()
@@ -139,11 +117,62 @@ def main():
 
     tests = loader.loadTestsFromNames(testlist)
     if args.list:
-        print("Selected tests:\n")
-        for test in itertools.chain(*itertools.chain(*tests)):
-            print(f"{test}")
-        exit(0)
+        failed_cls = getattr(unittest.loader, "_FailedTest", None)
+        any_failed = False
+        for test in _iter_all_tests(tests):
+            name = test.id()
+            if isinstance(test, failed_cls):
+                any_failed = True
+                print('')
+                print("Failed to construct %s:" % test.id())
+                exc = getattr(test, "_exception", None)
+                if exc is not None:
+                    tb = ''.join(traceback.format_exception(exc))
+                    print(tb.rstrip())
+                print('')
+            else:
+                print(f"{name}")
+        exit(1 if any_failed else 0)
 
+    if not args.no_build_cli:
+        logging.info("Compiling spacetime cli...")
+        smoketests.run_cmd("cargo", "build", cwd=TEST_DIR.parent, capture_stderr=False)
+
+    update_bin_name = "spacetimedb-update" + exe_suffix
+    try:
+        bin_is_symlink = SPACETIME_BIN.readlink() == update_bin_name
+    except OSError:
+        bin_is_symlink = False
+    if not bin_is_symlink:
+        try:
+            os.remove(SPACETIME_BIN)
+        except FileNotFoundError:
+            pass
+        try:
+            os.symlink(update_bin_name, SPACETIME_BIN)
+        except OSError:
+            shutil.copyfile(SPACETIME_BIN.with_name(update_bin_name), SPACETIME_BIN)
+
+    os.environ["SPACETIME_SKIP_CLIPPY"] = "1"
+
+    with tempfile.NamedTemporaryFile(mode="w+b", suffix=".toml", buffering=0, delete_on_close=False) as config_file:
+        with BASE_STDB_CONFIG_PATH.open("rb") as src, config_file.file as dst:
+            shutil.copyfileobj(src, dst)
+
+        if args.remote_server is not None:
+            smoketests.spacetime("--config-path", config_file.name, "server", "edit", "localhost", "--url", args.remote_server, "--yes")
+            smoketests.REMOTE_SERVER = True
+
+        if args.spacetime_login:
+            smoketests.spacetime("--config-path", config_file.name, "logout")
+            smoketests.spacetime("--config-path", config_file.name, "login")
+            smoketests.USE_SPACETIME_LOGIN = True
+        else:
+            smoketests.new_identity(config_file.name)
+
+        smoketests.STDB_CONFIG = Path(config_file.name).read_text()
+
+    build_template_target()
     buffer = not args.show_all_output
     verbosity = 2
 

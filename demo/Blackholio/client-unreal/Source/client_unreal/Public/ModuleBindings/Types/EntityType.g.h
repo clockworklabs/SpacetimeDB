@@ -12,14 +12,14 @@ struct CLIENT_UNREAL_API FEntityType
 {
     GENERATED_BODY()
 
-    // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 EntityId = 0;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
+    int32 EntityId = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FDbVector2Type Position;
 
-    // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 Mass = 0;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
+    int32 Mass = 0;
 
     FORCEINLINE bool operator==(const FEntityType& Other) const
     {

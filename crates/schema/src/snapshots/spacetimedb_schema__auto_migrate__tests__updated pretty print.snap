@@ -10,6 +10,14 @@ expression: "plan.pretty_print(PrettyPrintStyle::AnsiColor).expect(\"should pret
 ▸ [0m[1m[31mRemoved[0m unique constraint Apples_id_key on [id] of table [0m[1m[36mApples[0m
 ▸ [0m[1m[31mRemoved[0m auto-increment constraint Apples_id_seq on column id of table [0m[1m[36mApples[0m
 ▸ [0m[1m[31mRemoved[0m schedule for table [0m[1m[36mDeliveries_sched[0m calling reducer check_deliveries
+▸ ▸ [0m[1m[31mRemoved[0m anonymous view: [0m[1m[36mmy_view[0m
+    [0m[1m[34mParameters:[0m
+        • x: [0m[35mU32[0m
+        • y: [0m[35mU32[0m
+    [0m[1m[34mColumns:[0m
+        • a: [0m[35mU64[0m
+        • b: [0m[35mU64[0m
+
 ▸ [0m[1m[31mRemoved[0m row level security policy:
     `[0m[34mSELECT * FROM Apples[0m`
 ▸ [0m[1m[33mChanged[0m columns for table [0m[1m[36mApples[0m
@@ -31,6 +39,12 @@ expression: "plan.pretty_print(PrettyPrintStyle::AnsiColor).expect(\"should pret
 ▸ [0m[1m[32mCreated[0m index Apples_id_count_idx_btree on [id, count] of table [0m[1m[36mApples[0m
 ▸ [0m[1m[32mCreated[0m auto-increment constraint Bananas_id_seq on column id of table [0m[1m[36mBananas[0m
 ▸ [0m[1m[32mCreated[0m schedule for table [0m[1m[36mInspections_sched[0m calling reducer perform_inspection
+▸ ▸ [0m[1m[32mCreated[0m anonymous view: [0m[1m[36mmy_view[0m
+    [0m[1m[34mParameters:[0m
+        • x: [0m[35mU32[0m
+    [0m[1m[34mColumns:[0m
+        • a: [0m[35mU64[0m
+
 ▸ [0m[1m[32mCreated[0m row level security policy:
     `[0m[34mSELECT * FROM Bananas[0m`
 ▸ [0m[1m[33mChanged[0m access for table [0m[1m[36mBananas[0m ([0m[32mpublic → private[0m)

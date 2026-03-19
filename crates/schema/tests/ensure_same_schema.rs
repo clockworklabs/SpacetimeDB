@@ -18,13 +18,24 @@ fn assert_identical_modules(module_name_prefix: &str, lang_name: &str, suffix: &
         .steps;
 
     // In any migration plan, all `RowLevelSecurityDef`s are ALWAYS removed and
-    // re-added to ensure the core engine reinintializes the policies.
+    // re-added to ensure the core engine reinitializes the policies.
     // This is slightly silly (and arguably should be hidden inside `core`),
     // but for now, we just ignore these steps and manually compare the `RowLevelSecurityDef`s.
     diff.retain(|step| {
         !matches!(
             step,
             AutoMigrateStep::AddRowLevelSecurity(_) | AutoMigrateStep::RemoveRowLevelSecurity(_)
+        )
+    });
+
+    // TODO: Remove this once we have view bindings for C# and TypeScript
+    diff.retain(|step| {
+        !matches!(
+            step,
+            AutoMigrateStep::DisconnectAllUsers
+                | AutoMigrateStep::AddView(_)
+                | AutoMigrateStep::RemoveView(_)
+                | AutoMigrateStep::UpdateView(_)
         )
     });
 
@@ -69,12 +80,12 @@ macro_rules! declare_tests {
     }
 
 declare_tests! {
+    benchmarks => "benchmarks",
     module_test => "module-test",
     sdk_test_connect_disconnect => "sdk-test-connect-disconnect",
     sdk_test => "sdk-test",
 }
 
-// FIXME: Move `benchmarks => "benchmarks,` back into the macro once `benchmarks-ts` exists
 #[test]
 #[serial]
 fn ensure_same_schema_rust_csharp_benchmarks() {

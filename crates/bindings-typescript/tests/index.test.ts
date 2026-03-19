@@ -3,10 +3,13 @@ import {
   AlgebraicType,
   ConnectionId,
   Identity,
-  type IdentityTokenMessage,
+  ScheduleAt,
+  toCamelCase,
+  type Infer,
 } from '../src/index';
+import * as ws from '../src/sdk/client_api';
 import type { ColumnBuilder } from '../src/server';
-import { t } from '../src/server/type_builders';
+import { t } from '../src/lib/type_builders';
 
 describe('TypeBuilder', () => {
   it('builds the correct algebraic type for a point', () => {
@@ -15,7 +18,7 @@ describe('TypeBuilder', () => {
       y: t.f64(),
       z: t.f64(),
     });
-    expect(point.resolveType()).toEqual({
+    expect(point.algebraicType).toEqual({
       tag: 'Product',
       value: {
         elements: [
@@ -32,7 +35,7 @@ describe('TypeBuilder', () => {
       a: t.string(),
       b: t.number(),
     });
-    expect(sumType.resolveType()).toEqual({
+    expect(sumType.algebraicType).toEqual({
       tag: 'Sum',
       value: {
         variants: [
@@ -52,11 +55,11 @@ describe('TypeBuilder', () => {
     expect(col.typeBuilder.algebraicType).toEqual({
       tag: 'I32',
     });
-    expect(col.columnMetadata.isPrimaryKey).toBe(true);
-    expect(col.columnMetadata.isUnique).toBe(true);
-    expect(col.columnMetadata.indexType).toBe('btree');
-    expect(col.columnMetadata.isAutoIncrement).toBe(undefined);
-    expect(col.columnMetadata.isScheduleAt).toBe(undefined);
+    expect(col.columnMetadata.isPrimaryKey).toEqual(true);
+    expect(col.columnMetadata.isUnique).toEqual(true);
+    expect(col.columnMetadata.indexType).toEqual('btree');
+    expect(col.columnMetadata.isAutoIncrement).toEqual(undefined);
+    expect(col.columnMetadata.isScheduleAt).toEqual(undefined);
   });
 
   it('builds ColumnBuilders with the correct metadata', () => {
@@ -68,43 +71,43 @@ describe('TypeBuilder', () => {
     expect(indexCol.typeBuilder.algebraicType).toEqual({
       tag: 'I32',
     });
-    expect(indexCol.columnMetadata.isPrimaryKey).toBe(undefined);
-    expect(indexCol.columnMetadata.isUnique).toBe(undefined);
-    expect(indexCol.columnMetadata.indexType).toBe('btree');
-    expect(indexCol.columnMetadata.isAutoIncrement).toBe(undefined);
-    expect(indexCol.columnMetadata.isScheduleAt).toBe(undefined);
+    expect(indexCol.columnMetadata.isPrimaryKey).toEqual(undefined);
+    expect(indexCol.columnMetadata.isUnique).toEqual(undefined);
+    expect(indexCol.columnMetadata.indexType).toEqual('btree');
+    expect(indexCol.columnMetadata.isAutoIncrement).toEqual(undefined);
+    expect(indexCol.columnMetadata.isScheduleAt).toEqual(undefined);
 
     expect(uniqueCol.typeBuilder.algebraicType).toEqual({
       tag: 'I32',
     });
-    expect(uniqueCol.columnMetadata.isPrimaryKey).toBe(undefined);
-    expect(uniqueCol.columnMetadata.isUnique).toBe(true);
-    expect(uniqueCol.columnMetadata.indexType).toBe(undefined);
-    expect(uniqueCol.columnMetadata.isAutoIncrement).toBe(undefined);
-    expect(uniqueCol.columnMetadata.isScheduleAt).toBe(undefined);
+    expect(uniqueCol.columnMetadata.isPrimaryKey).toEqual(undefined);
+    expect(uniqueCol.columnMetadata.isUnique).toEqual(true);
+    expect(uniqueCol.columnMetadata.indexType).toEqual(undefined);
+    expect(uniqueCol.columnMetadata.isAutoIncrement).toEqual(undefined);
+    expect(uniqueCol.columnMetadata.isScheduleAt).toEqual(undefined);
 
     expect(primaryKeyCol.typeBuilder.algebraicType).toEqual({
       tag: 'I32',
     });
-    expect(primaryKeyCol.columnMetadata.isPrimaryKey).toBe(true);
-    expect(primaryKeyCol.columnMetadata.isUnique).toBe(undefined);
-    expect(primaryKeyCol.columnMetadata.indexType).toBe(undefined);
-    expect(primaryKeyCol.columnMetadata.isAutoIncrement).toBe(undefined);
-    expect(primaryKeyCol.columnMetadata.isScheduleAt).toBe(undefined);
+    expect(primaryKeyCol.columnMetadata.isPrimaryKey).toEqual(true);
+    expect(primaryKeyCol.columnMetadata.isUnique).toEqual(undefined);
+    expect(primaryKeyCol.columnMetadata.indexType).toEqual(undefined);
+    expect(primaryKeyCol.columnMetadata.isAutoIncrement).toEqual(undefined);
+    expect(primaryKeyCol.columnMetadata.isScheduleAt).toEqual(undefined);
 
     expect(autoIncCol.typeBuilder.algebraicType).toEqual({
       tag: 'I32',
     });
-    expect(autoIncCol.columnMetadata.isPrimaryKey).toBe(undefined);
-    expect(autoIncCol.columnMetadata.isUnique).toBe(undefined);
-    expect(autoIncCol.columnMetadata.indexType).toBe(undefined);
-    expect(autoIncCol.columnMetadata.isAutoIncrement).toBe(true);
-    expect(autoIncCol.columnMetadata.isScheduleAt).toBe(undefined);
+    expect(autoIncCol.columnMetadata.isPrimaryKey).toEqual(undefined);
+    expect(autoIncCol.columnMetadata.isUnique).toEqual(undefined);
+    expect(autoIncCol.columnMetadata.indexType).toEqual(undefined);
+    expect(autoIncCol.columnMetadata.isAutoIncrement).toEqual(true);
+    expect(autoIncCol.columnMetadata.isScheduleAt).toEqual(undefined);
   });
 
   it('builds a ScheduleAt column with the correct type and metadata', () => {
     const col = t.scheduleAt();
-    expect(col.typeBuilder.algebraicType).toEqual({
+    expect(col.algebraicType).toEqual({
       tag: 'Sum',
       value: {
         variants: [
@@ -139,14 +142,13 @@ describe('TypeBuilder', () => {
         ],
       },
     });
-    expect(col.columnMetadata.isScheduleAt).toBe(true);
+    expect(ScheduleAt.isScheduleAt(col.algebraicType)).toEqual(true);
   });
 });
 
 describe('Identity', () => {
   it('imports something from the spacetimedb sdk', () => {
-    const _msg: IdentityTokenMessage = {
-      tag: 'IdentityToken',
+    const _msg: Infer<typeof ws.InitialConnection> = {
       identity: Identity.fromString(
         '0xc200000000000000000000000000000000000000000000000000000000000000'
       ),
@@ -155,5 +157,11 @@ describe('Identity', () => {
         '0x00000000000000000000000000000000'
       ),
     };
+  });
+});
+
+describe(toCamelCase, () => {
+  it('converts PascalCase to camelCase', () => {
+    expect(toCamelCase('FooBar')).toEqual('fooBar');
   });
 });

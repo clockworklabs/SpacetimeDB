@@ -46,6 +46,8 @@ impl<'a> SlowQueryLogger<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
 
     use crate::sql::compiler::compile_sql;
@@ -62,13 +64,13 @@ mod tests {
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_vm::relation::MemTable;
 
-    fn run_query(db: &RelationalDB, sql: String) -> ResultTest<MemTable> {
+    fn run_query(db: &Arc<RelationalDB>, sql: String) -> ResultTest<MemTable> {
         let tx = begin_tx(db);
         let q = compile_sql(db, &AuthCtx::for_testing(), &tx, &sql)?;
         Ok(execute_for_testing(db, &sql, q)?.pop().unwrap())
     }
 
-    fn run_query_write(db: &RelationalDB, sql: String) -> ResultTest<()> {
+    fn run_query_write(db: &Arc<RelationalDB>, sql: String) -> ResultTest<()> {
         let tx = begin_tx(db);
         let q = compile_sql(db, &AuthCtx::for_testing(), &tx, &sql)?;
         drop(tx);

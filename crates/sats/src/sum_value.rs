@@ -1,4 +1,5 @@
 use crate::algebraic_value::AlgebraicValue;
+use crate::impl_deserialize;
 use crate::sum_type::SumType;
 
 /// A value of a sum type choosing a specific variant of the type.
@@ -31,7 +32,20 @@ impl SumValue {
 /// The tag of a `SumValue`.
 /// Can be used to read out the tag of a sum value without reading the payload.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[repr(transparent)]
 pub struct SumTag(pub u8);
+
+impl_deserialize!([] SumTag, de => <_>::deserialize(de).map(SumTag));
+
+#[cfg(feature = "memory-usage")]
+impl spacetimedb_memory_usage::MemoryUsage for SumTag {}
+
+impl From<&u8> for &SumTag {
+    fn from(value: &u8) -> Self {
+        // SAFETY: `SumTag` is `repr(transparent)` of `u8`.
+        unsafe { core::mem::transmute(value) }
+    }
+}
 
 impl From<SumTag> for SumValue {
     fn from(SumTag(tag): SumTag) -> Self {

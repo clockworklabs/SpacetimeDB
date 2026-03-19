@@ -1,0 +1,5 @@
+{
+  "description": "TypeScript server/client implementing quickstart chat",
+  "client_lang": "typescript",
+  "server_lang": "typescript"
+}

@@ -1,4 +1,7 @@
-use std::io;
+use std::{
+    fmt,
+    io::{self, Seek},
+};
 
 use log::{debug, warn};
 
@@ -14,8 +17,7 @@ pub(crate) mod fs;
 #[cfg(any(test, feature = "test"))]
 pub mod mem;
 
-pub use fs::Fs;
-pub use fs::OnNewSegmentFn;
+pub use fs::{Fs, OnNewSegmentFn, SizeOnDisk};
 #[cfg(any(test, feature = "test"))]
 pub use mem::Memory;
 
@@ -32,6 +34,10 @@ pub trait SegmentLen: io::Seek {
     /// If the method returns successfully, the seek position before the call is
     /// restored. However, if it returns an error, the seek position is
     /// unspecified.
+    ///
+    /// The returned length will be the bytes actually written to the segment,
+    /// not the allocated size of the segment (if the `fallocate` feature is
+    /// enabled).
     //
     // TODO: Remove trait and replace with `Seek::stream_len` if / when stabilized:
     // https://github.com/rust-lang/rust/issues/59359
@@ -49,8 +55,14 @@ pub trait SegmentLen: io::Seek {
     }
 }
 
-pub trait SegmentReader: io::BufRead + SegmentLen + Send + Sync {}
-impl<T: io::BufRead + SegmentLen + Send + Sync> SegmentReader for T {}
+pub trait SegmentReader: io::BufRead + SegmentLen + Send + Sync {
+    /// Whether the segment is considered immutable.
+    ///
+    /// Currently, this is true when the segment is compressed.
+    /// [resume_segment_writer] uses this method to indicate that a new segment
+    /// should be created when opening a commitlog.
+    fn sealed(&self) -> bool;
+}
 
 pub trait SegmentWriter: FileLike + io::Read + io::Write + SegmentLen + Send + Sync {}
 impl<T: FileLike + io::Read + io::Write + SegmentLen + Send + Sync> SegmentWriter for T {}
@@ -59,7 +71,10 @@ impl<T: FileLike + io::Read + io::Write + SegmentLen + Send + Sync> SegmentWrite
 ///
 /// This is mainly an internal trait to allow testing against an in-memory
 /// representation.
-pub trait Repo: Clone {
+///
+/// The [fmt::Display] should provide context about the location of the repo,
+/// e.g. the root directory for a filesystem-based implementation.
+pub trait Repo: Clone + fmt::Display {
     /// The type of log segments managed by this repo, which must behave like a file.
     type SegmentWriter: SegmentWriter + 'static;
     type SegmentReader: SegmentReader + 'static;
@@ -192,6 +207,8 @@ pub fn create_segment_writer<R: Repo>(
     offset: u64,
 ) -> io::Result<Writer<R::SegmentWriter>> {
     let mut storage = repo.create_segment(offset)?;
+    // Ensure we have enough space for this segment.
+    fallocate(&mut storage, &opts)?;
     Header {
         log_format_version: opts.log_format_version,
         checksum_algorithm: Commit::CHECKSUM_ALGORITHM,
@@ -206,12 +223,10 @@ pub fn create_segment_writer<R: Repo>(
             records: Vec::new(),
             epoch,
         },
-        inner: io::BufWriter::new(storage),
+        inner: io::BufWriter::with_capacity(opts.write_buffer_size, storage),
 
         min_tx_offset: offset,
         bytes_written: Header::LEN as u64,
-
-        max_records_in_commit: opts.max_records_in_commit,
 
         offset_index_head: create_offset_index_writer(repo, offset, opts),
     })
@@ -237,15 +252,9 @@ pub fn resume_segment_writer<R: Repo>(
     opts: Options,
     offset: u64,
 ) -> io::Result<Result<Writer<R::SegmentWriter>, Metadata>> {
-    let mut storage = repo.open_segment_writer(offset)?;
+    let mut reader = repo.open_segment_reader(offset)?;
     let offset_index = repo.get_offset_index(offset).ok();
-    let Metadata {
-        header,
-        tx_range,
-        size_in_bytes,
-        max_epoch,
-        max_commit_offset: _,
-    } = match Metadata::extract(offset, &mut storage, offset_index.as_ref()) {
+    let meta = match Metadata::extract(offset, &mut reader, offset_index.as_ref()) {
         Err(error::SegmentMetadata::InvalidCommit { sofar, source }) => {
             warn!("invalid commit in segment {offset}: {source}");
             debug!("sofar={sofar:?}");
@@ -254,36 +263,55 @@ pub fn resume_segment_writer<R: Repo>(
         Err(error::SegmentMetadata::Io(e)) => return Err(e),
         Ok(meta) => meta,
     };
-    header
+    meta.header
         .ensure_compatible(opts.log_format_version, Commit::CHECKSUM_ALGORITHM)
         .map_err(|msg| io::Error::new(io::ErrorKind::InvalidData, msg))?;
     // When resuming, the log format version must be equal.
-    if header.log_format_version != opts.log_format_version {
+    if meta.header.log_format_version != opts.log_format_version {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!(
                 "log format version mismatch: current={} segment={}",
-                opts.log_format_version, header.log_format_version
+                opts.log_format_version, meta.header.log_format_version
             ),
         ));
     }
 
-    Ok(Ok(Writer {
-        commit: Commit {
-            min_tx_offset: tx_range.end,
-            n: 0,
-            records: Vec::new(),
-            epoch: max_epoch,
-        },
-        inner: io::BufWriter::new(storage),
+    if reader.sealed() {
+        Ok(Err(meta))
+    } else {
+        let Metadata {
+            header: _,
+            tx_range,
+            size_in_bytes,
+            max_epoch,
+            max_commit_offset: _,
+            max_commit: _,
+        } = meta;
+        let mut writer = repo.open_segment_writer(offset)?;
+        // Ensure we have enough space for this segment.
+        // The segment could have been created without the `fallocate` feature
+        // enabled, so we call this here again to ensure writes can't fail due
+        // to ENOSPC.
+        fallocate(&mut writer, &opts)?;
+        // We use `O_APPEND`, but make the file offset consistent regardless.
+        writer.seek(io::SeekFrom::End(0))?;
 
-        min_tx_offset: tx_range.start,
-        bytes_written: size_in_bytes,
+        Ok(Ok(Writer {
+            commit: Commit {
+                min_tx_offset: tx_range.end,
+                n: 0,
+                records: Vec::new(),
+                epoch: max_epoch,
+            },
+            inner: io::BufWriter::new(writer),
 
-        max_records_in_commit: opts.max_records_in_commit,
+            min_tx_offset: tx_range.start,
+            bytes_written: size_in_bytes,
 
-        offset_index_head: create_offset_index_writer(repo, offset, opts),
-    }))
+            offset_index_head: create_offset_index_writer(repo, offset, opts),
+        }))
+    }
 }
 
 /// Open the existing segment at `offset` for reading.
@@ -299,4 +327,19 @@ pub fn open_segment_reader<R: Repo>(
     debug!("open segment reader at {offset}");
     let storage = repo.open_segment_reader(offset)?;
     Reader::new(max_log_format_version, offset, storage)
+}
+
+/// Allocate [Options::max_segment_size] of space for [FileLike]
+/// if the `fallocate` feature is enabled,
+/// and [Options::preallocate_segments] is `true`.
+///
+/// No-op otherwise.
+#[inline]
+pub(crate) fn fallocate(_f: &mut impl FileLike, _opts: &Options) -> io::Result<()> {
+    #[cfg(feature = "fallocate")]
+    if _opts.preallocate_segments {
+        _f.fallocate(_opts.max_segment_size)?;
+    }
+
+    Ok(())
 }

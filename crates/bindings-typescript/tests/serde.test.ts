@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'vitest';
-import { AlgebraicType, BinaryReader, BinaryWriter } from 'spacetimedb';
+import {
+  AlgebraicType,
+  BinaryReader,
+  BinaryWriter,
+  ConnectionId,
+  Identity,
+  ScheduleAt,
+  Uuid,
+} from '../src';
 
 describe('it correctly serializes and deserializes algebraic values', () => {
   test('when it serializes and deserializes with a product type', () => {
@@ -52,7 +60,7 @@ describe('it correctly serializes and deserializes algebraic values', () => {
       __identity__: BigInt(1234567890123456789012345678901234567890n),
     };
 
-    const algebraic_type = AlgebraicType.createIdentityType();
+    const algebraic_type = Identity.getAlgebraicType();
     const binaryWriter = new BinaryWriter(1024);
     AlgebraicType.serializeValue(binaryWriter, algebraic_type, value);
 
@@ -82,7 +90,7 @@ describe('it correctly serializes and deserializes algebraic values', () => {
       },
     };
 
-    const algebraic_type = AlgebraicType.createScheduleAtType();
+    const algebraic_type = ScheduleAt.getAlgebraicType();
     const binaryWriter = new BinaryWriter(1024);
     AlgebraicType.serializeValue(binaryWriter, algebraic_type, value);
 
@@ -107,7 +115,7 @@ describe('it correctly serializes and deserializes algebraic values', () => {
       },
     };
 
-    const algebraic_type = AlgebraicType.createScheduleAtType();
+    const algebraic_type = ScheduleAt.getAlgebraicType();
     const binaryWriter = new BinaryWriter(1024);
     AlgebraicType.serializeValue(binaryWriter, algebraic_type, value);
 
@@ -130,7 +138,7 @@ describe('it correctly serializes and deserializes algebraic values', () => {
       __connection_id__: U128_MAX,
     };
 
-    const algebraic_type = AlgebraicType.createConnectionIdType();
+    const algebraic_type = ConnectionId.getAlgebraicType();
     const binaryWriter = new BinaryWriter(1024);
     AlgebraicType.serializeValue(binaryWriter, algebraic_type, value);
 
@@ -148,6 +156,31 @@ describe('it correctly serializes and deserializes algebraic values', () => {
     );
 
     console.log(deserializedValue);
+
+    expect(deserializedValue).toEqual(value);
+  });
+
+  test('when it serializes and deserializes an Uuid ', () => {
+    const value = {
+      __uuid__: BigInt('0x1234567890abcdef1234567890abcdef'),
+    };
+
+    const algebraic_type = Uuid.getAlgebraicType();
+    const binaryWriter = new BinaryWriter(1024);
+    AlgebraicType.serializeValue(binaryWriter, algebraic_type, value);
+
+    const buffer = binaryWriter.getBuffer();
+    expect(buffer).toEqual(
+      new Uint8Array([
+        239, 205, 171, 144, 120, 86, 52, 18, 239, 205, 171, 144, 120, 86, 52,
+        18,
+      ])
+    );
+
+    const deserializedValue = AlgebraicType.deserializeValue(
+      new BinaryReader(buffer),
+      algebraic_type
+    );
 
     expect(deserializedValue).toEqual(value);
   });

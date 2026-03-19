@@ -1,5 +1,5 @@
 import { AlgebraicType } from './algebraic_type';
-import { hexStringToU128, u128ToHexString, u128ToUint8Array } from './utils';
+import { hexStringToU128, u128ToHexString, u128ToUint8Array } from './util';
 
 export type ConnectionIdAlgebraicType = {
   tag: 'Product';
@@ -61,6 +61,13 @@ export class ConnectionId {
    */
   isEqual(other: ConnectionId): boolean {
     return this.__connection_id__ == other.__connection_id__;
+  }
+
+  /**
+   * Check if two connection IDs are equal.
+   */
+  equals(other: ConnectionId): boolean {
+    return this.isEqual(other);
   }
 
   /**

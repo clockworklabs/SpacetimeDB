@@ -17,7 +17,7 @@ use super::indexes::{PageIndex, PageOffset, RowHash, RowPointer, SquashedOffset}
 use crate::static_assert_size;
 use core::{hint, slice};
 use spacetimedb_data_structures::map::{
-    Entry,
+    hash_map::Entry,
     IntMap, // No need to hash a hash.
 };
 use spacetimedb_sats::memory_usage::MemoryUsage;
@@ -194,10 +194,15 @@ impl PointerMap {
 
     /// Returns the row pointers associated with the given row `hash`.
     pub fn pointers_for(&self, hash: RowHash) -> &[RowPointer] {
-        self.map.get(&hash).map_or(&[], |poc| match poc.unpack() {
+        self.map.get(&hash).map_or(&[], |poc| self.poc_pointers(poc))
+    }
+
+    /// Returns the row pointers for `poc`.
+    fn poc_pointers<'a>(&'a self, poc: &'a PtrOrCollider) -> &'a [RowPointer] {
+        match poc.unpack() {
             MapSlotRef::Pointer(ro) => slice::from_ref(ro),
             MapSlotRef::Collider(ci) => &self.colliders[ci.idx()],
-        })
+        }
     }
 
     /// Returns the row pointers associated with the given row `hash`.
@@ -278,7 +283,7 @@ impl PointerMap {
     ///
     /// Returns whether the association was deleted.
     pub fn remove(&mut self, hash: RowHash, ptr: RowPointer) -> bool {
-        let ret = 'fun: {
+        'fun: {
             let Entry::Occupied(mut entry) = self.map.entry(hash) else {
                 break 'fun false;
             };
@@ -309,9 +314,24 @@ impl PointerMap {
             }
 
             true
-        };
+        }
+    }
 
-        ret
+    /// Returns an iterator over all row hash x row pointer pairs.
+    pub fn iter(&self) -> impl '_ + Iterator<Item = (RowHash, RowPointer)> {
+        self.map
+            .iter()
+            .flat_map(|(hash, poc)| self.poc_pointers(poc).iter().map(|&ptr| (*hash, ptr)))
+    }
+
+    /// Merges `translate(src_pm)` into `self`.
+    ///
+    /// For every `(hash, ptr)` in `src_pm`,
+    /// inserts `(hash, translate(ptr))` into `self`.
+    pub fn merge_from(&mut self, src_pm: PointerMap, translate: impl Fn(RowPointer) -> RowPointer) {
+        for (hash, ptr) in src_pm.iter() {
+            self.insert(hash, translate(ptr));
+        }
     }
 }
 

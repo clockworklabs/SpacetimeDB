@@ -5,6 +5,8 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Instant;
 
+use bytes::{Bytes, BytesMut};
+use futures::TryStreamExt as _;
 use spacetimedb::config::CertificateAuthority;
 use spacetimedb::messages::control_db::HostType;
 use spacetimedb::util::jobs::JobCores;
@@ -17,11 +19,10 @@ use spacetimedb_schema::def::ModuleDef;
 use tokio::runtime::{Builder, Runtime};
 
 use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage};
-use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::db::{Config, Storage};
 use spacetimedb::host::FunctionArgs;
-use spacetimedb::messages::websocket::CallReducerFlags;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
+use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_lib::{bsatn, sats};
 
 pub use spacetimedb::database_logger::LogLevel;
@@ -58,7 +59,7 @@ impl ModuleHandle {
     async fn call_reducer(&self, reducer: &str, args: FunctionArgs) -> anyhow::Result<()> {
         let result = self
             .client
-            .call_reducer(reducer, args, 0, Instant::now(), CallReducerFlags::FullUpdate)
+            .call_reducer(reducer, args, 0, Instant::now(), ws_v1::CallReducerFlags::FullUpdate)
             .await;
         let result = match result {
             Ok(result) => result.into(),
@@ -86,8 +87,17 @@ impl ModuleHandle {
     }
 
     pub async fn read_log(&self, size: Option<u32>) -> String {
-        let logs_dir = self._env.data_dir().replica(self.client.replica_id).module_logs();
-        DatabaseLogger::read_latest(logs_dir, size).await
+        let bytes = self
+            .client
+            .module()
+            .database_logger()
+            .tail(size, false)
+            .await
+            .unwrap()
+            .try_collect::<BytesMut>()
+            .await
+            .expect("failed to collect log stream");
+        String::from_utf8(bytes.into()).unwrap()
     }
 }
 
@@ -95,7 +105,7 @@ pub struct CompiledModule {
     name: String,
     path: PathBuf,
     pub(super) host_type: HostType,
-    program_bytes: OnceLock<Vec<u8>>,
+    program_bytes: OnceLock<Bytes>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -110,8 +120,9 @@ impl CompiledModule {
             &module_path(name),
             Some(PathBuf::from("src")).as_deref(),
             mode == CompilationMode::Debug,
+            None,
         )
-        .unwrap();
+        .expect("Module compilation failed");
         Self {
             name: name.to_owned(),
             path,
@@ -124,12 +135,16 @@ impl CompiledModule {
         &self.path
     }
 
-    pub fn program_bytes(&self) -> &[u8] {
-        self.program_bytes.get_or_init(|| std::fs::read(&self.path).unwrap())
+    pub fn program_bytes(&self) -> Bytes {
+        self.program_bytes
+            .get_or_init(|| std::fs::read(&self.path).unwrap().into())
+            .clone()
     }
 
     pub async fn extract_schema(&self) -> ModuleDef {
-        spacetimedb::host::extract_schema(self.program_bytes().into(), self.host_type)
+        // TODO: extract_schema should accept &[u8]
+        let boxed_bytes: Box<[u8]> = self.program_bytes()[..].into();
+        spacetimedb::host::extract_schema(boxed_bytes, self.host_type)
             .await
             .unwrap()
     }
@@ -189,7 +204,7 @@ impl CompiledModule {
             },
             &certs,
             paths.data_dir.into(),
-            JobCores::without_pinned_cores(tokio::runtime::Handle::current()),
+            JobCores::without_pinned_cores(),
         )
         .await
         .unwrap();
@@ -198,23 +213,23 @@ impl CompiledModule {
         let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().claims.identity;
         let connection_id = generate_random_connection_id();
 
-        let program_bytes = self.program_bytes().to_owned();
-
         env.publish_database(
             &identity,
             DatabaseDef {
                 database_identity: db_identity,
-                program_bytes,
+                program_bytes: self.program_bytes(),
                 num_replicas: None,
                 host_type: self.host_type,
+                parent: None,
+                organization: None,
             },
             MigrationPolicy::Compatible,
         )
         .await
         .unwrap();
 
-        let database = env.get_database_by_identity(&db_identity).unwrap().unwrap();
-        let instance = env.get_leader_replica_by_database(database.id).unwrap();
+        let database = env.get_database_by_identity(&db_identity).await.unwrap().unwrap();
+        let instance = env.get_leader_replica_by_database(database.id).await.unwrap();
 
         let client_id = ClientActorId {
             identity,
@@ -222,11 +237,7 @@ impl CompiledModule {
             name: env.client_actor_index().next_client_name(),
         };
 
-        let host = env
-            .leader(database.id)
-            .await
-            .expect("host should be running")
-            .expect("host should be running");
+        let host = env.leader(database.id).await.expect("host should be running");
         let module_rx = host.module_watcher().await.unwrap();
 
         // TODO: it might be neat to add some functionality to module handle to make
@@ -306,6 +317,34 @@ impl ModuleLanguage for Rust {
     fn get_module() -> &'static CompiledModule {
         lazy_static::lazy_static! {
             pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks", COMPILATION_MODE);
+        }
+
+        &MODULE
+    }
+}
+
+pub struct TypeScript;
+
+impl ModuleLanguage for TypeScript {
+    const NAME: &'static str = "typescript";
+
+    fn get_module() -> &'static CompiledModule {
+        lazy_static::lazy_static! {
+            pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks-ts", COMPILATION_MODE);
+        }
+
+        &MODULE
+    }
+}
+
+pub struct Cpp;
+
+impl ModuleLanguage for Cpp {
+    const NAME: &'static str = "cpp";
+
+    fn get_module() -> &'static CompiledModule {
+        lazy_static::lazy_static! {
+            pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks-cpp", COMPILATION_MODE);
         }
 
         &MODULE

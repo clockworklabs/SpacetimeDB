@@ -17,9 +17,9 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "config";
 
-            public sealed class IdUniqueIndex : UniqueIndexBase<uint>
+            public sealed class IdUniqueIndex : UniqueIndexBase<int>
             {
-                protected override uint GetKey(Config row) => row.Id;
+                protected override int GetKey(Config row) => row.Id;
 
                 public IdUniqueIndex(ConfigHandle table) : base(table) { }
             }
@@ -35,5 +35,27 @@ namespace SpacetimeDB.Types
         }
 
         public readonly ConfigHandle Config;
+    }
+
+    public sealed class ConfigCols
+    {
+        public global::SpacetimeDB.Col<Config, int> Id { get; }
+        public global::SpacetimeDB.Col<Config, long> WorldSize { get; }
+
+        public ConfigCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.Col<Config, int>(tableName, "id");
+            WorldSize = new global::SpacetimeDB.Col<Config, long>(tableName, "world_size");
+        }
+    }
+
+    public sealed class ConfigIxCols
+    {
+        public global::SpacetimeDB.IxCol<Config, int> Id { get; }
+
+        public ConfigIxCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.IxCol<Config, int>(tableName, "id");
+        }
     }
 }

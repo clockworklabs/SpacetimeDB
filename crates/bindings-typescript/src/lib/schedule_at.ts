@@ -22,6 +22,9 @@ export const ScheduleAt: {
    * @returns The algebraic type representation of the type.
    */
   getAlgebraicType(): ScheduleAtAlgebraicType;
+  isScheduleAt(
+    algebraicType: AlgebraicType
+  ): algebraicType is ScheduleAtAlgebraicType;
 } = {
   interval(value: bigint): ScheduleAtType {
     return Interval(value);
@@ -39,6 +42,26 @@ export const ScheduleAt: {
         { name: 'Time', algebraicType: Timestamp.getAlgebraicType() },
       ],
     });
+  },
+  isScheduleAt(
+    algebraicType: AlgebraicType
+  ): algebraicType is ScheduleAtAlgebraicType {
+    if (algebraicType.tag !== 'Sum') {
+      return false;
+    }
+    const variants = algebraicType.value.variants;
+    if (variants.length !== 2) {
+      return false;
+    }
+    const intervalVariant = variants.find(v => v.name === 'Interval');
+    const timeVariant = variants.find(v => v.name === 'Time');
+    if (!intervalVariant || !timeVariant) {
+      return false;
+    }
+    return (
+      TimeDuration.isTimeDuration(intervalVariant.algebraicType) &&
+      Timestamp.isTimestamp(timeVariant.algebraicType)
+    );
   },
 };
 

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Import Runtime build props/targets when using ProjectReference (NuGet auto-imports these; ProjectReference does not) -->
+  <Import Project="{SPACETIME_CSHARP_RUNTIME_DIR}/build/SpacetimeDB.Runtime.props" />
+  <Import Project="{SPACETIME_CSHARP_RUNTIME_DIR}/build/SpacetimeDB.Runtime.targets" />
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="{SPACETIME_CSHARP_RUNTIME_REF}" />
+    <!-- Codegen is packed into the NuGet Runtime package; with ProjectReference we must add it explicitly -->
+    <ProjectReference Include="{SPACETIME_CSHARP_CODEGEN_REF}" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>
