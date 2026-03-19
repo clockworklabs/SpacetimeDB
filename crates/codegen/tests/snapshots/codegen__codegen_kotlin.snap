@@ -289,33 +289,6 @@ class LoggedOutPlayerTableHandle internal constructor(
     override fun removeOnUpdate(cb: (EventContext, Player, Player) -> Unit) { tableCache.removeOnUpdate(cb) }
     override fun removeOnBeforeDelete(cb: (EventContext, Player) -> Unit) { tableCache.removeOnBeforeDelete(cb) }
 
-    fun remoteQuery(query: String = "", callback: (List<Player>) -> Unit) {
-        val sql = "SELECT $TABLE_NAME.* FROM $TABLE_NAME $query"
-        conn.oneOffQuery(sql) { msg ->
-            when (val result = msg.result) {
-                is QueryResult.Err -> throw IllegalStateException("RemoteQuery error: ${result.error}")
-                is QueryResult.Ok -> {
-                    val table = result.rows.tables.firstOrNull { it.table == TABLE_NAME }
-                        ?: throw IllegalStateException("Table '$TABLE_NAME' not found in result")
-                    callback(tableCache.decodeRowList(table.rows))
-                }
-            }
-        }
-    }
-
-    suspend fun remoteQuery(query: String = ""): List<Player> {
-        val sql = "SELECT $TABLE_NAME.* FROM $TABLE_NAME $query"
-        val msg = conn.oneOffQuery(sql)
-        return when (val result = msg.result) {
-            is QueryResult.Err -> throw IllegalStateException("RemoteQuery error: ${result.error}")
-            is QueryResult.Ok -> {
-                val table = result.rows.tables.firstOrNull { it.table == TABLE_NAME }
-                    ?: throw IllegalStateException("Table '$TABLE_NAME' not found in result")
-                tableCache.decodeRowList(table.rows)
-            }
-        }
-    }
-
     val identity = UniqueIndex<Player, Identity>(tableCache) { it.identity }
 
     val name = UniqueIndex<Player, String>(tableCache) { it.name }
@@ -366,6 +339,14 @@ object RemoteModule : ModuleDescriptor {
     override val cliVersion: String = "2.0.3"
 
     val tableNames: List<String> = listOf(
+        "logged_out_player",
+        "person",
+        "player",
+        "test_d",
+        "test_f",
+    )
+
+    override val subscribableTableNames: List<String> = listOf(
         "logged_out_player",
         "person",
         "player",
@@ -559,33 +540,6 @@ class MyPlayerTableHandle internal constructor(
     override fun removeOnDelete(cb: (EventContext, Player) -> Unit) { tableCache.removeOnDelete(cb) }
     override fun removeOnBeforeDelete(cb: (EventContext, Player) -> Unit) { tableCache.removeOnBeforeDelete(cb) }
 
-    fun remoteQuery(query: String = "", callback: (List<Player>) -> Unit) {
-        val sql = "SELECT $TABLE_NAME.* FROM $TABLE_NAME $query"
-        conn.oneOffQuery(sql) { msg ->
-            when (val result = msg.result) {
-                is QueryResult.Err -> throw IllegalStateException("RemoteQuery error: ${result.error}")
-                is QueryResult.Ok -> {
-                    val table = result.rows.tables.firstOrNull { it.table == TABLE_NAME }
-                        ?: throw IllegalStateException("Table '$TABLE_NAME' not found in result")
-                    callback(tableCache.decodeRowList(table.rows))
-                }
-            }
-        }
-    }
-
-    suspend fun remoteQuery(query: String = ""): List<Player> {
-        val sql = "SELECT $TABLE_NAME.* FROM $TABLE_NAME $query"
-        val msg = conn.oneOffQuery(sql)
-        return when (val result = msg.result) {
-            is QueryResult.Err -> throw IllegalStateException("RemoteQuery error: ${result.error}")
-            is QueryResult.Ok -> {
-                val table = result.rows.tables.firstOrNull { it.table == TABLE_NAME }
-                    ?: throw IllegalStateException("Table '$TABLE_NAME' not found in result")
-                tableCache.decodeRowList(table.rows)
-            }
-        }
-    }
-
 }
 
 @OptIn(InternalSpacetimeApi::class)
@@ -645,33 +599,6 @@ class PersonTableHandle internal constructor(
     override fun removeOnDelete(cb: (EventContext, Person) -> Unit) { tableCache.removeOnDelete(cb) }
     override fun removeOnUpdate(cb: (EventContext, Person, Person) -> Unit) { tableCache.removeOnUpdate(cb) }
     override fun removeOnBeforeDelete(cb: (EventContext, Person) -> Unit) { tableCache.removeOnBeforeDelete(cb) }
-
-    fun remoteQuery(query: String = "", callback: (List<Person>) -> Unit) {
-        val sql = "SELECT $TABLE_NAME.* FROM $TABLE_NAME $query"
-        conn.oneOffQuery(sql) { msg ->
-            when (val result = msg.result) {
-                is QueryResult.Err -> throw IllegalStateException("RemoteQuery error: ${result.error}")
-                is QueryResult.Ok -> {
-                    val table = result.rows.tables.firstOrNull { it.table == TABLE_NAME }
-                        ?: throw IllegalStateException("Table '$TABLE_NAME' not found in result")
-                    callback(tableCache.decodeRowList(table.rows))
-                }
-            }
-        }
-    }
-
-    suspend fun remoteQuery(query: String = ""): List<Person> {
-        val sql = "SELECT $TABLE_NAME.* FROM $TABLE_NAME $query"
-        val msg = conn.oneOffQuery(sql)
-        return when (val result = msg.result) {
-            is QueryResult.Err -> throw IllegalStateException("RemoteQuery error: ${result.error}")
-            is QueryResult.Ok -> {
-                val table = result.rows.tables.firstOrNull { it.table == TABLE_NAME }
-                    ?: throw IllegalStateException("Table '$TABLE_NAME' not found in result")
-                tableCache.decodeRowList(table.rows)
-            }
-        }
-    }
 
     val age = BTreeIndex<Person, UByte>(tableCache) { it.age }
 
@@ -740,33 +667,6 @@ class PlayerTableHandle internal constructor(
     override fun removeOnDelete(cb: (EventContext, Player) -> Unit) { tableCache.removeOnDelete(cb) }
     override fun removeOnUpdate(cb: (EventContext, Player, Player) -> Unit) { tableCache.removeOnUpdate(cb) }
     override fun removeOnBeforeDelete(cb: (EventContext, Player) -> Unit) { tableCache.removeOnBeforeDelete(cb) }
-
-    fun remoteQuery(query: String = "", callback: (List<Player>) -> Unit) {
-        val sql = "SELECT $TABLE_NAME.* FROM $TABLE_NAME $query"
-        conn.oneOffQuery(sql) { msg ->
-            when (val result = msg.result) {
-                is QueryResult.Err -> throw IllegalStateException("RemoteQuery error: ${result.error}")
-                is QueryResult.Ok -> {
-                    val table = result.rows.tables.firstOrNull { it.table == TABLE_NAME }
-                        ?: throw IllegalStateException("Table '$TABLE_NAME' not found in result")
-                    callback(tableCache.decodeRowList(table.rows))
-                }
-            }
-        }
-    }
-
-    suspend fun remoteQuery(query: String = ""): List<Player> {
-        val sql = "SELECT $TABLE_NAME.* FROM $TABLE_NAME $query"
-        val msg = conn.oneOffQuery(sql)
-        return when (val result = msg.result) {
-            is QueryResult.Err -> throw IllegalStateException("RemoteQuery error: ${result.error}")
-            is QueryResult.Ok -> {
-                val table = result.rows.tables.firstOrNull { it.table == TABLE_NAME }
-                    ?: throw IllegalStateException("Table '$TABLE_NAME' not found in result")
-                tableCache.decodeRowList(table.rows)
-            }
-        }
-    }
 
     val identity = UniqueIndex<Player, Identity>(tableCache) { it.identity }
 
@@ -1334,33 +1234,6 @@ class TestDTableHandle internal constructor(
     override fun removeOnDelete(cb: (EventContext, TestD) -> Unit) { tableCache.removeOnDelete(cb) }
     override fun removeOnBeforeDelete(cb: (EventContext, TestD) -> Unit) { tableCache.removeOnBeforeDelete(cb) }
 
-    fun remoteQuery(query: String = "", callback: (List<TestD>) -> Unit) {
-        val sql = "SELECT $TABLE_NAME.* FROM $TABLE_NAME $query"
-        conn.oneOffQuery(sql) { msg ->
-            when (val result = msg.result) {
-                is QueryResult.Err -> throw IllegalStateException("RemoteQuery error: ${result.error}")
-                is QueryResult.Ok -> {
-                    val table = result.rows.tables.firstOrNull { it.table == TABLE_NAME }
-                        ?: throw IllegalStateException("Table '$TABLE_NAME' not found in result")
-                    callback(tableCache.decodeRowList(table.rows))
-                }
-            }
-        }
-    }
-
-    suspend fun remoteQuery(query: String = ""): List<TestD> {
-        val sql = "SELECT $TABLE_NAME.* FROM $TABLE_NAME $query"
-        val msg = conn.oneOffQuery(sql)
-        return when (val result = msg.result) {
-            is QueryResult.Err -> throw IllegalStateException("RemoteQuery error: ${result.error}")
-            is QueryResult.Ok -> {
-                val table = result.rows.tables.firstOrNull { it.table == TABLE_NAME }
-                    ?: throw IllegalStateException("Table '$TABLE_NAME' not found in result")
-                tableCache.decodeRowList(table.rows)
-            }
-        }
-    }
-
 }
 
 @OptIn(InternalSpacetimeApi::class)
@@ -1411,33 +1284,6 @@ class TestFTableHandle internal constructor(
 
     override fun removeOnDelete(cb: (EventContext, TestFoobar) -> Unit) { tableCache.removeOnDelete(cb) }
     override fun removeOnBeforeDelete(cb: (EventContext, TestFoobar) -> Unit) { tableCache.removeOnBeforeDelete(cb) }
-
-    fun remoteQuery(query: String = "", callback: (List<TestFoobar>) -> Unit) {
-        val sql = "SELECT $TABLE_NAME.* FROM $TABLE_NAME $query"
-        conn.oneOffQuery(sql) { msg ->
-            when (val result = msg.result) {
-                is QueryResult.Err -> throw IllegalStateException("RemoteQuery error: ${result.error}")
-                is QueryResult.Ok -> {
-                    val table = result.rows.tables.firstOrNull { it.table == TABLE_NAME }
-                        ?: throw IllegalStateException("Table '$TABLE_NAME' not found in result")
-                    callback(tableCache.decodeRowList(table.rows))
-                }
-            }
-        }
-    }
-
-    suspend fun remoteQuery(query: String = ""): List<TestFoobar> {
-        val sql = "SELECT $TABLE_NAME.* FROM $TABLE_NAME $query"
-        val msg = conn.oneOffQuery(sql)
-        return when (val result = msg.result) {
-            is QueryResult.Err -> throw IllegalStateException("RemoteQuery error: ${result.error}")
-            is QueryResult.Ok -> {
-                val table = result.rows.tables.firstOrNull { it.table == TABLE_NAME }
-                    ?: throw IllegalStateException("Table '$TABLE_NAME' not found in result")
-                tableCache.decodeRowList(table.rows)
-            }
-        }
-    }
 
 }
 

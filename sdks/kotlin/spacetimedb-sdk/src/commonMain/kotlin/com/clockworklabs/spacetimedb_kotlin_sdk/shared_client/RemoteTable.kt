@@ -5,7 +5,7 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
  * Use `is RemotePersistentTable` / `is RemoteEventTable` to distinguish at runtime.
  *
  * - [RemotePersistentTable]: rows are stored in the client cache; supports
- *   count/all/iter, onDelete, onBeforeDelete, and remoteQuery.
+ *   count/all/iter, onDelete, and onBeforeDelete.
  * - [RemoteEventTable]: rows are NOT stored; only onInsert fires per event.
  */
 public sealed interface RemoteTable<Row> {

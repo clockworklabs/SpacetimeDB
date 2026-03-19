@@ -229,9 +229,6 @@ conn.oneOffQuery("SELECT person.* FROM person") { result -> }
 // Suspend (with optional timeout)
 val result = conn.oneOffQuery("SELECT person.* FROM person", timeout = 5.seconds)
 
-// Table-level convenience
-conn.db.person.remoteQuery("WHERE name = 'Alice'") { people -> }
-val people = conn.db.person.remoteQuery("WHERE name = 'Alice'")  // suspend
 ```
 
 ## Thread Safety

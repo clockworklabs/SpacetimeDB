@@ -192,56 +192,8 @@ impl Lang for Kotlin {
         }
         writeln!(out);
 
-        // Remote query and indexes (not applicable for event tables)
+        // Indexes (not applicable for event tables)
         if !is_event {
-        // Remote query (callback-based)
-        writeln!(out, "fun remoteQuery(query: String = \"\", callback: (List<{type_name}>) -> Unit) {{");
-        out.indent(1);
-        writeln!(out, "val sql = \"SELECT $TABLE_NAME.* FROM $TABLE_NAME $query\"");
-        writeln!(out, "conn.oneOffQuery(sql) {{ msg ->");
-        out.indent(1);
-        writeln!(out, "when (val result = msg.result) {{");
-        out.indent(1);
-        writeln!(out, "is QueryResult.Err -> throw IllegalStateException(\"RemoteQuery error: ${{result.error}}\")");
-        writeln!(out, "is QueryResult.Ok -> {{");
-        out.indent(1);
-        writeln!(out, "val table = result.rows.tables.firstOrNull {{ it.table == TABLE_NAME }}");
-        out.indent(1);
-        writeln!(out, "?: throw IllegalStateException(\"Table '$TABLE_NAME' not found in result\")");
-        out.dedent(1);
-        writeln!(out, "callback(tableCache.decodeRowList(table.rows))");
-        out.dedent(1);
-        writeln!(out, "}}");
-        out.dedent(1);
-        writeln!(out, "}}");
-        out.dedent(1);
-        writeln!(out, "}}");
-        out.dedent(1);
-        writeln!(out, "}}");
-        writeln!(out);
-
-        // Remote query (suspend)
-        writeln!(out, "suspend fun remoteQuery(query: String = \"\"): List<{type_name}> {{");
-        out.indent(1);
-        writeln!(out, "val sql = \"SELECT $TABLE_NAME.* FROM $TABLE_NAME $query\"");
-        writeln!(out, "val msg = conn.oneOffQuery(sql)");
-        writeln!(out, "return when (val result = msg.result) {{");
-        out.indent(1);
-        writeln!(out, "is QueryResult.Err -> throw IllegalStateException(\"RemoteQuery error: ${{result.error}}\")");
-        writeln!(out, "is QueryResult.Ok -> {{");
-        out.indent(1);
-        writeln!(out, "val table = result.rows.tables.firstOrNull {{ it.table == TABLE_NAME }}");
-        out.indent(1);
-        writeln!(out, "?: throw IllegalStateException(\"Table '$TABLE_NAME' not found in result\")");
-        out.dedent(1);
-        writeln!(out, "tableCache.decodeRowList(table.rows)");
-        out.dedent(1);
-        writeln!(out, "}}");
-        out.dedent(1);
-        writeln!(out, "}}");
-        out.dedent(1);
-        writeln!(out, "}}");
-        writeln!(out);
         } // !is_event
 
         // Index properties
