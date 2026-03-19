@@ -348,7 +348,8 @@ function createRowExpr<TableDef extends TypedTableDef>(
       columnBuilder.typeBuilder.algebraicType as InferSpacetimeTypeOfColumn<
         TableDef,
         typeof columnName
-      >
+      >,
+      columnBuilder.columnMetadata.name
     );
     row[columnName] = Object.freeze(column);
   }
@@ -438,7 +439,10 @@ export class ColumnExpression<
   ColumnName extends ColumnNames<TableDef>,
 > {
   readonly type = 'column' as const;
+  // This is the column accessor
   readonly column: ColumnName;
+  // The name of the column in the database.
+  readonly columnName: string;
   readonly table: TableDef['sourceName'];
   // phantom: actual runtime value is undefined
   readonly tsValueType?: RowType<TableDef>[ColumnName];
@@ -447,10 +451,12 @@ export class ColumnExpression<
   constructor(
     table: TableDef['sourceName'],
     column: ColumnName,
-    spacetimeType: InferSpacetimeTypeOfColumn<TableDef, ColumnName>
+    spacetimeType: InferSpacetimeTypeOfColumn<TableDef, ColumnName>,
+    columnName?: string
   ) {
     this.table = table;
     this.column = column;
+    this.columnName = columnName || column;
     this.spacetimeType = spacetimeType;
   }
 
@@ -838,7 +844,7 @@ function valueExprToSql<Table extends TypedTableDef>(
     return literalValueToSql(expr.value);
   }
   const table = tableAlias ?? expr.table;
-  return `${quoteIdentifier(table)}.${quoteIdentifier(expr.column)}`;
+  return `${quoteIdentifier(table)}.${quoteIdentifier(expr.columnName)}`;
 }
 
 function literalValueToSql(value: unknown): string {

@@ -14,6 +14,7 @@ pub(crate) async fn dispatch(test: &str, db_name: &str) {
         "view-non-table-return" => exec_non_table_return(db_name).await,
         "view-non-table-query-builder-return" => exec_non_table_query_builder_return(db_name).await,
         "view-subscription-update" => exec_subscription_update(db_name).await,
+        "view-disconnect-does-not-break-sender-updates" => exec_disconnect_sender_view_updates(db_name).await,
         _ => panic!("Unknown test: {test}"),
     }
 }
@@ -34,6 +35,22 @@ async fn build_and_run(builder: DbConnectionBuilder<RemoteModule>) -> DbConnecti
     conn
 }
 
+async fn build_connection(
+    db_name: &str,
+    with_builder: impl FnOnce(DbConnectionBuilder<RemoteModule>) -> DbConnectionBuilder<RemoteModule>,
+    callback: impl FnOnce(&DbConnection) + Send + 'static,
+) -> DbConnection {
+    let name = db_name.to_owned();
+    let builder = DbConnection::builder()
+        .with_database_name(name)
+        .with_uri(LOCALHOST)
+        .on_connect(|ctx, _, _| {
+            callback(ctx);
+        })
+        .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
+    build_and_run(with_builder(builder)).await
+}
+
 async fn connect_with_then(
     db_name: &str,
     test_counter: &std::sync::Arc<TestCounter>,
@@ -42,16 +59,11 @@ async fn connect_with_then(
     callback: impl FnOnce(&DbConnection) + Send + 'static,
 ) -> DbConnection {
     let connected_result = test_counter.add_test(format!("on_connect_{on_connect_suffix}"));
-    let name = db_name.to_owned();
-    let builder = DbConnection::builder()
-        .with_database_name(name)
-        .with_uri(LOCALHOST)
-        .on_connect(|ctx, _, _| {
-            callback(ctx);
-            connected_result(Ok(()));
-        })
-        .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
-    build_and_run(with_builder(builder)).await
+    build_connection(db_name, with_builder, move |ctx| {
+        callback(ctx);
+        connected_result(Ok(()));
+    })
+    .await
 }
 
 async fn connect_then(
@@ -74,6 +86,58 @@ fn subscribe_these_then(
 }
 
 type ResultRecorder = Box<dyn Send + FnOnce(Result<(), anyhow::Error>)>;
+
+async fn connect_my_player_client(
+    db_name: &str,
+    mut inserted_result: Option<ResultRecorder>,
+    mut deleted_result: Option<ResultRecorder>,
+    disconnected_result: Option<ResultRecorder>,
+) -> DbConnection {
+    // Subscribe to an identity-filtered view and immediately create one matching row for this client.
+    build_connection(
+        db_name,
+        |builder| {
+            builder.on_disconnect(move |ctx, error| {
+                assert!(
+                    !ctx.is_active(),
+                    "on_disconnect callback, but `ctx.is_active()` is true"
+                );
+                if let Some(disconnected_result) = disconnected_result {
+                    match error {
+                        Some(error) => disconnected_result(Err(anyhow::anyhow!("{error:?}"))),
+                        None => disconnected_result(Ok(())),
+                    }
+                } else if let Some(error) = error {
+                    panic!("Disconnect errored: {error:?}");
+                }
+            })
+        },
+        move |ctx| {
+            subscribe_these_then(ctx, &["SELECT * FROM my_player"], {
+                move |ctx| {
+                    let my_identity = ctx.identity();
+
+                    ctx.db.my_player().on_insert(move |_, player| {
+                        if player.identity == my_identity && inserted_result.is_some() {
+                            put_result(&mut inserted_result, Ok(()));
+                        }
+                    });
+
+                    ctx.db.my_player().on_delete(move |_, player| {
+                        if player.identity == my_identity && deleted_result.is_some() {
+                            put_result(&mut deleted_result, Ok(()));
+                        }
+                    });
+
+                    ctx.reducers()
+                        .insert_player_then(my_identity, 0, reducer_callback_assert_committed("insert_player"))
+                        .unwrap();
+                }
+            });
+        },
+    )
+    .await
+}
 
 fn put_result(result: &mut Option<ResultRecorder>, res: Result<(), anyhow::Error>) {
     (result.take().unwrap())(res);
@@ -417,4 +481,40 @@ async fn exec_subscription_update(db_name: &str) {
     )
     .await;
     test_counter.wait_for_all().await;
+}
+
+async fn exec_disconnect_sender_view_updates(db_name: &str) {
+    let conn1_insert_counter = TestCounter::new();
+    let conn1_delete_counter = TestCounter::new();
+    let conn1 = connect_my_player_client(
+        db_name,
+        Some(conn1_insert_counter.add_test("conn1 initial insert")),
+        Some(conn1_delete_counter.add_test("conn1 delete after disconnect")),
+        None,
+    )
+    .await;
+    conn1_insert_counter.wait_for_all().await;
+
+    let conn2_insert_counter = TestCounter::new();
+    let conn2_disconnect_counter = TestCounter::new();
+    let conn2 = connect_my_player_client(
+        db_name,
+        Some(conn2_insert_counter.add_test("conn2 initial insert")),
+        None,
+        Some(conn2_disconnect_counter.add_test("conn2 disconnect")),
+    )
+    .await;
+    conn2_insert_counter.wait_for_all().await;
+
+    // After client 2 disconnects, client 1 should still receive deletes from the sender-scoped view.
+    conn2.disconnect().unwrap();
+    conn2_disconnect_counter.wait_for_all().await;
+
+    conn1
+        .reducers()
+        .delete_player_then(conn1.identity(), reducer_callback_assert_committed("delete_player"))
+        .unwrap();
+    conn1_delete_counter.wait_for_all().await;
+
+    conn1.disconnect().unwrap();
 }

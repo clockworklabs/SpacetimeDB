@@ -4,8 +4,9 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
-#include "ModuleBindings/Types/QueryIdType.g.h"
-#include "ModuleBindings/Types/SubscribeRowsType.g.h"
+#include "ModuleBindings/Optionals/SpacetimeDbSdkOptionalQueryRows.g.h"
+#include "ModuleBindings/Types/QueryRowsType.g.h"
+#include "ModuleBindings/Types/QuerySetIdType.g.h"
 #include "UnsubscribeAppliedType.g.generated.h"
 
 USTRUCT(BlueprintType)
@@ -16,18 +17,15 @@ struct SPACETIMEDBSDK_API FUnsubscribeAppliedType
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
     uint32 RequestId = 0;
 
-    // NOTE: uint64 field not exposed to Blueprint due to non-blueprintable elements
-    uint64 TotalHostExecutionDurationMicros = 0;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
+    FQuerySetIdType QuerySetId;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    FQueryIdType QueryId;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    FSubscribeRowsType Rows;
+    FSpacetimeDbSdkOptionalQueryRows Rows;
 
     FORCEINLINE bool operator==(const FUnsubscribeAppliedType& Other) const
     {
-        return RequestId == Other.RequestId && TotalHostExecutionDurationMicros == Other.TotalHostExecutionDurationMicros && QueryId == Other.QueryId && Rows == Other.Rows;
+        return RequestId == Other.RequestId && QuerySetId == Other.QuerySetId && Rows == Other.Rows;
     }
 
     FORCEINLINE bool operator!=(const FUnsubscribeAppliedType& Other) const
@@ -45,8 +43,7 @@ struct SPACETIMEDBSDK_API FUnsubscribeAppliedType
 FORCEINLINE uint32 GetTypeHash(const FUnsubscribeAppliedType& UnsubscribeAppliedType)
 {
     uint32 Hash = GetTypeHash(UnsubscribeAppliedType.RequestId);
-    Hash = HashCombine(Hash, GetTypeHash(UnsubscribeAppliedType.TotalHostExecutionDurationMicros));
-    Hash = HashCombine(Hash, GetTypeHash(UnsubscribeAppliedType.QueryId));
+    Hash = HashCombine(Hash, GetTypeHash(UnsubscribeAppliedType.QuerySetId));
     Hash = HashCombine(Hash, GetTypeHash(UnsubscribeAppliedType.Rows));
     return Hash;
 }
@@ -55,5 +52,5 @@ namespace UE::SpacetimeDB
 {
     UE_SPACETIMEDB_ENABLE_TARRAY(FUnsubscribeAppliedType);
 
-    UE_SPACETIMEDB_STRUCT(FUnsubscribeAppliedType, RequestId, TotalHostExecutionDurationMicros, QueryId, Rows);
+    UE_SPACETIMEDB_STRUCT(FUnsubscribeAppliedType, RequestId, QuerySetId, Rows);
 }

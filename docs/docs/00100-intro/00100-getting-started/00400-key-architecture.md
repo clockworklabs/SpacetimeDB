@@ -537,7 +537,7 @@ A view can be written in C++ like so:
 
 ```cpp
 SPACETIMEDB_VIEW(std::optional<Player>, my_player, Public, ViewContext ctx) {
-   return ctx.db[player_identity].find(ctx.sender);
+   return ctx.db[player_identity].find(ctx.sender());
 }
 ```
 

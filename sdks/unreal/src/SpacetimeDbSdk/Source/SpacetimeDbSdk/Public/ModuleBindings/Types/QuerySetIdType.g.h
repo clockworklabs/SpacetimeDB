@@ -4,42 +4,42 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
-#include "QueryIdType.g.generated.h"
+#include "QuerySetIdType.g.generated.h"
 
 USTRUCT(BlueprintType)
-struct SPACETIMEDBSDK_API FQueryIdType
+struct SPACETIMEDBSDK_API FQuerySetIdType
 {
     GENERATED_BODY()
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
     uint32 Id = 0;
 
-    FORCEINLINE bool operator==(const FQueryIdType& Other) const
+    FORCEINLINE bool operator==(const FQuerySetIdType& Other) const
     {
         return Id == Other.Id;
     }
 
-    FORCEINLINE bool operator!=(const FQueryIdType& Other) const
+    FORCEINLINE bool operator!=(const FQuerySetIdType& Other) const
     {
         return !(*this == Other);
     }
 };
 
 /**
- * Custom hash function for FQueryIdType.
+ * Custom hash function for FQuerySetIdType.
  * Combines the hashes of all fields that are compared in operator==.
- * @param QueryIdType The FQueryIdType instance to hash.
+ * @param QuerySetIdType The FQuerySetIdType instance to hash.
  * @return The combined hash value.
  */
-FORCEINLINE uint32 GetTypeHash(const FQueryIdType& QueryIdType)
+FORCEINLINE uint32 GetTypeHash(const FQuerySetIdType& QuerySetIdType)
 {
-    uint32 Hash = GetTypeHash(QueryIdType.Id);
+    uint32 Hash = GetTypeHash(QuerySetIdType.Id);
     return Hash;
 }
 
 namespace UE::SpacetimeDB
 {
-    UE_SPACETIMEDB_ENABLE_TARRAY(FQueryIdType);
+    UE_SPACETIMEDB_ENABLE_TARRAY(FQuerySetIdType);
 
-    UE_SPACETIMEDB_STRUCT(FQueryIdType, Id);
+    UE_SPACETIMEDB_STRUCT(FQuerySetIdType, Id);
 }
