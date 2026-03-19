@@ -122,5 +122,7 @@ private:
 	void OnPlayerInsert(const FEventContext& Context, const FPlayerType& NewRow);
 	UFUNCTION()
 	void OnPlayerDelete(const FEventContext& Context, const FPlayerType& RemovedRow);
+	UFUNCTION()
+	void OnConsumeEntityEventInsert(const FEventContext& Context, const FConsumeEntityEventType& NewRow);
 	/* Data Bindings */
 };

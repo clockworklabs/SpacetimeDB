@@ -32,11 +32,11 @@ public:
 	int32 EntityId = 0;
 	virtual void Tick(float DeltaTime) override;
 	void ConsumeDespawn(float DeltaTime);
+	void StartConsumeDespawn(AEntity* InConsumingEntity);
 	
 	void Spawn(int32 InEntityId);
 	virtual void OnEntityUpdated(const FEntityType& NewVal);
 	virtual void OnDelete(const FEventContext& Context);
-	bool ConsumeDelete(const FEventContext& Context);
 	
 	void SetColor(const FLinearColor& Color) const;
 

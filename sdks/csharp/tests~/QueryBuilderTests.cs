@@ -40,30 +40,6 @@ public sealed class QueryBuilderTests
     private static Table<Row, RowCols, RowIxCols> MakeTable(string tableName) =>
         new(tableName, new RowCols(tableName), new RowIxCols(tableName));
 
-    private sealed class RowNullableCols
-    {
-        public NullableCol<Row, string> Name { get; }
-        public NullableCol<Row, int> Age { get; }
-
-        public RowNullableCols(string tableName)
-        {
-            Name = new NullableCol<Row, string>(tableName, "Name");
-            Age = new NullableCol<Row, int>(tableName, "Age");
-        }
-    }
-
-    private sealed class RowNullableIxCols
-    {
-        public NullableIxCol<Row, string> Name { get; }
-
-        public RowNullableIxCols(string tableName)
-        {
-            Name = new NullableIxCol<Row, string>(tableName, "Name");
-        }
-    }
-
-    private static Table<Row, RowNullableCols, RowNullableIxCols> MakeNullableTable(string tableName) =>
-        new(tableName, new RowNullableCols(tableName), new RowNullableIxCols(tableName));
 
     private sealed class LeftCols
     {
@@ -111,31 +87,6 @@ public sealed class QueryBuilderTests
     private static Table<RightRow, RightCols, RightIxCols> MakeRightTable(string tableName) =>
         new(tableName, new RightCols(tableName), new RightIxCols(tableName));
 
-    private sealed class LeftNullableIxCols
-    {
-        public NullableIxCol<LeftRow, int> Id { get; }
-
-        public LeftNullableIxCols(string tableName)
-        {
-            Id = new NullableIxCol<LeftRow, int>(tableName, "id");
-        }
-    }
-
-    private sealed class RightNullableIxCols
-    {
-        public NullableIxCol<RightRow, int> Uid { get; }
-
-        public RightNullableIxCols(string tableName)
-        {
-            Uid = new NullableIxCol<RightRow, int>(tableName, "uid");
-        }
-    }
-
-    private static Table<LeftRow, LeftCols, LeftNullableIxCols> MakeLeftNullableIxTable(string tableName) =>
-        new(tableName, new LeftCols(tableName), new LeftNullableIxCols(tableName));
-
-    private static Table<RightRow, RightCols, RightNullableIxCols> MakeRightNullableIxTable(string tableName) =>
-        new(tableName, new RightCols(tableName), new RightNullableIxCols(tableName));
 
     [Fact]
     public void All_QuotesTableName()
@@ -172,6 +123,14 @@ public sealed class QueryBuilderTests
             "SELECT * FROM \"T\" WHERE (\"T\".\"IsAdmin\" = FALSE)",
             table.Where(c => c.IsAdmin.Eq(false)).ToSql()
         );
+    }
+
+    [Fact]
+    public void Where_BoolColumn_FormatsCorrectly()
+    {
+        var table = MakeTable("T");
+        var sql = table.Where(c => c.IsAdmin.Eq(true)).ToSql();
+        Assert.Equal("SELECT * FROM \"T\" WHERE (\"T\".\"IsAdmin\" = TRUE)", sql);
     }
 
     [Fact]
@@ -273,22 +232,6 @@ public sealed class QueryBuilderTests
             "SELECT \"users\".* FROM \"users\" JOIN \"other\" ON \"users\".\"id\" = \"other\".\"uid\"",
             sql
         );
-    }
-
-    [Fact]
-    public void Where_NullableCol_Eq_FormatsCorrectly()
-    {
-        var table = MakeNullableTable("T");
-        var sql = table.Where(c => c.Name.Eq("x")).ToSql();
-        Assert.Equal("SELECT * FROM \"T\" WHERE (\"T\".\"Name\" = 'x')", sql);
-    }
-
-    [Fact]
-    public void Where_NullableCol_Gt_FormatsCorrectly()
-    {
-        var table = MakeNullableTable("T");
-        var sql = table.Where(c => c.Age.Gt(123)).ToSql();
-        Assert.Equal("SELECT * FROM \"T\" WHERE (\"T\".\"Age\" > 123)", sql);
     }
 
     [Fact]

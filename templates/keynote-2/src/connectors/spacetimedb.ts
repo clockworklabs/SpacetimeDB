@@ -17,15 +17,6 @@ export function spacetimedb(
     });
   }
 
-  // --- reducer completion tracking  ------------------------
-  const transferWaiters = new Map<
-    bigint,
-    { resolve: () => void; reject: (e: unknown) => void }
-  >();
-
-  let nextTransferId = 1n;
-  let transferHooked = false;
-
   async function connectWithBindings() {
     if (!url) throw new Error('STDB_URL not set');
     if (!moduleName) throw new Error('STDB_MODULE not set');
@@ -48,53 +39,6 @@ export function spacetimedb(
       .onConnect((ctx) => {
         console.log('[stdb] connected');
         const conn = ctx;
-
-        const reducers = conn.reducers;
-
-        if (
-          process.env.USE_SPACETIME_METRICS_ENDPOINT === '0' &&
-          !transferHooked
-        ) {
-          transferHooked = true;
-          console.log('[stdb] hooking onTransfer');
-          (reducers as any).onTransfer(
-            (
-              eventCtx: any,
-              args: {
-                from: number;
-                to: number;
-                amount: bigint;
-                clientTxnId: bigint;
-              },
-            ) => {
-              const clientTxnId = args.clientTxnId;
-              // console.log('[stdb] onTransfer fired', { ...args, status: eventCtx?.event?.status });
-
-              const waiter = transferWaiters.get(clientTxnId);
-              if (!waiter) {
-                console.warn(
-                  '[stdb] no waiter for clientTxnId',
-                  clientTxnId.toString(),
-                );
-                return;
-              }
-
-              transferWaiters.delete(clientTxnId);
-
-              const status = eventCtx?.event?.status;
-
-              if (status?.tag === 'Committed') {
-                waiter.resolve();
-              } else if (status?.tag === 'Failed') {
-                waiter.reject(new Error(status?.value ?? 'transfer failed'));
-              } else if (status?.tag === 'OutOfEnergy') {
-                waiter.reject(new Error('transfer out of energy'));
-              } else {
-                waiter.reject(new Error('unknown transfer status'));
-              }
-            },
-          );
-        }
 
         resolveReady();
 
@@ -134,6 +78,7 @@ export function spacetimedb(
 
   return {
     name: 'spacetimedb',
+    maxInflightPerWorker: 16384,
 
     async open() {
       try {
@@ -146,19 +91,6 @@ export function spacetimedb(
     },
 
     async close() {
-      const err = new Error('SpacetimeDB connection closed');
-
-      // Fail any in-flight transfers
-      for (const waiter of transferWaiters.values()) {
-        try {
-          waiter.reject(err);
-        } catch {
-          /* ignore */
-        }
-      }
-      transferWaiters.clear();
-      transferHooked = false;
-
       try {
         conn.disconnect();
       } catch (e) {
@@ -178,52 +110,23 @@ export function spacetimedb(
       return worker;
     },
 
-    async reducer(fn: string, args: Record<string, any>) {
+    async call(fn: string, args: Record<string, any>) {
       await ready;
 
       switch (fn) {
         case 'seed': {
-          conn.reducers.seed({
-            n: args.n,
-            initialBalance: args.initial_balance,
+          return conn.reducers.seed({
+            n: args.accounts,
+            initialBalance: args.initialBalance,
           });
-          return;
-        }
-
-        case 'createAccount': {
-          conn.reducers.createAccount({ id: args.id, balance: args.balance });
-          return;
         }
 
         case 'transfer': {
-          const clientTxnId = nextTransferId++;
-
-          if (process.env.USE_SPACETIME_METRICS_ENDPOINT === '0') {
-            return new Promise<void>((resolve, reject) => {
-              const waiter = { resolve, reject };
-              transferWaiters.set(clientTxnId, waiter);
-
-              try {
-                conn.reducers.transfer({
-                  from: args.from,
-                  to: args.to,
-                  amount: args.amount,
-                  clientTxnId,
-                });
-              } catch (err) {
-                console.log(`ERROR ${err}`);
-                transferWaiters.delete(clientTxnId);
-                reject(err);
-              }
-            });
-          } else {
-            return conn.reducers.transfer({
-              from: args.from,
-              to: args.to,
-              amount: args.amount,
-              clientTxnId,
-            });
-          }
+          return conn.reducers.transfer({
+            from: args.from,
+            to: args.to,
+            amount: args.amount,
+          });
         }
 
         default:
@@ -261,7 +164,7 @@ export function spacetimedb(
         return;
       }
 
-      let initial = BigInt(rawInitial);
+      const initial = BigInt(rawInitial);
 
       const accounts = conn.db?.accounts;
       if (!accounts) {
