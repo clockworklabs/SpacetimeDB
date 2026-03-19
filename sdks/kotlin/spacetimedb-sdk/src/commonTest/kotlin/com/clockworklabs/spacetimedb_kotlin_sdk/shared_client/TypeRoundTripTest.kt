@@ -179,6 +179,20 @@ class TypeRoundTripTest {
     }
 
     @Test
+    fun timestampToISOStringPreEpoch() {
+        // 1 second before epoch
+        val ts = Timestamp.fromEpochMicroseconds(-1_000_000L)
+        assertEquals("1969-12-31T23:59:59.000000Z", ts.toISOString())
+    }
+
+    @Test
+    fun timestampToISOStringPreEpochFractional() {
+        // 0.5 seconds before epoch
+        val ts = Timestamp.fromEpochMicroseconds(-500_000L)
+        assertEquals("1969-12-31T23:59:59.500000Z", ts.toISOString())
+    }
+
+    @Test
     fun timestampToISOStringKnownDate() {
         // 2023-11-14T22:13:20.000000Z = 1_700_000_000_000_000 micros
         val ts = Timestamp.fromEpochMicroseconds(1_700_000_000_000_000L)
