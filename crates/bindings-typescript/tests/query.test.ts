@@ -54,9 +54,20 @@ const ordersTable = table(
   }
 );
 
+const renamedColumnsTable = table(
+  {
+    name: 'renamed_columns',
+  },
+  {
+    displayName: t.string().name('display_name'),
+    ageYears: t.u32().name('age_years'),
+  }
+);
+
 const schemaDef = tablesToSchema(new ModuleContext(), {
   person: personTable,
   orders: ordersTable,
+  renamedColumns: renamedColumnsTable,
 });
 
 describe('Timestamp thing', () => {
@@ -346,5 +357,18 @@ describe('TableScan.toSql', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = toSql(qb.person);
     expect(sql).toBe('SELECT * FROM "person"');
+  });
+
+  it('uses DB column names for accessors with explicit DB names', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(
+      qb.renamedColumns
+        .where(row => row.displayName.eq('Alice').and(row.ageYears.gt(30)))
+        .build()
+    );
+
+    expect(sql).toBe(
+      `SELECT * FROM "renamed_columns" WHERE ("renamed_columns"."display_name" = 'Alice') AND ("renamed_columns"."age_years" > 30)`
+    );
   });
 });

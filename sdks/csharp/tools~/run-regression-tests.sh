@@ -31,7 +31,6 @@ rm -rf "$SDK_PATH/examples~/regression-tests/procedure-client/module_bindings"/*
 # Publish module for procedure tests
 cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- publish -c -y --server local -p "$STDB_PATH/modules/sdk-test-procedure" procedure-tests
 
-
 # Run client for btree test
 cd "$SDK_PATH/examples~/regression-tests/client" && dotnet run -c Debug
 

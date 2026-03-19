@@ -10,7 +10,7 @@ use crate::repo::{
 };
 
 mod segment;
-pub use segment::Segment;
+pub use segment::{ReadOnlySegment, Segment};
 
 pub const PAGE_SIZE: usize = 4096;
 
@@ -52,7 +52,7 @@ impl fmt::Display for Memory {
 
 impl Repo for Memory {
     type SegmentWriter = Segment;
-    type SegmentReader = io::BufReader<Segment>;
+    type SegmentReader = ReadOnlySegment;
 
     fn create_segment(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
         let mut inner = self.segments.write().unwrap();
@@ -88,7 +88,7 @@ impl Repo for Memory {
     }
 
     fn open_segment_reader(&self, offset: u64) -> io::Result<Self::SegmentReader> {
-        self.open_segment_writer(offset).map(io::BufReader::new)
+        self.open_segment_writer(offset).map(Into::into)
     }
 
     fn remove_segment(&self, offset: u64) -> io::Result<()> {
