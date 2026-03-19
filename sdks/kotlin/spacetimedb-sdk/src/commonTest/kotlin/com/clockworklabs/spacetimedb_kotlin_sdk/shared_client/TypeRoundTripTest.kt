@@ -130,6 +130,24 @@ class TypeRoundTripTest {
     }
 
     @Test
+    fun timestampNegativeRoundTrip() {
+        // 1969-12-31T23:59:59.000000Z — 1 second before epoch
+        val ts = Timestamp.fromEpochMicroseconds(-1_000_000L)
+        val decoded = encodeDecode({ ts.encode(it) }, { Timestamp.decode(it) })
+        assertEquals(ts, decoded)
+        assertEquals(-1_000_000L, decoded.microsSinceUnixEpoch)
+    }
+
+    @Test
+    fun timestampNegativeWithMicrosRoundTrip() {
+        // Fractional negative: -0.5 seconds = -500_000 micros
+        val ts = Timestamp.fromEpochMicroseconds(-500_000L)
+        val decoded = encodeDecode({ ts.encode(it) }, { Timestamp.decode(it) })
+        assertEquals(ts, decoded)
+        assertEquals(-500_000L, decoded.microsSinceUnixEpoch)
+    }
+
+    @Test
     fun timestampPlusMinusDuration() {
         val ts = Timestamp.fromEpochMicroseconds(1_000_000L) // 1 second
         val dur = TimeDuration(500_000.microseconds) // 0.5 seconds
