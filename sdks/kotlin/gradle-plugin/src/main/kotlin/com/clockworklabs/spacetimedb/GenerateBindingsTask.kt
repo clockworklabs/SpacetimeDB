@@ -1,10 +1,12 @@
 package com.clockworklabs.spacetimedb
 
 import org.gradle.api.DefaultTask
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
-import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
@@ -22,9 +24,12 @@ abstract class GenerateBindingsTask @Inject constructor(
     @get:PathSensitive(PathSensitivity.ABSOLUTE)
     abstract val cli: RegularFileProperty
 
-    @get:InputDirectory
-    @get:PathSensitive(PathSensitivity.RELATIVE)
+    @get:Internal
     abstract val modulePath: DirectoryProperty
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val moduleSourceFiles: ConfigurableFileCollection
 
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
@@ -36,10 +41,27 @@ abstract class GenerateBindingsTask @Inject constructor(
 
     @TaskAction
     fun generate() {
+        val moduleDir = modulePath.get().asFile
+        require(moduleDir.isDirectory) {
+            "SpacetimeDB module directory not found at '${moduleDir.absolutePath}'. " +
+            "Set the correct path via: spacetimedb { modulePath.set(file(\"/path/to/module\")) }"
+        }
+
         val outDir = outputDir.get().asFile
         outDir.mkdirs()
 
-        val cliPath = if (cli.isPresent) cli.get().asFile.absolutePath else "spacetimedb-cli"
+        val cliPath = if (cli.isPresent) {
+            cli.get().asFile.absolutePath
+        } else {
+            val found = System.getenv("PATH")?.split(java.io.File.pathSeparator)
+                ?.map { java.io.File(it, "spacetimedb-cli") }
+                ?.firstOrNull { it.canExecute() }
+            requireNotNull(found) {
+                "spacetimedb-cli not found on PATH. Install it from https://spacetimedb.com " +
+                "or set the path explicitly via: spacetimedb { cli.set(file(\"/path/to/spacetimedb-cli\")) }"
+            }
+            found.absolutePath
+        }
 
         execOps.exec { spec ->
             spec.commandLine(

@@ -12,10 +12,6 @@ application {
     mainClass.set("MainKt")
 }
 
-spacetimedb {
-    modulePath.set(layout.projectDirectory.dir("spacetimedb"))
-}
-
 dependencies {
     implementation(libs.spacetimedb.sdk)
     implementation(libs.kotlinx.coroutines.core)

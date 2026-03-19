@@ -37,7 +37,3 @@ kotlin {
         }
     }
 }
-
-spacetimedb {
-    modulePath.set(rootProject.layout.projectDirectory.dir("spacetimedb"))
-}

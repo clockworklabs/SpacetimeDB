@@ -11,7 +11,7 @@ class SpacetimeDbPlugin : Plugin<Project> {
     override fun apply(project: Project) {
         val ext = project.extensions.create("spacetimedb", SpacetimeDbExtension::class.java)
 
-        ext.modulePath.convention(project.layout.projectDirectory.dir("spacetimedb"))
+        ext.modulePath.convention(project.rootProject.layout.projectDirectory.dir("spacetimedb"))
 
         val generatedDir = project.layout.buildDirectory.dir("generated/spacetimedb")
 
@@ -21,11 +21,16 @@ class SpacetimeDbPlugin : Plugin<Project> {
             it.description = "Clean SpacetimeDB module build artifacts"
             it.delete(ext.modulePath.map { dir -> dir.dir("target") })
         }
-        project.tasks.named("clean") { it.dependsOn("cleanSpacetimeModule") }
+        project.plugins.withType(org.gradle.api.plugins.BasePlugin::class.java) {
+            project.tasks.named("clean") { it.dependsOn("cleanSpacetimeModule") }
+        }
 
         val generateTask = project.tasks.register("generateSpacetimeBindings", GenerateBindingsTask::class.java) {
             it.cli.set(ext.cli)
             it.modulePath.set(ext.modulePath)
+            it.moduleSourceFiles.from(ext.modulePath.map { dir ->
+                project.fileTree(dir) { tree -> tree.exclude("target") }
+            })
             it.outputDir.set(generatedDir)
         }
 
@@ -48,7 +53,7 @@ class SpacetimeDbPlugin : Plugin<Project> {
                 .kotlin
                 .srcDir(generatedDir)
 
-            project.tasks.matching { it.name.startsWith("compile") }.configureEach {
+            project.tasks.withType(org.jetbrains.kotlin.gradle.tasks.AbstractKotlinCompileTool::class.java).configureEach {
                 it.dependsOn(generateTask)
             }
         }
