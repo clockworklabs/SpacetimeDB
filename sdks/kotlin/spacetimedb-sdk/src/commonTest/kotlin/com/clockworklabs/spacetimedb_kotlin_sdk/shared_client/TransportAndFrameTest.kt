@@ -444,4 +444,37 @@ class TransportAndFrameTest {
         assertNull(conn.identity)
         conn.disconnect()
     }
+
+    // --- Protocol validation ---
+
+    @Test
+    fun invalidProtocolThrowsOnConnect() = runTest {
+        val transport = com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.transport.SpacetimeTransport(
+            client = HttpClient(),
+            baseUrl = "ftp://example.com",
+            nameOrAddress = "test",
+            connectionId = ConnectionId.random(),
+        )
+        val conn = DbConnection(
+            transport = transport,
+            httpClient = HttpClient(),
+            scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)),
+            onConnectCallbacks = emptyList(),
+            onDisconnectCallbacks = emptyList(),
+            onConnectErrorCallbacks = emptyList(),
+            clientConnectionId = ConnectionId.random(),
+            stats = Stats(),
+            moduleDescriptor = null,
+            callbackDispatcher = null,
+        )
+        var connectError: Throwable? = null
+        conn.onConnectError { _, err -> connectError = err }
+
+        conn.connect()
+        advanceUntilIdle()
+
+        assertNotNull(connectError)
+        assertTrue(connectError!!.message!!.contains("Unsupported protocol"))
+        assertFalse(conn.isActive)
+    }
 }

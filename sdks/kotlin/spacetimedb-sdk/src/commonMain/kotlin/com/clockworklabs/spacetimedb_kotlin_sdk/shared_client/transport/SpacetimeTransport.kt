@@ -112,7 +112,11 @@ public class SpacetimeTransport(
             protocol = when (base.protocol) {
                 URLProtocol.HTTPS -> URLProtocol.WSS
                 URLProtocol.HTTP -> URLProtocol.WS
-                else -> base.protocol
+                URLProtocol.WSS -> URLProtocol.WSS
+                URLProtocol.WS -> URLProtocol.WS
+                else -> throw IllegalArgumentException(
+                    "Unsupported protocol '${base.protocol.name}'. Use http://, https://, ws://, or wss://"
+                )
             }
             appendPathSegments("v1", "database", nameOrAddress, "subscribe")
             parameters.append("connection_id", connectionId.toHexString())
