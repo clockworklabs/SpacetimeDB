@@ -435,6 +435,11 @@ metrics_group!(
         #[help = "Total number of subscription queries by scan strategy"]
         #[labels(db: Identity, scan_type: str, table: str, unindexed_columns: str)]
         pub subscription_queries_total: IntCounterVec,
+
+        #[name = spacetime_durability_worker_reorder_window_length]
+        #[help = "The number of transactions currently being held in the reorder window"]
+        #[labels(db: Identity)]
+        pub durability_worker_reorder_window_length: IntGaugeVec,
     }
 );
 
