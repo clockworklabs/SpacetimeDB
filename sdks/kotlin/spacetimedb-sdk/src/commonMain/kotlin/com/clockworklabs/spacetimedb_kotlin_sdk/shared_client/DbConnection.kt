@@ -831,9 +831,9 @@ public open class DbConnection internal constructor(
         private var compression: CompressionMode = defaultCompressionMode
         private var lightMode: Boolean = false
         private var confirmedReads: Boolean? = null
-        private val onConnectCallbacks = atomic(persistentListOf<(DbConnectionView, Identity, String) -> Unit>())
-        private val onDisconnectCallbacks = atomic(persistentListOf<(DbConnectionView, Throwable?) -> Unit>())
-        private val onConnectErrorCallbacks = atomic(persistentListOf<(DbConnectionView, Throwable) -> Unit>())
+        private val onConnectCallbacks = mutableListOf<(DbConnectionView, Identity, String) -> Unit>()
+        private val onDisconnectCallbacks = mutableListOf<(DbConnectionView, Throwable?) -> Unit>()
+        private val onConnectErrorCallbacks = mutableListOf<(DbConnectionView, Throwable) -> Unit>()
         private var module: ModuleDescriptor? = null
         private var callbackDispatcher: CoroutineDispatcher? = null
         private var httpClient: HttpClient? = null
@@ -873,13 +873,13 @@ public open class DbConnection internal constructor(
         public fun withModule(descriptor: ModuleDescriptor): Builder = apply { module = descriptor }
 
         public fun onConnect(cb: (DbConnectionView, Identity, String) -> Unit): Builder =
-            apply { onConnectCallbacks.update { it.add(cb) } }
+            apply { onConnectCallbacks.add(cb) }
 
         public fun onDisconnect(cb: (DbConnectionView, Throwable?) -> Unit): Builder =
-            apply { onDisconnectCallbacks.update { it.add(cb) } }
+            apply { onDisconnectCallbacks.add(cb) }
 
         public fun onConnectError(cb: (DbConnectionView, Throwable) -> Unit): Builder =
-            apply { onConnectErrorCallbacks.update { it.add(cb) } }
+            apply { onConnectErrorCallbacks.add(cb) }
 
         public suspend fun build(): DbConnection {
             module?.let { ensureMinimumVersion(it.cliVersion) }
@@ -910,9 +910,9 @@ public open class DbConnection internal constructor(
                 transport = transport,
                 httpClient = resolvedClient,
                 scope = scope,
-                onConnectCallbacks = onConnectCallbacks.value,
-                onDisconnectCallbacks = onDisconnectCallbacks.value,
-                onConnectErrorCallbacks = onConnectErrorCallbacks.value,
+                onConnectCallbacks = onConnectCallbacks,
+                onDisconnectCallbacks = onDisconnectCallbacks,
+                onConnectErrorCallbacks = onConnectErrorCallbacks,
                 clientConnectionId = clientConnectionId,
                 stats = stats,
                 moduleDescriptor = module,
