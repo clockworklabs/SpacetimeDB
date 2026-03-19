@@ -107,6 +107,14 @@ pub trait Repo: Clone + fmt::Display {
     /// will be caught by [`resume_segment_writer`].
     fn open_segment_writer(&self, offset: u64) -> io::Result<Self::SegmentWriter>;
 
+    /// Return a path-like identifier for debugging logs.
+    ///
+    /// This is optional and only used to enrich error messages when segment
+    /// operations fail.
+    fn segment_file_path(&self, _offset: u64) -> Option<String> {
+        None
+    }
+
     /// Remove the segment at the minimum transaction offset `offset`.
     ///
     /// Return [`io::ErrorKind::NotFound`] if no such segment exists.
@@ -252,7 +260,9 @@ pub fn resume_segment_writer<R: Repo>(
     opts: Options,
     offset: u64,
 ) -> io::Result<Result<Writer<R::SegmentWriter>, Metadata>> {
-    let mut reader = repo.open_segment_reader(offset)?;
+    let mut reader = repo
+        .open_segment_reader(offset)
+        .map_err(|source| with_segment_context("opening segment for resume", repo, offset, source))?;
     let offset_index = repo.get_offset_index(offset).ok();
     let meta = match Metadata::extract(offset, &mut reader, offset_index.as_ref()) {
         Err(error::SegmentMetadata::InvalidCommit { sofar, source }) => {
@@ -260,19 +270,30 @@ pub fn resume_segment_writer<R: Repo>(
             debug!("sofar={sofar:?}");
             return Ok(Err(sofar));
         }
-        Err(error::SegmentMetadata::Io(e)) => return Err(e),
+        Err(error::SegmentMetadata::Io(e)) => {
+            return Err(with_segment_context("extracting segment metadata", repo, offset, e));
+        }
         Ok(meta) => meta,
     };
     meta.header
         .ensure_compatible(opts.log_format_version, Commit::CHECKSUM_ALGORITHM)
-        .map_err(|msg| io::Error::new(io::ErrorKind::InvalidData, msg))?;
+        .map_err(|msg| {
+            with_segment_context(
+                "checking segment compatibility",
+                repo,
+                offset,
+                io::Error::new(io::ErrorKind::InvalidData, msg),
+            )
+        })?;
     // When resuming, the log format version must be equal.
     if meta.header.log_format_version != opts.log_format_version {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!(
-                "log format version mismatch: current={} segment={}",
-                opts.log_format_version, meta.header.log_format_version
+                "{}: log format version mismatch: current={} segment={}",
+                segment_label(repo, offset),
+                opts.log_format_version,
+                meta.header.log_format_version
             ),
         ));
     }
@@ -324,9 +345,25 @@ pub fn open_segment_reader<R: Repo>(
     max_log_format_version: u8,
     offset: u64,
 ) -> io::Result<Reader<R::SegmentReader>> {
-    debug!("open segment reader at {offset}");
-    let storage = repo.open_segment_reader(offset)?;
+    let segment = segment_label(repo, offset);
+    debug!("open segment reader for {segment}");
+    let storage = repo
+        .open_segment_reader(offset)
+        .map_err(|source| with_segment_context("opening segment for read", repo, offset, source))?;
     Reader::new(max_log_format_version, offset, storage)
+        .map_err(|source| with_segment_context("reading segment header", repo, offset, source))
+}
+
+fn segment_label<R: Repo>(repo: &R, offset: u64) -> String {
+    repo.segment_file_path(offset)
+        .unwrap_or_else(|| format!("offset {offset}"))
+}
+
+fn with_segment_context<R: Repo>(context: &'static str, repo: &R, offset: u64, source: io::Error) -> io::Error {
+    io::Error::new(
+        source.kind(),
+        format!("{} [{}]: {}", segment_label(repo, offset), context, source),
+    )
 }
 
 /// Allocate [Options::max_segment_size] of space for [FileLike]
