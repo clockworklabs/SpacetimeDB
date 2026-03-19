@@ -69,7 +69,7 @@ use spacetimedb_schema::table_name::TableName;
 use spacetimedb_vm::relation::RelValue;
 use std::collections::VecDeque;
 use std::fmt;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
@@ -753,6 +753,8 @@ impl CallProcedureParams {
 struct ModuleInstanceManager<M: GenericModule> {
     instances: Mutex<VecDeque<M::Instance>>,
     module: M,
+    instance_count: AtomicUsize,
+    module_instances_metric: ModuleInstancesMetric,
     create_instance_time_metric: CreateInstanceTimeMetric,
 }
 
@@ -760,6 +762,14 @@ struct ModuleInstanceManager<M: GenericModule> {
 /// which calls `remove_label_values` to clean up on drop.
 struct CreateInstanceTimeMetric {
     metric: Histogram,
+    host_type: HostType,
+    database_identity: Identity,
+}
+
+/// Handle on the `spacetime_module_instances` label for a particular database
+/// which calls `remove_label_values` to clean up on drop.
+struct ModuleInstancesMetric {
+    metric: IntGauge,
     host_type: HostType,
     database_identity: Identity,
 }
@@ -772,6 +782,20 @@ impl Drop for CreateInstanceTimeMetric {
     }
 }
 
+impl Drop for ModuleInstancesMetric {
+    fn drop(&mut self) {
+        let _ = WORKER_METRICS
+            .module_instances
+            .remove_label_values(&self.database_identity, &self.host_type);
+    }
+}
+
+impl ModuleInstancesMetric {
+    fn set(&self, n: usize) {
+        self.metric.set(n as i64);
+    }
+}
+
 impl CreateInstanceTimeMetric {
     fn observe(&self, duration: std::time::Duration) {
         self.metric.observe(duration.as_secs_f64());
@@ -781,6 +805,14 @@ impl CreateInstanceTimeMetric {
 impl<M: GenericModule> ModuleInstanceManager<M> {
     fn new(module: M, init_inst: M::Instance, database_identity: Identity) -> Self {
         let host_type = module.host_type();
+        let module_instances_metric = ModuleInstancesMetric {
+            metric: WORKER_METRICS
+                .module_instances
+                .with_label_values(&database_identity, &host_type),
+            host_type,
+            database_identity,
+        };
+
         let create_instance_time_metric = CreateInstanceTimeMetric {
             metric: WORKER_METRICS
                 .module_create_instance_time_seconds
@@ -793,11 +825,15 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
         let mut instances = VecDeque::new();
         instances.push_front(init_inst);
 
-        Self {
+        let manager = Self {
             instances: Mutex::new(instances),
             module,
+            instance_count: AtomicUsize::new(1),
+            module_instances_metric,
             create_instance_time_metric,
-        }
+        };
+        manager.module_instances_metric.set(1);
+        manager
     }
 
     async fn with_instance<R>(&self, f: impl AsyncFnOnce(M::Instance) -> (R, M::Instance)) -> R {
@@ -816,6 +852,7 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             let res = self.module.create_instance().await;
             let elapsed_time = start_time.elapsed();
             self.create_instance_time_metric.observe(elapsed_time);
+            self.instance_count.fetch_add(1, Ordering::AcqRel);
             res
         }
     }
@@ -825,6 +862,7 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             // Don't return trapped instances;
             // they may have left internal data structures in the guest `Instance`
             // (WASM linear memory, V8 global scope) in a bad state.
+            self.instance_count.fetch_sub(1, Ordering::AcqRel);
             return;
         }
 
