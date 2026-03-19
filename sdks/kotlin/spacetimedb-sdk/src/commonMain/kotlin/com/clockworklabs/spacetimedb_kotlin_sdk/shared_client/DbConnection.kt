@@ -406,7 +406,12 @@ public open class DbConnection internal constructor(
             queryStrings = queries,
         )
         Logger.debug { "Subscribing with ${queries.size} queries (requestId=$requestId)" }
-        sendMessage(message)
+        if (!sendMessage(message)) {
+            subscriptions.update { it.remove(querySetId.id) }
+            querySetIdToRequestId.update { it.remove(querySetId.id) }
+            stats.subscriptionRequestTracker.finishTrackingRequest(requestId)
+            handle.markEnded()
+        }
         return handle
     }
 
@@ -420,7 +425,9 @@ public open class DbConnection internal constructor(
             querySetId = handle.querySetId,
             flags = flags,
         )
-        sendMessage(message)
+        if (!sendMessage(message)) {
+            stats.subscriptionRequestTracker.finishTrackingRequest(requestId)
+        }
     }
 
     // --- Reducers ---
@@ -455,7 +462,11 @@ public open class DbConnection internal constructor(
             args = encodedArgs,
         )
         Logger.debug { "Calling reducer '$reducerName' (requestId=$requestId)" }
-        sendMessage(message)
+        if (!sendMessage(message)) {
+            reducerCallbacks.update { it.remove(requestId) }
+            reducerCallInfo.update { it.remove(requestId) }
+            stats.reducerRequestTracker.finishTrackingRequest(requestId)
+        }
         return requestId
     }
 
@@ -482,7 +493,10 @@ public open class DbConnection internal constructor(
             args = args,
         )
         Logger.debug { "Calling procedure '$procedureName' (requestId=$requestId)" }
-        sendMessage(message)
+        if (!sendMessage(message)) {
+            procedureCallbacks.update { it.remove(requestId) }
+            stats.procedureRequestTracker.finishTrackingRequest(requestId)
+        }
         return requestId
     }
 
@@ -503,7 +517,10 @@ public open class DbConnection internal constructor(
             queryString = queryString,
         )
         Logger.debug { "Executing one-off query (requestId=$requestId)" }
-        sendMessage(message)
+        if (!sendMessage(message)) {
+            oneOffQueryCallbacks.update { it.remove(requestId) }
+            stats.oneOffRequestTracker.finishTrackingRequest(requestId)
+        }
         return requestId
     }
 
