@@ -239,6 +239,8 @@ pub struct TxData {
 
 impl TxData {
     /// Set `tx_offset` as the expected on-disk transaction offset of this transaction.
+    ///
+    /// Panics if the offset has already been set for this transaction.
     pub fn set_tx_offset(&mut self, tx_offset: u64) {
         assert!(self.tx_offset.is_none());
         self.tx_offset = Some(tx_offset);
