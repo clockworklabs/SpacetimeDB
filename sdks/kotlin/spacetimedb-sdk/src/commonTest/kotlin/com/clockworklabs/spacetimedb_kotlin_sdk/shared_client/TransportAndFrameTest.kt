@@ -14,6 +14,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertContains
 import kotlin.test.assertTrue
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -474,7 +475,7 @@ class TransportAndFrameTest {
         advanceUntilIdle()
 
         val err = assertNotNull(connectError)
-        assertTrue(assertNotNull(err.message).contains("Unsupported protocol"))
+        assertContains(assertNotNull(err.message), "Unsupported protocol")
         assertFalse(conn.isActive)
     }
 }

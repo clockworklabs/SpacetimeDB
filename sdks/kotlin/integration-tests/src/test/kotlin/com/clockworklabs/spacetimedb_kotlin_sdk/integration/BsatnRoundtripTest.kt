@@ -10,6 +10,7 @@ import module_bindings.Reminder
 import module_bindings.User
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
@@ -250,7 +251,7 @@ class BsatnRoundtripTest {
         original.encode(writer)
         val reader = BsatnReader(writer.toByteArray())
         val decoded = ScheduleAt.decode(reader)
-        assertTrue(decoded is ScheduleAt.Time, "Should decode as Time")
+        assertIs<ScheduleAt.Time>(decoded, "Should decode as Time")
         assertEquals(
             original.timestamp.microsSinceUnixEpoch,
             decoded.timestamp.microsSinceUnixEpoch

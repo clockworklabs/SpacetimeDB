@@ -9,6 +9,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class MultiClientTest {
@@ -238,7 +239,7 @@ class MultiClientTest {
 
         a.conn.reducers.sendMessage(tag)
         val ctx = withTimeout(DEFAULT_TIMEOUT_MS) { ctxSeen.await() }
-        assertTrue(ctx is EventContext.Reducer<*>, "Own reducer should produce Reducer context, got: ${ctx::class.simpleName}")
+        assertIs<EventContext.Reducer<*>>(ctx, "Own reducer should produce Reducer context, got: ${ctx::class.simpleName}")
         assertEquals(a.identity, ctx.callerIdentity)
 
         cleanupBoth(a, b)

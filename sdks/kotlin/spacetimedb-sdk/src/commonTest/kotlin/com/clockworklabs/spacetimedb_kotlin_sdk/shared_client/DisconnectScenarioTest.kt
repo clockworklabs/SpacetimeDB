@@ -18,6 +18,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -46,7 +47,7 @@ class DisconnectScenarioTest {
 
         // Callback should have been invoked with an error
         val result = assertNotNull(callbackResult)
-        assertTrue(result.result is QueryResult.Err)
+        assertIs<QueryResult.Err>(result.result)
     }
 
     @Test
@@ -102,7 +103,7 @@ class DisconnectScenarioTest {
         assertTrue(subHandle.isEnded)
         assertFalse(reducerFired) // Reducer callback never fires — it was discarded
         val qResult = assertNotNull(queryResult) // One-off query callback fires with error
-        assertTrue(qResult.result is QueryResult.Err)
+        assertIs<QueryResult.Err>(qResult.result)
     }
 
     @Test

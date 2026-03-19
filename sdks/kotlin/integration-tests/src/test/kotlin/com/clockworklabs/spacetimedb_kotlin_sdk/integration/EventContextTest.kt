@@ -8,6 +8,7 @@ import module_bindings.reducers
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class EventContextTest {
@@ -76,7 +77,7 @@ class EventContextTest {
         client.conn.reducers.setName("")
 
         val s = withTimeout(DEFAULT_TIMEOUT_MS) { statusDeferred.await() }
-        assertTrue(s is Status.Failed, "Empty name reducer should have Status.Failed, got: $s")
+        assertIs<Status.Failed>(s, "Empty name reducer should have Status.Failed, got: $s")
         val failedMsg = s.message
         assertTrue(failedMsg.isNotEmpty(), "Failed status should have a message: $failedMsg")
 
