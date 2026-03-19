@@ -41,11 +41,11 @@ class ChatRepository(
     private val tokenStore: TokenStore,
     private val host: String,
 ) {
-    private var conn: DbConnection? = null
-    private var mainSubHandle: SubscriptionHandle? = null
-    private var noteSubHandle: SubscriptionHandle? = null
-    private var localIdentity: Identity? = null
-    private var clientId: String? = null
+    @Volatile private var conn: DbConnection? = null
+    @Volatile private var mainSubHandle: SubscriptionHandle? = null
+    @Volatile private var noteSubHandle: SubscriptionHandle? = null
+    @Volatile private var localIdentity: Identity? = null
+    @Volatile private var clientId: String? = null
 
     private val _connected = MutableStateFlow(false)
     val connected: StateFlow<Boolean> = _connected.asStateFlow()

@@ -150,8 +150,10 @@ class AppViewModel(
 
     private fun handleLogout() {
         observationJob?.cancel()
-        viewModelScope.launch { chatRepository.disconnect() }
-        _state.update { AppState.Login() }
+        viewModelScope.launch {
+            chatRepository.disconnect()
+            _state.update { AppState.Login() }
+        }
     }
 
     private fun observeRepository() {

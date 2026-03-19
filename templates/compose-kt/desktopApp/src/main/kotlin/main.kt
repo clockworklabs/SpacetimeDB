@@ -7,6 +7,7 @@ import app.composable.App
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.websocket.WebSockets
+import kotlinx.coroutines.runBlocking
 
 fun main() = application {
     val httpClient = HttpClient(OkHttp) { install(WebSockets) }
@@ -14,7 +15,11 @@ fun main() = application {
     val repository = ChatRepository(httpClient, tokenStore, host = "ws://localhost:3000")
     val viewModel = AppViewModel(repository)
     Window(
-        onCloseRequest = ::exitApplication,
+        onCloseRequest = {
+            runBlocking { repository.disconnect() }
+            httpClient.close()
+            exitApplication()
+        },
         title = "SpacetimeDB Chat",
     ) {
         App(viewModel)
