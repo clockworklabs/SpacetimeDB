@@ -31,7 +31,9 @@ suspend fun main() {
                 println("[onAdd] Added person: $name (status=${ctx.status})")
             }
 
-            conn.subscribeToAllTables()
+            conn.subscribeToAllTables(
+                onError = { _, error -> println("Subscription error: $error") }
+            )
 
             conn.reducers.add("Alice") { ctx ->
                 println("[one-shot] Add completed: status=${ctx.status}")
