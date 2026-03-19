@@ -53,23 +53,27 @@ abstract class GenerateBindingsTask @Inject constructor(
         val cliPath = if (cli.isPresent) {
             cli.get().asFile.absolutePath
         } else {
-            val found = System.getenv("PATH")?.split(java.io.File.pathSeparator)
-                ?.map { java.io.File(it, "spacetimedb-cli") }
-                ?.firstOrNull { it.canExecute() }
-            requireNotNull(found) {
-                "spacetimedb-cli not found on PATH. Install it from https://spacetimedb.com " +
-                "or set the path explicitly via: spacetimedb { cli.set(file(\"/path/to/spacetimedb-cli\")) }"
-            }
-            found.absolutePath
+            "spacetimedb-cli"
         }
 
-        execOps.exec { spec ->
-            spec.commandLine(
-                cliPath, "generate",
-                "--lang", "kotlin",
-                "--out-dir", outDir.absolutePath,
-                "--module-path", modulePath.get().asFile.absolutePath,
-            )
+        try {
+            execOps.exec { spec ->
+                spec.commandLine(
+                    cliPath, "generate",
+                    "--lang", "kotlin",
+                    "--out-dir", outDir.absolutePath,
+                    "--module-path", modulePath.get().asFile.absolutePath,
+                )
+            }
+        } catch (e: org.gradle.process.internal.ExecException) {
+            if (!cli.isPresent && e.cause is java.io.IOException) {
+                throw org.gradle.api.GradleException(
+                    "spacetimedb-cli not found on PATH. Install it from https://spacetimedb.com " +
+                    "or set the path explicitly via: spacetimedb { cli.set(file(\"/path/to/spacetimedb-cli\")) }",
+                    e
+                )
+            }
+            throw e
         }
     }
 }
