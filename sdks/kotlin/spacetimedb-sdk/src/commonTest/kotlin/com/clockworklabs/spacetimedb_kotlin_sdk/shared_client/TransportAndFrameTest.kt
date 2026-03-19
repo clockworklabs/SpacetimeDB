@@ -473,8 +473,8 @@ class TransportAndFrameTest {
         conn.connect()
         advanceUntilIdle()
 
-        assertNotNull(connectError)
-        assertTrue(connectError!!.message!!.contains("Unsupported protocol"))
+        val err = assertNotNull(connectError)
+        assertTrue(assertNotNull(err.message).contains("Unsupported protocol"))
         assertFalse(conn.isActive)
     }
 }

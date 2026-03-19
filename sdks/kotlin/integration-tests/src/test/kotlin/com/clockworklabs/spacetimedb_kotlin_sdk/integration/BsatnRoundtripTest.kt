@@ -251,7 +251,6 @@ class BsatnRoundtripTest {
         val reader = BsatnReader(writer.toByteArray())
         val decoded = ScheduleAt.decode(reader)
         assertTrue(decoded is ScheduleAt.Time, "Should decode as Time")
-        decoded as ScheduleAt.Time
         assertEquals(
             original.timestamp.microsSinceUnixEpoch,
             decoded.timestamp.microsSinceUnixEpoch

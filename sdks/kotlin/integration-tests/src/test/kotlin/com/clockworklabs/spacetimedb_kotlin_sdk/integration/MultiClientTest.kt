@@ -239,7 +239,7 @@ class MultiClientTest {
         a.conn.reducers.sendMessage(tag)
         val ctx = withTimeout(DEFAULT_TIMEOUT_MS) { ctxSeen.await() }
         assertTrue(ctx is EventContext.Reducer<*>, "Own reducer should produce Reducer context, got: ${ctx::class.simpleName}")
-        assertEquals(a.identity, (ctx as EventContext.Reducer<*>).callerIdentity)
+        assertEquals(a.identity, ctx.callerIdentity)
 
         cleanupBoth(a, b)
     }

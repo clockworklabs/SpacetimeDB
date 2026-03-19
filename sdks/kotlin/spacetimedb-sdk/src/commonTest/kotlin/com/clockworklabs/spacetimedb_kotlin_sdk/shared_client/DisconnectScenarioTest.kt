@@ -45,8 +45,8 @@ class DisconnectScenarioTest {
         advanceUntilIdle()
 
         // Callback should have been invoked with an error
-        assertNotNull(callbackResult)
-        assertTrue(callbackResult!!.result is QueryResult.Err)
+        val result = assertNotNull(callbackResult)
+        assertTrue(result.result is QueryResult.Err)
     }
 
     @Test
@@ -101,8 +101,8 @@ class DisconnectScenarioTest {
         // All pending operations should be cleaned up
         assertTrue(subHandle.isEnded)
         assertFalse(reducerFired) // Reducer callback never fires — it was discarded
-        assertNotNull(queryResult) // One-off query callback fires with error
-        assertTrue(queryResult!!.result is QueryResult.Err)
+        val qResult = assertNotNull(queryResult) // One-off query callback fires with error
+        assertTrue(qResult.result is QueryResult.Err)
     }
 
     @Test

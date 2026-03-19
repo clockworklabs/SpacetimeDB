@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -395,9 +396,9 @@ class ConcurrencyStressTest {
 
         assertEquals(totalOps, tracker.sampleCount)
         // Min must be 1ms (smallest sample), max must be OPS_PER_THREAD ms
-        val result = tracker.allTimeMinMax
-        assertTrue(result != null && result.min.duration == 1.milliseconds, "allTimeMin wrong: ${result?.min}")
-        assertTrue(result != null && result.max.duration == OPS_PER_THREAD.milliseconds, "allTimeMax wrong: ${result?.max}")
+        val result = assertNotNull(tracker.allTimeMinMax, "allTimeMinMax should not be null after $totalOps samples")
+        assertEquals(1.milliseconds, result.min.duration, "allTimeMin wrong: ${result.min}")
+        assertEquals(OPS_PER_THREAD.milliseconds, result.max.duration, "allTimeMax wrong: ${result.max}")
     }
 
     // ---- Logger: concurrent level/handler read/write ----

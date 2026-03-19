@@ -77,7 +77,6 @@ class EventContextTest {
 
         val s = withTimeout(DEFAULT_TIMEOUT_MS) { statusDeferred.await() }
         assertTrue(s is Status.Failed, "Empty name reducer should have Status.Failed, got: $s")
-        s as Status.Failed
         val failedMsg = s.message
         assertTrue(failedMsg.isNotEmpty(), "Failed status should have a message: $failedMsg")
 

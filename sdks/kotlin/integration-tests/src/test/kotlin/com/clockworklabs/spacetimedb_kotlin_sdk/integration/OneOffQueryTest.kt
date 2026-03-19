@@ -33,7 +33,7 @@ class OneOffQueryTest {
 
         val qr = withTimeout(DEFAULT_TIMEOUT_MS) { result.await() }
         assertTrue(qr is QueryResult.Err, "Invalid SQL should return QueryResult.Err, got: $qr")
-        assertTrue((qr as QueryResult.Err).error.isNotEmpty(), "Error message should be non-empty")
+        assertTrue(qr.error.isNotEmpty(), "Error message should be non-empty")
 
         client.conn.disconnect()
     }
@@ -71,7 +71,6 @@ class OneOffQueryTest {
         }
         val qr = msg.result
         assertTrue(qr is QueryResult.Ok, "Should return Ok")
-        qr as QueryResult.Ok
         // We are connected, so at least our own user row should exist
         assertTrue(qr.rows.tables.isNotEmpty(), "Should have at least 1 table in result")
         assertTrue(qr.rows.tables[0].rows.rowsSize > 0, "Should have row data bytes for populated table")
