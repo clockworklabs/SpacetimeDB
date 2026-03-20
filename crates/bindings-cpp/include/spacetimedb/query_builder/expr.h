@@ -178,14 +178,17 @@ public:
         return format_node(root_);
     }
 
+    // Trailing underscore to avoid conflicting with C++ keyword
     [[nodiscard]] BoolExpr and_(const BoolExpr& other) const {
         return BoolExpr(std::make_shared<Node>(Kind::And, root_, other.root_));
     }
 
+    // Trailing underscore to avoid conflicting with C++ keyword
     [[nodiscard]] BoolExpr or_(const BoolExpr& other) const {
         return BoolExpr(std::make_shared<Node>(Kind::Or, root_, other.root_));
     }
 
+    // Trailing underscore to avoid conflicting with C++ keyword
     [[nodiscard]] BoolExpr not_() const {
         return BoolExpr(std::make_shared<Node>(Kind::Not, root_, nullptr));
     }
