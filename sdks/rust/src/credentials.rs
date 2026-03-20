@@ -8,7 +8,7 @@
 //! }
 //! ```
 
-#[cfg(not(feature = "wasm"))]
+#[cfg(not(feature = "browser"))]
 mod native_mod {
     use home::home_dir;
     use spacetimedb_lib::{bsatn, de::Deserialize, ser::Serialize};
