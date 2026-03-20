@@ -752,6 +752,7 @@ impl CallProcedureParams {
 struct ModuleInstanceManager<M: GenericModule> {
     instances: Mutex<VecDeque<M::Instance>>,
     module: M,
+    module_instances_metric: ModuleInstancesMetric,
     create_instance_time_metric: CreateInstanceTimeMetric,
 }
 
@@ -763,11 +764,45 @@ struct CreateInstanceTimeMetric {
     database_identity: Identity,
 }
 
+/// Handle on the `spacetime_module_instances` label for a particular database
+/// which calls `remove_label_values` to clean up on drop.
+struct ModuleInstancesMetric {
+    metric: IntGauge,
+    host_type: HostType,
+    database_identity: Identity,
+    count: std::sync::Mutex<i64>,
+}
+
 impl Drop for CreateInstanceTimeMetric {
     fn drop(&mut self) {
         let _ = WORKER_METRICS
             .module_create_instance_time_seconds
             .remove_label_values(&self.database_identity, &self.host_type);
+    }
+}
+
+impl Drop for ModuleInstancesMetric {
+    fn drop(&mut self) {
+        let _ = WORKER_METRICS
+            .module_instances
+            .remove_label_values(&self.database_identity, &self.host_type);
+    }
+}
+
+impl ModuleInstancesMetric {
+    fn inc(&self) {
+        let mut count = self.count.lock().unwrap();
+        *count += 1;
+        self.metric.set(*count);
+    }
+
+    fn dec(&self) {
+        let mut count = self.count.lock().unwrap();
+        if *count == 0 {
+            return;
+        }
+        *count -= 1;
+        self.metric.set(*count);
     }
 }
 
@@ -780,6 +815,15 @@ impl CreateInstanceTimeMetric {
 impl<M: GenericModule> ModuleInstanceManager<M> {
     fn new(module: M, init_inst: M::Instance, database_identity: Identity) -> Self {
         let host_type = module.host_type();
+        let module_instances_metric = ModuleInstancesMetric {
+            metric: WORKER_METRICS
+                .module_instances
+                .with_label_values(&database_identity, &host_type),
+            host_type,
+            database_identity,
+            count: std::sync::Mutex::new(1),
+        };
+
         let create_instance_time_metric = CreateInstanceTimeMetric {
             metric: WORKER_METRICS
                 .module_create_instance_time_seconds
@@ -795,6 +839,7 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
         Self {
             instances: Mutex::new(instances),
             module,
+            module_instances_metric,
             create_instance_time_metric,
         }
     }
@@ -815,6 +860,7 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             let res = self.module.create_instance().await;
             let elapsed_time = start_time.elapsed();
             self.create_instance_time_metric.observe(elapsed_time);
+            self.module_instances_metric.inc();
             res
         }
     }
@@ -824,6 +870,7 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             // Don't return trapped instances;
             // they may have left internal data structures in the guest `Instance`
             // (WASM linear memory, V8 global scope) in a bad state.
+            self.module_instances_metric.dec();
             return;
         }
 
