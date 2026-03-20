@@ -263,12 +263,9 @@ pub struct InvalidVar {
 }
 
 const VAR_ROW_LIMIT: &str = "row_limit";
-const VAR_SLOW_QUERY: &str = "slow_ad_hoc_query_ms";
-const VAR_SLOW_UPDATE: &str = "slow_tx_update_ms";
-const VAR_SLOW_SUB: &str = "slow_subscription_query_ms";
 
 fn is_var_valid(var: &str) -> bool {
-    var == VAR_ROW_LIMIT || var == VAR_SLOW_QUERY || var == VAR_SLOW_UPDATE || var == VAR_SLOW_SUB
+    var == VAR_ROW_LIMIT
 }
 
 const ST_VAR_NAME: &str = "st_var";

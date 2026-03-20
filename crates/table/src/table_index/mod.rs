@@ -27,7 +27,7 @@
 use self::hash_index::HashIndex;
 use self::same_key_entry::SameKeyEntryIter;
 use self::unique_direct_fixed_cap_index::{UniqueDirectFixedCapIndex, UniqueDirectFixedCapIndexRangeIter};
-use self::unique_direct_index::{UniqueDirectIndex, UniqueDirectIndexPointIter, UniqueDirectIndexRangeIter};
+use self::unique_direct_index::{UniqueDirectIndex, UniqueDirectIndexRangeIter};
 use self::unique_hash_index::UniqueHashIndex;
 use super::indexes::RowPointer;
 use super::table::RowRef;
@@ -58,28 +58,24 @@ pub use self::index::{Index, IndexCannotSeekRange, IndexSeekRangeResult, RangedI
 pub use self::key_size::KeySize;
 
 type BtreeIndex<K> = multimap::MultiMap<K>;
-type BtreeIndexPointIter<'a> = SameKeyEntryIter<'a>;
 type BtreeIndexRangeIter<'a, K> = multimap::MultiMapRangeIter<'a, K>;
 type BtreeUniqueIndex<K> = uniquemap::UniqueMap<K>;
-type BtreeUniqueIndexPointIter<'a> = uniquemap::UniqueMapPointIter<'a>;
 type BtreeUniqueIndexRangeIter<'a, K> = uniquemap::UniqueMapRangeIter<'a, K>;
 
 /// A point iterator over a [`TypedIndex`], with a specialized key type.
 ///
 /// See module docs for info about specialization.
 enum TypedIndexPointIter<'a> {
-    BTree(BtreeIndexPointIter<'a>),
-    UniqueBTree(BtreeUniqueIndexPointIter<'a>),
-    UniqueDirect(UniqueDirectIndexPointIter),
+    NonUnique(SameKeyEntryIter<'a>),
+    Unique(uniquemap::UniquePointIter),
 }
 
 impl Iterator for TypedIndexPointIter<'_> {
     type Item = RowPointer;
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Self::BTree(this) => this.next(),
-            Self::UniqueBTree(this) => this.next(),
-            Self::UniqueDirect(this) => this.next(),
+            Self::NonUnique(this) => this.next(),
+            Self::Unique(this) => this.next(),
         }
     }
 }
@@ -961,85 +957,85 @@ impl TypedIndex {
         use TypedIndex::*;
         use TypedIndexPointIter::*;
         match self {
-            BtreeBool(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_bool)),
-            BtreeU8(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_u8)),
-            BtreeSumTag(this) => BTree(iter_at_type(this, key, as_sum_tag)),
-            BtreeI8(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_i8)),
-            BtreeU16(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_u16)),
-            BtreeI16(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_i16)),
-            BtreeU32(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_u32)),
-            BtreeI32(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_i32)),
-            BtreeU64(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_u64)),
-            BtreeI64(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_i64)),
-            BtreeU128(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_u128)),
-            BtreeI128(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_i128)),
-            BtreeU256(this) => BTree(iter_at_type(this, key, |av| av.as_u256().map(|x| &**x))),
-            BtreeI256(this) => BTree(iter_at_type(this, key, |av| av.as_i256().map(|x| &**x))),
-            BtreeF32(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_f32)),
-            BtreeF64(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_f64)),
-            BtreeString(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_string)),
-            BtreeAV(this) => BTree(this.seek_point(key)),
-            HashBool(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_bool)),
-            HashU8(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_u8)),
-            HashSumTag(this) => BTree(iter_at_type(this, key, as_sum_tag)),
-            HashI8(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_i8)),
-            HashU16(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_u16)),
-            HashI16(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_i16)),
-            HashU32(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_u32)),
-            HashI32(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_i32)),
-            HashU64(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_u64)),
-            HashI64(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_i64)),
-            HashU128(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_u128)),
-            HashI128(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_i128)),
-            HashU256(this) => BTree(iter_at_type(this, key, |av| av.as_u256().map(|x| &**x))),
-            HashI256(this) => BTree(iter_at_type(this, key, |av| av.as_i256().map(|x| &**x))),
-            HashF32(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_f32)),
-            HashF64(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_f64)),
-            HashString(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_string)),
-            HashAV(this) => BTree(this.seek_point(key)),
-            UniqueBtreeBool(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_bool)),
-            UniqueBtreeU8(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_u8)),
-            UniqueBtreeSumTag(this) => UniqueBTree(iter_at_type(this, key, as_sum_tag)),
-            UniqueBtreeI8(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_i8)),
-            UniqueBtreeU16(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_u16)),
-            UniqueBtreeI16(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_i16)),
-            UniqueBtreeU32(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_u32)),
-            UniqueBtreeI32(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_i32)),
-            UniqueBtreeU64(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_u64)),
-            UniqueBtreeI64(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_i64)),
-            UniqueBtreeU128(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_u128)),
-            UniqueBtreeI128(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_i128)),
-            UniqueBtreeU256(this) => UniqueBTree(iter_at_type(this, key, |av| av.as_u256().map(|x| &**x))),
-            UniqueBtreeI256(this) => UniqueBTree(iter_at_type(this, key, |av| av.as_i256().map(|x| &**x))),
-            UniqueBtreeF32(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_f32)),
-            UniqueBtreeF64(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_f64)),
-            UniqueBtreeString(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_string)),
-            UniqueBtreeAV(this) => UniqueBTree(this.seek_point(key)),
+            BtreeBool(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_bool)),
+            BtreeU8(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_u8)),
+            BtreeSumTag(this) => NonUnique(iter_at_type(this, key, as_sum_tag)),
+            BtreeI8(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_i8)),
+            BtreeU16(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_u16)),
+            BtreeI16(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_i16)),
+            BtreeU32(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_u32)),
+            BtreeI32(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_i32)),
+            BtreeU64(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_u64)),
+            BtreeI64(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_i64)),
+            BtreeU128(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_u128)),
+            BtreeI128(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_i128)),
+            BtreeU256(this) => NonUnique(iter_at_type(this, key, |av| av.as_u256().map(|x| &**x))),
+            BtreeI256(this) => NonUnique(iter_at_type(this, key, |av| av.as_i256().map(|x| &**x))),
+            BtreeF32(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_f32)),
+            BtreeF64(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_f64)),
+            BtreeString(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_string)),
+            BtreeAV(this) => NonUnique(this.seek_point(key)),
+            HashBool(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_bool)),
+            HashU8(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_u8)),
+            HashSumTag(this) => NonUnique(iter_at_type(this, key, as_sum_tag)),
+            HashI8(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_i8)),
+            HashU16(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_u16)),
+            HashI16(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_i16)),
+            HashU32(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_u32)),
+            HashI32(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_i32)),
+            HashU64(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_u64)),
+            HashI64(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_i64)),
+            HashU128(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_u128)),
+            HashI128(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_i128)),
+            HashU256(this) => NonUnique(iter_at_type(this, key, |av| av.as_u256().map(|x| &**x))),
+            HashI256(this) => NonUnique(iter_at_type(this, key, |av| av.as_i256().map(|x| &**x))),
+            HashF32(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_f32)),
+            HashF64(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_f64)),
+            HashString(this) => NonUnique(iter_at_type(this, key, AlgebraicValue::as_string)),
+            HashAV(this) => NonUnique(this.seek_point(key)),
+            UniqueBtreeBool(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_bool)),
+            UniqueBtreeU8(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_u8)),
+            UniqueBtreeSumTag(this) => Unique(iter_at_type(this, key, as_sum_tag)),
+            UniqueBtreeI8(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_i8)),
+            UniqueBtreeU16(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_u16)),
+            UniqueBtreeI16(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_i16)),
+            UniqueBtreeU32(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_u32)),
+            UniqueBtreeI32(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_i32)),
+            UniqueBtreeU64(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_u64)),
+            UniqueBtreeI64(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_i64)),
+            UniqueBtreeU128(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_u128)),
+            UniqueBtreeI128(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_i128)),
+            UniqueBtreeU256(this) => Unique(iter_at_type(this, key, |av| av.as_u256().map(|x| &**x))),
+            UniqueBtreeI256(this) => Unique(iter_at_type(this, key, |av| av.as_i256().map(|x| &**x))),
+            UniqueBtreeF32(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_f32)),
+            UniqueBtreeF64(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_f64)),
+            UniqueBtreeString(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_string)),
+            UniqueBtreeAV(this) => Unique(this.seek_point(key)),
 
-            UniqueHashBool(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_bool)),
-            UniqueHashU8(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_u8)),
-            UniqueHashSumTag(this) => UniqueBTree(iter_at_type(this, key, as_sum_tag)),
-            UniqueHashI8(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_i8)),
-            UniqueHashU16(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_u16)),
-            UniqueHashI16(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_i16)),
-            UniqueHashU32(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_u32)),
-            UniqueHashI32(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_i32)),
-            UniqueHashU64(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_u64)),
-            UniqueHashI64(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_i64)),
-            UniqueHashU128(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_u128)),
-            UniqueHashI128(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_i128)),
-            UniqueHashU256(this) => UniqueBTree(iter_at_type(this, key, |av| av.as_u256().map(|x| &**x))),
-            UniqueHashI256(this) => UniqueBTree(iter_at_type(this, key, |av| av.as_i256().map(|x| &**x))),
-            UniqueHashF32(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_f32)),
-            UniqueHashF64(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_f64)),
-            UniqueHashString(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_string)),
-            UniqueHashAV(this) => UniqueBTree(this.seek_point(key)),
+            UniqueHashBool(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_bool)),
+            UniqueHashU8(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_u8)),
+            UniqueHashSumTag(this) => Unique(iter_at_type(this, key, as_sum_tag)),
+            UniqueHashI8(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_i8)),
+            UniqueHashU16(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_u16)),
+            UniqueHashI16(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_i16)),
+            UniqueHashU32(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_u32)),
+            UniqueHashI32(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_i32)),
+            UniqueHashU64(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_u64)),
+            UniqueHashI64(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_i64)),
+            UniqueHashU128(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_u128)),
+            UniqueHashI128(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_i128)),
+            UniqueHashU256(this) => Unique(iter_at_type(this, key, |av| av.as_u256().map(|x| &**x))),
+            UniqueHashI256(this) => Unique(iter_at_type(this, key, |av| av.as_i256().map(|x| &**x))),
+            UniqueHashF32(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_f32)),
+            UniqueHashF64(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_f64)),
+            UniqueHashString(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_string)),
+            UniqueHashAV(this) => Unique(this.seek_point(key)),
 
-            UniqueDirectSumTag(this) => UniqueDirect(iter_at_type(this, key, as_sum_tag)),
-            UniqueDirectU8(this) => UniqueDirect(iter_at_type(this, key, AlgebraicValue::as_u8)),
-            UniqueDirectU16(this) => UniqueDirect(iter_at_type(this, key, AlgebraicValue::as_u16)),
-            UniqueDirectU32(this) => UniqueDirect(iter_at_type(this, key, AlgebraicValue::as_u32)),
-            UniqueDirectU64(this) => UniqueDirect(iter_at_type(this, key, AlgebraicValue::as_u64)),
+            UniqueDirectSumTag(this) => Unique(iter_at_type(this, key, as_sum_tag)),
+            UniqueDirectU8(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_u8)),
+            UniqueDirectU16(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_u16)),
+            UniqueDirectU32(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_u32)),
+            UniqueDirectU64(this) => Unique(iter_at_type(this, key, AlgebraicValue::as_u64)),
         }
     }
 
