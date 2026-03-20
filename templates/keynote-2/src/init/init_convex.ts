@@ -1,4 +1,4 @@
-﻿const DEFAULT_CONVEX_URL = 'http://127.0.0.1:3210';
+import { accounts, convexDir, convexUrl, initialBalance } from '../opts';
 
 async function callConvexMutation(url: string, pathName: string, args: any) {
   const res = await fetch(`${url}/api/mutation?format=json`, {
@@ -25,11 +25,11 @@ export async function initConvex() {
   }
   console.log('\n[convex] scaffold');
 
-  const dir = process.env.CONVEX_DIR || './convex-app';
+  const dir = convexDir;
 
-  const ACC = Number(process.env.SEED_ACCOUNTS ?? 100_000);
-  const BAL = Number(process.env.SEED_INITIAL_BALANCE ?? 1_000_000_000);
-  const url = process.env.CONVEX_URL || DEFAULT_CONVEX_URL;
+  const ACC = accounts;
+  const BAL = initialBalance;
+  const url = convexUrl;
 
   console.log(
     `[convex] expecting dev server at ${url} (start with: cd ${dir} && pnpm dev)`,

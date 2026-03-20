@@ -1,4 +1,4 @@
-﻿import hdr from 'hdr-histogram-js';
+import hdr from 'hdr-histogram-js';
 import { performance } from 'node:perf_hooks';
 import { pickTwoDistinct, zipfSampler } from './zipf.ts';
 import { getSpacetimeCommittedTransfers } from './spacetimeMetrics.ts';
