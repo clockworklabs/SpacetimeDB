@@ -2,6 +2,9 @@ use spacetimedb::{ReducerContext, Table};
 
 #[spacetimedb::table(accessor = person, public)]
 pub struct Person {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
     name: String,
 }
 
@@ -22,7 +25,7 @@ pub fn identity_disconnected(_ctx: &ReducerContext) {
 
 #[spacetimedb::reducer]
 pub fn add(ctx: &ReducerContext, name: String) {
-    ctx.db.person().insert(Person { name });
+    ctx.db.person().insert(Person { id: 0, name });
 }
 
 #[spacetimedb::reducer]

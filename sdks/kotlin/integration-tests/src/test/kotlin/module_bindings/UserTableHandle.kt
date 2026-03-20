@@ -46,33 +46,6 @@ class UserTableHandle internal constructor(
     override fun removeOnUpdate(cb: (EventContext, User, User) -> Unit) { tableCache.removeOnUpdate(cb) }
     override fun removeOnBeforeDelete(cb: (EventContext, User) -> Unit) { tableCache.removeOnBeforeDelete(cb) }
 
-    fun remoteQuery(query: String = "", callback: (List<User>) -> Unit) {
-        val sql = "SELECT $TABLE_NAME.* FROM $TABLE_NAME $query"
-        conn.oneOffQuery(sql) { msg ->
-            when (val result = msg.result) {
-                is QueryResult.Err -> throw IllegalStateException("RemoteQuery error: ${result.error}")
-                is QueryResult.Ok -> {
-                    val table = result.rows.tables.firstOrNull { it.table == TABLE_NAME }
-                        ?: throw IllegalStateException("Table '$TABLE_NAME' not found in result")
-                    callback(tableCache.decodeRowList(table.rows))
-                }
-            }
-        }
-    }
-
-    suspend fun remoteQuery(query: String = ""): List<User> {
-        val sql = "SELECT $TABLE_NAME.* FROM $TABLE_NAME $query"
-        val msg = conn.oneOffQuery(sql)
-        return when (val result = msg.result) {
-            is QueryResult.Err -> throw IllegalStateException("RemoteQuery error: ${result.error}")
-            is QueryResult.Ok -> {
-                val table = result.rows.tables.firstOrNull { it.table == TABLE_NAME }
-                    ?: throw IllegalStateException("Table '$TABLE_NAME' not found in result")
-                tableCache.decodeRowList(table.rows)
-            }
-        }
-    }
-
     val identity = UniqueIndex<User, Identity>(tableCache) { it.identity }
 
 }

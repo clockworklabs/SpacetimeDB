@@ -168,3 +168,16 @@ class QueryBuilder {
 fun SubscriptionBuilder.addQuery(build: (QueryBuilder) -> Query<*>): SubscriptionBuilder {
     return addQuery(build(QueryBuilder()).toSql())
 }
+
+/**
+ * Subscribe to all persistent tables in this module.
+ * Event tables are excluded because the server does not support subscribing to them.
+ */
+fun SubscriptionBuilder.subscribeToAllTables(): com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.SubscriptionHandle {
+    val qb = QueryBuilder()
+    addQuery(qb.message().toSql())
+    addQuery(qb.note().toSql())
+    addQuery(qb.reminder().toSql())
+    addQuery(qb.user().toSql())
+    return subscribe()
+}
