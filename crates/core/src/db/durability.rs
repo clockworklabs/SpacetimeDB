@@ -105,7 +105,6 @@ impl DurabilityWorker {
                     reducer_context,
                     tx_data: tx_data.clone(),
                 });
-                return;
             }
             Err(mpsc::error::TrySendError::Closed(_)) => {
                 panic!("durability actor vanished database={}", self.database);
