@@ -7,8 +7,6 @@ name: Review Checks Reporter
 # consume artifacts from the untrusted workflow. It only reads trusted workflow
 # metadata and returns a normal workflow result.
 
-name: PR approval check
-
 on:
   workflow_run:
     workflows:
