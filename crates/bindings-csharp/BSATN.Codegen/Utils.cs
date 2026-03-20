@@ -33,11 +33,24 @@ public static class Utils
         .AddMemberOptions(SymbolDisplayMemberOptions.IncludeContainingType)
         .AddMiscellaneousOptions(
             SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier
+                | SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers
         );
 
     public static string SymbolToName(ISymbol symbol)
     {
         return symbol.ToDisplayString(SymbolFormat);
+    }
+
+    public static string EscapeIdentifier(string name)
+    {
+        if (name.Length > 0 && name[0] == '@')
+        {
+            return name;
+        }
+
+        var kind = SyntaxFacts.GetKeywordKind(name);
+        var contextualKind = SyntaxFacts.GetContextualKeywordKind(name);
+        return kind != SyntaxKind.None || contextualKind != SyntaxKind.None ? $"@{name}" : name;
     }
 
     public static void RegisterSourceOutputs(
