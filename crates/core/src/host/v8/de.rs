@@ -152,6 +152,28 @@ impl<'de, 'this, 'scope: 'de> de::Deserializer<'de> for Deserializer<'this, 'sco
         })
     }
 
+    fn validate_product<V: ProductVisitor<'de>>(self, visitor: V) -> Result<(), Self::Error> {
+        // In `ProductType.serializeValue()` in the TS SDK, null/undefined is accepted for the unit type.
+        if visitor.product_len() == 0 && self.input.is_null_or_undefined() {
+            return visitor.validate_seq_product(de::UnitAccess::new());
+        }
+
+        let object = cast!(
+            self.common.scope,
+            self.input,
+            Object,
+            "object for product type `{}`",
+            visitor.product_name().unwrap_or("<unknown>")
+        )?;
+
+        visitor.validate_named_product(ProductAccess {
+            common: self.common,
+            object,
+            next_value: None,
+            index: 0,
+        })
+    }
+
     fn deserialize_sum<V: SumVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error> {
         let scope = &*self.common.scope;
 
@@ -302,6 +324,17 @@ impl<'de, 'scope: 'de> de::NamedProductAccess<'de> for ProductAccess<'_, 'scope,
         // Deserialize the field's value.
         seed.deserialize(Deserializer { common, input })
     }
+
+    fn validate_field_value_seed<T: DeserializeSeed<'de>>(&mut self, seed: T) -> Result<(), Self::Error> {
+        let common = self.common.reborrow();
+        // Extract the field's value.
+        let input = self
+            .next_value
+            .take()
+            .expect("Call next_key_seed before next_value_seed");
+        // Deserialize the field's value.
+        seed.validate(Deserializer { common, input })
+    }
 }
 
 /// Used in `Deserializer::deserialize_sum` to translate a `tag` property of a JS object
@@ -367,6 +400,23 @@ where
             index: 0,
         }
     }
+
+    fn next_elem<'a>(&'a mut self) -> Option<Result<(T, Deserializer<'a, 'scope, 'isolate>), Error<'scope>>> {
+        self.seeds.next().map(move |seed| {
+            // Extract the array element.
+            let input = self
+                .arr
+                .get_index(self.common.scope, self.index)
+                .ok_or_else(exception_already_thrown)?;
+
+            // Make the deserializer.
+            let common = self.common.reborrow();
+            let de = Deserializer { common, input };
+
+            self.index += 1;
+            Ok((seed, de))
+        })
+    }
 }
 
 impl<'de, 'scope: 'de, T: DeserializeSeed<'de> + Clone> de::ArrayAccess<'de> for ArrayAccess<'_, 'scope, '_, T> {
@@ -374,24 +424,14 @@ impl<'de, 'scope: 'de, T: DeserializeSeed<'de> + Clone> de::ArrayAccess<'de> for
     type Error = Error<'scope>;
 
     fn next_element(&mut self) -> Result<Option<Self::Element>, Self::Error> {
-        self.seeds
-            .next()
-            .map(|seed| {
-                // Extract the array element.
-                let val = self
-                    .arr
-                    .get_index(self.common.scope, self.index)
-                    .ok_or_else(exception_already_thrown)?;
+        self.next_elem()
+            .map(|res| res.and_then(|(seed, de)| seed.deserialize(de)))
+            .transpose()
+    }
 
-                // Deserialize the element.
-                let val = seed.deserialize(Deserializer {
-                    common: self.common.reborrow(),
-                    input: val,
-                })?;
-
-                self.index += 1;
-                Ok(val)
-            })
+    fn validate_next_element(&mut self) -> Result<Option<()>, Self::Error> {
+        self.next_elem()
+            .map(|res| res.and_then(|(seed, de)| seed.validate(de)))
             .transpose()
     }
 
