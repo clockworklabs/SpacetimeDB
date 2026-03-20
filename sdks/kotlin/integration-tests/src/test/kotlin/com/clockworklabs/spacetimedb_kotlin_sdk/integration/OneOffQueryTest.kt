@@ -3,6 +3,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -74,7 +75,9 @@ class OneOffQueryTest {
         assertIs<QueryResult.Ok>(qr, "Should return Ok")
         // We are connected, so at least our own user row should exist
         assertTrue(qr.rows.tables.isNotEmpty(), "Should have at least 1 table in result")
-        assertTrue(qr.rows.tables[0].rows.rowsSize > 0, "Should have row data bytes for populated table")
+        val table = qr.rows.tables[0]
+        assertEquals("user", table.table, "Table name should be 'user'")
+        assertTrue(table.rows.rowsSize > 0, "Should have row data bytes for populated table")
 
         client.conn.disconnect()
     }

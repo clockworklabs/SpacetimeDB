@@ -348,9 +348,13 @@ class ConcurrencyStressTest {
         for (table in results) {
             assertTrue(first === table, "Different table instance returned by getOrCreateTable")
         }
-        // Factory is called once per thread that passes the fast path (at most THREAD_COUNT).
+        // Factory is called by each thread that misses the fast path (line 447).
+        // Threads arriving after the table is visible skip factory entirely.
         // CAS retries never re-invoke factory — it's hoisted outside the loop.
-        assertTrue(creationCount.get() in 1..THREAD_COUNT, "Unexpected factory call count: ${creationCount.get()}")
+        // In practice most threads miss the fast path under contention, but at least 1 must create.
+        val count = creationCount.get()
+        assertTrue(count >= 1, "Factory must be called at least once, got: $count")
+        assertTrue(count <= THREAD_COUNT, "Factory called more than THREAD_COUNT times: $count")
     }
 
     // ---- NetworkRequestTracker: concurrent start/finish ----

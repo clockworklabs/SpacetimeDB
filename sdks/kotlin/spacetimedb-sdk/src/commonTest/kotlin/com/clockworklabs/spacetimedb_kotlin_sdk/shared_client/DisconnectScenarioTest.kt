@@ -71,12 +71,13 @@ class DisconnectScenarioTest {
         conn.disconnect()
         advanceUntilIdle()
 
-        // One of these must be non-null — the query must not hang silently.
-        // Either failPendingOperations delivered an error result, or the
-        // coroutine was cancelled.
-        assertTrue(queryResult != null || queryError != null,
-            "Suspended oneOffQuery must resolve on disconnect — got neither result nor error")
-        queryResult?.let { assertTrue(it.result is QueryResult.Err) }
+        // The query must not hang silently — it must resolve on disconnect.
+        // failPendingOperations delivers an error result via the callback.
+        if (queryResult != null) {
+            assertIs<QueryResult.Err>(queryResult!!.result, "Disconnect should produce QueryResult.Err")
+        } else {
+            assertNotNull(queryError, "Suspended oneOffQuery must resolve on disconnect — got neither result nor error")
+        }
         conn.disconnect()
     }
 
