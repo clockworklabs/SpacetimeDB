@@ -1,4 +1,4 @@
-#[cfg(feature = "web")]
+#[cfg(feature = "browser")]
 use std::path::Path;
 
 use spacetimedb_testing::sdk::{Test, TestBuilder};
@@ -9,9 +9,8 @@ fn platform_test_builder(client_project: &str, run_selector: Option<&str>) -> Te
 
     // Note: `run_selector` is intentionally interpreted differently by mode:
     // - Native mode uses it as a CLI subcommand (`cargo run -- <selector>`), with `None` => `cargo run`.
-    // - Web mode assembles the Node/wasm-bindgen commands directly in this test harness so the
-    //   `crates/testing` framework stays generic and unaware of Rust SDK web-client details.
-    #[cfg(feature = "web")]
+    // - Web mode assembles the Node/wasm-bindgen commands directly in this test harness.
+    #[cfg(feature = "browser")]
     {
         let package_name = Path::new(client_project)
             .file_name()
@@ -32,7 +31,7 @@ fn platform_test_builder(client_project: &str, run_selector: Option<&str>) -> Te
         let wasm_path = format!("{target_dir}/wasm32-unknown-unknown/debug/deps/{artifact_name}.wasm");
         let js_module = format!("{bindgen_out_dir}/{artifact_name}.js");
         let js_module_cjs = format!("{bindgen_out_dir}/{artifact_name}.cjs");
-        let build_command = "cargo build --target wasm32-unknown-unknown --no-default-features --features web";
+        let build_command = "cargo build --target wasm32-unknown-unknown --no-default-features --features browser";
         let mkdir_command = shlex::try_join(["mkdir", "-p", bindgen_out_dir.as_str()])
             .expect("bindgen output path should be shell-quotable");
         let bindgen_command = shlex::try_join([
@@ -78,7 +77,7 @@ fn platform_test_builder(client_project: &str, run_selector: Option<&str>) -> Te
             .with_run_command(run_command)
     }
 
-    #[cfg(not(feature = "web"))]
+    #[cfg(not(feature = "browser"))]
     {
         let run_command = match run_selector {
             Some(subcommand) => format!("cargo run -- {}", subcommand),

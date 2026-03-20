@@ -403,9 +403,9 @@ async fn build_and_run(builder: DbConnectionBuilder<RemoteModule>) -> DbConnecti
 #[cfg(target_arch = "wasm32")]
 async fn build_and_run(builder: DbConnectionBuilder<RemoteModule>) -> DbConnection {
     // Why this differs from native:
-    // - In the SDK, `DbConnectionBuilder::build` is sync on non-web builds,
-    //   but async on `feature = "web"` because the websocket/token setup uses
-    //   wasm/web async primitives.
+    // - In the SDK, `DbConnectionBuilder::build` is sync on non-browser builds,
+    //   but async on `feature = "browser"` because the websocket/token setup uses
+    //   wasm/browser async primitives.
     // - We therefore keep the helper async and await directly so wasm stays
     //   non-blocking and can make forward progress on the JS event loop.
     let conn = builder.build().await.unwrap();
@@ -1789,9 +1789,9 @@ async fn exec_reauth_part_2(db_name: &str) {
 }
 
 /// TODO: Re-enable this once the wasm runner grows the browser-faithful mode
-/// described in `crates/testing/src/sdk.rs`. This test is about persisting web
+/// described in `crates/testing/src/sdk.rs`. This test is about persisting browser
 /// credentials across separate runs, and the current Node-based wasm harness does
-/// not exercise the browser cookie/storage APIs that web reauth depends on.
+/// not exercise the browser cookie/storage APIs that browser reauth depends on.
 #[cfg(target_arch = "wasm32")]
 async fn exec_reauth_part_1(_db_name: &str) {}
 

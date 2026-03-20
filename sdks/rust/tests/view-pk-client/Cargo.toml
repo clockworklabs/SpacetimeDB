@@ -16,9 +16,9 @@ native = [
     "dep:tokio",
 ]
 
-# Builds the client for wasm32-unknown-unknown using the Rust SDK `web` backend.
-web = [
-    "spacetimedb-sdk/web",
+# Builds the client for wasm32-unknown-unknown using the Rust SDK `browser` backend.
+browser = [
+    "spacetimedb-sdk/browser",
     "dep:wasm-bindgen",
     "dep:wasm-bindgen-futures",
     "dep:console_error_panic_hook",

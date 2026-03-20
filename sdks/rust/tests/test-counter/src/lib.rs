@@ -55,7 +55,7 @@ impl TestCounter {
     }
 
     pub async fn wait_for_all(&self) {
-        // wasm/web test clients run callbacks on a single-threaded event loop,
+        // wasm/browser test clients run callbacks on a single-threaded event loop,
         // so waiting must be async to allow callback tasks to make progress.
         #[cfg(target_arch = "wasm32")]
         self.wait_for_all_wasm_async().await;
@@ -119,7 +119,7 @@ impl TestCounter {
         const MAX_WAIT_ITERATIONS: u32 = (TEST_TIMEOUT_SECS as u32 * 1000) / WAIT_INTERVAL_MS;
 
         // Native can block on a Condvar because callbacks keep moving on a different SDK thread.
-        // wasm/web does not have that escape hatch in this harness: the websocket/message loop and
+        // wasm/browser does not have that escape hatch in this harness: the websocket/message loop and
         // the test body share the same single-threaded JS event loop, so blocking here would stop
         // callback delivery entirely. We poll with timer yields so websocket/callback tasks can
         // continue to run, and then do the same final pass native uses to convert recorded failures

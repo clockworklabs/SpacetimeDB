@@ -338,14 +338,14 @@ fn main() -> Result<()> {
                 "unreal"
             )
             .run()?;
-            // Run the same SDK suite against wasm+web test clients.
+            // Run the same SDK suite against wasm/browser test clients.
             cmd!(
                 "cargo",
                 "test",
                 "-p",
                 "spacetimedb-sdk",
                 "--features",
-                "allow_loopback_http_for_tests,web",
+                "allow_loopback_http_for_tests,browser",
                 "--",
                 "--test-threads=2",
                 "--skip",
@@ -413,7 +413,7 @@ fn main() -> Result<()> {
                 "cargo",
                 "clippy",
                 "--no-default-features",
-                "--features=web",
+                "--features=browser",
                 "-pspacetimedb-sdk",
                 "--tests",
                 "--benches",
