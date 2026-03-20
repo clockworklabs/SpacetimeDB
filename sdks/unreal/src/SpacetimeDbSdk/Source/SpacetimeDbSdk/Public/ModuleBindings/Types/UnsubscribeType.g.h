@@ -4,7 +4,8 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
-#include "ModuleBindings/Types/QueryIdType.g.h"
+#include "ModuleBindings/Types/QuerySetIdType.g.h"
+#include "ModuleBindings/Types/UnsubscribeFlagsType.g.h"
 #include "UnsubscribeType.g.generated.h"
 
 USTRUCT(BlueprintType)
@@ -16,11 +17,14 @@ struct SPACETIMEDBSDK_API FUnsubscribeType
     uint32 RequestId = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    FQueryIdType QueryId;
+    FQuerySetIdType QuerySetId;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
+    EUnsubscribeFlagsType Flags = EUnsubscribeFlagsType::Default;
 
     FORCEINLINE bool operator==(const FUnsubscribeType& Other) const
     {
-        return RequestId == Other.RequestId && QueryId == Other.QueryId;
+        return RequestId == Other.RequestId && QuerySetId == Other.QuerySetId && Flags == Other.Flags;
     }
 
     FORCEINLINE bool operator!=(const FUnsubscribeType& Other) const
@@ -38,7 +42,8 @@ struct SPACETIMEDBSDK_API FUnsubscribeType
 FORCEINLINE uint32 GetTypeHash(const FUnsubscribeType& UnsubscribeType)
 {
     uint32 Hash = GetTypeHash(UnsubscribeType.RequestId);
-    Hash = HashCombine(Hash, GetTypeHash(UnsubscribeType.QueryId));
+    Hash = HashCombine(Hash, GetTypeHash(UnsubscribeType.QuerySetId));
+    Hash = HashCombine(Hash, GetTypeHash(UnsubscribeType.Flags));
     return Hash;
 }
 
@@ -46,5 +51,5 @@ namespace UE::SpacetimeDB
 {
     UE_SPACETIMEDB_ENABLE_TARRAY(FUnsubscribeType);
 
-    UE_SPACETIMEDB_STRUCT(FUnsubscribeType, RequestId, QueryId);
+    UE_SPACETIMEDB_STRUCT(FUnsubscribeType, RequestId, QuerySetId, Flags);
 }

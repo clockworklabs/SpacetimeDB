@@ -8,7 +8,7 @@ use crate::database_logger::{DatabaseLogger, LogLevel, Record};
 use crate::db::relational_db::RelationalDB;
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
-use crate::estimation::estimate_rows_scanned;
+use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::hash::Hash;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
@@ -27,7 +27,6 @@ use crate::subscription::tx::DeltaTx;
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::subscription::{execute_plan, execute_plan_for_view};
 use crate::util::jobs::SingleCoreExecutor;
-use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::Context;
 use bytes::Bytes;
@@ -51,6 +50,7 @@ use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 use spacetimedb_durability::DurableOffset;
 use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
+use spacetimedb_execution::RelValue;
 use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
@@ -66,7 +66,6 @@ use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
-use spacetimedb_vm::relation::RelValue;
 use std::collections::VecDeque;
 use std::fmt;
 use std::sync::atomic::AtomicBool;
@@ -1884,7 +1883,12 @@ impl ModuleHost {
             let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
             let is_anonymous = st_view_row.is_anonymous;
             let sender = if is_anonymous { None } else { Some(caller) };
-            if !tx.is_view_materialized(view_id, ArgId::SENTINEL, caller)? {
+            let is_materialized = if is_anonymous {
+                tx.is_anonymous_view_materialized(view_id)?
+            } else {
+                tx.is_view_materialized(view_id, ArgId::SENTINEL, caller)?
+            };
+            if !is_materialized {
                 let (res, trapped) =
                     Self::call_view(instance, tx, &view_name, view_id, table_id, Nullary, caller, sender)?;
                 tx = res.tx;

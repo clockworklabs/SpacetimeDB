@@ -125,7 +125,7 @@
  * @usage
  * ```cpp
  * SPACETIMEDB_CLIENT_CONNECTED(on_connect, ReducerContext ctx) {
- *     LOG_INFO("Client connected: " + ctx.sender.to_hex());
+ *     LOG_INFO("Client connected: " + ctx.sender().to_hex());
  *     return Ok();
  * }
  * ```
@@ -149,7 +149,7 @@
  * @usage
  * ```cpp
  * SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) {
- *     LOG_INFO("Client disconnected: " + ctx.sender.to_hex());
+ *     LOG_INFO("Client disconnected: " + ctx.sender().to_hex());
  *     return Ok();
  * }
  * ```

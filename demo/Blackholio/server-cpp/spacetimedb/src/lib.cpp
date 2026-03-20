@@ -294,7 +294,7 @@ SPACETIMEDB_INIT(init, ReducerContext ctx) {
 }
 
 SPACETIMEDB_CLIENT_CONNECTED(connect, ReducerContext ctx) {
-    auto logged_out = ctx.db[logged_out_player_identity].find(ctx.sender);
+    auto logged_out = ctx.db[logged_out_player_identity].find(ctx.sender());
     if (logged_out.has_value()) {
         ctx.db[player].insert(logged_out.value());
         (void)ctx.db[logged_out_player_identity].delete_by_key(logged_out->identity);
@@ -313,14 +313,14 @@ SPACETIMEDB_CLIENT_CONNECTED(connect, ReducerContext ctx) {
             (void)ctx.db[logged_out_circle_entity_id].delete_by_key(circle_row.entity_id);
         }
     } else {
-        Player new_player{ctx.sender, 0, std::string()};
+        Player new_player{ctx.sender(), 0, std::string()};
         ctx.db[player].insert(new_player);
     }
     return Ok();
 }
 
 SPACETIMEDB_CLIENT_DISCONNECTED(disconnect, ReducerContext ctx) {
-    auto player_opt = ctx.db[player_identity].find(ctx.sender);
+    auto player_opt = ctx.db[player_identity].find(ctx.sender());
     if (!player_opt.has_value()) {
         return Err("Player not found");
     }
@@ -349,7 +349,7 @@ SPACETIMEDB_CLIENT_DISCONNECTED(disconnect, ReducerContext ctx) {
 
 SPACETIMEDB_REDUCER(enter_game, ReducerContext ctx, std::string name) {
     LOG_INFO("Creating player with name " + name);
-    auto player_opt = ctx.db[player_identity].find(ctx.sender);
+    auto player_opt = ctx.db[player_identity].find(ctx.sender());
     if (!player_opt.has_value()) {
         return Err("Player not found");
     }
@@ -367,7 +367,7 @@ SPACETIMEDB_REDUCER(enter_game, ReducerContext ctx, std::string name) {
 }
 
 SPACETIMEDB_REDUCER(respawn, ReducerContext ctx) {
-    auto player_opt = ctx.db[player_identity].find(ctx.sender);
+    auto player_opt = ctx.db[player_identity].find(ctx.sender());
     if (!player_opt.has_value()) {
         return Err("No such player found");
     }
@@ -381,7 +381,7 @@ SPACETIMEDB_REDUCER(respawn, ReducerContext ctx) {
 }
 
 SPACETIMEDB_REDUCER(suicide, ReducerContext ctx) {
-    auto player_opt = ctx.db[player_identity].find(ctx.sender);
+    auto player_opt = ctx.db[player_identity].find(ctx.sender());
     if (!player_opt.has_value()) {
         return Err("No such player found");
     }
@@ -397,7 +397,7 @@ SPACETIMEDB_REDUCER(suicide, ReducerContext ctx) {
 }
 
 SPACETIMEDB_REDUCER(update_player_input, ReducerContext ctx, DbVector2 direction) {
-    auto player_opt = ctx.db[player_identity].find(ctx.sender);
+    auto player_opt = ctx.db[player_identity].find(ctx.sender());
     if (!player_opt.has_value()) {
         return Err("Player not found");
     }
@@ -605,7 +605,7 @@ SPACETIMEDB_REDUCER(consume_entity, ReducerContext ctx, ConsumeEntityTimer reque
 }
 
 SPACETIMEDB_REDUCER(player_split, ReducerContext ctx) {
-    auto player_opt = ctx.db[player_identity].find(ctx.sender);
+    auto player_opt = ctx.db[player_identity].find(ctx.sender());
     if (!player_opt.has_value()) {
         return Err("Sender has no player");
     }
