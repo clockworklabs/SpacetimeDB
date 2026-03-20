@@ -6,6 +6,7 @@ import io.ktor.client.plugins.websocket.WebSockets
 import kotlinx.coroutines.delay
 import module_bindings.db
 import module_bindings.reducers
+import module_bindings.subscribeToAllTables
 import module_bindings.withModuleBindings
 import kotlin.time.Duration.Companion.seconds
 
@@ -31,9 +32,9 @@ suspend fun main() {
                 println("[onAdd] Added person: $name (status=${ctx.status})")
             }
 
-            conn.subscribeToAllTables(
-                onError = { _, error -> println("Subscription error: $error") }
-            )
+            conn.subscriptionBuilder()
+                .onError { _, error -> println("Subscription error: $error") }
+                .subscribeToAllTables()
 
             conn.reducers.add("Alice") { ctx ->
                 println("[one-shot] Add completed: status=${ctx.status}")
