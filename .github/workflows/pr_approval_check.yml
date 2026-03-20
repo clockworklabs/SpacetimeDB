@@ -1,3 +1,30 @@
+# This workflow is to enforce custom review requirements, e.g. for PRs opened
+# by the clockwork-labs-bot.
+#
+# The structure needs to be surprisingly complicated:
+# First, It must run `pull_request_review` events in order to react to review actions.
+# It must also run on `merge_group` events so that the (required) check can be posted in
+# the merge queue.
+#
+# Surprisingly, it must also be run on `pull_request` events because check results are tied
+# to specific commits, so pushing a new commit on an already-approved PR will erase the check
+# result on the PR head.
+#
+# As a result of running on `pull_request` _and_ `pull_request_review` events, a commit can end
+# up with multiple "copies" of the check. This is no good, since one of them can be stale and
+# incorrectly block the PR. Apparently, one solution to this is to write/overwrite a custom
+# commit status name, rather than using the one that GitHub generates by default.
+#
+# But there's an issue with the "custom commit status" approach. Workflows running on external PRs
+# don't have permission to make write operations to the repo, including commit statuses.
+#
+# The other approach is apparently to create a separate workflow that runs when _another_ workflow
+# completes. That workflow _can_ apparently run with elevated permissions. That's what we do here.
+# That run-on-completion workflow is pr_approval_report.yml
+#
+# There's one last wrinkle: the merge queue. The on-completion workflow hook does not appear to
+# satisfy the "required check in merge group" checker. So, in the merge queue, we instead rename
+# the check in this file to be the name that is required, so that it can pass properly.
 name: Review Checks Evaluator
 
 on:
@@ -19,7 +46,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Evaluate approval status
+      # See the comment at the top of this file for why we have to do this name dance.
+      - name: ${{ context.eventName == "merge_group" && "PR approval check" || "Evaluate approval status" }}
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

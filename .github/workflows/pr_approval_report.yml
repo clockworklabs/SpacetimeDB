@@ -1,3 +1,5 @@
+# This workflow only mirrors evaluator results back onto PR head SHAs.
+# See `pr_approval_check.yml` for more context on why this is required.
 name: Review Checks Reporter
 
 # SECURITY: This workflow runs with base-repository privileges after the
@@ -23,12 +25,16 @@ jobs:
 
     # SECURITY: Do not add a checkout step to this job. See comment at the top of this file.
     steps:
-      - name: Publish approval status
+      - name: PR approval check
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const contextName = "PR approval check";
+            if (context.payload.workflow_run.event === "merge_group") {
+              core.info("Merge group runs publish approval status directly from the evaluator.");
+              return;
+            }
+
             const conclusion = context.payload.workflow_run.conclusion;
 
             let state;
