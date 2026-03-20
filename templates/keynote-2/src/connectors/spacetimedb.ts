@@ -1,6 +1,17 @@
 import type { ReducerConnector } from '../core/connectors';
 import * as mod from '../../module_bindings';
 
+function useConfirmedReads(): boolean {
+  switch (process.env.STDB_CONFIRMED_READS) {
+    case '0':
+      return false;
+    case '1':
+      return true;
+    default:
+      return true;
+  }
+}
+
 export function spacetimedb(
   url = process.env.STDB_URL!,
   moduleName = process.env.STDB_MODULE!,
@@ -35,7 +46,7 @@ export function spacetimedb(
     const builder = Db.builder()
       .withUri(url)
       .withDatabaseName(moduleName)
-      .withConfirmedReads(process.env.STDB_CONFIRMED_READS === '1')
+      .withConfirmedReads(useConfirmedReads())
       .onConnect((ctx) => {
         console.log('[stdb] connected');
         const conn = ctx;
