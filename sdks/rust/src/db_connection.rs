@@ -983,6 +983,8 @@ but you must call one of them, or else the connection will never progress.
         // have the native file APIs that back `with_debug_to_file`. Keeping the
         // shared `extra_logging` field as `None` lets the rest of the connection and
         // cache code stay unified without pretending that file logging works in browser.
+        //
+        // TODO: Make this work in browser targets by logging to the browser console.
         let extra_logging = None;
         let connection_id_override = get_connection_id_override();
         let ws_connection = WsConnection::connect(
