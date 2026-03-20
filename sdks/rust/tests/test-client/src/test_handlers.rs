@@ -2415,7 +2415,10 @@ async fn test_intra_query_bag_semantics_for_join(db_name: &str) {
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
     let mut pk_u32_on_delete_result = Some(test_counter.add_test("pk_u32_on_delete"));
 
-    connect_then(db_name, &test_counter, {
+    // This test drives the whole subscription sequence from async callbacks.
+    // Keep the connection alive until those callbacks finish so we don't tear
+    // down the sender loop before the queued subscribe message is flushed.
+    let conn = connect_then(db_name, &test_counter, {
         move |ctx| {
             subscribe_these_then(
                 ctx,
@@ -2490,6 +2493,8 @@ async fn test_intra_query_bag_semantics_for_join(db_name: &str) {
         }
     })
     .await;
+    test_counter.wait_for_all().await;
+    drop(conn);
 }
 
 /// Test that several clients subscribing to the same query and using the same protocol (bsatn)
