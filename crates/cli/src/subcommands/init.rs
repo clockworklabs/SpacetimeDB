@@ -5,12 +5,13 @@ use anyhow::Context;
 use clap::{Arg, ArgMatches};
 use colored::Colorize;
 use convert_case::{Case, Casing};
-use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
+use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect, Input, Select};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use spacetimedb_client_api_messages::name::parse_database_name;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -18,7 +19,7 @@ use toml_edit::{value, DocumentMut, Item};
 use xmltree::{Element, XMLNode};
 
 use crate::spacetime_config::{PackageManager, SpacetimeConfig, CONFIG_FILENAME};
-use crate::subcommands::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
+use crate::subcommands::login::{spacetimedb_login_and_save, DEFAULT_AUTH_HOST};
 
 mod embedded {
     use spacetimedb_data_structures::map::HashCollectionExt as _;
@@ -35,17 +36,12 @@ pub struct TemplateDefinition {
     pub server_lang: Option<String>,
     #[serde(default)]
     pub client_lang: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct HighlightDefinition {
-    pub name: String,
-    pub template_id: String,
+    #[serde(default)]
+    pub client_framework: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct TemplatesList {
-    highlights: Vec<HighlightDefinition>,
     templates: Vec<TemplateDefinition>,
 }
 
@@ -195,11 +191,11 @@ pub fn cli() -> clap::Command {
         )
 }
 
-pub async fn fetch_templates_list() -> anyhow::Result<(Vec<HighlightDefinition>, Vec<TemplateDefinition>)> {
+pub async fn fetch_templates_list() -> anyhow::Result<Vec<TemplateDefinition>> {
     let content = embedded::get_templates_json();
     let templates_list: TemplatesList = serde_json::from_str(content).context("Failed to parse templates list JSON")?;
 
-    Ok((templates_list.highlights, templates_list.templates))
+    Ok(templates_list.templates)
 }
 
 pub async fn check_and_prompt_login(config: &mut Config) -> anyhow::Result<bool> {
@@ -218,7 +214,7 @@ pub async fn check_and_prompt_login(config: &mut Config) -> anyhow::Result<bool>
 
     if should_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
-        spacetimedb_login_force(config, &host, false, true).await?;
+        spacetimedb_login_and_save(config, &host, false, true).await?;
         println!("{}", "Successfully logged in!".green());
         Ok(true)
     } else {
@@ -680,7 +676,7 @@ async fn get_template_config_non_interactive(
     // Check if template is provided
     if let Some(template_str) = options.template.as_ref() {
         // Check if it's a builtin template
-        let (_, templates) = fetch_templates_list().await?;
+        let templates = fetch_templates_list().await?;
         return create_template_config_from_template_str(project_name, project_path, template_str, &templates);
     }
 
@@ -745,7 +741,7 @@ async fn get_template_config_interactive(
     if let Some(template_str) = options.template.as_ref() {
         println!("{} {}", "Template:".bold(), template_str);
 
-        let (_, templates) = fetch_templates_list().await?;
+        let templates = fetch_templates_list().await?;
         return create_template_config_from_template_str(project_name, project_path, template_str, &templates);
     }
 
@@ -769,114 +765,145 @@ async fn get_template_config_interactive(
     }
 
     // Fully interactive mode - prompt for template/language selection
-    let (highlights, templates) = fetch_templates_list().await?;
+    let templates = fetch_templates_list().await?;
 
-    let mut client_choices: Vec<String> = highlights
+    // First menu: all language combinations from templates + GitHub + None.
+    let mut templates_by_lang: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    for (idx, template) in templates.iter().enumerate() {
+        let server_lang = template.server_lang.as_deref();
+        let client_lang = template.client_framework.as_deref().or(template.client_lang.as_deref());
+        let lang = if server_lang == client_lang {
+            format_language_label(server_lang)
+        } else {
+            format!(
+                "{}/{}",
+                format_language_label(server_lang),
+                format_language_label(client_lang),
+            )
+        };
+        templates_by_lang.entry(lang).or_default().push(idx);
+    }
+
+    let lang_keys: Vec<String> = templates_by_lang.keys().cloned().collect();
+    let mut lang_items: Vec<String> = templates_by_lang
         .iter()
-        .map(|h| {
-            let template = templates.iter().find(|t| t.id == h.template_id);
-            match template {
-                Some(t) => format!("{} - {}", h.name, t.description),
-                None => h.name.clone(),
-            }
+        .map(|(lang, template_indices)| {
+            let count = template_indices.len();
+            let template_word = if count == 1 { "template" } else { "templates" };
+            format!("{lang} ({count} {template_word})")
         })
         .collect();
-    client_choices.push("Use Template - Choose from a list of built-in template projects or clone an existing SpacetimeDB project from GitHub".to_string());
-    client_choices.push("None".to_string());
+    lang_items.push("Clone from GitHub (owner/repo or git URL)".to_string());
+    lang_items.push("None".to_string());
 
-    let client_selection = Select::with_theme(&theme)
-        .with_prompt("Select a client type for your project (you can add other clients later)")
-        .items(&client_choices)
-        .default(0)
-        .interact()?;
-
-    let other_index = highlights.len();
-    let none_index = highlights.len() + 1;
-
-    if client_selection < highlights.len() {
-        let highlight = &highlights[client_selection];
-        let template = templates
-            .iter()
-            .find(|t| t.id == highlight.template_id)
-            .ok_or_else(|| anyhow::anyhow!("Template {} not found", highlight.template_id))?;
-
-        Ok(TemplateConfig {
-            project_name,
-            project_path,
-            template_type: TemplateType::Builtin,
-            server_lang: parse_server_lang(&template.server_lang)?,
-            client_lang: parse_client_lang(&template.client_lang)?,
-            github_repo: None,
-            template_def: Some(template.clone()),
-            use_local: true,
-        })
-    } else if client_selection == other_index {
-        println!("\n{}", "Available built-in templates:".bold());
-        for template in &templates {
-            println!("  {} - {}", template.id, template.description);
-        }
-        println!();
-
-        loop {
-            let template_id = Input::<String>::with_theme(&theme)
-                .with_prompt("Template ID or GitHub repository (owner/repo) or git URL")
-                .interact_text()?
-                .trim()
-                .to_string();
-            let template_config = create_template_config_from_template_str(
-                project_name.clone(),
-                project_path.clone(),
-                &template_id,
-                &templates,
-            );
-            // If template_id looks like a builtin template ID (e.g. kebab-case, all lowercase, no slashes, alphanumeric and dashes only)
-            // then ensure that it is a valid builtin template ID, if not reprompt
-            let is_builtin_like = |s: &str| {
-                !s.is_empty()
-                    && !s.contains('/')
-                    && s.chars()
-                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-            };
-            if !is_builtin_like(&template_id) {
-                break template_config;
-            }
-            if templates.iter().any(|t| t.id == template_id) {
-                break template_config;
-            }
-            eprintln!(
-                "{}",
-                "Unrecognized format. Enter a built-in ID (e.g. \"rust-chat\"), a GitHub repo (\"owner/repo\"), or a git URL."
-                    .bold()
-            );
-        }
-    } else if client_selection == none_index {
-        // Ask for server language only
-        let server_lang_choices = vec!["Rust", "C#", "TypeScript"];
-        let server_selection = Select::with_theme(&theme)
-            .with_prompt("Select server language")
-            .items(&server_lang_choices)
+    let github_clone_index = lang_keys.len();
+    let none_index = lang_keys.len() + 1;
+    loop {
+        let client_selection = FuzzySelect::with_theme(&theme)
+            .with_prompt("Select a language (type to filter)")
+            .items(&lang_items)
             .default(0)
             .interact()?;
 
-        let server_lang = match server_selection {
-            0 => Some(ServerLanguage::Rust),
-            1 => Some(ServerLanguage::Csharp),
-            2 => Some(ServerLanguage::TypeScript),
-            _ => unreachable!("Invalid server language selection"),
-        };
+        if client_selection < lang_keys.len() {
+            let selected_lang = &lang_keys[client_selection];
+            let template_indices = templates_by_lang
+                .get(selected_lang)
+                .ok_or_else(|| anyhow::anyhow!("No templates found for selected language"))?;
 
-        Ok(TemplateConfig {
-            project_name,
-            project_path,
-            template_type: TemplateType::Empty,
-            server_lang,
-            client_lang: None,
-            github_repo: None,
-            template_def: None,
-            use_local: true,
-        })
-    } else {
-        unreachable!("Invalid selection index")
+            let template = if template_indices.len() > 1 {
+                let template_items: Vec<String> = template_indices
+                    .iter()
+                    .map(|&idx| {
+                        let template = &templates[idx];
+                        format!("{} - {}", template.id, template.description)
+                    })
+                    .collect();
+
+                let pair_prompt = format!("Templates available for {selected_lang} (type to filter, Esc to go back)");
+                let template_selection = FuzzySelect::with_theme(&theme)
+                    .with_prompt(&pair_prompt)
+                    .items(&template_items)
+                    .default(0)
+                    .interact_opt()?;
+
+                let Some(template_selection) = template_selection else {
+                    continue;
+                };
+
+                &templates[template_indices[template_selection]]
+            } else {
+                &templates[template_indices[0]]
+            };
+
+            return Ok(TemplateConfig {
+                project_name,
+                project_path,
+                template_type: TemplateType::Builtin,
+                server_lang: parse_server_lang(&template.server_lang)?,
+                client_lang: parse_client_lang(&template.client_lang)?,
+                github_repo: None,
+                template_def: Some(template.clone()),
+                use_local: true,
+            });
+        } else if client_selection == github_clone_index {
+            return loop {
+                let repo_input = Input::<String>::with_theme(&theme)
+                    .with_prompt("GitHub repository (owner/repo) or git URL")
+                    .interact_text()?
+                    .trim()
+                    .to_string();
+                if repo_input.is_empty() {
+                    eprintln!("{}", "Please enter a GitHub repository.".bold());
+                    continue;
+                }
+                break create_template_config_from_template_str(
+                    project_name.clone(),
+                    project_path.clone(),
+                    &repo_input,
+                    &templates,
+                );
+            };
+        } else if client_selection == none_index {
+            // Ask for server language only
+            let server_lang_choices = vec!["Rust", "C#", "TypeScript"];
+            let server_selection = Select::with_theme(&theme)
+                .with_prompt("Select server language")
+                .items(&server_lang_choices)
+                .default(0)
+                .interact()?;
+
+            let server_lang = match server_selection {
+                0 => Some(ServerLanguage::Rust),
+                1 => Some(ServerLanguage::Csharp),
+                2 => Some(ServerLanguage::TypeScript),
+                _ => unreachable!("Invalid server language selection"),
+            };
+
+            return Ok(TemplateConfig {
+                project_name,
+                project_path,
+                template_type: TemplateType::Empty,
+                server_lang,
+                client_lang: None,
+                github_repo: None,
+                template_def: None,
+                use_local: true,
+            });
+        } else {
+            unreachable!("Invalid selection index");
+        }
+    }
+}
+
+fn format_language_label(lang: Option<&str>) -> String {
+    match lang {
+        Some(value) if value.eq_ignore_ascii_case("rust") => "Rust".to_string(),
+        Some(value) if value.eq_ignore_ascii_case("csharp") || value.eq_ignore_ascii_case("c#") => "C#".to_string(),
+        Some(value) if value.eq_ignore_ascii_case("typescript") => "TypeScript".to_string(),
+        Some(value) if value.eq_ignore_ascii_case("cpp") || value.eq_ignore_ascii_case("c++") => "C++".to_string(),
+        Some(value) if !value.trim().is_empty() => value.to_string(),
+        _ => "None".to_string(),
     }
 }
 

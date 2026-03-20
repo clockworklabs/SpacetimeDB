@@ -140,7 +140,7 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
 [SpacetimeDB.Index.BTree(Accessor = "TestIndexWithEmptyColumns", Columns = [])]
 [SpacetimeDB.Index.BTree(Accessor = "TestUnknownColumns", Columns = ["UnknownColumn"])]
  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-public partial struct TestIndexIssues
+[SpacetimeDB.Index.BTree(Columns = ["SelfIndexingColumn"])]
 */
       Message: Could not find the specified column UnknownColumn in TestIndexIssues.,
       Severity: Error,
@@ -148,6 +148,46 @@ public partial struct TestIndexIssues
         Id: STDB0016,
         Title: Unknown column,
         MessageFormat: Could not find the specified column {0} in {1}.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+[SpacetimeDB.Index.BTree(Accessor = "TestUnknownColumns", Columns = ["UnknownColumn"])]
+[SpacetimeDB.Index.BTree(Columns = ["SelfIndexingColumn"])]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Index.BTree(
+*/
+      Message: Index attribute on a table declaration must specify Accessor. Field-level index attributes may omit Accessor and default to the field name.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0029,
+        Title: Table-level index attributes must specify Accessor,
+        MessageFormat: Index attribute on a table declaration must specify Accessor. Field-level index attributes may omit Accessor and default to the field name.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+[SpacetimeDB.Index.BTree(Columns = ["SelfIndexingColumn"])]
+[SpacetimeDB.Index.BTree(
+ ^^^^^^^^^^^^^^^^^^^^^^^^
+    Name = "TestCanonicalNameWithoutAccessor",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Columns = ["SecondaryIndexingColumn"]
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+)]
+^
+public partial struct TestIndexIssues
+*/
+      Message: Index attribute on a table declaration must specify Accessor. Field-level index attributes may omit Accessor and default to the field name.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0029,
+        Title: Table-level index attributes must specify Accessor,
+        MessageFormat: Index attribute on a table declaration must specify Accessor. Field-level index attributes may omit Accessor and default to the field name.,
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true

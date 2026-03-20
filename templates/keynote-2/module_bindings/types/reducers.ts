@@ -6,11 +6,9 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
-import CreateAccountReducer from "../create_account_reducer";
 import SeedReducer from "../seed_reducer";
 import TransferReducer from "../transfer_reducer";
 
-export type CreateAccountParams = __Infer<typeof CreateAccountReducer>;
 export type SeedParams = __Infer<typeof SeedReducer>;
 export type TransferParams = __Infer<typeof TransferReducer>;
 

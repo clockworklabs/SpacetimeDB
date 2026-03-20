@@ -258,4 +258,13 @@ internal static class ErrorDescriptor
                 $"[SpacetimeDB.Settings] is declared multiple times: {string.Join(", ", fullNames)}",
             _ => Location.None
         );
+
+    public static readonly ErrorDescriptor<AttributeData> TableLevelIndexMissingAccessor =
+        new(
+            group,
+            "Table-level index attributes must specify Accessor",
+            _ =>
+                $"Index attribute on a table declaration must specify Accessor. Field-level index attributes may omit Accessor and default to the field name.",
+            attr => attr
+        );
 }

@@ -3,26 +3,10 @@
 #include "WebSocketsModule.h" // Required for FWebSocketsModule
 #include "SpacetimeDbSdk/Public/BSATN/UESpacetimeDB.h"
 #include "ModuleBindings/Types/ServerMessageType.g.h"
-#include "ModuleBindings/Types/CompressableQueryUpdateType.g.h"
-#include "Misc/Compression.h"
 
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonWriter.h"
 #include "Serialization/JsonSerializer.h"
-
-static void LogIdentityTokenHex(const FIdentityTokenType& InToken, const TCHAR* TagName)
-{
-	// Logs the identity token in a structured format for debugging purposes.
-	TSharedRef<FJsonObject> Obj = MakeShared<FJsonObject>();
-	Obj->SetStringField(TEXT("__identity__"), InToken.Identity.ToHex());
-	Obj->SetStringField(TEXT("token"), InToken.Token);
-	Obj->SetStringField(TEXT("__connection_id__"), InToken.ConnectionId.ToHex());
-
-	FString Json;
-	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Json);
-	FJsonSerializer::Serialize(Obj, Writer);
-	UE_LOG(LogSpacetimeDb_Connection, Log, TEXT("[%s] %s"), TagName, *Json);
-}
 
 UWebsocketManager::UWebsocketManager()
 {
@@ -64,8 +48,8 @@ void UWebsocketManager::Connect(const FString& ServerUrl)
 		UpgradeHeaders.Add("Authorization", HeaderToken);
 	}
 
-	// using the v1.bsatn.spacetimedb protocol for WebSocket connections
-	const FString Protocol = "v1.bsatn.spacetimedb"; // @TODO: Implement JSON alternative, v1.json.spacetimedb
+	// Use websocket protocol v2
+	const FString Protocol = "v2.bsatn.spacetimedb";
 
 	// Create the WebSocket connection
 	WebSocket = FWebSocketsModule::Get().CreateWebSocket(ServerUrl, Protocol, UpgradeHeaders);

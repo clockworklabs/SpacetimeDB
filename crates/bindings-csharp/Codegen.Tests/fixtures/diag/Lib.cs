@@ -441,10 +441,17 @@ public partial struct MyStruct
 [SpacetimeDB.Index.BTree(Accessor = "TestIndexWithoutColumns")]
 [SpacetimeDB.Index.BTree(Accessor = "TestIndexWithEmptyColumns", Columns = [])]
 [SpacetimeDB.Index.BTree(Accessor = "TestUnknownColumns", Columns = ["UnknownColumn"])]
+[SpacetimeDB.Index.BTree(Columns = ["SelfIndexingColumn"])]
+[SpacetimeDB.Index.BTree(
+    Name = "TestCanonicalNameWithoutAccessor",
+    Columns = ["SecondaryIndexingColumn"]
+)]
 public partial struct TestIndexIssues
 {
     [SpacetimeDB.Index.BTree(Accessor = "TestUnexpectedColumns", Columns = ["UnexpectedColumn"])]
     public int SelfIndexingColumn;
+
+    public int SecondaryIndexingColumn;
 }
 
 [SpacetimeDB.Table(

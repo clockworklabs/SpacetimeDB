@@ -8,7 +8,7 @@ use crate::database_logger::{DatabaseLogger, LogLevel, Record};
 use crate::db::relational_db::RelationalDB;
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
-use crate::estimation::estimate_rows_scanned;
+use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::hash::Hash;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
@@ -27,7 +27,6 @@ use crate::subscription::tx::DeltaTx;
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::subscription::{execute_plan, execute_plan_for_view};
 use crate::util::jobs::SingleCoreExecutor;
-use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::Context;
 use bytes::Bytes;
@@ -51,6 +50,7 @@ use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 use spacetimedb_durability::DurableOffset;
 use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
+use spacetimedb_execution::RelValue;
 use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
@@ -66,7 +66,6 @@ use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
-use spacetimedb_vm::relation::RelValue;
 use std::collections::VecDeque;
 use std::fmt;
 use std::sync::atomic::AtomicBool;
@@ -464,7 +463,6 @@ fn init_database_inner(
     let stdb = &*replica_ctx.relational_db;
     let logger = replica_ctx.logger.system_logger();
     let owner_identity = replica_ctx.database.owner_identity;
-    let host_type = replica_ctx.host_type;
 
     let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
     let auth_ctx = AuthCtx::for_current(owner_identity);
@@ -499,7 +497,7 @@ fn init_database_inner(
                     .with_context(|| format!("failed to create row-level security for table `{table_id}`: `{sql}`",))?;
             }
 
-            stdb.set_initialized(tx, host_type, program)?;
+            stdb.set_initialized(tx, program)?;
 
             anyhow::Ok(())
         })
@@ -754,6 +752,7 @@ impl CallProcedureParams {
 struct ModuleInstanceManager<M: GenericModule> {
     instances: Mutex<VecDeque<M::Instance>>,
     module: M,
+    module_instances_metric: ModuleInstancesMetric,
     create_instance_time_metric: CreateInstanceTimeMetric,
 }
 
@@ -765,11 +764,45 @@ struct CreateInstanceTimeMetric {
     database_identity: Identity,
 }
 
+/// Handle on the `spacetime_module_instances` label for a particular database
+/// which calls `remove_label_values` to clean up on drop.
+struct ModuleInstancesMetric {
+    metric: IntGauge,
+    host_type: HostType,
+    database_identity: Identity,
+    count: std::sync::Mutex<i64>,
+}
+
 impl Drop for CreateInstanceTimeMetric {
     fn drop(&mut self) {
         let _ = WORKER_METRICS
             .module_create_instance_time_seconds
             .remove_label_values(&self.database_identity, &self.host_type);
+    }
+}
+
+impl Drop for ModuleInstancesMetric {
+    fn drop(&mut self) {
+        let _ = WORKER_METRICS
+            .module_instances
+            .remove_label_values(&self.database_identity, &self.host_type);
+    }
+}
+
+impl ModuleInstancesMetric {
+    fn inc(&self) {
+        let mut count = self.count.lock().unwrap();
+        *count += 1;
+        self.metric.set(*count);
+    }
+
+    fn dec(&self) {
+        let mut count = self.count.lock().unwrap();
+        if *count == 0 {
+            return;
+        }
+        *count -= 1;
+        self.metric.set(*count);
     }
 }
 
@@ -782,6 +815,15 @@ impl CreateInstanceTimeMetric {
 impl<M: GenericModule> ModuleInstanceManager<M> {
     fn new(module: M, init_inst: M::Instance, database_identity: Identity) -> Self {
         let host_type = module.host_type();
+        let module_instances_metric = ModuleInstancesMetric {
+            metric: WORKER_METRICS
+                .module_instances
+                .with_label_values(&database_identity, &host_type),
+            host_type,
+            database_identity,
+            count: std::sync::Mutex::new(1),
+        };
+
         let create_instance_time_metric = CreateInstanceTimeMetric {
             metric: WORKER_METRICS
                 .module_create_instance_time_seconds
@@ -797,6 +839,7 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
         Self {
             instances: Mutex::new(instances),
             module,
+            module_instances_metric,
             create_instance_time_metric,
         }
     }
@@ -817,6 +860,7 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             let res = self.module.create_instance().await;
             let elapsed_time = start_time.elapsed();
             self.create_instance_time_metric.observe(elapsed_time);
+            self.module_instances_metric.inc();
             res
         }
     }
@@ -826,6 +870,7 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             // Don't return trapped instances;
             // they may have left internal data structures in the guest `Instance`
             // (WASM linear memory, V8 global scope) in a bad state.
+            self.module_instances_metric.dec();
             return;
         }
 
@@ -1252,7 +1297,6 @@ impl ModuleHost {
             client_id.identity,
             client_id.connection_id,
             info,
-            true,
             call_reducer,
             trapped_slot,
         )
@@ -1294,7 +1338,6 @@ impl ModuleHost {
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
         info: &ModuleInfo,
-        drop_view_subscribers: bool,
         call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResult, bool),
         trapped_slot: &mut bool,
     ) -> Result<(), ReducerCallError> {
@@ -1310,20 +1353,10 @@ impl ModuleHost {
 
         let workload = || Workload::reducer_no_args(reducer_name.clone(), caller_identity, caller_connection_id);
 
-        // Decrement the number of subscribers for each view this caller is subscribed to
-        let dec_view_subscribers = |tx: &mut MutTxId| {
-            if drop_view_subscribers && let Err(err) = tx.unsubscribe_views(caller_identity) {
-                log::error!("`call_identity_disconnected`: failed to delete client view data: {err}");
-            }
-        };
-
         // A fallback transaction that deletes the client from `st_client`.
         let database_identity = stdb.database_identity();
         let fallback = || {
             stdb.with_auto_commit(workload(), |mut_tx| {
-
-                dec_view_subscribers(mut_tx);
-
                 if !is_client_exist(mut_tx) {
                     // The client is already gone. Nothing to do.
                     log::debug!(
@@ -1349,9 +1382,7 @@ impl ModuleHost {
         };
 
         if let Some((reducer_id, reducer_def)) = reducer_lookup {
-            let mut mut_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload());
-
-            dec_view_subscribers(&mut mut_tx);
+            let mut_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload());
 
             if !is_client_exist(&mut_tx) {
                 // The client is already gone. Nothing to do.
@@ -1431,13 +1462,12 @@ impl ModuleHost {
         &self,
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
-        drop_view_subscribers: bool,
     ) -> Result<(), ReducerCallError> {
         self.call(
             "call_identity_disconnected",
-            (caller_identity, caller_connection_id, drop_view_subscribers),
-            async |(a, b, c), inst| inst.call_identity_disconnected(a, b, c),
-            async |(a, b, c), inst| inst.call_identity_disconnected(a, b, c).await,
+            (caller_identity, caller_connection_id),
+            async |(a, b), inst| inst.call_identity_disconnected(a, b),
+            async |(a, b), inst| inst.call_identity_disconnected(a, b).await,
         )
         .await?
     }
@@ -1900,7 +1930,12 @@ impl ModuleHost {
             let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
             let is_anonymous = st_view_row.is_anonymous;
             let sender = if is_anonymous { None } else { Some(caller) };
-            if !tx.is_view_materialized(view_id, ArgId::SENTINEL, caller)? {
+            let is_materialized = if is_anonymous {
+                tx.is_anonymous_view_materialized(view_id)?
+            } else {
+                tx.is_view_materialized(view_id, ArgId::SENTINEL, caller)?
+            };
+            if !is_materialized {
                 let (res, trapped) =
                     Self::call_view(instance, tx, &view_name, view_id, table_id, Nullary, caller, sender)?;
                 tx = res.tx;
@@ -1920,51 +1955,91 @@ impl ModuleHost {
         Ok((tx, false))
     }
 
+    /// Refreshes every view made stale by `tx`.
+    ///
+    /// The returned transaction contains both the original writes and any backing-table
+    /// updates produced by re-materializing the affected views.
     pub fn call_views_with_tx<I: WasmInstance>(
         tx: MutTxId,
         instance: &mut RefInstance<'_, I>,
         caller: Identity,
-    ) -> Result<(ViewCallResult, bool), ViewCallError> {
-        let mut out = ViewCallResult::default(tx);
+    ) -> (ViewCallResult, bool) {
+        Self::call_views_with_tx_at(tx, instance, caller, Timestamp::now())
+    }
+
+    /// Refreshes every view made stale by `tx`.
+    ///
+    /// This is the shared host-side path for finishing a transaction after writes have
+    /// invalidated one or more materialized views.
+    pub fn call_views_with_tx_at<I: WasmInstance>(
+        tx: MutTxId,
+        instance: &mut RefInstance<'_, I>,
+        caller: Identity,
+        timestamp: Timestamp,
+    ) -> (ViewCallResult, bool) {
+        let mut tx = tx;
         let module_def = &instance.common.info().module_def;
+        let mut outcome = ViewOutcome::Success;
+        let mut energy_used = FunctionBudget::ZERO;
+        let mut total_duration = Duration::ZERO;
+        let mut abi_duration = Duration::ZERO;
         let mut trapped = false;
-        use FunctionArgs::Nullary;
         for ViewCallInfo {
             view_id,
             table_id,
             fn_ptr,
             sender,
-        } in out.tx.views_for_refresh().cloned().collect::<Vec<_>>()
+        } in tx.views_for_refresh().cloned().collect::<Vec<_>>()
         {
-            let view_def = module_def
-                .get_view_by_id(fn_ptr, sender.is_none())
-                .ok_or(ViewCallError::NoSuchView)?;
+            let Some(view_def) = module_def.get_view_by_id(fn_ptr, sender.is_none()) else {
+                outcome = ViewOutcome::Failed(format!("view with fn_ptr `{fn_ptr}` not found"));
+                break;
+            };
+            let args = match FunctionArgs::Nullary.into_tuple_for_def(module_def, view_def) {
+                Ok(args) => args,
+                Err(err) => {
+                    outcome = ViewOutcome::Failed(format!("failed to build view args: {err}"));
+                    break;
+                }
+            };
 
-            let (result, trap) = Self::call_view(
+            let (result, trap) = Self::call_view_inner(
                 instance,
-                out.tx,
+                tx,
                 &view_def.name,
                 view_id,
                 table_id,
-                Nullary,
+                view_def.fn_ptr,
                 caller,
                 sender,
-            )?;
+                args,
+                view_def.product_type_ref,
+                timestamp,
+            );
 
             // Increment execution stats
-            out.tx = result.tx;
-            out.outcome = result.outcome;
-            out.energy_used += result.energy_used;
-            out.total_duration += result.total_duration;
-            out.abi_duration += result.abi_duration;
+            tx = result.tx;
+            outcome = result.outcome;
+            energy_used += result.energy_used;
+            total_duration += result.total_duration;
+            abi_duration += result.abi_duration;
             trapped |= trap;
 
             // Terminate early if execution failed
-            if !matches!(out.outcome, ViewOutcome::Success) || trapped {
+            if !matches!(outcome, ViewOutcome::Success) || trapped {
                 break;
             }
         }
-        Ok((out, trapped))
+        (
+            ViewCallResult {
+                outcome,
+                tx,
+                energy_used,
+                total_duration,
+                abi_duration,
+            },
+            trapped,
+        )
     }
 
     fn call_view<I: WasmInstance>(
@@ -1977,6 +2052,30 @@ impl ModuleHost {
         caller: Identity,
         sender: Option<Identity>,
     ) -> Result<(ViewCallResult, bool), ViewCallError> {
+        Self::call_view_at(
+            instance,
+            tx,
+            view_name,
+            view_id,
+            table_id,
+            args,
+            caller,
+            sender,
+            Timestamp::now(),
+        )
+    }
+
+    fn call_view_at<I: WasmInstance>(
+        instance: &mut RefInstance<'_, I>,
+        tx: MutTxId,
+        view_name: &Identifier,
+        view_id: ViewId,
+        table_id: TableId,
+        args: FunctionArgs,
+        caller: Identity,
+        sender: Option<Identity>,
+        timestamp: Timestamp,
+    ) -> Result<(ViewCallResult, bool), ViewCallError> {
         let module_def = &instance.common.info().module_def;
         let view_def = module_def.view(view_name).ok_or(ViewCallError::NoSuchView)?;
         let fn_ptr = view_def.fn_ptr;
@@ -1985,21 +2084,9 @@ impl ModuleHost {
             .into_tuple_for_def(module_def, view_def)
             .map_err(InvalidViewArguments)?;
 
-        match Self::call_view_inner(
-            instance, tx, view_name, view_id, table_id, fn_ptr, caller, sender, args, row_type,
-        ) {
-            err @ Err(ViewCallError::NoSuchView) => {
-                let _log_message = no_such_function_log_message("view", view_name);
-                //   self.inject_logs(LogLevel::Error, view_name, &log_message);
-                err
-            }
-            err @ Err(ViewCallError::Args(_)) => {
-                let _log_message = args_error_log_message("view", view_name);
-                // self.inject_logs(LogLevel::Error, view_name, &log_message);
-                err
-            }
-            res => res,
-        }
+        Ok(Self::call_view_inner(
+            instance, tx, view_name, view_id, table_id, fn_ptr, caller, sender, args, row_type, timestamp,
+        ))
     }
 
     fn call_view_inner<I: WasmInstance>(
@@ -2013,10 +2100,11 @@ impl ModuleHost {
         sender: Option<Identity>,
         args: ArgsTuple,
         row_type: AlgebraicTypeRef,
-    ) -> Result<(ViewCallResult, bool), ViewCallError> {
+        timestamp: Timestamp,
+    ) -> (ViewCallResult, bool) {
         let view_name = name.clone();
         let params = CallViewParams {
-            timestamp: Timestamp::now(),
+            timestamp,
             view_name,
             view_id,
             table_id,
@@ -2027,7 +2115,7 @@ impl ModuleHost {
             row_type,
         };
 
-        Ok(instance.common.call_view_with_tx(tx, params, instance.instance))
+        instance.common.call_view_with_tx(tx, params, instance.instance)
     }
 
     pub async fn init_database(&self, program: Program) -> Result<Option<ReducerCallResult>, InitDatabaseError> {

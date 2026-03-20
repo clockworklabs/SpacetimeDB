@@ -7,36 +7,36 @@
 #include "Types/LargeIntegers.h"
 #include "Types/Builtins.h"
 #include "ModuleBindings/Types/BsatnRowListType.g.h"
+#include "ModuleBindings/Types/CallProcedureType.g.h"
 #include "ModuleBindings/Types/CallReducerType.g.h"
 #include "ModuleBindings/Types/ClientMessageType.g.h"
-#include "ModuleBindings/Types/CompressableQueryUpdateType.g.h"
-#include "ModuleBindings/Types/DatabaseUpdateType.g.h"
-#include "ModuleBindings/Types/EnergyQuantaType.g.h"
-#include "ModuleBindings/Types/IdentityTokenType.g.h"
-#include "ModuleBindings/Types/InitialSubscriptionType.g.h"
-#include "ModuleBindings/Types/OneOffQueryResponseType.g.h"
+#include "ModuleBindings/Types/EventTableRowsType.g.h"
+#include "ModuleBindings/Types/InitialConnectionType.g.h"
 #include "ModuleBindings/Types/OneOffQueryType.g.h"
-#include "ModuleBindings/Types/OneOffTableType.g.h"
-#include "ModuleBindings/Types/QueryIdType.g.h"
-#include "ModuleBindings/Types/QueryUpdateType.g.h"
-#include "ModuleBindings/Types/ReducerCallInfoType.g.h"
+#include "ModuleBindings/Types/OneOffQueryResultType.g.h"
+#include "ModuleBindings/Types/PersistentTableRowsType.g.h"
+#include "ModuleBindings/Types/ProcedureResultType.g.h"
+#include "ModuleBindings/Types/ProcedureStatusType.g.h"
+#include "ModuleBindings/Types/QueryRowsType.g.h"
+#include "ModuleBindings/Types/QuerySetIdType.g.h"
+#include "ModuleBindings/Types/QuerySetUpdateType.g.h"
+#include "ModuleBindings/Types/ReducerOkType.g.h"
+#include "ModuleBindings/Types/ReducerOutcomeType.g.h"
+#include "ModuleBindings/Types/ReducerResultType.g.h"
+#include "ModuleBindings/Results/SpacetimeDbSdkResultQueryRowsString.g.h"
 #include "ModuleBindings/Types/RowSizeHintType.g.h"
 #include "ModuleBindings/Types/ServerMessageType.g.h"
+#include "ModuleBindings/Types/SingleTableRowsType.g.h"
 #include "ModuleBindings/Types/SubscribeAppliedType.g.h"
-#include "ModuleBindings/Types/SubscribeMultiAppliedType.g.h"
-#include "ModuleBindings/Types/SubscribeMultiType.g.h"
-#include "ModuleBindings/Types/SubscribeRowsType.g.h"
-#include "ModuleBindings/Types/SubscribeSingleType.g.h"
 #include "ModuleBindings/Types/SubscribeType.g.h"
 #include "ModuleBindings/Types/SubscriptionErrorType.g.h"
 #include "ModuleBindings/Types/TableUpdateType.g.h"
-#include "ModuleBindings/Types/TransactionUpdateLightType.g.h"
+#include "ModuleBindings/Types/TableUpdateRowsType.g.h"
 #include "ModuleBindings/Types/TransactionUpdateType.g.h"
 #include "ModuleBindings/Types/UnsubscribeAppliedType.g.h"
-#include "ModuleBindings/Types/UnsubscribeMultiAppliedType.g.h"
-#include "ModuleBindings/Types/UnsubscribeMultiType.g.h"
+#include "ModuleBindings/Types/UnsubscribeFlagsType.g.h"
 #include "ModuleBindings/Types/UnsubscribeType.g.h"
-#include "ModuleBindings/Types/UpdateStatusType.g.h"
+#include "ModuleBindings/Optionals/SpacetimeDbSdkOptionalQueryRows.g.h"
 
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -172,279 +172,191 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	ChartactarThingOrg.Type = OrgNpcChar;
 	TEST_ROUNDTRIP(FCharacterThing, ChartactarThingOrg, "FCharacterThing struct with Tagged Enum");
 
-	//Cliant API
-	LOG_Category("Cliant API");
-	//QueryIdType
-	FQueryIdType QueryId;
-	QueryId.Id = 100;
-	TEST_ROUNDTRIP(FQueryIdType, QueryId, "FQueryId");
+	// Client API (WS v2)
+	LOG_Category("Client API WS v2");
 
-	// SubscribeMultiType
-	FSubscribeMultiType SubscribeMulti;
-	SubscribeMulti.QueryStrings.Add("SELECT * FROM players");
-	SubscribeMulti.QueryStrings.Add("SELECT * FROM guilds WHERE region = 'EU'");
-	SubscribeMulti.RequestId = 500;
-	SubscribeMulti.QueryId = QueryId;
-	TEST_ROUNDTRIP(FSubscribeMultiType, SubscribeMulti, "FSubscribeMultiType");
+	FQuerySetIdType QuerySetId;
+	QuerySetId.Id = 100;
+	TEST_ROUNDTRIP(FQuerySetIdType, QuerySetId, "FQuerySetIdType");
 
-	// RowSizeHintType
 	FRowSizeHintType FixedSizeHint = FRowSizeHintType::FixedSize(static_cast<uint16>(128));
 	TEST_ROUNDTRIP(FRowSizeHintType, FixedSizeHint, "FRowSizeHintType::FixedSize Variant");
-	TArray<uint64> RowOffsetsArray; // keep empty like before (or add offsets if you want)
+	TArray<uint64> RowOffsetsArray;
 	FRowSizeHintType RowOffsetsHint = FRowSizeHintType::RowOffsets(RowOffsetsArray);
 	TEST_ROUNDTRIP(FRowSizeHintType, RowOffsetsHint, "FRowSizeHintType::RowOffsets Variant");
 
-	// BsatnRowListType
-	FBsatnRowListType BsatnRowList;
-	BsatnRowList.SizeHint = FixedSizeHint;
-	BsatnRowList.RowsData.Init(0xAB, 10);
-	TEST_ROUNDTRIP(FBsatnRowListType, BsatnRowList, "FBsatnRowListType with FixedSize hint");
+	FBsatnRowListType BsatnRowsFixed;
+	BsatnRowsFixed.SizeHint = FixedSizeHint;
+	BsatnRowsFixed.RowsData.Init(0xAB, 10);
+	TEST_ROUNDTRIP(FBsatnRowListType, BsatnRowsFixed, "FBsatnRowListType fixed");
 
-	// CallReducerType
+	FBsatnRowListType BsatnRowsOffsets;
+	BsatnRowsOffsets.SizeHint = RowOffsetsHint;
+	BsatnRowsOffsets.RowsData.Init(0xCD, 12);
+	TEST_ROUNDTRIP(FBsatnRowListType, BsatnRowsOffsets, "FBsatnRowListType offsets");
+
+	FSingleTableRowsType SingleTableRows;
+	SingleTableRows.Table = "PlayerStats";
+	SingleTableRows.Rows = BsatnRowsFixed;
+	TEST_ROUNDTRIP(FSingleTableRowsType, SingleTableRows, "FSingleTableRowsType");
+
+	FQueryRowsType QueryRows;
+	QueryRows.Tables.Add(SingleTableRows);
+	TEST_ROUNDTRIP(FQueryRowsType, QueryRows, "FQueryRowsType");
+
 	FCallReducerType CallReducer;
+	CallReducer.RequestId = 200;
+	CallReducer.Flags = 0;
 	CallReducer.Reducer = "MyGameReducer";
 	CallReducer.Args.Init(0xDE, 20);
-	CallReducer.RequestId = 200;
-	CallReducer.Flags = 0; 
 	TEST_ROUNDTRIP(FCallReducerType, CallReducer, "FCallReducerType");
 
-	// SubscribeType
+	FCallProcedureType CallProcedure;
+	CallProcedure.RequestId = 201;
+	CallProcedure.Flags = 0;
+	CallProcedure.Procedure = "MyGameProcedure";
+	CallProcedure.Args.Init(0xEF, 10);
+	TEST_ROUNDTRIP(FCallProcedureType, CallProcedure, "FCallProcedureType");
+
 	FSubscribeType Subscribe;
+	Subscribe.RequestId = 300;
+	Subscribe.QuerySetId = QuerySetId;
 	Subscribe.QueryStrings.Add("SELECT * FROM users WHERE status = 'online'");
 	Subscribe.QueryStrings.Add("SELECT item_name FROM inventory WHERE owner_id = 32");
-	Subscribe.RequestId = 300;
 	TEST_ROUNDTRIP(FSubscribeType, Subscribe, "FSubscribeType");
 
-	// OneOffQueryType
 	FOneOffQueryType OneOffQuery;
-	OneOffQuery.MessageId.Init(0xCC, 16);
+	OneOffQuery.RequestId = 301;
 	OneOffQuery.QueryString = "SELECT * FROM game_settings";
 	TEST_ROUNDTRIP(FOneOffQueryType, OneOffQuery, "FOneOffQueryType");
 
-	// SubscribeSingleType
-	FSubscribeSingleType SubscribeSingle;
-	SubscribeSingle.Query = "SELECT * FROM player_data WHERE player_id = 33";
-	SubscribeSingle.RequestId = 400;
-	SubscribeSingle.QueryId = QueryId;
-	TEST_ROUNDTRIP(FSubscribeSingleType, SubscribeSingle, "FSubscribeSingleType");
-
-	// UnsubscribeType
 	FUnsubscribeType Unsubscribe;
 	Unsubscribe.RequestId = 600;
-	Unsubscribe.QueryId = QueryId;
+	Unsubscribe.QuerySetId = QuerySetId;
+	Unsubscribe.Flags = EUnsubscribeFlagsType::SendDroppedRows;
 	TEST_ROUNDTRIP(FUnsubscribeType, Unsubscribe, "FUnsubscribeType");
 
-	// UnsubscribeMultiType
-	FUnsubscribeMultiType UnsubscribeMulti;
-	UnsubscribeMulti.RequestId = 700;
-	UnsubscribeMulti.QueryId = QueryId;
-	TEST_ROUNDTRIP(FUnsubscribeMultiType, UnsubscribeMulti, "FUnsubscribeMultiType");
-
-	// CallReducer variant
 	FClientMessageType ClientMessageCallReducer = FClientMessageType::CallReducer(CallReducer);
 	TEST_ROUNDTRIP(FClientMessageType, ClientMessageCallReducer, "FClientMessageType::CallReducer Variant");
+	FClientMessageType ClientMessageCallProcedure = FClientMessageType::CallProcedure(CallProcedure);
+	TEST_ROUNDTRIP(FClientMessageType, ClientMessageCallProcedure, "FClientMessageType::CallProcedure Variant");
 	FClientMessageType ClientMessageSubscribe = FClientMessageType::Subscribe(Subscribe);
 	TEST_ROUNDTRIP(FClientMessageType, ClientMessageSubscribe, "FClientMessageType::Subscribe Variant");
 	FClientMessageType ClientMessageOneOffQuery = FClientMessageType::OneOffQuery(OneOffQuery);
 	TEST_ROUNDTRIP(FClientMessageType, ClientMessageOneOffQuery, "FClientMessageType::OneOffQuery Variant");
-	FClientMessageType ClientMessageSubscribeSingle = FClientMessageType::SubscribeSingle(SubscribeSingle);
-	TEST_ROUNDTRIP(FClientMessageType, ClientMessageSubscribeSingle, "FClientMessageType::SubscribeSingle Variant");
-	FClientMessageType ClientMessageSubscribeMulti = FClientMessageType::SubscribeMulti(SubscribeMulti);
-	TEST_ROUNDTRIP(FClientMessageType, ClientMessageSubscribeMulti, "FClientMessageType::SubscribeMulti Variant");
 	FClientMessageType ClientMessageUnsubscribe = FClientMessageType::Unsubscribe(Unsubscribe);
 	TEST_ROUNDTRIP(FClientMessageType, ClientMessageUnsubscribe, "FClientMessageType::Unsubscribe Variant");
-	FClientMessageType ClientMessageUnsubscribeMulti = FClientMessageType::UnsubscribeMulti(UnsubscribeMulti);
-	TEST_ROUNDTRIP(FClientMessageType, ClientMessageUnsubscribeMulti, "FClientMessageType::UnsubscribeMulti Variant");
 
+	FPersistentTableRowsType PersistentRows;
+	PersistentRows.Inserts = BsatnRowsFixed;
+	PersistentRows.Deletes = BsatnRowsOffsets;
+	TEST_ROUNDTRIP(FPersistentTableRowsType, PersistentRows, "FPersistentTableRowsType");
 
-	// BsatnRowListType
-	FBsatnRowListType BsatnRowList1;
-	BsatnRowList1.SizeHint = FixedSizeHint;
-	BsatnRowList1.RowsData.Init(0xAB, 10);
-	TEST_ROUNDTRIP(FBsatnRowListType, BsatnRowList1, "FBsatnRowListType with FixedSize hint");
-	FBsatnRowListType BsatnRowList2;
-	BsatnRowList2.SizeHint = RowOffsetsHint;
-	BsatnRowList2.RowsData.Init(0xAB, 10);
-	TEST_ROUNDTRIP(FBsatnRowListType, BsatnRowList2, "FBsatnRowListType with RowOffsets hint");
+	FEventTableRowsType EventRows;
+	EventRows.Events = BsatnRowsFixed;
+	TEST_ROUNDTRIP(FEventTableRowsType, EventRows, "FEventTableRowsType");
 
-	// QueryUpdateType
-	FQueryUpdateType QueryUpdate;
-	QueryUpdate.Deletes = BsatnRowList1;
-	QueryUpdate.Inserts = BsatnRowList2;
-	TEST_ROUNDTRIP(FQueryUpdateType, QueryUpdate, "FQueryUpdateType");
+	FTableUpdateRowsType PersistentTableUpdateRows = FTableUpdateRowsType::PersistentTable(PersistentRows);
+	TEST_ROUNDTRIP(FTableUpdateRowsType, PersistentTableUpdateRows, "FTableUpdateRowsType::PersistentTable");
+	FTableUpdateRowsType EventTableUpdateRows = FTableUpdateRowsType::EventTable(EventRows);
+	TEST_ROUNDTRIP(FTableUpdateRowsType, EventTableUpdateRows, "FTableUpdateRowsType::EventTable");
 
-	// CompressableQueryUpdateType
-	FCompressableQueryUpdateType UncompressedUpdate =FCompressableQueryUpdateType::Uncompressed(QueryUpdate);
-	TEST_ROUNDTRIP(FCompressableQueryUpdateType, UncompressedUpdate, "FCompressableQueryUpdateType::Uncompressed Variant");
-	TArray<uint8> BrotliData;
-	BrotliData.Add(0x11);
-	BrotliData.Add(0x22);
-	FCompressableQueryUpdateType BrotliUpdate =FCompressableQueryUpdateType::Brotli(BrotliData);
-	TEST_ROUNDTRIP(FCompressableQueryUpdateType, BrotliUpdate, "FCompressableQueryUpdateType::Brotli Variant");
-	TArray<uint8> GzipData;
-	GzipData.Add(0xA1);
-	GzipData.Add(0xB2);
-	FCompressableQueryUpdateType GzipUpdate = FCompressableQueryUpdateType::Gzip(GzipData);
-	TEST_ROUNDTRIP(FCompressableQueryUpdateType, GzipUpdate, "FCompressableQueryUpdateType::Gzip Variant");
-
-	// TableUpdateType
 	FTableUpdateType TableUpdate;
-	TableUpdate.TableId = 1;
 	TableUpdate.TableName = "PlayerStats";
-	TableUpdate.NumRows = 100;
-	TableUpdate.Updates.Add(UncompressedUpdate);
-	TableUpdate.Updates.Add(BrotliUpdate);
-	TableUpdate.Updates.Add(GzipUpdate);
+	TableUpdate.Rows.Add(PersistentTableUpdateRows);
+	TableUpdate.Rows.Add(EventTableUpdateRows);
 	TEST_ROUNDTRIP(FTableUpdateType, TableUpdate, "FTableUpdateType");
 
-	// DatabaseUpdateType
-	FDatabaseUpdateType DatabaseUpdate;
-	DatabaseUpdate.Tables.Add(TableUpdate);
-	TEST_ROUNDTRIP(FDatabaseUpdateType, DatabaseUpdate, "FDatabaseUpdateType");
+	FQuerySetUpdateType QuerySetUpdate;
+	QuerySetUpdate.QuerySetId = QuerySetId;
+	QuerySetUpdate.Tables.Add(TableUpdate);
+	TEST_ROUNDTRIP(FQuerySetUpdateType, QuerySetUpdate, "FQuerySetUpdateType");
 
-	// EnergyQuantaType
-	FEnergyQuantaType EnergyQuanta;
-	EnergyQuanta.Quanta = FSpacetimeDBUInt128(1000, 500);
-	TEST_ROUNDTRIP(FEnergyQuantaType, EnergyQuanta, "FEnergyQuantaType");
-
-	// IdentityTokenType
-	FIdentityTokenType IdentityToken;
-	IdentityToken.Identity = FSpacetimeDBIdentity(FSpacetimeDBUInt256(FSpacetimeDBUInt128(10, 9), FSpacetimeDBUInt128(8, 7)));
-	IdentityToken.Token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
-	IdentityToken.ConnectionId = FSpacetimeDBConnectionId(FSpacetimeDBUInt128(12345, 67890));
-	TEST_ROUNDTRIP(FIdentityTokenType, IdentityToken, "FIdentityTokenType");
-
-	// InitialSubscriptionType
-	FInitialSubscriptionType InitialSubscription;
-	InitialSubscription.DatabaseUpdate = DatabaseUpdate;
-	InitialSubscription.RequestId = 101;
-	InitialSubscription.TotalHostExecutionDuration = FSpacetimeDBTimeDuration(500000); 
-	TEST_ROUNDTRIP(FInitialSubscriptionType, InitialSubscription, "FInitialSubscriptionType");
-
-
-	// OneOffTableType
-	FOneOffTableType OneOffTable;
-	OneOffTable.TableName = "GameScores";
-	OneOffTable.Rows = BsatnRowList1;
-	TEST_ROUNDTRIP(FOneOffTableType, OneOffTable, "FOneOffTableType");
-
-
-	// OneOffQueryResponseType
-	FOneOffQueryResponseType OneOffQueryResponse;
-	OneOffQueryResponse.MessageId.Init(0xDD, 16);
-	FSpacetimeDbSdkOptionalString SdkOptionalStringError;
-	SdkOptionalStringError.bHasValue = true;
-	SdkOptionalStringError.Value = "Error text";
-	OneOffQueryResponse.Tables.Add(OneOffTable);
-	OneOffQueryResponse.TotalHostExecutionDuration = FSpacetimeDBTimeDuration(123456);
-	TEST_ROUNDTRIP(FOneOffQueryResponseType, OneOffQueryResponse, "FOneOffQueryResponseType");
-
-	// ReducerCallInfoType
-	FReducerCallInfoType ReducerCallInfo;
-	ReducerCallInfo.ReducerName = "UpdatePlayerScore";
-	ReducerCallInfo.ReducerId = 123;
-	ReducerCallInfo.Args.Init(0xAB, 10);
-	ReducerCallInfo.RequestId = 789;
-	TEST_ROUNDTRIP(FReducerCallInfoType, ReducerCallInfo, "FReducerCallInfoType");
-
-	// UpdateStatusType
-	FUpdateStatusType StatusCommitted = FUpdateStatusType::Committed(DatabaseUpdate);
-	TEST_ROUNDTRIP(FUpdateStatusType, StatusCommitted, "FUpdateStatusType::Committed Variant");
-	FString FailedMsg = TEXT("Reducer execution failed due to invalid input.");
-	FUpdateStatusType StatusFailed = FUpdateStatusType::Failed(FailedMsg);
-	TEST_ROUNDTRIP(FUpdateStatusType, StatusFailed, "FUpdateStatusType::Failed Variant");
-	FSpacetimeDBUnit UnitValue{};
-	FUpdateStatusType StatusOutOfEnergy = FUpdateStatusType::OutOfEnergy(UnitValue);
-	TEST_ROUNDTRIP(FUpdateStatusType, StatusOutOfEnergy, "FUpdateStatusType::OutOfEnergy Variant");
-
-	// TransactionUpdateType
 	FTransactionUpdateType TransactionUpdate;
-	TransactionUpdate.Status = StatusCommitted;
-	TransactionUpdate.Timestamp = FSpacetimeDBTimestamp::FromFDateTime(FDateTime(2025, 6, 25, 9, 33, 0));
-	TransactionUpdate.CallerIdentity = FSpacetimeDBIdentity(FSpacetimeDBUInt256(FSpacetimeDBUInt128(1, 2), FSpacetimeDBUInt128(3, 4)));
-	TransactionUpdate.CallerConnectionId = FSpacetimeDBConnectionId(FSpacetimeDBUInt128(98765, 43210));
-	TransactionUpdate.ReducerCall = ReducerCallInfo;
-	TransactionUpdate.EnergyQuantaUsed = EnergyQuanta;
-	TransactionUpdate.TotalHostExecutionDuration = FSpacetimeDBTimeDuration(75000);
+	TransactionUpdate.QuerySets.Add(QuerySetUpdate);
 	TEST_ROUNDTRIP(FTransactionUpdateType, TransactionUpdate, "FTransactionUpdateType");
 
-	// SubscribeRowsType
-	FSubscribeRowsType SubscribeRows;
-	SubscribeRows.TableId = 10;
-	SubscribeRows.TableName = "ConfigData";
-	SubscribeRows.TableRows = TableUpdate;
-	TEST_ROUNDTRIP(FSubscribeRowsType, SubscribeRows, "FSubscribeRowsType");
-
-	// SubscribeAppliedType
 	FSubscribeAppliedType SubscribeApplied;
 	SubscribeApplied.RequestId = 12345;
-	SubscribeApplied.TotalHostExecutionDurationMicros = 250000;
-	SubscribeApplied.QueryId = QueryId;
-	SubscribeApplied.Rows = SubscribeRows;
+	SubscribeApplied.QuerySetId = QuerySetId;
+	SubscribeApplied.Rows = QueryRows;
 	TEST_ROUNDTRIP(FSubscribeAppliedType, SubscribeApplied, "FSubscribeAppliedType");
 
-	// SubscribeMultiAppliedType
-	FSubscribeMultiAppliedType SubscribeMultiApplied;
-	SubscribeMultiApplied.RequestId = 54321;
-	SubscribeMultiApplied.TotalHostExecutionDurationMicros = 300000; 
-	SubscribeMultiApplied.QueryId = QueryId;
-	SubscribeMultiApplied.Update = DatabaseUpdate;
-	TEST_ROUNDTRIP(FSubscribeMultiAppliedType, SubscribeMultiApplied, "FSubscribeMultiAppliedType");
+	FUnsubscribeAppliedType UnsubscribeApplied;
+	UnsubscribeApplied.RequestId = 3000;
+	UnsubscribeApplied.QuerySetId = QuerySetId;
+	UnsubscribeApplied.Rows = FSpacetimeDbSdkOptionalQueryRows(QueryRows);
+	TEST_ROUNDTRIP(FUnsubscribeAppliedType, UnsubscribeApplied, "FUnsubscribeAppliedType");
 
-	// SubscriptionErrorType
 	FSubscriptionErrorType SubscriptionError;
-	SubscriptionError.TotalHostExecutionDurationMicros = 50000; 
 	SubscriptionError.RequestId = FSpacetimeDbSdkOptionalUInt32(1001);
-	SubscriptionError.QueryId = FSpacetimeDbSdkOptionalUInt32(201);
-	SubscriptionError.TableId = FSpacetimeDbSdkOptionalUInt32(301);
+	SubscriptionError.QuerySetId = QuerySetId;
 	SubscriptionError.Error = "SQL syntax error in subscription query.";
 	TEST_ROUNDTRIP(FSubscriptionErrorType, SubscriptionError, "FSubscriptionErrorType");
 
-	// TransactionUpdateLightType
-	FTransactionUpdateLightType TransactionUpdateLight;
-	TransactionUpdateLight.RequestId = 2000;
-	TransactionUpdateLight.Update = DatabaseUpdate;
-	TEST_ROUNDTRIP(FTransactionUpdateLightType, TransactionUpdateLight, "FTransactionUpdateLightType");
+	FInitialConnectionType InitialConnection;
+	InitialConnection.Identity = FSpacetimeDBIdentity(FSpacetimeDBUInt256(FSpacetimeDBUInt128(10, 9), FSpacetimeDBUInt128(8, 7)));
+	InitialConnection.Token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
+	InitialConnection.ConnectionId = FSpacetimeDBConnectionId(FSpacetimeDBUInt128(12345, 67890));
+	TEST_ROUNDTRIP(FInitialConnectionType, InitialConnection, "FInitialConnectionType");
 
+	FSpacetimeDbSdkResultQueryRowsString OneOffResult = FSpacetimeDbSdkResultQueryRowsString::Ok(QueryRows);
+	TEST_ROUNDTRIP(FSpacetimeDbSdkResultQueryRowsString, OneOffResult, "FSpacetimeDbSdkResultQueryRowsString::Ok");
 
-	// UnsubscribeAppliedType
-	FUnsubscribeAppliedType UnsubscribeApplied;
-	UnsubscribeApplied.RequestId = 3000;
-	UnsubscribeApplied.TotalHostExecutionDurationMicros = 80000; 
-	UnsubscribeApplied.QueryId = QueryId;
-	UnsubscribeApplied.Rows = SubscribeRows;
-	TEST_ROUNDTRIP(FUnsubscribeAppliedType, UnsubscribeApplied, "FUnsubscribeAppliedType");
+	FOneOffQueryResultType OneOffQueryResult;
+	OneOffQueryResult.RequestId = 901;
+	OneOffQueryResult.Result = OneOffResult;
+	TEST_ROUNDTRIP(FOneOffQueryResultType, OneOffQueryResult, "FOneOffQueryResultType");
 
-	// UnsubscribeMultiAppliedType
-	FUnsubscribeMultiAppliedType UnsubscribeMultiApplied;
-	UnsubscribeMultiApplied.RequestId = 4000;
-	UnsubscribeMultiApplied.TotalHostExecutionDurationMicros = 100000;
-	UnsubscribeMultiApplied.QueryId = QueryId;
-	UnsubscribeMultiApplied.Update = DatabaseUpdate;
-	TEST_ROUNDTRIP(FUnsubscribeMultiAppliedType, UnsubscribeMultiApplied, "FUnsubscribeMultiAppliedType");
+	FReducerOkType ReducerOk;
+	ReducerOk.RetValue.Init(0xAA, 8);
+	ReducerOk.TransactionUpdate = TransactionUpdate;
+	TEST_ROUNDTRIP(FReducerOkType, ReducerOk, "FReducerOkType");
 
+	FReducerOutcomeType ReducerOutcomeOk = FReducerOutcomeType::Ok(ReducerOk);
+	TEST_ROUNDTRIP(FReducerOutcomeType, ReducerOutcomeOk, "FReducerOutcomeType::Ok");
+	TArray<uint8> ReducerErrBytes;
+	ReducerErrBytes.Add(0x11);
+	ReducerErrBytes.Add(0x22);
+	FReducerOutcomeType ReducerOutcomeErr = FReducerOutcomeType::Err(ReducerErrBytes);
+	TEST_ROUNDTRIP(FReducerOutcomeType, ReducerOutcomeErr, "FReducerOutcomeType::Err");
+	FReducerOutcomeType ReducerOutcomeInternal = FReducerOutcomeType::InternalError("Reducer crashed");
+	TEST_ROUNDTRIP(FReducerOutcomeType, ReducerOutcomeInternal, "FReducerOutcomeType::InternalError");
 
-	// UServerMessageType
-	FServerMessageType MessageInitialSubscription = FServerMessageType::InitialSubscription(InitialSubscription);
-	TEST_ROUNDTRIP(FServerMessageType, MessageInitialSubscription, "FServerMessageType::InitialSubscription Variant");
+	FReducerResultType ReducerResult;
+	ReducerResult.RequestId = 777;
+	ReducerResult.Timestamp = FSpacetimeDBTimestamp::FromFDateTime(FDateTime(2025, 6, 25, 9, 33, 0));
+	ReducerResult.Result = ReducerOutcomeOk;
+	TEST_ROUNDTRIP(FReducerResultType, ReducerResult, "FReducerResultType");
+
+	FProcedureStatusType ProcedureStatusReturned = FProcedureStatusType::Returned(TArray<uint8>{0x10, 0x20});
+	TEST_ROUNDTRIP(FProcedureStatusType, ProcedureStatusReturned, "FProcedureStatusType::Returned");
+	FProcedureStatusType ProcedureStatusInternal = FProcedureStatusType::InternalError("Procedure crashed");
+	TEST_ROUNDTRIP(FProcedureStatusType, ProcedureStatusInternal, "FProcedureStatusType::InternalError");
+
+	FProcedureResultType ProcedureResult;
+	ProcedureResult.Status = ProcedureStatusReturned;
+	ProcedureResult.Timestamp = FSpacetimeDBTimestamp::FromFDateTime(FDateTime(2025, 6, 25, 9, 35, 0));
+	ProcedureResult.TotalHostExecutionDuration = FSpacetimeDBTimeDuration(75000);
+	ProcedureResult.RequestId = 888;
+	TEST_ROUNDTRIP(FProcedureResultType, ProcedureResult, "FProcedureResultType");
+
+	FServerMessageType MessageInitialConnection = FServerMessageType::InitialConnection(InitialConnection);
+	TEST_ROUNDTRIP(FServerMessageType, MessageInitialConnection, "FServerMessageType::InitialConnection Variant");
 	FServerMessageType MessageTransactionUpdate = FServerMessageType::TransactionUpdate(TransactionUpdate);
 	TEST_ROUNDTRIP(FServerMessageType, MessageTransactionUpdate, "FServerMessageType::TransactionUpdate Variant");
-	FServerMessageType MessageTransactionUpdateLight = FServerMessageType::TransactionUpdateLight(TransactionUpdateLight);
-	TEST_ROUNDTRIP(FServerMessageType, MessageTransactionUpdateLight, "FServerMessageType::TransactionUpdateLight Variant");
-	FServerMessageType MessageIdentityToken = FServerMessageType::IdentityToken(IdentityToken);
-	TEST_ROUNDTRIP(FServerMessageType, MessageIdentityToken, "FServerMessageType::IdentityToken Variant");
-	FServerMessageType MessageOneOffQueryResponse = FServerMessageType::OneOffQueryResponse(OneOffQueryResponse);
-	TEST_ROUNDTRIP(FServerMessageType, MessageOneOffQueryResponse, "FServerMessageType::OneOffQueryResponse Variant");
+	FServerMessageType MessageOneOffQueryResult = FServerMessageType::OneOffQueryResult(OneOffQueryResult);
+	TEST_ROUNDTRIP(FServerMessageType, MessageOneOffQueryResult, "FServerMessageType::OneOffQueryResult Variant");
 	FServerMessageType MessageSubscribeApplied = FServerMessageType::SubscribeApplied(SubscribeApplied);
 	TEST_ROUNDTRIP(FServerMessageType, MessageSubscribeApplied, "FServerMessageType::SubscribeApplied Variant");
 	FServerMessageType MessageUnsubscribeApplied = FServerMessageType::UnsubscribeApplied(UnsubscribeApplied);
 	TEST_ROUNDTRIP(FServerMessageType, MessageUnsubscribeApplied, "FServerMessageType::UnsubscribeApplied Variant");
 	FServerMessageType MessageSubscriptionError = FServerMessageType::SubscriptionError(SubscriptionError);
 	TEST_ROUNDTRIP(FServerMessageType, MessageSubscriptionError, "FServerMessageType::SubscriptionError Variant");
-	FServerMessageType MessageSubscribeMultiApplied = FServerMessageType::SubscribeMultiApplied(SubscribeMultiApplied);
-	TEST_ROUNDTRIP(FServerMessageType, MessageSubscribeMultiApplied, "FServerMessageType::SubscribeMultiApplied Variant");
-	FServerMessageType MessageUnsubscribeMultiApplied = FServerMessageType::UnsubscribeMultiApplied(UnsubscribeMultiApplied);
-	TEST_ROUNDTRIP(FServerMessageType, MessageUnsubscribeMultiApplied, "FServerMessageType::UnsubscribeMultiApplied Variant");
+	FServerMessageType MessageReducerResult = FServerMessageType::ReducerResult(ReducerResult);
+	TEST_ROUNDTRIP(FServerMessageType, MessageReducerResult, "FServerMessageType::ReducerResult Variant");
+	FServerMessageType MessageProcedureResult = FServerMessageType::ProcedureResult(ProcedureResult);
+	TEST_ROUNDTRIP(FServerMessageType, MessageProcedureResult, "FServerMessageType::ProcedureResult Variant");
 
 	return true;
 }

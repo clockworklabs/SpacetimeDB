@@ -1203,14 +1203,30 @@ impl SubscriptionManager {
     /// If a query no longer has any subscribers,
     /// it is removed from the index along with its table ids.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn remove_all_subscriptions(&mut self, client: &ClientId) {
+    pub fn remove_all_subscriptions(&mut self, client: &ClientId) -> Vec<Query> {
+        let mut removed_query_hashes = HashSet::new();
+        if let Some(client_info) = self.clients.get(client) {
+            removed_query_hashes.extend(client_info.legacy_subscriptions.iter().copied());
+            removed_query_hashes.extend(client_info.subscription_ref_count.keys().copied());
+        }
+        let removed_queries = removed_query_hashes
+            .into_iter()
+            .filter_map(|hash| self.queries.get(&hash).map(|q| q.query.clone()))
+            .collect::<Vec<_>>();
+
         self.remove_legacy_subscriptions(client);
         let Some(client_info) = self.remove_client_and_inform_send_worker(*client) else {
-            return;
+            return removed_queries;
         };
 
         debug_assert!(client_info.legacy_subscriptions.is_empty());
         let mut queries_to_remove = Vec::new();
+        let v1_query_hashes = client_info
+            .v1_subscriptions
+            .values()
+            .flatten()
+            .copied()
+            .collect::<HashSet<_>>();
         for (subscription_id, queries) in client_info.v2_subscriptions {
             for query_hash in queries {
                 let Some(query_state) = self.queries.get_mut(&query_hash) else {
@@ -1231,15 +1247,15 @@ impl SubscriptionManager {
             }
         }
         // This loop can be removed once v1 subscriptions are removed.
-        for query_hash in client_info.subscription_ref_count.keys() {
-            let Some(query_state) = self.queries.get_mut(query_hash) else {
+        for query_hash in v1_query_hashes {
+            let Some(query_state) = self.queries.get_mut(&query_hash) else {
                 // This can happen if they are cliented up in the v2 loop above.
                 continue;
             };
             query_state.subscriptions.remove(client);
             // This could happen twice for the same hash if a client has a duplicate, but that's fine. It is idepotent.
             if !query_state.has_subscribers() {
-                queries_to_remove.push(*query_hash);
+                queries_to_remove.push(query_hash);
                 SubscriptionManager::remove_query_from_tables(
                     &mut self.tables,
                     &mut self.join_edges,
@@ -1252,6 +1268,8 @@ impl SubscriptionManager {
         for query_hash in queries_to_remove {
             self.queries.remove(&query_hash);
         }
+
+        removed_queries
     }
 
     /// Find the queries that need to be evaluated for this table update.
@@ -1460,8 +1478,6 @@ impl SubscriptionManager {
             })
             .fold(FoldState::default(), |mut acc, (qstate, plan, _hash)| {
                 let table_name = plan.subscribed_table_name().clone();
-                // let subscriptions_for_query = qstate.v2_subscriptions
-
                 match eval_delta(tx, &mut acc.metrics, plan) {
                     Err(err) => {
                         tracing::error!(
@@ -2201,8 +2217,11 @@ mod tests {
     }
 
     fn compile_plan(db: &RelationalDB, sql: &str) -> ResultTest<Arc<Plan>> {
+        compile_plan_with_auth(db, sql, AuthCtx::for_testing())
+    }
+
+    fn compile_plan_with_auth(db: &RelationalDB, sql: &str, auth: AuthCtx) -> ResultTest<Arc<Plan>> {
         with_read_only(db, |tx| {
-            let auth = AuthCtx::for_testing();
             let tx = SchemaViewer::new(&*tx, &auth);
             let (plans, has_param) = SubscriptionPlan::compile(sql, &tx, &auth).unwrap();
             let hash = QueryHash::from_string(sql, auth.caller(), has_param);
@@ -2216,6 +2235,14 @@ mod tests {
 
     fn client(connection_id: u128, db: &Arc<RelationalDB>) -> ClientConnectionSender {
         let (identity, connection_id) = id(connection_id);
+        client_with_identity(identity, connection_id, db)
+    }
+
+    fn client_with_identity(
+        identity: Identity,
+        connection_id: ConnectionId,
+        db: &Arc<RelationalDB>,
+    ) -> ClientConnectionSender {
         ClientConnectionSender::dummy(
             ClientActorId {
                 identity,
