@@ -57,6 +57,7 @@ use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::{RowRef, TableScanIter};
 use std::borrow::Cow;
 use std::io;
+use std::num::NonZeroUsize;
 use std::ops::{Bound, RangeBounds};
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -150,9 +151,16 @@ impl RelationalDB {
             Arc::new(EnumMap::from_fn(|ty| ExecutionCounters::new(&ty, &database_identity)));
 
         let (durability, disk_size_fn, snapshot_worker, rt) = Persistence::unzip(persistence);
-        let durability = durability
-            .zip(rt)
-            .map(|(durability, rt)| DurabilityWorker::new(database_identity, durability, rt));
+        let durability = durability.zip(rt).map(|(durability, rt)| {
+            let next_tx_offset = {
+                let tx = inner.begin_tx(Workload::Internal);
+                let next_tx_offset = tx.tx_offset();
+                let _ = inner.release_tx(tx);
+                next_tx_offset.into_inner()
+            };
+            let reorder_window_size = NonZeroUsize::new(8).unwrap();
+            DurabilityWorker::new(database_identity, durability, rt, next_tx_offset, reorder_window_size)
+        });
 
         Self {
             inner,

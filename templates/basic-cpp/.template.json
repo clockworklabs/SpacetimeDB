@@ -1,5 +1,8 @@
 {
   "description": "A basic C++ server template with only stubs for code",
   "server_lang": "cpp",
-  "client_lang": "rust"
+  "client_lang": "rust",
+  "builtWith": [
+    "spacetimedb-sdk"
+  ]
 }
