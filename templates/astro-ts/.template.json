@@ -1,0 +1,13 @@
+{
+  "description": "Astro app with a TypeScript server module",
+  "client_framework": "Astro",
+  "client_lang": "typescript",
+  "server_lang": "typescript",
+  "builtWith": [
+    "astro",
+    "react",
+    "react-dom",
+    "typescript",
+    "spacetimedb"
+  ]
+}

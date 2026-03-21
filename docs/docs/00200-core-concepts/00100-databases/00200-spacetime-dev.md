@@ -70,6 +70,7 @@ Choose from several built-in templates:
 - `basic-rs` - Basic Rust client and server stubs
 - `basic-cpp` - Basic C++ server stubs
 - `react-ts` - React web app with TypeScript server
+- `astro-ts` - Astro app with TypeScript server
 - `chat-console-rs` - Complete Rust chat implementation
 - `chat-console-cs` - Complete C# chat implementation
 - `chat-react-ts` - Complete TypeScript chat implementation
