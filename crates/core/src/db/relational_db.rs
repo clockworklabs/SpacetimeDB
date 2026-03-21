@@ -152,10 +152,14 @@ impl RelationalDB {
         let workload_type_to_exec_counters =
             Arc::new(EnumMap::from_fn(|ty| ExecutionCounters::new(&ty, &database_identity)));
 
-        let (durability, disk_size_fn, snapshot_worker, rt) = Persistence::unzip(persistence);
-        let durability = durability
-            .zip(rt)
-            .map(|(durability, rt)| DurabilityWorker::new(database_identity, durability, rt));
+        let (durability, local_durability, disk_size_fn, snapshot_worker, rt) = Persistence::unzip(persistence);
+        let durability = match (local_durability, durability, rt) {
+            (Some(local_durability), _, Some(rt)) => {
+                Some(DurabilityWorker::new_local(database_identity, local_durability, rt))
+            }
+            (None, Some(durability), Some(rt)) => Some(DurabilityWorker::new(database_identity, durability, rt)),
+            _ => None,
+        };
 
         Self {
             inner,
@@ -2027,6 +2031,7 @@ pub mod tests_utils {
 
             let persistence = Persistence {
                 durability: local.clone(),
+                local_durability: Some(local.clone()),
                 disk_size: disk_size_fn,
                 snapshots,
                 runtime: rt,
@@ -2148,6 +2153,7 @@ pub mod tests_utils {
             let history = local.as_history();
             let persistence = Persistence {
                 durability: local.clone(),
+                local_durability: Some(local.clone()),
                 disk_size: disk_size_fn,
                 snapshots,
                 runtime: rt,
