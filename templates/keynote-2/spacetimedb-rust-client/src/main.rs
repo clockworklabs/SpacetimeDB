@@ -130,7 +130,7 @@ fn bench(cli: &Common, bench: &Bench) {
     // Dump some config parameters.
     let alpha = bench.alpha;
     let accounts = cli.accounts;
-    let amount = bench.amount;
+    let amount = bench.amount as i64;
     if !cli.quiet {
         println!("Benchmark parameters:");
         println!("alpha={alpha}, amount = {amount}, accounts = {accounts}");

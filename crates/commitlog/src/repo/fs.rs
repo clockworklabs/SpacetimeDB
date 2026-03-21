@@ -240,9 +240,14 @@ impl Repo for Fs {
         File::options().read(true).append(true).open(self.segment_path(offset))
     }
 
+    fn segment_file_path(&self, offset: u64) -> Option<String> {
+        Some(self.segment_path(offset).0.to_string_lossy().into_owned())
+    }
+
     fn open_segment_reader(&self, offset: u64) -> io::Result<Self::SegmentReader> {
-        debug!("fs: open segment at {}", self.segment_path(offset).display());
-        let file = File::open(self.segment_path(offset))?;
+        let path = self.segment_path(offset);
+        debug!("fs: open segment at {}", path.display());
+        let file = File::open(&path)?;
         CompressReader::new(file).map(|inner| ReadOnlySegment { inner })
     }
 

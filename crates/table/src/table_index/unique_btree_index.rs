@@ -94,7 +94,7 @@ impl<K: Ord + KeySize> Index for UniqueBTreeIndex<K> {
     }
 }
 
-/// An iterator over the potential value in a unique index for a given key.
+/// An iterator over the potential value in a unique index for a given key.crates/table/src/table_index/uniquemap.rs
 pub struct UniquePointIter {
     /// The iterator seeking for matching keys in the range.
     pub(super) iter: IntoIter<RowPointer>,
