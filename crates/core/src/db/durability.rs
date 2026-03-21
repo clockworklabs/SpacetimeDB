@@ -7,8 +7,10 @@ use spacetimedb_commitlog::payload::{
     Txdata,
 };
 use spacetimedb_datastore::{execution_context::ReducerContext, traits::TxData};
+use spacetimedb_durability::Durability as _;
 use spacetimedb_durability::{DurableOffset, Transaction, TxOffset};
 use spacetimedb_lib::Identity;
+use spacetimedb_sats::ProductValue;
 use tokio::{
     runtime,
     sync::{
@@ -19,7 +21,7 @@ use tokio::{
     time::timeout,
 };
 
-use crate::db::persistence::Durability;
+use crate::db::persistence::{Durability, LocalDurability};
 
 /// A request to persist a transaction or to terminate the actor.
 pub struct DurabilityRequest {
@@ -36,10 +38,19 @@ type ShutdownReply = oneshot::Sender<OwnedNotified>;
 /// preparing the [TxData] for processing by the [Durability] layer.
 pub struct DurabilityWorker {
     database: Identity,
-    request_tx: UnboundedSender<DurabilityRequest>,
-    shutdown: Sender<ShutdownReply>,
-    durability: Arc<Durability>,
     runtime: runtime::Handle,
+    inner: DurabilityWorkerInner,
+}
+
+enum DurabilityWorkerInner {
+    Generic {
+        request_tx: UnboundedSender<DurabilityRequest>,
+        shutdown: Sender<ShutdownReply>,
+        durability: Arc<Durability>,
+    },
+    Local {
+        durability: LocalDurability,
+    },
 }
 
 impl DurabilityWorker {
@@ -60,13 +71,28 @@ impl DurabilityWorker {
 
         Self {
             database,
-            request_tx,
-            shutdown: shutdown_tx,
-            durability,
             runtime,
+            inner: DurabilityWorkerInner::Generic {
+                request_tx,
+                shutdown: shutdown_tx,
+                durability,
+            },
         }
     }
 
+    /// Create a [`DurabilityWorker`] that uses the local commitlog durability
+    /// actor directly. This removes the extra core durability actor so the
+    /// local path has only one queued background worker.
+    pub fn new_local(database: Identity, durability: LocalDurability, runtime: runtime::Handle) -> Self {
+        Self {
+            database,
+            runtime,
+            inner: DurabilityWorkerInner::Local { durability },
+        }
+    }
+}
+
+impl DurabilityWorker {
     /// Request that a transaction be made durable.
     /// That is, if `(tx_data, ctx)` should be appended to the commitlog, do so.
     ///
@@ -88,17 +114,26 @@ impl DurabilityWorker {
     /// - [Self::shutdown] was called
     ///
     pub fn request_durability(&self, reducer_context: Option<ReducerContext>, tx_data: &Arc<TxData>) {
-        self.request_tx
-            .send(DurabilityRequest {
-                reducer_context,
-                tx_data: tx_data.clone(),
-            })
-            .unwrap_or_else(|_| panic!("durability actor vanished database={}", self.database));
+        match &self.inner {
+            DurabilityWorkerInner::Generic { request_tx, .. } => request_tx
+                .send(DurabilityRequest {
+                    reducer_context,
+                    tx_data: tx_data.clone(),
+                })
+                .unwrap_or_else(|_| panic!("durability actor vanished database={}", self.database)),
+            DurabilityWorkerInner::Local { durability } => {
+                let tx_data = tx_data.clone();
+                durability.append_tx_deferred(move || prepare_tx_data_for_durability(reducer_context, &tx_data));
+            }
+        }
     }
 
     /// Get the [`DurableOffset`] of this database.
     pub fn durable_tx_offset(&self) -> DurableOffset {
-        self.durability.durable_tx_offset()
+        match &self.inner {
+            DurabilityWorkerInner::Generic { durability, .. } => durability.durable_tx_offset(),
+            DurabilityWorkerInner::Local { durability } => durability.durable_tx_offset(),
+        }
     }
 
     /// Shut down the worker without dropping it,
@@ -112,20 +147,26 @@ impl DurabilityWorker {
     /// After this method was called, calling [Self::request_durability]
     /// will panic.
     pub async fn close(&self) -> Option<TxOffset> {
-        let (done_tx, done_rx) = oneshot::channel();
-        // Channel errors can be ignored.
-        // It just means that the actor already exited.
-        let _ = self
-            .shutdown
-            .send(done_tx)
-            .map_err(drop)
-            .and_then(|()| done_rx.map_err(drop))
-            .and_then(|done| async move {
-                done.await;
-                Ok(())
-            })
-            .await;
-        self.durability.close().await
+        match &self.inner {
+            DurabilityWorkerInner::Generic {
+                shutdown, durability, ..
+            } => {
+                let (done_tx, done_rx) = oneshot::channel();
+                // Channel errors can be ignored.
+                // It just means that the actor already exited.
+                let _ = shutdown
+                    .send(done_tx)
+                    .map_err(drop)
+                    .and_then(|()| done_rx.map_err(drop))
+                    .and_then(|done| async move {
+                        done.await;
+                        Ok(())
+                    })
+                    .await;
+                durability.close().await
+            }
+            DurabilityWorkerInner::Local { durability } => durability.close().await,
+        }
     }
 
     /// Consume `self` and run [Self::close].
@@ -187,65 +228,66 @@ impl DurabilityWorkerActor {
                     let Some(DurabilityRequest { reducer_context, tx_data }) = req else {
                         break;
                     };
-                    Self::do_durability(&*self.durability, reducer_context, &tx_data);
+                    if let Some(tx) = prepare_tx_data_for_durability(reducer_context, &tx_data) {
+                        self.durability.append_tx(tx);
+                    }
                 }
             }
         }
 
         info!("durability worker actor done");
     }
+}
 
-    pub fn do_durability(durability: &Durability, reducer_context: Option<ReducerContext>, tx_data: &TxData) {
-        let Some(tx_offset) = tx_data.tx_offset() else {
-            let name = reducer_context.as_ref().map(|rcx| &rcx.name);
-            debug_assert!(
-                !tx_data.has_rows_or_connect_disconnect(name),
-                "tx_data has no rows but has connect/disconnect: `{name:?}`"
-            );
-            return;
-        };
-
-        let mut inserts: Box<_> = tx_data
-            .persistent_inserts()
-            .map(|(table_id, rowdata)| Ops { table_id, rowdata })
-            .collect();
-        // What we get from `tx_data` is not necessarily sorted,
-        // but the durability layer expects by-table_id sorted data.
-        // Unstable sorts are valid, there will only ever be one entry per table_id.
-        inserts.sort_unstable_by_key(|ops| ops.table_id);
-
-        let mut deletes: Box<_> = tx_data
-            .persistent_deletes()
-            .map(|(table_id, rowdata)| Ops { table_id, rowdata })
-            .collect();
-        deletes.sort_unstable_by_key(|ops| ops.table_id);
-
-        let mut truncates: Box<[_]> = tx_data.persistent_truncates().collect();
-        truncates.sort_unstable_by_key(|table_id| *table_id);
-
-        let inputs = reducer_context.map(|rcx| rcx.into());
-
+fn prepare_tx_data_for_durability(
+    reducer_context: Option<ReducerContext>,
+    tx_data: &TxData,
+) -> Option<Transaction<Txdata<ProductValue>>> {
+    let Some(tx_offset) = tx_data.tx_offset() else {
+        let name = reducer_context.as_ref().map(|rcx| &rcx.name);
         debug_assert!(
-            !(inserts.is_empty() && truncates.is_empty() && deletes.is_empty() && inputs.is_none()),
-            "empty transaction"
+            !tx_data.has_rows_or_connect_disconnect(name),
+            "tx_data has no rows but has connect/disconnect: `{name:?}`"
         );
+        return None;
+    };
 
-        let txdata = Txdata {
-            inputs,
-            outputs: None,
-            mutations: Some(Mutations {
-                inserts,
-                deletes,
-                truncates,
-            }),
-        };
+    let mut inserts: Box<_> = tx_data
+        .persistent_inserts()
+        .map(|(table_id, rowdata)| Ops { table_id, rowdata })
+        .collect();
+    inserts.sort_unstable_by_key(|ops| ops.table_id);
 
-        // This does not block, as per trait docs.
-        durability.append_tx(Transaction {
-            offset: tx_offset,
-            txdata,
-        });
-    }
+    let mut deletes: Box<_> = tx_data
+        .persistent_deletes()
+        .map(|(table_id, rowdata)| Ops { table_id, rowdata })
+        .collect();
+    deletes.sort_unstable_by_key(|ops| ops.table_id);
+
+    let mut truncates: Box<[_]> = tx_data.persistent_truncates().collect();
+    truncates.sort_unstable_by_key(|table_id| *table_id);
+
+    let inputs = reducer_context.map(|rcx| rcx.into());
+
+    debug_assert!(
+        !(inserts.is_empty() && truncates.is_empty() && deletes.is_empty() && inputs.is_none()),
+        "empty transaction"
+    );
+
+    let txdata = Txdata {
+        inputs,
+        outputs: None,
+        mutations: Some(Mutations {
+            inserts,
+            deletes,
+            truncates,
+        }),
+    };
+
+    Some(Transaction {
+        offset: tx_offset,
+        txdata,
+    })
 }
 
 #[cfg(test)]

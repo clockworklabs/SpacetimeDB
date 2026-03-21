@@ -67,6 +67,24 @@ pub enum OpenError {
 
 type ShutdownReply = oneshot::Sender<OwnedNotified>;
 
+enum QueueItem<T> {
+    Ready(Transaction<Txdata<T>>),
+    Deferred(Box<dyn DeferredTx<T>>),
+}
+
+trait DeferredTx<T>: Send {
+    fn prepare(self: Box<Self>) -> Option<Transaction<Txdata<T>>>;
+}
+
+impl<T, F> DeferredTx<T> for F
+where
+    F: FnOnce() -> Option<Transaction<Txdata<T>>> + Send + 'static,
+{
+    fn prepare(self: Box<Self>) -> Option<Transaction<Txdata<T>>> {
+        self()
+    }
+}
+
 /// [`Durability`] implementation backed by a [`Commitlog`] on local storage.
 ///
 /// The commitlog is constrained to store the canonical [`Txdata`] payload,
@@ -88,7 +106,7 @@ pub struct Local<T> {
     /// [`PersisterTask`].
     ///
     /// Note that this is unbounded!
-    queue: mpsc::UnboundedSender<Transaction<Txdata<T>>>,
+    queue: mpsc::UnboundedSender<QueueItem<T>>,
     /// How many transactions are sitting in the `queue`.
     ///
     /// This is mainly for observability purposes, and can thus be updated with
@@ -207,7 +225,7 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
     #[instrument(name = "durability::local::actor", skip_all)]
     async fn run(
         self,
-        mut transactions_rx: mpsc::UnboundedReceiver<Transaction<Txdata<T>>>,
+        mut transactions_rx: mpsc::UnboundedReceiver<QueueItem<T>>,
         mut shutdown_rx: mpsc::Receiver<oneshot::Sender<OwnedNotified>>,
     ) {
         info!("starting durability actor");
@@ -239,9 +257,15 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                     }
                     self.queue_depth.fetch_sub(n as u64, Relaxed);
                     let clog = self.clog.clone();
-                    tx_buf = spawn_blocking(move || -> io::Result<Vec<Transaction<Txdata<T>>>> {
-                        for tx in tx_buf.drain(..) {
-                            clog.commit([tx])?;
+                    tx_buf = spawn_blocking(move || -> io::Result<Vec<QueueItem<T>>> {
+                        for item in tx_buf.drain(..) {
+                            let tx = match item {
+                                QueueItem::Ready(tx) => Some(tx),
+                                QueueItem::Deferred(prepare) => prepare.prepare(),
+                            };
+                            if let Some(tx) = tx {
+                                clog.commit([tx])?;
+                            }
                         }
                         Ok(tx_buf)
                     })
@@ -328,7 +352,7 @@ impl<T: Send + Sync + 'static> Durability for Local<T> {
     type TxData = Txdata<T>;
 
     fn append_tx(&self, tx: Transaction<Self::TxData>) {
-        self.queue.send(tx).expect("durability actor crashed");
+        self.queue.send(QueueItem::Ready(tx)).expect("durability actor crashed");
         self.queue_depth.fetch_add(1, Relaxed);
     }
 
@@ -365,6 +389,15 @@ impl<T: Send + Sync + 'static> Durability for Local<T> {
             durable_offset.last_seen()
         }
         .boxed()
+    }
+}
+
+impl<T: Send + Sync + 'static> Local<T> {
+    pub fn append_tx_deferred(&self, prepare: impl FnOnce() -> Option<Transaction<Txdata<T>>> + Send + 'static) {
+        self.queue
+            .send(QueueItem::Deferred(Box::new(prepare)))
+            .expect("durability actor crashed");
+        self.queue_depth.fetch_add(1, Relaxed);
     }
 }
 
