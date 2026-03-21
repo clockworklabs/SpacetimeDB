@@ -1,0 +1,6 @@
+bin
+obj
+
+.DS_Store
+
+spacetime.local.json
