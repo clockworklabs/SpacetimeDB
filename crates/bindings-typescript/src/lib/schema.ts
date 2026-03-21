@@ -195,6 +195,7 @@ export class ModuleContext {
     procedures: [],
     views: [],
     lifeCycleReducers: [],
+    httpRoutes: [],
     caseConversionPolicy: { tag: 'SnakeCase' },
     explicitNames: {
       entries: [],
@@ -221,6 +222,7 @@ export class ModuleContext {
     push(module.procedures && { tag: 'Procedures', value: module.procedures });
     push(module.views && { tag: 'Views', value: module.views });
     push(module.schedules && { tag: 'Schedules', value: module.schedules });
+    push(module.httpRoutes && { tag: 'HttpRoutes', value: module.httpRoutes });
     push(
       module.lifeCycleReducers && {
         tag: 'LifeCycleReducers',

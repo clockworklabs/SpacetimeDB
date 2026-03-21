@@ -90,6 +90,9 @@ impl<'opts> Cpp<'opts> {
             AlgebraicTypeUse::TimeDuration => write!(output, "__sdk::TimeDuration"),
             AlgebraicTypeUse::ScheduleAt => write!(output, "__sdk::ScheduleAt"),
             AlgebraicTypeUse::Uuid => write!(output, "__sdk::Uuid"),
+            AlgebraicTypeUse::HttpRequestAndBody | AlgebraicTypeUse::HttpResponseAndBody => {
+                unimplemented!("Http request/response types are not supported in C++ output")
+            }
             AlgebraicTypeUse::Unit => write!(output, "std::monostate"),
             AlgebraicTypeUse::Never => write!(output, "std::monostate"),
             AlgebraicTypeUse::Ref(type_ref) => {

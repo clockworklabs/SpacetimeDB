@@ -813,6 +813,27 @@ where
     })
 }
 
+#[cfg(feature = "unstable")]
+pub fn register_http_route_procedure<I>(method: spacetimedb_lib::http::Method, path: &'static str)
+where
+    I: FnInfo<Invoke = ProcedureFn>,
+{
+    register_describer(move |module| {
+        let params = <(spacetimedb_lib::http::RequestAndBody,) as Args>::schema::<I>(&mut module.inner);
+        let ret_ty = <spacetimedb_lib::http::ResponseAndBody as SpacetimeType>::make_type(&mut module.inner);
+        module.inner.add_procedure_with_visibility(
+            I::NAME,
+            params,
+            ret_ty,
+            spacetimedb_lib::db::raw_def::v10::FunctionVisibility::Private,
+        );
+        module.inner.add_http_route(I::NAME, method.clone(), path);
+        module.procedures.push(I::INVOKE);
+
+        module.inner.add_explicit_names(I::explicit_names());
+    })
+}
+
 /// Registers a describer for the view `I` with arguments `A` and return type `Vec<T>`.
 pub fn register_view<'a, A, I, T>(_: impl View<'a, A, T>)
 where

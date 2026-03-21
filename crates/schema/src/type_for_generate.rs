@@ -305,6 +305,10 @@ pub enum AlgebraicTypeUse {
 
     /// The special `Uuid` type.
     Uuid,
+    /// The special HTTP request-and-body type.
+    HttpRequestAndBody,
+    /// The special HTTP response-and-body type.
+    HttpResponseAndBody,
 
     /// The unit type (empty product).
     /// This is *distinct* from a use of a definition of a product type with no elements.
@@ -406,6 +410,16 @@ impl TypespaceForGenerateBuilder<'_> {
             Ok(AlgebraicTypeUse::TimeDuration)
         } else if ty.is_uuid() {
             Ok(AlgebraicTypeUse::Uuid)
+        } else if ty
+            .as_product()
+            .is_some_and(|product| product.is_http_request_and_body())
+        {
+            Ok(AlgebraicTypeUse::HttpRequestAndBody)
+        } else if ty
+            .as_product()
+            .is_some_and(|product| product.is_http_response_and_body())
+        {
+            Ok(AlgebraicTypeUse::HttpResponseAndBody)
         } else if ty.is_unit() {
             Ok(AlgebraicTypeUse::Unit)
         } else if ty.is_never() {

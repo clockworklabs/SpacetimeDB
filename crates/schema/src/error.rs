@@ -1,6 +1,6 @@
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_lib::db::raw_def::v9::{Lifecycle, RawScopedTypeNameV9};
-use spacetimedb_lib::{ProductType, SumType};
+use spacetimedb_lib::{http, ProductType, SumType};
 use spacetimedb_primitives::{ColId, ColList, ColSet};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::{bsatn::DecodeError, raw_identifier::RawIdentifier, AlgebraicType, AlgebraicTypeRef};
@@ -119,6 +119,28 @@ pub enum ValidationError {
         expected: PrettyAlgebraicType,
         actual: PrettyAlgebraicType,
     },
+    #[error("HTTP route method {method:?} is not supported")]
+    InvalidHttpRouteMethod { method: http::Method },
+    #[error("HTTP route path `{path}` is invalid")]
+    InvalidHttpRoutePath { path: RawIdentifier },
+    #[error("HTTP route handler `{handler}` does not refer to a procedure")]
+    HttpRouteHandlerNotProcedure { handler: RawIdentifier },
+    #[error("HTTP route handler `{handler}` must be private")]
+    HttpRouteHandlerMustBePrivate { handler: RawIdentifier },
+    #[error("HTTP route handler `{handler}` has invalid params: expected {expected}, got {actual}")]
+    HttpRouteHandlerInvalidParams {
+        handler: RawIdentifier,
+        expected: PrettyAlgebraicType,
+        actual: PrettyAlgebraicType,
+    },
+    #[error("HTTP route handler `{handler}` has invalid return type: expected {expected}, got {actual}")]
+    HttpRouteHandlerInvalidReturnType {
+        handler: RawIdentifier,
+        expected: PrettyAlgebraicType,
+        actual: PrettyAlgebraicType,
+    },
+    #[error("HTTP route {method:?} `{path}` is defined multiple times")]
+    DuplicateHttpRoute { method: http::Method, path: RawIdentifier },
     #[error("Table name is reserved for system use: {table}")]
     TableNameReserved { table: Identifier },
     #[error("Row-level security invalid: `{error}`, query: `{sql}")]
