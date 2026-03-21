@@ -94,6 +94,40 @@ impl<K: Ord + KeySize> Index for UniqueMap<K> {
     }
 }
 
+impl<K: Ord + KeySize> UniqueMap<K> {
+    /// Construct a `UniqueMap` from a `BTreeMap<K, RowPointer>`.
+    ///
+    /// Each entry is inserted via [`Index::insert`] so that `num_key_bytes`
+    /// is correctly maintained regardless of `K::MemoStorage`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the map contains duplicate keys (should never happen
+    /// since the caller verified uniqueness).
+    pub fn from_non_unique(map: BTreeMap<K, RowPointer>) -> Self {
+        let mut result = Self::default();
+        for (key, ptr) in map {
+            result
+                .insert(key, ptr)
+                .expect("duplicate key in supposedly unique map");
+        }
+        result
+    }
+
+    /// Convert this unique map back into a non-unique `MultiMap`.
+    ///
+    /// This is lossless: each key maps to exactly one `RowPointer`,
+    /// which becomes a single-entry `SameKeyEntry` in the `MultiMap`.
+    pub fn into_non_unique(self) -> super::multimap::MultiMap<K> {
+        let mut mm = super::multimap::MultiMap::default();
+        for (key, ptr) in self.map {
+            // MultiMap::insert always succeeds.
+            let _ = <super::multimap::MultiMap<K> as Index>::insert(&mut mm, key, ptr);
+        }
+        mm
+    }
+}
+
 /// An iterator over the potential value in a [`UniqueMap`] for a given key.
 pub struct UniquePointIter {
     /// The iterator seeking for matching keys in the range.

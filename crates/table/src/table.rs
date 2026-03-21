@@ -1481,6 +1481,27 @@ Found violation at pointer {ptr:?} to row {:?}.",
         Some(index)
     }
 
+    /// Take the pointer map, if any, returning it.
+    ///
+    /// This is used when making an index unique — a unique index subsumes
+    /// the pointer map's role of preventing duplicate rows.
+    pub fn take_pointer_map(&mut self) -> Option<PointerMap> {
+        self.pointer_map.take()
+    }
+
+    /// Restore a previously taken pointer map.
+    ///
+    /// This is used on rollback when a unique constraint is removed
+    /// and no other unique indices remain.
+    pub fn restore_pointer_map(&mut self, pointer_map: PointerMap) {
+        self.pointer_map = Some(pointer_map);
+    }
+
+    /// Returns whether this table has any unique index.
+    pub fn has_unique_index(&self) -> bool {
+        self.indexes.values().any(|idx| idx.is_unique())
+    }
+
     /// Returns an iterator over all the rows of `self`, yielded as [`RowRef`]s.
     pub fn scan_rows<'a>(&'a self, blob_store: &'a dyn BlobStore) -> TableScanIter<'a> {
         TableScanIter {
