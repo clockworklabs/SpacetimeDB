@@ -7,7 +7,7 @@ use std::collections::btree_map::{BTreeMap, Range};
 
 /// A multi map that relates a `K` to a *set* of `RowPointer`s.
 #[derive(Debug, PartialEq, Eq)]
-pub struct MultiMap<K> {
+pub struct BTreeIndex<K> {
     /// The map is backed by a `BTreeMap` for relating keys to values.
     ///
     /// A value set is stored as a `SmallVec`.
@@ -21,7 +21,7 @@ pub struct MultiMap<K> {
     num_key_bytes: u64,
 }
 
-impl<K> Default for MultiMap<K> {
+impl<K> Default for BTreeIndex<K> {
     fn default() -> Self {
         Self {
             map: <_>::default(),
@@ -31,7 +31,7 @@ impl<K> Default for MultiMap<K> {
     }
 }
 
-impl<K: MemoryUsage> MemoryUsage for MultiMap<K> {
+impl<K: MemoryUsage> MemoryUsage for BTreeIndex<K> {
     fn heap_usage(&self) -> usize {
         let Self {
             map,
@@ -42,7 +42,7 @@ impl<K: MemoryUsage> MemoryUsage for MultiMap<K> {
     }
 }
 
-impl<K: Ord + KeySize> Index for MultiMap<K> {
+impl<K: Ord + KeySize> Index for BTreeIndex<K> {
     type Key = K;
 
     fn clone_structure(&self) -> Self {
@@ -118,32 +118,32 @@ impl<K: Ord + KeySize> Index for MultiMap<K> {
     }
 }
 
-impl<K: Ord + KeySize> RangedIndex for MultiMap<K> {
+impl<K: Ord + KeySize> RangedIndex for BTreeIndex<K> {
     type RangeIter<'a>
-        = MultiMapRangeIter<'a, K>
+        = BTreeIndexRangeIter<'a, K>
     where
         Self: 'a;
 
     /// Returns an iterator over the multimap that yields all the `V`s
     /// of the `K`s that fall within the specified `range`.
     fn seek_range(&self, range: &impl RangeBounds<Self::Key>) -> Self::RangeIter<'_> {
-        MultiMapRangeIter {
+        BTreeIndexRangeIter {
             outer: self.map.range((range.start_bound(), range.end_bound())),
             inner: SameKeyEntry::empty_iter(),
         }
     }
 }
 
-/// An iterator over values in a [`MultiMap`] where the keys are in a certain range.
+/// An iterator over values in a [`BTreeIndex`] where the keys are in a certain range.
 #[derive(Clone)]
-pub struct MultiMapRangeIter<'a, K> {
+pub struct BTreeIndexRangeIter<'a, K> {
     /// The outer iterator seeking for matching keys in the range.
     outer: Range<'a, K, SameKeyEntry>,
     /// The inner iterator for the value set for a found key.
     inner: SameKeyEntryIter<'a>,
 }
 
-impl<K> Iterator for MultiMapRangeIter<'_, K> {
+impl<K> Iterator for BTreeIndexRangeIter<'_, K> {
     type Item = RowPointer;
 
     fn next(&mut self) -> Option<Self::Item> {
