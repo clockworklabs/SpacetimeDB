@@ -5,10 +5,11 @@ use std::fmt;
 pub enum Vendor {
     OpenAi,
     Anthropic,
-    Google, // Gemini
-    Xai,    // Grok
+    Google,     // Gemini
+    Xai,        // Grok
     DeepSeek,
-    Meta, // Llama
+    Meta,       // Llama
+    OpenRouter, // unified proxy — routes to any vendor
 }
 
 impl Vendor {
@@ -21,6 +22,7 @@ impl Vendor {
             Vendor::Xai => "xai",
             Vendor::DeepSeek => "deepseek",
             Vendor::Meta => "meta",
+            Vendor::OpenRouter => "openrouter",
         }
     }
 
@@ -33,6 +35,7 @@ impl Vendor {
             Vendor::Xai => "xAI",
             Vendor::DeepSeek => "DeepSeek",
             Vendor::Meta => "Meta",
+            Vendor::OpenRouter => "OpenRouter",
         }
     }
 
@@ -46,6 +49,7 @@ impl Vendor {
             "xai" | "grok" => Vendor::Xai,
             "deepseek" => Vendor::DeepSeek,
             "meta" | "llama" => Vendor::Meta,
+            "openrouter" | "or" => Vendor::OpenRouter,
             _ => return None,
         })
     }

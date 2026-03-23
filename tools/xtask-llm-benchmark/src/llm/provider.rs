@@ -2,7 +2,8 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 
 use crate::llm::clients::{
-    AnthropicClient, DeepSeekClient, GoogleGeminiClient, MetaLlamaClient, OpenAiClient, XaiGrokClient,
+    AnthropicClient, DeepSeekClient, GoogleGeminiClient, MetaLlamaClient, OpenAiClient, OpenRouterClient,
+    XaiGrokClient,
 };
 use crate::llm::model_routes::ModelRoute;
 use crate::llm::prompt::BuiltPrompt;
@@ -20,6 +21,9 @@ pub struct RouterProvider {
     pub xai: Option<XaiGrokClient>,
     pub deepseek: Option<DeepSeekClient>,
     pub meta: Option<MetaLlamaClient>,
+    /// OpenRouter client used as a unified fallback when a direct vendor client
+    /// is not configured. Set via `OPENROUTER_API_KEY`.
+    pub openrouter: Option<OpenRouterClient>,
     pub force: Option<Vendor>,
 }
 
@@ -31,6 +35,7 @@ impl RouterProvider {
         xai: Option<XaiGrokClient>,
         deepseek: Option<DeepSeekClient>,
         meta: Option<MetaLlamaClient>,
+        openrouter: Option<OpenRouterClient>,
         force: Option<Vendor>,
     ) -> Self {
         Self {
@@ -40,6 +45,7 @@ impl RouterProvider {
             xai,
             deepseek,
             meta,
+            openrouter,
             force,
         }
     }
@@ -49,34 +55,70 @@ impl RouterProvider {
 impl LlmProvider for RouterProvider {
     async fn generate(&self, route: &ModelRoute, prompt: &BuiltPrompt) -> Result<String> {
         let vendor = self.force.unwrap_or(route.vendor);
+
+        // If vendor is explicitly OpenRouter, or if the direct client isn't configured
+        // but OpenRouter is available, route through OpenRouter.
+        if vendor == Vendor::OpenRouter {
+            let cli = self
+                .openrouter
+                .as_ref()
+                .context("OpenRouter client not configured (set OPENROUTER_API_KEY)")?;
+            return cli.generate(route.api_model, prompt).await;
+        }
+
+        // Try direct client first, fall back to OpenRouter if available.
         match vendor {
-            Vendor::OpenAi => {
-                let cli = self.openai.as_ref().context("OpenAI client not configured")?;
+            Vendor::OpenAi => match self.openai.as_ref() {
+                Some(cli) => cli.generate(route.api_model, prompt).await,
+                None => self.fallback_openrouter(route, prompt, "OpenAI").await,
+            },
+            Vendor::Anthropic => match self.anthropic.as_ref() {
+                Some(cli) => cli.generate(route.api_model, prompt).await,
+                None => self.fallback_openrouter(route, prompt, "Anthropic").await,
+            },
+            Vendor::Google => match self.google.as_ref() {
+                Some(cli) => cli.generate(route.api_model, prompt).await,
+                None => self.fallback_openrouter(route, prompt, "Google").await,
+            },
+            Vendor::Xai => match self.xai.as_ref() {
+                Some(cli) => cli.generate(route.api_model, prompt).await,
+                None => self.fallback_openrouter(route, prompt, "xAI").await,
+            },
+            Vendor::DeepSeek => match self.deepseek.as_ref() {
+                Some(cli) => cli.generate(route.api_model, prompt).await,
+                None => self.fallback_openrouter(route, prompt, "DeepSeek").await,
+            },
+            Vendor::Meta => match self.meta.as_ref() {
+                Some(cli) => cli.generate(route.api_model, prompt).await,
+                None => self.fallback_openrouter(route, prompt, "Meta").await,
+            },
+            Vendor::OpenRouter => unreachable!("handled above"),
+        }
+    }
+}
+
+impl RouterProvider {
+    /// Fall back to the OpenRouter client when a direct vendor client is not configured.
+    async fn fallback_openrouter(
+        &self,
+        route: &ModelRoute,
+        prompt: &BuiltPrompt,
+        vendor_name: &str,
+    ) -> Result<String> {
+        match self.openrouter.as_ref() {
+            Some(cli) => {
+                eprintln!(
+                    "[openrouter] {} client not configured, falling back to OpenRouter for model '{}'",
+                    vendor_name, route.api_model
+                );
                 cli.generate(route.api_model, prompt).await
             }
-            Vendor::Anthropic => {
-                let cli = self.anthropic.as_ref().context("Anthropic client not configured")?;
-                cli.generate(route.api_model, prompt).await
-            }
-            Vendor::Google => {
-                let cli = self.google.as_ref().context("Google client not configured")?;
-                cli.generate(route.api_model, prompt).await
-            }
-            Vendor::Xai => {
-                let cli = self.xai.as_ref().context("xAI client not configured")?;
-                cli.generate(route.api_model, prompt).await
-            }
-            Vendor::DeepSeek => {
-                let cli = self.deepseek.as_ref().context("DeepSeek client not configured")?;
-                cli.generate(route.api_model, prompt).await
-            }
-            Vendor::Meta => {
-                let c = self
-                    .meta
-                    .as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("Meta Llama not configured"))?;
-                c.generate(route.api_model, prompt).await
-            }
+            None => anyhow::bail!(
+                "{} client not configured and no OpenRouter fallback available. \
+                 Set {}_API_KEY or OPENROUTER_API_KEY.",
+                vendor_name,
+                vendor_name.to_ascii_uppercase()
+            ),
         }
     }
 }
