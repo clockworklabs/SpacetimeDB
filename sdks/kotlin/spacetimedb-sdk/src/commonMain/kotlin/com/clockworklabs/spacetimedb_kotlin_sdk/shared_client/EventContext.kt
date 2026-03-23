@@ -102,19 +102,19 @@ public sealed interface EventContext {
     /** Fired when a subscription's initial rows have been applied to the client cache. */
     public class SubscribeApplied(
         override val id: String,
-        override val connection: DbConnection,
+        override val connection: DbConnectionView,
     ) : EventContext
 
     /** Fired when an unsubscription has been confirmed by the server. */
     public class UnsubscribeApplied(
         override val id: String,
-        override val connection: DbConnection,
+        override val connection: DbConnectionView,
     ) : EventContext
 
     /** Fired when a server-side transaction update has been applied. */
     public class Transaction(
         override val id: String,
-        override val connection: DbConnection,
+        override val connection: DbConnectionView,
     ) : EventContext
 
     /** Fired when a reducer result is received, carrying the typed arguments and status. */
@@ -150,7 +150,7 @@ public sealed interface EventContext {
      */
     public class UnknownTransaction(
         override val id: String,
-        override val connection: DbConnection,
+        override val connection: DbConnectionView,
     ) : EventContext
 }
 
