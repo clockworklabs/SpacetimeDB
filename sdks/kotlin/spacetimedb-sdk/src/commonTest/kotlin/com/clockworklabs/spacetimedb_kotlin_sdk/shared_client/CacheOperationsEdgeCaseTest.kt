@@ -328,4 +328,21 @@ class CacheOperationsEdgeCaseTest {
         assertEquals(row1.hashCode(), row2.hashCode())
         assertFalse(row1 == row3)
     }
+
+    // =========================================================================
+    // FixedSize hint validation
+    // =========================================================================
+
+    @Test
+    fun fixedSizeHintNonDivisibleRowsDataThrows() {
+        val cache = createSampleCache()
+        // 7 bytes of data with FixedSize(4) → 7 % 4 != 0
+        val rowList = BsatnRowList(
+            sizeHint = RowSizeHint.FixedSize(4u),
+            rowsData = ByteArray(7),
+        )
+        assertFailsWith<IllegalArgumentException>("Should reject non-divisible FixedSize row data") {
+            cache.decodeRowList(rowList)
+        }
+    }
 }
