@@ -218,6 +218,52 @@ class ConnectionStateTransitionTest {
     }
 
     // =========================================================================
+    // SubscriptionBuilder — addQuery + subscribe(query) merges queries
+    // =========================================================================
+
+    @Test
+    fun subscribeWithQueryMergesAccumulatedAddQueryCalls() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        conn.subscriptionBuilder()
+            .addQuery("SELECT * FROM users")
+            .subscribe("SELECT * FROM messages")
+        advanceUntilIdle()
+
+        val subMsg = transport.sentMessages.filterIsInstance<ClientMessage.Subscribe>().last()
+        assertEquals(
+            listOf("SELECT * FROM users", "SELECT * FROM messages"),
+            subMsg.queryStrings,
+            "subscribe(query) must merge with accumulated addQuery() calls"
+        )
+        conn.disconnect()
+    }
+
+    @Test
+    fun subscribeWithListMergesAccumulatedAddQueryCalls() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        conn.subscriptionBuilder()
+            .addQuery("SELECT * FROM users")
+            .subscribe(listOf("SELECT * FROM messages", "SELECT * FROM notes"))
+        advanceUntilIdle()
+
+        val subMsg = transport.sentMessages.filterIsInstance<ClientMessage.Subscribe>().last()
+        assertEquals(
+            listOf("SELECT * FROM users", "SELECT * FROM messages", "SELECT * FROM notes"),
+            subMsg.queryStrings,
+            "subscribe(List) must merge with accumulated addQuery() calls"
+        )
+        conn.disconnect()
+    }
+
+    // =========================================================================
     // Empty Subscription Queries
     // =========================================================================
 
