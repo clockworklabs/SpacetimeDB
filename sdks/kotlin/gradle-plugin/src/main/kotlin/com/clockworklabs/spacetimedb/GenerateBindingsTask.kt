@@ -68,7 +68,7 @@ abstract class GenerateBindingsTask @Inject constructor(
                     "--module-path", modulePath.get().asFile.absolutePath,
                 )
             }
-        } catch (e: org.gradle.process.internal.ExecException) {
+        } catch (e: org.gradle.api.GradleException) {
             if (!cli.isPresent && e.cause is java.io.IOException) {
                 throw org.gradle.api.GradleException(
                     "spacetimedb-cli not found on PATH. Install it from https://spacetimedb.com " +
