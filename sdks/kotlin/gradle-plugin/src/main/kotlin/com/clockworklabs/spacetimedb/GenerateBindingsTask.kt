@@ -48,6 +48,9 @@ abstract class GenerateBindingsTask @Inject constructor(
         }
 
         val outDir = outputDir.get().asFile
+        if (outDir.isDirectory) {
+            outDir.listFiles()?.forEach { it.deleteRecursively() }
+        }
         outDir.mkdirs()
 
         val cliPath = if (cli.isPresent) {
