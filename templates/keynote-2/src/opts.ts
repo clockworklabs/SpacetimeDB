@@ -107,6 +107,9 @@ class CLIParser {
           };
           break;
         case 'strings':
+          if (options[name]?.length === 1 && options[name][0] === undefined) {
+            options[name] = undefined;
+          }
           parser = (s: string | string[]) =>
             (Array.isArray(s) ? s : s.split(',')).flat().map((s) => {
               const x = s.trim();
@@ -176,12 +179,7 @@ const args = new CLIParser()
     'SpacetimeDB module path',
     str('./spacetimedb', 'STDB_MODULE_PATH'),
   )
-  .option(
-    '--stdb-module-path <dir>',
-    'SpacetimeDB module path',
-    str('./spacetimedb', 'STDB_MODULE_PATH'),
-  )
-  .option('--stdb-confirmed-reads', 'Enable confirmed reads', {
+  .option('--no-stdb-confirmed-reads', 'Disable confirmed reads', {
     env: 'STDB_CONFIRMED_READS',
   })
   .option('--use-docker', 'Use docker', { env: 'USE_DOCKER' })
