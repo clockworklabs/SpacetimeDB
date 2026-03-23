@@ -8,9 +8,11 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class ProcedureAndQueryIntegrationTest {
@@ -218,6 +220,22 @@ class ProcedureAndQueryIntegrationTest {
         advanceUntilIdle()
 
         assertTrue(conn.isActive)
+        conn.disconnect()
+    }
+
+    // --- oneOffQuery suspend with finite timeout ---
+
+    @Test
+    fun oneOffQuerySuspendTimesOutWhenNoResponse() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport)
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        assertFailsWith<kotlinx.coroutines.TimeoutCancellationException> {
+            conn.oneOffQuery("SELECT * FROM sample", timeout = 1.milliseconds)
+        }
+
         conn.disconnect()
     }
 
