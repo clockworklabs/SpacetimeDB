@@ -915,8 +915,11 @@ fn run_mode_benchmarks(
 
 /// Routes to run: when `model_filter` is set (from --models), only routes whose vendor and
 /// model are in that filter are included; vendors not in the filter are excluded.
+///
+/// When explicit `openrouter:vendor/model` entries are passed they won't appear in
+/// `default_model_routes`, so we synthesize ad-hoc routes for them here.
 fn filter_routes(config: &RunConfig) -> Vec<ModelRoute> {
-    default_model_routes()
+    let mut routes: Vec<ModelRoute> = default_model_routes()
         .iter()
         .filter(|r| config.providers_filter.as_ref().is_none_or(|f| f.contains(&r.vendor)))
         .filter(|r| match &config.model_filter {
@@ -931,7 +934,28 @@ fn filter_routes(config: &RunConfig) -> Vec<ModelRoute> {
             },
         })
         .cloned()
-        .collect()
+        .collect();
+
+    // Synthesize ad-hoc routes for any vendor:model that isn't in the static list.
+    // This lets callers pass arbitrary model IDs (e.g. new models, openrouter paths)
+    // without having to add them to default_model_routes() first.
+    // Box::leak is intentional: this is a short-lived CLI process.
+    if let Some(mf) = &config.model_filter {
+        for (vendor, model_ids) in mf {
+            for model_id in model_ids {
+                if !routes.iter().any(|r| r.vendor == *vendor && r.api_model == model_id.as_str()) {
+                    let leaked: &'static str = Box::leak(model_id.clone().into_boxed_str());
+                    routes.push(ModelRoute {
+                        display_name: leaked,
+                        vendor: *vendor,
+                        api_model: leaked,
+                    });
+                }
+            }
+        }
+    }
+
+    routes
 }
 
 #[allow(clippy::too_many_arguments)]

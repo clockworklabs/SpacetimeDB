@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-03-23T21:39:13.195Z",
+  "generated_at": "2026-03-23T22:15:29.896Z",
   "by_language": {
     "csharp": {
       "modes": {
@@ -331,7 +331,7 @@
           }
         },
         "docs": {
-          "hash": "cb5bf60a6d17e761b5fcec5d8e69bafbaf56602e570522e688d4da57973c7ea8",
+          "hash": "94b083327046cf445b9a2676a3e957f10b1411bde9b8b72564cfd959eb1f393a",
           "models": {
             "Claude Opus 4.6": {
               "categories": {
@@ -611,6 +611,58 @@
                 "pass_pct": 90.16393,
                 "task_pass_equiv": 19.633333,
                 "task_pass_pct": 89.242424
+              }
+            },
+            "anthropic/claude-sonnet-4-6": {
+              "categories": {
+                "auth": {
+                  "tasks": 2,
+                  "total_tests": 2,
+                  "passed_tests": 2,
+                  "pass_pct": 100.0,
+                  "task_pass_equiv": 2.0,
+                  "task_pass_pct": 100.0
+                },
+                "data_modeling": {
+                  "tasks": 3,
+                  "total_tests": 3,
+                  "passed_tests": 3,
+                  "pass_pct": 100.0,
+                  "task_pass_equiv": 3.0,
+                  "task_pass_pct": 100.0
+                },
+                "queries": {
+                  "tasks": 6,
+                  "total_tests": 6,
+                  "passed_tests": 6,
+                  "pass_pct": 100.0,
+                  "task_pass_equiv": 6.0,
+                  "task_pass_pct": 100.0
+                },
+                "views": {
+                  "tasks": 2,
+                  "total_tests": 2,
+                  "passed_tests": 2,
+                  "pass_pct": 100.0,
+                  "task_pass_equiv": 2.0,
+                  "task_pass_pct": 100.0
+                },
+                "write_patterns": {
+                  "tasks": 3,
+                  "total_tests": 3,
+                  "passed_tests": 3,
+                  "pass_pct": 100.0,
+                  "task_pass_equiv": 3.0,
+                  "task_pass_pct": 100.0
+                }
+              },
+              "totals": {
+                "tasks": 16,
+                "total_tests": 16,
+                "passed_tests": 16,
+                "pass_pct": 100.0,
+                "task_pass_equiv": 16.0,
+                "task_pass_pct": 100.0
               }
             }
           }

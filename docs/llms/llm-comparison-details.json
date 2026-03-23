@@ -1,4 +1,5 @@
 {
+  "generated_at": "2026-03-23T22:15:28.825025+00:00",
   "languages": [
     {
       "lang": "csharp",
@@ -410,25 +411,6 @@
                   "category": "basics",
                   "route_api_model": "grok-4",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -442,6 +424,25 @@
                         "llm_out": "Id | Sum ----+----- 1 | 5",
                         "query": "SELECT Id, Sum FROM Result WHERE Id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
                       }
                     }
                   },
@@ -1337,25 +1338,6 @@
                   "category": "basics",
                   "route_api_model": "claude-opus-4-6",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -1369,6 +1351,25 @@
                         "llm_out": "Id | Sum ----+----- 1 | 5",
                         "query": "SELECT Id, Sum FROM Result WHERE Id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
                       }
                     }
                   },
@@ -2214,6 +2215,25 @@
                   "category": "basics",
                   "route_api_model": "claude-sonnet-4-6",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -2227,25 +2247,6 @@
                         "llm_out": "Id | Sum ----+----- 1 | 5",
                         "query": "SELECT Id, Sum FROM Result WHERE Id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
                       }
                     }
                   },
@@ -3205,25 +3206,6 @@
                   "category": "basics",
                   "route_api_model": "gpt-5.2-codex",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -3237,6 +3219,25 @@
                         "llm_out": "Id | Sum ----+----- 1 | 5",
                         "query": "SELECT Id, Sum FROM Result WHERE Id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
                       }
                     }
                   },
@@ -4173,6 +4174,25 @@
                   "category": "basics",
                   "route_api_model": "gpt-5-mini",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -4186,25 +4206,6 @@
                         "llm_out": "Id | Sum ----+----- 1 | 5",
                         "query": "SELECT Id, Sum FROM Result WHERE Id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
                       }
                     }
                   },
@@ -5005,25 +5006,6 @@
                   "category": "basics",
                   "route_api_model": "grok-code-fast-1",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -5037,6 +5019,25 @@
                         "llm_out": "Id | Sum ----+----- 1 | 5",
                         "query": "SELECT Id, Sum FROM Result WHERE Id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
                       }
                     }
                   },
@@ -5885,6 +5886,25 @@
                   "category": "basics",
                   "route_api_model": "google/gemini-3.1-pro-preview",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -5898,25 +5918,6 @@
                         "llm_out": "Id | Sum ----+----- 1 | 5",
                         "query": "SELECT Id, Sum FROM Result WHERE Id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
                       }
                     }
                   },
@@ -6765,6 +6766,25 @@
                   "category": "basics",
                   "route_api_model": "google/gemini-3-flash-preview",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -6778,25 +6798,6 @@
                         "llm_out": "Id | Sum ----+----- 1 | 5",
                         "query": "SELECT Id, Sum FROM Result WHERE Id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
                       }
                     }
                   },
@@ -7606,6 +7607,25 @@
                   "category": "basics",
                   "route_api_model": "deepseek-chat",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -7619,25 +7639,6 @@
                         "llm_out": "Id | Sum ----+----- 1 | 5",
                         "query": "SELECT Id, Sum FROM Result WHERE Id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
                       }
                     }
                   },
@@ -8540,25 +8541,6 @@
                   "category": "basics",
                   "route_api_model": "deepseek-reasoner",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -8572,6 +8554,25 @@
                         "llm_out": "Id | Sum ----+----- 1 | 5",
                         "query": "SELECT Id, Sum FROM Result WHERE Id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
                       }
                     }
                   },
@@ -9286,7 +9287,7 @@
       "modes": [
         {
           "mode": "docs",
-          "hash": "cb5bf60a6d17e761b5fcec5d8e69bafbaf56602e570522e688d4da57973c7ea8",
+          "hash": "94b083327046cf445b9a2676a3e957f10b1411bde9b8b72564cfd959eb1f393a",
           "models": [
             {
               "name": "Grok 4",
@@ -10568,6 +10569,25 @@
                   "category": "basics",
                   "route_api_model": "grok-code-fast-1",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -10581,25 +10601,6 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -11492,25 +11493,6 @@
                   "category": "basics",
                   "route_api_model": "claude-sonnet-4-6",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -11524,6 +11506,25 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -12416,25 +12417,6 @@
                   "category": "basics",
                   "route_api_model": "claude-opus-4-6",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -12448,6 +12430,25 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -13317,25 +13318,6 @@
                   "category": "basics",
                   "route_api_model": "gemini-3.1-pro-preview",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -13349,6 +13331,25 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -14193,25 +14194,6 @@
                   "category": "basics",
                   "route_api_model": "gemini-3-flash-preview",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -14225,6 +14207,25 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -15116,25 +15117,6 @@
                   "category": "basics",
                   "route_api_model": "gpt-5.2-codex",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -15148,6 +15130,25 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -15996,6 +15997,25 @@
                   "category": "basics",
                   "route_api_model": "gpt-5-mini",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -16009,25 +16029,6 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -16890,6 +16891,25 @@
                   "category": "basics",
                   "route_api_model": "deepseek-chat",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -16903,25 +16923,6 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -17773,25 +17774,6 @@
                   "category": "basics",
                   "route_api_model": "deepseek-reasoner",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -17805,6 +17787,25 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -18148,6 +18149,428 @@
                     }
                   },
                   "vendor": "deepseek"
+                }
+              }
+            },
+            {
+              "name": "anthropic/claude-sonnet-4-6",
+              "route_api_model": "anthropic/claude-sonnet-4-6",
+              "tasks": {
+                "t_022_view_basic": {
+                  "hash": "94b083327046cf445b9a2676a3e957f10b1411bde9b8b72564cfd959eb1f393a",
+                  "task": "t_022_view_basic",
+                  "lang": "rust",
+                  "golden_published": true,
+                  "model_name": "anthropic/claude-sonnet-4-6",
+                  "total_tests": 1,
+                  "passed_tests": 1,
+                  "category": "views",
+                  "route_api_model": "anthropic/claude-sonnet-4-6",
+                  "scorer_details": {
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    }
+                  },
+                  "vendor": "openrouter",
+                  "started_at": "2026-03-23T22:14:42.991646100Z",
+                  "finished_at": "2026-03-23T22:15:28.540399400Z"
+                },
+                "t_023_view_per_user": {
+                  "hash": "94b083327046cf445b9a2676a3e957f10b1411bde9b8b72564cfd959eb1f393a",
+                  "task": "t_023_view_per_user",
+                  "lang": "rust",
+                  "golden_published": true,
+                  "model_name": "anthropic/claude-sonnet-4-6",
+                  "total_tests": 1,
+                  "passed_tests": 1,
+                  "category": "views",
+                  "route_api_model": "anthropic/claude-sonnet-4-6",
+                  "scorer_details": {
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    }
+                  },
+                  "vendor": "openrouter",
+                  "started_at": "2026-03-23T22:14:44.052865300Z",
+                  "finished_at": "2026-03-23T22:15:27.011745900Z"
+                },
+                "t_024_event_table": {
+                  "hash": "94b083327046cf445b9a2676a3e957f10b1411bde9b8b72564cfd959eb1f393a",
+                  "task": "t_024_event_table",
+                  "lang": "rust",
+                  "golden_published": true,
+                  "model_name": "anthropic/claude-sonnet-4-6",
+                  "total_tests": 1,
+                  "passed_tests": 1,
+                  "category": "data_modeling",
+                  "route_api_model": "anthropic/claude-sonnet-4-6",
+                  "scorer_details": {
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    }
+                  },
+                  "vendor": "openrouter",
+                  "started_at": "2026-03-23T22:13:49.755573400Z",
+                  "finished_at": "2026-03-23T22:14:44.050685400Z"
+                },
+                "t_025_optional_fields": {
+                  "hash": "94b083327046cf445b9a2676a3e957f10b1411bde9b8b72564cfd959eb1f393a",
+                  "task": "t_025_optional_fields",
+                  "lang": "rust",
+                  "golden_published": true,
+                  "model_name": "anthropic/claude-sonnet-4-6",
+                  "total_tests": 1,
+                  "passed_tests": 1,
+                  "category": "data_modeling",
+                  "route_api_model": "anthropic/claude-sonnet-4-6",
+                  "scorer_details": {
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    }
+                  },
+                  "vendor": "openrouter",
+                  "started_at": "2026-03-23T22:13:50.292670900Z",
+                  "finished_at": "2026-03-23T22:14:40.428855400Z"
+                },
+                "t_026_auth_identity_check": {
+                  "hash": "94b083327046cf445b9a2676a3e957f10b1411bde9b8b72564cfd959eb1f393a",
+                  "task": "t_026_auth_identity_check",
+                  "lang": "rust",
+                  "golden_published": true,
+                  "model_name": "anthropic/claude-sonnet-4-6",
+                  "total_tests": 1,
+                  "passed_tests": 1,
+                  "category": "auth",
+                  "route_api_model": "anthropic/claude-sonnet-4-6",
+                  "scorer_details": {
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    }
+                  },
+                  "vendor": "openrouter",
+                  "started_at": "2026-03-23T22:13:48.685929100Z",
+                  "finished_at": "2026-03-23T22:14:41.583584800Z"
+                },
+                "t_027_private_vs_public_table": {
+                  "hash": "94b083327046cf445b9a2676a3e957f10b1411bde9b8b72564cfd959eb1f393a",
+                  "task": "t_027_private_vs_public_table",
+                  "lang": "rust",
+                  "golden_published": true,
+                  "model_name": "anthropic/claude-sonnet-4-6",
+                  "total_tests": 1,
+                  "passed_tests": 1,
+                  "category": "auth",
+                  "route_api_model": "anthropic/claude-sonnet-4-6",
+                  "scorer_details": {
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    }
+                  },
+                  "vendor": "openrouter",
+                  "started_at": "2026-03-23T22:13:49.222159100Z",
+                  "finished_at": "2026-03-23T22:14:43.648715600Z"
+                },
+                "t_028_cascade_delete": {
+                  "hash": "94b083327046cf445b9a2676a3e957f10b1411bde9b8b72564cfd959eb1f393a",
+                  "task": "t_028_cascade_delete",
+                  "lang": "rust",
+                  "golden_published": true,
+                  "model_name": "anthropic/claude-sonnet-4-6",
+                  "total_tests": 1,
+                  "passed_tests": 1,
+                  "category": "write_patterns",
+                  "route_api_model": "anthropic/claude-sonnet-4-6",
+                  "scorer_details": {
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    }
+                  },
+                  "vendor": "openrouter",
+                  "started_at": "2026-03-23T22:14:44.565980Z",
+                  "finished_at": "2026-03-23T22:15:28.398394100Z"
+                },
+                "t_029_filter_and_aggregate": {
+                  "hash": "94b083327046cf445b9a2676a3e957f10b1411bde9b8b72564cfd959eb1f393a",
+                  "task": "t_029_filter_and_aggregate",
+                  "lang": "rust",
+                  "golden_published": true,
+                  "model_name": "anthropic/claude-sonnet-4-6",
+                  "total_tests": 1,
+                  "passed_tests": 1,
+                  "category": "write_patterns",
+                  "route_api_model": "anthropic/claude-sonnet-4-6",
+                  "scorer_details": {
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    }
+                  },
+                  "vendor": "openrouter",
+                  "started_at": "2026-03-23T22:14:45.096930400Z",
+                  "finished_at": "2026-03-23T22:15:28.799412900Z"
+                },
+                "t_030_two_table_join": {
+                  "hash": "94b083327046cf445b9a2676a3e957f10b1411bde9b8b72564cfd959eb1f393a",
+                  "task": "t_030_two_table_join",
+                  "lang": "rust",
+                  "golden_published": true,
+                  "model_name": "anthropic/claude-sonnet-4-6",
+                  "total_tests": 1,
+                  "passed_tests": 1,
+                  "category": "write_patterns",
+                  "route_api_model": "anthropic/claude-sonnet-4-6",
+                  "scorer_details": {
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    }
+                  },
+                  "vendor": "openrouter",
+                  "started_at": "2026-03-23T22:14:45.608208400Z",
+                  "finished_at": "2026-03-23T22:15:27.918625600Z"
+                },
+                "t_031_unique_constraint": {
+                  "hash": "94b083327046cf445b9a2676a3e957f10b1411bde9b8b72564cfd959eb1f393a",
+                  "task": "t_031_unique_constraint",
+                  "lang": "rust",
+                  "golden_published": true,
+                  "model_name": "anthropic/claude-sonnet-4-6",
+                  "total_tests": 1,
+                  "passed_tests": 1,
+                  "category": "data_modeling",
+                  "route_api_model": "anthropic/claude-sonnet-4-6",
+                  "scorer_details": {
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    }
+                  },
+                  "vendor": "openrouter",
+                  "started_at": "2026-03-23T22:13:50.829981800Z",
+                  "finished_at": "2026-03-23T22:14:41.752772700Z"
+                },
+                "t_032_range_query": {
+                  "hash": "94b083327046cf445b9a2676a3e957f10b1411bde9b8b72564cfd959eb1f393a",
+                  "task": "t_032_range_query",
+                  "lang": "rust",
+                  "golden_published": true,
+                  "model_name": "anthropic/claude-sonnet-4-6",
+                  "total_tests": 1,
+                  "passed_tests": 1,
+                  "category": "queries",
+                  "route_api_model": "anthropic/claude-sonnet-4-6",
+                  "scorer_details": {
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    }
+                  },
+                  "vendor": "openrouter",
+                  "started_at": "2026-03-23T22:13:51.347339600Z",
+                  "finished_at": "2026-03-23T22:14:43.782790800Z"
+                },
+                "t_033_sort_and_limit": {
+                  "hash": "94b083327046cf445b9a2676a3e957f10b1411bde9b8b72564cfd959eb1f393a",
+                  "task": "t_033_sort_and_limit",
+                  "lang": "rust",
+                  "golden_published": true,
+                  "model_name": "anthropic/claude-sonnet-4-6",
+                  "total_tests": 1,
+                  "passed_tests": 1,
+                  "category": "queries",
+                  "route_api_model": "anthropic/claude-sonnet-4-6",
+                  "scorer_details": {
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    }
+                  },
+                  "vendor": "openrouter",
+                  "started_at": "2026-03-23T22:13:51.867492800Z",
+                  "finished_at": "2026-03-23T22:14:41.434365200Z"
+                },
+                "t_034_find_first": {
+                  "hash": "94b083327046cf445b9a2676a3e957f10b1411bde9b8b72564cfd959eb1f393a",
+                  "task": "t_034_find_first",
+                  "lang": "rust",
+                  "golden_published": true,
+                  "model_name": "anthropic/claude-sonnet-4-6",
+                  "total_tests": 1,
+                  "passed_tests": 1,
+                  "category": "queries",
+                  "route_api_model": "anthropic/claude-sonnet-4-6",
+                  "scorer_details": {
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    }
+                  },
+                  "vendor": "openrouter",
+                  "started_at": "2026-03-23T22:13:52.380191700Z",
+                  "finished_at": "2026-03-23T22:14:43.917977900Z"
+                },
+                "t_035_select_distinct": {
+                  "hash": "94b083327046cf445b9a2676a3e957f10b1411bde9b8b72564cfd959eb1f393a",
+                  "task": "t_035_select_distinct",
+                  "lang": "rust",
+                  "golden_published": true,
+                  "model_name": "anthropic/claude-sonnet-4-6",
+                  "total_tests": 1,
+                  "passed_tests": 1,
+                  "category": "queries",
+                  "route_api_model": "anthropic/claude-sonnet-4-6",
+                  "scorer_details": {
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    }
+                  },
+                  "vendor": "openrouter",
+                  "started_at": "2026-03-23T22:14:40.432901900Z",
+                  "finished_at": "2026-03-23T22:15:28.060726300Z"
+                },
+                "t_036_count_without_collect": {
+                  "hash": "94b083327046cf445b9a2676a3e957f10b1411bde9b8b72564cfd959eb1f393a",
+                  "task": "t_036_count_without_collect",
+                  "lang": "rust",
+                  "golden_published": true,
+                  "model_name": "anthropic/claude-sonnet-4-6",
+                  "total_tests": 1,
+                  "passed_tests": 1,
+                  "category": "queries",
+                  "route_api_model": "anthropic/claude-sonnet-4-6",
+                  "scorer_details": {
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    }
+                  },
+                  "vendor": "openrouter",
+                  "started_at": "2026-03-23T22:14:41.753094400Z",
+                  "finished_at": "2026-03-23T22:15:27.246292100Z"
+                },
+                "t_037_multi_column_filter": {
+                  "hash": "94b083327046cf445b9a2676a3e957f10b1411bde9b8b72564cfd959eb1f393a",
+                  "task": "t_037_multi_column_filter",
+                  "lang": "rust",
+                  "golden_published": true,
+                  "model_name": "anthropic/claude-sonnet-4-6",
+                  "total_tests": 1,
+                  "passed_tests": 1,
+                  "category": "queries",
+                  "route_api_model": "anthropic/claude-sonnet-4-6",
+                  "scorer_details": {
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    }
+                  },
+                  "vendor": "openrouter",
+                  "started_at": "2026-03-23T22:14:42.462814900Z",
+                  "finished_at": "2026-03-23T22:15:27.762457600Z"
                 }
               }
             }
@@ -20185,25 +20608,6 @@
                   "category": "basics",
                   "route_api_model": "grok-4",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -20217,6 +20621,25 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -21066,6 +21489,25 @@
                   "category": "basics",
                   "route_api_model": "claude-opus-4-6",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -21079,25 +21521,6 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -21993,6 +22416,25 @@
                   "category": "basics",
                   "route_api_model": "claude-sonnet-4-6",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -22006,25 +22448,6 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -23764,25 +24187,6 @@
                   "category": "basics",
                   "route_api_model": "gpt-5-mini",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -23796,6 +24200,25 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -24603,6 +25026,25 @@
                   "category": "basics",
                   "route_api_model": "grok-code-fast-1",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -24616,25 +25058,6 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -25519,6 +25942,25 @@
                   "category": "basics",
                   "route_api_model": "google/gemini-3-flash-preview",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -25532,25 +25974,6 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -26409,25 +26832,6 @@
                   "category": "basics",
                   "route_api_model": "google/gemini-3.1-pro-preview",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -26441,6 +26845,25 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -27310,25 +27733,6 @@
                   "category": "basics",
                   "route_api_model": "deepseek-reasoner",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -27342,6 +27746,25 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -28121,6 +28544,25 @@
                   "category": "basics",
                   "route_api_model": "deepseek-chat",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -28134,25 +28576,6 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
