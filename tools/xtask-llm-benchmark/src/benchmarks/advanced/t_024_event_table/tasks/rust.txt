@@ -1,0 +1,14 @@
+Write a SpacetimeDB backend module in Rust that defines an event table for damage notifications and a reducer that publishes events to it.
+
+TABLES
+- damage_event
+  - Struct: DamageEvent
+  - public event table (rows exist only for the duration of the transaction)
+  - Fields:
+    - entity_id: u64
+    - damage: u32
+    - source: String
+
+REDUCERS
+- deal_damage(ctx, entity_id: u64, damage: u32, source: String)
+  - Insert a DamageEvent row into the event table

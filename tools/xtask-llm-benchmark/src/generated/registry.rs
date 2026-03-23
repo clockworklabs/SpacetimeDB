@@ -4,6 +4,54 @@ use std::path::Path;
 
 #[allow(dead_code)]
 #[allow(clippy::all)]
+mod advanced_t_024_event_table {
+    include!("../benchmarks/advanced/t_024_event_table/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_025_optional_fields {
+    include!("../benchmarks/advanced/t_025_optional_fields/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_026_auth_identity_check {
+    include!("../benchmarks/advanced/t_026_auth_identity_check/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_027_private_vs_public_table {
+    include!("../benchmarks/advanced/t_027_private_vs_public_table/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_028_cascade_delete {
+    include!("../benchmarks/advanced/t_028_cascade_delete/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_029_filter_and_aggregate {
+    include!("../benchmarks/advanced/t_029_filter_and_aggregate/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_030_two_table_join {
+    include!("../benchmarks/advanced/t_030_two_table_join/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_031_unique_constraint {
+    include!("../benchmarks/advanced/t_031_unique_constraint/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
 mod basics_t_000_empty_reducers {
     include!("../benchmarks/basics/t_000_empty_reducers/spec.rs");
 }
@@ -134,6 +182,18 @@ mod schema_t_021_multi_column_index {
     include!("../benchmarks/schema/t_021_multi_column_index/spec.rs");
 }
 
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod views_t_022_view_basic {
+    include!("../benchmarks/views/t_022_view_basic/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod views_t_023_view_per_user {
+    include!("../benchmarks/views/t_023_view_per_user/spec.rs");
+}
+
 pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
     let task = task_root
         .file_name()
@@ -145,6 +205,14 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         .ok_or_else(|| anyhow!("missing category name"))?;
 
     let ctor = match (category, task) {
+        ("advanced", "t_024_event_table") => advanced_t_024_event_table::spec,
+        ("advanced", "t_025_optional_fields") => advanced_t_025_optional_fields::spec,
+        ("advanced", "t_026_auth_identity_check") => advanced_t_026_auth_identity_check::spec,
+        ("advanced", "t_027_private_vs_public_table") => advanced_t_027_private_vs_public_table::spec,
+        ("advanced", "t_028_cascade_delete") => advanced_t_028_cascade_delete::spec,
+        ("advanced", "t_029_filter_and_aggregate") => advanced_t_029_filter_and_aggregate::spec,
+        ("advanced", "t_030_two_table_join") => advanced_t_030_two_table_join::spec,
+        ("advanced", "t_031_unique_constraint") => advanced_t_031_unique_constraint::spec,
         ("basics", "t_000_empty_reducers") => basics_t_000_empty_reducers::spec,
         ("basics", "t_001_basic_tables") => basics_t_001_basic_tables::spec,
         ("basics", "t_002_scheduled_table") => basics_t_002_scheduled_table::spec,
@@ -167,6 +235,8 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("schema", "t_019_many_to_many") => schema_t_019_many_to_many::spec,
         ("schema", "t_020_ecs") => schema_t_020_ecs::spec,
         ("schema", "t_021_multi_column_index") => schema_t_021_multi_column_index::spec,
+        ("views", "t_022_view_basic") => views_t_022_view_basic::spec,
+        ("views", "t_023_view_per_user") => views_t_023_view_per_user::spec,
         _ => return Err(anyhow!("no spec registered for {}/{} (need spec.rs)", category, task)),
     };
 

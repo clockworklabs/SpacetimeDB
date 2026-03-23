@@ -1,0 +1,23 @@
+Write a SpacetimeDB backend module in C# that defines an Order table and a CategoryStats table, with a reducer that computes aggregate statistics from filtered orders.
+
+TABLES
+- Order
+  - Struct: Order
+  - Fields:
+    - Id: ulong (primary key, AutoInc)
+    - Category: string (index BTree)
+    - Amount: ulong
+    - Fulfilled: bool
+
+- CategoryStats
+  - Struct: CategoryStats
+  - Fields:
+    - Category: string (primary key)
+    - TotalAmount: ulong
+    - OrderCount: uint
+
+REDUCERS
+- ComputeStats(ctx, string category)
+  - Filter all orders matching the given category
+  - Count the number of matching orders and sum their amounts
+  - Insert (or update if exists) a CategoryStats row with the results

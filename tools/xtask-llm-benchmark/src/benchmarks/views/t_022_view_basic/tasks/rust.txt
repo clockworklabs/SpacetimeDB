@@ -1,0 +1,16 @@
+Write a SpacetimeDB backend module in Rust that defines a public table and an anonymous view that returns all rows from the table.
+
+TABLES
+- player
+  - Struct: Player
+  - public table
+  - Fields:
+    - id: u64 (primary key, auto_inc)
+    - name: String
+    - score: u32
+
+VIEWS
+- all_players
+  - anonymous view (uses AnonymousViewContext)
+  - public
+  - Returns: Vec<Player> (all rows from the player table)

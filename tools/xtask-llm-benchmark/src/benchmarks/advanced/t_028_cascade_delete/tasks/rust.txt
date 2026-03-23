@@ -1,0 +1,20 @@
+Write a SpacetimeDB backend module in Rust that defines an author table and a post table with a foreign key, and a reducer that deletes an author along with all their posts.
+
+TABLES
+- author
+  - Struct: Author
+  - Fields:
+    - id: u64 (primary key, auto_inc)
+    - name: String
+
+- post
+  - Struct: Post
+  - Fields:
+    - id: u64 (primary key, auto_inc)
+    - author_id: u64 (index btree)
+    - title: String
+
+REDUCERS
+- delete_author(ctx, author_id: u64)
+  - First, iterate all posts with matching author_id and delete each one
+  - Then delete the author by id

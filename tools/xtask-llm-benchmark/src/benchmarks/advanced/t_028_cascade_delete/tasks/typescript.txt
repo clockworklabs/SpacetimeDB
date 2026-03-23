@@ -1,0 +1,18 @@
+Write a SpacetimeDB backend module in TypeScript that defines an author table and a post table with a foreign key, and a reducer that deletes an author along with all their posts.
+
+TABLES
+- author
+  - Fields:
+    - id: number (u64, primary key, autoInc)
+    - name: string
+
+- post
+  - Fields:
+    - id: number (u64, primary key, autoInc)
+    - authorId: number (u64, index btree)
+    - title: string
+
+REDUCERS
+- delete_author(ctx, { authorId: number (u64) })
+  - First, iterate all posts with matching authorId and delete each one
+  - Then delete the author by id
