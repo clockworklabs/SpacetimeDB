@@ -18,7 +18,7 @@ use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
 use crate::host::module_host::{
     call_identity_connected, init_database, ClientConnectedError, ViewCallError, ViewCommand, ViewCommandResult,
 };
-use crate::host::scheduler::{CallScheduledFunctionError, CallScheduledFunctionResult, ScheduledFunctionParams};
+use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
     AnonymousViewOp, DescribeError, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings, InstanceCommon,
@@ -848,23 +848,6 @@ impl JsInstanceLane {
         })
         .await
         .map_err(|_| ViewCallError::InternalError(instance_lane_worker_error("call_view")))
-    }
-
-    /// Run a scheduled reducer function exactly once.
-    ///
-    /// If the worker disappears before replying, we replace it for future
-    /// requests and surface an internal error to the scheduler, which is then
-    /// responsible for re-queueing the scheduled item.
-    pub(in crate::host) async fn call_scheduled_function(
-        &self,
-        params: ScheduledFunctionParams,
-    ) -> Result<CallScheduledFunctionResult, CallScheduledFunctionError> {
-        self.run_once("call_scheduled_function", |inst: JsInstance| async move {
-            inst.send_request(|reply_tx| JsWorkerRequest::CallScheduledFunction { reply_tx, params })
-                .await
-        })
-        .await
-        .map_err(|_| CallScheduledFunctionError::WorkerError(instance_lane_worker_error("call_scheduled_function")))
     }
 }
 

@@ -281,20 +281,10 @@ pub(crate) struct ScheduledFunctionParams(QueueItem);
 pub(crate) enum CallScheduledFunctionError {
     #[error(transparent)]
     NoSuchModule(#[from] NoSuchModule),
-    #[error("scheduled reducer worker failed before replying: {0}")]
-    WorkerError(String),
 }
 
 #[cfg(target_pointer_width = "64")]
 spacetimedb_table::static_assert_size!(QueueItem, 64);
-
-impl ScheduledFunctionParams {
-    pub(crate) fn uses_procedure_lane(&self, module: &ModuleInfo, db: &RelationalDB) -> anyhow::Result<bool> {
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-        let params = call_params_for_queued_item(module, db, &tx, self.0.clone())?;
-        Ok(matches!(params, Some((_timestamp, _instant, CallParams::Procedure(_)))))
-    }
-}
 
 impl SchedulerActor {
     async fn run(mut self) {
@@ -338,7 +328,6 @@ impl SchedulerActor {
 
     async fn handle_queued(&mut self, id: Expired<QueueItem>) {
         let item = id.into_inner();
-        let retry_item = item.clone();
         let id: Option<ScheduledFunctionId> = match &item {
             QueueItem::Id { id, .. } => Some(*id),
             QueueItem::VolatileNonatomicImmediate { .. } => None,
@@ -357,13 +346,6 @@ impl SchedulerActor {
             // If the module already exited, leave the `ScheduledFunction` in
             // the database for when the module restarts.
             Err(CallScheduledFunctionError::NoSuchModule(_)) => {}
-            Err(CallScheduledFunctionError::WorkerError(err)) => {
-                log::error!("scheduled function lost its reducer worker before replying: {err}");
-                let key = self.queue.insert(retry_item, Duration::ZERO);
-                if let Some(id) = id {
-                    self.key_map.insert(id, key);
-                }
-            }
             Ok(CallScheduledFunctionResult { reschedule: None }) => {
                 // nothing to do
             }

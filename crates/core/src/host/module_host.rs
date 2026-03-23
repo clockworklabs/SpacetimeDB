@@ -1932,31 +1932,11 @@ impl ModuleHost {
                 )
                 .await?
             }
-            ModuleHostInner::Js(V8ModuleHost { module, .. }) => {
-                let use_procedure_lane =
-                    match params.uses_procedure_lane(&self.info, module.replica_ctx().relational_db.as_ref()) {
-                        Ok(use_procedure_lane) => use_procedure_lane,
-                        Err(err) => {
-                            log::error!("failed to classify scheduled JS function; routing to procedure lane: {err:#}");
-                            true
-                        }
-                    };
-                if use_procedure_lane {
-                    Ok(self
-                        .with_js_pooled_instance("unknown scheduled function", async move |inst| {
-                            inst.call_scheduled_function(params).await
-                        })
-                        .await?)
-                } else {
-                    self.call(
-                        "unknown scheduled function",
-                        params,
-                        async move |params, inst| Ok(inst.call_scheduled_function(params).await),
-                        async move |params, inst| inst.call_scheduled_function(params).await,
-                    )
-                    .await?
-                }
-            }
+            ModuleHostInner::Js(_) => Ok(self
+                .with_js_pooled_instance("unknown scheduled function", async move |inst| {
+                    inst.call_scheduled_function(params).await
+                })
+                .await?),
         }
     }
 
