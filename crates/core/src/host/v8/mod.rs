@@ -730,9 +730,6 @@ impl V8HeapMetrics {
 }
 
 fn sample_heap_stats(scope: &mut PinScope<'_, '_>, metrics: &V8HeapMetrics) -> v8::HeapStatistics {
-    // Heap statistics are isolate-local, so they must be read on the JS worker
-    // thread that owns the isolate. Pushing this into a background task would
-    // still have to enqueue work back onto this same thread.
     let stats = scope.get_heap_statistics();
     metrics.observe(&stats);
     stats
@@ -746,18 +743,17 @@ fn heap_fraction_at_or_above(used: usize, limit: usize, fraction: f64) -> bool {
     limit > 0 && ((used as f64) / (limit as f64)) >= fraction
 }
 
+/// The single JS worker can process an unbounded number of reducer calls over its lifetime.
+/// That is great for locality, but it also means any JS heap retention that would previously
+/// have been spread across several pooled isolates now accumulates in one isolate.
+///
+/// If heap usage is close to the configured limit even after manually invoking GC,
+/// we'll instantiate a new isolate to reclaim memory and avoid OOMing the current one.
 fn should_retire_worker_for_heap(
     scope: &mut PinScope<'_, '_>,
     metrics: &V8HeapMetrics,
     config: V8HeapPolicyConfig,
 ) -> Option<(usize, usize)> {
-    // The single instance-lane worker can process an unbounded number of reducer
-    // calls over its lifetime. That is great for locality, but it also means any
-    // JS heap retention that would previously have been spread across several
-    // pooled isolates now accumulates in one isolate. Periodically asking V8 to
-    // collect only when cheap heap stats say we're already under pressure keeps
-    // the steady-state hot path cheap while still giving the long-lived worker
-    // model a bounded-memory replacement policy.
     let stats = sample_heap_stats(scope, metrics);
     let (used, limit) = heap_usage(&stats);
     if !heap_fraction_at_or_above(used, limit, config.heap_gc_trigger_fraction) {
