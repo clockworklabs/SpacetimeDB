@@ -115,11 +115,11 @@ class ConnectionStateTransitionTest {
     }
 
     // =========================================================================
-    // Post-Disconnect Operations
+    // Post-Disconnect Operations — sendMessage returns false, caller cleans up
     // =========================================================================
 
     @Test
-    fun callReducerAfterDisconnectDoesNotCrash() = runTest {
+    fun callReducerAfterDisconnectCleansUpTracking() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -128,12 +128,14 @@ class ConnectionStateTransitionTest {
         conn.disconnect()
         advanceUntilIdle()
 
-        // Graceful no-op — logs warning, does not throw
+        // sendMessage returns false — callback and tracker must be cleaned up
         conn.callReducer("add", byteArrayOf(), "args")
+        assertEquals(0, conn.stats.reducerRequestTracker.requestsAwaitingResponse,
+            "Reducer tracker must be cleaned up when send fails")
     }
 
     @Test
-    fun callProcedureAfterDisconnectDoesNotCrash() = runTest {
+    fun callProcedureAfterDisconnectCleansUpTracking() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -142,12 +144,13 @@ class ConnectionStateTransitionTest {
         conn.disconnect()
         advanceUntilIdle()
 
-        // Graceful no-op — logs warning, does not throw
         conn.callProcedure("proc", byteArrayOf())
+        assertEquals(0, conn.stats.procedureRequestTracker.requestsAwaitingResponse,
+            "Procedure tracker must be cleaned up when send fails")
     }
 
     @Test
-    fun oneOffQueryAfterDisconnectDoesNotCrash() = runTest {
+    fun oneOffQueryAfterDisconnectCleansUpTracking() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -156,8 +159,25 @@ class ConnectionStateTransitionTest {
         conn.disconnect()
         advanceUntilIdle()
 
-        // Graceful no-op — logs warning, does not throw
         conn.oneOffQuery("SELECT 1") {}
+        assertEquals(0, conn.stats.oneOffRequestTracker.requestsAwaitingResponse,
+            "OneOffQuery tracker must be cleaned up when send fails")
+    }
+
+    @Test
+    fun subscribeAfterDisconnectCleansUpTracking() = runTest {
+        val transport = FakeTransport()
+        val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
+        transport.sendToClient(initialConnectionMsg())
+        advanceUntilIdle()
+
+        conn.disconnect()
+        advanceUntilIdle()
+
+        val handle = conn.subscribe(listOf("SELECT * FROM sample"))
+        assertEquals(0, conn.stats.subscriptionRequestTracker.requestsAwaitingResponse,
+            "Subscription tracker must be cleaned up when send fails")
+        assertTrue(handle.isEnded, "Handle must be marked ended when send fails")
     }
 
     // =========================================================================
