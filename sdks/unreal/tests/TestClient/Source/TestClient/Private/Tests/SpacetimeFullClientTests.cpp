@@ -102,6 +102,46 @@ static FString NormalizeDuration(const FSpacetimeDBTimeDuration &Dur)
 	const double Seconds = static_cast<double>(Dur.GetMicroseconds()) / 1'000'000.0;
 	return TrimFloat(Seconds);
 }
+
+static void CompileTypedQueryBuilderSmoke(UDbConnection* Conn)
+{
+	Conn->SubscriptionBuilder()
+		->AddQuery([](const FQueryBuilder& Q)
+		{
+			return Q.From.OneU8().Where([](const FOneU8Cols& Cols)
+			{
+				return Cols.N.Eq(static_cast<uint8>(1));
+			});
+		})
+		.AddQuery([](const FQueryBuilder& Q)
+		{
+			return Q.From.OneString().Where([](const FOneStringCols& Cols)
+			{
+				return Cols.S.Eq(TEXT("typed-query-builder"));
+			});
+		})
+		.AddQuery([](const FQueryBuilder& Q)
+		{
+			return Q.From.OneTimestamp().Where([](const FOneTimestampCols& Cols)
+			{
+				return Cols.T.Gte(FSpacetimeDBTimestamp(1));
+			});
+		})
+		.AddQuery([](const FQueryBuilder& Q)
+		{
+			return Q.From.PkU32().LeftSemijoin(Q.From.UniqueU32(), [](const FPkU32IxCols& Left, const FUniqueU32IxCols& Right)
+			{
+				return Left.N.Eq(Right.N);
+			});
+		})
+		.AddQuery([](const FQueryBuilder& Q)
+		{
+			return Q.From.UniqueU32().Where([](const FUniqueU32Cols&, const FUniqueU32IxCols& Ix)
+			{
+				return Ix.N.Eq(static_cast<uint32>(7));
+			});
+		});
+}
 //
 
 bool FInsertPrimitiveTest::RunTest(const FString &Parameters)
