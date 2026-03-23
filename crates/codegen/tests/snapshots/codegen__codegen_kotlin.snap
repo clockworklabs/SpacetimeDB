@@ -816,6 +816,7 @@ class RemoteProcedures internal constructor(
 
 package module_bindings
 
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.CallbackList
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ModuleReducers
@@ -878,7 +879,7 @@ class RemoteReducers internal constructor(
         conn.callReducer(TestBtreeIndexArgsReducer.REDUCER_NAME, ByteArray(0), Unit, callback)
     }
 
-    private val onAddCallbacks = mutableListOf<(EventContext.Reducer<AddArgs>, String, UByte) -> Unit>()
+    private val onAddCallbacks = CallbackList<(EventContext.Reducer<AddArgs>, String, UByte) -> Unit>()
 
     fun onAdd(cb: (EventContext.Reducer<AddArgs>, String, UByte) -> Unit) {
         onAddCallbacks.add(cb)
@@ -888,7 +889,7 @@ class RemoteReducers internal constructor(
         onAddCallbacks.remove(cb)
     }
 
-    private val onAddPlayerCallbacks = mutableListOf<(EventContext.Reducer<AddPlayerArgs>, String) -> Unit>()
+    private val onAddPlayerCallbacks = CallbackList<(EventContext.Reducer<AddPlayerArgs>, String) -> Unit>()
 
     fun onAddPlayer(cb: (EventContext.Reducer<AddPlayerArgs>, String) -> Unit) {
         onAddPlayerCallbacks.add(cb)
@@ -898,7 +899,7 @@ class RemoteReducers internal constructor(
         onAddPlayerCallbacks.remove(cb)
     }
 
-    private val onAddPrivateCallbacks = mutableListOf<(EventContext.Reducer<AddPrivateArgs>, String) -> Unit>()
+    private val onAddPrivateCallbacks = CallbackList<(EventContext.Reducer<AddPrivateArgs>, String) -> Unit>()
 
     fun onAddPrivate(cb: (EventContext.Reducer<AddPrivateArgs>, String) -> Unit) {
         onAddPrivateCallbacks.add(cb)
@@ -908,7 +909,7 @@ class RemoteReducers internal constructor(
         onAddPrivateCallbacks.remove(cb)
     }
 
-    private val onAssertCallerIdentityIsModuleIdentityCallbacks = mutableListOf<(EventContext.Reducer<Unit>) -> Unit>()
+    private val onAssertCallerIdentityIsModuleIdentityCallbacks = CallbackList<(EventContext.Reducer<Unit>) -> Unit>()
 
     fun onAssertCallerIdentityIsModuleIdentity(cb: (EventContext.Reducer<Unit>) -> Unit) {
         onAssertCallerIdentityIsModuleIdentityCallbacks.add(cb)
@@ -918,7 +919,7 @@ class RemoteReducers internal constructor(
         onAssertCallerIdentityIsModuleIdentityCallbacks.remove(cb)
     }
 
-    private val onDeletePlayerCallbacks = mutableListOf<(EventContext.Reducer<DeletePlayerArgs>, ULong) -> Unit>()
+    private val onDeletePlayerCallbacks = CallbackList<(EventContext.Reducer<DeletePlayerArgs>, ULong) -> Unit>()
 
     fun onDeletePlayer(cb: (EventContext.Reducer<DeletePlayerArgs>, ULong) -> Unit) {
         onDeletePlayerCallbacks.add(cb)
@@ -928,7 +929,7 @@ class RemoteReducers internal constructor(
         onDeletePlayerCallbacks.remove(cb)
     }
 
-    private val onDeletePlayersByNameCallbacks = mutableListOf<(EventContext.Reducer<DeletePlayersByNameArgs>, String) -> Unit>()
+    private val onDeletePlayersByNameCallbacks = CallbackList<(EventContext.Reducer<DeletePlayersByNameArgs>, String) -> Unit>()
 
     fun onDeletePlayersByName(cb: (EventContext.Reducer<DeletePlayersByNameArgs>, String) -> Unit) {
         onDeletePlayersByNameCallbacks.add(cb)
@@ -938,7 +939,7 @@ class RemoteReducers internal constructor(
         onDeletePlayersByNameCallbacks.remove(cb)
     }
 
-    private val onListOverAgeCallbacks = mutableListOf<(EventContext.Reducer<ListOverAgeArgs>, UByte) -> Unit>()
+    private val onListOverAgeCallbacks = CallbackList<(EventContext.Reducer<ListOverAgeArgs>, UByte) -> Unit>()
 
     fun onListOverAge(cb: (EventContext.Reducer<ListOverAgeArgs>, UByte) -> Unit) {
         onListOverAgeCallbacks.add(cb)
@@ -948,7 +949,7 @@ class RemoteReducers internal constructor(
         onListOverAgeCallbacks.remove(cb)
     }
 
-    private val onLogModuleIdentityCallbacks = mutableListOf<(EventContext.Reducer<Unit>) -> Unit>()
+    private val onLogModuleIdentityCallbacks = CallbackList<(EventContext.Reducer<Unit>) -> Unit>()
 
     fun onLogModuleIdentity(cb: (EventContext.Reducer<Unit>) -> Unit) {
         onLogModuleIdentityCallbacks.add(cb)
@@ -958,7 +959,7 @@ class RemoteReducers internal constructor(
         onLogModuleIdentityCallbacks.remove(cb)
     }
 
-    private val onQueryPrivateCallbacks = mutableListOf<(EventContext.Reducer<Unit>) -> Unit>()
+    private val onQueryPrivateCallbacks = CallbackList<(EventContext.Reducer<Unit>) -> Unit>()
 
     fun onQueryPrivate(cb: (EventContext.Reducer<Unit>) -> Unit) {
         onQueryPrivateCallbacks.add(cb)
@@ -968,7 +969,7 @@ class RemoteReducers internal constructor(
         onQueryPrivateCallbacks.remove(cb)
     }
 
-    private val onSayHelloCallbacks = mutableListOf<(EventContext.Reducer<Unit>) -> Unit>()
+    private val onSayHelloCallbacks = CallbackList<(EventContext.Reducer<Unit>) -> Unit>()
 
     fun onSayHello(cb: (EventContext.Reducer<Unit>) -> Unit) {
         onSayHelloCallbacks.add(cb)
@@ -978,7 +979,7 @@ class RemoteReducers internal constructor(
         onSayHelloCallbacks.remove(cb)
     }
 
-    private val onTestCallbacks = mutableListOf<(EventContext.Reducer<TestArgs>, TestA, TestB, NamespaceTestC, NamespaceTestF) -> Unit>()
+    private val onTestCallbacks = CallbackList<(EventContext.Reducer<TestArgs>, TestA, TestB, NamespaceTestC, NamespaceTestF) -> Unit>()
 
     fun onTest(cb: (EventContext.Reducer<TestArgs>, TestA, TestB, NamespaceTestC, NamespaceTestF) -> Unit) {
         onTestCallbacks.add(cb)
@@ -988,7 +989,7 @@ class RemoteReducers internal constructor(
         onTestCallbacks.remove(cb)
     }
 
-    private val onTestBtreeIndexArgsCallbacks = mutableListOf<(EventContext.Reducer<Unit>) -> Unit>()
+    private val onTestBtreeIndexArgsCallbacks = CallbackList<(EventContext.Reducer<Unit>) -> Unit>()
 
     fun onTestBtreeIndexArgs(cb: (EventContext.Reducer<Unit>) -> Unit) {
         onTestBtreeIndexArgsCallbacks.add(cb)
@@ -1004,84 +1005,84 @@ class RemoteReducers internal constructor(
                 if (onAddCallbacks.isNotEmpty()) {
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<AddArgs>
-                    for (cb in onAddCallbacks.toList()) cb(typedCtx, typedCtx.args.name, typedCtx.args.age)
+                    onAddCallbacks.forEach { it(typedCtx, typedCtx.args.name, typedCtx.args.age) }
                 }
             }
             AddPlayerReducer.REDUCER_NAME -> {
                 if (onAddPlayerCallbacks.isNotEmpty()) {
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<AddPlayerArgs>
-                    for (cb in onAddPlayerCallbacks.toList()) cb(typedCtx, typedCtx.args.name)
+                    onAddPlayerCallbacks.forEach { it(typedCtx, typedCtx.args.name) }
                 }
             }
             AddPrivateReducer.REDUCER_NAME -> {
                 if (onAddPrivateCallbacks.isNotEmpty()) {
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<AddPrivateArgs>
-                    for (cb in onAddPrivateCallbacks.toList()) cb(typedCtx, typedCtx.args.name)
+                    onAddPrivateCallbacks.forEach { it(typedCtx, typedCtx.args.name) }
                 }
             }
             AssertCallerIdentityIsModuleIdentityReducer.REDUCER_NAME -> {
                 if (onAssertCallerIdentityIsModuleIdentityCallbacks.isNotEmpty()) {
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<Unit>
-                    for (cb in onAssertCallerIdentityIsModuleIdentityCallbacks.toList()) cb(typedCtx)
+                    onAssertCallerIdentityIsModuleIdentityCallbacks.forEach { it(typedCtx) }
                 }
             }
             DeletePlayerReducer.REDUCER_NAME -> {
                 if (onDeletePlayerCallbacks.isNotEmpty()) {
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<DeletePlayerArgs>
-                    for (cb in onDeletePlayerCallbacks.toList()) cb(typedCtx, typedCtx.args.id)
+                    onDeletePlayerCallbacks.forEach { it(typedCtx, typedCtx.args.id) }
                 }
             }
             DeletePlayersByNameReducer.REDUCER_NAME -> {
                 if (onDeletePlayersByNameCallbacks.isNotEmpty()) {
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<DeletePlayersByNameArgs>
-                    for (cb in onDeletePlayersByNameCallbacks.toList()) cb(typedCtx, typedCtx.args.name)
+                    onDeletePlayersByNameCallbacks.forEach { it(typedCtx, typedCtx.args.name) }
                 }
             }
             ListOverAgeReducer.REDUCER_NAME -> {
                 if (onListOverAgeCallbacks.isNotEmpty()) {
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<ListOverAgeArgs>
-                    for (cb in onListOverAgeCallbacks.toList()) cb(typedCtx, typedCtx.args.age)
+                    onListOverAgeCallbacks.forEach { it(typedCtx, typedCtx.args.age) }
                 }
             }
             LogModuleIdentityReducer.REDUCER_NAME -> {
                 if (onLogModuleIdentityCallbacks.isNotEmpty()) {
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<Unit>
-                    for (cb in onLogModuleIdentityCallbacks.toList()) cb(typedCtx)
+                    onLogModuleIdentityCallbacks.forEach { it(typedCtx) }
                 }
             }
             QueryPrivateReducer.REDUCER_NAME -> {
                 if (onQueryPrivateCallbacks.isNotEmpty()) {
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<Unit>
-                    for (cb in onQueryPrivateCallbacks.toList()) cb(typedCtx)
+                    onQueryPrivateCallbacks.forEach { it(typedCtx) }
                 }
             }
             SayHelloReducer.REDUCER_NAME -> {
                 if (onSayHelloCallbacks.isNotEmpty()) {
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<Unit>
-                    for (cb in onSayHelloCallbacks.toList()) cb(typedCtx)
+                    onSayHelloCallbacks.forEach { it(typedCtx) }
                 }
             }
             TestReducer.REDUCER_NAME -> {
                 if (onTestCallbacks.isNotEmpty()) {
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<TestArgs>
-                    for (cb in onTestCallbacks.toList()) cb(typedCtx, typedCtx.args.arg, typedCtx.args.arg2, typedCtx.args.arg3, typedCtx.args.arg4)
+                    onTestCallbacks.forEach { it(typedCtx, typedCtx.args.arg, typedCtx.args.arg2, typedCtx.args.arg3, typedCtx.args.arg4) }
                 }
             }
             TestBtreeIndexArgsReducer.REDUCER_NAME -> {
                 if (onTestBtreeIndexArgsCallbacks.isNotEmpty()) {
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<Unit>
-                    for (cb in onTestBtreeIndexArgsCallbacks.toList()) cb(typedCtx)
+                    onTestBtreeIndexArgsCallbacks.forEach { it(typedCtx) }
                 }
             }
         }

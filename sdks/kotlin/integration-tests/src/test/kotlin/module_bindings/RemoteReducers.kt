@@ -5,6 +5,7 @@
 
 package module_bindings
 
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.CallbackList
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Int128
@@ -61,7 +62,7 @@ class RemoteReducers internal constructor(
         conn.callReducer(SetNameReducer.REDUCER_NAME, args.encode(), args, callback)
     }
 
-    private val onAddNoteCallbacks = mutableListOf<(EventContext.Reducer<AddNoteArgs>, String, String) -> Unit>()
+    private val onAddNoteCallbacks = CallbackList<(EventContext.Reducer<AddNoteArgs>, String, String) -> Unit>()
 
     fun onAddNote(cb: (EventContext.Reducer<AddNoteArgs>, String, String) -> Unit) {
         onAddNoteCallbacks.add(cb)
@@ -71,7 +72,7 @@ class RemoteReducers internal constructor(
         onAddNoteCallbacks.remove(cb)
     }
 
-    private val onCancelReminderCallbacks = mutableListOf<(EventContext.Reducer<CancelReminderArgs>, ULong) -> Unit>()
+    private val onCancelReminderCallbacks = CallbackList<(EventContext.Reducer<CancelReminderArgs>, ULong) -> Unit>()
 
     fun onCancelReminder(cb: (EventContext.Reducer<CancelReminderArgs>, ULong) -> Unit) {
         onCancelReminderCallbacks.add(cb)
@@ -81,7 +82,7 @@ class RemoteReducers internal constructor(
         onCancelReminderCallbacks.remove(cb)
     }
 
-    private val onDeleteMessageCallbacks = mutableListOf<(EventContext.Reducer<DeleteMessageArgs>, ULong) -> Unit>()
+    private val onDeleteMessageCallbacks = CallbackList<(EventContext.Reducer<DeleteMessageArgs>, ULong) -> Unit>()
 
     fun onDeleteMessage(cb: (EventContext.Reducer<DeleteMessageArgs>, ULong) -> Unit) {
         onDeleteMessageCallbacks.add(cb)
@@ -91,7 +92,7 @@ class RemoteReducers internal constructor(
         onDeleteMessageCallbacks.remove(cb)
     }
 
-    private val onDeleteNoteCallbacks = mutableListOf<(EventContext.Reducer<DeleteNoteArgs>, ULong) -> Unit>()
+    private val onDeleteNoteCallbacks = CallbackList<(EventContext.Reducer<DeleteNoteArgs>, ULong) -> Unit>()
 
     fun onDeleteNote(cb: (EventContext.Reducer<DeleteNoteArgs>, ULong) -> Unit) {
         onDeleteNoteCallbacks.add(cb)
@@ -101,7 +102,7 @@ class RemoteReducers internal constructor(
         onDeleteNoteCallbacks.remove(cb)
     }
 
-    private val onInsertBigIntsCallbacks = mutableListOf<(EventContext.Reducer<InsertBigIntsArgs>, Int128, UInt128, Int256, UInt256) -> Unit>()
+    private val onInsertBigIntsCallbacks = CallbackList<(EventContext.Reducer<InsertBigIntsArgs>, Int128, UInt128, Int256, UInt256) -> Unit>()
 
     fun onInsertBigInts(cb: (EventContext.Reducer<InsertBigIntsArgs>, Int128, UInt128, Int256, UInt256) -> Unit) {
         onInsertBigIntsCallbacks.add(cb)
@@ -111,7 +112,7 @@ class RemoteReducers internal constructor(
         onInsertBigIntsCallbacks.remove(cb)
     }
 
-    private val onScheduleReminderCallbacks = mutableListOf<(EventContext.Reducer<ScheduleReminderArgs>, String, ULong) -> Unit>()
+    private val onScheduleReminderCallbacks = CallbackList<(EventContext.Reducer<ScheduleReminderArgs>, String, ULong) -> Unit>()
 
     fun onScheduleReminder(cb: (EventContext.Reducer<ScheduleReminderArgs>, String, ULong) -> Unit) {
         onScheduleReminderCallbacks.add(cb)
@@ -121,7 +122,7 @@ class RemoteReducers internal constructor(
         onScheduleReminderCallbacks.remove(cb)
     }
 
-    private val onScheduleReminderRepeatCallbacks = mutableListOf<(EventContext.Reducer<ScheduleReminderRepeatArgs>, String, ULong) -> Unit>()
+    private val onScheduleReminderRepeatCallbacks = CallbackList<(EventContext.Reducer<ScheduleReminderRepeatArgs>, String, ULong) -> Unit>()
 
     fun onScheduleReminderRepeat(cb: (EventContext.Reducer<ScheduleReminderRepeatArgs>, String, ULong) -> Unit) {
         onScheduleReminderRepeatCallbacks.add(cb)
@@ -131,7 +132,7 @@ class RemoteReducers internal constructor(
         onScheduleReminderRepeatCallbacks.remove(cb)
     }
 
-    private val onSendMessageCallbacks = mutableListOf<(EventContext.Reducer<SendMessageArgs>, String) -> Unit>()
+    private val onSendMessageCallbacks = CallbackList<(EventContext.Reducer<SendMessageArgs>, String) -> Unit>()
 
     fun onSendMessage(cb: (EventContext.Reducer<SendMessageArgs>, String) -> Unit) {
         onSendMessageCallbacks.add(cb)
@@ -141,7 +142,7 @@ class RemoteReducers internal constructor(
         onSendMessageCallbacks.remove(cb)
     }
 
-    private val onSetNameCallbacks = mutableListOf<(EventContext.Reducer<SetNameArgs>, String) -> Unit>()
+    private val onSetNameCallbacks = CallbackList<(EventContext.Reducer<SetNameArgs>, String) -> Unit>()
 
     fun onSetName(cb: (EventContext.Reducer<SetNameArgs>, String) -> Unit) {
         onSetNameCallbacks.add(cb)
@@ -157,63 +158,63 @@ class RemoteReducers internal constructor(
                 if (onAddNoteCallbacks.isNotEmpty()) {
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<AddNoteArgs>
-                    for (cb in onAddNoteCallbacks.toList()) cb(typedCtx, typedCtx.args.content, typedCtx.args.tag)
+                    onAddNoteCallbacks.forEach { it(typedCtx, typedCtx.args.content, typedCtx.args.tag) }
                 }
             }
             CancelReminderReducer.REDUCER_NAME -> {
                 if (onCancelReminderCallbacks.isNotEmpty()) {
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<CancelReminderArgs>
-                    for (cb in onCancelReminderCallbacks.toList()) cb(typedCtx, typedCtx.args.reminderId)
+                    onCancelReminderCallbacks.forEach { it(typedCtx, typedCtx.args.reminderId) }
                 }
             }
             DeleteMessageReducer.REDUCER_NAME -> {
                 if (onDeleteMessageCallbacks.isNotEmpty()) {
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<DeleteMessageArgs>
-                    for (cb in onDeleteMessageCallbacks.toList()) cb(typedCtx, typedCtx.args.messageId)
+                    onDeleteMessageCallbacks.forEach { it(typedCtx, typedCtx.args.messageId) }
                 }
             }
             DeleteNoteReducer.REDUCER_NAME -> {
                 if (onDeleteNoteCallbacks.isNotEmpty()) {
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<DeleteNoteArgs>
-                    for (cb in onDeleteNoteCallbacks.toList()) cb(typedCtx, typedCtx.args.noteId)
+                    onDeleteNoteCallbacks.forEach { it(typedCtx, typedCtx.args.noteId) }
                 }
             }
             InsertBigIntsReducer.REDUCER_NAME -> {
                 if (onInsertBigIntsCallbacks.isNotEmpty()) {
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<InsertBigIntsArgs>
-                    for (cb in onInsertBigIntsCallbacks.toList()) cb(typedCtx, typedCtx.args.valI128, typedCtx.args.valU128, typedCtx.args.valI256, typedCtx.args.valU256)
+                    onInsertBigIntsCallbacks.forEach { it(typedCtx, typedCtx.args.valI128, typedCtx.args.valU128, typedCtx.args.valI256, typedCtx.args.valU256) }
                 }
             }
             ScheduleReminderReducer.REDUCER_NAME -> {
                 if (onScheduleReminderCallbacks.isNotEmpty()) {
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<ScheduleReminderArgs>
-                    for (cb in onScheduleReminderCallbacks.toList()) cb(typedCtx, typedCtx.args.text, typedCtx.args.delayMs)
+                    onScheduleReminderCallbacks.forEach { it(typedCtx, typedCtx.args.text, typedCtx.args.delayMs) }
                 }
             }
             ScheduleReminderRepeatReducer.REDUCER_NAME -> {
                 if (onScheduleReminderRepeatCallbacks.isNotEmpty()) {
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<ScheduleReminderRepeatArgs>
-                    for (cb in onScheduleReminderRepeatCallbacks.toList()) cb(typedCtx, typedCtx.args.text, typedCtx.args.intervalMs)
+                    onScheduleReminderRepeatCallbacks.forEach { it(typedCtx, typedCtx.args.text, typedCtx.args.intervalMs) }
                 }
             }
             SendMessageReducer.REDUCER_NAME -> {
                 if (onSendMessageCallbacks.isNotEmpty()) {
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<SendMessageArgs>
-                    for (cb in onSendMessageCallbacks.toList()) cb(typedCtx, typedCtx.args.text)
+                    onSendMessageCallbacks.forEach { it(typedCtx, typedCtx.args.text) }
                 }
             }
             SetNameReducer.REDUCER_NAME -> {
                 if (onSetNameCallbacks.isNotEmpty()) {
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<SetNameArgs>
-                    for (cb in onSetNameCallbacks.toList()) cb(typedCtx, typedCtx.args.name)
+                    onSetNameCallbacks.forEach { it(typedCtx, typedCtx.args.name) }
                 }
             }
         }

@@ -7,7 +7,7 @@ dependencies {
     testImplementation(libs.kotlin.test)
     testImplementation(libs.ktor.client.okhttp)
     testImplementation(libs.ktor.client.websockets)
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:${libs.versions.kotlinx.coroutines.get()}")
+    testImplementation(libs.kotlinx.coroutines.core)
     testImplementation(libs.bignum)
 }
 

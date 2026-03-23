@@ -1242,6 +1242,7 @@ fn generate_remote_reducers_file(module: &ModuleDef, options: &CodegenOptions) -
 
     // Collect all imports needed by reducer params
     let mut imports = BTreeSet::new();
+    imports.insert(format!("{SDK_PKG}.CallbackList"));
     imports.insert(format!("{SDK_PKG}.DbConnection"));
     imports.insert(format!("{SDK_PKG}.EventContext"));
     imports.insert(format!("{SDK_PKG}.ModuleReducers"));
@@ -1342,7 +1343,7 @@ fn generate_remote_reducers_file(module: &ModuleDef, options: &CodegenOptions) -
         // Callback list
         writeln!(
             out,
-            "private val on{reducer_name_pascal}Callbacks = mutableListOf<{cb_type}>()"
+            "private val on{reducer_name_pascal}Callbacks = CallbackList<{cb_type}>()"
         );
         writeln!(out);
 
@@ -1384,7 +1385,7 @@ fn generate_remote_reducers_file(module: &ModuleDef, options: &CodegenOptions) -
         if reducer.params_for_generate.elements.is_empty() {
             writeln!(out, "@Suppress(\"UNCHECKED_CAST\")");
             writeln!(out, "val typedCtx = ctx as EventContext.Reducer<Unit>");
-            writeln!(out, "for (cb in on{reducer_name_pascal}Callbacks.toList()) cb(typedCtx)");
+            writeln!(out, "on{reducer_name_pascal}Callbacks.forEach {{ it(typedCtx) }}");
         } else {
             writeln!(out, "@Suppress(\"UNCHECKED_CAST\")");
             writeln!(out, "val typedCtx = ctx as EventContext.Reducer<{reducer_name_pascal}Args>");
@@ -1402,7 +1403,7 @@ fn generate_remote_reducers_file(module: &ModuleDef, options: &CodegenOptions) -
                 )
                 .collect();
             let call_args_str = call_args.join(", ");
-            writeln!(out, "for (cb in on{reducer_name_pascal}Callbacks.toList()) cb({call_args_str})");
+            writeln!(out, "on{reducer_name_pascal}Callbacks.forEach {{ it({call_args_str}) }}");
         }
 
         out.dedent(1);
