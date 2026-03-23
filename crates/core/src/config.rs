@@ -176,37 +176,25 @@ pub struct LogConfig {
 #[derive(Clone, Copy, Debug, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct V8HeapPolicyConfig {
-    #[serde(
-        default = "default_v8_heap_check_request_interval",
-        deserialize_with = "deserialize_nonzero_u64"
-    )]
+    #[serde(default = "def_req_interval", deserialize_with = "de_nz_u64")]
     pub heap_check_request_interval: Option<u64>,
-    #[serde(
-        default = "default_v8_heap_check_time_interval",
-        deserialize_with = "deserialize_nonzero_duration"
-    )]
+    #[serde(default = "def_time_interval", deserialize_with = "de_nz_duration")]
     pub heap_check_time_interval: Option<Duration>,
-    #[serde(
-        default = "default_v8_heap_gc_trigger_fraction",
-        deserialize_with = "deserialize_fraction"
-    )]
+    #[serde(default = "def_gc_trigger", deserialize_with = "de_fraction")]
     pub heap_gc_trigger_fraction: f64,
-    #[serde(
-        default = "default_v8_heap_retire_fraction",
-        deserialize_with = "deserialize_fraction"
-    )]
+    #[serde(default = "def_retire", deserialize_with = "de_fraction")]
     pub heap_retire_fraction: f64,
-    #[serde(default, rename = "heap-limit-mb", deserialize_with = "deserialize_heap_limit_mb")]
+    #[serde(default, rename = "heap-limit-mb", deserialize_with = "de_limit_mb")]
     pub heap_limit_bytes: Option<usize>,
 }
 
 impl Default for V8HeapPolicyConfig {
     fn default() -> Self {
         Self {
-            heap_check_request_interval: default_v8_heap_check_request_interval(),
-            heap_check_time_interval: default_v8_heap_check_time_interval(),
-            heap_gc_trigger_fraction: default_v8_heap_gc_trigger_fraction(),
-            heap_retire_fraction: default_v8_heap_retire_fraction(),
+            heap_check_request_interval: def_req_interval(),
+            heap_check_time_interval: def_time_interval(),
+            heap_gc_trigger_fraction: def_gc_trigger(),
+            heap_retire_fraction: def_retire(),
             heap_limit_bytes: None,
         }
     }
@@ -228,23 +216,27 @@ impl V8HeapPolicyConfig {
     }
 }
 
-fn default_v8_heap_check_request_interval() -> Option<u64> {
+/// Default number of requests between V8 heap checks.
+fn def_req_interval() -> Option<u64> {
     Some(65_536)
 }
 
-fn default_v8_heap_check_time_interval() -> Option<Duration> {
+/// Default wall-clock interval between V8 heap checks.
+fn def_time_interval() -> Option<Duration> {
     Some(Duration::from_secs(30))
 }
 
-fn default_v8_heap_gc_trigger_fraction() -> f64 {
+/// Default heap fill fraction that triggers a GC.
+fn def_gc_trigger() -> f64 {
     0.67
 }
 
-fn default_v8_heap_retire_fraction() -> f64 {
+/// Default heap fill fraction that retires the worker after a GC.
+fn def_retire() -> f64 {
     0.75
 }
 
-fn deserialize_nonzero_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+fn de_nz_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -252,7 +244,7 @@ where
     Ok((value != 0).then_some(value))
 }
 
-fn deserialize_nonzero_duration<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
+fn de_nz_duration<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -271,7 +263,7 @@ where
     Ok((!duration.is_zero()).then_some(duration))
 }
 
-fn deserialize_fraction<'de, D>(deserializer: D) -> Result<f64, D::Error>
+fn de_fraction<'de, D>(deserializer: D) -> Result<f64, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -296,7 +288,7 @@ where
     }
 }
 
-fn deserialize_heap_limit_mb<'de, D>(deserializer: D) -> Result<Option<usize>, D::Error>
+fn de_limit_mb<'de, D>(deserializer: D) -> Result<Option<usize>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
