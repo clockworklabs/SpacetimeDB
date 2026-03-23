@@ -758,43 +758,39 @@ private:
 };
 
 // QueryBuilder types
-struct TESTVIEWCLIENT_API FPlayerCols
+struct TESTVIEWCLIENT_API FMyPlayerCols;
+struct TESTVIEWCLIENT_API FMyPlayerIxCols;
+struct TESTVIEWCLIENT_API FPlayerAndLevelCols;
+struct TESTVIEWCLIENT_API FPlayerAndLevelIxCols;
+struct TESTVIEWCLIENT_API FPlayerLocationCols;
+struct TESTVIEWCLIENT_API FPlayerLocationIxCols;
+struct TESTVIEWCLIENT_API FPlayerCols;
+struct TESTVIEWCLIENT_API FPlayerIxCols;
+struct TESTVIEWCLIENT_API FPlayerLevelCols;
+struct TESTVIEWCLIENT_API FPlayerLevelIxCols;
+struct TESTVIEWCLIENT_API FPlayersAtLevel0Cols;
+struct TESTVIEWCLIENT_API FPlayersAtLevel0IxCols;
+
+struct TESTVIEWCLIENT_API FMyPlayerCols
 {
-    explicit FPlayerCols(const char* TableName)
+    explicit FMyPlayerCols(const char* TableName)
         : EntityId(TableName, "entity_id"), Identity(TableName, "identity") {}
 
     ::SpacetimeDB::query_builder::Col<FPlayerType, uint64> EntityId;
     ::SpacetimeDB::query_builder::Col<FPlayerType, FSpacetimeDBIdentity> Identity;
 };
 
-struct TESTVIEWCLIENT_API FPlayerIxCols
+struct TESTVIEWCLIENT_API FMyPlayerIxCols
 {
-    explicit FPlayerIxCols(const char* TableName)
-        : EntityId(TableName, "entity_id"), Identity(TableName, "identity") {}
+    explicit FMyPlayerIxCols(const char* TableName)
+ {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPlayerType, uint64, &FPlayerType::EntityId> EntityId;
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPlayerType, FSpacetimeDBIdentity, &FPlayerType::Identity> Identity;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FPlayerType, &FPlayerType::EntityId>);
-    inline std::true_type indexed_member_lookup(member_tag<FPlayerType, &FPlayerType::Identity>);
-
     template<>
-    struct HasCols<FPlayerType>
-    {
-        static FPlayerCols get(const char* table_name) { return FPlayerCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPlayerType>
-    {
-        static FPlayerIxCols get(const char* table_name) { return FPlayerIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPlayerType> : std::true_type {};
+    struct CanBeLookupTable<Table<FPlayerType, FMyPlayerCols, FMyPlayerIxCols>> : std::true_type {};
 }
 
 struct TESTVIEWCLIENT_API FPlayerAndLevelCols
@@ -816,21 +812,8 @@ struct TESTVIEWCLIENT_API FPlayerAndLevelIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FPlayerAndLevelType>
-    {
-        static FPlayerAndLevelCols get(const char* table_name) { return FPlayerAndLevelCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPlayerAndLevelType>
-    {
-        static FPlayerAndLevelIxCols get(const char* table_name) { return FPlayerAndLevelIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPlayerAndLevelType> : std::true_type {};
+    struct CanBeLookupTable<Table<FPlayerAndLevelType, FPlayerAndLevelCols, FPlayerAndLevelIxCols>> : std::true_type {};
 }
 
 struct TESTVIEWCLIENT_API FPlayerLocationCols
@@ -853,21 +836,32 @@ struct TESTVIEWCLIENT_API FPlayerLocationIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FPlayerLocationType>
-    {
-        static FPlayerLocationCols get(const char* table_name) { return FPlayerLocationCols(table_name); }
-    };
+    struct CanBeLookupTable<Table<FPlayerLocationType, FPlayerLocationCols, FPlayerLocationIxCols>> : std::true_type {};
+}
 
-    template<>
-    struct HasIxCols<FPlayerLocationType>
-    {
-        static FPlayerLocationIxCols get(const char* table_name) { return FPlayerLocationIxCols(table_name); }
-    };
+struct TESTVIEWCLIENT_API FPlayerCols
+{
+    explicit FPlayerCols(const char* TableName)
+        : EntityId(TableName, "entity_id"), Identity(TableName, "identity") {}
 
+    ::SpacetimeDB::query_builder::Col<FPlayerType, uint64> EntityId;
+    ::SpacetimeDB::query_builder::Col<FPlayerType, FSpacetimeDBIdentity> Identity;
+};
+
+struct TESTVIEWCLIENT_API FPlayerIxCols
+{
+    explicit FPlayerIxCols(const char* TableName)
+        : EntityId(TableName, "entity_id"), Identity(TableName, "identity") {}
+
+    ::SpacetimeDB::query_builder::IxCol<FPlayerType, uint64> EntityId;
+    ::SpacetimeDB::query_builder::IxCol<FPlayerType, FSpacetimeDBIdentity> Identity;
+};
+
+namespace SpacetimeDB::query_builder
+{
     template<>
-    struct CanBeLookupTable<FPlayerLocationType> : std::true_type {};
+    struct CanBeLookupTable<Table<FPlayerType, FPlayerCols, FPlayerIxCols>> : std::true_type {};
 }
 
 struct TESTVIEWCLIENT_API FPlayerLevelCols
@@ -884,39 +878,46 @@ struct TESTVIEWCLIENT_API FPlayerLevelIxCols
     explicit FPlayerLevelIxCols(const char* TableName)
         : EntityId(TableName, "entity_id"), Level(TableName, "level") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPlayerLevelType, uint64, &FPlayerLevelType::EntityId> EntityId;
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPlayerLevelType, uint64, &FPlayerLevelType::Level> Level;
+    ::SpacetimeDB::query_builder::IxCol<FPlayerLevelType, uint64> EntityId;
+    ::SpacetimeDB::query_builder::IxCol<FPlayerLevelType, uint64> Level;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FPlayerLevelType, &FPlayerLevelType::EntityId>);
-    inline std::true_type indexed_member_lookup(member_tag<FPlayerLevelType, &FPlayerLevelType::Level>);
-
     template<>
-    struct HasCols<FPlayerLevelType>
-    {
-        static FPlayerLevelCols get(const char* table_name) { return FPlayerLevelCols(table_name); }
-    };
+    struct CanBeLookupTable<Table<FPlayerLevelType, FPlayerLevelCols, FPlayerLevelIxCols>> : std::true_type {};
+}
 
-    template<>
-    struct HasIxCols<FPlayerLevelType>
-    {
-        static FPlayerLevelIxCols get(const char* table_name) { return FPlayerLevelIxCols(table_name); }
-    };
+struct TESTVIEWCLIENT_API FPlayersAtLevel0Cols
+{
+    explicit FPlayersAtLevel0Cols(const char* TableName)
+        : EntityId(TableName, "entity_id"), Identity(TableName, "identity") {}
 
+    ::SpacetimeDB::query_builder::Col<FPlayerType, uint64> EntityId;
+    ::SpacetimeDB::query_builder::Col<FPlayerType, FSpacetimeDBIdentity> Identity;
+};
+
+struct TESTVIEWCLIENT_API FPlayersAtLevel0IxCols
+{
+    explicit FPlayersAtLevel0IxCols(const char* TableName)
+ {}
+
+};
+
+namespace SpacetimeDB::query_builder
+{
     template<>
-    struct CanBeLookupTable<FPlayerLevelType> : std::true_type {};
+    struct CanBeLookupTable<Table<FPlayerType, FPlayersAtLevel0Cols, FPlayersAtLevel0IxCols>> : std::true_type {};
 }
 
 struct TESTVIEWCLIENT_API FFrom
 {
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPlayerType> MyPlayer() const { return ::SpacetimeDB::query_builder::Table<FPlayerType>("my_player"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPlayerAndLevelType> MyPlayerAndLevel() const { return ::SpacetimeDB::query_builder::Table<FPlayerAndLevelType>("my_player_and_level"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPlayerLocationType> NearbyPlayers() const { return ::SpacetimeDB::query_builder::Table<FPlayerLocationType>("nearby_players"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPlayerType> Player() const { return ::SpacetimeDB::query_builder::Table<FPlayerType>("player"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPlayerLevelType> PlayerLevel() const { return ::SpacetimeDB::query_builder::Table<FPlayerLevelType>("player_level"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPlayerType> PlayersAtLevel0() const { return ::SpacetimeDB::query_builder::Table<FPlayerType>("players_at_level_0"); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPlayerType, FMyPlayerCols, FMyPlayerIxCols> MyPlayer() const { return ::SpacetimeDB::query_builder::Table<FPlayerType, FMyPlayerCols, FMyPlayerIxCols>("my_player", FMyPlayerCols("my_player"), FMyPlayerIxCols("my_player")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPlayerAndLevelType, FPlayerAndLevelCols, FPlayerAndLevelIxCols> MyPlayerAndLevel() const { return ::SpacetimeDB::query_builder::Table<FPlayerAndLevelType, FPlayerAndLevelCols, FPlayerAndLevelIxCols>("my_player_and_level", FPlayerAndLevelCols("my_player_and_level"), FPlayerAndLevelIxCols("my_player_and_level")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPlayerLocationType, FPlayerLocationCols, FPlayerLocationIxCols> NearbyPlayers() const { return ::SpacetimeDB::query_builder::Table<FPlayerLocationType, FPlayerLocationCols, FPlayerLocationIxCols>("nearby_players", FPlayerLocationCols("nearby_players"), FPlayerLocationIxCols("nearby_players")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPlayerType, FPlayerCols, FPlayerIxCols> Player() const { return ::SpacetimeDB::query_builder::Table<FPlayerType, FPlayerCols, FPlayerIxCols>("player", FPlayerCols("player"), FPlayerIxCols("player")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPlayerLevelType, FPlayerLevelCols, FPlayerLevelIxCols> PlayerLevel() const { return ::SpacetimeDB::query_builder::Table<FPlayerLevelType, FPlayerLevelCols, FPlayerLevelIxCols>("player_level", FPlayerLevelCols("player_level"), FPlayerLevelIxCols("player_level")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPlayerType, FPlayersAtLevel0Cols, FPlayersAtLevel0IxCols> PlayersAtLevel0() const { return ::SpacetimeDB::query_builder::Table<FPlayerType, FPlayersAtLevel0Cols, FPlayersAtLevel0IxCols>("players_at_level_0", FPlayersAtLevel0Cols("players_at_level_0"), FPlayersAtLevel0IxCols("players_at_level_0")); }
 };
 
 struct TESTVIEWCLIENT_API FQueryBuilder
@@ -991,7 +992,7 @@ public:
         return Typed;
     }
 
-    /** Convenience for subscribing to all rows from all tables */
+    /** Convenience for subscribing to all rows from all public sources, including views */
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
     USubscriptionHandle* SubscribeToAllTables();
 

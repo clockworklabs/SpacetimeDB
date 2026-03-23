@@ -1114,6 +1114,7 @@ private:
 // QueryBuilder types
 struct TESTPROCCLIENT_API FMyTableCols
 {
+    using legacy_type = FMyTableCols;
     explicit FMyTableCols(const char* TableName)
         : Field(TableName, "field") {}
 
@@ -1122,6 +1123,7 @@ struct TESTPROCCLIENT_API FMyTableCols
 
 struct TESTPROCCLIENT_API FMyTableIxCols
 {
+    using legacy_type = FMyTableIxCols;
     explicit FMyTableIxCols(const char* TableName)
  {}
 
@@ -1129,25 +1131,13 @@ struct TESTPROCCLIENT_API FMyTableIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FMyTableType>
-    {
-        static FMyTableCols get(const char* table_name) { return FMyTableCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FMyTableType>
-    {
-        static FMyTableIxCols get(const char* table_name) { return FMyTableIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FMyTableType> : std::true_type {};
+    struct CanBeLookupTable<Table<FMyTableType, FMyTableCols, FMyTableIxCols>> : std::true_type {};
 }
 
 struct TESTPROCCLIENT_API FPkUuidCols
 {
+    using legacy_type = FPkUuidCols;
     explicit FPkUuidCols(const char* TableName)
         : U(TableName, "u"), Data(TableName, "data") {}
 
@@ -1157,6 +1147,7 @@ struct TESTPROCCLIENT_API FPkUuidCols
 
 struct TESTPROCCLIENT_API FPkUuidIxCols
 {
+    using legacy_type = FPkUuidIxCols;
     explicit FPkUuidIxCols(const char* TableName)
  {}
 
@@ -1164,25 +1155,13 @@ struct TESTPROCCLIENT_API FPkUuidIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FPkUuidType>
-    {
-        static FPkUuidCols get(const char* table_name) { return FPkUuidCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPkUuidType>
-    {
-        static FPkUuidIxCols get(const char* table_name) { return FPkUuidIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPkUuidType> : std::true_type {};
+    struct CanBeLookupTable<Table<FPkUuidType, FPkUuidCols, FPkUuidIxCols>> : std::true_type {};
 }
 
 struct TESTPROCCLIENT_API FProcInsertsIntoCols
 {
+    using legacy_type = FProcInsertsIntoCols;
     explicit FProcInsertsIntoCols(const char* TableName)
         : ReducerTs(TableName, "reducer_ts"), ProcedureTs(TableName, "procedure_ts"), X(TableName, "x"), Y(TableName, "y") {}
 
@@ -1194,6 +1173,7 @@ struct TESTPROCCLIENT_API FProcInsertsIntoCols
 
 struct TESTPROCCLIENT_API FProcInsertsIntoIxCols
 {
+    using legacy_type = FProcInsertsIntoIxCols;
     explicit FProcInsertsIntoIxCols(const char* TableName)
  {}
 
@@ -1201,28 +1181,15 @@ struct TESTPROCCLIENT_API FProcInsertsIntoIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FProcInsertsIntoType>
-    {
-        static FProcInsertsIntoCols get(const char* table_name) { return FProcInsertsIntoCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FProcInsertsIntoType>
-    {
-        static FProcInsertsIntoIxCols get(const char* table_name) { return FProcInsertsIntoIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FProcInsertsIntoType> : std::true_type {};
+    struct CanBeLookupTable<Table<FProcInsertsIntoType, FProcInsertsIntoCols, FProcInsertsIntoIxCols>> : std::true_type {};
 }
 
 struct TESTPROCCLIENT_API FFrom
 {
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FMyTableType> MyTable() const { return ::SpacetimeDB::query_builder::Table<FMyTableType>("my_table"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkUuidType> PkUuid() const { return ::SpacetimeDB::query_builder::Table<FPkUuidType>("pk_uuid"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FProcInsertsIntoType> ProcInsertsInto() const { return ::SpacetimeDB::query_builder::Table<FProcInsertsIntoType>("proc_inserts_into"); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FMyTableType, FMyTableCols, FMyTableIxCols> MyTable() const { return ::SpacetimeDB::query_builder::Table<FMyTableType, FMyTableCols, FMyTableIxCols>("my_table", FMyTableCols("my_table"), FMyTableIxCols("my_table")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkUuidType, FPkUuidCols, FPkUuidIxCols> PkUuid() const { return ::SpacetimeDB::query_builder::Table<FPkUuidType, FPkUuidCols, FPkUuidIxCols>("pk_uuid", FPkUuidCols("pk_uuid"), FPkUuidIxCols("pk_uuid")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FProcInsertsIntoType, FProcInsertsIntoCols, FProcInsertsIntoIxCols> ProcInsertsInto() const { return ::SpacetimeDB::query_builder::Table<FProcInsertsIntoType, FProcInsertsIntoCols, FProcInsertsIntoIxCols>("proc_inserts_into", FProcInsertsIntoCols("proc_inserts_into"), FProcInsertsIntoIxCols("proc_inserts_into")); }
 };
 
 struct TESTPROCCLIENT_API FQueryBuilder
@@ -1294,7 +1261,7 @@ public:
         return Typed;
     }
 
-    /** Convenience for subscribing to all rows from all tables */
+    /** Convenience for subscribing to all rows from all public sources, including views */
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
     USubscriptionHandle* SubscribeToAllTables();
 

@@ -101,14 +101,14 @@ bool FViewPkQueryBuilderSemijoinTest::RunTest(const FString& Parameters)
     FQueryBuilder Q;
 
     const FString MembershipJoinSql = ToFString(
-        Q.From.ViewPkMembership().RightSemijoin(Q.From.AllViewPkPlayers(), [](const FViewPkMembershipIxCols& Membership, const FViewPkPlayerIxCols& Player)
+        Q.From.ViewPkMembership().RightSemijoin(Q.From.AllViewPkPlayers(), [](const FViewPkMembershipIxCols& Membership, const FAllViewPkPlayersIxCols& Player)
         {
             return Membership.PlayerId.Eq(Player.Id);
         }).into_sql()
     );
 
     const FString SenderViewsJoinSql = ToFString(
-        Q.From.SenderViewPkPlayersA().RightSemijoin(Q.From.SenderViewPkPlayersB(), [](const FViewPkPlayerIxCols& LeftView, const FViewPkPlayerIxCols& RightView)
+        Q.From.SenderViewPkPlayersA().RightSemijoin(Q.From.SenderViewPkPlayersB(), [](const FSenderViewPkPlayersAIxCols& LeftView, const FSenderViewPkPlayersBIxCols& RightView)
         {
             return LeftView.Id.Eq(RightView.Id);
         }).into_sql()
