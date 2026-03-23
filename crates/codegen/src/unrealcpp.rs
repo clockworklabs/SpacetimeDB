@@ -916,6 +916,14 @@ impl Lang for UnrealCpp<'_> {
             );
         }
 
+        for (_, _, product_type_ref) in iter_table_names_and_types(module, options.visibility) {
+            includes.insert(format!(
+                "ModuleBindings/Types/{}Type.g.h",
+                type_ref_name(self.module_prefix, module, product_type_ref)
+            ));
+        }
+        includes.insert("QueryBuilder/query_builder.h".to_string());
+
         // Convert to sorted vector
         let mut include_vec: Vec<String> = includes.into_iter().collect();
         include_vec.sort();
@@ -985,6 +993,16 @@ impl Lang for UnrealCpp<'_> {
             self.module_prefix,
             module,
             options.visibility,
+            &self.get_api_macro(),
+            self.module_name,
+        );
+
+        // QueryBuilder types
+        generate_query_builder_types(
+            &mut client_h,
+            module,
+            options.visibility,
+            self.module_prefix,
             &self.get_api_macro(),
             self.module_name,
         );
@@ -2948,6 +2966,289 @@ fn generate_remote_procedures_class(
     writeln!(output);
 }
 
+fn generate_query_builder_types(
+    output: &mut UnrealCppAutogen,
+    module: &ModuleDef,
+    visibility: CodegenVisibility,
+    module_prefix: &str,
+    api_macro: &str,
+    module_name: &str,
+) {
+    struct QueryBuilderRowMeta {
+        row_struct: String,
+        cols_struct: String,
+        ix_cols_struct: String,
+        fields: Vec<(String, String, String)>,
+        singleton_indexed_fields: Vec<String>,
+        can_be_lookup: bool,
+    }
+
+    writeln!(output, "// QueryBuilder types");
+
+    let mut row_metas = Vec::<QueryBuilderRowMeta>::new();
+
+    for (table_name, _accessor_name, product_type_ref) in iter_table_names_and_types(module, visibility) {
+        let product_type = module.typespace_for_generate()[product_type_ref]
+            .as_product()
+            .expect("query builder source should be a product type");
+        let row_struct = format!("F{}Type", type_ref_name(module_prefix, module, product_type_ref));
+        let row_type_name = row_struct
+            .strip_suffix("Type")
+            .expect("row struct should end with Type")
+            .to_string();
+
+        let is_event = iter_tables(module, visibility)
+            .find(|table| table.name == *table_name)
+            .map(|table| table.is_event)
+            .unwrap_or(false);
+
+        let singleton_indexed_fields: Vec<String> = iter_tables(module, visibility)
+            .find(|table| table.name == *table_name)
+            .map(|table| {
+                let table_product_type = module.typespace_for_generate()[table.product_type_ref]
+                    .as_product()
+                    .expect("table schema should be a product type");
+                iter_indexes(table)
+                    .filter_map(|idx| {
+                        let col = idx.algorithm.columns().as_singleton()?;
+                        let (field_name, _) = &table_product_type.elements[col.idx()];
+                        Some(field_name.deref().to_case(Case::Pascal))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let row_fields = product_type
+            .elements
+            .iter()
+            .map(|(field_name, field_ty)| {
+                (
+                    field_name.deref().to_string(),
+                    field_name.deref().to_case(Case::Pascal),
+                    cpp_ty_fmt_with_module(module_prefix, module, field_ty, module_name).to_string(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        if let Some(existing) = row_metas.iter_mut().find(|meta| meta.row_struct == row_struct) {
+            for field_name in singleton_indexed_fields {
+                if !existing.singleton_indexed_fields.contains(&field_name) {
+                    existing.singleton_indexed_fields.push(field_name);
+                }
+            }
+            if !is_event {
+                existing.can_be_lookup = true;
+            }
+            continue;
+        }
+
+        row_metas.push(QueryBuilderRowMeta {
+            row_struct,
+            cols_struct: format!("{row_type_name}Cols"),
+            ix_cols_struct: format!("{row_type_name}IxCols"),
+            fields: row_fields,
+            singleton_indexed_fields,
+            can_be_lookup: !is_event,
+        });
+    }
+
+    for row_meta in &row_metas {
+        let row_struct = &row_meta.row_struct;
+        let cols_struct = &row_meta.cols_struct;
+        let ix_cols_struct = &row_meta.ix_cols_struct;
+        let singleton_indexed_fields = &row_meta.singleton_indexed_fields;
+
+        writeln!(output, "struct {api_macro} {cols_struct}");
+        writeln!(output, "{{");
+        writeln!(output, "    explicit {cols_struct}(const char* TableName)");
+        write!(output, "        : ");
+        for (idx, (field_name_raw, field_name_pascal, _field_type)) in row_meta.fields.iter().enumerate() {
+            if idx > 0 {
+                write!(output, ", ");
+            }
+            write!(
+                output,
+                "{}(TableName, \"{}\")",
+                field_name_pascal,
+                field_name_raw
+            );
+        }
+        writeln!(output, " {{}}");
+        writeln!(output);
+        for (_field_name_raw, field_name_pascal, field_type) in &row_meta.fields {
+            writeln!(
+                output,
+                "    ::SpacetimeDB::query_builder::Col<{row_struct}, {field_type}> {field_name_pascal};"
+            );
+        }
+        writeln!(output, "}};");
+        writeln!(output);
+
+        writeln!(output, "struct {api_macro} {ix_cols_struct}");
+        writeln!(output, "{{");
+        writeln!(output, "    explicit {ix_cols_struct}(const char* TableName)");
+        if !singleton_indexed_fields.is_empty() {
+            write!(output, "        : ");
+            for (idx, (field_name_raw, field_name_pascal, _field_type)) in row_meta
+                .fields
+                .iter()
+                .filter(|(_field_name_raw, field_name_pascal, _)| singleton_indexed_fields.contains(field_name_pascal))
+                .enumerate()
+            {
+                if idx > 0 {
+                    write!(output, ", ");
+                }
+                write!(
+                    output,
+                    "{}(TableName, \"{}\")",
+                    field_name_pascal,
+                    field_name_raw
+                );
+            }
+        }
+        writeln!(output, " {{}}");
+        writeln!(output);
+        for (_field_name_raw, field_name_pascal, field_type) in row_meta
+            .fields
+            .iter()
+            .filter(|(_field_name_raw, field_name_pascal, _)| singleton_indexed_fields.contains(field_name_pascal))
+        {
+            writeln!(
+                output,
+                "    ::SpacetimeDB::query_builder::detail::ix_col_member_t<{row_struct}, {field_type}, &{row_struct}::{field_name_pascal}> {field_name_pascal};"
+            );
+        }
+        writeln!(output, "}};");
+        writeln!(output);
+
+        writeln!(output, "namespace SpacetimeDB::query_builder");
+        writeln!(output, "{{");
+        for field_name_pascal in singleton_indexed_fields {
+            writeln!(
+                output,
+                "    inline std::true_type indexed_member_lookup(member_tag<{row_struct}, &{row_struct}::{field_name_pascal}>);"
+            );
+        }
+        writeln!(output);
+        writeln!(output, "    template<>");
+        writeln!(output, "    struct HasCols<{row_struct}>");
+        writeln!(output, "    {{");
+        writeln!(
+            output,
+            "        static {cols_struct} get(const char* table_name) {{ return {cols_struct}(table_name); }}"
+        );
+        writeln!(output, "    }};");
+        writeln!(output);
+        writeln!(output, "    template<>");
+        writeln!(output, "    struct HasIxCols<{row_struct}>");
+        writeln!(output, "    {{");
+        writeln!(
+            output,
+            "        static {ix_cols_struct} get(const char* table_name) {{ return {ix_cols_struct}(table_name); }}"
+        );
+        writeln!(output, "    }};");
+        if row_meta.can_be_lookup {
+            writeln!(output);
+            writeln!(output, "    template<>");
+            writeln!(
+                output,
+                "    struct CanBeLookupTable<{row_struct}> : std::true_type {{}};"
+            );
+        }
+        writeln!(output, "}}");
+        writeln!(output);
+    }
+
+    writeln!(output, "struct {api_macro} F{module_prefix}From");
+    writeln!(output, "{{");
+    for (table_name, accessor_name, product_type_ref) in iter_table_names_and_types(module, visibility) {
+        let row_struct = format!("F{}Type", type_ref_name(module_prefix, module, product_type_ref));
+        let source_pascal = accessor_name.deref().to_case(Case::Pascal);
+        writeln!(
+            output,
+            "    [[nodiscard]] ::SpacetimeDB::query_builder::Table<{row_struct}> {source_pascal}() const {{ return ::SpacetimeDB::query_builder::Table<{row_struct}>(\"{}\"); }}",
+            table_name.deref()
+        );
+    }
+    writeln!(output, "}};");
+    writeln!(output);
+
+    writeln!(output, "struct {api_macro} F{module_prefix}QueryBuilder");
+    writeln!(output, "{{");
+    writeln!(output, "    F{module_prefix}From From;");
+    writeln!(output);
+    writeln!(output, "    static TArray<FString> AllTablesSqlQueries()");
+    writeln!(output, "    {{");
+    writeln!(output, "        TArray<FString> Sql;");
+        for (_table_name, accessor_name, _product_type_ref) in iter_table_names_and_types(module, visibility) {
+            let source_pascal = accessor_name.deref().to_case(Case::Pascal);
+            writeln!(
+                output,
+                "        Sql.Add(FString(UTF8_TO_TCHAR(F{module_prefix}QueryBuilder().From.{source_pascal}().into_sql().c_str())));"
+            );
+        }
+    writeln!(output, "        return Sql;");
+    writeln!(output, "    }}");
+    writeln!(output, "}};");
+    writeln!(output);
+
+    writeln!(output, "struct {api_macro} F{module_prefix}TypedSubscriptionBuilder");
+    writeln!(output, "{{");
+    writeln!(
+        output,
+        "    explicit F{module_prefix}TypedSubscriptionBuilder(U{module_prefix}DbConnection* InConn)"
+    );
+    writeln!(output, "        : Conn(InConn) {{}}");
+    writeln!(output);
+    writeln!(
+        output,
+        "    F{module_prefix}TypedSubscriptionBuilder& OnApplied(F{module_prefix}OnSubscriptionApplied Callback);"
+    );
+    writeln!(
+        output,
+        "    F{module_prefix}TypedSubscriptionBuilder& OnError(F{module_prefix}OnSubscriptionError Callback);"
+    );
+    writeln!(output);
+    writeln!(output, "    template<typename TFn>");
+    writeln!(
+        output,
+        "    F{module_prefix}TypedSubscriptionBuilder& AddQuery(TFn&& Build)"
+    );
+    writeln!(output, "    {{");
+    writeln!(output, "        F{module_prefix}QueryBuilder Q;");
+    writeln!(output, "        auto Query = std::forward<TFn>(Build)(Q);");
+    writeln!(
+        output,
+        "        static_assert(::SpacetimeDB::query_builder::QueryBuilderReturn<decltype(Query)>,"
+    );
+    writeln!(
+        output,
+        "            \"Typed subscription queries must return a query_builder table/query expression.\");"
+    );
+    writeln!(
+        output,
+        "        Sql.Add(FString(UTF8_TO_TCHAR(Query.into_sql().c_str())));"
+    );
+    writeln!(output, "        return *this;");
+    writeln!(output, "    }}");
+    writeln!(output);
+    writeln!(output, "    U{module_prefix}SubscriptionHandle* Subscribe();");
+    writeln!(output);
+    writeln!(output, "private:");
+    writeln!(output, "    U{module_prefix}DbConnection* Conn = nullptr;");
+    writeln!(output, "    TArray<FString> Sql;");
+    writeln!(
+        output,
+        "    F{module_prefix}OnSubscriptionApplied OnAppliedDelegateInternal;"
+    );
+    writeln!(
+        output,
+        "    F{module_prefix}OnSubscriptionError OnErrorDelegateInternal;"
+    );
+    writeln!(output, "}};");
+    writeln!(output);
+}
+
 fn generate_subscription_builder_class(output: &mut UnrealCppAutogen, module_prefix: &str, api_macro: &str) {
     writeln!(output, "// SubscriptionBuilder class");
     writeln!(output, "UCLASS(BlueprintType)");
@@ -2977,6 +3278,19 @@ fn generate_subscription_builder_class(output: &mut UnrealCppAutogen, module_pre
         output,
         "    U{module_prefix}SubscriptionHandle* Subscribe(const TArray<FString>& SQL);"
     );
+    writeln!(output);
+    writeln!(output, "    template<typename TFn>");
+    writeln!(
+        output,
+        "    [[nodiscard]] F{module_prefix}TypedSubscriptionBuilder AddQuery(TFn&& Build)"
+    );
+    writeln!(output, "    {{");
+    writeln!(output, "        F{module_prefix}TypedSubscriptionBuilder Typed(Conn);");
+    writeln!(output, "        Typed.OnApplied(OnAppliedDelegateInternal);");
+    writeln!(output, "        Typed.OnError(OnErrorDelegateInternal);");
+    writeln!(output, "        Typed.AddQuery(std::forward<TFn>(Build));");
+    writeln!(output, "        return Typed;");
+    writeln!(output, "    }}");
     writeln!(output);
     writeln!(
         output,
@@ -3668,6 +3982,39 @@ fn generate_client_implementation(
     writeln!(output, "}}");
     writeln!(
         output,
+        "F{module_prefix}TypedSubscriptionBuilder& F{module_prefix}TypedSubscriptionBuilder::OnApplied(F{module_prefix}OnSubscriptionApplied Callback)"
+    );
+    writeln!(output, "{{");
+    writeln!(output, "\tOnAppliedDelegateInternal = Callback;");
+    writeln!(output, "\treturn *this;");
+    writeln!(output, "}}");
+    writeln!(
+        output,
+        "F{module_prefix}TypedSubscriptionBuilder& F{module_prefix}TypedSubscriptionBuilder::OnError(F{module_prefix}OnSubscriptionError Callback)"
+    );
+    writeln!(output, "{{");
+    writeln!(output, "\tOnErrorDelegateInternal = Callback;");
+    writeln!(output, "\treturn *this;");
+    writeln!(output, "}}");
+    writeln!(
+        output,
+        "U{module_prefix}SubscriptionHandle* F{module_prefix}TypedSubscriptionBuilder::Subscribe()"
+    );
+    writeln!(output, "{{");
+    writeln!(output, "\tif (!Conn)");
+    writeln!(output, "\t{{");
+    writeln!(output, "\t\treturn nullptr;");
+    writeln!(output, "\t}}");
+    writeln!(
+        output,
+        "\tU{module_prefix}SubscriptionBuilder* Builder = Conn->SubscriptionBuilder();"
+    );
+    writeln!(output, "\tBuilder->OnApplied(OnAppliedDelegateInternal);");
+    writeln!(output, "\tBuilder->OnError(OnErrorDelegateInternal);");
+    writeln!(output, "\treturn Builder->Subscribe(Sql);");
+    writeln!(output, "}}");
+    writeln!(
+        output,
         "U{module_prefix}SubscriptionBuilder* U{module_prefix}SubscriptionBuilder::OnApplied(F{module_prefix}OnSubscriptionApplied Callback)"
     );
     writeln!(output, "{{");
@@ -3721,7 +4068,7 @@ fn generate_client_implementation(
         "U{module_prefix}SubscriptionHandle* U{module_prefix}SubscriptionBuilder::SubscribeToAllTables()"
     );
     writeln!(output, "{{");
-    writeln!(output, "\treturn Subscribe({{ \"SELECT * FROM * \" }});");
+    writeln!(output, "\treturn Subscribe(F{module_prefix}QueryBuilder::AllTablesSqlQueries());");
     writeln!(output, "}}");
     writeln!(output);
     writeln!(
@@ -5574,7 +5921,7 @@ fn autogen_cpp_sum(
         writeln!(output, "            case E{name}Tag::{pas}:");
         writeln!(
             output,
-            "                return GetAs{variant_name}() == Other.GetAs{variant_name}();"
+            "                return GetAs{pas}() == Other.GetAs{pas}();"
         );
     }
 

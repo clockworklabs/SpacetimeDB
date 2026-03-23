@@ -10911,6 +10911,27 @@ USubscriptionBuilder* UDbConnection::SubscriptionBuilder()
 	Builder->Conn = this;
 	return Builder;
 }
+FTypedSubscriptionBuilder& FTypedSubscriptionBuilder::OnApplied(FOnSubscriptionApplied Callback)
+{
+	OnAppliedDelegateInternal = Callback;
+	return *this;
+}
+FTypedSubscriptionBuilder& FTypedSubscriptionBuilder::OnError(FOnSubscriptionError Callback)
+{
+	OnErrorDelegateInternal = Callback;
+	return *this;
+}
+USubscriptionHandle* FTypedSubscriptionBuilder::Subscribe()
+{
+	if (!Conn)
+	{
+		return nullptr;
+	}
+	USubscriptionBuilder* Builder = Conn->SubscriptionBuilder();
+	Builder->OnApplied(OnAppliedDelegateInternal);
+	Builder->OnError(OnErrorDelegateInternal);
+	return Builder->Subscribe(Sql);
+}
 USubscriptionBuilder* USubscriptionBuilder::OnApplied(FOnSubscriptionApplied Callback)
 {
 	OnAppliedDelegateInternal = Callback;
@@ -10948,7 +10969,7 @@ USubscriptionHandle* USubscriptionBuilder::Subscribe(const TArray<FString>& SQL)
 }
 USubscriptionHandle* USubscriptionBuilder::SubscribeToAllTables()
 {
-	return Subscribe({ "SELECT * FROM * " });
+	return Subscribe(FQueryBuilder::AllTablesSqlQueries());
 }
 
 USubscriptionHandle::USubscriptionHandle(UDbConnection* InConn)

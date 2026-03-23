@@ -5,8 +5,8 @@
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
 #include "ModuleBindings/Types/SimpleEnumType.g.h"
-#include "Kismet/BlueprintFunctionLibrary.h"
 #include "Types/Builtins.h"
+#include "Kismet/BlueprintFunctionLibrary.h"
 #include "EnumWithPayloadType.g.generated.h"
 
 UENUM(BlueprintType)
@@ -46,7 +46,7 @@ struct TESTCLIENT_API FEnumWithPayloadType
 public:
     FEnumWithPayloadType() = default;
 
-    TVariant<FSpacetimeDBUuid, FSpacetimeDBIdentity, TArray<uint8>, uint32, int16, uint8, FSpacetimeDBInt128, FString, int64, uint64, int32, double, FSpacetimeDBInt256, TArray<FString>, bool, int8, uint16, FSpacetimeDBUInt128, float, FSpacetimeDBUInt256, FSpacetimeDBConnectionId, TArray<int32>, TArray<ESimpleEnumType>, FSpacetimeDBTimestamp> MessageData;
+    TVariant<FSpacetimeDBUInt256, FSpacetimeDBTimestamp, TArray<int32>, FSpacetimeDBConnectionId, TArray<uint8>, int8, int16, FSpacetimeDBInt128, FSpacetimeDBIdentity, FSpacetimeDBUuid, uint32, TArray<FString>, FSpacetimeDBInt256, bool, uint64, FString, TArray<ESimpleEnumType>, uint16, FSpacetimeDBUInt128, uint8, int32, int64, double, float> MessageData;
 
     UPROPERTY(BlueprintReadOnly)
     EEnumWithPayloadTag Tag = static_cast<EEnumWithPayloadTag>(0);
