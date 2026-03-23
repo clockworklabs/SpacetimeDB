@@ -74,7 +74,7 @@ class DisconnectScenarioTest {
         // The query must not hang silently — it must resolve on disconnect.
         // failPendingOperations delivers an error result via the callback.
         if (queryResult != null) {
-            assertIs<QueryResult.Err>(queryResult!!.result, "Disconnect should produce QueryResult.Err")
+            assertIs<QueryResult.Err>(queryResult.result, "Disconnect should produce QueryResult.Err")
         } else {
             assertNotNull(queryError, "Suspended oneOffQuery must resolve on disconnect — got neither result nor error")
         }
