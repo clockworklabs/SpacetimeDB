@@ -14,9 +14,9 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
@@ -195,7 +195,7 @@ class AppViewModel(
 
     override fun onCleared() {
         observationJob?.cancel()
-        viewModelScope.launch { withContext(NonCancellable) { chatRepository.disconnect() } }
+        CoroutineScope(NonCancellable).launch { chatRepository.disconnect() }
     }
 
     companion object {
