@@ -235,4 +235,26 @@ class ConnectionStateTransitionTest {
         assertEquals(queries, handle.queries)
         conn.disconnect()
     }
+
+    // =========================================================================
+    // Connect then immediate disconnect — state must end as Closed
+    // =========================================================================
+
+    @Test
+    fun connectThenImmediateDisconnectEndsAsClosed() = runTest {
+        val transport = FakeTransport()
+        val conn = createTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
+
+        conn.connect()
+        assertTrue(conn.isActive)
+
+        // Disconnect immediately without waiting for server handshake
+        conn.disconnect()
+        advanceUntilIdle()
+
+        assertFalse(conn.isActive, "State must be Closed after disconnect, not stuck in Connected")
+
+        // Must not be reconnectable — Closed is terminal
+        assertFailsWith<IllegalStateException> { conn.connect() }
+    }
 }
