@@ -2,8 +2,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 
 use crate::llm::clients::{
-    AnthropicClient, DeepSeekClient, GoogleGeminiClient, MetaLlamaClient, OpenAiClient, OpenRouterClient,
-    XaiGrokClient,
+    AnthropicClient, DeepSeekClient, GoogleGeminiClient, MetaLlamaClient, OpenAiClient, OpenRouterClient, XaiGrokClient,
 };
 use crate::llm::model_routes::ModelRoute;
 use crate::llm::prompt::BuiltPrompt;
@@ -99,12 +98,7 @@ impl LlmProvider for RouterProvider {
 
 impl RouterProvider {
     /// Fall back to the OpenRouter client when a direct vendor client is not configured.
-    async fn fallback_openrouter(
-        &self,
-        route: &ModelRoute,
-        prompt: &BuiltPrompt,
-        vendor_name: &str,
-    ) -> Result<String> {
+    async fn fallback_openrouter(&self, route: &ModelRoute, prompt: &BuiltPrompt, vendor_name: &str) -> Result<String> {
         match self.openrouter.as_ref() {
             Some(cli) => {
                 eprintln!(

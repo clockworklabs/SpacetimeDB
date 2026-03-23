@@ -3,8 +3,7 @@ use std::{env, sync::Arc};
 
 use crate::llm::clients::http::HttpClient;
 use crate::llm::clients::{
-    AnthropicClient, DeepSeekClient, GoogleGeminiClient, MetaLlamaClient, OpenAiClient, OpenRouterClient,
-    XaiGrokClient,
+    AnthropicClient, DeepSeekClient, GoogleGeminiClient, MetaLlamaClient, OpenAiClient, OpenRouterClient, XaiGrokClient,
 };
 use crate::llm::provider::{LlmProvider, RouterProvider};
 use crate::llm::types::Vendor;

@@ -20,7 +20,9 @@ pub fn resolve_mode_paths(mode: &str) -> Result<Vec<PathBuf>> {
         "cursor_rules" => gather_cursor_rules_files(docs_dir().join("static/ai-rules"), None),
         "rustdoc_json" => resolve_rustdoc_json_paths_always(),
         "none" | "no_guidelines" => Ok(Vec::new()),
-        other => bail!("unknown mode `{other}` (expected: docs | llms.md | cursor_rules | rustdoc_json | none | no_guidelines)"),
+        other => bail!(
+            "unknown mode `{other}` (expected: docs | llms.md | cursor_rules | rustdoc_json | none | no_guidelines)"
+        ),
     }
 }
 
@@ -69,7 +71,9 @@ pub fn resolve_mode_paths_hashing(mode: &str) -> Result<Vec<PathBuf>> {
                 bail!("README not found under {}", rustdoc_crate_root().display())
             }
         }
-        other => bail!("unknown mode `{other}` (expected: docs | llms.md | cursor_rules | rustdoc_json | none | no_guidelines)"),
+        other => bail!(
+            "unknown mode `{other}` (expected: docs | llms.md | cursor_rules | rustdoc_json | none | no_guidelines)"
+        ),
     }
 }
 

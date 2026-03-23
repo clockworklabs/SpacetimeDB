@@ -5,8 +5,8 @@ use std::fmt;
 pub enum Vendor {
     OpenAi,
     Anthropic,
-    Google,     // Gemini
-    Xai,        // Grok
+    Google, // Gemini
+    Xai,    // Grok
     DeepSeek,
     Meta,       // Llama
     OpenRouter, // unified proxy — routes to any vendor
