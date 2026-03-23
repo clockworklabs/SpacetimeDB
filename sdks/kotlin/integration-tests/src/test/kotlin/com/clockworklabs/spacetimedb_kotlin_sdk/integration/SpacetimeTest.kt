@@ -70,6 +70,7 @@ suspend fun ConnectedClient.subscribeAll(): ConnectedClient {
             "SELECT * FROM message",
             "SELECT * FROM note",
             "SELECT * FROM reminder",
+            "SELECT * FROM big_int_row",
         ))
     withTimeout(DEFAULT_TIMEOUT_MS) { applied.await() }
     return this

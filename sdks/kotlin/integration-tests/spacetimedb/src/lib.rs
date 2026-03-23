@@ -1,4 +1,5 @@
 use spacetimedb::{Identity, ReducerContext, ScheduleAt, Table, Timestamp};
+use spacetimedb::sats::{i256, u256};
 
 #[spacetimedb::table(accessor = user, public)]
 pub struct User {
@@ -39,6 +40,36 @@ pub struct Reminder {
     scheduled_at: ScheduleAt,
     text: String,
     owner: Identity,
+}
+
+/// Table with large integer fields — tests Int128/UInt128/Int256/UInt256 codegen.
+#[spacetimedb::table(accessor = big_int_row, public)]
+pub struct BigIntRow {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    val_i128: i128,
+    val_u128: u128,
+    val_i256: i256,
+    val_u256: u256,
+}
+
+#[spacetimedb::reducer]
+pub fn insert_big_ints(
+    ctx: &ReducerContext,
+    val_i128: i128,
+    val_u128: u128,
+    val_i256: i256,
+    val_u256: u256,
+) -> Result<(), String> {
+    ctx.db.big_int_row().insert(BigIntRow {
+        id: 0,
+        val_i128,
+        val_u128,
+        val_i256,
+        val_u256,
+    });
+    Ok(())
 }
 
 fn validate_name(name: String) -> Result<String, String> {

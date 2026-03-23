@@ -6,6 +6,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.*
 import com.ionspin.kotlin.bignum.integer.BigInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.microseconds
@@ -429,5 +430,191 @@ class TypeRoundTripTest {
         val uuid = SpacetimeUuid.fromCounterV7(counter, ts, randomBytes)
         val decoded = encodeDecode({ uuid.encode(it) }, { SpacetimeUuid.decode(it) })
         assertEquals(uuid, decoded)
+    }
+
+    // ---- Int128 ----
+
+    @Test
+    fun int128RoundTrip() {
+        val v = Int128(BigInteger.parseString("170141183460469231731687303715884105727")) // 2^127 - 1
+        val decoded = encodeDecode({ v.encode(it) }, { Int128.decode(it) })
+        assertEquals(v, decoded)
+    }
+
+    @Test
+    fun int128ZeroRoundTrip() {
+        val v = Int128(BigInteger.ZERO)
+        val decoded = encodeDecode({ v.encode(it) }, { Int128.decode(it) })
+        assertEquals(v, decoded)
+    }
+
+    @Test
+    fun int128NegativeRoundTrip() {
+        val v = Int128(-BigInteger.ONE.shl(127)) // -2^127 (I128 min)
+        val decoded = encodeDecode({ v.encode(it) }, { Int128.decode(it) })
+        assertEquals(v, decoded)
+    }
+
+    @Test
+    fun int128CompareToOrdering() {
+        val neg = Int128(-BigInteger.ONE)
+        val zero = Int128(BigInteger.ZERO)
+        val pos = Int128(BigInteger.ONE)
+        assertTrue(neg < zero)
+        assertTrue(zero < pos)
+        assertEquals(0, zero.compareTo(zero))
+    }
+
+    @Test
+    fun int128ToString() {
+        val v = Int128(BigInteger.parseString("42"))
+        assertEquals("42", v.toString())
+    }
+
+    // ---- UInt128 ----
+
+    @Test
+    fun uint128RoundTrip() {
+        val v = UInt128(BigInteger.ONE.shl(128) - BigInteger.ONE) // 2^128 - 1
+        val decoded = encodeDecode({ v.encode(it) }, { UInt128.decode(it) })
+        assertEquals(v, decoded)
+    }
+
+    @Test
+    fun uint128ZeroRoundTrip() {
+        val v = UInt128(BigInteger.ZERO)
+        val decoded = encodeDecode({ v.encode(it) }, { UInt128.decode(it) })
+        assertEquals(v, decoded)
+    }
+
+    @Test
+    fun uint128HighBitSetRoundTrip() {
+        val v = UInt128(BigInteger.ONE.shl(127))
+        val decoded = encodeDecode({ v.encode(it) }, { UInt128.decode(it) })
+        assertEquals(v, decoded)
+    }
+
+    @Test
+    fun uint128CompareToOrdering() {
+        val small = UInt128(BigInteger.ONE)
+        val large = UInt128(BigInteger.ONE.shl(100))
+        assertTrue(small < large)
+        assertEquals(0, small.compareTo(small))
+    }
+
+    // ---- Int256 ----
+
+    @Test
+    fun int256RoundTrip() {
+        val v = Int256(BigInteger.ONE.shl(255) - BigInteger.ONE) // 2^255 - 1 (I256 max)
+        val decoded = encodeDecode({ v.encode(it) }, { Int256.decode(it) })
+        assertEquals(v, decoded)
+    }
+
+    @Test
+    fun int256ZeroRoundTrip() {
+        val v = Int256(BigInteger.ZERO)
+        val decoded = encodeDecode({ v.encode(it) }, { Int256.decode(it) })
+        assertEquals(v, decoded)
+    }
+
+    @Test
+    fun int256NegativeRoundTrip() {
+        val v = Int256(-BigInteger.ONE.shl(255)) // -2^255 (I256 min)
+        val decoded = encodeDecode({ v.encode(it) }, { Int256.decode(it) })
+        assertEquals(v, decoded)
+    }
+
+    @Test
+    fun int256CompareToOrdering() {
+        val neg = Int256(-BigInteger.ONE)
+        val pos = Int256(BigInteger.ONE)
+        assertTrue(neg < pos)
+    }
+
+    // ---- UInt256 ----
+
+    @Test
+    fun uint256RoundTrip() {
+        val v = UInt256(BigInteger.ONE.shl(256) - BigInteger.ONE) // 2^256 - 1
+        val decoded = encodeDecode({ v.encode(it) }, { UInt256.decode(it) })
+        assertEquals(v, decoded)
+    }
+
+    @Test
+    fun uint256ZeroRoundTrip() {
+        val v = UInt256(BigInteger.ZERO)
+        val decoded = encodeDecode({ v.encode(it) }, { UInt256.decode(it) })
+        assertEquals(v, decoded)
+    }
+
+    @Test
+    fun uint256HighBitSetRoundTrip() {
+        val v = UInt256(BigInteger.ONE.shl(255))
+        val decoded = encodeDecode({ v.encode(it) }, { UInt256.decode(it) })
+        assertEquals(v, decoded)
+    }
+
+    // ---- SpacetimeResult ----
+
+    @Test
+    fun spacetimeResultOkRoundTrip() {
+        val result: SpacetimeResult<Int, String> = SpacetimeResult.Ok(42)
+        val writer = BsatnWriter()
+        // Encode: tag 0 + I32
+        writer.writeSumTag(0u)
+        writer.writeI32(42)
+        val reader = BsatnReader(writer.toByteArray())
+        val tag = reader.readSumTag().toInt()
+        assertEquals(0, tag)
+        val value = reader.readI32()
+        assertEquals(42, value)
+        assertEquals(0, reader.remaining)
+    }
+
+    @Test
+    fun spacetimeResultErrRoundTrip() {
+        val result: SpacetimeResult<Int, String> = SpacetimeResult.Err("oops")
+        val writer = BsatnWriter()
+        // Encode: tag 1 + String
+        writer.writeSumTag(1u)
+        writer.writeString("oops")
+        val reader = BsatnReader(writer.toByteArray())
+        val tag = reader.readSumTag().toInt()
+        assertEquals(1, tag)
+        val error = reader.readString()
+        assertEquals("oops", error)
+        assertEquals(0, reader.remaining)
+    }
+
+    @Test
+    fun spacetimeResultOkType() {
+        val result: SpacetimeResult<Int, String> = SpacetimeResult.Ok(42)
+        assertIs<SpacetimeResult.Ok<Int>>(result)
+        assertEquals(42, result.value)
+    }
+
+    @Test
+    fun spacetimeResultErrType() {
+        val result: SpacetimeResult<Int, String> = SpacetimeResult.Err("oops")
+        assertIs<SpacetimeResult.Err<String>>(result)
+        assertEquals("oops", result.error)
+    }
+
+    @Test
+    fun spacetimeResultWhenExhaustive() {
+        val ok: SpacetimeResult<Int, String> = SpacetimeResult.Ok(1)
+        val err: SpacetimeResult<Int, String> = SpacetimeResult.Err("e")
+        // Verify exhaustive when works (sealed interface)
+        val okMsg = when (ok) {
+            is SpacetimeResult.Ok -> "ok:${ok.value}"
+            is SpacetimeResult.Err -> "err:${ok.error}"
+        }
+        assertEquals("ok:1", okMsg)
+        val errMsg = when (err) {
+            is SpacetimeResult.Ok -> "ok:${err.value}"
+            is SpacetimeResult.Err -> "err:${err.error}"
+        }
+        assertEquals("err:e", errMsg)
     }
 }

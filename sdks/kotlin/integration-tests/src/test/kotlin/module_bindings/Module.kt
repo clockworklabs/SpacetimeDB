@@ -25,6 +25,7 @@ object RemoteModule : ModuleDescriptor {
     override val cliVersion: String = "2.0.3"
 
     val tableNames: List<String> = listOf(
+        "big_int_row",
         "message",
         "note",
         "reminder",
@@ -32,6 +33,7 @@ object RemoteModule : ModuleDescriptor {
     )
 
     override val subscribableTableNames: List<String> = listOf(
+        "big_int_row",
         "message",
         "note",
         "reminder",
@@ -43,6 +45,7 @@ object RemoteModule : ModuleDescriptor {
         "cancel_reminder",
         "delete_message",
         "delete_note",
+        "insert_big_ints",
         "schedule_reminder",
         "schedule_reminder_repeat",
         "send_message",
@@ -53,6 +56,7 @@ object RemoteModule : ModuleDescriptor {
     )
 
     override fun registerTables(cache: ClientCache) {
+        cache.register(BigIntRowTableHandle.TABLE_NAME, BigIntRowTableHandle.createTableCache())
         cache.register(MessageTableHandle.TABLE_NAME, MessageTableHandle.createTableCache())
         cache.register(NoteTableHandle.TABLE_NAME, NoteTableHandle.createTableCache())
         cache.register(ReminderTableHandle.TABLE_NAME, ReminderTableHandle.createTableCache())
@@ -148,6 +152,7 @@ fun DbConnection.Builder.withModuleBindings(): DbConnection.Builder {
  * Supports WHERE predicates and semi-joins.
  */
 class QueryBuilder {
+    fun bigIntRow(): Table<BigIntRow, BigIntRowCols, BigIntRowIxCols> = Table("big_int_row", BigIntRowCols("big_int_row"), BigIntRowIxCols("big_int_row"))
     fun message(): Table<Message, MessageCols, MessageIxCols> = Table("message", MessageCols("message"), MessageIxCols("message"))
     fun note(): Table<Note, NoteCols, NoteIxCols> = Table("note", NoteCols("note"), NoteIxCols("note"))
     fun reminder(): Table<Reminder, ReminderCols, ReminderIxCols> = Table("reminder", ReminderCols("reminder"), ReminderIxCols("reminder"))
@@ -175,6 +180,7 @@ fun SubscriptionBuilder.addQuery(build: (QueryBuilder) -> Query<*>): Subscriptio
  */
 fun SubscriptionBuilder.subscribeToAllTables(): com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.SubscriptionHandle {
     val qb = QueryBuilder()
+    addQuery(qb.bigIntRow().toSql())
     addQuery(qb.message().toSql())
     addQuery(qb.note().toSql())
     addQuery(qb.reminder().toSql())

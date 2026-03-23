@@ -8,6 +8,7 @@ dependencies {
     testImplementation(libs.ktor.client.okhttp)
     testImplementation(libs.ktor.client.websockets)
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:${libs.versions.kotlinx.coroutines.get()}")
+    testImplementation(libs.bignum)
 }
 
 // Generated bindings live in src/jvmTest/kotlin/module_bindings/.

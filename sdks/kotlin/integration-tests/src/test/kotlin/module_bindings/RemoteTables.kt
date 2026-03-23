@@ -13,6 +13,14 @@ class RemoteTables internal constructor(
     private val conn: DbConnection,
     private val clientCache: ClientCache,
 ) : ModuleTables {
+    val bigIntRow: BigIntRowTableHandle by lazy {
+        @Suppress("UNCHECKED_CAST")
+        val cache = clientCache.getOrCreateTable<BigIntRow>(BigIntRowTableHandle.TABLE_NAME) {
+            BigIntRowTableHandle.createTableCache()
+        }
+        BigIntRowTableHandle(conn, cache)
+    }
+
     val message: MessageTableHandle by lazy {
         @Suppress("UNCHECKED_CAST")
         val cache = clientCache.getOrCreateTable<Message>(MessageTableHandle.TABLE_NAME) {

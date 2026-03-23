@@ -7,7 +7,11 @@ package module_bindings
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Int128
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Int256
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ModuleReducers
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.UInt128
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.UInt256
 
 class RemoteReducers internal constructor(
     private val conn: DbConnection,
@@ -30,6 +34,11 @@ class RemoteReducers internal constructor(
     fun deleteNote(noteId: ULong, callback: ((EventContext.Reducer<DeleteNoteArgs>) -> Unit)? = null) {
         val args = DeleteNoteArgs(noteId)
         conn.callReducer(DeleteNoteReducer.REDUCER_NAME, args.encode(), args, callback)
+    }
+
+    fun insertBigInts(valI128: Int128, valU128: UInt128, valI256: Int256, valU256: UInt256, callback: ((EventContext.Reducer<InsertBigIntsArgs>) -> Unit)? = null) {
+        val args = InsertBigIntsArgs(valI128, valU128, valI256, valU256)
+        conn.callReducer(InsertBigIntsReducer.REDUCER_NAME, args.encode(), args, callback)
     }
 
     fun scheduleReminder(text: String, delayMs: ULong, callback: ((EventContext.Reducer<ScheduleReminderArgs>) -> Unit)? = null) {
@@ -90,6 +99,16 @@ class RemoteReducers internal constructor(
 
     fun removeOnDeleteNote(cb: (EventContext.Reducer<DeleteNoteArgs>, ULong) -> Unit) {
         onDeleteNoteCallbacks.remove(cb)
+    }
+
+    private val onInsertBigIntsCallbacks = mutableListOf<(EventContext.Reducer<InsertBigIntsArgs>, Int128, UInt128, Int256, UInt256) -> Unit>()
+
+    fun onInsertBigInts(cb: (EventContext.Reducer<InsertBigIntsArgs>, Int128, UInt128, Int256, UInt256) -> Unit) {
+        onInsertBigIntsCallbacks.add(cb)
+    }
+
+    fun removeOnInsertBigInts(cb: (EventContext.Reducer<InsertBigIntsArgs>, Int128, UInt128, Int256, UInt256) -> Unit) {
+        onInsertBigIntsCallbacks.remove(cb)
     }
 
     private val onScheduleReminderCallbacks = mutableListOf<(EventContext.Reducer<ScheduleReminderArgs>, String, ULong) -> Unit>()
@@ -160,6 +179,13 @@ class RemoteReducers internal constructor(
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<DeleteNoteArgs>
                     for (cb in onDeleteNoteCallbacks.toList()) cb(typedCtx, typedCtx.args.noteId)
+                }
+            }
+            InsertBigIntsReducer.REDUCER_NAME -> {
+                if (onInsertBigIntsCallbacks.isNotEmpty()) {
+                    @Suppress("UNCHECKED_CAST")
+                    val typedCtx = ctx as EventContext.Reducer<InsertBigIntsArgs>
+                    for (cb in onInsertBigIntsCallbacks.toList()) cb(typedCtx, typedCtx.args.valI128, typedCtx.args.valU128, typedCtx.args.valI256, typedCtx.args.valU256)
                 }
             }
             ScheduleReminderReducer.REDUCER_NAME -> {

@@ -5,11 +5,42 @@
 
 package module_bindings
 
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Int128
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Int256
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.UInt128
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.UInt256
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ScheduleAt
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Timestamp
+
+data class BigIntRow(
+    val id: ULong,
+    val valI128: Int128,
+    val valU128: UInt128,
+    val valI256: Int256,
+    val valU256: UInt256
+) {
+    fun encode(writer: BsatnWriter) {
+        writer.writeU64(id)
+        valI128.encode(writer)
+        valU128.encode(writer)
+        valI256.encode(writer)
+        valU256.encode(writer)
+    }
+
+    companion object {
+        fun decode(reader: BsatnReader): BigIntRow {
+            val id = reader.readU64()
+            val valI128 = Int128.decode(reader)
+            val valU128 = UInt128.decode(reader)
+            val valI256 = Int256.decode(reader)
+            val valU256 = UInt256.decode(reader)
+            return BigIntRow(id, valI128, valU128, valI256, valU256)
+        }
+    }
+}
 
 data class Message(
     val id: ULong,
