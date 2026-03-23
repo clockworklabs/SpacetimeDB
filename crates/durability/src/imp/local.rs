@@ -89,7 +89,7 @@ pub struct Local<T> {
     /// Backlog of transactions to be written to disk by the background
     /// [`PersisterTask`].
     ///
-    /// The queue is bounded to `2 * Option::batch_capacity`.
+    /// The queue is bounded to `4 * Option::batch_capacity`.
     queue: mpsc::Sender<Transaction<Txdata<T>>>,
     /// How many transactions are sitting in the `queue`.
     ///
@@ -128,7 +128,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
             opts.commitlog,
             on_new_segment,
         )?);
-        let (queue, txdata_rx) = mpsc::channel(2 * opts.batch_capacity.get());
+        let (queue, txdata_rx) = mpsc::channel(4 * opts.batch_capacity.get());
         let queue_depth = Arc::new(AtomicU64::new(0));
         let (durable_tx, durable_rx) = watch::channel(clog.max_committed_offset());
         let (shutdown_tx, shutdown_rx) = mpsc::channel(1);

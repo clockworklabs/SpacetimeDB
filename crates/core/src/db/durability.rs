@@ -86,7 +86,7 @@ impl DurabilityWorker {
         next_tx_offset: TxOffset,
         reorder_window_size: NonZeroUsize,
     ) -> Self {
-        let (request_tx, request_rx) = channel(5000);
+        let (request_tx, request_rx) = channel(4 * 4096);
         let (shutdown_tx, shutdown_rx) = channel(1);
 
         let actor = DurabilityWorkerActor {
