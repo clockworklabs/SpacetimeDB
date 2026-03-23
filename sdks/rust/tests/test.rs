@@ -353,7 +353,12 @@ macro_rules! declare_tests_with_suffix {
                 make_test("test-lhs-join-update-disjoint-queries").run()
             }
 
+            // The Rust client variant of this test is currently under-synchronized:
+            // it returns basically instantly after starting the connection.
+            // It's also somewhat broken due to casing issues.
+            // Re-enable this test once it is fixed and properly waiting for its results.
             #[test]
+            #[ignore = "Flaky until test-client retains ignored connections or this test owns its connection lifetime"]
             fn test_intra_query_bag_semantics_for_join() {
                 make_test("test-intra-query-bag-semantics-for-join").run()
             }
