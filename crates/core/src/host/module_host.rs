@@ -1269,28 +1269,53 @@ impl ModuleHost {
         .await
     }
 
-    async fn with_js_pooled_instance<R>(
+    /// Run a function for this module using pooled instances.
+    ///
+    /// For WASM, this is identical to [`Self::call`].
+    /// For V8/JS, this uses the pooled procedure instances instead of the
+    /// single instance lane.
+    async fn call_pooled<A, R>(
         &self,
         label: &str,
-        f: impl AsyncFnOnce(&JsInstance) -> R,
-    ) -> Result<R, NoSuchModule> {
+        arg: A,
+        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
+        js: impl AsyncFnOnce(A, &JsInstance) -> R,
+    ) -> Result<R, NoSuchModule>
+    where
+        R: Send + 'static,
+        A: Send + 'static,
+    {
         self.guard_closed()?;
         let timer_guard = self.start_call_timer(label);
 
         scopeguard::defer_on_unwind!({
-            log::warn!("pooled JS instance operation {label} panicked");
+            log::warn!("pooled operation {label} panicked");
             (self.on_panic)();
         });
 
         Ok(match &*self.inner {
-            ModuleHostInner::Wasm(_) => unreachable!("WASM should not use the pooled JS instance path"),
+            ModuleHostInner::Wasm(WasmtimeModuleHost {
+                executor,
+                instance_manager,
+            }) => {
+                instance_manager
+                    .with_instance(async |mut inst| {
+                        executor
+                            .run_job(async move || {
+                                drop(timer_guard);
+                                (wasm(arg, &mut inst).await, inst)
+                            })
+                            .await
+                    })
+                    .await
+            }
             ModuleHostInner::Js(V8ModuleHost {
                 procedure_instances, ..
             }) => {
                 procedure_instances
                     .with_instance(async |inst| {
                         drop(timer_guard);
-                        let res = f(&inst).await;
+                        let res = js(arg, &inst).await;
                         (res, inst)
                     })
                     .await
@@ -1299,21 +1324,13 @@ impl ModuleHost {
     }
 
     async fn call_view_command(&self, label: &str, cmd: ViewCommand) -> Result<ViewCommandResult, ViewCallError> {
-        Ok(match &*self.inner {
-            ModuleHostInner::Wasm(_) => {
-                self.call(
-                    label,
-                    cmd,
-                    async |cmd, inst| Ok::<_, ViewCallError>(inst.call_view(cmd)),
-                    async |_cmd, _inst| unreachable!("WASM should not use the JS call_view path"),
-                )
-                .await??
-            }
-            ModuleHostInner::Js(_) => {
-                self.with_js_pooled_instance(label, async |inst| inst.call_view(cmd).await)
-                    .await?
-            }
-        })
+        self.call_pooled(
+            label,
+            cmd,
+            async |cmd, inst| Ok::<_, ViewCallError>(inst.call_view(cmd)),
+            async |cmd, inst| Ok::<_, ViewCallError>(inst.call_view(cmd).await),
+        )
+        .await?
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
@@ -1901,43 +1918,26 @@ impl ModuleHost {
         name: &str,
         params: CallProcedureParams,
     ) -> Result<CallProcedureReturn, NoSuchModule> {
-        match &*self.inner {
-            ModuleHostInner::Wasm(_) => {
-                self.call(
-                    name,
-                    params,
-                    async move |params, inst| inst.call_procedure(params).await,
-                    async move |_params, _inst| unreachable!("JS procedure lane is not used for WASM modules"),
-                )
-                .await
-            }
-            ModuleHostInner::Js(_) => {
-                self.with_js_pooled_instance(name, async move |inst| inst.call_procedure(params).await)
-                    .await
-            }
-        }
+        self.call_pooled(
+            name,
+            params,
+            async move |params, inst| inst.call_procedure(params).await,
+            async move |params, inst| inst.call_procedure(params).await,
+        )
+        .await
     }
 
     pub(super) async fn call_scheduled_function(
         &self,
         params: ScheduledFunctionParams,
     ) -> Result<CallScheduledFunctionResult, CallScheduledFunctionError> {
-        match &*self.inner {
-            ModuleHostInner::Wasm(_) => {
-                self.call(
-                    "unknown scheduled function",
-                    params,
-                    async move |params, inst| Ok(inst.call_scheduled_function(params).await),
-                    async move |_params, _inst| unreachable!("JS scheduled-function lane is not used for WASM modules"),
-                )
-                .await?
-            }
-            ModuleHostInner::Js(_) => Ok(self
-                .with_js_pooled_instance("unknown scheduled function", async move |inst| {
-                    inst.call_scheduled_function(params).await
-                })
-                .await?),
-        }
+        self.call_pooled(
+            "unknown scheduled function",
+            params,
+            async move |params, inst| Ok(inst.call_scheduled_function(params).await),
+            async move |params, inst| Ok(inst.call_scheduled_function(params).await),
+        )
+        .await?
     }
 
     /// Materializes the views return by the `view_collector`, if not already materialized,
