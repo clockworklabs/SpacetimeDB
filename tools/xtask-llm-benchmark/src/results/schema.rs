@@ -6,6 +6,9 @@ use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Results {
+    /// ISO 8601 timestamp of when this results file was last updated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generated_at: Option<String>,
     pub languages: Vec<LangEntry>,
 }
 

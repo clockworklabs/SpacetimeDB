@@ -52,11 +52,10 @@ pub struct RunOutcome {
 }
 
 impl RunOutcome {
-    /// Strip volatile fields that change every run (timestamps, ports, paths)
+    /// Strip volatile fields that change every run (ports, paths)
     /// to reduce git diff noise when committing results.
+    /// Timestamps (started_at, finished_at) are preserved for score history tracking.
     pub fn sanitize_for_commit(&mut self) {
-        self.started_at = None;
-        self.finished_at = None;
         self.work_dir_golden = None;
         self.work_dir_llm = None;
         self.golden_db = None;

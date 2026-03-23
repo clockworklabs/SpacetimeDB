@@ -105,6 +105,9 @@ pub fn merge_task_runs(path: &Path, mode: &str, runs: &[RunOutcome]) -> Result<(
             model_v.tasks.insert(r.task.clone(), sanitized);
         }
 
+        // Update the top-level timestamp
+        root.generated_at = Some(chrono::Utc::now().to_rfc3339());
+
         save_atomic(path, &root)
     })();
 
