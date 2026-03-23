@@ -1,25 +1,22 @@
 using SpacetimeDB;
+using System.Collections.Generic;
 
 public static partial class Module
 {
-    [Table(Accessor = "Player", Public = true)]
-    public partial struct Player
+    [Table(Accessor = "Announcement", Public = true)]
+    [SpacetimeDB.Index.BTree(Columns = new[] { nameof(Announcement.Active) })]
+    public partial struct Announcement
     {
         [PrimaryKey]
         [AutoInc]
         public ulong Id;
-        public string Name;
-        public uint Score;
+        public string Message;
+        public bool Active;
     }
 
-    [SpacetimeDB.View(Accessor = "AllPlayers", Public = true)]
-    public static List<Player> AllPlayers(AnonymousViewContext ctx)
+    [SpacetimeDB.View(Accessor = "ActiveAnnouncements", Public = true)]
+    public static IEnumerable<Announcement> ActiveAnnouncements(AnonymousViewContext ctx)
     {
-        var rows = new List<Player>();
-        foreach (var p in ctx.Db.Player.Iter())
-        {
-            rows.Add(p);
-        }
-        return rows;
+        return ctx.Db.Announcement.Active.Filter(true);
     }
 }

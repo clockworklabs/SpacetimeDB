@@ -1,15 +1,13 @@
-Write a SpacetimeDB backend module in TypeScript that defines a public table and an anonymous view that returns all rows from the table.
+Write a SpacetimeDB backend module in TypeScript that defines a public anonymous view over a table.
 
-TABLES
-- player
-  - public table
+TABLE
+- announcement (public)
   - Fields:
-    - id: number (u64, primary key, autoInc)
-    - name: string
-    - score: number (u32)
+    - id: u64 (primary key, auto-increment)
+    - message: string
+    - active: bool (btree index)
 
-VIEWS
-- all_players
-  - anonymous view (uses spacetimedb.anonymousView)
-  - public
-  - Returns: array of player rows (all rows from the player table)
+VIEW
+- activeAnnouncements (anonymousView, public)
+  - Returns: array of announcement rows
+  - Body: return all rows where active == true using the btree index filter

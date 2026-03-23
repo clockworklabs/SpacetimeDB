@@ -1,4 +1,4 @@
-use spacetimedb::{table, view, ViewContext, Identity, Query};
+use spacetimedb::{table, view, ViewContext, Identity};
 
 #[table(accessor = profile, public)]
 pub struct Profile {
@@ -12,9 +12,6 @@ pub struct Profile {
 }
 
 #[view(accessor = my_profile, public)]
-fn my_profile(ctx: &ViewContext) -> impl Query<Profile> {
-    ctx.from
-        .profile()
-        .r#where(|p| p.identity.eq(ctx.sender()))
-        .build()
+fn my_profile(ctx: &ViewContext) -> Option<Profile> {
+    ctx.db.profile().identity().find(ctx.sender())
 }

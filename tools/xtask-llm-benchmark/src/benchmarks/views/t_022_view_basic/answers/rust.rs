@@ -1,15 +1,16 @@
-use spacetimedb::{table, view, AnonymousViewContext, Query};
+use spacetimedb::{table, view, AnonymousViewContext};
 
-#[table(accessor = player, public)]
-pub struct Player {
+#[table(accessor = announcement, public)]
+pub struct Announcement {
     #[primary_key]
     #[auto_inc]
     pub id: u64,
-    pub name: String,
-    pub score: u32,
+    pub message: String,
+    #[index(btree)]
+    pub active: bool,
 }
 
-#[view(accessor = all_players, public)]
-fn all_players(ctx: &AnonymousViewContext) -> impl Query<Player> {
-    ctx.from.player().build()
+#[view(accessor = active_announcements, public)]
+fn active_announcements(ctx: &AnonymousViewContext) -> Vec<Announcement> {
+    ctx.db.announcement().active().filter(true).collect()
 }
