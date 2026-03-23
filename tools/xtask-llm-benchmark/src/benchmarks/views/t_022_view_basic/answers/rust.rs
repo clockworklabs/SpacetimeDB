@@ -1,4 +1,4 @@
-use spacetimedb::{table, view, AnonymousViewContext};
+use spacetimedb::{table, view, AnonymousViewContext, Query};
 
 #[table(accessor = player, public)]
 pub struct Player {
@@ -10,6 +10,6 @@ pub struct Player {
 }
 
 #[view(accessor = all_players, public)]
-fn all_players(ctx: &AnonymousViewContext) -> Vec<Player> {
-    ctx.db.player().iter().collect()
+fn all_players(ctx: &AnonymousViewContext) -> impl Query<Player> {
+    ctx.from.player().build()
 }

@@ -1,4 +1,4 @@
-use spacetimedb::{reducer, table, ReducerContext};
+use spacetimedb::{Table, reducer, table, ReducerContext};
 use spacetimedb::Identity;
 
 #[table(accessor = message, public)]

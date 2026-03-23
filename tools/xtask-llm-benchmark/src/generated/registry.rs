@@ -4,50 +4,14 @@ use std::path::Path;
 
 #[allow(dead_code)]
 #[allow(clippy::all)]
-mod advanced_t_024_event_table {
-    include!("../benchmarks/advanced/t_024_event_table/spec.rs");
+mod auth_t_026_auth_identity_check {
+    include!("../benchmarks/auth/t_026_auth_identity_check/spec.rs");
 }
 
 #[allow(dead_code)]
 #[allow(clippy::all)]
-mod advanced_t_025_optional_fields {
-    include!("../benchmarks/advanced/t_025_optional_fields/spec.rs");
-}
-
-#[allow(dead_code)]
-#[allow(clippy::all)]
-mod advanced_t_026_auth_identity_check {
-    include!("../benchmarks/advanced/t_026_auth_identity_check/spec.rs");
-}
-
-#[allow(dead_code)]
-#[allow(clippy::all)]
-mod advanced_t_027_private_vs_public_table {
-    include!("../benchmarks/advanced/t_027_private_vs_public_table/spec.rs");
-}
-
-#[allow(dead_code)]
-#[allow(clippy::all)]
-mod advanced_t_028_cascade_delete {
-    include!("../benchmarks/advanced/t_028_cascade_delete/spec.rs");
-}
-
-#[allow(dead_code)]
-#[allow(clippy::all)]
-mod advanced_t_029_filter_and_aggregate {
-    include!("../benchmarks/advanced/t_029_filter_and_aggregate/spec.rs");
-}
-
-#[allow(dead_code)]
-#[allow(clippy::all)]
-mod advanced_t_030_two_table_join {
-    include!("../benchmarks/advanced/t_030_two_table_join/spec.rs");
-}
-
-#[allow(dead_code)]
-#[allow(clippy::all)]
-mod advanced_t_031_unique_constraint {
-    include!("../benchmarks/advanced/t_031_unique_constraint/spec.rs");
+mod auth_t_027_private_vs_public_table {
+    include!("../benchmarks/auth/t_027_private_vs_public_table/spec.rs");
 }
 
 #[allow(dead_code)]
@@ -120,6 +84,42 @@ mod basics_t_010_connect {
 #[allow(clippy::all)]
 mod basics_t_011_helper_function {
     include!("../benchmarks/basics/t_011_helper_function/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod basics_t_038_schedule_at_time {
+    include!("../benchmarks/basics/t_038_schedule_at_time/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod basics_t_039_cancel_schedule {
+    include!("../benchmarks/basics/t_039_cancel_schedule/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod basics_t_040_lifecycle_player {
+    include!("../benchmarks/basics/t_040_lifecycle_player/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod data_modeling_t_024_event_table {
+    include!("../benchmarks/data_modeling/t_024_event_table/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod data_modeling_t_025_optional_fields {
+    include!("../benchmarks/data_modeling/t_025_optional_fields/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod data_modeling_t_031_unique_constraint {
+    include!("../benchmarks/data_modeling/t_031_unique_constraint/spec.rs");
 }
 
 #[allow(dead_code)]
@@ -230,6 +230,24 @@ mod views_t_023_view_per_user {
     include!("../benchmarks/views/t_023_view_per_user/spec.rs");
 }
 
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod write_patterns_t_028_cascade_delete {
+    include!("../benchmarks/write_patterns/t_028_cascade_delete/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod write_patterns_t_029_filter_and_aggregate {
+    include!("../benchmarks/write_patterns/t_029_filter_and_aggregate/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod write_patterns_t_030_two_table_join {
+    include!("../benchmarks/write_patterns/t_030_two_table_join/spec.rs");
+}
+
 pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
     let task = task_root
         .file_name()
@@ -241,14 +259,8 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         .ok_or_else(|| anyhow!("missing category name"))?;
 
     let ctor = match (category, task) {
-        ("advanced", "t_024_event_table") => advanced_t_024_event_table::spec,
-        ("advanced", "t_025_optional_fields") => advanced_t_025_optional_fields::spec,
-        ("advanced", "t_026_auth_identity_check") => advanced_t_026_auth_identity_check::spec,
-        ("advanced", "t_027_private_vs_public_table") => advanced_t_027_private_vs_public_table::spec,
-        ("advanced", "t_028_cascade_delete") => advanced_t_028_cascade_delete::spec,
-        ("advanced", "t_029_filter_and_aggregate") => advanced_t_029_filter_and_aggregate::spec,
-        ("advanced", "t_030_two_table_join") => advanced_t_030_two_table_join::spec,
-        ("advanced", "t_031_unique_constraint") => advanced_t_031_unique_constraint::spec,
+        ("auth", "t_026_auth_identity_check") => auth_t_026_auth_identity_check::spec,
+        ("auth", "t_027_private_vs_public_table") => auth_t_027_private_vs_public_table::spec,
         ("basics", "t_000_empty_reducers") => basics_t_000_empty_reducers::spec,
         ("basics", "t_001_basic_tables") => basics_t_001_basic_tables::spec,
         ("basics", "t_002_scheduled_table") => basics_t_002_scheduled_table::spec,
@@ -261,6 +273,12 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("basics", "t_009_init") => basics_t_009_init::spec,
         ("basics", "t_010_connect") => basics_t_010_connect::spec,
         ("basics", "t_011_helper_function") => basics_t_011_helper_function::spec,
+        ("basics", "t_038_schedule_at_time") => basics_t_038_schedule_at_time::spec,
+        ("basics", "t_039_cancel_schedule") => basics_t_039_cancel_schedule::spec,
+        ("basics", "t_040_lifecycle_player") => basics_t_040_lifecycle_player::spec,
+        ("data_modeling", "t_024_event_table") => data_modeling_t_024_event_table::spec,
+        ("data_modeling", "t_025_optional_fields") => data_modeling_t_025_optional_fields::spec,
+        ("data_modeling", "t_031_unique_constraint") => data_modeling_t_031_unique_constraint::spec,
         ("queries", "t_032_range_query") => queries_t_032_range_query::spec,
         ("queries", "t_033_sort_and_limit") => queries_t_033_sort_and_limit::spec,
         ("queries", "t_034_find_first") => queries_t_034_find_first::spec,
@@ -279,6 +297,9 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("schema", "t_021_multi_column_index") => schema_t_021_multi_column_index::spec,
         ("views", "t_022_view_basic") => views_t_022_view_basic::spec,
         ("views", "t_023_view_per_user") => views_t_023_view_per_user::spec,
+        ("write_patterns", "t_028_cascade_delete") => write_patterns_t_028_cascade_delete::spec,
+        ("write_patterns", "t_029_filter_and_aggregate") => write_patterns_t_029_filter_and_aggregate::spec,
+        ("write_patterns", "t_030_two_table_join") => write_patterns_t_030_two_table_join::spec,
         _ => return Err(anyhow!("no spec registered for {}/{} (need spec.rs)", category, task)),
     };
 

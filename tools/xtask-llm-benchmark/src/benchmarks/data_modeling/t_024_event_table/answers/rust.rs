@@ -1,4 +1,4 @@
-use spacetimedb::{reducer, table, ReducerContext};
+use spacetimedb::{Table, reducer, table, ReducerContext};
 
 #[table(accessor = damage_event, public, event)]
 pub struct DamageEvent {
