@@ -401,8 +401,10 @@ export async function runOne({
     console.log(`[${connector.name}] Running verification pass...`);
     try {
       await withOpTimeout(connector.verify(), `${connector.name} verify()`);
+      console.log(`[${connector.name}] Verification passed`);
     } catch (err) {
-      console.error(`[${connector.name}] Verification failed:`, err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[${connector.name}] Verification failed: ${msg}`);
     }
   }
 

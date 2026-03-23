@@ -1,7 +1,8 @@
-use std::{sync::Arc, time::Duration};
+use std::{cmp::Reverse, collections::BinaryHeap, iter, num::NonZeroUsize, sync::Arc, time::Duration};
 
 use futures::TryFutureExt as _;
 use log::{error, info};
+use prometheus::IntGauge;
 use spacetimedb_commitlog::payload::{
     txdata::{Mutations, Ops},
     Txdata,
@@ -9,6 +10,7 @@ use spacetimedb_commitlog::payload::{
 use spacetimedb_datastore::{execution_context::ReducerContext, traits::TxData};
 use spacetimedb_durability::{DurableOffset, Transaction, TxOffset};
 use spacetimedb_lib::Identity;
+use thiserror::Error;
 use tokio::{
     runtime,
     sync::{
@@ -18,8 +20,9 @@ use tokio::{
     },
     time::timeout,
 };
+use tracing::{info_span, Instrument as _};
 
-use crate::db::persistence::Durability;
+use crate::{db::persistence::Durability, worker_metrics::WORKER_METRICS};
 
 /// A request to persist a transaction or to terminate the actor.
 pub struct DurabilityRequest {
@@ -34,6 +37,36 @@ type ShutdownReply = oneshot::Sender<OwnedNotified>;
 ///
 /// This exists to avoid holding a transaction lock while
 /// preparing the [TxData] for processing by the [Durability] layer.
+///
+/// The durability worker is internal to [RelationalDB], which calls
+/// [DurabilityWorker::request_durability] after committing a transaction.
+///
+/// # Transaction ordering
+///
+/// The backing datastore of [RelationalDB] is responsible for creating a total
+/// ordering of transactions and must uphold that [TxOffset]s are monotonically
+/// increasing without gaps.
+///
+/// However, [RelationalDB::commit_tx] respectively [RelationalDB::commit_tx_downgrade]
+/// may be called from multiple threads. Because those methods are not
+/// synchronized, and release the transaction lock before requesting durability,
+/// it is possible for [DurabilityRequest]s to appear slightly out-of-order on
+/// the worker channel.
+///
+/// To mitigate this, the worker keeps a window of up to `reorder_window_size`
+/// requests if out-of-order requests are detected, and flushes it to the
+/// underlying durability layer once it is able to linearize the offset sequence.
+///
+/// Since we expect out-of-order requests to happen very rarely, this measure
+/// should not negatively impact throughput in the common case, unlike holding
+/// the transaction lock until request submission is complete.
+///
+/// Note that the commitlog rejects out-of-order commits, so if a missing offset
+/// arrives outside `reorder_window_size` (or never), already committed
+/// transactions may be lost (by way of the durability worker crashing).
+/// Those transactions will not be confirmed, however, so this is safe.
+///
+/// [RelationalDB]: crate::db::relational_db::RelationalDB
 pub struct DurabilityWorker {
     database: Identity,
     request_tx: UnboundedSender<DurabilityRequest>,
@@ -46,7 +79,13 @@ impl DurabilityWorker {
     /// Create a new [`DurabilityWorker`] using the given `durability` policy.
     ///
     /// Background tasks will be spawned onto to provided tokio `runtime`.
-    pub fn new(database: Identity, durability: Arc<Durability>, runtime: runtime::Handle) -> Self {
+    pub fn new(
+        database: Identity,
+        durability: Arc<Durability>,
+        runtime: runtime::Handle,
+        next_tx_offset: TxOffset,
+        reorder_window_size: NonZeroUsize,
+    ) -> Self {
         let (request_tx, request_rx) = unbounded_channel();
         let (shutdown_tx, shutdown_rx) = channel(1);
 
@@ -54,9 +93,17 @@ impl DurabilityWorker {
             request_rx,
             shutdown: shutdown_rx,
             durability: durability.clone(),
+            reorder_window: ReorderWindow::new(next_tx_offset, reorder_window_size),
+            reorder_window_len: WORKER_METRICS
+                .durability_worker_reorder_window_length
+                .with_label_values(&database),
         };
         let _enter = runtime.enter();
-        tokio::spawn(actor.run());
+        tokio::spawn(
+            actor
+                .run()
+                .instrument(info_span!("durability_worker", database = %database)),
+        );
 
         Self {
             database,
@@ -162,16 +209,97 @@ impl DurabilityWorker {
     }
 }
 
-pub struct DurabilityWorkerActor {
+#[derive(Debug, Error)]
+enum ReorderError {
+    #[error("reordering window exceeded")]
+    SizeExceeded,
+    #[error("transaction offset behind expected offset")]
+    TxBehind,
+}
+
+/// A bounded collection of elements ordered by [TxOffset], backed by a [BinaryHeap].
+///
+/// This exists to tolerate slightly out-of-order requests.
+/// See the struct docs for [DurabilityWorker] for more context.
+struct ReorderWindow<T> {
+    heap: BinaryHeap<Reverse<TxOrdered<T>>>,
+    next_tx: TxOffset,
+    max_len: NonZeroUsize,
+}
+
+impl<T> ReorderWindow<T> {
+    pub fn new(next_tx: TxOffset, max_len: NonZeroUsize) -> Self {
+        // We expect that requests usually arrive in order,
+        // so allocate only a single element for the common case.
+        let heap = BinaryHeap::with_capacity(1);
+        Self { heap, next_tx, max_len }
+    }
+
+    /// Push a durability request onto the heap.
+    ///
+    /// # Errors
+    ///
+    /// The method returns an error if:
+    ///
+    /// - the window is full, i.e. `self.len() >= self.max_len`
+    /// - the `tx_offset` of the request is smaller than the next expected offset
+    ///
+    pub fn push(&mut self, req: TxOrdered<T>) -> Result<(), ReorderError> {
+        if self.len() >= self.max_len.get() {
+            return Err(ReorderError::SizeExceeded);
+        }
+        if req.tx_offset < self.next_tx {
+            return Err(ReorderError::TxBehind);
+        }
+        // We've got an out-of-order request,
+        // eagerly allocate the max capacity.
+        if self.len() > 0 {
+            self.heap.reserve_exact(self.max_len.get());
+        }
+        self.heap.push(Reverse(req));
+
+        Ok(())
+    }
+
+    /// Remove all [DurabilityRequest]s in order, until a gap in the offset
+    /// sequence is detected or the heap is empty.
+    pub fn drain(&mut self) -> impl Iterator<Item = T> {
+        iter::from_fn(|| {
+            let min_tx_offset = self.heap.peek().map(|Reverse(x)| x.tx_offset);
+            if min_tx_offset.is_some_and(|tx_offset| tx_offset == self.next_tx) {
+                let Reverse(TxOrdered { inner: request, .. }) = self.heap.pop().unwrap();
+                self.next_tx += 1;
+                Some(request)
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn len(&self) -> usize {
+        self.heap.len()
+    }
+}
+
+struct DurabilityWorkerActor {
     request_rx: UnboundedReceiver<DurabilityRequest>,
     shutdown: Receiver<ShutdownReply>,
     durability: Arc<Durability>,
+    reorder_window: ReorderWindow<DurabilityRequest>,
+    reorder_window_len: IntGauge,
 }
 
 impl DurabilityWorkerActor {
     /// Processes requests to do durability.
     async fn run(mut self) {
-        let done = scopeguard::guard(Arc::new(Notify::new()), |done| done.notify_waiters());
+        // When this future completes or is cancelled, ensure that:
+        // - shutdown waiters are notified
+        // - metrics are reset
+        let done = scopeguard::guard(Arc::new(Notify::new()), |done| {
+            done.notify_waiters();
+            self.reorder_window_len.set(0);
+        });
+
         loop {
             tokio::select! {
                 // Biased towards the shutdown channel,
@@ -184,26 +312,44 @@ impl DurabilityWorkerActor {
                 },
 
                 req = self.request_rx.recv() => {
-                    let Some(DurabilityRequest { reducer_context, tx_data }) = req else {
+                    let Some(request) = req else {
                         break;
                     };
-                    Self::do_durability(&*self.durability, reducer_context, &tx_data);
+                    match request.tx_data.tx_offset() {
+                        // Drop the request if it doesn't have a tx offset.
+                        None => {
+                            let name = request.reducer_context.as_ref().map(|rcx| &rcx.name);
+                            debug_assert!(
+                                !request.tx_data.has_rows_or_connect_disconnect(name),
+                                "tx_data has no rows but has connect/disconnect: `{name:?}`"
+                            );
+                        },
+                        // Otherwise, push to the reordering window.
+                        Some(tx_offset) => {
+                            let request = TxOrdered { tx_offset, inner: request };
+                            if let Err(e) = self.reorder_window.push(request) {
+                                error!("{e}");
+                                break;
+                            }
+                        },
+                    }
                 }
             }
+
+            // Drain all requests that are properly ordered.
+            self.reorder_window
+                .drain()
+                .for_each(|request| Self::do_durability(&*self.durability, request.reducer_context, &request.tx_data));
+            self.reorder_window_len.set(self.reorder_window.len() as _);
         }
 
         info!("durability worker actor done");
     }
 
     pub fn do_durability(durability: &Durability, reducer_context: Option<ReducerContext>, tx_data: &TxData) {
-        let Some(tx_offset) = tx_data.tx_offset() else {
-            let name = reducer_context.as_ref().map(|rcx| &rcx.name);
-            debug_assert!(
-                !tx_data.has_rows_or_connect_disconnect(name),
-                "tx_data has no rows but has connect/disconnect: `{name:?}`"
-            );
-            return;
-        };
+        let tx_offset = tx_data
+            .tx_offset()
+            .expect("txs without offset should have been dropped");
 
         let mut inserts: Box<_> = tx_data
             .persistent_inserts()
@@ -245,6 +391,33 @@ impl DurabilityWorkerActor {
             offset: tx_offset,
             txdata,
         });
+    }
+}
+
+/// Wrapper to sort [DurabilityRequest]s by [TxOffset].
+struct TxOrdered<T> {
+    tx_offset: TxOffset,
+    inner: T,
+}
+
+impl<T> PartialEq for TxOrdered<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.tx_offset == other.tx_offset
+    }
+}
+
+impl<T> Eq for TxOrdered<T> {}
+
+#[allow(clippy::non_canonical_partial_ord_impl)]
+impl<T> PartialOrd for TxOrdered<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.tx_offset.cmp(&other.tx_offset))
+    }
+}
+
+impl<T> Ord for TxOrdered<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap()
     }
 }
 
@@ -313,8 +486,13 @@ mod tests {
     #[tokio::test]
     async fn shutdown_waits_until_durable() {
         let durability = Arc::new(CountingDurability::default());
-        let worker = DurabilityWorker::new(Identity::ONE, durability.clone(), runtime::Handle::current());
-
+        let worker = DurabilityWorker::new(
+            Identity::ONE,
+            durability.clone(),
+            runtime::Handle::current(),
+            0,
+            NonZeroUsize::new(1).unwrap(),
+        );
         for i in 0..=10 {
             let mut txdata = TxData::default();
             txdata.set_tx_offset(i);
@@ -349,6 +527,70 @@ mod tests {
             Some(10),
             *durability.appended.borrow(),
             "durability should have appended up to tx offset 10"
+        );
+    }
+
+    #[test]
+    fn reorder_window_sorts_by_tx_offset() {
+        let mut win = ReorderWindow::new(0, NonZeroUsize::new(5).unwrap());
+
+        for tx_offset in (0..5).rev() {
+            win.push(TxOrdered {
+                tx_offset,
+                inner: tx_offset,
+            })
+            .unwrap();
+        }
+
+        let txs = win.drain().collect::<Vec<_>>();
+        assert_eq!(txs, &[0, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn reorder_window_stops_drain_at_gap() {
+        let mut win = ReorderWindow::new(0, NonZeroUsize::new(5).unwrap());
+
+        win.push(TxOrdered { tx_offset: 4, inner: 4 }).unwrap();
+        assert!(win.drain().collect::<Vec<_>>().is_empty());
+
+        for tx_offset in 0..4 {
+            win.push(TxOrdered {
+                tx_offset,
+                inner: tx_offset,
+            })
+            .unwrap();
+        }
+
+        let txs = win.drain().collect::<Vec<_>>();
+        assert_eq!(&txs, &[0, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn reorder_window_error_when_full() {
+        let mut win = ReorderWindow::new(0, NonZeroUsize::new(1).unwrap());
+        win.push(TxOrdered {
+            tx_offset: 0,
+            inner: (),
+        })
+        .unwrap();
+        assert_matches!(
+            win.push(TxOrdered {
+                tx_offset: 1,
+                inner: ()
+            }),
+            Err(ReorderError::SizeExceeded)
+        );
+    }
+
+    #[test]
+    fn reorder_window_error_on_late_request() {
+        let mut win = ReorderWindow::new(1, NonZeroUsize::new(5).unwrap());
+        assert_matches!(
+            win.push(TxOrdered {
+                tx_offset: 0,
+                inner: ()
+            }),
+            Err(ReorderError::TxBehind)
         );
     }
 }

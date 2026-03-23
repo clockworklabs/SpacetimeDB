@@ -1,6 +1,6 @@
 use super::index::{Index, RangedIndex};
+use super::unique_btree_index::UniquePointIter;
 use super::unique_direct_index::{expose, injest, ToFromUsize, NONE_PTR};
-use super::uniquemap::UniquePointIter;
 use crate::indexes::RowPointer;
 use crate::table_index::KeySize;
 use core::marker::PhantomData;

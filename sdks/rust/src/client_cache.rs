@@ -5,12 +5,13 @@
 use crate::callbacks::CallbackId;
 use crate::db_connection::{debug_log, PendingMutation, SharedCell};
 use crate::spacetime_module::{InModule, SpacetimeModule, TableUpdate, WithBsatn};
-use anymap::{any::Any, Map};
+use anymap3::Map;
 use bytes::Bytes;
 use core::any::type_name;
 use core::hash::Hash;
 use futures_channel::mpsc;
 use spacetimedb_data_structures::map::{hash_map::Entry, HashCollectionExt, HashMap};
+use std::any::Any;
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::Write;
@@ -374,7 +375,7 @@ impl<M: SpacetimeModule> ClientCache<M> {
     ) -> &mut TableCache<Row> {
         self.tables
             .entry::<HashMap<&'static str, TableCache<Row>>>()
-            .or_insert_with(Default::default)
+            .or_default()
             .entry(table_name)
             .or_insert_with(|| TableCache::new(self.extra_logging.clone()))
     }
