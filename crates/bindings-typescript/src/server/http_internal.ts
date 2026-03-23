@@ -286,8 +286,8 @@ function fetchStreaming(url: URL | string, init: RequestOptions = {}): Streaming
     serializeRequest(request),
     body
   );
-  const response = HttpResponse.deserialize(new BinaryReader(responseBuf));
   const stream = new StreamHandle(handle);
+  const response = HttpResponse.deserialize(new BinaryReader(responseBuf));
   const code = response.code;
   const responseHeaders = deserializeHeaders(response.headers);
 
