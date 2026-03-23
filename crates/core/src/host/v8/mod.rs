@@ -13,6 +13,7 @@ use super::module_common::{build_common_module_from_raw, run_describer, ModuleCo
 use super::module_host::{CallProcedureParams, CallReducerParams, ModuleInfo, ModuleWithInstance};
 use super::UpdateDatabaseResult;
 use crate::client::ClientActorId;
+use crate::config::V8HeapPolicyConfig;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
 use crate::host::module_host::{
@@ -73,19 +74,32 @@ mod to_value;
 mod util;
 
 /// The V8 runtime, for modules written in e.g., JS or TypeScript.
-#[derive(Default)]
 pub struct V8Runtime {
-    _priv: (),
+    heap_policy: V8HeapPolicyConfig,
+}
+
+impl Default for V8Runtime {
+    fn default() -> Self {
+        Self::new(V8HeapPolicyConfig::default())
+    }
 }
 
 impl V8Runtime {
+    pub fn new(heap_policy: V8HeapPolicyConfig) -> Self {
+        Self {
+            heap_policy: heap_policy.normalized(),
+        }
+    }
+
     pub async fn make_actor(
         &self,
         mcc: ModuleCreationContext,
         program_bytes: &[u8],
         core: AllocatedJobCore,
     ) -> anyhow::Result<ModuleWithInstance> {
-        V8_RUNTIME_GLOBAL.make_actor(mcc, program_bytes, core).await
+        V8_RUNTIME_GLOBAL
+            .make_actor(mcc, program_bytes, core, self.heap_policy)
+            .await
     }
 }
 
@@ -98,7 +112,6 @@ impl V8Runtime {
 
 static V8_RUNTIME_GLOBAL: LazyLock<V8RuntimeInner> = LazyLock::new(V8RuntimeInner::init);
 static NEXT_JS_INSTANCE_ID: AtomicU64 = AtomicU64::new(1);
-static V8_HEAP_POLICY_CONFIG: LazyLock<V8HeapPolicyConfig> = LazyLock::new(V8HeapPolicyConfig::from_env);
 
 thread_local! {
     // Note, `on_module_thread` runs host closures on a single JS module thread.
@@ -146,93 +159,6 @@ pub(crate) fn assert_not_on_js_module_thread(label: &str) {
     });
 }
 
-#[derive(Debug, Clone, Copy)]
-struct V8HeapPolicyConfig {
-    heap_check_request_interval: Option<u64>,
-    heap_check_time_interval: Option<std::time::Duration>,
-    heap_gc_trigger_fraction: f64,
-    heap_retire_fraction: f64,
-    heap_limit_bytes: Option<usize>,
-}
-
-impl Default for V8HeapPolicyConfig {
-    fn default() -> Self {
-        Self {
-            heap_check_request_interval: Some(65_536),
-            heap_check_time_interval: Some(std::time::Duration::from_secs(30)),
-            heap_gc_trigger_fraction: 0.67,
-            heap_retire_fraction: 0.75,
-            heap_limit_bytes: None,
-        }
-    }
-}
-
-impl V8HeapPolicyConfig {
-    fn from_env() -> Self {
-        let mut config = Self {
-            heap_check_request_interval: env_u64("SPACETIMEDB_V8_HEAP_CHECK_REQUEST_INTERVAL", 65_536),
-            heap_check_time_interval: env_u64("SPACETIMEDB_V8_HEAP_CHECK_TIME_INTERVAL_SECS", 30)
-                .map(std::time::Duration::from_secs),
-            heap_gc_trigger_fraction: env_fraction("SPACETIMEDB_V8_HEAP_GC_TRIGGER_FRACTION", 0.67),
-            heap_retire_fraction: env_fraction("SPACETIMEDB_V8_HEAP_RETIRE_FRACTION", 0.75),
-            heap_limit_bytes: env_u64("SPACETIMEDB_V8_HEAP_LIMIT_MB", 0)
-                .filter(|mb| *mb > 0)
-                .and_then(|mb| usize::try_from(mb).ok().and_then(|mb| mb.checked_mul(1024 * 1024))),
-        };
-
-        if config.heap_retire_fraction < config.heap_gc_trigger_fraction {
-            log::warn!(
-                "SPACETIMEDB_V8_HEAP_RETIRE_FRACTION ({}) is below \
-                 SPACETIMEDB_V8_HEAP_GC_TRIGGER_FRACTION ({}); using the GC trigger fraction for both",
-                config.heap_retire_fraction,
-                config.heap_gc_trigger_fraction,
-            );
-            config.heap_retire_fraction = config.heap_gc_trigger_fraction;
-        }
-
-        config
-    }
-}
-
-fn env_u64(name: &str, default: u64) -> Option<u64> {
-    match std::env::var(name) {
-        Ok(value) => match value.parse::<u64>() {
-            Ok(0) => None,
-            Ok(parsed) => Some(parsed),
-            Err(err) => {
-                log::warn!("invalid {name}={value:?}: {err}; using default {default}");
-                Some(default)
-            }
-        },
-        Err(std::env::VarError::NotPresent) => Some(default),
-        Err(err) => {
-            log::warn!("failed to read {name}: {err}; using default {default}");
-            Some(default)
-        }
-    }
-}
-
-fn env_fraction(name: &str, default: f64) -> f64 {
-    match std::env::var(name) {
-        Ok(value) => match value.parse::<f64>() {
-            Ok(parsed) if parsed.is_finite() && (0.0..=1.0).contains(&parsed) => parsed,
-            Ok(parsed) => {
-                log::warn!("invalid {name}={parsed}; expected a fraction between 0.0 and 1.0, using default {default}");
-                default
-            }
-            Err(err) => {
-                log::warn!("invalid {name}={value:?}: {err}; using default {default}");
-                default
-            }
-        },
-        Err(std::env::VarError::NotPresent) => default,
-        Err(err) => {
-            log::warn!("failed to read {name}: {err}; using default {default}");
-            default
-        }
-    }
-}
-
 /// The actual V8 runtime, with initialization of V8.
 struct V8RuntimeInner {
     _priv: (),
@@ -272,6 +198,7 @@ impl V8RuntimeInner {
         mcc: ModuleCreationContext,
         program_bytes: &[u8],
         core: AllocatedJobCore,
+        heap_policy: V8HeapPolicyConfig,
     ) -> anyhow::Result<ModuleWithInstance> {
         #![allow(unreachable_code, unused_variables)]
 
@@ -288,13 +215,20 @@ impl V8RuntimeInner {
         let mcc = Either::Right(mcc);
         let load_balance_guard = Arc::new(core.guard);
         let core_pinner = core.pinner;
-        let (common, init_inst) =
-            spawn_instance_worker(program.clone(), mcc, load_balance_guard.clone(), core_pinner.clone()).await?;
+        let (common, init_inst) = spawn_instance_worker(
+            program.clone(),
+            mcc,
+            load_balance_guard.clone(),
+            core_pinner.clone(),
+            heap_policy,
+        )
+        .await?;
         let module = JsModule {
             common,
             program,
             load_balance_guard,
             core_pinner,
+            heap_policy,
         };
 
         Ok(ModuleWithInstance::Js { module, init_inst })
@@ -307,6 +241,7 @@ pub struct JsModule {
     program: Arc<str>,
     load_balance_guard: Arc<LoadBalanceOnDropGuard>,
     core_pinner: CorePinner,
+    heap_policy: V8HeapPolicyConfig,
 }
 
 impl JsModule {
@@ -327,11 +262,18 @@ impl JsModule {
         let common = self.common.clone();
         let load_balance_guard = self.load_balance_guard.clone();
         let core_pinner = self.core_pinner.clone();
+        let heap_policy = self.heap_policy;
 
         // This has to be done in a blocking context because of `blocking_recv`.
-        let (_, instance) = spawn_instance_worker(program, Either::Left(common), load_balance_guard, core_pinner)
-            .await
-            .expect("`spawn_instance_worker` should succeed when passed `ModuleCommon`");
+        let (_, instance) = spawn_instance_worker(
+            program,
+            Either::Left(common),
+            load_balance_guard,
+            core_pinner,
+            heap_policy,
+        )
+        .await
+        .expect("`spawn_instance_worker` should succeed when passed `ModuleCommon`");
         instance
     }
 }
@@ -1082,8 +1024,8 @@ fn startup_instance_worker<'scope>(
 }
 
 /// Returns a new isolate.
-fn new_isolate() -> OwnedIsolate {
-    let params = if let Some(heap_limit_bytes) = V8_HEAP_POLICY_CONFIG.heap_limit_bytes {
+fn new_isolate(heap_policy: V8HeapPolicyConfig) -> OwnedIsolate {
+    let params = if let Some(heap_limit_bytes) = heap_policy.heap_limit_bytes {
         v8::CreateParams::default().heap_limits(0, heap_limit_bytes)
     } else {
         v8::CreateParams::default()
@@ -1111,6 +1053,7 @@ async fn spawn_instance_worker(
     module_or_mcc: Either<ModuleCommon, ModuleCreationContext>,
     load_balance_guard: Arc<LoadBalanceOnDropGuard>,
     mut core_pinner: CorePinner,
+    heap_policy: V8HeapPolicyConfig,
 ) -> anyhow::Result<(ModuleCommon, JsInstance)> {
     // Spawn a rendezvous queue for requests to the worker.
     // Multiple callers can wait to hand work to the worker, but with
@@ -1132,7 +1075,7 @@ async fn spawn_instance_worker(
         let _entered = rt.enter();
 
         // Create the isolate and scope.
-        let mut isolate = new_isolate();
+        let mut isolate = new_isolate(heap_policy);
         scope_with_context!(let scope, &mut isolate, Context::new(scope, Default::default()));
 
         // Setup the instance environment.
@@ -1181,7 +1124,6 @@ async fn spawn_instance_worker(
         let info = &module_common.info();
         let mut instance_common = InstanceCommon::new(&module_common);
         let replica_ctx: &Arc<ReplicaContext> = module_common.replica_ctx();
-        let heap_policy = *V8_HEAP_POLICY_CONFIG;
         let heap_metrics = V8HeapMetrics::new(&info.database_identity);
 
         // Create a zero-initialized buffer for holding reducer args.
