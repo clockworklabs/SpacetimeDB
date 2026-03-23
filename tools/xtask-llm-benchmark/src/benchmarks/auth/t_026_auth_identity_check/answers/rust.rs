@@ -1,5 +1,5 @@
 use spacetimedb::{reducer, table, ReducerContext};
-use spacetimedb_lib::Identity;
+use spacetimedb::Identity;
 
 #[table(accessor = message, public)]
 pub struct Message {
@@ -15,7 +15,7 @@ pub struct Message {
 pub fn create_message(ctx: &ReducerContext, text: String) {
     ctx.db.message().insert(Message {
         id: 0,
-        owner: ctx.sender,
+        owner: ctx.sender(),
         text,
     });
 }
@@ -23,7 +23,7 @@ pub fn create_message(ctx: &ReducerContext, text: String) {
 #[reducer]
 pub fn delete_message(ctx: &ReducerContext, id: u64) {
     let msg = ctx.db.message().id().find(id).expect("not found");
-    if msg.owner != ctx.sender {
+    if msg.owner != ctx.sender() {
         panic!("unauthorized");
     }
     ctx.db.message().id().delete(id);

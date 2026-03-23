@@ -1,0 +1,15 @@
+Write a SpacetimeDB backend module in C# that schedules a reducer and allows canceling it before it fires.
+
+TABLE
+- CleanupJob
+  - Fields:
+    - ScheduledId: ulong (primary key, auto-increment)
+    - ScheduledAt: ScheduleAt (the schedule column)
+  - Scheduling:
+    - Scheduled = nameof(RunCleanup)
+    - ScheduledAt = nameof(CleanupJob.ScheduledAt)
+
+REDUCERS
+- RunCleanup: scheduled reducer triggered by CleanupJob (receives a CleanupJob row, does nothing)
+- Init (ReducerKind.Init): inserts one row into CleanupJob with a 60-second interval (60_000_000 microseconds)
+- CancelCleanup(ctx, scheduledId: ulong): deletes the CleanupJob row with the given scheduledId, canceling the pending scheduled call

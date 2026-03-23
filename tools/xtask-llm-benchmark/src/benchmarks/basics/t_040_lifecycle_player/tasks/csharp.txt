@@ -1,0 +1,11 @@
+Write a SpacetimeDB backend module in C# that maintains a table of currently connected players using lifecycle reducers.
+
+TABLE
+- OnlinePlayer (public)
+  - Fields:
+    - Identity: Identity (primary key)
+    - ConnectedAt: Timestamp
+
+REDUCERS
+- ClientConnected (ReducerKind.ClientConnected): inserts an OnlinePlayer row using ctx.Sender as the identity and ctx.Timestamp as ConnectedAt
+- ClientDisconnected (ReducerKind.ClientDisconnected): deletes the OnlinePlayer row for ctx.Sender

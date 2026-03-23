@@ -1,5 +1,5 @@
 use spacetimedb::{table, view, ViewContext};
-use spacetimedb_lib::Identity;
+use spacetimedb::Identity;
 
 #[table(accessor = profile, public)]
 pub struct Profile {

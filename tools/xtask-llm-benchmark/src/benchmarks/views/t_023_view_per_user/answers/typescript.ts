@@ -17,6 +17,6 @@ export const my_profile = spacetimedb.view(
   { name: 'my_profile', public: true },
   t.option(profile.rowType),
   (ctx) => {
-    return ctx.db.profile.identity.find(ctx.sender()) ?? undefined;
+    return ctx.db.profile.identity.find(ctx.sender) ?? undefined;
   }
 );

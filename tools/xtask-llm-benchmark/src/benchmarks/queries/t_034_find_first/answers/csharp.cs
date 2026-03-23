@@ -1,5 +1,4 @@
 using SpacetimeDB;
-using System.Linq;
 
 public static partial class Module
 {
@@ -24,14 +23,17 @@ public static partial class Module
     [Reducer]
     public static void FindFirstIncomplete(ReducerContext ctx)
     {
-        var first = ctx.Db.Task.Iter().FirstOrDefault(t => !t.Completed);
-        if (first.Title != null)
+        foreach (var t in ctx.Db.Task.Iter())
         {
-            ctx.Db.FirstIncomplete.Insert(new FirstIncomplete
+            if (!t.Completed)
             {
-                TaskId = first.Id,
-                Title = first.Title,
-            });
+                ctx.Db.FirstIncomplete.Insert(new FirstIncomplete
+                {
+                    TaskId = t.Id,
+                    Title = t.Title,
+                });
+                return;
+            }
         }
     }
 }

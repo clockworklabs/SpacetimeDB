@@ -21,7 +21,7 @@ pub struct Post {
 #[reducer]
 pub fn delete_author(ctx: &ReducerContext, author_id: u64) {
     // Delete all posts by this author
-    for p in ctx.db.post().author_id().filter(author_id) {
+    for p in ctx.db.post().author_id().filter(&author_id) {
         ctx.db.post().id().delete(p.id);
     }
     // Delete the author
