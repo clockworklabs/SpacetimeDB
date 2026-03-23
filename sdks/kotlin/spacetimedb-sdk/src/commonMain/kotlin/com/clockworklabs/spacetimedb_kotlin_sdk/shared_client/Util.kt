@@ -5,8 +5,10 @@ import com.ionspin.kotlin.bignum.integer.Sign
 import kotlin.random.Random
 import kotlin.time.Instant
 
-internal fun BigInteger.toHexString(byteWidth: Int): String =
-    toString(16).padStart(byteWidth * 2, '0')
+internal fun BigInteger.toHexString(byteWidth: Int): String {
+    require(signum() >= 0) { "toHexString requires a non-negative value, got $this" }
+    return toString(16).padStart(byteWidth * 2, '0')
+}
 
 internal fun parseHexString(hex: String): BigInteger = BigInteger.parseString(hex, 16)
 internal fun randomBigInteger(byteLength: Int): BigInteger {
