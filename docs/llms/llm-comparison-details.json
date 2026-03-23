@@ -410,6 +410,25 @@
                   "category": "basics",
                   "route_api_model": "grok-4",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -423,25 +442,6 @@
                         "llm_out": "Id | Sum ----+----- 1 | 5",
                         "query": "SELECT Id, Sum FROM Result WHERE Id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
                       }
                     }
                   },
@@ -1337,6 +1337,25 @@
                   "category": "basics",
                   "route_api_model": "claude-opus-4-6",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -1350,25 +1369,6 @@
                         "llm_out": "Id | Sum ----+----- 1 | 5",
                         "query": "SELECT Id, Sum FROM Result WHERE Id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
                       }
                     }
                   },
@@ -2214,25 +2214,6 @@
                   "category": "basics",
                   "route_api_model": "claude-sonnet-4-6",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -2246,6 +2227,25 @@
                         "llm_out": "Id | Sum ----+----- 1 | 5",
                         "query": "SELECT Id, Sum FROM Result WHERE Id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
                       }
                     }
                   },
@@ -3205,6 +3205,25 @@
                   "category": "basics",
                   "route_api_model": "gpt-5.2-codex",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -3218,25 +3237,6 @@
                         "llm_out": "Id | Sum ----+----- 1 | 5",
                         "query": "SELECT Id, Sum FROM Result WHERE Id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
                       }
                     }
                   },
@@ -4173,25 +4173,6 @@
                   "category": "basics",
                   "route_api_model": "gpt-5-mini",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -4205,6 +4186,25 @@
                         "llm_out": "Id | Sum ----+----- 1 | 5",
                         "query": "SELECT Id, Sum FROM Result WHERE Id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
                       }
                     }
                   },
@@ -5005,6 +5005,25 @@
                   "category": "basics",
                   "route_api_model": "grok-code-fast-1",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -5018,25 +5037,6 @@
                         "llm_out": "Id | Sum ----+----- 1 | 5",
                         "query": "SELECT Id, Sum FROM Result WHERE Id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
                       }
                     }
                   },
@@ -5885,25 +5885,6 @@
                   "category": "basics",
                   "route_api_model": "google/gemini-3.1-pro-preview",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -5917,6 +5898,25 @@
                         "llm_out": "Id | Sum ----+----- 1 | 5",
                         "query": "SELECT Id, Sum FROM Result WHERE Id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
                       }
                     }
                   },
@@ -6765,25 +6765,6 @@
                   "category": "basics",
                   "route_api_model": "google/gemini-3-flash-preview",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -6797,6 +6778,25 @@
                         "llm_out": "Id | Sum ----+----- 1 | 5",
                         "query": "SELECT Id, Sum FROM Result WHERE Id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
                       }
                     }
                   },
@@ -7606,25 +7606,6 @@
                   "category": "basics",
                   "route_api_model": "deepseek-chat",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -7638,6 +7619,25 @@
                         "llm_out": "Id | Sum ----+----- 1 | 5",
                         "query": "SELECT Id, Sum FROM Result WHERE Id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
                       }
                     }
                   },
@@ -8540,6 +8540,25 @@
                   "category": "basics",
                   "route_api_model": "deepseek-reasoner",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -8553,25 +8572,6 @@
                         "llm_out": "Id | Sum ----+----- 1 | 5",
                         "query": "SELECT Id, Sum FROM Result WHERE Id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM Result WHERE Id=1 AND Sum=5"
                       }
                     }
                   },
@@ -8951,6 +8951,14 @@
         }
       ],
       "golden_answers": {
+        "auth/t_026_auth_identity_check": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Message\", Public = true)]\n    public partial struct Message\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        [Index.BTree]\n        public Identity Owner;\n        public string Text;\n    }\n\n    [Reducer]\n    public static void CreateMessage(ReducerContext ctx, string text)\n    {\n        ctx.Db.Message.Insert(new Message\n        {\n            Id = 0,\n            Owner = ctx.Sender,\n            Text = text,\n        });\n    }\n\n    [Reducer]\n    public static void DeleteMessage(ReducerContext ctx, ulong id)\n    {\n        var msg = ctx.Db.Message.Id.Find(id);\n        if (msg is not Message m)\n        {\n            throw new Exception(\"not found\");\n        }\n        if (m.Owner != ctx.Sender)\n        {\n            throw new Exception(\"unauthorized\");\n        }\n        ctx.Db.Message.Id.Delete(id);\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "auth/t_027_private_vs_public_table": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"UserInternal\")]\n    public partial struct UserInternal\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Name;\n        public string Email;\n        public string PasswordHash;\n    }\n\n    [Table(Accessor = \"UserPublic\", Public = true)]\n    public partial struct UserPublic\n    {\n        [PrimaryKey]\n        public ulong Id;\n        public string Name;\n    }\n\n    [Reducer]\n    public static void RegisterUser(ReducerContext ctx, string name, string email, string passwordHash)\n    {\n        var intern = ctx.Db.UserInternal.Insert(new UserInternal\n        {\n            Id = 0,\n            Name = name,\n            Email = email,\n            PasswordHash = passwordHash,\n        });\n        ctx.Db.UserPublic.Insert(new UserPublic\n        {\n            Id = intern.Id,\n            Name = name,\n        });\n    }\n}\n",
+          "syntax": "csharp"
+        },
         "basics/t_000_empty_reducers": {
           "answer": "using SpacetimeDB;\r\n\r\npublic static partial class Module\r\n{\r\n    [Reducer]\r\n    public static void EmptyReducer_NoArgs(ReducerContext ctx) { }\r\n\r\n    [Reducer]\r\n    public static void EmptyReducer_WithInt(ReducerContext ctx, int count) { }\r\n\r\n    [Reducer]\r\n    public static void EmptyReducer_WithString(ReducerContext ctx, string name) { }\r\n\r\n    [Reducer]\r\n    public static void EmptyReducer_WithTwoArgs(ReducerContext ctx, int count, string name) { }\r\n\r\n    [Reducer]\r\n    public static void EmptyReducer_WithThreeArgs(ReducerContext ctx, bool active, float ratio, string label) { }\r\n}",
           "syntax": "csharp"
@@ -8997,6 +9005,54 @@
         },
         "basics/t_011_helper_function": {
           "answer": "using SpacetimeDB;\r\n\r\npublic static partial class Module\r\n{\r\n    [Table(Name = \"results\")]\r\n    public partial struct Result\r\n    {\r\n        [PrimaryKey] public int Id;\r\n        public int Sum;\r\n    }\r\n\r\n    static int Add(int a, int b) => a + b;\r\n\r\n    [Reducer]\r\n    public static void ComputeSum(ReducerContext ctx, int id, int a, int b)\r\n    {\r\n        ctx.Db.results.Insert(new Result { Id = id, Sum = Add(a, b) });\r\n    }\r\n}\r\n",
+          "syntax": "csharp"
+        },
+        "basics/t_038_schedule_at_time": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Reminder\", Scheduled = nameof(SendReminder), ScheduledAt = nameof(Reminder.ScheduledAt))]\n    public partial struct Reminder\n    {\n        [PrimaryKey, AutoInc] public ulong ScheduledId;\n        public ScheduleAt ScheduledAt;\n        public string Message;\n    }\n\n    [Reducer]\n    public static void SendReminder(ReducerContext ctx, Reminder row) { }\n\n    [Reducer(ReducerKind.Init)]\n    public static void Init(ReducerContext ctx)\n    {\n        var delay = new TimeDuration { Microseconds = 60_000_000 };\n        ctx.Db.Reminder.Insert(new Reminder\n        {\n            ScheduledAt = new ScheduleAt.Time(ctx.Timestamp + delay),\n            Message = \"Hello!\",\n        });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "basics/t_039_cancel_schedule": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"CleanupJob\", Scheduled = nameof(RunCleanup), ScheduledAt = nameof(CleanupJob.ScheduledAt))]\n    public partial struct CleanupJob\n    {\n        [PrimaryKey, AutoInc] public ulong ScheduledId;\n        public ScheduleAt ScheduledAt;\n    }\n\n    [Reducer]\n    public static void RunCleanup(ReducerContext ctx, CleanupJob row) { }\n\n    [Reducer(ReducerKind.Init)]\n    public static void Init(ReducerContext ctx)\n    {\n        ctx.Db.CleanupJob.Insert(new CleanupJob\n        {\n            ScheduledAt = new ScheduleAt.Interval(new TimeDuration { Microseconds = 60_000_000 }),\n        });\n    }\n\n    [Reducer]\n    public static void CancelCleanup(ReducerContext ctx, ulong scheduledId)\n    {\n        ctx.Db.CleanupJob.ScheduledId.Delete(scheduledId);\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "basics/t_040_lifecycle_player": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"OnlinePlayer\", Public = true)]\n    public partial struct OnlinePlayer\n    {\n        [PrimaryKey]\n        public Identity Identity;\n        public Timestamp ConnectedAt;\n    }\n\n    [Reducer(ReducerKind.ClientConnected)]\n    public static void ClientConnected(ReducerContext ctx)\n    {\n        ctx.Db.OnlinePlayer.Insert(new OnlinePlayer\n        {\n            Identity = ctx.Sender,\n            ConnectedAt = ctx.Timestamp,\n        });\n    }\n\n    [Reducer(ReducerKind.ClientDisconnected)]\n    public static void ClientDisconnected(ReducerContext ctx)\n    {\n        ctx.Db.OnlinePlayer.Identity.Delete(ctx.Sender);\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "data_modeling/t_024_event_table": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"DamageEvent\", Public = true, Event = true)]\n    public partial struct DamageEvent\n    {\n        public ulong EntityId;\n        public uint Damage;\n        public string Source;\n    }\n\n    [Reducer]\n    public static void DealDamage(ReducerContext ctx, ulong entityId, uint damage, string source)\n    {\n        ctx.Db.DamageEvent.Insert(new DamageEvent\n        {\n            EntityId = entityId,\n            Damage = damage,\n            Source = source,\n        });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "data_modeling/t_025_optional_fields": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Player\")]\n    public partial struct Player\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Name;\n        public string? Nickname;\n        public uint? HighScore;\n    }\n\n    [Reducer]\n    public static void CreatePlayer(ReducerContext ctx, string name, string? nickname, uint? highScore)\n    {\n        ctx.Db.Player.Insert(new Player\n        {\n            Id = 0,\n            Name = name,\n            Nickname = nickname,\n            HighScore = highScore,\n        });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "data_modeling/t_031_unique_constraint": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Account\")]\n    public partial struct Account\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        [Unique]\n        public string Email;\n        public string DisplayName;\n    }\n\n    [Reducer]\n    public static void CreateAccount(ReducerContext ctx, string email, string displayName)\n    {\n        ctx.Db.Account.Insert(new Account\n        {\n            Id = 0,\n            Email = email,\n            DisplayName = displayName,\n        });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "queries/t_032_range_query": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Product\")]\n    public partial struct Product\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Name;\n        [Index.BTree]\n        public uint Price;\n    }\n\n    [Table(Accessor = \"PriceRangeResult\")]\n    public partial struct PriceRangeResult\n    {\n        [PrimaryKey]\n        public ulong ProductId;\n        public string Name;\n        public uint Price;\n    }\n\n    [Reducer]\n    public static void FindInPriceRange(ReducerContext ctx, uint minPrice, uint maxPrice)\n    {\n        foreach (var p in ctx.Db.Product.Iter())\n        {\n            if (p.Price >= minPrice && p.Price <= maxPrice)\n            {\n                ctx.Db.PriceRangeResult.Insert(new PriceRangeResult\n                {\n                    ProductId = p.Id,\n                    Name = p.Name,\n                    Price = p.Price,\n                });\n            }\n        }\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "queries/t_033_sort_and_limit": {
+          "answer": "using SpacetimeDB;\nusing System.Linq;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Player\")]\n    public partial struct Player\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Name;\n        public ulong Score;\n    }\n\n    [Table(Accessor = \"Leaderboard\")]\n    public partial struct LeaderboardEntry\n    {\n        [PrimaryKey]\n        public uint Rank;\n        public string PlayerName;\n        public ulong Score;\n    }\n\n    [Reducer]\n    public static void BuildLeaderboard(ReducerContext ctx, uint limit)\n    {\n        var players = ctx.Db.Player.Iter()\n            .OrderByDescending(p => p.Score)\n            .Take((int)limit)\n            .ToList();\n\n        for (int i = 0; i < players.Count; i++)\n        {\n            ctx.Db.Leaderboard.Insert(new LeaderboardEntry\n            {\n                Rank = (uint)(i + 1),\n                PlayerName = players[i].Name,\n                Score = players[i].Score,\n            });\n        }\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "queries/t_034_find_first": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Task\")]\n    public partial struct Task\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Title;\n        public bool Completed;\n    }\n\n    [Table(Accessor = \"FirstIncomplete\")]\n    public partial struct FirstIncomplete\n    {\n        [PrimaryKey]\n        public ulong TaskId;\n        public string Title;\n    }\n\n    [Reducer]\n    public static void FindFirstIncomplete(ReducerContext ctx)\n    {\n        foreach (var t in ctx.Db.Task.Iter())\n        {\n            if (!t.Completed)\n            {\n                ctx.Db.FirstIncomplete.Insert(new FirstIncomplete\n                {\n                    TaskId = t.Id,\n                    Title = t.Title,\n                });\n                return;\n            }\n        }\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "queries/t_035_select_distinct": {
+          "answer": "using SpacetimeDB;\nusing System.Collections.Generic;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Order\")]\n    public partial struct Order\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Category;\n        public uint Amount;\n    }\n\n    [Table(Accessor = \"DistinctCategory\")]\n    public partial struct DistinctCategory\n    {\n        [PrimaryKey]\n        public string Category;\n    }\n\n    [Reducer]\n    public static void CollectDistinctCategories(ReducerContext ctx)\n    {\n        var categories = new HashSet<string>();\n        foreach (var o in ctx.Db.Order.Iter())\n        {\n            categories.Add(o.Category);\n        }\n        foreach (var category in categories)\n        {\n            ctx.Db.DistinctCategory.Insert(new DistinctCategory { Category = category });\n        }\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "queries/t_036_count_without_collect": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"User\")]\n    public partial struct User\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Name;\n        public bool Active;\n    }\n\n    [Table(Accessor = \"UserStats\")]\n    public partial struct UserStats\n    {\n        [PrimaryKey]\n        public string Key;\n        public ulong Count;\n    }\n\n    [Reducer]\n    public static void ComputeUserCounts(ReducerContext ctx)\n    {\n        ulong total = 0;\n        ulong active = 0;\n        foreach (var u in ctx.Db.User.Iter())\n        {\n            total++;\n            if (u.Active)\n            {\n                active++;\n            }\n        }\n\n        ctx.Db.UserStats.Insert(new UserStats { Key = \"total\", Count = total });\n        ctx.Db.UserStats.Insert(new UserStats { Key = \"active\", Count = active });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "queries/t_037_multi_column_filter": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"EventLog\")]\n    [SpacetimeDB.Index.BTree(Accessor = \"by_category_severity\", Columns = new[] { nameof(EventLog.Category), nameof(EventLog.Severity) })]\n    public partial struct EventLog\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Category;\n        public uint Severity;\n        public string Message;\n    }\n\n    [Table(Accessor = \"FilteredEvent\")]\n    public partial struct FilteredEvent\n    {\n        [PrimaryKey]\n        public ulong EventId;\n        public string Message;\n    }\n\n    [Reducer]\n    public static void FilterEvents(ReducerContext ctx, string category, uint severity)\n    {\n        foreach (var e in ctx.Db.EventLog.Iter())\n        {\n            if (e.Category == category && e.Severity == severity)\n            {\n                ctx.Db.FilteredEvent.Insert(new FilteredEvent\n                {\n                    EventId = e.Id,\n                    Message = e.Message,\n                });\n            }\n        }\n    }\n}\n",
           "syntax": "csharp"
         },
         "schema/t_012_spacetime_product_type": {
@@ -9125,6 +9181,102 @@
         },
         "t_021_multi_column_index": {
           "answer": "using SpacetimeDB;\r\n\r\npublic static partial class Module\r\n{\r\n    [Table(Accessor = \"Log\")]\r\n    [SpacetimeDB.Index.BTree(Accessor = \"by_user_day\", Columns = new[] { nameof(UserId), nameof(Day) })]\r\n    public partial struct Log\r\n    {\r\n        [PrimaryKey] public int Id;\r\n        public int UserId;\r\n        public int Day;\r\n        public string Message;\r\n    }\r\n\r\n    [Reducer]\r\n    public static void Seed(ReducerContext ctx)\r\n    {\r\n        ctx.Db.Log.Insert(new Log { Id = 1, UserId = 7, Day = 1, Message = \"a\" });\r\n        ctx.Db.Log.Insert(new Log { Id = 2, UserId = 7, Day = 2, Message = \"b\" });\r\n        ctx.Db.Log.Insert(new Log { Id = 3, UserId = 9, Day = 1, Message = \"c\" });\r\n    }\r\n}\r\n",
+          "syntax": "csharp"
+        },
+        "t_022_view_basic": {
+          "answer": "using SpacetimeDB;\nusing System.Collections.Generic;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Announcement\", Public = true)]\n    [SpacetimeDB.Index.BTree(Columns = new[] { nameof(Announcement.Active) })]\n    public partial struct Announcement\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Message;\n        public bool Active;\n    }\n\n    [SpacetimeDB.View(Accessor = \"ActiveAnnouncements\", Public = true)]\n    public static IEnumerable<Announcement> ActiveAnnouncements(AnonymousViewContext ctx)\n    {\n        return ctx.Db.Announcement.Active.Filter(true);\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_023_view_per_user": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Profile\", Public = true)]\n    public partial struct Profile\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        [Unique]\n        public Identity Identity;\n        public string Name;\n        public string Bio;\n    }\n\n    [SpacetimeDB.View(Accessor = \"MyProfile\", Public = true)]\n    public static Profile? MyProfile(ViewContext ctx)\n    {\n        return ctx.Db.Profile.Identity.Find(ctx.Sender) as Profile?;\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_024_event_table": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"DamageEvent\", Public = true, Event = true)]\n    public partial struct DamageEvent\n    {\n        public ulong EntityId;\n        public uint Damage;\n        public string Source;\n    }\n\n    [Reducer]\n    public static void DealDamage(ReducerContext ctx, ulong entityId, uint damage, string source)\n    {\n        ctx.Db.DamageEvent.Insert(new DamageEvent\n        {\n            EntityId = entityId,\n            Damage = damage,\n            Source = source,\n        });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_025_optional_fields": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Player\")]\n    public partial struct Player\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Name;\n        public string? Nickname;\n        public uint? HighScore;\n    }\n\n    [Reducer]\n    public static void CreatePlayer(ReducerContext ctx, string name, string? nickname, uint? highScore)\n    {\n        ctx.Db.Player.Insert(new Player\n        {\n            Id = 0,\n            Name = name,\n            Nickname = nickname,\n            HighScore = highScore,\n        });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_026_auth_identity_check": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Message\", Public = true)]\n    public partial struct Message\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        [Index.BTree]\n        public Identity Owner;\n        public string Text;\n    }\n\n    [Reducer]\n    public static void CreateMessage(ReducerContext ctx, string text)\n    {\n        ctx.Db.Message.Insert(new Message\n        {\n            Id = 0,\n            Owner = ctx.Sender,\n            Text = text,\n        });\n    }\n\n    [Reducer]\n    public static void DeleteMessage(ReducerContext ctx, ulong id)\n    {\n        var msg = ctx.Db.Message.Id.Find(id);\n        if (msg is not Message m)\n        {\n            throw new Exception(\"not found\");\n        }\n        if (m.Owner != ctx.Sender)\n        {\n            throw new Exception(\"unauthorized\");\n        }\n        ctx.Db.Message.Id.Delete(id);\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_027_private_vs_public_table": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"UserInternal\")]\n    public partial struct UserInternal\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Name;\n        public string Email;\n        public string PasswordHash;\n    }\n\n    [Table(Accessor = \"UserPublic\", Public = true)]\n    public partial struct UserPublic\n    {\n        [PrimaryKey]\n        public ulong Id;\n        public string Name;\n    }\n\n    [Reducer]\n    public static void RegisterUser(ReducerContext ctx, string name, string email, string passwordHash)\n    {\n        var intern = ctx.Db.UserInternal.Insert(new UserInternal\n        {\n            Id = 0,\n            Name = name,\n            Email = email,\n            PasswordHash = passwordHash,\n        });\n        ctx.Db.UserPublic.Insert(new UserPublic\n        {\n            Id = intern.Id,\n            Name = name,\n        });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_028_cascade_delete": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Author\")]\n    public partial struct Author\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Name;\n    }\n\n    [Table(Accessor = \"Post\")]\n    public partial struct Post\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        [Index.BTree]\n        public ulong AuthorId;\n        public string Title;\n    }\n\n    [Reducer]\n    public static void DeleteAuthor(ReducerContext ctx, ulong authorId)\n    {\n        // Delete all posts by this author\n        foreach (var p in ctx.Db.Post.AuthorId.Filter(authorId))\n        {\n            ctx.Db.Post.Id.Delete(p.Id);\n        }\n        // Delete the author\n        ctx.Db.Author.Id.Delete(authorId);\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_029_filter_and_aggregate": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Order\")]\n    public partial struct Order\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        [Index.BTree]\n        public string Category;\n        public ulong Amount;\n        public bool Fulfilled;\n    }\n\n    [Table(Accessor = \"CategoryStats\")]\n    public partial struct CategoryStats\n    {\n        [PrimaryKey]\n        public string Category;\n        public ulong TotalAmount;\n        public uint OrderCount;\n    }\n\n    [Reducer]\n    public static void ComputeStats(ReducerContext ctx, string category)\n    {\n        ulong totalAmount = 0;\n        uint orderCount = 0;\n\n        foreach (var o in ctx.Db.Order.Category.Filter(category))\n        {\n            totalAmount += o.Amount;\n            orderCount += 1;\n        }\n\n        // Upsert: delete existing then insert\n        ctx.Db.CategoryStats.Category.Delete(category);\n        ctx.Db.CategoryStats.Insert(new CategoryStats\n        {\n            Category = category,\n            TotalAmount = totalAmount,\n            OrderCount = orderCount,\n        });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_030_two_table_join": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Customer\")]\n    public partial struct Customer\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Name;\n    }\n\n    [Table(Accessor = \"Order\")]\n    public partial struct Order\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        [Index.BTree]\n        public ulong CustomerId;\n        public string Product;\n        public uint Amount;\n    }\n\n    [Table(Accessor = \"OrderDetail\")]\n    public partial struct OrderDetail\n    {\n        [PrimaryKey]\n        public ulong OrderId;\n        public string CustomerName;\n        public string Product;\n        public uint Amount;\n    }\n\n    [Reducer]\n    public static void BuildOrderDetails(ReducerContext ctx)\n    {\n        foreach (var o in ctx.Db.Order.Iter())\n        {\n            if (ctx.Db.Customer.Id.Find(o.CustomerId) is Customer c)\n            {\n                ctx.Db.OrderDetail.Insert(new OrderDetail\n                {\n                    OrderId = o.Id,\n                    CustomerName = c.Name,\n                    Product = o.Product,\n                    Amount = o.Amount,\n                });\n            }\n        }\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_031_unique_constraint": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Account\")]\n    public partial struct Account\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        [Unique]\n        public string Email;\n        public string DisplayName;\n    }\n\n    [Reducer]\n    public static void CreateAccount(ReducerContext ctx, string email, string displayName)\n    {\n        ctx.Db.Account.Insert(new Account\n        {\n            Id = 0,\n            Email = email,\n            DisplayName = displayName,\n        });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_032_range_query": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Product\")]\n    public partial struct Product\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Name;\n        [Index.BTree]\n        public uint Price;\n    }\n\n    [Table(Accessor = \"PriceRangeResult\")]\n    public partial struct PriceRangeResult\n    {\n        [PrimaryKey]\n        public ulong ProductId;\n        public string Name;\n        public uint Price;\n    }\n\n    [Reducer]\n    public static void FindInPriceRange(ReducerContext ctx, uint minPrice, uint maxPrice)\n    {\n        foreach (var p in ctx.Db.Product.Iter())\n        {\n            if (p.Price >= minPrice && p.Price <= maxPrice)\n            {\n                ctx.Db.PriceRangeResult.Insert(new PriceRangeResult\n                {\n                    ProductId = p.Id,\n                    Name = p.Name,\n                    Price = p.Price,\n                });\n            }\n        }\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_033_sort_and_limit": {
+          "answer": "using SpacetimeDB;\nusing System.Linq;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Player\")]\n    public partial struct Player\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Name;\n        public ulong Score;\n    }\n\n    [Table(Accessor = \"Leaderboard\")]\n    public partial struct LeaderboardEntry\n    {\n        [PrimaryKey]\n        public uint Rank;\n        public string PlayerName;\n        public ulong Score;\n    }\n\n    [Reducer]\n    public static void BuildLeaderboard(ReducerContext ctx, uint limit)\n    {\n        var players = ctx.Db.Player.Iter()\n            .OrderByDescending(p => p.Score)\n            .Take((int)limit)\n            .ToList();\n\n        for (int i = 0; i < players.Count; i++)\n        {\n            ctx.Db.Leaderboard.Insert(new LeaderboardEntry\n            {\n                Rank = (uint)(i + 1),\n                PlayerName = players[i].Name,\n                Score = players[i].Score,\n            });\n        }\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_034_find_first": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Task\")]\n    public partial struct Task\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Title;\n        public bool Completed;\n    }\n\n    [Table(Accessor = \"FirstIncomplete\")]\n    public partial struct FirstIncomplete\n    {\n        [PrimaryKey]\n        public ulong TaskId;\n        public string Title;\n    }\n\n    [Reducer]\n    public static void FindFirstIncomplete(ReducerContext ctx)\n    {\n        foreach (var t in ctx.Db.Task.Iter())\n        {\n            if (!t.Completed)\n            {\n                ctx.Db.FirstIncomplete.Insert(new FirstIncomplete\n                {\n                    TaskId = t.Id,\n                    Title = t.Title,\n                });\n                return;\n            }\n        }\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_035_select_distinct": {
+          "answer": "using SpacetimeDB;\nusing System.Collections.Generic;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Order\")]\n    public partial struct Order\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Category;\n        public uint Amount;\n    }\n\n    [Table(Accessor = \"DistinctCategory\")]\n    public partial struct DistinctCategory\n    {\n        [PrimaryKey]\n        public string Category;\n    }\n\n    [Reducer]\n    public static void CollectDistinctCategories(ReducerContext ctx)\n    {\n        var categories = new HashSet<string>();\n        foreach (var o in ctx.Db.Order.Iter())\n        {\n            categories.Add(o.Category);\n        }\n        foreach (var category in categories)\n        {\n            ctx.Db.DistinctCategory.Insert(new DistinctCategory { Category = category });\n        }\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_036_count_without_collect": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"User\")]\n    public partial struct User\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Name;\n        public bool Active;\n    }\n\n    [Table(Accessor = \"UserStats\")]\n    public partial struct UserStats\n    {\n        [PrimaryKey]\n        public string Key;\n        public ulong Count;\n    }\n\n    [Reducer]\n    public static void ComputeUserCounts(ReducerContext ctx)\n    {\n        ulong total = 0;\n        ulong active = 0;\n        foreach (var u in ctx.Db.User.Iter())\n        {\n            total++;\n            if (u.Active)\n            {\n                active++;\n            }\n        }\n\n        ctx.Db.UserStats.Insert(new UserStats { Key = \"total\", Count = total });\n        ctx.Db.UserStats.Insert(new UserStats { Key = \"active\", Count = active });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_037_multi_column_filter": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"EventLog\")]\n    [SpacetimeDB.Index.BTree(Accessor = \"by_category_severity\", Columns = new[] { nameof(EventLog.Category), nameof(EventLog.Severity) })]\n    public partial struct EventLog\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Category;\n        public uint Severity;\n        public string Message;\n    }\n\n    [Table(Accessor = \"FilteredEvent\")]\n    public partial struct FilteredEvent\n    {\n        [PrimaryKey]\n        public ulong EventId;\n        public string Message;\n    }\n\n    [Reducer]\n    public static void FilterEvents(ReducerContext ctx, string category, uint severity)\n    {\n        foreach (var e in ctx.Db.EventLog.Iter())\n        {\n            if (e.Category == category && e.Severity == severity)\n            {\n                ctx.Db.FilteredEvent.Insert(new FilteredEvent\n                {\n                    EventId = e.Id,\n                    Message = e.Message,\n                });\n            }\n        }\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_038_schedule_at_time": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Reminder\", Scheduled = nameof(SendReminder), ScheduledAt = nameof(Reminder.ScheduledAt))]\n    public partial struct Reminder\n    {\n        [PrimaryKey, AutoInc] public ulong ScheduledId;\n        public ScheduleAt ScheduledAt;\n        public string Message;\n    }\n\n    [Reducer]\n    public static void SendReminder(ReducerContext ctx, Reminder row) { }\n\n    [Reducer(ReducerKind.Init)]\n    public static void Init(ReducerContext ctx)\n    {\n        var delay = new TimeDuration { Microseconds = 60_000_000 };\n        ctx.Db.Reminder.Insert(new Reminder\n        {\n            ScheduledAt = new ScheduleAt.Time(ctx.Timestamp + delay),\n            Message = \"Hello!\",\n        });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_039_cancel_schedule": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"CleanupJob\", Scheduled = nameof(RunCleanup), ScheduledAt = nameof(CleanupJob.ScheduledAt))]\n    public partial struct CleanupJob\n    {\n        [PrimaryKey, AutoInc] public ulong ScheduledId;\n        public ScheduleAt ScheduledAt;\n    }\n\n    [Reducer]\n    public static void RunCleanup(ReducerContext ctx, CleanupJob row) { }\n\n    [Reducer(ReducerKind.Init)]\n    public static void Init(ReducerContext ctx)\n    {\n        ctx.Db.CleanupJob.Insert(new CleanupJob\n        {\n            ScheduledAt = new ScheduleAt.Interval(new TimeDuration { Microseconds = 60_000_000 }),\n        });\n    }\n\n    [Reducer]\n    public static void CancelCleanup(ReducerContext ctx, ulong scheduledId)\n    {\n        ctx.Db.CleanupJob.ScheduledId.Delete(scheduledId);\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_040_lifecycle_player": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"OnlinePlayer\", Public = true)]\n    public partial struct OnlinePlayer\n    {\n        [PrimaryKey]\n        public Identity Identity;\n        public Timestamp ConnectedAt;\n    }\n\n    [Reducer(ReducerKind.ClientConnected)]\n    public static void ClientConnected(ReducerContext ctx)\n    {\n        ctx.Db.OnlinePlayer.Insert(new OnlinePlayer\n        {\n            Identity = ctx.Sender,\n            ConnectedAt = ctx.Timestamp,\n        });\n    }\n\n    [Reducer(ReducerKind.ClientDisconnected)]\n    public static void ClientDisconnected(ReducerContext ctx)\n    {\n        ctx.Db.OnlinePlayer.Identity.Delete(ctx.Sender);\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "views/t_022_view_basic": {
+          "answer": "using SpacetimeDB;\nusing System.Collections.Generic;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Announcement\", Public = true)]\n    [SpacetimeDB.Index.BTree(Columns = new[] { nameof(Announcement.Active) })]\n    public partial struct Announcement\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Message;\n        public bool Active;\n    }\n\n    [SpacetimeDB.View(Accessor = \"ActiveAnnouncements\", Public = true)]\n    public static IEnumerable<Announcement> ActiveAnnouncements(AnonymousViewContext ctx)\n    {\n        return ctx.Db.Announcement.Active.Filter(true);\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "views/t_023_view_per_user": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Profile\", Public = true)]\n    public partial struct Profile\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        [Unique]\n        public Identity Identity;\n        public string Name;\n        public string Bio;\n    }\n\n    [SpacetimeDB.View(Accessor = \"MyProfile\", Public = true)]\n    public static Profile? MyProfile(ViewContext ctx)\n    {\n        return ctx.Db.Profile.Identity.Find(ctx.Sender) as Profile?;\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "write_patterns/t_028_cascade_delete": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Author\")]\n    public partial struct Author\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Name;\n    }\n\n    [Table(Accessor = \"Post\")]\n    public partial struct Post\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        [Index.BTree]\n        public ulong AuthorId;\n        public string Title;\n    }\n\n    [Reducer]\n    public static void DeleteAuthor(ReducerContext ctx, ulong authorId)\n    {\n        // Delete all posts by this author\n        foreach (var p in ctx.Db.Post.AuthorId.Filter(authorId))\n        {\n            ctx.Db.Post.Id.Delete(p.Id);\n        }\n        // Delete the author\n        ctx.Db.Author.Id.Delete(authorId);\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "write_patterns/t_029_filter_and_aggregate": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Order\")]\n    public partial struct Order\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        [Index.BTree]\n        public string Category;\n        public ulong Amount;\n        public bool Fulfilled;\n    }\n\n    [Table(Accessor = \"CategoryStats\")]\n    public partial struct CategoryStats\n    {\n        [PrimaryKey]\n        public string Category;\n        public ulong TotalAmount;\n        public uint OrderCount;\n    }\n\n    [Reducer]\n    public static void ComputeStats(ReducerContext ctx, string category)\n    {\n        ulong totalAmount = 0;\n        uint orderCount = 0;\n\n        foreach (var o in ctx.Db.Order.Category.Filter(category))\n        {\n            totalAmount += o.Amount;\n            orderCount += 1;\n        }\n\n        // Upsert: delete existing then insert\n        ctx.Db.CategoryStats.Category.Delete(category);\n        ctx.Db.CategoryStats.Insert(new CategoryStats\n        {\n            Category = category,\n            TotalAmount = totalAmount,\n            OrderCount = orderCount,\n        });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "write_patterns/t_030_two_table_join": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Accessor = \"Customer\")]\n    public partial struct Customer\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        public string Name;\n    }\n\n    [Table(Accessor = \"Order\")]\n    public partial struct Order\n    {\n        [PrimaryKey]\n        [AutoInc]\n        public ulong Id;\n        [Index.BTree]\n        public ulong CustomerId;\n        public string Product;\n        public uint Amount;\n    }\n\n    [Table(Accessor = \"OrderDetail\")]\n    public partial struct OrderDetail\n    {\n        [PrimaryKey]\n        public ulong OrderId;\n        public string CustomerName;\n        public string Product;\n        public uint Amount;\n    }\n\n    [Reducer]\n    public static void BuildOrderDetails(ReducerContext ctx)\n    {\n        foreach (var o in ctx.Db.Order.Iter())\n        {\n            if (ctx.Db.Customer.Id.Find(o.CustomerId) is Customer c)\n            {\n                ctx.Db.OrderDetail.Insert(new OrderDetail\n                {\n                    OrderId = o.Id,\n                    CustomerName = c.Name,\n                    Product = o.Product,\n                    Amount = o.Amount,\n                });\n            }\n        }\n    }\n}\n",
           "syntax": "csharp"
         }
       }
@@ -10416,25 +10568,6 @@
                   "category": "basics",
                   "route_api_model": "grok-code-fast-1",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -10448,6 +10581,25 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -11340,6 +11492,25 @@
                   "category": "basics",
                   "route_api_model": "claude-sonnet-4-6",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -11353,25 +11524,6 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -12264,6 +12416,25 @@
                   "category": "basics",
                   "route_api_model": "claude-opus-4-6",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -12277,25 +12448,6 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -13165,6 +13317,25 @@
                   "category": "basics",
                   "route_api_model": "gemini-3.1-pro-preview",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -13178,25 +13349,6 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -14041,6 +14193,25 @@
                   "category": "basics",
                   "route_api_model": "gemini-3-flash-preview",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -14054,25 +14225,6 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -14964,6 +15116,25 @@
                   "category": "basics",
                   "route_api_model": "gpt-5.2-codex",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -14977,25 +15148,6 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -15844,25 +15996,6 @@
                   "category": "basics",
                   "route_api_model": "gpt-5-mini",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -15876,6 +16009,25 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -16738,25 +16890,6 @@
                   "category": "basics",
                   "route_api_model": "deepseek-chat",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -16770,6 +16903,25 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -17621,6 +17773,25 @@
                   "category": "basics",
                   "route_api_model": "deepseek-reasoner",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -17634,25 +17805,6 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -19300,6 +19452,14 @@
         }
       ],
       "golden_answers": {
+        "auth/t_026_auth_identity_check": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\nuse spacetimedb::Identity;\n\n#[table(accessor = message, public)]\npub struct Message {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    #[index(btree)]\n    pub owner: Identity,\n    pub text: String,\n}\n\n#[reducer]\npub fn create_message(ctx: &ReducerContext, text: String) {\n    ctx.db.message().insert(Message {\n        id: 0,\n        owner: ctx.sender(),\n        text,\n    });\n}\n\n#[reducer]\npub fn delete_message(ctx: &ReducerContext, id: u64) {\n    let msg = ctx.db.message().id().find(id).expect(\"not found\");\n    if msg.owner != ctx.sender() {\n        panic!(\"unauthorized\");\n    }\n    ctx.db.message().id().delete(id);\n}\n",
+          "syntax": "rust"
+        },
+        "auth/t_027_private_vs_public_table": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(accessor = user_internal)]\npub struct UserInternal {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub name: String,\n    pub email: String,\n    pub password_hash: String,\n}\n\n#[table(accessor = user_public, public)]\npub struct UserPublic {\n    #[primary_key]\n    pub id: u64,\n    pub name: String,\n}\n\n#[reducer]\npub fn register_user(ctx: &ReducerContext, name: String, email: String, password_hash: String) {\n    let internal = ctx.db.user_internal().insert(UserInternal {\n        id: 0,\n        name: name.clone(),\n        email,\n        password_hash,\n    });\n    ctx.db.user_public().insert(UserPublic {\n        id: internal.id,\n        name,\n    });\n}\n",
+          "syntax": "rust"
+        },
         "basics/t_000_empty_reducers": {
           "answer": "use spacetimedb::{reducer, ReducerContext};\r\n\r\n#[reducer]\r\npub fn empty_reducer_no_args(ctx: &ReducerContext) -> Result<(), String> {\r\n    Ok(())\r\n}\r\n\r\n#[reducer]\r\npub fn empty_reducer_with_int(ctx: &ReducerContext, count: i32) -> Result<(), String> {\r\n    Ok(())\r\n}\r\n\r\n#[reducer]\r\npub fn empty_reducer_with_string(ctx: &ReducerContext, name: String) -> Result<(), String> {\r\n    Ok(())\r\n}\r\n\r\n#[reducer]\r\npub fn empty_reducer_with_two_args(ctx: &ReducerContext, count: i32, name: String) -> Result<(), String> {\r\n    Ok(())\r\n}\r\n\r\n#[reducer]\r\npub fn empty_reducer_with_three_args(\r\n    ctx: &ReducerContext,\r\n    active: bool,\r\n    ratio: f32,\r\n    label: String,\r\n) -> Result<(), String> {\r\n    Ok(())\r\n}\r\n",
           "syntax": "rust"
@@ -19346,6 +19506,54 @@
         },
         "basics/t_011_helper_function": {
           "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\r\n\r\n#[table(name = results)]\r\npub struct ResultRow {\r\n    #[primary_key]\r\n    pub id: i32,\r\n    pub sum: i32,\r\n}\r\n\r\nfn add(a: i32, b: i32) -> i32 { a + b }\r\n\r\n#[reducer]\r\npub fn compute_sum(ctx: &ReducerContext, id: i32, a: i32, b: i32) {\r\n    ctx.db.results().insert(ResultRow { id, sum: add(a, b) });\r\n}\r\n",
+          "syntax": "rust"
+        },
+        "basics/t_038_schedule_at_time": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, ScheduleAt, Table};\nuse std::time::Duration;\n\n#[table(accessor = reminder, scheduled(send_reminder))]\npub struct Reminder {\n    #[primary_key]\n    #[auto_inc]\n    scheduled_id: u64,\n    scheduled_at: ScheduleAt,\n    message: String,\n}\n\n#[reducer]\npub fn send_reminder(_ctx: &ReducerContext, _row: Reminder) {}\n\n#[reducer(init)]\npub fn init(ctx: &ReducerContext) {\n    let fire_at = ctx.timestamp + Duration::from_secs(60);\n    ctx.db.reminder().insert(Reminder {\n        scheduled_id: 0,\n        scheduled_at: ScheduleAt::Time(fire_at),\n        message: \"Hello!\".to_string(),\n    });\n}\n",
+          "syntax": "rust"
+        },
+        "basics/t_039_cancel_schedule": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, ScheduleAt, Table};\nuse std::time::Duration;\n\n#[table(accessor = cleanup_job, scheduled(run_cleanup))]\npub struct CleanupJob {\n    #[primary_key]\n    #[auto_inc]\n    scheduled_id: u64,\n    scheduled_at: ScheduleAt,\n}\n\n#[reducer]\npub fn run_cleanup(_ctx: &ReducerContext, _row: CleanupJob) {}\n\n#[reducer(init)]\npub fn init(ctx: &ReducerContext) {\n    ctx.db.cleanup_job().insert(CleanupJob {\n        scheduled_id: 0,\n        scheduled_at: ScheduleAt::Interval(Duration::from_secs(60).into()),\n    });\n}\n\n#[reducer]\npub fn cancel_cleanup(ctx: &ReducerContext, scheduled_id: u64) {\n    ctx.db.cleanup_job().scheduled_id().delete(&scheduled_id);\n}\n",
+          "syntax": "rust"
+        },
+        "basics/t_040_lifecycle_player": {
+          "answer": "use spacetimedb::{reducer, table, Identity, ReducerContext, Table, Timestamp};\n\n#[table(accessor = online_player, public)]\npub struct OnlinePlayer {\n    #[primary_key]\n    pub identity: Identity,\n    pub connected_at: Timestamp,\n}\n\n#[reducer(client_connected)]\npub fn client_connected(ctx: &ReducerContext) {\n    ctx.db.online_player().insert(OnlinePlayer {\n        identity: ctx.sender(),\n        connected_at: ctx.timestamp,\n    });\n}\n\n#[reducer(client_disconnected)]\npub fn client_disconnected(ctx: &ReducerContext) {\n    ctx.db.online_player().identity().delete(&ctx.sender());\n}\n",
+          "syntax": "rust"
+        },
+        "data_modeling/t_024_event_table": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(accessor = damage_event, public, event)]\npub struct DamageEvent {\n    pub entity_id: u64,\n    pub damage: u32,\n    pub source: String,\n}\n\n#[reducer]\nfn deal_damage(ctx: &ReducerContext, entity_id: u64, damage: u32, source: String) {\n    ctx.db.damage_event().insert(DamageEvent {\n        entity_id,\n        damage,\n        source,\n    });\n}\n",
+          "syntax": "rust"
+        },
+        "data_modeling/t_025_optional_fields": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(accessor = player)]\npub struct Player {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub name: String,\n    pub nickname: Option<String>,\n    pub high_score: Option<u32>,\n}\n\n#[reducer]\npub fn create_player(ctx: &ReducerContext, name: String, nickname: Option<String>, high_score: Option<u32>) {\n    ctx.db.player().insert(Player {\n        id: 0,\n        name,\n        nickname,\n        high_score,\n    });\n}\n",
+          "syntax": "rust"
+        },
+        "data_modeling/t_031_unique_constraint": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(accessor = account)]\npub struct Account {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    #[unique]\n    pub email: String,\n    pub display_name: String,\n}\n\n#[reducer]\npub fn create_account(ctx: &ReducerContext, email: String, display_name: String) {\n    ctx.db.account().insert(Account {\n        id: 0,\n        email,\n        display_name,\n    });\n}\n",
+          "syntax": "rust"
+        },
+        "queries/t_032_range_query": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(accessor = product)]\npub struct Product {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub name: String,\n    #[index(btree)]\n    pub price: u32,\n}\n\n#[table(accessor = price_range_result)]\npub struct PriceRangeResult {\n    #[primary_key]\n    pub product_id: u64,\n    pub name: String,\n    pub price: u32,\n}\n\n#[reducer]\npub fn find_in_price_range(ctx: &ReducerContext, min_price: u32, max_price: u32) {\n    for p in ctx.db.product().iter() {\n        if p.price >= min_price && p.price <= max_price {\n            ctx.db.price_range_result().insert(PriceRangeResult {\n                product_id: p.id,\n                name: p.name,\n                price: p.price,\n            });\n        }\n    }\n}\n",
+          "syntax": "rust"
+        },
+        "queries/t_033_sort_and_limit": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(accessor = player)]\npub struct Player {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub name: String,\n    pub score: u64,\n}\n\n#[table(accessor = leaderboard)]\npub struct LeaderboardEntry {\n    #[primary_key]\n    pub rank: u32,\n    pub player_name: String,\n    pub score: u64,\n}\n\n#[reducer]\npub fn build_leaderboard(ctx: &ReducerContext, limit: u32) {\n    let mut players: Vec<Player> = ctx.db.player().iter().collect();\n    players.sort_by(|a, b| b.score.cmp(&a.score));\n\n    for (i, p) in players.into_iter().take(limit as usize).enumerate() {\n        ctx.db.leaderboard().insert(LeaderboardEntry {\n            rank: (i as u32) + 1,\n            player_name: p.name,\n            score: p.score,\n        });\n    }\n}\n",
+          "syntax": "rust"
+        },
+        "queries/t_034_find_first": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(accessor = task)]\npub struct Task {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub title: String,\n    pub completed: bool,\n}\n\n#[table(accessor = first_incomplete)]\npub struct FirstIncomplete {\n    #[primary_key]\n    pub task_id: u64,\n    pub title: String,\n}\n\n#[reducer]\npub fn find_first_incomplete(ctx: &ReducerContext) {\n    if let Some(t) = ctx.db.task().iter().find(|t| !t.completed) {\n        ctx.db.first_incomplete().insert(FirstIncomplete {\n            task_id: t.id,\n            title: t.title,\n        });\n    }\n}\n",
+          "syntax": "rust"
+        },
+        "queries/t_035_select_distinct": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\nuse std::collections::BTreeSet;\n\n#[table(accessor = order)]\npub struct Order {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub category: String,\n    pub amount: u32,\n}\n\n#[table(accessor = distinct_category)]\npub struct DistinctCategory {\n    #[primary_key]\n    pub category: String,\n}\n\n#[reducer]\npub fn collect_distinct_categories(ctx: &ReducerContext) {\n    let categories: BTreeSet<String> = ctx.db.order().iter().map(|o| o.category).collect();\n    for category in categories {\n        ctx.db.distinct_category().insert(DistinctCategory { category });\n    }\n}\n",
+          "syntax": "rust"
+        },
+        "queries/t_036_count_without_collect": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(accessor = user)]\npub struct User {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub name: String,\n    pub active: bool,\n}\n\n#[table(accessor = user_stats)]\npub struct UserStats {\n    #[primary_key]\n    pub key: String,\n    pub count: u64,\n}\n\n#[reducer]\npub fn compute_user_counts(ctx: &ReducerContext) {\n    let total = ctx.db.user().iter().count() as u64;\n    let active = ctx.db.user().iter().filter(|u| u.active).count() as u64;\n\n    ctx.db.user_stats().insert(UserStats {\n        key: \"total\".to_string(),\n        count: total,\n    });\n    ctx.db.user_stats().insert(UserStats {\n        key: \"active\".to_string(),\n        count: active,\n    });\n}\n",
+          "syntax": "rust"
+        },
+        "queries/t_037_multi_column_filter": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(\n    accessor = event_log,\n    index(accessor = by_category_severity, btree(columns = [category, severity]))\n)]\npub struct EventLog {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub category: String,\n    pub severity: u32,\n    pub message: String,\n}\n\n#[table(accessor = filtered_event)]\npub struct FilteredEvent {\n    #[primary_key]\n    pub event_id: u64,\n    pub message: String,\n}\n\n#[reducer]\npub fn filter_events(ctx: &ReducerContext, category: String, severity: u32) {\n    for e in ctx.db.event_log().iter() {\n        if e.category == category && e.severity == severity {\n            ctx.db.filtered_event().insert(FilteredEvent {\n                event_id: e.id,\n                message: e.message,\n            });\n        }\n    }\n}\n",
           "syntax": "rust"
         },
         "schema/t_012_spacetime_product_type": {
@@ -19474,6 +19682,102 @@
         },
         "t_021_multi_column_index": {
           "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\r\n\r\n#[table(\r\n    accessor = log,\r\n    index(accessor = by_user_day, btree(columns = [user_id, day]))\r\n)]\r\npub struct Log {\r\n    #[primary_key]\r\n    pub id: i32,\r\n    pub user_id: i32,\r\n    pub day: i32,\r\n    pub message: String,\r\n}\r\n\r\n#[reducer]\r\npub fn seed(ctx: &ReducerContext) {\r\n    ctx.db.log().insert(Log {\r\n        id: 1,\r\n        user_id: 7,\r\n        day: 1,\r\n        message: \"a\".into(),\r\n    });\r\n    ctx.db.log().insert(Log {\r\n        id: 2,\r\n        user_id: 7,\r\n        day: 2,\r\n        message: \"b\".into(),\r\n    });\r\n    ctx.db.log().insert(Log {\r\n        id: 3,\r\n        user_id: 9,\r\n        day: 1,\r\n        message: \"c\".into(),\r\n    });\r\n}\r\n",
+          "syntax": "rust"
+        },
+        "t_022_view_basic": {
+          "answer": "use spacetimedb::{table, view, AnonymousViewContext};\n\n#[table(accessor = announcement, public)]\npub struct Announcement {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub message: String,\n    #[index(btree)]\n    pub active: bool,\n}\n\n#[view(accessor = active_announcements, public)]\nfn active_announcements(ctx: &AnonymousViewContext) -> Vec<Announcement> {\n    ctx.db.announcement().active().filter(true).collect()\n}\n",
+          "syntax": "rust"
+        },
+        "t_023_view_per_user": {
+          "answer": "use spacetimedb::{table, view, ViewContext, Identity};\n\n#[table(accessor = profile, public)]\npub struct Profile {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    #[unique]\n    pub identity: Identity,\n    pub name: String,\n    pub bio: String,\n}\n\n#[view(accessor = my_profile, public)]\nfn my_profile(ctx: &ViewContext) -> Option<Profile> {\n    ctx.db.profile().identity().find(ctx.sender())\n}\n",
+          "syntax": "rust"
+        },
+        "t_024_event_table": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(accessor = damage_event, public, event)]\npub struct DamageEvent {\n    pub entity_id: u64,\n    pub damage: u32,\n    pub source: String,\n}\n\n#[reducer]\nfn deal_damage(ctx: &ReducerContext, entity_id: u64, damage: u32, source: String) {\n    ctx.db.damage_event().insert(DamageEvent {\n        entity_id,\n        damage,\n        source,\n    });\n}\n",
+          "syntax": "rust"
+        },
+        "t_025_optional_fields": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(accessor = player)]\npub struct Player {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub name: String,\n    pub nickname: Option<String>,\n    pub high_score: Option<u32>,\n}\n\n#[reducer]\npub fn create_player(ctx: &ReducerContext, name: String, nickname: Option<String>, high_score: Option<u32>) {\n    ctx.db.player().insert(Player {\n        id: 0,\n        name,\n        nickname,\n        high_score,\n    });\n}\n",
+          "syntax": "rust"
+        },
+        "t_026_auth_identity_check": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\nuse spacetimedb::Identity;\n\n#[table(accessor = message, public)]\npub struct Message {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    #[index(btree)]\n    pub owner: Identity,\n    pub text: String,\n}\n\n#[reducer]\npub fn create_message(ctx: &ReducerContext, text: String) {\n    ctx.db.message().insert(Message {\n        id: 0,\n        owner: ctx.sender(),\n        text,\n    });\n}\n\n#[reducer]\npub fn delete_message(ctx: &ReducerContext, id: u64) {\n    let msg = ctx.db.message().id().find(id).expect(\"not found\");\n    if msg.owner != ctx.sender() {\n        panic!(\"unauthorized\");\n    }\n    ctx.db.message().id().delete(id);\n}\n",
+          "syntax": "rust"
+        },
+        "t_027_private_vs_public_table": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(accessor = user_internal)]\npub struct UserInternal {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub name: String,\n    pub email: String,\n    pub password_hash: String,\n}\n\n#[table(accessor = user_public, public)]\npub struct UserPublic {\n    #[primary_key]\n    pub id: u64,\n    pub name: String,\n}\n\n#[reducer]\npub fn register_user(ctx: &ReducerContext, name: String, email: String, password_hash: String) {\n    let internal = ctx.db.user_internal().insert(UserInternal {\n        id: 0,\n        name: name.clone(),\n        email,\n        password_hash,\n    });\n    ctx.db.user_public().insert(UserPublic {\n        id: internal.id,\n        name,\n    });\n}\n",
+          "syntax": "rust"
+        },
+        "t_028_cascade_delete": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(accessor = author)]\npub struct Author {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub name: String,\n}\n\n#[table(accessor = post)]\npub struct Post {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    #[index(btree)]\n    pub author_id: u64,\n    pub title: String,\n}\n\n#[reducer]\npub fn delete_author(ctx: &ReducerContext, author_id: u64) {\n    // Delete all posts by this author\n    for p in ctx.db.post().author_id().filter(&author_id) {\n        ctx.db.post().id().delete(p.id);\n    }\n    // Delete the author\n    ctx.db.author().id().delete(author_id);\n}\n",
+          "syntax": "rust"
+        },
+        "t_029_filter_and_aggregate": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(accessor = order)]\npub struct Order {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    #[index(btree)]\n    pub category: String,\n    pub amount: u64,\n    pub fulfilled: bool,\n}\n\n#[table(accessor = category_stats)]\npub struct CategoryStats {\n    #[primary_key]\n    pub category: String,\n    pub total_amount: u64,\n    pub order_count: u32,\n}\n\n#[reducer]\npub fn compute_stats(ctx: &ReducerContext, category: String) {\n    let mut total_amount: u64 = 0;\n    let mut order_count: u32 = 0;\n\n    for o in ctx.db.order().category().filter(&category) {\n        total_amount += o.amount;\n        order_count += 1;\n    }\n\n    // Upsert: delete existing then insert\n    let _ = ctx.db.category_stats().category().delete(category.clone());\n    ctx.db.category_stats().insert(CategoryStats {\n        category,\n        total_amount,\n        order_count,\n    });\n}\n",
+          "syntax": "rust"
+        },
+        "t_030_two_table_join": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(accessor = customer)]\npub struct Customer {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub name: String,\n}\n\n#[table(accessor = order)]\npub struct Order {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    #[index(btree)]\n    pub customer_id: u64,\n    pub product: String,\n    pub amount: u32,\n}\n\n#[table(accessor = order_detail)]\npub struct OrderDetail {\n    #[primary_key]\n    pub order_id: u64,\n    pub customer_name: String,\n    pub product: String,\n    pub amount: u32,\n}\n\n#[reducer]\npub fn build_order_details(ctx: &ReducerContext) {\n    for o in ctx.db.order().iter() {\n        if let Some(c) = ctx.db.customer().id().find(o.customer_id) {\n            ctx.db.order_detail().insert(OrderDetail {\n                order_id: o.id,\n                customer_name: c.name,\n                product: o.product,\n                amount: o.amount,\n            });\n        }\n    }\n}\n",
+          "syntax": "rust"
+        },
+        "t_031_unique_constraint": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(accessor = account)]\npub struct Account {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    #[unique]\n    pub email: String,\n    pub display_name: String,\n}\n\n#[reducer]\npub fn create_account(ctx: &ReducerContext, email: String, display_name: String) {\n    ctx.db.account().insert(Account {\n        id: 0,\n        email,\n        display_name,\n    });\n}\n",
+          "syntax": "rust"
+        },
+        "t_032_range_query": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(accessor = product)]\npub struct Product {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub name: String,\n    #[index(btree)]\n    pub price: u32,\n}\n\n#[table(accessor = price_range_result)]\npub struct PriceRangeResult {\n    #[primary_key]\n    pub product_id: u64,\n    pub name: String,\n    pub price: u32,\n}\n\n#[reducer]\npub fn find_in_price_range(ctx: &ReducerContext, min_price: u32, max_price: u32) {\n    for p in ctx.db.product().iter() {\n        if p.price >= min_price && p.price <= max_price {\n            ctx.db.price_range_result().insert(PriceRangeResult {\n                product_id: p.id,\n                name: p.name,\n                price: p.price,\n            });\n        }\n    }\n}\n",
+          "syntax": "rust"
+        },
+        "t_033_sort_and_limit": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(accessor = player)]\npub struct Player {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub name: String,\n    pub score: u64,\n}\n\n#[table(accessor = leaderboard)]\npub struct LeaderboardEntry {\n    #[primary_key]\n    pub rank: u32,\n    pub player_name: String,\n    pub score: u64,\n}\n\n#[reducer]\npub fn build_leaderboard(ctx: &ReducerContext, limit: u32) {\n    let mut players: Vec<Player> = ctx.db.player().iter().collect();\n    players.sort_by(|a, b| b.score.cmp(&a.score));\n\n    for (i, p) in players.into_iter().take(limit as usize).enumerate() {\n        ctx.db.leaderboard().insert(LeaderboardEntry {\n            rank: (i as u32) + 1,\n            player_name: p.name,\n            score: p.score,\n        });\n    }\n}\n",
+          "syntax": "rust"
+        },
+        "t_034_find_first": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(accessor = task)]\npub struct Task {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub title: String,\n    pub completed: bool,\n}\n\n#[table(accessor = first_incomplete)]\npub struct FirstIncomplete {\n    #[primary_key]\n    pub task_id: u64,\n    pub title: String,\n}\n\n#[reducer]\npub fn find_first_incomplete(ctx: &ReducerContext) {\n    if let Some(t) = ctx.db.task().iter().find(|t| !t.completed) {\n        ctx.db.first_incomplete().insert(FirstIncomplete {\n            task_id: t.id,\n            title: t.title,\n        });\n    }\n}\n",
+          "syntax": "rust"
+        },
+        "t_035_select_distinct": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\nuse std::collections::BTreeSet;\n\n#[table(accessor = order)]\npub struct Order {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub category: String,\n    pub amount: u32,\n}\n\n#[table(accessor = distinct_category)]\npub struct DistinctCategory {\n    #[primary_key]\n    pub category: String,\n}\n\n#[reducer]\npub fn collect_distinct_categories(ctx: &ReducerContext) {\n    let categories: BTreeSet<String> = ctx.db.order().iter().map(|o| o.category).collect();\n    for category in categories {\n        ctx.db.distinct_category().insert(DistinctCategory { category });\n    }\n}\n",
+          "syntax": "rust"
+        },
+        "t_036_count_without_collect": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(accessor = user)]\npub struct User {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub name: String,\n    pub active: bool,\n}\n\n#[table(accessor = user_stats)]\npub struct UserStats {\n    #[primary_key]\n    pub key: String,\n    pub count: u64,\n}\n\n#[reducer]\npub fn compute_user_counts(ctx: &ReducerContext) {\n    let total = ctx.db.user().iter().count() as u64;\n    let active = ctx.db.user().iter().filter(|u| u.active).count() as u64;\n\n    ctx.db.user_stats().insert(UserStats {\n        key: \"total\".to_string(),\n        count: total,\n    });\n    ctx.db.user_stats().insert(UserStats {\n        key: \"active\".to_string(),\n        count: active,\n    });\n}\n",
+          "syntax": "rust"
+        },
+        "t_037_multi_column_filter": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(\n    accessor = event_log,\n    index(accessor = by_category_severity, btree(columns = [category, severity]))\n)]\npub struct EventLog {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub category: String,\n    pub severity: u32,\n    pub message: String,\n}\n\n#[table(accessor = filtered_event)]\npub struct FilteredEvent {\n    #[primary_key]\n    pub event_id: u64,\n    pub message: String,\n}\n\n#[reducer]\npub fn filter_events(ctx: &ReducerContext, category: String, severity: u32) {\n    for e in ctx.db.event_log().iter() {\n        if e.category == category && e.severity == severity {\n            ctx.db.filtered_event().insert(FilteredEvent {\n                event_id: e.id,\n                message: e.message,\n            });\n        }\n    }\n}\n",
+          "syntax": "rust"
+        },
+        "t_038_schedule_at_time": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, ScheduleAt, Table};\nuse std::time::Duration;\n\n#[table(accessor = reminder, scheduled(send_reminder))]\npub struct Reminder {\n    #[primary_key]\n    #[auto_inc]\n    scheduled_id: u64,\n    scheduled_at: ScheduleAt,\n    message: String,\n}\n\n#[reducer]\npub fn send_reminder(_ctx: &ReducerContext, _row: Reminder) {}\n\n#[reducer(init)]\npub fn init(ctx: &ReducerContext) {\n    let fire_at = ctx.timestamp + Duration::from_secs(60);\n    ctx.db.reminder().insert(Reminder {\n        scheduled_id: 0,\n        scheduled_at: ScheduleAt::Time(fire_at),\n        message: \"Hello!\".to_string(),\n    });\n}\n",
+          "syntax": "rust"
+        },
+        "t_039_cancel_schedule": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, ScheduleAt, Table};\nuse std::time::Duration;\n\n#[table(accessor = cleanup_job, scheduled(run_cleanup))]\npub struct CleanupJob {\n    #[primary_key]\n    #[auto_inc]\n    scheduled_id: u64,\n    scheduled_at: ScheduleAt,\n}\n\n#[reducer]\npub fn run_cleanup(_ctx: &ReducerContext, _row: CleanupJob) {}\n\n#[reducer(init)]\npub fn init(ctx: &ReducerContext) {\n    ctx.db.cleanup_job().insert(CleanupJob {\n        scheduled_id: 0,\n        scheduled_at: ScheduleAt::Interval(Duration::from_secs(60).into()),\n    });\n}\n\n#[reducer]\npub fn cancel_cleanup(ctx: &ReducerContext, scheduled_id: u64) {\n    ctx.db.cleanup_job().scheduled_id().delete(&scheduled_id);\n}\n",
+          "syntax": "rust"
+        },
+        "t_040_lifecycle_player": {
+          "answer": "use spacetimedb::{reducer, table, Identity, ReducerContext, Table, Timestamp};\n\n#[table(accessor = online_player, public)]\npub struct OnlinePlayer {\n    #[primary_key]\n    pub identity: Identity,\n    pub connected_at: Timestamp,\n}\n\n#[reducer(client_connected)]\npub fn client_connected(ctx: &ReducerContext) {\n    ctx.db.online_player().insert(OnlinePlayer {\n        identity: ctx.sender(),\n        connected_at: ctx.timestamp,\n    });\n}\n\n#[reducer(client_disconnected)]\npub fn client_disconnected(ctx: &ReducerContext) {\n    ctx.db.online_player().identity().delete(&ctx.sender());\n}\n",
+          "syntax": "rust"
+        },
+        "views/t_022_view_basic": {
+          "answer": "use spacetimedb::{table, view, AnonymousViewContext};\n\n#[table(accessor = announcement, public)]\npub struct Announcement {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub message: String,\n    #[index(btree)]\n    pub active: bool,\n}\n\n#[view(accessor = active_announcements, public)]\nfn active_announcements(ctx: &AnonymousViewContext) -> Vec<Announcement> {\n    ctx.db.announcement().active().filter(true).collect()\n}\n",
+          "syntax": "rust"
+        },
+        "views/t_023_view_per_user": {
+          "answer": "use spacetimedb::{table, view, ViewContext, Identity};\n\n#[table(accessor = profile, public)]\npub struct Profile {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    #[unique]\n    pub identity: Identity,\n    pub name: String,\n    pub bio: String,\n}\n\n#[view(accessor = my_profile, public)]\nfn my_profile(ctx: &ViewContext) -> Option<Profile> {\n    ctx.db.profile().identity().find(ctx.sender())\n}\n",
+          "syntax": "rust"
+        },
+        "write_patterns/t_028_cascade_delete": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(accessor = author)]\npub struct Author {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub name: String,\n}\n\n#[table(accessor = post)]\npub struct Post {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    #[index(btree)]\n    pub author_id: u64,\n    pub title: String,\n}\n\n#[reducer]\npub fn delete_author(ctx: &ReducerContext, author_id: u64) {\n    // Delete all posts by this author\n    for p in ctx.db.post().author_id().filter(&author_id) {\n        ctx.db.post().id().delete(p.id);\n    }\n    // Delete the author\n    ctx.db.author().id().delete(author_id);\n}\n",
+          "syntax": "rust"
+        },
+        "write_patterns/t_029_filter_and_aggregate": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(accessor = order)]\npub struct Order {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    #[index(btree)]\n    pub category: String,\n    pub amount: u64,\n    pub fulfilled: bool,\n}\n\n#[table(accessor = category_stats)]\npub struct CategoryStats {\n    #[primary_key]\n    pub category: String,\n    pub total_amount: u64,\n    pub order_count: u32,\n}\n\n#[reducer]\npub fn compute_stats(ctx: &ReducerContext, category: String) {\n    let mut total_amount: u64 = 0;\n    let mut order_count: u32 = 0;\n\n    for o in ctx.db.order().category().filter(&category) {\n        total_amount += o.amount;\n        order_count += 1;\n    }\n\n    // Upsert: delete existing then insert\n    let _ = ctx.db.category_stats().category().delete(category.clone());\n    ctx.db.category_stats().insert(CategoryStats {\n        category,\n        total_amount,\n        order_count,\n    });\n}\n",
+          "syntax": "rust"
+        },
+        "write_patterns/t_030_two_table_join": {
+          "answer": "use spacetimedb::{Table, reducer, table, ReducerContext};\n\n#[table(accessor = customer)]\npub struct Customer {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub name: String,\n}\n\n#[table(accessor = order)]\npub struct Order {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    #[index(btree)]\n    pub customer_id: u64,\n    pub product: String,\n    pub amount: u32,\n}\n\n#[table(accessor = order_detail)]\npub struct OrderDetail {\n    #[primary_key]\n    pub order_id: u64,\n    pub customer_name: String,\n    pub product: String,\n    pub amount: u32,\n}\n\n#[reducer]\npub fn build_order_details(ctx: &ReducerContext) {\n    for o in ctx.db.order().iter() {\n        if let Some(c) = ctx.db.customer().id().find(o.customer_id) {\n            ctx.db.order_detail().insert(OrderDetail {\n                order_id: o.id,\n                customer_name: c.name,\n                product: o.product,\n                amount: o.amount,\n            });\n        }\n    }\n}\n",
           "syntax": "rust"
         }
       }
@@ -19881,6 +20185,25 @@
                   "category": "basics",
                   "route_api_model": "grok-4",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -19894,25 +20217,6 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -20762,25 +21066,6 @@
                   "category": "basics",
                   "route_api_model": "claude-opus-4-6",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -20794,6 +21079,25 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -21689,25 +21993,6 @@
                   "category": "basics",
                   "route_api_model": "claude-sonnet-4-6",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -21721,6 +22006,25 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -23460,6 +23764,25 @@
                   "category": "basics",
                   "route_api_model": "gpt-5-mini",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -23473,25 +23796,6 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -24299,25 +24603,6 @@
                   "category": "basics",
                   "route_api_model": "grok-code-fast-1",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -24331,6 +24616,25 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -25215,25 +25519,6 @@
                   "category": "basics",
                   "route_api_model": "google/gemini-3-flash-preview",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -25247,6 +25532,25 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -26105,6 +26409,25 @@
                   "category": "basics",
                   "route_api_model": "google/gemini-3.1-pro-preview",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -26118,25 +26441,6 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -27006,6 +27310,25 @@
                   "category": "basics",
                   "route_api_model": "deepseek-reasoner",
                   "scorer_details": {
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -27019,25 +27342,6 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
@@ -27817,25 +28121,6 @@
                   "category": "basics",
                   "route_api_model": "deepseek-chat",
                   "scorer_details": {
-                    "helper_func_sum_abs": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "actual": 1,
-                        "expected": 1,
-                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
-                      }
-                    },
-                    "schema_parity": {
-                      "pass": true,
-                      "partial": 1.0,
-                      "notes": {
-                        "reducers_diff": null,
-                        "reducers_equal": true,
-                        "tables_diff": null,
-                        "tables_equal": true
-                      }
-                    },
                     "helper_func_sum_parity": {
                       "pass": true,
                       "partial": 1.0,
@@ -27849,6 +28134,25 @@
                         "llm_out": "id | sum ----+----- 1 | 5",
                         "query": "SELECT id, sum FROM result WHERE id=1",
                         "reducer": "compute_sum"
+                      }
+                    },
+                    "schema_parity": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "reducers_diff": null,
+                        "reducers_equal": true,
+                        "tables_diff": null,
+                        "tables_equal": true
+                      }
+                    },
+                    "helper_func_sum_abs": {
+                      "pass": true,
+                      "partial": 1.0,
+                      "notes": {
+                        "actual": 1,
+                        "expected": 1,
+                        "sql": "SELECT COUNT(*) AS n FROM result WHERE id=1 AND sum=5"
                       }
                     }
                   },
