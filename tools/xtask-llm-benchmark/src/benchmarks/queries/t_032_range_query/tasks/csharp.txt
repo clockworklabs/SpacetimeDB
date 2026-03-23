@@ -1,0 +1,21 @@
+Write a SpacetimeDB backend module in C# that defines a Product table with a BTree-indexed Price column, a result table, and a reducer that filters products within a price range and writes matches to the result table.
+
+TABLES
+- Product
+  - Struct: Product
+  - Fields:
+    - Id: ulong (primary key, AutoInc)
+    - Name: string
+    - Price: uint (index BTree)
+
+- PriceRangeResult
+  - Struct: PriceRangeResult
+  - Fields:
+    - ProductId: ulong (primary key)
+    - Name: string
+    - Price: uint
+
+REDUCERS
+- FindInPriceRange(ctx, uint minPrice, uint maxPrice)
+  - Iterate all products
+  - For each product where Price >= minPrice AND Price <= maxPrice, insert a PriceRangeResult row

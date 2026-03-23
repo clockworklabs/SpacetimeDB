@@ -1,0 +1,20 @@
+Write a SpacetimeDB backend module in TypeScript that defines a player table with scores, a leaderboard result table, and a reducer that finds the top N players by score (descending) and writes them to the result table.
+
+TABLES
+- player
+  - Fields:
+    - id: number (u64, primary key, autoInc)
+    - name: string
+    - score: number (u64)
+
+- leaderboard
+  - Fields:
+    - rank: number (u32, primary key)
+    - playerName: string
+    - score: number (u64)
+
+REDUCERS
+- build_leaderboard(ctx, { limit: number (u32) })
+  - Collect all players into an array, sort by score descending
+  - Take the first `limit` entries
+  - Insert each into leaderboard with rank starting at 1

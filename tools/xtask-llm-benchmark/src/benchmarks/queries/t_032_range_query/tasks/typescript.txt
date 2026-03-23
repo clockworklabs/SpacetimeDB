@@ -1,0 +1,19 @@
+Write a SpacetimeDB backend module in TypeScript that defines a product table with a BTree-indexed price column, a result table, and a reducer that filters products within a price range and writes matches to the result table.
+
+TABLES
+- product
+  - Fields:
+    - id: number (u64, primary key, autoInc)
+    - name: string
+    - price: number (u32, index btree)
+
+- priceRangeResult
+  - Fields:
+    - productId: number (u64, primary key)
+    - name: string
+    - price: number (u32)
+
+REDUCERS
+- find_in_price_range(ctx, { minPrice: number (u32), maxPrice: number (u32) })
+  - Iterate all products
+  - For each product where price >= minPrice AND price <= maxPrice, insert a priceRangeResult row

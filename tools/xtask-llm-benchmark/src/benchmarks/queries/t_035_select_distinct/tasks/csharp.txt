@@ -1,0 +1,20 @@
+Write a SpacetimeDB backend module in C# that defines an Order table and a result table, with a reducer that collects all distinct Category values from orders into the result table.
+
+TABLES
+- Order
+  - Struct: Order
+  - Fields:
+    - Id: ulong (primary key, AutoInc)
+    - Category: string
+    - Amount: uint
+
+- DistinctCategory
+  - Struct: DistinctCategory
+  - Fields:
+    - Category: string (primary key)
+
+REDUCERS
+- CollectDistinctCategories(ctx)
+  - Iterate all orders
+  - Collect unique Category values (use a HashSet)
+  - Insert each unique category into DistinctCategory

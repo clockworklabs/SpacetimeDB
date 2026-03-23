@@ -1,0 +1,22 @@
+Write a SpacetimeDB backend module in Rust that defines an event log table with a multi-column BTree index and a result table, with a reducer that filters events by both category and severity level.
+
+TABLES
+- event_log
+  - Struct: EventLog
+  - Fields:
+    - id: u64 (primary key, auto_inc)
+    - category: String
+    - severity: u32
+    - message: String
+  - Index: multi-column btree index on (category, severity)
+
+- filtered_event
+  - Struct: FilteredEvent
+  - Fields:
+    - event_id: u64 (primary key)
+    - message: String
+
+REDUCERS
+- filter_events(ctx, category: String, severity: u32)
+  - Iterate all event_log rows
+  - For each row where category matches AND severity matches, insert into filtered_event

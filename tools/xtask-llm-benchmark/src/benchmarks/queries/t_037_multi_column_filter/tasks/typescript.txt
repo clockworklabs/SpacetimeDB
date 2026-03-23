@@ -1,0 +1,20 @@
+Write a SpacetimeDB backend module in TypeScript that defines an event log table with a multi-column BTree index and a result table, with a reducer that filters events by both category and severity level.
+
+TABLES
+- eventLog
+  - Fields:
+    - id: number (u64, primary key, autoInc)
+    - category: string
+    - severity: number (u32)
+    - message: string
+  - Index: multi-column btree index on (category, severity)
+
+- filteredEvent
+  - Fields:
+    - eventId: number (u64, primary key)
+    - message: string
+
+REDUCERS
+- filter_events(ctx, { category: string, severity: number (u32) })
+  - Iterate all eventLog rows
+  - For each row where category matches AND severity matches, insert into filteredEvent
