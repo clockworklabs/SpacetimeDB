@@ -11,21 +11,21 @@ struct SPACETIMEDBSDK_API FCallProcedureType
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    FString Procedure;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    TArray<uint8> Args;
-
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
     uint32 RequestId = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     uint8 Flags = 0;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
+    FString Procedure;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
+    TArray<uint8> Args;
+
     FORCEINLINE bool operator==(const FCallProcedureType& Other) const
     {
-        return Procedure == Other.Procedure && Args == Other.Args && RequestId == Other.RequestId && Flags == Other.Flags;
+        return RequestId == Other.RequestId && Flags == Other.Flags && Procedure == Other.Procedure && Args == Other.Args;
     }
 
     FORCEINLINE bool operator!=(const FCallProcedureType& Other) const
@@ -42,10 +42,10 @@ struct SPACETIMEDBSDK_API FCallProcedureType
  */
 FORCEINLINE uint32 GetTypeHash(const FCallProcedureType& CallProcedureType)
 {
-    uint32 Hash = GetTypeHash(CallProcedureType.Procedure);
-    Hash = HashCombine(Hash, GetTypeHash(CallProcedureType.Args));
-    Hash = HashCombine(Hash, GetTypeHash(CallProcedureType.RequestId));
+    uint32 Hash = GetTypeHash(CallProcedureType.RequestId);
     Hash = HashCombine(Hash, GetTypeHash(CallProcedureType.Flags));
+    Hash = HashCombine(Hash, GetTypeHash(CallProcedureType.Procedure));
+    Hash = HashCombine(Hash, GetTypeHash(CallProcedureType.Args));
     return Hash;
 }
 
@@ -53,5 +53,5 @@ namespace UE::SpacetimeDB
 {
     UE_SPACETIMEDB_ENABLE_TARRAY(FCallProcedureType);
 
-    UE_SPACETIMEDB_STRUCT(FCallProcedureType, Procedure, Args, RequestId, Flags);
+    UE_SPACETIMEDB_STRUCT(FCallProcedureType, RequestId, Flags, Procedure, Args);
 }

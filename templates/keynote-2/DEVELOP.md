@@ -88,6 +88,7 @@ Copy `.env.example` to `.env` and adjust.
 - `STDB_MODULE` – module name to load (e.g. `test-1`)
 - `STDB_MODULE_PATH` – filesystem path to the module source (for local dev)
 - `STDB_METRICS_URL` – HTTP URL for the SpacetimeDB metrics endpoint
+- `STDB_CONFIRMED_READS` – `1` = force confirmed reads on, `0` = force them off
 
 **Supabase:**
 

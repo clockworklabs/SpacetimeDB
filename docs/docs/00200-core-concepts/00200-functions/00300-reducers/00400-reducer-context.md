@@ -238,7 +238,7 @@ FIELD_PrimaryKey(player, identity);
 
 SPACETIMEDB_REDUCER(update_score, ReducerContext ctx, uint32_t new_score) {
     // Get the caller's identity
-    auto caller = ctx.sender;
+    auto caller = ctx.sender();
     
     // Find and update their player record
     if (auto player = ctx.db[player_identity].find(caller)) {
@@ -269,7 +269,7 @@ The timestamp indicates when the reducer was invoked. This value is consistent t
 The context provides access to a random number generator that is deterministic and reproducible. This ensures that reducer execution is consistent across all nodes in a distributed system.
 
 :::warning
-Never use external random number generators (like `Math.random()` in TypeScript or `Random` in C# without using the context). These are non-deterministic and will cause different nodes to produce different results, breaking consensus.
+Never use external random number generators (like `Random` in C# without using the context). These are non-deterministic and will cause different nodes to produce different results, breaking consensus.
 :::
 
 ## Module Identity
@@ -385,7 +385,7 @@ SPACETIMEDB_SCHEDULE(scheduled_task, 1, send_reminder);
 
 SPACETIMEDB_REDUCER(send_reminder, ReducerContext ctx, ScheduledTask task) {
     // Only allow the scheduler (module identity) to call this
-    if (ctx.sender != ctx.identity()) {
+    if (ctx.sender() != ctx.identity()) {
         return Err("This reducer can only be called by the scheduler");
     }
     
@@ -409,10 +409,7 @@ SPACETIMEDB_REDUCER(send_reminder, ReducerContext ctx, ScheduledTask task) {
 | `senderAuth`   | `AuthCtx`                  | Authorization context for the caller (includes JWT claims and internal call detection) |
 | `connectionId` | `ConnectionId \| undefined`| Connection ID of the caller, if available       |
 | `timestamp`    | `Timestamp`                | Time when the reducer was invoked               |
-
-:::note
-TypeScript uses `Math.random()` for random number generation, which is automatically seeded deterministically by SpacetimeDB.
-:::
+| `random`       | `Random`                   | Random number generator (deterministic, seeded by SpacetimeDB) |
 </TabItem>
 <TabItem value="csharp" label="C#">
 

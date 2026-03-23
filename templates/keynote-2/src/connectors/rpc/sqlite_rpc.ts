@@ -81,7 +81,14 @@ export default function sqlite_rpc(
     },
 
     async verify() {
-      await httpCall('verify');
+      const result = (await httpCall('verify')) as
+        | { skipped?: boolean }
+        | undefined;
+      if (result && typeof result === 'object' && result.skipped === true) {
+        throw new Error(
+          '[sqlite_rpc] verify was skipped on the server (set SEED_INITIAL_BALANCE in the sqlite-rpc-server process env, matching the bench)',
+        );
+      }
     },
 
     async call(name: string, args?: Record<string, unknown>) {

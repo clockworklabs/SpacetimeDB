@@ -254,6 +254,11 @@ metrics_group!(
         #[buckets(0, 1, 2, 5, 10, 25, 50, 75, 100, 200, 300, 400, 500, 1000)]
         pub instance_queue_length_histogram: HistogramVec,
 
+        #[name = spacetime_module_instances]
+        #[help = "Current number of live module instances (WASM or V8) for this database"]
+        #[labels(database_identity: Identity, module_type: HostType)]
+        pub module_instances: IntGaugeVec,
+
         #[name = spacetime_reducer_wait_time_sec]
         #[help = "The amount of time (in seconds) a reducer spends in the queue waiting to run"]
         #[labels(db: Identity, reducer: str)]
@@ -435,6 +440,11 @@ metrics_group!(
         #[help = "Total number of subscription queries by scan strategy"]
         #[labels(db: Identity, scan_type: str, table: str, unindexed_columns: str)]
         pub subscription_queries_total: IntCounterVec,
+
+        #[name = spacetime_durability_worker_reorder_window_length]
+        #[help = "The number of transactions currently being held in the reorder window"]
+        #[labels(db: Identity)]
+        pub durability_worker_reorder_window_length: IntGaugeVec,
     }
 );
 

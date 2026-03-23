@@ -30,6 +30,9 @@ jobs:
   publish-approval-status:
     name: Set approval status
     runs-on: ubuntu-latest
+    # Disabled until we can spend some more focus on making this work consistently.
+    # See https://github.com/clockworklabs/SpacetimeDB/pull/4673.
+    if: false
 
     # SECURITY: Do not add a checkout step to this job. See comment at the top of this file.
     steps:
