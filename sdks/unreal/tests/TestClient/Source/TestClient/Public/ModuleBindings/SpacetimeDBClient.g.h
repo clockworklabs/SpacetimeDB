@@ -10470,6 +10470,221 @@ private:
 };
 
 // QueryBuilder types
+struct TESTCLIENT_API FBTreeU32Cols;
+struct TESTCLIENT_API FBTreeU32IxCols;
+struct TESTCLIENT_API FIndexedSimpleEnumCols;
+struct TESTCLIENT_API FIndexedSimpleEnumIxCols;
+struct TESTCLIENT_API FLargeTableCols;
+struct TESTCLIENT_API FLargeTableIxCols;
+struct TESTCLIENT_API FOneBoolCols;
+struct TESTCLIENT_API FOneBoolIxCols;
+struct TESTCLIENT_API FOneByteStructCols;
+struct TESTCLIENT_API FOneByteStructIxCols;
+struct TESTCLIENT_API FOneConnectionIdCols;
+struct TESTCLIENT_API FOneConnectionIdIxCols;
+struct TESTCLIENT_API FOneEnumWithPayloadCols;
+struct TESTCLIENT_API FOneEnumWithPayloadIxCols;
+struct TESTCLIENT_API FOneEveryPrimitiveStructCols;
+struct TESTCLIENT_API FOneEveryPrimitiveStructIxCols;
+struct TESTCLIENT_API FOneEveryVecStructCols;
+struct TESTCLIENT_API FOneEveryVecStructIxCols;
+struct TESTCLIENT_API FOneF32Cols;
+struct TESTCLIENT_API FOneF32IxCols;
+struct TESTCLIENT_API FOneF64Cols;
+struct TESTCLIENT_API FOneF64IxCols;
+struct TESTCLIENT_API FOneI128Cols;
+struct TESTCLIENT_API FOneI128IxCols;
+struct TESTCLIENT_API FOneI16Cols;
+struct TESTCLIENT_API FOneI16IxCols;
+struct TESTCLIENT_API FOneI256Cols;
+struct TESTCLIENT_API FOneI256IxCols;
+struct TESTCLIENT_API FOneI32Cols;
+struct TESTCLIENT_API FOneI32IxCols;
+struct TESTCLIENT_API FOneI64Cols;
+struct TESTCLIENT_API FOneI64IxCols;
+struct TESTCLIENT_API FOneI8Cols;
+struct TESTCLIENT_API FOneI8IxCols;
+struct TESTCLIENT_API FOneIdentityCols;
+struct TESTCLIENT_API FOneIdentityIxCols;
+struct TESTCLIENT_API FOneSimpleEnumCols;
+struct TESTCLIENT_API FOneSimpleEnumIxCols;
+struct TESTCLIENT_API FOneStringCols;
+struct TESTCLIENT_API FOneStringIxCols;
+struct TESTCLIENT_API FOneTimestampCols;
+struct TESTCLIENT_API FOneTimestampIxCols;
+struct TESTCLIENT_API FOneU128Cols;
+struct TESTCLIENT_API FOneU128IxCols;
+struct TESTCLIENT_API FOneU16Cols;
+struct TESTCLIENT_API FOneU16IxCols;
+struct TESTCLIENT_API FOneU256Cols;
+struct TESTCLIENT_API FOneU256IxCols;
+struct TESTCLIENT_API FOneU32Cols;
+struct TESTCLIENT_API FOneU32IxCols;
+struct TESTCLIENT_API FOneU64Cols;
+struct TESTCLIENT_API FOneU64IxCols;
+struct TESTCLIENT_API FOneU8Cols;
+struct TESTCLIENT_API FOneU8IxCols;
+struct TESTCLIENT_API FOneUnitStructCols;
+struct TESTCLIENT_API FOneUnitStructIxCols;
+struct TESTCLIENT_API FOneUuidCols;
+struct TESTCLIENT_API FOneUuidIxCols;
+struct TESTCLIENT_API FOptionEveryPrimitiveStructCols;
+struct TESTCLIENT_API FOptionEveryPrimitiveStructIxCols;
+struct TESTCLIENT_API FOptionI32Cols;
+struct TESTCLIENT_API FOptionI32IxCols;
+struct TESTCLIENT_API FOptionIdentityCols;
+struct TESTCLIENT_API FOptionIdentityIxCols;
+struct TESTCLIENT_API FOptionSimpleEnumCols;
+struct TESTCLIENT_API FOptionSimpleEnumIxCols;
+struct TESTCLIENT_API FOptionStringCols;
+struct TESTCLIENT_API FOptionStringIxCols;
+struct TESTCLIENT_API FOptionUuidCols;
+struct TESTCLIENT_API FOptionUuidIxCols;
+struct TESTCLIENT_API FOptionVecOptionI32Cols;
+struct TESTCLIENT_API FOptionVecOptionI32IxCols;
+struct TESTCLIENT_API FPkBoolCols;
+struct TESTCLIENT_API FPkBoolIxCols;
+struct TESTCLIENT_API FPkConnectionIdCols;
+struct TESTCLIENT_API FPkConnectionIdIxCols;
+struct TESTCLIENT_API FPkI128Cols;
+struct TESTCLIENT_API FPkI128IxCols;
+struct TESTCLIENT_API FPkI16Cols;
+struct TESTCLIENT_API FPkI16IxCols;
+struct TESTCLIENT_API FPkI256Cols;
+struct TESTCLIENT_API FPkI256IxCols;
+struct TESTCLIENT_API FPkI32Cols;
+struct TESTCLIENT_API FPkI32IxCols;
+struct TESTCLIENT_API FPkI64Cols;
+struct TESTCLIENT_API FPkI64IxCols;
+struct TESTCLIENT_API FPkI8Cols;
+struct TESTCLIENT_API FPkI8IxCols;
+struct TESTCLIENT_API FPkIdentityCols;
+struct TESTCLIENT_API FPkIdentityIxCols;
+struct TESTCLIENT_API FPkSimpleEnumCols;
+struct TESTCLIENT_API FPkSimpleEnumIxCols;
+struct TESTCLIENT_API FPkStringCols;
+struct TESTCLIENT_API FPkStringIxCols;
+struct TESTCLIENT_API FPkU128Cols;
+struct TESTCLIENT_API FPkU128IxCols;
+struct TESTCLIENT_API FPkU16Cols;
+struct TESTCLIENT_API FPkU16IxCols;
+struct TESTCLIENT_API FPkU256Cols;
+struct TESTCLIENT_API FPkU256IxCols;
+struct TESTCLIENT_API FPkU32Cols;
+struct TESTCLIENT_API FPkU32IxCols;
+struct TESTCLIENT_API FPkU32TwoCols;
+struct TESTCLIENT_API FPkU32TwoIxCols;
+struct TESTCLIENT_API FPkU64Cols;
+struct TESTCLIENT_API FPkU64IxCols;
+struct TESTCLIENT_API FPkU8Cols;
+struct TESTCLIENT_API FPkU8IxCols;
+struct TESTCLIENT_API FPkUuidCols;
+struct TESTCLIENT_API FPkUuidIxCols;
+struct TESTCLIENT_API FResultEveryPrimitiveStructStringCols;
+struct TESTCLIENT_API FResultEveryPrimitiveStructStringIxCols;
+struct TESTCLIENT_API FResultI32StringCols;
+struct TESTCLIENT_API FResultI32StringIxCols;
+struct TESTCLIENT_API FResultIdentityStringCols;
+struct TESTCLIENT_API FResultIdentityStringIxCols;
+struct TESTCLIENT_API FResultSimpleEnumI32Cols;
+struct TESTCLIENT_API FResultSimpleEnumI32IxCols;
+struct TESTCLIENT_API FResultStringI32Cols;
+struct TESTCLIENT_API FResultStringI32IxCols;
+struct TESTCLIENT_API FResultVecI32StringCols;
+struct TESTCLIENT_API FResultVecI32StringIxCols;
+struct TESTCLIENT_API FScheduledTableCols;
+struct TESTCLIENT_API FScheduledTableIxCols;
+struct TESTCLIENT_API FTableHoldsTableCols;
+struct TESTCLIENT_API FTableHoldsTableIxCols;
+struct TESTCLIENT_API FUniqueBoolCols;
+struct TESTCLIENT_API FUniqueBoolIxCols;
+struct TESTCLIENT_API FUniqueConnectionIdCols;
+struct TESTCLIENT_API FUniqueConnectionIdIxCols;
+struct TESTCLIENT_API FUniqueI128Cols;
+struct TESTCLIENT_API FUniqueI128IxCols;
+struct TESTCLIENT_API FUniqueI16Cols;
+struct TESTCLIENT_API FUniqueI16IxCols;
+struct TESTCLIENT_API FUniqueI256Cols;
+struct TESTCLIENT_API FUniqueI256IxCols;
+struct TESTCLIENT_API FUniqueI32Cols;
+struct TESTCLIENT_API FUniqueI32IxCols;
+struct TESTCLIENT_API FUniqueI64Cols;
+struct TESTCLIENT_API FUniqueI64IxCols;
+struct TESTCLIENT_API FUniqueI8Cols;
+struct TESTCLIENT_API FUniqueI8IxCols;
+struct TESTCLIENT_API FUniqueIdentityCols;
+struct TESTCLIENT_API FUniqueIdentityIxCols;
+struct TESTCLIENT_API FUniqueStringCols;
+struct TESTCLIENT_API FUniqueStringIxCols;
+struct TESTCLIENT_API FUniqueU128Cols;
+struct TESTCLIENT_API FUniqueU128IxCols;
+struct TESTCLIENT_API FUniqueU16Cols;
+struct TESTCLIENT_API FUniqueU16IxCols;
+struct TESTCLIENT_API FUniqueU256Cols;
+struct TESTCLIENT_API FUniqueU256IxCols;
+struct TESTCLIENT_API FUniqueU32Cols;
+struct TESTCLIENT_API FUniqueU32IxCols;
+struct TESTCLIENT_API FUniqueU64Cols;
+struct TESTCLIENT_API FUniqueU64IxCols;
+struct TESTCLIENT_API FUniqueU8Cols;
+struct TESTCLIENT_API FUniqueU8IxCols;
+struct TESTCLIENT_API FUniqueUuidCols;
+struct TESTCLIENT_API FUniqueUuidIxCols;
+struct TESTCLIENT_API FUsersCols;
+struct TESTCLIENT_API FUsersIxCols;
+struct TESTCLIENT_API FVecBoolCols;
+struct TESTCLIENT_API FVecBoolIxCols;
+struct TESTCLIENT_API FVecByteStructCols;
+struct TESTCLIENT_API FVecByteStructIxCols;
+struct TESTCLIENT_API FVecConnectionIdCols;
+struct TESTCLIENT_API FVecConnectionIdIxCols;
+struct TESTCLIENT_API FVecEnumWithPayloadCols;
+struct TESTCLIENT_API FVecEnumWithPayloadIxCols;
+struct TESTCLIENT_API FVecEveryPrimitiveStructCols;
+struct TESTCLIENT_API FVecEveryPrimitiveStructIxCols;
+struct TESTCLIENT_API FVecEveryVecStructCols;
+struct TESTCLIENT_API FVecEveryVecStructIxCols;
+struct TESTCLIENT_API FVecF32Cols;
+struct TESTCLIENT_API FVecF32IxCols;
+struct TESTCLIENT_API FVecF64Cols;
+struct TESTCLIENT_API FVecF64IxCols;
+struct TESTCLIENT_API FVecI128Cols;
+struct TESTCLIENT_API FVecI128IxCols;
+struct TESTCLIENT_API FVecI16Cols;
+struct TESTCLIENT_API FVecI16IxCols;
+struct TESTCLIENT_API FVecI256Cols;
+struct TESTCLIENT_API FVecI256IxCols;
+struct TESTCLIENT_API FVecI32Cols;
+struct TESTCLIENT_API FVecI32IxCols;
+struct TESTCLIENT_API FVecI64Cols;
+struct TESTCLIENT_API FVecI64IxCols;
+struct TESTCLIENT_API FVecI8Cols;
+struct TESTCLIENT_API FVecI8IxCols;
+struct TESTCLIENT_API FVecIdentityCols;
+struct TESTCLIENT_API FVecIdentityIxCols;
+struct TESTCLIENT_API FVecSimpleEnumCols;
+struct TESTCLIENT_API FVecSimpleEnumIxCols;
+struct TESTCLIENT_API FVecStringCols;
+struct TESTCLIENT_API FVecStringIxCols;
+struct TESTCLIENT_API FVecTimestampCols;
+struct TESTCLIENT_API FVecTimestampIxCols;
+struct TESTCLIENT_API FVecU128Cols;
+struct TESTCLIENT_API FVecU128IxCols;
+struct TESTCLIENT_API FVecU16Cols;
+struct TESTCLIENT_API FVecU16IxCols;
+struct TESTCLIENT_API FVecU256Cols;
+struct TESTCLIENT_API FVecU256IxCols;
+struct TESTCLIENT_API FVecU32Cols;
+struct TESTCLIENT_API FVecU32IxCols;
+struct TESTCLIENT_API FVecU64Cols;
+struct TESTCLIENT_API FVecU64IxCols;
+struct TESTCLIENT_API FVecU8Cols;
+struct TESTCLIENT_API FVecU8IxCols;
+struct TESTCLIENT_API FVecUnitStructCols;
+struct TESTCLIENT_API FVecUnitStructIxCols;
+struct TESTCLIENT_API FVecUuidCols;
+struct TESTCLIENT_API FVecUuidIxCols;
+
 struct TESTCLIENT_API FBTreeU32Cols
 {
     explicit FBTreeU32Cols(const char* TableName)
@@ -10484,27 +10699,13 @@ struct TESTCLIENT_API FBTreeU32IxCols
     explicit FBTreeU32IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FBTreeU32Type, uint32, &FBTreeU32Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FBTreeU32Type, uint32> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FBTreeU32Type, &FBTreeU32Type::N>);
-
     template<>
-    struct HasCols<FBTreeU32Type>
-    {
-        static FBTreeU32Cols get(const char* table_name) { return FBTreeU32Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FBTreeU32Type>
-    {
-        static FBTreeU32IxCols get(const char* table_name) { return FBTreeU32IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FBTreeU32Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FBTreeU32Type, FBTreeU32Cols, FBTreeU32IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FIndexedSimpleEnumCols
@@ -10520,27 +10721,13 @@ struct TESTCLIENT_API FIndexedSimpleEnumIxCols
     explicit FIndexedSimpleEnumIxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FIndexedSimpleEnumType, ESimpleEnumType, &FIndexedSimpleEnumType::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FIndexedSimpleEnumType, ESimpleEnumType> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FIndexedSimpleEnumType, &FIndexedSimpleEnumType::N>);
-
     template<>
-    struct HasCols<FIndexedSimpleEnumType>
-    {
-        static FIndexedSimpleEnumCols get(const char* table_name) { return FIndexedSimpleEnumCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FIndexedSimpleEnumType>
-    {
-        static FIndexedSimpleEnumIxCols get(const char* table_name) { return FIndexedSimpleEnumIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FIndexedSimpleEnumType> : std::true_type {};
+    struct CanBeLookupTable<Table<FIndexedSimpleEnumType, FIndexedSimpleEnumCols, FIndexedSimpleEnumIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FLargeTableCols
@@ -10581,21 +10768,8 @@ struct TESTCLIENT_API FLargeTableIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FLargeTableType>
-    {
-        static FLargeTableCols get(const char* table_name) { return FLargeTableCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FLargeTableType>
-    {
-        static FLargeTableIxCols get(const char* table_name) { return FLargeTableIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FLargeTableType> : std::true_type {};
+    struct CanBeLookupTable<Table<FLargeTableType, FLargeTableCols, FLargeTableIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneBoolCols
@@ -10615,21 +10789,8 @@ struct TESTCLIENT_API FOneBoolIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneBoolType>
-    {
-        static FOneBoolCols get(const char* table_name) { return FOneBoolCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneBoolType>
-    {
-        static FOneBoolIxCols get(const char* table_name) { return FOneBoolIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneBoolType> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneBoolType, FOneBoolCols, FOneBoolIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneByteStructCols
@@ -10649,21 +10810,8 @@ struct TESTCLIENT_API FOneByteStructIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneByteStructType>
-    {
-        static FOneByteStructCols get(const char* table_name) { return FOneByteStructCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneByteStructType>
-    {
-        static FOneByteStructIxCols get(const char* table_name) { return FOneByteStructIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneByteStructType> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneByteStructType, FOneByteStructCols, FOneByteStructIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneConnectionIdCols
@@ -10683,21 +10831,8 @@ struct TESTCLIENT_API FOneConnectionIdIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneConnectionIdType>
-    {
-        static FOneConnectionIdCols get(const char* table_name) { return FOneConnectionIdCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneConnectionIdType>
-    {
-        static FOneConnectionIdIxCols get(const char* table_name) { return FOneConnectionIdIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneConnectionIdType> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneConnectionIdType, FOneConnectionIdCols, FOneConnectionIdIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneEnumWithPayloadCols
@@ -10717,21 +10852,8 @@ struct TESTCLIENT_API FOneEnumWithPayloadIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneEnumWithPayloadType>
-    {
-        static FOneEnumWithPayloadCols get(const char* table_name) { return FOneEnumWithPayloadCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneEnumWithPayloadType>
-    {
-        static FOneEnumWithPayloadIxCols get(const char* table_name) { return FOneEnumWithPayloadIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneEnumWithPayloadType> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneEnumWithPayloadType, FOneEnumWithPayloadCols, FOneEnumWithPayloadIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneEveryPrimitiveStructCols
@@ -10751,21 +10873,8 @@ struct TESTCLIENT_API FOneEveryPrimitiveStructIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneEveryPrimitiveStructType>
-    {
-        static FOneEveryPrimitiveStructCols get(const char* table_name) { return FOneEveryPrimitiveStructCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneEveryPrimitiveStructType>
-    {
-        static FOneEveryPrimitiveStructIxCols get(const char* table_name) { return FOneEveryPrimitiveStructIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneEveryPrimitiveStructType> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneEveryPrimitiveStructType, FOneEveryPrimitiveStructCols, FOneEveryPrimitiveStructIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneEveryVecStructCols
@@ -10785,21 +10894,8 @@ struct TESTCLIENT_API FOneEveryVecStructIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneEveryVecStructType>
-    {
-        static FOneEveryVecStructCols get(const char* table_name) { return FOneEveryVecStructCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneEveryVecStructType>
-    {
-        static FOneEveryVecStructIxCols get(const char* table_name) { return FOneEveryVecStructIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneEveryVecStructType> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneEveryVecStructType, FOneEveryVecStructCols, FOneEveryVecStructIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneF32Cols
@@ -10819,21 +10915,8 @@ struct TESTCLIENT_API FOneF32IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneF32Type>
-    {
-        static FOneF32Cols get(const char* table_name) { return FOneF32Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneF32Type>
-    {
-        static FOneF32IxCols get(const char* table_name) { return FOneF32IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneF32Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneF32Type, FOneF32Cols, FOneF32IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneF64Cols
@@ -10853,21 +10936,8 @@ struct TESTCLIENT_API FOneF64IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneF64Type>
-    {
-        static FOneF64Cols get(const char* table_name) { return FOneF64Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneF64Type>
-    {
-        static FOneF64IxCols get(const char* table_name) { return FOneF64IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneF64Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneF64Type, FOneF64Cols, FOneF64IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneI128Cols
@@ -10887,21 +10957,8 @@ struct TESTCLIENT_API FOneI128IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneI128Type>
-    {
-        static FOneI128Cols get(const char* table_name) { return FOneI128Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneI128Type>
-    {
-        static FOneI128IxCols get(const char* table_name) { return FOneI128IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneI128Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneI128Type, FOneI128Cols, FOneI128IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneI16Cols
@@ -10921,21 +10978,8 @@ struct TESTCLIENT_API FOneI16IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneI16Type>
-    {
-        static FOneI16Cols get(const char* table_name) { return FOneI16Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneI16Type>
-    {
-        static FOneI16IxCols get(const char* table_name) { return FOneI16IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneI16Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneI16Type, FOneI16Cols, FOneI16IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneI256Cols
@@ -10955,21 +10999,8 @@ struct TESTCLIENT_API FOneI256IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneI256Type>
-    {
-        static FOneI256Cols get(const char* table_name) { return FOneI256Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneI256Type>
-    {
-        static FOneI256IxCols get(const char* table_name) { return FOneI256IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneI256Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneI256Type, FOneI256Cols, FOneI256IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneI32Cols
@@ -10989,21 +11020,8 @@ struct TESTCLIENT_API FOneI32IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneI32Type>
-    {
-        static FOneI32Cols get(const char* table_name) { return FOneI32Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneI32Type>
-    {
-        static FOneI32IxCols get(const char* table_name) { return FOneI32IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneI32Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneI32Type, FOneI32Cols, FOneI32IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneI64Cols
@@ -11023,21 +11041,8 @@ struct TESTCLIENT_API FOneI64IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneI64Type>
-    {
-        static FOneI64Cols get(const char* table_name) { return FOneI64Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneI64Type>
-    {
-        static FOneI64IxCols get(const char* table_name) { return FOneI64IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneI64Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneI64Type, FOneI64Cols, FOneI64IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneI8Cols
@@ -11057,21 +11062,8 @@ struct TESTCLIENT_API FOneI8IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneI8Type>
-    {
-        static FOneI8Cols get(const char* table_name) { return FOneI8Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneI8Type>
-    {
-        static FOneI8IxCols get(const char* table_name) { return FOneI8IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneI8Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneI8Type, FOneI8Cols, FOneI8IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneIdentityCols
@@ -11091,21 +11083,8 @@ struct TESTCLIENT_API FOneIdentityIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneIdentityType>
-    {
-        static FOneIdentityCols get(const char* table_name) { return FOneIdentityCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneIdentityType>
-    {
-        static FOneIdentityIxCols get(const char* table_name) { return FOneIdentityIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneIdentityType> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneIdentityType, FOneIdentityCols, FOneIdentityIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneSimpleEnumCols
@@ -11125,21 +11104,8 @@ struct TESTCLIENT_API FOneSimpleEnumIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneSimpleEnumType>
-    {
-        static FOneSimpleEnumCols get(const char* table_name) { return FOneSimpleEnumCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneSimpleEnumType>
-    {
-        static FOneSimpleEnumIxCols get(const char* table_name) { return FOneSimpleEnumIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneSimpleEnumType> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneSimpleEnumType, FOneSimpleEnumCols, FOneSimpleEnumIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneStringCols
@@ -11159,21 +11125,8 @@ struct TESTCLIENT_API FOneStringIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneStringType>
-    {
-        static FOneStringCols get(const char* table_name) { return FOneStringCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneStringType>
-    {
-        static FOneStringIxCols get(const char* table_name) { return FOneStringIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneStringType> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneStringType, FOneStringCols, FOneStringIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneTimestampCols
@@ -11193,21 +11146,8 @@ struct TESTCLIENT_API FOneTimestampIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneTimestampType>
-    {
-        static FOneTimestampCols get(const char* table_name) { return FOneTimestampCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneTimestampType>
-    {
-        static FOneTimestampIxCols get(const char* table_name) { return FOneTimestampIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneTimestampType> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneTimestampType, FOneTimestampCols, FOneTimestampIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneU128Cols
@@ -11227,21 +11167,8 @@ struct TESTCLIENT_API FOneU128IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneU128Type>
-    {
-        static FOneU128Cols get(const char* table_name) { return FOneU128Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneU128Type>
-    {
-        static FOneU128IxCols get(const char* table_name) { return FOneU128IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneU128Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneU128Type, FOneU128Cols, FOneU128IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneU16Cols
@@ -11261,21 +11188,8 @@ struct TESTCLIENT_API FOneU16IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneU16Type>
-    {
-        static FOneU16Cols get(const char* table_name) { return FOneU16Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneU16Type>
-    {
-        static FOneU16IxCols get(const char* table_name) { return FOneU16IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneU16Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneU16Type, FOneU16Cols, FOneU16IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneU256Cols
@@ -11295,21 +11209,8 @@ struct TESTCLIENT_API FOneU256IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneU256Type>
-    {
-        static FOneU256Cols get(const char* table_name) { return FOneU256Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneU256Type>
-    {
-        static FOneU256IxCols get(const char* table_name) { return FOneU256IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneU256Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneU256Type, FOneU256Cols, FOneU256IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneU32Cols
@@ -11329,21 +11230,8 @@ struct TESTCLIENT_API FOneU32IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneU32Type>
-    {
-        static FOneU32Cols get(const char* table_name) { return FOneU32Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneU32Type>
-    {
-        static FOneU32IxCols get(const char* table_name) { return FOneU32IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneU32Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneU32Type, FOneU32Cols, FOneU32IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneU64Cols
@@ -11363,21 +11251,8 @@ struct TESTCLIENT_API FOneU64IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneU64Type>
-    {
-        static FOneU64Cols get(const char* table_name) { return FOneU64Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneU64Type>
-    {
-        static FOneU64IxCols get(const char* table_name) { return FOneU64IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneU64Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneU64Type, FOneU64Cols, FOneU64IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneU8Cols
@@ -11397,21 +11272,8 @@ struct TESTCLIENT_API FOneU8IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneU8Type>
-    {
-        static FOneU8Cols get(const char* table_name) { return FOneU8Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneU8Type>
-    {
-        static FOneU8IxCols get(const char* table_name) { return FOneU8IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneU8Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneU8Type, FOneU8Cols, FOneU8IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneUnitStructCols
@@ -11431,21 +11293,8 @@ struct TESTCLIENT_API FOneUnitStructIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneUnitStructType>
-    {
-        static FOneUnitStructCols get(const char* table_name) { return FOneUnitStructCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneUnitStructType>
-    {
-        static FOneUnitStructIxCols get(const char* table_name) { return FOneUnitStructIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneUnitStructType> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneUnitStructType, FOneUnitStructCols, FOneUnitStructIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOneUuidCols
@@ -11465,21 +11314,8 @@ struct TESTCLIENT_API FOneUuidIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOneUuidType>
-    {
-        static FOneUuidCols get(const char* table_name) { return FOneUuidCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOneUuidType>
-    {
-        static FOneUuidIxCols get(const char* table_name) { return FOneUuidIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOneUuidType> : std::true_type {};
+    struct CanBeLookupTable<Table<FOneUuidType, FOneUuidCols, FOneUuidIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOptionEveryPrimitiveStructCols
@@ -11499,21 +11335,8 @@ struct TESTCLIENT_API FOptionEveryPrimitiveStructIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOptionEveryPrimitiveStructType>
-    {
-        static FOptionEveryPrimitiveStructCols get(const char* table_name) { return FOptionEveryPrimitiveStructCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOptionEveryPrimitiveStructType>
-    {
-        static FOptionEveryPrimitiveStructIxCols get(const char* table_name) { return FOptionEveryPrimitiveStructIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOptionEveryPrimitiveStructType> : std::true_type {};
+    struct CanBeLookupTable<Table<FOptionEveryPrimitiveStructType, FOptionEveryPrimitiveStructCols, FOptionEveryPrimitiveStructIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOptionI32Cols
@@ -11533,21 +11356,8 @@ struct TESTCLIENT_API FOptionI32IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOptionI32Type>
-    {
-        static FOptionI32Cols get(const char* table_name) { return FOptionI32Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOptionI32Type>
-    {
-        static FOptionI32IxCols get(const char* table_name) { return FOptionI32IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOptionI32Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FOptionI32Type, FOptionI32Cols, FOptionI32IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOptionIdentityCols
@@ -11567,21 +11377,8 @@ struct TESTCLIENT_API FOptionIdentityIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOptionIdentityType>
-    {
-        static FOptionIdentityCols get(const char* table_name) { return FOptionIdentityCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOptionIdentityType>
-    {
-        static FOptionIdentityIxCols get(const char* table_name) { return FOptionIdentityIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOptionIdentityType> : std::true_type {};
+    struct CanBeLookupTable<Table<FOptionIdentityType, FOptionIdentityCols, FOptionIdentityIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOptionSimpleEnumCols
@@ -11601,21 +11398,8 @@ struct TESTCLIENT_API FOptionSimpleEnumIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOptionSimpleEnumType>
-    {
-        static FOptionSimpleEnumCols get(const char* table_name) { return FOptionSimpleEnumCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOptionSimpleEnumType>
-    {
-        static FOptionSimpleEnumIxCols get(const char* table_name) { return FOptionSimpleEnumIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOptionSimpleEnumType> : std::true_type {};
+    struct CanBeLookupTable<Table<FOptionSimpleEnumType, FOptionSimpleEnumCols, FOptionSimpleEnumIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOptionStringCols
@@ -11635,21 +11419,8 @@ struct TESTCLIENT_API FOptionStringIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOptionStringType>
-    {
-        static FOptionStringCols get(const char* table_name) { return FOptionStringCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOptionStringType>
-    {
-        static FOptionStringIxCols get(const char* table_name) { return FOptionStringIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOptionStringType> : std::true_type {};
+    struct CanBeLookupTable<Table<FOptionStringType, FOptionStringCols, FOptionStringIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOptionUuidCols
@@ -11669,21 +11440,8 @@ struct TESTCLIENT_API FOptionUuidIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOptionUuidType>
-    {
-        static FOptionUuidCols get(const char* table_name) { return FOptionUuidCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOptionUuidType>
-    {
-        static FOptionUuidIxCols get(const char* table_name) { return FOptionUuidIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOptionUuidType> : std::true_type {};
+    struct CanBeLookupTable<Table<FOptionUuidType, FOptionUuidCols, FOptionUuidIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FOptionVecOptionI32Cols
@@ -11703,21 +11461,8 @@ struct TESTCLIENT_API FOptionVecOptionI32IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FOptionVecOptionI32Type>
-    {
-        static FOptionVecOptionI32Cols get(const char* table_name) { return FOptionVecOptionI32Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FOptionVecOptionI32Type>
-    {
-        static FOptionVecOptionI32IxCols get(const char* table_name) { return FOptionVecOptionI32IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FOptionVecOptionI32Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FOptionVecOptionI32Type, FOptionVecOptionI32Cols, FOptionVecOptionI32IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FPkBoolCols
@@ -11734,27 +11479,13 @@ struct TESTCLIENT_API FPkBoolIxCols
     explicit FPkBoolIxCols(const char* TableName)
         : B(TableName, "b") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPkBoolType, bool, &FPkBoolType::B> B;
+    ::SpacetimeDB::query_builder::IxCol<FPkBoolType, bool> B;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FPkBoolType, &FPkBoolType::B>);
-
     template<>
-    struct HasCols<FPkBoolType>
-    {
-        static FPkBoolCols get(const char* table_name) { return FPkBoolCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPkBoolType>
-    {
-        static FPkBoolIxCols get(const char* table_name) { return FPkBoolIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPkBoolType> : std::true_type {};
+    struct CanBeLookupTable<Table<FPkBoolType, FPkBoolCols, FPkBoolIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FPkConnectionIdCols
@@ -11771,27 +11502,13 @@ struct TESTCLIENT_API FPkConnectionIdIxCols
     explicit FPkConnectionIdIxCols(const char* TableName)
         : A(TableName, "a") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPkConnectionIdType, FSpacetimeDBConnectionId, &FPkConnectionIdType::A> A;
+    ::SpacetimeDB::query_builder::IxCol<FPkConnectionIdType, FSpacetimeDBConnectionId> A;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FPkConnectionIdType, &FPkConnectionIdType::A>);
-
     template<>
-    struct HasCols<FPkConnectionIdType>
-    {
-        static FPkConnectionIdCols get(const char* table_name) { return FPkConnectionIdCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPkConnectionIdType>
-    {
-        static FPkConnectionIdIxCols get(const char* table_name) { return FPkConnectionIdIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPkConnectionIdType> : std::true_type {};
+    struct CanBeLookupTable<Table<FPkConnectionIdType, FPkConnectionIdCols, FPkConnectionIdIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FPkI128Cols
@@ -11808,27 +11525,13 @@ struct TESTCLIENT_API FPkI128IxCols
     explicit FPkI128IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPkI128Type, FSpacetimeDBInt128, &FPkI128Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FPkI128Type, FSpacetimeDBInt128> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FPkI128Type, &FPkI128Type::N>);
-
     template<>
-    struct HasCols<FPkI128Type>
-    {
-        static FPkI128Cols get(const char* table_name) { return FPkI128Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPkI128Type>
-    {
-        static FPkI128IxCols get(const char* table_name) { return FPkI128IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPkI128Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FPkI128Type, FPkI128Cols, FPkI128IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FPkI16Cols
@@ -11845,27 +11548,13 @@ struct TESTCLIENT_API FPkI16IxCols
     explicit FPkI16IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPkI16Type, int16, &FPkI16Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FPkI16Type, int16> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FPkI16Type, &FPkI16Type::N>);
-
     template<>
-    struct HasCols<FPkI16Type>
-    {
-        static FPkI16Cols get(const char* table_name) { return FPkI16Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPkI16Type>
-    {
-        static FPkI16IxCols get(const char* table_name) { return FPkI16IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPkI16Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FPkI16Type, FPkI16Cols, FPkI16IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FPkI256Cols
@@ -11882,27 +11571,13 @@ struct TESTCLIENT_API FPkI256IxCols
     explicit FPkI256IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPkI256Type, FSpacetimeDBInt256, &FPkI256Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FPkI256Type, FSpacetimeDBInt256> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FPkI256Type, &FPkI256Type::N>);
-
     template<>
-    struct HasCols<FPkI256Type>
-    {
-        static FPkI256Cols get(const char* table_name) { return FPkI256Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPkI256Type>
-    {
-        static FPkI256IxCols get(const char* table_name) { return FPkI256IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPkI256Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FPkI256Type, FPkI256Cols, FPkI256IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FPkI32Cols
@@ -11919,27 +11594,13 @@ struct TESTCLIENT_API FPkI32IxCols
     explicit FPkI32IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPkI32Type, int32, &FPkI32Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FPkI32Type, int32> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FPkI32Type, &FPkI32Type::N>);
-
     template<>
-    struct HasCols<FPkI32Type>
-    {
-        static FPkI32Cols get(const char* table_name) { return FPkI32Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPkI32Type>
-    {
-        static FPkI32IxCols get(const char* table_name) { return FPkI32IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPkI32Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FPkI32Type, FPkI32Cols, FPkI32IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FPkI64Cols
@@ -11956,27 +11617,13 @@ struct TESTCLIENT_API FPkI64IxCols
     explicit FPkI64IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPkI64Type, int64, &FPkI64Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FPkI64Type, int64> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FPkI64Type, &FPkI64Type::N>);
-
     template<>
-    struct HasCols<FPkI64Type>
-    {
-        static FPkI64Cols get(const char* table_name) { return FPkI64Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPkI64Type>
-    {
-        static FPkI64IxCols get(const char* table_name) { return FPkI64IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPkI64Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FPkI64Type, FPkI64Cols, FPkI64IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FPkI8Cols
@@ -11993,27 +11640,13 @@ struct TESTCLIENT_API FPkI8IxCols
     explicit FPkI8IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPkI8Type, int8, &FPkI8Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FPkI8Type, int8> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FPkI8Type, &FPkI8Type::N>);
-
     template<>
-    struct HasCols<FPkI8Type>
-    {
-        static FPkI8Cols get(const char* table_name) { return FPkI8Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPkI8Type>
-    {
-        static FPkI8IxCols get(const char* table_name) { return FPkI8IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPkI8Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FPkI8Type, FPkI8Cols, FPkI8IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FPkIdentityCols
@@ -12030,27 +11663,13 @@ struct TESTCLIENT_API FPkIdentityIxCols
     explicit FPkIdentityIxCols(const char* TableName)
         : I(TableName, "i") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPkIdentityType, FSpacetimeDBIdentity, &FPkIdentityType::I> I;
+    ::SpacetimeDB::query_builder::IxCol<FPkIdentityType, FSpacetimeDBIdentity> I;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FPkIdentityType, &FPkIdentityType::I>);
-
     template<>
-    struct HasCols<FPkIdentityType>
-    {
-        static FPkIdentityCols get(const char* table_name) { return FPkIdentityCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPkIdentityType>
-    {
-        static FPkIdentityIxCols get(const char* table_name) { return FPkIdentityIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPkIdentityType> : std::true_type {};
+    struct CanBeLookupTable<Table<FPkIdentityType, FPkIdentityCols, FPkIdentityIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FPkSimpleEnumCols
@@ -12067,27 +11686,13 @@ struct TESTCLIENT_API FPkSimpleEnumIxCols
     explicit FPkSimpleEnumIxCols(const char* TableName)
         : A(TableName, "a") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPkSimpleEnumType, ESimpleEnumType, &FPkSimpleEnumType::A> A;
+    ::SpacetimeDB::query_builder::IxCol<FPkSimpleEnumType, ESimpleEnumType> A;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FPkSimpleEnumType, &FPkSimpleEnumType::A>);
-
     template<>
-    struct HasCols<FPkSimpleEnumType>
-    {
-        static FPkSimpleEnumCols get(const char* table_name) { return FPkSimpleEnumCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPkSimpleEnumType>
-    {
-        static FPkSimpleEnumIxCols get(const char* table_name) { return FPkSimpleEnumIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPkSimpleEnumType> : std::true_type {};
+    struct CanBeLookupTable<Table<FPkSimpleEnumType, FPkSimpleEnumCols, FPkSimpleEnumIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FPkStringCols
@@ -12104,27 +11709,13 @@ struct TESTCLIENT_API FPkStringIxCols
     explicit FPkStringIxCols(const char* TableName)
         : S(TableName, "s") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPkStringType, FString, &FPkStringType::S> S;
+    ::SpacetimeDB::query_builder::IxCol<FPkStringType, FString> S;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FPkStringType, &FPkStringType::S>);
-
     template<>
-    struct HasCols<FPkStringType>
-    {
-        static FPkStringCols get(const char* table_name) { return FPkStringCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPkStringType>
-    {
-        static FPkStringIxCols get(const char* table_name) { return FPkStringIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPkStringType> : std::true_type {};
+    struct CanBeLookupTable<Table<FPkStringType, FPkStringCols, FPkStringIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FPkU128Cols
@@ -12141,27 +11732,13 @@ struct TESTCLIENT_API FPkU128IxCols
     explicit FPkU128IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPkU128Type, FSpacetimeDBUInt128, &FPkU128Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FPkU128Type, FSpacetimeDBUInt128> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FPkU128Type, &FPkU128Type::N>);
-
     template<>
-    struct HasCols<FPkU128Type>
-    {
-        static FPkU128Cols get(const char* table_name) { return FPkU128Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPkU128Type>
-    {
-        static FPkU128IxCols get(const char* table_name) { return FPkU128IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPkU128Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FPkU128Type, FPkU128Cols, FPkU128IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FPkU16Cols
@@ -12178,27 +11755,13 @@ struct TESTCLIENT_API FPkU16IxCols
     explicit FPkU16IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPkU16Type, uint16, &FPkU16Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FPkU16Type, uint16> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FPkU16Type, &FPkU16Type::N>);
-
     template<>
-    struct HasCols<FPkU16Type>
-    {
-        static FPkU16Cols get(const char* table_name) { return FPkU16Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPkU16Type>
-    {
-        static FPkU16IxCols get(const char* table_name) { return FPkU16IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPkU16Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FPkU16Type, FPkU16Cols, FPkU16IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FPkU256Cols
@@ -12215,27 +11778,13 @@ struct TESTCLIENT_API FPkU256IxCols
     explicit FPkU256IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPkU256Type, FSpacetimeDBUInt256, &FPkU256Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FPkU256Type, FSpacetimeDBUInt256> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FPkU256Type, &FPkU256Type::N>);
-
     template<>
-    struct HasCols<FPkU256Type>
-    {
-        static FPkU256Cols get(const char* table_name) { return FPkU256Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPkU256Type>
-    {
-        static FPkU256IxCols get(const char* table_name) { return FPkU256IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPkU256Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FPkU256Type, FPkU256Cols, FPkU256IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FPkU32Cols
@@ -12252,27 +11801,13 @@ struct TESTCLIENT_API FPkU32IxCols
     explicit FPkU32IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPkU32Type, uint32, &FPkU32Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FPkU32Type, uint32> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FPkU32Type, &FPkU32Type::N>);
-
     template<>
-    struct HasCols<FPkU32Type>
-    {
-        static FPkU32Cols get(const char* table_name) { return FPkU32Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPkU32Type>
-    {
-        static FPkU32IxCols get(const char* table_name) { return FPkU32IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPkU32Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FPkU32Type, FPkU32Cols, FPkU32IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FPkU32TwoCols
@@ -12289,27 +11824,13 @@ struct TESTCLIENT_API FPkU32TwoIxCols
     explicit FPkU32TwoIxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPkU32TwoType, uint32, &FPkU32TwoType::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FPkU32TwoType, uint32> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FPkU32TwoType, &FPkU32TwoType::N>);
-
     template<>
-    struct HasCols<FPkU32TwoType>
-    {
-        static FPkU32TwoCols get(const char* table_name) { return FPkU32TwoCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPkU32TwoType>
-    {
-        static FPkU32TwoIxCols get(const char* table_name) { return FPkU32TwoIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPkU32TwoType> : std::true_type {};
+    struct CanBeLookupTable<Table<FPkU32TwoType, FPkU32TwoCols, FPkU32TwoIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FPkU64Cols
@@ -12326,27 +11847,13 @@ struct TESTCLIENT_API FPkU64IxCols
     explicit FPkU64IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPkU64Type, uint64, &FPkU64Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FPkU64Type, uint64> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FPkU64Type, &FPkU64Type::N>);
-
     template<>
-    struct HasCols<FPkU64Type>
-    {
-        static FPkU64Cols get(const char* table_name) { return FPkU64Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPkU64Type>
-    {
-        static FPkU64IxCols get(const char* table_name) { return FPkU64IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPkU64Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FPkU64Type, FPkU64Cols, FPkU64IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FPkU8Cols
@@ -12363,27 +11870,13 @@ struct TESTCLIENT_API FPkU8IxCols
     explicit FPkU8IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPkU8Type, uint8, &FPkU8Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FPkU8Type, uint8> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FPkU8Type, &FPkU8Type::N>);
-
     template<>
-    struct HasCols<FPkU8Type>
-    {
-        static FPkU8Cols get(const char* table_name) { return FPkU8Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPkU8Type>
-    {
-        static FPkU8IxCols get(const char* table_name) { return FPkU8IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPkU8Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FPkU8Type, FPkU8Cols, FPkU8IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FPkUuidCols
@@ -12400,27 +11893,13 @@ struct TESTCLIENT_API FPkUuidIxCols
     explicit FPkUuidIxCols(const char* TableName)
         : U(TableName, "u") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FPkUuidType, FSpacetimeDBUuid, &FPkUuidType::U> U;
+    ::SpacetimeDB::query_builder::IxCol<FPkUuidType, FSpacetimeDBUuid> U;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FPkUuidType, &FPkUuidType::U>);
-
     template<>
-    struct HasCols<FPkUuidType>
-    {
-        static FPkUuidCols get(const char* table_name) { return FPkUuidCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FPkUuidType>
-    {
-        static FPkUuidIxCols get(const char* table_name) { return FPkUuidIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FPkUuidType> : std::true_type {};
+    struct CanBeLookupTable<Table<FPkUuidType, FPkUuidCols, FPkUuidIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FResultEveryPrimitiveStructStringCols
@@ -12440,21 +11919,8 @@ struct TESTCLIENT_API FResultEveryPrimitiveStructStringIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FResultEveryPrimitiveStructStringType>
-    {
-        static FResultEveryPrimitiveStructStringCols get(const char* table_name) { return FResultEveryPrimitiveStructStringCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FResultEveryPrimitiveStructStringType>
-    {
-        static FResultEveryPrimitiveStructStringIxCols get(const char* table_name) { return FResultEveryPrimitiveStructStringIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FResultEveryPrimitiveStructStringType> : std::true_type {};
+    struct CanBeLookupTable<Table<FResultEveryPrimitiveStructStringType, FResultEveryPrimitiveStructStringCols, FResultEveryPrimitiveStructStringIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FResultI32StringCols
@@ -12474,21 +11940,8 @@ struct TESTCLIENT_API FResultI32StringIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FResultI32StringType>
-    {
-        static FResultI32StringCols get(const char* table_name) { return FResultI32StringCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FResultI32StringType>
-    {
-        static FResultI32StringIxCols get(const char* table_name) { return FResultI32StringIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FResultI32StringType> : std::true_type {};
+    struct CanBeLookupTable<Table<FResultI32StringType, FResultI32StringCols, FResultI32StringIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FResultIdentityStringCols
@@ -12508,21 +11961,8 @@ struct TESTCLIENT_API FResultIdentityStringIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FResultIdentityStringType>
-    {
-        static FResultIdentityStringCols get(const char* table_name) { return FResultIdentityStringCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FResultIdentityStringType>
-    {
-        static FResultIdentityStringIxCols get(const char* table_name) { return FResultIdentityStringIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FResultIdentityStringType> : std::true_type {};
+    struct CanBeLookupTable<Table<FResultIdentityStringType, FResultIdentityStringCols, FResultIdentityStringIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FResultSimpleEnumI32Cols
@@ -12542,21 +11982,8 @@ struct TESTCLIENT_API FResultSimpleEnumI32IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FResultSimpleEnumI32Type>
-    {
-        static FResultSimpleEnumI32Cols get(const char* table_name) { return FResultSimpleEnumI32Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FResultSimpleEnumI32Type>
-    {
-        static FResultSimpleEnumI32IxCols get(const char* table_name) { return FResultSimpleEnumI32IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FResultSimpleEnumI32Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FResultSimpleEnumI32Type, FResultSimpleEnumI32Cols, FResultSimpleEnumI32IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FResultStringI32Cols
@@ -12576,21 +12003,8 @@ struct TESTCLIENT_API FResultStringI32IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FResultStringI32Type>
-    {
-        static FResultStringI32Cols get(const char* table_name) { return FResultStringI32Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FResultStringI32Type>
-    {
-        static FResultStringI32IxCols get(const char* table_name) { return FResultStringI32IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FResultStringI32Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FResultStringI32Type, FResultStringI32Cols, FResultStringI32IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FResultVecI32StringCols
@@ -12610,21 +12024,8 @@ struct TESTCLIENT_API FResultVecI32StringIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FResultVecI32StringType>
-    {
-        static FResultVecI32StringCols get(const char* table_name) { return FResultVecI32StringCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FResultVecI32StringType>
-    {
-        static FResultVecI32StringIxCols get(const char* table_name) { return FResultVecI32StringIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FResultVecI32StringType> : std::true_type {};
+    struct CanBeLookupTable<Table<FResultVecI32StringType, FResultVecI32StringCols, FResultVecI32StringIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FScheduledTableCols
@@ -12642,27 +12043,13 @@ struct TESTCLIENT_API FScheduledTableIxCols
     explicit FScheduledTableIxCols(const char* TableName)
         : ScheduledId(TableName, "scheduled_id") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FScheduledTableType, uint64, &FScheduledTableType::ScheduledId> ScheduledId;
+    ::SpacetimeDB::query_builder::IxCol<FScheduledTableType, uint64> ScheduledId;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FScheduledTableType, &FScheduledTableType::ScheduledId>);
-
     template<>
-    struct HasCols<FScheduledTableType>
-    {
-        static FScheduledTableCols get(const char* table_name) { return FScheduledTableCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FScheduledTableType>
-    {
-        static FScheduledTableIxCols get(const char* table_name) { return FScheduledTableIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FScheduledTableType> : std::true_type {};
+    struct CanBeLookupTable<Table<FScheduledTableType, FScheduledTableCols, FScheduledTableIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FTableHoldsTableCols
@@ -12683,21 +12070,8 @@ struct TESTCLIENT_API FTableHoldsTableIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FTableHoldsTableType>
-    {
-        static FTableHoldsTableCols get(const char* table_name) { return FTableHoldsTableCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FTableHoldsTableType>
-    {
-        static FTableHoldsTableIxCols get(const char* table_name) { return FTableHoldsTableIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FTableHoldsTableType> : std::true_type {};
+    struct CanBeLookupTable<Table<FTableHoldsTableType, FTableHoldsTableCols, FTableHoldsTableIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FUniqueBoolCols
@@ -12714,27 +12088,13 @@ struct TESTCLIENT_API FUniqueBoolIxCols
     explicit FUniqueBoolIxCols(const char* TableName)
         : B(TableName, "b") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FUniqueBoolType, bool, &FUniqueBoolType::B> B;
+    ::SpacetimeDB::query_builder::IxCol<FUniqueBoolType, bool> B;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FUniqueBoolType, &FUniqueBoolType::B>);
-
     template<>
-    struct HasCols<FUniqueBoolType>
-    {
-        static FUniqueBoolCols get(const char* table_name) { return FUniqueBoolCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FUniqueBoolType>
-    {
-        static FUniqueBoolIxCols get(const char* table_name) { return FUniqueBoolIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FUniqueBoolType> : std::true_type {};
+    struct CanBeLookupTable<Table<FUniqueBoolType, FUniqueBoolCols, FUniqueBoolIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FUniqueConnectionIdCols
@@ -12751,27 +12111,13 @@ struct TESTCLIENT_API FUniqueConnectionIdIxCols
     explicit FUniqueConnectionIdIxCols(const char* TableName)
         : A(TableName, "a") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FUniqueConnectionIdType, FSpacetimeDBConnectionId, &FUniqueConnectionIdType::A> A;
+    ::SpacetimeDB::query_builder::IxCol<FUniqueConnectionIdType, FSpacetimeDBConnectionId> A;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FUniqueConnectionIdType, &FUniqueConnectionIdType::A>);
-
     template<>
-    struct HasCols<FUniqueConnectionIdType>
-    {
-        static FUniqueConnectionIdCols get(const char* table_name) { return FUniqueConnectionIdCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FUniqueConnectionIdType>
-    {
-        static FUniqueConnectionIdIxCols get(const char* table_name) { return FUniqueConnectionIdIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FUniqueConnectionIdType> : std::true_type {};
+    struct CanBeLookupTable<Table<FUniqueConnectionIdType, FUniqueConnectionIdCols, FUniqueConnectionIdIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FUniqueI128Cols
@@ -12788,27 +12134,13 @@ struct TESTCLIENT_API FUniqueI128IxCols
     explicit FUniqueI128IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FUniqueI128Type, FSpacetimeDBInt128, &FUniqueI128Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FUniqueI128Type, FSpacetimeDBInt128> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FUniqueI128Type, &FUniqueI128Type::N>);
-
     template<>
-    struct HasCols<FUniqueI128Type>
-    {
-        static FUniqueI128Cols get(const char* table_name) { return FUniqueI128Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FUniqueI128Type>
-    {
-        static FUniqueI128IxCols get(const char* table_name) { return FUniqueI128IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FUniqueI128Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FUniqueI128Type, FUniqueI128Cols, FUniqueI128IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FUniqueI16Cols
@@ -12825,27 +12157,13 @@ struct TESTCLIENT_API FUniqueI16IxCols
     explicit FUniqueI16IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FUniqueI16Type, int16, &FUniqueI16Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FUniqueI16Type, int16> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FUniqueI16Type, &FUniqueI16Type::N>);
-
     template<>
-    struct HasCols<FUniqueI16Type>
-    {
-        static FUniqueI16Cols get(const char* table_name) { return FUniqueI16Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FUniqueI16Type>
-    {
-        static FUniqueI16IxCols get(const char* table_name) { return FUniqueI16IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FUniqueI16Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FUniqueI16Type, FUniqueI16Cols, FUniqueI16IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FUniqueI256Cols
@@ -12862,27 +12180,13 @@ struct TESTCLIENT_API FUniqueI256IxCols
     explicit FUniqueI256IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FUniqueI256Type, FSpacetimeDBInt256, &FUniqueI256Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FUniqueI256Type, FSpacetimeDBInt256> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FUniqueI256Type, &FUniqueI256Type::N>);
-
     template<>
-    struct HasCols<FUniqueI256Type>
-    {
-        static FUniqueI256Cols get(const char* table_name) { return FUniqueI256Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FUniqueI256Type>
-    {
-        static FUniqueI256IxCols get(const char* table_name) { return FUniqueI256IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FUniqueI256Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FUniqueI256Type, FUniqueI256Cols, FUniqueI256IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FUniqueI32Cols
@@ -12899,27 +12203,13 @@ struct TESTCLIENT_API FUniqueI32IxCols
     explicit FUniqueI32IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FUniqueI32Type, int32, &FUniqueI32Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FUniqueI32Type, int32> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FUniqueI32Type, &FUniqueI32Type::N>);
-
     template<>
-    struct HasCols<FUniqueI32Type>
-    {
-        static FUniqueI32Cols get(const char* table_name) { return FUniqueI32Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FUniqueI32Type>
-    {
-        static FUniqueI32IxCols get(const char* table_name) { return FUniqueI32IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FUniqueI32Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FUniqueI32Type, FUniqueI32Cols, FUniqueI32IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FUniqueI64Cols
@@ -12936,27 +12226,13 @@ struct TESTCLIENT_API FUniqueI64IxCols
     explicit FUniqueI64IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FUniqueI64Type, int64, &FUniqueI64Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FUniqueI64Type, int64> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FUniqueI64Type, &FUniqueI64Type::N>);
-
     template<>
-    struct HasCols<FUniqueI64Type>
-    {
-        static FUniqueI64Cols get(const char* table_name) { return FUniqueI64Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FUniqueI64Type>
-    {
-        static FUniqueI64IxCols get(const char* table_name) { return FUniqueI64IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FUniqueI64Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FUniqueI64Type, FUniqueI64Cols, FUniqueI64IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FUniqueI8Cols
@@ -12973,27 +12249,13 @@ struct TESTCLIENT_API FUniqueI8IxCols
     explicit FUniqueI8IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FUniqueI8Type, int8, &FUniqueI8Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FUniqueI8Type, int8> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FUniqueI8Type, &FUniqueI8Type::N>);
-
     template<>
-    struct HasCols<FUniqueI8Type>
-    {
-        static FUniqueI8Cols get(const char* table_name) { return FUniqueI8Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FUniqueI8Type>
-    {
-        static FUniqueI8IxCols get(const char* table_name) { return FUniqueI8IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FUniqueI8Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FUniqueI8Type, FUniqueI8Cols, FUniqueI8IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FUniqueIdentityCols
@@ -13010,27 +12272,13 @@ struct TESTCLIENT_API FUniqueIdentityIxCols
     explicit FUniqueIdentityIxCols(const char* TableName)
         : I(TableName, "i") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FUniqueIdentityType, FSpacetimeDBIdentity, &FUniqueIdentityType::I> I;
+    ::SpacetimeDB::query_builder::IxCol<FUniqueIdentityType, FSpacetimeDBIdentity> I;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FUniqueIdentityType, &FUniqueIdentityType::I>);
-
     template<>
-    struct HasCols<FUniqueIdentityType>
-    {
-        static FUniqueIdentityCols get(const char* table_name) { return FUniqueIdentityCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FUniqueIdentityType>
-    {
-        static FUniqueIdentityIxCols get(const char* table_name) { return FUniqueIdentityIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FUniqueIdentityType> : std::true_type {};
+    struct CanBeLookupTable<Table<FUniqueIdentityType, FUniqueIdentityCols, FUniqueIdentityIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FUniqueStringCols
@@ -13047,27 +12295,13 @@ struct TESTCLIENT_API FUniqueStringIxCols
     explicit FUniqueStringIxCols(const char* TableName)
         : S(TableName, "s") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FUniqueStringType, FString, &FUniqueStringType::S> S;
+    ::SpacetimeDB::query_builder::IxCol<FUniqueStringType, FString> S;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FUniqueStringType, &FUniqueStringType::S>);
-
     template<>
-    struct HasCols<FUniqueStringType>
-    {
-        static FUniqueStringCols get(const char* table_name) { return FUniqueStringCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FUniqueStringType>
-    {
-        static FUniqueStringIxCols get(const char* table_name) { return FUniqueStringIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FUniqueStringType> : std::true_type {};
+    struct CanBeLookupTable<Table<FUniqueStringType, FUniqueStringCols, FUniqueStringIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FUniqueU128Cols
@@ -13084,27 +12318,13 @@ struct TESTCLIENT_API FUniqueU128IxCols
     explicit FUniqueU128IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FUniqueU128Type, FSpacetimeDBUInt128, &FUniqueU128Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FUniqueU128Type, FSpacetimeDBUInt128> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FUniqueU128Type, &FUniqueU128Type::N>);
-
     template<>
-    struct HasCols<FUniqueU128Type>
-    {
-        static FUniqueU128Cols get(const char* table_name) { return FUniqueU128Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FUniqueU128Type>
-    {
-        static FUniqueU128IxCols get(const char* table_name) { return FUniqueU128IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FUniqueU128Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FUniqueU128Type, FUniqueU128Cols, FUniqueU128IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FUniqueU16Cols
@@ -13121,27 +12341,13 @@ struct TESTCLIENT_API FUniqueU16IxCols
     explicit FUniqueU16IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FUniqueU16Type, uint16, &FUniqueU16Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FUniqueU16Type, uint16> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FUniqueU16Type, &FUniqueU16Type::N>);
-
     template<>
-    struct HasCols<FUniqueU16Type>
-    {
-        static FUniqueU16Cols get(const char* table_name) { return FUniqueU16Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FUniqueU16Type>
-    {
-        static FUniqueU16IxCols get(const char* table_name) { return FUniqueU16IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FUniqueU16Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FUniqueU16Type, FUniqueU16Cols, FUniqueU16IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FUniqueU256Cols
@@ -13158,27 +12364,13 @@ struct TESTCLIENT_API FUniqueU256IxCols
     explicit FUniqueU256IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FUniqueU256Type, FSpacetimeDBUInt256, &FUniqueU256Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FUniqueU256Type, FSpacetimeDBUInt256> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FUniqueU256Type, &FUniqueU256Type::N>);
-
     template<>
-    struct HasCols<FUniqueU256Type>
-    {
-        static FUniqueU256Cols get(const char* table_name) { return FUniqueU256Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FUniqueU256Type>
-    {
-        static FUniqueU256IxCols get(const char* table_name) { return FUniqueU256IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FUniqueU256Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FUniqueU256Type, FUniqueU256Cols, FUniqueU256IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FUniqueU32Cols
@@ -13195,27 +12387,13 @@ struct TESTCLIENT_API FUniqueU32IxCols
     explicit FUniqueU32IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FUniqueU32Type, uint32, &FUniqueU32Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FUniqueU32Type, uint32> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FUniqueU32Type, &FUniqueU32Type::N>);
-
     template<>
-    struct HasCols<FUniqueU32Type>
-    {
-        static FUniqueU32Cols get(const char* table_name) { return FUniqueU32Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FUniqueU32Type>
-    {
-        static FUniqueU32IxCols get(const char* table_name) { return FUniqueU32IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FUniqueU32Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FUniqueU32Type, FUniqueU32Cols, FUniqueU32IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FUniqueU64Cols
@@ -13232,27 +12410,13 @@ struct TESTCLIENT_API FUniqueU64IxCols
     explicit FUniqueU64IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FUniqueU64Type, uint64, &FUniqueU64Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FUniqueU64Type, uint64> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FUniqueU64Type, &FUniqueU64Type::N>);
-
     template<>
-    struct HasCols<FUniqueU64Type>
-    {
-        static FUniqueU64Cols get(const char* table_name) { return FUniqueU64Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FUniqueU64Type>
-    {
-        static FUniqueU64IxCols get(const char* table_name) { return FUniqueU64IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FUniqueU64Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FUniqueU64Type, FUniqueU64Cols, FUniqueU64IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FUniqueU8Cols
@@ -13269,27 +12433,13 @@ struct TESTCLIENT_API FUniqueU8IxCols
     explicit FUniqueU8IxCols(const char* TableName)
         : N(TableName, "n") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FUniqueU8Type, uint8, &FUniqueU8Type::N> N;
+    ::SpacetimeDB::query_builder::IxCol<FUniqueU8Type, uint8> N;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FUniqueU8Type, &FUniqueU8Type::N>);
-
     template<>
-    struct HasCols<FUniqueU8Type>
-    {
-        static FUniqueU8Cols get(const char* table_name) { return FUniqueU8Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FUniqueU8Type>
-    {
-        static FUniqueU8IxCols get(const char* table_name) { return FUniqueU8IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FUniqueU8Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FUniqueU8Type, FUniqueU8Cols, FUniqueU8IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FUniqueUuidCols
@@ -13306,27 +12456,13 @@ struct TESTCLIENT_API FUniqueUuidIxCols
     explicit FUniqueUuidIxCols(const char* TableName)
         : U(TableName, "u") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FUniqueUuidType, FSpacetimeDBUuid, &FUniqueUuidType::U> U;
+    ::SpacetimeDB::query_builder::IxCol<FUniqueUuidType, FSpacetimeDBUuid> U;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FUniqueUuidType, &FUniqueUuidType::U>);
-
     template<>
-    struct HasCols<FUniqueUuidType>
-    {
-        static FUniqueUuidCols get(const char* table_name) { return FUniqueUuidCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FUniqueUuidType>
-    {
-        static FUniqueUuidIxCols get(const char* table_name) { return FUniqueUuidIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FUniqueUuidType> : std::true_type {};
+    struct CanBeLookupTable<Table<FUniqueUuidType, FUniqueUuidCols, FUniqueUuidIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FUsersCols
@@ -13343,27 +12479,13 @@ struct TESTCLIENT_API FUsersIxCols
     explicit FUsersIxCols(const char* TableName)
         : Identity(TableName, "identity") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FUsersType, FSpacetimeDBIdentity, &FUsersType::Identity> Identity;
+    ::SpacetimeDB::query_builder::IxCol<FUsersType, FSpacetimeDBIdentity> Identity;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FUsersType, &FUsersType::Identity>);
-
     template<>
-    struct HasCols<FUsersType>
-    {
-        static FUsersCols get(const char* table_name) { return FUsersCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FUsersType>
-    {
-        static FUsersIxCols get(const char* table_name) { return FUsersIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FUsersType> : std::true_type {};
+    struct CanBeLookupTable<Table<FUsersType, FUsersCols, FUsersIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecBoolCols
@@ -13383,21 +12505,8 @@ struct TESTCLIENT_API FVecBoolIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecBoolType>
-    {
-        static FVecBoolCols get(const char* table_name) { return FVecBoolCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecBoolType>
-    {
-        static FVecBoolIxCols get(const char* table_name) { return FVecBoolIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecBoolType> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecBoolType, FVecBoolCols, FVecBoolIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecByteStructCols
@@ -13417,21 +12526,8 @@ struct TESTCLIENT_API FVecByteStructIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecByteStructType>
-    {
-        static FVecByteStructCols get(const char* table_name) { return FVecByteStructCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecByteStructType>
-    {
-        static FVecByteStructIxCols get(const char* table_name) { return FVecByteStructIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecByteStructType> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecByteStructType, FVecByteStructCols, FVecByteStructIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecConnectionIdCols
@@ -13451,21 +12547,8 @@ struct TESTCLIENT_API FVecConnectionIdIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecConnectionIdType>
-    {
-        static FVecConnectionIdCols get(const char* table_name) { return FVecConnectionIdCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecConnectionIdType>
-    {
-        static FVecConnectionIdIxCols get(const char* table_name) { return FVecConnectionIdIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecConnectionIdType> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecConnectionIdType, FVecConnectionIdCols, FVecConnectionIdIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecEnumWithPayloadCols
@@ -13485,21 +12568,8 @@ struct TESTCLIENT_API FVecEnumWithPayloadIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecEnumWithPayloadType>
-    {
-        static FVecEnumWithPayloadCols get(const char* table_name) { return FVecEnumWithPayloadCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecEnumWithPayloadType>
-    {
-        static FVecEnumWithPayloadIxCols get(const char* table_name) { return FVecEnumWithPayloadIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecEnumWithPayloadType> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecEnumWithPayloadType, FVecEnumWithPayloadCols, FVecEnumWithPayloadIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecEveryPrimitiveStructCols
@@ -13519,21 +12589,8 @@ struct TESTCLIENT_API FVecEveryPrimitiveStructIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecEveryPrimitiveStructType>
-    {
-        static FVecEveryPrimitiveStructCols get(const char* table_name) { return FVecEveryPrimitiveStructCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecEveryPrimitiveStructType>
-    {
-        static FVecEveryPrimitiveStructIxCols get(const char* table_name) { return FVecEveryPrimitiveStructIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecEveryPrimitiveStructType> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecEveryPrimitiveStructType, FVecEveryPrimitiveStructCols, FVecEveryPrimitiveStructIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecEveryVecStructCols
@@ -13553,21 +12610,8 @@ struct TESTCLIENT_API FVecEveryVecStructIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecEveryVecStructType>
-    {
-        static FVecEveryVecStructCols get(const char* table_name) { return FVecEveryVecStructCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecEveryVecStructType>
-    {
-        static FVecEveryVecStructIxCols get(const char* table_name) { return FVecEveryVecStructIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecEveryVecStructType> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecEveryVecStructType, FVecEveryVecStructCols, FVecEveryVecStructIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecF32Cols
@@ -13587,21 +12631,8 @@ struct TESTCLIENT_API FVecF32IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecF32Type>
-    {
-        static FVecF32Cols get(const char* table_name) { return FVecF32Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecF32Type>
-    {
-        static FVecF32IxCols get(const char* table_name) { return FVecF32IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecF32Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecF32Type, FVecF32Cols, FVecF32IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecF64Cols
@@ -13621,21 +12652,8 @@ struct TESTCLIENT_API FVecF64IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecF64Type>
-    {
-        static FVecF64Cols get(const char* table_name) { return FVecF64Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecF64Type>
-    {
-        static FVecF64IxCols get(const char* table_name) { return FVecF64IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecF64Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecF64Type, FVecF64Cols, FVecF64IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecI128Cols
@@ -13655,21 +12673,8 @@ struct TESTCLIENT_API FVecI128IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecI128Type>
-    {
-        static FVecI128Cols get(const char* table_name) { return FVecI128Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecI128Type>
-    {
-        static FVecI128IxCols get(const char* table_name) { return FVecI128IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecI128Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecI128Type, FVecI128Cols, FVecI128IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecI16Cols
@@ -13689,21 +12694,8 @@ struct TESTCLIENT_API FVecI16IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecI16Type>
-    {
-        static FVecI16Cols get(const char* table_name) { return FVecI16Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecI16Type>
-    {
-        static FVecI16IxCols get(const char* table_name) { return FVecI16IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecI16Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecI16Type, FVecI16Cols, FVecI16IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecI256Cols
@@ -13723,21 +12715,8 @@ struct TESTCLIENT_API FVecI256IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecI256Type>
-    {
-        static FVecI256Cols get(const char* table_name) { return FVecI256Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecI256Type>
-    {
-        static FVecI256IxCols get(const char* table_name) { return FVecI256IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecI256Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecI256Type, FVecI256Cols, FVecI256IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecI32Cols
@@ -13757,21 +12736,8 @@ struct TESTCLIENT_API FVecI32IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecI32Type>
-    {
-        static FVecI32Cols get(const char* table_name) { return FVecI32Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecI32Type>
-    {
-        static FVecI32IxCols get(const char* table_name) { return FVecI32IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecI32Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecI32Type, FVecI32Cols, FVecI32IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecI64Cols
@@ -13791,21 +12757,8 @@ struct TESTCLIENT_API FVecI64IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecI64Type>
-    {
-        static FVecI64Cols get(const char* table_name) { return FVecI64Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecI64Type>
-    {
-        static FVecI64IxCols get(const char* table_name) { return FVecI64IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecI64Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecI64Type, FVecI64Cols, FVecI64IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecI8Cols
@@ -13825,21 +12778,8 @@ struct TESTCLIENT_API FVecI8IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecI8Type>
-    {
-        static FVecI8Cols get(const char* table_name) { return FVecI8Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecI8Type>
-    {
-        static FVecI8IxCols get(const char* table_name) { return FVecI8IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecI8Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecI8Type, FVecI8Cols, FVecI8IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecIdentityCols
@@ -13859,21 +12799,8 @@ struct TESTCLIENT_API FVecIdentityIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecIdentityType>
-    {
-        static FVecIdentityCols get(const char* table_name) { return FVecIdentityCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecIdentityType>
-    {
-        static FVecIdentityIxCols get(const char* table_name) { return FVecIdentityIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecIdentityType> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecIdentityType, FVecIdentityCols, FVecIdentityIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecSimpleEnumCols
@@ -13893,21 +12820,8 @@ struct TESTCLIENT_API FVecSimpleEnumIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecSimpleEnumType>
-    {
-        static FVecSimpleEnumCols get(const char* table_name) { return FVecSimpleEnumCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecSimpleEnumType>
-    {
-        static FVecSimpleEnumIxCols get(const char* table_name) { return FVecSimpleEnumIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecSimpleEnumType> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecSimpleEnumType, FVecSimpleEnumCols, FVecSimpleEnumIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecStringCols
@@ -13927,21 +12841,8 @@ struct TESTCLIENT_API FVecStringIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecStringType>
-    {
-        static FVecStringCols get(const char* table_name) { return FVecStringCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecStringType>
-    {
-        static FVecStringIxCols get(const char* table_name) { return FVecStringIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecStringType> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecStringType, FVecStringCols, FVecStringIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecTimestampCols
@@ -13961,21 +12862,8 @@ struct TESTCLIENT_API FVecTimestampIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecTimestampType>
-    {
-        static FVecTimestampCols get(const char* table_name) { return FVecTimestampCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecTimestampType>
-    {
-        static FVecTimestampIxCols get(const char* table_name) { return FVecTimestampIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecTimestampType> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecTimestampType, FVecTimestampCols, FVecTimestampIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecU128Cols
@@ -13995,21 +12883,8 @@ struct TESTCLIENT_API FVecU128IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecU128Type>
-    {
-        static FVecU128Cols get(const char* table_name) { return FVecU128Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecU128Type>
-    {
-        static FVecU128IxCols get(const char* table_name) { return FVecU128IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecU128Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecU128Type, FVecU128Cols, FVecU128IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecU16Cols
@@ -14029,21 +12904,8 @@ struct TESTCLIENT_API FVecU16IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecU16Type>
-    {
-        static FVecU16Cols get(const char* table_name) { return FVecU16Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecU16Type>
-    {
-        static FVecU16IxCols get(const char* table_name) { return FVecU16IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecU16Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecU16Type, FVecU16Cols, FVecU16IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecU256Cols
@@ -14063,21 +12925,8 @@ struct TESTCLIENT_API FVecU256IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecU256Type>
-    {
-        static FVecU256Cols get(const char* table_name) { return FVecU256Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecU256Type>
-    {
-        static FVecU256IxCols get(const char* table_name) { return FVecU256IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecU256Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecU256Type, FVecU256Cols, FVecU256IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecU32Cols
@@ -14097,21 +12946,8 @@ struct TESTCLIENT_API FVecU32IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecU32Type>
-    {
-        static FVecU32Cols get(const char* table_name) { return FVecU32Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecU32Type>
-    {
-        static FVecU32IxCols get(const char* table_name) { return FVecU32IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecU32Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecU32Type, FVecU32Cols, FVecU32IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecU64Cols
@@ -14131,21 +12967,8 @@ struct TESTCLIENT_API FVecU64IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecU64Type>
-    {
-        static FVecU64Cols get(const char* table_name) { return FVecU64Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecU64Type>
-    {
-        static FVecU64IxCols get(const char* table_name) { return FVecU64IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecU64Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecU64Type, FVecU64Cols, FVecU64IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecU8Cols
@@ -14165,21 +12988,8 @@ struct TESTCLIENT_API FVecU8IxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecU8Type>
-    {
-        static FVecU8Cols get(const char* table_name) { return FVecU8Cols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecU8Type>
-    {
-        static FVecU8IxCols get(const char* table_name) { return FVecU8IxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecU8Type> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecU8Type, FVecU8Cols, FVecU8IxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecUnitStructCols
@@ -14199,21 +13009,8 @@ struct TESTCLIENT_API FVecUnitStructIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecUnitStructType>
-    {
-        static FVecUnitStructCols get(const char* table_name) { return FVecUnitStructCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecUnitStructType>
-    {
-        static FVecUnitStructIxCols get(const char* table_name) { return FVecUnitStructIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecUnitStructType> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecUnitStructType, FVecUnitStructCols, FVecUnitStructIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FVecUuidCols
@@ -14233,132 +13030,119 @@ struct TESTCLIENT_API FVecUuidIxCols
 
 namespace SpacetimeDB::query_builder
 {
-
     template<>
-    struct HasCols<FVecUuidType>
-    {
-        static FVecUuidCols get(const char* table_name) { return FVecUuidCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FVecUuidType>
-    {
-        static FVecUuidIxCols get(const char* table_name) { return FVecUuidIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FVecUuidType> : std::true_type {};
+    struct CanBeLookupTable<Table<FVecUuidType, FVecUuidCols, FVecUuidIxCols>> : std::true_type {};
 }
 
 struct TESTCLIENT_API FFrom
 {
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FBTreeU32Type> BtreeU32() const { return ::SpacetimeDB::query_builder::Table<FBTreeU32Type>("btree_u_32"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FIndexedSimpleEnumType> IndexedSimpleEnum() const { return ::SpacetimeDB::query_builder::Table<FIndexedSimpleEnumType>("indexed_simple_enum"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FLargeTableType> LargeTable() const { return ::SpacetimeDB::query_builder::Table<FLargeTableType>("large_table"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneBoolType> OneBool() const { return ::SpacetimeDB::query_builder::Table<FOneBoolType>("one_bool"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneByteStructType> OneByteStruct() const { return ::SpacetimeDB::query_builder::Table<FOneByteStructType>("one_byte_struct"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneConnectionIdType> OneConnectionId() const { return ::SpacetimeDB::query_builder::Table<FOneConnectionIdType>("one_connection_id"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneEnumWithPayloadType> OneEnumWithPayload() const { return ::SpacetimeDB::query_builder::Table<FOneEnumWithPayloadType>("one_enum_with_payload"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneEveryPrimitiveStructType> OneEveryPrimitiveStruct() const { return ::SpacetimeDB::query_builder::Table<FOneEveryPrimitiveStructType>("one_every_primitive_struct"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneEveryVecStructType> OneEveryVecStruct() const { return ::SpacetimeDB::query_builder::Table<FOneEveryVecStructType>("one_every_vec_struct"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneF32Type> OneF32() const { return ::SpacetimeDB::query_builder::Table<FOneF32Type>("one_f_32"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneF64Type> OneF64() const { return ::SpacetimeDB::query_builder::Table<FOneF64Type>("one_f_64"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneI128Type> OneI128() const { return ::SpacetimeDB::query_builder::Table<FOneI128Type>("one_i_128"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneI16Type> OneI16() const { return ::SpacetimeDB::query_builder::Table<FOneI16Type>("one_i_16"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneI256Type> OneI256() const { return ::SpacetimeDB::query_builder::Table<FOneI256Type>("one_i_256"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneI32Type> OneI32() const { return ::SpacetimeDB::query_builder::Table<FOneI32Type>("one_i_32"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneI64Type> OneI64() const { return ::SpacetimeDB::query_builder::Table<FOneI64Type>("one_i_64"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneI8Type> OneI8() const { return ::SpacetimeDB::query_builder::Table<FOneI8Type>("one_i_8"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneIdentityType> OneIdentity() const { return ::SpacetimeDB::query_builder::Table<FOneIdentityType>("one_identity"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneSimpleEnumType> OneSimpleEnum() const { return ::SpacetimeDB::query_builder::Table<FOneSimpleEnumType>("one_simple_enum"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneStringType> OneString() const { return ::SpacetimeDB::query_builder::Table<FOneStringType>("one_string"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneTimestampType> OneTimestamp() const { return ::SpacetimeDB::query_builder::Table<FOneTimestampType>("one_timestamp"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneU128Type> OneU128() const { return ::SpacetimeDB::query_builder::Table<FOneU128Type>("one_u_128"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneU16Type> OneU16() const { return ::SpacetimeDB::query_builder::Table<FOneU16Type>("one_u_16"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneU256Type> OneU256() const { return ::SpacetimeDB::query_builder::Table<FOneU256Type>("one_u_256"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneU32Type> OneU32() const { return ::SpacetimeDB::query_builder::Table<FOneU32Type>("one_u_32"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneU64Type> OneU64() const { return ::SpacetimeDB::query_builder::Table<FOneU64Type>("one_u_64"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneU8Type> OneU8() const { return ::SpacetimeDB::query_builder::Table<FOneU8Type>("one_u_8"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneUnitStructType> OneUnitStruct() const { return ::SpacetimeDB::query_builder::Table<FOneUnitStructType>("one_unit_struct"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneUuidType> OneUuid() const { return ::SpacetimeDB::query_builder::Table<FOneUuidType>("one_uuid"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOptionEveryPrimitiveStructType> OptionEveryPrimitiveStruct() const { return ::SpacetimeDB::query_builder::Table<FOptionEveryPrimitiveStructType>("option_every_primitive_struct"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOptionI32Type> OptionI32() const { return ::SpacetimeDB::query_builder::Table<FOptionI32Type>("option_i_32"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOptionIdentityType> OptionIdentity() const { return ::SpacetimeDB::query_builder::Table<FOptionIdentityType>("option_identity"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOptionSimpleEnumType> OptionSimpleEnum() const { return ::SpacetimeDB::query_builder::Table<FOptionSimpleEnumType>("option_simple_enum"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOptionStringType> OptionString() const { return ::SpacetimeDB::query_builder::Table<FOptionStringType>("option_string"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOptionUuidType> OptionUuid() const { return ::SpacetimeDB::query_builder::Table<FOptionUuidType>("option_uuid"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOptionVecOptionI32Type> OptionVecOptionI32() const { return ::SpacetimeDB::query_builder::Table<FOptionVecOptionI32Type>("option_vec_option_i_32"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkBoolType> PkBool() const { return ::SpacetimeDB::query_builder::Table<FPkBoolType>("pk_bool"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkConnectionIdType> PkConnectionId() const { return ::SpacetimeDB::query_builder::Table<FPkConnectionIdType>("pk_connection_id"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkI128Type> PkI128() const { return ::SpacetimeDB::query_builder::Table<FPkI128Type>("pk_i_128"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkI16Type> PkI16() const { return ::SpacetimeDB::query_builder::Table<FPkI16Type>("pk_i_16"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkI256Type> PkI256() const { return ::SpacetimeDB::query_builder::Table<FPkI256Type>("pk_i_256"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkI32Type> PkI32() const { return ::SpacetimeDB::query_builder::Table<FPkI32Type>("pk_i_32"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkI64Type> PkI64() const { return ::SpacetimeDB::query_builder::Table<FPkI64Type>("pk_i_64"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkI8Type> PkI8() const { return ::SpacetimeDB::query_builder::Table<FPkI8Type>("pk_i_8"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkIdentityType> PkIdentity() const { return ::SpacetimeDB::query_builder::Table<FPkIdentityType>("pk_identity"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkSimpleEnumType> PkSimpleEnum() const { return ::SpacetimeDB::query_builder::Table<FPkSimpleEnumType>("pk_simple_enum"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkStringType> PkString() const { return ::SpacetimeDB::query_builder::Table<FPkStringType>("pk_string"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkU128Type> PkU128() const { return ::SpacetimeDB::query_builder::Table<FPkU128Type>("pk_u_128"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkU16Type> PkU16() const { return ::SpacetimeDB::query_builder::Table<FPkU16Type>("pk_u_16"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkU256Type> PkU256() const { return ::SpacetimeDB::query_builder::Table<FPkU256Type>("pk_u_256"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkU32Type> PkU32() const { return ::SpacetimeDB::query_builder::Table<FPkU32Type>("pk_u_32"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkU32TwoType> PkU32Two() const { return ::SpacetimeDB::query_builder::Table<FPkU32TwoType>("pk_u_32_two"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkU64Type> PkU64() const { return ::SpacetimeDB::query_builder::Table<FPkU64Type>("pk_u_64"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkU8Type> PkU8() const { return ::SpacetimeDB::query_builder::Table<FPkU8Type>("pk_u_8"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkUuidType> PkUuid() const { return ::SpacetimeDB::query_builder::Table<FPkUuidType>("pk_uuid"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FResultEveryPrimitiveStructStringType> ResultEveryPrimitiveStructString() const { return ::SpacetimeDB::query_builder::Table<FResultEveryPrimitiveStructStringType>("result_every_primitive_struct_string"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FResultI32StringType> ResultI32String() const { return ::SpacetimeDB::query_builder::Table<FResultI32StringType>("result_i_32_string"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FResultIdentityStringType> ResultIdentityString() const { return ::SpacetimeDB::query_builder::Table<FResultIdentityStringType>("result_identity_string"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FResultSimpleEnumI32Type> ResultSimpleEnumI32() const { return ::SpacetimeDB::query_builder::Table<FResultSimpleEnumI32Type>("result_simple_enum_i_32"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FResultStringI32Type> ResultStringI32() const { return ::SpacetimeDB::query_builder::Table<FResultStringI32Type>("result_string_i_32"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FResultVecI32StringType> ResultVecI32String() const { return ::SpacetimeDB::query_builder::Table<FResultVecI32StringType>("result_vec_i_32_string"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FScheduledTableType> ScheduledTable() const { return ::SpacetimeDB::query_builder::Table<FScheduledTableType>("scheduled_table"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FTableHoldsTableType> TableHoldsTable() const { return ::SpacetimeDB::query_builder::Table<FTableHoldsTableType>("table_holds_table"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueBoolType> UniqueBool() const { return ::SpacetimeDB::query_builder::Table<FUniqueBoolType>("unique_bool"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueConnectionIdType> UniqueConnectionId() const { return ::SpacetimeDB::query_builder::Table<FUniqueConnectionIdType>("unique_connection_id"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueI128Type> UniqueI128() const { return ::SpacetimeDB::query_builder::Table<FUniqueI128Type>("unique_i_128"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueI16Type> UniqueI16() const { return ::SpacetimeDB::query_builder::Table<FUniqueI16Type>("unique_i_16"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueI256Type> UniqueI256() const { return ::SpacetimeDB::query_builder::Table<FUniqueI256Type>("unique_i_256"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueI32Type> UniqueI32() const { return ::SpacetimeDB::query_builder::Table<FUniqueI32Type>("unique_i_32"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueI64Type> UniqueI64() const { return ::SpacetimeDB::query_builder::Table<FUniqueI64Type>("unique_i_64"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueI8Type> UniqueI8() const { return ::SpacetimeDB::query_builder::Table<FUniqueI8Type>("unique_i_8"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueIdentityType> UniqueIdentity() const { return ::SpacetimeDB::query_builder::Table<FUniqueIdentityType>("unique_identity"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueStringType> UniqueString() const { return ::SpacetimeDB::query_builder::Table<FUniqueStringType>("unique_string"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueU128Type> UniqueU128() const { return ::SpacetimeDB::query_builder::Table<FUniqueU128Type>("unique_u_128"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueU16Type> UniqueU16() const { return ::SpacetimeDB::query_builder::Table<FUniqueU16Type>("unique_u_16"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueU256Type> UniqueU256() const { return ::SpacetimeDB::query_builder::Table<FUniqueU256Type>("unique_u_256"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueU32Type> UniqueU32() const { return ::SpacetimeDB::query_builder::Table<FUniqueU32Type>("unique_u_32"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueU64Type> UniqueU64() const { return ::SpacetimeDB::query_builder::Table<FUniqueU64Type>("unique_u_64"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueU8Type> UniqueU8() const { return ::SpacetimeDB::query_builder::Table<FUniqueU8Type>("unique_u_8"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueUuidType> UniqueUuid() const { return ::SpacetimeDB::query_builder::Table<FUniqueUuidType>("unique_uuid"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUsersType> Users() const { return ::SpacetimeDB::query_builder::Table<FUsersType>("users"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecBoolType> VecBool() const { return ::SpacetimeDB::query_builder::Table<FVecBoolType>("vec_bool"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecByteStructType> VecByteStruct() const { return ::SpacetimeDB::query_builder::Table<FVecByteStructType>("vec_byte_struct"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecConnectionIdType> VecConnectionId() const { return ::SpacetimeDB::query_builder::Table<FVecConnectionIdType>("vec_connection_id"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecEnumWithPayloadType> VecEnumWithPayload() const { return ::SpacetimeDB::query_builder::Table<FVecEnumWithPayloadType>("vec_enum_with_payload"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecEveryPrimitiveStructType> VecEveryPrimitiveStruct() const { return ::SpacetimeDB::query_builder::Table<FVecEveryPrimitiveStructType>("vec_every_primitive_struct"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecEveryVecStructType> VecEveryVecStruct() const { return ::SpacetimeDB::query_builder::Table<FVecEveryVecStructType>("vec_every_vec_struct"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecF32Type> VecF32() const { return ::SpacetimeDB::query_builder::Table<FVecF32Type>("vec_f_32"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecF64Type> VecF64() const { return ::SpacetimeDB::query_builder::Table<FVecF64Type>("vec_f_64"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecI128Type> VecI128() const { return ::SpacetimeDB::query_builder::Table<FVecI128Type>("vec_i_128"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecI16Type> VecI16() const { return ::SpacetimeDB::query_builder::Table<FVecI16Type>("vec_i_16"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecI256Type> VecI256() const { return ::SpacetimeDB::query_builder::Table<FVecI256Type>("vec_i_256"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecI32Type> VecI32() const { return ::SpacetimeDB::query_builder::Table<FVecI32Type>("vec_i_32"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecI64Type> VecI64() const { return ::SpacetimeDB::query_builder::Table<FVecI64Type>("vec_i_64"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecI8Type> VecI8() const { return ::SpacetimeDB::query_builder::Table<FVecI8Type>("vec_i_8"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecIdentityType> VecIdentity() const { return ::SpacetimeDB::query_builder::Table<FVecIdentityType>("vec_identity"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecSimpleEnumType> VecSimpleEnum() const { return ::SpacetimeDB::query_builder::Table<FVecSimpleEnumType>("vec_simple_enum"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecStringType> VecString() const { return ::SpacetimeDB::query_builder::Table<FVecStringType>("vec_string"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecTimestampType> VecTimestamp() const { return ::SpacetimeDB::query_builder::Table<FVecTimestampType>("vec_timestamp"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecU128Type> VecU128() const { return ::SpacetimeDB::query_builder::Table<FVecU128Type>("vec_u_128"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecU16Type> VecU16() const { return ::SpacetimeDB::query_builder::Table<FVecU16Type>("vec_u_16"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecU256Type> VecU256() const { return ::SpacetimeDB::query_builder::Table<FVecU256Type>("vec_u_256"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecU32Type> VecU32() const { return ::SpacetimeDB::query_builder::Table<FVecU32Type>("vec_u_32"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecU64Type> VecU64() const { return ::SpacetimeDB::query_builder::Table<FVecU64Type>("vec_u_64"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecU8Type> VecU8() const { return ::SpacetimeDB::query_builder::Table<FVecU8Type>("vec_u_8"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecUnitStructType> VecUnitStruct() const { return ::SpacetimeDB::query_builder::Table<FVecUnitStructType>("vec_unit_struct"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecUuidType> VecUuid() const { return ::SpacetimeDB::query_builder::Table<FVecUuidType>("vec_uuid"); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FBTreeU32Type, FBTreeU32Cols, FBTreeU32IxCols> BtreeU32() const { return ::SpacetimeDB::query_builder::Table<FBTreeU32Type, FBTreeU32Cols, FBTreeU32IxCols>("btree_u_32", FBTreeU32Cols("btree_u_32"), FBTreeU32IxCols("btree_u_32")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FIndexedSimpleEnumType, FIndexedSimpleEnumCols, FIndexedSimpleEnumIxCols> IndexedSimpleEnum() const { return ::SpacetimeDB::query_builder::Table<FIndexedSimpleEnumType, FIndexedSimpleEnumCols, FIndexedSimpleEnumIxCols>("indexed_simple_enum", FIndexedSimpleEnumCols("indexed_simple_enum"), FIndexedSimpleEnumIxCols("indexed_simple_enum")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FLargeTableType, FLargeTableCols, FLargeTableIxCols> LargeTable() const { return ::SpacetimeDB::query_builder::Table<FLargeTableType, FLargeTableCols, FLargeTableIxCols>("large_table", FLargeTableCols("large_table"), FLargeTableIxCols("large_table")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneBoolType, FOneBoolCols, FOneBoolIxCols> OneBool() const { return ::SpacetimeDB::query_builder::Table<FOneBoolType, FOneBoolCols, FOneBoolIxCols>("one_bool", FOneBoolCols("one_bool"), FOneBoolIxCols("one_bool")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneByteStructType, FOneByteStructCols, FOneByteStructIxCols> OneByteStruct() const { return ::SpacetimeDB::query_builder::Table<FOneByteStructType, FOneByteStructCols, FOneByteStructIxCols>("one_byte_struct", FOneByteStructCols("one_byte_struct"), FOneByteStructIxCols("one_byte_struct")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneConnectionIdType, FOneConnectionIdCols, FOneConnectionIdIxCols> OneConnectionId() const { return ::SpacetimeDB::query_builder::Table<FOneConnectionIdType, FOneConnectionIdCols, FOneConnectionIdIxCols>("one_connection_id", FOneConnectionIdCols("one_connection_id"), FOneConnectionIdIxCols("one_connection_id")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneEnumWithPayloadType, FOneEnumWithPayloadCols, FOneEnumWithPayloadIxCols> OneEnumWithPayload() const { return ::SpacetimeDB::query_builder::Table<FOneEnumWithPayloadType, FOneEnumWithPayloadCols, FOneEnumWithPayloadIxCols>("one_enum_with_payload", FOneEnumWithPayloadCols("one_enum_with_payload"), FOneEnumWithPayloadIxCols("one_enum_with_payload")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneEveryPrimitiveStructType, FOneEveryPrimitiveStructCols, FOneEveryPrimitiveStructIxCols> OneEveryPrimitiveStruct() const { return ::SpacetimeDB::query_builder::Table<FOneEveryPrimitiveStructType, FOneEveryPrimitiveStructCols, FOneEveryPrimitiveStructIxCols>("one_every_primitive_struct", FOneEveryPrimitiveStructCols("one_every_primitive_struct"), FOneEveryPrimitiveStructIxCols("one_every_primitive_struct")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneEveryVecStructType, FOneEveryVecStructCols, FOneEveryVecStructIxCols> OneEveryVecStruct() const { return ::SpacetimeDB::query_builder::Table<FOneEveryVecStructType, FOneEveryVecStructCols, FOneEveryVecStructIxCols>("one_every_vec_struct", FOneEveryVecStructCols("one_every_vec_struct"), FOneEveryVecStructIxCols("one_every_vec_struct")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneF32Type, FOneF32Cols, FOneF32IxCols> OneF32() const { return ::SpacetimeDB::query_builder::Table<FOneF32Type, FOneF32Cols, FOneF32IxCols>("one_f_32", FOneF32Cols("one_f_32"), FOneF32IxCols("one_f_32")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneF64Type, FOneF64Cols, FOneF64IxCols> OneF64() const { return ::SpacetimeDB::query_builder::Table<FOneF64Type, FOneF64Cols, FOneF64IxCols>("one_f_64", FOneF64Cols("one_f_64"), FOneF64IxCols("one_f_64")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneI128Type, FOneI128Cols, FOneI128IxCols> OneI128() const { return ::SpacetimeDB::query_builder::Table<FOneI128Type, FOneI128Cols, FOneI128IxCols>("one_i_128", FOneI128Cols("one_i_128"), FOneI128IxCols("one_i_128")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneI16Type, FOneI16Cols, FOneI16IxCols> OneI16() const { return ::SpacetimeDB::query_builder::Table<FOneI16Type, FOneI16Cols, FOneI16IxCols>("one_i_16", FOneI16Cols("one_i_16"), FOneI16IxCols("one_i_16")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneI256Type, FOneI256Cols, FOneI256IxCols> OneI256() const { return ::SpacetimeDB::query_builder::Table<FOneI256Type, FOneI256Cols, FOneI256IxCols>("one_i_256", FOneI256Cols("one_i_256"), FOneI256IxCols("one_i_256")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneI32Type, FOneI32Cols, FOneI32IxCols> OneI32() const { return ::SpacetimeDB::query_builder::Table<FOneI32Type, FOneI32Cols, FOneI32IxCols>("one_i_32", FOneI32Cols("one_i_32"), FOneI32IxCols("one_i_32")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneI64Type, FOneI64Cols, FOneI64IxCols> OneI64() const { return ::SpacetimeDB::query_builder::Table<FOneI64Type, FOneI64Cols, FOneI64IxCols>("one_i_64", FOneI64Cols("one_i_64"), FOneI64IxCols("one_i_64")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneI8Type, FOneI8Cols, FOneI8IxCols> OneI8() const { return ::SpacetimeDB::query_builder::Table<FOneI8Type, FOneI8Cols, FOneI8IxCols>("one_i_8", FOneI8Cols("one_i_8"), FOneI8IxCols("one_i_8")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneIdentityType, FOneIdentityCols, FOneIdentityIxCols> OneIdentity() const { return ::SpacetimeDB::query_builder::Table<FOneIdentityType, FOneIdentityCols, FOneIdentityIxCols>("one_identity", FOneIdentityCols("one_identity"), FOneIdentityIxCols("one_identity")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneSimpleEnumType, FOneSimpleEnumCols, FOneSimpleEnumIxCols> OneSimpleEnum() const { return ::SpacetimeDB::query_builder::Table<FOneSimpleEnumType, FOneSimpleEnumCols, FOneSimpleEnumIxCols>("one_simple_enum", FOneSimpleEnumCols("one_simple_enum"), FOneSimpleEnumIxCols("one_simple_enum")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneStringType, FOneStringCols, FOneStringIxCols> OneString() const { return ::SpacetimeDB::query_builder::Table<FOneStringType, FOneStringCols, FOneStringIxCols>("one_string", FOneStringCols("one_string"), FOneStringIxCols("one_string")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneTimestampType, FOneTimestampCols, FOneTimestampIxCols> OneTimestamp() const { return ::SpacetimeDB::query_builder::Table<FOneTimestampType, FOneTimestampCols, FOneTimestampIxCols>("one_timestamp", FOneTimestampCols("one_timestamp"), FOneTimestampIxCols("one_timestamp")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneU128Type, FOneU128Cols, FOneU128IxCols> OneU128() const { return ::SpacetimeDB::query_builder::Table<FOneU128Type, FOneU128Cols, FOneU128IxCols>("one_u_128", FOneU128Cols("one_u_128"), FOneU128IxCols("one_u_128")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneU16Type, FOneU16Cols, FOneU16IxCols> OneU16() const { return ::SpacetimeDB::query_builder::Table<FOneU16Type, FOneU16Cols, FOneU16IxCols>("one_u_16", FOneU16Cols("one_u_16"), FOneU16IxCols("one_u_16")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneU256Type, FOneU256Cols, FOneU256IxCols> OneU256() const { return ::SpacetimeDB::query_builder::Table<FOneU256Type, FOneU256Cols, FOneU256IxCols>("one_u_256", FOneU256Cols("one_u_256"), FOneU256IxCols("one_u_256")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneU32Type, FOneU32Cols, FOneU32IxCols> OneU32() const { return ::SpacetimeDB::query_builder::Table<FOneU32Type, FOneU32Cols, FOneU32IxCols>("one_u_32", FOneU32Cols("one_u_32"), FOneU32IxCols("one_u_32")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneU64Type, FOneU64Cols, FOneU64IxCols> OneU64() const { return ::SpacetimeDB::query_builder::Table<FOneU64Type, FOneU64Cols, FOneU64IxCols>("one_u_64", FOneU64Cols("one_u_64"), FOneU64IxCols("one_u_64")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneU8Type, FOneU8Cols, FOneU8IxCols> OneU8() const { return ::SpacetimeDB::query_builder::Table<FOneU8Type, FOneU8Cols, FOneU8IxCols>("one_u_8", FOneU8Cols("one_u_8"), FOneU8IxCols("one_u_8")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneUnitStructType, FOneUnitStructCols, FOneUnitStructIxCols> OneUnitStruct() const { return ::SpacetimeDB::query_builder::Table<FOneUnitStructType, FOneUnitStructCols, FOneUnitStructIxCols>("one_unit_struct", FOneUnitStructCols("one_unit_struct"), FOneUnitStructIxCols("one_unit_struct")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOneUuidType, FOneUuidCols, FOneUuidIxCols> OneUuid() const { return ::SpacetimeDB::query_builder::Table<FOneUuidType, FOneUuidCols, FOneUuidIxCols>("one_uuid", FOneUuidCols("one_uuid"), FOneUuidIxCols("one_uuid")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOptionEveryPrimitiveStructType, FOptionEveryPrimitiveStructCols, FOptionEveryPrimitiveStructIxCols> OptionEveryPrimitiveStruct() const { return ::SpacetimeDB::query_builder::Table<FOptionEveryPrimitiveStructType, FOptionEveryPrimitiveStructCols, FOptionEveryPrimitiveStructIxCols>("option_every_primitive_struct", FOptionEveryPrimitiveStructCols("option_every_primitive_struct"), FOptionEveryPrimitiveStructIxCols("option_every_primitive_struct")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOptionI32Type, FOptionI32Cols, FOptionI32IxCols> OptionI32() const { return ::SpacetimeDB::query_builder::Table<FOptionI32Type, FOptionI32Cols, FOptionI32IxCols>("option_i_32", FOptionI32Cols("option_i_32"), FOptionI32IxCols("option_i_32")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOptionIdentityType, FOptionIdentityCols, FOptionIdentityIxCols> OptionIdentity() const { return ::SpacetimeDB::query_builder::Table<FOptionIdentityType, FOptionIdentityCols, FOptionIdentityIxCols>("option_identity", FOptionIdentityCols("option_identity"), FOptionIdentityIxCols("option_identity")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOptionSimpleEnumType, FOptionSimpleEnumCols, FOptionSimpleEnumIxCols> OptionSimpleEnum() const { return ::SpacetimeDB::query_builder::Table<FOptionSimpleEnumType, FOptionSimpleEnumCols, FOptionSimpleEnumIxCols>("option_simple_enum", FOptionSimpleEnumCols("option_simple_enum"), FOptionSimpleEnumIxCols("option_simple_enum")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOptionStringType, FOptionStringCols, FOptionStringIxCols> OptionString() const { return ::SpacetimeDB::query_builder::Table<FOptionStringType, FOptionStringCols, FOptionStringIxCols>("option_string", FOptionStringCols("option_string"), FOptionStringIxCols("option_string")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOptionUuidType, FOptionUuidCols, FOptionUuidIxCols> OptionUuid() const { return ::SpacetimeDB::query_builder::Table<FOptionUuidType, FOptionUuidCols, FOptionUuidIxCols>("option_uuid", FOptionUuidCols("option_uuid"), FOptionUuidIxCols("option_uuid")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FOptionVecOptionI32Type, FOptionVecOptionI32Cols, FOptionVecOptionI32IxCols> OptionVecOptionI32() const { return ::SpacetimeDB::query_builder::Table<FOptionVecOptionI32Type, FOptionVecOptionI32Cols, FOptionVecOptionI32IxCols>("option_vec_option_i_32", FOptionVecOptionI32Cols("option_vec_option_i_32"), FOptionVecOptionI32IxCols("option_vec_option_i_32")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkBoolType, FPkBoolCols, FPkBoolIxCols> PkBool() const { return ::SpacetimeDB::query_builder::Table<FPkBoolType, FPkBoolCols, FPkBoolIxCols>("pk_bool", FPkBoolCols("pk_bool"), FPkBoolIxCols("pk_bool")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkConnectionIdType, FPkConnectionIdCols, FPkConnectionIdIxCols> PkConnectionId() const { return ::SpacetimeDB::query_builder::Table<FPkConnectionIdType, FPkConnectionIdCols, FPkConnectionIdIxCols>("pk_connection_id", FPkConnectionIdCols("pk_connection_id"), FPkConnectionIdIxCols("pk_connection_id")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkI128Type, FPkI128Cols, FPkI128IxCols> PkI128() const { return ::SpacetimeDB::query_builder::Table<FPkI128Type, FPkI128Cols, FPkI128IxCols>("pk_i_128", FPkI128Cols("pk_i_128"), FPkI128IxCols("pk_i_128")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkI16Type, FPkI16Cols, FPkI16IxCols> PkI16() const { return ::SpacetimeDB::query_builder::Table<FPkI16Type, FPkI16Cols, FPkI16IxCols>("pk_i_16", FPkI16Cols("pk_i_16"), FPkI16IxCols("pk_i_16")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkI256Type, FPkI256Cols, FPkI256IxCols> PkI256() const { return ::SpacetimeDB::query_builder::Table<FPkI256Type, FPkI256Cols, FPkI256IxCols>("pk_i_256", FPkI256Cols("pk_i_256"), FPkI256IxCols("pk_i_256")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkI32Type, FPkI32Cols, FPkI32IxCols> PkI32() const { return ::SpacetimeDB::query_builder::Table<FPkI32Type, FPkI32Cols, FPkI32IxCols>("pk_i_32", FPkI32Cols("pk_i_32"), FPkI32IxCols("pk_i_32")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkI64Type, FPkI64Cols, FPkI64IxCols> PkI64() const { return ::SpacetimeDB::query_builder::Table<FPkI64Type, FPkI64Cols, FPkI64IxCols>("pk_i_64", FPkI64Cols("pk_i_64"), FPkI64IxCols("pk_i_64")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkI8Type, FPkI8Cols, FPkI8IxCols> PkI8() const { return ::SpacetimeDB::query_builder::Table<FPkI8Type, FPkI8Cols, FPkI8IxCols>("pk_i_8", FPkI8Cols("pk_i_8"), FPkI8IxCols("pk_i_8")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkIdentityType, FPkIdentityCols, FPkIdentityIxCols> PkIdentity() const { return ::SpacetimeDB::query_builder::Table<FPkIdentityType, FPkIdentityCols, FPkIdentityIxCols>("pk_identity", FPkIdentityCols("pk_identity"), FPkIdentityIxCols("pk_identity")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkSimpleEnumType, FPkSimpleEnumCols, FPkSimpleEnumIxCols> PkSimpleEnum() const { return ::SpacetimeDB::query_builder::Table<FPkSimpleEnumType, FPkSimpleEnumCols, FPkSimpleEnumIxCols>("pk_simple_enum", FPkSimpleEnumCols("pk_simple_enum"), FPkSimpleEnumIxCols("pk_simple_enum")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkStringType, FPkStringCols, FPkStringIxCols> PkString() const { return ::SpacetimeDB::query_builder::Table<FPkStringType, FPkStringCols, FPkStringIxCols>("pk_string", FPkStringCols("pk_string"), FPkStringIxCols("pk_string")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkU128Type, FPkU128Cols, FPkU128IxCols> PkU128() const { return ::SpacetimeDB::query_builder::Table<FPkU128Type, FPkU128Cols, FPkU128IxCols>("pk_u_128", FPkU128Cols("pk_u_128"), FPkU128IxCols("pk_u_128")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkU16Type, FPkU16Cols, FPkU16IxCols> PkU16() const { return ::SpacetimeDB::query_builder::Table<FPkU16Type, FPkU16Cols, FPkU16IxCols>("pk_u_16", FPkU16Cols("pk_u_16"), FPkU16IxCols("pk_u_16")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkU256Type, FPkU256Cols, FPkU256IxCols> PkU256() const { return ::SpacetimeDB::query_builder::Table<FPkU256Type, FPkU256Cols, FPkU256IxCols>("pk_u_256", FPkU256Cols("pk_u_256"), FPkU256IxCols("pk_u_256")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkU32Type, FPkU32Cols, FPkU32IxCols> PkU32() const { return ::SpacetimeDB::query_builder::Table<FPkU32Type, FPkU32Cols, FPkU32IxCols>("pk_u_32", FPkU32Cols("pk_u_32"), FPkU32IxCols("pk_u_32")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkU32TwoType, FPkU32TwoCols, FPkU32TwoIxCols> PkU32Two() const { return ::SpacetimeDB::query_builder::Table<FPkU32TwoType, FPkU32TwoCols, FPkU32TwoIxCols>("pk_u_32_two", FPkU32TwoCols("pk_u_32_two"), FPkU32TwoIxCols("pk_u_32_two")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkU64Type, FPkU64Cols, FPkU64IxCols> PkU64() const { return ::SpacetimeDB::query_builder::Table<FPkU64Type, FPkU64Cols, FPkU64IxCols>("pk_u_64", FPkU64Cols("pk_u_64"), FPkU64IxCols("pk_u_64")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkU8Type, FPkU8Cols, FPkU8IxCols> PkU8() const { return ::SpacetimeDB::query_builder::Table<FPkU8Type, FPkU8Cols, FPkU8IxCols>("pk_u_8", FPkU8Cols("pk_u_8"), FPkU8IxCols("pk_u_8")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FPkUuidType, FPkUuidCols, FPkUuidIxCols> PkUuid() const { return ::SpacetimeDB::query_builder::Table<FPkUuidType, FPkUuidCols, FPkUuidIxCols>("pk_uuid", FPkUuidCols("pk_uuid"), FPkUuidIxCols("pk_uuid")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FResultEveryPrimitiveStructStringType, FResultEveryPrimitiveStructStringCols, FResultEveryPrimitiveStructStringIxCols> ResultEveryPrimitiveStructString() const { return ::SpacetimeDB::query_builder::Table<FResultEveryPrimitiveStructStringType, FResultEveryPrimitiveStructStringCols, FResultEveryPrimitiveStructStringIxCols>("result_every_primitive_struct_string", FResultEveryPrimitiveStructStringCols("result_every_primitive_struct_string"), FResultEveryPrimitiveStructStringIxCols("result_every_primitive_struct_string")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FResultI32StringType, FResultI32StringCols, FResultI32StringIxCols> ResultI32String() const { return ::SpacetimeDB::query_builder::Table<FResultI32StringType, FResultI32StringCols, FResultI32StringIxCols>("result_i_32_string", FResultI32StringCols("result_i_32_string"), FResultI32StringIxCols("result_i_32_string")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FResultIdentityStringType, FResultIdentityStringCols, FResultIdentityStringIxCols> ResultIdentityString() const { return ::SpacetimeDB::query_builder::Table<FResultIdentityStringType, FResultIdentityStringCols, FResultIdentityStringIxCols>("result_identity_string", FResultIdentityStringCols("result_identity_string"), FResultIdentityStringIxCols("result_identity_string")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FResultSimpleEnumI32Type, FResultSimpleEnumI32Cols, FResultSimpleEnumI32IxCols> ResultSimpleEnumI32() const { return ::SpacetimeDB::query_builder::Table<FResultSimpleEnumI32Type, FResultSimpleEnumI32Cols, FResultSimpleEnumI32IxCols>("result_simple_enum_i_32", FResultSimpleEnumI32Cols("result_simple_enum_i_32"), FResultSimpleEnumI32IxCols("result_simple_enum_i_32")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FResultStringI32Type, FResultStringI32Cols, FResultStringI32IxCols> ResultStringI32() const { return ::SpacetimeDB::query_builder::Table<FResultStringI32Type, FResultStringI32Cols, FResultStringI32IxCols>("result_string_i_32", FResultStringI32Cols("result_string_i_32"), FResultStringI32IxCols("result_string_i_32")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FResultVecI32StringType, FResultVecI32StringCols, FResultVecI32StringIxCols> ResultVecI32String() const { return ::SpacetimeDB::query_builder::Table<FResultVecI32StringType, FResultVecI32StringCols, FResultVecI32StringIxCols>("result_vec_i_32_string", FResultVecI32StringCols("result_vec_i_32_string"), FResultVecI32StringIxCols("result_vec_i_32_string")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FScheduledTableType, FScheduledTableCols, FScheduledTableIxCols> ScheduledTable() const { return ::SpacetimeDB::query_builder::Table<FScheduledTableType, FScheduledTableCols, FScheduledTableIxCols>("scheduled_table", FScheduledTableCols("scheduled_table"), FScheduledTableIxCols("scheduled_table")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FTableHoldsTableType, FTableHoldsTableCols, FTableHoldsTableIxCols> TableHoldsTable() const { return ::SpacetimeDB::query_builder::Table<FTableHoldsTableType, FTableHoldsTableCols, FTableHoldsTableIxCols>("table_holds_table", FTableHoldsTableCols("table_holds_table"), FTableHoldsTableIxCols("table_holds_table")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueBoolType, FUniqueBoolCols, FUniqueBoolIxCols> UniqueBool() const { return ::SpacetimeDB::query_builder::Table<FUniqueBoolType, FUniqueBoolCols, FUniqueBoolIxCols>("unique_bool", FUniqueBoolCols("unique_bool"), FUniqueBoolIxCols("unique_bool")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueConnectionIdType, FUniqueConnectionIdCols, FUniqueConnectionIdIxCols> UniqueConnectionId() const { return ::SpacetimeDB::query_builder::Table<FUniqueConnectionIdType, FUniqueConnectionIdCols, FUniqueConnectionIdIxCols>("unique_connection_id", FUniqueConnectionIdCols("unique_connection_id"), FUniqueConnectionIdIxCols("unique_connection_id")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueI128Type, FUniqueI128Cols, FUniqueI128IxCols> UniqueI128() const { return ::SpacetimeDB::query_builder::Table<FUniqueI128Type, FUniqueI128Cols, FUniqueI128IxCols>("unique_i_128", FUniqueI128Cols("unique_i_128"), FUniqueI128IxCols("unique_i_128")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueI16Type, FUniqueI16Cols, FUniqueI16IxCols> UniqueI16() const { return ::SpacetimeDB::query_builder::Table<FUniqueI16Type, FUniqueI16Cols, FUniqueI16IxCols>("unique_i_16", FUniqueI16Cols("unique_i_16"), FUniqueI16IxCols("unique_i_16")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueI256Type, FUniqueI256Cols, FUniqueI256IxCols> UniqueI256() const { return ::SpacetimeDB::query_builder::Table<FUniqueI256Type, FUniqueI256Cols, FUniqueI256IxCols>("unique_i_256", FUniqueI256Cols("unique_i_256"), FUniqueI256IxCols("unique_i_256")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueI32Type, FUniqueI32Cols, FUniqueI32IxCols> UniqueI32() const { return ::SpacetimeDB::query_builder::Table<FUniqueI32Type, FUniqueI32Cols, FUniqueI32IxCols>("unique_i_32", FUniqueI32Cols("unique_i_32"), FUniqueI32IxCols("unique_i_32")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueI64Type, FUniqueI64Cols, FUniqueI64IxCols> UniqueI64() const { return ::SpacetimeDB::query_builder::Table<FUniqueI64Type, FUniqueI64Cols, FUniqueI64IxCols>("unique_i_64", FUniqueI64Cols("unique_i_64"), FUniqueI64IxCols("unique_i_64")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueI8Type, FUniqueI8Cols, FUniqueI8IxCols> UniqueI8() const { return ::SpacetimeDB::query_builder::Table<FUniqueI8Type, FUniqueI8Cols, FUniqueI8IxCols>("unique_i_8", FUniqueI8Cols("unique_i_8"), FUniqueI8IxCols("unique_i_8")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueIdentityType, FUniqueIdentityCols, FUniqueIdentityIxCols> UniqueIdentity() const { return ::SpacetimeDB::query_builder::Table<FUniqueIdentityType, FUniqueIdentityCols, FUniqueIdentityIxCols>("unique_identity", FUniqueIdentityCols("unique_identity"), FUniqueIdentityIxCols("unique_identity")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueStringType, FUniqueStringCols, FUniqueStringIxCols> UniqueString() const { return ::SpacetimeDB::query_builder::Table<FUniqueStringType, FUniqueStringCols, FUniqueStringIxCols>("unique_string", FUniqueStringCols("unique_string"), FUniqueStringIxCols("unique_string")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueU128Type, FUniqueU128Cols, FUniqueU128IxCols> UniqueU128() const { return ::SpacetimeDB::query_builder::Table<FUniqueU128Type, FUniqueU128Cols, FUniqueU128IxCols>("unique_u_128", FUniqueU128Cols("unique_u_128"), FUniqueU128IxCols("unique_u_128")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueU16Type, FUniqueU16Cols, FUniqueU16IxCols> UniqueU16() const { return ::SpacetimeDB::query_builder::Table<FUniqueU16Type, FUniqueU16Cols, FUniqueU16IxCols>("unique_u_16", FUniqueU16Cols("unique_u_16"), FUniqueU16IxCols("unique_u_16")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueU256Type, FUniqueU256Cols, FUniqueU256IxCols> UniqueU256() const { return ::SpacetimeDB::query_builder::Table<FUniqueU256Type, FUniqueU256Cols, FUniqueU256IxCols>("unique_u_256", FUniqueU256Cols("unique_u_256"), FUniqueU256IxCols("unique_u_256")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueU32Type, FUniqueU32Cols, FUniqueU32IxCols> UniqueU32() const { return ::SpacetimeDB::query_builder::Table<FUniqueU32Type, FUniqueU32Cols, FUniqueU32IxCols>("unique_u_32", FUniqueU32Cols("unique_u_32"), FUniqueU32IxCols("unique_u_32")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueU64Type, FUniqueU64Cols, FUniqueU64IxCols> UniqueU64() const { return ::SpacetimeDB::query_builder::Table<FUniqueU64Type, FUniqueU64Cols, FUniqueU64IxCols>("unique_u_64", FUniqueU64Cols("unique_u_64"), FUniqueU64IxCols("unique_u_64")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueU8Type, FUniqueU8Cols, FUniqueU8IxCols> UniqueU8() const { return ::SpacetimeDB::query_builder::Table<FUniqueU8Type, FUniqueU8Cols, FUniqueU8IxCols>("unique_u_8", FUniqueU8Cols("unique_u_8"), FUniqueU8IxCols("unique_u_8")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUniqueUuidType, FUniqueUuidCols, FUniqueUuidIxCols> UniqueUuid() const { return ::SpacetimeDB::query_builder::Table<FUniqueUuidType, FUniqueUuidCols, FUniqueUuidIxCols>("unique_uuid", FUniqueUuidCols("unique_uuid"), FUniqueUuidIxCols("unique_uuid")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FUsersType, FUsersCols, FUsersIxCols> Users() const { return ::SpacetimeDB::query_builder::Table<FUsersType, FUsersCols, FUsersIxCols>("users", FUsersCols("users"), FUsersIxCols("users")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecBoolType, FVecBoolCols, FVecBoolIxCols> VecBool() const { return ::SpacetimeDB::query_builder::Table<FVecBoolType, FVecBoolCols, FVecBoolIxCols>("vec_bool", FVecBoolCols("vec_bool"), FVecBoolIxCols("vec_bool")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecByteStructType, FVecByteStructCols, FVecByteStructIxCols> VecByteStruct() const { return ::SpacetimeDB::query_builder::Table<FVecByteStructType, FVecByteStructCols, FVecByteStructIxCols>("vec_byte_struct", FVecByteStructCols("vec_byte_struct"), FVecByteStructIxCols("vec_byte_struct")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecConnectionIdType, FVecConnectionIdCols, FVecConnectionIdIxCols> VecConnectionId() const { return ::SpacetimeDB::query_builder::Table<FVecConnectionIdType, FVecConnectionIdCols, FVecConnectionIdIxCols>("vec_connection_id", FVecConnectionIdCols("vec_connection_id"), FVecConnectionIdIxCols("vec_connection_id")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecEnumWithPayloadType, FVecEnumWithPayloadCols, FVecEnumWithPayloadIxCols> VecEnumWithPayload() const { return ::SpacetimeDB::query_builder::Table<FVecEnumWithPayloadType, FVecEnumWithPayloadCols, FVecEnumWithPayloadIxCols>("vec_enum_with_payload", FVecEnumWithPayloadCols("vec_enum_with_payload"), FVecEnumWithPayloadIxCols("vec_enum_with_payload")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecEveryPrimitiveStructType, FVecEveryPrimitiveStructCols, FVecEveryPrimitiveStructIxCols> VecEveryPrimitiveStruct() const { return ::SpacetimeDB::query_builder::Table<FVecEveryPrimitiveStructType, FVecEveryPrimitiveStructCols, FVecEveryPrimitiveStructIxCols>("vec_every_primitive_struct", FVecEveryPrimitiveStructCols("vec_every_primitive_struct"), FVecEveryPrimitiveStructIxCols("vec_every_primitive_struct")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecEveryVecStructType, FVecEveryVecStructCols, FVecEveryVecStructIxCols> VecEveryVecStruct() const { return ::SpacetimeDB::query_builder::Table<FVecEveryVecStructType, FVecEveryVecStructCols, FVecEveryVecStructIxCols>("vec_every_vec_struct", FVecEveryVecStructCols("vec_every_vec_struct"), FVecEveryVecStructIxCols("vec_every_vec_struct")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecF32Type, FVecF32Cols, FVecF32IxCols> VecF32() const { return ::SpacetimeDB::query_builder::Table<FVecF32Type, FVecF32Cols, FVecF32IxCols>("vec_f_32", FVecF32Cols("vec_f_32"), FVecF32IxCols("vec_f_32")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecF64Type, FVecF64Cols, FVecF64IxCols> VecF64() const { return ::SpacetimeDB::query_builder::Table<FVecF64Type, FVecF64Cols, FVecF64IxCols>("vec_f_64", FVecF64Cols("vec_f_64"), FVecF64IxCols("vec_f_64")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecI128Type, FVecI128Cols, FVecI128IxCols> VecI128() const { return ::SpacetimeDB::query_builder::Table<FVecI128Type, FVecI128Cols, FVecI128IxCols>("vec_i_128", FVecI128Cols("vec_i_128"), FVecI128IxCols("vec_i_128")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecI16Type, FVecI16Cols, FVecI16IxCols> VecI16() const { return ::SpacetimeDB::query_builder::Table<FVecI16Type, FVecI16Cols, FVecI16IxCols>("vec_i_16", FVecI16Cols("vec_i_16"), FVecI16IxCols("vec_i_16")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecI256Type, FVecI256Cols, FVecI256IxCols> VecI256() const { return ::SpacetimeDB::query_builder::Table<FVecI256Type, FVecI256Cols, FVecI256IxCols>("vec_i_256", FVecI256Cols("vec_i_256"), FVecI256IxCols("vec_i_256")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecI32Type, FVecI32Cols, FVecI32IxCols> VecI32() const { return ::SpacetimeDB::query_builder::Table<FVecI32Type, FVecI32Cols, FVecI32IxCols>("vec_i_32", FVecI32Cols("vec_i_32"), FVecI32IxCols("vec_i_32")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecI64Type, FVecI64Cols, FVecI64IxCols> VecI64() const { return ::SpacetimeDB::query_builder::Table<FVecI64Type, FVecI64Cols, FVecI64IxCols>("vec_i_64", FVecI64Cols("vec_i_64"), FVecI64IxCols("vec_i_64")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecI8Type, FVecI8Cols, FVecI8IxCols> VecI8() const { return ::SpacetimeDB::query_builder::Table<FVecI8Type, FVecI8Cols, FVecI8IxCols>("vec_i_8", FVecI8Cols("vec_i_8"), FVecI8IxCols("vec_i_8")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecIdentityType, FVecIdentityCols, FVecIdentityIxCols> VecIdentity() const { return ::SpacetimeDB::query_builder::Table<FVecIdentityType, FVecIdentityCols, FVecIdentityIxCols>("vec_identity", FVecIdentityCols("vec_identity"), FVecIdentityIxCols("vec_identity")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecSimpleEnumType, FVecSimpleEnumCols, FVecSimpleEnumIxCols> VecSimpleEnum() const { return ::SpacetimeDB::query_builder::Table<FVecSimpleEnumType, FVecSimpleEnumCols, FVecSimpleEnumIxCols>("vec_simple_enum", FVecSimpleEnumCols("vec_simple_enum"), FVecSimpleEnumIxCols("vec_simple_enum")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecStringType, FVecStringCols, FVecStringIxCols> VecString() const { return ::SpacetimeDB::query_builder::Table<FVecStringType, FVecStringCols, FVecStringIxCols>("vec_string", FVecStringCols("vec_string"), FVecStringIxCols("vec_string")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecTimestampType, FVecTimestampCols, FVecTimestampIxCols> VecTimestamp() const { return ::SpacetimeDB::query_builder::Table<FVecTimestampType, FVecTimestampCols, FVecTimestampIxCols>("vec_timestamp", FVecTimestampCols("vec_timestamp"), FVecTimestampIxCols("vec_timestamp")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecU128Type, FVecU128Cols, FVecU128IxCols> VecU128() const { return ::SpacetimeDB::query_builder::Table<FVecU128Type, FVecU128Cols, FVecU128IxCols>("vec_u_128", FVecU128Cols("vec_u_128"), FVecU128IxCols("vec_u_128")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecU16Type, FVecU16Cols, FVecU16IxCols> VecU16() const { return ::SpacetimeDB::query_builder::Table<FVecU16Type, FVecU16Cols, FVecU16IxCols>("vec_u_16", FVecU16Cols("vec_u_16"), FVecU16IxCols("vec_u_16")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecU256Type, FVecU256Cols, FVecU256IxCols> VecU256() const { return ::SpacetimeDB::query_builder::Table<FVecU256Type, FVecU256Cols, FVecU256IxCols>("vec_u_256", FVecU256Cols("vec_u_256"), FVecU256IxCols("vec_u_256")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecU32Type, FVecU32Cols, FVecU32IxCols> VecU32() const { return ::SpacetimeDB::query_builder::Table<FVecU32Type, FVecU32Cols, FVecU32IxCols>("vec_u_32", FVecU32Cols("vec_u_32"), FVecU32IxCols("vec_u_32")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecU64Type, FVecU64Cols, FVecU64IxCols> VecU64() const { return ::SpacetimeDB::query_builder::Table<FVecU64Type, FVecU64Cols, FVecU64IxCols>("vec_u_64", FVecU64Cols("vec_u_64"), FVecU64IxCols("vec_u_64")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecU8Type, FVecU8Cols, FVecU8IxCols> VecU8() const { return ::SpacetimeDB::query_builder::Table<FVecU8Type, FVecU8Cols, FVecU8IxCols>("vec_u_8", FVecU8Cols("vec_u_8"), FVecU8IxCols("vec_u_8")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecUnitStructType, FVecUnitStructCols, FVecUnitStructIxCols> VecUnitStruct() const { return ::SpacetimeDB::query_builder::Table<FVecUnitStructType, FVecUnitStructCols, FVecUnitStructIxCols>("vec_unit_struct", FVecUnitStructCols("vec_unit_struct"), FVecUnitStructIxCols("vec_unit_struct")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FVecUuidType, FVecUuidCols, FVecUuidIxCols> VecUuid() const { return ::SpacetimeDB::query_builder::Table<FVecUuidType, FVecUuidCols, FVecUuidIxCols>("vec_uuid", FVecUuidCols("vec_uuid"), FVecUuidIxCols("vec_uuid")); }
 };
 
 struct TESTCLIENT_API FQueryBuilder
@@ -14534,7 +13318,7 @@ public:
         return Typed;
     }
 
-    /** Convenience for subscribing to all rows from all tables */
+    /** Convenience for subscribing to all rows from all public sources, including views */
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
     USubscriptionHandle* SubscribeToAllTables();
 

@@ -806,41 +806,86 @@ private:
 };
 
 // QueryBuilder types
-struct TESTVIEWPKCLIENT_API FViewPkPlayerCols
+struct TESTVIEWPKCLIENT_API FAllViewPkPlayersCols;
+struct TESTVIEWPKCLIENT_API FAllViewPkPlayersIxCols;
+struct TESTVIEWPKCLIENT_API FSenderViewPkPlayersACols;
+struct TESTVIEWPKCLIENT_API FSenderViewPkPlayersAIxCols;
+struct TESTVIEWPKCLIENT_API FSenderViewPkPlayersBCols;
+struct TESTVIEWPKCLIENT_API FSenderViewPkPlayersBIxCols;
+struct TESTVIEWPKCLIENT_API FViewPkMembershipCols;
+struct TESTVIEWPKCLIENT_API FViewPkMembershipIxCols;
+struct TESTVIEWPKCLIENT_API FViewPkMembershipSecondaryCols;
+struct TESTVIEWPKCLIENT_API FViewPkMembershipSecondaryIxCols;
+struct TESTVIEWPKCLIENT_API FViewPkPlayerCols;
+struct TESTVIEWPKCLIENT_API FViewPkPlayerIxCols;
+
+struct TESTVIEWPKCLIENT_API FAllViewPkPlayersCols
 {
-    explicit FViewPkPlayerCols(const char* TableName)
+    explicit FAllViewPkPlayersCols(const char* TableName)
         : Id(TableName, "id"), Name(TableName, "name") {}
 
     ::SpacetimeDB::query_builder::Col<FViewPkPlayerType, uint64> Id;
     ::SpacetimeDB::query_builder::Col<FViewPkPlayerType, FString> Name;
 };
 
-struct TESTVIEWPKCLIENT_API FViewPkPlayerIxCols
+struct TESTVIEWPKCLIENT_API FAllViewPkPlayersIxCols
 {
-    explicit FViewPkPlayerIxCols(const char* TableName)
+    explicit FAllViewPkPlayersIxCols(const char* TableName)
         : Id(TableName, "id") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FViewPkPlayerType, uint64, &FViewPkPlayerType::Id> Id;
+    ::SpacetimeDB::query_builder::IxCol<FViewPkPlayerType, uint64> Id;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FViewPkPlayerType, &FViewPkPlayerType::Id>);
-
     template<>
-    struct HasCols<FViewPkPlayerType>
-    {
-        static FViewPkPlayerCols get(const char* table_name) { return FViewPkPlayerCols(table_name); }
-    };
+    struct CanBeLookupTable<Table<FViewPkPlayerType, FAllViewPkPlayersCols, FAllViewPkPlayersIxCols>> : std::true_type {};
+}
 
-    template<>
-    struct HasIxCols<FViewPkPlayerType>
-    {
-        static FViewPkPlayerIxCols get(const char* table_name) { return FViewPkPlayerIxCols(table_name); }
-    };
+struct TESTVIEWPKCLIENT_API FSenderViewPkPlayersACols
+{
+    explicit FSenderViewPkPlayersACols(const char* TableName)
+        : Id(TableName, "id"), Name(TableName, "name") {}
 
+    ::SpacetimeDB::query_builder::Col<FViewPkPlayerType, uint64> Id;
+    ::SpacetimeDB::query_builder::Col<FViewPkPlayerType, FString> Name;
+};
+
+struct TESTVIEWPKCLIENT_API FSenderViewPkPlayersAIxCols
+{
+    explicit FSenderViewPkPlayersAIxCols(const char* TableName)
+        : Id(TableName, "id") {}
+
+    ::SpacetimeDB::query_builder::IxCol<FViewPkPlayerType, uint64> Id;
+};
+
+namespace SpacetimeDB::query_builder
+{
     template<>
-    struct CanBeLookupTable<FViewPkPlayerType> : std::true_type {};
+    struct CanBeLookupTable<Table<FViewPkPlayerType, FSenderViewPkPlayersACols, FSenderViewPkPlayersAIxCols>> : std::true_type {};
+}
+
+struct TESTVIEWPKCLIENT_API FSenderViewPkPlayersBCols
+{
+    explicit FSenderViewPkPlayersBCols(const char* TableName)
+        : Id(TableName, "id"), Name(TableName, "name") {}
+
+    ::SpacetimeDB::query_builder::Col<FViewPkPlayerType, uint64> Id;
+    ::SpacetimeDB::query_builder::Col<FViewPkPlayerType, FString> Name;
+};
+
+struct TESTVIEWPKCLIENT_API FSenderViewPkPlayersBIxCols
+{
+    explicit FSenderViewPkPlayersBIxCols(const char* TableName)
+        : Id(TableName, "id") {}
+
+    ::SpacetimeDB::query_builder::IxCol<FViewPkPlayerType, uint64> Id;
+};
+
+namespace SpacetimeDB::query_builder
+{
+    template<>
+    struct CanBeLookupTable<Table<FViewPkPlayerType, FSenderViewPkPlayersBCols, FSenderViewPkPlayersBIxCols>> : std::true_type {};
 }
 
 struct TESTVIEWPKCLIENT_API FViewPkMembershipCols
@@ -857,29 +902,14 @@ struct TESTVIEWPKCLIENT_API FViewPkMembershipIxCols
     explicit FViewPkMembershipIxCols(const char* TableName)
         : Id(TableName, "id"), PlayerId(TableName, "player_id") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FViewPkMembershipType, uint64, &FViewPkMembershipType::Id> Id;
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FViewPkMembershipType, uint64, &FViewPkMembershipType::PlayerId> PlayerId;
+    ::SpacetimeDB::query_builder::IxCol<FViewPkMembershipType, uint64> Id;
+    ::SpacetimeDB::query_builder::IxCol<FViewPkMembershipType, uint64> PlayerId;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FViewPkMembershipType, &FViewPkMembershipType::Id>);
-    inline std::true_type indexed_member_lookup(member_tag<FViewPkMembershipType, &FViewPkMembershipType::PlayerId>);
-
     template<>
-    struct HasCols<FViewPkMembershipType>
-    {
-        static FViewPkMembershipCols get(const char* table_name) { return FViewPkMembershipCols(table_name); }
-    };
-
-    template<>
-    struct HasIxCols<FViewPkMembershipType>
-    {
-        static FViewPkMembershipIxCols get(const char* table_name) { return FViewPkMembershipIxCols(table_name); }
-    };
-
-    template<>
-    struct CanBeLookupTable<FViewPkMembershipType> : std::true_type {};
+    struct CanBeLookupTable<Table<FViewPkMembershipType, FViewPkMembershipCols, FViewPkMembershipIxCols>> : std::true_type {};
 }
 
 struct TESTVIEWPKCLIENT_API FViewPkMembershipSecondaryCols
@@ -896,39 +926,47 @@ struct TESTVIEWPKCLIENT_API FViewPkMembershipSecondaryIxCols
     explicit FViewPkMembershipSecondaryIxCols(const char* TableName)
         : Id(TableName, "id"), PlayerId(TableName, "player_id") {}
 
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FViewPkMembershipSecondaryType, uint64, &FViewPkMembershipSecondaryType::Id> Id;
-    ::SpacetimeDB::query_builder::detail::ix_col_member_t<FViewPkMembershipSecondaryType, uint64, &FViewPkMembershipSecondaryType::PlayerId> PlayerId;
+    ::SpacetimeDB::query_builder::IxCol<FViewPkMembershipSecondaryType, uint64> Id;
+    ::SpacetimeDB::query_builder::IxCol<FViewPkMembershipSecondaryType, uint64> PlayerId;
 };
 
 namespace SpacetimeDB::query_builder
 {
-    inline std::true_type indexed_member_lookup(member_tag<FViewPkMembershipSecondaryType, &FViewPkMembershipSecondaryType::Id>);
-    inline std::true_type indexed_member_lookup(member_tag<FViewPkMembershipSecondaryType, &FViewPkMembershipSecondaryType::PlayerId>);
-
     template<>
-    struct HasCols<FViewPkMembershipSecondaryType>
-    {
-        static FViewPkMembershipSecondaryCols get(const char* table_name) { return FViewPkMembershipSecondaryCols(table_name); }
-    };
+    struct CanBeLookupTable<Table<FViewPkMembershipSecondaryType, FViewPkMembershipSecondaryCols, FViewPkMembershipSecondaryIxCols>> : std::true_type {};
+}
 
-    template<>
-    struct HasIxCols<FViewPkMembershipSecondaryType>
-    {
-        static FViewPkMembershipSecondaryIxCols get(const char* table_name) { return FViewPkMembershipSecondaryIxCols(table_name); }
-    };
+struct TESTVIEWPKCLIENT_API FViewPkPlayerCols
+{
+    explicit FViewPkPlayerCols(const char* TableName)
+        : Id(TableName, "id"), Name(TableName, "name") {}
 
+    ::SpacetimeDB::query_builder::Col<FViewPkPlayerType, uint64> Id;
+    ::SpacetimeDB::query_builder::Col<FViewPkPlayerType, FString> Name;
+};
+
+struct TESTVIEWPKCLIENT_API FViewPkPlayerIxCols
+{
+    explicit FViewPkPlayerIxCols(const char* TableName)
+        : Id(TableName, "id") {}
+
+    ::SpacetimeDB::query_builder::IxCol<FViewPkPlayerType, uint64> Id;
+};
+
+namespace SpacetimeDB::query_builder
+{
     template<>
-    struct CanBeLookupTable<FViewPkMembershipSecondaryType> : std::true_type {};
+    struct CanBeLookupTable<Table<FViewPkPlayerType, FViewPkPlayerCols, FViewPkPlayerIxCols>> : std::true_type {};
 }
 
 struct TESTVIEWPKCLIENT_API FFrom
 {
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FViewPkPlayerType> AllViewPkPlayers() const { return ::SpacetimeDB::query_builder::Table<FViewPkPlayerType>("all_view_pk_players"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FViewPkPlayerType> SenderViewPkPlayersA() const { return ::SpacetimeDB::query_builder::Table<FViewPkPlayerType>("sender_view_pk_players_a"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FViewPkPlayerType> SenderViewPkPlayersB() const { return ::SpacetimeDB::query_builder::Table<FViewPkPlayerType>("sender_view_pk_players_b"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FViewPkMembershipType> ViewPkMembership() const { return ::SpacetimeDB::query_builder::Table<FViewPkMembershipType>("view_pk_membership"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FViewPkMembershipSecondaryType> ViewPkMembershipSecondary() const { return ::SpacetimeDB::query_builder::Table<FViewPkMembershipSecondaryType>("view_pk_membership_secondary"); }
-    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FViewPkPlayerType> ViewPkPlayer() const { return ::SpacetimeDB::query_builder::Table<FViewPkPlayerType>("view_pk_player"); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FViewPkPlayerType, FAllViewPkPlayersCols, FAllViewPkPlayersIxCols> AllViewPkPlayers() const { return ::SpacetimeDB::query_builder::Table<FViewPkPlayerType, FAllViewPkPlayersCols, FAllViewPkPlayersIxCols>("all_view_pk_players", FAllViewPkPlayersCols("all_view_pk_players"), FAllViewPkPlayersIxCols("all_view_pk_players")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FViewPkPlayerType, FSenderViewPkPlayersACols, FSenderViewPkPlayersAIxCols> SenderViewPkPlayersA() const { return ::SpacetimeDB::query_builder::Table<FViewPkPlayerType, FSenderViewPkPlayersACols, FSenderViewPkPlayersAIxCols>("sender_view_pk_players_a", FSenderViewPkPlayersACols("sender_view_pk_players_a"), FSenderViewPkPlayersAIxCols("sender_view_pk_players_a")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FViewPkPlayerType, FSenderViewPkPlayersBCols, FSenderViewPkPlayersBIxCols> SenderViewPkPlayersB() const { return ::SpacetimeDB::query_builder::Table<FViewPkPlayerType, FSenderViewPkPlayersBCols, FSenderViewPkPlayersBIxCols>("sender_view_pk_players_b", FSenderViewPkPlayersBCols("sender_view_pk_players_b"), FSenderViewPkPlayersBIxCols("sender_view_pk_players_b")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FViewPkMembershipType, FViewPkMembershipCols, FViewPkMembershipIxCols> ViewPkMembership() const { return ::SpacetimeDB::query_builder::Table<FViewPkMembershipType, FViewPkMembershipCols, FViewPkMembershipIxCols>("view_pk_membership", FViewPkMembershipCols("view_pk_membership"), FViewPkMembershipIxCols("view_pk_membership")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FViewPkMembershipSecondaryType, FViewPkMembershipSecondaryCols, FViewPkMembershipSecondaryIxCols> ViewPkMembershipSecondary() const { return ::SpacetimeDB::query_builder::Table<FViewPkMembershipSecondaryType, FViewPkMembershipSecondaryCols, FViewPkMembershipSecondaryIxCols>("view_pk_membership_secondary", FViewPkMembershipSecondaryCols("view_pk_membership_secondary"), FViewPkMembershipSecondaryIxCols("view_pk_membership_secondary")); }
+    [[nodiscard]] ::SpacetimeDB::query_builder::Table<FViewPkPlayerType, FViewPkPlayerCols, FViewPkPlayerIxCols> ViewPkPlayer() const { return ::SpacetimeDB::query_builder::Table<FViewPkPlayerType, FViewPkPlayerCols, FViewPkPlayerIxCols>("view_pk_player", FViewPkPlayerCols("view_pk_player"), FViewPkPlayerIxCols("view_pk_player")); }
 };
 
 struct TESTVIEWPKCLIENT_API FQueryBuilder
@@ -1003,7 +1041,7 @@ public:
         return Typed;
     }
 
-    /** Convenience for subscribing to all rows from all tables */
+    /** Convenience for subscribing to all rows from all public sources, including views */
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
     USubscriptionHandle* SubscribeToAllTables();
 

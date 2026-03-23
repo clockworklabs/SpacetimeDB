@@ -39,7 +39,7 @@ bool FViewQueryBuilderDirectSourcesTest::RunTest(const FString& Parameters)
         return Query.From.MyPlayer();
     }).AddQuery([](const FQueryBuilder& Query)
     {
-        return Query.From.PlayersAtLevel0().Where([](const FPlayerCols& Cols)
+        return Query.From.PlayersAtLevel0().Where([](const FPlayersAtLevel0Cols& Cols)
         {
             return Cols.EntityId.Eq(static_cast<uint64>(7));
         });
