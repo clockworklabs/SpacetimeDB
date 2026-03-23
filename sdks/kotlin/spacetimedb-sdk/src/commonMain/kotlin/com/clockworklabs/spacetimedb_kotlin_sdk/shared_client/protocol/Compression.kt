@@ -5,8 +5,11 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol
  * First byte of every WebSocket message indicates compression.
  */
 public object Compression {
+    /** No compression applied. */
     public const val NONE: Byte = 0x00
+    /** Brotli compression. */
     public const val BROTLI: Byte = 0x01
+    /** Gzip compression. */
     public const val GZIP: Byte = 0x02
 }
 
@@ -21,6 +24,7 @@ public class DecompressedPayload(public val data: ByteArray, public val offset: 
         require(offset in 0..data.size) { "offset $offset out of bounds for data of size ${data.size}" }
     }
 
+    /** Number of usable bytes in the payload (total data size minus the offset). */
     public val size: Int get() = data.size - offset
 }
 

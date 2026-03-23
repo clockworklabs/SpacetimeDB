@@ -15,6 +15,8 @@ public value class SqlLiteral<@Suppress("unused") T>(public val sql: String)
 
 /**
  * Factory for creating [SqlLiteral] values from Kotlin types.
+ *
+ * Each method converts a native Kotlin value into its SQL literal representation.
  */
 public object SqlLit {
     public fun string(value: String): SqlLiteral<String> =

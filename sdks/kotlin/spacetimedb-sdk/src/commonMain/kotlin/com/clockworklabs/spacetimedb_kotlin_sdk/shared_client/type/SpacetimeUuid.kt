@@ -10,14 +10,17 @@ import kotlinx.atomicfu.getAndUpdate
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
+/** Thread-safe monotonic counter for UUID V7 generation. */
 public class Counter(value: Int = 0) {
     private val _value = atomic(value)
     internal fun getAndIncrement(): Int =
         _value.getAndUpdate { (it + 1) and 0x7FFF_FFFF }
 }
 
+/** UUID version detected from the version nibble. */
 public enum class UuidVersion { Nil, V4, V7, Max, Unknown }
 
+/** A UUID wrapper providing BSATN encoding and V4/V7 generation for SpacetimeDB. */
 public data class SpacetimeUuid(val data: Uuid) : Comparable<SpacetimeUuid> {
     override fun compareTo(other: SpacetimeUuid): Int {
         val a = data.toByteArray()
@@ -28,6 +31,7 @@ public data class SpacetimeUuid(val data: Uuid) : Comparable<SpacetimeUuid> {
         }
         return 0
     }
+    /** Encodes this value to BSATN. */
     public fun encode(writer: BsatnWriter) {
         val value = BigInteger.fromByteArray(data.toByteArray(), Sign.POSITIVE)
         writer.writeU128(value)
@@ -35,8 +39,10 @@ public data class SpacetimeUuid(val data: Uuid) : Comparable<SpacetimeUuid> {
 
     override fun toString(): String = data.toString()
 
+    /** Returns this UUID as a 32-character lowercase hex string. */
     public fun toHexString(): String = data.toHexString()
 
+    /** Returns the 16-byte big-endian representation of this UUID. */
     public fun toByteArray(): ByteArray = data.toByteArray()
 
     /**
@@ -62,6 +68,7 @@ public data class SpacetimeUuid(val data: Uuid) : Comparable<SpacetimeUuid> {
             ((b[11].toInt() and 0xFF) shr 1)
     }
 
+    /** Detects the UUID version from the version nibble in byte 6. */
     public fun getVersion(): UuidVersion {
         if (data == Uuid.NIL) return UuidVersion.Nil
         val bytes = data.toByteArray()
@@ -74,9 +81,12 @@ public data class SpacetimeUuid(val data: Uuid) : Comparable<SpacetimeUuid> {
     }
 
     public companion object {
+        /** The nil UUID (all zeros). */
         public val NIL: SpacetimeUuid = SpacetimeUuid(Uuid.NIL)
+        /** The max UUID (all ones). */
         public val MAX: SpacetimeUuid = SpacetimeUuid(Uuid.fromByteArray(ByteArray(16) { 0xFF.toByte() }))
 
+        /** Decodes from BSATN. */
         public fun decode(reader: BsatnReader): SpacetimeUuid {
             val value = reader.readU128()
             val bytes = value.toByteArray()
@@ -85,8 +95,10 @@ public data class SpacetimeUuid(val data: Uuid) : Comparable<SpacetimeUuid> {
             return SpacetimeUuid(Uuid.fromByteArray(padded))
         }
 
+        /** Generates a random V4 UUID using the platform's secure random. */
         public fun random(): SpacetimeUuid = SpacetimeUuid(Uuid.random())
 
+        /** Creates a V4 UUID from 16 random bytes, setting the version and variant bits. */
         public fun fromRandomBytesV4(bytes: ByteArray): SpacetimeUuid {
             require(bytes.size == 16) { "UUID v4 requires exactly 16 bytes, got ${bytes.size}" }
             val b = bytes.copyOf()
@@ -146,6 +158,7 @@ public data class SpacetimeUuid(val data: Uuid) : Comparable<SpacetimeUuid> {
             return SpacetimeUuid(Uuid.fromByteArray(b))
         }
 
+        /** Parses a UUID from its standard string representation (e.g. `550e8400-e29b-41d4-a716-446655440000`). */
         public fun parse(str: String): SpacetimeUuid = SpacetimeUuid(Uuid.parse(str))
     }
 }

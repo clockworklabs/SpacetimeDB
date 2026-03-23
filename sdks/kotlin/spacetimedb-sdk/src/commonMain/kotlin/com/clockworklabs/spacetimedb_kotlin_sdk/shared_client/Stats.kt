@@ -7,12 +7,21 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 
+/** A single latency sample with its associated metadata (e.g. reducer name). */
 public data class DurationSample(val duration: Duration, val metadata: String)
 
+/** Min/max pair from a [NetworkRequestTracker] query. */
 public data class MinMaxResult(val min: DurationSample, val max: DurationSample)
 
 private class RequestEntry(val startTime: TimeMark, val metadata: String)
 
+/**
+ * Tracks request latencies over sliding time windows.
+ * Thread-safe — all reads and writes are synchronized.
+ *
+ * Use [minMaxTimes] to query min/max latency within a recent window,
+ * or [allTimeMinMax] for the lifetime extremes.
+ */
 public class NetworkRequestTracker internal constructor(
     private val timeSource: TimeSource = TimeSource.Monotonic,
 ) : SynchronizedObject() {
@@ -30,6 +39,7 @@ public class NetworkRequestTracker internal constructor(
     private var nextRequestId = 0u
     private val requests = mutableMapOf<UInt, RequestEntry>()
 
+    /** All-time min/max latency, or `null` if no samples recorded yet. */
     public val allTimeMinMax: MinMaxResult?
         get() = synchronized(this) {
             val min = allTimeMin ?: return null
@@ -37,6 +47,7 @@ public class NetworkRequestTracker internal constructor(
             MinMaxResult(min, max)
         }
 
+    /** Min/max latency within the last [lastSeconds] seconds, or `null` if no samples in that window. */
     public fun minMaxTimes(lastSeconds: Int): MinMaxResult? = synchronized(this) {
         val tracker = trackers.getOrPut(lastSeconds) {
             check(trackers.size < MAX_TRACKERS) {
@@ -47,8 +58,10 @@ public class NetworkRequestTracker internal constructor(
         tracker.getMinMax()
     }
 
+    /** Total number of latency samples recorded. */
     public val sampleCount: Int get() = synchronized(this) { totalSamples }
 
+    /** Number of requests that have been started but not yet completed. */
     public val requestsAwaitingResponse: Int get() = synchronized(this) { requests.size }
 
     internal fun startTrackingRequest(metadata: String = ""): UInt {
@@ -150,11 +163,20 @@ public class NetworkRequestTracker internal constructor(
     }
 }
 
+/** Aggregated latency trackers for each category of SpacetimeDB operation. */
 public class Stats {
+    /** Tracks round-trip latency for reducer calls. */
     public val reducerRequestTracker: NetworkRequestTracker = NetworkRequestTracker()
+
+    /** Tracks round-trip latency for procedure calls. */
     public val procedureRequestTracker: NetworkRequestTracker = NetworkRequestTracker()
+
+    /** Tracks round-trip latency for subscription requests. */
     public val subscriptionRequestTracker: NetworkRequestTracker = NetworkRequestTracker()
+
+    /** Tracks round-trip latency for one-off query requests. */
     public val oneOffRequestTracker: NetworkRequestTracker = NetworkRequestTracker()
 
+    /** Tracks time spent applying incoming server messages to the client cache. */
     public val applyMessageTracker: NetworkRequestTracker = NetworkRequestTracker()
 }

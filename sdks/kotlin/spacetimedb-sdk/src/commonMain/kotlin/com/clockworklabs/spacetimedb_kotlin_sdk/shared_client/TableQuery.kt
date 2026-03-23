@@ -7,6 +7,7 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
  * Implemented by [Table], [FromWhere], [LeftSemiJoin], and [RightSemiJoin].
  */
 public interface Query<@Suppress("unused") TRow> {
+    /** Converts this query to its SQL string representation. */
     public fun toSql(): String
 }
 
@@ -27,6 +28,7 @@ public class Table<TRow, TCols, TIxCols>(
 
     override fun toSql(): String = "SELECT * FROM ${SqlFormat.quoteIdent(tableName)}"
 
+    /** Adds a WHERE clause to this table query. */
     public fun where(predicate: (TCols) -> BoolExpr<TRow>): FromWhere<TRow, TCols, TIxCols> =
         FromWhere(this, predicate(cols))
 
@@ -48,6 +50,7 @@ public class Table<TRow, TCols, TIxCols>(
     public fun where(predicate: (TCols, TIxCols) -> IxCol<TRow, Boolean>): FromWhere<TRow, TCols, TIxCols> =
         FromWhere(this, predicate(cols, ixCols).eq(SqlLit.bool(true)))
 
+    /** Alias for [where]; adds a WHERE clause to this table query. */
     public fun filter(predicate: (TCols) -> BoolExpr<TRow>): FromWhere<TRow, TCols, TIxCols> =
         FromWhere(this, predicate(cols))
 
@@ -69,12 +72,14 @@ public class Table<TRow, TCols, TIxCols>(
     public fun filter(predicate: (TCols, TIxCols) -> IxCol<TRow, Boolean>): FromWhere<TRow, TCols, TIxCols> =
         FromWhere(this, predicate(cols, ixCols).eq(SqlLit.bool(true)))
 
+    /** Creates a left semi-join with [right], returning rows from this table where a match exists. */
     public fun <TRRow, TRCols, TRIxCols> leftSemijoin(
         right: Table<TRRow, TRCols, TRIxCols>,
         on: (TIxCols, TRIxCols) -> IxJoinEq<TRow, TRRow>,
     ): LeftSemiJoin<TRow, TCols, TIxCols, TRRow, TRCols, TRIxCols> =
         LeftSemiJoin(this, right, on(ixCols, right.ixCols))
 
+    /** Creates a right semi-join with [right], returning rows from the right table where a match exists. */
     public fun <TRRow, TRCols, TRIxCols> rightSemijoin(
         right: Table<TRRow, TRCols, TRIxCols>,
         on: (TIxCols, TRIxCols) -> IxJoinEq<TRow, TRRow>,
@@ -93,6 +98,7 @@ public class FromWhere<TRow, TCols, TIxCols>(
 ) : Query<TRow> {
     override fun toSql(): String = "${table.toSql()} WHERE ${expr.sql}"
 
+    /** Chains an additional AND predicate onto this query's WHERE clause. */
     public fun where(predicate: (TCols) -> BoolExpr<TRow>): FromWhere<TRow, TCols, TIxCols> =
         FromWhere(table, expr.and(predicate(table.cols)))
 
@@ -114,6 +120,7 @@ public class FromWhere<TRow, TCols, TIxCols>(
     public fun where(predicate: (TCols, TIxCols) -> IxCol<TRow, Boolean>): FromWhere<TRow, TCols, TIxCols> =
         FromWhere(table, expr.and(predicate(table.cols, table.ixCols).eq(SqlLit.bool(true))))
 
+    /** Alias for [where]; chains an additional AND predicate onto this query's WHERE clause. */
     public fun filter(predicate: (TCols) -> BoolExpr<TRow>): FromWhere<TRow, TCols, TIxCols> =
         FromWhere(table, expr.and(predicate(table.cols)))
 
@@ -135,12 +142,14 @@ public class FromWhere<TRow, TCols, TIxCols>(
     public fun filter(predicate: (TCols, TIxCols) -> IxCol<TRow, Boolean>): FromWhere<TRow, TCols, TIxCols> =
         FromWhere(table, expr.and(predicate(table.cols, table.ixCols).eq(SqlLit.bool(true))))
 
+    /** Creates a left semi-join with [right], preserving this query's WHERE clause. */
     public fun <TRRow, TRCols, TRIxCols> leftSemijoin(
         right: Table<TRRow, TRCols, TRIxCols>,
         on: (TIxCols, TRIxCols) -> IxJoinEq<TRow, TRRow>,
     ): LeftSemiJoin<TRow, TCols, TIxCols, TRRow, TRCols, TRIxCols> =
         LeftSemiJoin(this.table, right, on(table.ixCols, right.ixCols), expr)
 
+    /** Creates a right semi-join with [right], preserving this query's WHERE clause. */
     public fun <TRRow, TRCols, TRIxCols> rightSemijoin(
         right: Table<TRRow, TRCols, TRIxCols>,
         on: (TIxCols, TRIxCols) -> IxJoinEq<TRow, TRRow>,
@@ -163,6 +172,7 @@ public class LeftSemiJoin<TLRow, TLCols, TLIxCols, TRRow, TRCols, TRIxCols>(
         return if (whereExpr != null) "$base WHERE ${whereExpr.sql}" else base
     }
 
+    /** Adds a WHERE predicate on the left table's columns. */
     public fun where(predicate: (TLCols) -> BoolExpr<TLRow>): LeftSemiJoin<TLRow, TLCols, TLIxCols, TRRow, TRCols, TRIxCols> {
         val newExpr = predicate(left.cols)
         return LeftSemiJoin(left, right, join, whereExpr?.and(newExpr) ?: newExpr)
@@ -175,6 +185,7 @@ public class LeftSemiJoin<TLRow, TLCols, TLIxCols, TRRow, TRCols, TRIxCols>(
         return LeftSemiJoin(left, right, join, whereExpr?.and(newExpr) ?: newExpr)
     }
 
+    /** Alias for [where]; adds a WHERE predicate on the left table's columns. */
     public fun filter(predicate: (TLCols) -> BoolExpr<TLRow>): LeftSemiJoin<TLRow, TLCols, TLIxCols, TRRow, TRCols, TRIxCols> {
         val newExpr = predicate(left.cols)
         return LeftSemiJoin(left, right, join, whereExpr?.and(newExpr) ?: newExpr)
@@ -207,6 +218,7 @@ public class RightSemiJoin<TLRow, TLCols, TLIxCols, TRRow, TRCols, TRIxCols>(
         return if (conditions.isEmpty()) base else "$base WHERE ${conditions.joinToString(" AND ")}"
     }
 
+    /** Adds a WHERE predicate on the right table's columns. */
     public fun where(predicate: (TRCols) -> BoolExpr<TRRow>): RightSemiJoin<TLRow, TLCols, TLIxCols, TRRow, TRCols, TRIxCols> {
         val newExpr = predicate(right.cols)
         return RightSemiJoin(left, right, join, leftWhereExpr, rightWhereExpr?.and(newExpr) ?: newExpr)
@@ -219,6 +231,7 @@ public class RightSemiJoin<TLRow, TLCols, TLIxCols, TRRow, TRCols, TRIxCols>(
         return RightSemiJoin(left, right, join, leftWhereExpr, rightWhereExpr?.and(newExpr) ?: newExpr)
     }
 
+    /** Alias for [where]; adds a WHERE predicate on the right table's columns. */
     public fun filter(predicate: (TRCols) -> BoolExpr<TRRow>): RightSemiJoin<TLRow, TLCols, TLIxCols, TRRow, TRCols, TRIxCols> {
         val newExpr = predicate(right.cols)
         return RightSemiJoin(left, right, join, leftWhereExpr, rightWhereExpr?.and(newExpr) ?: newExpr)

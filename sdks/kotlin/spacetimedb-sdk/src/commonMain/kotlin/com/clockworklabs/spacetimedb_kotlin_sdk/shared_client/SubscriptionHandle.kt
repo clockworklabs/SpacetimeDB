@@ -15,24 +15,31 @@ public enum class SubscriptionState {
 }
 
 /**
- * Handle to a subscription. Mirrors TS SDK's SubscriptionHandleImpl.
+ * Handle to a subscription.
  *
  * Tracks the lifecycle: Pending -> Active -> Ended.
  * - Active after SubscribeApplied received
  * - Ended after UnsubscribeApplied or SubscriptionError received
  */
 public class SubscriptionHandle internal constructor(
+    /** The server-assigned query set identifier for this subscription. */
     public val querySetId: QuerySetId,
+    /** The SQL queries this subscription is tracking. */
     public val queries: List<String>,
     private val connection: DbConnection,
     private val onAppliedCallbacks: List<(EventContext.SubscribeApplied) -> Unit> = emptyList(),
     private val onErrorCallbacks: List<(EventContext.Error, Throwable) -> Unit> = emptyList(),
 ) {
     private val _state = atomic(SubscriptionState.PENDING)
+    /** The current lifecycle state of this subscription. */
     public val state: SubscriptionState get() = _state.value
+    /** Whether the subscription is pending (sent but not yet confirmed by the server). */
     public val isPending: Boolean get() = _state.value == SubscriptionState.PENDING
+    /** Whether the subscription is active (confirmed and receiving updates). */
     public val isActive: Boolean get() = _state.value == SubscriptionState.ACTIVE
+    /** Whether an unsubscribe request has been sent but not yet confirmed. */
     public val isUnsubscribing: Boolean get() = _state.value == SubscriptionState.UNSUBSCRIBING
+    /** Whether the subscription has ended (unsubscribed or errored). */
     public val isEnded: Boolean get() = _state.value == SubscriptionState.ENDED
 
     private val _onEndCallback = atomic<((EventContext.UnsubscribeApplied) -> Unit)?>(null)

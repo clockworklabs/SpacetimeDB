@@ -6,6 +6,14 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.SpacetimeUuid
 
+/**
+ * Type-specialized comparison extensions for [Col] and [IxCol].
+ *
+ * Each overload accepts a native Kotlin value, converts it to a [SqlLiteral] via [SqlLit],
+ * and delegates to the underlying column comparison method. This avoids requiring callers
+ * to wrap every value in [SqlLit] manually.
+ */
+
 // ---- Col<TRow, String> ----
 
 public fun <TRow> Col<TRow, String>.eq(value: String): BoolExpr<TRow> = eq(SqlLit.string(value))

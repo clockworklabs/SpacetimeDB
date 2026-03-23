@@ -27,6 +27,7 @@ internal class BsatnRowKey(val bytes: ByteArray) {
  * Callback that fires after table operations are applied.
  */
 public fun interface PendingCallback {
+    /** Executes this deferred callback. */
     public fun invoke()
 }
 
@@ -43,7 +44,7 @@ internal data class DecodedRow<Row>(val row: Row, val rawBytes: ByteArray) {
 /**
  * Type-erased marker for pre-decoded row data.
  * Produced by [TableCache.parseUpdate] / [TableCache.parseDeletes],
- * consumed by preApply/apply methods. Matches C# SDK's IParsedTableUpdate pattern:
+ * consumed by preApply/apply methods.
  * rows are decoded once and the parsed result is passed to all phases.
  */
 public interface ParsedTableData
@@ -63,7 +64,7 @@ internal class ParsedDeletesOnly<Row>(
 
 /**
  * Per-table cache entry. Stores rows with reference counting
- * to handle overlapping subscriptions (matching TS SDK's TableCache).
+ * to handle overlapping subscriptions.
  *
  * Rows are keyed by their primary key (or full encoded bytes if no PK).
  *
@@ -75,11 +76,13 @@ public class TableCache<Row, Key : Any> private constructor(
     private val keyExtractor: (Row, ByteArray) -> Key,
 ) {
     public companion object {
+        /** Creates a table cache that keys rows by an extracted primary key. */
         public fun <Row, Key : Any> withPrimaryKey(
             decode: (BsatnReader) -> Row,
             primaryKey: (Row) -> Key,
         ): TableCache<Row, Key> = TableCache(decode) { row, _ -> primaryKey(row) }
 
+        /** Creates a table cache that keys rows by their full BSATN-encoded bytes. */
         @Suppress("UNCHECKED_CAST")
         public fun <Row> withContentKey(
             decode: (BsatnReader) -> Row,
@@ -100,20 +103,37 @@ public class TableCache<Row, Key : Any> private constructor(
     internal fun addInternalInsertListener(cb: (Row) -> Unit) { _internalInsertListeners.update { it.add(cb) } }
     internal fun addInternalDeleteListener(cb: (Row) -> Unit) { _internalDeleteListeners.update { it.add(cb) } }
 
+    /** Registers a callback that fires after a row is inserted. */
     public fun onInsert(cb: (EventContext, Row) -> Unit) { _onInsertCallbacks.update { it.add(cb) } }
+
+    /** Registers a callback that fires after a row is deleted. */
     public fun onDelete(cb: (EventContext, Row) -> Unit) { _onDeleteCallbacks.update { it.add(cb) } }
+
+    /** Registers a callback that fires after a row is updated (old row, new row). */
     public fun onUpdate(cb: (EventContext, Row, Row) -> Unit) { _onUpdateCallbacks.update { it.add(cb) } }
+
+    /** Registers a callback that fires before a row is deleted. */
     public fun onBeforeDelete(cb: (EventContext, Row) -> Unit) { _onBeforeDeleteCallbacks.update { it.add(cb) } }
 
+    /** Removes a previously registered insert callback. */
     public fun removeOnInsert(cb: (EventContext, Row) -> Unit) { _onInsertCallbacks.update { it.remove(cb) } }
+
+    /** Removes a previously registered delete callback. */
     public fun removeOnDelete(cb: (EventContext, Row) -> Unit) { _onDeleteCallbacks.update { it.remove(cb) } }
+
+    /** Removes a previously registered update callback. */
     public fun removeOnUpdate(cb: (EventContext, Row, Row) -> Unit) { _onUpdateCallbacks.update { it.remove(cb) } }
+
+    /** Removes a previously registered before-delete callback. */
     public fun removeOnBeforeDelete(cb: (EventContext, Row) -> Unit) { _onBeforeDeleteCallbacks.update { it.remove(cb) } }
 
+    /** Returns the number of rows currently stored in this table. */
     public fun count(): Int = _rows.value.size
 
+    /** Returns a lazy sequence over all rows in this table. */
     public fun iter(): Sequence<Row> = _rows.value.values.asSequence().map { it.first }
 
+    /** Returns a snapshot list of all rows in this table. */
     public fun all(): List<Row> = _rows.value.values.map { it.first }
 
     /**
@@ -143,6 +163,7 @@ public class TableCache<Row, Key : Any> private constructor(
         return result
     }
 
+    /** Decodes all rows from a [BsatnRowList], discarding raw bytes. */
     public fun decodeRowList(rowList: BsatnRowList): List<Row> =
         decodeRowListWithBytes(rowList).map { it.row }
 
@@ -426,24 +447,28 @@ public class TableCache<Row, Key : Any> private constructor(
 
 /**
  * Client-side cache holding all table caches.
- * Mirrors TS SDK's ClientCache — registry of TableCache instances by table name.
+ * Registry of [TableCache] instances keyed by table name.
  */
 public class ClientCache {
     private val _tables = atomic(persistentHashMapOf<String, TableCache<*, *>>())
 
+    /** Registers a [TableCache] under the given table name. */
     public fun <Row, Key : Any> register(tableName: String, cache: TableCache<Row, Key>) {
         _tables.update { it.put(tableName, cache) }
     }
 
+    /** Returns the table cache for [tableName], throwing if not registered. */
     @Suppress("UNCHECKED_CAST")
     public fun <Row> getTable(tableName: String): TableCache<Row, *> =
         _tables.value[tableName] as? TableCache<Row, *>
             ?: error("Table '$tableName' not found in client cache")
 
+    /** Returns the table cache for [tableName], or `null` if not registered. */
     @Suppress("UNCHECKED_CAST")
     public fun <Row> getTableOrNull(tableName: String): TableCache<Row, *>? =
         _tables.value[tableName] as? TableCache<Row, *>
 
+    /** Returns the table cache for [tableName], creating it via [factory] if not yet registered. */
     @Suppress("UNCHECKED_CAST")
     public fun <Row> getOrCreateTable(tableName: String, factory: () -> TableCache<Row, *>): TableCache<Row, *> {
         // Fast path: already registered
@@ -465,11 +490,14 @@ public class ClientCache {
         return result!!
     }
 
+    /** Returns the table cache for [tableName] without casting, or `null` if not registered. */
     public fun getUntypedTable(tableName: String): TableCache<*, *>? =
         _tables.value[tableName]
 
+    /** Returns the set of all registered table names. */
     public fun tableNames(): Set<String> = _tables.value.keys
 
+    /** Clears all rows from every registered table cache. */
     public fun clear() {
         for ((_, table) in _tables.value) table.clear()
     }

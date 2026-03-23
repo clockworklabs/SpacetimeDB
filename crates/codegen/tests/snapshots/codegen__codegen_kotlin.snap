@@ -13,9 +13,11 @@ package module_bindings
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 
+/** Arguments for the `add_player` reducer. */
 data class AddPlayerArgs(
     val name: String
 ) {
+    /** Encodes these arguments to BSATN. */
     fun encode(): ByteArray {
         val writer = BsatnWriter()
         writer.writeString(name)
@@ -23,6 +25,7 @@ data class AddPlayerArgs(
     }
 
     companion object {
+        /** Decodes [AddPlayerArgs] from BSATN. */
         fun decode(reader: BsatnReader): AddPlayerArgs {
             val name = reader.readString()
             return AddPlayerArgs(name)
@@ -30,6 +33,7 @@ data class AddPlayerArgs(
     }
 }
 
+/** Constants for the `add_player` reducer. */
 object AddPlayerReducer {
     const val REDUCER_NAME = "add_player"
 }
@@ -45,9 +49,11 @@ package module_bindings
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 
+/** Arguments for the `add_private` reducer. */
 data class AddPrivateArgs(
     val name: String
 ) {
+    /** Encodes these arguments to BSATN. */
     fun encode(): ByteArray {
         val writer = BsatnWriter()
         writer.writeString(name)
@@ -55,6 +61,7 @@ data class AddPrivateArgs(
     }
 
     companion object {
+        /** Decodes [AddPrivateArgs] from BSATN. */
         fun decode(reader: BsatnReader): AddPrivateArgs {
             val name = reader.readString()
             return AddPrivateArgs(name)
@@ -62,6 +69,7 @@ data class AddPrivateArgs(
     }
 }
 
+/** Constants for the `add_private` reducer. */
 object AddPrivateReducer {
     const val REDUCER_NAME = "add_private"
 }
@@ -77,10 +85,12 @@ package module_bindings
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 
+/** Arguments for the `add` reducer. */
 data class AddArgs(
     val name: String,
     val age: UByte
 ) {
+    /** Encodes these arguments to BSATN. */
     fun encode(): ByteArray {
         val writer = BsatnWriter()
         writer.writeString(name)
@@ -89,6 +99,7 @@ data class AddArgs(
     }
 
     companion object {
+        /** Decodes [AddArgs] from BSATN. */
         fun decode(reader: BsatnReader): AddArgs {
             val name = reader.readString()
             val age = reader.readU8()
@@ -97,6 +108,7 @@ data class AddArgs(
     }
 }
 
+/** Constants for the `add` reducer. */
 object AddReducer {
     const val REDUCER_NAME = "add"
 }
@@ -112,6 +124,7 @@ package module_bindings
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 
+/** Constants for the `assert_caller_identity_is_module_identity` reducer. */
 object AssertCallerIdentityIsModuleIdentityReducer {
     const val REDUCER_NAME = "assert_caller_identity_is_module_identity"
 }
@@ -127,9 +140,11 @@ package module_bindings
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 
+/** Arguments for the `delete_player` reducer. */
 data class DeletePlayerArgs(
     val id: ULong
 ) {
+    /** Encodes these arguments to BSATN. */
     fun encode(): ByteArray {
         val writer = BsatnWriter()
         writer.writeU64(id)
@@ -137,6 +152,7 @@ data class DeletePlayerArgs(
     }
 
     companion object {
+        /** Decodes [DeletePlayerArgs] from BSATN. */
         fun decode(reader: BsatnReader): DeletePlayerArgs {
             val id = reader.readU64()
             return DeletePlayerArgs(id)
@@ -144,6 +160,7 @@ data class DeletePlayerArgs(
     }
 }
 
+/** Constants for the `delete_player` reducer. */
 object DeletePlayerReducer {
     const val REDUCER_NAME = "delete_player"
 }
@@ -159,9 +176,11 @@ package module_bindings
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 
+/** Arguments for the `delete_players_by_name` reducer. */
 data class DeletePlayersByNameArgs(
     val name: String
 ) {
+    /** Encodes these arguments to BSATN. */
     fun encode(): ByteArray {
         val writer = BsatnWriter()
         writer.writeString(name)
@@ -169,6 +188,7 @@ data class DeletePlayersByNameArgs(
     }
 
     companion object {
+        /** Decodes [DeletePlayersByNameArgs] from BSATN. */
         fun decode(reader: BsatnReader): DeletePlayersByNameArgs {
             val name = reader.readString()
             return DeletePlayersByNameArgs(name)
@@ -176,6 +196,7 @@ data class DeletePlayersByNameArgs(
     }
 }
 
+/** Constants for the `delete_players_by_name` reducer. */
 object DeletePlayersByNameReducer {
     const val REDUCER_NAME = "delete_players_by_name"
 }
@@ -204,9 +225,11 @@ package module_bindings
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 
+/** Arguments for the `list_over_age` reducer. */
 data class ListOverAgeArgs(
     val age: UByte
 ) {
+    /** Encodes these arguments to BSATN. */
     fun encode(): ByteArray {
         val writer = BsatnWriter()
         writer.writeU8(age)
@@ -214,6 +237,7 @@ data class ListOverAgeArgs(
     }
 
     companion object {
+        /** Decodes [ListOverAgeArgs] from BSATN. */
         fun decode(reader: BsatnReader): ListOverAgeArgs {
             val age = reader.readU8()
             return ListOverAgeArgs(age)
@@ -221,6 +245,7 @@ data class ListOverAgeArgs(
     }
 }
 
+/** Constants for the `list_over_age` reducer. */
 object ListOverAgeReducer {
     const val REDUCER_NAME = "list_over_age"
 }
@@ -236,6 +261,7 @@ package module_bindings
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 
+/** Constants for the `log_module_identity` reducer. */
 object LogModuleIdentityReducer {
     const val REDUCER_NAME = "log_module_identity"
 }
@@ -259,6 +285,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.UniqueIndex
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 
+/** Client-side handle for the `logged_out_player` table. */
 class LoggedOutPlayerTableHandle internal constructor(
     private val conn: DbConnection,
     private val tableCache: TableCache<Player, *>,
@@ -526,6 +553,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.TableCache
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 
+/** Client-side handle for the `my_player` table. */
 class MyPlayerTableHandle internal constructor(
     private val conn: DbConnection,
     private val tableCache: TableCache<Player, *>,
@@ -584,6 +612,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.TableCache
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.UniqueIndex
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
 
+/** Client-side handle for the `person` table. */
 class PersonTableHandle internal constructor(
     private val conn: DbConnection,
     private val tableCache: TableCache<Person, *>,
@@ -652,6 +681,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.UniqueIndex
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 
+/** Client-side handle for the `player` table. */
 class PlayerTableHandle internal constructor(
     private val conn: DbConnection,
     private val tableCache: TableCache<Player, *>,
@@ -715,6 +745,7 @@ package module_bindings
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 
+/** Constants for the `query_private` reducer. */
 object QueryPrivateReducer {
     const val REDUCER_NAME = "query_private"
 }
@@ -735,6 +766,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ProcedureStatus
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ServerMessage
 
+/** Generated procedure call methods and callback registration. */
 class RemoteProcedures internal constructor(
     private val conn: DbConnection,
 ) : ModuleProcedures {
@@ -821,6 +853,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ModuleReducers
 
+/** Generated reducer call methods and callback registration. */
 class RemoteReducers internal constructor(
     private val conn: DbConnection,
 ) : ModuleReducers {
@@ -1101,6 +1134,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ClientCache
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ModuleTables
 
+/** Generated table accessors for all tables in this module. */
 class RemoteTables internal constructor(
     private val conn: DbConnection,
     private val clientCache: ClientCache,
@@ -1175,6 +1209,7 @@ package module_bindings
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 
+/** Constants for the `say_hello` reducer. */
 object SayHelloReducer {
     const val REDUCER_NAME = "say_hello"
 }
@@ -1203,6 +1238,7 @@ package module_bindings
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 
+/** Constants for the `test_btree_index_args` reducer. */
 object TestBtreeIndexArgsReducer {
     const val REDUCER_NAME = "test_btree_index_args"
 }
@@ -1223,6 +1259,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.RemotePersistentTa
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.TableCache
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
 
+/** Client-side handle for the `test_d` table. */
 class TestDTableHandle internal constructor(
     private val conn: DbConnection,
     private val tableCache: TableCache<TestD, *>,
@@ -1274,6 +1311,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.RemotePersistentTa
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.TableCache
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
 
+/** Client-side handle for the `test_f` table. */
 class TestFTableHandle internal constructor(
     private val conn: DbConnection,
     private val tableCache: TableCache<TestFoobar, *>,
@@ -1320,12 +1358,14 @@ package module_bindings
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 
+/** Arguments for the `test` reducer. */
 data class TestArgs(
     val arg: TestA,
     val arg2: TestB,
     val arg3: NamespaceTestC,
     val arg4: NamespaceTestF
 ) {
+    /** Encodes these arguments to BSATN. */
     fun encode(): ByteArray {
         val writer = BsatnWriter()
         arg.encode(writer)
@@ -1336,6 +1376,7 @@ data class TestArgs(
     }
 
     companion object {
+        /** Decodes [TestArgs] from BSATN. */
         fun decode(reader: BsatnReader): TestArgs {
             val arg = TestA.decode(reader)
             val arg2 = TestB.decode(reader)
@@ -1346,6 +1387,7 @@ data class TestArgs(
     }
 }
 
+/** Constants for the `test` reducer. */
 object TestReducer {
     const val REDUCER_NAME = "test"
 }
@@ -1365,14 +1407,17 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ScheduleAt
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Timestamp
 
+/** Data type `Baz` from the module schema. */
 data class Baz(
     val field: String
 ) {
+    /** Encodes this value to BSATN. */
     fun encode(writer: BsatnWriter) {
         writer.writeString(field)
     }
 
     companion object {
+        /** Decodes a [Baz] from BSATN. */
         fun decode(reader: BsatnReader): Baz {
             val field = reader.readString()
             return Baz(field)
@@ -1380,6 +1425,7 @@ data class Baz(
     }
 }
 
+/** Sum type `Foobar` from the module schema. */
 sealed interface Foobar {
     data class Baz(val value: module_bindings.Baz) : Foobar
     data object Bar : Foobar
@@ -1411,16 +1457,19 @@ sealed interface Foobar {
     }
 }
 
+/** Data type `HasSpecialStuff` from the module schema. */
 data class HasSpecialStuff(
     val identity: Identity,
     val connectionId: ConnectionId
 ) {
+    /** Encodes this value to BSATN. */
     fun encode(writer: BsatnWriter) {
         identity.encode(writer)
         connectionId.encode(writer)
     }
 
     companion object {
+        /** Decodes a [HasSpecialStuff] from BSATN. */
         fun decode(reader: BsatnReader): HasSpecialStuff {
             val identity = Identity.decode(reader)
             val connectionId = ConnectionId.decode(reader)
@@ -1429,11 +1478,13 @@ data class HasSpecialStuff(
     }
 }
 
+/** Data type `Person` from the module schema. */
 data class Person(
     val id: UInt,
     val name: String,
     val age: UByte
 ) {
+    /** Encodes this value to BSATN. */
     fun encode(writer: BsatnWriter) {
         writer.writeU32(id)
         writer.writeString(name)
@@ -1441,6 +1492,7 @@ data class Person(
     }
 
     companion object {
+        /** Decodes a [Person] from BSATN. */
         fun decode(reader: BsatnReader): Person {
             val id = reader.readU32()
             val name = reader.readString()
@@ -1450,16 +1502,19 @@ data class Person(
     }
 }
 
+/** Data type `PkMultiIdentity` from the module schema. */
 data class PkMultiIdentity(
     val id: UInt,
     val other: UInt
 ) {
+    /** Encodes this value to BSATN. */
     fun encode(writer: BsatnWriter) {
         writer.writeU32(id)
         writer.writeU32(other)
     }
 
     companion object {
+        /** Decodes a [PkMultiIdentity] from BSATN. */
         fun decode(reader: BsatnReader): PkMultiIdentity {
             val id = reader.readU32()
             val other = reader.readU32()
@@ -1468,11 +1523,13 @@ data class PkMultiIdentity(
     }
 }
 
+/** Data type `Player` from the module schema. */
 data class Player(
     val identity: Identity,
     val playerId: ULong,
     val name: String
 ) {
+    /** Encodes this value to BSATN. */
     fun encode(writer: BsatnWriter) {
         identity.encode(writer)
         writer.writeU64(playerId)
@@ -1480,6 +1537,7 @@ data class Player(
     }
 
     companion object {
+        /** Decodes a [Player] from BSATN. */
         fun decode(reader: BsatnReader): Player {
             val identity = Identity.decode(reader)
             val playerId = reader.readU64()
@@ -1489,16 +1547,19 @@ data class Player(
     }
 }
 
+/** Data type `Point` from the module schema. */
 data class Point(
     val x: Long,
     val y: Long
 ) {
+    /** Encodes this value to BSATN. */
     fun encode(writer: BsatnWriter) {
         writer.writeI64(x)
         writer.writeI64(y)
     }
 
     companion object {
+        /** Decodes a [Point] from BSATN. */
         fun decode(reader: BsatnReader): Point {
             val x = reader.readI64()
             val y = reader.readI64()
@@ -1507,14 +1568,17 @@ data class Point(
     }
 }
 
+/** Data type `PrivateTable` from the module schema. */
 data class PrivateTable(
     val name: String
 ) {
+    /** Encodes this value to BSATN. */
     fun encode(writer: BsatnWriter) {
         writer.writeString(name)
     }
 
     companion object {
+        /** Decodes a [PrivateTable] from BSATN. */
         fun decode(reader: BsatnReader): PrivateTable {
             val name = reader.readString()
             return PrivateTable(name)
@@ -1522,14 +1586,17 @@ data class PrivateTable(
     }
 }
 
+/** Data type `RemoveTable` from the module schema. */
 data class RemoveTable(
     val id: UInt
 ) {
+    /** Encodes this value to BSATN. */
     fun encode(writer: BsatnWriter) {
         writer.writeU32(id)
     }
 
     companion object {
+        /** Decodes a [RemoveTable] from BSATN. */
         fun decode(reader: BsatnReader): RemoveTable {
             val id = reader.readU32()
             return RemoveTable(id)
@@ -1537,11 +1604,13 @@ data class RemoveTable(
     }
 }
 
+/** Data type `RepeatingTestArg` from the module schema. */
 data class RepeatingTestArg(
     val scheduledId: ULong,
     val scheduledAt: ScheduleAt,
     val prevTime: Timestamp
 ) {
+    /** Encodes this value to BSATN. */
     fun encode(writer: BsatnWriter) {
         writer.writeU64(scheduledId)
         scheduledAt.encode(writer)
@@ -1549,6 +1618,7 @@ data class RepeatingTestArg(
     }
 
     companion object {
+        /** Decodes a [RepeatingTestArg] from BSATN. */
         fun decode(reader: BsatnReader): RepeatingTestArg {
             val scheduledId = reader.readU64()
             val scheduledAt = ScheduleAt.decode(reader)
@@ -1558,11 +1628,13 @@ data class RepeatingTestArg(
     }
 }
 
+/** Data type `TestA` from the module schema. */
 data class TestA(
     val x: UInt,
     val y: UInt,
     val z: String
 ) {
+    /** Encodes this value to BSATN. */
     fun encode(writer: BsatnWriter) {
         writer.writeU32(x)
         writer.writeU32(y)
@@ -1570,6 +1642,7 @@ data class TestA(
     }
 
     companion object {
+        /** Decodes a [TestA] from BSATN. */
         fun decode(reader: BsatnReader): TestA {
             val x = reader.readU32()
             val y = reader.readU32()
@@ -1579,14 +1652,17 @@ data class TestA(
     }
 }
 
+/** Data type `TestB` from the module schema. */
 data class TestB(
     val foo: String
 ) {
+    /** Encodes this value to BSATN. */
     fun encode(writer: BsatnWriter) {
         writer.writeString(foo)
     }
 
     companion object {
+        /** Decodes a [TestB] from BSATN. */
         fun decode(reader: BsatnReader): TestB {
             val foo = reader.readString()
             return TestB(foo)
@@ -1594,9 +1670,11 @@ data class TestB(
     }
 }
 
+/** Data type `TestD` from the module schema. */
 data class TestD(
     val testC: NamespaceTestC?
 ) {
+    /** Encodes this value to BSATN. */
     fun encode(writer: BsatnWriter) {
         if (testC != null) {
             writer.writeSumTag(0u)
@@ -1607,6 +1685,7 @@ data class TestD(
     }
 
     companion object {
+        /** Decodes a [TestD] from BSATN. */
         fun decode(reader: BsatnReader): TestD {
             val testC = if (reader.readSumTag().toInt() == 0) NamespaceTestC.decode(reader) else null
             return TestD(testC)
@@ -1614,16 +1693,19 @@ data class TestD(
     }
 }
 
+/** Data type `TestE` from the module schema. */
 data class TestE(
     val id: ULong,
     val name: String
 ) {
+    /** Encodes this value to BSATN. */
     fun encode(writer: BsatnWriter) {
         writer.writeU64(id)
         writer.writeString(name)
     }
 
     companion object {
+        /** Decodes a [TestE] from BSATN. */
         fun decode(reader: BsatnReader): TestE {
             val id = reader.readU64()
             val name = reader.readString()
@@ -1632,14 +1714,17 @@ data class TestE(
     }
 }
 
+/** Data type `TestFoobar` from the module schema. */
 data class TestFoobar(
     val field: Foobar
 ) {
+    /** Encodes this value to BSATN. */
     fun encode(writer: BsatnWriter) {
         field.encode(writer)
     }
 
     companion object {
+        /** Decodes a [TestFoobar] from BSATN. */
         fun decode(reader: BsatnReader): TestFoobar {
             val field = Foobar.decode(reader)
             return TestFoobar(field)
@@ -1647,6 +1732,7 @@ data class TestFoobar(
     }
 }
 
+/** Enum type `NamespaceTestC` from the module schema. */
 enum class NamespaceTestC {
     Foo,
     Bar;
@@ -1663,6 +1749,7 @@ enum class NamespaceTestC {
     }
 }
 
+/** Sum type `NamespaceTestF` from the module schema. */
 sealed interface NamespaceTestF {
     data object Foo : NamespaceTestF
     data object Bar : NamespaceTestF

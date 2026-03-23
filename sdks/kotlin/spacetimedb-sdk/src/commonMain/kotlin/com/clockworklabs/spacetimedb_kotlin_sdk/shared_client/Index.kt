@@ -38,6 +38,7 @@ public class UniqueIndex<Row, Col>(
         }
     }
 
+    /** Returns the row matching [value], or `null` if no match. */
     public fun find(value: Col): Row? = _cache.value[value]
 }
 
@@ -84,5 +85,6 @@ public class BTreeIndex<Row, Col>(
         }
     }
 
+    /** Returns all rows matching [value], or an empty set if none. */
     public fun filter(value: Col): Set<Row> = _cache.value[value] ?: emptySet()
 }

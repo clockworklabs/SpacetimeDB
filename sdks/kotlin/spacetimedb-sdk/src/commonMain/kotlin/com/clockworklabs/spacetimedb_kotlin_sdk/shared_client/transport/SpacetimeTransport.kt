@@ -49,6 +49,7 @@ public class SpacetimeTransport(
     private val _session = atomic<WebSocketSession?>(null)
 
     public companion object {
+        /** WebSocket sub-protocol identifier for BSATN v2. */
         public const val WS_PROTOCOL: String = "v2.bsatn.spacetimedb"
     }
 
@@ -56,8 +57,7 @@ public class SpacetimeTransport(
 
     /**
      * Connects to the SpacetimeDB WebSocket endpoint.
-     * Passes the auth token as a Bearer Authorization header directly
-     * on the WebSocket connection (matching C# SDK).
+     * Passes the auth token as a Bearer Authorization header on the WebSocket connection.
      */
     override suspend fun connect() {
         val wsUrl = buildWsUrl()
@@ -71,8 +71,7 @@ public class SpacetimeTransport(
     }
 
     /**
-     * Sends a ClientMessage over the WebSocket.
-     * Matches TS SDK's #sendEncoded: serialize to BSATN then send as binary frame.
+     * Sends a [ClientMessage] over the WebSocket as a BSATN-encoded binary frame.
      */
     override suspend fun send(message: ClientMessage) {
         val writer = BsatnWriter()
@@ -101,6 +100,7 @@ public class SpacetimeTransport(
         }
     }
 
+    /** Closes the WebSocket session, if one is open. */
     override suspend fun disconnect() {
         val ws = _session.getAndSet(null)
         ws?.close()

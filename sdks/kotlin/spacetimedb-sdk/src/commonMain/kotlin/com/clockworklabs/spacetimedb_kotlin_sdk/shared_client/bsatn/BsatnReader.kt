@@ -11,17 +11,21 @@ public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private 
         private fun unsignedBigInt(v: Long): BigInteger = BigInteger.fromULong(v.toULong())
     }
 
+    /** Current read position within the buffer. */
     public var offset: Int = offset
         private set
 
+    /** Number of bytes remaining to be read. */
     public val remaining: Int get() = limit - offset
 
+    /** Resets this reader to decode from a new byte array from the beginning. */
     public fun reset(newData: ByteArray) {
         data = newData
         offset = 0
         limit = newData.size
     }
 
+    /** Advances the read position by [n] bytes without returning data. */
     public fun skip(n: Int) {
         ensure(n)
         offset += n
@@ -31,6 +35,7 @@ public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private 
         check(n >= 0 && remaining >= n) { "BsatnReader: need $n bytes but only $remaining remain" }
     }
 
+    /** Reads a BSATN boolean (1 byte, nonzero = true). */
     public fun readBool(): Boolean {
         ensure(1)
         val b = data[offset].toInt() and 0xFF
@@ -38,6 +43,7 @@ public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private 
         return b != 0
     }
 
+    /** Reads a single signed byte. */
     public fun readByte(): Byte {
         ensure(1)
         val b = data[offset]
@@ -45,8 +51,10 @@ public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private 
         return b
     }
 
+    /** Reads a signed 8-bit integer. */
     public fun readI8(): Byte = readByte()
 
+    /** Reads an unsigned 8-bit integer. */
     public fun readU8(): UByte {
         ensure(1)
         val b = data[offset].toUByte()
@@ -54,6 +62,7 @@ public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private 
         return b
     }
 
+    /** Reads a signed 16-bit integer (little-endian). */
     public fun readI16(): Short {
         ensure(2)
         val b0 = data[offset].toInt() and 0xFF
@@ -62,8 +71,10 @@ public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private 
         return (b0 or (b1 shl 8)).toShort()
     }
 
+    /** Reads an unsigned 16-bit integer (little-endian). */
     public fun readU16(): UShort = readI16().toUShort()
 
+    /** Reads a signed 32-bit integer (little-endian). */
     public fun readI32(): Int {
         ensure(4)
         val b0 = data[offset].toLong() and 0xFF
@@ -74,8 +85,10 @@ public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private 
         return (b0 or (b1 shl 8) or (b2 shl 16) or (b3 shl 24)).toInt()
     }
 
+    /** Reads an unsigned 32-bit integer (little-endian). */
     public fun readU32(): UInt = readI32().toUInt()
 
+    /** Reads a signed 64-bit integer (little-endian). */
     public fun readI64(): Long {
         ensure(8)
         var result = 0L
@@ -86,12 +99,16 @@ public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private 
         return result
     }
 
+    /** Reads an unsigned 64-bit integer (little-endian). */
     public fun readU64(): ULong = readI64().toULong()
 
+    /** Reads a 32-bit IEEE 754 float (little-endian). */
     public fun readF32(): Float = Float.fromBits(readI32())
 
+    /** Reads a 64-bit IEEE 754 double (little-endian). */
     public fun readF64(): Double = Double.fromBits(readI64())
 
+    /** Reads a signed 128-bit integer (little-endian) as a [BigInteger]. */
     public fun readI128(): BigInteger {
         val p0 = readI64()
         val p1 = readI64() // signed top chunk
@@ -100,6 +117,7 @@ public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private 
             .add(unsignedBigInt(p0))
     }
 
+    /** Reads an unsigned 128-bit integer (little-endian) as a [BigInteger]. */
     public fun readU128(): BigInteger {
         val p0 = readI64()
         val p1 = readI64()
@@ -108,6 +126,7 @@ public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private 
             .add(unsignedBigInt(p0))
     }
 
+    /** Reads a signed 256-bit integer (little-endian) as a [BigInteger]. */
     public fun readI256(): BigInteger {
         val p0 = readI64()
         val p1 = readI64()
@@ -120,6 +139,7 @@ public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private 
             .add(unsignedBigInt(p0))
     }
 
+    /** Reads an unsigned 256-bit integer (little-endian) as a [BigInteger]. */
     public fun readU256(): BigInteger {
         val p0 = readI64()
         val p1 = readI64()
@@ -132,6 +152,7 @@ public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private 
             .add(unsignedBigInt(p0))
     }
 
+    /** Reads a BSATN length-prefixed UTF-8 string. */
     public fun readString(): String {
         val len = readU32()
         check(len <= Int.MAX_VALUE.toUInt()) { "String length $len exceeds maximum supported size" }
@@ -139,6 +160,7 @@ public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private 
         return bytes.decodeToString()
     }
 
+    /** Reads a BSATN length-prefixed byte array. */
     public fun readByteArray(): ByteArray {
         val len = readU32()
         check(len <= Int.MAX_VALUE.toUInt()) { "Byte array length $len exceeds maximum supported size" }
@@ -174,10 +196,10 @@ public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private 
         return data.copyOfRange(from, to)
     }
 
-    // Sum type tag byte
+    /** Reads a sum-type tag byte. */
     public fun readSumTag(): UByte = readU8()
 
-    // Array length prefix (U32, returned as Int for indexing)
+    /** Reads a BSATN array length prefix (U32), returned as Int for indexing. */
     public fun readArrayLen(): Int {
         val len = readU32()
         check(len <= Int.MAX_VALUE.toUInt()) { "Array length $len exceeds maximum supported size" }

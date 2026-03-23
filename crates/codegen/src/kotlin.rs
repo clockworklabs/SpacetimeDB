@@ -124,6 +124,7 @@ impl Lang for Kotlin {
         } else {
             "RemotePersistentTable"
         };
+        writeln!(out, "/** Client-side handle for the `{}` table. */", table.name.deref());
         writeln!(out, "class {table_name_pascal}TableHandle internal constructor(");
         out.indent(1);
         writeln!(out, "private val conn: DbConnection,");
@@ -344,6 +345,7 @@ impl Lang for Kotlin {
 
         // Emit args data class with encode/decode (if there are params)
         if !reducer.params_for_generate.elements.is_empty() {
+            writeln!(out, "/** Arguments for the `{}` reducer. */", reducer.name.deref());
             writeln!(out, "data class {reducer_name_pascal}Args(");
             out.indent(1);
             for (i, (ident, ty)) in reducer.params_for_generate.elements.iter().enumerate() {
@@ -361,6 +363,7 @@ impl Lang for Kotlin {
             out.indent(1);
 
             // encode method
+            writeln!(out, "/** Encodes these arguments to BSATN. */");
             writeln!(out, "fun encode(): ByteArray {{");
             out.indent(1);
             writeln!(out, "val writer = BsatnWriter()");
@@ -376,6 +379,7 @@ impl Lang for Kotlin {
             // companion object with decode
             writeln!(out, "companion object {{");
             out.indent(1);
+            writeln!(out, "/** Decodes [{reducer_name_pascal}Args] from BSATN. */");
             writeln!(out, "fun decode(reader: BsatnReader): {reducer_name_pascal}Args {{");
             out.indent(1);
             for (ident, ty) in reducer.params_for_generate.elements.iter() {
@@ -401,6 +405,7 @@ impl Lang for Kotlin {
         }
 
         // Reducer companion object
+        writeln!(out, "/** Constants for the `{}` reducer. */", reducer.name.deref());
         writeln!(out, "object {reducer_name_pascal}Reducer {{");
         out.indent(1);
         writeln!(
@@ -922,18 +927,22 @@ fn define_product_type(
     elements: &[(Identifier, AlgebraicTypeUse)],
 ) {
     if elements.is_empty() {
+        writeln!(out, "/** Data type `{name}` from the module schema. */");
         writeln!(out, "class {name} {{");
         out.indent(1);
+        writeln!(out, "/** Encodes this value to BSATN. */");
         writeln!(out, "fun encode(writer: BsatnWriter) {{ }}");
         writeln!(out);
         writeln!(out, "companion object {{");
         out.indent(1);
+        writeln!(out, "/** Decodes a [{name}] from BSATN. */");
         writeln!(out, "fun decode(reader: BsatnReader): {name} = {name}()");
         out.dedent(1);
         writeln!(out, "}}");
         out.dedent(1);
         writeln!(out, "}}");
     } else {
+        writeln!(out, "/** Data type `{name}` from the module schema. */");
         writeln!(out, "data class {name}(");
         out.indent(1);
         for (i, (ident, ty)) in elements.iter().enumerate() {
@@ -947,6 +956,7 @@ fn define_product_type(
         out.indent(1);
 
         // encode method
+        writeln!(out, "/** Encodes this value to BSATN. */");
         writeln!(out, "fun encode(writer: BsatnWriter) {{");
         out.indent(1);
         for (ident, ty) in elements.iter() {
@@ -960,6 +970,7 @@ fn define_product_type(
         // companion object with decode
         writeln!(out, "companion object {{");
         out.indent(1);
+        writeln!(out, "/** Decodes a [{name}] from BSATN. */");
         writeln!(out, "fun decode(reader: BsatnReader): {name} {{");
         out.indent(1);
         for (ident, ty) in elements.iter() {
@@ -1061,6 +1072,7 @@ fn define_sum_type(module: &ModuleDef, out: &mut Indenter, name: &str, variants:
         .map(|(ident, _)| ident.deref().to_case(Case::Pascal))
         .collect();
 
+    writeln!(out, "/** Sum type `{name}` from the module schema. */");
     writeln!(out, "sealed interface {name} {{");
     out.indent(1);
 
@@ -1149,6 +1161,7 @@ fn define_sum_type(module: &ModuleDef, out: &mut Indenter, name: &str, variants:
 }
 
 fn define_plain_enum(out: &mut Indenter, name: &str, variants: &[Identifier]) {
+    writeln!(out, "/** Enum type `{name}` from the module schema. */");
     writeln!(out, "enum class {name} {{");
     out.indent(1);
     for (i, variant) in variants.iter().enumerate() {
@@ -1192,6 +1205,7 @@ fn generate_remote_tables_file(module: &ModuleDef, options: &CodegenOptions) -> 
     writeln!(out, "import {SDK_PKG}.ModuleTables");
     writeln!(out);
 
+    writeln!(out, "/** Generated table accessors for all tables in this module. */");
     writeln!(out, "class RemoteTables internal constructor(");
     out.indent(1);
     writeln!(out, "private val conn: DbConnection,");
@@ -1261,6 +1275,7 @@ fn generate_remote_reducers_file(module: &ModuleDef, options: &CodegenOptions) -
     }
     writeln!(out);
 
+    writeln!(out, "/** Generated reducer call methods and callback registration. */");
     writeln!(out, "class RemoteReducers internal constructor(");
     out.indent(1);
     writeln!(out, "private val conn: DbConnection,");
@@ -1461,6 +1476,7 @@ fn generate_remote_procedures_file(module: &ModuleDef, options: &CodegenOptions)
     }
     writeln!(out);
 
+    writeln!(out, "/** Generated procedure call methods and callback registration. */");
     writeln!(out, "class RemoteProcedures internal constructor(");
     out.indent(1);
     writeln!(out, "private val conn: DbConnection,");

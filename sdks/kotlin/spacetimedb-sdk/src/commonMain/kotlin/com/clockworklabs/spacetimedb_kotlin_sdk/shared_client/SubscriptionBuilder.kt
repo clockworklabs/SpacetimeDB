@@ -2,7 +2,6 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
 /**
  * Builder for configuring subscription callbacks before subscribing.
- * Matches TS SDK's SubscriptionBuilderImpl pattern.
  */
 public class SubscriptionBuilder internal constructor(
     private val connection: DbConnection,
@@ -11,10 +10,12 @@ public class SubscriptionBuilder internal constructor(
     private val onErrorCallbacks = mutableListOf<(EventContext.Error, Throwable) -> Unit>()
     private val querySqls = mutableListOf<String>()
 
+    /** Registers a callback invoked when the subscription's initial rows are applied. */
     public fun onApplied(cb: (EventContext.SubscribeApplied) -> Unit): SubscriptionBuilder = apply {
         onAppliedCallbacks.add(cb)
     }
 
+    /** Registers a callback invoked when the subscription encounters an error. */
     public fun onError(cb: (EventContext.Error, Throwable) -> Unit): SubscriptionBuilder = apply {
         onErrorCallbacks.add(cb)
     }

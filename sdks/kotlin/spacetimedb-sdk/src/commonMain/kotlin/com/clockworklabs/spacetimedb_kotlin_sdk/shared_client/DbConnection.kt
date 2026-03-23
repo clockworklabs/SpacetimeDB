@@ -66,7 +66,9 @@ private fun decodeReducerError(bytes: ByteArray): String {
  * Compression mode for the WebSocket connection.
  */
 public enum class CompressionMode(internal val wireValue: String) {
+    /** Gzip compression. */
     GZIP("Gzip"),
+    /** No compression. */
     NONE("None"),
 }
 
@@ -86,9 +88,12 @@ public enum class CompressionMode(internal val wireValue: String) {
  * ```
  */
 public sealed interface ConnectionState {
+    /** No connection has been established yet. */
     public data object Disconnected : ConnectionState
+    /** A connection attempt is in progress. */
     public data object Connecting : ConnectionState
 
+    /** The WebSocket connection is active and processing messages. */
     public class Connected internal constructor(
         internal val receiveJob: Job,
         internal val sendJob: Job,
@@ -109,12 +114,12 @@ public sealed interface ConnectionState {
         }
     }
 
+    /** The connection has been closed and cannot be reused. */
     public data object Closed : ConnectionState
 }
 
 /**
  * Main entry point for connecting to a SpacetimeDB module.
- * Mirrors TS SDK's DbConnectionImpl.
  *
  * Handles:
  * - WebSocket connection lifecycle
@@ -131,10 +136,12 @@ public open class DbConnection internal constructor(
     onDisconnectCallbacks: List<(DbConnectionView, Throwable?) -> Unit>,
     onConnectErrorCallbacks: List<(DbConnectionView, Throwable) -> Unit>,
     private val clientConnectionId: ConnectionId,
+    /** Performance statistics for this connection (request latencies, message counts, etc.). */
     public val stats: Stats,
     internal val moduleDescriptor: ModuleDescriptor?,
     private val callbackDispatcher: CoroutineDispatcher?,
 ) : DbConnectionView {
+    /** Local cache of subscribed table rows, kept in sync with the server. */
     public val clientCache: ClientCache = ClientCache()
 
     private val _moduleTables = atomic<ModuleTables?>(null)
@@ -161,6 +168,7 @@ public open class DbConnection internal constructor(
         get() = _connectionId.value
 
     private val _token = atomic<String?>(null)
+    /** Authentication token assigned by the server, or `null` before connection. */
     public var token: String?
         get() = _token.value
         private set(value) { _token.value = value }
@@ -232,8 +240,7 @@ public open class DbConnection internal constructor(
      *
      * If the transport fails to connect, [onConnectError] callbacks are fired
      * and the connection transitions to [ConnectionState.Closed].
-     * No exception is thrown — errors are reported via callbacks
-     * (matching C# and TS SDK behavior).
+     * No exception is thrown — errors are reported via callbacks.
      */
     internal suspend fun connect() {
         val disconnected = _state.value as? ConnectionState.Disconnected
@@ -555,7 +562,7 @@ public open class DbConnection internal constructor(
     private suspend fun processMessage(message: ServerMessage) {
         when (message) {
             is ServerMessage.InitialConnection -> {
-                // Validate identity consistency (matching C# SDK)
+                // Validate identity consistency
                 val currentIdentity = identity
                 if (currentIdentity != null && currentIdentity != message.identity) {
                     val error = IllegalStateException(
@@ -832,6 +839,7 @@ public open class DbConnection internal constructor(
 
     // --- Builder ---
 
+    /** Fluent builder for configuring and creating a [DbConnection]. */
     public class Builder {
         private var uri: String? = null
         private var nameOrAddress: String? = null
@@ -852,15 +860,21 @@ public open class DbConnection internal constructor(
          */
         public fun withHttpClient(client: HttpClient): Builder = apply { httpClient = client }
 
+        /** Sets the SpacetimeDB server URI (e.g. `http://localhost:3000`). */
         public fun withUri(uri: String): Builder = apply { this.uri = uri }
+        /** Sets the database name or address to connect to. */
         public fun withDatabaseName(nameOrAddress: String): Builder =
             apply { this.nameOrAddress = nameOrAddress }
 
+        /** Sets the authentication token, or `null` for anonymous connections. */
         public fun withToken(token: String?): Builder = apply { authToken = token }
+        /** Sets the compression mode for the WebSocket connection. */
         public fun withCompression(compression: CompressionMode): Builder =
             apply { this.compression = compression }
 
+        /** Enables or disables light mode (reduced initial data transfer). */
         public fun withLightMode(lightMode: Boolean): Builder = apply { this.lightMode = lightMode }
+        /** Enables or disables confirmed reads from the server. */
         public fun withConfirmedReads(confirmed: Boolean): Builder = apply { confirmedReads = confirmed }
 
         /**
@@ -880,15 +894,19 @@ public open class DbConnection internal constructor(
          */
         public fun withModule(descriptor: ModuleDescriptor): Builder = apply { module = descriptor }
 
+        /** Registers a callback invoked when the connection is established. */
         public fun onConnect(cb: (DbConnectionView, Identity, String) -> Unit): Builder =
             apply { onConnectCallbacks.add(cb) }
 
+        /** Registers a callback invoked when the connection is closed. */
         public fun onDisconnect(cb: (DbConnectionView, Throwable?) -> Unit): Builder =
             apply { onDisconnectCallbacks.add(cb) }
 
+        /** Registers a callback invoked when a connection attempt fails. */
         public fun onConnectError(cb: (DbConnectionView, Throwable) -> Unit): Builder =
             apply { onConnectErrorCallbacks.add(cb) }
 
+        /** Builds and connects the [DbConnection]. Suspends until the WebSocket handshake completes. */
         public suspend fun build(): DbConnection {
             module?.let { ensureMinimumVersion(it.cliVersion) }
             require(compression in availableCompressionModes) {
