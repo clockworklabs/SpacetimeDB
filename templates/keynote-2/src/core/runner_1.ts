@@ -1,4 +1,4 @@
-﻿import hdr from 'hdr-histogram-js';
+import hdr from 'hdr-histogram-js';
 import { performance } from 'node:perf_hooks';
 import { pickTwoDistinct, zipfSampler } from './zipf.ts';
 import { getSpacetimeCommittedTransfers } from './spacetimeMetrics.ts';
@@ -255,8 +255,10 @@ export async function runOne({
     console.log(`[${connector.name}] Running verification pass...`);
     try {
       await withOpTimeout(connector.verify(), `${connector.name} verify()`);
+      console.log(`[${connector.name}] Verification passed`);
     } catch (err) {
-      console.error(`[${connector.name}] Verification failed:`, err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[${connector.name}] Verification failed: ${msg}`);
     }
   }
 
