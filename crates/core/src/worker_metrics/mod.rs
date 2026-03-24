@@ -312,6 +312,11 @@ metrics_group!(
         #[labels(database_identity: Identity)]
         pub v8_heap_size_limit_bytes: IntGaugeVec,
 
+        #[name = spacetime_worker_v8_instance_lane_queue_length]
+        #[help = "The number of queued requests waiting for a database's JS instance lane worker"]
+        #[labels(database_identity: Identity)]
+        pub v8_instance_lane_queue_length: IntGaugeVec,
+
         #[name = spacetime_worker_v8_external_memory_bytes]
         #[help = "The external memory tracked by V8 for a database's JS worker isolate"]
         #[labels(database_identity: Identity)]
