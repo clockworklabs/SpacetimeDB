@@ -35,6 +35,7 @@ use self::unique_direct_index::{UniqueDirectIndex, UniqueDirectIndexRangeIter};
 use self::unique_hash_index::UniqueHashIndex;
 use super::indexes::RowPointer;
 use super::table::RowRef;
+use crate::table_index::bytes_key::required_bytes_key_size;
 use crate::table_index::index::Despecialize;
 use crate::table_index::unique_direct_index::ToFromUsize;
 use crate::{read_column::ReadColumn, static_assert_size};
@@ -550,16 +551,40 @@ impl<'a> TypedIndexKey<'a> {
                 Self::AV(CowAV::Owned(val))
             }
 
+            // SAFETY:
+            // 1. Caller promised that `cols` matches what was given at construction (`Self::new`).
+            //   In the case of `.clone_structure()`, the structure is preserved,
+            //   so the promise is also preserved.
+            //   This entails, that because we reached here, that `cols` is singleton.
+            // 2. Caller promised that projecting the `row_ref`'s type/layout to `self.indexed_columns`
+            //   gives us the index's key type.
+            //   This entails that each `ColId` in `self.indexed_columns`,
+            //   and by 1. also `cols`,
+            //   must be in-bounds of `row_ref`'s layout.
             BTreeBytesKey8(_) | HashBytesKey8(_) | UniqueBTreeBytesKey8(_) | UniqueHashBytesKey8(_) => {
-                Self::BytesKey8(BytesKey::from_row_ref(cols, row_ref))
+                Self::BytesKey8(unsafe { BytesKey::from_row_ref(cols, row_ref) })
             }
-            BTreeBytesKey16(_) | UniqueBTreeBytesKey16(_) => Self::BytesKey16(BytesKey::from_row_ref(cols, row_ref)),
-            BTreeBytesKey32(_) | UniqueBTreeBytesKey32(_) => Self::BytesKey32(BytesKey::from_row_ref(cols, row_ref)),
-            BTreeBytesKey64(_) | UniqueBTreeBytesKey64(_) => Self::BytesKey64(BytesKey::from_row_ref(cols, row_ref)),
-            BTreeBytesKey128(_) | UniqueBTreeBytesKey128(_) => Self::BytesKey128(BytesKey::from_row_ref(cols, row_ref)),
-            HashBytesKey24(_) | UniqueHashBytesKey24(_) => Self::BytesKey24(BytesKey::from_row_ref(cols, row_ref)),
-            HashBytesKey56(_) | UniqueHashBytesKey56(_) => Self::BytesKey56(BytesKey::from_row_ref(cols, row_ref)),
-            HashBytesKey120(_) | UniqueHashBytesKey120(_) => Self::BytesKey120(BytesKey::from_row_ref(cols, row_ref)),
+            BTreeBytesKey16(_) | UniqueBTreeBytesKey16(_) => {
+                Self::BytesKey16(unsafe { BytesKey::from_row_ref(cols, row_ref) })
+            }
+            BTreeBytesKey32(_) | UniqueBTreeBytesKey32(_) => {
+                Self::BytesKey32(unsafe { BytesKey::from_row_ref(cols, row_ref) })
+            }
+            BTreeBytesKey64(_) | UniqueBTreeBytesKey64(_) => {
+                Self::BytesKey64(unsafe { BytesKey::from_row_ref(cols, row_ref) })
+            }
+            BTreeBytesKey128(_) | UniqueBTreeBytesKey128(_) => {
+                Self::BytesKey128(unsafe { BytesKey::from_row_ref(cols, row_ref) })
+            }
+            HashBytesKey24(_) | UniqueHashBytesKey24(_) => {
+                Self::BytesKey24(unsafe { BytesKey::from_row_ref(cols, row_ref) })
+            }
+            HashBytesKey56(_) | UniqueHashBytesKey56(_) => {
+                Self::BytesKey56(unsafe { BytesKey::from_row_ref(cols, row_ref) })
+            }
+            HashBytesKey120(_) | UniqueHashBytesKey120(_) => {
+                Self::BytesKey120(unsafe { BytesKey::from_row_ref(cols, row_ref) })
+            }
         }
     }
 
@@ -942,10 +967,16 @@ impl TypedIndex {
                 // We use a direct index here
                 AlgebraicType::Sum(sum) if sum.is_simple_enum() => UniqueBTreeSumTag(<_>::default()),
 
-                // The index is either multi-column,
-                // or we don't care to specialize on the key type,
-                // so use a map keyed on `AlgebraicValue`.
-                _ => UniqueBTreeAV(<_>::default()),
+                ty => match required_bytes_key_size(ty, true) {
+                    Some(..=BYTES_KEY_SIZE_8_B) => UniqueBTreeBytesKey8(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_16_B) => UniqueBTreeBytesKey16(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_32_B) => UniqueBTreeBytesKey32(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_64_B) => UniqueBTreeBytesKey64(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_128_B) => UniqueBTreeBytesKey128(<_>::default()),
+                    // The key type cannot use the fixed byte key optimization,
+                    // so use a map keyed on `AlgebraicValue`.
+                    Some(_) | None => UniqueBTreeAV(<_>::default()),
+                },
             }
         } else {
             match key_type {
@@ -969,10 +1000,16 @@ impl TypedIndex {
                 // For a plain enum, use `u8` as the native type.
                 AlgebraicType::Sum(sum) if sum.is_simple_enum() => BTreeSumTag(<_>::default()),
 
-                // The index is either multi-column,
-                // or we don't care to specialize on the key type,
-                // so use a map keyed on `AlgebraicValue`.
-                _ => BTreeAV(<_>::default()),
+                ty => match required_bytes_key_size(ty, true) {
+                    Some(..=BYTES_KEY_SIZE_8_B) => BTreeBytesKey8(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_16_B) => BTreeBytesKey16(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_32_B) => BTreeBytesKey32(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_64_B) => BTreeBytesKey64(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_128_B) => BTreeBytesKey128(<_>::default()),
+                    // The key type cannot use the fixed byte key optimization,
+                    // so use a map keyed on `AlgebraicValue`.
+                    Some(_) | None => BTreeAV(<_>::default()),
+                },
             }
         }
     }
@@ -1005,10 +1042,15 @@ impl TypedIndex {
                 // We use a direct index here
                 AlgebraicType::Sum(sum) if sum.is_simple_enum() => UniqueHashSumTag(<_>::default()),
 
-                // The index is either multi-column,
-                // or we don't care to specialize on the key type,
-                // so use a map keyed on `AlgebraicValue`.
-                _ => UniqueHashAV(<_>::default()),
+                ty => match required_bytes_key_size(ty, false) {
+                    Some(..=BYTES_KEY_SIZE_8_H) => UniqueHashBytesKey8(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_24_H) => UniqueHashBytesKey24(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_56_H) => UniqueHashBytesKey56(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_120_H) => UniqueHashBytesKey120(<_>::default()),
+                    // The key type cannot use the fixed byte key optimization,
+                    // so use a map keyed on `AlgebraicValue`.
+                    Some(_) | None => UniqueHashAV(<_>::default()),
+                },
             }
         } else {
             match key_type {
@@ -1032,10 +1074,15 @@ impl TypedIndex {
                 // For a plain enum, use `u8` as the native type.
                 AlgebraicType::Sum(sum) if sum.is_simple_enum() => HashSumTag(<_>::default()),
 
-                // The index is either multi-column,
-                // or we don't care to specialize on the key type,
-                // so use a map keyed on `AlgebraicValue`.
-                _ => HashAV(<_>::default()),
+                ty => match required_bytes_key_size(ty, false) {
+                    Some(..=BYTES_KEY_SIZE_8_H) => HashBytesKey8(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_24_H) => HashBytesKey24(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_56_H) => HashBytesKey56(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_120_H) => HashBytesKey120(<_>::default()),
+                    // The key type cannot use the fixed byte key optimization,
+                    // so use a map keyed on `AlgebraicValue`.
+                    Some(_) | None => HashAV(<_>::default()),
+                },
             }
         }
     }
