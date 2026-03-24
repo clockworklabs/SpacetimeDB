@@ -2,8 +2,24 @@ import { stdbUrl } from '../opts';
 
 type LabelFilter = Record<string, string>;
 
+function formatErrorWithCause(err: unknown): string {
+  if (!(err instanceof Error)) {
+    return String(err);
+  }
+
+  const cause =
+    'cause' in err && err.cause != null ? `; cause: ${String(err.cause)}` : '';
+  return `${err.message}${cause}`;
+}
+
 export async function fetchMetrics(url: string): Promise<string> {
-  const res = await fetch(url);
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch (err) {
+    throw new Error(`metrics GET ${url} failed: ${formatErrorWithCause(err)}`);
+  }
+
   if (!res.ok) {
     throw new Error(
       `metrics GET ${url} failed: ${res.status} ${res.statusText}`,

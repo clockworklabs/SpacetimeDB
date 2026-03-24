@@ -1,6 +1,16 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
+function formatErrorWithCause(err: unknown): string {
+  if (!(err instanceof Error)) {
+    return String(err);
+  }
+
+  const cause =
+    'cause' in err && err.cause != null ? `; cause: ${String(err.cause)}` : '';
+  return `${err.message}${cause}`;
+}
+
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -9,7 +19,15 @@ export async function fetchJson<T>(
   url: string,
   init?: RequestInit,
 ): Promise<T> {
-  const res = await fetch(url, init);
+  let res: Response;
+  try {
+    res = await fetch(url, init);
+  } catch (err) {
+    throw new Error(
+      `${init?.method ?? 'GET'} ${url} failed: ${formatErrorWithCause(err)}`,
+    );
+  }
+
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`${init?.method ?? 'GET'} ${url} failed: ${res.status} ${text}`);
