@@ -1,4 +1,4 @@
-﻿/** Fast, deterministic PRNG (mulberry32). */
+/** Fast, deterministic PRNG (mulberry32). */
 function mulberry32(seed: number) {
   let t = seed >>> 0;
   return {

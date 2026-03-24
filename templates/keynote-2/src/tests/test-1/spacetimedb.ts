@@ -1,4 +1,4 @@
-﻿import { reducer_single } from '../../scenario_recipes/reducer_single.ts';
+import { reducer_single } from '../../scenario_recipes/reducer_single.ts';
 
 export default {
   system: 'spacetimedb',

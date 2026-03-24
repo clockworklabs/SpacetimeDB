@@ -1,11 +1,11 @@
-﻿import 'dotenv/config';
+import 'dotenv/config';
 import http from 'node:http';
 import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { pgTable, integer, bigint as pgBigint } from 'drizzle-orm/pg-core';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { RpcRequest, RpcResponse } from '../connectors/rpc/rpc_common.ts';
-import { poolMaxFromEnv } from '../helpers.ts';
+import { poolMax } from '../opts.ts';
 
 const CRDB_URL = process.env.CRDB_URL;
 if (!CRDB_URL) {
@@ -20,7 +20,7 @@ const accounts = pgTable('accounts', {
 const pool = new Pool({
   connectionString: CRDB_URL,
   application_name: 'crdb-rpc-drizzle',
-  max: poolMaxFromEnv(),
+  max: poolMax,
 });
 
 const db = drizzle(pool, { schema: { accounts } });

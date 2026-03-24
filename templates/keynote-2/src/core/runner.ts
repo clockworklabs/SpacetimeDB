@@ -5,11 +5,22 @@ import { getSpacetimeCommittedTransfers } from './spacetimeMetrics.ts';
 import { makeCollisionTracker } from './collision_tracker.ts';
 import { RunResult } from './types.ts';
 import { BaseConnector } from './connectors.ts';
+import {
+  benchPipelined,
+  logErrors,
+  maxInflightPerWorker,
+  minOpTimeoutMs,
+  opTimeoutMs,
+  precomputedTransferPairs,
+  tailSlackMs,
+  useSpacetimeMetricsEndpoint,
+  verifyTransactions,
+} from '../opts.ts';
 
-const OP_TIMEOUT_MS = Number(process.env.BENCH_OP_TIMEOUT_MS ?? '15000');
-const MIN_OP_TIMEOUT_MS = Number(process.env.MIN_OP_TIMEOUT_MS ?? '250');
-const TAIL_SLACK_MS = Number(process.env.TAIL_SLACK_MS ?? '1000');
-const DEFAULT_PRECOMPUTED_TRANSFER_PAIRS = 10_000_000;
+const OP_TIMEOUT_MS = opTimeoutMs;
+const MIN_OP_TIMEOUT_MS = minOpTimeoutMs;
+const TAIL_SLACK_MS = tailSlackMs;
+const PRECOMPUTED_TRANSFER_PAIRS = precomputedTransferPairs;
 
 function precomputeZipfTransferPairs(
   accounts: number,
@@ -101,8 +112,7 @@ export async function runOne({
   }
 
   const useSpacetimeMetrics =
-    process.env.USE_SPACETIME_METRICS_ENDPOINT === '1' &&
-    connector.name === 'spacetimedb';
+    useSpacetimeMetricsEndpoint && connector.name === 'spacetimedb';
   let beforeTransfers: bigint | null = null;
 
   if (useSpacetimeMetrics) {
@@ -126,13 +136,7 @@ export async function runOne({
     }
   }
 
-  const precomputedPairsRaw = Number(
-    process.env.BENCH_PRECOMPUTED_TRANSFER_PAIRS ??
-      DEFAULT_PRECOMPUTED_TRANSFER_PAIRS,
-  );
-  const precomputedPairs = Number.isFinite(precomputedPairsRaw)
-    ? Math.max(1, Math.floor(precomputedPairsRaw))
-    : DEFAULT_PRECOMPUTED_TRANSFER_PAIRS;
+  const precomputedPairs = PRECOMPUTED_TRANSFER_PAIRS;
 
   console.log(
     `[${connector.name}] precomputing ${precomputedPairs} Zipf transfer pairs...`,
@@ -148,27 +152,13 @@ export async function runOne({
     `[${connector.name}] precomputed ${transferPairs.count} pairs in ${(precomputeElapsedMs / 1000).toFixed(2)}s`,
   );
 
-  const getEnvTernary = (envVal: string | undefined) => {
-    switch (envVal) {
-      case '0':
-        return false;
-      case '1':
-        return true;
-      default:
-        return null;
-    }
-  };
-
-  const PIPELINED =
-    getEnvTernary(process.env.BENCH_PIPELINED) ??
-    !!connector.maxInflightPerWorker;
-  const MAX_INFLIGHT_ENV = process.env.MAX_INFLIGHT_PER_WORKER;
+  const PIPELINED = benchPipelined ?? !!connector.maxInflightPerWorker;
   const MAX_INFLIGHT_PER_WORKER =
-    MAX_INFLIGHT_ENV == null
+    maxInflightPerWorker === undefined
       ? (connector.maxInflightPerWorker ?? 8)
-      : MAX_INFLIGHT_ENV === '0'
+      : maxInflightPerWorker == 0
         ? Infinity
-        : Number(MAX_INFLIGHT_ENV);
+        : maxInflightPerWorker;
 
   console.log(
     `[${connector.name}] max inflight per worker: ${MAX_INFLIGHT_PER_WORKER}`,
@@ -240,7 +230,7 @@ export async function runOne({
             );
             ok = true;
           } catch (err) {
-            if (process.env.LOG_ERRORS === '1') {
+            if (logErrors) {
               const msg =
                 err instanceof Error
                   ? `${err.name}: ${err.message}`
@@ -292,7 +282,7 @@ export async function runOne({
               hist.recordValue(Math.max(1, Math.round((t1 - t0) * 1e3)));
             }
           } catch (err) {
-            if (process.env.LOG_ERRORS === '1') {
+            if (logErrors) {
               const msg =
                 err instanceof Error
                   ? `${err instanceof Error ? err.message : String(err)}`
@@ -383,10 +373,10 @@ export async function runOne({
     return { start, completedWithinWindow, completedTotal, committedDelta };
   };
 
-  const warmUpSeconds = 5;
-  console.log(`[${connector.name}] Warming up for ${warmUpSeconds}s...`);
-  await run(warmUpSeconds);
-  console.log(`[${connector.name}] Finished warmup.`);
+  // const warmUpSeconds = 5;
+  // console.log(`[${connector.name}] Warming up for ${warmUpSeconds}s...`);
+  // await run(warmUpSeconds);
+  // console.log(`[${connector.name}] Finished warmup.`);
 
   console.log(`[${connector.name}] Starting workers for ${seconds}s run...`);
 
@@ -397,7 +387,7 @@ export async function runOne({
     `[${connector.name}] All workers finished (including in-flight ops)`,
   );
 
-  if (process.env.VERIFY === '1') {
+  if (verifyTransactions) {
     console.log(`[${connector.name}] Running verification pass...`);
     try {
       await withOpTimeout(connector.verify(), `${connector.name} verify()`);
