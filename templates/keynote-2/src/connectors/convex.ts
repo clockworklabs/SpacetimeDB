@@ -1,8 +1,7 @@
-﻿import type { RpcConnector } from '../core/connectors.ts';
+import type { RpcConnector } from '../core/connectors.ts';
+import { convexUrl } from '../opts.ts';
 
-export default function convex(
-  url = process.env.CONVEX_URL || 'http://127.0.0.1:3210',
-): RpcConnector {
+export default function convex(url = convexUrl): RpcConnector {
   if (!url) throw new Error('CONVEX_URL not set');
 
   function isWriteConflict(msg: unknown): boolean {

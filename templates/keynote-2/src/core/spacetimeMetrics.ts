@@ -1,4 +1,6 @@
-﻿type LabelFilter = Record<string, string>;
+import { stdbUrl } from '../opts';
+
+type LabelFilter = Record<string, string>;
 
 export async function fetchMetrics(url: string): Promise<string> {
   const res = await fetch(url);
@@ -62,8 +64,7 @@ export function parseMetricCounter(
 }
 
 export async function getSpacetimeCommittedTransfers(): Promise<bigint | null> {
-  const url =
-    process.env.STDB_METRICS_URL ?? 'http://127.0.0.1:3000/v1/metrics';
+  const url = `http://${stdbUrl}/v1/metrics`;
 
   const labels: LabelFilter = {
     committed: 'true',
