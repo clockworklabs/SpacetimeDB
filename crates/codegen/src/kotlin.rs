@@ -1,7 +1,6 @@
 use crate::util::{
-    collect_case, is_reducer_invokable, iter_indexes, iter_procedures, iter_reducers, iter_tables,
-    iter_types, print_auto_generated_file_comment, print_auto_generated_version_comment,
-    type_ref_name,
+    collect_case, is_reducer_invokable, iter_indexes, iter_procedures, iter_reducers, iter_tables, iter_types,
+    print_auto_generated_file_comment, print_auto_generated_version_comment, type_ref_name,
 };
 use crate::{CodegenOptions, OutputFile};
 
@@ -27,9 +26,34 @@ const SDK_PKG: &str = "com.clockworklabs.spacetimedb_kotlin_sdk.shared_client";
 /// Kotlin hard keywords that must be escaped with backticks when used as identifiers.
 /// See: https://kotlinlang.org/docs/keyword-reference.html#hard-keywords
 const KOTLIN_HARD_KEYWORDS: &[&str] = &[
-    "as", "break", "class", "continue", "do", "else", "false", "for", "fun", "if", "in",
-    "interface", "is", "null", "object", "package", "return", "super", "this", "throw", "true",
-    "try", "typealias", "typeof", "val", "var", "when", "while",
+    "as",
+    "break",
+    "class",
+    "continue",
+    "do",
+    "else",
+    "false",
+    "for",
+    "fun",
+    "if",
+    "in",
+    "interface",
+    "is",
+    "null",
+    "object",
+    "package",
+    "return",
+    "super",
+    "this",
+    "throw",
+    "true",
+    "try",
+    "typealias",
+    "typeof",
+    "val",
+    "var",
+    "when",
+    "while",
 ];
 
 /// Escapes a Kotlin identifier with backticks if it collides with a hard keyword.
@@ -49,12 +73,7 @@ impl Lang for Kotlin {
         vec![]
     }
 
-    fn generate_table_file_from_schema(
-        &self,
-        module: &ModuleDef,
-        table: &TableDef,
-        schema: TableSchema,
-    ) -> OutputFile {
+    fn generate_table_file_from_schema(&self, module: &ModuleDef, table: &TableDef, schema: TableSchema) -> OutputFile {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
@@ -69,12 +88,11 @@ impl Lang for Kotlin {
         let is_event = table.is_event;
 
         // Check if this table has user-defined indexes (event tables never have indexes)
-        let has_unique_index = !is_event && iter_indexes(table).any(|idx| {
-            idx.accessor_name.is_some() && schema.is_unique(&idx.algorithm.columns())
-        });
-        let has_btree_index = !is_event && iter_indexes(table).any(|idx| {
-            idx.accessor_name.is_some() && !schema.is_unique(&idx.algorithm.columns())
-        });
+        let has_unique_index = !is_event
+            && iter_indexes(table).any(|idx| idx.accessor_name.is_some() && schema.is_unique(&idx.algorithm.columns()));
+        let has_btree_index = !is_event
+            && iter_indexes(table)
+                .any(|idx| idx.accessor_name.is_some() && !schema.is_unique(&idx.algorithm.columns()));
 
         // Collect indexed column positions for IxCols generation
         let mut ix_col_positions: BTreeSet<usize> = BTreeSet::new();
@@ -175,10 +193,19 @@ impl Lang for Kotlin {
         }
 
         // Callbacks
-        writeln!(out, "override fun onInsert(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.onInsert(cb) }}");
-        writeln!(out, "override fun removeOnInsert(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.removeOnInsert(cb) }}");
+        writeln!(
+            out,
+            "override fun onInsert(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.onInsert(cb) }}"
+        );
+        writeln!(
+            out,
+            "override fun removeOnInsert(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.removeOnInsert(cb) }}"
+        );
         if !is_event {
-            writeln!(out, "override fun onDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.onDelete(cb) }}");
+            writeln!(
+                out,
+                "override fun onDelete(cb: (EventContext, {type_name}) -> Unit) {{ tableCache.onDelete(cb) }}"
+            );
             if table.primary_key.is_some() {
                 writeln!(out, "override fun onUpdate(cb: (EventContext, {type_name}, {type_name}) -> Unit) {{ tableCache.onUpdate(cb) }}");
             }
@@ -193,8 +220,7 @@ impl Lang for Kotlin {
         writeln!(out);
 
         // Indexes (not applicable for event tables)
-        if !is_event {
-        } // !is_event
+        if !is_event {} // !is_event
 
         // Index properties
         let get_field_name_and_type = |col_pos: ColId| -> (String, String) {
@@ -226,24 +252,19 @@ impl Lang for Kotlin {
                 }
                 None => {
                     // Multi-column index
-                    let col_fields: Vec<(String, String)> =
-                        columns.iter().map(get_field_name_and_type).collect();
+                    let col_fields: Vec<(String, String)> = columns.iter().map(get_field_name_and_type).collect();
 
                     match col_fields.len() {
                         2 => {
                             let col_types = format!("{}, {}", col_fields[0].1, col_fields[1].1);
-                            let key_expr =
-                                format!("Pair(it.{}, it.{})", col_fields[0].0, col_fields[1].0);
+                            let key_expr = format!("Pair(it.{}, it.{})", col_fields[0].0, col_fields[1].0);
                             writeln!(
                                 out,
                                 "val {index_name_camel} = {index_class}<{type_name}, Pair<{col_types}>>(tableCache) {{ {key_expr} }}"
                             );
                         }
                         3 => {
-                            let col_types = format!(
-                                "{}, {}, {}",
-                                col_fields[0].1, col_fields[1].1, col_fields[2].1
-                            );
+                            let col_types = format!("{}, {}, {}", col_fields[0].1, col_fields[1].1, col_fields[2].1);
                             let key_expr = format!(
                                 "Triple(it.{}, it.{}, it.{})",
                                 col_fields[0].0, col_fields[1].0, col_fields[2].0
@@ -408,11 +429,7 @@ impl Lang for Kotlin {
         writeln!(out, "/** Constants for the `{}` reducer. */", reducer.name.deref());
         writeln!(out, "object {reducer_name_pascal}Reducer {{");
         out.indent(1);
-        writeln!(
-            out,
-            "const val REDUCER_NAME = \"{}\"",
-            reducer.name.deref()
-        );
+        writeln!(out, "const val REDUCER_NAME = \"{}\"", reducer.name.deref());
         out.dedent(1);
         writeln!(out, "}}");
 
@@ -447,11 +464,7 @@ impl Lang for Kotlin {
         if procedure.params_for_generate.elements.is_empty() {
             writeln!(out, "object {procedure_name_pascal}Procedure {{");
             out.indent(1);
-            writeln!(
-                out,
-                "const val PROCEDURE_NAME = \"{}\"",
-                procedure.name.deref()
-            );
+            writeln!(out, "const val PROCEDURE_NAME = \"{}\"", procedure.name.deref());
             let return_ty = kotlin_type(module, &procedure.return_type_for_generate);
             writeln!(out, "// Returns: {return_ty}");
             out.dedent(1);
@@ -474,11 +487,7 @@ impl Lang for Kotlin {
             writeln!(out);
             writeln!(out, "object {procedure_name_pascal}Procedure {{");
             out.indent(1);
-            writeln!(
-                out,
-                "const val PROCEDURE_NAME = \"{}\"",
-                procedure.name.deref()
-            );
+            writeln!(out, "const val PROCEDURE_NAME = \"{}\"", procedure.name.deref());
             let return_ty = kotlin_type(module, &procedure.return_type_for_generate);
             writeln!(out, "// Returns: {return_ty}");
             out.dedent(1);
@@ -1002,11 +1011,9 @@ fn define_product_type(
             writeln!(out, "if (other !is {name}) return false");
             for (ident, ty) in elements.iter() {
                 let field_name = kotlin_ident(ident.deref().to_case(Case::Camel));
-                if matches!(ty, AlgebraicTypeUse::Array(inner) if matches!(&**inner, AlgebraicTypeUse::Primitive(PrimitiveType::U8))) {
-                    writeln!(
-                        out,
-                        "if (!{field_name}.contentEquals(other.{field_name})) return false"
-                    );
+                if matches!(ty, AlgebraicTypeUse::Array(inner) if matches!(&**inner, AlgebraicTypeUse::Primitive(PrimitiveType::U8)))
+                {
+                    writeln!(out, "if (!{field_name}.contentEquals(other.{field_name})) return false");
                 } else {
                     writeln!(out, "if ({field_name} != other.{field_name}) return false");
                 }
@@ -1021,11 +1028,9 @@ fn define_product_type(
             writeln!(out, "var result = 0");
             for (ident, ty) in elements.iter() {
                 let field_name = kotlin_ident(ident.deref().to_case(Case::Camel));
-                if matches!(ty, AlgebraicTypeUse::Array(inner) if matches!(&**inner, AlgebraicTypeUse::Primitive(PrimitiveType::U8))) {
-                    writeln!(
-                        out,
-                        "result = 31 * result + {field_name}.contentHashCode()"
-                    );
+                if matches!(ty, AlgebraicTypeUse::Array(inner) if matches!(&**inner, AlgebraicTypeUse::Primitive(PrimitiveType::U8)))
+                {
+                    writeln!(out, "result = 31 * result + {field_name}.contentHashCode()");
                 } else {
                     writeln!(out, "result = 31 * result + {field_name}.hashCode()");
                 }
@@ -1181,7 +1186,10 @@ fn define_plain_enum(out: &mut Indenter, name: &str, variants: &[Identifier]) {
     writeln!(out, "fun decode(reader: BsatnReader): {name} {{");
     out.indent(1);
     writeln!(out, "val tag = reader.readSumTag().toInt()");
-    writeln!(out, "return entries.getOrElse(tag) {{ error(\"Unknown {name} tag: $tag\") }}");
+    writeln!(
+        out,
+        "return entries.getOrElse(tag) {{ error(\"Unknown {name} tag: $tag\") }}"
+    );
     out.dedent(1);
     writeln!(out, "}}");
     out.dedent(1);
@@ -1293,7 +1301,10 @@ fn generate_remote_reducers_file(module: &ModuleDef, options: &CodegenOptions) -
         let reducer_name_pascal = reducer.accessor_name.deref().to_case(Case::Pascal);
 
         if reducer.params_for_generate.elements.is_empty() {
-            writeln!(out, "fun {reducer_name_camel}(callback: ((EventContext.Reducer<Unit>) -> Unit)? = null) {{");
+            writeln!(
+                out,
+                "fun {reducer_name_camel}(callback: ((EventContext.Reducer<Unit>) -> Unit)? = null) {{"
+            );
             out.indent(1);
             writeln!(
                 out,
@@ -1349,9 +1360,13 @@ fn generate_remote_reducers_file(module: &ModuleDef, options: &CodegenOptions) -
             format!("{reducer_name_pascal}Args")
         };
         let cb_params: Vec<String> = std::iter::once(format!("EventContext.Reducer<{args_type}>"))
-            .chain(reducer.params_for_generate.elements.iter().map(|(_, ty)| {
-                kotlin_type(module, ty)
-            }))
+            .chain(
+                reducer
+                    .params_for_generate
+                    .elements
+                    .iter()
+                    .map(|(_, ty)| kotlin_type(module, ty)),
+            )
             .collect();
         let cb_type = format!("({}) -> Unit", cb_params.join(", "));
 
@@ -1403,22 +1418,22 @@ fn generate_remote_reducers_file(module: &ModuleDef, options: &CodegenOptions) -
             writeln!(out, "on{reducer_name_pascal}Callbacks.forEach {{ it(typedCtx) }}");
         } else {
             writeln!(out, "@Suppress(\"UNCHECKED_CAST\")");
-            writeln!(out, "val typedCtx = ctx as EventContext.Reducer<{reducer_name_pascal}Args>");
+            writeln!(
+                out,
+                "val typedCtx = ctx as EventContext.Reducer<{reducer_name_pascal}Args>"
+            );
             // Build the call args from typed args fields
             let call_args: Vec<String> = std::iter::once("typedCtx".to_string())
-                .chain(
-                    reducer
-                        .params_for_generate
-                        .elements
-                        .iter()
-                        .map(|(ident, _)| {
-                            let field_name = kotlin_ident(ident.deref().to_case(Case::Camel));
-                            format!("typedCtx.args.{field_name}")
-                        }),
-                )
+                .chain(reducer.params_for_generate.elements.iter().map(|(ident, _)| {
+                    let field_name = kotlin_ident(ident.deref().to_case(Case::Camel));
+                    format!("typedCtx.args.{field_name}")
+                }))
                 .collect();
             let call_args_str = call_args.join(", ");
-            writeln!(out, "on{reducer_name_pascal}Callbacks.forEach {{ it({call_args_str}) }}");
+            writeln!(
+                out,
+                "on{reducer_name_pascal}Callbacks.forEach {{ it({call_args_str}) }}"
+            );
         }
 
         out.dedent(1);
@@ -1476,7 +1491,10 @@ fn generate_remote_procedures_file(module: &ModuleDef, options: &CodegenOptions)
     }
     writeln!(out);
 
-    writeln!(out, "/** Generated procedure call methods and callback registration. */");
+    writeln!(
+        out,
+        "/** Generated procedure call methods and callback registration. */"
+    );
     writeln!(out, "class RemoteProcedures internal constructor(");
     out.indent(1);
     writeln!(out, "private val conn: DbConnection,");
@@ -1514,7 +1532,10 @@ fn generate_remote_procedures_file(module: &ModuleDef, options: &CodegenOptions)
             writeln!(out, "fun {procedure_name_camel}(callback: {callback_type} = null) {{");
         } else {
             let params_str = params.join(", ");
-            writeln!(out, "fun {procedure_name_camel}({params_str}, callback: {callback_type} = null) {{");
+            writeln!(
+                out,
+                "fun {procedure_name_camel}({params_str}, callback: {callback_type} = null) {{"
+            );
         }
         out.indent(1);
 
@@ -1534,9 +1555,12 @@ fn generate_remote_procedures_file(module: &ModuleDef, options: &CodegenOptions)
         };
 
         // Generate wrapper callback that decodes the return value into a Result
-        writeln!(out, "val wrappedCallback = callback?.let {{ userCb ->") ;
+        writeln!(out, "val wrappedCallback = callback?.let {{ userCb ->");
         out.indent(1);
-        writeln!(out, "{{ ctx: EventContext.Procedure, msg: ServerMessage.ProcedureResultMsg ->") ;
+        writeln!(
+            out,
+            "{{ ctx: EventContext.Procedure, msg: ServerMessage.ProcedureResultMsg ->"
+        );
         out.indent(1);
         writeln!(out, "when (val status = msg.status) {{");
         out.indent(1);
@@ -1609,10 +1633,7 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
 
     // RemoteModule object with version info and table/reducer/procedure names
     writeln!(out, "/**");
-    writeln!(
-        out,
-        " * Module metadata generated by the SpacetimeDB CLI."
-    );
+    writeln!(out, " * Module metadata generated by the SpacetimeDB CLI.");
     writeln!(
         out,
         " * Contains version info and the names of all tables, reducers, and procedures."
@@ -1639,10 +1660,7 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     writeln!(out);
 
     // Subscribable (persistent) table names — excludes event tables
-    writeln!(
-        out,
-        "override val subscribableTableNames: List<String> = listOf("
-    );
+    writeln!(out, "override val subscribableTableNames: List<String> = listOf(");
     out.indent(1);
     for table in iter_tables(module, options.visibility) {
         if !table.is_event {
@@ -1692,7 +1710,10 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     writeln!(out);
 
     // createAccessors() — ModuleDescriptor implementation
-    writeln!(out, "override fun createAccessors(conn: DbConnection): ModuleAccessors {{");
+    writeln!(
+        out,
+        "override fun createAccessors(conn: DbConnection): ModuleAccessors {{"
+    );
     out.indent(1);
     writeln!(out, "return ModuleAccessors(");
     out.indent(1);
@@ -1721,10 +1742,7 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
 
     // Extension properties on DbConnection
     writeln!(out, "/**");
-    writeln!(
-        out,
-        " * Typed table accessors for this module's tables."
-    );
+    writeln!(out, " * Typed table accessors for this module's tables.");
     writeln!(out, " */");
     writeln!(out, "val DbConnection.db: RemoteTables");
     out.indent(1);
@@ -1733,10 +1751,7 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     writeln!(out);
 
     writeln!(out, "/**");
-    writeln!(
-        out,
-        " * Typed reducer call functions for this module's reducers."
-    );
+    writeln!(out, " * Typed reducer call functions for this module's reducers.");
     writeln!(out, " */");
     writeln!(out, "val DbConnection.reducers: RemoteReducers");
     out.indent(1);
@@ -1745,10 +1760,7 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     writeln!(out);
 
     writeln!(out, "/**");
-    writeln!(
-        out,
-        " * Typed procedure call functions for this module's procedures."
-    );
+    writeln!(out, " * Typed procedure call functions for this module's procedures.");
     writeln!(out, " */");
     writeln!(out, "val DbConnection.procedures: RemoteProcedures");
     out.indent(1);
@@ -1758,10 +1770,7 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
 
     // Extension properties on DbConnectionView (exposed via EventContext.connection)
     writeln!(out, "/**");
-    writeln!(
-        out,
-        " * Typed table accessors for this module's tables."
-    );
+    writeln!(out, " * Typed table accessors for this module's tables.");
     writeln!(out, " */");
     writeln!(out, "val DbConnectionView.db: RemoteTables");
     out.indent(1);
@@ -1770,10 +1779,7 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     writeln!(out);
 
     writeln!(out, "/**");
-    writeln!(
-        out,
-        " * Typed reducer call functions for this module's reducers."
-    );
+    writeln!(out, " * Typed reducer call functions for this module's reducers.");
     writeln!(out, " */");
     writeln!(out, "val DbConnectionView.reducers: RemoteReducers");
     out.indent(1);
@@ -1782,10 +1788,7 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     writeln!(out);
 
     writeln!(out, "/**");
-    writeln!(
-        out,
-        " * Typed procedure call functions for this module's procedures."
-    );
+    writeln!(out, " * Typed procedure call functions for this module's procedures.");
     writeln!(out, " */");
     writeln!(out, "val DbConnectionView.procedures: RemoteProcedures");
     out.indent(1);
@@ -1795,10 +1798,7 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
 
     // Extension properties on EventContext for typed access in callbacks
     writeln!(out, "/**");
-    writeln!(
-        out,
-        " * Typed table accessors available directly on event context."
-    );
+    writeln!(out, " * Typed table accessors available directly on event context.");
     writeln!(out, " */");
     writeln!(out, "val EventContext.db: RemoteTables");
     out.indent(1);
@@ -1832,10 +1832,7 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
 
     // Builder extension for zero-config setup
     writeln!(out, "/**");
-    writeln!(
-        out,
-        " * Registers this module's tables with the connection builder."
-    );
+    writeln!(out, " * Registers this module's tables with the connection builder.");
     writeln!(
         out,
         " * Call this on the builder to enable typed [db], [reducers], and [procedures] accessors."
@@ -1874,9 +1871,7 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
         let method_name = kotlin_ident(table.accessor_name.deref().to_case(Case::Camel));
 
         // Check if this table has indexed columns
-        let has_ix = iter_indexes(table).any(|idx| {
-            matches!(&idx.algorithm, IndexAlgorithm::BTree(_))
-        });
+        let has_ix = iter_indexes(table).any(|idx| matches!(&idx.algorithm, IndexAlgorithm::BTree(_)));
 
         if has_ix {
             writeln!(
@@ -1896,10 +1891,7 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
 
     // Typed addQuery extension on SubscriptionBuilder
     writeln!(out, "/**");
-    writeln!(
-        out,
-        " * Add a type-safe table query to this subscription."
-    );
+    writeln!(out, " * Add a type-safe table query to this subscription.");
     writeln!(out, " *");
     writeln!(out, " * Example:");
     writeln!(out, " * ```kotlin");
@@ -1912,7 +1904,10 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     writeln!(out, " *     .subscribe()");
     writeln!(out, " * ```");
     writeln!(out, " */");
-    writeln!(out, "fun SubscriptionBuilder.addQuery(build: (QueryBuilder) -> Query<*>): SubscriptionBuilder {{");
+    writeln!(
+        out,
+        "fun SubscriptionBuilder.addQuery(build: (QueryBuilder) -> Query<*>): SubscriptionBuilder {{"
+    );
     out.indent(1);
     writeln!(out, "return addQuery(build(QueryBuilder()).toSql())");
     out.dedent(1);
@@ -1922,9 +1917,15 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     // Generated subscribeToAllTables with baked-in queries via QueryBuilder
     writeln!(out, "/**");
     writeln!(out, " * Subscribe to all persistent tables in this module.");
-    writeln!(out, " * Event tables are excluded because the server does not support subscribing to them.");
+    writeln!(
+        out,
+        " * Event tables are excluded because the server does not support subscribing to them."
+    );
     writeln!(out, " */");
-    writeln!(out, "fun SubscriptionBuilder.subscribeToAllTables(): {SDK_PKG}.SubscriptionHandle {{");
+    writeln!(
+        out,
+        "fun SubscriptionBuilder.subscribeToAllTables(): {SDK_PKG}.SubscriptionHandle {{"
+    );
     out.indent(1);
     writeln!(out, "val qb = QueryBuilder()");
     for table in iter_tables(module, options.visibility) {

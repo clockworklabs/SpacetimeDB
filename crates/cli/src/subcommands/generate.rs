@@ -687,7 +687,13 @@ pub enum Language {
 
 impl clap::ValueEnum for Language {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Csharp, Self::Kotlin, Self::TypeScript, Self::Rust, Self::UnrealCpp]
+        &[
+            Self::Csharp,
+            Self::Kotlin,
+            Self::TypeScript,
+            Self::Rust,
+            Self::UnrealCpp,
+        ]
     }
     fn to_possible_value(&self) -> Option<PossibleValue> {
         Some(match self {

@@ -556,39 +556,42 @@ fn setup_kotlin_client_sdk(project_path: &Path) -> Result<()> {
 
     // Append includeBuild to settings.gradle.kts
     let settings_path = project_path.join("settings.gradle.kts");
-    let settings = fs::read_to_string(&settings_path)
-        .with_context(|| format!("Failed to read {:?}", settings_path))?;
+    let settings = fs::read_to_string(&settings_path).with_context(|| format!("Failed to read {:?}", settings_path))?;
     let sdk_path_str = kotlin_sdk_path.display().to_string().replace('\\', "/");
     let patched = settings.replace(
         "// includeBuild(\"<path-to-spacetimedb-kotlin-sdk>\")",
         &format!("includeBuild(\"{}\")", sdk_path_str),
     );
-    fs::write(&settings_path, patched)
-        .with_context(|| format!("Failed to write {:?}", settings_path))?;
+    fs::write(&settings_path, patched).with_context(|| format!("Failed to write {:?}", settings_path))?;
 
     // Find the build.gradle.kts that applies the spacetimedb plugin (not `apply false`)
     // and append a spacetimedb {} block with the CLI path.
     let cli_path_str = cli_path.display().to_string().replace('\\', "/");
-    let plugin_build_file = find_spacetimedb_plugin_build_file(project_path)
-        .with_context(|| format!("No build.gradle.kts applying the spacetimedb plugin found in {:?}", project_path))?;
-    let content = fs::read_to_string(&plugin_build_file)
-        .with_context(|| format!("Failed to read {:?}", plugin_build_file))?;
+    let plugin_build_file = find_spacetimedb_plugin_build_file(project_path).with_context(|| {
+        format!(
+            "No build.gradle.kts applying the spacetimedb plugin found in {:?}",
+            project_path
+        )
+    })?;
+    let content =
+        fs::read_to_string(&plugin_build_file).with_context(|| format!("Failed to read {:?}", plugin_build_file))?;
     let patched = format!(
         "{}\nspacetimedb {{\n    cli.set(file(\"{}\"))\n}}\n",
         content, cli_path_str
     );
-    fs::write(&plugin_build_file, patched)
-        .with_context(|| format!("Failed to write {:?}", plugin_build_file))?;
+    fs::write(&plugin_build_file, patched).with_context(|| format!("Failed to write {:?}", plugin_build_file))?;
 
     // Copy Gradle wrapper from the SDK
     let gradlew_src = kotlin_sdk_path.join("gradlew");
     if gradlew_src.exists() {
-        fs::copy(&gradlew_src, project_path.join("gradlew"))
-            .context("Failed to copy gradlew")?;
+        fs::copy(&gradlew_src, project_path.join("gradlew")).context("Failed to copy gradlew")?;
         let wrapper_src = kotlin_sdk_path.join("gradle/wrapper");
         let wrapper_dst = project_path.join("gradle/wrapper");
         fs::create_dir_all(&wrapper_dst).context("Failed to create gradle/wrapper")?;
-        for entry in fs::read_dir(&wrapper_src).context("Failed to read gradle/wrapper")?.flatten() {
+        for entry in fs::read_dir(&wrapper_src)
+            .context("Failed to read gradle/wrapper")?
+            .flatten()
+        {
             fs::copy(entry.path(), wrapper_dst.join(entry.file_name()))
                 .context("Failed to copy gradle wrapper file")?;
         }
@@ -609,9 +612,7 @@ fn find_spacetimedb_plugin_build_file(dir: &Path) -> Result<PathBuf> {
             }
         } else if path.file_name().is_some_and(|n| n == "build.gradle.kts") {
             let content = fs::read_to_string(&path)?;
-            if content.contains("alias(libs.plugins.spacetimedb)")
-                && !content.contains("spacetimedb) apply false")
-            {
+            if content.contains("alias(libs.plugins.spacetimedb)") && !content.contains("spacetimedb) apply false") {
                 return Ok(path);
             }
         }
@@ -747,7 +748,12 @@ fn test_rust_template(test: &Smoketest, template: &Template, project_path: &Path
         let gradlew = spacetimedb_smoketests::gradlew_path()
             .context("gradlew not found — cannot build Kotlin template client")?;
         let output = Command::new(&gradlew)
-            .args(["compileKotlin", "--no-daemon", "--no-configuration-cache", "--stacktrace"])
+            .args([
+                "compileKotlin",
+                "--no-daemon",
+                "--no-configuration-cache",
+                "--stacktrace",
+            ])
             .current_dir(project_path)
             .output()
             .context("Failed to run gradlew compileKotlin")?;

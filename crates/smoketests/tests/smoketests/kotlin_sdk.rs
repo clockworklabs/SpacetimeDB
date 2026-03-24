@@ -41,8 +41,7 @@ fn test_build_kotlin_client() {
     // Copy rust-toolchain.toml so the module builds with the right toolchain
     let toolchain_src = workspace.join("rust-toolchain.toml");
     if toolchain_src.exists() {
-        fs::copy(&toolchain_src, module_path.join("rust-toolchain.toml"))
-            .expect("Failed to copy rust-toolchain.toml");
+        fs::copy(&toolchain_src, module_path.join("rust-toolchain.toml")).expect("Failed to copy rust-toolchain.toml");
     }
 
     // Step 2: Build the server module (compiles to WASM)
@@ -92,10 +91,7 @@ fn test_build_kotlin_client() {
         "No Kotlin files were generated in {}",
         bindings_dir.display()
     );
-    eprintln!(
-        "Generated {} Kotlin binding files",
-        generated_files.len()
-    );
+    eprintln!("Generated {} Kotlin binding files", generated_files.len());
 
     // Step 4: Set up a minimal Gradle project that depends on the local Kotlin SDK
     let kotlin_sdk_path = workspace.join("sdks/kotlin");
@@ -136,8 +132,7 @@ plugins {{
 includeBuild("{kotlin_sdk_path_str}")
 "#
     );
-    fs::write(client_dir.join("settings.gradle.kts"), settings_gradle)
-        .expect("Failed to write settings.gradle.kts");
+    fs::write(client_dir.join("settings.gradle.kts"), settings_gradle).expect("Failed to write settings.gradle.kts");
 
     // build.gradle.kts — minimal JVM project depending on the SDK
     let build_gradle = format!(
@@ -154,8 +149,7 @@ dependencies {{
 }}
 "#
     );
-    fs::write(client_dir.join("build.gradle.kts"), build_gradle)
-        .expect("Failed to write build.gradle.kts");
+    fs::write(client_dir.join("build.gradle.kts"), build_gradle).expect("Failed to write build.gradle.kts");
 
     // Minimal Main.kt that imports generated types (compile check only)
     let main_kt_dir = client_dir.join("src/main/kotlin");
@@ -178,9 +172,11 @@ fun main() {
     let wrapper_src = sdk_root.join("gradle/wrapper");
     let wrapper_dst = client_dir.join("gradle/wrapper");
     fs::create_dir_all(&wrapper_dst).expect("Failed to create gradle/wrapper dir");
-    for entry in fs::read_dir(&wrapper_src).expect("Failed to read gradle/wrapper").flatten() {
-        fs::copy(entry.path(), wrapper_dst.join(entry.file_name()))
-            .expect("Failed to copy gradle wrapper file");
+    for entry in fs::read_dir(&wrapper_src)
+        .expect("Failed to read gradle/wrapper")
+        .flatten()
+    {
+        fs::copy(entry.path(), wrapper_dst.join(entry.file_name())).expect("Failed to copy gradle wrapper file");
     }
 
     // Run ./gradlew compileKotlin to validate the bindings compile
@@ -229,8 +225,7 @@ fn test_kotlin_integration() {
 
     let toolchain_src = workspace.join("rust-toolchain.toml");
     if toolchain_src.exists() {
-        fs::copy(&toolchain_src, module_path.join("rust-toolchain.toml"))
-            .expect("Failed to copy rust-toolchain.toml");
+        fs::copy(&toolchain_src, module_path.join("rust-toolchain.toml")).expect("Failed to copy rust-toolchain.toml");
     }
 
     let output = Command::new(&cli_path)
@@ -249,8 +244,10 @@ fn test_kotlin_integration() {
     let output = Command::new(&cli_path)
         .args([
             "publish",
-            "--server", server_url,
-            "--module-path", module_path.to_str().unwrap(),
+            "--server",
+            server_url,
+            "--module-path",
+            module_path.to_str().unwrap(),
             "--no-config",
             "-y",
             db_name,
