@@ -9,11 +9,16 @@ import { initConvex } from './init/init_convex';
 import { sh } from './init/utils';
 import { setTimeout as sleep } from 'node:timers/promises';
 import EventEmitter from 'node:events';
-import {
+import { type ConnectorKey } from './config.ts';
+import { parseDemoOptions } from './opts.ts';
+
+const options = parseDemoOptions();
+const {
   accounts,
   alpha,
   concurrency,
-  ConnectorKey,
+  convexDir,
+  convexUrl,
   initialBalance,
   noAnimation,
   seconds,
@@ -23,7 +28,7 @@ import {
   stdbModulePath,
   stdbUrl,
   systems,
-} from './opts';
+} = options;
 
 // Simple TCP ping - just check if something is listening on the port
 function ping(port: number, timeout = 2000): Promise<boolean> {
@@ -180,8 +185,8 @@ async function checkService(system: string): Promise<boolean> {
 // ============================================================================
 
 async function prepSystem(system: ConnectorKey): Promise<void> {
-  const connector = CONNECTORS[system];
-  if (!connector) {
+  const makeConnector = CONNECTORS[system];
+  if (!makeConnector) {
     console.log(`  ${system.padEnd(15)} ${c('yellow', '⚠ SKIPPED')}`);
     return;
   }
@@ -204,9 +209,9 @@ async function prepSystem(system: ConnectorKey): Promise<void> {
     }
 
     if (system === 'convex') {
-      await initConvex();
+      await initConvex({ accounts, convexDir, convexUrl, initialBalance });
     } else {
-      const conn = connector();
+      const conn = makeConnector(options);
       await conn.open();
       try {
         await conn.call('seed', { accounts, initialBalance });
@@ -239,7 +244,7 @@ async function runBenchmarkOther(
     return null;
   }
 
-  const connector = connectorFactory();
+  const connector = connectorFactory(options);
   const testMod = await import(`./tests/test-1/${system}.ts`);
   const scenario = testMod.default.run;
 
@@ -250,6 +255,7 @@ async function runBenchmarkOther(
     concurrency,
     accounts,
     alpha,
+    runtimeConfig: options,
   });
 
   return {
