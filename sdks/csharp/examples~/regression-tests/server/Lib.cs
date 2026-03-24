@@ -132,7 +132,10 @@ public static partial class Module
     }
 
     [SpacetimeDB.Table(Accessor = "score", Public = true)]
-    [SpacetimeDB.Index.BTree(Accessor = "by_player_and_level", Columns = new[] { "PlayerId", "Level" })]
+    [SpacetimeDB.Index.BTree(
+        Accessor = "by_player_and_level",
+        Columns = new[] { "PlayerId", "Level" }
+    )]
     public partial struct Score
     {
         public uint PlayerId;
@@ -392,6 +395,51 @@ public static partial class Module
             );
     }
 
+    // IEnumerable<T> view support - manual list building with filtering
+    [SpacetimeDB.View(Accessor = "ienumerable_players_from_iter", Public = true)]
+    public static IEnumerable<Player> IEnumerablePlayersFromIter(AnonymousViewContext ctx)
+    {
+        var result = new List<Player>();
+        foreach (var playerLevel in ctx.Db.player_level.Level.Filter(1ul))
+        {
+            if (ctx.Db.player.Id.Find(playerLevel.PlayerId) is Player player)
+            {
+                result.Add(player);
+            }
+        }
+        return result;
+    }
+
+    // IEnumerable<T> view support - direct filter-to-list conversion
+    [SpacetimeDB.View(Accessor = "ienumerable_admins_from_filter", Public = true)]
+    public static IEnumerable<User> IEnumerableAdminsFromFilter(AnonymousViewContext ctx)
+    {
+        return ctx.Db.user.IsAdmin.Filter(true).ToList();
+    }
+
+    // IEnumerable<T> view support - complex logic with joins and custom objects
+    [SpacetimeDB.View(Accessor = "ienumerable_players_with_levels", Public = true)]
+    public static IEnumerable<PlayerAndLevel> IEnumerablePlayersWithLevels(AnonymousViewContext ctx)
+    {
+        var result = new List<PlayerAndLevel>();
+        foreach (var playerLevel in ctx.Db.player_level.Level.Filter(1ul))
+        {
+            if (ctx.Db.player.Id.Find(playerLevel.PlayerId) is Player player)
+            {
+                result.Add(
+                    new PlayerAndLevel
+                    {
+                        Id = player.Id,
+                        Identity = player.Identity,
+                        Name = player.Name,
+                        Level = playerLevel.Level,
+                    }
+                );
+            }
+        }
+        return result;
+    }
+
     [SpacetimeDB.Reducer]
     public static void Delete(ReducerContext ctx, uint id)
     {
@@ -500,11 +548,7 @@ public static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void InsertViewPkMembershipSecondary(
-        ReducerContext ctx,
-        ulong id,
-        ulong playerId
-    )
+    public static void InsertViewPkMembershipSecondary(ReducerContext ctx, ulong id, ulong playerId)
     {
         ctx.Db.view_pk_membership_secondary.Insert(
             new ViewPkMembershipSecondary { Id = id, PlayerId = playerId }
