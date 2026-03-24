@@ -100,6 +100,9 @@ enum Commands {
 
     /// Scan details file for LLM API failures and print rerun commands per (lang, model). Does not run anything.
     ScanRerunCommands(ScanRerunCommandsArgs),
+
+    /// Show which (mode, model, category) combinations have no results and print rerun commands.
+    Status(StatusArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -175,6 +178,21 @@ struct ScanRerunCommandsArgs {
     /// Input details.json (default: llm-comparison-details.json)
     #[arg(long)]
     details: Option<PathBuf>,
+}
+
+#[derive(Args, Debug, Clone)]
+struct StatusArgs {
+    /// Input details.json (default: llm-comparison-details.json)
+    #[arg(long)]
+    details: Option<PathBuf>,
+
+    /// Comma-separated modes to check (default: docs,none)
+    #[arg(long, value_delimiter = ',', default_value = "docs,none")]
+    modes: Vec<String>,
+
+    /// Comma-separated languages to check (default: all languages found in details.json)
+    #[arg(long, value_delimiter = ',')]
+    lang: Option<Vec<String>>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -256,6 +274,7 @@ fn main() -> Result<()> {
         Commands::Analyze(args) => cmd_analyze(args),
         Commands::CountHttpFailures(args) => cmd_count_http_failures(args),
         Commands::ScanRerunCommands(args) => cmd_scan_rerun_commands(args),
+        Commands::Status(args) => cmd_status(args),
     }
 }
 
@@ -929,7 +948,10 @@ fn filter_routes(config: &RunConfig) -> Vec<ModelRoute> {
                 Some(allowed) => {
                     let api = r.api_model.to_ascii_lowercase();
                     let dn = r.display_name.to_ascii_lowercase();
-                    allowed.contains(&api) || allowed.contains(&dn)
+                    let or_id = r.openrouter_model.map(|m| m.to_ascii_lowercase());
+                    allowed.contains(&api)
+                        || allowed.contains(&dn)
+                        || or_id.as_ref().map(|m| allowed.contains(m)).unwrap_or(false)
                 }
             },
         })
@@ -943,7 +965,12 @@ fn filter_routes(config: &RunConfig) -> Vec<ModelRoute> {
     if let Some(mf) = &config.model_filter {
         for (vendor, model_ids) in mf {
             for model_id in model_ids {
-                if !routes.iter().any(|r| r.vendor == *vendor && r.api_model == model_id.as_str()) {
+                let already_matched = routes.iter().any(|r| {
+                    r.vendor == *vendor
+                        && (r.api_model == model_id.as_str()
+                            || r.openrouter_model == Some(model_id.as_str()))
+                });
+                if !already_matched {
                     let leaked: &'static str = Box::leak(model_id.clone().into_boxed_str());
                     routes.push(ModelRoute {
                         display_name: leaked,
@@ -1317,6 +1344,150 @@ fn cmd_scan_rerun_commands(args: ScanRerunCommandsArgs) -> Result<()> {
             lang, mode, vendor, api_model, tasks_arg
         );
         println!();
+    }
+    Ok(())
+}
+
+fn cmd_status(args: StatusArgs) -> Result<()> {
+    use xtask_llm_benchmark::results::schema::Results;
+
+    let details_path = args.details.unwrap_or_else(llm_comparison_details);
+
+    // All known categories by scanning benchmarks dir
+    let all_categories = {
+        let bench_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/benchmarks");
+        let mut cats: Vec<String> = fs::read_dir(&bench_dir)
+            .with_context(|| format!("read benchmarks dir {}", bench_dir.display()))?
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        cats.sort();
+        cats
+    };
+
+    // Build task_id -> category map by scanning benchmarks dir
+    let task_cat: HashMap<String, String> = {
+        let bench_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/benchmarks");
+        let mut m = HashMap::new();
+        for cat in &all_categories {
+            let cat_dir = bench_dir.join(cat);
+            if let Ok(entries) = fs::read_dir(&cat_dir) {
+                for e in entries.filter_map(|e| e.ok()) {
+                    if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                        m.insert(e.file_name().to_string_lossy().to_string(), cat.clone());
+                    }
+                }
+            }
+        }
+        m
+    };
+
+    // All task IDs across all categories (sorted)
+    let all_tasks: Vec<String> = {
+        let bench_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/benchmarks");
+        let mut tasks: Vec<String> = Vec::new();
+        for cat in &all_categories {
+            let cat_dir = bench_dir.join(cat);
+            if let Ok(entries) = fs::read_dir(&cat_dir) {
+                for e in entries.filter_map(|e| e.ok()) {
+                    if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                        tasks.push(e.file_name().to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+        tasks.sort();
+        tasks
+    };
+
+    // Build map: (lang, mode, display_name) -> set of task IDs that have a real result
+    // (llm responded AND no API error — i.e. the LLM actually generated code, pass or fail)
+    let mut settled: HashMap<(String, String, String), std::collections::HashSet<String>> = HashMap::new();
+    let mut all_langs: Vec<String> = Vec::new();
+
+    if details_path.exists() {
+        let content = fs::read_to_string(&details_path)
+            .with_context(|| format!("read {}", details_path.display()))?;
+        let results: Results = serde_json::from_str(&content).context("parse details.json")?;
+        for lang_entry in &results.languages {
+            if !all_langs.contains(&lang_entry.lang) {
+                all_langs.push(lang_entry.lang.clone());
+            }
+            for mode_entry in &lang_entry.modes {
+                if !args.modes.contains(&mode_entry.mode) {
+                    continue;
+                }
+                for model_entry in &mode_entry.models {
+                    let key = (lang_entry.lang.clone(), mode_entry.mode.clone(), model_entry.name.clone());
+                    for (task_id, outcome) in &model_entry.tasks {
+                        // Settled = LLM responded (has output). Pass or fail doesn't matter here —
+                        // what matters is we got a real answer, not an API/network error.
+                        let is_api_error = outcome.llm_output.is_none()
+                            && get_publish_error_from_outcome(outcome)
+                                .map(|e| is_http_like_error(&e))
+                                .unwrap_or(false);
+                        if !is_api_error {
+                            settled.entry(key.clone()).or_default().insert(task_id.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    all_langs.sort();
+
+    let langs = args.lang.unwrap_or_else(|| all_langs.clone());
+    let routes = default_model_routes();
+    let mut any_missing = false;
+
+    for lang in &langs {
+        let mut lang_header_printed = false;
+        for mode in &args.modes {
+            for route in routes {
+                let display = route.display_name.to_string();
+                let done = settled
+                    .get(&(lang.clone(), mode.clone(), display.clone()))
+                    .cloned()
+                    .unwrap_or_default();
+                // Tasks never attempted OR that hit an API error and need a real retry
+                let incomplete: Vec<&str> = all_tasks
+                    .iter()
+                    .filter(|t| !done.contains(t.as_str()))
+                    .map(|s| s.as_str())
+                    .collect();
+                if incomplete.is_empty() {
+                    continue;
+                }
+                if !lang_header_printed {
+                    println!("=== {} ===\n", lang);
+                    lang_header_printed = true;
+                }
+                any_missing = true;
+                let vendor_str = format!("{:?}", route.vendor).to_ascii_lowercase();
+                // Show by category for readability
+                let by_cat: Vec<String> = all_categories.iter().filter_map(|cat| {
+                    let cat_tasks: Vec<&str> = incomplete.iter()
+                        .filter(|t| task_cat.get(**t).map(|c| c == cat).unwrap_or(false))
+                        .copied()
+                        .collect();
+                    if cat_tasks.is_empty() { None }
+                    else { Some(format!("  {} ({}): {}", cat, cat_tasks.len(), cat_tasks.join(", "))) }
+                }).collect();
+                println!("# {} | mode={} | {} incomplete tasks", display, mode, incomplete.len());
+                for line in &by_cat { println!("{}", line); }
+                println!(
+                    "cargo run -p xtask-llm-benchmark -- run --lang {} --modes {} --models {}:{} --tasks {}",
+                    lang, mode, vendor_str, route.api_model,
+                    incomplete.join(",")
+                );
+                println!();
+            }
+        }
+    }
+
+    if !any_missing {
+        println!("All models have real results for all tasks in modes: {}", args.modes.join(", "));
     }
     Ok(())
 }

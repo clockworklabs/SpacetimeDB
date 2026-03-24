@@ -1,0 +1,24 @@
+Write a SpacetimeDB backend module in TypeScript that implements a one-time admin bootstrap pattern.
+
+TABLES
+- config
+  - private table
+  - Fields:
+    - id: number (u32, primary key)
+    - admin: Identity
+
+- admin_log
+  - public table
+  - Fields:
+    - id: number (u64, primary key, autoInc)
+    - action: string
+
+REDUCERS
+- bootstrap_admin(ctx)
+  - If a config row already exists (id = 0), throw "already bootstrapped"
+  - Otherwise insert config { id: 0, admin: ctx.sender }
+
+- admin_action(ctx, { action: string })
+  - Load the config row with id = 0; if missing, throw "not bootstrapped"
+  - If ctx.sender does not equal config.admin, throw "not admin"
+  - Insert an admin_log row with the given action, id = 0n for autoInc

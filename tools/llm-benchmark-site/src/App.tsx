@@ -4,6 +4,7 @@ import Leaderboard from './pages/Leaderboard'
 import ModelDetail from './pages/ModelDetail'
 import CategoryView from './pages/CategoryView'
 import Trends from './pages/Trends'
+import Evals from './pages/Evals'
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
           <Route path="/model/:name" element={<ModelDetail />} />
           <Route path="/category/:name" element={<CategoryView />} />
           <Route path="/trends" element={<Trends />} />
+          <Route path="/evals" element={<Evals />} />
         </Routes>
       </main>
     </div>

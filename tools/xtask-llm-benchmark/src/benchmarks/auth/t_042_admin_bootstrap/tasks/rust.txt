@@ -1,0 +1,26 @@
+Write a SpacetimeDB backend module in Rust that implements a one-time admin bootstrap pattern.
+
+TABLES
+- config
+  - Struct: Config
+  - private table
+  - Fields:
+    - id: u32 (primary key)
+    - admin: Identity
+
+- admin_log
+  - Struct: AdminLog
+  - public table
+  - Fields:
+    - id: u64 (primary key, auto_inc)
+    - action: String
+
+REDUCERS
+- bootstrap_admin(ctx)
+  - If a Config row already exists (id = 0), panic with "already bootstrapped"
+  - Otherwise insert Config { id: 0, admin: ctx.sender }
+
+- admin_action(ctx, action: String)
+  - Load the Config row with id = 0; if missing, panic with "not bootstrapped"
+  - If ctx.sender does not equal config.admin, panic with "not admin"
+  - Insert an AdminLog row with the given action, id = 0 for auto_inc

@@ -1,0 +1,33 @@
+Write a SpacetimeDB backend module in TypeScript that implements a ban list enforced on game entry.
+
+TABLES
+- admin
+  - private table
+  - Fields:
+    - identity: Identity (primary key)
+
+- banned
+  - private table
+  - Fields:
+    - identity: Identity (primary key)
+
+- player
+  - public table
+  - Fields:
+    - identity: Identity (primary key)
+    - name: string
+
+REDUCERS
+- add_admin(ctx, { target: Identity })
+  - If ctx.sender is not in the admin table, throw "not admin"
+  - Insert { identity: target } into admin (ignore if already present)
+
+- ban_player(ctx, { target: Identity })
+  - If ctx.sender is not in the admin table, throw "not admin"
+  - Insert { identity: target } into banned
+  - Remove the player row for target if one exists
+
+- join_game(ctx, { name: string })
+  - If ctx.sender is in the banned table, throw "banned"
+  - If a player row already exists for ctx.sender, throw "already in game"
+  - Insert player { identity: ctx.sender, name }

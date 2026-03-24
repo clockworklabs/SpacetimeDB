@@ -38,6 +38,7 @@ export default function NavBar() {
         {[
           { to: '/', label: 'Leaderboard' },
           { to: '/trends', label: 'Trends' },
+          { to: '/evals', label: 'Evals' },
         ].map(({ to, label }) => (
           <NavLink
             key={to}

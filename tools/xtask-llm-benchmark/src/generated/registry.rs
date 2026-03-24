@@ -16,6 +16,42 @@ mod auth_t_027_private_vs_public_table {
 
 #[allow(dead_code)]
 #[allow(clippy::all)]
+mod auth_t_041_registered_user_gate {
+    include!("../benchmarks/auth/t_041_registered_user_gate/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod auth_t_042_admin_bootstrap {
+    include!("../benchmarks/auth/t_042_admin_bootstrap/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod auth_t_043_role_based_access {
+    include!("../benchmarks/auth/t_043_role_based_access/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod auth_t_044_ban_list {
+    include!("../benchmarks/auth/t_044_ban_list/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod auth_t_045_rate_limit {
+    include!("../benchmarks/auth/t_045_rate_limit/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod auth_t_046_shared_document {
+    include!("../benchmarks/auth/t_046_shared_document/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
 mod basics_t_000_empty_reducers {
     include!("../benchmarks/basics/t_000_empty_reducers/spec.rs");
 }
@@ -118,8 +154,38 @@ mod data_modeling_t_025_optional_fields {
 
 #[allow(dead_code)]
 #[allow(clippy::all)]
+mod data_modeling_t_028_cascade_delete {
+    include!("../benchmarks/data_modeling/t_028_cascade_delete/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod data_modeling_t_029_filter_and_aggregate {
+    include!("../benchmarks/data_modeling/t_029_filter_and_aggregate/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod data_modeling_t_030_two_table_join {
+    include!("../benchmarks/data_modeling/t_030_two_table_join/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
 mod data_modeling_t_031_unique_constraint {
     include!("../benchmarks/data_modeling/t_031_unique_constraint/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod queries_t_022_view_basic {
+    include!("../benchmarks/queries/t_022_view_basic/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod queries_t_023_view_per_user {
+    include!("../benchmarks/queries/t_023_view_per_user/spec.rs");
 }
 
 #[allow(dead_code)]
@@ -218,36 +284,6 @@ mod schema_t_021_multi_column_index {
     include!("../benchmarks/schema/t_021_multi_column_index/spec.rs");
 }
 
-#[allow(dead_code)]
-#[allow(clippy::all)]
-mod views_t_022_view_basic {
-    include!("../benchmarks/views/t_022_view_basic/spec.rs");
-}
-
-#[allow(dead_code)]
-#[allow(clippy::all)]
-mod views_t_023_view_per_user {
-    include!("../benchmarks/views/t_023_view_per_user/spec.rs");
-}
-
-#[allow(dead_code)]
-#[allow(clippy::all)]
-mod write_patterns_t_028_cascade_delete {
-    include!("../benchmarks/write_patterns/t_028_cascade_delete/spec.rs");
-}
-
-#[allow(dead_code)]
-#[allow(clippy::all)]
-mod write_patterns_t_029_filter_and_aggregate {
-    include!("../benchmarks/write_patterns/t_029_filter_and_aggregate/spec.rs");
-}
-
-#[allow(dead_code)]
-#[allow(clippy::all)]
-mod write_patterns_t_030_two_table_join {
-    include!("../benchmarks/write_patterns/t_030_two_table_join/spec.rs");
-}
-
 pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
     let task = task_root
         .file_name()
@@ -261,6 +297,12 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
     let ctor = match (category, task) {
         ("auth", "t_026_auth_identity_check") => auth_t_026_auth_identity_check::spec,
         ("auth", "t_027_private_vs_public_table") => auth_t_027_private_vs_public_table::spec,
+        ("auth", "t_041_registered_user_gate") => auth_t_041_registered_user_gate::spec,
+        ("auth", "t_042_admin_bootstrap") => auth_t_042_admin_bootstrap::spec,
+        ("auth", "t_043_role_based_access") => auth_t_043_role_based_access::spec,
+        ("auth", "t_044_ban_list") => auth_t_044_ban_list::spec,
+        ("auth", "t_045_rate_limit") => auth_t_045_rate_limit::spec,
+        ("auth", "t_046_shared_document") => auth_t_046_shared_document::spec,
         ("basics", "t_000_empty_reducers") => basics_t_000_empty_reducers::spec,
         ("basics", "t_001_basic_tables") => basics_t_001_basic_tables::spec,
         ("basics", "t_002_scheduled_table") => basics_t_002_scheduled_table::spec,
@@ -278,7 +320,12 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("basics", "t_040_lifecycle_player") => basics_t_040_lifecycle_player::spec,
         ("data_modeling", "t_024_event_table") => data_modeling_t_024_event_table::spec,
         ("data_modeling", "t_025_optional_fields") => data_modeling_t_025_optional_fields::spec,
+        ("data_modeling", "t_028_cascade_delete") => data_modeling_t_028_cascade_delete::spec,
+        ("data_modeling", "t_029_filter_and_aggregate") => data_modeling_t_029_filter_and_aggregate::spec,
+        ("data_modeling", "t_030_two_table_join") => data_modeling_t_030_two_table_join::spec,
         ("data_modeling", "t_031_unique_constraint") => data_modeling_t_031_unique_constraint::spec,
+        ("queries", "t_022_view_basic") => queries_t_022_view_basic::spec,
+        ("queries", "t_023_view_per_user") => queries_t_023_view_per_user::spec,
         ("queries", "t_032_range_query") => queries_t_032_range_query::spec,
         ("queries", "t_033_sort_and_limit") => queries_t_033_sort_and_limit::spec,
         ("queries", "t_034_find_first") => queries_t_034_find_first::spec,
@@ -295,11 +342,6 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("schema", "t_019_many_to_many") => schema_t_019_many_to_many::spec,
         ("schema", "t_020_ecs") => schema_t_020_ecs::spec,
         ("schema", "t_021_multi_column_index") => schema_t_021_multi_column_index::spec,
-        ("views", "t_022_view_basic") => views_t_022_view_basic::spec,
-        ("views", "t_023_view_per_user") => views_t_023_view_per_user::spec,
-        ("write_patterns", "t_028_cascade_delete") => write_patterns_t_028_cascade_delete::spec,
-        ("write_patterns", "t_029_filter_and_aggregate") => write_patterns_t_029_filter_and_aggregate::spec,
-        ("write_patterns", "t_030_two_table_join") => write_patterns_t_030_two_table_join::spec,
         _ => return Err(anyhow!("no spec registered for {}/{} (need spec.rs)", category, task)),
     };
 

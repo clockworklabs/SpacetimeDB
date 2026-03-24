@@ -75,7 +75,9 @@ function TaskRow({ task }: { task: TaskResult }) {
                   >
                     <PassChip passed={detail.pass} size="sm" />
                     <span className="text-xs text-slate-300 font-mono">{key}</span>
-                    <span className="text-xs text-slate-500">{(detail.partial * 100).toFixed(0)}%</span>
+                    {detail.partial != null && (
+                      <span className="text-xs text-slate-500">{(detail.partial * 100).toFixed(0)}%</span>
+                    )}
                   </div>
                 ))}
               </div>

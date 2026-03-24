@@ -34,8 +34,33 @@ fn pct(passed: u32, total: u32) -> f32 {
     }
 }
 
+/// Build a task_id -> category map by scanning the benchmarks directory.
+/// This is always derived fresh so moving tasks between categories is reflected
+/// immediately on the next `summary` run without re-running any models.
+fn build_task_category_map() -> HashMap<String, String> {
+    let bench_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/benchmarks");
+    let mut map = HashMap::new();
+    if let Ok(cats) = fs::read_dir(&bench_dir) {
+        for cat_entry in cats.filter_map(|e| e.ok()) {
+            if !cat_entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let cat = cat_entry.file_name().to_string_lossy().to_string();
+            if let Ok(tasks) = fs::read_dir(cat_entry.path()) {
+                for task_entry in tasks.filter_map(|e| e.ok()) {
+                    if task_entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                        map.insert(task_entry.file_name().to_string_lossy().to_string(), cat.clone());
+                    }
+                }
+            }
+        }
+    }
+    map
+}
+
 /// Build `Summary` from your in-memory `Results`.
 pub fn summary_from_results(results: &Results) -> Summary {
+    let task_category = build_task_category_map();
     let mut by_language: BTreeMap<String, LangSummary> = BTreeMap::new();
 
     for lang_ent in &results.languages {
@@ -61,8 +86,14 @@ pub fn summary_from_results(results: &Results) -> Summary {
                     totals: Totals::default(),
                 });
 
-                for t in model_ent.tasks.values() {
-                    let cat_key = t.category.clone().expect("Missing category");
+                for (task_id, t) in &model_ent.tasks {
+                    // Derive category from the current benchmarks directory structure
+                    // so that moving tasks between categories is reflected without re-running.
+                    let cat_key = task_category
+                        .get(task_id.as_str())
+                        .cloned()
+                        .or_else(|| t.category.clone())
+                        .unwrap_or_else(|| "unknown".to_string());
                     let cat_sum = model_sum.categories.entry(cat_key).or_default();
 
                     // counts

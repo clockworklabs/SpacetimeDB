@@ -1,0 +1,35 @@
+Write a SpacetimeDB backend module in C# that implements a ban list enforced on game entry.
+
+TABLES
+- Admin
+  - Struct: Admin
+  - private table
+  - Fields:
+    - Identity: Identity (primary key)
+
+- Banned
+  - Struct: Banned
+  - private table
+  - Fields:
+    - Identity: Identity (primary key)
+
+- Player
+  - Struct: Player
+  - public table
+  - Fields:
+    - Identity: Identity (primary key)
+    - Name: string
+
+REDUCERS
+- AddAdmin(ctx, Identity target)
+  - If ctx.Sender is not in the Admin table, throw exception with "not admin"
+  - Insert Admin { Identity = target } (ignore if already present)
+
+- BanPlayer(ctx, Identity target)
+  - If ctx.Sender is not in the Admin table, throw exception with "not admin"
+  - Insert Banned { Identity = target }
+  - Remove the Player row for target if one exists
+
+- JoinGame(ctx, string name)
+  - If ctx.Sender is in the Banned table, throw exception with "banned"
+  - Insert Player { Identity = ctx.Sender, Name = name }; if already present, throw exception with "already in game"

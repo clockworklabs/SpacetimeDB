@@ -65,7 +65,9 @@ function OutputModal({ cell, onClose }: ModalProps) {
               >
                 <PassChip passed={detail.pass} size="sm" />
                 <span className="font-mono text-slate-300">{key}</span>
-                <span className="text-slate-500">{(detail.partial * 100).toFixed(0)}%</span>
+                {detail.partial != null && (
+                  <span className="text-slate-500">{(detail.partial * 100).toFixed(0)}%</span>
+                )}
               </div>
             ))}
           </div>

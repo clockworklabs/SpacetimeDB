@@ -1,0 +1,26 @@
+Write a SpacetimeDB backend module in TypeScript that implements role-based access control.
+
+TABLES
+- user
+  - private table
+  - Fields:
+    - identity: Identity (primary key)
+    - role: string  ("admin" or "member")
+
+REDUCERS
+- register(ctx)
+  - If a user row already exists for ctx.sender, throw "already registered"
+  - Insert user { identity: ctx.sender, role: "member" }
+
+- promote(ctx, { target: Identity })
+  - Load the user row for ctx.sender; if missing, throw "not registered"
+  - If the caller's role is not "admin", throw "not admin"
+  - Load the user row for target; if missing, throw "target not registered"
+  - Update that row's role to "admin"
+
+- member_action(ctx)
+  - Load the user row for ctx.sender; if missing, throw "not registered"
+
+- admin_action(ctx)
+  - Load the user row for ctx.sender; if missing, throw "not registered"
+  - If the role is not "admin", throw "not admin"
