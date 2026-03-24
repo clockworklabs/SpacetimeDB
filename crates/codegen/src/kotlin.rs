@@ -219,9 +219,6 @@ impl Lang for Kotlin {
         }
         writeln!(out);
 
-        // Indexes (not applicable for event tables)
-        if !is_event {} // !is_event
-
         // Index properties
         let get_field_name_and_type = |col_pos: ColId| -> (String, String) {
             let (field_name, field_type) = &product_def.elements[col_pos.idx()];
@@ -501,22 +498,13 @@ impl Lang for Kotlin {
     }
 
     fn generate_global_files(&self, module: &ModuleDef, options: &CodegenOptions) -> Vec<OutputFile> {
-        let mut files = Vec::new();
-
-        // 1. Types.kt — all user-defined types with BSATN encode/decode
-        files.push(generate_types_file(module));
-
-        // 2. RemoteTables.kt — typed table handle accessors
-        files.push(generate_remote_tables_file(module, options));
-
-        // 3. RemoteReducers.kt — reducer call functions with BSATN encoding
-        files.push(generate_remote_reducers_file(module, options));
-
-        // 4. RemoteProcedures.kt — procedure call functions with BSATN encoding
-        files.push(generate_remote_procedures_file(module, options));
-
-        // 5. Module.kt — zero-config wiring
-        files.push(generate_module_file(module, options));
+        let files = vec![
+            generate_types_file(module),
+            generate_remote_tables_file(module, options),
+            generate_remote_reducers_file(module, options),
+            generate_remote_procedures_file(module, options),
+            generate_module_file(module, options),
+        ];
 
         files
     }
