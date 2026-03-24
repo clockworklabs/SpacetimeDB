@@ -7,7 +7,7 @@ import Trends from './pages/Trends'
 
 export default function App() {
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#0b0f14', color: '#e2e8f0' }}>
+    <div className="min-h-screen" style={{ backgroundColor: '#0d0d0e', color: '#e6e9f0' }}>
       <NavBar />
       <main>
         <Routes>

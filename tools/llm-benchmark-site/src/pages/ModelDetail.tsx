@@ -4,15 +4,15 @@ import { useData } from '../hooks/useData'
 import PassChip from '../components/PassChip'
 import type { TaskResult } from '../types'
 
-const ACCENT = '#69b3ff'
-const OK = '#38d39f'
-const BAD = '#ff6b6b'
-const CARD_BG = '#111824'
-const BORDER = '#1e2a38'
+const ACCENT = '#4cf490'
+const OK = '#4cf490'
+const BAD = '#ff4c4c'
+const CARD_BG = '#141416'
+const BORDER = '#202126'
 
 function pctColor(pct: number) {
   if (pct >= 80) return OK
-  if (pct >= 50) return '#f0a500'
+  if (pct >= 50) return '#fbdc8e'
   return BAD
 }
 
@@ -34,11 +34,11 @@ function TaskRow({ task }: { task: TaskResult }) {
   return (
     <div
       className="border rounded-lg overflow-hidden"
-      style={{ borderColor: BORDER, backgroundColor: '#0d1420' }}
+      style={{ borderColor: BORDER, backgroundColor: '#0d0d0e' }}
     >
       {/* Header row */}
       <button
-        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[#151f2e] transition-colors"
+        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[#1a1a1f] transition-colors"
         onClick={() => setExpanded((v) => !v)}
       >
         <PassChip passed={passed} size="sm" />
@@ -71,7 +71,7 @@ function TaskRow({ task }: { task: TaskResult }) {
                   <div
                     key={key}
                     className="flex items-center gap-2 px-3 py-1.5 rounded"
-                    style={{ backgroundColor: '#111824', border: `1px solid ${BORDER}` }}
+                    style={{ backgroundColor: '#141416', border: `1px solid ${BORDER}` }}
                   >
                     <PassChip passed={detail.pass} size="sm" />
                     <span className="text-xs text-slate-300 font-mono">{key}</span>
@@ -98,7 +98,7 @@ function TaskRow({ task }: { task: TaskResult }) {
             <p className="text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wide">LLM Output</p>
             <pre
               className="text-xs text-slate-300 p-3 rounded overflow-x-auto whitespace-pre-wrap break-words font-mono leading-relaxed"
-              style={{ backgroundColor: '#080c12', border: `1px solid ${BORDER}`, maxHeight: 400 }}
+              style={{ backgroundColor: '#0a0a0b', border: `1px solid ${BORDER}`, maxHeight: 400 }}
             >
               {task.llm_output || <span className="text-slate-600 italic">No output</span>}
             </pre>
@@ -316,7 +316,7 @@ export default function ModelDetail() {
                 className="px-2 py-1 rounded text-xs font-medium transition-colors capitalize"
                 style={
                   filterStatus === s
-                    ? { backgroundColor: '#1e2a38', color: ACCENT }
+                    ? { backgroundColor: '#202126', color: ACCENT }
                     : { color: '#64748b' }
                 }
               >

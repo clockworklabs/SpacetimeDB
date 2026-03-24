@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import type { BenchmarkDetails, BenchmarkSummary, HistorySnapshot } from '../types'
 
-const DETAILS_URL = '../../docs/llms/docs-benchmark-details.json'
-const SUMMARY_URL = '../../docs/llms/docs-benchmark-summary.json'
+const DETAILS_URL = '../../docs/llms/llm-comparison-details.json'
+const SUMMARY_URL = '../../docs/llms/llm-comparison-summary.json'
 const HISTORY_MANIFEST_URL = '../../docs/llms/history/manifest.json'
 
 interface UseDataResult {

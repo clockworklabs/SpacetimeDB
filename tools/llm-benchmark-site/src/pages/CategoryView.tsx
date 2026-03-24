@@ -4,10 +4,10 @@ import { useData } from '../hooks/useData'
 import PassChip from '../components/PassChip'
 import type { TaskResult } from '../types'
 
-const ACCENT = '#69b3ff'
-const BAD = '#ff6b6b'
-const CARD_BG = '#111824'
-const BORDER = '#1e2a38'
+const ACCENT = '#4cf490'
+const BAD = '#ff4c4c'
+const CARD_BG = '#141416'
+const BORDER = '#202126'
 
 interface CellInfo {
   task: TaskResult
@@ -32,7 +32,7 @@ function OutputModal({ cell, onClose }: ModalProps) {
     >
       <div
         className="rounded-xl border w-full max-w-3xl max-h-[80vh] flex flex-col"
-        style={{ backgroundColor: '#0d1420', borderColor: BORDER }}
+        style={{ backgroundColor: '#0d0d0e', borderColor: BORDER }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal header */}
@@ -61,7 +61,7 @@ function OutputModal({ cell, onClose }: ModalProps) {
               <div
                 key={key}
                 className="flex items-center gap-2 px-2 py-1 rounded text-xs"
-                style={{ backgroundColor: '#111824', border: `1px solid ${BORDER}` }}
+                style={{ backgroundColor: '#141416', border: `1px solid ${BORDER}` }}
               >
                 <PassChip passed={detail.pass} size="sm" />
                 <span className="font-mono text-slate-300">{key}</span>
@@ -218,7 +218,7 @@ export default function CategoryView() {
                 {/* Task name cell */}
                 <td
                   className="px-4 py-2 font-mono text-xs text-slate-300 sticky left-0 z-10"
-                  style={{ backgroundColor: '#0d1420', borderRight: `1px solid ${BORDER}` }}
+                  style={{ backgroundColor: '#0d0d0e', borderRight: `1px solid ${BORDER}` }}
                 >
                   {taskName}
                 </td>

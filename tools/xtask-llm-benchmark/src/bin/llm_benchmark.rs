@@ -949,6 +949,7 @@ fn filter_routes(config: &RunConfig) -> Vec<ModelRoute> {
                         display_name: leaked,
                         vendor: *vendor,
                         api_model: leaked,
+                        openrouter_model: None,
                     });
                 }
             }
@@ -1228,6 +1229,7 @@ fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
         display_name: "gpt-4o-mini",
         api_model: "gpt-4o-mini",
         vendor: Vendor::OpenAi,
+        openrouter_model: Some("openai/gpt-4o-mini"),
     };
 
     use xtask_llm_benchmark::llm::prompt::BuiltPrompt;

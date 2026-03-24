@@ -3,15 +3,15 @@ import { Link } from 'react-router-dom'
 import { useData } from '../hooks/useData'
 import type { LeaderboardRow } from '../types'
 
-const ACCENT = '#69b3ff'
-const OK = '#38d39f'
-const BAD = '#ff6b6b'
-const CARD_BG = '#111824'
-const BORDER = '#1e2a38'
+const ACCENT = '#4cf490'
+const OK = '#4cf490'
+const BAD = '#ff4c4c'
+const CARD_BG = '#141416'
+const BORDER = '#202126'
 
 function pctColor(pct: number): string {
   if (pct >= 80) return OK
-  if (pct >= 50) return '#f0a500'
+  if (pct >= 50) return '#fbdc8e'
   return BAD
 }
 
@@ -20,7 +20,7 @@ function PctBar({ pct }: { pct: number }) {
     <div className="flex items-center gap-2">
       <div
         className="h-1.5 rounded-full flex-1 overflow-hidden"
-        style={{ backgroundColor: '#1e2a38', maxWidth: 80 }}
+        style={{ backgroundColor: '#202126', maxWidth: 80 }}
       >
         <div
           className="h-full rounded-full transition-all"
@@ -51,6 +51,8 @@ function RankBadge({ rank }: { rank: number }) {
   )
 }
 
+const ALLOWED_MODES = ['docs', 'none']
+
 export default function Leaderboard() {
   const { details, summary, loading, error } = useData()
 
@@ -67,16 +69,17 @@ export default function Leaderboard() {
   const modes = useMemo(() => {
     const l = lang || languages[0]
     if (!l) return []
-    if (summary) return Object.keys(summary.by_language[l]?.modes ?? {}).sort()
-    if (details) {
+    let all: string[] = []
+    if (summary) all = Object.keys(summary.by_language[l]?.modes ?? {})
+    else if (details) {
       const langData = details.languages.find((x) => x.lang === l)
-      return langData ? langData.modes.map((m) => m.mode).sort() : []
+      all = langData ? langData.modes.map((m) => m.mode) : []
     }
-    return []
+    return all.filter((m) => ALLOWED_MODES.includes(m)).sort()
   }, [lang, languages, summary, details])
 
   const activeLang = lang || languages[0] || ''
-  const activeMode = mode || modes[0] || ''
+  const activeMode = mode || (modes.includes('docs') ? 'docs' : modes[0]) || ''
 
   // Build leaderboard rows from summary
   const rows: LeaderboardRow[] = useMemo(() => {
@@ -146,7 +149,7 @@ export default function Leaderboard() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white mb-1">Leaderboard</h1>
         <p className="text-slate-400 text-sm">
-          Models ranked by task pass rate — how many tasks they fully solve.
+          Models ranked by task pass rate: how many tasks they fully solve.
         </p>
       </div>
 
@@ -161,7 +164,7 @@ export default function Leaderboard() {
               className="px-3 py-1.5 rounded text-sm font-medium transition-colors capitalize"
               style={
                 activeLang === l
-                  ? { backgroundColor: '#1e2a38', color: ACCENT }
+                  ? { backgroundColor: '#202126', color: ACCENT }
                   : { color: '#64748b' }
               }
             >
@@ -206,14 +209,14 @@ export default function Leaderboard() {
               <th className="px-4 py-3 text-left font-semibold text-slate-400 whitespace-nowrap">Task Pass%</th>
               <th className="px-4 py-3 text-left font-semibold text-slate-400 whitespace-nowrap">Tests</th>
               {allCategories.map((cat) => (
-                <th key={cat} className="px-4 py-3 text-left font-semibold whitespace-nowrap" style={{ color: '#64748b' }}>
+                <th key={cat} className="px-4 py-3 text-left font-semibold whitespace-nowrap" style={{ color: '#6f7987' }}>
                   <Link
                     to={`/category/${encodeURIComponent(cat)}`}
                     className="hover:underline capitalize"
                     style={{ color: '#64748b' }}
                     onClick={(e) => e.stopPropagation()}
                   >
-                    {cat}
+                    {cat.replace(/_/g, ' ')}
                   </Link>
                 </th>
               ))}
@@ -225,13 +228,13 @@ export default function Leaderboard() {
                 key={row.modelName}
                 className="transition-colors hover:cursor-pointer"
                 style={{ borderBottom: idx < rows.length - 1 ? `1px solid ${BORDER}` : undefined }}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#151f2e')}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#1a1a1f')}
                 onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '')}
               >
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 align-middle">
                   <RankBadge rank={row.rank} />
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 align-middle">
                   <Link
                     to={`/model/${encodeURIComponent(row.modelName)}`}
                     className="font-medium hover:underline"
@@ -240,23 +243,23 @@ export default function Leaderboard() {
                     {row.modelName}
                   </Link>
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 align-middle">
                   <PctBar pct={row.taskPassPct} />
                 </td>
-                <td className="px-4 py-3 text-slate-400 tabular-nums whitespace-nowrap">
+                <td className="px-4 py-3 align-middle text-slate-400 tabular-nums whitespace-nowrap">
                   {row.passedTests} / {row.totalTests}
                 </td>
                 {allCategories.map((cat) => {
                   const c = row.categories[cat]
                   if (!c) {
                     return (
-                      <td key={cat} className="px-4 py-3 text-center">
+                      <td key={cat} className="px-4 py-3 align-middle">
                         <span className="text-slate-600 text-xs">—</span>
                       </td>
                     )
                   }
                   return (
-                    <td key={cat} className="px-4 py-3">
+                    <td key={cat} className="px-4 py-3 align-middle">
                       <div className="flex flex-col gap-0.5">
                         <span
                           className="text-xs font-semibold tabular-nums"
@@ -264,7 +267,7 @@ export default function Leaderboard() {
                         >
                           {c.taskPassPct.toFixed(0)}%
                         </span>
-                        <span className="text-xs text-slate-500 tabular-nums">
+                        <span className="text-xs tabular-nums" style={{ color: '#6f7987' }}>
                           {c.passed}/{c.total}
                         </span>
                       </div>
@@ -292,7 +295,7 @@ export default function Leaderboard() {
           ≥80%
         </span>
         <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: '#f0a500' }} />
+          <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: '#fbdc8e' }} />
           ≥50%
         </span>
         <span className="flex items-center gap-1">

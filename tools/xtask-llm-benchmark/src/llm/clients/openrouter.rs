@@ -126,16 +126,19 @@ pub fn openrouter_ctx_limit_tokens(model: &str) -> usize {
     if m.contains("gpt-4o") || m.contains("gpt-4") {
         return 128_000;
     }
-    // xAI / Grok
+    // xAI / Grok — leave ~50 k headroom for segments + output on top of trimmed prefix
     if m.contains("grok-code-fast") {
-        return 256_000;
+        return 200_000;
+    }
+    if m.contains("grok-4") {
+        return 200_000;
     }
     if m.contains("grok") {
-        return 128_000;
+        return 90_000;
     }
-    // DeepSeek
+    // DeepSeek — hard cap is 131 072 on OpenRouter; leave ~25 k headroom for segments + output
     if m.contains("deepseek") {
-        return 128_000;
+        return 106_000;
     }
     // Gemini
     if m.contains("gemini") {

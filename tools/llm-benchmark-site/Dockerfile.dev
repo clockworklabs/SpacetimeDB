@@ -1,0 +1,11 @@
+FROM node:20-alpine
+
+WORKDIR /app/tools/llm-benchmark-site
+
+# Install deps (layer-cached; only re-runs when package.json changes)
+COPY tools/llm-benchmark-site/package*.json ./
+RUN npm ci
+
+EXPOSE 5173
+
+CMD ["npm", "run", "dev"]

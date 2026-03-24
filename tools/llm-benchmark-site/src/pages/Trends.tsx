@@ -11,13 +11,14 @@ import {
 } from 'recharts'
 import { useHistoryFiles } from '../hooks/useData'
 
-const ACCENT = '#69b3ff'
-const CARD_BG = '#111824'
-const BORDER = '#1e2a38'
+const ACCENT = '#4cf490'
+const ALLOWED_MODES = ['docs', 'none']
+const CARD_BG = '#141416'
+const BORDER = '#202126'
 
 // Palette for lines — enough for many models
 const LINE_COLORS = [
-  '#69b3ff', '#38d39f', '#f0a500', '#ff6b6b', '#c084fc',
+  '#4cf490', '#02befa', '#fbdc8e', '#ff4c4c', '#a880ff',
   '#fb923c', '#34d399', '#60a5fa', '#f472b6', '#a3e635',
   '#fbbf24', '#4ade80', '#e879f9', '#38bdf8', '#f87171',
 ]
@@ -52,11 +53,14 @@ export default function Trends() {
         }
       }
     }
-    return { languages: Array.from(langSet).sort(), modes: Array.from(modeSet).sort() }
+    return {
+      languages: Array.from(langSet).sort(),
+      modes: Array.from(modeSet).filter((m) => ALLOWED_MODES.includes(m)).sort(),
+    }
   }, [snapshots])
 
   const lang = activeLang || languages[0] || ''
-  const mode = activeMode || modes[0] || ''
+  const mode = activeMode || (modes.includes('docs') ? 'docs' : modes[0]) || ''
 
   // Build chart data: one point per snapshot
   const { chartData, modelNames } = useMemo(() => {
@@ -105,8 +109,8 @@ export default function Trends() {
           <h2 className="text-lg font-semibold text-slate-200 mb-2">No history data yet</h2>
           <p className="text-slate-400 max-w-md mx-auto text-sm leading-relaxed">
             Run the periodic CI workflow to start tracking trends. Each run will save a timestamped
-            snapshot to <code className="text-xs bg-[#1e2a38] px-1 py-0.5 rounded">docs/llms/history/</code> and
-            update the <code className="text-xs bg-[#1e2a38] px-1 py-0.5 rounded">manifest.json</code> file.
+            snapshot to <code className="text-xs bg-[#202126] px-1 py-0.5 rounded">docs/llms/history/</code> and
+            update the <code className="text-xs bg-[#202126] px-1 py-0.5 rounded">manifest.json</code> file.
           </p>
         </div>
       ) : (
@@ -123,7 +127,7 @@ export default function Trends() {
                   className="px-3 py-1.5 rounded text-sm font-medium transition-colors capitalize"
                   style={
                     lang === l
-                      ? { backgroundColor: '#1e2a38', color: ACCENT }
+                      ? { backgroundColor: '#202126', color: ACCENT }
                       : { color: '#64748b' }
                   }
                 >
@@ -182,7 +186,7 @@ export default function Trends() {
                   />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: '#0d1420',
+                      backgroundColor: '#0d0d0e',
                       border: `1px solid ${BORDER}`,
                       borderRadius: 8,
                       color: '#e2e8f0',

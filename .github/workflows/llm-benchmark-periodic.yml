@@ -96,6 +96,12 @@ jobs:
               cp "$f" "docs/llms/history/${DATE}_${BASENAME}.json"
             fi
           done
+          # Regenerate manifest.json listing all history files (sorted)
+          ls docs/llms/history/*.json 2>/dev/null \
+            | xargs -I{} basename {} \
+            | grep -v manifest.json \
+            | sort \
+            | jq -R . | jq -s . > docs/llms/history/manifest.json
 
       - name: Ensure only docs/llms changed
         run: |

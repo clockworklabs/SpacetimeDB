@@ -11,7 +11,7 @@ export default function PassChip({ passed, label, size = 'md' }: PassChipProps) 
     return (
       <span
         className={`inline-block rounded font-mono font-semibold ${paddingClass}`}
-        style={{ backgroundColor: '#1e2a38', color: '#64748b' }}
+        style={{ backgroundColor: '#202126', color: '#6f7987' }}
       >
         {label ?? '—'}
       </span>
@@ -22,9 +22,9 @@ export default function PassChip({ passed, label, size = 'md' }: PassChipProps) 
     <span
       className={`inline-block rounded font-mono font-semibold ${paddingClass}`}
       style={{
-        backgroundColor: passed ? 'rgba(56,211,159,0.15)' : 'rgba(255,107,107,0.15)',
-        color: passed ? '#38d39f' : '#ff6b6b',
-        border: `1px solid ${passed ? 'rgba(56,211,159,0.3)' : 'rgba(255,107,107,0.3)'}`,
+        backgroundColor: passed ? 'rgba(76,244,144,0.12)' : 'rgba(255,76,76,0.12)',
+        color: passed ? '#4cf490' : '#ff4c4c',
+        border: `1px solid ${passed ? 'rgba(76,244,144,0.3)' : 'rgba(255,76,76,0.3)'}`,
       }}
     >
       {label ?? (passed ? 'PASS' : 'FAIL')}
