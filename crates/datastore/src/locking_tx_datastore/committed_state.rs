@@ -1230,6 +1230,9 @@ impl CommittedState {
 
     /// Collects the inserted rows in `tx_table` into `tx_data`,
     /// and applies `on_row` to each inserted row.
+    ///
+    /// The `on_row` closure will be called with each inserted row.
+    /// `Self::merge_apply_inserts` uses this to add non-event rows to the committed state.
     fn collect_inserts(
         page_pool: &PagePool,
         truncates: &mut IntSet<TableId>,
