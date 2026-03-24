@@ -48,7 +48,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue}
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{
-    ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
+    ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
 };
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotError, SnapshotRepository};
@@ -1477,6 +1477,15 @@ impl RelationalDB {
     ///Removes the [Sequence] from database instance
     pub fn drop_sequence(&self, tx: &mut MutTx, seq_id: SequenceId) -> Result<(), DBError> {
         Ok(self.inner.drop_sequence_mut_tx(tx, seq_id)?)
+    }
+
+    /// Creates a new constraint in the database instance.
+    pub fn create_constraint(
+        &self,
+        tx: &mut MutTx,
+        constraint: ConstraintSchema,
+    ) -> Result<ConstraintId, DBError> {
+        Ok(self.inner.create_constraint_mut_tx(tx, constraint)?)
     }
 
     ///Removes the [Constraints] from database instance
