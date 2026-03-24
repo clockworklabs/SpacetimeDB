@@ -202,6 +202,34 @@ fun main() {
     eprintln!("Kotlin SDK smoketest passed: bindings compile successfully");
 }
 
+/// Run the Kotlin SDK unit tests (BSATN codec, type round-trips, query builder, etc.).
+/// Does not require a running SpacetimeDB server.
+/// Skips if gradle is not available or disabled via SMOKETESTS_GRADLE=0.
+#[test]
+fn test_kotlin_sdk_unit_tests() {
+    require_gradle!();
+
+    let workspace = workspace_root();
+    let kotlin_sdk_path = workspace.join("sdks/kotlin");
+    let gradlew = gradlew_path().expect("gradlew not found");
+
+    let output = Command::new(&gradlew)
+        .args([":spacetimedb-sdk:allTests", "--no-daemon", "--no-configuration-cache"])
+        .current_dir(&kotlin_sdk_path)
+        .output()
+        .expect("Failed to run gradlew :spacetimedb-sdk:allTests");
+
+    if !output.status.success() {
+        panic!(
+            "Kotlin SDK unit tests failed:\nstdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    eprintln!("Kotlin SDK unit tests passed");
+}
+
 /// Run Kotlin SDK integration tests against a live SpacetimeDB server.
 /// Spawns a local server, builds + publishes the integration test module,
 /// then runs the Gradle integration tests with SPACETIMEDB_HOST set.
