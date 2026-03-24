@@ -43,6 +43,11 @@ public object SqlLit {
         return SqlLiteral(BigDecimal.fromDouble(value).toPlainString())
     }
 
+    public fun int128(value: Int128): SqlLiteral<Int128> = SqlLiteral(value.value.toString())
+    public fun uint128(value: UInt128): SqlLiteral<UInt128> = SqlLiteral(value.value.toString())
+    public fun int256(value: Int256): SqlLiteral<Int256> = SqlLiteral(value.value.toString())
+    public fun uint256(value: UInt256): SqlLiteral<UInt256> = SqlLiteral(value.value.toString())
+
     public fun identity(value: Identity): SqlLiteral<Identity> =
         SqlLiteral(SqlFormat.formatHexLiteral(value.toHexString()))
 

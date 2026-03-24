@@ -142,6 +142,48 @@ public fun <TRow> IxCol<TRow, Float>.neq(value: Float): BoolExpr<TRow> = neq(Sql
 public fun <TRow> IxCol<TRow, Double>.eq(value: Double): BoolExpr<TRow> = eq(SqlLit.double(value))
 public fun <TRow> IxCol<TRow, Double>.neq(value: Double): BoolExpr<TRow> = neq(SqlLit.double(value))
 
+// ---- Col<TRow, Int128/UInt128/Int256/UInt256> ----
+
+public fun <TRow> Col<TRow, Int128>.eq(value: Int128): BoolExpr<TRow> = eq(SqlLit.int128(value))
+public fun <TRow> Col<TRow, Int128>.neq(value: Int128): BoolExpr<TRow> = neq(SqlLit.int128(value))
+public fun <TRow> Col<TRow, Int128>.lt(value: Int128): BoolExpr<TRow> = lt(SqlLit.int128(value))
+public fun <TRow> Col<TRow, Int128>.lte(value: Int128): BoolExpr<TRow> = lte(SqlLit.int128(value))
+public fun <TRow> Col<TRow, Int128>.gt(value: Int128): BoolExpr<TRow> = gt(SqlLit.int128(value))
+public fun <TRow> Col<TRow, Int128>.gte(value: Int128): BoolExpr<TRow> = gte(SqlLit.int128(value))
+
+public fun <TRow> Col<TRow, UInt128>.eq(value: UInt128): BoolExpr<TRow> = eq(SqlLit.uint128(value))
+public fun <TRow> Col<TRow, UInt128>.neq(value: UInt128): BoolExpr<TRow> = neq(SqlLit.uint128(value))
+public fun <TRow> Col<TRow, UInt128>.lt(value: UInt128): BoolExpr<TRow> = lt(SqlLit.uint128(value))
+public fun <TRow> Col<TRow, UInt128>.lte(value: UInt128): BoolExpr<TRow> = lte(SqlLit.uint128(value))
+public fun <TRow> Col<TRow, UInt128>.gt(value: UInt128): BoolExpr<TRow> = gt(SqlLit.uint128(value))
+public fun <TRow> Col<TRow, UInt128>.gte(value: UInt128): BoolExpr<TRow> = gte(SqlLit.uint128(value))
+
+public fun <TRow> Col<TRow, Int256>.eq(value: Int256): BoolExpr<TRow> = eq(SqlLit.int256(value))
+public fun <TRow> Col<TRow, Int256>.neq(value: Int256): BoolExpr<TRow> = neq(SqlLit.int256(value))
+public fun <TRow> Col<TRow, Int256>.lt(value: Int256): BoolExpr<TRow> = lt(SqlLit.int256(value))
+public fun <TRow> Col<TRow, Int256>.lte(value: Int256): BoolExpr<TRow> = lte(SqlLit.int256(value))
+public fun <TRow> Col<TRow, Int256>.gt(value: Int256): BoolExpr<TRow> = gt(SqlLit.int256(value))
+public fun <TRow> Col<TRow, Int256>.gte(value: Int256): BoolExpr<TRow> = gte(SqlLit.int256(value))
+
+public fun <TRow> Col<TRow, UInt256>.eq(value: UInt256): BoolExpr<TRow> = eq(SqlLit.uint256(value))
+public fun <TRow> Col<TRow, UInt256>.neq(value: UInt256): BoolExpr<TRow> = neq(SqlLit.uint256(value))
+public fun <TRow> Col<TRow, UInt256>.lt(value: UInt256): BoolExpr<TRow> = lt(SqlLit.uint256(value))
+public fun <TRow> Col<TRow, UInt256>.lte(value: UInt256): BoolExpr<TRow> = lte(SqlLit.uint256(value))
+public fun <TRow> Col<TRow, UInt256>.gt(value: UInt256): BoolExpr<TRow> = gt(SqlLit.uint256(value))
+public fun <TRow> Col<TRow, UInt256>.gte(value: UInt256): BoolExpr<TRow> = gte(SqlLit.uint256(value))
+
+public fun <TRow> IxCol<TRow, Int128>.eq(value: Int128): BoolExpr<TRow> = eq(SqlLit.int128(value))
+public fun <TRow> IxCol<TRow, Int128>.neq(value: Int128): BoolExpr<TRow> = neq(SqlLit.int128(value))
+
+public fun <TRow> IxCol<TRow, UInt128>.eq(value: UInt128): BoolExpr<TRow> = eq(SqlLit.uint128(value))
+public fun <TRow> IxCol<TRow, UInt128>.neq(value: UInt128): BoolExpr<TRow> = neq(SqlLit.uint128(value))
+
+public fun <TRow> IxCol<TRow, Int256>.eq(value: Int256): BoolExpr<TRow> = eq(SqlLit.int256(value))
+public fun <TRow> IxCol<TRow, Int256>.neq(value: Int256): BoolExpr<TRow> = neq(SqlLit.int256(value))
+
+public fun <TRow> IxCol<TRow, UInt256>.eq(value: UInt256): BoolExpr<TRow> = eq(SqlLit.uint256(value))
+public fun <TRow> IxCol<TRow, UInt256>.neq(value: UInt256): BoolExpr<TRow> = neq(SqlLit.uint256(value))
+
 // ---- Col<TRow, Identity/ConnectionId/SpacetimeUuid> ----
 
 public fun <TRow> Col<TRow, Identity>.eq(value: Identity): BoolExpr<TRow> = eq(SqlLit.identity(value))
