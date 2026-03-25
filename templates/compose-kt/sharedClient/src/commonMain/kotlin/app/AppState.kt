@@ -6,12 +6,23 @@ import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 
 @Immutable
-sealed interface AppState {
+data class FieldInput(val value: String = "", val error: String? = null)
+
+@Immutable
+data class AppState(
+    val login: Login = Login(),
+    val chat: Chat = Chat(),
+    val currentScreen: Screen = Screen.LOGIN,
+) {
+    enum class Screen {
+        LOGIN, CHAT
+    }
+
     @Immutable
     data class Login(
-        val clientId: String = "",
-        val error: String? = null,
-    ) : AppState
+        val clientIdField: FieldInput = FieldInput(),
+        val hostField: FieldInput = FieldInput(),
+    )
 
     @Immutable
     data class Chat(
@@ -23,7 +34,7 @@ sealed interface AppState {
         val notes: ImmutableList<NoteUi> = persistentListOf(),
         val noteSubState: String = "none",
         val dbName: String = "",
-    ) : AppState {
+    ) {
 
         @Immutable
         sealed interface ChatLine {

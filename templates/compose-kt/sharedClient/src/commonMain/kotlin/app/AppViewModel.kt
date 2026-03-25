@@ -14,9 +14,8 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
@@ -24,11 +23,12 @@ import kotlin.time.Duration.Companion.seconds
 
 class AppViewModel(
     private val chatRepository: ChatRepository,
+    defaultHost: String,
 ) : ViewModel() {
 
     private var observationJob: Job? = null
 
-    private val _state = MutableStateFlow<AppState>(AppState.Login())
+    private val _state = MutableStateFlow(AppState(login = AppState.Login(hostField = FieldInput(defaultHost))))
     val state: StateFlow<AppState> = _state
         .stateIn(
             scope = viewModelScope,
@@ -39,7 +39,11 @@ class AppViewModel(
     fun onAction(action: AppAction) {
         when (action) {
             is AppAction.Login.OnClientChanged -> updateLogin {
-                copy(clientId = action.client, error = null)
+                copy(clientIdField = clientIdField.copy(value = action.client, error = null))
+            }
+
+            is AppAction.Login.OnHostChanged -> updateLogin {
+                copy(hostField = hostField.copy(value = action.host, error = null))
             }
 
             AppAction.Login.OnSubmitClicked -> handleLoginSubmit()
@@ -54,28 +58,35 @@ class AppViewModel(
     }
 
     private fun handleLoginSubmit() {
-        val currentState = _state.value as? AppState.Login ?: return
-        val clientId = currentState.clientId
+        val currentState = _state.value
+        val clientId = currentState.login.clientIdField.value
+        val host = currentState.login.hostField.value
 
         if (clientId.isBlank()) {
-            updateLogin { copy(error = "Client ID cannot be empty") }
+            updateLogin { copy(clientIdField = clientIdField.copy(error = "Client ID cannot be empty")) }
             return
         }
         if (!clientId.all { it.isLetterOrDigit() || it == '-' || it == '_' }) {
-            updateLogin { copy(error = "Client ID may only contain letters, digits, '-', or '_'") }
+            updateLogin { copy(clientIdField = clientIdField.copy(error ="Client ID may only contain letters, digits, '-', or '_'")) }
+            return
+        }
+        if (host.isBlank()) {
+            updateLogin { copy(hostField = hostField.copy(error = "Server host cannot be empty")) }
             return
         }
 
-        _state.update { AppState.Chat(dbName = ChatRepository.DB_NAME) }
+        _state.update {
+            it.copy(currentScreen = AppState.Screen.CHAT, chat = AppState.Chat())
+        }
         observeRepository()
         viewModelScope.launch {
-            chatRepository.connect(clientId)
+            chatRepository.connect(clientId, host)
         }
     }
 
     private fun handleChatSubmit() {
-        val currentState = _state.value as? AppState.Chat ?: return
-        val text = currentState.input.trim()
+        val currentState = _state.value
+        val text = currentState.chat.input.trim()
         if (text.isEmpty()) return
 
         updateChat { copy(input = "") }
@@ -126,7 +137,10 @@ class AppViewModel(
                 val remindParts = arg.trim().split(" ", limit = 2)
                 val delayMs = remindParts.getOrNull(0)?.toULongOrNull()
                 val remindText = remindParts.getOrNull(1)
-                if (delayMs != null && remindText != null) chatRepository.scheduleReminder(remindText, delayMs)
+                if (delayMs != null && remindText != null) chatRepository.scheduleReminder(
+                    remindText,
+                    delayMs
+                )
                 else chatRepository.log("Usage: /remind <delay_ms> <text>")
             }
 
@@ -140,7 +154,10 @@ class AppViewModel(
                 val remindParts = arg.trim().split(" ", limit = 2)
                 val intervalMs = remindParts.getOrNull(0)?.toULongOrNull()
                 val remindText = remindParts.getOrNull(1)
-                if (intervalMs != null && remindText != null) chatRepository.scheduleReminderRepeat(remindText, intervalMs)
+                if (intervalMs != null && remindText != null) chatRepository.scheduleReminderRepeat(
+                    remindText,
+                    intervalMs
+                )
                 else chatRepository.log("Usage: /remind-repeat <interval_ms> <text>")
             }
 
@@ -150,10 +167,10 @@ class AppViewModel(
 
     private fun handleLogout() {
         observationJob?.cancel()
-        viewModelScope.launch {
-            chatRepository.disconnect()
-            _state.update { AppState.Login() }
+        _state.update {
+            it.copy(chat = AppState.Chat(), currentScreen = AppState.Screen.LOGIN)
         }
+        viewModelScope.launch { chatRepository.disconnect() }
     }
 
     private fun observeRepository() {
@@ -164,7 +181,11 @@ class AppViewModel(
                 .launchIn(this)
 
             chatRepository.lines
-                .onEach { lines -> updateChat { copy(lines = lines.map { it.toChatLine() }.toImmutableList()) } }
+                .onEach { lines ->
+                    updateChat {
+                        copy(lines = lines.map { it.toChatLine() }.toImmutableList())
+                    }
+                }
                 .launchIn(this)
 
             chatRepository.onlineUsers
@@ -176,26 +197,46 @@ class AppViewModel(
                 .launchIn(this)
 
             chatRepository.notes
-                .onEach { notes -> updateChat { copy(notes = notes.map { it.toNoteUi() }.toImmutableList()) } }
+                .onEach { notes ->
+                    updateChat {
+                        copy(notes = notes.map { it.toNoteUi() }.toImmutableList())
+                    }
+                }
                 .launchIn(this)
 
             chatRepository.noteSubState
                 .onEach { state -> updateChat { copy(noteSubState = state) } }
                 .launchIn(this)
+
+            chatRepository.connectionError
+                .onEach { error ->
+                    if (error != null) {
+                        _state.update {
+                            it.copy(
+                                currentScreen = AppState.Screen.LOGIN,
+                                login = it.login.copy(
+                                    hostField = it.login.hostField.copy(error = error),
+                                ),
+                                chat = AppState.Chat(),
+                            )
+                        }
+                    }
+                }
+                .launchIn(this)
         }
     }
 
     private inline fun updateLogin(block: AppState.Login.() -> AppState.Login) {
-        _state.update { old -> if (old is AppState.Login) old.block() else old }
+        _state.update { it.copy(login = block(it.login)) }
     }
 
     private inline fun updateChat(block: AppState.Chat.() -> AppState.Chat) {
-        _state.update { old -> if (old is AppState.Chat) old.block() else old }
+        _state.update { it.copy(chat = block(it.chat)) }
     }
 
     override fun onCleared() {
         observationJob?.cancel()
-        CoroutineScope(NonCancellable).launch { chatRepository.disconnect() }
+        runBlocking { chatRepository.disconnect() }
     }
 
     companion object {

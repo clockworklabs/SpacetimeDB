@@ -9,11 +9,15 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResu
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Timestamp
 import io.ktor.client.HttpClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import module_bindings.RemoteTables
+import module_bindings.SpacetimeConfig
 import module_bindings.User
 import module_bindings.db
 import module_bindings.reducers
@@ -39,7 +43,6 @@ data class NoteData(
 class ChatRepository(
     private val httpClient: HttpClient,
     private val tokenStore: TokenStore,
-    private val host: String,
 ) {
     @Volatile private var conn: DbConnection? = null
     @Volatile private var mainSubHandle: SubscriptionHandle? = null
@@ -49,6 +52,9 @@ class ChatRepository(
 
     private val _connected = MutableStateFlow(false)
     val connected: StateFlow<Boolean> = _connected.asStateFlow()
+
+    private val _connectionError = MutableStateFlow<String?>(null)
+    val connectionError: StateFlow<String?> = _connectionError.asStateFlow()
 
     private val _lines = MutableStateFlow<List<ChatLineData>>(emptyList())
     val lines: StateFlow<List<ChatLineData>> = _lines.asStateFlow()
@@ -69,7 +75,8 @@ class ChatRepository(
         _lines.update { it + ChatLineData.System(text) }
     }
 
-    suspend fun connect(clientId: String) {
+    suspend fun connect(clientId: String, host: String) {
+        _connectionError.value = null
         this.clientId = clientId
         val connection = DbConnection.Builder()
             .withHttpClient(httpClient)
@@ -79,7 +86,9 @@ class ChatRepository(
             .withModuleBindings()
             .onConnect { c, identity, token ->
                 localIdentity = identity
-                tokenStore.save(clientId, token)
+                CoroutineScope(Dispatchers.IO).launch {
+                    tokenStore.save(clientId, token)
+                }
                 log("Identity: ${identity.toHexString().take(16)}...")
 
                 registerTableCallbacks(c)
@@ -87,7 +96,7 @@ class ChatRepository(
                 registerSubscriptions(c)
             }
             .onConnectError { _, e ->
-                log("Connection error: $e")
+                _connectionError.value = e.message ?: "Connection failed"
             }
             .onDisconnect { _, error ->
                 _connected.value = false
@@ -289,7 +298,7 @@ class ChatRepository(
             }
         }
 
-        c.reducers.onAddNote { ctx, content, tag ->
+        c.reducers.onAddNote { ctx, _, tag ->
             if (ctx.callerIdentity == localIdentity) {
                 if (ctx.status is Status.Committed) {
                     log("Note added (tag=$tag)")
@@ -351,7 +360,7 @@ class ChatRepository(
                             msg.sent,
                         )
                     }
-                _lines.update { it + initialMessages }
+                _lines.update { initialMessages }
                 log("Main subscription applied.")
             }
             .onError { _, error ->
@@ -389,7 +398,7 @@ class ChatRepository(
     }
 
     companion object {
-        const val DB_NAME = "compose-kt"
+        val DB_NAME: String get() = SpacetimeConfig.databaseName
 
         private fun userNameOrIdentity(user: User): String =
             user.name ?: user.identity.toHexString().take(8)
