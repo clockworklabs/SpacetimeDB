@@ -97,7 +97,6 @@ class TransportAndFrameTest {
         val handler = kotlinx.coroutines.CoroutineExceptionHandler { _, _ -> }
         val conn = DbConnection(
             transport = transport,
-            httpClient = HttpClient(),
             scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler) + handler),
             onConnectCallbacks = emptyList(),
             onDisconnectCallbacks = emptyList(),
@@ -357,7 +356,6 @@ class TransportAndFrameTest {
         var disconnectError: Throwable? = null
         val conn = DbConnection(
             transport = rawTransport,
-            httpClient = HttpClient(),
             scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)),
             onConnectCallbacks = listOf { _, _, _ -> connected = true },
             onDisconnectCallbacks = listOf { _, err -> disconnectError = err },
@@ -458,7 +456,6 @@ class TransportAndFrameTest {
         )
         val conn = DbConnection(
             transport = transport,
-            httpClient = HttpClient(),
             scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)),
             onConnectCallbacks = emptyList(),
             onDisconnectCallbacks = emptyList(),

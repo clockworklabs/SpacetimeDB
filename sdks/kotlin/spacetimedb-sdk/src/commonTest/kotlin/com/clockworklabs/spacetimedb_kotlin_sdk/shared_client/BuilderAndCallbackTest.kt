@@ -4,7 +4,6 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.*
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Timestamp
-import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -276,7 +275,6 @@ class BuilderAndCallbackTest {
         val cb: (DbConnectionView, Identity, String) -> Unit = { _, _, _ -> count++ }
         val conn = DbConnection(
             transport = transport,
-            httpClient = HttpClient(),
             scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)),
             onConnectCallbacks = listOf(cb, cb, cb),
             onDisconnectCallbacks = emptyList(),
@@ -335,7 +333,6 @@ class BuilderAndCallbackTest {
         var secondFired = false
         val conn = DbConnection(
             transport = transport,
-            httpClient = HttpClient(),
             scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)),
             onConnectCallbacks = listOf(
                 { _, _, _ -> error("onConnect explosion") },

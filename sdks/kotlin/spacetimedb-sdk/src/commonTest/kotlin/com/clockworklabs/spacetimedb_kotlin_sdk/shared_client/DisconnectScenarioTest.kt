@@ -5,7 +5,6 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.transport.Transpor
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 import com.ionspin.kotlin.bignum.integer.BigInteger
-import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -161,7 +160,6 @@ class DisconnectScenarioTest {
 
         val conn = DbConnection(
             transport = suspendingTransport,
-            httpClient = HttpClient(),
             scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)),
             onConnectCallbacks = emptyList(),
             onDisconnectCallbacks = emptyList(),

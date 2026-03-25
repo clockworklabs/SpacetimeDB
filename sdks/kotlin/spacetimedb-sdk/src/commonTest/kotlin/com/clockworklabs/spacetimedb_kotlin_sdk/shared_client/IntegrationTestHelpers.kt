@@ -6,7 +6,6 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.transport.Transport
 import com.ionspin.kotlin.bignum.integer.BigInteger
-import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -50,7 +49,6 @@ fun TestScope.createTestConnection(
     val context = if (exceptionHandler != null) baseContext + exceptionHandler else baseContext
     return DbConnection(
         transport = transport,
-        httpClient = HttpClient(),
         scope = CoroutineScope(context),
         onConnectCallbacks = listOfNotNull(onConnect),
         onDisconnectCallbacks = listOfNotNull(onDisconnect),
@@ -68,7 +66,6 @@ fun TestScope.createConnectionWithTransport(
 ): DbConnection {
     return DbConnection(
         transport = transport,
-        httpClient = HttpClient(),
         scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)),
         onConnectCallbacks = emptyList(),
         onDisconnectCallbacks = listOfNotNull(onDisconnect),

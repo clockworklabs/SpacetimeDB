@@ -5,7 +5,6 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.TableUpda
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 import com.ionspin.kotlin.bignum.integer.BigInteger
-import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -608,7 +607,6 @@ class ConcurrencyStressTest {
 
         val conn = DbConnection(
             transport = transport,
-            httpClient = HttpClient(),
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
             onConnectCallbacks = emptyList(),
             onDisconnectCallbacks = listOf { _, _ -> disconnectCount.incrementAndGet() },

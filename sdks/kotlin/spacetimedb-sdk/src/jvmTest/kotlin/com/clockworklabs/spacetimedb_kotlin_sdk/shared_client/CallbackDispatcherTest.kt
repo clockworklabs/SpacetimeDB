@@ -4,7 +4,6 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ServerMes
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 import com.ionspin.kotlin.bignum.integer.BigInteger
-import io.ktor.client.HttpClient
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi
@@ -41,7 +40,6 @@ class CallbackDispatcherTest {
         try {
             val conn = DbConnection(
                 transport = transport,
-                httpClient = HttpClient(),
                 scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)),
                 onConnectCallbacks = listOf { _, _, _ ->
                     callbackThreadDeferred.complete(Thread.currentThread().name)

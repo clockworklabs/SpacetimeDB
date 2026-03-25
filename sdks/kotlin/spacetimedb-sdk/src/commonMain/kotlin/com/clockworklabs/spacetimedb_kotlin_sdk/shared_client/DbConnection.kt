@@ -2,6 +2,7 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ClientMessage
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ProcedureStatus
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QuerySetId
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ReducerOutcome
@@ -14,6 +15,8 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.transport.Spacetim
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.transport.Transport
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.TimeDuration
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Timestamp
 import io.ktor.client.HttpClient
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.getAndUpdate
@@ -130,7 +133,6 @@ public sealed interface ConnectionState {
  */
 public open class DbConnection internal constructor(
     private val transport: Transport,
-    private val httpClient: HttpClient,
     private val scope: CoroutineScope,
     onConnectCallbacks: List<(DbConnectionView, Identity, String) -> Unit>,
     onDisconnectCallbacks: List<(DbConnectionView, Throwable?) -> Unit>,
@@ -300,7 +302,7 @@ public open class DbConnection internal constructor(
             }
         }
 
-        _state.value = ConnectionState.Connected(receiveJob, sendJob)
+        _state.compareAndSet(ConnectionState.Connecting, ConnectionState.Connected(receiveJob, sendJob))
     }
 
     /**
@@ -344,7 +346,30 @@ public open class DbConnection internal constructor(
 
         val pendingProcedures = procedureCallbacks.getAndSet(persistentHashMapOf())
         if (pendingProcedures.isNotEmpty()) {
-            Logger.warn { "Discarding ${pendingProcedures.size} pending procedure callback(s) due to disconnect" }
+            Logger.warn { "Failing ${pendingProcedures.size} pending procedure callback(s) due to disconnect" }
+            val errorMsg = "Connection closed before procedure result was received"
+            for ((requestId, cb) in pendingProcedures) {
+                val procedureEvent = ProcedureEvent(
+                    timestamp = Timestamp.UNIX_EPOCH,
+                    status = ProcedureStatus.InternalError(errorMsg),
+                    callerIdentity = identity ?: Identity.zero(),
+                    callerConnectionId = connectionId,
+                    totalHostExecutionDuration = TimeDuration(Duration.ZERO),
+                    requestId = requestId,
+                )
+                val ctx = EventContext.Procedure(
+                    id = nextEventId(),
+                    connection = this,
+                    event = procedureEvent,
+                )
+                val resultMsg = ServerMessage.ProcedureResultMsg(
+                    status = ProcedureStatus.InternalError(errorMsg),
+                    timestamp = Timestamp.UNIX_EPOCH,
+                    totalHostExecutionDuration = TimeDuration(Duration.ZERO),
+                    requestId = requestId,
+                )
+                runUserCallback { cb.invoke(ctx, resultMsg) }
+            }
         }
 
         val pendingQueries = oneOffQueryCallbacks.getAndSet(persistentHashMapOf())
@@ -931,7 +956,6 @@ public open class DbConnection internal constructor(
 
             val conn = DbConnection(
                 transport = transport,
-                httpClient = resolvedClient,
                 scope = scope,
                 onConnectCallbacks = onConnectCallbacks,
                 onDisconnectCallbacks = onDisconnectCallbacks,
