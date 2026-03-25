@@ -81,8 +81,7 @@ abstract class GenerateConfigTask : DefaultTask() {
     }
 
     private fun extractDatabase(json: String): String? {
-        // Simple regex extraction — avoids adding a JSON library dependency to the plugin
-        val match = Regex(""""database"\s*:\s*"([^"]+)"""").find(json)
-        return match?.groupValues?.get(1)
+        val parsed = groovy.json.JsonSlurper().parseText(json)
+        return (parsed as? Map<*, *>)?.get("database") as? String
     }
 }
