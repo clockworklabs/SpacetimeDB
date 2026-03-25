@@ -5,6 +5,8 @@ use std::{
 
 use log::{debug, warn};
 
+pub use spacetimedb_fs_utils::compression::CompressionStats;
+
 use crate::{
     commit::Commit,
     error,
@@ -121,7 +123,7 @@ pub trait Repo: Clone + fmt::Display {
     fn remove_segment(&self, offset: u64) -> io::Result<()>;
 
     /// Compress a segment in storage, marking it as immutable.
-    fn compress_segment(&self, offset: u64) -> io::Result<()>;
+    fn compress_segment(&self, offset: u64) -> io::Result<CompressionStats>;
 
     /// Traverse all segments in this repository and return list of their
     /// offsets, sorted in ascending order.
@@ -164,7 +166,7 @@ impl<T: Repo> Repo for &T {
         T::remove_segment(self, offset)
     }
 
-    fn compress_segment(&self, offset: u64) -> io::Result<()> {
+    fn compress_segment(&self, offset: u64) -> io::Result<CompressionStats> {
         T::compress_segment(self, offset)
     }
 

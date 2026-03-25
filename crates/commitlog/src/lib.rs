@@ -9,6 +9,8 @@ use log::trace;
 use repo::{fs::OnNewSegmentFn, Repo};
 use spacetimedb_paths::server::CommitLogDir;
 
+pub use spacetimedb_fs_utils::compression::CompressionStats;
+
 pub mod commit;
 pub mod commitlog;
 mod index;
@@ -330,16 +332,18 @@ impl<T> Commitlog<T> {
     }
 
     /// Compress the segments at the offsets provided, marking them as immutable.
-    pub fn compress_segments(&self, offsets: &[u64]) -> io::Result<()> {
+    pub fn compress_segments(&self, offsets: &[u64]) -> io::Result<CompressionStats> {
         // even though `compress_segment` takes &self, we take an
         // exclusive lock to avoid any weirdness happening.
         #[allow(clippy::readonly_write_lock)]
         let inner = self.inner.write().unwrap();
         assert!(!offsets.contains(&inner.head.min_tx_offset()));
         // TODO: parallelize, maybe
-        offsets
-            .iter()
-            .try_for_each(|&offset| inner.repo.compress_segment(offset))
+        let mut stats = <_>::default();
+        for offset in offsets {
+            stats += inner.repo.compress_segment(*offset)?;
+        }
+        Ok(stats)
     }
 
     /// Remove all data from the log and reopen it.
