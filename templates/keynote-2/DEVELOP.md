@@ -253,7 +253,6 @@ pnpm run bench-dist-coordinator -- \
   --window-seconds 30 \
   --verify 1 \
   --stdb-url ws://127.0.0.1:3000 \
-  --stdb-metrics-url http://127.0.0.1:3000/v1/metrics \
   --stdb-module test-1 \
   --bind 127.0.0.1 \
   --port 8080
@@ -264,9 +263,9 @@ Notes:
 - `--warmup-seconds` is the unmeasured warmup period. Generators submit requests during warmup, but those transactions are excluded from TPS.
 - `--window-seconds` is the measured interval.
 - `--verify 1` preserves the existing benchmark semantics by running one verification pass centrally after the epoch completes.
-- `--stdb-metrics-url` is required. It is the HTTP metrics endpoint the coordinator uses to measure throughput.
+- The coordinator derives the HTTP metrics endpoint from `--stdb-url` by switching to `http://` or `https://` and appending `/v1/metrics`.
 - For a real multi-machine run, change `--bind 127.0.0.1` to `--bind 0.0.0.0` so remote generators can reach the coordinator.
-- For a real multi-machine run, set both `--stdb-url` and `--stdb-metrics-url` to the server machine's reachable addresses.
+- For a real multi-machine run, set `--stdb-url` to the server machine's reachable address.
 
 #### Step 4: Start generators on one or more client machines
 

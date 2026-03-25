@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { spacetimedb } from '../connectors/spacetimedb.ts';
 import { getSpacetimeCommittedTransfers } from '../core/spacetimeMetrics.ts';
+import { normalizeStdbUrl } from '../core/stdbUrl.ts';
 import {
   getBoolFlag,
   getNumberFlag,
@@ -96,7 +97,6 @@ class DistributedCoordinator {
   private readonly stopAckTimeoutMs: number;
   private readonly resultsDir: string;
   private readonly stdbUrl: string;
-  private readonly stdbMetricsUrl: string;
   private readonly moduleName: string;
 
   private readonly generators = new Map<string, GeneratorRecord>();
@@ -115,7 +115,6 @@ class DistributedCoordinator {
     stopAckTimeoutMs: number;
     resultsDir: string;
     stdbUrl: string;
-    stdbMetricsUrl: string;
     moduleName: string;
   }) {
     this.testName = opts.testName;
@@ -126,7 +125,6 @@ class DistributedCoordinator {
     this.stopAckTimeoutMs = opts.stopAckTimeoutMs;
     this.resultsDir = opts.resultsDir;
     this.stdbUrl = opts.stdbUrl;
-    this.stdbMetricsUrl = opts.stdbMetricsUrl;
     this.moduleName = opts.moduleName;
   }
 
@@ -281,7 +279,7 @@ class DistributedCoordinator {
       );
       await sleep(this.warmupMs);
 
-      const before = await getSpacetimeCommittedTransfers(this.stdbMetricsUrl);
+      const before = await getSpacetimeCommittedTransfers(this.stdbUrl);
       if (before == null) {
         throw new Error(
           'Failed to read spacetime committed transfer counter at measurement start',
@@ -296,7 +294,7 @@ class DistributedCoordinator {
       );
       await sleep(this.windowMs);
 
-      const after = await getSpacetimeCommittedTransfers(this.stdbMetricsUrl);
+      const after = await getSpacetimeCommittedTransfers(this.stdbUrl);
       if (after == null) {
         throw new Error(
           'Failed to read spacetime committed transfer counter at measurement end',
@@ -434,15 +432,12 @@ async function main(): Promise<void> {
     60,
   );
   const verifyAfterEpoch = getBoolFlag(flags, 'verify', false);
-  const stdbUrl = getStringFlag(
+  const rawStdbUrl = getStringFlag(
     flags,
     'stdb-url',
     process.env.STDB_URL ?? 'ws://127.0.0.1:3000',
   );
-  const stdbMetricsUrl = getStringFlag(
-    flags,
-    'stdb-metrics-url',
-  );
+  const stdbUrl = normalizeStdbUrl(rawStdbUrl);
   const moduleName = getStringFlag(
     flags,
     'stdb-module',
@@ -459,7 +454,6 @@ async function main(): Promise<void> {
     stopAckTimeoutMs: stopAckTimeoutSeconds * 1000,
     resultsDir,
     stdbUrl,
-    stdbMetricsUrl,
     moduleName,
   });
 
@@ -524,7 +518,7 @@ async function main(): Promise<void> {
   });
 
   console.log(
-    `[coordinator] listening on http://${bind}:${port} test=${testName} connector=${connectorName} warmup=${warmupSeconds}s window=${windowSeconds}s verify=${verifyAfterEpoch ? 'on' : 'off'} metrics=${stdbMetricsUrl}`,
+    `[coordinator] listening on http://${bind}:${port} test=${testName} connector=${connectorName} warmup=${warmupSeconds}s window=${windowSeconds}s verify=${verifyAfterEpoch ? 'on' : 'off'} stdb=${stdbUrl}`,
   );
 }
 

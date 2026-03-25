@@ -3,6 +3,7 @@ import 'dotenv/config';
 import { hostname as getHostname } from 'node:os';
 import { spacetimedb } from '../connectors/spacetimedb.ts';
 import type { ReducerConnector } from '../core/connectors.ts';
+import { normalizeStdbUrl } from '../core/stdbUrl.ts';
 import { getNumberFlag, getStringFlag, parseArgs } from './args.ts';
 import { LoadSession } from './loadSession.ts';
 import type { CoordinatorState } from './protocol.ts';
@@ -41,11 +42,12 @@ async function main(): Promise<void> {
   const openParallelism = getNumberFlag(flags, 'open-parallelism', 128);
   const pollMs = getNumberFlag(flags, 'poll-ms', 1000);
   const controlRetries = getNumberFlag(flags, 'control-retries', 3);
-  const stdbUrl = getStringFlag(
+  const rawStdbUrl = getStringFlag(
     flags,
     'stdb-url',
     process.env.STDB_URL ?? 'ws://127.0.0.1:3000',
   );
+  const stdbUrl = normalizeStdbUrl(rawStdbUrl);
   const moduleName = getStringFlag(
     flags,
     'stdb-module',
