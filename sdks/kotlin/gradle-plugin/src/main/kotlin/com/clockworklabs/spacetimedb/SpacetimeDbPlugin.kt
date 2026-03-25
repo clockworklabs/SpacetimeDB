@@ -34,6 +34,13 @@ class SpacetimeDbPlugin : Plugin<Project> {
             it.outputDir.set(generatedDir)
         }
 
+        val configTask = project.tasks.register("generateSpacetimeConfig", GenerateConfigTask::class.java) {
+            val rootDir = project.rootProject.layout.projectDirectory
+            it.localConfig.set(rootDir.file("spacetime.local.json"))
+            it.mainConfig.set(rootDir.file("spacetime.json"))
+            it.outputDir.set(generatedDir)
+        }
+
         // Wire generated sources into Kotlin compilation
         project.pluginManager.withPlugin("org.jetbrains.kotlin.jvm") {
             project.extensions.getByType(SourceSetContainer::class.java)
@@ -43,6 +50,7 @@ class SpacetimeDbPlugin : Plugin<Project> {
 
             project.tasks.named("compileKotlin") {
                 it.dependsOn(generateTask)
+                it.dependsOn(configTask)
             }
         }
 
@@ -55,6 +63,7 @@ class SpacetimeDbPlugin : Plugin<Project> {
 
             project.tasks.withType(org.jetbrains.kotlin.gradle.tasks.AbstractKotlinCompileTool::class.java).configureEach {
                 it.dependsOn(generateTask)
+                it.dependsOn(configTask)
             }
         }
     }
