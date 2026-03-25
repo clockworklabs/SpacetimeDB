@@ -12,13 +12,12 @@ import kotlin.time.Duration.Companion.seconds
 
 suspend fun main() {
     val host = System.getenv("SPACETIMEDB_HOST") ?: "ws://localhost:3000"
-    val dbName = System.getenv("SPACETIMEDB_DB_NAME") ?: "basic-kt"
     val httpClient = HttpClient(OkHttp) { install(WebSockets) }
 
     DbConnection.Builder()
         .withHttpClient(httpClient)
         .withUri(host)
-        .withDatabaseName(dbName)
+        .withDatabaseName(module_bindings.SpacetimeConfig.databaseName)
         .withModuleBindings()
         .onConnect { conn, identity, _ ->
             println("Connected to SpacetimeDB!")
