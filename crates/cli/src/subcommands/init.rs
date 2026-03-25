@@ -1757,7 +1757,7 @@ pub fn init_csharp_project(project_path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Adds NativeAOT-LLVM package references to an existing C# .csproj file.
+/// Adds NativeAOT-LLVM package references to an existing C# .csproj file and creates NuGet.Config.
 /// This is called when `--native-aot` is specified during `spacetime init`.
 fn add_native_aot_packages_to_csproj(project_path: &Path) -> anyhow::Result<()> {
     let csproj_path = project_path.join("StdbModule.csproj");
@@ -1789,6 +1789,25 @@ fn add_native_aot_packages_to_csproj(project_path: &Path) -> anyhow::Result<()> 
         "{} Added NativeAOT-LLVM package references to {}",
         "✓".green(),
         csproj_path.display()
+    );
+
+    // Create NuGet.Config with the dotnet-experimental feed required for NativeAOT-LLVM packages
+    let nuget_config_path = project_path.join("NuGet.Config");
+    let nuget_config_content = r#"<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+</configuration>
+"#;
+
+    std::fs::write(&nuget_config_path, nuget_config_content)?;
+    println!(
+        "{} Created {} with dotnet-experimental feed",
+        "✓".green(),
+        nuget_config_path.display()
     );
 
     Ok(())
