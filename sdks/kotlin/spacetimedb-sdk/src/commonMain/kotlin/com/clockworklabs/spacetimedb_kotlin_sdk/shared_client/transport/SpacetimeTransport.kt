@@ -25,18 +25,18 @@ import kotlinx.coroutines.flow.flow
  * Transport abstraction for SpacetimeDB connections.
  * Allows injecting a fake transport in tests.
  */
-public interface Transport {
-    public suspend fun connect()
-    public suspend fun send(message: ClientMessage)
-    public fun incoming(): Flow<ServerMessage>
-    public suspend fun disconnect()
+internal interface Transport {
+    suspend fun connect()
+    suspend fun send(message: ClientMessage)
+    fun incoming(): Flow<ServerMessage>
+    suspend fun disconnect()
 }
 
 /**
  * WebSocket transport for SpacetimeDB.
  * Handles connection, message encoding/decoding, and compression.
  */
-public class SpacetimeTransport(
+internal class SpacetimeTransport(
     private val client: HttpClient,
     private val baseUrl: String,
     private val nameOrAddress: String,

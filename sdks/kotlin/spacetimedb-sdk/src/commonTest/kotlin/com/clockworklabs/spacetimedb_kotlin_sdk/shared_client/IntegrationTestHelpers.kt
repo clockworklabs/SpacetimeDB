@@ -60,7 +60,7 @@ fun TestScope.createTestConnection(
     )
 }
 
-fun TestScope.createConnectionWithTransport(
+internal fun TestScope.createConnectionWithTransport(
     transport: Transport,
     onDisconnect: ((DbConnectionView, Throwable?) -> Unit)? = null,
 ): DbConnection {
