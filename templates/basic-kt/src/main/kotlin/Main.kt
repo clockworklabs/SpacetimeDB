@@ -17,7 +17,7 @@ suspend fun main() {
     DbConnection.Builder()
         .withHttpClient(httpClient)
         .withUri(host)
-        .withDatabaseName(module_bindings.SpacetimeConfig.databaseName)
+        .withDatabaseName(module_bindings.SpacetimeConfig.DATABASE_NAME)
         .withModuleBindings()
         .onConnect { conn, identity, _ ->
             println("Connected to SpacetimeDB!")

@@ -81,7 +81,7 @@ class ChatRepository(
         val connection = DbConnection.Builder()
             .withHttpClient(httpClient)
             .withUri(host)
-            .withDatabaseName(DB_NAME)
+            .withDatabaseName(SpacetimeConfig.DATABASE_NAME)
             .withToken(tokenStore.load(clientId))
             .withModuleBindings()
             .onConnect { c, identity, token ->
@@ -398,8 +398,6 @@ class ChatRepository(
     }
 
     companion object {
-        val DB_NAME: String get() = SpacetimeConfig.databaseName
-
         private fun userNameOrIdentity(user: User): String =
             user.name ?: user.identity.toHexString().take(8)
 

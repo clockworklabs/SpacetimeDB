@@ -53,8 +53,8 @@ abstract class GenerateConfigTask : DefaultTask() {
             appendLine()
             appendLine("/** Build-time configuration extracted from the SpacetimeDB project config. */")
             appendLine("object SpacetimeConfig {")
-            appendLine("    /** The database name from spacetime.local.json, overridable via SPACETIMEDB_DB_NAME env var. */")
-            appendLine("    val databaseName: String get() = System.getenv(\"SPACETIMEDB_DB_NAME\") ?: \"$dbName\"")
+            appendLine("    /** The database name from spacetime.local.json (or spacetime.json). */")
+            appendLine("    const val DATABASE_NAME: String = \"$dbName\"")
             appendLine("}")
             appendLine()
         }
