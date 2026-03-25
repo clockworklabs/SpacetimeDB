@@ -1094,6 +1094,11 @@ fn write_decode_expr_avoiding_variants(module: &ModuleDef, ty: &AlgebraicTypeUse
 }
 
 fn define_sum_type(module: &ModuleDef, out: &mut Indenter, name: &str, variants: &[(Identifier, AlgebraicTypeUse)]) {
+    assert!(
+        variants.len() <= 256,
+        "Sum type `{name}` has {} variants, but BSATN sum tags are limited to 256",
+        variants.len()
+    );
     // Collect all variant names so we can detect when a payload type name collides
     // with a variant name (which would resolve to the sealed interface member instead
     // of the top-level type).
@@ -1191,6 +1196,11 @@ fn define_sum_type(module: &ModuleDef, out: &mut Indenter, name: &str, variants:
 }
 
 fn define_plain_enum(out: &mut Indenter, name: &str, variants: &[Identifier]) {
+    assert!(
+        variants.len() <= 256,
+        "Enum `{name}` has {} variants, but BSATN sum tags are limited to 256",
+        variants.len()
+    );
     writeln!(out, "/** Enum type `{name}` from the module schema. */");
     writeln!(out, "enum class {name} {{");
     out.indent(1);
