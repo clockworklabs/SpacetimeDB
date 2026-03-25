@@ -1,4 +1,5 @@
 import cac from 'cac';
+import { normalizeStdbUrl } from './core/stdbUrl';
 
 export const validConnectors = [
   'convex',
@@ -243,7 +244,7 @@ export const noAnimation: boolean = !opts.animation;
 export const accounts: number = opts.accounts;
 export const initialBalance: number = opts.initialBalance;
 
-export const stdbUrl: string = opts.stdbUrl.replace(/^(http|ws)s?:\/\//, '');
+export const stdbUrl: string = normalizeStdbUrl(opts.stdbUrl);
 export const stdbModule: string = opts.stdbModule;
 export const stdbModulePath: string = opts.stdbModulePath;
 export const stdbConfirmedReads: boolean = opts.stdbConfirmedReads;

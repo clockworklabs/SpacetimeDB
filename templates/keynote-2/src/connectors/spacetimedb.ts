@@ -6,6 +6,7 @@ import {
   stdbModule,
   stdbUrl,
 } from '../opts';
+import { deriveWebsocketUrl } from '../core/stdbUrl';
 
 export function spacetimedb(
   url = stdbUrl,
@@ -31,7 +32,7 @@ export function spacetimedb(
     if (subscriptions.length === 0) subscribed.resolve();
 
     const builder = Db.builder()
-      .withUri('ws://' + url)
+      .withUri(deriveWebsocketUrl(url))
       .withDatabaseName(moduleName)
       .withConfirmedReads(stdbConfirmedReads)
       .onConnect((ctx) => {
