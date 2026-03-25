@@ -258,7 +258,6 @@ public open class DbConnection internal constructor(
             transport.connect()
         } catch (e: Exception) {
             _state.value = ConnectionState.Closed
-            httpClient.close()
             scope.cancel()
             for (cb in _onConnectErrorCallbacks.value) runUserCallback { cb(this, e) }
             return
@@ -294,11 +293,9 @@ public open class DbConnection internal constructor(
                 val cbs = _onDisconnectCallbacks.getAndSet(persistentListOf())
                 for (cb in cbs) runUserCallback { cb(this@DbConnection, e) }
             } finally {
-                // Release resources so the JVM can exit (OkHttp connection pool threads)
                 withContext(NonCancellable) {
                     sendChannel.close()
                     try { transport.disconnect() } catch (_: Exception) {}
-                    httpClient.close()
                 }
             }
         }
