@@ -67,6 +67,7 @@ const DEFAULT_TEST_C: TestC = TestC::Foo;
 pub struct TestD {
     #[default(Some(DEFAULT_TEST_C))]
     test_c: Option<TestC>,
+    test_c_nested: Option<Vec<TestC>>,
 }
 
 // uses internal apis that should not be used by user code
