@@ -571,13 +571,9 @@ public open class DbConnection internal constructor(
     // --- Internal ---
 
     private fun sendMessage(message: ClientMessage): Boolean {
-        if (_state.value !is ConnectionState.Connected) {
-            Logger.warn { "Cannot send message: connection is not active" }
-            return false
-        }
         val result = sendChannel.trySend(message)
-        if (!result.isSuccess) {
-            Logger.warn { "Cannot send message: connection closed" }
+        if (result.isFailure) {
+            Logger.warn { "Cannot send message: connection is not active" }
             return false
         }
         return true
