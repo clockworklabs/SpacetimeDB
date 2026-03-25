@@ -1,4 +1,4 @@
-﻿import { ACC, BAL, waitFor } from './utils.ts';
+import { ACC, BAL, waitFor } from './utils.ts';
 import pg from 'pg';
 
 export async function initPgLike(url: string, label: string) {

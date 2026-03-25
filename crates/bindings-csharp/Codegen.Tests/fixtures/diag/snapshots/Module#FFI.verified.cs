@@ -1981,9 +1981,10 @@ sealed class view_def_ienumerable_return_from_filterViewDispatcher
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
-            ReturnType: new SpacetimeDB.BSATN.Unsupported<System.Collections.Generic.IEnumerable<TestScheduleIssues>>().GetAlgebraicType(
-                registrar
-            )
+            ReturnType: new SpacetimeDB.BSATN.List<
+                TestScheduleIssues,
+                TestScheduleIssues.BSATN
+            >().GetAlgebraicType(registrar)
         );
 
     public byte[] Invoke(
@@ -1996,14 +1997,17 @@ sealed class view_def_ienumerable_return_from_filterViewDispatcher
             var returnValue = Module.ViewDefIEnumerableReturnFromFilter(
                 (SpacetimeDB.ViewContext)ctx
             );
-            SpacetimeDB.BSATN.Unsupported<System.Collections.Generic.IEnumerable<TestScheduleIssues>> returnRW =
-                new();
+            var listSerializer = new SpacetimeDB.BSATN.List<
+                TestScheduleIssues,
+                TestScheduleIssues.BSATN
+            >();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
             var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
             var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
             headerRW.Write(writer, header);
-            returnRW.Write(writer, returnValue);
+            listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
         catch (System.Exception e)
@@ -2028,7 +2032,7 @@ sealed class view_def_ienumerable_return_from_iterViewDispatcher
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
-            ReturnType: new SpacetimeDB.BSATN.Unsupported<System.Collections.Generic.IEnumerable<Player>>().GetAlgebraicType(
+            ReturnType: new SpacetimeDB.BSATN.List<Player, Player.BSATN>().GetAlgebraicType(
                 registrar
             )
         );
@@ -2041,14 +2045,14 @@ sealed class view_def_ienumerable_return_from_iterViewDispatcher
         try
         {
             var returnValue = Module.ViewDefIEnumerableReturnFromIter((SpacetimeDB.ViewContext)ctx);
-            SpacetimeDB.BSATN.Unsupported<System.Collections.Generic.IEnumerable<Player>> returnRW =
-                new();
+            var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
             var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
             var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
             headerRW.Write(writer, header);
-            returnRW.Write(writer, returnValue);
+            listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
         catch (System.Exception e)
@@ -2085,13 +2089,14 @@ sealed class view_def_no_contextViewDispatcher : global::SpacetimeDB.Internal.IV
         try
         {
             var returnValue = Module.ViewDefNoContext((SpacetimeDB.ViewContext)ctx);
-            SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
+            var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
             var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
             var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
             headerRW.Write(writer, header);
-            returnRW.Write(writer, returnValue);
+            listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
         catch (System.Exception e)
@@ -2126,13 +2131,14 @@ sealed class view_def_no_publicViewDispatcher : global::SpacetimeDB.Internal.IVi
         try
         {
             var returnValue = Module.ViewDefNoPublic((SpacetimeDB.ViewContext)ctx);
-            SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
+            var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
             var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
             var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
             headerRW.Write(writer, header);
-            returnRW.Write(writer, returnValue);
+            listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
         catch (System.Exception e)
@@ -2167,13 +2173,14 @@ sealed class view_def_wrong_contextViewDispatcher : global::SpacetimeDB.Internal
         try
         {
             var returnValue = Module.ViewDefWrongContext((SpacetimeDB.ViewContext)ctx);
-            SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
+            var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
             var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
             var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
             headerRW.Write(writer, header);
-            returnRW.Write(writer, returnValue);
+            listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
         catch (System.Exception e)

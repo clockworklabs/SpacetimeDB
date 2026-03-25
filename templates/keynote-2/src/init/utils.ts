@@ -1,9 +1,10 @@
-﻿import { spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import pg from 'pg';
-import { setTimeout as sleep } from 'timers/promises';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { accounts, initialBalance } from '../opts';
 
-export const ACC = Number(process.env.SEED_ACCOUNTS ?? 100_000);
-export const BAL = Number(process.env.SEED_INITIAL_BALANCE ?? 1_000_000);
+export const ACC = accounts;
+export const BAL = initialBalance;
 
 export function has(v?: string) {
   return v && v.trim().length > 0;

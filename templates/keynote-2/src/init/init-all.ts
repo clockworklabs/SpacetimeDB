@@ -1,4 +1,4 @@
-﻿import 'dotenv/config';
+import 'dotenv/config';
 import { init_supabase } from './init_supabase.ts';
 import { ACC, BAL, has, sh } from './utils.ts';
 import { initSpacetime } from './init_spacetime.ts';
