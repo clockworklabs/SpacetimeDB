@@ -286,6 +286,7 @@ public open class DbConnection internal constructor(
                 failPendingOperations()
                 val cbs = _onDisconnectCallbacks.getAndSet(persistentListOf())
                 for (cb in cbs) runUserCallback { cb(this@DbConnection, null) }
+                clientCache.clear()
             } catch (e: Exception) {
                 currentCoroutineContext().ensureActive()
                 Logger.error { "Connection error: ${e.message}" }
@@ -294,6 +295,7 @@ public open class DbConnection internal constructor(
                 failPendingOperations()
                 val cbs = _onDisconnectCallbacks.getAndSet(persistentListOf())
                 for (cb in cbs) runUserCallback { cb(this@DbConnection, e) }
+                clientCache.clear()
             } finally {
                 withContext(NonCancellable) {
                     sendChannel.close()
@@ -326,9 +328,9 @@ public open class DbConnection internal constructor(
             prev.shutdown(currentCoroutineContext()[Job])
         }
         failPendingOperations()
-        clientCache.clear()
         val cbs = _onDisconnectCallbacks.getAndSet(persistentListOf())
         for (cb in cbs) runUserCallback { cb(this@DbConnection, reason) }
+        clientCache.clear()
         scope.cancel()
     }
 
