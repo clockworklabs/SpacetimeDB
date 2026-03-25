@@ -53,6 +53,7 @@ public partial struct TestD
 {
     // In Rust this was an Option<TestC>; in C# we use a nullable enum.
     public TestC? test_c;
+    public TestC[]? test_c_nested;
 }
 
 [Table(Accessor = "test_e")]
