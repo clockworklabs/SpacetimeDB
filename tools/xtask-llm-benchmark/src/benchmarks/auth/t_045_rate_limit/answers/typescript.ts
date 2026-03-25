@@ -22,7 +22,7 @@ export default spacetimedb;
 export const limited_action = spacetimedb.reducer(
   { payload: t.string() },
   (ctx, { payload }) => {
-    const now = BigInt(ctx.timestamp.toMicrosSinceUnixEpoch());
+    const now = BigInt(ctx.timestamp.microsSinceUnixEpoch);
     const entry = ctx.db.rate_limit.identity.find(ctx.sender);
     if (entry) {
       if (now - entry.last_call_us < 1_000_000n) throw new Error('rate limited');

@@ -43,7 +43,7 @@ export const edit_document = spacetimedb.reducer(
     const doc = ctx.db.document.id.find(document_id);
     if (!doc) throw new Error('not found');
     const isOwner = doc.owner.equals(ctx.sender);
-    const isShared = ctx.db.document_share.document_id.filter(document_id)
+    const isShared = [...ctx.db.document_share.document_id.filter(document_id)]
       .some(s => s.shared_with.equals(ctx.sender));
     if (!isOwner && !isShared) throw new Error('unauthorized');
     ctx.db.document.id.update({ ...doc, title: new_title });

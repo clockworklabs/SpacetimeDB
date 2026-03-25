@@ -17,7 +17,7 @@ public static partial class Module
         [PrimaryKey]
         [AutoInc]
         public ulong Id;
-        [Index.BTree]
+        [SpacetimeDB.Index.BTree]
         public ulong CustomerId;
         public string Product;
         public uint Amount;

@@ -16,7 +16,7 @@ TABLES
 
 REDUCERS
 - limited_action(ctx, { payload: string })
-  - Get the current time in microseconds: BigInt(ctx.timestamp.toMicrosSinceUnixEpoch())
+  - Get the current time in microseconds: ctx.timestamp.microsSinceUnixEpoch (a BigInt)
   - Look up the rate_limit row for ctx.sender
   - If a row exists and (now - last_call_us) < 1_000_000n, throw "rate limited"
   - Insert or update the rate_limit row with last_call_us = now

@@ -25,8 +25,8 @@ export const seed = spacetimedb.reducer(
   ctx => {
     ctx.db.drawing.insert({
       id: 1,
-      a: { circle: 10 },
-      b: { rectangle: { width: 4, height: 6 } },
+      a: { tag: 'circle', value: 10 },
+      b: { tag: 'rectangle', value: { width: 4, height: 6 } },
     });
   }
 );

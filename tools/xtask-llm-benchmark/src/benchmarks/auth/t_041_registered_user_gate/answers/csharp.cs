@@ -16,7 +16,7 @@ public static partial class Module
         [PrimaryKey]
         [AutoInc]
         public ulong Id;
-        [Index.BTree]
+        [SpacetimeDB.Index.BTree]
         public Identity Sender;
         public string Text;
     }

@@ -9,7 +9,7 @@ public static partial class Module
         [AutoInc]
         public ulong Id;
         public string Name;
-        [Index.BTree]
+        [SpacetimeDB.Index.BTree]
         public uint Price;
     }
 

@@ -1,10 +1,11 @@
 using SpacetimeDB;
 using System.Collections.Generic;
+using System.Linq;
 
 public static partial class Module
 {
     [Table(Accessor = "Announcement", Public = true)]
-    [SpacetimeDB.Index.BTree(Columns = new[] { nameof(Announcement.Active) })]
+    [SpacetimeDB.Index.BTree(Accessor = "Active", Columns = new[] { nameof(Announcement.Active) })]
     public partial struct Announcement
     {
         [PrimaryKey]
@@ -15,8 +16,8 @@ public static partial class Module
     }
 
     [SpacetimeDB.View(Accessor = "ActiveAnnouncements", Public = true)]
-    public static IEnumerable<Announcement> ActiveAnnouncements(AnonymousViewContext ctx)
+    public static List<Announcement> ActiveAnnouncements(AnonymousViewContext ctx)
     {
-        return ctx.Db.Announcement.Active.Filter(true);
+        return ctx.Db.Announcement.Active.Filter(true).ToList();
     }
 }

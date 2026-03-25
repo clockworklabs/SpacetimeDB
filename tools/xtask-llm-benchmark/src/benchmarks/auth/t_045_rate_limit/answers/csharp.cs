@@ -23,7 +23,7 @@ public static partial class Module
     [Reducer]
     public static void LimitedAction(ReducerContext ctx, string payload)
     {
-        ulong now = (ulong)(ctx.Timestamp.ToUnixTimeMilliseconds() * 1000);
+        ulong now = (ulong)ctx.Timestamp.MicrosecondsSinceUnixEpoch;
         var entry = ctx.Db.RateLimit.Identity.Find(ctx.Sender);
         if (entry is RateLimit r)
         {

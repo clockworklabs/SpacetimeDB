@@ -236,7 +236,7 @@ export default function Leaderboard() {
                 </td>
                 <td className="px-4 py-3 align-middle">
                   <Link
-                    to={`/model/${encodeURIComponent(row.modelName)}`}
+                    to={`/model/${encodeURIComponent(row.modelName)}?lang=${activeLang}&mode=${activeMode}`}
                     className="font-medium hover:underline"
                     style={{ color: ACCENT }}
                   >

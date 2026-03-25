@@ -83,39 +83,33 @@ export default function Evals() {
                 {filtered.length}
               </span>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-px">
               {filtered.map(task => {
                 const isOpen = expanded.has(task.id)
-                const firstLine = task.description.split('\n')[0]
+                const summary = task.description.split('\n')[0]
+                  .replace(/^Write a SpacetimeDB backend module in (?:Rust|C#|TypeScript) that /, '')
                 return (
                   <div
                     key={task.id}
-                    className="rounded overflow-hidden"
-                    style={{ border: `1px solid ${BORDER}`, backgroundColor: CARD_BG }}
+                    className="overflow-hidden"
+                    style={{ borderBottom: `1px solid ${BORDER}` }}
                   >
                     <button
-                      className="w-full flex items-start justify-between gap-4 px-4 py-3 text-left"
+                      className="w-full grid gap-x-4 px-2 py-2.5 text-left hover:bg-white/5 transition-colors"
+                      style={{ gridTemplateColumns: '3rem 14rem 1fr 1.5rem' }}
                       onClick={() => toggle(task.id)}
                     >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="text-xs font-mono shrink-0" style={{ color: MUTED }}>
-                          {task.id.match(/t_\d+/)?.[0]}
-                        </span>
-                        <span className="text-sm font-medium truncate">{task.title}</span>
-                      </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        {!isOpen && (
-                          <span className="text-xs max-w-xs truncate hidden sm:block" style={{ color: MUTED }}>
-                            {firstLine.replace(/^Write a SpacetimeDB backend module in Rust that /, '')}
-                          </span>
-                        )}
-                        <span style={{ color: MUTED }}>{isOpen ? '▲' : '▼'}</span>
-                      </div>
+                      <span className="text-xs font-mono self-center" style={{ color: MUTED }}>
+                        {task.id.match(/t_\d+/)?.[0]}
+                      </span>
+                      <span className="text-sm font-medium self-center truncate">{task.title}</span>
+                      <span className="text-xs self-center truncate" style={{ color: MUTED }}>{summary}</span>
+                      <span className="text-xs self-center text-right" style={{ color: MUTED }}>{isOpen ? '▲' : '▼'}</span>
                     </button>
                     {isOpen && (
-                      <div className="px-4 pb-4 border-t" style={{ borderColor: BORDER }}>
+                      <div className="px-2 pb-4 pt-1">
                         <pre
-                          className="text-xs mt-3 whitespace-pre-wrap font-mono leading-relaxed"
+                          className="text-xs whitespace-pre-wrap font-mono leading-relaxed"
                           style={{ color: '#c8d0dc' }}
                         >
                           {task.description}

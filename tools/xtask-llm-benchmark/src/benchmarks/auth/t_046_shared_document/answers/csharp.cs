@@ -9,7 +9,7 @@ public static partial class Module
         [PrimaryKey]
         [AutoInc]
         public ulong Id;
-        [Index.BTree]
+        [SpacetimeDB.Index.BTree]
         public Identity Owner;
         public string Title;
     }
@@ -17,9 +17,9 @@ public static partial class Module
     [Table(Accessor = "DocumentShare", Public = true)]
     public partial struct DocumentShare
     {
-        [Index.BTree]
+        [SpacetimeDB.Index.BTree]
         public ulong DocumentId;
-        [Index.BTree]
+        [SpacetimeDB.Index.BTree]
         public Identity SharedWith;
     }
 

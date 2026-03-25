@@ -8,7 +8,7 @@ public static partial class Module
         [PrimaryKey]
         [AutoInc]
         public ulong Id;
-        [Index.BTree]
+        [SpacetimeDB.Index.BTree]
         public string Category;
         public ulong Amount;
         public bool Fulfilled;

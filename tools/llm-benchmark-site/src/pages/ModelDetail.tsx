@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { useData } from '../hooks/useData'
 import PassChip from '../components/PassChip'
 import type { TaskResult } from '../types'
@@ -19,6 +19,7 @@ function pctColor(pct: number) {
 function duration(started: string, finished: string): string {
   try {
     const ms = new Date(finished).getTime() - new Date(started).getTime()
+    if (!isFinite(ms) || ms < 0) return '—'
     if (ms < 1000) return `${ms}ms`
     return `${(ms / 1000).toFixed(1)}s`
   } catch {
@@ -96,15 +97,17 @@ function TaskRow({ task }: { task: TaskResult }) {
           )}
 
           {/* LLM Output */}
-          <div>
-            <p className="text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wide">LLM Output</p>
-            <pre
-              className="text-xs text-slate-300 p-3 rounded overflow-x-auto whitespace-pre-wrap break-words font-mono leading-relaxed"
-              style={{ backgroundColor: '#0a0a0b', border: `1px solid ${BORDER}`, maxHeight: 400 }}
-            >
-              {task.llm_output || <span className="text-slate-600 italic">No output</span>}
-            </pre>
-          </div>
+          {task.llm_output && (
+            <div>
+              <p className="text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wide">LLM Output</p>
+              <pre
+                className="text-xs text-slate-300 p-3 rounded overflow-x-auto whitespace-pre-wrap break-words font-mono leading-relaxed"
+                style={{ backgroundColor: '#0a0a0b', border: `1px solid ${BORDER}`, maxHeight: 400 }}
+              >
+                {task.llm_output}
+              </pre>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -113,23 +116,31 @@ function TaskRow({ task }: { task: TaskResult }) {
 
 export default function ModelDetail() {
   const { name } = useParams<{ name: string }>()
+  const [searchParams] = useSearchParams()
   const decodedName = decodeURIComponent(name ?? '')
+  const preferLang = searchParams.get('lang') ?? ''
+  const preferMode = searchParams.get('mode') ?? ''
   const { details, summary, loading, error } = useData()
 
   const [filterCategory, setFilterCategory] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<'all' | 'pass' | 'fail'>('all')
 
-  // Find model data across all languages/modes
+  // Find model data — prefer lang/mode from URL params, fall back to first match
   const modelData = useMemo(() => {
     if (!details) return null
+    let fallback: { lang: string; mode: string; model: (typeof details.languages)[0]['modes'][0]['models'][0] } | null = null
     for (const lang of details.languages) {
       for (const modeObj of lang.modes) {
         const model = modeObj.models.find((m) => m.name === decodedName)
-        if (model) return { lang: lang.lang, mode: modeObj.mode, model }
+        if (!model) continue
+        if ((!preferLang || lang.lang === preferLang) && (!preferMode || modeObj.mode === preferMode)) {
+          return { lang: lang.lang, mode: modeObj.mode, model }
+        }
+        if (!fallback) fallback = { lang: lang.lang, mode: modeObj.mode, model }
       }
     }
-    return null
-  }, [details, decodedName])
+    return fallback
+  }, [details, decodedName, preferLang, preferMode])
 
   const summaryData = useMemo(() => {
     if (!summary || !modelData) return null

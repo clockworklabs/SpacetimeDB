@@ -19,7 +19,7 @@ export const sendReminder = spacetimedb.reducer(
 );
 
 export const init = spacetimedb.init(ctx => {
-  const fireAt = ctx.timestamp + 60_000_000n;
+  const fireAt = ctx.timestamp.microsSinceUnixEpoch + 60_000_000n;
   ctx.db.reminder.insert({
     scheduledId: 0n,
     scheduledAt: ScheduleAt.time(fireAt),
