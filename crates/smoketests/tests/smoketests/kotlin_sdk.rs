@@ -248,7 +248,26 @@ fn test_kotlin_integration() {
     let server_url = &guard.host_url;
     eprintln!("[KOTLIN-INTEGRATION] Server running at {server_url}");
 
-    // Step 2: Patch the module to use local bindings and build it
+    // Step 2: Regenerate Kotlin bindings from the module source
+    let bindings_dir = kotlin_sdk_path.join("integration-tests/src/test/kotlin/module_bindings");
+    let output = Command::new(&cli_path)
+        .args([
+            "generate",
+            "--lang", "kotlin",
+            "--out-dir", bindings_dir.to_str().unwrap(),
+            "--module-path", module_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to run spacetime generate");
+    assert!(
+        output.status.success(),
+        "spacetime generate failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    eprintln!("[KOTLIN-INTEGRATION] Bindings regenerated");
+
+    // Step 3: Patch the module to use local bindings and build it
     patch_module_cargo_to_local_bindings(&module_path).expect("Failed to patch module Cargo.toml");
 
     let toolchain_src = workspace.join("rust-toolchain.toml");
@@ -267,7 +286,7 @@ fn test_kotlin_integration() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    // Step 3: Publish the module
+    // Step 4: Publish the module
     let db_name = "kotlin-integration-test";
     let output = Command::new(&cli_path)
         .args([
@@ -290,7 +309,7 @@ fn test_kotlin_integration() {
     );
     eprintln!("[KOTLIN-INTEGRATION] Module published as '{db_name}'");
 
-    // Step 4: Run Gradle integration tests
+    // Step 5: Run Gradle integration tests
     let gradlew = gradlew_path().expect("gradlew not found");
     let ws_url = server_url.replace("http://", "ws://").replace("https://", "wss://");
 
