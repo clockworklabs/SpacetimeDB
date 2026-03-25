@@ -330,13 +330,21 @@ impl<T: Send + Sync + 'static> Durability for Local<T> {
     type TxData = Txdata<T>;
 
     fn append_tx(&self, tx: Transaction<Self::TxData>) {
-        let send = || self.queue.blocking_send(tx);
-        if tokio::runtime::Handle::try_current().is_ok() {
-            tokio::task::block_in_place(send)
-        } else {
-            send()
+        match self.queue.try_reserve() {
+            Ok(permit) => permit.send(tx),
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                panic!("durability actor crashed");
+            }
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                let send = || self.queue.blocking_send(tx);
+                if tokio::runtime::Handle::try_current().is_ok() {
+                    tokio::task::block_in_place(send)
+                } else {
+                    send()
+                }
+                .expect("durability actor crashed");
+            }
         }
-        .expect("durability actor crashed");
 
         self.queue_depth.fetch_add(1, Relaxed);
     }
