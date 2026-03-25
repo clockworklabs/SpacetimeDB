@@ -52,6 +52,18 @@ public class IxCol<TRow, TValue> @InternalSpacetimeApi constructor(tableName: St
 
     /** Tests inequality against a literal value. */
     public fun neq(value: SqlLiteral<TValue>): BoolExpr<TRow> = BoolExpr("($refSql <> ${value.sql})")
+
+    /** Tests whether this column is strictly less than [value]. */
+    public fun lt(value: SqlLiteral<TValue>): BoolExpr<TRow> = BoolExpr("($refSql < ${value.sql})")
+
+    /** Tests whether this column is less than or equal to [value]. */
+    public fun lte(value: SqlLiteral<TValue>): BoolExpr<TRow> = BoolExpr("($refSql <= ${value.sql})")
+
+    /** Tests whether this column is strictly greater than [value]. */
+    public fun gt(value: SqlLiteral<TValue>): BoolExpr<TRow> = BoolExpr("($refSql > ${value.sql})")
+
+    /** Tests whether this column is greater than or equal to [value]. */
+    public fun gte(value: SqlLiteral<TValue>): BoolExpr<TRow> = BoolExpr("($refSql >= ${value.sql})")
 }
 
 /**
