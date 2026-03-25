@@ -60,6 +60,8 @@ static GLOBAL: Jemalloc = Jemalloc;
 pub static _rjem_malloc_conf: &[u8] = b"prof:true,prof_active:false,lg_prof_sample:19\0";
 
 fn main() -> anyhow::Result<()> {
+    const RESERVED_DATABASE_CORES: usize = 2;
+
     // take_hook() returns the default hook in case when a custom one is not set
     let orig_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info| {
@@ -68,15 +70,25 @@ fn main() -> anyhow::Result<()> {
         process::exit(1);
     }));
 
-    let cores = startup::pin_threads();
-
     // Create a multi-threaded run loop
     let mut builder = Builder::new_multi_thread();
     builder.enable_all();
-    cores.tokio.configure(&mut builder);
+    let database_cores = if let Some(core_ids) = startup::Cores::get_core_ids() {
+        let reserved_database_cores = RESERVED_DATABASE_CORES.min(core_ids.len());
+        let database_fraction = reserved_database_cores as f64 / core_ids.len() as f64;
+        let cores = startup::pin_threads_with_reservations(startup::CoreReservations {
+            databases: database_fraction,
+            tokio_workers: 1.0,
+            rayon: 0.0,
+            irq: 0,
+            reserved: 0,
+        });
+        cores.tokio.configure(&mut builder);
+        cores.databases.make_database_runners()
+    } else {
+        JobCores::without_pinned_cores()
+    };
     let rt = builder.build().unwrap();
-    cores.rayon.configure(rt.handle());
-    let database_cores = cores.databases.make_database_runners();
 
     // Keep a handle on the `database_cores` alive outside of `async_main`
     // and explicitly drop it to avoid dropping it from an `async` context -
