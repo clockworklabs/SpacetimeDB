@@ -548,7 +548,9 @@ export default __t.row({
   get testC() {
     return __t.option(NamespaceTestC).name("test_c");
   },
-  testCNested: __t.option(__t.array(NamespaceTestC)).name("test_c_nested"),
+  get testCNested() {
+    return __t.option(__t.array(NamespaceTestC)).name("test_c_nested");
+  },
 });
 '''
 "test_f_table.ts" = '''
@@ -702,7 +704,9 @@ export const TestD = __t.object("TestD", {
   get testC() {
     return __t.option(NamespaceTestC);
   },
-  testCNested: __t.option(__t.array(NamespaceTestC)),
+  get testCNested() {
+    return __t.option(__t.array(NamespaceTestC));
+  },
 });
 export type TestD = __Infer<typeof TestD>;
 
