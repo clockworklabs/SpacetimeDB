@@ -625,8 +625,8 @@ public open class DbConnection internal constructor(
                     callbacks.addAll(table.applyInserts(ctx, tableRows.rows))
                 }
 
-                handle.handleApplied(ctx)
                 for (cb in callbacks) runUserCallback { cb.invoke() }
+                handle.handleApplied(ctx)
             }
 
             is ServerMessage.UnsubscribeApplied -> {
