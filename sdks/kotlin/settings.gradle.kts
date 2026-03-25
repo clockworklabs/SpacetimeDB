@@ -37,3 +37,4 @@ plugins {
 include(":spacetimedb-sdk")
 include(":gradle-plugin")
 include(":integration-tests")
+include(":codegen-tests")

@@ -210,14 +210,35 @@ fn test_kotlin_sdk_unit_tests() {
     require_gradle!();
 
     let workspace = workspace_root();
+    let cli_path = ensure_binaries_built();
     let kotlin_sdk_path = workspace.join("sdks/kotlin");
     let gradlew = gradlew_path().expect("gradlew not found");
 
+    // Generate Kotlin bindings for codegen edge-case tests
+    let codegen_bindings_dir = kotlin_sdk_path.join("codegen-tests/src/test/kotlin/module_bindings");
+    let codegen_module_path = kotlin_sdk_path.join("codegen-tests/spacetimedb");
+    let _ = fs::remove_dir_all(&codegen_bindings_dir);
+    let output = Command::new(&cli_path)
+        .args([
+            "generate",
+            "--lang", "kotlin",
+            "--out-dir", codegen_bindings_dir.to_str().unwrap(),
+            "--module-path", codegen_module_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to run spacetime generate for codegen-tests");
+    assert!(
+        output.status.success(),
+        "spacetime generate (codegen-tests) failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
     let output = Command::new(&gradlew)
-        .args([":spacetimedb-sdk:allTests", "--no-daemon", "--no-configuration-cache"])
+        .args([":spacetimedb-sdk:allTests", ":codegen-tests:test", "--no-daemon", "--no-configuration-cache"])
         .current_dir(&kotlin_sdk_path)
         .output()
-        .expect("Failed to run gradlew :spacetimedb-sdk:allTests");
+        .expect("Failed to run gradlew :spacetimedb-sdk:allTests :codegen-tests:test");
 
     if !output.status.success() {
         panic!(
@@ -250,6 +271,7 @@ fn test_kotlin_integration() {
 
     // Step 2: Regenerate Kotlin bindings from the module source
     let bindings_dir = kotlin_sdk_path.join("integration-tests/src/test/kotlin/module_bindings");
+    let _ = fs::remove_dir_all(&bindings_dir);
     let output = Command::new(&cli_path)
         .args([
             "generate",

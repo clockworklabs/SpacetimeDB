@@ -966,17 +966,13 @@ fn define_product_type(
 ) {
     if elements.is_empty() {
         writeln!(out, "/** Data type `{name}` from the module schema. */");
-        writeln!(out, "class {name} {{");
+        writeln!(out, "data object {name} {{");
         out.indent(1);
         writeln!(out, "/** Encodes this value to BSATN. */");
         writeln!(out, "fun encode(writer: BsatnWriter) {{ }}");
         writeln!(out);
-        writeln!(out, "companion object {{");
-        out.indent(1);
         writeln!(out, "/** Decodes a [{name}] from BSATN. */");
-        writeln!(out, "fun decode(reader: BsatnReader): {name} = {name}()");
-        out.dedent(1);
-        writeln!(out, "}}");
+        writeln!(out, "fun decode(reader: BsatnReader): {name} = {name}");
         out.dedent(1);
         writeln!(out, "}}");
     } else {
