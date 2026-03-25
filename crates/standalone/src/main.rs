@@ -1,6 +1,5 @@
 use clap::Command;
 
-use spacetimedb::startup;
 use spacetimedb::util::jobs::JobCores;
 use tokio::runtime::Builder;
 
@@ -68,15 +67,11 @@ fn main() -> anyhow::Result<()> {
         process::exit(1);
     }));
 
-    let cores = startup::pin_threads();
-
     // Create a multi-threaded run loop
     let mut builder = Builder::new_multi_thread();
     builder.enable_all();
-    cores.tokio.configure(&mut builder);
     let rt = builder.build().unwrap();
-    cores.rayon.configure(rt.handle());
-    let database_cores = cores.databases.make_database_runners();
+    let database_cores = JobCores::without_pinned_cores();
 
     // Keep a handle on the `database_cores` alive outside of `async_main`
     // and explicitly drop it to avoid dropping it from an `async` context -
