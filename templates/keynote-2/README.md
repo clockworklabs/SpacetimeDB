@@ -180,6 +180,7 @@ for the other backends/databases as they maxed out before the client.
 ## Running the Benchmarks
 
 See [DEVELOP.md](./DEVELOP.md) for detailed setup and execution instructions.
+The distributed TypeScript SpacetimeDB workflow is documented there as `Run the distributed TypeScript SpacetimeDB benchmark`.
 
 ### Quick Start
 

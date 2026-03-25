@@ -268,12 +268,20 @@ struct SchedulerActor {
     module_host: WeakModuleHost,
 }
 
+#[derive(Clone)]
 enum QueueItem {
     Id { id: ScheduledFunctionId, at: Timestamp },
     VolatileNonatomicImmediate { function_name: String, args: FunctionArgs },
 }
 
+#[derive(Clone)]
 pub(crate) struct ScheduledFunctionParams(QueueItem);
+
+#[derive(thiserror::Error, Debug)]
+pub(crate) enum CallScheduledFunctionError {
+    #[error(transparent)]
+    NoSuchModule(#[from] NoSuchModule),
+}
 
 #[cfg(target_pointer_width = "64")]
 spacetimedb_table::static_assert_size!(QueueItem, 64);
@@ -320,8 +328,8 @@ impl SchedulerActor {
 
     async fn handle_queued(&mut self, id: Expired<QueueItem>) {
         let item = id.into_inner();
-        let id: Option<ScheduledFunctionId> = match item {
-            QueueItem::Id { id, .. } => Some(id),
+        let id: Option<ScheduledFunctionId> = match &item {
+            QueueItem::Id { id, .. } => Some(*id),
             QueueItem::VolatileNonatomicImmediate { .. } => None,
         };
         if let Some(id) = id {
@@ -337,7 +345,7 @@ impl SchedulerActor {
         match result {
             // If the module already exited, leave the `ScheduledFunction` in
             // the database for when the module restarts.
-            Err(NoSuchModule) => {}
+            Err(CallScheduledFunctionError::NoSuchModule(_)) => {}
             Ok(CallScheduledFunctionResult { reschedule: None }) => {
                 // nothing to do
             }
