@@ -87,6 +87,13 @@ export type ConnectorRuntimeConfig = Pick<
   | 'stdbUrl'
 >;
 
+export interface SpacetimeConnectorConfig {
+  initialBalance: number;
+  stdbConfirmedReads: boolean;
+  stdbModule: string;
+  stdbUrl: string;
+}
+
 export type RunnerRuntimeConfig = Pick<
   SharedRuntimeConfig,
   | 'benchPipelined'

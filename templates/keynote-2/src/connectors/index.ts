@@ -7,7 +7,11 @@ import sqlite_rpc from './rpc/sqlite_rpc.ts';
 import supabase_rpc from './rpc/supabase_rpc.ts';
 import planetscale_pg_rpc from './rpc/planetscale_pg_rpc.ts';
 import type { ReducerConnector, RpcConnector } from '../core/connectors.ts';
-import type { ConnectorKey, ConnectorRuntimeConfig } from '../config.ts';
+import type {
+  ConnectorKey,
+  ConnectorRuntimeConfig,
+  SpacetimeConnectorConfig,
+} from '../config.ts';
 
 export type { ConnectorKey } from '../config.ts';
 
@@ -15,10 +19,19 @@ export type ConnectorFactory = (
   config: ConnectorRuntimeConfig,
 ) => ReducerConnector | RpcConnector;
 
+const toSpacetimeConfig = (
+  config: ConnectorRuntimeConfig,
+): SpacetimeConnectorConfig => ({
+  initialBalance: config.initialBalance,
+  stdbConfirmedReads: config.stdbConfirmedReads,
+  stdbModule: config.stdbModule,
+  stdbUrl: config.stdbUrl,
+});
+
 export const CONNECTORS = {
   convex: (config) => convex(config.convexUrl),
-  spacetimedb: (config) => spacetimedb(config),
-  spacetimedbRustClient: spacetimedb,
+  spacetimedb: (config) => spacetimedb(toSpacetimeConfig(config)),
+  spacetimedbRustClient: (config) => spacetimedb(toSpacetimeConfig(config)),
   bun: (config) => bun(config.bunUrl),
   postgres_rpc: () => postgres_rpc(),
   cockroach_rpc: () => cockroach_rpc(),

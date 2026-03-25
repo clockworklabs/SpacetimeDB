@@ -1,4 +1,3 @@
-import { stdbUrl } from '../opts';
 import { deriveMetricsUrl } from './stdbUrl';
 
 type LabelFilter = Record<string, string>;
@@ -81,7 +80,7 @@ export function parseMetricCounter(
 }
 
 export async function getSpacetimeCommittedTransfers(
-  rawStdbUrl = stdbUrl,
+  rawStdbUrl: string,
 ): Promise<bigint | null> {
   const url = deriveMetricsUrl(rawStdbUrl);
 

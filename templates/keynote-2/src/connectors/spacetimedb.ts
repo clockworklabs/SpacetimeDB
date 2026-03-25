@@ -1,9 +1,9 @@
 import type { ReducerConnector } from '../core/connectors';
 import * as mod from '../../module_bindings';
 import { deriveWebsocketUrl } from '../core/stdbUrl';
-import type { ConnectorRuntimeConfig } from '../config.ts';
+import type { SpacetimeConnectorConfig } from '../config.ts';
 
-export function spacetimedb(config: ConnectorRuntimeConfig): ReducerConnector {
+export function spacetimedb(config: SpacetimeConnectorConfig): ReducerConnector {
   const {
     initialBalance,
     stdbConfirmedReads,
