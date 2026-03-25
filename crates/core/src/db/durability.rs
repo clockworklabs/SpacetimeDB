@@ -135,15 +135,6 @@ impl DurabilityWorker {
     /// - [Self::shutdown] was called
     ///
     pub fn request_durability(&self, reducer_context: Option<ReducerContext>, tx_data: &Arc<TxData>) {
-        // NOTE: Even though the method signature doesn't make it obvious, it is
-        // running in an ambient async context that is a [tokio::task::LocalSet].
-        // This won't allow to block on any tokio runtime, even if it is not the
-        // one the local set is running on.
-        // To escape this, we use a [futures] local thread runtime to effectively
-        // block the execution of the local set.
-        // This is what we want: exert backpressure on the transactional
-        // engine when the durability layer is unable to keep up.
-
         // We first try to send it without blocking.
         match self.request_tx.try_reserve() {
             Ok(permit) => {
@@ -158,10 +149,17 @@ impl DurabilityWorker {
             Err(mpsc::error::TrySendError::Full(_)) => {
                 // If the channel was full, we use the blocking version.
                 let start = std::time::Instant::now();
-                futures::executor::block_on(self.request_tx.send(DurabilityRequest {
-                    reducer_context,
-                    tx_data: tx_data.clone(),
-                }))
+                let send = || {
+                    self.request_tx.blocking_send(DurabilityRequest {
+                        reducer_context,
+                        tx_data: tx_data.clone(),
+                    })
+                };
+                if tokio::runtime::Handle::try_current().is_ok() {
+                    tokio::task::block_in_place(send)
+                } else {
+                    send()
+                }
                 .unwrap_or_else(|_| panic!("durability actor vanished database={}", self.database));
                 // We could cache this metric, but if we are already in the blocking code path,
                 // the extra time of looking up the metric is probably negligible.
@@ -513,7 +511,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn shutdown_waits_until_durable() {
         let durability = Arc::new(CountingDurability::default());
         let worker = DurabilityWorker::new(

@@ -330,7 +330,14 @@ impl<T: Send + Sync + 'static> Durability for Local<T> {
     type TxData = Txdata<T>;
 
     fn append_tx(&self, tx: Transaction<Self::TxData>) {
-        futures::executor::block_on(self.queue.send(tx)).expect("durability actor crashed");
+        let send = || self.queue.blocking_send(tx);
+        if tokio::runtime::Handle::try_current().is_ok() {
+            tokio::task::block_in_place(send)
+        } else {
+            send()
+        }
+        .expect("durability actor crashed");
+
         self.queue_depth.fetch_add(1, Relaxed);
     }
 
