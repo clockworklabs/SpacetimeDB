@@ -7,6 +7,7 @@ import sqlite_rpc from './rpc/sqlite_rpc.ts';
 import supabase_rpc from './rpc/supabase_rpc.ts';
 import planetscale_pg_rpc from './rpc/planetscale_pg_rpc.ts';
 import { ConnectorKey } from '../opts.ts';
+export type { ConnectorKey } from '../opts.ts';
 
 export const CONNECTORS = {
   convex,
