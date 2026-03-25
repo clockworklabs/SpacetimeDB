@@ -73,7 +73,7 @@ Copy `.env.example` to `.env` and adjust.
 - `SKIP_SQLITE` – `1` = don't init SQLite in prep
 - `SKIP_SUPABASE` – `1` = don't init Supabase in prep
 - `SKIP_CONVEX` – `1` = don't init Convex in prep
-- `USE_SPACETIME_METRICS_ENDPOINT` – `1` = read committed transfer counts from the SpacetimeDB metrics endpoint; otherwise only local counters are used
+- `SPACETIME_METRICS_ENDPOINT` – `1` = read committed transfer counts from the derived SpacetimeDB metrics endpoint; otherwise only local counters are used
 
 **PostgreSQL / CockroachDB:**
 
@@ -90,7 +90,6 @@ Copy `.env.example` to `.env` and adjust.
 - `STDB_URL` – WebSocket URL for SpacetimeDB
 - `STDB_MODULE` – module name to load (e.g. `test-1`)
 - `STDB_MODULE_PATH` – filesystem path to the module source (for local dev)
-- `STDB_METRICS_URL` – HTTP URL for the SpacetimeDB metrics endpoint
 - `STDB_CONFIRMED_READS` – `1` = force confirmed reads on, `0` = force them off
 
 **Supabase:**
