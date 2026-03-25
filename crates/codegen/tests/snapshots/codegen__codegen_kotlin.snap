@@ -788,8 +788,7 @@ class RemoteProcedures internal constructor(
     }
 
     fun returnValue(foo: ULong, callback: ((EventContext.Procedure, Result<Baz>) -> Unit)? = null) {
-        val writer = BsatnWriter()
-        writer.writeU64(foo)
+        val args = ReturnValueArgs(foo)
         val wrappedCallback = callback?.let { userCb ->
             { ctx: EventContext.Procedure, msg: ServerMessage.ProcedureResultMsg ->
                 when (val status = msg.status) {
@@ -803,7 +802,7 @@ class RemoteProcedures internal constructor(
                 }
             }
         }
-        conn.callProcedure(ReturnValueProcedure.PROCEDURE_NAME, writer.toByteArray(), wrappedCallback)
+        conn.callProcedure(ReturnValueProcedure.PROCEDURE_NAME, args.encode(), wrappedCallback)
     }
 
     fun sleepOneSecond(callback: ((EventContext.Procedure, Result<Unit>) -> Unit)? = null) {
@@ -1189,9 +1188,25 @@ class RemoteTables internal constructor(
 
 package module_bindings
 
+/** Arguments for the `return_value` procedure. */
 data class ReturnValueArgs(
     val foo: ULong
-)
+) {
+    /** Encodes these arguments to BSATN. */
+    fun encode(): ByteArray {
+        val writer = BsatnWriter()
+        writer.writeU64(foo)
+        return writer.toByteArray()
+    }
+
+    companion object {
+        /** Decodes [ReturnValueArgs] from BSATN. */
+        fun decode(reader: BsatnReader): ReturnValueArgs {
+            val foo = reader.readU64()
+            return ReturnValueArgs(foo)
+        }
+    }
+}
 
 object ReturnValueProcedure {
     const val PROCEDURE_NAME = "return_value"

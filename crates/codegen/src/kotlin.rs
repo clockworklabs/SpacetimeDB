@@ -467,6 +467,7 @@ impl Lang for Kotlin {
             out.dedent(1);
             writeln!(out, "}}");
         } else {
+            writeln!(out, "/** Arguments for the `{}` procedure. */", procedure.name.deref());
             writeln!(out, "data class {procedure_name_pascal}Args(");
             out.indent(1);
             for (i, (ident, ty)) in procedure.params_for_generate.elements.iter().enumerate() {
@@ -480,7 +481,47 @@ impl Lang for Kotlin {
                 writeln!(out, "val {field_name}: {kotlin_ty}{comma}");
             }
             out.dedent(1);
-            writeln!(out, ")");
+            writeln!(out, ") {{");
+            out.indent(1);
+
+            // encode method
+            writeln!(out, "/** Encodes these arguments to BSATN. */");
+            writeln!(out, "fun encode(): ByteArray {{");
+            out.indent(1);
+            writeln!(out, "val writer = BsatnWriter()");
+            for (ident, ty) in procedure.params_for_generate.elements.iter() {
+                let field_name = kotlin_ident(ident.deref().to_case(Case::Camel));
+                write_encode_field(module, out, &field_name, ty);
+            }
+            writeln!(out, "return writer.toByteArray()");
+            out.dedent(1);
+            writeln!(out, "}}");
+            writeln!(out);
+
+            // companion object with decode
+            writeln!(out, "companion object {{");
+            out.indent(1);
+            writeln!(out, "/** Decodes [{procedure_name_pascal}Args] from BSATN. */");
+            writeln!(out, "fun decode(reader: BsatnReader): {procedure_name_pascal}Args {{");
+            out.indent(1);
+            for (ident, ty) in procedure.params_for_generate.elements.iter() {
+                let field_name = kotlin_ident(ident.deref().to_case(Case::Camel));
+                write_decode_field(module, out, &field_name, ty);
+            }
+            let field_names: Vec<String> = procedure
+                .params_for_generate
+                .elements
+                .iter()
+                .map(|(ident, _)| kotlin_ident(ident.deref().to_case(Case::Camel)))
+                .collect();
+            let args = field_names.join(", ");
+            writeln!(out, "return {procedure_name_pascal}Args({args})");
+            out.dedent(1);
+            writeln!(out, "}}");
+            out.dedent(1);
+            writeln!(out, "}}");
+            out.dedent(1);
+            writeln!(out, "}}");
             writeln!(out);
             writeln!(out, "object {procedure_name_pascal}Procedure {{");
             out.indent(1);
@@ -1527,19 +1568,18 @@ fn generate_remote_procedures_file(module: &ModuleDef, options: &CodegenOptions)
         }
         out.indent(1);
 
-        // Encode args
-        if !procedure.params_for_generate.elements.is_empty() {
-            writeln!(out, "val writer = BsatnWriter()");
-            for (ident, ty) in procedure.params_for_generate.elements.iter() {
-                let field_name = kotlin_ident(ident.deref().to_case(Case::Camel));
-                write_encode_field(module, out, &field_name, ty);
-            }
-        }
-
         let args_expr = if procedure.params_for_generate.elements.is_empty() {
-            "ByteArray(0)"
+            "ByteArray(0)".to_string()
         } else {
-            "writer.toByteArray()"
+            let arg_names: Vec<String> = procedure
+                .params_for_generate
+                .elements
+                .iter()
+                .map(|(ident, _)| kotlin_ident(ident.deref().to_case(Case::Camel)))
+                .collect();
+            let arg_names_str = arg_names.join(", ");
+            writeln!(out, "val args = {procedure_name_pascal}Args({arg_names_str})");
+            "args.encode()".to_string()
         };
 
         // Generate wrapper callback that decodes the return value into a Result
