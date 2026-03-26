@@ -146,6 +146,7 @@ public open class DbConnection internal constructor(
     private val callbackDispatcher: CoroutineDispatcher?,
 ) : DbConnectionView {
     /** Local cache of subscribed table rows, kept in sync with the server. */
+    @InternalSpacetimeApi
     public val clientCache: ClientCache = ClientCache()
 
     private val _moduleTables = atomic<ModuleTables?>(null)

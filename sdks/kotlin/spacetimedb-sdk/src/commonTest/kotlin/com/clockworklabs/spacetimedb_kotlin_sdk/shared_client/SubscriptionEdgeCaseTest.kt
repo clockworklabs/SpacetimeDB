@@ -206,7 +206,7 @@ class SubscriptionEdgeCaseTest {
         assertEquals(1, cache.count())
 
         // Unsubscribe with rows returned
-        handle.unsubscribeThen(UnsubscribeFlags.SendDroppedRows) {}
+        handle.unsubscribeThen {}
         advanceUntilIdle()
         transport.sendToClient(
             ServerMessage.UnsubscribeApplied(

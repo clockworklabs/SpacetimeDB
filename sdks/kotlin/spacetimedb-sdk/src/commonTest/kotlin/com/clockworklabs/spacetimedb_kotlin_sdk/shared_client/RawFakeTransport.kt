@@ -20,7 +20,7 @@ import kotlinx.coroutines.flow.flow
  * Decode errors surface as exceptions in the flow, which DbConnection's
  * receive loop catches and routes to onDisconnect(error).
  */
-class RawFakeTransport : Transport {
+internal class RawFakeTransport : Transport {
     private val _rawIncoming = Channel<ByteArray>(Channel.UNLIMITED)
     private val _sent = atomic(persistentListOf<ClientMessage>())
     private var _connected = false

@@ -11,7 +11,7 @@ import com.ionspin.kotlin.bignum.decimal.BigDecimal
  * to ensure column comparisons are type-safe.
  */
 @JvmInline
-public value class SqlLiteral<@Suppress("unused") T>(public val sql: String)
+public value class SqlLiteral<@Suppress("unused") T> @InternalSpacetimeApi constructor(@property:InternalSpacetimeApi public val sql: String)
 
 /**
  * Factory for creating [SqlLiteral] values from Kotlin types.

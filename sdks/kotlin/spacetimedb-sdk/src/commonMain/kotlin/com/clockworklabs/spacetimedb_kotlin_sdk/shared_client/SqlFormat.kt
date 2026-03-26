@@ -4,6 +4,7 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
  * SQL formatting utilities for the typed query builder.
  * Handles identifier quoting and literal escaping.
  */
+@InternalSpacetimeApi
 public object SqlFormat {
     /**
      * Quote a SQL identifier with double quotes, escaping internal double quotes by doubling.

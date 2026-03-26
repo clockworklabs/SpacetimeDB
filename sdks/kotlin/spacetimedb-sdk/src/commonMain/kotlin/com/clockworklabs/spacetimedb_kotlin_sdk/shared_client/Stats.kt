@@ -25,7 +25,7 @@ private class RequestEntry(val startTime: TimeMark, val metadata: String)
 public class NetworkRequestTracker internal constructor(
     private val timeSource: TimeSource = TimeSource.Monotonic,
 ) : SynchronizedObject() {
-    public constructor() : this(TimeSource.Monotonic)
+    internal constructor() : this(TimeSource.Monotonic)
 
     public companion object {
         private const val MAX_TRACKERS = 16

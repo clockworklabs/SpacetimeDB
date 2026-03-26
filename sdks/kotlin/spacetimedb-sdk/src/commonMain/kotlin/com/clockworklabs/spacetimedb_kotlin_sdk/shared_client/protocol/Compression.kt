@@ -4,13 +4,13 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol
  * Compression tags matching the SpacetimeDB wire protocol.
  * First byte of every WebSocket message indicates compression.
  */
-public object Compression {
+internal object Compression {
     /** No compression applied. */
-    public const val NONE: Byte = 0x00
+    const val NONE: Byte = 0x00
     /** Brotli compression. */
-    public const val BROTLI: Byte = 0x01
+    const val BROTLI: Byte = 0x01
     /** Gzip compression. */
-    public const val GZIP: Byte = 0x02
+    const val GZIP: Byte = 0x02
 }
 
 /**
@@ -19,29 +19,29 @@ public object Compression {
  * For uncompressed messages, [data] is the original array and [offset] skips the tag byte,
  * avoiding an unnecessary allocation.
  */
-public class DecompressedPayload(public val data: ByteArray, public val offset: Int = 0) {
+internal class DecompressedPayload(val data: ByteArray, val offset: Int = 0) {
     init {
         require(offset in 0..data.size) { "offset $offset out of bounds for data of size ${data.size}" }
     }
 
     /** Number of usable bytes in the payload (total data size minus the offset). */
-    public val size: Int get() = data.size - offset
+    val size: Int get() = data.size - offset
 }
 
 /**
  * Strips the compression prefix byte and decompresses if needed.
  * Returns the raw BSATN payload.
  */
-public expect fun decompressMessage(data: ByteArray): DecompressedPayload
+internal expect fun decompressMessage(data: ByteArray): DecompressedPayload
 
 /**
  * Default compression mode for this platform.
  * Native targets default to NONE (no decompression support); JVM/Android default to GZIP.
  */
-public expect val defaultCompressionMode: com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.CompressionMode
+internal expect val defaultCompressionMode: com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.CompressionMode
 
 /**
  * Compression modes supported on this platform.
  * The builder validates that the user-selected mode is in this set.
  */
-public expect val availableCompressionModes: Set<com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.CompressionMode>
+internal expect val availableCompressionModes: Set<com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.CompressionMode>

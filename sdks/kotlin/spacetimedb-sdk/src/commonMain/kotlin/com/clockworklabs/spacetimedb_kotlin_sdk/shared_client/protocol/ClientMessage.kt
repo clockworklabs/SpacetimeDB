@@ -1,22 +1,24 @@
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol
 
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.InternalSpacetimeApi
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 
 /** Opaque identifier for a subscription query set. */
+@InternalSpacetimeApi
 public data class QuerySetId(val id: UInt) {
     /** Encodes this value to BSATN. */
     public fun encode(writer: BsatnWriter): Unit = writer.writeU32(id)
 }
 
 /** Flags controlling server behavior when unsubscribing. */
-public sealed interface UnsubscribeFlags {
+internal sealed interface UnsubscribeFlags {
     /** Default unsubscribe behavior (rows are silently dropped). */
-    public data object Default : UnsubscribeFlags
+    data object Default : UnsubscribeFlags
     /** Request that the server send the dropped rows back before completing. */
-    public data object SendDroppedRows : UnsubscribeFlags
+    data object SendDroppedRows : UnsubscribeFlags
 
     /** Encodes this value to BSATN. */
-    public fun encode(writer: BsatnWriter) {
+    fun encode(writer: BsatnWriter) {
         when (this) {
             is Default -> writer.writeSumTag(0u)
             is SendDroppedRows -> writer.writeSumTag(1u)
@@ -28,13 +30,13 @@ public sealed interface UnsubscribeFlags {
  * Messages sent from the client to the SpacetimeDB server.
  * Variant tags match the wire protocol (0=Subscribe, 1=Unsubscribe, 2=OneOffQuery, 3=CallReducer, 4=CallProcedure).
  */
-public sealed interface ClientMessage {
+internal sealed interface ClientMessage {
 
     /** Encodes this message to BSATN. */
-    public fun encode(writer: BsatnWriter)
+    fun encode(writer: BsatnWriter)
 
     /** Request to subscribe to a set of SQL queries. */
-    public data class Subscribe(
+    data class Subscribe(
         val requestId: UInt,
         val querySetId: QuerySetId,
         val queryStrings: List<String>,
@@ -49,7 +51,7 @@ public sealed interface ClientMessage {
     }
 
     /** Request to unsubscribe from a query set. */
-    public data class Unsubscribe(
+    data class Unsubscribe(
         val requestId: UInt,
         val querySetId: QuerySetId,
         val flags: UnsubscribeFlags,
@@ -63,7 +65,7 @@ public sealed interface ClientMessage {
     }
 
     /** A single-shot SQL query that does not create a subscription. */
-    public data class OneOffQuery(
+    data class OneOffQuery(
         val requestId: UInt,
         val queryString: String,
     ) : ClientMessage {
@@ -75,7 +77,7 @@ public sealed interface ClientMessage {
     }
 
     /** Request to invoke a reducer on the server. */
-    public data class CallReducer(
+    data class CallReducer(
         val requestId: UInt,
         val flags: UByte,
         val reducer: String,
@@ -106,7 +108,7 @@ public sealed interface ClientMessage {
     }
 
     /** Request to invoke a procedure on the server. */
-    public data class CallProcedure(
+    data class CallProcedure(
         val requestId: UInt,
         val flags: UByte,
         val procedure: String,
@@ -136,9 +138,9 @@ public sealed interface ClientMessage {
         }
     }
 
-    public companion object {
+    companion object {
         /** Encodes a [ClientMessage] to a BSATN byte array. */
-        public fun encodeToBytes(message: ClientMessage): ByteArray {
+        fun encodeToBytes(message: ClientMessage): ByteArray {
             val writer = BsatnWriter()
             message.encode(writer)
             return writer.toByteArray()

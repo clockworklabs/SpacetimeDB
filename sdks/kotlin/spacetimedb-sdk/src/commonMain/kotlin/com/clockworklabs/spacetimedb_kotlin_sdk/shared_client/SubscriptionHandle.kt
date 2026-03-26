@@ -23,6 +23,7 @@ public enum class SubscriptionState {
  */
 public class SubscriptionHandle internal constructor(
     /** The server-assigned query set identifier for this subscription. */
+    @InternalSpacetimeApi
     public val querySetId: QuerySetId,
     /** The SQL queries this subscription is tracking. */
     public val queries: List<String>,
@@ -48,22 +49,20 @@ public class SubscriptionHandle internal constructor(
      * Unsubscribe from this subscription.
      * The onEnd callback will fire when the server confirms.
      */
-    public fun unsubscribe(flags: UnsubscribeFlags = UnsubscribeFlags.Default) {
-        doUnsubscribe(flags)
+    public fun unsubscribe() {
+        doUnsubscribe()
     }
 
     /**
      * Unsubscribe and register a callback for when it completes.
      */
     public fun unsubscribeThen(
-        flags: UnsubscribeFlags = UnsubscribeFlags.Default,
         onEnd: (EventContext.UnsubscribeApplied) -> Unit,
     ) {
-        doUnsubscribe(flags, onEnd)
+        doUnsubscribe(onEnd)
     }
 
     private fun doUnsubscribe(
-        flags: UnsubscribeFlags,
         onEnd: ((EventContext.UnsubscribeApplied) -> Unit)? = null,
     ) {
         if (!_state.compareAndSet(SubscriptionState.ACTIVE, SubscriptionState.UNSUBSCRIBING)) {
@@ -72,7 +71,7 @@ public class SubscriptionHandle internal constructor(
         // Set callback AFTER the CAS succeeds. This is safe because handleEnd()
         // only fires after the server receives our Unsubscribe message (sent below).
         if (onEnd != null) _onEndCallback.value = onEnd
-        connection.unsubscribe(this, flags)
+        connection.unsubscribe(this, UnsubscribeFlags.SendDroppedRows)
     }
 
     internal suspend fun handleApplied(ctx: EventContext.SubscribeApplied) {

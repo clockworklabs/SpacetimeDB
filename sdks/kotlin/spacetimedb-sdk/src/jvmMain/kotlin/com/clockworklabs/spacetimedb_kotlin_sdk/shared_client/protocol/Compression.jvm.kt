@@ -6,7 +6,7 @@ import java.io.ByteArrayOutputStream
 import java.util.zip.GZIPInputStream
 import org.brotli.dec.BrotliInputStream
 
-public actual fun decompressMessage(data: ByteArray): DecompressedPayload {
+internal actual fun decompressMessage(data: ByteArray): DecompressedPayload {
     require(data.isNotEmpty()) { "Empty message" }
 
     return when (val tag = data[0]) {
@@ -27,7 +27,7 @@ public actual fun decompressMessage(data: ByteArray): DecompressedPayload {
     }
 }
 
-public actual val defaultCompressionMode: CompressionMode = CompressionMode.GZIP
+internal actual val defaultCompressionMode: CompressionMode = CompressionMode.GZIP
 
-public actual val availableCompressionModes: Set<CompressionMode> =
+internal actual val availableCompressionModes: Set<CompressionMode> =
     setOf(CompressionMode.NONE, CompressionMode.BROTLI, CompressionMode.GZIP)

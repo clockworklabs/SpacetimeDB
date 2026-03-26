@@ -1,32 +1,35 @@
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn
 
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.InternalSpacetimeApi
 import com.ionspin.kotlin.bignum.integer.BigInteger
 
 /**
  * Binary reader for BSATN decoding. All multi-byte values are little-endian.
  */
 public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private var limit: Int = data.size) {
-    public companion object {
+    internal companion object {
         /** Convert a signed Long to an unsigned BigInteger (0..2^64-1). */
         private fun unsignedBigInt(v: Long): BigInteger = BigInteger.fromULong(v.toULong())
     }
 
     /** Current read position within the buffer. */
+    @InternalSpacetimeApi
     public var offset: Int = offset
         private set
 
     /** Number of bytes remaining to be read. */
+    @InternalSpacetimeApi
     public val remaining: Int get() = limit - offset
 
     /** Resets this reader to decode from a new byte array from the beginning. */
-    public fun reset(newData: ByteArray) {
+    internal fun reset(newData: ByteArray) {
         data = newData
         offset = 0
         limit = newData.size
     }
 
     /** Advances the read position by [n] bytes without returning data. */
-    public fun skip(n: Int) {
+    internal fun skip(n: Int) {
         ensure(n)
         offset += n
     }
@@ -178,7 +181,7 @@ public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private 
      * Returns a zero-copy view of the underlying buffer.
      * The returned BsatnReader shares the same backing array — no allocation.
      */
-    public fun readRawBytesView(length: Int): BsatnReader {
+    internal fun readRawBytesView(length: Int): BsatnReader {
         ensure(length)
         val view = BsatnReader(data, offset, offset + length)
         offset += length
@@ -189,7 +192,7 @@ public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private 
      * Returns a copy of the underlying buffer between [from] and [to].
      * Used when a materialized ByteArray is needed (e.g. for content-based keying).
      */
-    public fun sliceArray(from: Int, to: Int): ByteArray {
+    internal fun sliceArray(from: Int, to: Int): ByteArray {
         check(from <= to && to <= limit) {
             "sliceArray($from, $to) out of view bounds (limit=$limit)"
         }

@@ -2,12 +2,12 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.CompressionMode
 
-public actual val defaultCompressionMode: CompressionMode = CompressionMode.NONE
+internal actual val defaultCompressionMode: CompressionMode = CompressionMode.NONE
 
-public actual val availableCompressionModes: Set<CompressionMode> =
+internal actual val availableCompressionModes: Set<CompressionMode> =
     setOf(CompressionMode.NONE)
 
-public actual fun decompressMessage(data: ByteArray): DecompressedPayload {
+internal actual fun decompressMessage(data: ByteArray): DecompressedPayload {
     require(data.isNotEmpty()) { "Empty message" }
 
     return when (val tag = data[0]) {

@@ -48,9 +48,9 @@ internal class SpacetimeTransport(
 ) : Transport {
     private val _session = atomic<WebSocketSession?>(null)
 
-    public companion object {
+    internal companion object {
         /** WebSocket sub-protocol identifier for BSATN v2. */
-        public const val WS_PROTOCOL: String = "v2.bsatn.spacetimedb"
+        const val WS_PROTOCOL: String = "v2.bsatn.spacetimedb"
     }
 
 

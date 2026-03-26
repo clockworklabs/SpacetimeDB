@@ -8,7 +8,7 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
  * @param TValue the Kotlin type of this column's value
  */
 public class Col<TRow, TValue> @InternalSpacetimeApi constructor(tableName: String, columnName: String) {
-    public val refSql: String = "${SqlFormat.quoteIdent(tableName)}.${SqlFormat.quoteIdent(columnName)}"
+    internal val refSql: String = "${SqlFormat.quoteIdent(tableName)}.${SqlFormat.quoteIdent(columnName)}"
 
     /** Tests equality against a literal value. */
     public fun eq(value: SqlLiteral<TValue>): BoolExpr<TRow> = BoolExpr("($refSql = ${value.sql})")
@@ -40,7 +40,7 @@ public class Col<TRow, TValue> @InternalSpacetimeApi constructor(tableName: Stri
  * Supports eq/neq comparisons and indexed join equality.
  */
 public class IxCol<TRow, TValue> @InternalSpacetimeApi constructor(tableName: String, columnName: String) {
-    public val refSql: String = "${SqlFormat.quoteIdent(tableName)}.${SqlFormat.quoteIdent(columnName)}"
+    internal val refSql: String = "${SqlFormat.quoteIdent(tableName)}.${SqlFormat.quoteIdent(columnName)}"
 
     /** Tests equality against a literal value. */
     public fun eq(value: SqlLiteral<TValue>): BoolExpr<TRow> = BoolExpr("($refSql = ${value.sql})")
@@ -72,6 +72,6 @@ public class IxCol<TRow, TValue> @InternalSpacetimeApi constructor(tableName: St
  * Used as the `on` parameter for semi-join methods.
  */
 public class IxJoinEq<@Suppress("unused") TLeftRow, @Suppress("unused") TRightRow> @InternalSpacetimeApi constructor(
-    public val leftRefSql: String,
-    public val rightRefSql: String,
+    internal val leftRefSql: String,
+    internal val rightRefSql: String,
 )

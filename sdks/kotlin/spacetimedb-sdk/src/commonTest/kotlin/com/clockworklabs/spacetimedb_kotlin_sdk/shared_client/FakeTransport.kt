@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.consumeAsFlow
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class, kotlinx.coroutines.DelicateCoroutinesApi::class)
-class FakeTransport(
+internal class FakeTransport(
     private val connectError: Throwable? = null,
 ) : Transport {
     private var _incoming = Channel<ServerMessage>(Channel.UNLIMITED)

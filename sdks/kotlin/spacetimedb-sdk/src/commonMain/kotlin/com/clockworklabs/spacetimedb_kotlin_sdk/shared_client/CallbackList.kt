@@ -8,6 +8,7 @@ import kotlinx.collections.immutable.persistentListOf
  * Thread-safe callback list backed by an atomic persistent list.
  * Reads are zero-copy snapshots; writes use atomic CAS.
  */
+@InternalSpacetimeApi
 public class CallbackList<T> {
     private val list = atomic(persistentListOf<T>())
 

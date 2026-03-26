@@ -1,5 +1,3 @@
-@file:OptIn(InternalSpacetimeApi::class)
-
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.*
@@ -220,11 +218,11 @@ class ConnectionStateTransitionTest {
     }
 
     // =========================================================================
-    // SubscriptionBuilder — addQuery + subscribe(query) merges queries
+    // SubscriptionBuilder — subscribe(query) does NOT merge with addQuery()
     // =========================================================================
 
     @Test
-    fun subscribeWithQueryMergesAccumulatedAddQueryCalls() = runTest {
+    fun subscribeWithQueryDoesNotMergeAccumulatedAddQueryCalls() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -237,15 +235,15 @@ class ConnectionStateTransitionTest {
 
         val subMsg = transport.sentMessages.filterIsInstance<ClientMessage.Subscribe>().last()
         assertEquals(
-            listOf("SELECT * FROM users", "SELECT * FROM messages"),
+            listOf("SELECT * FROM messages"),
             subMsg.queryStrings,
-            "subscribe(query) must merge with accumulated addQuery() calls"
+            "subscribe(query) must use only the passed query, ignoring addQuery() calls"
         )
         conn.disconnect()
     }
 
     @Test
-    fun subscribeWithListMergesAccumulatedAddQueryCalls() = runTest {
+    fun subscribeWithListDoesNotMergeAccumulatedAddQueryCalls() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -258,9 +256,9 @@ class ConnectionStateTransitionTest {
 
         val subMsg = transport.sentMessages.filterIsInstance<ClientMessage.Subscribe>().last()
         assertEquals(
-            listOf("SELECT * FROM users", "SELECT * FROM messages", "SELECT * FROM notes"),
+            listOf("SELECT * FROM messages", "SELECT * FROM notes"),
             subMsg.queryStrings,
-            "subscribe(List) must merge with accumulated addQuery() calls"
+            "subscribe(List) must use only the passed queries, ignoring addQuery() calls"
         )
         conn.disconnect()
     }

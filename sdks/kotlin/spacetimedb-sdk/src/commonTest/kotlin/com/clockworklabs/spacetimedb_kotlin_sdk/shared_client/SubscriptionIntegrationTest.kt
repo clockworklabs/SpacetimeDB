@@ -244,12 +244,12 @@ class SubscriptionIntegrationTest {
         advanceUntilIdle()
         assertTrue(handle.isActive)
 
-        handle.unsubscribe(UnsubscribeFlags.SendDroppedRows)
+        handle.unsubscribe()
         advanceUntilIdle()
 
         val unsub = transport.sentMessages.filterIsInstance<ClientMessage.Unsubscribe>().last()
         assertEquals(handle.querySetId, unsub.querySetId)
-        assertEquals(UnsubscribeFlags.SendDroppedRows, unsub.flags)
+        assertEquals(UnsubscribeFlags.SendDroppedRows, unsub.flags) // hardcoded internally
         conn.disconnect()
     }
 
@@ -398,7 +398,7 @@ class SubscriptionIntegrationTest {
         assertEquals(1, insertCount) // onInsert does NOT fire again
 
         // First subscription unsubscribes — ref count decrements to 1
-        handle1.unsubscribeThen(UnsubscribeFlags.SendDroppedRows) {}
+        handle1.unsubscribeThen {}
         advanceUntilIdle()
         transport.sendToClient(
             ServerMessage.UnsubscribeApplied(
@@ -412,7 +412,7 @@ class SubscriptionIntegrationTest {
         assertEquals(0, deleteCount) // onDelete does NOT fire
 
         // Second subscription unsubscribes — ref count goes to 0
-        handle2.unsubscribeThen(UnsubscribeFlags.SendDroppedRows) {}
+        handle2.unsubscribeThen {}
         advanceUntilIdle()
         transport.sendToClient(
             ServerMessage.UnsubscribeApplied(
@@ -499,7 +499,7 @@ class SubscriptionIntegrationTest {
         assertEquals(updatedRow, updateNew)
 
         // After unsubscribing handle1, the row still has ref count from handle2
-        handle1.unsubscribeThen(UnsubscribeFlags.SendDroppedRows) {}
+        handle1.unsubscribeThen {}
         advanceUntilIdle()
         transport.sendToClient(
             ServerMessage.UnsubscribeApplied(
@@ -613,7 +613,7 @@ class SubscriptionIntegrationTest {
         assertEquals(2, cache.count())
 
         // Start unsubscribing sub1
-        handle1.unsubscribeThen(UnsubscribeFlags.SendDroppedRows) {}
+        handle1.unsubscribeThen {}
         advanceUntilIdle()
         assertTrue(handle1.isUnsubscribing)
 
@@ -807,7 +807,7 @@ class SubscriptionIntegrationTest {
         assertEquals(1, cache.count())
 
         // Unsubscribe
-        handle1.unsubscribeThen(UnsubscribeFlags.SendDroppedRows) {}
+        handle1.unsubscribeThen {}
         advanceUntilIdle()
         transport.sendToClient(
             ServerMessage.UnsubscribeApplied(
@@ -893,7 +893,7 @@ class SubscriptionIntegrationTest {
         assertEquals(1, cache.count())
 
         // Unsubscribe middle subscription
-        handle2.unsubscribeThen(UnsubscribeFlags.SendDroppedRows) {}
+        handle2.unsubscribeThen {}
         advanceUntilIdle()
         transport.sendToClient(
             ServerMessage.UnsubscribeApplied(
@@ -912,7 +912,7 @@ class SubscriptionIntegrationTest {
         assertTrue(handle3.isActive)
 
         // Unsubscribe first
-        handle1.unsubscribeThen(UnsubscribeFlags.SendDroppedRows) {}
+        handle1.unsubscribeThen {}
         advanceUntilIdle()
         transport.sendToClient(
             ServerMessage.UnsubscribeApplied(
@@ -928,7 +928,7 @@ class SubscriptionIntegrationTest {
         assertEquals(0, deleteCount)
 
         // Unsubscribe last — ref count -> 0, row deleted
-        handle3.unsubscribeThen(UnsubscribeFlags.SendDroppedRows) {}
+        handle3.unsubscribeThen {}
         advanceUntilIdle()
         transport.sendToClient(
             ServerMessage.UnsubscribeApplied(
@@ -989,7 +989,7 @@ class SubscriptionIntegrationTest {
         cache.onDelete { _, row -> deleted.add(row.id) }
 
         // Unsubscribe sub1 — drops sharedRow (ref 2->1) and sub1Only (ref 1->0)
-        handle1.unsubscribeThen(UnsubscribeFlags.SendDroppedRows) {}
+        handle1.unsubscribeThen {}
         advanceUntilIdle()
         transport.sendToClient(
             ServerMessage.UnsubscribeApplied(

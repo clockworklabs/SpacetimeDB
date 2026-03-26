@@ -19,7 +19,7 @@ public enum class LogLevel {
     /** Fine-grained tracing of internal operations. */
     TRACE;
 
-    public fun shouldLog(threshold: LogLevel): Boolean = this.ordinal <= threshold.ordinal
+    internal fun shouldLog(threshold: LogLevel): Boolean = this.ordinal <= threshold.ordinal
 }
 
 /**

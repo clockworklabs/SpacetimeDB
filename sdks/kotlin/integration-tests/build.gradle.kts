@@ -2,6 +2,14 @@ plugins {
     alias(libs.plugins.kotlinJvm)
 }
 
+kotlin {
+    sourceSets.all {
+        languageSettings {
+            optIn("com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.InternalSpacetimeApi")
+        }
+    }
+}
+
 dependencies {
     testImplementation(project(":spacetimedb-sdk"))
     testImplementation(libs.kotlin.test)

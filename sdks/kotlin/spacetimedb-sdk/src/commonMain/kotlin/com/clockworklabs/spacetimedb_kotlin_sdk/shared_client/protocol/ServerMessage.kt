@@ -4,9 +4,11 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Timestamp
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.TimeDuration
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.InternalSpacetimeApi
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 
 /** Hint describing how rows are packed in a [BsatnRowList]. */
+@InternalSpacetimeApi
 public sealed interface RowSizeHint {
     /** All rows have the same fixed byte size. */
     public data class FixedSize(val size: UShort) : RowSizeHint
@@ -30,6 +32,7 @@ public sealed interface RowSizeHint {
 }
 
 /** A BSATN-encoded list of rows with an associated [RowSizeHint]. */
+@InternalSpacetimeApi
 public class BsatnRowList(
     public val sizeHint: RowSizeHint,
     private val rowsData: ByteArray,
@@ -58,6 +61,7 @@ public class BsatnRowList(
 }
 
 /** Rows belonging to a single table, identified by name. */
+@InternalSpacetimeApi
 public data class SingleTableRows(
     val table: String,
     val rows: BsatnRowList,
@@ -73,6 +77,7 @@ public data class SingleTableRows(
 }
 
 /** Collection of rows grouped by table, returned from a query. */
+@InternalSpacetimeApi
 public data class QueryRows(
     val tables: List<SingleTableRows>,
 ) {
@@ -87,6 +92,7 @@ public data class QueryRows(
 }
 
 /** Result of a query: either successful rows or an error message. */
+@InternalSpacetimeApi
 public sealed interface QueryResult {
     /** Successful query result containing the returned rows. */
     public data class Ok(val rows: QueryRows) : QueryResult
@@ -95,6 +101,7 @@ public sealed interface QueryResult {
 }
 
 /** Row updates for a single table within a transaction. */
+@InternalSpacetimeApi
 public sealed interface TableUpdateRows {
     /** Inserts and deletes for a persistent (stored) table. */
     public data class PersistentTable(
@@ -123,6 +130,7 @@ public sealed interface TableUpdateRows {
 }
 
 /** Update for a single table: its name and the list of row changes. */
+@InternalSpacetimeApi
 public data class TableUpdate(
     val tableName: String,
     val rows: List<TableUpdateRows>,
@@ -139,6 +147,7 @@ public data class TableUpdate(
 }
 
 /** Table updates scoped to a single query set. */
+@InternalSpacetimeApi
 public data class QuerySetUpdate(
     val querySetId: QuerySetId,
     val tables: List<TableUpdate>,
@@ -155,6 +164,7 @@ public data class QuerySetUpdate(
 }
 
 /** A complete transaction update containing changes across all affected query sets. */
+@InternalSpacetimeApi
 public data class TransactionUpdate(
     val querySets: List<QuerySetUpdate>,
 ) {
@@ -169,6 +179,7 @@ public data class TransactionUpdate(
 }
 
 /** Outcome of a reducer execution on the server. */
+@InternalSpacetimeApi
 public sealed interface ReducerOutcome {
     /** Reducer succeeded with a return value and transaction update. */
     public data class Ok(
@@ -219,6 +230,7 @@ public sealed interface ReducerOutcome {
 }
 
 /** Status of a procedure execution on the server. */
+@InternalSpacetimeApi
 public sealed interface ProcedureStatus {
     /** Procedure returned successfully with a BSATN-encoded value. */
     public data class Returned(val value: ByteArray) : ProcedureStatus {
@@ -247,6 +259,7 @@ public sealed interface ProcedureStatus {
  * Messages received from the SpacetimeDB server.
  * Variant tags match the wire protocol (0=InitialConnection through 7=ProcedureResult).
  */
+@InternalSpacetimeApi
 public sealed interface ServerMessage {
 
     /** Server confirmed the connection and assigned identity/token. */

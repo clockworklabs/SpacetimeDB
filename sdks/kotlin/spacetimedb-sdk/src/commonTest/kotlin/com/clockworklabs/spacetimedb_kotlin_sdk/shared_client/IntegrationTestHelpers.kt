@@ -22,7 +22,7 @@ fun initialConnectionMsg() = ServerMessage.InitialConnection(
     token = TEST_TOKEN,
 )
 
-suspend fun TestScope.buildTestConnection(
+internal suspend fun TestScope.buildTestConnection(
     transport: FakeTransport,
     onConnect: ((DbConnectionView, Identity, String) -> Unit)? = null,
     onDisconnect: ((DbConnectionView, Throwable?) -> Unit)? = null,
@@ -36,7 +36,7 @@ suspend fun TestScope.buildTestConnection(
     return conn
 }
 
-fun TestScope.createTestConnection(
+internal fun TestScope.createTestConnection(
     transport: FakeTransport,
     onConnect: ((DbConnectionView, Identity, String) -> Unit)? = null,
     onDisconnect: ((DbConnectionView, Throwable?) -> Unit)? = null,

@@ -26,9 +26,9 @@ internal class BsatnRowKey(val bytes: ByteArray) {
 /**
  * Callback that fires after table operations are applied.
  */
-public fun interface PendingCallback {
+internal fun interface PendingCallback {
     /** Executes this deferred callback. */
-    public fun invoke()
+    fun invoke()
 }
 
 /**
@@ -47,7 +47,7 @@ internal data class DecodedRow<Row>(val row: Row, val rawBytes: ByteArray) {
  * consumed by preApply/apply methods.
  * rows are decoded once and the parsed result is passed to all phases.
  */
-public interface ParsedTableData
+internal interface ParsedTableData
 
 internal class ParsedPersistentUpdate<Row>(
     val deletes: List<DecodedRow<Row>>,
@@ -71,18 +71,21 @@ internal class ParsedDeletesOnly<Row>(
  * @param Row the row type stored in this cache
  * @param Key the key type used to identify rows (typed PK or BsatnRowKey)
  */
+@InternalSpacetimeApi
 public class TableCache<Row, Key : Any> private constructor(
     private val decode: (BsatnReader) -> Row,
     private val keyExtractor: (Row, ByteArray) -> Key,
 ) {
     public companion object {
         /** Creates a table cache that keys rows by an extracted primary key. */
+        @InternalSpacetimeApi
         public fun <Row, Key : Any> withPrimaryKey(
             decode: (BsatnReader) -> Row,
             primaryKey: (Row) -> Key,
         ): TableCache<Row, Key> = TableCache(decode) { row, _ -> primaryKey(row) }
 
         /** Creates a table cache that keys rows by their full BSATN-encoded bytes. */
+        @InternalSpacetimeApi
         @Suppress("UNCHECKED_CAST")
         public fun <Row> withContentKey(
             decode: (BsatnReader) -> Row,
@@ -164,7 +167,7 @@ public class TableCache<Row, Key : Any> private constructor(
     }
 
     /** Decodes all rows from a [BsatnRowList], discarding raw bytes. */
-    public fun decodeRowList(rowList: BsatnRowList): List<Row> =
+    internal fun decodeRowList(rowList: BsatnRowList): List<Row> =
         decodeRowListWithBytes(rowList).map { it.row }
 
     // --- Parse phase: decode once, reuse across preApply/apply ---
@@ -173,7 +176,7 @@ public class TableCache<Row, Key : Any> private constructor(
      * Decode a [TableUpdateRows] into a [ParsedTableData] that can be passed
      * to [preApplyUpdate] and [applyUpdate]. Rows are decoded exactly once.
      */
-    public fun parseUpdate(update: TableUpdateRows): ParsedTableData = when (update) {
+    internal fun parseUpdate(update: TableUpdateRows): ParsedTableData = when (update) {
         is TableUpdateRows.PersistentTable -> ParsedPersistentUpdate(
             deletes = decodeRowListWithBytes(update.deletes),
             inserts = decodeRowListWithBytes(update.inserts),
@@ -187,7 +190,7 @@ public class TableCache<Row, Key : Any> private constructor(
      * Decode a [BsatnRowList] of deletes into a [ParsedTableData] that can be
      * passed to [preApplyDeletes] and [applyDeletes]. Rows are decoded exactly once.
      */
-    public fun parseDeletes(rowList: BsatnRowList): ParsedTableData =
+    internal fun parseDeletes(rowList: BsatnRowList): ParsedTableData =
         ParsedDeletesOnly(rows = decodeRowListWithBytes(rowList))
 
     // --- Insert (single-phase, no pre-apply needed) ---
@@ -196,7 +199,7 @@ public class TableCache<Row, Key : Any> private constructor(
      * Apply insert operations from a BsatnRowList.
      * Returns pending callbacks to execute after all tables are updated.
      */
-    public fun applyInserts(ctx: EventContext, rowList: BsatnRowList): List<PendingCallback> {
+    internal fun applyInserts(ctx: EventContext, rowList: BsatnRowList): List<PendingCallback> {
         val decoded = decodeRowListWithBytes(rowList)
         val callbacks = mutableListOf<PendingCallback>()
         val newInserts = mutableListOf<Row>()
@@ -236,7 +239,7 @@ public class TableCache<Row, Key : Any> private constructor(
      * Accepts pre-decoded data from [parseDeletes].
      */
     @Suppress("UNCHECKED_CAST")
-    public fun preApplyDeletes(ctx: EventContext, parsed: ParsedTableData) {
+    internal fun preApplyDeletes(ctx: EventContext, parsed: ParsedTableData) {
         if (_onBeforeDeleteCallbacks.value.isEmpty()) return
         val data = parsed as ParsedDeletesOnly<Row>
         val snapshot = _rows.value
@@ -255,7 +258,7 @@ public class TableCache<Row, Key : Any> private constructor(
      * Accepts pre-decoded data from [parseDeletes].
      */
     @Suppress("UNCHECKED_CAST")
-    public fun applyDeletes(ctx: EventContext, parsed: ParsedTableData): List<PendingCallback> {
+    internal fun applyDeletes(ctx: EventContext, parsed: ParsedTableData): List<PendingCallback> {
         val data = parsed as ParsedDeletesOnly<Row>
         val callbacks = mutableListOf<PendingCallback>()
         val removedRows = mutableListOf<Row>()
@@ -296,7 +299,7 @@ public class TableCache<Row, Key : Any> private constructor(
      * Accepts pre-decoded data from [parseUpdate].
      */
     @Suppress("UNCHECKED_CAST")
-    public fun preApplyUpdate(ctx: EventContext, parsed: ParsedTableData) {
+    internal fun preApplyUpdate(ctx: EventContext, parsed: ParsedTableData) {
         if (_onBeforeDeleteCallbacks.value.isEmpty()) return
         val update = parsed as? ParsedPersistentUpdate<Row> ?: return
 
@@ -322,7 +325,7 @@ public class TableCache<Row, Key : Any> private constructor(
      * Accepts pre-decoded data from [parseUpdate].
      */
     @Suppress("UNCHECKED_CAST")
-    public fun applyUpdate(ctx: EventContext, parsed: ParsedTableData): List<PendingCallback> {
+    internal fun applyUpdate(ctx: EventContext, parsed: ParsedTableData): List<PendingCallback> {
         return when (parsed) {
             is ParsedPersistentUpdate<*> -> {
                 val update = parsed as ParsedPersistentUpdate<Row>
@@ -434,7 +437,7 @@ public class TableCache<Row, Key : Any> private constructor(
     /**
      * Clear all rows (used on disconnect).
      */
-    public fun clear() {
+    internal fun clear() {
         val oldRows = _rows.getAndSet(persistentHashMapOf())
         val listeners = _internalDeleteListeners.value
         if (listeners.isNotEmpty()) {
@@ -449,26 +452,29 @@ public class TableCache<Row, Key : Any> private constructor(
  * Client-side cache holding all table caches.
  * Registry of [TableCache] instances keyed by table name.
  */
+@InternalSpacetimeApi
 public class ClientCache {
     private val _tables = atomic(persistentHashMapOf<String, TableCache<*, *>>())
 
     /** Registers a [TableCache] under the given table name. */
+    @InternalSpacetimeApi
     public fun <Row, Key : Any> register(tableName: String, cache: TableCache<Row, Key>) {
         _tables.update { it.put(tableName, cache) }
     }
 
     /** Returns the table cache for [tableName], throwing if not registered. */
     @Suppress("UNCHECKED_CAST")
-    public fun <Row> getTable(tableName: String): TableCache<Row, *> =
+    internal fun <Row> getTable(tableName: String): TableCache<Row, *> =
         _tables.value[tableName] as? TableCache<Row, *>
             ?: error("Table '$tableName' not found in client cache")
 
     /** Returns the table cache for [tableName], or `null` if not registered. */
     @Suppress("UNCHECKED_CAST")
-    public fun <Row> getTableOrNull(tableName: String): TableCache<Row, *>? =
+    internal fun <Row> getTableOrNull(tableName: String): TableCache<Row, *>? =
         _tables.value[tableName] as? TableCache<Row, *>
 
     /** Returns the table cache for [tableName], creating it via [factory] if not yet registered. */
+    @InternalSpacetimeApi
     @Suppress("UNCHECKED_CAST")
     public fun <Row> getOrCreateTable(tableName: String, factory: () -> TableCache<Row, *>): TableCache<Row, *> {
         // Fast path: already registered
@@ -491,14 +497,14 @@ public class ClientCache {
     }
 
     /** Returns the table cache for [tableName] without casting, or `null` if not registered. */
-    public fun getUntypedTable(tableName: String): TableCache<*, *>? =
+    internal fun getUntypedTable(tableName: String): TableCache<*, *>? =
         _tables.value[tableName]
 
     /** Returns the set of all registered table names. */
-    public fun tableNames(): Set<String> = _tables.value.keys
+    internal fun tableNames(): Set<String> = _tables.value.keys
 
     /** Clears all rows from every registered table cache. */
-    public fun clear() {
+    internal fun clear() {
         for ((_, table) in _tables.value) table.clear()
     }
 }

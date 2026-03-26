@@ -57,6 +57,7 @@ kotlin {
         all {
             languageSettings {
                 optIn("kotlin.uuid.ExperimentalUuidApi")
+                optIn("com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.InternalSpacetimeApi")
             }
         }
 

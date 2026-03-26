@@ -143,6 +143,7 @@ impl Lang for Kotlin {
             "RemotePersistentTable"
         };
         writeln!(out, "/** Client-side handle for the `{}` table. */", table.name.deref());
+        writeln!(out, "@OptIn(InternalSpacetimeApi::class)");
         writeln!(out, "class {table_name_pascal}TableHandle internal constructor(");
         out.indent(1);
         writeln!(out, "private val conn: DbConnection,");
@@ -1248,10 +1249,12 @@ fn generate_remote_tables_file(module: &ModuleDef, options: &CodegenOptions) -> 
 
     writeln!(out, "import {SDK_PKG}.ClientCache");
     writeln!(out, "import {SDK_PKG}.DbConnection");
+    writeln!(out, "import {SDK_PKG}.InternalSpacetimeApi");
     writeln!(out, "import {SDK_PKG}.ModuleTables");
     writeln!(out);
 
     writeln!(out, "/** Generated table accessors for all tables in this module. */");
+    writeln!(out, "@OptIn(InternalSpacetimeApi::class)");
     writeln!(out, "class RemoteTables internal constructor(");
     out.indent(1);
     writeln!(out, "private val conn: DbConnection,");
@@ -1699,6 +1702,7 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     writeln!(out, "import {SDK_PKG}.DbConnection");
     writeln!(out, "import {SDK_PKG}.DbConnectionView");
     writeln!(out, "import {SDK_PKG}.EventContext");
+    writeln!(out, "import {SDK_PKG}.InternalSpacetimeApi");
     writeln!(out, "import {SDK_PKG}.ModuleAccessors");
     writeln!(out, "import {SDK_PKG}.ModuleDescriptor");
     writeln!(out, "import {SDK_PKG}.Query");
@@ -1714,6 +1718,7 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
         " * Contains version info and the names of all tables, reducers, and procedures."
     );
     writeln!(out, " */");
+    writeln!(out, "@OptIn(InternalSpacetimeApi::class)");
     writeln!(out, "object RemoteModule : ModuleDescriptor {{");
     out.indent(1);
 

@@ -1,5 +1,6 @@
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn
 
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.InternalSpacetimeApi
 import com.ionspin.kotlin.bignum.integer.BigInteger
 import com.ionspin.kotlin.bignum.integer.util.toTwosComplementByteArray
 import kotlin.io.encoding.Base64
@@ -28,6 +29,7 @@ internal class ResizableBuffer(initialCapacity: Int) {
 public class BsatnWriter(initialCapacity: Int = 256) {
     private var buffer = ResizableBuffer(initialCapacity)
     /** Number of bytes written so far. */
+    @InternalSpacetimeApi
     public var offset: Int = 0
         private set
 
@@ -177,7 +179,7 @@ public class BsatnWriter(initialCapacity: Int = 256) {
     }
 
     /** Raw bytes, no length prefix */
-    public fun writeRawBytes(bytes: ByteArray) {
+    internal fun writeRawBytes(bytes: ByteArray) {
         expandBuffer(bytes.size)
         bytes.copyInto(buffer.buffer, offset)
         offset += bytes.size
@@ -199,9 +201,11 @@ public class BsatnWriter(initialCapacity: Int = 256) {
 
     /** Returns the written bytes as a Base64-encoded string. */
     @OptIn(ExperimentalEncodingApi::class)
+    @InternalSpacetimeApi
     public fun toBase64(): String = Base64.Default.encode(toByteArray())
 
     /** Resets this writer, discarding all written data and re-allocating the buffer. */
+    @InternalSpacetimeApi
     public fun reset(initialCapacity: Int = 256) {
         buffer = ResizableBuffer(initialCapacity)
         offset = 0
