@@ -1,15 +1,15 @@
 import { join } from 'node:path';
-import { ACC, BAL, sh } from './utils.ts';
-import { stdbModule, stdbModulePath } from '../opts.ts';
+import { sh } from './utils.ts';
+import type { SpacetimeInitConfig } from '../config.ts';
 
-export async function initSpacetime() {
+export async function initSpacetime(config: SpacetimeInitConfig) {
   const useMaincloud = process.env.STDB_MAINCLOUD === '1';
   const server = useMaincloud
     ? 'maincloud'
     : process.env.STDB_SERVER || 'local';
 
-  const dbName = stdbModule;
-  const modulePath = stdbModulePath;
+  const { accounts, initialBalance, stdbModule: dbName, stdbModulePath: modulePath } =
+    config;
 
   if (!dbName || !modulePath) {
     console.log('[spacetimedb] missing STDB_MODULE/STDB_MODULE_PATH; skipping');
@@ -50,7 +50,9 @@ export async function initSpacetime() {
   ]);
 
   // 3) Seed
-  console.log(`[spacetimedb] seed: n=${ACC} bal=${BAL}`);
+  console.log(
+    `[spacetimedb] seed: n=${accounts} bal=${initialBalance}`,
+  );
   try {
     await sh('spacetime', [
       'call',
@@ -58,8 +60,8 @@ export async function initSpacetime() {
       server,
       dbName,
       'seed',
-      String(ACC),
-      String(BAL),
+      String(accounts),
+      String(initialBalance),
     ]);
   } catch (e: any) {
     console.warn('[spacetimedb] seed reducer failed/missing:', e.message);

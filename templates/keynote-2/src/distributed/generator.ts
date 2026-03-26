@@ -2,6 +2,10 @@ import 'dotenv/config';
 
 import { hostname as getHostname } from 'node:os';
 import { spacetimedb } from '../connectors/spacetimedb.ts';
+import {
+  getSharedRuntimeDefaults,
+  type SpacetimeConnectorConfig,
+} from '../config.ts';
 import type { ReducerConnector } from '../core/connectors.ts';
 import { normalizeStdbUrl } from '../core/stdbUrl.ts';
 import { getNumberFlag, getStringFlag, parseArgs } from './args.ts';
@@ -53,10 +57,17 @@ async function main(): Promise<void> {
     'stdb-module',
     process.env.STDB_MODULE ?? 'test-1',
   );
+  const defaults = getSharedRuntimeDefaults();
+  const connectorConfig: SpacetimeConnectorConfig = {
+    initialBalance: defaults.initialBalance,
+    stdbConfirmedReads: defaults.stdbConfirmedReads,
+    stdbModule: moduleName,
+    stdbUrl,
+  };
 
   const testCase = await loadDistributedTestCase(testName, 'spacetimedb');
   const session = new LoadSession({
-    makeConnector: () => spacetimedb(stdbUrl, moduleName),
+    makeConnector: () => spacetimedb(connectorConfig),
     scenario: testCase.run as (
       conn: ReducerConnector,
       from: number,

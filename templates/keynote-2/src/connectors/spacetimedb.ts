@@ -1,17 +1,16 @@
 import type { ReducerConnector } from '../core/connectors';
 import * as mod from '../../module_bindings';
-import {
-  initialBalance,
-  stdbConfirmedReads,
-  stdbModule,
-  stdbUrl,
-} from '../opts';
 import { deriveWebsocketUrl } from '../core/stdbUrl';
+import type { SpacetimeConnectorConfig } from '../config.ts';
 
-export function spacetimedb(
-  url = stdbUrl,
-  moduleName = stdbModule,
-): ReducerConnector {
+export function spacetimedb(config: SpacetimeConnectorConfig): ReducerConnector {
+  const {
+    initialBalance,
+    stdbConfirmedReads,
+    stdbModule: moduleName,
+    stdbUrl: url,
+  } = config;
+
   let ready: ReturnType<typeof Promise.withResolvers<void>>;
   let conn: mod.DbConnection;
 
@@ -98,7 +97,7 @@ export function spacetimedb(
     },
 
     async createWorker(): Promise<ReducerConnector> {
-      const worker = spacetimedb(url, moduleName);
+      const worker = spacetimedb(config);
       await worker.open();
       worker.verify = async () => {
         throw new Error(
