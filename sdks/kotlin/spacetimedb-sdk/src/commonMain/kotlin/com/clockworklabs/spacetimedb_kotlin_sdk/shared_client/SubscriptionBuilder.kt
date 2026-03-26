@@ -37,17 +37,16 @@ public class SubscriptionBuilder internal constructor(
     }
 
     /**
-     * Subscribe to a single raw SQL query (merged with any accumulated [addQuery] calls).
+     * Subscribe to a single raw SQL query.
      */
     public fun subscribe(query: String): SubscriptionHandle =
         subscribe(listOf(query))
 
     /**
-     * Subscribe to multiple raw SQL queries (merged with any accumulated [addQuery] calls).
+     * Subscribe to the given raw SQL queries.
      */
     public fun subscribe(queries: List<String>): SubscriptionHandle {
-        val allQueries = querySqls + queries
-        return connection.subscribe(allQueries, onApplied = onAppliedCallbacks, onError = onErrorCallbacks)
+        return connection.subscribe(queries, onApplied = onAppliedCallbacks, onError = onErrorCallbacks)
     }
 
 }
