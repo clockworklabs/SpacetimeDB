@@ -57,8 +57,6 @@ This automatically:
 
 ## Converting an Existing Project
 
-### Manual Configuration
-
 1. **Update spacetime.json**
    Add `"native-aot": true` to your `spacetime.json`:
    ```json
