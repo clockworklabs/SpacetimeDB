@@ -7,7 +7,6 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct OrderLine {
-    pub order_line_key: u64,
     pub ol_w_id: u16,
     pub ol_d_id: u8,
     pub ol_o_id: u32,
@@ -28,7 +27,6 @@ impl __sdk::InModule for OrderLine {
 ///
 /// Provides typed access to columns for query building.
 pub struct OrderLineCols {
-    pub order_line_key: __sdk::__query_builder::Col<OrderLine, u64>,
     pub ol_w_id: __sdk::__query_builder::Col<OrderLine, u16>,
     pub ol_d_id: __sdk::__query_builder::Col<OrderLine, u8>,
     pub ol_o_id: __sdk::__query_builder::Col<OrderLine, u32>,
@@ -45,7 +43,6 @@ impl __sdk::__query_builder::HasCols for OrderLine {
     type Cols = OrderLineCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         OrderLineCols {
-            order_line_key: __sdk::__query_builder::Col::new(table_name, "order_line_key"),
             ol_w_id: __sdk::__query_builder::Col::new(table_name, "ol_w_id"),
             ol_d_id: __sdk::__query_builder::Col::new(table_name, "ol_d_id"),
             ol_o_id: __sdk::__query_builder::Col::new(table_name, "ol_o_id"),
@@ -63,16 +60,12 @@ impl __sdk::__query_builder::HasCols for OrderLine {
 /// Indexed column accessor struct for the table `OrderLine`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct OrderLineIxCols {
-    pub order_line_key: __sdk::__query_builder::IxCol<OrderLine, u64>,
-}
+pub struct OrderLineIxCols {}
 
 impl __sdk::__query_builder::HasIxCols for OrderLine {
     type IxCols = OrderLineIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        OrderLineIxCols {
-            order_line_key: __sdk::__query_builder::IxCol::new(table_name, "order_line_key"),
-        }
+        OrderLineIxCols {}
     }
 }
 

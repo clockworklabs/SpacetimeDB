@@ -7,7 +7,6 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct Customer {
-    pub customer_key: u64,
     pub c_w_id: u16,
     pub c_d_id: u8,
     pub c_id: u32,
@@ -39,7 +38,6 @@ impl __sdk::InModule for Customer {
 ///
 /// Provides typed access to columns for query building.
 pub struct CustomerCols {
-    pub customer_key: __sdk::__query_builder::Col<Customer, u64>,
     pub c_w_id: __sdk::__query_builder::Col<Customer, u16>,
     pub c_d_id: __sdk::__query_builder::Col<Customer, u8>,
     pub c_id: __sdk::__query_builder::Col<Customer, u32>,
@@ -67,7 +65,6 @@ impl __sdk::__query_builder::HasCols for Customer {
     type Cols = CustomerCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         CustomerCols {
-            customer_key: __sdk::__query_builder::Col::new(table_name, "customer_key"),
             c_w_id: __sdk::__query_builder::Col::new(table_name, "c_w_id"),
             c_d_id: __sdk::__query_builder::Col::new(table_name, "c_d_id"),
             c_id: __sdk::__query_builder::Col::new(table_name, "c_id"),
@@ -96,16 +93,12 @@ impl __sdk::__query_builder::HasCols for Customer {
 /// Indexed column accessor struct for the table `Customer`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct CustomerIxCols {
-    pub customer_key: __sdk::__query_builder::IxCol<Customer, u64>,
-}
+pub struct CustomerIxCols {}
 
 impl __sdk::__query_builder::HasIxCols for Customer {
     type IxCols = CustomerIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        CustomerIxCols {
-            customer_key: __sdk::__query_builder::IxCol::new(table_name, "customer_key"),
-        }
+        CustomerIxCols {}
     }
 }
 

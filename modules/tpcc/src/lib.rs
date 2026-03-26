@@ -152,8 +152,6 @@ pub struct Warehouse {
 )]
 #[derive(Clone, Debug)]
 pub struct District {
-    #[primary_key]
-    pub district_key: u32,
     pub d_w_id: u16,
     pub d_id: u8,
     pub d_name: String,
@@ -174,8 +172,6 @@ pub struct District {
 )]
 #[derive(Clone, Debug)]
 pub struct Customer {
-    #[primary_key]
-    pub customer_key: u64,
     pub c_w_id: u16,
     pub c_d_id: u8,
     pub c_id: u32,
@@ -232,8 +228,6 @@ pub struct Item {
 )]
 #[derive(Clone, Debug)]
 pub struct Stock {
-    #[primary_key]
-    pub stock_key: u64,
     pub s_w_id: u16,
     pub s_i_id: u32,
     pub s_quantity: i32,
@@ -260,8 +254,6 @@ pub struct Stock {
 )]
 #[derive(Clone, Debug)]
 pub struct OOrder {
-    #[primary_key]
-    pub order_key: u64,
     pub o_w_id: u16,
     pub o_d_id: u8,
     pub o_id: u32,
@@ -278,8 +270,6 @@ pub struct OOrder {
 )]
 #[derive(Clone, Debug)]
 pub struct NewOrder {
-    #[primary_key]
-    pub new_order_key: u64,
     pub no_w_id: u16,
     pub no_d_id: u8,
     pub no_o_id: u32,
@@ -291,8 +281,6 @@ pub struct NewOrder {
 )]
 #[derive(Clone, Debug)]
 pub struct OrderLine {
-    #[primary_key]
-    pub order_line_key: u64,
     pub ol_w_id: u16,
     pub ol_d_id: u8,
     pub ol_o_id: u32,
@@ -409,8 +397,7 @@ pub fn load_warehouses(ctx: &ReducerContext, rows: Vec<Warehouse>) -> Result<(),
 #[reducer]
 pub fn load_districts(ctx: &ReducerContext, rows: Vec<District>) -> Result<(), String> {
     for row in rows {
-        validate_district_row(&row)?;
-        ctx.db.district().insert(row);
+        insert_district_checked(ctx, row)?;
     }
     Ok(())
 }
@@ -418,8 +405,7 @@ pub fn load_districts(ctx: &ReducerContext, rows: Vec<District>) -> Result<(), S
 #[reducer]
 pub fn load_customers(ctx: &ReducerContext, rows: Vec<Customer>) -> Result<(), String> {
     for row in rows {
-        validate_customer_row(&row)?;
-        ctx.db.customer().insert(row);
+        insert_customer_checked(ctx, row)?;
     }
     Ok(())
 }
@@ -445,8 +431,7 @@ pub fn load_items(ctx: &ReducerContext, rows: Vec<Item>) -> Result<(), String> {
 #[reducer]
 pub fn load_stocks(ctx: &ReducerContext, rows: Vec<Stock>) -> Result<(), String> {
     for row in rows {
-        validate_stock_row(&row)?;
-        ctx.db.stock().insert(row);
+        insert_stock_checked(ctx, row)?;
     }
     Ok(())
 }
@@ -454,7 +439,7 @@ pub fn load_stocks(ctx: &ReducerContext, rows: Vec<Stock>) -> Result<(), String>
 #[reducer]
 pub fn load_orders(ctx: &ReducerContext, rows: Vec<OOrder>) -> Result<(), String> {
     for row in rows {
-        ctx.db.oorder().insert(row);
+        insert_order_checked_reducer(ctx, row)?;
     }
     Ok(())
 }
@@ -462,7 +447,7 @@ pub fn load_orders(ctx: &ReducerContext, rows: Vec<OOrder>) -> Result<(), String
 #[reducer]
 pub fn load_new_orders(ctx: &ReducerContext, rows: Vec<NewOrder>) -> Result<(), String> {
     for row in rows {
-        ctx.db.new_order_row().insert(row);
+        insert_new_order_checked_reducer(ctx, row)?;
     }
     Ok(())
 }
@@ -470,7 +455,7 @@ pub fn load_new_orders(ctx: &ReducerContext, rows: Vec<NewOrder>) -> Result<(), 
 #[reducer]
 pub fn load_order_lines(ctx: &ReducerContext, rows: Vec<OrderLine>) -> Result<(), String> {
     for row in rows {
-        ctx.db.order_line().insert(row);
+        insert_order_line_checked_reducer(ctx, row)?;
     }
     Ok(())
 }
@@ -657,10 +642,6 @@ fn validate_warehouse_row(row: &Warehouse) -> Result<(), String> {
 
 fn validate_district_row(row: &District) -> Result<(), String> {
     ensure!(
-        row.district_key == pack_district_key(row.d_w_id, row.d_id),
-        "district row has mismatched packed key"
-    );
-    ensure!(
         (1..=DISTRICTS_PER_WAREHOUSE).contains(&row.d_id),
         "district id out of range"
     );
@@ -668,10 +649,6 @@ fn validate_district_row(row: &District) -> Result<(), String> {
 }
 
 fn validate_customer_row(row: &Customer) -> Result<(), String> {
-    ensure!(
-        row.customer_key == pack_customer_key(row.c_w_id, row.c_d_id, row.c_id),
-        "customer row has mismatched packed key"
-    );
     ensure!(
         (1..=DISTRICTS_PER_WAREHOUSE).contains(&row.c_d_id),
         "customer district id out of range"
@@ -689,11 +666,196 @@ fn validate_item_row(row: &Item) -> Result<(), String> {
 }
 
 fn validate_stock_row(row: &Stock) -> Result<(), String> {
-    ensure!(
-        row.stock_key == pack_stock_key(row.s_w_id, row.s_i_id),
-        "stock row has mismatched packed key"
-    );
     ensure!((1..=ITEMS).contains(&row.s_i_id), "stock item id out of range");
+    Ok(())
+}
+
+fn validate_order_row(row: &OOrder) -> Result<(), String> {
+    ensure!(
+        (1..=DISTRICTS_PER_WAREHOUSE).contains(&row.o_d_id),
+        "order district id out of range"
+    );
+    ensure!((5..=15).contains(&row.o_ol_cnt), "order line count out of range");
+    Ok(())
+}
+
+fn validate_new_order_row(row: &NewOrder) -> Result<(), String> {
+    ensure!(
+        (1..=DISTRICTS_PER_WAREHOUSE).contains(&row.no_d_id),
+        "new-order district id out of range"
+    );
+    Ok(())
+}
+
+fn validate_order_line_row(row: &OrderLine) -> Result<(), String> {
+    ensure!(
+        (1..=DISTRICTS_PER_WAREHOUSE).contains(&row.ol_d_id),
+        "order-line district id out of range"
+    );
+    ensure!((1..=15).contains(&row.ol_number), "order-line number out of range");
+    ensure!(row.ol_quantity > 0, "order-line quantity must be positive");
+    Ok(())
+}
+
+fn insert_district_checked(ctx: &ReducerContext, row: District) -> Result<(), String> {
+    validate_district_row(&row)?;
+    ensure!(
+        ctx.db
+            .district()
+            .by_w_d()
+            .filter((row.d_w_id, row.d_id))
+            .next()
+            .is_none(),
+        "district ({}, {}) already exists",
+        row.d_w_id,
+        row.d_id
+    );
+    ctx.db.district().insert(row);
+    Ok(())
+}
+
+fn insert_customer_checked(ctx: &ReducerContext, row: Customer) -> Result<(), String> {
+    validate_customer_row(&row)?;
+    ensure!(
+        ctx.db
+            .customer()
+            .by_w_d_c_id()
+            .filter((row.c_w_id, row.c_d_id, row.c_id))
+            .next()
+            .is_none(),
+        "customer ({}, {}, {}) already exists",
+        row.c_w_id,
+        row.c_d_id,
+        row.c_id
+    );
+    ctx.db.customer().insert(row);
+    Ok(())
+}
+
+fn insert_stock_checked(ctx: &ReducerContext, row: Stock) -> Result<(), String> {
+    validate_stock_row(&row)?;
+    ensure!(
+        ctx.db
+            .stock()
+            .by_w_i()
+            .filter((row.s_w_id, row.s_i_id))
+            .next()
+            .is_none(),
+        "stock ({}, {}) already exists",
+        row.s_w_id,
+        row.s_i_id
+    );
+    ctx.db.stock().insert(row);
+    Ok(())
+}
+
+fn insert_order_checked_reducer(ctx: &ReducerContext, row: OOrder) -> Result<(), String> {
+    validate_order_row(&row)?;
+    ensure!(
+        ctx.db
+            .oorder()
+            .by_w_d_o_id()
+            .filter((row.o_w_id, row.o_d_id, row.o_id))
+            .next()
+            .is_none(),
+        "order ({}, {}, {}) already exists",
+        row.o_w_id,
+        row.o_d_id,
+        row.o_id
+    );
+    ctx.db.oorder().insert(row);
+    Ok(())
+}
+
+fn insert_new_order_checked_reducer(ctx: &ReducerContext, row: NewOrder) -> Result<(), String> {
+    validate_new_order_row(&row)?;
+    ensure!(
+        ctx.db
+            .new_order_row()
+            .by_w_d_o_id()
+            .filter((row.no_w_id, row.no_d_id, row.no_o_id))
+            .next()
+            .is_none(),
+        "new-order ({}, {}, {}) already exists",
+        row.no_w_id,
+        row.no_d_id,
+        row.no_o_id
+    );
+    ctx.db.new_order_row().insert(row);
+    Ok(())
+}
+
+fn insert_order_line_checked_reducer(ctx: &ReducerContext, row: OrderLine) -> Result<(), String> {
+    validate_order_line_row(&row)?;
+    ensure!(
+        ctx.db
+            .order_line()
+            .by_w_d_o_number()
+            .filter((row.ol_w_id, row.ol_d_id, row.ol_o_id, row.ol_number))
+            .next()
+            .is_none(),
+        "order-line ({}, {}, {}, {}) already exists",
+        row.ol_w_id,
+        row.ol_d_id,
+        row.ol_o_id,
+        row.ol_number
+    );
+    ctx.db.order_line().insert(row);
+    Ok(())
+}
+
+fn insert_order_checked_tx(tx: &spacetimedb::TxContext, row: OOrder) -> Result<(), String> {
+    validate_order_row(&row)?;
+    ensure!(
+        tx.db
+            .oorder()
+            .by_w_d_o_id()
+            .filter((row.o_w_id, row.o_d_id, row.o_id))
+            .next()
+            .is_none(),
+        "order ({}, {}, {}) already exists",
+        row.o_w_id,
+        row.o_d_id,
+        row.o_id
+    );
+    tx.db.oorder().insert(row);
+    Ok(())
+}
+
+fn insert_new_order_checked_tx(tx: &spacetimedb::TxContext, row: NewOrder) -> Result<(), String> {
+    validate_new_order_row(&row)?;
+    ensure!(
+        tx.db
+            .new_order_row()
+            .by_w_d_o_id()
+            .filter((row.no_w_id, row.no_d_id, row.no_o_id))
+            .next()
+            .is_none(),
+        "new-order ({}, {}, {}) already exists",
+        row.no_w_id,
+        row.no_d_id,
+        row.no_o_id
+    );
+    tx.db.new_order_row().insert(row);
+    Ok(())
+}
+
+fn insert_order_line_checked_tx(tx: &spacetimedb::TxContext, row: OrderLine) -> Result<(), String> {
+    validate_order_line_row(&row)?;
+    ensure!(
+        tx.db
+            .order_line()
+            .by_w_d_o_number()
+            .filter((row.ol_w_id, row.ol_d_id, row.ol_o_id, row.ol_number))
+            .next()
+            .is_none(),
+        "order-line ({}, {}, {}, {}) already exists",
+        row.ol_w_id,
+        row.ol_d_id,
+        row.ol_o_id,
+        row.ol_number
+    );
+    tx.db.order_line().insert(row);
     Ok(())
 }
 
@@ -731,58 +893,72 @@ fn new_order_tx(
 
     let order_id = district.d_next_o_id;
 
-    tx.db.district().district_key().update(District {
-        d_next_o_id: district.d_next_o_id + 1,
-        ..district.clone()
-    });
+    replace_district_tx(
+        tx,
+        district.clone(),
+        District {
+            d_next_o_id: district.d_next_o_id + 1,
+            ..district.clone()
+        },
+    )?;
 
-    tx.db.oorder().insert(OOrder {
-        order_key: pack_order_key(w_id, d_id, order_id),
-        o_w_id: w_id,
-        o_d_id: d_id,
-        o_id: order_id,
-        o_c_id: c_id,
-        o_entry_d: tx.timestamp,
-        o_carrier_id: None,
-        o_ol_cnt: order_lines.len() as u8,
-        o_all_local: all_local,
-    });
+    insert_order_checked_tx(
+        tx,
+        OOrder {
+            o_w_id: w_id,
+            o_d_id: d_id,
+            o_id: order_id,
+            o_c_id: c_id,
+            o_entry_d: tx.timestamp,
+            o_carrier_id: None,
+            o_ol_cnt: order_lines.len() as u8,
+            o_all_local: all_local,
+        },
+    )?;
 
-    tx.db.new_order_row().insert(NewOrder {
-        new_order_key: pack_order_key(w_id, d_id, order_id),
-        no_w_id: w_id,
-        no_d_id: d_id,
-        no_o_id: order_id,
-    });
+    insert_new_order_checked_tx(
+        tx,
+        NewOrder {
+            no_w_id: w_id,
+            no_d_id: d_id,
+            no_o_id: order_id,
+        },
+    )?;
 
     let mut line_results = Vec::with_capacity(touched_items.len());
     let mut subtotal_cents = 0i64;
     for (idx, (line, item, stock)) in touched_items.into_iter().enumerate() {
         let updated_stock_quantity = adjust_stock_quantity(stock.s_quantity, line.quantity as i32);
-        tx.db.stock().stock_key().update(Stock {
-            s_quantity: updated_stock_quantity,
-            s_ytd: stock.s_ytd + u64::from(line.quantity),
-            s_order_cnt: stock.s_order_cnt + 1,
-            s_remote_cnt: stock.s_remote_cnt + u32::from(line.supply_w_id != w_id),
-            ..stock.clone()
-        });
+        replace_stock_tx(
+            tx,
+            stock.clone(),
+            Stock {
+                s_quantity: updated_stock_quantity,
+                s_ytd: stock.s_ytd + u64::from(line.quantity),
+                s_order_cnt: stock.s_order_cnt + 1,
+                s_remote_cnt: stock.s_remote_cnt + u32::from(line.supply_w_id != w_id),
+                ..stock.clone()
+            },
+        )?;
 
         let line_amount_cents = item.i_price_cents * i64::from(line.quantity);
         subtotal_cents += line_amount_cents;
         let dist_info = district_stock_info(&stock, d_id);
-        tx.db.order_line().insert(OrderLine {
-            order_line_key: pack_order_line_key(w_id, d_id, order_id, (idx + 1) as u8),
-            ol_w_id: w_id,
-            ol_d_id: d_id,
-            ol_o_id: order_id,
-            ol_number: (idx + 1) as u8,
-            ol_i_id: line.item_id,
-            ol_supply_w_id: line.supply_w_id,
-            ol_delivery_d: None,
-            ol_quantity: line.quantity,
-            ol_amount_cents: line_amount_cents,
-            ol_dist_info: dist_info,
-        });
+        insert_order_line_checked_tx(
+            tx,
+            OrderLine {
+                ol_w_id: w_id,
+                ol_d_id: d_id,
+                ol_o_id: order_id,
+                ol_number: (idx + 1) as u8,
+                ol_i_id: line.item_id,
+                ol_supply_w_id: line.supply_w_id,
+                ol_delivery_d: None,
+                ol_quantity: line.quantity,
+                ol_amount_cents: line_amount_cents,
+                ol_dist_info: dist_info,
+            },
+        )?;
 
         let brand_generic = if contains_original(&item.i_data) && contains_original(&stock.s_data) {
             "B"
@@ -833,10 +1009,14 @@ fn payment_tx(tx: &spacetimedb::TxContext, req: PaymentRequest<'_>) -> Result<Pa
         ..warehouse.clone()
     });
 
-    tx.db.district().district_key().update(District {
-        d_ytd_cents: district.d_ytd_cents + req.payment_amount_cents,
-        ..district.clone()
-    });
+    replace_district_tx(
+        tx,
+        district.clone(),
+        District {
+            d_ytd_cents: district.d_ytd_cents + req.payment_amount_cents,
+            ..district.clone()
+        },
+    )?;
 
     let mut updated_customer = Customer {
         c_balance_cents: customer.c_balance_cents - req.payment_amount_cents,
@@ -860,7 +1040,7 @@ fn payment_tx(tx: &spacetimedb::TxContext, req: PaymentRequest<'_>) -> Result<Pa
         updated_customer.c_data.truncate(MAX_C_DATA_LEN);
     }
 
-    tx.db.customer().customer_key().update(updated_customer.clone());
+    replace_customer_tx(tx, customer.clone(), updated_customer.clone())?;
 
     tx.db.history().insert(History {
         history_id: 0,
@@ -990,19 +1170,17 @@ fn process_delivery_district(
         return Ok(false);
     };
 
-    let order_key = pack_order_key(w_id, d_id, new_order.no_o_id);
-    let order = ctx
-        .db
-        .oorder()
-        .order_key()
-        .find(order_key)
-        .ok_or_else(|| "delivery referenced missing order".to_string())?;
+    let order = find_order_by_id_reducer(ctx, w_id, d_id, new_order.no_o_id)?;
 
-    ctx.db.new_order_row().new_order_key().delete(new_order.new_order_key);
-    ctx.db.oorder().order_key().update(OOrder {
-        o_carrier_id: Some(carrier_id),
-        ..order.clone()
-    });
+    ctx.db.new_order_row().delete(new_order);
+    replace_order_reducer(
+        ctx,
+        order.clone(),
+        OOrder {
+            o_carrier_id: Some(carrier_id),
+            ..order.clone()
+        },
+    )?;
 
     let mut total_amount_cents = 0i64;
     let order_lines: Vec<_> = ctx
@@ -1013,18 +1191,26 @@ fn process_delivery_district(
         .collect();
     for line in order_lines {
         total_amount_cents += line.ol_amount_cents;
-        ctx.db.order_line().order_line_key().update(OrderLine {
-            ol_delivery_d: Some(delivered_at),
-            ..line
-        });
+        replace_order_line_reducer(
+            ctx,
+            line.clone(),
+            OrderLine {
+                ol_delivery_d: Some(delivered_at),
+                ..line
+            },
+        )?;
     }
 
     let customer = find_customer_by_id_reducer(ctx, w_id, d_id, order.o_c_id)?;
-    ctx.db.customer().customer_key().update(Customer {
-        c_balance_cents: customer.c_balance_cents + total_amount_cents,
-        c_delivery_cnt: customer.c_delivery_cnt + 1,
-        ..customer
-    });
+    replace_customer_reducer(
+        ctx,
+        customer.clone(),
+        Customer {
+            c_balance_cents: customer.c_balance_cents + total_amount_cents,
+            c_delivery_cnt: customer.c_delivery_cnt + 1,
+            ..customer
+        },
+    )?;
 
     Ok(true)
 }
@@ -1089,6 +1275,15 @@ fn find_customer_by_id_reducer(ctx: &ReducerContext, w_id: u16, d_id: u8, c_id: 
         .ok_or_else(|| format!("customer ({w_id}, {d_id}, {c_id}) not found"))
 }
 
+fn find_order_by_id_reducer(ctx: &ReducerContext, w_id: u16, d_id: u8, o_id: u32) -> Result<OOrder, String> {
+    ctx.db
+        .oorder()
+        .by_w_d_o_id()
+        .filter((w_id, d_id, o_id))
+        .next()
+        .ok_or_else(|| format!("order ({w_id}, {d_id}, {o_id}) not found"))
+}
+
 fn find_item(tx: &spacetimedb::TxContext, item_id: u32) -> Result<Item, String> {
     tx.db
         .item()
@@ -1104,6 +1299,69 @@ fn find_stock(tx: &spacetimedb::TxContext, w_id: u16, item_id: u32) -> Result<St
         .filter((w_id, item_id))
         .next()
         .ok_or_else(|| format!("stock ({w_id}, {item_id}) not found"))
+}
+
+fn replace_district_tx(tx: &spacetimedb::TxContext, old: District, new: District) -> Result<(), String> {
+    ensure!(
+        old.d_w_id == new.d_w_id && old.d_id == new.d_id,
+        "district identity cannot change during update"
+    );
+    tx.db.district().delete(old);
+    tx.db.district().insert(new);
+    Ok(())
+}
+
+fn replace_customer_tx(tx: &spacetimedb::TxContext, old: Customer, new: Customer) -> Result<(), String> {
+    ensure!(
+        old.c_w_id == new.c_w_id && old.c_d_id == new.c_d_id && old.c_id == new.c_id,
+        "customer identity cannot change during update"
+    );
+    tx.db.customer().delete(old);
+    tx.db.customer().insert(new);
+    Ok(())
+}
+
+fn replace_stock_tx(tx: &spacetimedb::TxContext, old: Stock, new: Stock) -> Result<(), String> {
+    ensure!(
+        old.s_w_id == new.s_w_id && old.s_i_id == new.s_i_id,
+        "stock identity cannot change during update"
+    );
+    tx.db.stock().delete(old);
+    tx.db.stock().insert(new);
+    Ok(())
+}
+
+fn replace_customer_reducer(ctx: &ReducerContext, old: Customer, new: Customer) -> Result<(), String> {
+    ensure!(
+        old.c_w_id == new.c_w_id && old.c_d_id == new.c_d_id && old.c_id == new.c_id,
+        "customer identity cannot change during update"
+    );
+    ctx.db.customer().delete(old);
+    ctx.db.customer().insert(new);
+    Ok(())
+}
+
+fn replace_order_reducer(ctx: &ReducerContext, old: OOrder, new: OOrder) -> Result<(), String> {
+    ensure!(
+        old.o_w_id == new.o_w_id && old.o_d_id == new.o_d_id && old.o_id == new.o_id,
+        "order identity cannot change during update"
+    );
+    ctx.db.oorder().delete(old);
+    ctx.db.oorder().insert(new);
+    Ok(())
+}
+
+fn replace_order_line_reducer(ctx: &ReducerContext, old: OrderLine, new: OrderLine) -> Result<(), String> {
+    ensure!(
+        old.ol_w_id == new.ol_w_id
+            && old.ol_d_id == new.ol_d_id
+            && old.ol_o_id == new.ol_o_id
+            && old.ol_number == new.ol_number,
+        "order-line identity cannot change during update"
+    );
+    ctx.db.order_line().delete(old);
+    ctx.db.order_line().insert(new);
+    Ok(())
 }
 
 fn district_stock_info(stock: &Stock, d_id: u8) -> String {
@@ -1142,26 +1400,6 @@ fn apply_discount(amount_cents: i64, discount_bps: i64) -> i64 {
     amount_cents * (TAX_SCALE - discount_bps) / TAX_SCALE
 }
 
-fn pack_district_key(w_id: u16, d_id: u8) -> u32 {
-    (u32::from(w_id) * 100) + u32::from(d_id)
-}
-
-fn pack_customer_key(w_id: u16, d_id: u8, c_id: u32) -> u64 {
-    ((u64::from(w_id) * 100) + u64::from(d_id)) * 10_000 + u64::from(c_id)
-}
-
-fn pack_stock_key(w_id: u16, item_id: u32) -> u64 {
-    u64::from(w_id) * 1_000_000 + u64::from(item_id)
-}
-
-fn pack_order_key(w_id: u16, d_id: u8, o_id: u32) -> u64 {
-    ((u64::from(w_id) * 100) + u64::from(d_id)) * 10_000_000 + u64::from(o_id)
-}
-
-fn pack_order_line_key(w_id: u16, d_id: u8, o_id: u32, ol_number: u8) -> u64 {
-    pack_order_key(w_id, d_id, o_id) * 100 + u64::from(ol_number)
-}
-
 fn as_delivery_completion_view(row: DeliveryCompletion) -> DeliveryCompletionView {
     DeliveryCompletionView {
         completion_id: row.completion_id,
@@ -1192,11 +1430,5 @@ mod tests {
     fn stock_quantity_wraps_like_tpcc() {
         assert_eq!(adjust_stock_quantity(20, 5), 15);
         assert_eq!(adjust_stock_quantity(10, 5), 96);
-    }
-
-    #[test]
-    fn packing_roundtrips_expected_ranges() {
-        assert!(pack_customer_key(1, 1, 1) < pack_customer_key(1, 1, 2));
-        assert!(pack_order_line_key(1, 1, 1, 1) < pack_order_line_key(1, 1, 1, 2));
     }
 }

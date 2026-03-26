@@ -7,7 +7,6 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct Stock {
-    pub stock_key: u64,
     pub s_w_id: u16,
     pub s_i_id: u32,
     pub s_quantity: i32,
@@ -35,7 +34,6 @@ impl __sdk::InModule for Stock {
 ///
 /// Provides typed access to columns for query building.
 pub struct StockCols {
-    pub stock_key: __sdk::__query_builder::Col<Stock, u64>,
     pub s_w_id: __sdk::__query_builder::Col<Stock, u16>,
     pub s_i_id: __sdk::__query_builder::Col<Stock, u32>,
     pub s_quantity: __sdk::__query_builder::Col<Stock, i32>,
@@ -59,7 +57,6 @@ impl __sdk::__query_builder::HasCols for Stock {
     type Cols = StockCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         StockCols {
-            stock_key: __sdk::__query_builder::Col::new(table_name, "stock_key"),
             s_w_id: __sdk::__query_builder::Col::new(table_name, "s_w_id"),
             s_i_id: __sdk::__query_builder::Col::new(table_name, "s_i_id"),
             s_quantity: __sdk::__query_builder::Col::new(table_name, "s_quantity"),
@@ -84,16 +81,12 @@ impl __sdk::__query_builder::HasCols for Stock {
 /// Indexed column accessor struct for the table `Stock`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct StockIxCols {
-    pub stock_key: __sdk::__query_builder::IxCol<Stock, u64>,
-}
+pub struct StockIxCols {}
 
 impl __sdk::__query_builder::HasIxCols for Stock {
     type IxCols = StockIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        StockIxCols {
-            stock_key: __sdk::__query_builder::IxCol::new(table_name, "stock_key"),
-        }
+        StockIxCols {}
     }
 }
 

@@ -7,7 +7,6 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct District {
-    pub district_key: u32,
     pub d_w_id: u16,
     pub d_id: u8,
     pub d_name: String,
@@ -29,7 +28,6 @@ impl __sdk::InModule for District {
 ///
 /// Provides typed access to columns for query building.
 pub struct DistrictCols {
-    pub district_key: __sdk::__query_builder::Col<District, u32>,
     pub d_w_id: __sdk::__query_builder::Col<District, u16>,
     pub d_id: __sdk::__query_builder::Col<District, u8>,
     pub d_name: __sdk::__query_builder::Col<District, String>,
@@ -47,7 +45,6 @@ impl __sdk::__query_builder::HasCols for District {
     type Cols = DistrictCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         DistrictCols {
-            district_key: __sdk::__query_builder::Col::new(table_name, "district_key"),
             d_w_id: __sdk::__query_builder::Col::new(table_name, "d_w_id"),
             d_id: __sdk::__query_builder::Col::new(table_name, "d_id"),
             d_name: __sdk::__query_builder::Col::new(table_name, "d_name"),
@@ -66,16 +63,12 @@ impl __sdk::__query_builder::HasCols for District {
 /// Indexed column accessor struct for the table `District`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct DistrictIxCols {
-    pub district_key: __sdk::__query_builder::IxCol<District, u32>,
-}
+pub struct DistrictIxCols {}
 
 impl __sdk::__query_builder::HasIxCols for District {
     type IxCols = DistrictIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        DistrictIxCols {
-            district_key: __sdk::__query_builder::IxCol::new(table_name, "district_key"),
-        }
+        DistrictIxCols {}
     }
 }
 

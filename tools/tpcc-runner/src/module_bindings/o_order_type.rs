@@ -7,7 +7,6 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct OOrder {
-    pub order_key: u64,
     pub o_w_id: u16,
     pub o_d_id: u8,
     pub o_id: u32,
@@ -26,7 +25,6 @@ impl __sdk::InModule for OOrder {
 ///
 /// Provides typed access to columns for query building.
 pub struct OOrderCols {
-    pub order_key: __sdk::__query_builder::Col<OOrder, u64>,
     pub o_w_id: __sdk::__query_builder::Col<OOrder, u16>,
     pub o_d_id: __sdk::__query_builder::Col<OOrder, u8>,
     pub o_id: __sdk::__query_builder::Col<OOrder, u32>,
@@ -41,7 +39,6 @@ impl __sdk::__query_builder::HasCols for OOrder {
     type Cols = OOrderCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         OOrderCols {
-            order_key: __sdk::__query_builder::Col::new(table_name, "order_key"),
             o_w_id: __sdk::__query_builder::Col::new(table_name, "o_w_id"),
             o_d_id: __sdk::__query_builder::Col::new(table_name, "o_d_id"),
             o_id: __sdk::__query_builder::Col::new(table_name, "o_id"),
@@ -57,16 +54,12 @@ impl __sdk::__query_builder::HasCols for OOrder {
 /// Indexed column accessor struct for the table `OOrder`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct OOrderIxCols {
-    pub order_key: __sdk::__query_builder::IxCol<OOrder, u64>,
-}
+pub struct OOrderIxCols {}
 
 impl __sdk::__query_builder::HasIxCols for OOrder {
     type IxCols = OOrderIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        OOrderIxCols {
-            order_key: __sdk::__query_builder::IxCol::new(table_name, "order_key"),
-        }
+        OOrderIxCols {}
     }
 }
 

@@ -93,7 +93,6 @@ fn load_warehouses_and_districts(
 
         for d_id in 1..=DISTRICTS_PER_WAREHOUSE {
             district_batch.push(District {
-                district_key: pack_district_key(w_id, d_id),
                 d_w_id: w_id,
                 d_id,
                 d_name: alpha_string(rng, 6, 10),
@@ -130,7 +129,6 @@ fn load_stock(client: &ModuleClient, warehouses: u16, batch_size: usize, rng: &m
     for w_id in 1..=warehouses {
         for item_id in 1..=ITEMS {
             batch.push(Stock {
-                stock_key: pack_stock_key(w_id, item_id),
                 s_w_id: w_id,
                 s_i_id: item_id,
                 s_quantity: rng.random_range(10..=100),
@@ -187,7 +185,6 @@ fn load_customers_history_orders(
                     make_last_name(nurand(rng, 255, 0, 999, load_c_last))
                 };
                 customer_batch.push(Customer {
-                    customer_key: pack_customer_key(w_id, d_id, c_id),
                     c_w_id: w_id,
                     c_d_id: d_id,
                     c_id,
@@ -235,7 +232,6 @@ fn load_customers_history_orders(
                 let delivered = o_id < NEW_ORDER_START;
                 let order_line_count = rng.random_range(5..=15) as u8;
                 order_batch.push(OOrder {
-                    order_key: pack_order_key(w_id, d_id, o_id),
                     o_w_id: w_id,
                     o_d_id: d_id,
                     o_id,
@@ -251,7 +247,6 @@ fn load_customers_history_orders(
                 });
                 if !delivered {
                     new_order_batch.push(NewOrder {
-                        new_order_key: pack_order_key(w_id, d_id, o_id),
                         no_w_id: w_id,
                         no_d_id: d_id,
                         no_o_id: o_id,
@@ -260,7 +255,6 @@ fn load_customers_history_orders(
 
                 for ol_number in 1..=order_line_count {
                     order_line_batch.push(OrderLine {
-                        order_line_key: pack_order_line_key(w_id, d_id, o_id, ol_number),
                         ol_w_id: w_id,
                         ol_d_id: d_id,
                         ol_o_id: o_id,

@@ -122,26 +122,6 @@ pub fn maybe_with_original<R: Rng>(rng: &mut R, min_len: usize, max_len: usize) 
     data
 }
 
-pub fn pack_district_key(w_id: u16, d_id: u8) -> u32 {
-    (u32::from(w_id) * 100) + u32::from(d_id)
-}
-
-pub fn pack_customer_key(w_id: u16, d_id: u8, c_id: u32) -> u64 {
-    ((u64::from(w_id) * 100) + u64::from(d_id)) * 10_000 + u64::from(c_id)
-}
-
-pub fn pack_stock_key(w_id: u16, item_id: u32) -> u64 {
-    u64::from(w_id) * 1_000_000 + u64::from(item_id)
-}
-
-pub fn pack_order_key(w_id: u16, d_id: u8, o_id: u32) -> u64 {
-    ((u64::from(w_id) * 100) + u64::from(d_id)) * 10_000_000 + u64::from(o_id)
-}
-
-pub fn pack_order_line_key(w_id: u16, d_id: u8, o_id: u32, ol_number: u8) -> u64 {
-    pack_order_key(w_id, d_id, o_id) * 100 + u64::from(ol_number)
-}
-
 pub fn keying_time(kind: TransactionKind, scale: f64) -> Duration {
     scaled_duration(
         match kind {
