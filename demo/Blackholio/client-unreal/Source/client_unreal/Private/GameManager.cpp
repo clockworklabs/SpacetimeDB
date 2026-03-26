@@ -7,6 +7,7 @@
 #include "Connection/Credentials.h"
 #include "ModuleBindings/Tables/CircleTable.g.h"
 #include "ModuleBindings/Tables/ConfigTable.g.h"
+#include "ModuleBindings/Tables/ConsumeEntityEventTable.g.h"
 #include "ModuleBindings/Tables/EntityTable.g.h"
 #include "ModuleBindings/Tables/FoodTable.g.h"
 #include "ModuleBindings/Tables/PlayerTable.g.h"
@@ -103,6 +104,7 @@ void AGameManager::HandleConnect(UDbConnection* InConn, FSpacetimeDBIdentity Ide
 	LocalIdentity = Identity;
 
 	Conn->Db->Circle->OnInsert.AddDynamic(this, &AGameManager::OnCircleInsert);
+	Conn->Db->ConsumeEntityEvent->OnInsert.AddDynamic(this, &AGameManager::OnConsumeEntityEventInsert);
 	Conn->Db->Entity->OnUpdate.AddDynamic(this, &AGameManager::OnEntityUpdate);
 	Conn->Db->Entity->OnDelete.AddDynamic(this, &AGameManager::OnEntityDelete);
 	Conn->Db->Food->OnInsert.AddDynamic(this, &AGameManager::OnFoodInsert);
@@ -252,6 +254,18 @@ void AGameManager::OnFoodInsert(const FEventContext& Context, const FFoodType& N
 {
     if (EntityMap.Contains(NewRow.EntityId)) return;
     SpawnFood(NewRow);
+}
+
+void AGameManager::OnConsumeEntityEventInsert(const FEventContext& Context, const FConsumeEntityEventType& NewRow)
+{
+	AEntity* ConsumedEntity = GetEntity(NewRow.ConsumedEntityId);
+	AEntity* ConsumerEntity = GetEntity(NewRow.ConsumerEntityId);
+	if (!ConsumedEntity || !ConsumerEntity)
+	{
+		return;
+	}
+
+	ConsumedEntity->StartConsumeDespawn(ConsumerEntity);
 }
 
 void AGameManager::OnPlayerInsert(const FEventContext& Context, const FPlayerType& NewRow)

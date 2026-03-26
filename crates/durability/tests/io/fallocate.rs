@@ -43,7 +43,7 @@ use tokio::{sync::watch, time::sleep};
 
 const MB: u64 = 1024 * 1024;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn local_durability_cannot_be_created_if_not_enough_space() -> anyhow::Result<()> {
     enable_logging();
 
@@ -72,7 +72,7 @@ async fn local_durability_cannot_be_created_if_not_enough_space() -> anyhow::Res
 // NOTE: This test is set up to proceed more or less sequentially.
 // In reality, `append_tx` will fail at some point in the future.
 // I.e. transactions can be lost when the host runs out of disk space.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 #[should_panic = "durability actor crashed"]
 async fn local_durability_crashes_on_new_segment_if_not_enough_space() {
     enable_logging();
@@ -120,7 +120,7 @@ async fn local_durability_crashes_on_new_segment_if_not_enough_space() {
 /// without `fallocate`.
 ///
 /// Resuming a segment when there is insufficient space should fail.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn local_durability_crashes_on_resume_with_insuffient_space() -> anyhow::Result<()> {
     enable_logging();
 

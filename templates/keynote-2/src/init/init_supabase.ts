@@ -1,4 +1,4 @@
-﻿import pg, { Client as Pg } from 'pg';
+import pg, { Client as Pg } from 'pg';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 type PrepOpts = {

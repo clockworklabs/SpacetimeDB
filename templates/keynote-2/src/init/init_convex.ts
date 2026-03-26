@@ -1,4 +1,4 @@
-﻿const DEFAULT_CONVEX_URL = 'http://127.0.0.1:3210';
+import type { ConvexInitConfig } from '../config.ts';
 
 async function callConvexMutation(url: string, pathName: string, args: any) {
   const res = await fetch(`${url}/api/mutation?format=json`, {
@@ -18,21 +18,17 @@ async function callConvexMutation(url: string, pathName: string, args: any) {
   return json.value;
 }
 
-export async function initConvex() {
+export async function initConvex(config: ConvexInitConfig) {
   if (process.env.SKIP_CONVEX === '1') {
     console.log('[convex] skipped (set SKIP_CONVEX=0 to enable)');
     return;
   }
   console.log('\n[convex] scaffold');
 
-  const dir = process.env.CONVEX_DIR || './convex-app';
-
-  const ACC = Number(process.env.SEED_ACCOUNTS ?? 100_000);
-  const BAL = Number(process.env.SEED_INITIAL_BALANCE ?? 1_000_000_000);
-  const url = process.env.CONVEX_URL || DEFAULT_CONVEX_URL;
+  const { accounts, convexDir, convexUrl, initialBalance } = config;
 
   console.log(
-    `[convex] expecting dev server at ${url} (start with: cd ${dir} && pnpm dev)`,
+    `[convex] expecting dev server at ${convexUrl} (start with: cd ${convexDir} && pnpm dev)`,
   );
 
   try {
@@ -40,7 +36,7 @@ export async function initConvex() {
       console.log('[convex] clearing accounts…');
       for (;;) {
         const deleted: number = await callConvexMutation(
-          url,
+          convexUrl,
           'seed:clear_accounts',
           {},
         );
@@ -56,18 +52,18 @@ export async function initConvex() {
     // Max ~16k writes per function; keep a safety margin
     const CHUNK = 10_000;
     console.log(
-      `[convex] seeding ${ACC} accounts in chunks of ${CHUNK} (initial=${BAL})`,
+      `[convex] seeding ${accounts} accounts in chunks of ${CHUNK} (initial=${initialBalance})`,
     );
 
-    for (let start = 0; start < ACC; start += CHUNK) {
-      const count = Math.min(CHUNK, ACC - start);
+    for (let start = 0; start < accounts; start += CHUNK) {
+      const count = Math.min(CHUNK, accounts - start);
       console.log(
         `[convex]   → seed:seed_range { start: ${start}, count: ${count} }`,
       );
-      await callConvexMutation(url, 'seed:seed_range', {
+      await callConvexMutation(convexUrl, 'seed:seed_range', {
         start,
         count,
-        initial: BAL,
+        initial: initialBalance,
       });
     }
 

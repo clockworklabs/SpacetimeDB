@@ -113,7 +113,7 @@ pub(in super::super) mod test {
     pub(in super::super) fn with_scope<R>(logic: impl FnOnce(&mut PinScope<'_, '_>) -> R) -> R {
         V8Runtime::init_for_test();
 
-        let mut isolate = new_isolate();
+        let mut isolate = new_isolate(Default::default());
         scope_with_context!(let scope, &mut isolate, Context::new(scope, Default::default()));
 
         logic(scope)
