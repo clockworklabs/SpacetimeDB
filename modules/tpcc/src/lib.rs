@@ -1,13 +1,24 @@
+use http::Request;
 use spacetimedb::{
-    procedure, reducer, table, ProcedureContext, ReducerContext, ScheduleAt, SpacetimeType, Table, Timestamp,
+    http::Timeout, procedure, reducer, sats::serde::SerdeWrapper, table, Identity, ProcedureContext, ReducerContext,
+    ScheduleAt, SpacetimeType, Table, Timestamp, TxContext,
 };
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, time::Duration};
 
 const DISTRICTS_PER_WAREHOUSE: u8 = 10;
 const CUSTOMERS_PER_DISTRICT: u32 = 3_000;
 const ITEMS: u32 = 100_000;
 const MAX_C_DATA_LEN: usize = 500;
 const TAX_SCALE: i64 = 10_000;
+
+#[spacetimedb::table(accessor = spacetimedb_uri)]
+struct SpacetimeDbUri {
+    uri: String,
+}
+
+fn get_spacetimedb_uri(tx: &TxContext) -> String {
+    tx.db.spacetimedb_uri().iter().next().unwrap().uri
+}
 
 macro_rules! ensure {
     ($cond:expr, $($arg:tt)+) => {
@@ -23,10 +34,12 @@ pub enum CustomerSelector {
     ByLastName(String),
 }
 
+type WarehouseId = u16;
+
 #[derive(Clone, Debug, SpacetimeType)]
 pub struct NewOrderLineInput {
     pub item_id: u32,
-    pub supply_w_id: u16,
+    pub supply_w_id: WarehouseId,
     pub quantity: u32,
 }
 
@@ -34,7 +47,7 @@ pub struct NewOrderLineInput {
 pub struct NewOrderLineResult {
     pub item_id: u32,
     pub item_name: String,
-    pub supply_w_id: u16,
+    pub supply_w_id: WarehouseId,
     pub quantity: u32,
     pub stock_quantity: i32,
     pub item_price_cents: i64,
@@ -74,7 +87,7 @@ pub struct PaymentResult {
 #[derive(Clone, Debug, SpacetimeType)]
 pub struct OrderStatusLineResult {
     pub item_id: u32,
-    pub supply_w_id: u16,
+    pub supply_w_id: WarehouseId,
     pub quantity: u32,
     pub amount_cents: i64,
     pub delivery_d: Option<Timestamp>,
@@ -95,7 +108,7 @@ pub struct OrderStatusResult {
 
 #[derive(Clone, Debug, SpacetimeType)]
 pub struct StockLevelResult {
-    pub warehouse_id: u16,
+    pub warehouse_id: WarehouseId,
     pub district_id: u8,
     pub threshold: i32,
     pub low_stock_count: u32,
@@ -105,7 +118,7 @@ pub struct StockLevelResult {
 pub struct DeliveryQueueAck {
     pub scheduled_id: u64,
     pub queued_at: Timestamp,
-    pub warehouse_id: u16,
+    pub warehouse_id: WarehouseId,
     pub carrier_id: u8,
 }
 
@@ -123,7 +136,7 @@ pub struct DeliveryCompletionView {
     pub driver_id: String,
     pub terminal_id: u32,
     pub request_id: u64,
-    pub warehouse_id: u16,
+    pub warehouse_id: WarehouseId,
     pub carrier_id: u8,
     pub queued_at: Timestamp,
     pub completed_at: Timestamp,
@@ -135,7 +148,7 @@ pub struct DeliveryCompletionView {
 #[derive(Clone, Debug)]
 pub struct Warehouse {
     #[primary_key]
-    pub w_id: u16,
+    pub w_id: WarehouseId,
     pub w_name: String,
     pub w_street_1: String,
     pub w_street_2: String,
@@ -144,6 +157,13 @@ pub struct Warehouse {
     pub w_zip: String,
     pub w_tax_bps: i32,
     pub w_ytd_cents: i64,
+
+    /// Added by us: the [`Identity`] of the remote database where this warehouse is sharded,
+    /// or `None` if this warehouse is sharded in the local database.
+    ///
+    /// TPC-C 1.4.7: "Attributes may be added and/or duplicated from one table to another
+    /// as long as these changes do not improve performance."
+    pub remote_database_home: Option<Identity>,
 }
 
 #[table(
@@ -154,7 +174,7 @@ pub struct Warehouse {
 pub struct District {
     #[primary_key]
     pub district_key: u32,
-    pub d_w_id: u16,
+    pub d_w_id: WarehouseId,
     pub d_id: u8,
     pub d_name: String,
     pub d_street_1: String,
@@ -176,7 +196,7 @@ pub struct District {
 pub struct Customer {
     #[primary_key]
     pub customer_key: u64,
-    pub c_w_id: u16,
+    pub c_w_id: WarehouseId,
     pub c_d_id: u8,
     pub c_id: u32,
     pub c_first: String,
@@ -207,7 +227,7 @@ pub struct History {
     pub history_id: u64,
     pub h_c_id: u32,
     pub h_c_d_id: u8,
-    pub h_c_w_id: u16,
+    pub h_c_w_id: WarehouseId,
     pub h_d_id: u8,
     pub h_w_id: u16,
     pub h_date: Timestamp,
@@ -234,7 +254,7 @@ pub struct Item {
 pub struct Stock {
     #[primary_key]
     pub stock_key: u64,
-    pub s_w_id: u16,
+    pub s_w_id: WarehouseId,
     pub s_i_id: u32,
     pub s_quantity: i32,
     pub s_dist_01: String,
@@ -262,7 +282,7 @@ pub struct Stock {
 pub struct OOrder {
     #[primary_key]
     pub order_key: u64,
-    pub o_w_id: u16,
+    pub o_w_id: WarehouseId,
     pub o_d_id: u8,
     pub o_id: u32,
     pub o_c_id: u32,
@@ -280,7 +300,7 @@ pub struct OOrder {
 pub struct NewOrder {
     #[primary_key]
     pub new_order_key: u64,
-    pub no_w_id: u16,
+    pub no_w_id: WarehouseId,
     pub no_d_id: u8,
     pub no_o_id: u32,
 }
@@ -293,7 +313,7 @@ pub struct NewOrder {
 pub struct OrderLine {
     #[primary_key]
     pub order_line_key: u64,
-    pub ol_w_id: u16,
+    pub ol_w_id: WarehouseId,
     pub ol_d_id: u8,
     pub ol_o_id: u32,
     pub ol_number: u8,
@@ -321,7 +341,7 @@ pub struct DeliveryJob {
     pub terminal_id: u32,
     pub request_id: u64,
     pub queued_at: Timestamp,
-    pub w_id: u16,
+    pub w_id: WarehouseId,
     pub carrier_id: u8,
     pub next_d_id: u8,
     pub skipped_districts: u8,
@@ -341,7 +361,7 @@ pub struct DeliveryCompletion {
     pub driver_id: String,
     pub terminal_id: u32,
     pub request_id: u64,
-    pub warehouse_id: u16,
+    pub warehouse_id: WarehouseId,
     pub carrier_id: u8,
     pub queued_at: Timestamp,
     pub completed_at: Timestamp,
@@ -483,7 +503,374 @@ pub fn new_order(
     c_id: u32,
     order_lines: Vec<NewOrderLineInput>,
 ) -> Result<NewOrderResult, String> {
-    ctx.try_with_tx(|tx| new_order_tx(tx, w_id, d_id, c_id, order_lines.clone()))
+    ensure!(
+        (1..=DISTRICTS_PER_WAREHOUSE).contains(&d_id),
+        "district id out of range"
+    );
+    ensure!(
+        (5..=15).contains(&order_lines.len()),
+        "new-order requires between 5 and 15 order lines"
+    );
+
+    // Setup TX: validate warehouse, district, customer ID.
+    // These never change in TPC-C, so we don't need to include the checks in the same transaction as the rest of the work.
+    let (warehouse, district, customer, spacetimedb_uri) = ctx.try_with_tx(|tx| {
+        let warehouse = find_warehouse(tx, w_id)?;
+        let district = find_district(tx, w_id, d_id)?;
+        let customer = find_customer_by_id(tx, w_id, d_id, c_id)?;
+        let spacetimedb_uri = get_spacetimedb_uri(tx);
+        Ok::<_, String>((warehouse, district, customer, spacetimedb_uri))
+    })?;
+
+    let (local_database_items, remote_database_items, all_local_warehouse) = ctx.try_with_tx(|tx| {
+        let mut local_database_items: Vec<(usize, NewOrderLineInput, Item, bool)> =
+            Vec::with_capacity(order_lines.len());
+        let mut remote_database_items: Vec<(usize, NewOrderLineInput, Item, Identity)> =
+            Vec::with_capacity(order_lines.len());
+
+        // Whether this order applies only to a single warehouse.
+        // This may be `false` even when `remote_database_items_to_get` is non-empty,
+        // as we may run multiple warehouses from the same database.
+        let mut all_local_warehouse = true;
+
+        for (idx, line) in order_lines.iter().enumerate() {
+            ensure!(line.quantity > 0, "order line quantity must be positive");
+
+            let is_remote_warehouse = line.supply_w_id == w_id;
+            all_local_warehouse &= is_remote_warehouse;
+
+            let warehouse = tx
+                .db
+                .warehouse()
+                .w_id()
+                .find(line.supply_w_id)
+                .ok_or_else(|| format!("No such warehouse: {}", line.supply_w_id))?;
+
+            // TECHNICALLY NON-CONFORMANT: If we encounter a non-existent item in the order,
+            // we'll short-circuit and exit here.
+            // TPC-C technically requires, in 2.4.2.3, that we still retrieve and process all the valid item numbers.
+            // This would be a horrendous pain to implement, so we won't.
+            // We don't do the things the spec tells us it doesn't want us to do, namely:
+            // - changing the execution of other steps
+            // - using a different type of transaction
+            // But we do skip inspecting some number of valid items and stocks.
+            let item = find_item(tx, line.item_id)?;
+            match warehouse.remote_database_home {
+                None => {
+                    // Warehouse is local to this database.
+                    // We'll actually "process" the items, i.e. decrement the stock and sum the order price,
+                    // after we look up and process all the remote items.
+                    local_database_items.push((idx, NewOrderLineInput::clone(line), item, is_remote_warehouse));
+                }
+                Some(remote_database_identity) => {
+                    // Warehouse is on another database; we'll have to do a remote request.
+                    // This is *really* non-conformant.
+                    // TODO(docs): link to blog post justifying this.
+                    remote_database_items.push((idx, NewOrderLineInput::clone(line), item, remote_database_identity));
+                }
+            }
+        }
+
+        Ok::<_, String>((local_database_items, remote_database_items, all_local_warehouse))
+    })?;
+
+    let mut remote_item_reservations: Vec<ReserveItemOutput> = Vec::with_capacity(remote_database_items.len());
+
+    for (_idx, line, item, remote_database_ident) in &remote_database_items {
+        match call_remote_function(
+            ctx,
+            &spacetimedb_uri,
+            *remote_database_ident,
+            "reserve_item_for_remote_order",
+            vec![serde_json::json!(spacetimedb_sats::serde::SerdeWrapper(
+                ReserveItemInput {
+                    line: NewOrderLineInput::clone(line),
+                    district: d_id,
+                }
+            ))],
+        ) {
+            Err(e) => {
+                rollback_all_remote_item_reservations(
+                    ctx,
+                    &spacetimedb_uri,
+                    remote_database_items,
+                    remote_item_reservations,
+                );
+                return Err(format!("Error reserving remote item: {e}"));
+            }
+            Ok(body) => {
+                let body = body.into_string().expect("Body should be valid UTF-8");
+                let res: SerdeWrapper<Result<ReserveItemOutput, String>> =
+                    serde_json::from_str(&body).expect("Response does not conform to expected schema");
+                match res.0 {
+                    Err(e) => {
+                        rollback_all_remote_item_reservations(
+                            ctx,
+                            &spacetimedb_uri,
+                            remote_database_items,
+                            remote_item_reservations,
+                        );
+                        return Err(format!("Error reserving remote item from database: {e}"));
+                    }
+                    Ok(output) => remote_item_reservations.push(output),
+                }
+            }
+        };
+    }
+
+    match ctx.try_with_tx(|tx| {
+        let district = tx
+            .db
+            .district()
+            .district_key()
+            .find(district.district_key)
+            .expect("District should not have been removed since we retrieved it last");
+        let order_id = district.d_next_o_id;
+        tx.db.district().district_key().update(District {
+            d_next_o_id: order_id + 1,
+            ..district
+        });
+
+        let mut subtotal_cents = 0;
+
+        let line_results = local_database_items
+            .iter()
+            .map(|(idx, line, item, is_remote_warehouse)| {
+                let stock = find_stock(tx, line.supply_w_id, line.item_id).expect("Stock should exist for all items");
+                tx.db.stock().stock_key().update(Stock {
+                    s_quantity: adjust_stock_quantity(stock.s_quantity, line.quantity as i32),
+                    s_ytd: stock.s_ytd + line.quantity as u64,
+                    s_order_cnt: stock.s_order_cnt + 1,
+                    s_remote_cnt: stock.s_remote_cnt + u32::from(*is_remote_warehouse),
+                    ..stock.clone()
+                });
+
+                (idx, line, item, district_stock_info(&stock, d_id), stock.s_data)
+            })
+            .chain(remote_database_items.iter().zip(remote_item_reservations.iter()).map(
+                |((idx, line, item, _remote_db_ident), reservation)| {
+                    (idx, line, item, reservation.s_dist, reservation.s_data)
+                },
+            ))
+            .map(|(idx, line, item, s_dist, s_data)| {
+                let line_amount_cents = line.quantity as i64 * item.i_price_cents;
+                subtotal_cents += line_amount_cents;
+                let brand_generic = if contains_original(&item.i_data) && contains_original(&s_data) {
+                    "B"
+                } else {
+                    "G"
+                };
+                tx.db.order_line().insert(OrderLine {
+                    order_line_key: pack_order_line_key(w_id, d_id, order_id, (idx + 1) as u8),
+                    ol_w_id: w_id,
+                    ol_d_id: d_id,
+                    ol_o_id: order_id,
+                    ol_number: (idx + 1) as u8,
+                    ol_i_id: line.item_id,
+                    ol_supply_w_id: line.supply_w_id,
+                    ol_delivery_d: None,
+                    ol_quantity: line.quantity,
+                    ol_amount_cents: line_amount_cents,
+                    ol_dist_info: s_dist,
+                });
+
+                NewOrderLineResult {
+                    item_id: item.i_id,
+                    item_name: item.i_name,
+                    supply_w_id: line.supply_w_id,
+                    quantity: line.quantity,
+                    stock_quantity: updated_stock_quantity,
+                    item_price_cents: item.i_price_cents,
+                    amount_cents: line_amount_cents,
+                    brand_generic: brand_generic.to_string(),
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let taxed = apply_tax(
+            subtotal_cents,
+            i64::from(warehouse.w_tax_bps) + i64::from(district.d_tax_bps),
+        );
+        let total_amount_cents = apply_discount(taxed, i64::from(customer.c_discount_bps));
+
+        Ok(NewOrderResult {
+            warehouse_tax_bps: warehouse.w_tax_bps,
+            district_tax_bps: district.d_tax_bps,
+            customer_discount_bps: customer.c_discount_bps,
+            customer_last: customer.c_last,
+            customer_credit: customer.c_credit,
+            order_id,
+            entry_d: tx.timestamp,
+            total_amount_cents,
+            all_local: all_local_warehouse,
+            lines: line_results,
+        })
+    }) {
+        Ok(result) => {
+            confirm_all_remote_item_reservations(
+                ctx,
+                &spacetimedb_uri,
+                remote_database_items,
+                remote_item_reservations,
+            );
+            Ok(result)
+        }
+        Err(e) => {
+            rollback_all_remote_item_reservations(
+                ctx,
+                &spacetimedb_uri,
+                remote_database_items,
+                remote_item_reservations,
+            );
+            Err(e)
+        }
+    }
+}
+
+fn call_remote_function(
+    ctx: &mut ProcedureContext,
+    spacetimedb_uri: &str,
+    database_ident: Identity,
+    function_name: &str,
+    arguments: Vec<serde_json::Value>,
+) -> Result<spacetimedb::http::Body, String> {
+    let request = Request::builder()
+        .uri(format!(
+            "{spacetimedb_uri}/v1/database/{database_ident}/call/{function_name}"
+        ))
+        .method("POST")
+        // TODO(auth): include a token.
+        .body(serde_json::json!(arguments).to_string())
+        .map_err(|e| format!("Error constructing `Request`: {e}"))?;
+    match ctx.http.send(request) {
+        Err(e) => Err(format!("Error sending request to remote database {database_ident} at URI {spacetimedb_uri} to call {function_name}: {e}")),
+        Ok(response) if response.status() != http::status::StatusCode::OK => Err(format!("Got non-200 response code {} from request to remote database {database_ident} at URI {spacetimedb_uri} when calling {function_name}: {}", response.status(), response.into_body().into_string_lossy())),
+        Ok(response) => Ok(response.into_body()),
+    }
+}
+
+fn rollback_all_remote_item_reservations(
+    ctx: &mut ProcedureContext,
+    spacetimedb_uri: &str,
+    remote_items: Vec<(usize, NewOrderLineInput, Item, Identity)>,
+    reservations: Vec<ReserveItemOutput>,
+) {
+    for ((_idx, _line, _item, remote_database_ident), reservation) in
+        remote_items.into_iter().zip(reservations.into_iter())
+    {
+        if let Err(e) = call_remote_function(
+            ctx,
+            spacetimedb_uri,
+            remote_database_ident,
+            "rollback_item_reservation",
+            vec![serde_json::json!(reservation.rollback_token)],
+        ) {
+            log::error!("Error rollinb back item reservation: {e}");
+        }
+    }
+}
+
+fn confirm_all_remote_item_reservations(
+    ctx: &mut ProcedureContext,
+    spacetimedb_uri: &str,
+    remote_items: Vec<(usize, NewOrderLineInput, Item, Identity)>,
+    reservations: Vec<ReserveItemOutput>,
+) {
+    for ((_idx, _line, _item, remote_database_ident), reservation) in
+        remote_items.into_iter().zip(reservations.into_iter())
+    {
+        if let Err(e) = call_remote_function(
+            ctx,
+            spacetimedb_uri,
+            remote_database_ident,
+            "confirm_item_reservation",
+            vec![serde_json::json!(reservation.rollback_token)],
+        ) {
+            log::error!("Error confirming item reservation: {e}");
+        }
+    }
+}
+
+#[derive(SpacetimeType)]
+pub struct ReserveItemOutput {
+    s_dist: String,
+    s_data: String,
+    rollback_token: u64,
+}
+
+#[table(accessor = reserved_item_log)]
+pub struct ReservedItemLog {
+    #[primary_key]
+    #[auto_inc]
+    rollback_token: u64,
+    line: NewOrderLineInput,
+}
+
+#[derive(SpacetimeType)]
+pub struct ReserveItemInput {
+    line: NewOrderLineInput,
+    district: u8,
+}
+
+#[procedure]
+pub fn reserve_item_for_remote_order(
+    ctx: &mut ProcedureContext,
+    input: ReserveItemInput,
+) -> Result<ReserveItemOutput, String> {
+    let ReserveItemInput { line, district } = input;
+    ctx.try_with_tx(|tx| {
+        let stock = find_stock(tx, line.supply_w_id, line.item_id)?;
+
+        let quantity = line.quantity;
+
+        let ReservedItemLog { rollback_token, .. } = tx.db.reserved_item_log().insert(ReservedItemLog {
+            rollback_token: 0,
+            line: line.clone(),
+        });
+
+        let reserved = ReserveItemOutput {
+            s_dist: district_stock_info(&stock, district),
+            s_data: stock.s_data.clone(),
+            rollback_token,
+        };
+
+        tx.db.stock().stock_key().update(Stock {
+            s_quantity: adjust_stock_quantity(stock.s_quantity, quantity as i32),
+            s_ytd: stock.s_ytd + u64::from(quantity),
+            s_order_cnt: stock.s_order_cnt + 1,
+            s_remote_cnt: stock.s_remote_cnt + 1,
+            ..stock
+        });
+
+        Ok(reserved)
+    })
+}
+
+#[reducer]
+pub fn rollback_item_reservation(ctx: &ReducerContext, rollback_token: u64) -> Result<(), String> {
+    let line = ctx
+        .db
+        .reserved_item_log()
+        .rollback_token()
+        .find(rollback_token)
+        .ok_or_else(|| format!("No such rollback token: {rollback_token}"))?
+        .line;
+    let stock = find_stock(ctx, line.supply_w_id, line.item_id)?;
+    let quantity = line.quantity;
+    ctx.db.stock().stock_key().update(Stock {
+        s_quantity: reverse_stock_quantity(stock.s_quantity, quantity as i32),
+        s_ytd: stock.s_ytd - line.quantity as u64,
+        s_order_cnt: stock.s_order_cnt - 1,
+        s_remote_cnt: stock.s_remote_cnt - 1,
+        ..stock
+    });
+    ctx.db.reserved_item_log().rollback_token().delete(rollback_token);
+    Ok(())
+}
+
+#[reducer]
+pub fn confirm_item_reservation(ctx: &ReducerContext, rollback_token: u64) {
+    ctx.db.reserved_item_log().rollback_token().delete(rollback_token);
 }
 
 #[procedure]
@@ -1097,7 +1484,7 @@ fn find_item(tx: &spacetimedb::TxContext, item_id: u32) -> Result<Item, String> 
         .ok_or_else(|| format!("item {item_id} not found"))
 }
 
-fn find_stock(tx: &spacetimedb::TxContext, w_id: u16, item_id: u32) -> Result<Stock, String> {
+fn find_stock(tx: &ReducerContext, w_id: u16, item_id: u32) -> Result<Stock, String> {
     tx.db
         .stock()
         .by_w_i()
@@ -1127,10 +1514,22 @@ fn contains_original(data: &str) -> bool {
 }
 
 fn adjust_stock_quantity(current_quantity: i32, ordered_quantity: i32) -> i32 {
+    assert!(ordered_quantity >= 1);
+    assert!(ordered_quantity <= 10);
     if current_quantity - ordered_quantity >= 10 {
         current_quantity - ordered_quantity
     } else {
         current_quantity - ordered_quantity + 91
+    }
+}
+
+fn reverse_stock_quantity(current_quantity: i32, ordered_quantity: i32) -> i32 {
+    assert!(ordered_quantity >= 1);
+    assert!(ordered_quantity <= 10);
+    if current_quantity + ordered_quantity >= 91 {
+        current_quantity + ordered_quantity - 91
+    } else {
+        current_quantity + ordered_quantity
     }
 }
 
