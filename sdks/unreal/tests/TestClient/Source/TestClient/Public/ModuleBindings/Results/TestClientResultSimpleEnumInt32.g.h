@@ -16,10 +16,10 @@ struct TESTCLIENT_API FTestClientResultSimpleEnumInt32
     bool bIsOk = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB", meta = (EditCondition = "bIsOk"))
-    ESimpleEnumType OkValue;
+    ESimpleEnumType OkValue = {};
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB", meta = (EditCondition = "!bIsOk"))
-    int32 ErrValue;
+    int32 ErrValue = {};
 
     FTestClientResultSimpleEnumInt32() = default;
 

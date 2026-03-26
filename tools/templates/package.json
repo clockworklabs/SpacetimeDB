@@ -1,0 +1,14 @@
+{
+  "name": "templates-tools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate-readmes": "tsx generate-template-readmes.ts",
+    "update-jsons": "tsx update-template-jsons.ts",
+    "generate": "pnpm run generate-readmes && pnpm run update-jsons"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "@types/node": "^20.0.0"
+  }
+}
