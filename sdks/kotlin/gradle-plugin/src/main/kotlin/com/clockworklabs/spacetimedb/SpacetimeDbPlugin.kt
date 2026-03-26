@@ -13,7 +13,8 @@ class SpacetimeDbPlugin : Plugin<Project> {
 
         ext.modulePath.convention(project.rootProject.layout.projectDirectory.dir("spacetimedb"))
 
-        val generatedDir = project.layout.buildDirectory.dir("generated/spacetimedb")
+        val bindingsDir = project.layout.buildDirectory.dir("generated/spacetimedb/bindings")
+        val configDir = project.layout.buildDirectory.dir("generated/spacetimedb/config")
 
         // Clean the Rust target directory when running `gradle clean`
         project.tasks.register("cleanSpacetimeModule", Delete::class.java) {
@@ -31,22 +32,21 @@ class SpacetimeDbPlugin : Plugin<Project> {
             it.moduleSourceFiles.from(ext.modulePath.map { dir ->
                 project.fileTree(dir) { tree -> tree.exclude("target") }
             })
-            it.outputDir.set(generatedDir)
+            it.outputDir.set(bindingsDir)
         }
 
         val configTask = project.tasks.register("generateSpacetimeConfig", GenerateConfigTask::class.java) {
             val rootDir = project.rootProject.layout.projectDirectory
             it.localConfig.set(rootDir.file("spacetime.local.json"))
             it.mainConfig.set(rootDir.file("spacetime.json"))
-            it.outputDir.set(generatedDir)
+            it.outputDir.set(configDir)
         }
 
         // Wire generated sources into Kotlin compilation
         project.pluginManager.withPlugin("org.jetbrains.kotlin.jvm") {
-            project.extensions.getByType(SourceSetContainer::class.java)
-                .getByName("main")
-                .java
-                .srcDir(generatedDir)
+            val sourceSets = project.extensions.getByType(SourceSetContainer::class.java)
+            sourceSets.getByName("main").java.srcDir(bindingsDir)
+            sourceSets.getByName("main").java.srcDir(configDir)
 
             project.tasks.named("compileKotlin") {
                 it.dependsOn(generateTask)
@@ -55,11 +55,9 @@ class SpacetimeDbPlugin : Plugin<Project> {
         }
 
         project.pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
-            project.extensions.getByType(KotlinMultiplatformExtension::class.java)
-                .sourceSets
-                .getByName("commonMain")
-                .kotlin
-                .srcDir(generatedDir)
+            val kmpSourceSets = project.extensions.getByType(KotlinMultiplatformExtension::class.java).sourceSets
+            kmpSourceSets.getByName("commonMain").kotlin.srcDir(bindingsDir)
+            kmpSourceSets.getByName("commonMain").kotlin.srcDir(configDir)
 
             project.tasks.withType(org.jetbrains.kotlin.gradle.tasks.AbstractKotlinCompileTool::class.java).configureEach {
                 it.dependsOn(generateTask)
