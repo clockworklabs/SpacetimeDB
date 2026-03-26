@@ -1944,9 +1944,10 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
         let method_name = kotlin_ident(accessor_name.deref().to_case(Case::Camel));
 
         // Check if this table has indexed columns (views have none)
-        let has_ix = module.tables().find(|t| t.name == *name).is_some_and(|t| {
-            iter_indexes(t).any(|idx| matches!(&idx.algorithm, IndexAlgorithm::BTree(_)))
-        });
+        let has_ix = module
+            .tables()
+            .find(|t| t.name == *name)
+            .is_some_and(|t| iter_indexes(t).any(|idx| matches!(&idx.algorithm, IndexAlgorithm::BTree(_))));
 
         if has_ix {
             writeln!(
