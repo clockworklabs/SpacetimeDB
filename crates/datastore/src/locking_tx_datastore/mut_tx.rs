@@ -272,6 +272,9 @@ impl MutTxId {
         op: &FuncCallType,
         table_id: TableId,
         index_id: IndexId,
+        // The point that was scanned, if any.
+        // Otherwise this was a range scan
+        // and we'll conservatively record this as a full table scan.
         point: Option<IndexKey<'_>>,
     ) {
         if let FuncCallType::View(view) = op {

@@ -292,6 +292,9 @@ impl<'a> CowAV<'a> {
     }
 }
 
+// The various sizes passed to `BytesKey`.
+// A `B` suffix is for a size used for a btree index
+// and an `H` suffix is for a size used for a hash index.
 const BYTES_KEY_SIZE_8_B: usize = 8;
 const BYTES_KEY_SIZE_8_H: usize = size_sub_row_pointer(16);
 const _: () = assert!(BYTES_KEY_SIZE_8_B == BYTES_KEY_SIZE_8_H);

@@ -106,7 +106,14 @@ impl<K: Ord + KeySize> Index for BTreeIndex<K> {
 
 impl<K: KeySize + Ord> BTreeIndex<K> {
     /// See [`Index::delete`].
-    /// This version has relaxed bounds.
+    ///
+    /// This version has relaxed bounds
+    /// where relaxed means that the key type can be borrowed from the index's key type
+    /// and need not be `Index::Key` itself.
+    /// This allows e.g., queries with `&str` rather than providing an owned string key.
+    /// This can be exploited to avoid heap alloctions in some situations,
+    /// e.g., borrowing the input directly from BSATN.
+    /// This is similar to the bounds on [`BTreeMap::remove`].
     pub fn delete<Q>(&mut self, key: &Q, ptr: RowPointer) -> bool
     where
         Q: ?Sized + KeySize + Ord,
@@ -131,7 +138,14 @@ impl<K: KeySize + Ord> BTreeIndex<K> {
     }
 
     /// See [`Index::seek_point`].
-    /// This version has relaxed bounds.
+    ///
+    /// This version has relaxed bounds
+    /// where relaxed means that the key type can be borrowed from the index's key type
+    /// and need not be `Index::Key` itself.
+    /// This allows e.g., queries with `&str` rather than providing an owned string key.
+    /// This can be exploited to avoid heap alloctions in some situations,
+    /// e.g., borrowing the input directly from BSATN.
+    /// This is similar to the bounds on [`BTreeMap::get`].
     pub fn seek_point<Q>(&self, point: &Q) -> <Self as Index>::PointIter<'_>
     where
         Q: ?Sized + Ord,
@@ -156,7 +170,14 @@ impl<K: Ord + KeySize> RangedIndex for BTreeIndex<K> {
 
 impl<K: KeySize + Ord> BTreeIndex<K> {
     /// See [`RangedIndex::seek_range`].
-    /// This version has relaxed bounds.
+    ///
+    /// This version has relaxed bounds
+    /// where relaxed means that the key type can be borrowed from the index's key type
+    /// and need not be `Index::Key` itself.
+    /// This allows e.g., queries with `&str` rather than providing an owned string key.
+    /// This can be exploited to avoid heap alloctions in some situations,
+    /// e.g., borrowing the input directly from BSATN.
+    /// This is similar to the bounds on [`BTreeMap::range`].
     pub fn seek_range<Q: ?Sized + Ord>(&self, range: &impl RangeBounds<Q>) -> <Self as RangedIndex>::RangeIter<'_>
     where
         <Self as Index>::Key: Borrow<Q>,

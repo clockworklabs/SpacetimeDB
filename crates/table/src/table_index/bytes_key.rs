@@ -17,7 +17,7 @@ use spacetimedb_sats::{u256, AlgebraicType, AlgebraicValue, ProductTypeElement, 
 ///
 /// As we cannot have too many different `N`s,
 /// we have a few `N`s, where each is a power of 2.
-/// A key is then padded to the nearest `N`.
+/// A key is then padded with zeroes to the nearest `N`.
 /// For example, a key `(x: u8, y: u16, z: u32)` for a 3-column index
 /// would have `N = 1 + 2 + 4 = 7` but would be padded to `N = 8`.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
@@ -57,12 +57,21 @@ pub(super) fn required_bytes_key_size(ty: &AlgebraicType, is_range_index: bool) 
 
         // For sum, we report the greatest possible fixed size.
         // A key may be of variable size, a long as it fits within an upper bound.
+        //
+        // It's valid to use BSATN-ified sums in range index, i.e., when `is_range_index`,
+        // as `Ord for AlgebraicValue` delegates to `Ord for SumValue`
+        // which compares the `tag` first and the payload (`value`) second,
+        // The BSATN encoding of sums places the `tag` first and the payload second.
+        // When comparing two `[u8]` slices with encoded sums,
+        // this produces an ordering that also compares the `tag` first and the payload second.
         Sum(ty) => {
             let mut max_size = 0;
             for var in &ty.variants {
                 let variant_size = required_bytes_key_size(&var.algebraic_type, is_range_index)?;
                 max_size = max_size.max(variant_size);
             }
+            // The sum tag is represented as a u8 in BSATN,
+            // so add a byte for the tag.
             Some(1 + max_size)
         }
 
@@ -97,7 +106,11 @@ pub(super) fn required_bytes_key_size(ty: &AlgebraicType, is_range_index: bool) 
 impl<const N: usize> BytesKey<N> {
     /// Decodes `self` as an [`AlgebraicValue`] at `key_type`.
     ///
-    /// Panics if the wrong `key_type` is provided, but that should never happen.
+    /// An incorrect `key_type`,
+    /// i.e., one other than what was used when the index was created,
+    /// may lead to a panic, but this is not guaranteed.
+    /// The method could also silently succeed
+    /// if the passed `key_type` incidentally happens to be compatible the stored bytes in `self`.
     pub(super) fn decode_algebraic_value(&self, key_type: &AlgebraicType) -> AlgebraicValue {
         AlgebraicValue::decode(key_type, &mut self.0.as_slice())
             .expect("A `BytesKey` should by construction always deserialize to the right `key_type`")
@@ -122,6 +135,14 @@ impl<const N: usize> BytesKey<N> {
         range_type: &AlgebraicType,
     ) -> DecodeResult<Self> {
         // Validate the BSATN.
+        //
+        // The BSATN can originate from untrusted sources, e.g., from module code.
+        // This also means that a `BytesKey` can be trusted to hold valid BSATN
+        // for the key type, which we can rely on in e.g., `decode_algebraic_value`,
+        // which isn't used in a context where it would be appropriate to fail.
+        //
+        // Another reason to validate is that we wish for `BytesKey` to be strictly
+        // an optimization and not allow things that would be rejected by the non-optimized code.
         WithTypespace::empty(prefix_types).validate(Deserializer::new(&mut { prefix }))?;
         WithTypespace::empty(range_type).validate(Deserializer::new(&mut { endpoint }))?;
         // Check that the `prefix` and the `endpoint` together fit into the key.
@@ -138,7 +159,7 @@ impl<const N: usize> BytesKey<N> {
     /// Decodes `bytes` in BSATN to a [`BytesKey<N>`]
     /// by copying over the bytes if they fit into the key.
     pub(super) fn from_bsatn(ty: &AlgebraicType, bytes: &[u8]) -> DecodeResult<Self> {
-        // Validate the BSATN.
+        // Validate the BSATN. See `Self::from_bsatn_prefix_and_endpoint` for more details.
         WithTypespace::empty(ty).validate(Deserializer::new(&mut { bytes }))?;
         // Check that the `bytes` fit into the key.
         let got = bytes.len();
@@ -177,5 +198,29 @@ impl<const N: usize> BytesKey<N> {
         av.serialize_into_bsatn(ser)
             .expect("should've serialized an `AlgebraicValue` to BSATN successfully");
         Self(arr)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use proptest::prelude::*;
+    use spacetimedb_sats::bsatn::to_len;
+    use spacetimedb_sats::proptest::generate_typed_row;
+
+    const N: usize = 4096;
+
+    proptest! {
+        #[test]
+        fn test_bytes_key_round_trip((ty, av) in generate_typed_row()) {
+            let len = to_len(&av).unwrap();
+            prop_assume!(len <= N);
+
+            let ty = AlgebraicType::Product(ty);
+            let av = AlgebraicValue::Product(av);
+            let key = BytesKey::<N>::from_algebraic_value(&av);
+            let decoded_av = key.decode_algebraic_value(&ty);
+            assert_eq!(av, decoded_av);
+        }
     }
 }
