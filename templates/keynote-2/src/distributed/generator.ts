@@ -149,8 +149,11 @@ async function main(): Promise<void> {
           state.currentEpoch != null &&
           state.participants.includes(id)
         ) {
-          console.log(`[generator ${id}] starting epoch ${state.currentEpoch}`);
-          await session.startEpoch(state.currentEpoch);
+          const { pipelined, maxInflightPerConnection } = state.loadOptions;
+          console.log(
+            `[generator ${id}] starting epoch ${state.currentEpoch} mode=${pipelined ? `pipelined/${maxInflightPerConnection}` : 'closed-loop'}`,
+          );
+          await session.startEpoch(state.currentEpoch, state.loadOptions);
           activeEpoch = state.currentEpoch;
         }
       } else if (!shouldKeepRunning) {

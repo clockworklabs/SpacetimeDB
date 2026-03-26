@@ -18,7 +18,7 @@ function printState(state: CoordinatorState): void {
     `phase=${state.phase} epoch=${state.currentEpoch ?? '-'} label=${state.currentLabel ?? '-'}`,
   );
   console.log(
-    `test=${state.test} connector=${state.connector} participants=${state.participants.length}`,
+    `test=${state.test} connector=${state.connector} participants=${state.participants.length} mode=${state.loadOptions.pipelined ? `pipelined/${state.loadOptions.maxInflightPerConnection}` : 'closed-loop'}`,
   );
 
   if (state.generators.length === 0) {
@@ -35,7 +35,7 @@ function printState(state: CoordinatorState): void {
   if (state.lastResult) {
     console.log('last_result:');
     console.log(
-      `  epoch=${state.lastResult.epoch} tps=${state.lastResult.tps.toFixed(2)} delta=${state.lastResult.committedDelta} verification=${state.lastResult.verification}${state.lastResult.error ? ` error=${state.lastResult.error}` : ''}`,
+      `  epoch=${state.lastResult.epoch} mode=${state.lastResult.loadOptions.pipelined ? `pipelined/${state.lastResult.loadOptions.maxInflightPerConnection}` : 'closed-loop'} tps=${state.lastResult.tps.toFixed(2)} delta=${state.lastResult.committedDelta} verification=${state.lastResult.verification}${state.lastResult.error ? ` error=${state.lastResult.error}` : ''}`,
     );
   }
 }

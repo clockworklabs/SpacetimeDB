@@ -264,6 +264,8 @@ Notes:
 
 - `--warmup-seconds` is the unmeasured warmup period. Generators submit requests during warmup, but those transactions are excluded from TPS.
 - `--window-seconds` is the measured interval.
+- `--pipelined 1` enables request pipelining. Omit it or pass `--pipelined 0` to stay in closed-loop mode, one request at a time.
+- `--max-inflight-per-connection` caps the number of in-flight requests each connection may have when pipelining is enabled. The default is `8`.
 - `--verify 1` preserves the existing benchmark semantics by running one verification pass centrally after the epoch completes.
 - The coordinator derives the HTTP metrics endpoint from `--stdb-url` by switching to `http://` or `https://` and appending `/v1/metrics`.
 - For a real multi-machine run, change `--bind 127.0.0.1` to `--bind 0.0.0.0` so remote generators can reach the coordinator.
@@ -351,6 +353,7 @@ The result contains:
 
 - participating generator IDs
 - total participating connections
+- whether the epoch used closed-loop or pipelined load, and the per-connection in-flight cap
 - committed transaction delta from the server metrics endpoint
 - measured window duration
 - computed TPS
@@ -361,7 +364,7 @@ The result contains:
 - Start the coordinator before the generators.
 - Generators begin submitting requests when the coordinator enters `warmup`, not when the measured window begins.
 - Throughput is measured only from the committed transaction counter delta recorded after warmup, so warmup transactions are excluded.
-- For this distributed TypeScript mode, each connection runs closed-loop with one request at a time. There is no pipelining in this flow.
+- Distributed TypeScript mode defaults to closed-loop, one request at a time per connection. Enable pipelining on the coordinator with `--pipelined 1`, and all generators will follow that setting for the epoch.
 - Late generators are allowed to register and become ready while an epoch is already running, but they only participate in the next epoch.
 - The coordinator does not use heartbeats. It includes generators that most recently reported `ready`.
 - If a participating generator dies and never sends `/stopped`, the epoch result is written with an `error`, and that generator remains `running` in coordinator status until you restart it and let it register again.
