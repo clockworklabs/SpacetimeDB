@@ -1,9 +1,10 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-import { ACC, BAL } from './utils.ts';
+import type { SeedConfig } from '../config.ts';
 
-export function initSqlite(file: string) {
+export function initSqlite(file: string, seedConfig: SeedConfig) {
+  const { accounts, initialBalance } = seedConfig;
   console.log(`\n[sqlite] init @ ${file}`);
 
   try {
@@ -26,10 +27,10 @@ export function initSqlite(file: string) {
       WITH RECURSIVE c(x) AS (
         SELECT 0
         UNION ALL
-        SELECT x + 1 FROM c LIMIT ${ACC}
+        SELECT x + 1 FROM c LIMIT ${accounts}
       )
       INSERT INTO accounts(id, balance)
-      SELECT x, ${BAL} FROM c;
+      SELECT x, ${initialBalance} FROM c;
     `);
 
     db.exec(`COMMIT;`);

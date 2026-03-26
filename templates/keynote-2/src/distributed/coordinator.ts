@@ -4,6 +4,10 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { spacetimedb } from '../connectors/spacetimedb.ts';
+import {
+  getSharedRuntimeDefaults,
+  type SpacetimeConnectorConfig,
+} from '../config.ts';
 import { getSpacetimeCommittedTransfers } from '../core/spacetimeMetrics.ts';
 import { normalizeStdbUrl } from '../core/stdbUrl.ts';
 import {
@@ -74,7 +78,15 @@ async function runVerification(url: string, moduleName: string): Promise<void> {
   const prevVerify = process.env.VERIFY;
   process.env.VERIFY = '1';
 
-  const conn = spacetimedb(url, moduleName);
+  const defaults = getSharedRuntimeDefaults();
+  const config: SpacetimeConnectorConfig = {
+    initialBalance: defaults.initialBalance,
+    stdbConfirmedReads: defaults.stdbConfirmedReads,
+    stdbModule: moduleName,
+    stdbUrl: url,
+  };
+
+  const conn = spacetimedb(config);
   try {
     await conn.open();
     await conn.verify();
