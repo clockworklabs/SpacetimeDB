@@ -1688,7 +1688,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathB
         // Print warning about Windows-only support
         println!(
             "{}",
-            "Note: NativeAOT-LLVM is experimental and currently only supported for Windows server modules.".yellow()
+            "Note: NativeAOT-LLVM is experimental and building for this platform is currently only supported on Windows.".yellow()
         );
     }
 
