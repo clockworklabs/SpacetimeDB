@@ -209,6 +209,8 @@ object DeletePlayersByNameReducer {
 
 package module_bindings
 
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 object GetMySchemaViaHttpProcedure {
     const val PROCEDURE_NAME = "get_my_schema_via_http"
     // Returns: String
@@ -367,6 +369,7 @@ object RemoteModule : ModuleDescriptor {
 
     val tableNames: List<String> = listOf(
         "logged_out_player",
+        "my_player",
         "person",
         "player",
         "test_d",
@@ -375,6 +378,7 @@ object RemoteModule : ModuleDescriptor {
 
     override val subscribableTableNames: List<String> = listOf(
         "logged_out_player",
+        "my_player",
         "person",
         "player",
         "test_d",
@@ -405,6 +409,7 @@ object RemoteModule : ModuleDescriptor {
 
     override fun registerTables(cache: ClientCache) {
         cache.register(LoggedOutPlayerTableHandle.TABLE_NAME, LoggedOutPlayerTableHandle.createTableCache())
+        cache.register(MyPlayerTableHandle.TABLE_NAME, MyPlayerTableHandle.createTableCache())
         cache.register(PersonTableHandle.TABLE_NAME, PersonTableHandle.createTableCache())
         cache.register(PlayerTableHandle.TABLE_NAME, PlayerTableHandle.createTableCache())
         cache.register(TestDTableHandle.TABLE_NAME, TestDTableHandle.createTableCache())
@@ -501,6 +506,7 @@ fun DbConnection.Builder.withModuleBindings(): DbConnection.Builder {
  */
 class QueryBuilder {
     fun loggedOutPlayer(): Table<Player, LoggedOutPlayerCols, LoggedOutPlayerIxCols> = Table("logged_out_player", LoggedOutPlayerCols("logged_out_player"), LoggedOutPlayerIxCols("logged_out_player"))
+    fun myPlayer(): Table<Player, MyPlayerCols, MyPlayerIxCols> = Table("my_player", MyPlayerCols("my_player"), MyPlayerIxCols())
     fun person(): Table<Person, PersonCols, PersonIxCols> = Table("person", PersonCols("person"), PersonIxCols("person"))
     fun player(): Table<Player, PlayerCols, PlayerIxCols> = Table("player", PlayerCols("player"), PlayerIxCols("player"))
     fun testD(): Table<TestD, TestDCols, TestDIxCols> = Table("test_d", TestDCols("test_d"), TestDIxCols())
@@ -529,6 +535,7 @@ fun SubscriptionBuilder.addQuery(build: (QueryBuilder) -> Query<*>): Subscriptio
 fun SubscriptionBuilder.subscribeToAllTables(): com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.SubscriptionHandle {
     val qb = QueryBuilder()
     addQuery(qb.loggedOutPlayer().toSql())
+    addQuery(qb.myPlayer().toSql())
     addQuery(qb.person().toSql())
     addQuery(qb.player().toSql())
     addQuery(qb.testD().toSql())
@@ -851,6 +858,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.CallbackList
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ModuleReducers
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Status
 
 /** Generated reducer call methods and callback registration. */
 class RemoteReducers internal constructor(
@@ -1031,6 +1039,17 @@ class RemoteReducers internal constructor(
         onTestBtreeIndexArgsCallbacks.remove(cb)
     }
 
+    private val onUnhandledReducerErrorCallbacks = CallbackList<(EventContext.Reducer<*>) -> Unit>()
+
+    /** Register a callback for reducer errors with no specific handler. */
+    fun onUnhandledReducerError(cb: (EventContext.Reducer<*>) -> Unit) {
+        onUnhandledReducerErrorCallbacks.add(cb)
+    }
+
+    fun removeOnUnhandledReducerError(cb: (EventContext.Reducer<*>) -> Unit) {
+        onUnhandledReducerErrorCallbacks.remove(cb)
+    }
+
     internal fun handleReducerEvent(ctx: EventContext.Reducer<*>) {
         when (ctx.reducerName) {
             AddReducer.REDUCER_NAME -> {
@@ -1038,6 +1057,8 @@ class RemoteReducers internal constructor(
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<AddArgs>
                     onAddCallbacks.forEach { it(typedCtx, typedCtx.args.name, typedCtx.args.age) }
+                } else if (ctx.status is Status.Failed) {
+                    onUnhandledReducerErrorCallbacks.forEach { it(ctx) }
                 }
             }
             AddPlayerReducer.REDUCER_NAME -> {
@@ -1045,6 +1066,8 @@ class RemoteReducers internal constructor(
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<AddPlayerArgs>
                     onAddPlayerCallbacks.forEach { it(typedCtx, typedCtx.args.name) }
+                } else if (ctx.status is Status.Failed) {
+                    onUnhandledReducerErrorCallbacks.forEach { it(ctx) }
                 }
             }
             AddPrivateReducer.REDUCER_NAME -> {
@@ -1052,6 +1075,8 @@ class RemoteReducers internal constructor(
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<AddPrivateArgs>
                     onAddPrivateCallbacks.forEach { it(typedCtx, typedCtx.args.name) }
+                } else if (ctx.status is Status.Failed) {
+                    onUnhandledReducerErrorCallbacks.forEach { it(ctx) }
                 }
             }
             AssertCallerIdentityIsModuleIdentityReducer.REDUCER_NAME -> {
@@ -1059,6 +1084,8 @@ class RemoteReducers internal constructor(
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<Unit>
                     onAssertCallerIdentityIsModuleIdentityCallbacks.forEach { it(typedCtx) }
+                } else if (ctx.status is Status.Failed) {
+                    onUnhandledReducerErrorCallbacks.forEach { it(ctx) }
                 }
             }
             DeletePlayerReducer.REDUCER_NAME -> {
@@ -1066,6 +1093,8 @@ class RemoteReducers internal constructor(
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<DeletePlayerArgs>
                     onDeletePlayerCallbacks.forEach { it(typedCtx, typedCtx.args.id) }
+                } else if (ctx.status is Status.Failed) {
+                    onUnhandledReducerErrorCallbacks.forEach { it(ctx) }
                 }
             }
             DeletePlayersByNameReducer.REDUCER_NAME -> {
@@ -1073,6 +1102,8 @@ class RemoteReducers internal constructor(
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<DeletePlayersByNameArgs>
                     onDeletePlayersByNameCallbacks.forEach { it(typedCtx, typedCtx.args.name) }
+                } else if (ctx.status is Status.Failed) {
+                    onUnhandledReducerErrorCallbacks.forEach { it(ctx) }
                 }
             }
             ListOverAgeReducer.REDUCER_NAME -> {
@@ -1080,6 +1111,8 @@ class RemoteReducers internal constructor(
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<ListOverAgeArgs>
                     onListOverAgeCallbacks.forEach { it(typedCtx, typedCtx.args.age) }
+                } else if (ctx.status is Status.Failed) {
+                    onUnhandledReducerErrorCallbacks.forEach { it(ctx) }
                 }
             }
             LogModuleIdentityReducer.REDUCER_NAME -> {
@@ -1087,6 +1120,8 @@ class RemoteReducers internal constructor(
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<Unit>
                     onLogModuleIdentityCallbacks.forEach { it(typedCtx) }
+                } else if (ctx.status is Status.Failed) {
+                    onUnhandledReducerErrorCallbacks.forEach { it(ctx) }
                 }
             }
             QueryPrivateReducer.REDUCER_NAME -> {
@@ -1094,6 +1129,8 @@ class RemoteReducers internal constructor(
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<Unit>
                     onQueryPrivateCallbacks.forEach { it(typedCtx) }
+                } else if (ctx.status is Status.Failed) {
+                    onUnhandledReducerErrorCallbacks.forEach { it(ctx) }
                 }
             }
             SayHelloReducer.REDUCER_NAME -> {
@@ -1101,6 +1138,8 @@ class RemoteReducers internal constructor(
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<Unit>
                     onSayHelloCallbacks.forEach { it(typedCtx) }
+                } else if (ctx.status is Status.Failed) {
+                    onUnhandledReducerErrorCallbacks.forEach { it(ctx) }
                 }
             }
             TestReducer.REDUCER_NAME -> {
@@ -1108,6 +1147,8 @@ class RemoteReducers internal constructor(
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<TestArgs>
                     onTestCallbacks.forEach { it(typedCtx, typedCtx.args.arg, typedCtx.args.arg2, typedCtx.args.arg3, typedCtx.args.arg4) }
+                } else if (ctx.status is Status.Failed) {
+                    onUnhandledReducerErrorCallbacks.forEach { it(ctx) }
                 }
             }
             TestBtreeIndexArgsReducer.REDUCER_NAME -> {
@@ -1115,6 +1156,13 @@ class RemoteReducers internal constructor(
                     @Suppress("UNCHECKED_CAST")
                     val typedCtx = ctx as EventContext.Reducer<Unit>
                     onTestBtreeIndexArgsCallbacks.forEach { it(typedCtx) }
+                } else if (ctx.status is Status.Failed) {
+                    onUnhandledReducerErrorCallbacks.forEach { it(ctx) }
+                }
+            }
+            else -> {
+                if (ctx.status is Status.Failed) {
+                    onUnhandledReducerErrorCallbacks.forEach { it(ctx) }
                 }
             }
         }
@@ -1144,6 +1192,14 @@ class RemoteTables internal constructor(
             LoggedOutPlayerTableHandle.createTableCache()
         }
         LoggedOutPlayerTableHandle(conn, cache)
+    }
+
+    val myPlayer: MyPlayerTableHandle by lazy {
+        @Suppress("UNCHECKED_CAST")
+        val cache = clientCache.getOrCreateTable<Player>(MyPlayerTableHandle.TABLE_NAME) {
+            MyPlayerTableHandle.createTableCache()
+        }
+        MyPlayerTableHandle(conn, cache)
     }
 
     val person: PersonTableHandle by lazy {
@@ -1188,6 +1244,8 @@ class RemoteTables internal constructor(
 
 package module_bindings
 
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 /** Arguments for the `return_value` procedure. */
 data class ReturnValueArgs(
     val foo: ULong
@@ -1237,6 +1295,8 @@ object SayHelloReducer {
 
 package module_bindings
 
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 object SleepOneSecondProcedure {
     const val PROCEDURE_NAME = "sleep_one_second"
     // Returns: Unit
@@ -1802,6 +1862,8 @@ sealed interface NamespaceTestF {
 
 package module_bindings
 
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 object WithTxProcedure {
     const val PROCEDURE_NAME = "with_tx"
     // Returns: Unit

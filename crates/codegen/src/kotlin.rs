@@ -1,6 +1,6 @@
 use crate::util::{
-    collect_case, is_reducer_invokable, iter_indexes, iter_procedures, iter_reducers, iter_tables, iter_types,
-    print_auto_generated_file_comment, print_auto_generated_version_comment, type_ref_name,
+    collect_case, is_reducer_invokable, iter_indexes, iter_procedures, iter_reducers, iter_table_names_and_types,
+    iter_types, print_auto_generated_file_comment, print_auto_generated_version_comment, type_ref_name,
 };
 use crate::{CodegenOptions, OutputFile};
 
@@ -447,6 +447,9 @@ impl Lang for Kotlin {
         print_file_header(out);
         writeln!(out);
 
+        // Imports
+        writeln!(out, "import {SDK_PKG}.bsatn.BsatnReader");
+        writeln!(out, "import {SDK_PKG}.bsatn.BsatnWriter");
         gen_and_print_imports(
             module,
             out,
@@ -1257,10 +1260,10 @@ fn generate_remote_tables_file(module: &ModuleDef, options: &CodegenOptions) -> 
     writeln!(out, ") : ModuleTables {{");
     out.indent(1);
 
-    for table in iter_tables(module, options.visibility) {
-        let table_name_pascal = table.accessor_name.deref().to_case(Case::Pascal);
-        let table_name_camel = kotlin_ident(table.accessor_name.deref().to_case(Case::Camel));
-        let type_name = type_ref_name(module, table.product_type_ref);
+    for (_, accessor_name, product_type_ref) in iter_table_names_and_types(module, options.visibility) {
+        let table_name_pascal = accessor_name.deref().to_case(Case::Pascal);
+        let table_name_camel = kotlin_ident(accessor_name.deref().to_case(Case::Camel));
+        let type_name = type_ref_name(module, product_type_ref);
 
         writeln!(out, "val {table_name_camel}: {table_name_pascal}TableHandle by lazy {{");
         out.indent(1);
@@ -1303,11 +1306,9 @@ fn generate_remote_reducers_file(module: &ModuleDef, options: &CodegenOptions) -
     imports.insert(format!("{SDK_PKG}.DbConnection"));
     imports.insert(format!("{SDK_PKG}.EventContext"));
     imports.insert(format!("{SDK_PKG}.ModuleReducers"));
+    imports.insert(format!("{SDK_PKG}.Status"));
 
     for reducer in iter_reducers(module, options.visibility) {
-        if !is_reducer_invokable(reducer) {
-            continue;
-        }
         for (_, ty) in reducer.params_for_generate.elements.iter() {
             collect_type_imports(module, ty, &mut imports);
         }
@@ -1382,10 +1383,6 @@ fn generate_remote_reducers_file(module: &ModuleDef, options: &CodegenOptions) -
 
     // --- Per-reducer persistent callbacks ---
     for reducer in iter_reducers(module, options.visibility) {
-        if !is_reducer_invokable(reducer) {
-            continue;
-        }
-
         let reducer_name_pascal = reducer.accessor_name.deref().to_case(Case::Pascal);
 
         // Build the typed callback signature: (EventContext.Reducer<ArgsType>, arg1Type, arg2Type, ...) -> Unit
@@ -1429,6 +1426,35 @@ fn generate_remote_reducers_file(module: &ModuleDef, options: &CodegenOptions) -
         writeln!(out);
     }
 
+    // --- Unhandled reducer error fallback ---
+    writeln!(
+        out,
+        "private val onUnhandledReducerErrorCallbacks = CallbackList<(EventContext.Reducer<*>) -> Unit>()"
+    );
+    writeln!(out);
+    writeln!(
+        out,
+        "/** Register a callback for reducer errors with no specific handler. */"
+    );
+    writeln!(
+        out,
+        "fun onUnhandledReducerError(cb: (EventContext.Reducer<*>) -> Unit) {{"
+    );
+    out.indent(1);
+    writeln!(out, "onUnhandledReducerErrorCallbacks.add(cb)");
+    out.dedent(1);
+    writeln!(out, "}}");
+    writeln!(out);
+    writeln!(
+        out,
+        "fun removeOnUnhandledReducerError(cb: (EventContext.Reducer<*>) -> Unit) {{"
+    );
+    out.indent(1);
+    writeln!(out, "onUnhandledReducerErrorCallbacks.remove(cb)");
+    out.dedent(1);
+    writeln!(out, "}}");
+    writeln!(out);
+
     // --- handleReducerEvent dispatch ---
     writeln!(out, "internal fun handleReducerEvent(ctx: EventContext.Reducer<*>) {{");
     out.indent(1);
@@ -1436,10 +1462,6 @@ fn generate_remote_reducers_file(module: &ModuleDef, options: &CodegenOptions) -
     out.indent(1);
 
     for reducer in iter_reducers(module, options.visibility) {
-        if !is_reducer_invokable(reducer) {
-            continue;
-        }
-
         let reducer_name_pascal = reducer.accessor_name.deref().to_case(Case::Pascal);
 
         writeln!(out, "{reducer_name_pascal}Reducer.REDUCER_NAME -> {{");
@@ -1472,10 +1494,25 @@ fn generate_remote_reducers_file(module: &ModuleDef, options: &CodegenOptions) -
         }
 
         out.dedent(1);
+        writeln!(out, "}} else if (ctx.status is Status.Failed) {{");
+        out.indent(1);
+        writeln!(out, "onUnhandledReducerErrorCallbacks.forEach {{ it(ctx) }}");
+        out.dedent(1);
         writeln!(out, "}}");
         out.dedent(1);
         writeln!(out, "}}");
     }
+
+    // Fallback for unknown reducer names
+    writeln!(out, "else -> {{");
+    out.indent(1);
+    writeln!(out, "if (ctx.status is Status.Failed) {{");
+    out.indent(1);
+    writeln!(out, "onUnhandledReducerErrorCallbacks.forEach {{ it(ctx) }}");
+    out.dedent(1);
+    writeln!(out, "}}");
+    out.dedent(1);
+    writeln!(out, "}}");
 
     out.dedent(1);
     writeln!(out, "}}");
@@ -1683,22 +1720,24 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     );
     writeln!(out);
 
-    // Table names list
+    // Table and view names list
     writeln!(out, "val tableNames: List<String> = listOf(");
     out.indent(1);
-    for table in iter_tables(module, options.visibility) {
-        writeln!(out, "\"{}\",", table.name.deref());
+    for (name, _, _) in iter_table_names_and_types(module, options.visibility) {
+        writeln!(out, "\"{}\",", name.deref());
     }
     out.dedent(1);
     writeln!(out, ")");
     writeln!(out);
 
-    // Subscribable (persistent) table names — excludes event tables
+    // Subscribable (persistent) table/view names — excludes event tables
     writeln!(out, "override val subscribableTableNames: List<String> = listOf(");
     out.indent(1);
-    for table in iter_tables(module, options.visibility) {
-        if !table.is_event {
-            writeln!(out, "\"{}\",", table.name.deref());
+    for (name, _, _) in iter_table_names_and_types(module, options.visibility) {
+        // Event tables are not subscribable; views are never event tables.
+        let is_event = module.tables().any(|t| t.name == *name && t.is_event);
+        if !is_event {
+            writeln!(out, "\"{}\",", name.deref());
         }
     }
     out.dedent(1);
@@ -1732,8 +1771,8 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     // registerTables() — ModuleDescriptor implementation
     writeln!(out, "override fun registerTables(cache: ClientCache) {{");
     out.indent(1);
-    for table in iter_tables(module, options.visibility) {
-        let table_name_pascal = table.accessor_name.deref().to_case(Case::Pascal);
+    for (_, accessor_name, _) in iter_table_names_and_types(module, options.visibility) {
+        let table_name_pascal = accessor_name.deref().to_case(Case::Pascal);
         writeln!(
             out,
             "cache.register({table_name_pascal}TableHandle.TABLE_NAME, {table_name_pascal}TableHandle.createTableCache())"
@@ -1898,14 +1937,16 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     writeln!(out, " */");
     writeln!(out, "class QueryBuilder {{");
     out.indent(1);
-    for table in iter_tables(module, options.visibility) {
-        let table_name = table.name.deref();
-        let type_name = type_ref_name(module, table.product_type_ref);
-        let table_name_pascal = table.accessor_name.deref().to_case(Case::Pascal);
-        let method_name = kotlin_ident(table.accessor_name.deref().to_case(Case::Camel));
+    for (name, accessor_name, product_type_ref) in iter_table_names_and_types(module, options.visibility) {
+        let table_name = name.deref();
+        let type_name = type_ref_name(module, product_type_ref);
+        let table_name_pascal = accessor_name.deref().to_case(Case::Pascal);
+        let method_name = kotlin_ident(accessor_name.deref().to_case(Case::Camel));
 
-        // Check if this table has indexed columns
-        let has_ix = iter_indexes(table).any(|idx| matches!(&idx.algorithm, IndexAlgorithm::BTree(_)));
+        // Check if this table has indexed columns (views have none)
+        let has_ix = module.tables().find(|t| t.name == *name).is_some_and(|t| {
+            iter_indexes(t).any(|idx| matches!(&idx.algorithm, IndexAlgorithm::BTree(_)))
+        });
 
         if has_ix {
             writeln!(
@@ -1962,9 +2003,11 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     );
     out.indent(1);
     writeln!(out, "val qb = QueryBuilder()");
-    for table in iter_tables(module, options.visibility) {
-        if !table.is_event {
-            let method_name = kotlin_ident(table.accessor_name.deref().to_case(Case::Camel));
+    for (name, accessor_name, _) in iter_table_names_and_types(module, options.visibility) {
+        // Event tables are not subscribable; views are never event tables.
+        let is_event = module.tables().any(|t| t.name == *name && t.is_event);
+        if !is_event {
+            let method_name = kotlin_ident(accessor_name.deref().to_case(Case::Camel));
             writeln!(out, "addQuery(qb.{method_name}().toSql())");
         }
     }
