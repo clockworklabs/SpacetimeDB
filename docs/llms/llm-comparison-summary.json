@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-03-25T23:55:02.595Z",
+  "generated_at": "2026-03-26T13:47:16.109Z",
   "by_language": {
     "csharp": {
       "modes": {
@@ -3294,6 +3294,531 @@
                 "pass_pct": 0.0,
                 "task_pass_equiv": 0.0,
                 "task_pass_pct": 0.0
+              }
+            }
+          }
+        },
+        "search": {
+          "hash": "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+          "models": {
+            "Claude Opus 4.6": {
+              "categories": {
+                "auth": {
+                  "tasks": 8,
+                  "total_tests": 8,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0,
+                  "task_pass_equiv": 0.0,
+                  "task_pass_pct": 0.0
+                },
+                "basics": {
+                  "tasks": 15,
+                  "total_tests": 30,
+                  "passed_tests": 8,
+                  "pass_pct": 26.666666,
+                  "task_pass_equiv": 3.0,
+                  "task_pass_pct": 20.0
+                },
+                "data_modeling": {
+                  "tasks": 6,
+                  "total_tests": 6,
+                  "passed_tests": 2,
+                  "pass_pct": 33.333332,
+                  "task_pass_equiv": 2.0,
+                  "task_pass_pct": 33.333336
+                },
+                "queries": {
+                  "tasks": 8,
+                  "total_tests": 8,
+                  "passed_tests": 1,
+                  "pass_pct": 12.5,
+                  "task_pass_equiv": 1.0,
+                  "task_pass_pct": 12.5
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 1,
+                  "pass_pct": 2.9411764,
+                  "task_pass_equiv": 0.5,
+                  "task_pass_pct": 5.0
+                }
+              },
+              "totals": {
+                "tasks": 47,
+                "total_tests": 86,
+                "passed_tests": 12,
+                "pass_pct": 13.953488,
+                "task_pass_equiv": 6.5,
+                "task_pass_pct": 13.829787
+              }
+            },
+            "Claude Sonnet 4.6": {
+              "categories": {
+                "auth": {
+                  "tasks": 8,
+                  "total_tests": 8,
+                  "passed_tests": 3,
+                  "pass_pct": 37.5,
+                  "task_pass_equiv": 3.0,
+                  "task_pass_pct": 37.5
+                },
+                "basics": {
+                  "tasks": 15,
+                  "total_tests": 30,
+                  "passed_tests": 3,
+                  "pass_pct": 10.0,
+                  "task_pass_equiv": 1.5,
+                  "task_pass_pct": 10.0
+                },
+                "data_modeling": {
+                  "tasks": 6,
+                  "total_tests": 6,
+                  "passed_tests": 1,
+                  "pass_pct": 16.666666,
+                  "task_pass_equiv": 1.0,
+                  "task_pass_pct": 16.666668
+                },
+                "queries": {
+                  "tasks": 8,
+                  "total_tests": 8,
+                  "passed_tests": 2,
+                  "pass_pct": 25.0,
+                  "task_pass_equiv": 2.0,
+                  "task_pass_pct": 25.0
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 9,
+                  "pass_pct": 26.470589,
+                  "task_pass_equiv": 2.5,
+                  "task_pass_pct": 25.0
+                }
+              },
+              "totals": {
+                "tasks": 47,
+                "total_tests": 86,
+                "passed_tests": 18,
+                "pass_pct": 20.930233,
+                "task_pass_equiv": 10.0,
+                "task_pass_pct": 21.276596
+              }
+            },
+            "DeepSeek Chat": {
+              "categories": {
+                "auth": {
+                  "tasks": 8,
+                  "total_tests": 8,
+                  "passed_tests": 4,
+                  "pass_pct": 50.0,
+                  "task_pass_equiv": 4.0,
+                  "task_pass_pct": 50.0
+                },
+                "basics": {
+                  "tasks": 15,
+                  "total_tests": 30,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0,
+                  "task_pass_equiv": 0.0,
+                  "task_pass_pct": 0.0
+                },
+                "data_modeling": {
+                  "tasks": 6,
+                  "total_tests": 6,
+                  "passed_tests": 4,
+                  "pass_pct": 66.666664,
+                  "task_pass_equiv": 4.0,
+                  "task_pass_pct": 66.66667
+                },
+                "queries": {
+                  "tasks": 8,
+                  "total_tests": 8,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0,
+                  "task_pass_equiv": 0.0,
+                  "task_pass_pct": 0.0
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 4,
+                  "pass_pct": 11.764706,
+                  "task_pass_equiv": 1.0,
+                  "task_pass_pct": 10.0
+                }
+              },
+              "totals": {
+                "tasks": 47,
+                "total_tests": 86,
+                "passed_tests": 12,
+                "pass_pct": 13.953488,
+                "task_pass_equiv": 9.0,
+                "task_pass_pct": 19.148937
+              }
+            },
+            "DeepSeek Reasoner": {
+              "categories": {
+                "auth": {
+                  "tasks": 8,
+                  "total_tests": 8,
+                  "passed_tests": 2,
+                  "pass_pct": 25.0,
+                  "task_pass_equiv": 2.0,
+                  "task_pass_pct": 25.0
+                },
+                "basics": {
+                  "tasks": 15,
+                  "total_tests": 30,
+                  "passed_tests": 1,
+                  "pass_pct": 3.3333333,
+                  "task_pass_equiv": 1.0,
+                  "task_pass_pct": 6.666667
+                },
+                "data_modeling": {
+                  "tasks": 6,
+                  "total_tests": 6,
+                  "passed_tests": 1,
+                  "pass_pct": 16.666666,
+                  "task_pass_equiv": 1.0,
+                  "task_pass_pct": 16.666668
+                },
+                "queries": {
+                  "tasks": 8,
+                  "total_tests": 8,
+                  "passed_tests": 1,
+                  "pass_pct": 12.5,
+                  "task_pass_equiv": 1.0,
+                  "task_pass_pct": 12.5
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0,
+                  "task_pass_equiv": 0.0,
+                  "task_pass_pct": 0.0
+                }
+              },
+              "totals": {
+                "tasks": 47,
+                "total_tests": 86,
+                "passed_tests": 5,
+                "pass_pct": 5.8139534,
+                "task_pass_equiv": 5.0,
+                "task_pass_pct": 10.638298
+              }
+            },
+            "GPT-5-mini": {
+              "categories": {
+                "auth": {
+                  "tasks": 8,
+                  "total_tests": 8,
+                  "passed_tests": 2,
+                  "pass_pct": 25.0,
+                  "task_pass_equiv": 2.0,
+                  "task_pass_pct": 25.0
+                },
+                "basics": {
+                  "tasks": 15,
+                  "total_tests": 30,
+                  "passed_tests": 2,
+                  "pass_pct": 6.6666665,
+                  "task_pass_equiv": 2.0,
+                  "task_pass_pct": 13.333334
+                },
+                "data_modeling": {
+                  "tasks": 6,
+                  "total_tests": 6,
+                  "passed_tests": 3,
+                  "pass_pct": 50.0,
+                  "task_pass_equiv": 3.0,
+                  "task_pass_pct": 50.0
+                },
+                "queries": {
+                  "tasks": 8,
+                  "total_tests": 8,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0,
+                  "task_pass_equiv": 0.0,
+                  "task_pass_pct": 0.0
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 4,
+                  "pass_pct": 11.764706,
+                  "task_pass_equiv": 1.0,
+                  "task_pass_pct": 10.0
+                }
+              },
+              "totals": {
+                "tasks": 47,
+                "total_tests": 86,
+                "passed_tests": 11,
+                "pass_pct": 12.790698,
+                "task_pass_equiv": 8.0,
+                "task_pass_pct": 17.021276
+              }
+            },
+            "GPT-5.2-Codex": {
+              "categories": {
+                "auth": {
+                  "tasks": 8,
+                  "total_tests": 8,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0,
+                  "task_pass_equiv": 0.0,
+                  "task_pass_pct": 0.0
+                },
+                "basics": {
+                  "tasks": 15,
+                  "total_tests": 30,
+                  "passed_tests": 7,
+                  "pass_pct": 23.333334,
+                  "task_pass_equiv": 2.0,
+                  "task_pass_pct": 13.333334
+                },
+                "data_modeling": {
+                  "tasks": 6,
+                  "total_tests": 6,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0,
+                  "task_pass_equiv": 0.0,
+                  "task_pass_pct": 0.0
+                },
+                "queries": {
+                  "tasks": 8,
+                  "total_tests": 8,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0,
+                  "task_pass_equiv": 0.0,
+                  "task_pass_pct": 0.0
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 3,
+                  "pass_pct": 8.823529,
+                  "task_pass_equiv": 1.0,
+                  "task_pass_pct": 10.0
+                }
+              },
+              "totals": {
+                "tasks": 47,
+                "total_tests": 86,
+                "passed_tests": 10,
+                "pass_pct": 11.627907,
+                "task_pass_equiv": 3.0,
+                "task_pass_pct": 6.382979
+              }
+            },
+            "Gemini 3 Flash": {
+              "categories": {
+                "auth": {
+                  "tasks": 8,
+                  "total_tests": 8,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0,
+                  "task_pass_equiv": 0.0,
+                  "task_pass_pct": 0.0
+                },
+                "basics": {
+                  "tasks": 15,
+                  "total_tests": 30,
+                  "passed_tests": 2,
+                  "pass_pct": 6.6666665,
+                  "task_pass_equiv": 0.5,
+                  "task_pass_pct": 3.3333335
+                },
+                "data_modeling": {
+                  "tasks": 6,
+                  "total_tests": 6,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0,
+                  "task_pass_equiv": 0.0,
+                  "task_pass_pct": 0.0
+                },
+                "queries": {
+                  "tasks": 8,
+                  "total_tests": 8,
+                  "passed_tests": 1,
+                  "pass_pct": 12.5,
+                  "task_pass_equiv": 1.0,
+                  "task_pass_pct": 12.5
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 3,
+                  "pass_pct": 8.823529,
+                  "task_pass_equiv": 1.0,
+                  "task_pass_pct": 10.0
+                }
+              },
+              "totals": {
+                "tasks": 47,
+                "total_tests": 86,
+                "passed_tests": 6,
+                "pass_pct": 6.976744,
+                "task_pass_equiv": 2.5,
+                "task_pass_pct": 5.319149
+              }
+            },
+            "Gemini 3.1 Pro": {
+              "categories": {
+                "auth": {
+                  "tasks": 8,
+                  "total_tests": 8,
+                  "passed_tests": 1,
+                  "pass_pct": 12.5,
+                  "task_pass_equiv": 1.0,
+                  "task_pass_pct": 12.5
+                },
+                "basics": {
+                  "tasks": 15,
+                  "total_tests": 30,
+                  "passed_tests": 1,
+                  "pass_pct": 3.3333333,
+                  "task_pass_equiv": 1.0,
+                  "task_pass_pct": 6.666667
+                },
+                "data_modeling": {
+                  "tasks": 6,
+                  "total_tests": 6,
+                  "passed_tests": 1,
+                  "pass_pct": 16.666666,
+                  "task_pass_equiv": 1.0,
+                  "task_pass_pct": 16.666668
+                },
+                "queries": {
+                  "tasks": 8,
+                  "total_tests": 8,
+                  "passed_tests": 2,
+                  "pass_pct": 25.0,
+                  "task_pass_equiv": 2.0,
+                  "task_pass_pct": 25.0
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 1,
+                  "pass_pct": 2.9411764,
+                  "task_pass_equiv": 0.5,
+                  "task_pass_pct": 5.0
+                }
+              },
+              "totals": {
+                "tasks": 47,
+                "total_tests": 86,
+                "passed_tests": 6,
+                "pass_pct": 6.976744,
+                "task_pass_equiv": 5.5,
+                "task_pass_pct": 11.702127
+              }
+            },
+            "Grok 4": {
+              "categories": {
+                "auth": {
+                  "tasks": 8,
+                  "total_tests": 8,
+                  "passed_tests": 6,
+                  "pass_pct": 75.0,
+                  "task_pass_equiv": 6.0,
+                  "task_pass_pct": 75.0
+                },
+                "basics": {
+                  "tasks": 15,
+                  "total_tests": 30,
+                  "passed_tests": 24,
+                  "pass_pct": 80.0,
+                  "task_pass_equiv": 10.5,
+                  "task_pass_pct": 70.0
+                },
+                "data_modeling": {
+                  "tasks": 6,
+                  "total_tests": 6,
+                  "passed_tests": 4,
+                  "pass_pct": 66.666664,
+                  "task_pass_equiv": 4.0,
+                  "task_pass_pct": 66.66667
+                },
+                "queries": {
+                  "tasks": 8,
+                  "total_tests": 8,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0,
+                  "task_pass_equiv": 0.0,
+                  "task_pass_pct": 0.0
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 28,
+                  "pass_pct": 82.35294,
+                  "task_pass_equiv": 8.5,
+                  "task_pass_pct": 85.0
+                }
+              },
+              "totals": {
+                "tasks": 47,
+                "total_tests": 86,
+                "passed_tests": 62,
+                "pass_pct": 72.093025,
+                "task_pass_equiv": 29.0,
+                "task_pass_pct": 61.702126
+              }
+            },
+            "Grok Code": {
+              "categories": {
+                "auth": {
+                  "tasks": 8,
+                  "total_tests": 8,
+                  "passed_tests": 2,
+                  "pass_pct": 25.0,
+                  "task_pass_equiv": 2.0,
+                  "task_pass_pct": 25.0
+                },
+                "basics": {
+                  "tasks": 15,
+                  "total_tests": 30,
+                  "passed_tests": 2,
+                  "pass_pct": 6.6666665,
+                  "task_pass_equiv": 0.5,
+                  "task_pass_pct": 3.3333335
+                },
+                "data_modeling": {
+                  "tasks": 6,
+                  "total_tests": 6,
+                  "passed_tests": 1,
+                  "pass_pct": 16.666666,
+                  "task_pass_equiv": 1.0,
+                  "task_pass_pct": 16.666668
+                },
+                "queries": {
+                  "tasks": 8,
+                  "total_tests": 8,
+                  "passed_tests": 1,
+                  "pass_pct": 12.5,
+                  "task_pass_equiv": 1.0,
+                  "task_pass_pct": 12.5
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 6,
+                  "pass_pct": 17.647058,
+                  "task_pass_equiv": 1.5,
+                  "task_pass_pct": 15.000001
+                }
+              },
+              "totals": {
+                "tasks": 47,
+                "total_tests": 86,
+                "passed_tests": 12,
+                "pass_pct": 13.953488,
+                "task_pass_equiv": 6.0,
+                "task_pass_pct": 12.765958
               }
             }
           }

@@ -36,9 +36,9 @@ Rules:\n\
         ));
 
         let static_prefix = Some(if search_enabled {
-            "<<<DOCS START>>>\nNo documentation provided. You have access to web search — search for SpacetimeDB documentation, examples, and API references as needed.\n<<<DOCS END>>>\n".to_string()
+            "<<<DOCS START>>>\nYou MUST search the web for SpacetimeDB documentation and examples before writing any code. Do not write code until you have searched.\n<<<DOCS END>>>\n".to_string()
         } else if context.trim().is_empty() {
-            "<<<DOCS START>>>\nNo documentation provided. Use your knowledge of the latest SpacetimeDB syntax and conventions.\n<<<DOCS END>>>\n".to_string()
+            "<<<DOCS START>>>\nUse your knowledge of the latest SpacetimeDB syntax and conventions.\n<<<DOCS END>>>\n".to_string()
         } else {
             format!(
                 "<<<DOCS START>>>Context:\n{context}\n<<<DOCS END>>>\n",

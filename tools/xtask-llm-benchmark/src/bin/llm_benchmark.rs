@@ -917,16 +917,19 @@ fn run_mode_benchmarks(
         &routes,
     ))?;
 
-    // Print summary
-    for rr in &route_runs {
-        let total: u32 = rr.outcomes.iter().map(|o| o.total_tests).sum();
-        let passed: u32 = rr.outcomes.iter().map(|o| o.passed_tests).sum();
-        let pct = if total == 0 {
-            0.0
-        } else {
-            (passed as f32 / total as f32) * 100.0
-        };
-        println!("   ↳ {}: {}/{} passed ({:.1}%)", rr.route_name, passed, total, pct);
+    // Print summary sorted by pass rate descending
+    let mut summary: Vec<(&str, u32, u32, f32)> = route_runs
+        .iter()
+        .map(|rr| {
+            let total: u32 = rr.outcomes.iter().map(|o| o.total_tests).sum();
+            let passed: u32 = rr.outcomes.iter().map(|o| o.passed_tests).sum();
+            let pct = if total == 0 { 0.0 } else { (passed as f32 / total as f32) * 100.0 };
+            (rr.route_name.as_str(), passed, total, pct)
+        })
+        .collect();
+    summary.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
+    for (name, passed, total, pct) in &summary {
+        println!("   ↳ {}: {}/{} passed ({:.1}%)", name, passed, total, pct);
     }
 
     Ok(())
