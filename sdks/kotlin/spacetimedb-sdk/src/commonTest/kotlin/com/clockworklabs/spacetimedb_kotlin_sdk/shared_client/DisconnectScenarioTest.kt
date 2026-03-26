@@ -1,3 +1,5 @@
+@file:OptIn(InternalSpacetimeApi::class)
+
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.*

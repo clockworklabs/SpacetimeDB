@@ -461,6 +461,7 @@ public open class DbConnection internal constructor(
      * The encodedArgs should be BSATN-encoded reducer arguments.
      * The typedArgs is the typed args object stored for the event context.
      */
+    @InternalSpacetimeApi
     public fun <A : Any> callReducer(
         reducerName: String,
         encodedArgs: ByteArray,
@@ -500,6 +501,7 @@ public open class DbConnection internal constructor(
      * Call a procedure on the server.
      * The args should be BSATN-encoded procedure arguments.
      */
+    @InternalSpacetimeApi
     public fun callProcedure(
         procedureName: String,
         args: ByteArray,

@@ -1305,6 +1305,7 @@ fn generate_remote_reducers_file(module: &ModuleDef, options: &CodegenOptions) -
     imports.insert(format!("{SDK_PKG}.CallbackList"));
     imports.insert(format!("{SDK_PKG}.DbConnection"));
     imports.insert(format!("{SDK_PKG}.EventContext"));
+    imports.insert(format!("{SDK_PKG}.InternalSpacetimeApi"));
     imports.insert(format!("{SDK_PKG}.ModuleReducers"));
     imports.insert(format!("{SDK_PKG}.Status"));
 
@@ -1320,6 +1321,7 @@ fn generate_remote_reducers_file(module: &ModuleDef, options: &CodegenOptions) -
     writeln!(out);
 
     writeln!(out, "/** Generated reducer call methods and callback registration. */");
+    writeln!(out, "@OptIn(InternalSpacetimeApi::class)");
     writeln!(out, "class RemoteReducers internal constructor(");
     out.indent(1);
     writeln!(out, "private val conn: DbConnection,");
@@ -1540,6 +1542,7 @@ fn generate_remote_procedures_file(module: &ModuleDef, options: &CodegenOptions)
     // Collect all imports needed by procedure params and return types
     let mut imports = BTreeSet::new();
     imports.insert(format!("{SDK_PKG}.DbConnection"));
+    imports.insert(format!("{SDK_PKG}.InternalSpacetimeApi"));
     imports.insert(format!("{SDK_PKG}.ModuleProcedures"));
 
     let has_procedures = iter_procedures(module, options.visibility).next().is_some();
@@ -1567,6 +1570,7 @@ fn generate_remote_procedures_file(module: &ModuleDef, options: &CodegenOptions)
         out,
         "/** Generated procedure call methods and callback registration. */"
     );
+    writeln!(out, "@OptIn(InternalSpacetimeApi::class)");
     writeln!(out, "class RemoteProcedures internal constructor(");
     out.indent(1);
     writeln!(out, "private val conn: DbConnection,");

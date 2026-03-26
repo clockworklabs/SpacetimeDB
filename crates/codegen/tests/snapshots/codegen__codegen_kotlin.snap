@@ -767,6 +767,7 @@ package module_bindings
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.InternalSpacetimeApi
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ModuleProcedures
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
@@ -774,6 +775,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.Procedure
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ServerMessage
 
 /** Generated procedure call methods and callback registration. */
+@OptIn(InternalSpacetimeApi::class)
 class RemoteProcedures internal constructor(
     private val conn: DbConnection,
 ) : ModuleProcedures {
@@ -857,10 +859,12 @@ package module_bindings
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.CallbackList
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.InternalSpacetimeApi
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ModuleReducers
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Status
 
 /** Generated reducer call methods and callback registration. */
+@OptIn(InternalSpacetimeApi::class)
 class RemoteReducers internal constructor(
     private val conn: DbConnection,
 ) : ModuleReducers {
