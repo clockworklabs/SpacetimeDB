@@ -910,6 +910,25 @@ impl MutTxId {
         )
     }
 
+    /// Drops the row in `st_column_accessor` for `(table_name, col_name)`.
+    fn drop_st_column_accessor_for_col(&mut self, table_name: &TableName, col_name: &Identifier) -> Result<()> {
+        let table_str: &str = table_name.as_ref();
+        let col_str: &str = col_name.as_ref();
+        let value = spacetimedb_sats::AlgebraicValue::product([table_str.into(), col_str.into()]);
+        let ptrs: Vec<_> = self
+            .iter_by_col_eq(
+                ST_COLUMN_ACCESSOR_ID,
+                [StColumnAccessorFields::TableName, StColumnAccessorFields::ColName],
+                &value,
+            )?
+            .map(|row_ref| row_ref.pointer())
+            .collect();
+        for ptr in ptrs {
+            self.delete(ST_COLUMN_ACCESSOR_ID, ptr)?;
+        }
+        Ok(())
+    }
+
     /// Drops the row in `st_table` for this `table_id`
     fn drop_st_table(&mut self, table_id: TableId) -> Result<()> {
         self.delete_col_eq(ST_TABLE_ID, StTableFields::TableId.col_id(), &table_id.into())
@@ -925,6 +944,46 @@ impl MutTxId {
     fn drop_st_index_accessor(&mut self, index_name: &RawIdentifier) -> Result<()> {
         let value = index_name.as_ref().into();
         self.delete_col_eq(ST_INDEX_ACCESSOR_ID, StIndexAccessorFields::IndexName.col_id(), &value)
+    }
+
+    /// Removes the accessor entry in `st_table_accessor` for `table_name`.
+    pub(crate) fn remove_table_accessor(&mut self, table_name: &TableName) -> Result<()> {
+        self.drop_st_table_accessor(table_name)
+    }
+
+    /// Inserts an accessor entry into `st_table_accessor` for `table_name`.
+    pub(crate) fn add_table_accessor(&mut self, table_name: &TableName, alias: &Identifier) -> Result<()> {
+        self.insert_st_table_accessor(table_name, Some(alias))
+    }
+
+    /// Removes the accessor entry in `st_index_accessor` for `index_name`.
+    pub(crate) fn remove_index_accessor(&mut self, index_name: &RawIdentifier) -> Result<()> {
+        self.drop_st_index_accessor(index_name)
+    }
+
+    /// Inserts an accessor entry into `st_index_accessor` for `index_name`.
+    pub(crate) fn add_index_accessor(&mut self, index_name: &RawIdentifier, alias: &RawIdentifier) -> Result<()> {
+        self.insert_st_index_accessor(index_name, Some(alias))
+    }
+
+    /// Drops all `st_column_accessor` entries for `table_name`.
+    pub(crate) fn drop_column_accessors_for_table(&mut self, table_name: &TableName) -> Result<()> {
+        self.drop_st_column_accessor(table_name)
+    }
+
+    /// Drops the `st_column_accessor` entry for a single `(table_name, col_name)` pair.
+    pub(crate) fn drop_column_accessor_for_col(&mut self, table_name: &TableName, col_name: &Identifier) -> Result<()> {
+        self.drop_st_column_accessor_for_col(table_name, col_name)
+    }
+
+    /// Inserts a single `st_column_accessor` entry for `(table_name, col_name)`.
+    pub(crate) fn insert_column_accessor(
+        &mut self,
+        table_name: &TableName,
+        col_name: &Identifier,
+        alias: Option<&Identifier>,
+    ) -> Result<()> {
+        self.insert_st_column_accessor(table_name, col_name, alias)
     }
 
     /// Drops the row in `st_view` for this `view_id`

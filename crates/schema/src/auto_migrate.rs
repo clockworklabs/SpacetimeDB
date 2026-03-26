@@ -292,10 +292,26 @@ pub enum AutoMigrateStep<'def> {
     /// Recompute a view, update its backing table, and push updates to clients
     UpdateView(<ViewDef as ModuleDefLookup>::Key<'def>),
 
+    /// Remove an accessor entry for a table, index, or set of columns.
+    /// The target carries the canonical def key(s) needed to locate the entry.
+    RemoveAccessor(AccessorType<'def>),
+
+    /// Add an accessor entry for a table, index, or set of columns.
+    /// The target carries the canonical def key(s); the new alias is derived
+    /// from the new `ModuleDef` at execution time.
+    AddAccessor(AccessorType<'def>),
+
     /// Disconnect all users connected to the module.
     DisconnectAllUsers,
 }
 
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum AccessorType<'def> {
+    Table(<TableDef as ModuleDefLookup>::Key<'def>),
+    Index(<IndexDef as ModuleDefLookup>::Key<'def>),
+    /// Canonical `(table_name, col_name)` — targets a single column's accessor.
+    Column(<ColumnDef as ModuleDefLookup>::Key<'def>),
+}
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ChangeColumnTypeParts {
     pub table: Identifier,
@@ -418,15 +434,6 @@ pub enum AutoMigrateError {
 
     #[error("Changing the event flag of table {table} requires a manual migration")]
     ChangeTableEventFlag { table: Identifier },
-
-    #[error(
-        "Changing the accessor name on index {index} from {old_accessor:?} to {new_accessor:?} requires a manual migration"
-    )]
-    ChangeIndexAccessor {
-        index: RawIdentifier,
-        old_accessor: Option<Identifier>,
-        new_accessor: Option<Identifier>,
-    },
 }
 
 /// Construct a migration plan.
@@ -674,6 +681,12 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
         }
     }
 
+    if old.accessor_name != new.accessor_name {
+        plan.steps
+            .push(AutoMigrateStep::RemoveAccessor(AccessorType::Table(key)));
+        plan.steps.push(AutoMigrateStep::AddAccessor(AccessorType::Table(key)));
+    }
+
     let columns_ok = diff(plan.old, plan.new, |def| {
         def.lookup_expect::<TableDef>(key).columns.iter()
     })
@@ -748,6 +761,18 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
         plan.steps.push(AutoMigrateStep::AddColumns(key));
     } else if row_type_changed {
         plan.steps.push(AutoMigrateStep::ChangeColumns(key));
+    }
+
+    // Check if any column's accessor_name changed; emit one step per changed column.
+    for col_diff in diff(plan.old, plan.new, |def| def.lookup_expect::<TableDef>(key).columns.iter()) {
+        if let Diff::MaybeChange { old, new } = col_diff {
+            if old.accessor_name != new.accessor_name {
+                plan.steps
+                    .push(AutoMigrateStep::RemoveAccessor(AccessorType::Column(old.key())));
+                plan.steps
+                    .push(AutoMigrateStep::AddAccessor(AccessorType::Column(new.key())));
+            }
+        }
     }
 
     Ok(())
@@ -942,20 +967,17 @@ fn auto_migrate_indexes(plan: &mut AutoMigratePlan<'_>, new_tables: &HashSet<&Id
                     Ok(())
                 }
                 Diff::MaybeChange { old, new } => {
-                    if old.accessor_name != new.accessor_name {
-                        Err(AutoMigrateError::ChangeIndexAccessor {
-                            index: old.name.clone(),
-                            old_accessor: old.accessor_name.clone(),
-                            new_accessor: new.accessor_name.clone(),
-                        }
-                        .into())
-                    } else {
-                        if old.algorithm != new.algorithm {
-                            plan.steps.push(AutoMigrateStep::RemoveIndex(old.key()));
-                            plan.steps.push(AutoMigrateStep::AddIndex(old.key()));
-                        }
-                        Ok(())
+                    if old.source_name != new.source_name {
+                        plan.steps
+                            .push(AutoMigrateStep::RemoveAccessor(AccessorType::Index(old.key())));
+                        plan.steps
+                            .push(AutoMigrateStep::AddAccessor(AccessorType::Index(old.key())));
                     }
+                    if old.algorithm != new.algorithm {
+                        plan.steps.push(AutoMigrateStep::RemoveIndex(old.key()));
+                        plan.steps.push(AutoMigrateStep::AddIndex(old.key()));
+                    }
+                    Ok(())
                 }
             }
         })
@@ -1716,17 +1738,8 @@ mod tests {
             AutoMigrateError::RemoveTable { table } => table == &bananas
         );
 
-        let apples_id_index = "Apples_id_idx_btree";
-        let accessor_old = expect_identifier("id_index");
-        let accessor_new = expect_identifier("id_index_new_accessor");
-        expect_error_matching!(
-            result,
-            AutoMigrateError::ChangeIndexAccessor {
-                index,
-                old_accessor,
-                new_accessor
-            } => &index[..] == apples_id_index && old_accessor.as_ref() == Some(&accessor_old) && new_accessor.as_ref() == Some(&accessor_new)
-        );
+        // Changing an index accessor name is now supported as an auto migration step.
+        // (Previously this was an error; now RemoveAlias/AddAlias steps are emitted instead.)
 
         // It is not currently possible to test for `ChangeUniqueConstraint`, because unique constraint names are now generated during validation,
         // and are determined by their columns and table name. So it's impossible to create a unique constraint with the same name

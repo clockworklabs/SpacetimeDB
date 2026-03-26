@@ -47,6 +47,7 @@ use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
+use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{
     ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
@@ -1009,6 +1010,61 @@ impl RelationalDB {
         Ok(self
             .inner
             .add_columns_to_table_mut_tx(tx, table_id, column_schemas, default_values)?)
+    }
+
+    /// Removes the accessor entry in `st_table_accessor` for `table_name`.
+    pub(crate) fn remove_table_accessor(&self, tx: &mut MutTx, table_name: &TableName) -> Result<(), DBError> {
+        Ok(self.inner.remove_table_accessor_mut_tx(tx, table_name)?)
+    }
+
+    /// Inserts an accessor entry into `st_table_accessor` for `table_name`.
+    pub(crate) fn add_table_accessor(
+        &self,
+        tx: &mut MutTx,
+        table_name: &TableName,
+        alias: &Identifier,
+    ) -> Result<(), DBError> {
+        Ok(self.inner.add_table_accessor_mut_tx(tx, table_name, alias)?)
+    }
+
+    /// Removes the accessor entry in `st_index_accessor` for `index_name`.
+    pub(crate) fn remove_index_accessor(&self, tx: &mut MutTx, index_name: &RawIdentifier) -> Result<(), DBError> {
+        Ok(self.inner.remove_index_accessor_mut_tx(tx, index_name)?)
+    }
+
+    /// Inserts an accessor entry into `st_index_accessor` for `index_name`.
+    pub(crate) fn add_index_accessor(
+        &self,
+        tx: &mut MutTx,
+        index_name: &RawIdentifier,
+        alias: &RawIdentifier,
+    ) -> Result<(), DBError> {
+        Ok(self.inner.add_index_accessor_mut_tx(tx, index_name, alias)?)
+    }
+
+    /// Drops the `st_column_accessor` entry for a single `(table_name, col_name)` pair.
+    pub(crate) fn drop_column_accessor_for_col(
+        &self,
+        tx: &mut MutTx,
+        table_name: &TableName,
+        col_name: &Identifier,
+    ) -> Result<(), DBError> {
+        Ok(self
+            .inner
+            .drop_column_accessor_for_col_mut_tx(tx, table_name, col_name)?)
+    }
+
+    /// Inserts a single `st_column_accessor` entry for `(table_name, col_name)`.
+    pub(crate) fn insert_column_accessor(
+        &self,
+        tx: &mut MutTx,
+        table_name: &TableName,
+        col_name: &Identifier,
+        alias: Option<&Identifier>,
+    ) -> Result<(), DBError> {
+        Ok(self
+            .inner
+            .insert_column_accessor_mut_tx(tx, table_name, col_name, alias)?)
     }
 
     /// Reports the `TxMetrics`s passed.

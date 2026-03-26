@@ -6,9 +6,10 @@ use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColSet, TableId};
-use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
+use spacetimedb_schema::auto_migrate::{AccessorType, AutoMigratePlan, ManualMigratePlan, MigratePlan};
 use spacetimedb_schema::def::{TableDef, ViewDef};
 use spacetimedb_schema::schema::{column_schemas_from_defs, IndexSchema, Schema, SequenceSchema, TableSchema};
+use spacetimedb_schema::table_name::TableName;
 
 /// The logger used for by [`update_database`] and friends.
 pub trait UpdateLogger {
@@ -307,6 +308,64 @@ fn auto_migrate_database(
                 // but send response indicated that caller should drop clients
                 res = UpdateResult::RequiresClientDisconnect;
             }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveAccessor(target) => match target {
+                AccessorType::Table(table_name) => {
+                    let table_name = TableName::new(table_name.clone());
+                    log!(logger, "Removing table accessor for `{}`", table_name);
+                    stdb.remove_table_accessor(tx, &table_name)?;
+                }
+                AccessorType::Index(index_name) => {
+                    log!(logger, "Removing index accessor for `{}`", index_name);
+                    stdb.remove_index_accessor(tx, index_name)?;
+                }
+                AccessorType::Column((table_name, col_name)) => {
+                    let table_name = TableName::new(table_name.clone());
+                    log!(logger, "Removing column accessor for `{}.{}`", table_name, col_name);
+                    stdb.drop_column_accessor_for_col(tx, &table_name, col_name)?;
+                }
+            },
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddAccessor(target) => match target {
+                AccessorType::Table(table_name) => {
+                    let table_def: &TableDef = plan.new.expect_lookup(table_name);
+                    let table_name = TableName::new(table_def.name.clone());
+                    log!(
+                        logger,
+                        "Adding table accessor `{}` for `{}`",
+                        table_def.accessor_name,
+                        table_name
+                    );
+                    stdb.add_table_accessor(tx, &table_name, &table_def.accessor_name)?;
+                }
+                AccessorType::Index(index_name) => {
+                    let table_def = plan
+                        .new
+                        .stored_in_table_def(index_name)
+                        .expect("index must exist in new def");
+                    let index_def = table_def
+                        .indexes
+                        .get(index_name)
+                        .expect("index must exist in table def");
+                    log!(
+                        logger,
+                        "Adding index accessor `{}` for `{}`",
+                        index_def.source_name,
+                        index_name
+                    );
+                    stdb.add_index_accessor(tx, index_name, &index_def.source_name)?;
+                }
+                AccessorType::Column((table_name, col_name)) => {
+                    let col_def: &spacetimedb_schema::def::ColumnDef = plan.new.expect_lookup((table_name, col_name));
+                    let table_name = TableName::new(table_name.clone());
+                    log!(
+                        logger,
+                        "Adding column accessor `{}` for `{}.{}`",
+                        col_def.accessor_name,
+                        table_name,
+                        col_name
+                    );
+                    stdb.insert_column_accessor(tx, &table_name, col_name, Some(&col_def.accessor_name))?;
+                }
+            },
         }
     }
 

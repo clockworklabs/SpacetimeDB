@@ -99,6 +99,7 @@ fn format_step<F: MigrationFormatter>(
             f.format_add_columns(&new_columns)
         }
         AutoMigrateStep::DisconnectAllUsers => f.format_disconnect_warning(),
+        AutoMigrateStep::RemoveAccessor(_) | AutoMigrateStep::AddAccessor(_) => Ok(()),
     }?;
 
     Ok(())

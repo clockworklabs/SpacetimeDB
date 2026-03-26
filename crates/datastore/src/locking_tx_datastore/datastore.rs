@@ -36,11 +36,13 @@ use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_paths::server::SnapshotDirPath;
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId, ViewId};
 use spacetimedb_sats::{
-    algebraic_value::de::ValueDeserializer, bsatn, buffer::BufReader, AlgebraicValue, ProductValue,
+    algebraic_value::de::ValueDeserializer, bsatn, buffer::BufReader, raw_identifier::RawIdentifier, AlgebraicValue,
+    ProductValue,
 };
 use spacetimedb_sats::{memory_usage::MemoryUsage, Deserialize};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_schema::{
+    identifier::Identifier,
     reducer_name::ReducerName,
     schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema},
 };
@@ -347,6 +349,62 @@ impl Locking {
         defaults: Vec<AlgebraicValue>,
     ) -> Result<TableId> {
         tx.add_columns_to_table(table_id, column_schemas, defaults)
+    }
+
+    /// Removes the accessor entry in `st_table_accessor` for `table_name`.
+    pub fn remove_table_accessor_mut_tx(&self, tx: &mut MutTxId, table_name: &TableName) -> Result<()> {
+        tx.remove_table_accessor(table_name)
+    }
+
+    /// Inserts an accessor entry into `st_table_accessor` for `table_name`.
+    pub fn add_table_accessor_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_name: &TableName,
+        alias: &Identifier,
+    ) -> Result<()> {
+        tx.add_table_accessor(table_name, alias)
+    }
+
+    /// Removes the accessor entry in `st_index_accessor` for `index_name`.
+    pub fn remove_index_accessor_mut_tx(&self, tx: &mut MutTxId, index_name: &RawIdentifier) -> Result<()> {
+        tx.remove_index_accessor(index_name)
+    }
+
+    /// Inserts an accessor entry into `st_index_accessor` for `index_name`.
+    pub fn add_index_accessor_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        index_name: &RawIdentifier,
+        alias: &RawIdentifier,
+    ) -> Result<()> {
+        tx.add_index_accessor(index_name, alias)
+    }
+
+    /// Drops all `st_column_accessor` entries for `table_name`.
+    pub fn drop_column_accessors_mut_tx(&self, tx: &mut MutTxId, table_name: &TableName) -> Result<()> {
+        tx.drop_column_accessors_for_table(table_name)
+    }
+
+    /// Drops the `st_column_accessor` entry for a single `(table_name, col_name)` pair.
+    pub fn drop_column_accessor_for_col_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_name: &TableName,
+        col_name: &Identifier,
+    ) -> Result<()> {
+        tx.drop_column_accessor_for_col(table_name, col_name)
+    }
+
+    /// Inserts a single `st_column_accessor` entry for `(table_name, col_name)`.
+    pub fn insert_column_accessor_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_name: &TableName,
+        col_name: &Identifier,
+        alias: Option<&Identifier>,
+    ) -> Result<()> {
+        tx.insert_column_accessor(table_name, col_name, alias)
     }
 }
 
