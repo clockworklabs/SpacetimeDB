@@ -3,6 +3,11 @@ use spacetimedb_guard::{ensure_binaries_built, SpacetimeDbGuard};
 use spacetimedb_smoketests::{gradlew_path, patch_module_cargo_to_local_bindings, require_gradle, workspace_root};
 use std::fs;
 use std::process::Command;
+use std::sync::Mutex;
+
+/// Gradle builds sharing the same project directory cannot run in parallel.
+/// This mutex serializes all Kotlin smoketests that invoke gradlew on sdks/kotlin/.
+static GRADLE_LOCK: Mutex<()> = Mutex::new(());
 
 /// Ensure that generated Kotlin bindings compile against the local Kotlin SDK.
 /// This test does not depend on a running SpacetimeDB instance.
@@ -10,6 +15,7 @@ use std::process::Command;
 #[test]
 fn test_build_kotlin_client() {
     require_gradle!();
+    let _lock = GRADLE_LOCK.lock().unwrap();
 
     let workspace = workspace_root();
     let cli_path = ensure_binaries_built();
@@ -208,6 +214,7 @@ fun main() {
 #[test]
 fn test_kotlin_sdk_unit_tests() {
     require_gradle!();
+    let _lock = GRADLE_LOCK.lock().unwrap();
 
     let workspace = workspace_root();
     let cli_path = ensure_binaries_built();
@@ -266,6 +273,7 @@ fn test_kotlin_sdk_unit_tests() {
 #[test]
 fn test_kotlin_integration() {
     require_gradle!();
+    let _lock = GRADLE_LOCK.lock().unwrap();
 
     let workspace = workspace_root();
     let cli_path = ensure_binaries_built();
