@@ -43,10 +43,8 @@ pub(super) const fn size_sub_row_pointer(n: usize) -> usize {
 ///
 /// If keys at `ty` are incompatible with fixed byte keys,
 /// e.g., because they are of unbounded length,
-/// or because `is_ranged_index` is `true`
-/// and they are of a type whose byte representation is not order-preserving,
 /// then `None` is returned.
-pub(super) fn required_bytes_key_size(ty: &AlgebraicType, is_range_index: bool) -> Option<usize> {
+pub(super) fn required_bytes_key_size(ty: &AlgebraicType) -> Option<usize> {
     use AlgebraicType::*;
 
     match ty {
@@ -57,17 +55,10 @@ pub(super) fn required_bytes_key_size(ty: &AlgebraicType, is_range_index: bool) 
 
         // For sum, we report the greatest possible fixed size.
         // A key may be of variable size, a long as it fits within an upper bound.
-        //
-        // It's valid to use BSATN-ified sums in range index, i.e., when `is_range_index`,
-        // as `Ord for AlgebraicValue` delegates to `Ord for SumValue`
-        // which compares the `tag` first and the payload (`value`) second,
-        // The BSATN encoding of sums places the `tag` first and the payload second.
-        // When comparing two `[u8]` slices with encoded sums,
-        // this produces an ordering that also compares the `tag` first and the payload second.
         Sum(ty) => {
             let mut max_size = 0;
             for var in &ty.variants {
-                let variant_size = required_bytes_key_size(&var.algebraic_type, is_range_index)?;
+                let variant_size = required_bytes_key_size(&var.algebraic_type)?;
                 max_size = max_size.max(variant_size);
             }
             // The sum tag is represented as a u8 in BSATN,
@@ -79,21 +70,12 @@ pub(super) fn required_bytes_key_size(ty: &AlgebraicType, is_range_index: bool) 
         Product(ty) => {
             let mut total_size = 0;
             for elem in &ty.elements {
-                total_size += required_bytes_key_size(&elem.algebraic_type, is_range_index)?;
+                total_size += required_bytes_key_size(&elem.algebraic_type)?;
             }
             Some(total_size)
         }
 
-        // The index is a range index and the key is either signed or a float.
-        // Signed integers are stored in two's complement,
-        // so their byte representation is not order-preserving.
-        // Floats meanwhile, are stored in IEEE 754 format,
-        // so their byte representation is not order-preserving either.
-        // Therefore, we cannot use fixed byte keys for these types in range indices.
-        I8 | I16 | I32 | I64 | I128 | I256 | F32 | F64 if is_range_index => None,
-
-        // At this point we know that the index is a point index
-        // so we need not worry about signed integers and floats not being order-preserving.
+        // Primitives:
         Bool | U8 | I8 => Some(mem::size_of::<u8>()),
         U16 | I16 => Some(mem::size_of::<u16>()),
         U32 | I32 | F32 => Some(mem::size_of::<u32>()),
@@ -222,5 +204,36 @@ mod test {
             let decoded_av = key.decode_algebraic_value(&ty);
             assert_eq!(av, decoded_av);
         }
+
+        /*
+        // This test turned out not to hold for integers larger than u8,
+        // as BSATN stores them little-endian,
+        // but `Ord for AlgebraicValue` compares them as big-endian.
+        // It's included here for posterity and in case we'd like to
+        // massage the BSATN before storing it in the `BytesKey`
+        // to make it order-preserving.
+
+        use proptest::array::uniform;
+        use spacetimedb_sats::proptest::{gen_with, generate_product_value, generate_row_type, SIZE};
+
+        #[test]
+        fn order_in_bsatn_is_preserved((ty, [r1, r2]) in gen_with(generate_row_type(0..=SIZE), |ty| uniform(generate_product_value(ty)))) {
+            let ty: AlgebraicType = ty.into();
+            let r1: AlgebraicValue = r1.into();
+            let r2: AlgebraicValue = r2.into();
+
+            let Some(required) = required_bytes_key_size(&ty, true) else {
+                //dbg!(&ty);
+                return Err(TestCaseError::reject("type is incompatible with fixed byte keys in range indices"));
+            };
+            prop_assume!(required <= N);
+
+            let k1 = BytesKey::<N>::from_algebraic_value(&r1);
+            let k2 = BytesKey::<N>::from_algebraic_value(&r2);
+            let ord_k = k1.cmp(&k2);
+            let ord_r = r1.cmp(&r2);
+            prop_assert_eq!(ord_k, ord_r);
+        }
+        */
     }
 }

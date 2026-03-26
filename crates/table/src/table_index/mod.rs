@@ -125,11 +125,6 @@ enum TypedIndexRangeIter<'a> {
     BTreeF64(BTreeIndexRangeIter<'a, F64>),
     BTreeString(BTreeIndexRangeIter<'a, Box<str>>),
     BTreeAV(BTreeIndexRangeIter<'a, AlgebraicValue>),
-    BTreeBytesKey8(BTreeIndexRangeIter<'a, BytesKey<BYTES_KEY_SIZE_8_B>>),
-    BTreeBytesKey16(BTreeIndexRangeIter<'a, BytesKey<BYTES_KEY_SIZE_16_B>>),
-    BTreeBytesKey32(BTreeIndexRangeIter<'a, BytesKey<BYTES_KEY_SIZE_32_B>>),
-    BTreeBytesKey64(BTreeIndexRangeIter<'a, BytesKey<BYTES_KEY_SIZE_64_B>>),
-    BTreeBytesKey128(BTreeIndexRangeIter<'a, BytesKey<BYTES_KEY_SIZE_128_B>>),
 
     // All the unique btree index iterators.
     UniqueBTreeBool(UniqueBTreeIndexRangeIter<'a, bool>),
@@ -150,11 +145,6 @@ enum TypedIndexRangeIter<'a> {
     UniqueBTreeF64(UniqueBTreeIndexRangeIter<'a, F64>),
     UniqueBTreeString(UniqueBTreeIndexRangeIter<'a, Box<str>>),
     UniqueBTreeAV(UniqueBTreeIndexRangeIter<'a, AlgebraicValue>),
-    UniqueBTreeBytesKey8(UniqueBTreeIndexRangeIter<'a, BytesKey<BYTES_KEY_SIZE_8_B>>),
-    UniqueBTreeBytesKey16(UniqueBTreeIndexRangeIter<'a, BytesKey<BYTES_KEY_SIZE_16_B>>),
-    UniqueBTreeBytesKey32(UniqueBTreeIndexRangeIter<'a, BytesKey<BYTES_KEY_SIZE_32_B>>),
-    UniqueBTreeBytesKey64(UniqueBTreeIndexRangeIter<'a, BytesKey<BYTES_KEY_SIZE_64_B>>),
-    UniqueBTreeBytesKey128(UniqueBTreeIndexRangeIter<'a, BytesKey<BYTES_KEY_SIZE_128_B>>),
 
     UniqueDirect(UniqueDirectIndexRangeIter<'a>),
     UniqueDirectU8(UniqueDirectFixedCapIndexRangeIter<'a>),
@@ -184,11 +174,6 @@ impl Iterator for TypedIndexRangeIter<'_> {
             Self::BTreeF64(this) => this.next(),
             Self::BTreeString(this) => this.next(),
             Self::BTreeAV(this) => this.next(),
-            Self::BTreeBytesKey8(this) => this.next(),
-            Self::BTreeBytesKey16(this) => this.next(),
-            Self::BTreeBytesKey32(this) => this.next(),
-            Self::BTreeBytesKey64(this) => this.next(),
-            Self::BTreeBytesKey128(this) => this.next(),
 
             Self::UniqueBTreeBool(this) => this.next(),
             Self::UniqueBTreeU8(this) => this.next(),
@@ -208,11 +193,6 @@ impl Iterator for TypedIndexRangeIter<'_> {
             Self::UniqueBTreeF64(this) => this.next(),
             Self::UniqueBTreeString(this) => this.next(),
             Self::UniqueBTreeAV(this) => this.next(),
-            Self::UniqueBTreeBytesKey8(this) => this.next(),
-            Self::UniqueBTreeBytesKey16(this) => this.next(),
-            Self::UniqueBTreeBytesKey32(this) => this.next(),
-            Self::UniqueBTreeBytesKey64(this) => this.next(),
-            Self::UniqueBTreeBytesKey128(this) => this.next(),
 
             Self::UniqueDirect(this) => this.next(),
             Self::UniqueDirectU8(this) => this.next(),
@@ -298,13 +278,13 @@ impl<'a> CowAV<'a> {
 const BYTES_KEY_SIZE_8_B: usize = 8;
 const BYTES_KEY_SIZE_8_H: usize = size_sub_row_pointer(16);
 const _: () = assert!(BYTES_KEY_SIZE_8_B == BYTES_KEY_SIZE_8_H);
-const BYTES_KEY_SIZE_16_B: usize = 16;
+//const BYTES_KEY_SIZE_16_B: usize = 16;
 const BYTES_KEY_SIZE_24_H: usize = size_sub_row_pointer(32);
-const BYTES_KEY_SIZE_32_B: usize = 32;
+//const BYTES_KEY_SIZE_32_B: usize = 32;
 const BYTES_KEY_SIZE_56_H: usize = size_sub_row_pointer(64);
-const BYTES_KEY_SIZE_64_B: usize = 64;
+//const BYTES_KEY_SIZE_64_B: usize = 64;
 const BYTES_KEY_SIZE_120_H: usize = size_sub_row_pointer(128);
-const BYTES_KEY_SIZE_128_B: usize = 128;
+//const BYTES_KEY_SIZE_128_B: usize = 128;
 
 /// A key into a [`TypedIndex`].
 #[derive(enum_as_inner::EnumAsInner, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -329,16 +309,12 @@ enum TypedIndexKey<'a> {
     AV(CowAV<'a>),
 
     BytesKey8(BytesKey<BYTES_KEY_SIZE_8_B>),
-    BytesKey16(BytesKey<BYTES_KEY_SIZE_16_B>),
     BytesKey24(BytesKey<BYTES_KEY_SIZE_24_H>),
-    BytesKey32(BytesKey<BYTES_KEY_SIZE_32_B>),
     BytesKey56(BytesKey<BYTES_KEY_SIZE_56_H>),
-    BytesKey64(BytesKey<BYTES_KEY_SIZE_64_B>),
     BytesKey120(BytesKey<BYTES_KEY_SIZE_120_H>),
-    BytesKey128(BytesKey<BYTES_KEY_SIZE_128_B>),
 }
 
-static_assert_size!(TypedIndexKey<'_>, 144);
+static_assert_size!(TypedIndexKey<'_>, 128);
 
 /// Transposes a `Bound<Result<T, E>>` to a `Result<Bound<T>, E>`.
 fn transpose_bound<T, E>(bound: Bound<Result<T, E>>) -> Result<Bound<T>, E> {
@@ -394,15 +370,7 @@ impl<'a> TypedIndexKey<'a> {
 
             (av, BTreeAV(_) | HashAV(_) | UniqueBTreeAV(_) | UniqueHashAV(_)) => Self::AV(CowAV::Borrowed(av)),
 
-            (av, BTreeBytesKey8(_) | HashBytesKey8(_) | UniqueBTreeBytesKey8(_) | UniqueHashBytesKey8(_)) => {
-                Self::BytesKey8(BytesKey::from_algebraic_value(av))
-            }
-            (av, BTreeBytesKey16(_) | UniqueBTreeBytesKey16(_)) => Self::BytesKey16(BytesKey::from_algebraic_value(av)),
-            (av, BTreeBytesKey32(_) | UniqueBTreeBytesKey32(_)) => Self::BytesKey32(BytesKey::from_algebraic_value(av)),
-            (av, BTreeBytesKey64(_) | UniqueBTreeBytesKey64(_)) => Self::BytesKey64(BytesKey::from_algebraic_value(av)),
-            (av, BTreeBytesKey128(_) | UniqueBTreeBytesKey128(_)) => {
-                Self::BytesKey128(BytesKey::from_algebraic_value(av))
-            }
+            (av, HashBytesKey8(_) | UniqueHashBytesKey8(_)) => Self::BytesKey8(BytesKey::from_algebraic_value(av)),
             (av, HashBytesKey24(_) | UniqueHashBytesKey24(_)) => Self::BytesKey24(BytesKey::from_algebraic_value(av)),
             (av, HashBytesKey56(_) | UniqueHashBytesKey56(_)) => Self::BytesKey56(BytesKey::from_algebraic_value(av)),
             (av, HashBytesKey120(_) | UniqueHashBytesKey120(_)) => {
@@ -459,13 +427,7 @@ impl<'a> TypedIndexKey<'a> {
                 AlgebraicValue::decode(ty, reader).map(CowAV::Owned).map(Self::AV)
             }
 
-            BTreeBytesKey8(_) | HashBytesKey8(_) | UniqueBTreeBytesKey8(_) | UniqueHashBytesKey8(_) => {
-                BytesKey::from_bsatn(ty, bytes).map(Self::BytesKey8)
-            }
-            BTreeBytesKey16(_) | UniqueBTreeBytesKey16(_) => BytesKey::from_bsatn(ty, bytes).map(Self::BytesKey16),
-            BTreeBytesKey32(_) | UniqueBTreeBytesKey32(_) => BytesKey::from_bsatn(ty, bytes).map(Self::BytesKey32),
-            BTreeBytesKey64(_) | UniqueBTreeBytesKey64(_) => BytesKey::from_bsatn(ty, bytes).map(Self::BytesKey64),
-            BTreeBytesKey128(_) | UniqueBTreeBytesKey128(_) => BytesKey::from_bsatn(ty, bytes).map(Self::BytesKey128),
+            HashBytesKey8(_) | UniqueHashBytesKey8(_) => BytesKey::from_bsatn(ty, bytes).map(Self::BytesKey8),
             HashBytesKey24(_) | UniqueHashBytesKey24(_) => BytesKey::from_bsatn(ty, bytes).map(Self::BytesKey24),
             HashBytesKey56(_) | UniqueHashBytesKey56(_) => BytesKey::from_bsatn(ty, bytes).map(Self::BytesKey56),
             HashBytesKey120(_) | UniqueHashBytesKey120(_) => BytesKey::from_bsatn(ty, bytes).map(Self::BytesKey120),
@@ -564,20 +526,8 @@ impl<'a> TypedIndexKey<'a> {
             //   This entails that each `ColId` in `self.indexed_columns`,
             //   and by 1. also `cols`,
             //   must be in-bounds of `row_ref`'s layout.
-            BTreeBytesKey8(_) | HashBytesKey8(_) | UniqueBTreeBytesKey8(_) | UniqueHashBytesKey8(_) => {
+            HashBytesKey8(_) | UniqueHashBytesKey8(_) => {
                 Self::BytesKey8(unsafe { BytesKey::from_row_ref(cols, row_ref) })
-            }
-            BTreeBytesKey16(_) | UniqueBTreeBytesKey16(_) => {
-                Self::BytesKey16(unsafe { BytesKey::from_row_ref(cols, row_ref) })
-            }
-            BTreeBytesKey32(_) | UniqueBTreeBytesKey32(_) => {
-                Self::BytesKey32(unsafe { BytesKey::from_row_ref(cols, row_ref) })
-            }
-            BTreeBytesKey64(_) | UniqueBTreeBytesKey64(_) => {
-                Self::BytesKey64(unsafe { BytesKey::from_row_ref(cols, row_ref) })
-            }
-            BTreeBytesKey128(_) | UniqueBTreeBytesKey128(_) => {
-                Self::BytesKey128(unsafe { BytesKey::from_row_ref(cols, row_ref) })
             }
             HashBytesKey24(_) | UniqueHashBytesKey24(_) => {
                 Self::BytesKey24(unsafe { BytesKey::from_row_ref(cols, row_ref) })
@@ -614,13 +564,9 @@ impl<'a> TypedIndexKey<'a> {
             Self::String(x) => TypedIndexKey::String(x.borrow().into()),
             Self::AV(x) => TypedIndexKey::AV(x.borrow().into()),
             Self::BytesKey8(x) => TypedIndexKey::BytesKey8(*x),
-            Self::BytesKey16(x) => TypedIndexKey::BytesKey16(*x),
             Self::BytesKey24(x) => TypedIndexKey::BytesKey24(*x),
-            Self::BytesKey32(x) => TypedIndexKey::BytesKey32(*x),
             Self::BytesKey56(x) => TypedIndexKey::BytesKey56(*x),
-            Self::BytesKey64(x) => TypedIndexKey::BytesKey64(*x),
             Self::BytesKey120(x) => TypedIndexKey::BytesKey120(*x),
-            Self::BytesKey128(x) => TypedIndexKey::BytesKey128(*x),
         }
     }
 
@@ -646,13 +592,9 @@ impl<'a> TypedIndexKey<'a> {
             Self::String(x) => x.into_owned().into(),
             Self::AV(x) => x.into_owned(),
             Self::BytesKey8(x) => x.decode_algebraic_value(key_type),
-            Self::BytesKey16(x) => x.decode_algebraic_value(key_type),
             Self::BytesKey24(x) => x.decode_algebraic_value(key_type),
-            Self::BytesKey32(x) => x.decode_algebraic_value(key_type),
             Self::BytesKey56(x) => x.decode_algebraic_value(key_type),
-            Self::BytesKey64(x) => x.decode_algebraic_value(key_type),
             Self::BytesKey120(x) => x.decode_algebraic_value(key_type),
-            Self::BytesKey128(x) => x.decode_algebraic_value(key_type),
         }
     }
 }
@@ -684,11 +626,6 @@ enum TypedIndex {
     // TODO(perf, centril): consider `UmbraString` or some "German string".
     BTreeString(BTreeIndex<Box<str>>),
     BTreeAV(BTreeIndex<AlgebraicValue>),
-    BTreeBytesKey8(BTreeIndex<BytesKey<BYTES_KEY_SIZE_8_B>>),
-    BTreeBytesKey16(BTreeIndex<BytesKey<BYTES_KEY_SIZE_16_B>>),
-    BTreeBytesKey32(BTreeIndex<BytesKey<BYTES_KEY_SIZE_32_B>>),
-    BTreeBytesKey64(BTreeIndex<BytesKey<BYTES_KEY_SIZE_64_B>>),
-    BTreeBytesKey128(BTreeIndex<BytesKey<BYTES_KEY_SIZE_128_B>>),
 
     // All the non-unique hash index types.
     HashBool(HashIndex<bool>),
@@ -735,11 +672,6 @@ enum TypedIndex {
     // TODO(perf, centril): consider `UmbraString` or some "German string".
     UniqueBTreeString(UniqueBTreeIndex<Box<str>>),
     UniqueBTreeAV(UniqueBTreeIndex<AlgebraicValue>),
-    UniqueBTreeBytesKey8(UniqueBTreeIndex<BytesKey<BYTES_KEY_SIZE_8_B>>),
-    UniqueBTreeBytesKey16(UniqueBTreeIndex<BytesKey<BYTES_KEY_SIZE_16_B>>),
-    UniqueBTreeBytesKey32(UniqueBTreeIndex<BytesKey<BYTES_KEY_SIZE_32_B>>),
-    UniqueBTreeBytesKey64(UniqueBTreeIndex<BytesKey<BYTES_KEY_SIZE_64_B>>),
-    UniqueBTreeBytesKey128(UniqueBTreeIndex<BytesKey<BYTES_KEY_SIZE_128_B>>),
 
     // All the unique hash index types.
     UniqueHashBool(UniqueHashIndex<bool>),
@@ -797,11 +729,6 @@ macro_rules! same_for_all_types {
             Self::BTreeF64($this) => $body,
             Self::BTreeString($this) => $body,
             Self::BTreeAV($this) => $body,
-            Self::BTreeBytesKey8($this) => $body,
-            Self::BTreeBytesKey16($this) => $body,
-            Self::BTreeBytesKey32($this) => $body,
-            Self::BTreeBytesKey64($this) => $body,
-            Self::BTreeBytesKey128($this) => $body,
 
             Self::HashBool($this) => $body,
             Self::HashU8($this) => $body,
@@ -844,11 +771,6 @@ macro_rules! same_for_all_types {
             Self::UniqueBTreeF64($this) => $body,
             Self::UniqueBTreeString($this) => $body,
             Self::UniqueBTreeAV($this) => $body,
-            Self::UniqueBTreeBytesKey8($this) => $body,
-            Self::UniqueBTreeBytesKey16($this) => $body,
-            Self::UniqueBTreeBytesKey32($this) => $body,
-            Self::UniqueBTreeBytesKey64($this) => $body,
-            Self::UniqueBTreeBytesKey128($this) => $body,
 
             Self::UniqueHashBool($this) => $body,
             Self::UniqueHashU8($this) => $body,
@@ -970,16 +892,10 @@ impl TypedIndex {
                 // We use a direct index here
                 AlgebraicType::Sum(sum) if sum.is_simple_enum() => UniqueBTreeSumTag(<_>::default()),
 
-                ty => match required_bytes_key_size(ty, true) {
-                    Some(..=BYTES_KEY_SIZE_8_B) => UniqueBTreeBytesKey8(<_>::default()),
-                    Some(..=BYTES_KEY_SIZE_16_B) => UniqueBTreeBytesKey16(<_>::default()),
-                    Some(..=BYTES_KEY_SIZE_32_B) => UniqueBTreeBytesKey32(<_>::default()),
-                    Some(..=BYTES_KEY_SIZE_64_B) => UniqueBTreeBytesKey64(<_>::default()),
-                    Some(..=BYTES_KEY_SIZE_128_B) => UniqueBTreeBytesKey128(<_>::default()),
-                    // The key type cannot use the fixed byte key optimization,
-                    // so use a map keyed on `AlgebraicValue`.
-                    Some(_) | None => UniqueBTreeAV(<_>::default()),
-                },
+                // The index is either multi-column,
+                // or we don't care to specialize on the key type,
+                // so use a map keyed on `AlgebraicValue`.
+                _ => UniqueBTreeAV(<_>::default()),
             }
         } else {
             match key_type {
@@ -1003,16 +919,10 @@ impl TypedIndex {
                 // For a plain enum, use `u8` as the native type.
                 AlgebraicType::Sum(sum) if sum.is_simple_enum() => BTreeSumTag(<_>::default()),
 
-                ty => match required_bytes_key_size(ty, true) {
-                    Some(..=BYTES_KEY_SIZE_8_B) => BTreeBytesKey8(<_>::default()),
-                    Some(..=BYTES_KEY_SIZE_16_B) => BTreeBytesKey16(<_>::default()),
-                    Some(..=BYTES_KEY_SIZE_32_B) => BTreeBytesKey32(<_>::default()),
-                    Some(..=BYTES_KEY_SIZE_64_B) => BTreeBytesKey64(<_>::default()),
-                    Some(..=BYTES_KEY_SIZE_128_B) => BTreeBytesKey128(<_>::default()),
-                    // The key type cannot use the fixed byte key optimization,
-                    // so use a map keyed on `AlgebraicValue`.
-                    Some(_) | None => BTreeAV(<_>::default()),
-                },
+                // The index is either multi-column,
+                // or we don't care to specialize on the key type,
+                // so use a map keyed on `AlgebraicValue`.
+                _ => BTreeAV(<_>::default()),
             }
         }
     }
@@ -1045,7 +955,7 @@ impl TypedIndex {
                 // We use a direct index here
                 AlgebraicType::Sum(sum) if sum.is_simple_enum() => UniqueHashSumTag(<_>::default()),
 
-                ty => match required_bytes_key_size(ty, false) {
+                ty => match required_bytes_key_size(ty) {
                     Some(..=BYTES_KEY_SIZE_8_H) => UniqueHashBytesKey8(<_>::default()),
                     Some(..=BYTES_KEY_SIZE_24_H) => UniqueHashBytesKey24(<_>::default()),
                     Some(..=BYTES_KEY_SIZE_56_H) => UniqueHashBytesKey56(<_>::default()),
@@ -1077,7 +987,7 @@ impl TypedIndex {
                 // For a plain enum, use `u8` as the native type.
                 AlgebraicType::Sum(sum) if sum.is_simple_enum() => HashSumTag(<_>::default()),
 
-                ty => match required_bytes_key_size(ty, false) {
+                ty => match required_bytes_key_size(ty) {
                     Some(..=BYTES_KEY_SIZE_8_H) => HashBytesKey8(<_>::default()),
                     Some(..=BYTES_KEY_SIZE_24_H) => HashBytesKey24(<_>::default()),
                     Some(..=BYTES_KEY_SIZE_56_H) => HashBytesKey56(<_>::default()),
@@ -1102,12 +1012,10 @@ impl TypedIndex {
         match self {
             BTreeBool(_) | BTreeU8(_) | BTreeSumTag(_) | BTreeI8(_) | BTreeU16(_) | BTreeI16(_) | BTreeU32(_)
             | BTreeI32(_) | BTreeU64(_) | BTreeI64(_) | BTreeU128(_) | BTreeI128(_) | BTreeU256(_) | BTreeI256(_)
-            | BTreeF32(_) | BTreeF64(_) | BTreeString(_) | BTreeAV(_) | BTreeBytesKey8(_) | BTreeBytesKey16(_)
-            | BTreeBytesKey32(_) | BTreeBytesKey64(_) | BTreeBytesKey128(_) | HashBool(_) | HashU8(_)
-            | HashSumTag(_) | HashI8(_) | HashU16(_) | HashI16(_) | HashU32(_) | HashI32(_) | HashU64(_)
-            | HashI64(_) | HashU128(_) | HashI128(_) | HashU256(_) | HashI256(_) | HashF32(_) | HashF64(_)
-            | HashString(_) | HashAV(_) | HashBytesKey8(_) | HashBytesKey24(_) | HashBytesKey56(_)
-            | HashBytesKey120(_) => false,
+            | BTreeF32(_) | BTreeF64(_) | BTreeString(_) | BTreeAV(_) | HashBool(_) | HashU8(_) | HashSumTag(_)
+            | HashI8(_) | HashU16(_) | HashI16(_) | HashU32(_) | HashI32(_) | HashU64(_) | HashI64(_) | HashU128(_)
+            | HashI128(_) | HashU256(_) | HashI256(_) | HashF32(_) | HashF64(_) | HashString(_) | HashAV(_)
+            | HashBytesKey8(_) | HashBytesKey24(_) | HashBytesKey56(_) | HashBytesKey120(_) => false,
             UniqueBTreeBool(_)
             | UniqueBTreeU8(_)
             | UniqueBTreeSumTag(_)
@@ -1126,11 +1034,6 @@ impl TypedIndex {
             | UniqueBTreeF64(_)
             | UniqueBTreeString(_)
             | UniqueBTreeAV(_)
-            | UniqueBTreeBytesKey8(_)
-            | UniqueBTreeBytesKey16(_)
-            | UniqueBTreeBytesKey32(_)
-            | UniqueBTreeBytesKey64(_)
-            | UniqueBTreeBytesKey128(_)
             | UniqueHashBool(_)
             | UniqueHashU8(_)
             | UniqueHashSumTag(_)
@@ -1213,11 +1116,6 @@ impl TypedIndex {
             (BTreeF64(i), F64(k)) => (i.insert(k, ptr), None),
             (BTreeString(i), String(k)) => (i.insert(k.into_owned(), ptr), None),
             (BTreeAV(i), AV(k)) => (i.insert(k.into_owned(), ptr), None),
-            (BTreeBytesKey8(i), BytesKey8(k)) => (i.insert(k, ptr), None),
-            (BTreeBytesKey16(i), BytesKey16(k)) => (i.insert(k, ptr), None),
-            (BTreeBytesKey32(i), BytesKey32(k)) => (i.insert(k, ptr), None),
-            (BTreeBytesKey64(i), BytesKey64(k)) => (i.insert(k, ptr), None),
-            (BTreeBytesKey128(i), BytesKey128(k)) => (i.insert(k, ptr), None),
             (HashBool(i), Bool(k)) => (i.insert(k, ptr), None),
             (HashU8(i), U8(k)) => (i.insert(k, ptr), None),
             (HashSumTag(i), SumTag(k)) => (i.insert(k, ptr), None),
@@ -1258,11 +1156,6 @@ impl TypedIndex {
             (UniqueBTreeF64(i), F64(k)) => (i.insert(k, ptr), None),
             (UniqueBTreeString(i), String(k)) => (i.insert(k.into_owned(), ptr), None),
             (UniqueBTreeAV(i), AV(k)) => (i.insert(k.into_owned(), ptr), None),
-            (UniqueBTreeBytesKey8(i), BytesKey8(k)) => (i.insert(k, ptr), None),
-            (UniqueBTreeBytesKey16(i), BytesKey16(k)) => (i.insert(k, ptr), None),
-            (UniqueBTreeBytesKey32(i), BytesKey32(k)) => (i.insert(k, ptr), None),
-            (UniqueBTreeBytesKey64(i), BytesKey64(k)) => (i.insert(k, ptr), None),
-            (UniqueBTreeBytesKey128(i), BytesKey128(k)) => (i.insert(k, ptr), None),
             (UniqueHashBool(i), Bool(k)) => (i.insert(k, ptr), None),
             (UniqueHashU8(i), U8(k)) => (i.insert(k, ptr), None),
             (UniqueHashSumTag(i), SumTag(k)) => (i.insert(k, ptr), None),
@@ -1330,11 +1223,6 @@ impl TypedIndex {
             (BTreeF64(i), F64(k)) => i.delete(k, ptr),
             (BTreeString(i), String(k)) => i.delete(k.borrow(), ptr),
             (BTreeAV(i), AV(k)) => i.delete(k.borrow(), ptr),
-            (BTreeBytesKey8(i), BytesKey8(k)) => i.delete(k, ptr),
-            (BTreeBytesKey16(i), BytesKey16(k)) => i.delete(k, ptr),
-            (BTreeBytesKey32(i), BytesKey32(k)) => i.delete(k, ptr),
-            (BTreeBytesKey64(i), BytesKey64(k)) => i.delete(k, ptr),
-            (BTreeBytesKey128(i), BytesKey128(k)) => i.delete(k, ptr),
             (HashBool(i), Bool(k)) => i.delete(k, ptr),
             (HashU8(i), U8(k)) => i.delete(k, ptr),
             (HashSumTag(i), SumTag(k)) => i.delete(k, ptr),
@@ -1375,11 +1263,6 @@ impl TypedIndex {
             (UniqueBTreeF64(i), F64(k)) => i.delete(k, ptr),
             (UniqueBTreeString(i), String(k)) => i.delete(k.borrow(), ptr),
             (UniqueBTreeAV(i), AV(k)) => i.delete(k.borrow(), ptr),
-            (UniqueBTreeBytesKey8(i), BytesKey8(k)) => i.delete(k, ptr),
-            (UniqueBTreeBytesKey16(i), BytesKey16(k)) => i.delete(k, ptr),
-            (UniqueBTreeBytesKey32(i), BytesKey32(k)) => i.delete(k, ptr),
-            (UniqueBTreeBytesKey64(i), BytesKey64(k)) => i.delete(k, ptr),
-            (UniqueBTreeBytesKey128(i), BytesKey128(k)) => i.delete(k, ptr),
             (UniqueHashBool(i), Bool(k)) => i.delete(k, ptr),
             (UniqueHashU8(i), U8(k)) => i.delete(k, ptr),
             (UniqueHashSumTag(i), SumTag(k)) => i.delete(k, ptr),
@@ -1435,11 +1318,6 @@ impl TypedIndex {
             (BTreeF64(this), F64(key)) => NonUnique(this.seek_point(key)),
             (BTreeString(this), String(key)) => NonUnique(this.seek_point(key.borrow())),
             (BTreeAV(this), AV(key)) => NonUnique(this.seek_point(key.borrow())),
-            (BTreeBytesKey8(this), BytesKey8(key)) => NonUnique(this.seek_point(key)),
-            (BTreeBytesKey16(this), BytesKey16(key)) => NonUnique(this.seek_point(key)),
-            (BTreeBytesKey32(this), BytesKey32(key)) => NonUnique(this.seek_point(key)),
-            (BTreeBytesKey64(this), BytesKey64(key)) => NonUnique(this.seek_point(key)),
-            (BTreeBytesKey128(this), BytesKey128(key)) => NonUnique(this.seek_point(key)),
             (HashBool(this), Bool(key)) => NonUnique(this.seek_point(key)),
             (HashU8(this), U8(key)) => NonUnique(this.seek_point(key)),
             (HashSumTag(this), SumTag(key)) => NonUnique(this.seek_point(key)),
@@ -1480,11 +1358,6 @@ impl TypedIndex {
             (UniqueBTreeF64(this), F64(key)) => Unique(this.seek_point(key)),
             (UniqueBTreeString(this), String(key)) => Unique(this.seek_point(key.borrow())),
             (UniqueBTreeAV(this), AV(key)) => Unique(this.seek_point(key.borrow())),
-            (UniqueBTreeBytesKey8(this), BytesKey8(key)) => Unique(this.seek_point(key)),
-            (UniqueBTreeBytesKey16(this), BytesKey16(key)) => Unique(this.seek_point(key)),
-            (UniqueBTreeBytesKey32(this), BytesKey32(key)) => Unique(this.seek_point(key)),
-            (UniqueBTreeBytesKey64(this), BytesKey64(key)) => Unique(this.seek_point(key)),
-            (UniqueBTreeBytesKey128(this), BytesKey128(key)) => Unique(this.seek_point(key)),
             (UniqueHashBool(this), Bool(key)) => Unique(this.seek_point(key)),
             (UniqueHashU8(this), U8(key)) => Unique(this.seek_point(key)),
             (UniqueHashSumTag(this), SumTag(key)) => Unique(this.seek_point(key)),
@@ -1616,13 +1489,6 @@ impl TypedIndex {
                 BTreeString(this.seek_range(&range))
             }
             Self::BTreeAV(this) => BTreeAV(this.seek_range(&map(range, |k| k.as_av().map(|s| s.borrow())))),
-            Self::BTreeBytesKey8(this) => BTreeBytesKey8(this.seek_range(&map(range, TypedIndexKey::as_bytes_key8))),
-            Self::BTreeBytesKey16(this) => BTreeBytesKey16(this.seek_range(&map(range, TypedIndexKey::as_bytes_key16))),
-            Self::BTreeBytesKey32(this) => BTreeBytesKey32(this.seek_range(&map(range, TypedIndexKey::as_bytes_key32))),
-            Self::BTreeBytesKey64(this) => BTreeBytesKey64(this.seek_range(&map(range, TypedIndexKey::as_bytes_key64))),
-            Self::BTreeBytesKey128(this) => {
-                BTreeBytesKey128(this.seek_range(&map(range, TypedIndexKey::as_bytes_key128)))
-            }
 
             Self::UniqueBTreeBool(this) => UniqueBTreeBool(this.seek_range(&map(range, TypedIndexKey::as_bool))),
             Self::UniqueBTreeU8(this) => UniqueBTreeU8(this.seek_range(&map(range, TypedIndexKey::as_u8))),
@@ -1645,21 +1511,6 @@ impl TypedIndex {
                 UniqueBTreeString(this.seek_range(&range))
             }
             Self::UniqueBTreeAV(this) => UniqueBTreeAV(this.seek_range(&map(range, |k| k.as_av().map(|s| s.borrow())))),
-            Self::UniqueBTreeBytesKey8(this) => {
-                UniqueBTreeBytesKey8(this.seek_range(&map(range, TypedIndexKey::as_bytes_key8)))
-            }
-            Self::UniqueBTreeBytesKey16(this) => {
-                UniqueBTreeBytesKey16(this.seek_range(&map(range, TypedIndexKey::as_bytes_key16)))
-            }
-            Self::UniqueBTreeBytesKey32(this) => {
-                UniqueBTreeBytesKey32(this.seek_range(&map(range, TypedIndexKey::as_bytes_key32)))
-            }
-            Self::UniqueBTreeBytesKey64(this) => {
-                UniqueBTreeBytesKey64(this.seek_range(&map(range, TypedIndexKey::as_bytes_key64)))
-            }
-            Self::UniqueBTreeBytesKey128(this) => {
-                UniqueBTreeBytesKey128(this.seek_range(&map(range, TypedIndexKey::as_bytes_key128)))
-            }
 
             Self::UniqueDirectSumTag(this) => UniqueDirectU8(this.seek_range(&map(range, TypedIndexKey::as_sum_tag))),
             Self::UniqueDirectU8(this) => UniqueDirect(this.seek_range(&map(range, TypedIndexKey::as_u8))),
@@ -1839,15 +1690,6 @@ impl TableIndex {
                 let suffix_len = suffix_types.len();
 
                 match &self.idx {
-                    BTreeBytesKey8(_) => Self::bounds_from_bsatn_bytes_key(
-                        prefix,
-                        prefix_types,
-                        start,
-                        end,
-                        range_type,
-                        suffix_len,
-                        TypedIndexKey::BytesKey8,
-                    ),
                     BTreeAV(_) | HashAV(_) | UniqueBTreeAV(_) | UniqueHashAV(_) => {
                         // The index is not specialized.
                         // We now have the types,
@@ -1894,6 +1736,7 @@ impl TableIndex {
     /// Decodes `prefix` ++ `start` and `prefix` ++ `end`
     /// as BSATN-encoded bounds for a bytes key index.
     /// The `suffix_len` is used to determine whether this is a point scan or a range scan.
+    #[allow(dead_code)]
     fn bounds_from_bsatn_bytes_key<'de, const N: usize>(
         prefix: &'de [u8],
         prefix_types: &[ProductTypeElement],
@@ -2111,11 +1954,6 @@ impl TableIndex {
             | (BTreeF64(_), BTreeF64(_))
             | (BTreeString(_), BTreeString(_))
             | (BTreeAV(_), BTreeAV(_))
-            | (BTreeBytesKey8(_), BTreeBytesKey8(_))
-            | (BTreeBytesKey16(_), BTreeBytesKey16(_))
-            | (BTreeBytesKey32(_), BTreeBytesKey32(_))
-            | (BTreeBytesKey64(_), BTreeBytesKey64(_))
-            | (BTreeBytesKey128(_), BTreeBytesKey128(_))
             | (HashBool(_), HashBool(_))
             | (HashU8(_), HashU8(_))
             | (HashSumTag(_), HashSumTag(_))
@@ -2157,11 +1995,6 @@ impl TableIndex {
             (UniqueBTreeF64(idx), UniqueBTreeF64(other)) => idx.can_merge(other, ignore),
             (UniqueBTreeString(idx), UniqueBTreeString(other)) => idx.can_merge(other, ignore),
             (UniqueBTreeAV(idx), UniqueBTreeAV(other)) => idx.can_merge(other, ignore),
-            (UniqueBTreeBytesKey8(idx), UniqueBTreeBytesKey8(other)) => idx.can_merge(other, ignore),
-            (UniqueBTreeBytesKey16(idx), UniqueBTreeBytesKey16(other)) => idx.can_merge(other, ignore),
-            (UniqueBTreeBytesKey32(idx), UniqueBTreeBytesKey32(other)) => idx.can_merge(other, ignore),
-            (UniqueBTreeBytesKey64(idx), UniqueBTreeBytesKey64(other)) => idx.can_merge(other, ignore),
-            (UniqueBTreeBytesKey128(idx), UniqueBTreeBytesKey128(other)) => idx.can_merge(other, ignore),
             (UniqueHashBool(idx), UniqueHashBool(other)) => idx.can_merge(other, ignore),
             (UniqueHashU8(idx), UniqueHashU8(other)) => idx.can_merge(other, ignore),
             (UniqueHashSumTag(idx), UniqueHashSumTag(other)) => idx.can_merge(other, ignore),
