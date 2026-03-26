@@ -15,25 +15,25 @@ const CUSTOMER_INITIAL_BALANCE_CENTS: i64 = -1_000;
 const CUSTOMER_INITIAL_YTD_PAYMENT_CENTS: i64 = 1_000;
 const HISTORY_INITIAL_AMOUNT_CENTS: i64 = 1_000;
 
-pub fn run(config: LoadConfig) -> Result<()> {
+pub async fn run(config: LoadConfig) -> Result<()> {
     log::info!(
         "loading tpcc dataset into {} / {} with {} warehouse(s)",
         config.connection.uri,
         config.connection.database,
         config.warehouses
     );
-    let client = ModuleClient::connect(&config.connection)?;
+    let client = ModuleClient::connect(&config.connection).await?;
     if config.reset {
-        client.reset_tpcc().context("failed to reset tpcc data")?;
+        client.reset_tpcc().await.context("failed to reset tpcc data")?;
     }
 
     let mut rng = StdRng::seed_from_u64(0x5eed_5eed);
     let load_c_last = rng.random_range(0..=255);
     let base_ts = Timestamp::from(SystemTime::now());
 
-    load_items(&client, config.batch_size, &mut rng)?;
-    load_warehouses_and_districts(&client, config.warehouses, config.batch_size, base_ts, &mut rng)?;
-    load_stock(&client, config.warehouses, config.batch_size, &mut rng)?;
+    load_items(&client, config.batch_size, &mut rng).await?;
+    load_warehouses_and_districts(&client, config.warehouses, config.batch_size, base_ts, &mut rng).await?;
+    load_stock(&client, config.warehouses, config.batch_size, &mut rng).await?;
     load_customers_history_orders(
         &client,
         config.warehouses,
@@ -41,14 +41,15 @@ pub fn run(config: LoadConfig) -> Result<()> {
         base_ts,
         load_c_last,
         &mut rng,
-    )?;
+    )
+    .await?;
 
-    client.shutdown();
+    client.shutdown().await;
     log::info!("tpcc load finished");
     Ok(())
 }
 
-fn load_items(client: &ModuleClient, batch_size: usize, rng: &mut StdRng) -> Result<()> {
+async fn load_items(client: &ModuleClient, batch_size: usize, rng: &mut StdRng) -> Result<()> {
     let mut batch = Vec::with_capacity(batch_size);
     for item_id in 1..=ITEMS {
         batch.push(Item {
@@ -59,16 +60,16 @@ fn load_items(client: &ModuleClient, batch_size: usize, rng: &mut StdRng) -> Res
             i_data: maybe_with_original(rng, 26, 50),
         });
         if batch.len() >= batch_size {
-            client.load_items(std::mem::take(&mut batch))?;
+            client.load_items(std::mem::take(&mut batch)).await?;
         }
     }
     if !batch.is_empty() {
-        client.load_items(batch)?;
+        client.load_items(batch).await?;
     }
     Ok(())
 }
 
-fn load_warehouses_and_districts(
+async fn load_warehouses_and_districts(
     client: &ModuleClient,
     warehouses: u16,
     batch_size: usize,
@@ -112,19 +113,19 @@ fn load_warehouses_and_districts(
         let split_at = warehouse_batch.len().min(batch_size);
         let remainder = warehouse_batch.split_off(split_at);
         let rows = std::mem::replace(&mut warehouse_batch, remainder);
-        client.load_warehouses(rows)?;
+        client.load_warehouses(rows).await?;
     }
     while !district_batch.is_empty() {
         let split_at = district_batch.len().min(batch_size);
         let remainder = district_batch.split_off(split_at);
         let rows = std::mem::replace(&mut district_batch, remainder);
-        client.load_districts(rows)?;
+        client.load_districts(rows).await?;
     }
     let _ = timestamp;
     Ok(())
 }
 
-fn load_stock(client: &ModuleClient, warehouses: u16, batch_size: usize, rng: &mut StdRng) -> Result<()> {
+async fn load_stock(client: &ModuleClient, warehouses: u16, batch_size: usize, rng: &mut StdRng) -> Result<()> {
     let mut batch = Vec::with_capacity(batch_size);
     for w_id in 1..=warehouses {
         for item_id in 1..=ITEMS {
@@ -148,17 +149,17 @@ fn load_stock(client: &ModuleClient, warehouses: u16, batch_size: usize, rng: &m
                 s_data: maybe_with_original(rng, 26, 50),
             });
             if batch.len() >= batch_size {
-                client.load_stocks(std::mem::take(&mut batch))?;
+                client.load_stocks(std::mem::take(&mut batch)).await?;
             }
         }
     }
     if !batch.is_empty() {
-        client.load_stocks(batch)?;
+        client.load_stocks(batch).await?;
     }
     Ok(())
 }
 
-fn load_customers_history_orders(
+async fn load_customers_history_orders(
     client: &ModuleClient,
     warehouses: u16,
     batch_size: usize,
@@ -220,10 +221,10 @@ fn load_customers_history_orders(
                 });
 
                 if customer_batch.len() >= batch_size {
-                    client.load_customers(std::mem::take(&mut customer_batch))?;
+                    client.load_customers(std::mem::take(&mut customer_batch)).await?;
                 }
                 if history_batch.len() >= batch_size {
-                    client.load_history(std::mem::take(&mut history_batch))?;
+                    client.load_history(std::mem::take(&mut history_batch)).await?;
                 }
             }
 
@@ -267,34 +268,34 @@ fn load_customers_history_orders(
                         ol_dist_info: alpha_string(rng, 24, 24),
                     });
                     if order_line_batch.len() >= batch_size {
-                        client.load_order_lines(std::mem::take(&mut order_line_batch))?;
+                        client.load_order_lines(std::mem::take(&mut order_line_batch)).await?;
                     }
                 }
 
                 if order_batch.len() >= batch_size {
-                    client.load_orders(std::mem::take(&mut order_batch))?;
+                    client.load_orders(std::mem::take(&mut order_batch)).await?;
                 }
                 if new_order_batch.len() >= batch_size {
-                    client.load_new_orders(std::mem::take(&mut new_order_batch))?;
+                    client.load_new_orders(std::mem::take(&mut new_order_batch)).await?;
                 }
             }
         }
     }
 
     if !customer_batch.is_empty() {
-        client.load_customers(customer_batch)?;
+        client.load_customers(customer_batch).await?;
     }
     if !history_batch.is_empty() {
-        client.load_history(history_batch)?;
+        client.load_history(history_batch).await?;
     }
     if !order_batch.is_empty() {
-        client.load_orders(order_batch)?;
+        client.load_orders(order_batch).await?;
     }
     if !new_order_batch.is_empty() {
-        client.load_new_orders(new_order_batch)?;
+        client.load_new_orders(new_order_batch).await?;
     }
     if !order_line_batch.is_empty() {
-        client.load_order_lines(order_line_batch)?;
+        client.load_order_lines(order_line_batch).await?;
     }
 
     Ok(())

@@ -4,8 +4,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
+use tokio::task::JoinSet;
 
 use crate::client::{expect_ok, ModuleClient};
 use crate::config::{default_run_id, DriverConfig};
@@ -54,7 +54,7 @@ pub async fn run(config: DriverConfig) -> Result<()> {
 
     let abort = Arc::new(AtomicBool::new(false));
     let request_ids = Arc::new(AtomicU64::new(1));
-    let mut handles = Vec::with_capacity(config.terminals as usize);
+    let mut tasks = JoinSet::new();
 
     for offset in 0..config.terminals {
         let terminal_id = config.terminal_start + offset;
@@ -82,12 +82,12 @@ pub async fn run(config: DriverConfig) -> Result<()> {
             assignment,
             seed: terminal_seed,
         };
-        handles.push(thread::spawn(move || run_terminal(runtime)));
+        tasks.spawn(run_terminal(runtime));
     }
 
     let mut first_error: Option<anyhow::Error> = None;
-    for handle in handles {
-        match handle.join() {
+    while let Some(result) = tasks.join_next().await {
+        match result {
             Ok(Ok(())) => {}
             Ok(Err(err)) => {
                 abort.store(true, Ordering::Relaxed);
@@ -95,10 +95,10 @@ pub async fn run(config: DriverConfig) -> Result<()> {
                     first_error = Some(err);
                 }
             }
-            Err(_) => {
+            Err(err) => {
                 abort.store(true, Ordering::Relaxed);
                 if first_error.is_none() {
-                    first_error = Some(anyhow!("terminal thread panicked"));
+                    first_error = Some(anyhow!("terminal task failed: {}", err));
                 }
             }
         }
@@ -132,7 +132,7 @@ pub async fn run(config: DriverConfig) -> Result<()> {
     Ok(())
 }
 
-fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
+async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
     let TerminalRuntime {
         config,
         metrics,
@@ -143,8 +143,8 @@ fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
         assignment,
         seed,
     } = runtime;
-    let client = ModuleClient::connect(&config.connection)?;
-    sleep_until_ms(schedule.warmup_start_ms);
+    let client = ModuleClient::connect(&config.connection).await?;
+    sleep_until_ms(schedule.warmup_start_ms).await;
 
     let mut rng = StdRng::seed_from_u64(seed);
     while !abort.load(Ordering::Relaxed) {
@@ -163,7 +163,7 @@ fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
             constants: &run_constants,
             request_ids: &request_ids,
         };
-        let event = execute_transaction(&context, kind, &mut rng, started_ms);
+        let event = execute_transaction(&context, kind, &mut rng, started_ms).await;
 
         match event {
             Ok(record) => {
@@ -173,61 +173,70 @@ fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
             }
             Err(err) => {
                 abort.store(true, Ordering::Relaxed);
-                client.shutdown();
+                client.shutdown().await;
                 return Err(err);
             }
         }
 
         let delay = keying_time(kind, config.keying_time_scale) + think_time(kind, config.think_time_scale, &mut rng);
         if !delay.is_zero() && crate::summary::now_millis() < schedule.stop_ms {
-            thread::sleep(delay);
+            tokio::time::sleep(delay).await;
         }
     }
 
-    client.shutdown();
+    client.shutdown().await;
     Ok(())
 }
 
-fn execute_transaction(
+async fn execute_transaction(
     context: &TransactionContext<'_>,
     kind: TransactionKind,
     rng: &mut StdRng,
     started_ms: u64,
 ) -> Result<TransactionRecord> {
     match kind {
-        TransactionKind::NewOrder => execute_new_order(
-            context.client,
-            context.config.warehouse_count,
-            context.assignment,
-            context.constants,
-            rng,
-            started_ms,
-        ),
-        TransactionKind::Payment => execute_payment(
-            context.client,
-            context.config.warehouse_count,
-            context.assignment,
-            context.constants,
-            rng,
-            started_ms,
-        ),
-        TransactionKind::OrderStatus => {
-            execute_order_status(context.client, context.assignment, context.constants, rng, started_ms)
+        TransactionKind::NewOrder => {
+            execute_new_order(
+                context.client,
+                context.config.warehouse_count,
+                context.assignment,
+                context.constants,
+                rng,
+                started_ms,
+            )
+            .await
         }
-        TransactionKind::Delivery => execute_delivery(
-            context.client,
-            context.run_id,
-            context.driver_id,
-            context.assignment,
-            context.request_ids,
-            rng,
-            started_ms,
-        ),
-        TransactionKind::StockLevel => execute_stock_level(context.client, context.assignment, rng, started_ms),
+        TransactionKind::Payment => {
+            execute_payment(
+                context.client,
+                context.config.warehouse_count,
+                context.assignment,
+                context.constants,
+                rng,
+                started_ms,
+            )
+            .await
+        }
+        TransactionKind::OrderStatus => {
+            execute_order_status(context.client, context.assignment, context.constants, rng, started_ms).await
+        }
+        TransactionKind::Delivery => {
+            execute_delivery(
+                context.client,
+                context.run_id,
+                context.driver_id,
+                context.assignment,
+                context.request_ids,
+                rng,
+                started_ms,
+            )
+            .await
+        }
+        TransactionKind::StockLevel => execute_stock_level(context.client, context.assignment, rng, started_ms).await,
     }
 }
 
-fn execute_new_order(
+async fn execute_new_order(
     client: &ModuleClient,
     warehouse_count: u16,
     assignment: &TerminalAssignment,
@@ -264,12 +273,14 @@ fn execute_new_order(
         });
     }
 
-    let result = client.new_order(
-        assignment.warehouse_id,
-        assignment.district_id,
-        customer_id,
-        order_lines,
-    )?;
+    let result = client
+        .new_order(
+            assignment.warehouse_id,
+            assignment.district_id,
+            customer_id,
+            order_lines,
+        )
+        .await?;
     let finished_ms = crate::summary::now_millis();
     match result {
         Ok(_) => Ok(TransactionRecord {
@@ -306,7 +317,7 @@ fn execute_new_order(
     }
 }
 
-fn execute_payment(
+async fn execute_payment(
     client: &ModuleClient,
     warehouse_count: u16,
     assignment: &TerminalAssignment,
@@ -338,14 +349,16 @@ fn execute_payment(
     let amount_cents = rng.random_range(100..=500_000);
     let finished = expect_ok(
         "payment",
-        client.payment(
-            assignment.warehouse_id,
-            assignment.district_id,
-            c_w_id,
-            c_d_id,
-            selector,
-            amount_cents,
-        ),
+        client
+            .payment(
+                assignment.warehouse_id,
+                assignment.district_id,
+                c_w_id,
+                c_d_id,
+                selector,
+                amount_cents,
+            )
+            .await,
     )?;
     let _ = finished;
     let finished_ms = crate::summary::now_millis();
@@ -364,7 +377,7 @@ fn execute_payment(
     })
 }
 
-fn execute_order_status(
+async fn execute_order_status(
     client: &ModuleClient,
     assignment: &TerminalAssignment,
     constants: &RunConstants,
@@ -379,7 +392,9 @@ fn execute_order_status(
     };
     let _ = expect_ok(
         "order_status",
-        client.order_status(assignment.warehouse_id, assignment.district_id, selector),
+        client
+            .order_status(assignment.warehouse_id, assignment.district_id, selector)
+            .await,
     )?;
     let finished_ms = crate::summary::now_millis();
     Ok(TransactionRecord {
@@ -397,7 +412,7 @@ fn execute_order_status(
     })
 }
 
-fn execute_delivery(
+async fn execute_delivery(
     client: &ModuleClient,
     run_id: &str,
     driver_id: &str,
@@ -409,14 +424,16 @@ fn execute_delivery(
     let request_id = request_ids.fetch_add(1, Ordering::Relaxed);
     let _ = expect_ok(
         "queue_delivery",
-        client.queue_delivery(
-            run_id.to_string(),
-            driver_id.to_string(),
-            assignment.terminal_id,
-            request_id,
-            assignment.warehouse_id,
-            rng.random_range(1..=10),
-        ),
+        client
+            .queue_delivery(
+                run_id.to_string(),
+                driver_id.to_string(),
+                assignment.terminal_id,
+                request_id,
+                assignment.warehouse_id,
+                rng.random_range(1..=10),
+            )
+            .await,
     )?;
     let finished_ms = crate::summary::now_millis();
     Ok(TransactionRecord {
@@ -434,7 +451,7 @@ fn execute_delivery(
     })
 }
 
-fn execute_stock_level(
+async fn execute_stock_level(
     client: &ModuleClient,
     assignment: &TerminalAssignment,
     rng: &mut StdRng,
@@ -443,7 +460,9 @@ fn execute_stock_level(
     let threshold = rng.random_range(10..=20);
     let _ = expect_ok(
         "stock_level",
-        client.stock_level(assignment.warehouse_id, assignment.district_id, threshold),
+        client
+            .stock_level(assignment.warehouse_id, assignment.district_id, threshold)
+            .await,
     )?;
     let finished_ms = crate::summary::now_millis();
     Ok(TransactionRecord {
@@ -524,8 +543,11 @@ async fn harvest_delivery_completions(
     if expected == 0 {
         return Ok(());
     }
-    let client = ModuleClient::connect(&config.connection)?;
-    let progress = expect_ok("delivery_progress", client.delivery_progress(schedule.run_id.clone()))?;
+    let client = ModuleClient::connect(&config.connection).await?;
+    let progress = expect_ok(
+        "delivery_progress",
+        client.delivery_progress(schedule.run_id.clone()).await,
+    )?;
     log::info!(
         "delivery progress before harvest: pending_jobs={} completed_jobs={}",
         progress.pending_jobs,
@@ -541,7 +563,9 @@ async fn harvest_delivery_completions(
         }
         let batch = expect_ok(
             "fetch_delivery_completions",
-            client.fetch_delivery_completions(schedule.run_id.clone(), after_completion_id, 512),
+            client
+                .fetch_delivery_completions(schedule.run_id.clone(), after_completion_id, 512)
+                .await,
         )?;
         if batch.is_empty() {
             if crate::summary::now_millis() >= deadline {
@@ -568,7 +592,7 @@ async fn harvest_delivery_completions(
         );
     }
 
-    client.shutdown();
+    client.shutdown().await;
     Ok(())
 }
 
@@ -616,4 +640,11 @@ fn print_summary(summary: &DriverSummary, summary_path: &Path, events_path: &Pat
     );
     log::info!("summary={}", summary_path.display());
     log::info!("events={}", events_path.display());
+}
+
+async fn sleep_until_ms(target_ms: u64) {
+    let now_ms = crate::summary::now_millis();
+    if target_ms > now_ms {
+        tokio::time::sleep(Duration::from_millis(target_ms - now_ms)).await;
+    }
 }
