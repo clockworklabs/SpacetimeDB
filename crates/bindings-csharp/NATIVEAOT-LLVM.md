@@ -6,7 +6,8 @@ This guide provides instructions for enabling NativeAOT-LLVM compilation for C# 
 
 NativeAOT-LLVM compiles C# modules to native WebAssembly (WASM) instead of using the Mono runtime.
 
-This is currently only supported for Windows server modules and is experimental. Please test your modules throughly.
+> [!WARNING]
+> This is currently only supported for Windows server modules and is experimental.
 
 ## Prerequisites
 
