@@ -69,6 +69,8 @@ private fun decodeReducerError(bytes: ByteArray): String {
  * Compression mode for the WebSocket connection.
  */
 public enum class CompressionMode(internal val wireValue: String) {
+    /** Brotli compression (JVM/Android only). */
+    BROTLI("Brotli"),
     /** Gzip compression. */
     GZIP("Gzip"),
     /** No compression. */

@@ -51,8 +51,9 @@ class CompressionTest {
     }
 
     @Test
-    fun brotliTagThrows() {
-        assertFailsWith<IllegalStateException> {
+    fun brotliTagRejectsInvalidData() {
+        // Brotli decoder is wired up — invalid data throws IOException (not IllegalStateException)
+        assertFailsWith<java.io.IOException> {
             decompressMessage(byteArrayOf(Compression.BROTLI, 1, 2, 3))
         }
     }

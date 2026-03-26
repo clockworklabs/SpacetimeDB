@@ -40,6 +40,14 @@ kotlin {
             implementation(libs.ktor.client.websockets)
         }
 
+        jvmMain.dependencies {
+            implementation(libs.brotli.dec)
+        }
+
+        androidMain.dependencies {
+            implementation(libs.brotli.dec)
+        }
+
         commonTest.dependencies {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
