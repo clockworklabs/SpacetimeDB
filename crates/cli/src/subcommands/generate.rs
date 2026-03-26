@@ -388,6 +388,9 @@ fn detect_default_language(client_project_dir: &Path) -> anyhow::Result<Language
     if client_project_dir.join("Cargo.toml").exists() {
         return Ok(Language::Rust);
     }
+    if client_project_dir.join("build.gradle.kts").exists() || client_project_dir.join("build.gradle").exists() {
+        return Ok(Language::Kotlin);
+    }
     if let Ok(entries) = fs::read_dir(client_project_dir)
         && entries
             .flatten()
