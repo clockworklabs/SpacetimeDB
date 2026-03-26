@@ -1,4 +1,11 @@
 import { useMemo, useState } from 'react'
+
+function modeLabel(mode: string): string {
+  if (mode === 'no_context') return 'No Context'
+  if (mode === 'docs') return 'With Docs'
+  if (mode === 'search') return 'Web Search'
+  return mode
+}
 import {
   LineChart,
   Line,
@@ -12,7 +19,7 @@ import {
 import { useHistoryFiles } from '../hooks/useData'
 
 const ACCENT = '#4cf490'
-const ALLOWED_MODES = ['docs', 'none']
+const ALLOWED_MODES = ['docs', 'no_context', 'search']
 const CARD_BG = '#141416'
 const BORDER = '#202126'
 
@@ -144,7 +151,7 @@ export default function Trends() {
                 style={{ backgroundColor: CARD_BG, color: '#94a3b8', border: `1px solid ${BORDER}` }}
               >
                 {modes.map((m) => (
-                  <option key={m} value={m}>{m}</option>
+                  <option key={m} value={m}>{modeLabel(m)}</option>
                 ))}
               </select>
             )}

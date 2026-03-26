@@ -3,6 +3,13 @@ import { Link } from 'react-router-dom'
 import { useData } from '../hooks/useData'
 import type { LeaderboardRow } from '../types'
 
+function modeLabel(mode: string): string {
+  if (mode === 'no_context') return 'No Context'
+  if (mode === 'docs') return 'With Docs'
+  if (mode === 'search') return 'Web Search'
+  return mode
+}
+
 const ACCENT = '#4cf490'
 const OK = '#4cf490'
 const BAD = '#ff4c4c'
@@ -51,7 +58,7 @@ function RankBadge({ rank }: { rank: number }) {
   )
 }
 
-const ALLOWED_MODES = ['docs', 'none']
+const ALLOWED_MODES = ['docs', 'no_context', 'search']
 
 export default function Leaderboard() {
   const { details, summary, loading, error } = useData()
@@ -182,7 +189,7 @@ export default function Leaderboard() {
             style={{ backgroundColor: CARD_BG, color: '#94a3b8', border: `1px solid ${BORDER}` }}
           >
             {modes.map((m) => (
-              <option key={m} value={m}>{m}</option>
+              <option key={m} value={m}>{modeLabel(m)}</option>
             ))}
           </select>
         )}

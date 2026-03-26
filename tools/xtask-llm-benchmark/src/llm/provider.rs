@@ -53,6 +53,24 @@ impl RouterProvider {
 #[async_trait]
 impl LlmProvider for RouterProvider {
     async fn generate(&self, route: &ModelRoute, prompt: &BuiltPrompt) -> Result<String> {
+        // Web search mode: route all models through OpenRouter with :online suffix.
+        // OpenRouter's :online feature adds Bing-powered web search to any model.
+        if prompt.search_enabled {
+            let cli = self.openrouter.as_ref().context(
+                "Search mode requires OPENROUTER_API_KEY — OpenRouter provides unified web search via :online models",
+            )?;
+            let base_model = route
+                .openrouter_model
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| openrouter_model_id(route.vendor, route.api_model));
+            let online_model = format!("{base_model}:online");
+            eprintln!(
+                "[search] {} → OpenRouter :online model '{}'",
+                route.display_name, online_model
+            );
+            return cli.generate(&online_model, prompt).await;
+        }
+
         let vendor = self.force.unwrap_or(route.vendor);
 
         // If vendor is explicitly OpenRouter, or if the direct client isn't configured

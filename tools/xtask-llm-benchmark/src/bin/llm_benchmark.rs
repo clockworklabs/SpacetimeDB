@@ -1269,6 +1269,7 @@ fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
         ),
         static_prefix: None,
         segments: vec![xtask_llm_benchmark::llm::segmentation::Segment::new("user", prompt)],
+        search_enabled: false,
     };
 
     let analysis = runtime.block_on(provider.generate(&route, &built_prompt))?;

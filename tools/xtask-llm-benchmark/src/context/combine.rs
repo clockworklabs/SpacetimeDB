@@ -11,7 +11,7 @@ use std::sync::LazyLock;
 /// Get the base directory for a given mode (used for stripping prefixes to get relative paths).
 fn base_for_mode(mode: &str) -> Result<PathBuf> {
     Ok(match mode {
-        "docs" | "llms.md" | "cursor_rules" | "none" | "no_guidelines" => docs_dir(),
+        "docs" | "llms.md" | "cursor_rules" | "no_context" | "none" | "no_guidelines" | "search" => docs_dir(),
         // rustdoc_json is handled separately in build_context_from_rustdoc_json
         _ => bail!("unknown mode `{mode}` for base_for_mode"),
     })
@@ -31,7 +31,7 @@ fn stable_rel_path(base: &Path, p: &Path) -> String {
 
 /// Build context for the given mode, optionally filtering tabs for a specific language.
 pub fn build_context(mode: &str, lang: Option<Lang>) -> Result<String> {
-    if mode == "none" || mode == "no_guidelines" {
+    if mode == "no_context" || mode == "none" || mode == "no_guidelines" || mode == "search" {
         return Ok(String::new());
     }
     if mode == "rustdoc_json" {

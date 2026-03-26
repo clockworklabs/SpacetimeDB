@@ -1,4 +1,11 @@
 import { useState, useMemo } from 'react'
+
+function modeLabel(mode: string): string {
+  if (mode === 'no_context') return 'No Context'
+  if (mode === 'docs') return 'With Docs'
+  if (mode === 'search') return 'Web Search'
+  return mode
+}
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { useData } from '../hooks/useData'
 import PassChip from '../components/PassChip'
@@ -209,7 +216,7 @@ export default function ModelDetail() {
             <div className="flex items-center gap-3 text-sm text-slate-400">
               <span className="capitalize">{modelData.lang}</span>
               <span>·</span>
-              <span>{modelData.mode}</span>
+              <span>{modeLabel(modelData.mode)}</span>
               <span>·</span>
               <span>{modelData.model.route_api_model}</span>
             </div>

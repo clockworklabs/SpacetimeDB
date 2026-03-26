@@ -187,13 +187,56 @@ impl TaskRunner {
 
         let prompt_builder = (spec.make_prompt)(cfg.lang);
         println!("→ [{}] {}: building prompt", cfg.lang_name, cfg.route.display_name);
-        let prompt = prompt_builder.build_segmented(cfg.context);
+        let prompt = prompt_builder.build_segmented(cfg.mode, cfg.context);
 
         println!("→ [{}] {}: calling provider", cfg.lang_name, cfg.route.display_name);
-        let llm_output = tokio::time::timeout(std::time::Duration::from_secs(90), cfg.llm.generate(cfg.route, &prompt))
-            .await
-            .map_err(|_| RunOneError::Other(anyhow!("LLM call timed out")))?
-            .map_err(RunOneError::Other)?;
+        let llm_output = {
+            const MAX_ATTEMPTS: u32 = 3;
+            // Slow models (Gemini 3.1 Pro, DeepSeek Reasoner) can take 8+ minutes on large contexts.
+            let timeout_secs = match cfg.route.display_name.to_ascii_lowercase() {
+                n if n.contains("gemini") || n.contains("deepseek") => 600,
+                _ => 300,
+            };
+            let mut last_err: anyhow::Error = anyhow!("no attempts made");
+            let mut result = None;
+            for attempt in 1..=MAX_ATTEMPTS {
+                let r = tokio::time::timeout(
+                    std::time::Duration::from_secs(timeout_secs),
+                    cfg.llm.generate(cfg.route, &prompt),
+                )
+                .await;
+                match r {
+                    Ok(Ok(output)) => { result = Some(output); break; }
+                    Ok(Err(e)) => {
+                        let msg = format!("{e:#}");
+                        let retryable = msg.contains("timed out")
+                            || msg.contains("429")
+                            || msg.contains("502")
+                            || msg.contains("503")
+                            || msg.contains("504")
+                            || msg.contains("rate limit");
+                        if retryable && attempt < MAX_ATTEMPTS {
+                            let delay = if msg.contains("429") || msg.contains("rate limit") { 60 } else { 30 };
+                            eprintln!("⚠️ [{}/{}] provider error (attempt {}/{}), retrying in {delay}s: {}", cfg.lang_name, cfg.route.display_name, attempt, MAX_ATTEMPTS, msg);
+                            tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+                            last_err = e;
+                        } else {
+                            return Err(RunOneError::Other(e));
+                        }
+                    }
+                    Err(_) => {
+                        if attempt < MAX_ATTEMPTS {
+                            eprintln!("⚠️ [{}/{}] LLM call timed out after {timeout_secs}s (attempt {}/{}), retrying in 30s", cfg.lang_name, cfg.route.display_name, attempt, MAX_ATTEMPTS);
+                            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                            last_err = anyhow!("LLM call timed out after {timeout_secs}s");
+                        } else {
+                            return Err(RunOneError::Other(anyhow!("LLM call timed out after {timeout_secs}s ({MAX_ATTEMPTS} attempts)")));
+                        }
+                    }
+                }
+            }
+            result.ok_or_else(|| RunOneError::Other(last_err))?
+        };
 
         if debug_llm() {
             print_llm_output(cfg.route.display_name, &task_id, &llm_output);
@@ -335,6 +378,7 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
                 let run_cfg = RunContext {
                     lang_name: &lang_name,
                     lang,
+                    mode: cfg.mode,
                     route,
                     context,
                     hash,
@@ -451,6 +495,7 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
                 let run_cfg = RunContext {
                     lang_name: &lang_name,
                     lang,
+                    mode: cfg.mode,
                     route,
                     context,
                     hash,

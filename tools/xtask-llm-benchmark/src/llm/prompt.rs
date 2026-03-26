@@ -15,11 +15,14 @@ pub struct BuiltPrompt {
     pub system: Option<String>,
     pub static_prefix: Option<String>,
     pub segments: Vec<Segment<'static>>,
+    /// When true, the provider should enable web search (OpenRouter :online).
+    pub search_enabled: bool,
 }
 
 impl PromptBuilder {
-    pub fn build_segmented(&self, context: &str) -> BuiltPrompt {
+    pub fn build_segmented(&self, mode: &str, context: &str) -> BuiltPrompt {
         let version = "1.6";
+        let search_enabled = mode == "search";
 
         // SYSTEM: hygiene-only for Knowledge; hygiene + stricter output rules for Conformance.
         let system = Some(format!(
@@ -32,8 +35,10 @@ Rules:\n\
             lang = self.lang
         ));
 
-        let static_prefix = Some(if context.trim().is_empty() {
-            "<<<DOCS START>>>\nNo documentation provided. You must rely on your knowledge of SpacetimeDB syntax and conventions.\n<<<DOCS END>>>\n".to_string()
+        let static_prefix = Some(if search_enabled {
+            "<<<DOCS START>>>\nNo documentation provided. You have access to web search — search for SpacetimeDB documentation, examples, and API references as needed.\n<<<DOCS END>>>\n".to_string()
+        } else if context.trim().is_empty() {
+            "<<<DOCS START>>>\nNo documentation provided. Use your knowledge of the latest SpacetimeDB syntax and conventions.\n<<<DOCS END>>>\n".to_string()
         } else {
             format!(
                 "<<<DOCS START>>>Context:\n{context}\n<<<DOCS END>>>\n",
@@ -62,6 +67,7 @@ HARD CONSTRAINTS:\n\
             system,
             static_prefix,
             segments: vec![Segment::new("user", dynamic).keep().min_chars(0).weight(8.0)],
+            search_enabled,
         }
     }
 }

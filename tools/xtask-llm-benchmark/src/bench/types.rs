@@ -103,6 +103,7 @@ pub enum RunOneError {
 pub struct RunContext<'a> {
     pub lang_name: &'a str,
     pub lang: Lang,
+    pub mode: &'a str,
     pub route: &'a ModelRoute,
     pub context: &'a str,
     pub hash: &'a str,
@@ -114,6 +115,7 @@ impl<'a> RunContext<'a> {
     pub fn new(
         lang_name: &'a str,
         lang: Lang,
+        mode: &'a str,
         route: &'a ModelRoute,
         context: &'a str,
         hash: &'a str,
@@ -123,6 +125,7 @@ impl<'a> RunContext<'a> {
         Self {
             lang_name,
             lang,
+            mode,
             route,
             context,
             hash,

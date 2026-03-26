@@ -29,6 +29,7 @@ export default defineConfig({
   base: './',
   server: {
     host: true,
+    port: process.env.PORT ? parseInt(process.env.PORT) : undefined,
     watch: {
       // Required for HMR inside Docker on Windows (no inotify support)
       usePolling: true,

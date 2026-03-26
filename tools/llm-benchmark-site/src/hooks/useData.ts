@@ -1,6 +1,46 @@
 import { useState, useEffect } from 'react'
 import type { BenchmarkDetails, BenchmarkSummary, HistorySnapshot } from '../types'
 
+const MODE_ALIASES: Record<string, string> = {
+  none: 'no_context',
+  no_guidelines: 'no_context',
+}
+
+function normalizeMode(mode: string): string {
+  return MODE_ALIASES[mode] ?? mode
+}
+
+/** Rename aliased mode keys/values in loaded data so the UI only sees canonical names. */
+function normalizeDetails(data: BenchmarkDetails): BenchmarkDetails {
+  return {
+    ...data,
+    languages: data.languages.map((lang) => ({
+      ...lang,
+      modes: lang.modes.map((m) => ({ ...m, mode: normalizeMode(m.mode) })),
+    })),
+  }
+}
+
+function normalizeSummary(data: BenchmarkSummary): BenchmarkSummary {
+  return {
+    ...data,
+    by_language: Object.fromEntries(
+      Object.entries(data.by_language).map(([lang, langData]) => [
+        lang,
+        {
+          ...langData,
+          modes: Object.fromEntries(
+            Object.entries(langData.modes).map(([mode, modeData]) => [
+              normalizeMode(mode),
+              modeData,
+            ])
+          ),
+        },
+      ])
+    ),
+  }
+}
+
 const DETAILS_URL = '../../docs/llms/llm-comparison-details.json'
 const SUMMARY_URL = '../../docs/llms/llm-comparison-summary.json'
 const HISTORY_MANIFEST_URL = '../../docs/llms/history/manifest.json'
@@ -37,8 +77,8 @@ export function useData(): UseDataResult {
         ])
 
         if (!cancelled) {
-          setDetails(detailsData)
-          setSummary(summaryData)
+          setDetails(normalizeDetails(detailsData))
+          setSummary(normalizeSummary(summaryData))
           setError(null)
         }
       } catch (err) {

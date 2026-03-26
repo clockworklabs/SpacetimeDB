@@ -17,8 +17,10 @@ pub const ALL_MODES: &[&str] = &[
     "llms.md",
     "cursor_rules",
     "rustdoc_json",
-    "none",
-    "no_guidelines",
+    "no_context",
+    "none",          // alias for no_context (backward compat)
+    "no_guidelines", // alias for no_context (backward compat)
+    "search",        // no docs context but web search enabled via OpenRouter :online
 ];
 
 #[inline]

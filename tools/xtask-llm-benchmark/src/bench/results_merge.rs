@@ -69,10 +69,19 @@ fn ensure_model<'a>(mode_v: &'a mut ModeEntry, name: &str) -> &'a mut ModelEntry
     mode_v.models.last_mut().unwrap()
 }
 
+/// Normalize mode aliases to their canonical names before saving.
+fn canonical_mode(mode: &str) -> &str {
+    match mode {
+        "none" | "no_guidelines" => "no_context",
+        other => other,
+    }
+}
+
 pub fn merge_task_runs(path: &Path, mode: &str, runs: &[RunOutcome]) -> Result<()> {
     if runs.is_empty() {
         return Ok(());
     }
+    let mode = canonical_mode(mode);
 
     let lock_path = path.with_extension("lock");
     let lock = fs::OpenOptions::new()
