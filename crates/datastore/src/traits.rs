@@ -531,6 +531,8 @@ impl Program {
 pub struct InsertFlags {
     /// Is the table a scheduler table?
     pub is_scheduler_table: bool,
+    /// Is the table an outbox table?
+    pub is_outbox_table: bool,
 }
 
 /// Additional information about an update operation.
