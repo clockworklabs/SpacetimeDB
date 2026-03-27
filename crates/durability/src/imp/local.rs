@@ -12,7 +12,9 @@ use futures::{FutureExt as _, TryFutureExt as _};
 use itertools::Itertools as _;
 use log::{info, trace, warn};
 use scopeguard::ScopeGuard;
-use spacetimedb_commitlog::{error, payload::Txdata, Commit, Commitlog, Decoder, Encode, Transaction};
+use spacetimedb_commitlog::{
+    error, payload::Txdata, Commit, Commitlog, CompressionStats, Decoder, Encode, Transaction,
+};
 use spacetimedb_fs_utils::lockfile::advisory::{LockError, LockedFile};
 use spacetimedb_paths::server::ReplicaDir;
 use thiserror::Error;
@@ -183,7 +185,7 @@ impl<T: Send + Sync + 'static> Local<T> {
     }
 
     /// Compress the segments at the offsets provided, marking them as immutable.
-    pub fn compress_segments(&self, offsets: &[TxOffset]) -> io::Result<()> {
+    pub fn compress_segments(&self, offsets: &[TxOffset]) -> io::Result<CompressionStats> {
         self.clog.compress_segments(offsets)
     }
 
