@@ -442,8 +442,6 @@ impl InstanceEnv {
     ///
     /// The `on_result_reducer` and delivery data are resolved at delivery time from the
     /// outbox table's schema and row, so ST_MSG_ID only stores the minimal reference.
-    #[cold]
-    #[inline(never)]
     fn enqueue_outbox_row(
         &self,
         _stdb: &RelationalDB,
