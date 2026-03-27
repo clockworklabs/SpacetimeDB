@@ -1,0 +1,54 @@
+---
+import DeferredPeopleSnapshot from '../components/DeferredPeopleSnapshot.astro';
+import { SpacetimeApp } from '../components/SpacetimeApp';
+import Layout from '../layouts/Layout.astro';
+import { fetchPeople } from '../lib/spacetimedb-server';
+
+let initialPeople: Awaited<ReturnType<typeof fetchPeople>> = [];
+let initialLoadNotice: string | null = null;
+
+try {
+  initialPeople = await fetchPeople();
+} catch (error) {
+  console.error('Failed to fetch initial data from SpacetimeDB:', error);
+  initialLoadNotice =
+    'The first server-rendered snapshot is unavailable right now. The live client will still connect when SpacetimeDB is ready.';
+}
+---
+
+<Layout
+  title="SpacetimeDB Astro App"
+  description="An Astro app powered by SpacetimeDB with a server-rendered snapshot and a live interactive client."
+>
+  <main class="page-shell">
+    <h1>SpacetimeDB Astro App</h1>
+    <p>
+      This Astro template keeps the UI simple while showing both a server rendered snapshot and a
+      live interactive client.
+    </p>
+
+    <section class="section-block">
+      <h2>Live People List</h2>
+      <p>Server snapshot first, WebSocket updates after hydration.</p>
+
+      {initialLoadNotice && <p class="connection-note">{initialLoadNotice}</p>}
+
+      <SpacetimeApp client:load initialPeople={initialPeople} />
+    </section>
+
+    <section class="section-block">
+      <h2>Deferred Server Island</h2>
+      <p>This section uses <code>server:defer</code> and loads after the page shell.</p>
+
+      <DeferredPeopleSnapshot server:defer>
+        <div slot="fallback" class="server-island-fallback">
+          <h3>Fetching a fresh server snapshot.</h3>
+          <p>
+            Astro has already rendered the page shell. This placeholder will be replaced with the
+            server island response once the snapshot is ready.
+          </p>
+        </div>
+      </DeferredPeopleSnapshot>
+    </section>
+  </main>
+</Layout>
