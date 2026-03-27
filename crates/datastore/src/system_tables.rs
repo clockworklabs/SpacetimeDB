@@ -89,6 +89,9 @@ pub const ST_INDEX_ACCESSOR_ID: TableId = TableId(19);
 /// The static ID of the table that maps canonical column names to accessor names
 pub const ST_COLUMN_ACCESSOR_ID: TableId = TableId(20);
 
+/// The static ID of the table that tracks the last tx offset send by other databases.
+pub const ST_DATABASES_TX_OFFSET_ID: TableId = TableId(21);
+
 pub(crate) const ST_CONNECTION_CREDENTIALS_NAME: &str = "st_connection_credentials";
 pub const ST_TABLE_NAME: &str = "st_table";
 pub const ST_COLUMN_NAME: &str = "st_column";
@@ -109,6 +112,7 @@ pub(crate) const ST_EVENT_TABLE_NAME: &str = "st_event_table";
 pub(crate) const ST_TABLE_ACCESSOR_NAME: &str = "st_table_accessor";
 pub(crate) const ST_INDEX_ACCESSOR_NAME: &str = "st_index_accessor";
 pub(crate) const ST_COLUMN_ACCESSOR_NAME: &str = "st_column_accessor";
+pub(crate) const ST_DATABASES_TX_OFFSET_NAME: &str = "st_databases_tx_offset";
 /// Reserved range of sequence values used for system tables.
 ///
 /// Ids for user-created tables will start at `ST_RESERVED_SEQUENCE_RANGE`.
@@ -182,7 +186,7 @@ pub fn is_built_in_meta_row(table_id: TableId, row: &ProductValue) -> Result<boo
             let row: StEventTableRow = to_typed_row(row)?;
             table_id_is_reserved(row.table_id)
         }
-        ST_TABLE_ACCESSOR_ID | ST_INDEX_ACCESSOR_ID | ST_COLUMN_ACCESSOR_ID => false,
+        ST_TABLE_ACCESSOR_ID | ST_INDEX_ACCESSOR_ID | ST_COLUMN_ACCESSOR_ID | ST_DATABASES_TX_OFFSET_ID => false,
         TableId(..ST_RESERVED_SEQUENCE_RANGE) => {
             log::warn!("Unknown system table {table_id:?}");
             false
@@ -205,7 +209,7 @@ pub enum SystemTable {
     st_table_accessor,
 }
 
-pub fn system_tables() -> [TableSchema; 20] {
+pub fn system_tables() -> [TableSchema; 21] {
     [
         // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
         st_table_schema(),
@@ -228,6 +232,7 @@ pub fn system_tables() -> [TableSchema; 20] {
         st_table_accessor_schema(),
         st_index_accessor_schema(),
         st_column_accessor_schema(),
+        st_databases_tx_offset_schema(),
     ]
 }
 
@@ -276,6 +281,7 @@ pub(crate) const ST_EVENT_TABLE_IDX: usize = 16;
 pub(crate) const ST_TABLE_ACCESSOR_IDX: usize = 17;
 pub(crate) const ST_INDEX_ACCESSOR_IDX: usize = 18;
 pub(crate) const ST_COLUMN_ACCESSOR_IDX: usize = 19;
+pub(crate) const ST_DATABASES_TX_OFFSET_IDX: usize = 20;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -448,6 +454,11 @@ st_fields_enum!(enum StColumnAccessorFields {
     "table_name", TableName = 0,
     "col_name", ColName = 1,
     "accessor_name", AccessorName = 2,
+});
+
+st_fields_enum!(enum StDatabasesTxOffsetFields {
+    "database_identity", DatabaseIdentity = 0,
+    "tx_offset", TxOffset = 1,
 });
 
 /// Helper method to check that a system table has the correct fields.
@@ -668,6 +679,17 @@ fn system_module_def() -> ModuleDef {
         .with_unique_constraint(st_column_accessor_table_alias_cols)
         .with_index_no_accessor_name(btree(st_column_accessor_table_alias_cols));
 
+    let st_databases_tx_offset_type = builder.add_type::<StDatabasesTxOffsetRow>();
+    builder
+        .build_table(
+            ST_DATABASES_TX_OFFSET_NAME,
+            *st_databases_tx_offset_type.as_ref().expect("should be ref"),
+        )
+        .with_type(TableType::System)
+        .with_unique_constraint(StDatabasesTxOffsetFields::DatabaseIdentity)
+        .with_index_no_accessor_name(btree(StDatabasesTxOffsetFields::DatabaseIdentity))
+        .with_primary_key(StDatabasesTxOffsetFields::DatabaseIdentity);
+
     let result = builder
         .finish()
         .try_into()
@@ -693,6 +715,7 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StTableAccessorFields>(&result, ST_TABLE_ACCESSOR_NAME);
     validate_system_table::<StIndexAccessorFields>(&result, ST_INDEX_ACCESSOR_NAME);
     validate_system_table::<StColumnAccessorFields>(&result, ST_COLUMN_ACCESSOR_NAME);
+    validate_system_table::<StDatabasesTxOffsetFields>(&result, ST_DATABASES_TX_OFFSET_NAME);
 
     result
 }
@@ -741,6 +764,7 @@ lazy_static::lazy_static! {
         m.insert("st_index_accessor_accessor_name_key", ConstraintId(23));
         m.insert("st_column_accessor_table_name_col_name_key", ConstraintId(24));
         m.insert("st_column_accessor_table_name_accessor_name_key", ConstraintId(25));
+        m.insert("st_databases_tx_offset_database_identity_key", ConstraintId(26));
         m
     };
 }
@@ -779,6 +803,7 @@ lazy_static::lazy_static! {
         m.insert("st_index_accessor_accessor_name_idx_btree", IndexId(27));
         m.insert("st_column_accessor_table_name_col_name_idx_btree", IndexId(28));
         m.insert("st_column_accessor_table_name_accessor_name_idx_btree", IndexId(29));
+        m.insert("st_databases_tx_offset_database_identity_idx_btree", IndexId(30));
         m
     };
 }
@@ -940,6 +965,10 @@ fn st_column_accessor_schema() -> TableSchema {
     st_schema(ST_COLUMN_ACCESSOR_NAME, ST_COLUMN_ACCESSOR_ID)
 }
 
+fn st_databases_tx_offset_schema() -> TableSchema {
+    st_schema(ST_DATABASES_TX_OFFSET_NAME, ST_DATABASES_TX_OFFSET_ID)
+}
+
 /// If `table_id` refers to a known system table, return its schema.
 ///
 /// Used when restoring from a snapshot; system tables are reinstantiated with this schema,
@@ -968,6 +997,7 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_TABLE_ACCESSOR_ID => Some(st_table_accessor_schema()),
         ST_INDEX_ACCESSOR_ID => Some(st_index_accessor_schema()),
         ST_COLUMN_ACCESSOR_ID => Some(st_column_accessor_schema()),
+        ST_DATABASES_TX_OFFSET_ID => Some(st_databases_tx_offset_schema()),
         _ => None,
     }
 }
@@ -1857,6 +1887,14 @@ impl From<StColumnAccessorRow> for ProductValue {
     fn from(x: StColumnAccessorRow) -> Self {
         to_product_value(&x)
     }
+}
+
+/// System Table [ST_DATABASES_TX_OFFST_NAME]
+#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct StDatabasesTxOffsetRow {
+    pub database_identity: IdentityViaU256,
+    pub tx_offset: u64,
 }
 
 thread_local! {
