@@ -152,6 +152,22 @@ pub enum ValidationError {
         ok_type: PrettyAlgebraicType,
         err_type: PrettyAlgebraicType,
     },
+    #[error("outbox table {table_name} not found in module")]
+    OutboxTableNotFound { table_name: RawIdentifier },
+    #[error("table {table} is declared as an outbox table multiple times")]
+    DuplicateOutbox { table: Identifier },
+    #[error("outbox table {table} col 0 must be `u64` with `#[primary_key] #[auto_inc]`, found {found}")]
+    OutboxInvalidIdColumn {
+        table: Identifier,
+        found: PrettyAlgebraicType,
+    },
+    #[error("outbox table {table} col 1 must be `Identity` (U256), found {found}")]
+    OutboxInvalidTargetColumn {
+        table: Identifier,
+        found: PrettyAlgebraicType,
+    },
+    #[error("outbox table {table} must have at least 2 columns (id, target_identity)")]
+    OutboxTooFewColumns { table: Identifier },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.

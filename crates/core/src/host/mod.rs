@@ -12,6 +12,7 @@ use spacetimedb_schema::def::ModuleDef;
 
 mod disk_storage;
 mod host_controller;
+pub mod idc_runtime;
 mod module_common;
 #[allow(clippy::too_many_arguments)]
 pub mod module_host;

@@ -2,7 +2,7 @@ use super::instrumentation::CallTimes;
 use super::*;
 use crate::client::ClientActorId;
 use crate::database_logger;
-use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
+use crate::energy::{EnergyMonitor, EnergyQuanta, FunctionBudget, FunctionFingerprint};
 use crate::error::DBError;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{InstanceEnv, TxSlot};
@@ -37,6 +37,7 @@ use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, ViewError};
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
+use spacetimedb_datastore::system_tables::st_inbound_msg_result_status;
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_lib::buffer::DecodeError;
@@ -375,7 +376,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             func_names
         };
         let uninit_instance = module.instantiate_pre()?;
-        let instance_env = InstanceEnv::new(mcc.replica_ctx.clone(), mcc.scheduler.clone());
+        let instance_env = InstanceEnv::new(mcc.replica_ctx.clone(), mcc.scheduler.clone(), mcc.idc_sender.clone());
         let mut instance = uninit_instance.instantiate(instance_env, &func_names)?;
 
         let desc = instance.extract_descriptions()?;
@@ -422,7 +423,11 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
     pub fn create_instance(&self) -> WasmModuleInstance<T::Instance> {
         let common = &self.common;
-        let env = InstanceEnv::new(common.replica_ctx().clone(), common.scheduler().clone());
+        let env = InstanceEnv::new(
+            common.replica_ctx().clone(),
+            common.scheduler().clone(),
+            common.idc_sender(),
+        );
         // this shouldn't fail, since we already called module.create_instance()
         // before and it didn't error, and ideally they should be deterministic
         let mut instance = self
@@ -820,11 +825,12 @@ impl InstanceCommon {
             reducer_id,
             args,
             timer,
+            dedup_sender,
         } = params;
         let caller_connection_id_opt = (caller_connection_id != ConnectionId::ZERO).then_some(caller_connection_id);
 
         let replica_ctx = inst.replica_ctx();
-        let stdb = replica_ctx.relational_db();
+        let stdb = replica_ctx.relational_db().clone();
         let info = self.info.clone();
         let reducer_def = info.module_def.reducer_by_id(reducer_id);
         let reducer_name = &reducer_def.name;
@@ -844,6 +850,33 @@ impl InstanceCommon {
 
         let workload = Workload::Reducer(ReducerContext::from(op.clone()));
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable, workload));
+
+        // Check the dedup index atomically within this transaction.
+        // If the incoming msg_id is ≤ the last delivered msg_id for this sender,
+        // the message is a duplicate; discard it and return the stored result.
+        if let Some((sender_identity, sender_msg_id)) = dedup_sender {
+            let stored = tx.get_inbound_msg_row(sender_identity);
+            if stored.as_ref().is_some_and(|r| sender_msg_id <= r.last_outbound_msg) {
+                let _ = stdb.rollback_mut_tx(tx);
+                let stored = stored.unwrap();
+                let outcome = match stored.result_status {
+                    s if s == st_inbound_msg_result_status::SUCCESS => ReducerOutcome::Committed,
+                    s if s == st_inbound_msg_result_status::REDUCER_ERROR => {
+                        ReducerOutcome::Failed(Box::new(stored.result_payload.into()))
+                    }
+                    _ => ReducerOutcome::Deduplicated,
+                };
+                return (
+                    ReducerCallResult {
+                        outcome,
+                        energy_used: EnergyQuanta::ZERO,
+                        execution_duration: Duration::ZERO,
+                    },
+                    false,
+                );
+            }
+        }
+
         let mut tx_slot = inst.tx_slot();
 
         let vm_metrics = self.vm_metrics.get_for_reducer_id(reducer_id);
@@ -885,12 +918,24 @@ impl InstanceCommon {
             Ok(return_value) => {
                 // If this is an OnDisconnect lifecycle event, remove the client from st_clients.
                 // We handle OnConnect events before running the reducer.
-                let res = match reducer_def.lifecycle {
+                let lifecycle_res = match reducer_def.lifecycle {
                     Some(Lifecycle::OnDisconnect) => {
                         tx.delete_st_client(caller_identity, caller_connection_id, info.database_identity)
                     }
                     _ => Ok(()),
                 };
+                // Atomically update the dedup index so this sender's tx_offset is recorded
+                // as delivered. This prevents re-processing if the message is retried.
+                let dedup_res = match dedup_sender {
+                    Some((sender_identity, sender_msg_id)) => tx.upsert_inbound_last_msg(
+                        sender_identity,
+                        sender_msg_id,
+                        st_inbound_msg_result_status::SUCCESS,
+                        String::new(),
+                    ),
+                    None => Ok(()),
+                };
+                let res = lifecycle_res.and(dedup_res);
                 match res {
                     Ok(()) => (EventStatus::Committed(DatabaseUpdate::default()), return_value),
                     Err(err) => {
@@ -949,6 +994,26 @@ impl InstanceCommon {
             timer,
         };
         let event = commit_and_broadcast_event(&info.subscriptions, client, event, out.tx).event;
+
+        // For IDC (database-to-database) calls: if the reducer failed with a user error,
+        // record the failure in st_inbound_msg in a separate tx (since the reducer tx
+        // was rolled back). This allows the sending database to receive the error on dedup
+        // rather than re-running the reducer.
+        if let (Some((sender_identity, sender_msg_id)), EventStatus::FailedUser(err)) = (dedup_sender, &event.status) {
+            let err_msg = err.clone();
+            let mut dedup_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+            if let Err(e) = dedup_tx.upsert_inbound_last_msg(
+                sender_identity,
+                sender_msg_id,
+                st_inbound_msg_result_status::REDUCER_ERROR,
+                err_msg,
+            ) {
+                log::error!("IDC: failed to record reducer error in dedup table for sender {sender_identity}: {e}");
+                let _ = stdb.rollback_mut_tx(dedup_tx);
+            } else if let Err(e) = stdb.commit_tx(dedup_tx) {
+                log::error!("IDC: failed to commit dedup error record for sender {sender_identity}: {e}");
+            }
+        }
 
         let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),

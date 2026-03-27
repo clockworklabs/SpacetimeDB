@@ -132,6 +132,8 @@ mod sym {
     symbol!(update);
     symbol!(default);
     symbol!(event);
+    symbol!(outbox);
+    symbol!(on_result);
 
     symbol!(u8);
     symbol!(i8);

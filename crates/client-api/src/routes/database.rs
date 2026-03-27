@@ -216,6 +216,126 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     }
 }
 
+/// Path parameters for the `call_from_database` route.
+#[derive(Deserialize)]
+pub struct CallFromDatabaseParams {
+    name_or_identity: NameOrIdentity,
+    reducer: String,
+}
+
+/// Query parameters for the `call_from_database` route.
+///
+/// Both fields are mandatory; a missing field results in a 400 Bad Request.
+#[derive(Deserialize)]
+pub struct CallFromDatabaseQuery {
+    /// Hex-encoded [`Identity`] of the sending database.
+    sender_identity: String,
+    /// The inter-database message ID from the sender's st_outbound_msg.
+    /// Used for at-most-once delivery via `st_inbound_msg`.
+    msg_id: u64,
+}
+
+/// Call a reducer on behalf of another database, with deduplication.
+///
+/// Endpoint: `POST /database/:name_or_identity/call-from-database/:reducer`
+///
+/// Required query params:
+/// - `sender_identity` — hex-encoded identity of the sending database.
+/// - `msg_id`          — the inter-database message ID from the sender's st_outbound_msg.
+///
+/// Before invoking the reducer, the receiver checks `st_inbound_msg`.
+/// If the incoming `msg_id` is ≤ the last delivered msg_id for `sender_identity`,
+/// the call is a duplicate and 200 OK is returned immediately without running the reducer.
+/// Otherwise the reducer is invoked, the dedup index is updated atomically in the same
+/// transaction, and an acknowledgment is returned on success.
+pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    Path(CallFromDatabaseParams {
+        name_or_identity,
+        reducer,
+    }): Path<CallFromDatabaseParams>,
+    Query(CallFromDatabaseQuery {
+        sender_identity,
+        msg_id,
+    }): Query<CallFromDatabaseQuery>,
+    TypedHeader(content_type): TypedHeader<headers::ContentType>,
+    body: axum::body::Bytes,
+) -> axum::response::Result<impl IntoResponse> {
+    // IDC callers send BSATN (application/octet-stream).
+    if content_type != headers::ContentType::octet_stream() {
+        return Err((StatusCode::UNSUPPORTED_MEDIA_TYPE, "Expected application/octet-stream").into());
+    }
+
+    let caller_identity = auth.claims.identity;
+
+    let sender_identity = Identity::from_hex(&sender_identity).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            "Invalid sender_identity: expected hex-encoded identity",
+        )
+    })?;
+
+    let args = FunctionArgs::Bsatn(body);
+    let connection_id = generate_random_connection_id();
+
+    let (module, Database { owner_identity, .. }) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+
+    // Call client_connected, if defined.
+    module
+        .call_identity_connected(auth.into(), connection_id)
+        .await
+        .map_err(client_connected_error_to_response)?;
+
+    let result = module
+        .call_reducer_from_database(
+            caller_identity,
+            Some(connection_id),
+            None,
+            None,
+            None,
+            &reducer,
+            args,
+            sender_identity,
+            msg_id,
+        )
+        .await;
+
+    module
+        .call_identity_disconnected(caller_identity, connection_id)
+        .await
+        .map_err(client_disconnected_error_to_response)?;
+
+    match result {
+        Ok(rcr) => {
+            let (status, body) = match rcr.outcome {
+                ReducerOutcome::Committed => (StatusCode::OK, "".into()),
+                ReducerOutcome::Deduplicated => (StatusCode::OK, "deduplicated".into()),
+                // 422 = reducer ran but returned Err; IDC runtime uses this to distinguish
+                // reducer failures from transport errors (which it retries).
+                ReducerOutcome::Failed(errmsg) => (StatusCode::UNPROCESSABLE_ENTITY, *errmsg),
+                ReducerOutcome::BudgetExceeded => {
+                    log::warn!(
+                        "Node's energy budget exceeded for identity: {owner_identity} while executing {reducer}"
+                    );
+                    (StatusCode::PAYMENT_REQUIRED, "Module energy budget exhausted.".into())
+                }
+            };
+            Ok((
+                status,
+                TypedHeader(SpacetimeEnergyUsed(rcr.energy_used)),
+                TypedHeader(SpacetimeExecutionDurationMicros(rcr.execution_duration)),
+                body,
+            )
+                .into_response())
+        }
+        Err(e) => {
+            let (status, msg) = map_reducer_error(e, &reducer);
+            Err((status, msg).into())
+        }
+    }
+}
+
 fn assert_content_type_json(content_type: headers::ContentType) -> axum::response::Result<()> {
     if content_type != headers::ContentType::json() {
         Err(axum::extract::rejection::MissingJsonContentType::default().into())
@@ -230,7 +350,7 @@ fn reducer_outcome_response(
     outcome: ReducerOutcome,
 ) -> (StatusCode, Box<str>) {
     match outcome {
-        ReducerOutcome::Committed => (StatusCode::OK, "".into()),
+        ReducerOutcome::Committed | ReducerOutcome::Deduplicated => (StatusCode::OK, "".into()),
         ReducerOutcome::Failed(errmsg) => {
             // TODO: different status code? this is what cloudflare uses, sorta
             (StatusCode::from_u16(530).unwrap(), *errmsg)
@@ -1189,6 +1309,8 @@ pub struct DatabaseRoutes<S> {
     pub subscribe_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/call/:reducer
     pub call_reducer_procedure_post: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/call-from-database/:reducer?sender_identity=<hex>&msg_id=<u64>
+    pub call_from_database_post: MethodRouter<S>,
     /// GET: /database/:name_or_identity/schema
     pub schema_get: MethodRouter<S>,
     /// GET: /database/:name_or_identity/logs
@@ -1220,6 +1342,7 @@ where
             identity_get: get(get_identity::<S>),
             subscribe_get: get(handle_websocket::<S>),
             call_reducer_procedure_post: post(call::<S>),
+            call_from_database_post: post(call_from_database::<S>),
             schema_get: get(schema::<S>),
             logs_get: get(logs::<S>),
             sql_post: post(sql::<S>),
@@ -1245,6 +1368,7 @@ where
             .route("/identity", self.identity_get)
             .route("/subscribe", self.subscribe_get)
             .route("/call/:reducer", self.call_reducer_procedure_post)
+            .route("/call-from-database/:reducer", self.call_from_database_post)
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)

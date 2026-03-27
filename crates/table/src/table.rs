@@ -101,6 +101,11 @@ pub struct Table {
     ///
     /// This is an optimization to avoid checking the schema in e.g., `InstanceEnv::{insert, update}`.
     is_scheduler: bool,
+    /// Indicates whether this is an outbox table or not.
+    ///
+    /// Set from `schema.outbox.is_some()`.
+    /// This is an optimization to avoid checking the schema in e.g., `InstanceEnv::insert`.
+    is_outbox: bool,
 }
 
 type StaticLayoutInTable = Option<(StaticLayout, StaticBsatnValidator)>;
@@ -213,6 +218,7 @@ impl MemoryUsage for Table {
             row_count,
             blob_store_bytes,
             is_scheduler,
+            is_outbox,
         } = self;
         inner.heap_usage()
             + pointer_map.heap_usage()
@@ -221,6 +227,7 @@ impl MemoryUsage for Table {
             + row_count.heap_usage()
             + blob_store_bytes.heap_usage()
             + is_scheduler.heap_usage()
+            + is_outbox.heap_usage()
     }
 }
 
@@ -535,6 +542,11 @@ impl Table {
     /// Returns whether this is a scheduler table.
     pub fn is_scheduler(&self) -> bool {
         self.is_scheduler
+    }
+
+    /// Returns whether this is an outbox table (i.e., `schema.outbox.is_some()`).
+    pub fn is_outbox(&self) -> bool {
+        self.is_outbox
     }
 
     /// Check if the `row` conflicts with any unique index on `self`,
@@ -2297,6 +2309,7 @@ impl Table {
         squashed_offset: SquashedOffset,
         pointer_map: Option<PointerMap>,
     ) -> Self {
+        let is_outbox = schema.outbox.is_some();
         Self {
             inner: TableInner {
                 row_layout,
@@ -2305,6 +2318,7 @@ impl Table {
                 pages: Pages::default(),
             },
             is_scheduler: schema.schedule.is_some(),
+            is_outbox,
             schema,
             indexes: BTreeMap::new(),
             pointer_map,
