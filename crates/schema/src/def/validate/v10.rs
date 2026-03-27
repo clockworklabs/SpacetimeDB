@@ -510,6 +510,7 @@ impl<'a> ModuleValidatorV10<'a> {
             table_access,
             is_event,
             accessor_name: identifier(raw_table_name)?,
+            on_result_reducer: None, // TODO: parse from raw table def once wire format supports it
         })
     }
 

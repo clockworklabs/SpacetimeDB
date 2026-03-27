@@ -201,6 +201,10 @@ pub struct TableSchema {
     /// Whether this is an event table.
     pub is_event: bool,
 
+    /// For outbox tables (`__outbox_<reducer>`): the name of the local reducer to call
+    /// with the result of the remote reducer invocation. `None` means no callback.
+    pub on_result_reducer: Option<String>,
+
     /// Cache for `row_type_for_table` in the data store.
     pub row_type: ProductType,
 }
@@ -227,6 +231,7 @@ impl TableSchema {
         primary_key: Option<ColId>,
         is_event: bool,
         alias: Option<Identifier>,
+        on_result_reducer: Option<String>,
     ) -> Self {
         Self {
             row_type: columns_to_row_type(&columns),
@@ -243,6 +248,7 @@ impl TableSchema {
             primary_key,
             is_event,
             alias,
+            on_result_reducer,
         }
     }
 
@@ -280,6 +286,7 @@ impl TableSchema {
             None,
             None,
             false,
+            None,
             None,
         )
     }
@@ -803,6 +810,7 @@ impl TableSchema {
             view_primary_key,
             false,
             None,
+            None,
         )
     }
 
@@ -974,6 +982,7 @@ impl TableSchema {
             if *is_anonymous { view_primary_key } else { None },
             false,
             Some(accessor_name.clone()),
+            None,
         )
     }
 }
@@ -1005,6 +1014,7 @@ impl Schema for TableSchema {
             table_access,
             is_event,
             accessor_name,
+            on_result_reducer,
             ..
         } = def;
 
@@ -1045,6 +1055,7 @@ impl Schema for TableSchema {
             *primary_key,
             *is_event,
             Some(accessor_name.clone()),
+            on_result_reducer.clone(),
         )
     }
 

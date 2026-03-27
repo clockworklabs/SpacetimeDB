@@ -2740,27 +2740,16 @@ impl MutTxId {
     }
 
     /// Insert a new outbound inter-database message into `st_msg_id`.
-    /// Returns the auto-incremented msg_id assigned to this message.
-    pub fn insert_st_msg_id(
-        &mut self,
-        sender_table_id: u32,
-        target_db_identity: Identity,
-        target_reducer: String,
-        args_bsatn: Vec<u8>,
-        on_result_reducer: String,
-    ) -> Result<()> {
+    pub fn insert_st_msg_id(&mut self, outbox_table_id: u32, row_id: u64) -> Result<()> {
         let row = StMsgIdRow {
             msg_id: 0, // auto-incremented by the sequence
-            sender_table_id,
-            target_db_identity: target_db_identity.into(),
-            target_reducer,
-            args_bsatn,
-            on_result_reducer,
+            outbox_table_id,
+            row_id,
         };
         self.insert_via_serialize_bsatn(ST_MSG_ID_ID, &row)
             .map(|_| ())
             .inspect_err(|e| {
-                log::error!("insert_st_msg_id: failed to insert msg for {target_db_identity}: {e}");
+                log::error!("insert_st_msg_id: failed to insert msg for outbox_table_id={outbox_table_id}: {e}");
             })
     }
 

@@ -471,11 +471,8 @@ st_fields_enum!(enum StInboundMsgIdFields {
 
 st_fields_enum!(enum StMsgIdFields {
     "msg_id", MsgId = 0,
-    "sender_table_id", SenderTableId = 1,
-    "target_db_identity", TargetDbIdentity = 2,
-    "target_reducer", TargetReducer = 3,
-    "args_bsatn", ArgsBsatn = 4,
-    "on_result_reducer", OnResultReducer = 5,
+    "outbox_table_id", OutboxTableId = 1,
+    "row_id", RowId = 2,
 });
 
 /// Helper method to check that a system table has the correct fields.
@@ -1957,17 +1954,20 @@ pub mod st_inbound_msg_id_result_status {
 }
 
 /// System Table [ST_MSG_ID_NAME]
-/// Tracks outbound inter-database messages (outbox pattern).
+/// Tracks undelivered outbound inter-database messages (outbox pattern).
+/// A row's presence means the message has not yet been fully processed.
+/// Once delivery and the on_result callback complete, the row is deleted.
+///
+/// Delivery data (target identity, reducer name, args) is read from the outbox table row.
+/// The on_result_reducer is read from the outbox table's schema (TableSchema::on_result_reducer).
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StMsgIdRow {
     pub msg_id: u64,
-    pub sender_table_id: u32,
-    pub target_db_identity: IdentityViaU256,
-    pub target_reducer: String,
-    pub args_bsatn: Vec<u8>,
-    /// Optional reducer to call on the sender database with the result of the remote reducer call.
-    pub on_result_reducer: String,
+    /// The TableId of the `__outbox_<reducer>` table that generated this message.
+    pub outbox_table_id: u32,
+    /// The auto-inc primary key (col 0) of the row in the outbox table.
+    pub row_id: u64,
 }
 
 impl TryFrom<RowRef<'_>> for StMsgIdRow {

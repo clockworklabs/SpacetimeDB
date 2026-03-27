@@ -692,6 +692,10 @@ pub struct TableDef {
     /// Event tables persist to the commitlog but are not merged into committed state.
     /// Their rows are only visible to V2 subscribers in the transaction that inserted them.
     pub is_event: bool,
+
+    /// For outbox tables (`__outbox_<reducer>`): the name of the local reducer to call
+    /// with the result of the remote reducer invocation. Empty string means no callback.
+    pub on_result_reducer: Option<String>,
 }
 
 impl TableDef {
@@ -751,6 +755,7 @@ impl From<TableDef> for RawTableDefV10 {
             table_access,
             is_event,
             accessor_name,
+            on_result_reducer: _, // not represented in V10 wire format
         } = val;
 
         RawTableDefV10 {
@@ -793,6 +798,7 @@ impl From<ViewDef> for TableDef {
             table_access: if is_public { Public } else { Private },
             is_event: false,
             accessor_name,
+            on_result_reducer: None,
         }
     }
 }

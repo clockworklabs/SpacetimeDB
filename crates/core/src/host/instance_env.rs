@@ -435,10 +435,13 @@ impl InstanceEnv {
     /// Enqueue an outbox row into ST_MSG_ID atomically within the current transaction,
     /// and notify the IDC runtime so it delivers without waiting for the next poll cycle.
     ///
-    /// Outbox tables follow the naming convention `__outbox_<reducer>`.
-    /// The first column (col 0) must hold the target database Identity (BSATN-encoded as U256).
-    /// The remaining bytes of the row's BSATN encoding are passed as `args_bsatn` to the
-    /// remote reducer.
+    /// Outbox tables follow the naming convention `__outbox_<reducer>` and have:
+    ///   - Col 0: auto-inc primary key (u64) — stored as `row_id` in ST_MSG_ID.
+    ///   - Col 1: target database Identity (stored as U256).
+    ///   - Remaining cols: args for the remote reducer.
+    ///
+    /// The `on_result_reducer` and delivery data are resolved at delivery time from the
+    /// outbox table's schema and row, so ST_MSG_ID only stores the minimal reference.
     #[cold]
     #[inline(never)]
     fn enqueue_outbox_row(
@@ -450,34 +453,22 @@ impl InstanceEnv {
     ) -> Result<(), NodesError> {
         use spacetimedb_datastore::locking_tx_datastore::state_view::StateView as _;
 
-        // Get table name to extract reducer name.
-        let schema = tx.schema_for_table(table_id).map_err(DBError::from)?;
-        let table_name = schema.table_name.to_string();
-        let reducer_name = table_name.strip_prefix("__outbox_").unwrap_or(&table_name).to_string();
-
         let row_ref = tx.get(table_id, row_ptr).map_err(DBError::from)?.unwrap();
-
         let pv = row_ref.to_product_value();
 
-        // Col 0 must be the target database Identity, stored as AlgebraicValue::U256.
-        let target_db_identity = match pv.elements.first() {
-            Some(AlgebraicValue::U256(u)) => Identity::from_u256(**u),
+        // Col 0 is the auto-inc primary key — this is the row_id we store in ST_MSG_ID.
+        let row_id = match pv.elements.first() {
+            Some(AlgebraicValue::U64(id)) => *id,
             other => {
+                let schema = tx.schema_for_table(table_id).map_err(DBError::from)?;
                 return Err(NodesError::Internal(Box::new(DBError::Other(anyhow::anyhow!(
-                    "outbox table {table_name}: expected col 0 to be U256 (Identity), got {other:?}"
+                    "outbox table {}: expected col 0 to be U64 (auto-inc PK), got {other:?}",
+                    schema.table_name
                 )))));
             }
         };
 
-        // Remaining elements are the args for the remote reducer.
-        let args_bsatn = pv.elements[1..].iter().fold(Vec::new(), |mut acc, elem| {
-            bsatn::to_writer(&mut acc, elem).expect("writing outbox row args to BSATN should never fail");
-            acc
-        });
-
-        // TODO: populate on_result_reducer from TableDef once that field is added.
-        tx.insert_st_msg_id(table_id.0, target_db_identity, reducer_name, args_bsatn, String::new())
-            .map_err(DBError::from)?;
+        tx.insert_st_msg_id(table_id.0, row_id).map_err(DBError::from)?;
 
         // Wake the IDC runtime immediately so it doesn't wait for the next poll cycle.
         let _ = self.idc_sender.send(());
