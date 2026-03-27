@@ -168,6 +168,7 @@ Connect from any of these platforms:
 | **TypeScript** (React, Next.js, Vue, Svelte, Angular, Node.js, Bun, Deno) | [Get started](https://spacetimedb.com/docs/quickstarts/react) |
 | **Rust** | [Get started](https://spacetimedb.com/docs/quickstarts/rust) |
 | **C#** (standalone and Unity) | [Get started](https://spacetimedb.com/docs/quickstarts/c-sharp) |
+| **Kotlin** (Android, JVM, iOS/Native) | [Get started](https://spacetimedb.com/docs/quickstarts/kotlin) |
 | **C++** (Unreal Engine) | [Get started](https://spacetimedb.com/docs/quickstarts/c-plus-plus) |
 
 ## Running with Docker
