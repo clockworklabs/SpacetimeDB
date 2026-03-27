@@ -1,4 +1,4 @@
-use spacetimedb::{Identity, ReducerContext, ScheduleAt, Table, Timestamp};
+use spacetimedb::{Identity, ProcedureContext, ReducerContext, ScheduleAt, Table, Timestamp};
 use spacetimedb::sats::{i256, u256};
 
 #[spacetimedb::table(accessor = user, public)]
@@ -217,6 +217,18 @@ pub fn send_reminder(ctx: &ReducerContext, reminder: Reminder) {
         text: format!("[REMINDER] {}", reminder.text),
         sent: ctx.timestamp,
     });
+}
+
+/// Simple procedure that echoes a greeting.
+#[spacetimedb::procedure]
+pub fn greet(_ctx: &mut ProcedureContext, name: String) -> String {
+    format!("Hello, {name}!")
+}
+
+/// No-arg procedure that returns a constant.
+#[spacetimedb::procedure]
+pub fn server_ping(_ctx: &mut ProcedureContext) -> String {
+    "pong".to_string()
 }
 
 #[spacetimedb::reducer(init)]
