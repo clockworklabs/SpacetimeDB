@@ -775,11 +775,9 @@ pub fn register_table<T: Table>() {
         table.finish();
 
         if let Some(outbox) = T::OUTBOX {
-            module.inner.add_outbox(
-                T::TABLE_NAME,
-                outbox.remote_reducer_name,
-                outbox.on_result_reducer_name,
-            );
+            module
+                .inner
+                .add_outbox(T::TABLE_NAME, outbox.remote_reducer_name, outbox.on_result_reducer_name);
         }
 
         module.inner.add_explicit_names(T::explicit_names());

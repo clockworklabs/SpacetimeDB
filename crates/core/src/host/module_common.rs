@@ -38,7 +38,13 @@ pub fn build_common_module_from_raw(
         replica_ctx.subscriptions.clone(),
     );
 
-    Ok(ModuleCommon::new(replica_ctx, mcc.scheduler, mcc.idc_sender, info, mcc.energy_monitor))
+    Ok(ModuleCommon::new(
+        replica_ctx,
+        mcc.scheduler,
+        mcc.idc_sender,
+        info,
+        mcc.energy_monitor,
+    ))
 }
 
 /// Non-runtime-specific parts of a module.

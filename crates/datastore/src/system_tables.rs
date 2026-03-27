@@ -190,7 +190,9 @@ pub fn is_built_in_meta_row(table_id: TableId, row: &ProductValue) -> Result<boo
             let row: StEventTableRow = to_typed_row(row)?;
             table_id_is_reserved(row.table_id)
         }
-        ST_TABLE_ACCESSOR_ID | ST_INDEX_ACCESSOR_ID | ST_COLUMN_ACCESSOR_ID | ST_INBOUND_MSG_ID_ID | ST_MSG_ID_ID => false,
+        ST_TABLE_ACCESSOR_ID | ST_INDEX_ACCESSOR_ID | ST_COLUMN_ACCESSOR_ID | ST_INBOUND_MSG_ID_ID | ST_MSG_ID_ID => {
+            false
+        }
         TableId(..ST_RESERVED_SEQUENCE_RANGE) => {
             log::warn!("Unknown system table {table_id:?}");
             false
@@ -706,10 +708,7 @@ fn system_module_def() -> ModuleDef {
 
     let st_msg_id_type = builder.add_type::<StMsgIdRow>();
     builder
-        .build_table(
-            ST_MSG_ID_NAME,
-            *st_msg_id_type.as_ref().expect("should be ref"),
-        )
+        .build_table(ST_MSG_ID_NAME, *st_msg_id_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_auto_inc_primary_key(StMsgIdFields::MsgId)
         .with_index_no_accessor_name(btree(StMsgIdFields::MsgId));

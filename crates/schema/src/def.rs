@@ -752,7 +752,7 @@ impl From<TableDef> for RawTableDefV9 {
             table_type,
             table_access,
             is_event: _, // V9 does not support event tables; ignore when converting back
-            outbox: _, // V9 does not support outbox tables; ignore when converting back
+            outbox: _,   // V9 does not support outbox tables; ignore when converting back
             ..
         } = val;
 

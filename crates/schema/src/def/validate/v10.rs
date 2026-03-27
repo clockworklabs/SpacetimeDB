@@ -189,10 +189,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .unwrap_or_else(|| Ok(Vec::new()));
 
     // Collect raw outbox definitions from the Outboxes section for post-validation attachment.
-    let raw_outboxes: Vec<RawOutboxDefV10> = def
-        .outboxes()
-        .map(|v| v.to_vec())
-        .unwrap_or_default();
+    let raw_outboxes: Vec<RawOutboxDefV10> = def.outboxes().map(|v| v.to_vec()).unwrap_or_default();
 
     // Validate lifecycle reducers - they reference reducers by name
     let lifecycle_validations = reducers

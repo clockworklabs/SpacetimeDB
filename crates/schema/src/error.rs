@@ -156,16 +156,12 @@ pub enum ValidationError {
     OutboxTableNotFound { table_name: RawIdentifier },
     #[error("table {table} is declared as an outbox table multiple times")]
     DuplicateOutbox { table: Identifier },
-    #[error(
-        "outbox table {table} col 0 must be `u64` with `#[primary_key] #[auto_inc]`, found {found}"
-    )]
+    #[error("outbox table {table} col 0 must be `u64` with `#[primary_key] #[auto_inc]`, found {found}")]
     OutboxInvalidIdColumn {
         table: Identifier,
         found: PrettyAlgebraicType,
     },
-    #[error(
-        "outbox table {table} col 1 must be `Identity` (U256), found {found}"
-    )]
+    #[error("outbox table {table} col 1 must be `Identity` (U256), found {found}")]
     OutboxInvalidTargetColumn {
         table: Identifier,
         found: PrettyAlgebraicType,

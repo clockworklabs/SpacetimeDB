@@ -279,19 +279,14 @@ impl OutboxArg {
             if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) {
                 Err(meta.error("outbox takes a single function path, e.g. `outbox(my_remote_reducer)`"))
             } else {
-                check_duplicate_msg(
-                    &remote_reducer,
-                    &meta,
-                    "can only specify one remote reducer for outbox",
-                )?;
+                check_duplicate_msg(&remote_reducer, &meta, "can only specify one remote reducer for outbox")?;
                 remote_reducer = Some(meta.path);
                 Ok(())
             }
         })?;
 
-        let remote_reducer = remote_reducer.ok_or_else(|| {
-            syn::Error::new(span, "outbox requires a remote reducer: `outbox(my_remote_reducer)`")
-        })?;
+        let remote_reducer = remote_reducer
+            .ok_or_else(|| syn::Error::new(span, "outbox requires a remote reducer: `outbox(my_remote_reducer)`"))?;
 
         Ok(Self {
             span,
@@ -309,18 +304,17 @@ impl OutboxArg {
             if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) {
                 Err(meta.error("on_result takes a single function path, e.g. `on_result(my_local_reducer)`"))
             } else {
-                check_duplicate_msg(
-                    &result,
-                    &meta,
-                    "can only specify one on_result reducer",
-                )?;
+                check_duplicate_msg(&result, &meta, "can only specify one on_result reducer")?;
                 result = Some(meta.path);
                 Ok(())
             }
         })?;
 
         result.ok_or_else(|| {
-            syn::Error::new(span, "on_result requires a local reducer: `on_result(my_local_reducer)`")
+            syn::Error::new(
+                span,
+                "on_result requires a local reducer: `on_result(my_local_reducer)`",
+            )
         })
     }
 }

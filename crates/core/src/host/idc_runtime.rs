@@ -56,12 +56,7 @@ pub struct IdcRuntimeStarter {
 
 impl IdcRuntimeStarter {
     /// Spawn the IDC runtime background task.
-    pub fn start(
-        self,
-        db: Arc<RelationalDB>,
-        config: IdcRuntimeConfig,
-        module_host: WeakModuleHost,
-    ) -> IdcRuntime {
+    pub fn start(self, db: Arc<RelationalDB>, config: IdcRuntimeConfig, module_host: WeakModuleHost) -> IdcRuntime {
         let abort = tokio::spawn(run_idc_loop(db, config, module_host, self.rx)).abort_handle();
         IdcRuntime { _abort: abort }
     }
@@ -328,10 +323,7 @@ fn load_pending_into_targets(db: &RelationalDB, targets: &mut HashMap<Identity, 
         };
 
         let table_name = schema.table_name.to_string();
-        let target_reducer = table_name
-            .strip_prefix("__outbox_")
-            .unwrap_or(&table_name)
-            .to_string();
+        let target_reducer = table_name.strip_prefix("__outbox_").unwrap_or(&table_name).to_string();
         let on_result_reducer = schema.on_result_reducer.clone();
 
         // Look up the outbox row by its auto-inc PK (col 0) to get target identity and args.

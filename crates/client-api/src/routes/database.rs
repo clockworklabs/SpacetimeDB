@@ -269,8 +269,12 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
 
     let caller_identity = auth.claims.identity;
 
-    let sender_identity = Identity::from_hex(&sender_identity)
-        .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid sender_identity: expected hex-encoded identity"))?;
+    let sender_identity = Identity::from_hex(&sender_identity).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            "Invalid sender_identity: expected hex-encoded identity",
+        )
+    })?;
 
     let args = FunctionArgs::Bsatn(body);
     let connection_id = generate_random_connection_id();

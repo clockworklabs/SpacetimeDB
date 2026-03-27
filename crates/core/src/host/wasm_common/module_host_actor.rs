@@ -34,10 +34,10 @@ use core::time::Duration;
 use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
-use spacetimedb_datastore::system_tables::st_inbound_msg_id_result_status;
 use spacetimedb_datastore::error::{DatastoreError, ViewError};
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
+use spacetimedb_datastore::system_tables::st_inbound_msg_id_result_status;
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_lib::buffer::DecodeError;
@@ -423,7 +423,11 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
     pub fn create_instance(&self) -> WasmModuleInstance<T::Instance> {
         let common = &self.common;
-        let env = InstanceEnv::new(common.replica_ctx().clone(), common.scheduler().clone(), common.idc_sender());
+        let env = InstanceEnv::new(
+            common.replica_ctx().clone(),
+            common.scheduler().clone(),
+            common.idc_sender(),
+        );
         // this shouldn't fail, since we already called module.create_instance()
         // before and it didn't error, and ideally they should be deterministic
         let mut instance = self
@@ -933,9 +937,7 @@ impl InstanceCommon {
                 };
                 let res = lifecycle_res.and(dedup_res);
                 match res {
-                    Ok(()) => {
-                        (EventStatus::Committed(DatabaseUpdate::default()), return_value)
-                    }
+                    Ok(()) => (EventStatus::Committed(DatabaseUpdate::default()), return_value),
                     Err(err) => {
                         let err = err.to_string();
                         log_reducer_error(
@@ -997,9 +999,7 @@ impl InstanceCommon {
         // record the failure in st_inbound_msg_id in a separate tx (since the reducer tx
         // was rolled back). This allows the sending database to receive the error on dedup
         // rather than re-running the reducer.
-        if let (Some((sender_identity, sender_msg_id)), EventStatus::FailedUser(err)) =
-            (dedup_sender, &event.status)
-        {
+        if let (Some((sender_identity, sender_msg_id)), EventStatus::FailedUser(err)) = (dedup_sender, &event.status) {
             let err_msg = err.clone();
             let mut dedup_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
             if let Err(e) = dedup_tx.upsert_inbound_last_msg_id(
