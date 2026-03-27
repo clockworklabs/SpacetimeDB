@@ -4,6 +4,7 @@ use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
 use std::ffi::OsStr;
+use std::ffi::OsString;
 use std::path::Path;
 use std::path::PathBuf;
 use std::{env, fs};
@@ -289,6 +290,15 @@ fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
     Ok(())
 }
 
+fn tracked_rs_files_under(path: &str) -> Result<Vec<PathBuf>> {
+    let output = cmd!("git", "ls-files", "--", path).read()?;
+    Ok(output
+        .lines()
+        .filter(|line| line.ends_with(".rs"))
+        .map(PathBuf::from)
+        .collect())
+}
+
 fn main() -> Result<()> {
     env_logger::init();
 
@@ -328,6 +338,20 @@ fn main() -> Result<()> {
                 "unreal"
             )
             .run()?;
+            // Run the same SDK suite against wasm/browser test clients.
+            cmd!(
+                "cargo",
+                "test",
+                "-p",
+                "spacetimedb-sdk",
+                "--features",
+                "allow_loopback_http_for_tests,browser",
+                "--",
+                "--test-threads=2",
+                "--skip",
+                "unreal"
+            )
+            .run()?;
             // TODO: This should check for a diff at the start. If there is one, we should alert the user
             // that we're disabling diff checks because they have a dirty git repo, and to re-run in a clean one
             // if they want those checks.
@@ -361,11 +385,36 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::Lint) => {
-            cmd!("cargo", "fmt", "--all", "--", "--check").run()?;
+            ensure_repo_root()?;
+            // `cargo fmt --all` only checks files that Cargo discovers through workspace/package targets.
+            // However, we also keep Rust sources in a locations that are tracked but not part of our workspace,
+            // so this approach properly catches all the files, where `cargo fmt` does not.
+            let mut files = Vec::new();
+            files.extend(tracked_rs_files_under(".")?);
+            const RUSTFMT_BATCH_SIZE: usize = 200;
+            for batch in files.chunks(RUSTFMT_BATCH_SIZE) {
+                let mut args = Vec::<OsString>::with_capacity(batch.len() + 1);
+                args.push("--check".into());
+                args.extend(batch.iter().map(|path| path.as_os_str().to_os_string()));
+                cmd("rustfmt", args).run()?;
+            }
             cmd!(
                 "cargo",
                 "clippy",
                 "--all",
+                "--tests",
+                "--benches",
+                "--",
+                "-D",
+                "warnings",
+            )
+            .run()?;
+            cmd!(
+                "cargo",
+                "clippy",
+                "--no-default-features",
+                "--features=browser",
+                "-pspacetimedb-sdk",
                 "--tests",
                 "--benches",
                 "--",

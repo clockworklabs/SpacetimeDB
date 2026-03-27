@@ -1,4 +1,4 @@
-﻿export type RunResult = {
+export type RunResult = {
   tps: number;
   samples: number;
   committed_txns: number | null;

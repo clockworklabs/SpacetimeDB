@@ -316,7 +316,7 @@ cargo run --bin spacetimedb-cli -- generate --lang unrealcpp --uproject-dir crat
 ### Parameters
 
 - `--lang unrealcpp`: Specifies the UnrealCPP code generator
-- `--uproject-dir`: Directory containing Unreal's .uproject or .uplugin file
+- `--uproject-dir`: Directory containing your Unreal project's `.uproject` file
 - `--module-path`: Path to your SpacetimeDB module source code
 - `--unreal-module-name`: **Required** - Name used for generated classes, API prefix and putting generated module bindings in the correct Module's Source
 
@@ -330,6 +330,15 @@ The `--unreal-module-name` parameter is **mandatory** for UnrealCPP generation b
 4. **Generated Module Bindings**: Put generated bindings in correct module's source
 
 **⚠️ IMPORTANT:** Without the module name, the generated code would not compile in Unreal Engine due to missing API macros and naming conflicts.
+
+### Project Setup Behavior
+
+When generating into an Unreal project, the code generator also:
+
+1. Ensures the named module exists in the project's `Modules` array in the `.uproject` file.
+2. Creates missing `Source/<Module>/<Module>.Build.cs`, `Source/<Module>/<Module>.cpp`, and `Source/<Module>/<Module>.h` files.
+
+If the `.uproject` file is missing, unreadable, malformed, or has an invalid `Modules` field, generation fails immediately.
 
 ## Implementation Details
 

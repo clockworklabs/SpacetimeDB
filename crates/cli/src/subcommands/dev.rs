@@ -470,8 +470,23 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let spacetime_config = loaded_config.as_ref().map(|lc| &lc.config);
     let using_spacetime_config = spacetime_config.is_some();
-    let generate_configs_from_file: Vec<HashMap<String, serde_json::Value>> =
-        spacetime_config.and_then(|c| c.generate.clone()).unwrap_or_default();
+    let generate_configs_from_file: Vec<HashMap<String, serde_json::Value>> = {
+        let mut entries = spacetime_config.and_then(|c| c.generate.clone()).unwrap_or_default();
+        // Inherit top-level `module-path` into generate entries that don't specify their own.
+        // Without this, `generate` entries fall back to the hardcoded "spacetimedb" default
+        // even when the top-level config has a module-path set.
+        if let Some(top_level_module_path) = spacetime_config
+            .and_then(|c| c.additional_fields.get("module-path"))
+            .cloned()
+        {
+            for entry in &mut entries {
+                entry
+                    .entry("module-path".to_string())
+                    .or_insert(top_level_module_path.clone());
+            }
+        }
+        entries
+    };
 
     // Re-resolve publish targets now that config files may have been created by init.
     if publish_configs.is_empty() {
@@ -676,6 +691,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     // Safety prompt: warn if any selected database target is defined in spacetime.json.
+    // spacetime.local.json is gitignored and personal, so it's fine for dev use.
     if let Some(ref lc) = loaded_config {
         let database_sources = resolve_database_sources(&lc.config);
         let databases_from_main_config: Vec<String> = db_names_for_logging

@@ -31,7 +31,6 @@ spacetimedb-query.workspace = true
 spacetimedb-sats = { workspace = true, features = ["serde"] }
 spacetimedb-schema.workspace = true
 spacetimedb-table.workspace = true
-spacetimedb-vm.workspace = true
 spacetimedb-snapshot.workspace = true
 spacetimedb-subscription.workspace = true
 spacetimedb-expr.workspace = true
@@ -65,6 +64,7 @@ hex.workspace = true
 hostname.workspace = true
 http.workspace = true
 http-body-util.workspace = true
+humantime.workspace = true
 hyper.workspace = true
 imara-diff.workspace = true
 indexmap.workspace = true
@@ -156,7 +156,6 @@ spacetimedb-lib = { path = "../lib", features = ["proptest", "test"] }
 spacetimedb-sats = { path = "../sats", features = ["proptest"] }
 spacetimedb-commitlog = { path = "../commitlog", features = ["test"] }
 spacetimedb-datastore = { path = "../datastore/", features = ["test"] }
-spacetimedb-vm = { workspace = true, features = ["test"]}
 
 criterion.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.

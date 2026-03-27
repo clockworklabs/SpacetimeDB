@@ -10,7 +10,7 @@ use tempfile::NamedTempFile;
 
 use crate::segment::FileLike;
 
-use super::{Repo, SegmentLen, TxOffset, TxOffsetIndex, TxOffsetIndexMut};
+use super::{Repo, SegmentLen, SegmentReader, TxOffset, TxOffsetIndex, TxOffsetIndexMut};
 
 const SEGMENT_FILE_EXT: &str = ".stdb.log";
 
@@ -154,9 +154,52 @@ impl FileLike for NamedTempFile {
     }
 }
 
+/// A file-backed, read-only segment.
+///
+/// Transparently handles reading compressed segments.
+/// [Self::sealed] returns `true` if the segment is compressed.
+pub struct ReadOnlySegment {
+    inner: CompressReader,
+}
+
+impl SegmentReader for ReadOnlySegment {
+    #[inline]
+    fn sealed(&self) -> bool {
+        self.inner.is_compressed()
+    }
+}
+
+impl io::Read for ReadOnlySegment {
+    #[inline]
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.inner.read(buf)
+    }
+}
+
+impl io::BufRead for ReadOnlySegment {
+    #[inline]
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        self.inner.fill_buf()
+    }
+
+    #[inline]
+    fn consume(&mut self, amount: usize) {
+        self.inner.consume(amount);
+    }
+}
+
+impl io::Seek for ReadOnlySegment {
+    #[inline]
+    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
+        self.inner.seek(pos)
+    }
+}
+
+impl SegmentLen for ReadOnlySegment {}
+
 impl Repo for Fs {
     type SegmentWriter = File;
-    type SegmentReader = CompressReader;
+    type SegmentReader = ReadOnlySegment;
 
     fn create_segment(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
         File::options()
@@ -197,9 +240,15 @@ impl Repo for Fs {
         File::options().read(true).append(true).open(self.segment_path(offset))
     }
 
+    fn segment_file_path(&self, offset: u64) -> Option<String> {
+        Some(self.segment_path(offset).0.to_string_lossy().into_owned())
+    }
+
     fn open_segment_reader(&self, offset: u64) -> io::Result<Self::SegmentReader> {
-        let file = File::open(self.segment_path(offset))?;
-        CompressReader::new(file)
+        let path = self.segment_path(offset);
+        debug!("fs: open segment at {}", path.display());
+        let file = File::open(&path)?;
+        CompressReader::new(file).map(|inner| ReadOnlySegment { inner })
     }
 
     fn remove_segment(&self, offset: u64) -> io::Result<()> {
@@ -215,7 +264,7 @@ impl Repo for Fs {
     fn compress_segment(&self, offset: u64) -> io::Result<()> {
         let src = self.open_segment_reader(offset)?;
         // if it's already compressed, leave it be
-        let CompressReader::None(mut src) = src else {
+        let CompressReader::None(mut src) = src.inner else {
             return Ok(());
         };
 
