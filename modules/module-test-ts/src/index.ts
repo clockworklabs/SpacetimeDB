@@ -92,6 +92,7 @@ type TestA = Infer<typeof testA>;
 // NOTE: If your Option default requires wrapping, adjust to your bindings’ Option encoding.
 const testDRow = {
   test_c: t.option(testC).default(DEFAULT_TEST_C as unknown as any),
+  test_c_nested: t.option(t.array(testC)),
 };
 type TestD = InferTypeOfRow<typeof testDRow>;
 
@@ -152,7 +153,7 @@ const spacetimedb = schema({
   person: table(
     {
       public: true,
-      indexes: [{ accessor: "age", algorithm: 'btree', columns: ['age'] }],
+      indexes: [{ accessor: 'age', algorithm: 'btree', columns: ['age'] }],
     },
     personRow
   ),
@@ -160,8 +161,8 @@ const spacetimedb = schema({
   // test_a with index foo on x
   testATable: table(
     {
-      name: "test_a",
-      indexes: [{ accessor: "foo", algorithm: 'btree', columns: ['x'] }],
+      name: 'test_a',
+      indexes: [{ accessor: 'foo', algorithm: 'btree', columns: ['x'] }],
     },
     testA
   ),
@@ -174,7 +175,7 @@ const spacetimedb = schema({
     {
       name: 'test_e',
       public: false,
-      indexes: [{ accessor:"name", algorithm: 'btree', columns: ['name'] }],
+      indexes: [{ accessor: 'name', algorithm: 'btree', columns: ['name'] }],
     },
     testERow
   ),
@@ -194,7 +195,11 @@ const spacetimedb = schema({
       name: 'points',
       public: false,
       indexes: [
-        { accessor: 'multi_column_index', algorithm: 'btree', columns: ['x', 'y'] },
+        {
+          accessor: 'multi_column_index',
+          algorithm: 'btree',
+          columns: ['x', 'y'],
+        },
       ],
     },
     pointsRow
@@ -207,7 +212,7 @@ const spacetimedb = schema({
   repeatingTestArg: table(
     {
       name: 'repeating_test_arg',
-      scheduled: (): any => repeatingTest
+      scheduled: (): any => repeatingTest,
     },
     repeatingTestArg
   ),

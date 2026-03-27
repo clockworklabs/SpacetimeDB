@@ -3593,6 +3593,7 @@ use super::namespace_test_c_type::NamespaceTestC;
 #[sats(crate = __lib)]
 pub struct TestD {
     pub test_c: Option::<NamespaceTestC>,
+    pub test_c_nested: Option::<Vec::<NamespaceTestC>>,
 }
 
 
@@ -3606,6 +3607,7 @@ impl __sdk::InModule for TestD {
 /// Provides typed access to columns for query building.
 pub struct TestDCols {
     pub test_c: __sdk::__query_builder::Col<TestD, Option::<NamespaceTestC>>,
+    pub test_c_nested: __sdk::__query_builder::Col<TestD, Option::<Vec::<NamespaceTestC>>>,
 }
 
 impl __sdk::__query_builder::HasCols for TestD {
@@ -3613,6 +3615,7 @@ impl __sdk::__query_builder::HasCols for TestD {
     fn cols(table_name: &'static str) -> Self::Cols {
         TestDCols {
             test_c: __sdk::__query_builder::Col::new(table_name, "test_c"),
+            test_c_nested: __sdk::__query_builder::Col::new(table_name, "test_c_nested"),
 
         }
     }
