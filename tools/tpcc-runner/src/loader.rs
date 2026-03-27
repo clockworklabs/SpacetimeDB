@@ -27,6 +27,8 @@ pub fn run(config: LoadConfig) -> Result<()> {
         client.reset_tpcc().context("failed to reset tpcc data")?;
     }
 
+    client.set_spacetimedb_uri(&config.connection.uri)?;
+
     let mut rng = StdRng::seed_from_u64(0x5eed_5eed);
     let load_c_last = rng.random_range(0..=255);
     let base_ts = Timestamp::from(SystemTime::now());
@@ -89,6 +91,8 @@ fn load_warehouses_and_districts(
             w_zip: zip_code(rng),
             w_tax_bps: rng.random_range(0..=2_000),
             w_ytd_cents: WAREHOUSE_YTD_CENTS,
+
+            remote_database_home: None,
         });
 
         for d_id in 1..=DISTRICTS_PER_WAREHOUSE {

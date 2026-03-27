@@ -46,6 +46,21 @@ impl ModuleClient {
         })
     }
 
+    pub fn set_spacetimedb_uri(&self, uri: &str) -> Result<()> {
+        let (tx, rx) = sync_channel(1);
+        self.conn
+            .reducers
+            .set_spacetimedb_uri_then(uri.to_string(), move |_, res| {
+                let _ = tx.send(res);
+            })?;
+        match rx.recv_timeout(self.timeout) {
+            Ok(Ok(Ok(()))) => Ok(()),
+            Ok(Ok(Err(message))) => bail!("set_spacetimedb_uri failed: {}", message),
+            Ok(Err(err)) => Err(anyhow!("set_spacetimedb_uri internal error: {}", err)),
+            Err(_) => bail!("timed out waiting for set_spacetimedb_uri"),
+        }
+    }
+
     pub fn reset_tpcc(&self) -> Result<()> {
         let (tx, rx) = sync_channel(1);
         self.conn.reducers.reset_tpcc_then(move |_, res| {
