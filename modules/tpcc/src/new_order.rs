@@ -5,8 +5,8 @@ use spacetimedb_sats::serde::SerdeWrapper;
 
 use crate::{
     district, find_customer_by_id, find_district, find_stock, find_warehouse, item, order_line, pack_order_key,
-    remote::{call_remote_function, get_spacetimedb_uri},
-    stock, warehouse, District, Item, OrderLine, Stock, WarehouseId, DISTRICTS_PER_WAREHOUSE, TAX_SCALE,
+    remote::{call_remote_function, get_spacetimedb_uri, remote_warehouse_home},
+    stock, District, Item, OrderLine, Stock, WarehouseId, DISTRICTS_PER_WAREHOUSE, TAX_SCALE,
 };
 
 #[derive(Clone, Debug, SpacetimeType)]
@@ -205,13 +205,6 @@ fn partition_local_from_remote_database_items(
             let is_remote_warehouse = line.supply_w_id == local_warehouse_id;
             all_local_warehouse &= !is_remote_warehouse;
 
-            let warehouse = tx
-                .db
-                .warehouse()
-                .w_id()
-                .find(line.supply_w_id)
-                .ok_or_else(|| format!("No such warehouse: {}", line.supply_w_id))?;
-
             // TECHNICALLY NON-CONFORMANT: If we encounter a non-existent item in the order,
             // we'll short-circuit and exit here.
             // TPC-C technically requires, in 2.4.2.3, that we still retrieve and process all the valid item numbers.
@@ -221,7 +214,8 @@ fn partition_local_from_remote_database_items(
             // - using a different type of transaction
             // But we do skip inspecting some number of valid items and stocks.
             let item = find_item(tx, line.item_id)?;
-            match warehouse.remote_database_home {
+
+            match remote_warehouse_home(tx, line.supply_w_id) {
                 None => {
                     // Warehouse is local to this database.
                     // We'll actually "process" the items, i.e. decrement the stock and sum the order price,

@@ -1,6 +1,8 @@
 use http::Request;
 use spacetimedb::{reducer, table, Identity, ProcedureContext, ReducerContext, Table, TxContext};
 
+use crate::WarehouseId;
+
 #[table(accessor = spacetimedb_uri)]
 struct SpacetimeDbUri {
     uri: String,
@@ -16,6 +18,32 @@ fn set_spacetimedb_uri(ctx: &ReducerContext, uri: String) {
 
 pub fn get_spacetimedb_uri(tx: &TxContext) -> String {
     tx.db.spacetimedb_uri().iter().next().unwrap().uri
+}
+
+/// For warehouses not managed by this database, stores the [`Identity`] of the remote database which manages that warehouse.
+///
+/// Will not have a row present for a warehouse managed by the local database.
+#[table(accessor = remote_warehouse)]
+pub struct RemoteWarehouse {
+    #[primary_key]
+    pub w_id: WarehouseId,
+    pub remote_database_home: Identity,
+}
+
+#[reducer]
+fn load_remote_warehouses(ctx: &ReducerContext, rows: Vec<RemoteWarehouse>) -> Result<(), String> {
+    for row in rows {
+        ctx.db.remote_warehouse().try_insert(row)?;
+    }
+    Ok(())
+}
+
+pub fn remote_warehouse_home(ctx: &ReducerContext, warehouse_id: WarehouseId) -> Option<Identity> {
+    ctx.db
+        .remote_warehouse()
+        .w_id()
+        .find(warehouse_id)
+        .map(|row| row.remote_database_home)
 }
 
 pub fn call_remote_function(

@@ -1,5 +1,5 @@
 use spacetimedb::{
-    procedure, reducer, table, Identity, ProcedureContext, ReducerContext, ScheduleAt, SpacetimeType, Table, Timestamp,
+    procedure, reducer, table, ProcedureContext, ReducerContext, ScheduleAt, SpacetimeType, Table, Timestamp,
 };
 use std::collections::BTreeSet;
 
@@ -12,6 +12,7 @@ macro_rules! ensure {
 }
 
 mod new_order;
+mod payment;
 mod remote;
 
 const DISTRICTS_PER_WAREHOUSE: u8 = 10;
@@ -27,21 +28,6 @@ pub enum CustomerSelector {
 }
 
 type WarehouseId = u16;
-
-#[derive(Clone, Debug, SpacetimeType)]
-pub struct PaymentResult {
-    pub warehouse_name: String,
-    pub district_name: String,
-    pub customer_id: u32,
-    pub customer_first: String,
-    pub customer_middle: String,
-    pub customer_last: String,
-    pub customer_balance_cents: i64,
-    pub customer_credit: String,
-    pub customer_discount_bps: i32,
-    pub payment_amount_cents: i64,
-    pub customer_data: Option<String>,
-}
 
 #[derive(Clone, Debug, SpacetimeType)]
 pub struct OrderStatusLineResult {
@@ -116,13 +102,6 @@ pub struct Warehouse {
     pub w_zip: String,
     pub w_tax_bps: i32,
     pub w_ytd_cents: i64,
-
-    /// Added by us: the [`Identity`] of the remote database where this warehouse is sharded,
-    /// or `None` if this warehouse is sharded in the local database.
-    ///
-    /// TPC-C 1.4.7: "Attributes may be added and/or duplicated from one table to another
-    /// as long as these changes do not improve performance."
-    pub remote_database_home: Option<Identity>,
 }
 
 #[table(
@@ -328,16 +307,6 @@ pub struct DeliveryCompletion {
     pub processed_districts: u8,
 }
 
-struct PaymentRequest<'a> {
-    w_id: u16,
-    d_id: u8,
-    c_w_id: u16,
-    c_d_id: u8,
-    customer_selector: &'a CustomerSelector,
-    payment_amount_cents: i64,
-    now: Timestamp,
-}
-
 #[reducer]
 pub fn reset_tpcc(ctx: &ReducerContext) -> Result<(), String> {
     for row in ctx.db.delivery_job().iter() {
@@ -452,33 +421,6 @@ pub fn load_order_lines(ctx: &ReducerContext, rows: Vec<OrderLine>) -> Result<()
         ctx.db.order_line().insert(row);
     }
     Ok(())
-}
-
-#[procedure]
-pub fn payment(
-    ctx: &mut ProcedureContext,
-    w_id: u16,
-    d_id: u8,
-    c_w_id: u16,
-    c_d_id: u8,
-    customer: CustomerSelector,
-    payment_amount_cents: i64,
-) -> Result<PaymentResult, String> {
-    let now = ctx.timestamp;
-    ctx.try_with_tx(|tx| {
-        payment_tx(
-            tx,
-            PaymentRequest {
-                w_id,
-                d_id,
-                c_w_id,
-                c_d_id,
-                customer_selector: &customer,
-                payment_amount_cents,
-                now,
-            },
-        )
-    })
 }
 
 #[procedure]
@@ -663,78 +605,6 @@ fn validate_stock_row(row: &Stock) -> Result<(), String> {
     );
     ensure!((1..=ITEMS).contains(&row.s_i_id), "stock item id out of range");
     Ok(())
-}
-
-fn payment_tx(tx: &spacetimedb::TxContext, req: PaymentRequest<'_>) -> Result<PaymentResult, String> {
-    ensure!(req.payment_amount_cents > 0, "payment amount must be positive");
-
-    let warehouse = find_warehouse(tx, req.w_id)?;
-    let district = find_district(tx, req.w_id, req.d_id)?;
-    let customer = resolve_customer(tx, req.c_w_id, req.c_d_id, req.customer_selector)?;
-
-    tx.db.warehouse().w_id().update(Warehouse {
-        w_ytd_cents: warehouse.w_ytd_cents + req.payment_amount_cents,
-        ..warehouse.clone()
-    });
-
-    tx.db.district().district_key().update(District {
-        d_ytd_cents: district.d_ytd_cents + req.payment_amount_cents,
-        ..district.clone()
-    });
-
-    let mut updated_customer = Customer {
-        c_balance_cents: customer.c_balance_cents - req.payment_amount_cents,
-        c_ytd_payment_cents: customer.c_ytd_payment_cents + req.payment_amount_cents,
-        c_payment_cnt: customer.c_payment_cnt + 1,
-        ..customer.clone()
-    };
-
-    if updated_customer.c_credit == "BC" {
-        let prefix = format!(
-            "{} {} {} {} {} {} {}|",
-            updated_customer.c_id,
-            updated_customer.c_d_id,
-            updated_customer.c_w_id,
-            req.d_id,
-            req.w_id,
-            req.payment_amount_cents,
-            req.now.to_micros_since_unix_epoch()
-        );
-        updated_customer.c_data = format!("{prefix}{}", updated_customer.c_data);
-        updated_customer.c_data.truncate(MAX_C_DATA_LEN);
-    }
-
-    tx.db.customer().customer_key().update(updated_customer.clone());
-
-    tx.db.history().insert(History {
-        history_id: 0,
-        h_c_id: updated_customer.c_id,
-        h_c_d_id: updated_customer.c_d_id,
-        h_c_w_id: updated_customer.c_w_id,
-        h_d_id: req.d_id,
-        h_w_id: req.w_id,
-        h_date: req.now,
-        h_amount_cents: req.payment_amount_cents,
-        h_data: format!("{}    {}", warehouse.w_name, district.d_name),
-    });
-
-    Ok(PaymentResult {
-        warehouse_name: warehouse.w_name,
-        district_name: district.d_name,
-        customer_id: updated_customer.c_id,
-        customer_first: updated_customer.c_first,
-        customer_middle: updated_customer.c_middle,
-        customer_last: updated_customer.c_last,
-        customer_balance_cents: updated_customer.c_balance_cents,
-        customer_credit: updated_customer.c_credit.clone(),
-        customer_discount_bps: updated_customer.c_discount_bps,
-        payment_amount_cents: req.payment_amount_cents,
-        customer_data: if updated_customer.c_credit == "BC" {
-            Some(updated_customer.c_data)
-        } else {
-            None
-        },
-    })
 }
 
 fn order_status_tx(
