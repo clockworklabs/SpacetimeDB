@@ -1,0 +1,41 @@
+use http::Request;
+use spacetimedb::{reducer, table, Identity, ProcedureContext, ReducerContext, Table, TxContext};
+
+#[table(accessor = spacetimedb_uri)]
+struct SpacetimeDbUri {
+    uri: String,
+}
+
+#[reducer]
+fn set_spacetimedb_uri(ctx: &ReducerContext, uri: String) {
+    for row in ctx.db.spacetimedb_uri().iter() {
+        ctx.db.spacetimedb_uri().delete(row);
+    }
+    ctx.db.spacetimedb_uri().insert(SpacetimeDbUri { uri });
+}
+
+pub fn get_spacetimedb_uri(tx: &TxContext) -> String {
+    tx.db.spacetimedb_uri().iter().next().unwrap().uri
+}
+
+pub fn call_remote_function(
+    ctx: &mut ProcedureContext,
+    spacetimedb_uri: &str,
+    database_ident: Identity,
+    function_name: &str,
+    arguments: Vec<serde_json::Value>,
+) -> Result<spacetimedb::http::Body, String> {
+    let request = Request::builder()
+        .uri(format!(
+            "{spacetimedb_uri}/v1/database/{database_ident}/call/{function_name}"
+        ))
+        .method("POST")
+        // TODO(auth): include a token.
+        .body(serde_json::json!(arguments).to_string())
+        .map_err(|e| format!("Error constructing `Request`: {e}"))?;
+    match ctx.http.send(request) {
+        Err(e) => Err(format!("Error sending request to remote database {database_ident} at URI {spacetimedb_uri} to call {function_name}: {e}")),
+        Ok(response) if response.status() != http::status::StatusCode::OK => Err(format!("Got non-200 response code {} from request to remote database {database_ident} at URI {spacetimedb_uri} when calling {function_name}: {}", response.status(), response.into_body().into_string_lossy())),
+        Ok(response) => Ok(response.into_body()),
+    }
+}
