@@ -1,3 +1,4 @@
+use super::idc_runtime::IdcSender;
 use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
@@ -40,6 +41,8 @@ use std::vec::IntoIter;
 pub struct InstanceEnv {
     pub replica_ctx: Arc<ReplicaContext>,
     pub scheduler: Scheduler,
+    /// Sender to notify the IDC runtime of new outbox rows.
+    pub idc_sender: IdcSender,
     pub tx: TxSlot,
     /// The timestamp the current function began running.
     pub start_time: Timestamp,
@@ -224,10 +227,11 @@ impl ChunkedWriter {
 
 // Generic 'instance environment' delegated to from various host types.
 impl InstanceEnv {
-    pub fn new(replica_ctx: Arc<ReplicaContext>, scheduler: Scheduler) -> Self {
+    pub fn new(replica_ctx: Arc<ReplicaContext>, scheduler: Scheduler, idc_sender: IdcSender) -> Self {
         Self {
             replica_ctx,
             scheduler,
+            idc_sender,
             tx: TxSlot::default(),
             start_time: Timestamp::now(),
             start_instant: Instant::now(),
@@ -385,6 +389,10 @@ impl InstanceEnv {
             self.schedule_row(stdb, tx, table_id, row_ptr)?;
         }
 
+        if insert_flags.is_outbox_table {
+            self.enqueue_outbox_row(stdb, tx, table_id, row_ptr)?;
+        }
+
         // Note, we update the metric for bytes written after the insert.
         // This is to capture auto-inc columns.
         tx.metrics.bytes_written += buffer.len();
@@ -420,6 +428,59 @@ impl InstanceEnv {
                 self.start_time,
             )
             .map_err(NodesError::ScheduleError)?;
+
+        Ok(())
+    }
+
+    /// Enqueue an outbox row into ST_MSG_ID atomically within the current transaction,
+    /// and notify the IDC runtime so it delivers without waiting for the next poll cycle.
+    ///
+    /// Outbox tables follow the naming convention `__outbox_<reducer>`.
+    /// The first column (col 0) must hold the target database Identity (BSATN-encoded as U256).
+    /// The remaining bytes of the row's BSATN encoding are passed as `args_bsatn` to the
+    /// remote reducer.
+    #[cold]
+    #[inline(never)]
+    fn enqueue_outbox_row(
+        &self,
+        _stdb: &RelationalDB,
+        tx: &mut MutTx,
+        table_id: TableId,
+        row_ptr: RowPointer,
+    ) -> Result<(), NodesError> {
+        use spacetimedb_datastore::locking_tx_datastore::state_view::StateView as _;
+
+        // Get table name to extract reducer name.
+        let schema = tx.schema_for_table(table_id).map_err(DBError::from)?;
+        let table_name = schema.table_name.to_string();
+        let reducer_name = table_name.strip_prefix("__outbox_").unwrap_or(&table_name).to_string();
+
+        let row_ref = tx.get(table_id, row_ptr).map_err(DBError::from)?.unwrap();
+
+        let pv = row_ref.to_product_value();
+
+        // Col 0 must be the target database Identity, stored as AlgebraicValue::U256.
+        let target_db_identity = match pv.elements.first() {
+            Some(AlgebraicValue::U256(u)) => Identity::from_u256(**u),
+            other => {
+                return Err(NodesError::Internal(Box::new(DBError::Other(anyhow::anyhow!(
+                    "outbox table {table_name}: expected col 0 to be U256 (Identity), got {other:?}"
+                )))));
+            }
+        };
+
+        // Remaining elements are the args for the remote reducer.
+        let args_bsatn = pv.elements[1..].iter().fold(Vec::new(), |mut acc, elem| {
+            bsatn::to_writer(&mut acc, elem).expect("writing outbox row args to BSATN should never fail");
+            acc
+        });
+
+        // TODO: populate on_result_reducer from TableDef once that field is added.
+        tx.insert_st_msg_id(table_id.0, target_db_identity, reducer_name, args_bsatn, String::new())
+            .map_err(DBError::from)?;
+
+        // Wake the IDC runtime immediately so it doesn't wait for the next poll cycle.
+        let _ = self.idc_sender.send(());
 
         Ok(())
     }
@@ -1366,7 +1427,11 @@ mod test {
     fn instance_env(db: Arc<RelationalDB>) -> Result<(InstanceEnv, tokio::runtime::Runtime)> {
         let (scheduler, _) = Scheduler::open(db.clone());
         let (replica_context, runtime) = replica_ctx(db)?;
-        Ok((InstanceEnv::new(Arc::new(replica_context), scheduler), runtime))
+        let (_, idc_sender) = crate::host::idc_runtime::IdcRuntime::open();
+        Ok((
+            InstanceEnv::new(Arc::new(replica_context), scheduler, idc_sender),
+            runtime,
+        ))
     }
 
     /// An in-memory `RelationalDB` for testing.

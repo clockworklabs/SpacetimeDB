@@ -1062,11 +1062,11 @@ async fn spawn_instance_worker(
         scope_with_context!(let scope, &mut isolate, Context::new(scope, Default::default()));
 
         // Setup the instance environment.
-        let (replica_ctx, scheduler) = match &module_or_mcc {
-            Either::Left(module) => (module.replica_ctx(), module.scheduler()),
-            Either::Right(mcc) => (&mcc.replica_ctx, &mcc.scheduler),
+        let (replica_ctx, scheduler, idc_sender) = match &module_or_mcc {
+            Either::Left(module) => (module.replica_ctx(), module.scheduler(), module.idc_sender()),
+            Either::Right(mcc) => (&mcc.replica_ctx, &mcc.scheduler, mcc.idc_sender.clone()),
         };
-        let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone());
+        let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone(), idc_sender);
         scope.set_slot(JsInstanceEnv::new(instance_env));
 
         catch_exception(scope, |scope| Ok(builtins::evaluate_builtins(scope)?))

@@ -19,14 +19,14 @@ use crate::{
 use crate::{
     error::{IndexError, SequenceError, TableError},
     system_tables::{
-        with_sys_table_buf, StClientFields, StClientRow, StColumnAccessorFields, StColumnAccessorRow, StColumnFields,
-        StColumnRow, StConstraintFields, StConstraintRow, StDatabasesTxOffsetFields, StDatabasesTxOffsetRow,
-        StEventTableRow, StFields as _, StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow,
-        StRowLevelSecurityFields, StRowLevelSecurityRow, StScheduledFields, StScheduledRow, StSequenceFields,
-        StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow, SystemTable,
-        ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_DATABASES_TX_OFFSET_ID,
-        ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID,
-        ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
+        with_sys_table_buf, StClientFields, StClientRow, StColumnAccessorFields, StColumnAccessorRow,
+        StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StEventTableRow, StFields as _,
+        StInboundMsgIdFields, StInboundMsgIdRow, StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow,
+        StMsgIdFields, StMsgIdRow, StRowLevelSecurityFields, StRowLevelSecurityRow, StScheduledFields, StScheduledRow,
+        StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow,
+        SystemTable, ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID,
+        ST_INBOUND_MSG_ID_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_MSG_ID_ID, ST_ROW_LEVEL_SECURITY_ID,
+        ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
     },
 };
 use crate::{execution_context::ExecutionContext, system_tables::StViewColumnRow};
@@ -2612,42 +2612,135 @@ impl MutTxId {
         .map(|row| row.pointer())
     }
 
-    /// Look up the last delivered tx offset for `sender_identity` in `st_databases_tx_offset`.
+    /// Look up the inbound dedup record for `sender_identity` in `st_inbound_msg_id`.
     ///
     /// Returns `None` if no entry exists for this sender (i.e., no message has been delivered yet).
-    pub fn get_databases_tx_offset(&self, sender_identity: Identity) -> Option<u64> {
+    pub fn get_inbound_msg_id_row(&self, sender_identity: Identity) -> Option<StInboundMsgIdRow> {
         self.iter_by_col_eq(
-            ST_DATABASES_TX_OFFSET_ID,
-            StDatabasesTxOffsetFields::DatabaseIdentity.col_id(),
+            ST_INBOUND_MSG_ID_ID,
+            StInboundMsgIdFields::DatabaseIdentity.col_id(),
             &IdentityViaU256::from(sender_identity).into(),
         )
-        .expect("failed to read from st_databases_tx_offset system table")
+        .expect("failed to read from st_inbound_msg_id system table")
         .next()
-        .and_then(|row_ref| StDatabasesTxOffsetRow::try_from(row_ref).ok())
-        .map(|row| row.tx_offset)
+        .and_then(|row_ref| StInboundMsgIdRow::try_from(row_ref).ok())
     }
 
-    /// Update the last delivered tx offset for `sender_identity` in `st_databases_tx_offset`.
+    /// Update the last delivered msg_id for `sender_identity` in `st_inbound_msg_id`.
     ///
     /// If an entry already exists, it is replaced; otherwise a new entry is inserted.
-    pub fn upsert_databases_tx_offset(&mut self, sender_identity: Identity, tx_offset: u64) -> Result<()> {
+    /// `result_status` and `result_payload` store the outcome of the reducer call
+    /// (see [st_inbound_msg_id_result_status]).
+    pub fn upsert_inbound_last_msg_id(
+        &mut self,
+        sender_identity: Identity,
+        last_msg_id: u64,
+        result_status: u8,
+        result_payload: String,
+    ) -> Result<()> {
         // Delete the existing row if present.
         self.delete_col_eq(
-            ST_DATABASES_TX_OFFSET_ID,
-            StDatabasesTxOffsetFields::DatabaseIdentity.col_id(),
+            ST_INBOUND_MSG_ID_ID,
+            StInboundMsgIdFields::DatabaseIdentity.col_id(),
             &IdentityViaU256::from(sender_identity).into(),
         )?;
-        let row = StDatabasesTxOffsetRow {
+        let row = StInboundMsgIdRow {
             database_identity: sender_identity.into(),
-            tx_offset,
+            last_msg_id,
+            result_status,
+            result_payload,
         };
-        self.insert_via_serialize_bsatn(ST_DATABASES_TX_OFFSET_ID, &row)
+        self.insert_via_serialize_bsatn(ST_INBOUND_MSG_ID_ID, &row)
             .map(|_| ())
             .inspect_err(|e| {
                 log::error!(
-                    "upsert_databases_tx_offset: failed to upsert tx offset for {sender_identity} to {tx_offset}: {e}"
+                    "upsert_inbound_last_msg_id: failed to upsert last_msg_id for {sender_identity} to {last_msg_id}: {e}"
                 );
             })
+    }
+
+    /// Insert a new outbound inter-database message into `st_msg_id`.
+    /// Returns the auto-incremented msg_id assigned to this message.
+    pub fn insert_st_msg_id(
+        &mut self,
+        sender_table_id: u32,
+        target_db_identity: Identity,
+        target_reducer: String,
+        args_bsatn: Vec<u8>,
+        on_result_reducer: String,
+    ) -> Result<()> {
+        let row = StMsgIdRow {
+            msg_id: 0, // auto-incremented by the sequence
+            sender_table_id,
+            target_db_identity: target_db_identity.into(),
+            target_reducer,
+            args_bsatn,
+            on_result_reducer,
+        };
+        self.insert_via_serialize_bsatn(ST_MSG_ID_ID, &row)
+            .map(|_| ())
+            .inspect_err(|e| {
+                log::error!("insert_st_msg_id: failed to insert msg for {target_db_identity}: {e}");
+            })
+    }
+
+    /// Retrieve all outbound messages from `st_msg_id`, ordered by msg_id ascending.
+    pub fn all_msg_ids(&self) -> Result<Vec<StMsgIdRow>> {
+        let mut rows: Vec<StMsgIdRow> = self
+            .iter(ST_MSG_ID_ID)
+            .expect("failed to read from st_msg_id system table")
+            .filter_map(|row_ref| StMsgIdRow::try_from(row_ref).ok())
+            .collect();
+        rows.sort_by_key(|r| r.msg_id);
+        Ok(rows)
+    }
+
+    /// Delete a message from `st_msg_id` once it has been fully processed.
+    pub fn delete_msg_id(&mut self, msg_id: u64) -> Result<()> {
+        self.delete_col_eq(
+            ST_MSG_ID_ID,
+            StMsgIdFields::MsgId.col_id(),
+            &AlgebraicValue::U64(msg_id),
+        )
+        .map(|_| ())
+        .inspect_err(|e| {
+            log::error!("delete_msg_id: failed to delete msg_id={msg_id}: {e}");
+        })
+    }
+
+    /// Returns the table IDs and table names of all tables that had rows inserted
+    /// in this transaction and whose name starts with `"__outbox_"`.
+    ///
+    /// Used by the IDC runtime to detect outbox inserts and enqueue ST_MSG_ID entries.
+    pub fn outbox_insert_table_ids(&self) -> Vec<(TableId, String)> {
+        let mut result = Vec::new();
+        for table_id in self.tx_state.insert_tables.keys() {
+            if let Ok(schema) = self.schema_for_table(*table_id) {
+                let name = schema.table_name.to_string();
+                if name.starts_with("__outbox_") {
+                    result.push((*table_id, name));
+                }
+            }
+        }
+        result
+    }
+
+    /// Returns the raw BSATN bytes of all rows inserted into `table_id` in this transaction.
+    ///
+    /// Each `Vec<u8>` encodes a full outbox row. The first 32 bytes are the target
+    /// database identity (U256 little-endian), and the remaining bytes are the reducer args.
+    pub fn outbox_inserts_for_table(&mut self, table_id: TableId) -> Vec<Vec<u8>> {
+        let Some(inserted_table) = self.tx_state.insert_tables.get(&table_id) else {
+            return Vec::new();
+        };
+        // Collect blob-store-independent data: we hold a shared ref to insert_tables,
+        // so we can't also borrow committed_state mutably for the blob store.
+        // Use the blob store embedded in the TxState.
+        let blob_store = &self.tx_state.blob_store;
+        inserted_table
+            .scan_rows(blob_store)
+            .filter_map(|row_ref| row_ref.to_bsatn_vec().ok())
+            .collect()
     }
 
     pub fn insert_via_serialize_bsatn<'a, T: Serialize>(
@@ -2808,6 +2901,7 @@ pub(super) fn insert<'a, const GENERATE: bool>(
 
     let insert_flags = InsertFlags {
         is_scheduler_table: tx_table.is_scheduler(),
+        is_outbox_table: tx_table.is_outbox(),
     };
     let ok = |row_ref| Ok((gen_cols, row_ref, insert_flags));
 
