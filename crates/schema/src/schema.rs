@@ -1014,7 +1014,7 @@ impl Schema for TableSchema {
             table_access,
             is_event,
             accessor_name,
-            on_result_reducer,
+            outbox,
             ..
         } = def;
 
@@ -1041,6 +1041,11 @@ impl Schema for TableSchema {
             .as_ref()
             .map(|schedule| ScheduleSchema::from_module_def(module_def, schedule, table_id, ScheduleId::SENTINEL));
 
+        let on_result_reducer = outbox
+            .as_ref()
+            .and_then(|o| o.on_result_reducer.as_ref())
+            .map(|r| r.to_string());
+
         TableSchema::new(
             table_id,
             TableName::new(name.clone()),
@@ -1055,7 +1060,7 @@ impl Schema for TableSchema {
             *primary_key,
             *is_event,
             Some(accessor_name.clone()),
-            on_result_reducer.clone(),
+            on_result_reducer,
         )
     }
 

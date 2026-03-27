@@ -22,6 +22,16 @@ pub(crate) struct TableArgs {
     accessor: Ident,
     indices: Vec<IndexArg>,
     event: Option<Span>,
+    outbox: Option<OutboxArg>,
+}
+
+/// Parsed from `outbox(remote_reducer_fn)` optionally followed by `on_result(local_reducer_fn)`.
+struct OutboxArg {
+    span: Span,
+    /// Path to the remote-side reducer function (used only for its name via `FnInfo::NAME`).
+    remote_reducer: Path,
+    /// Path to the local `on_result` reducer, if any.
+    on_result_reducer: Option<Path>,
 }
 
 enum TableAccess {
@@ -82,6 +92,7 @@ impl TableArgs {
         let mut name: Option<LitStr> = None;
         let mut indices = Vec::new();
         let mut event = None;
+        let mut outbox: Option<OutboxArg> = None;
         syn::meta::parser(|meta| {
             match_meta!(match meta {
                 sym::public => {
@@ -149,6 +160,30 @@ If you're migrating from SpacetimeDB 1.*, replace `name = {sym}` with `accessor 
                     check_duplicate(&event, &meta)?;
                     event = Some(meta.path.span());
                 }
+                sym::outbox => {
+                    check_duplicate_msg(&outbox, &meta, "already specified outbox")?;
+                    outbox = Some(OutboxArg::parse_meta(meta)?);
+                }
+                sym::on_result => {
+                    // `on_result` must be specified alongside `outbox`.
+                    // We parse it here and attach it to the outbox arg below.
+                    let span = meta.path.span();
+                    let on_result_path = OutboxArg::parse_single_path_meta(meta)?;
+                    match &mut outbox {
+                        Some(ob) => {
+                            if ob.on_result_reducer.is_some() {
+                                return Err(syn::Error::new(span, "already specified on_result"));
+                            }
+                            ob.on_result_reducer = Some(on_result_path);
+                        }
+                        None => {
+                            return Err(syn::Error::new(
+                                span,
+                                "on_result requires outbox to be specified first: `outbox(remote_reducer), on_result(local_reducer)`",
+                            ))
+                        }
+                    }
+                }
             });
             Ok(())
         })
@@ -188,6 +223,7 @@ If you're migrating from SpacetimeDB 1.*, replace `name = {name_str_value:?}` wi
             indices,
             name,
             event,
+            outbox,
         })
     }
 }
@@ -227,6 +263,64 @@ impl ScheduledArg {
             span,
             reducer_or_procedure,
             at,
+        })
+    }
+}
+
+impl OutboxArg {
+    /// Parse `outbox(remote_reducer_path)`.
+    ///
+    /// `on_result` is parsed separately via `parse_single_path_meta` and attached afterwards.
+    fn parse_meta(meta: ParseNestedMeta) -> syn::Result<Self> {
+        let span = meta.path.span();
+        let mut remote_reducer: Option<Path> = None;
+
+        meta.parse_nested_meta(|meta| {
+            if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) {
+                Err(meta.error("outbox takes a single function path, e.g. `outbox(my_remote_reducer)`"))
+            } else {
+                check_duplicate_msg(
+                    &remote_reducer,
+                    &meta,
+                    "can only specify one remote reducer for outbox",
+                )?;
+                remote_reducer = Some(meta.path);
+                Ok(())
+            }
+        })?;
+
+        let remote_reducer = remote_reducer.ok_or_else(|| {
+            syn::Error::new(span, "outbox requires a remote reducer: `outbox(my_remote_reducer)`")
+        })?;
+
+        Ok(Self {
+            span,
+            remote_reducer,
+            on_result_reducer: None,
+        })
+    }
+
+    /// Parse `on_result(local_reducer_path)` and return the path.
+    fn parse_single_path_meta(meta: ParseNestedMeta) -> syn::Result<Path> {
+        let span = meta.path.span();
+        let mut result: Option<Path> = None;
+
+        meta.parse_nested_meta(|meta| {
+            if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) {
+                Err(meta.error("on_result takes a single function path, e.g. `on_result(my_local_reducer)`"))
+            } else {
+                check_duplicate_msg(
+                    &result,
+                    &meta,
+                    "can only specify one on_result reducer",
+                )?;
+                result = Some(meta.path);
+                Ok(())
+            }
+        })?;
+
+        result.ok_or_else(|| {
+            syn::Error::new(span, "on_result requires a local reducer: `on_result(my_local_reducer)`")
         })
     }
 }

@@ -324,7 +324,7 @@ impl ModuleValidatorV9<'_> {
             table_access,
             is_event: false, // V9 does not support event tables
             accessor_name: name,
-            on_result_reducer: None, // V9 does not support on_result_reducer
+            outbox: None, // V9 does not support outbox tables
         })
     }
 
