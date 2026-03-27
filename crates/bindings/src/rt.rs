@@ -533,6 +533,9 @@ impl<T: SpacetimeType> TableColumn for T {}
 /// Assert that the primary_key column of a scheduled table is a u64.
 pub const fn assert_scheduled_table_primary_key<T: ScheduledTablePrimaryKey>() {}
 
+/// Assert that the primary_key column of an outbox table is a u64.
+pub const fn assert_outbox_table_primary_key<T: OutboxTablePrimaryKey>() {}
+
 /// Verify at compile time that a function has the correct signature for an outbox `on_result` reducer.
 ///
 /// The reducer must accept `(OutboxRow, Result<(), String>)` as its user-supplied arguments:
@@ -554,6 +557,13 @@ mod sealed {
 pub trait ScheduledTablePrimaryKey: sealed::Sealed {}
 impl sealed::Sealed for u64 {}
 impl ScheduledTablePrimaryKey for u64 {}
+
+#[diagnostic::on_unimplemented(
+    message = "outbox table primary key must be a `u64`",
+    label = "should be `u64`, not `{Self}`"
+)]
+pub trait OutboxTablePrimaryKey: sealed::Sealed {}
+impl OutboxTablePrimaryKey for u64 {}
 
 /// Used in the last type parameter of `Reducer` to indicate that the
 /// context argument *should* be passed to the reducer logic.

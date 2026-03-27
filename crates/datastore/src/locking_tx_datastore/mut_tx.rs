@@ -44,7 +44,6 @@ use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
-use spacetimedb_lib::bsatn::ToBsatn;
 use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics, Timestamp};
 use spacetimedb_lib::{
     db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
@@ -2777,40 +2776,6 @@ impl MutTxId {
         })
     }
 
-    /// Returns the table IDs and table names of all tables that had rows inserted
-    /// in this transaction and whose name starts with `"__outbox_"`.
-    ///
-    /// Used by the IDC runtime to detect outbox inserts and enqueue ST_OUTBOUND_MSG entries.
-    pub fn outbox_insert_table_ids(&self) -> Vec<(TableId, String)> {
-        let mut result = Vec::new();
-        for table_id in self.tx_state.insert_tables.keys() {
-            if let Ok(schema) = self.schema_for_table(*table_id) {
-                let name = schema.table_name.to_string();
-                if name.starts_with("__outbox_") {
-                    result.push((*table_id, name));
-                }
-            }
-        }
-        result
-    }
-
-    /// Returns the raw BSATN bytes of all rows inserted into `table_id` in this transaction.
-    ///
-    /// Each `Vec<u8>` encodes a full outbox row. The first 32 bytes are the target
-    /// database identity (U256 little-endian), and the remaining bytes are the reducer args.
-    pub fn outbox_inserts_for_table(&mut self, table_id: TableId) -> Vec<Vec<u8>> {
-        let Some(inserted_table) = self.tx_state.insert_tables.get(&table_id) else {
-            return Vec::new();
-        };
-        // Collect blob-store-independent data: we hold a shared ref to insert_tables,
-        // so we can't also borrow committed_state mutably for the blob store.
-        // Use the blob store embedded in the TxState.
-        let blob_store = &self.tx_state.blob_store;
-        inserted_table
-            .scan_rows(blob_store)
-            .filter_map(|row_ref| row_ref.to_bsatn_vec().ok())
-            .collect()
-    }
 
     pub fn insert_via_serialize_bsatn<'a, T: Serialize>(
         &'a mut self,

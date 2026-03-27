@@ -77,7 +77,11 @@ impl IdcRuntime {
 #[derive(Clone)]
 struct PendingMessage {
     msg_id: u64,
+    /// Stored for future use (e.g. deleting the outbox row after delivery).
+    #[allow(dead_code)]
     outbox_table_id: TableId,
+    /// Stored for future use (e.g. deleting the outbox row after delivery).
+    #[allow(dead_code)]
     row_id: u64,
     target_db_identity: Identity,
     target_reducer: String,
@@ -325,9 +329,19 @@ fn load_pending_into_targets(db: &RelationalDB, targets: &mut HashMap<Identity, 
             }
         };
 
-        let table_name = schema.table_name.to_string();
-        let target_reducer = table_name.strip_prefix("__outbox_").unwrap_or(&table_name).to_string();
-        let on_result_reducer = schema.on_result_reducer.clone();
+        let outbox_schema = match schema.outbox.as_ref() {
+            Some(o) => o,
+            None => {
+                log::error!(
+                    "idc_runtime: table {:?} (msg_id={}) is not an outbox table",
+                    schema.table_name,
+                    st_row.msg_id,
+                );
+                continue;
+            }
+        };
+        let target_reducer = outbox_schema.remote_reducer.to_string();
+        let on_result_reducer = outbox_schema.on_result_reducer.as_ref().map(|id| id.to_string());
 
         // Look up the outbox row by its auto-inc PK (col 0) to get target identity and args.
         let outbox_row = db
