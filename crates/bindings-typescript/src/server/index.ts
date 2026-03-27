@@ -8,7 +8,7 @@ export {
 export { CaseConversionPolicy } from '../lib/autogen/types';
 export { table } from '../lib/table';
 export { SenderError, SpacetimeHostError, errors } from './errors';
-export type { Reducer, ReducerCtx } from '../lib/reducers';
+export type { Reducer, ReducerCtx, JwtClaims, AuthCtx } from '../lib/reducers';
 export type { ReducerExport } from './reducers';
 export { type DbView } from './db_view';
 export * from './query';
