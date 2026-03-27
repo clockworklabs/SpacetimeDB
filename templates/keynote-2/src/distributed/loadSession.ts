@@ -1,6 +1,7 @@
 import type { ReducerConnector } from '../core/connectors.ts';
 import { performance } from 'node:perf_hooks';
 import { pickTwoDistinct, zipfSampler } from '../core/zipf.ts';
+import type { DistributedLoadOptions } from './protocol.ts';
 
 const OP_TIMEOUT_MS = Number(process.env.BENCH_OP_TIMEOUT_MS ?? '15000');
 const DEFAULT_PRECOMPUTED_TRANSFER_PAIRS = 10_000_000;
@@ -67,6 +68,7 @@ type RunState = {
   epoch: number;
   stopRequested: boolean;
   workerPromises: Promise<void>[];
+  loadOptions: DistributedLoadOptions;
 };
 
 export class LoadSession {
@@ -137,7 +139,7 @@ export class LoadSession {
     }
   }
 
-  async startEpoch(epoch: number): Promise<void> {
+  async startEpoch(epoch: number, loadOptions: DistributedLoadOptions): Promise<void> {
     if (this.openedConnections !== this.concurrency) {
       throw new Error(
         `Cannot start epoch ${epoch}: expected ${this.concurrency} open connections, got ${this.openedConnections}`,
@@ -153,8 +155,14 @@ export class LoadSession {
       epoch,
       stopRequested: false,
       workerPromises: [],
+      loadOptions,
     };
     this.runState = runState;
+
+    const mode = loadOptions.pipelined
+      ? `pipelined max_inflight=${loadOptions.maxInflightPerConnection}`
+      : 'closed-loop';
+    console.log(`[distributed] starting epoch ${epoch} in ${mode} mode`);
 
     runState.workerPromises = this.conns.map((conn, workerIndex) => {
       if (!conn) {
@@ -213,13 +221,23 @@ export class LoadSession {
     workerIndex: number,
     runState: RunState,
   ): Promise<void> {
+    const nextTransferPair = this.makeTransferPairPicker(workerIndex);
+    if (!runState.loadOptions.pipelined) {
+      await this.closedLoopWorker(conn, workerIndex, runState, nextTransferPair);
+      return;
+    }
+
+    await this.pipelinedWorker(conn, workerIndex, runState, nextTransferPair);
+  }
+
+  private makeTransferPairPicker(workerIndex: number): () => [number, number] {
     const pairsPerWorker = Math.max(
       1,
       Math.floor(this.pairs.count / this.concurrency),
     );
     let pairIndex = workerIndex * pairsPerWorker;
 
-    const nextTransferPair = (): [number, number] => {
+    return (): [number, number] => {
       if (pairIndex >= this.pairs.count) {
         pairIndex = 0;
       }
@@ -229,22 +247,65 @@ export class LoadSession {
       pairIndex++;
       return [from, to];
     };
+  }
+
+  private async closedLoopWorker(
+    conn: ReducerConnector,
+    workerIndex: number,
+    runState: RunState,
+    nextTransferPair: () => [number, number],
+  ): Promise<void> {
+    while (!runState.stopRequested) {
+      await this.runTransfer(conn, workerIndex, nextTransferPair);
+    }
+  }
+
+  private async pipelinedWorker(
+    conn: ReducerConnector,
+    workerIndex: number,
+    runState: RunState,
+    nextTransferPair: () => [number, number],
+  ): Promise<void> {
+    const maxInflight = runState.loadOptions.maxInflightPerConnection;
+    const inflight = new Set<Promise<void>>();
+
+    const launchTransfer = () => {
+      const transfer = this.runTransfer(conn, workerIndex, nextTransferPair);
+      inflight.add(transfer);
+      transfer.finally(() => {
+        inflight.delete(transfer);
+      });
+    };
 
     while (!runState.stopRequested) {
-      const [from, to] = nextTransferPair();
+      if (inflight.size < maxInflight) {
+        launchTransfer();
+      } else {
+        await Promise.race(inflight);
+      }
+    }
 
-      try {
-        await withOpTimeout(
-          this.scenario(conn, from, to, 1),
-          `[distributed] worker ${workerIndex} transfer ${from}->${to}`,
+    await Promise.all(inflight);
+  }
+
+  private async runTransfer(
+    conn: ReducerConnector,
+    workerIndex: number,
+    nextTransferPair: () => [number, number],
+  ): Promise<void> {
+    const [from, to] = nextTransferPair();
+
+    try {
+      await withOpTimeout(
+        this.scenario(conn, from, to, 1),
+        `[distributed] worker ${workerIndex} transfer ${from}->${to}`,
+      );
+    } catch (err) {
+      if (process.env.LOG_ERRORS === '1') {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `[distributed] worker ${workerIndex} failed ${from}->${to}: ${msg}`,
         );
-      } catch (err) {
-        if (process.env.LOG_ERRORS === '1') {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.warn(
-            `[distributed] worker ${workerIndex} failed ${from}->${to}: ${msg}`,
-          );
-        }
       }
     }
   }

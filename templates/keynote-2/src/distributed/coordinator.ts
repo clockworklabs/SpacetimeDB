@@ -20,6 +20,7 @@ import {
 import type {
   CoordinatorPhase,
   CoordinatorState,
+  DistributedLoadOptions,
   EpochResult,
   GeneratorLocalState,
   GeneratorSnapshot,
@@ -103,6 +104,7 @@ async function runVerification(url: string, moduleName: string): Promise<void> {
 class DistributedCoordinator {
   private readonly testName: string;
   private readonly connectorName: string;
+  private readonly loadOptions: DistributedLoadOptions;
   private readonly warmupMs: number;
   private readonly windowMs: number;
   private readonly verifyAfterEpoch: boolean;
@@ -121,6 +123,7 @@ class DistributedCoordinator {
   constructor(opts: {
     testName: string;
     connectorName: string;
+    loadOptions: DistributedLoadOptions;
     warmupMs: number;
     windowMs: number;
     verifyAfterEpoch: boolean;
@@ -131,6 +134,7 @@ class DistributedCoordinator {
   }) {
     this.testName = opts.testName;
     this.connectorName = opts.connectorName;
+    this.loadOptions = opts.loadOptions;
     this.warmupMs = opts.warmupMs;
     this.windowMs = opts.windowMs;
     this.verifyAfterEpoch = opts.verifyAfterEpoch;
@@ -159,6 +163,7 @@ class DistributedCoordinator {
       participants: this.currentEpoch?.participantIds ?? [],
       test: this.testName,
       connector: this.connectorName,
+      loadOptions: this.loadOptions,
       generators,
       lastResult: this.lastResult,
     };
@@ -365,6 +370,7 @@ class DistributedCoordinator {
       label: activeEpoch.label,
       test: this.testName,
       connector: this.connectorName,
+      loadOptions: this.loadOptions,
       warmupSeconds: this.warmupMs / 1000,
       windowSeconds: this.windowMs / 1000,
       actualWindowSeconds,
@@ -438,11 +444,23 @@ async function main(): Promise<void> {
   const resultsDir = getStringFlag(flags, 'results-dir', defaultResultsDir);
   const warmupSeconds = getNumberFlag(flags, 'warmup-seconds', 15);
   const windowSeconds = getNumberFlag(flags, 'window-seconds', 60);
+  const pipelined = getBoolFlag(flags, 'pipelined', false);
+  const maxInflightPerConnection = getNumberFlag(
+    flags,
+    'max-inflight-per-connection',
+    8,
+  );
   const stopAckTimeoutSeconds = getNumberFlag(
     flags,
     'stop-ack-timeout-seconds',
     60,
   );
+  if (
+    !Number.isInteger(maxInflightPerConnection) ||
+    maxInflightPerConnection < 1
+  ) {
+    throw new Error('--max-inflight-per-connection must be an integer >= 1');
+  }
   const verifyAfterEpoch = getBoolFlag(flags, 'verify', false);
   const rawStdbUrl = getStringFlag(
     flags,
@@ -460,6 +478,10 @@ async function main(): Promise<void> {
   const coordinator = new DistributedCoordinator({
     testName,
     connectorName,
+    loadOptions: {
+      pipelined,
+      maxInflightPerConnection,
+    },
     warmupMs: warmupSeconds * 1000,
     windowMs: windowSeconds * 1000,
     verifyAfterEpoch,
@@ -530,7 +552,7 @@ async function main(): Promise<void> {
   });
 
   console.log(
-    `[coordinator] listening on http://${bind}:${port} test=${testName} connector=${connectorName} warmup=${warmupSeconds}s window=${windowSeconds}s verify=${verifyAfterEpoch ? 'on' : 'off'} stdb=${stdbUrl}`,
+    `[coordinator] listening on http://${bind}:${port} test=${testName} connector=${connectorName} mode=${pipelined ? `pipelined/${maxInflightPerConnection}` : 'closed-loop'} warmup=${warmupSeconds}s window=${windowSeconds}s verify=${verifyAfterEpoch ? 'on' : 'off'} stdb=${stdbUrl}`,
   );
 }
 

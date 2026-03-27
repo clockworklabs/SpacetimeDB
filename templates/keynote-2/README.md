@@ -149,6 +149,7 @@ This architectural difference means SpacetimeDB can execute transactions in micr
 ### Client Pipelining
 
 The benchmark supports **pipelining** for all clients - sending multiple requests without waiting for responses. This maximizes throughput by keeping connections saturated.
+The distributed TypeScript SpacetimeDB flow also supports coordinator-controlled pipelining via `bench-dist-coordinator -- --pipelined 1`, with `--max-inflight-per-connection` to cap outstanding requests per connection.
 
 ### Confirmed Reads (`withConfirmedReads`)
 

@@ -2,6 +2,11 @@ export type GeneratorLocalState = 'registered' | 'ready' | 'running';
 
 export type CoordinatorPhase = 'idle' | 'warmup' | 'measure' | 'stop';
 
+export type DistributedLoadOptions = {
+  pipelined: boolean;
+  maxInflightPerConnection: number;
+};
+
 export type GeneratorSnapshot = {
   id: string;
   hostname: string;
@@ -16,6 +21,7 @@ export type EpochResult = {
   label: string | null;
   test: string;
   connector: string;
+  loadOptions: DistributedLoadOptions;
   warmupSeconds: number;
   windowSeconds: number;
   actualWindowSeconds: number;
@@ -39,6 +45,7 @@ export type CoordinatorState = {
   participants: string[];
   test: string;
   connector: string;
+  loadOptions: DistributedLoadOptions;
   generators: GeneratorSnapshot[];
   lastResult: EpochResult | null;
 };
