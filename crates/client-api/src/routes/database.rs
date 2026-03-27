@@ -230,9 +230,9 @@ pub struct CallFromDatabaseParams {
 pub struct CallFromDatabaseQuery {
     /// Hex-encoded [`Identity`] of the sending database.
     sender_identity: String,
-    /// The commitlog offset of the message on the sender side.
-    /// Used for at-most-once delivery via `st_databases_tx_offset`.
-    tx_offset: u64,
+    /// The inter-database message ID from the sender's st_msg_id.
+    /// Used for at-most-once delivery via `st_inbound_msg_id`.
+    msg_id: u64,
 }
 
 /// Call a reducer on behalf of another database, with deduplication.
@@ -241,10 +241,10 @@ pub struct CallFromDatabaseQuery {
 ///
 /// Required query params:
 /// - `sender_identity` — hex-encoded identity of the sending database.
-/// - `tx_offset`       — the sender's commitlog offset for this message.
+/// - `msg_id`          — the inter-database message ID from the sender's st_msg_id.
 ///
-/// Before invoking the reducer, the receiver checks `st_databases_tx_offset`.
-/// If the incoming `tx_offset` is ≤ the last delivered offset for `sender_identity`,
+/// Before invoking the reducer, the receiver checks `st_inbound_msg_id`.
+/// If the incoming `msg_id` is ≤ the last delivered msg_id for `sender_identity`,
 /// the call is a duplicate and 200 OK is returned immediately without running the reducer.
 /// Otherwise the reducer is invoked, the dedup index is updated atomically in the same
 /// transaction, and an acknowledgment is returned on success.
@@ -257,19 +257,22 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
     }): Path<CallFromDatabaseParams>,
     Query(CallFromDatabaseQuery {
         sender_identity,
-        tx_offset,
+        msg_id,
     }): Query<CallFromDatabaseQuery>,
     TypedHeader(content_type): TypedHeader<headers::ContentType>,
-    ByteStringBody(body): ByteStringBody,
+    body: axum::body::Bytes,
 ) -> axum::response::Result<impl IntoResponse> {
-    assert_content_type_json(content_type)?;
+    // IDC callers send BSATN (application/octet-stream).
+    if content_type != headers::ContentType::octet_stream() {
+        return Err((StatusCode::UNSUPPORTED_MEDIA_TYPE, "Expected application/octet-stream").into());
+    }
 
     let caller_identity = auth.claims.identity;
 
     let sender_identity = Identity::from_hex(&sender_identity)
         .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid sender_identity: expected hex-encoded identity"))?;
 
-    let args = FunctionArgs::Json(body);
+    let args = FunctionArgs::Bsatn(body);
     let connection_id = generate_random_connection_id();
 
     let (module, Database { owner_identity, .. }) = find_module_and_database(&worker_ctx, name_or_identity).await?;
@@ -290,7 +293,7 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
             &reducer,
             args,
             sender_identity,
-            tx_offset,
+            msg_id,
         )
         .await;
 
@@ -304,7 +307,9 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
             let (status, body) = match rcr.outcome {
                 ReducerOutcome::Committed => (StatusCode::OK, "".into()),
                 ReducerOutcome::Deduplicated => (StatusCode::OK, "deduplicated".into()),
-                ReducerOutcome::Failed(errmsg) => (StatusCode::from_u16(530).unwrap(), *errmsg),
+                // 422 = reducer ran but returned Err; IDC runtime uses this to distinguish
+                // reducer failures from transport errors (which it retries).
+                ReducerOutcome::Failed(errmsg) => (StatusCode::UNPROCESSABLE_ENTITY, *errmsg),
                 ReducerOutcome::BudgetExceeded => {
                     log::warn!(
                         "Node's energy budget exceeded for identity: {owner_identity} while executing {reducer}"
@@ -1300,7 +1305,7 @@ pub struct DatabaseRoutes<S> {
     pub subscribe_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/call/:reducer
     pub call_reducer_procedure_post: MethodRouter<S>,
-    /// POST: /database/:name_or_identity/call-from-database/:reducer?sender_identity=<hex>&tx_offset=<u64>
+    /// POST: /database/:name_or_identity/call-from-database/:reducer?sender_identity=<hex>&msg_id=<u64>
     pub call_from_database_post: MethodRouter<S>,
     /// GET: /database/:name_or_identity/schema
     pub schema_get: MethodRouter<S>,

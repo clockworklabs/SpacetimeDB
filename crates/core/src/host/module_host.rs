@@ -626,11 +626,11 @@ pub struct CallReducerParams {
     pub args: ArgsTuple,
     /// If set, enables at-most-once delivery semantics for database-to-database calls.
     ///
-    /// The tuple is `(sender_database_identity, sender_tx_offset)`.
-    /// Before running the reducer, `st_databases_tx_offset` is consulted:
-    /// if `sender_tx_offset` ≤ the stored last-delivered offset for the sender,
+    /// The tuple is `(sender_database_identity, sender_msg_id)`.
+    /// Before running the reducer, `st_inbound_msg_id` is consulted:
+    /// if `sender_msg_id` ≤ the stored last-delivered msg_id for the sender,
     /// the call is a duplicate and returns [`ReducerCallError::Deduplicated`].
-    /// Otherwise the reducer runs, and the stored offset is updated atomically
+    /// Otherwise the reducer runs, and the stored msg_id is updated atomically
     /// within the same transaction.
     pub dedup_sender: Option<(Identity, u64)>,
 }
@@ -1670,9 +1670,9 @@ impl ModuleHost {
     /// Variant of [`Self::call_reducer`] for database-to-database calls.
     ///
     /// Behaves identically to `call_reducer`, except that it enforces at-most-once
-    /// delivery using the `st_databases_tx_offset` dedup index.
+    /// delivery using the `st_inbound_msg_id` dedup index.
     /// Before invoking the reducer, the receiver checks whether
-    /// `sender_tx_offset` ≤ the last delivered offset for `sender_database_identity`.
+    /// `sender_msg_id` ≤ the last delivered msg_id for `sender_database_identity`.
     /// If so, the call is a duplicate and [`ReducerOutcome::Deduplicated`] is returned
     /// without running the reducer.
     /// Otherwise the reducer runs, and the dedup index is updated atomically
@@ -1687,7 +1687,7 @@ impl ModuleHost {
         reducer_name: &str,
         args: FunctionArgs,
         sender_database_identity: Identity,
-        sender_tx_offset: u64,
+        sender_msg_id: u64,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let res = async {
             let (reducer_id, reducer_def) = self
@@ -1716,7 +1716,7 @@ impl ModuleHost {
                 timer,
                 reducer_id,
                 args,
-                dedup_sender: Some((sender_database_identity, sender_tx_offset)),
+                dedup_sender: Some((sender_database_identity, sender_msg_id)),
             };
 
             self.call(
