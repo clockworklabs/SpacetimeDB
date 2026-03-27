@@ -75,6 +75,7 @@ members = [
     "delete-database",
     "client-connection-reject",
     "client-connection-disconnect-panic",
+    "sql-connect-hook",
 
     # Log filtering tests
     "logs-level-filter",
