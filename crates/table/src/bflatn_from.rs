@@ -11,10 +11,12 @@ use super::{
 };
 use core::cell::Cell;
 use core::str;
+use spacetimedb_primitives::ColList;
 use spacetimedb_sats::{
     i256, impl_serialize,
     layout::{
-        align_to, AlgebraicTypeLayout, HasLayout as _, ProductTypeLayoutView, RowTypeLayout, SumTypeLayout, VarLenType,
+        align_to, AlgebraicTypeLayout, HasLayout as _, ProductTypeElementLayout, ProductTypeLayoutView, RowTypeLayout,
+        SumTypeLayout, VarLenType,
     },
     ser::{SerializeNamedProduct, Serializer},
     u256, ArrayType,
@@ -44,6 +46,46 @@ pub unsafe fn serialize_row_from_page<S: Serializer>(
     unsafe { serialize_product(ser, fixed_bytes, page, blob_store, &Cell::new(0), ty.product()) }
 }
 
+/// Serializes the columns `cols` of the row in `page`
+/// where the fixed part of `row` starts at `fixed_offset`
+/// and lasts `ty.size()` bytes. This region is typed at `ty`.
+///
+/// # Safety
+///
+/// 1. the `fixed_offset` must point at a row in `page` lasting `ty.size()` byte.
+/// 2. the row must be a valid `ty`.
+/// 3. for any `vlr: VarLenRef` stored in the row,
+///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
+/// 4. any `col` in `cols` must be in-bounds of `ty`'s layout.
+pub unsafe fn serialize_columns_from_page<S: Serializer>(
+    ser: S,
+    page: &Page,
+    blob_store: &dyn BlobStore,
+    fixed_offset: PageOffset,
+    ty: &RowTypeLayout,
+    cols: &ColList,
+) -> Result<S::Ok, S::Error> {
+    let bytes = page.get_row_data(fixed_offset, ty.size());
+
+    let elems = &*ty.elements;
+    let mut ser = ser.serialize_named_product(elems.len())?;
+
+    for col in cols.iter() {
+        let col_idx = col.idx();
+        // SAFETY: per 4. caller promised that any `col` is in-bounds of `ty`'s layout.
+        let elem_ty = unsafe { elems.get_unchecked(col_idx) };
+        let offset = elem_ty.offset as usize;
+        // SAFETY:
+        // 1. `value` was valid at `ty` so we know
+        //     `sub_val = &bytes[range_move(0..elem_ty.ty.size(), offset)]`
+        //     is valid at `elem_ty.ty`, as `elem_ty`.
+        // 2. forward caller requirement.
+        unsafe { serialize_product_field(&mut ser, bytes, page, blob_store, offset, elem_ty) }?;
+    }
+
+    ser.end()
+}
+
 /// This has to be a `Cell<_>` here as we only get `&Value` in `Serialize`.
 type CurrOffset<'a> = &'a Cell<usize>;
 
@@ -70,28 +112,50 @@ unsafe fn serialize_product<S: Serializer>(
     curr_offset: CurrOffset<'_>,
     ty: ProductTypeLayoutView<'_>,
 ) -> Result<S::Ok, S::Error> {
-    let elems = &ty.elements;
+    let elems = ty.elements;
     let mut ser = ser.serialize_named_product(elems.len())?;
 
     let my_offset = curr_offset.get();
-
     for elem_ty in elems.iter() {
-        curr_offset.set(my_offset + elem_ty.offset as usize);
-        // SAFETY: By 1., `value` is valid at `ty`,
-        // so it follows that valid and properly aligned sub-`value`s
-        // are valid `elem_ty.ty`s.
-        // By 2., and the above, it follows that sub-`value`s won't have dangling `VarLenRef`s.
-        let value = Value {
-            bytes,
-            page,
-            blob_store,
-            curr_offset,
-            ty: &elem_ty.ty,
-        };
-        ser.serialize_element(elem_ty.name.as_deref(), &value)?;
+        let offset = my_offset + elem_ty.offset as usize;
+        // SAFETY:
+        // 1. `value` was valid at `ty` so we know
+        //     `sub_val = &bytes[range_move(0..elem_ty.ty.size(), offset)]`
+        //     is valid at `elem_ty.ty`, as `elem_ty`.
+        // 2. forward caller requirement.
+        unsafe { serialize_product_field(&mut ser, bytes, page, blob_store, offset, elem_ty) }?;
     }
 
     ser.end()
+}
+
+/// Serializes a product field in `value = &bytes[range_move(0..ty.size(), offset)]`,
+/// where the field is typed at `elem_ty`, into `ser`.
+///
+/// SAFETY:
+/// 1. the `value` must be valid at type `ty` and properly aligned for `ty`.
+/// 2. for any `vlr: VarLenRef` stored in `value`,
+///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
+unsafe fn serialize_product_field<S: SerializeNamedProduct>(
+    ser: &mut S,
+    bytes: &Bytes,
+    page: &Page,
+    blob_store: &dyn BlobStore,
+    offset: usize,
+    elem_ty: &ProductTypeElementLayout,
+) -> Result<(), S::Error> {
+    // SAFETY: By 1., `value` is valid at `ty`,
+    // so it follows that valid and properly aligned sub-`value`s
+    // are valid `elem_ty.ty`s.
+    // By 2., and the above, it follows that sub-`value`s won't have dangling `VarLenRef`s.
+    let value = Value {
+        bytes,
+        page,
+        blob_store,
+        curr_offset: &Cell::new(offset),
+        ty: &elem_ty.ty,
+    };
+    ser.serialize_element(elem_ty.name.as_deref(), &value)
 }
 
 /// Serializes the sum value in `value = &bytes[range_move(0..ty.size(), *curr_offset)]`,
