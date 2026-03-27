@@ -439,8 +439,6 @@ impl InstanceEnv {
     /// The first column (col 0) must hold the target database Identity (BSATN-encoded as U256).
     /// The remaining bytes of the row's BSATN encoding are passed as `args_bsatn` to the
     /// remote reducer.
-    #[cold]
-    #[inline(never)]
     fn enqueue_outbox_row(
         &self,
         _stdb: &RelationalDB,
