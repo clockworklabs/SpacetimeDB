@@ -136,13 +136,24 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         reducer,
     }): Path<CallParams>,
     TypedHeader(content_type): TypedHeader<headers::ContentType>,
-    ByteStringBody(body): ByteStringBody,
+    body: Bytes,
 ) -> axum::response::Result<impl IntoResponse> {
-    assert_content_type_json(content_type)?;
-
     let caller_identity = auth.claims.identity;
 
-    let args = FunctionArgs::Json(body);
+    let args = if content_type == headers::ContentType::json() {
+        FunctionArgs::Json(
+            body.try_into()
+                .map_err(|e| (StatusCode::BAD_REQUEST, format!("JSON body was not valid UTF-8: {e}")))?,
+        )
+    } else if content_type == headers::ContentType::octet_stream() {
+        FunctionArgs::Bsatn(body)
+    } else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Expected a `Content-Type` of either `application/json` or `application/octet-stream`",
+        )
+            .into());
+    };
 
     // HTTP callers always need a connection ID to provide to connect/disconnect,
     // so generate one.
@@ -213,14 +224,6 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
                 .into_response())
         }
         Err(e) => Err((e.0, e.1).into()),
-    }
-}
-
-fn assert_content_type_json(content_type: headers::ContentType) -> axum::response::Result<()> {
-    if content_type != headers::ContentType::json() {
-        Err(axum::extract::rejection::MissingJsonContentType::default().into())
-    } else {
-        Ok(())
     }
 }
 

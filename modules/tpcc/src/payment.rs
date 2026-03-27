@@ -61,7 +61,7 @@ pub fn payment(
                 &spacetimedb_uri,
                 remote_database,
                 "process_remote_payment",
-                vec![serde_json::json!(SerdeWrapper(payment_request.clone()))],
+                payment_request.clone(),
             )?
             .into_string()
             .expect("Body should be valid UTF-8");

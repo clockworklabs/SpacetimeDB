@@ -1,5 +1,6 @@
 use http::Request;
-use spacetimedb::{reducer, table, Identity, ProcedureContext, ReducerContext, Table, TxContext};
+use spacetimedb::{reducer, table, Identity, ProcedureContext, ReducerContext, Serialize, Table, TxContext};
+use spacetimedb_sats::bsatn;
 
 use crate::WarehouseId;
 
@@ -51,16 +52,16 @@ pub fn call_remote_function(
     spacetimedb_uri: &str,
     database_ident: Identity,
     function_name: &str,
-    arguments: Vec<serde_json::Value>,
+    arguments: impl Serialize,
 ) -> Result<spacetimedb::http::Body, String> {
     let request = Request::builder()
         .uri(format!(
             "{spacetimedb_uri}/v1/database/{database_ident}/call/{function_name}"
         ))
         .method("POST")
-        .header("Content-Type", "application/json")
+        .header("Content-Type", "application/octet-stream")
         // TODO(auth): include a token.
-        .body(serde_json::json!(arguments).to_string())
+        .body(bsatn::to_vec(&arguments).map_err(|e| format!("Failed to BSATN-serialize arguments: {e}"))?)
         .map_err(|e| format!("Error constructing `Request`: {e}"))?;
     match ctx.http.send(request) {
         Err(e) => Err(format!("Error sending request to remote database {database_ident} at URI {spacetimedb_uri} to call {function_name}: {e}")),

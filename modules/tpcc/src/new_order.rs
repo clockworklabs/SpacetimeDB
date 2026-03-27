@@ -268,12 +268,10 @@ fn reserve_remote_items(
             &spacetimedb_uri,
             *remote_database_identity,
             "reserve_item_for_remote_order",
-            vec![serde_json::json!(spacetimedb_sats::serde::SerdeWrapper(
-                ReserveItemInput {
-                    line: NewOrderLineInput::clone(line),
-                    district: district_id,
-                }
-            ))],
+            ReserveItemInput {
+                line: NewOrderLineInput::clone(line),
+                district: district_id,
+            },
         ) {
             Err(e) => {
                 rollback_all_remote_item_reservations(
@@ -319,7 +317,7 @@ fn rollback_all_remote_item_reservations(
             spacetimedb_uri,
             remote_item.remote_database_identity,
             "rollback_item_reservation",
-            vec![serde_json::json!(reservation.rollback_token)],
+            reservation.rollback_token,
         ) {
             log::error!("Error rollinb back item reservation: {e}");
         }
@@ -338,7 +336,7 @@ fn confirm_all_remote_item_reservations(
             spacetimedb_uri,
             remote_item.remote_database_identity,
             "confirm_item_reservation",
-            vec![serde_json::json!(reservation.rollback_token)],
+            reservation.rollback_token,
         ) {
             log::error!("Error confirming item reservation: {e}");
         }
