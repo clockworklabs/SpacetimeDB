@@ -461,7 +461,11 @@ where
         // even if we can't get hold of a running [ModuleHost].
         Err(e) => {
             warn!("could not obtain leader host for module logs: {e:#}");
-            let Some(replica) = worker_ctx.get_leader_replica_by_database(database.id).await else {
+            let Some(replica) = worker_ctx
+                .get_leader_replica_by_database(database.id)
+                .await
+                .map_err(log_and_500)?
+            else {
                 return Err(MISDIRECTED.into());
             };
             let logs_dir = worker_ctx.module_logs_dir(replica.id);

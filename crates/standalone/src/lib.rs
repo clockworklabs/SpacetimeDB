@@ -169,7 +169,7 @@ impl NodeDelegate for StandaloneEnv {
     }
 
     async fn leader(&self, database_id: u64) -> Result<Host, Self::GetLeaderHostError> {
-        let Some(leader) = self.control_db.get_leader_replica_by_database(database_id) else {
+        let Some(leader) = self.control_db.get_leader_replica_by_database(database_id)? else {
             return Err(GetLeaderHostError::NoSuchReplica);
         };
 
@@ -235,8 +235,8 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
         Ok(self.control_db.get_replicas()?)
     }
 
-    async fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
-        self.control_db.get_leader_replica_by_database(database_id)
+    async fn get_leader_replica_by_database(&self, database_id: u64) -> anyhow::Result<Option<Replica>> {
+        Ok(self.control_db.get_leader_replica_by_database(database_id)?)
     }
     // Energy
     async fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
