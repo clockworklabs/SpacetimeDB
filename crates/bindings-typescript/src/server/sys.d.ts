@@ -94,6 +94,19 @@ declare module 'spacetime:sys@2.0' {
     body: Uint8Array | string
   ): [response: Uint8Array, body: Uint8Array];
 
+  export function procedure_http_stream_open(
+    request: Uint8Array,
+    body: Uint8Array | string
+  ): [handle: number, response: Uint8Array];
+
+  export function procedure_http_stream_next(
+    handle: number
+  ): Uint8Array | null;
+
+  export function procedure_http_stream_close(
+    handle: number
+  ): void;
+
   export function procedure_start_mut_tx(): bigint;
 
   export function procedure_commit_mut_tx();

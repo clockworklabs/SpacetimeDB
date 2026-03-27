@@ -26,7 +26,7 @@ use crate::host::wasm_common::module_host_actor::{
     InstanceOp, ProcedureExecuteResult, ProcedureOp, ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp,
     WasmInstance,
 };
-use crate::host::wasm_common::{RowIters, TimingSpanSet};
+use crate::host::wasm_common::{HttpStreams, RowIters, TimingSpanSet};
 use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
@@ -296,6 +296,9 @@ struct JsInstanceEnv {
     /// The slab of `BufferIters` created for this instance.
     iters: RowIters,
 
+    /// The slab of streaming HTTP response handles.
+    http_streams: HttpStreams,
+
     /// Track time spent in module-defined spans.
     timing_spans: TimingSpanSet,
 
@@ -318,6 +321,7 @@ impl JsInstanceEnv {
             module_def: None,
             call_times: CallTimes::new(),
             iters: <_>::default(),
+            http_streams: <_>::default(),
             chunk_pool: <_>::default(),
             timing_spans: <_>::default(),
         }
