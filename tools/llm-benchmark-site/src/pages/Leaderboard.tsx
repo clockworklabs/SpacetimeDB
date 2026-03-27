@@ -5,6 +5,7 @@ import type { LeaderboardRow } from '../types'
 
 function modeLabel(mode: string): string {
   if (mode === 'no_context') return 'No Context'
+  if (mode === 'guidelines') return 'Guidelines'
   if (mode === 'docs') return 'With Docs'
   if (mode === 'search') return 'Web Search'
   return mode
@@ -58,7 +59,7 @@ function RankBadge({ rank }: { rank: number }) {
   )
 }
 
-const ALLOWED_MODES = ['docs', 'no_context', 'search']
+const ALLOWED_MODES = ['guidelines', 'no_context', 'docs']
 
 export default function Leaderboard() {
   const { details, summary, loading, error } = useData()
@@ -86,7 +87,7 @@ export default function Leaderboard() {
   }, [lang, languages, summary, details])
 
   const activeLang = lang || languages[0] || ''
-  const activeMode = mode || (modes.includes('docs') ? 'docs' : modes[0]) || ''
+  const activeMode = mode || (modes.includes('guidelines') ? 'guidelines' : modes.includes('docs') ? 'docs' : modes[0]) || ''
 
   // Build leaderboard rows from summary
   const rows: LeaderboardRow[] = useMemo(() => {

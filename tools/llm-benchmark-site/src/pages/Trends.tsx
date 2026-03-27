@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 
 function modeLabel(mode: string): string {
   if (mode === 'no_context') return 'No Context'
+  if (mode === 'guidelines') return 'Guidelines'
   if (mode === 'docs') return 'With Docs'
   if (mode === 'search') return 'Web Search'
   return mode
@@ -19,7 +20,7 @@ import {
 import { useHistoryFiles } from '../hooks/useData'
 
 const ACCENT = '#4cf490'
-const ALLOWED_MODES = ['docs', 'no_context', 'search']
+const ALLOWED_MODES = ['guidelines', 'no_context', 'docs']
 const CARD_BG = '#141416'
 const BORDER = '#202126'
 
@@ -67,7 +68,7 @@ export default function Trends() {
   }, [snapshots])
 
   const lang = activeLang || languages[0] || ''
-  const mode = activeMode || (modes.includes('docs') ? 'docs' : modes[0]) || ''
+  const mode = activeMode || (modes.includes('guidelines') ? 'guidelines' : modes.includes('docs') ? 'docs' : modes[0]) || ''
 
   // Build chart data: one point per snapshot
   const { chartData, modelNames } = useMemo(() => {

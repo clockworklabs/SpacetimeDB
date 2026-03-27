@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 
 function modeLabel(mode: string): string {
   if (mode === 'no_context') return 'No Context'
+  if (mode === 'guidelines') return 'Guidelines'
   if (mode === 'docs') return 'With Docs'
   if (mode === 'search') return 'Web Search'
   return mode
