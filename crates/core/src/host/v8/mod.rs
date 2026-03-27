@@ -13,6 +13,7 @@ use super::module_common::{build_common_module_from_raw, run_describer, ModuleCo
 use super::module_host::{CallProcedureParams, CallReducerParams, ModuleInfo, ModuleWithInstance};
 use super::UpdateDatabaseResult;
 use crate::client::ClientActorId;
+use crate::config::V8HeapPolicyConfig;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
 use crate::host::module_host::{
@@ -31,12 +32,14 @@ use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::jobs::{AllocatedJobCore, CorePinner, LoadBalanceOnDropGuard};
+use crate::worker_metrics::WORKER_METRICS;
 use core::any::type_name;
 use core::str;
 use futures::future::LocalBoxFuture;
 use futures::FutureExt;
 use itertools::Either;
 use parking_lot::RwLock;
+use prometheus::IntGauge;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
 use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
@@ -71,19 +74,32 @@ mod to_value;
 mod util;
 
 /// The V8 runtime, for modules written in e.g., JS or TypeScript.
-#[derive(Default)]
 pub struct V8Runtime {
-    _priv: (),
+    heap_policy: V8HeapPolicyConfig,
+}
+
+impl Default for V8Runtime {
+    fn default() -> Self {
+        Self::new(V8HeapPolicyConfig::default())
+    }
 }
 
 impl V8Runtime {
+    pub fn new(heap_policy: V8HeapPolicyConfig) -> Self {
+        Self {
+            heap_policy: heap_policy.normalized(),
+        }
+    }
+
     pub async fn make_actor(
         &self,
         mcc: ModuleCreationContext,
         program_bytes: &[u8],
         core: AllocatedJobCore,
     ) -> anyhow::Result<ModuleWithInstance> {
-        V8_RUNTIME_GLOBAL.make_actor(mcc, program_bytes, core).await
+        V8_RUNTIME_GLOBAL
+            .make_actor(mcc, program_bytes, core, self.heap_policy)
+            .await
     }
 }
 
@@ -182,6 +198,7 @@ impl V8RuntimeInner {
         mcc: ModuleCreationContext,
         program_bytes: &[u8],
         core: AllocatedJobCore,
+        heap_policy: V8HeapPolicyConfig,
     ) -> anyhow::Result<ModuleWithInstance> {
         #![allow(unreachable_code, unused_variables)]
 
@@ -198,13 +215,20 @@ impl V8RuntimeInner {
         let mcc = Either::Right(mcc);
         let load_balance_guard = Arc::new(core.guard);
         let core_pinner = core.pinner;
-        let (common, init_inst) =
-            spawn_instance_worker(program.clone(), mcc, load_balance_guard.clone(), core_pinner.clone()).await?;
+        let (common, init_inst) = spawn_instance_worker(
+            program.clone(),
+            mcc,
+            load_balance_guard.clone(),
+            core_pinner.clone(),
+            heap_policy,
+        )
+        .await?;
         let module = JsModule {
             common,
             program,
             load_balance_guard,
             core_pinner,
+            heap_policy,
         };
 
         Ok(ModuleWithInstance::Js { module, init_inst })
@@ -217,6 +241,7 @@ pub struct JsModule {
     program: Arc<str>,
     load_balance_guard: Arc<LoadBalanceOnDropGuard>,
     core_pinner: CorePinner,
+    heap_policy: V8HeapPolicyConfig,
 }
 
 impl JsModule {
@@ -237,11 +262,18 @@ impl JsModule {
         let common = self.common.clone();
         let load_balance_guard = self.load_balance_guard.clone();
         let core_pinner = self.core_pinner.clone();
+        let heap_policy = self.heap_policy;
 
         // This has to be done in a blocking context because of `blocking_recv`.
-        let (_, instance) = spawn_instance_worker(program, Either::Left(common), load_balance_guard, core_pinner)
-            .await
-            .expect("`spawn_instance_worker` should succeed when passed `ModuleCommon`");
+        let (_, instance) = spawn_instance_worker(
+            program,
+            Either::Left(common),
+            load_balance_guard,
+            core_pinner,
+            heap_policy,
+        )
+        .await
+        .expect("`spawn_instance_worker` should succeed when passed `ModuleCommon`");
         instance
     }
 }
@@ -589,6 +621,97 @@ fn send_worker_reply<T>(ctx: &str, reply_tx: JsReplyTx<T>, value: T, trapped: bo
     }
 }
 
+struct V8HeapMetrics {
+    total_heap_size_bytes: IntGauge,
+    total_physical_size_bytes: IntGauge,
+    used_global_handles_size_bytes: IntGauge,
+    used_heap_size_bytes: IntGauge,
+    heap_size_limit_bytes: IntGauge,
+    external_memory_bytes: IntGauge,
+    native_contexts: IntGauge,
+    detached_contexts: IntGauge,
+}
+
+impl V8HeapMetrics {
+    fn new(database_identity: &Identity) -> Self {
+        Self {
+            total_heap_size_bytes: WORKER_METRICS
+                .v8_total_heap_size_bytes
+                .with_label_values(database_identity),
+            total_physical_size_bytes: WORKER_METRICS
+                .v8_total_physical_size_bytes
+                .with_label_values(database_identity),
+            used_global_handles_size_bytes: WORKER_METRICS
+                .v8_used_global_handles_size_bytes
+                .with_label_values(database_identity),
+            used_heap_size_bytes: WORKER_METRICS
+                .v8_used_heap_size_bytes
+                .with_label_values(database_identity),
+            heap_size_limit_bytes: WORKER_METRICS
+                .v8_heap_size_limit_bytes
+                .with_label_values(database_identity),
+            external_memory_bytes: WORKER_METRICS
+                .v8_external_memory_bytes
+                .with_label_values(database_identity),
+            native_contexts: WORKER_METRICS.v8_native_contexts.with_label_values(database_identity),
+            detached_contexts: WORKER_METRICS.v8_detached_contexts.with_label_values(database_identity),
+        }
+    }
+
+    fn observe(&self, stats: &v8::HeapStatistics) {
+        self.total_heap_size_bytes.set(stats.total_heap_size() as i64);
+        self.total_physical_size_bytes.set(stats.total_physical_size() as i64);
+        self.used_global_handles_size_bytes
+            .set(stats.used_global_handles_size() as i64);
+        self.used_heap_size_bytes.set(stats.used_heap_size() as i64);
+        self.heap_size_limit_bytes.set(stats.heap_size_limit() as i64);
+        self.external_memory_bytes.set(stats.external_memory() as i64);
+        self.native_contexts.set(stats.number_of_native_contexts() as i64);
+        self.detached_contexts.set(stats.number_of_detached_contexts() as i64);
+    }
+}
+
+fn sample_heap_stats(scope: &mut PinScope<'_, '_>, metrics: &V8HeapMetrics) -> v8::HeapStatistics {
+    let stats = scope.get_heap_statistics();
+    metrics.observe(&stats);
+    stats
+}
+
+fn heap_usage(stats: &v8::HeapStatistics) -> (usize, usize) {
+    (stats.used_heap_size(), stats.heap_size_limit())
+}
+
+fn heap_fraction_at_or_above(used: usize, limit: usize, fraction: f64) -> bool {
+    limit > 0 && ((used as f64) / (limit as f64)) >= fraction
+}
+
+/// The single JS worker can process an unbounded number of reducer calls over its lifetime.
+/// That is great for locality, but it also means any JS heap retention that would previously
+/// have been spread across several pooled isolates now accumulates in one isolate.
+///
+/// If heap usage is close to the configured limit even after manually invoking GC,
+/// we'll instantiate a new isolate to reclaim memory and avoid OOMing the current one.
+fn should_retire_worker_for_heap(
+    scope: &mut PinScope<'_, '_>,
+    metrics: &V8HeapMetrics,
+    config: V8HeapPolicyConfig,
+) -> Option<(usize, usize)> {
+    let stats = sample_heap_stats(scope, metrics);
+    let (used, limit) = heap_usage(&stats);
+    if !heap_fraction_at_or_above(used, limit, config.heap_gc_trigger_fraction) {
+        return None;
+    }
+
+    scope.low_memory_notification();
+    let stats = sample_heap_stats(scope, metrics);
+    let (used, limit) = heap_usage(&stats);
+    if heap_fraction_at_or_above(used, limit, config.heap_retire_fraction) {
+        Some((used, limit))
+    } else {
+        None
+    }
+}
+
 struct JsInstanceLaneState {
     // Instance-lane calls stay on one active worker for locality. The hot path clones
     // this handle and feeds work straight into the worker-owned FIFO; trap
@@ -596,7 +719,7 @@ struct JsInstanceLaneState {
     active: RwLock<JsInstance>,
 
     // Replacement must be serialized because multiple callers can all observe
-    // the same trapped worker and attempt recovery at once.
+    // the same worker becoming unusable and attempt recovery at once.
     //
     // This must be an async mutex rather than a blocking mutex because recovery
     // may need to call `create_instance().await`.
@@ -654,7 +777,7 @@ impl JsInstanceLane {
             return;
         }
 
-        log::warn!("instance lane worker trapped; creating a fresh instance-lane worker");
+        log::warn!("instance lane worker needs replacement; creating a fresh instance-lane worker");
 
         // Keep the awaited instance creation outside of any `parking_lot` guard.
         // The only lock held across this await is `replace_lock`, which is why it
@@ -884,8 +1007,13 @@ fn startup_instance_worker<'scope>(
 }
 
 /// Returns a new isolate.
-fn new_isolate() -> OwnedIsolate {
-    let mut isolate = Isolate::new(<_>::default());
+fn new_isolate(heap_policy: V8HeapPolicyConfig) -> OwnedIsolate {
+    let params = if let Some(heap_limit_bytes) = heap_policy.heap_limit_bytes {
+        v8::CreateParams::default().heap_limits(0, heap_limit_bytes)
+    } else {
+        v8::CreateParams::default()
+    };
+    let mut isolate = Isolate::new(params);
     isolate.set_capture_stack_trace_for_uncaught_exceptions(true, 1024);
     isolate
 }
@@ -908,6 +1036,7 @@ async fn spawn_instance_worker(
     module_or_mcc: Either<ModuleCommon, ModuleCreationContext>,
     load_balance_guard: Arc<LoadBalanceOnDropGuard>,
     mut core_pinner: CorePinner,
+    heap_policy: V8HeapPolicyConfig,
 ) -> anyhow::Result<(ModuleCommon, JsInstance)> {
     // Spawn a rendezvous queue for requests to the worker.
     // Multiple callers can wait to hand work to the worker, but with
@@ -917,6 +1046,8 @@ async fn spawn_instance_worker(
 
     // This one-shot channel is used for initial startup error handling within the thread.
     let (result_tx, result_rx) = oneshot::channel();
+    let trapped = Arc::new(AtomicBool::new(false));
+    let worker_trapped = trapped.clone();
 
     let rt = tokio::runtime::Handle::current();
 
@@ -927,7 +1058,7 @@ async fn spawn_instance_worker(
         let _entered = rt.enter();
 
         // Create the isolate and scope.
-        let mut isolate = new_isolate();
+        let mut isolate = new_isolate(heap_policy);
         scope_with_context!(let scope, &mut isolate, Context::new(scope, Default::default()));
 
         // Setup the instance environment.
@@ -976,6 +1107,7 @@ async fn spawn_instance_worker(
         let info = &module_common.info();
         let mut instance_common = InstanceCommon::new(&module_common);
         let replica_ctx: &Arc<ReplicaContext> = module_common.replica_ctx();
+        let heap_metrics = V8HeapMetrics::new(&info.database_identity);
 
         // Create a zero-initialized buffer for holding reducer args.
         // Arguments needing more space will not use this.
@@ -988,11 +1120,14 @@ async fn spawn_instance_worker(
             hooks: &hooks,
             reducer_args_buf,
         };
+        let _initial_heap_stats = sample_heap_stats(inst.scope, &heap_metrics);
 
         // Process requests to the worker.
         //
         // The loop is terminated when the last `JsInstance` handle is dropped.
         // This will cause channels, scopes, and the isolate to be cleaned up.
+        let mut requests_since_heap_check = 0u64;
+        let mut last_heap_check_at = Instant::now();
         for request in request_rx.iter() {
             let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, &mut inst);
             let mut should_exit = false;
@@ -1012,11 +1147,13 @@ async fn spawn_instance_worker(
                 }
                 JsWorkerRequest::CallReducer { reply_tx, params } => {
                     let (res, trapped) = call_reducer(None, params);
+                    worker_trapped.store(trapped, Ordering::Relaxed);
                     send_worker_reply("call_reducer", reply_tx, res, trapped);
                     should_exit = trapped;
                 }
                 JsWorkerRequest::CallView { reply_tx, cmd } => {
                     let (res, trapped) = instance_common.handle_cmd(cmd, &mut inst);
+                    worker_trapped.store(trapped, Ordering::Relaxed);
                     send_worker_reply("call_view", reply_tx, res, trapped);
                     should_exit = trapped;
                 }
@@ -1025,6 +1162,7 @@ async fn spawn_instance_worker(
                         .call_procedure(params, &mut inst)
                         .now_or_never()
                         .expect("our call_procedure implementation is not actually async");
+                    worker_trapped.store(trapped, Ordering::Relaxed);
                     send_worker_reply("call_procedure", reply_tx, res, trapped);
                     should_exit = trapped;
                 }
@@ -1040,6 +1178,7 @@ async fn spawn_instance_worker(
                     let mut trapped = false;
                     let res =
                         call_identity_connected(caller_auth, caller_connection_id, info, call_reducer, &mut trapped);
+                    worker_trapped.store(trapped, Ordering::Relaxed);
                     send_worker_reply("call_identity_connected", reply_tx, res, trapped);
                     should_exit = trapped;
                 }
@@ -1056,18 +1195,21 @@ async fn spawn_instance_worker(
                         call_reducer,
                         &mut trapped,
                     );
+                    worker_trapped.store(trapped, Ordering::Relaxed);
                     send_worker_reply("call_identity_disconnected", reply_tx, res, trapped);
                     should_exit = trapped;
                 }
                 JsWorkerRequest::DisconnectClient { reply_tx, client_id } => {
                     let mut trapped = false;
                     let res = ModuleHost::disconnect_client_inner(client_id, info, call_reducer, &mut trapped);
+                    worker_trapped.store(trapped, Ordering::Relaxed);
                     send_worker_reply("disconnect_client", reply_tx, res, trapped);
                     should_exit = trapped;
                 }
                 JsWorkerRequest::InitDatabase { reply_tx, program } => {
                     let (res, trapped): (Result<Option<ReducerCallResult>, anyhow::Error>, bool) =
                         init_database(replica_ctx, &module_common.info().module_def, program, call_reducer);
+                    worker_trapped.store(trapped, Ordering::Relaxed);
                     send_worker_reply("init_database", reply_tx, res, trapped);
                     should_exit = trapped;
                 }
@@ -1076,8 +1218,32 @@ async fn spawn_instance_worker(
                         .call_scheduled_function(params, &mut inst)
                         .now_or_never()
                         .expect("our call_procedure implementation is not actually async");
+                    worker_trapped.store(trapped, Ordering::Relaxed);
                     send_worker_reply("call_scheduled_function", reply_tx, res, trapped);
                     should_exit = trapped;
+                }
+            }
+
+            if !should_exit {
+                let request_check_due = heap_policy.heap_check_request_interval.is_some_and(|interval| {
+                    requests_since_heap_check += 1;
+                    requests_since_heap_check >= interval
+                });
+                let time_check_due = heap_policy
+                    .heap_check_time_interval
+                    .is_some_and(|interval| last_heap_check_at.elapsed() >= interval);
+                if request_check_due || time_check_due {
+                    requests_since_heap_check = 0;
+                    last_heap_check_at = Instant::now();
+                    if let Some((used, limit)) = should_retire_worker_for_heap(inst.scope, &heap_metrics, heap_policy) {
+                        worker_trapped.store(true, Ordering::Relaxed);
+                        should_exit = true;
+                        log::warn!(
+                            "retiring JS worker after V8 heap stayed high post-GC: used={}MiB limit={}MiB",
+                            used / (1024 * 1024),
+                            limit / (1024 * 1024),
+                        );
+                    }
                 }
             }
 
@@ -1085,6 +1251,11 @@ async fn spawn_instance_worker(
             // on that poisoned isolate. We reply to the trapping request first so
             // the caller can observe the actual reducer/procedure error, and then
             // shut the worker down so later callers retry on a fresh instance.
+            //
+            // We also retire workers when they stay near the V8 heap limit after
+            // a GC. The instance lane intentionally keeps a JS worker alive for
+            // a long time, so this gives it a bounded-memory replacement policy
+            // instead of letting one isolate absorb the entire module lifetime.
             if should_exit {
                 break;
             }
@@ -1097,7 +1268,7 @@ async fn spawn_instance_worker(
         let inst = JsInstance {
             id: NEXT_JS_INSTANCE_ID.fetch_add(1, Ordering::Relaxed),
             request_tx,
-            trapped: Arc::new(AtomicBool::new(false)),
+            trapped,
         };
         (opt_mc, inst)
     })

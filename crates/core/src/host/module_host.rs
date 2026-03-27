@@ -347,8 +347,8 @@ pub enum ModuleWithInstance {
 }
 
 enum ModuleHostInner {
-    Wasm(WasmtimeModuleHost),
-    Js(V8ModuleHost),
+    Wasm(Box<WasmtimeModuleHost>),
+    Js(Box<V8ModuleHost>),
 }
 
 struct WasmtimeModuleHost {
@@ -1070,20 +1070,20 @@ impl ModuleHost {
             } => {
                 info = module.info();
                 let instance_manager = ModuleInstanceManager::new(module, Some(init_inst), database_identity);
-                Arc::new(ModuleHostInner::Wasm(WasmtimeModuleHost {
+                Arc::new(ModuleHostInner::Wasm(Box::new(WasmtimeModuleHost {
                     executor,
                     instance_manager,
-                }))
+                })))
             }
             ModuleWithInstance::Js { module, init_inst } => {
                 info = module.info();
                 let instance_lane = super::v8::JsInstanceLane::new(module.clone(), init_inst);
                 let procedure_instances = ModuleInstanceManager::new(module.clone(), None, database_identity);
-                Arc::new(ModuleHostInner::Js(V8ModuleHost {
+                Arc::new(ModuleHostInner::Js(Box::new(V8ModuleHost {
                     module,
                     instance_lane,
                     procedure_instances,
-                }))
+                })))
             }
         };
         let on_panic = Arc::new(on_panic);
@@ -1143,7 +1143,8 @@ impl ModuleHost {
         let timer_guard = self.start_call_timer(label);
 
         Ok(match &*self.inner {
-            ModuleHostInner::Wasm(WasmtimeModuleHost { executor, .. }) => {
+            ModuleHostInner::Wasm(wasm) => {
+                let executor = &wasm.executor;
                 executor
                     .run_job(async move || {
                         drop(timer_guard);
@@ -1151,7 +1152,8 @@ impl ModuleHost {
                     })
                     .await
             }
-            ModuleHostInner::Js(V8ModuleHost { instance_lane, .. }) => {
+            ModuleHostInner::Js(js) => {
+                let instance_lane = &js.instance_lane;
                 instance_lane
                     .run_on_thread(async move || {
                         drop(timer_guard);
@@ -1215,15 +1217,14 @@ impl ModuleHost {
         });
 
         Ok(match &*self.inner {
-            ModuleHostInner::Wasm(WasmtimeModuleHost {
-                executor,
-                instance_manager,
-            }) => {
+            ModuleHostInner::Wasm(wasm) => {
+                let executor = &wasm.executor;
+                let instance_manager = &wasm.instance_manager;
                 instance_manager
                     .with_instance(async |inst| work_wasm(timer_guard, executor, inst, arg).await)
                     .await
             }
-            ModuleHostInner::Js(V8ModuleHost { instance_lane, .. }) => work_js(timer_guard, instance_lane, arg).await,
+            ModuleHostInner::Js(js) => work_js(timer_guard, &js.instance_lane, arg).await,
         })
     }
 
@@ -1294,13 +1295,10 @@ impl ModuleHost {
         });
 
         Ok(match &*self.inner {
-            ModuleHostInner::Wasm(WasmtimeModuleHost {
-                executor,
-                instance_manager,
-            }) => {
-                instance_manager
+            ModuleHostInner::Wasm(host) => {
+                host.instance_manager
                     .with_instance(async |mut inst| {
-                        executor
+                        host.executor
                             .run_job(async move || {
                                 drop(timer_guard);
                                 (wasm(arg, &mut inst).await, inst)
@@ -1309,10 +1307,8 @@ impl ModuleHost {
                     })
                     .await
             }
-            ModuleHostInner::Js(V8ModuleHost {
-                procedure_instances, ..
-            }) => {
-                procedure_instances
+            ModuleHostInner::Js(host) => {
+                host.procedure_instances
                     .with_instance(async |inst| {
                         drop(timer_guard);
                         let res = js(arg, &inst).await;

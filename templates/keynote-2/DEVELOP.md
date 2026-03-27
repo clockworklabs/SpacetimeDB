@@ -34,6 +34,9 @@ The script will:
 - `--skip-prep` - Skip database seeding
 - `--no-animation` - Disable animated output
 
+`demo` always runs the built-in `test-1` scenario. Use `bench` if you need to choose a test explicitly.
+`demo` uses `--systems`; `bench` uses `--connectors`.
+
 ---
 
 ## Prerequisites
@@ -70,7 +73,7 @@ Copy `.env.example` to `.env` and adjust.
 - `SKIP_SQLITE` – `1` = don't init SQLite in prep
 - `SKIP_SUPABASE` – `1` = don't init Supabase in prep
 - `SKIP_CONVEX` – `1` = don't init Convex in prep
-- `USE_SPACETIME_METRICS_ENDPOINT` – `1` = read committed transfer counts from the SpacetimeDB metrics endpoint; otherwise only local counters are used
+- `SPACETIME_METRICS_ENDPOINT` – `1` = read committed transfer counts from the derived SpacetimeDB metrics endpoint; otherwise only local counters are used
 
 **PostgreSQL / CockroachDB:**
 
@@ -87,7 +90,6 @@ Copy `.env.example` to `.env` and adjust.
 - `STDB_URL` – WebSocket URL for SpacetimeDB
 - `STDB_MODULE` – module name to load (e.g. `test-1`)
 - `STDB_MODULE_PATH` – filesystem path to the module source (for local dev)
-- `STDB_METRICS_URL` – HTTP URL for the SpacetimeDB metrics endpoint
 - `STDB_CONFIRMED_READS` – `1` = force confirmed reads on, `0` = force them off
 
 **Supabase:**
@@ -164,26 +166,26 @@ cd ..
 ### 1. Run a test
 
 ```bash
-npm run bench [test-name] [--seconds N] [--concurrency N] [--alpha A] [--connectors list]
+npm run bench -- [test-name] [--seconds N] [--concurrency N] [--alpha A] [--connectors list]
 ```
 
 Examples:
 
 ```bash
-# Default test (test-1), default args (note: only 1 test right now, and it's embedded)
+# Default test (test-1), default args
 npm run bench
 
 # Explicit test name
-npm run bench test-1
+npm run bench -- test-1
 
 # Short run, 100 concurrent workers
-npm run bench test-1 --seconds 10 --concurrency 100
+npm run bench -- test-1 --seconds 10 --concurrency 100
 
 # Heavier skew on hot accounts
-npm run bench test-1 --alpha 2.0
+npm run bench -- test-1 --alpha 2.0
 
 # Only run selected connectors
-npm run bench test-1 --connectors spacetimedb,sqlite
+npm run bench -- test-1 --connectors spacetimedb,sqlite_rpc
 ```
 
 ### 2. Run the distributed TypeScript SpacetimeDB benchmark
@@ -392,7 +394,7 @@ From `src/cli.ts`:
   - Example:
 
     ```bash
-    --connectors spacetimedb,sqlite,postgres
+    --connectors spacetimedb,sqlite_rpc,postgres_rpc
     ```
 
   - If omitted, all connectors for that test are run
@@ -422,7 +424,7 @@ docker compose run --rm bench \
   --connectors convex
 ```
 
-If using Docker, make sure to set `USE_DOCKER=1` in `.env`, verify docker-compose env variables, verify you've run supabase init, and run `npm prep` before running bench.
+If using Docker, make sure to set `USE_DOCKER=1` in `.env`, verify docker-compose env variables, verify you've run supabase init, and run `npm run prep` before running bench.
 
 ## Output
 

@@ -1,7 +1,6 @@
 import type { RpcConnector } from '../core/connectors.ts';
-import { bunUrl } from '../opts.ts';
 
-export default function bun(url = bunUrl): RpcConnector {
+export default function bun(url: string): RpcConnector {
   if (!url) throw new Error('BUN_URL not set');
 
   const baseUrl = url.replace(/\/+$/, '');
