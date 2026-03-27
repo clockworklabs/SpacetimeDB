@@ -42,7 +42,7 @@ use crate::{read_column::ReadColumn, static_assert_size};
 use core::ops::{Bound, RangeBounds};
 use core::{fmt, iter};
 use spacetimedb_primitives::{ColId, ColList};
-use spacetimedb_sats::bsatn::{decode, from_reader, from_slice};
+use spacetimedb_sats::bsatn::{decode, from_reader};
 use spacetimedb_sats::buffer::{DecodeError, DecodeResult};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::product_value::InvalidFieldError;
@@ -1665,9 +1665,14 @@ impl TableIndex {
     ) -> DecodeResult<PointOrRange<'de>> {
         use TypedIndex::*;
 
+        let read_bound = |mut bytes| {
+            let reader = &mut bytes;
+            from_reader::<Bound<()>>(reader).map(|b| b.map(|()| *reader))
+        };
+
         // Decode just whether it's inclusive or other bound forms.
-        let start = from_slice(rstart)?;
-        let end = from_slice(rend)?;
+        let start = read_bound(rstart)?;
+        let end = read_bound(rend)?;
 
         match &self.key_type {
             // Multi-column index case or single-column index on a product field.
