@@ -34,7 +34,7 @@ class DisconnectScenarioTest {
         transport.sendToClient(initialConnectionMsg())
         advanceUntilIdle()
 
-        var callbackResult: ServerMessage.OneOffQueryResult? = null
+        var callbackResult: OneOffQueryResult? = null
         conn.oneOffQuery("SELECT * FROM sample") { result ->
             callbackResult = result
         }
@@ -46,7 +46,7 @@ class DisconnectScenarioTest {
 
         // Callback should have been invoked with an error
         val result = assertNotNull(callbackResult)
-        assertIs<QueryResult.Err>(result.result)
+        assertIs<SdkResult.Failure<QueryError>>(result)
     }
 
     @Test
@@ -56,7 +56,7 @@ class DisconnectScenarioTest {
         transport.sendToClient(initialConnectionMsg())
         advanceUntilIdle()
 
-        var queryResult: ServerMessage.OneOffQueryResult? = null
+        var queryResult: OneOffQueryResult? = null
         var queryError: Throwable? = null
         val job = launch {
             try {
@@ -73,7 +73,7 @@ class DisconnectScenarioTest {
         // The query must not hang silently — it must resolve on disconnect.
         // failPendingOperations delivers an error result via the callback.
         if (queryResult != null) {
-            assertIs<QueryResult.Err>(queryResult.result, "Disconnect should produce QueryResult.Err")
+            assertIs<SdkResult.Failure<QueryError>>(queryResult, "Disconnect should produce SdkResult.Failure")
         } else {
             assertNotNull(queryError, "Suspended oneOffQuery must resolve on disconnect — got neither result nor error")
         }
@@ -91,7 +91,7 @@ class DisconnectScenarioTest {
         val subHandle = conn.subscribe(listOf("SELECT * FROM t"))
         var reducerFired = false
         conn.callReducer("add", byteArrayOf(), "args", callback = { _ -> reducerFired = true })
-        var queryResult: ServerMessage.OneOffQueryResult? = null
+        var queryResult: OneOffQueryResult? = null
         conn.oneOffQuery("SELECT 1") { queryResult = it }
         advanceUntilIdle()
 
@@ -103,7 +103,7 @@ class DisconnectScenarioTest {
         assertTrue(subHandle.isEnded)
         assertFalse(reducerFired) // Reducer callback never fires — it was discarded
         val qResult = assertNotNull(queryResult) // One-off query callback fires with error
-        assertIs<QueryResult.Err>(qResult.result)
+        assertIs<SdkResult.Failure<QueryError>>(qResult)
     }
 
     @Test

@@ -5,7 +5,8 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnectionView
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Status
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.SubscriptionHandle
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.onFailure
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.onSuccess
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Timestamp
 import io.ktor.client.HttpClient
@@ -19,6 +20,7 @@ import kotlinx.coroutines.launch
 import module_bindings.RemoteTables
 import module_bindings.SpacetimeConfig
 import module_bindings.User
+import module_bindings.addQuery
 import module_bindings.db
 import module_bindings.reducers
 import module_bindings.withModuleBindings
@@ -175,7 +177,8 @@ class ChatRepository(
             .onError { _, error ->
                 log("Note subscription error: $error")
             }
-            .subscribe("SELECT * FROM note")
+            .addQuery { qb -> qb.note() }
+            .subscribe()
         _noteSubState.value = noteSubHandle?.state?.toString() ?: "pending"
         log("Re-subscribing to notes...")
     }
@@ -183,10 +186,9 @@ class ChatRepository(
     fun oneOffQuery(sql: String) {
         val c = conn ?: return
         c.oneOffQuery(sql) { result ->
-            when (val r = result.result) {
-                is QueryResult.Ok -> log("OneOffQuery OK: ${r.rows.tables.size} table(s)")
-                is QueryResult.Err -> log("OneOffQuery error: ${r.error}")
-            }
+            result
+                .onSuccess { data -> log("OneOffQuery OK: ${data.tableCount} table(s)") }
+                .onFailure { error -> log("OneOffQuery error: $error") }
         }
         log("Executing: $sql")
     }
@@ -194,11 +196,9 @@ class ChatRepository(
     suspend fun suspendOneOffQuery(sql: String) {
         val c = conn ?: return
         log("Executing (suspend): $sql")
-        val result = c.oneOffQuery(sql)
-        when (val r = result.result) {
-            is QueryResult.Ok -> log("SuspendQuery OK: ${r.rows.tables.size} table(s)")
-            is QueryResult.Err -> log("SuspendQuery error: ${r.error}")
-        }
+        c.oneOffQuery(sql)
+            .onSuccess { data -> log("SuspendQuery OK: ${data.tableCount} table(s)") }
+            .onFailure { error -> log("SuspendQuery error: $error") }
     }
 
     fun scheduleReminder(text: String, delayMs: ULong) {
@@ -374,6 +374,7 @@ class ChatRepository(
                 )
             )
 
+        // Type-safe query builder — equivalent to .subscribe("SELECT * FROM note")
         noteSubHandle = c.subscriptionBuilder()
             .onApplied { ctx ->
                 refreshNotes(ctx.db)
@@ -383,7 +384,8 @@ class ChatRepository(
             .onError { _, error ->
                 log("Note subscription error: $error")
             }
-            .subscribe("SELECT * FROM note")
+            .addQuery { qb -> qb.note() }
+            .subscribe()
         _noteSubState.value = noteSubHandle?.state?.toString() ?: "pending"
     }
 

@@ -64,7 +64,7 @@ suspend fun ConnectedClient.subscribeAll(): ConnectedClient {
     val applied = CompletableDeferred<Unit>()
     conn.subscriptionBuilder()
         .onApplied { _ -> applied.complete(Unit) }
-        .onError { _, err -> applied.completeExceptionally(RuntimeException(err)) }
+        .onError { _, err -> applied.completeExceptionally(RuntimeException("$err")) }
         .subscribe(listOf(
             "SELECT * FROM user",
             "SELECT * FROM message",

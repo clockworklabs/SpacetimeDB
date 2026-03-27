@@ -1,5 +1,7 @@
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.CompressionMode
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.onFailure
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.onSuccess
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Int128
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Int256
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.UInt128
@@ -128,8 +130,9 @@ abstract class CompressionTestBase(private val mode: CompressionMode) {
 
         val received = CompletableDeferred<String>()
         client.conn.procedures.greet("World") { _, result ->
-            result.onSuccess { received.complete(it) }
-            result.onFailure { received.completeExceptionally(it) }
+            result
+                .onSuccess { received.complete(it) }
+                .onFailure { received.completeExceptionally(Exception("$it")) }
         }
 
         assertEquals("Hello, World!", withTimeout(DEFAULT_TIMEOUT_MS) { received.await() })
@@ -142,8 +145,9 @@ abstract class CompressionTestBase(private val mode: CompressionMode) {
 
         val received = CompletableDeferred<String>()
         client.conn.procedures.serverPing { _, result ->
-            result.onSuccess { received.complete(it) }
-            result.onFailure { received.completeExceptionally(it) }
+            result
+                .onSuccess { received.complete(it) }
+                .onFailure { received.completeExceptionally(Exception("$it")) }
         }
 
         assertEquals("pong", withTimeout(DEFAULT_TIMEOUT_MS) { received.await() })

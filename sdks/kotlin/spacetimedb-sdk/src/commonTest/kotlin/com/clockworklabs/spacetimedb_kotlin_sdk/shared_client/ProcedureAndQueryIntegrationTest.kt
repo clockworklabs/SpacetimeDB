@@ -104,7 +104,7 @@ class ProcedureAndQueryIntegrationTest {
         transport.sendToClient(initialConnectionMsg())
         advanceUntilIdle()
 
-        var result: ServerMessage.OneOffQueryResult? = null
+        var result: OneOffQueryResult? = null
         val requestId = conn.oneOffQuery("SELECT * FROM sample") { msg ->
             result = msg
         }
@@ -120,7 +120,7 @@ class ProcedureAndQueryIntegrationTest {
 
         val capturedResult = result
         assertNotNull(capturedResult)
-        assertTrue(capturedResult.result is QueryResult.Ok)
+        assertTrue(capturedResult is SdkResult.Success)
         conn.disconnect()
     }
 
@@ -134,7 +134,7 @@ class ProcedureAndQueryIntegrationTest {
         // Retrieve the requestId that will be assigned by inspecting sentMessages
         val beforeCount = transport.sentMessages.size
         // Launch the suspend query in a separate coroutine since it suspends
-        var queryResult: ServerMessage.OneOffQueryResult? = null
+        var queryResult: OneOffQueryResult? = null
         val job = launch {
             queryResult = conn.oneOffQuery("SELECT * FROM sample")
         }
@@ -155,7 +155,7 @@ class ProcedureAndQueryIntegrationTest {
 
         val capturedQueryResult = queryResult
         assertNotNull(capturedQueryResult)
-        assertTrue(capturedQueryResult.result is QueryResult.Ok)
+        assertTrue(capturedQueryResult is SdkResult.Success)
         conn.disconnect()
     }
 
@@ -168,7 +168,7 @@ class ProcedureAndQueryIntegrationTest {
         transport.sendToClient(initialConnectionMsg())
         advanceUntilIdle()
 
-        var result: ServerMessage.OneOffQueryResult? = null
+        var result: OneOffQueryResult? = null
         val requestId = conn.oneOffQuery("SELECT * FROM bad") { msg ->
             result = msg
         }
@@ -184,9 +184,10 @@ class ProcedureAndQueryIntegrationTest {
 
         val capturedResult = result
         assertNotNull(capturedResult)
-        val errResult = capturedResult.result
-        assertTrue(errResult is QueryResult.Err)
-        assertEquals("syntax error", errResult.error)
+        assertTrue(capturedResult is SdkResult.Failure)
+        val queryError = capturedResult.error
+        assertTrue(queryError is QueryError.ServerError)
+        assertEquals("syntax error", queryError.message)
         conn.disconnect()
     }
 

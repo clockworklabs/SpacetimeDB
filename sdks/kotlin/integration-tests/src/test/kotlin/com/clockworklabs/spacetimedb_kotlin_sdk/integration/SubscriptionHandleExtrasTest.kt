@@ -16,7 +16,7 @@ class SubscriptionHandleExtrasTest {
 
         val handle = client.conn.subscriptionBuilder()
             .onApplied { _ -> applied.complete(Unit) }
-            .onError { _, err -> applied.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied.completeExceptionally(RuntimeException("$err")) }
             .subscribe("SELECT * FROM user")
 
         withTimeout(DEFAULT_TIMEOUT_MS) { applied.await() }
@@ -34,7 +34,7 @@ class SubscriptionHandleExtrasTest {
 
         val handle = client.conn.subscriptionBuilder()
             .onApplied { _ -> applied.complete(Unit) }
-            .onError { _, err -> applied.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied.completeExceptionally(RuntimeException("$err")) }
             .addQuery("SELECT * FROM user")
             .addQuery("SELECT * FROM note")
             .subscribe()
@@ -55,7 +55,7 @@ class SubscriptionHandleExtrasTest {
 
         val handle = client.conn.subscriptionBuilder()
             .onApplied { _ -> applied.complete(Unit) }
-            .onError { _, err -> applied.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied.completeExceptionally(RuntimeException("$err")) }
             .subscribe("SELECT * FROM user")
 
         withTimeout(DEFAULT_TIMEOUT_MS) { applied.await() }
@@ -71,7 +71,7 @@ class SubscriptionHandleExtrasTest {
 
         val handle = client.conn.subscriptionBuilder()
             .onApplied { _ -> applied.complete(Unit) }
-            .onError { _, err -> applied.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied.completeExceptionally(RuntimeException("$err")) }
             .subscribe("SELECT * FROM user")
 
         withTimeout(DEFAULT_TIMEOUT_MS) { applied.await() }
@@ -87,7 +87,7 @@ class SubscriptionHandleExtrasTest {
 
         val handle = client.conn.subscriptionBuilder()
             .onApplied { _ -> applied.complete(Unit) }
-            .onError { _, err -> applied.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied.completeExceptionally(RuntimeException("$err")) }
             .subscribe("SELECT * FROM note")
 
         withTimeout(DEFAULT_TIMEOUT_MS) { applied.await() }
@@ -107,7 +107,7 @@ class SubscriptionHandleExtrasTest {
 
         val handle = client.conn.subscriptionBuilder()
             .onApplied { _ -> applied.complete(Unit) }
-            .onError { _, err -> applied.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied.completeExceptionally(RuntimeException("$err")) }
             .subscribe("SELECT * FROM user")
 
         withTimeout(DEFAULT_TIMEOUT_MS) { applied.await() }

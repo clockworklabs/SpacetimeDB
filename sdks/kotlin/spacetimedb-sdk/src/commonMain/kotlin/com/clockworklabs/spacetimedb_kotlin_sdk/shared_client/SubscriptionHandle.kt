@@ -29,7 +29,7 @@ public class SubscriptionHandle internal constructor(
     public val queries: List<String>,
     private val connection: DbConnection,
     private val onAppliedCallbacks: List<(EventContext.SubscribeApplied) -> Unit> = emptyList(),
-    private val onErrorCallbacks: List<(EventContext.Error, Throwable) -> Unit> = emptyList(),
+    private val onErrorCallbacks: List<(EventContext.Error, SubscriptionError) -> Unit> = emptyList(),
 ) {
     private val _state = atomic(SubscriptionState.PENDING)
     /** The current lifecycle state of this subscription. */
@@ -79,7 +79,7 @@ public class SubscriptionHandle internal constructor(
         for (cb in onAppliedCallbacks) connection.runUserCallback { cb(ctx) }
     }
 
-    internal suspend fun handleError(ctx: EventContext.Error, error: Throwable) {
+    internal suspend fun handleError(ctx: EventContext.Error, error: SubscriptionError) {
         _state.value = SubscriptionState.ENDED
         for (cb in onErrorCallbacks) connection.runUserCallback { cb(ctx, error) }
     }

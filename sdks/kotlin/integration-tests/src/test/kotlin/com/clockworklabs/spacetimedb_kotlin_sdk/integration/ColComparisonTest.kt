@@ -67,7 +67,7 @@ class ColComparisonTest {
 
         client2.conn.subscriptionBuilder()
             .onApplied { _ -> applied.complete(Unit) }
-            .onError { _, err -> applied.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied.completeExceptionally(RuntimeException("$err")) }
             .addQuery { qb -> qb.note().where { c -> c.id.gte(SqlLit.ulong(noteId)) } }
             .subscribe()
 
@@ -129,7 +129,7 @@ class ColComparisonTest {
 
         client2.conn.subscriptionBuilder()
             .onApplied { _ -> applied.complete(Unit) }
-            .onError { _, err -> applied.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied.completeExceptionally(RuntimeException("$err")) }
             .addQuery { qb ->
                 qb.note()
                     .where { c -> c.tag.eq(SqlLit.string("chain-test")) }

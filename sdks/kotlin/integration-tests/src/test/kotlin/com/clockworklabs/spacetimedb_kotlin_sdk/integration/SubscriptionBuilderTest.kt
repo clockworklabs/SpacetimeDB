@@ -1,3 +1,4 @@
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.SubscriptionError
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.SubscriptionState
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
@@ -19,7 +20,7 @@ class SubscriptionBuilderTest {
 
         client.conn.subscriptionBuilder()
             .onApplied { _ -> applied.complete(Unit) }
-            .onError { _, err -> applied.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied.completeExceptionally(RuntimeException("$err")) }
             .addQuery("SELECT * FROM user")
             .addQuery("SELECT * FROM message")
             .subscribe()
@@ -38,7 +39,7 @@ class SubscriptionBuilderTest {
 
         client.conn.subscriptionBuilder()
             .onApplied { _ -> applied.complete(Unit) }
-            .onError { _, err -> applied.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied.completeExceptionally(RuntimeException("$err")) }
             .subscribeToAllTables()
 
         withTimeout(DEFAULT_TIMEOUT_MS) { applied.await() }
@@ -64,15 +65,16 @@ class SubscriptionBuilderTest {
     @Test
     fun `onError fires on invalid SQL`() = runBlocking {
         val client = connectToDb()
-        val error = CompletableDeferred<Throwable>()
+        val error = CompletableDeferred<SubscriptionError>()
 
         client.conn.subscriptionBuilder()
             .onApplied { _ -> error.completeExceptionally(AssertionError("Should not apply invalid SQL")) }
             .onError { _, err -> error.complete(err) }
             .subscribe("THIS IS NOT VALID SQL")
 
-        val ex = withTimeout(DEFAULT_TIMEOUT_MS) { error.await() }
-        assertTrue(ex.message?.isNotEmpty() == true, "Error message should be non-empty: ${ex.message}")
+        val err = withTimeout(DEFAULT_TIMEOUT_MS) { error.await() }
+        assertTrue(err is SubscriptionError.ServerError, "Should be ServerError")
+        assertTrue(err.message.isNotEmpty(), "Error message should be non-empty: ${err.message}")
 
         client.conn.disconnect()
     }
@@ -86,7 +88,7 @@ class SubscriptionBuilderTest {
         client.conn.subscriptionBuilder()
             .onApplied { _ -> first.complete(Unit) }
             .onApplied { _ -> second.complete(Unit) }
-            .onError { _, err -> first.completeExceptionally(err) }
+            .onError { _, err -> first.completeExceptionally(RuntimeException("$err")) }
             .subscribe("SELECT * FROM user")
 
         withTimeout(DEFAULT_TIMEOUT_MS) { first.await() }
@@ -102,7 +104,7 @@ class SubscriptionBuilderTest {
 
         val handle = client.conn.subscriptionBuilder()
             .onApplied { _ -> applied.complete(Unit) }
-            .onError { _, err -> applied.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied.completeExceptionally(RuntimeException("$err")) }
             .subscribe("SELECT * FROM user")
 
         // Immediately after subscribe(), handle should be pending
@@ -127,7 +129,7 @@ class SubscriptionBuilderTest {
 
         val handle = client.conn.subscriptionBuilder()
             .onApplied { _ -> applied.complete(Unit) }
-            .onError { _, err -> applied.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied.completeExceptionally(RuntimeException("$err")) }
             .subscribe("SELECT * FROM note")
 
         withTimeout(DEFAULT_TIMEOUT_MS) { applied.await() }

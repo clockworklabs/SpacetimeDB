@@ -7,7 +7,7 @@ public class SubscriptionBuilder internal constructor(
     private val connection: DbConnection,
 ) {
     private val onAppliedCallbacks = mutableListOf<(EventContext.SubscribeApplied) -> Unit>()
-    private val onErrorCallbacks = mutableListOf<(EventContext.Error, Throwable) -> Unit>()
+    private val onErrorCallbacks = mutableListOf<(EventContext.Error, SubscriptionError) -> Unit>()
     private val querySqls = mutableListOf<String>()
 
     /** Registers a callback invoked when the subscription's initial rows are applied. */
@@ -16,7 +16,7 @@ public class SubscriptionBuilder internal constructor(
     }
 
     /** Registers a callback invoked when the subscription encounters an error. */
-    public fun onError(cb: (EventContext.Error, Throwable) -> Unit): SubscriptionBuilder = apply {
+    public fun onError(cb: (EventContext.Error, SubscriptionError) -> Unit): SubscriptionBuilder = apply {
         onErrorCallbacks.add(cb)
     }
 

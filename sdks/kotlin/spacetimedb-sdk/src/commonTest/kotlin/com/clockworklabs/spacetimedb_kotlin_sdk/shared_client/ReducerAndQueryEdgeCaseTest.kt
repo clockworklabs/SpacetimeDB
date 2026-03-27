@@ -9,6 +9,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -25,10 +26,12 @@ class ReducerAndQueryEdgeCaseTest {
         transport.sendToClient(initialConnectionMsg())
         advanceUntilIdle()
 
-        val results = mutableMapOf<UInt, ServerMessage.OneOffQueryResult>()
-        val id1 = conn.oneOffQuery("SELECT 1") { results[it.requestId] = it }
-        val id2 = conn.oneOffQuery("SELECT 2") { results[it.requestId] = it }
-        val id3 = conn.oneOffQuery("SELECT 3") { results[it.requestId] = it }
+        var result1: OneOffQueryResult? = null
+        var result2: OneOffQueryResult? = null
+        var result3: OneOffQueryResult? = null
+        val id1 = conn.oneOffQuery("SELECT 1") { result1 = it }
+        val id2 = conn.oneOffQuery("SELECT 2") { result2 = it }
+        val id3 = conn.oneOffQuery("SELECT 3") { result3 = it }
         advanceUntilIdle()
 
         // Respond in reverse order
@@ -43,10 +46,12 @@ class ReducerAndQueryEdgeCaseTest {
         )
         advanceUntilIdle()
 
-        assertEquals(3, results.size)
-        assertTrue(results[id1]!!.result is QueryResult.Ok)
-        assertTrue(results[id2]!!.result is QueryResult.Err)
-        assertTrue(results[id3]!!.result is QueryResult.Ok)
+        assertNotNull(result1)
+        assertNotNull(result2)
+        assertNotNull(result3)
+        assertTrue(result1 is SdkResult.Success)
+        assertTrue(result2 is SdkResult.Failure)
+        assertTrue(result3 is SdkResult.Success)
         conn.disconnect()
     }
 

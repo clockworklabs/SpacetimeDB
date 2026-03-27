@@ -190,7 +190,7 @@ public open class DbConnection internal constructor(
     private val procedureCallbacks =
         atomic(persistentHashMapOf<UInt, (EventContext.Procedure, ServerMessage.ProcedureResultMsg) -> Unit>())
     private val oneOffQueryCallbacks =
-        atomic(persistentHashMapOf<UInt, (ServerMessage.OneOffQueryResult) -> Unit>())
+        atomic(persistentHashMapOf<UInt, (SdkResult<OneOffQueryData, QueryError>) -> Unit>())
     private val querySetIdToRequestId = atomic(persistentHashMapOf<UInt, UInt>())
     private val _eventId = atomic(0L)
     private val _onConnectCallbacks = onConnectCallbacks.toList()
@@ -380,12 +380,9 @@ public open class DbConnection internal constructor(
         val pendingQueries = oneOffQueryCallbacks.getAndSet(persistentHashMapOf())
         if (pendingQueries.isNotEmpty()) {
             Logger.warn { "Failing ${pendingQueries.size} pending one-off query callback(s) due to disconnect" }
-            val errorResult = ServerMessage.OneOffQueryResult(
-                requestId = 0u,
-                result = QueryResult.Err("Connection closed before query result was received"),
-            )
-            for ((requestId, cb) in pendingQueries) {
-                runUserCallback { cb.invoke(errorResult.copy(requestId = requestId)) }
+            val errorResult: SdkResult<OneOffQueryData, QueryError> = SdkResult.Failure(QueryError.Disconnected)
+            for ((_, cb) in pendingQueries) {
+                runUserCallback { cb.invoke(errorResult) }
             }
         }
 
@@ -411,7 +408,7 @@ public open class DbConnection internal constructor(
     public override fun subscribe(
         queries: List<String>,
         onApplied: List<(EventContext.SubscribeApplied) -> Unit>,
-        onError: List<(EventContext.Error, Throwable) -> Unit>,
+        onError: List<(EventContext.Error, SubscriptionError) -> Unit>,
     ): SubscriptionHandle {
         val requestId = stats.subscriptionRequestTracker.startTrackingRequest()
         val querySetId = QuerySetId(_nextQuerySetId.incrementAndGet().toUInt())
@@ -535,7 +532,7 @@ public open class DbConnection internal constructor(
      */
     public override fun oneOffQuery(
         queryString: String,
-        callback: (ServerMessage.OneOffQueryResult) -> Unit,
+        callback: (SdkResult<OneOffQueryData, QueryError>) -> Unit,
     ): UInt {
         val requestId = stats.oneOffRequestTracker.startTrackingRequest()
         oneOffQueryCallbacks.update { it.put(requestId, callback) }
@@ -560,8 +557,8 @@ public open class DbConnection internal constructor(
     public override suspend fun oneOffQuery(
         queryString: String,
         timeout: Duration,
-    ): ServerMessage.OneOffQueryResult {
-        suspend fun await(): ServerMessage.OneOffQueryResult =
+    ): SdkResult<OneOffQueryData, QueryError> {
+        suspend fun await(): SdkResult<OneOffQueryData, QueryError> =
             suspendCancellableCoroutine { cont ->
                 val requestId = oneOffQuery(queryString) { result ->
                     cont.resume(result)
@@ -662,8 +659,8 @@ public open class DbConnection internal constructor(
                     Logger.warn { "Received SubscriptionError for unknown querySetId=${message.querySetId.id}" }
                     return
                 }
-                val error = Exception(message.error)
-                val ctx = EventContext.Error(id = nextEventId(), connection = this, error = error)
+                val subError = SubscriptionError.ServerError(message.error)
+                val ctx = EventContext.Error(id = nextEventId(), connection = this, error = Exception(message.error))
                 Logger.error { "Subscription error: ${message.error}" }
                 var subRequestId: UInt? = null
                 querySetIdToRequestId.getAndUpdate { map ->
@@ -673,12 +670,12 @@ public open class DbConnection internal constructor(
                 subRequestId?.let { stats.subscriptionRequestTracker.finishTrackingRequest(it) }
 
                 if (message.requestId == null) {
-                    handle.handleError(ctx, error)
-                    disconnect(error)
+                    handle.handleError(ctx, subError)
+                    disconnect(Exception(message.error))
                     return
                 }
 
-                handle.handleError(ctx, error)
+                handle.handleError(ctx, subError)
                 subscriptions.update { it.remove(message.querySetId.id) }
             }
 
@@ -813,12 +810,18 @@ public open class DbConnection internal constructor(
 
             is ServerMessage.OneOffQueryResult -> {
                 stats.oneOffRequestTracker.finishTrackingRequest(message.requestId)
-                var cb: ((ServerMessage.OneOffQueryResult) -> Unit)? = null
+                var cb: ((SdkResult<OneOffQueryData, QueryError>) -> Unit)? = null
                 oneOffQueryCallbacks.getAndUpdate { map ->
                     cb = map[message.requestId]
                     map.remove(message.requestId)
                 }
-                cb?.let { runUserCallback { it.invoke(message) } }
+                cb?.let { callback ->
+                    val sdkResult: SdkResult<OneOffQueryData, QueryError> = when (val r = message.result) {
+                        is QueryResult.Ok -> SdkResult.Success(OneOffQueryData(r.rows.tables.size))
+                        is QueryResult.Err -> SdkResult.Failure(QueryError.ServerError(r.error))
+                    }
+                    runUserCallback { callback.invoke(sdkResult) }
+                }
             }
         }
     }

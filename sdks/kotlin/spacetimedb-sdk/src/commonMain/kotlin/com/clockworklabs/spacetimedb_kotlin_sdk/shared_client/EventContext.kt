@@ -57,7 +57,7 @@ public interface DbConnectionView {
     public fun subscribe(
         queries: List<String>,
         onApplied: List<(EventContext.SubscribeApplied) -> Unit> = emptyList(),
-        onError: List<(EventContext.Error, Throwable) -> Unit> = emptyList(),
+        onError: List<(EventContext.Error, SubscriptionError) -> Unit> = emptyList(),
     ): SubscriptionHandle
     /** Subscribes to the given SQL [queries]. */
     public fun subscribe(vararg queries: String): SubscriptionHandle
@@ -65,13 +65,13 @@ public interface DbConnectionView {
     /** Executes a one-off SQL query with a callback for the result. */
     public fun oneOffQuery(
         queryString: String,
-        callback: (ServerMessage.OneOffQueryResult) -> Unit,
+        callback: (SdkResult<OneOffQueryData, QueryError>) -> Unit,
     ): UInt
     /** Executes a one-off SQL query, suspending until the result is available. */
     public suspend fun oneOffQuery(
         queryString: String,
         timeout: Duration = Duration.INFINITE,
-    ): ServerMessage.OneOffQueryResult
+    ): SdkResult<OneOffQueryData, QueryError>
 
     /** Disconnects from SpacetimeDB, optionally providing a [reason]. */
     public suspend fun disconnect(reason: Throwable? = null)

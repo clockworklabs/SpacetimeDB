@@ -68,7 +68,7 @@ class SubscriptionIntegrationTest {
         var errorMsg: String? = null
         val handle = conn.subscribe(
             queries = listOf("SELECT * FROM nonexistent"),
-            onError = listOf { _, err -> errorMsg = err.message },
+            onError = listOf { _, err -> errorMsg = (err as SubscriptionError.ServerError).message },
         )
 
         transport.sendToClient(
@@ -265,7 +265,7 @@ class SubscriptionIntegrationTest {
         var errorMsg: String? = null
         val handle = conn.subscribe(
             queries = listOf("SELECT * FROM sample"),
-            onError = listOf { _, err -> errorMsg = err.message },
+            onError = listOf { _, err -> errorMsg = (err as SubscriptionError.ServerError).message },
         )
         transport.sendToClient(
             ServerMessage.SubscribeApplied(
@@ -682,7 +682,7 @@ class SubscriptionIntegrationTest {
         assertTrue(handle1.isActive)
 
         // Sub2: errors during subscribe (requestId present = non-fatal)
-        var sub2Error: Throwable? = null
+        var sub2Error: SubscriptionError? = null
         val handle2 = conn.subscribe(
             queries = listOf("SELECT * FROM sample WHERE invalid"),
             onError = listOf { _, err -> sub2Error = err },

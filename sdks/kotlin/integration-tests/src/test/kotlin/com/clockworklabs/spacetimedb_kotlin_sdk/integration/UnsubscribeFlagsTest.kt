@@ -17,7 +17,7 @@ class UnsubscribeFlagsTest {
 
         val handle = client.conn.subscriptionBuilder()
             .onApplied { _ -> applied.complete(Unit) }
-            .onError { _, err -> applied.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied.completeExceptionally(RuntimeException("$err")) }
             .subscribe("SELECT * FROM note")
 
         withTimeout(DEFAULT_TIMEOUT_MS) { applied.await() }
@@ -39,7 +39,7 @@ class UnsubscribeFlagsTest {
 
         val handle = client.conn.subscriptionBuilder()
             .onApplied { _ -> applied.complete(Unit) }
-            .onError { _, err -> applied.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied.completeExceptionally(RuntimeException("$err")) }
             .subscribe("SELECT * FROM note")
 
         withTimeout(DEFAULT_TIMEOUT_MS) { applied.await() }
@@ -62,7 +62,7 @@ class UnsubscribeFlagsTest {
         val applied = CompletableDeferred<Unit>()
         val handle = client.conn.subscriptionBuilder()
             .onApplied { _ -> applied.complete(Unit) }
-            .onError { _, err -> applied.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied.completeExceptionally(RuntimeException("$err")) }
             .subscribe("SELECT * FROM user")
 
         withTimeout(DEFAULT_TIMEOUT_MS) { applied.await() }
@@ -85,13 +85,13 @@ class UnsubscribeFlagsTest {
         val applied1 = CompletableDeferred<Unit>()
         val handle1 = client.conn.subscriptionBuilder()
             .onApplied { _ -> applied1.complete(Unit) }
-            .onError { _, err -> applied1.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied1.completeExceptionally(RuntimeException("$err")) }
             .subscribe("SELECT * FROM user")
 
         val applied2 = CompletableDeferred<Unit>()
         val handle2 = client.conn.subscriptionBuilder()
             .onApplied { _ -> applied2.complete(Unit) }
-            .onError { _, err -> applied2.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied2.completeExceptionally(RuntimeException("$err")) }
             .subscribe("SELECT * FROM note")
 
         withTimeout(DEFAULT_TIMEOUT_MS) { applied1.await() }
@@ -116,7 +116,7 @@ class UnsubscribeFlagsTest {
         val applied1 = CompletableDeferred<Unit>()
         val handle1 = client.conn.subscriptionBuilder()
             .onApplied { _ -> applied1.complete(Unit) }
-            .onError { _, err -> applied1.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied1.completeExceptionally(RuntimeException("$err")) }
             .subscribe("SELECT * FROM user")
 
         withTimeout(DEFAULT_TIMEOUT_MS) { applied1.await() }
@@ -131,7 +131,7 @@ class UnsubscribeFlagsTest {
         val applied2 = CompletableDeferred<Unit>()
         val handle2 = client.conn.subscriptionBuilder()
             .onApplied { _ -> applied2.complete(Unit) }
-            .onError { _, err -> applied2.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied2.completeExceptionally(RuntimeException("$err")) }
             .subscribe("SELECT * FROM user")
 
         withTimeout(DEFAULT_TIMEOUT_MS) { applied2.await() }

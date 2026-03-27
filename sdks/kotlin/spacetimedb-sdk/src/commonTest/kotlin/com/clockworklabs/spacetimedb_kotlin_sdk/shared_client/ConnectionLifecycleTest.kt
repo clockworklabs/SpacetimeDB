@@ -339,7 +339,7 @@ class ConnectionLifecycleTest {
         var errorMsg: String? = null
         val handle = conn.subscribe(
             queries = listOf("SELECT * FROM player"),
-            onError = listOf { _, err -> errorMsg = err.message },
+            onError = listOf { _, err -> errorMsg = (err as SubscriptionError.ServerError).message },
         )
 
         transport.sendToClient(

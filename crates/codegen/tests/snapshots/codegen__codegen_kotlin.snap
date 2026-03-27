@@ -776,6 +776,8 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.InternalSpacetimeApi
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ModuleProcedures
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.ProcedureError
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.SdkResult
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ProcedureStatus
@@ -786,16 +788,16 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ServerMes
 class RemoteProcedures internal constructor(
     private val conn: DbConnection,
 ) : ModuleProcedures {
-    fun getMySchemaViaHttp(callback: ((EventContext.Procedure, Result<String>) -> Unit)? = null) {
+    fun getMySchemaViaHttp(callback: ((EventContext.Procedure, SdkResult<String, ProcedureError>) -> Unit)? = null) {
         val wrappedCallback = callback?.let { userCb ->
             { ctx: EventContext.Procedure, msg: ServerMessage.ProcedureResultMsg ->
                 when (val status = msg.status) {
                     is ProcedureStatus.Returned -> {
                         val reader = BsatnReader(status.value)
-                        userCb(ctx, Result.success(reader.readString()))
+                        userCb(ctx, SdkResult.Success(reader.readString()))
                     }
                     is ProcedureStatus.InternalError -> {
-                        userCb(ctx, Result.failure(Exception(status.message)))
+                        userCb(ctx, SdkResult.Failure(ProcedureError.InternalError(status.message)))
                     }
                 }
             }
@@ -803,17 +805,17 @@ class RemoteProcedures internal constructor(
         conn.callProcedure(GetMySchemaViaHttpProcedure.PROCEDURE_NAME, ByteArray(0), wrappedCallback)
     }
 
-    fun returnValue(foo: ULong, callback: ((EventContext.Procedure, Result<Baz>) -> Unit)? = null) {
+    fun returnValue(foo: ULong, callback: ((EventContext.Procedure, SdkResult<Baz, ProcedureError>) -> Unit)? = null) {
         val args = ReturnValueArgs(foo)
         val wrappedCallback = callback?.let { userCb ->
             { ctx: EventContext.Procedure, msg: ServerMessage.ProcedureResultMsg ->
                 when (val status = msg.status) {
                     is ProcedureStatus.Returned -> {
                         val reader = BsatnReader(status.value)
-                        userCb(ctx, Result.success(Baz.decode(reader)))
+                        userCb(ctx, SdkResult.Success(Baz.decode(reader)))
                     }
                     is ProcedureStatus.InternalError -> {
-                        userCb(ctx, Result.failure(Exception(status.message)))
+                        userCb(ctx, SdkResult.Failure(ProcedureError.InternalError(status.message)))
                     }
                 }
             }
@@ -821,15 +823,15 @@ class RemoteProcedures internal constructor(
         conn.callProcedure(ReturnValueProcedure.PROCEDURE_NAME, args.encode(), wrappedCallback)
     }
 
-    fun sleepOneSecond(callback: ((EventContext.Procedure, Result<Unit>) -> Unit)? = null) {
+    fun sleepOneSecond(callback: ((EventContext.Procedure, SdkResult<Unit, ProcedureError>) -> Unit)? = null) {
         val wrappedCallback = callback?.let { userCb ->
             { ctx: EventContext.Procedure, msg: ServerMessage.ProcedureResultMsg ->
                 when (val status = msg.status) {
                     is ProcedureStatus.Returned -> {
-                        userCb(ctx, Result.success(Unit))
+                        userCb(ctx, SdkResult.Success(Unit))
                     }
                     is ProcedureStatus.InternalError -> {
-                        userCb(ctx, Result.failure(Exception(status.message)))
+                        userCb(ctx, SdkResult.Failure(ProcedureError.InternalError(status.message)))
                     }
                 }
             }
@@ -837,15 +839,15 @@ class RemoteProcedures internal constructor(
         conn.callProcedure(SleepOneSecondProcedure.PROCEDURE_NAME, ByteArray(0), wrappedCallback)
     }
 
-    fun withTx(callback: ((EventContext.Procedure, Result<Unit>) -> Unit)? = null) {
+    fun withTx(callback: ((EventContext.Procedure, SdkResult<Unit, ProcedureError>) -> Unit)? = null) {
         val wrappedCallback = callback?.let { userCb ->
             { ctx: EventContext.Procedure, msg: ServerMessage.ProcedureResultMsg ->
                 when (val status = msg.status) {
                     is ProcedureStatus.Returned -> {
-                        userCb(ctx, Result.success(Unit))
+                        userCb(ctx, SdkResult.Success(Unit))
                     }
                     is ProcedureStatus.InternalError -> {
-                        userCb(ctx, Result.failure(Exception(status.message)))
+                        userCb(ctx, SdkResult.Failure(ProcedureError.InternalError(status.message)))
                     }
                 }
             }

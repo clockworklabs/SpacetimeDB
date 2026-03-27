@@ -19,7 +19,7 @@ class TypeSafeQueryTest {
         // Subscribe using type-safe query: user where online = true
         client.conn.subscriptionBuilder()
             .onApplied { _ -> applied.complete(Unit) }
-            .onError { _, err -> applied.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied.completeExceptionally(RuntimeException("$err")) }
             .addQuery { qb -> qb.user().where { c -> c.online.eq(SqlLit.bool(true)) } }
             .subscribe()
 
@@ -40,7 +40,7 @@ class TypeSafeQueryTest {
 
         client.conn.subscriptionBuilder()
             .onApplied { _ -> applied.complete(Unit) }
-            .onError { _, err -> applied.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied.completeExceptionally(RuntimeException("$err")) }
             .addQuery { qb -> qb.user().filter { c -> c.online.eq(SqlLit.bool(true)) } }
             .subscribe()
 
@@ -59,7 +59,7 @@ class TypeSafeQueryTest {
         // Subscribe to users where online != false (i.e. online users)
         client.conn.subscriptionBuilder()
             .onApplied { _ -> applied.complete(Unit) }
-            .onError { _, err -> applied.completeExceptionally(RuntimeException(err)) }
+            .onError { _, err -> applied.completeExceptionally(RuntimeException("$err")) }
             .addQuery { qb -> qb.user().where { c -> c.online.neq(SqlLit.bool(false)) } }
             .subscribe()
 

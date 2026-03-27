@@ -1,96 +1,95 @@
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.OneOffQueryData
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.OneOffQueryResult
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.QueryError
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.SdkResult
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.getOrNull
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
-import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class OneOffQueryTest {
 
     @Test
-    fun `callback oneOffQuery with valid SQL returns Ok result`() = runBlocking {
+    fun `callback oneOffQuery with valid SQL returns Success`() = runBlocking {
         val client = connectToDb()
 
-        val result = CompletableDeferred<QueryResult>()
+        val result = CompletableDeferred<OneOffQueryResult>()
         client.conn.oneOffQuery("SELECT * FROM user") { msg ->
-            result.complete(msg.result)
+            result.complete(msg)
         }
 
         val qr = withTimeout(DEFAULT_TIMEOUT_MS) { result.await() }
-        assertTrue(qr is QueryResult.Ok, "Valid SQL should return QueryResult.Ok, got: $qr")
+        assertIs<SdkResult.Success<*>>(qr, "Valid SQL should return Success, got: $qr")
 
         client.conn.disconnect()
     }
 
     @Test
-    fun `callback oneOffQuery with invalid SQL returns Err result`() = runBlocking {
+    fun `callback oneOffQuery with invalid SQL returns Failure`() = runBlocking {
         val client = connectToDb()
 
-        val result = CompletableDeferred<QueryResult>()
+        val result = CompletableDeferred<OneOffQueryResult>()
         client.conn.oneOffQuery("THIS IS NOT VALID SQL AT ALL") { msg ->
-            result.complete(msg.result)
+            result.complete(msg)
         }
 
         val qr = withTimeout(DEFAULT_TIMEOUT_MS) { result.await() }
-        assertIs<QueryResult.Err>(qr, "Invalid SQL should return QueryResult.Err, got: $qr")
-        assertTrue(qr.error.isNotEmpty(), "Error message should be non-empty")
+        assertIs<SdkResult.Failure<*>>(qr, "Invalid SQL should return Failure, got: $qr")
+        val serverError = assertIs<QueryError.ServerError>(qr.error, "Error should be QueryError.ServerError")
+        assertTrue(serverError.message.isNotEmpty(), "Error message should be non-empty")
 
         client.conn.disconnect()
     }
 
     @Test
-    fun `suspend oneOffQuery with valid SQL returns Ok result`() = runBlocking {
+    fun `suspend oneOffQuery with valid SQL returns Success`() = runBlocking {
         val client = connectToDb()
 
-        val msg = withTimeout(DEFAULT_TIMEOUT_MS) {
+        val qr = withTimeout(DEFAULT_TIMEOUT_MS) {
             client.conn.oneOffQuery("SELECT * FROM user")
         }
-        assertTrue(msg.result is QueryResult.Ok, "Valid SQL should return QueryResult.Ok, got: ${msg.result}")
+        assertIs<SdkResult.Success<OneOffQueryData>>(qr, "Valid SQL should return Success, got: $qr")
+        assertTrue(qr.getOrNull()!!.tableCount >= 0, "tableCount should be non-negative")
 
         client.conn.disconnect()
     }
 
     @Test
-    fun `suspend oneOffQuery with invalid SQL returns Err result`() = runBlocking {
+    fun `suspend oneOffQuery with invalid SQL returns Failure`() = runBlocking {
         val client = connectToDb()
 
-        val msg = withTimeout(DEFAULT_TIMEOUT_MS) {
+        val qr = withTimeout(DEFAULT_TIMEOUT_MS) {
             client.conn.oneOffQuery("INVALID SQL QUERY")
         }
-        assertTrue(msg.result is QueryResult.Err, "Invalid SQL should return QueryResult.Err, got: ${msg.result}")
+        assertIs<SdkResult.Failure<*>>(qr, "Invalid SQL should return Failure, got: $qr")
 
         client.conn.disconnect()
     }
 
     @Test
-    fun `oneOffQuery returns rows with table data for populated table`() = runBlocking {
+    fun `oneOffQuery returns Success with tableCount for populated table`() = runBlocking {
         val client = connectToDb()
 
-        val msg = withTimeout(DEFAULT_TIMEOUT_MS) {
+        val qr = withTimeout(DEFAULT_TIMEOUT_MS) {
             client.conn.oneOffQuery("SELECT * FROM user")
         }
-        val qr = msg.result
-        assertIs<QueryResult.Ok>(qr, "Should return Ok")
-        // We are connected, so at least our own user row should exist
-        assertTrue(qr.rows.tables.isNotEmpty(), "Should have at least 1 table in result")
-        val table = qr.rows.tables[0]
-        assertEquals("user", table.table, "Table name should be 'user'")
-        assertTrue(table.rows.rowsSize > 0, "Should have row data bytes for populated table")
+        assertIs<SdkResult.Success<OneOffQueryData>>(qr, "Should return Success")
+        assertTrue(qr.getOrNull()!!.tableCount > 0, "Should have at least 1 table in result")
 
         client.conn.disconnect()
     }
 
     @Test
-    fun `oneOffQuery returns Ok with empty rows for nonexistent filter`() = runBlocking {
+    fun `oneOffQuery returns Success for nonexistent filter`() = runBlocking {
         val client = connectToDb()
 
-        val msg = withTimeout(DEFAULT_TIMEOUT_MS) {
+        val qr = withTimeout(DEFAULT_TIMEOUT_MS) {
             client.conn.oneOffQuery("SELECT * FROM note WHERE tag = 'nonexistent-tag-xyz-12345'")
         }
-        val qr = msg.result
-        assertTrue(qr is QueryResult.Ok, "Valid SQL should return Ok even with 0 rows")
+        assertIs<SdkResult.Success<*>>(qr, "Valid SQL should return Success even with 0 rows")
 
         client.conn.disconnect()
     }
@@ -100,16 +99,16 @@ class OneOffQueryTest {
         val client = connectToDb()
 
         val results = (1..5).map { i ->
-            val deferred = CompletableDeferred<QueryResult>()
+            val deferred = CompletableDeferred<OneOffQueryResult>()
             client.conn.oneOffQuery("SELECT * FROM user") { msg ->
-                deferred.complete(msg.result)
+                deferred.complete(msg)
             }
             deferred
         }
 
         results.forEachIndexed { i, deferred ->
             val qr = withTimeout(DEFAULT_TIMEOUT_MS) { deferred.await() }
-            assertTrue(qr is QueryResult.Ok, "Query $i should return Ok, got: $qr")
+            assertIs<SdkResult.Success<*>>(qr, "Query $i should return Success, got: $qr")
         }
 
         client.conn.disconnect()

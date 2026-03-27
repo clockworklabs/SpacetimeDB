@@ -60,7 +60,7 @@ class WithCallbackDispatcherTest {
         val threadName = CompletableDeferred<String>()
         conn.subscriptionBuilder()
             .onApplied { _ -> threadName.complete(Thread.currentThread().name) }
-            .onError { _, err -> threadName.completeExceptionally(err) }
+            .onError { _, err -> threadName.completeExceptionally(RuntimeException("$err")) }
             .subscribe("SELECT * FROM user")
 
         val name = withTimeout(DEFAULT_TIMEOUT_MS) { threadName.await() }
@@ -94,7 +94,7 @@ class WithCallbackDispatcherTest {
         val subApplied = CompletableDeferred<Unit>()
         conn.subscriptionBuilder()
             .onApplied { _ -> subApplied.complete(Unit) }
-            .onError { _, err -> subApplied.completeExceptionally(err) }
+            .onError { _, err -> subApplied.completeExceptionally(RuntimeException("$err")) }
             .subscribe("SELECT * FROM user")
         withTimeout(DEFAULT_TIMEOUT_MS) { subApplied.await() }
 
