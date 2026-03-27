@@ -533,7 +533,7 @@ impl Lang for Csharp<'_> {
             indented_block(output, |output| {
                 writeln!(
                     output,
-                    "protected override string RemoteTableName => \"{}\";",
+                    "public override string RemoteTableName => \"{}\";",
                     table.name
                 );
                 writeln!(output);
