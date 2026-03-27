@@ -977,6 +977,48 @@ impl InstanceEnv {
             Ok((response, body))
         })
     }
+
+    /// Call a reducer on a remote database via the local reverse proxy (`localhost:80`).
+    ///
+    /// Unlike [`Self::http_request`], this is explicitly allowed while a transaction is open —
+    /// the caller is responsible for understanding the consistency implications.
+    ///
+    /// Uses the warmed HTTP/2 client stored in [`ReplicaContext::call_reducer_client`],
+    /// configured when the replica was constructed.
+    ///
+    /// Returns `(http_status, response_body)` on transport success,
+    /// or [`NodesError::HttpError`] if the connection itself fails.
+    pub fn call_reducer_on_db(
+        &self,
+        database_identity: Identity,
+        reducer_name: &str,
+        args: bytes::Bytes,
+    ) -> impl Future<Output = Result<(u16, bytes::Bytes), NodesError>> + use<> {
+        let client = self.replica_ctx.call_reducer_client.clone();
+        let url = format!(
+            "http://localhost/v1/database/{}/call/{}",
+            database_identity.to_hex(),
+            reducer_name,
+        );
+
+        async move {
+            let response = client
+                .post(&url)
+                .header(http::header::CONTENT_TYPE, "application/octet-stream")
+                .body(args)
+                .send()
+                .await
+                .map_err(|e| NodesError::HttpError(e.to_string()))?;
+
+            let status = response.status().as_u16();
+            let body = response
+                .bytes()
+                .await
+                .map_err(|e| NodesError::HttpError(e.to_string()))?;
+
+            Ok((status, body))
+        }
+    }
 }
 
 /// Default timeout for HTTP requests performed by [`InstanceEnv::http_request`].
@@ -1317,7 +1359,7 @@ mod test {
         },
         host::Scheduler,
         messages::control_db::{Database, HostType},
-        replica_context::ReplicaContext,
+        replica_context::{CallReducerOnDbConfig, ReplicaContext},
         subscription::module_subscription_actor::ModuleSubscriptions,
     };
     use anyhow::{anyhow, Result};
@@ -1351,6 +1393,7 @@ mod test {
                 replica_id: 0,
                 logger,
                 subscriptions: subs,
+                call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
             },
             runtime,
         ))

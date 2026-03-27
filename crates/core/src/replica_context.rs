@@ -8,8 +8,36 @@ use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use std::io;
 use std::ops::Deref;
 use std::sync::Arc;
+use std::time::Duration;
 
 pub type Result<T> = anyhow::Result<T>;
+
+/// Configuration for the HTTP/2 client used to call reducers on remote databases.
+///
+/// Pass to [`ReplicaContext::new_call_reducer_client`] or supply directly when
+/// constructing [`ReplicaContext`].
+#[derive(Debug, Clone)]
+pub struct CallReducerOnDbConfig {
+    /// How long idle connections are held open. Default: 90 s.
+    pub pool_idle_timeout: Duration,
+    /// Max idle connections per host. Default: 8.
+    pub pool_max_idle_per_host: usize,
+    /// TCP keepalive sent to the OS. Default: 20 s.
+    pub tcp_keepalive: Duration,
+    /// Per-request timeout. Default: 30 s.
+    pub request_timeout: Duration,
+}
+
+impl Default for CallReducerOnDbConfig {
+    fn default() -> Self {
+        Self {
+            pool_idle_timeout: Duration::from_secs(90),
+            pool_max_idle_per_host: 8,
+            tcp_keepalive: Duration::from_secs(20),
+            request_timeout: Duration::from_secs(30),
+        }
+    }
+}
 
 /// A "live" database.
 #[derive(Clone)]
@@ -18,6 +46,24 @@ pub struct ReplicaContext {
     pub replica_id: u64,
     pub logger: Arc<DatabaseLogger>,
     pub subscriptions: ModuleSubscriptions,
+    /// Warmed HTTP/2 client for [`crate::host::instance_env::InstanceEnv::call_reducer_on_db`].
+    ///
+    /// `reqwest::Client` is internally an `Arc`, so cloning `ReplicaContext` shares the pool.
+    pub call_reducer_client: reqwest::Client,
+}
+
+impl ReplicaContext {
+    /// Build a warmed `reqwest::Client` from `config`.
+    pub fn new_call_reducer_client(config: &CallReducerOnDbConfig) -> reqwest::Client {
+        reqwest::Client::builder()
+            .http2_prior_knowledge()
+            .tcp_keepalive(config.tcp_keepalive)
+            .pool_idle_timeout(config.pool_idle_timeout)
+            .pool_max_idle_per_host(config.pool_max_idle_per_host)
+            .timeout(config.request_timeout)
+            .build()
+            .expect("failed to build call_reducer_on_db HTTP/2 client")
+    }
 }
 
 impl ReplicaContext {

@@ -436,6 +436,10 @@ macro_rules! abi_funcs {
         $link_async! {
             "spacetime_10.3"::procedure_sleep_until,
             "spacetime_10.3"::procedure_http_request,
+
+            // Call a reducer on another database while holding (or not holding) a transaction.
+            // Uses a warmed HTTP/2 connection pool to localhost:80.
+            "spacetime_10.5"::call_reducer_on_db,
         }
     };
 }

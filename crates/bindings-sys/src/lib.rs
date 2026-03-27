@@ -865,6 +865,39 @@ pub mod raw {
         ) -> u16;
     }
 
+    #[link(wasm_import_module = "spacetime_10.5")]
+    unsafe extern "C" {
+        /// Call a reducer on another SpacetimeDB database via the local reverse proxy at `localhost:80`.
+        ///
+        /// - `identity_ptr` must point to exactly 32 bytes — the BSATN (little-endian) encoding of
+        ///   the target database `Identity`.
+        /// - `reducer_ptr[..reducer_len]` is the UTF-8 name of the reducer to call.
+        /// - `args_ptr[..args_len]` is the BSATN-encoded reducer arguments.
+        ///
+        /// On transport success (any HTTP response received):
+        /// - Returns the HTTP status code (e.g. 200, 400, 530).
+        /// - Writes a [`BytesSource`] containing the response body bytes to `*out`.
+        ///
+        /// On transport failure (connection refused, timeout, etc.):
+        /// - Returns [`errno::HTTP_ERROR`] (21).
+        /// - Writes a [`BytesSource`] containing a BSATN-encoded error [`String`] to `*out`.
+        ///
+        /// Unlike `procedure_http_request`, this syscall may be called while a transaction
+        /// is open (i.e. from within a reducer body).
+        ///
+        /// # Traps
+        ///
+        /// Traps if any pointer is NULL or its range falls outside of linear memory.
+        pub fn call_reducer_on_db(
+            identity_ptr: *const u8, // exactly 32 bytes, BSATN-encoded Identity
+            reducer_ptr: *const u8,
+            reducer_len: u32,
+            args_ptr: *const u8,
+            args_len: u32,
+            out: *mut BytesSource,
+        ) -> u16;
+    }
+
     /// What strategy does the database index use?
     ///
     /// See also: <https://www.postgresql.org/docs/current/sql-createindex.html>

@@ -17,7 +17,7 @@ use crate::subscription::module_subscription_manager::TransactionOffset;
 use anyhow::{anyhow, Context as _};
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
-use spacetimedb_lib::{bsatn, ConnectionId, Timestamp};
+use spacetimedb_lib::{bsatn, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use spacetimedb_primitives::{errno, ColId};
 use spacetimedb_schema::def::ModuleDef;
@@ -1940,6 +1940,88 @@ impl WasmInstanceEnv {
             (
                 caller,
                 res.or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureHttpRequest, err)),
+            )
+        })
+    }
+
+    /// Call a reducer on another SpacetimeDB database via the local reverse proxy at `localhost:80`.
+    ///
+    /// - `identity_ptr` must point to exactly 32 bytes — the BSATN (little-endian) encoding of the
+    ///   target [`Identity`].
+    /// - `reducer_ptr[..reducer_len]` is the UTF-8 name of the reducer to call.
+    /// - `args_ptr[..args_len]` is the BSATN-encoded reducer arguments.
+    ///
+    /// On transport success (any HTTP response received from the server):
+    /// - Returns the HTTP status code (e.g. 200, 400, 530).
+    /// - Writes a [`BytesSource`] containing the response body bytes to `*out`.
+    ///
+    /// On transport failure (connection refused, timeout, etc.):
+    /// - Returns [`errno::HTTP_ERROR`].
+    /// - Writes a [`BytesSource`] containing a BSATN-encoded error [`String`] to `*out`.
+    ///
+    /// Unlike [`Self::procedure_http_request`], this ABI may be called while holding
+    /// an open transaction (i.e. from within a reducer body).
+    ///
+    /// # Traps
+    ///
+    /// Traps if any pointer is NULL or its range falls outside of linear memory.
+    pub fn call_reducer_on_db<'caller>(
+        caller: Caller<'caller, Self>,
+        (identity_ptr, reducer_ptr, reducer_len, args_ptr, args_len, out): (
+            WasmPtr<u8>,
+            WasmPtr<u8>,
+            u32,
+            WasmPtr<u8>,
+            u32,
+            WasmPtr<u32>,
+        ),
+    ) -> Fut<'caller, RtResult<u32>> {
+        Self::async_with_span(caller, AbiCall::CallReducerOnDb, move |mut caller| async move {
+            let (mem, env) = Self::mem_env(&mut caller);
+
+            #[allow(clippy::redundant_closure_call)]
+            let res = (async move || {
+                // Read the 32-byte BSATN-encoded Identity (little-endian).
+                let identity_slice = mem.deref_slice(identity_ptr, 32)?;
+                let identity_bytes: [u8; 32] = identity_slice
+                    .try_into()
+                    .expect("deref_slice(ptr, 32) always yields exactly 32 bytes");
+                let database_identity = Identity::from_byte_array(identity_bytes);
+
+                // Read the reducer name as a UTF-8 string.
+                let reducer_name = mem.deref_str(reducer_ptr, reducer_len)?;
+
+                // Read the BSATN-encoded args as raw bytes.
+                let args_buf = mem.deref_slice(args_ptr, args_len)?;
+                let args = bytes::Bytes::copy_from_slice(args_buf);
+
+                let result = env
+                    .instance_env
+                    .call_reducer_on_db(database_identity, reducer_name, args)
+                    .await;
+
+                match result {
+                    Ok((status, body)) => {
+                        let bytes_source = WasmInstanceEnv::create_bytes_source(env, body)?;
+                        bytes_source.0.write_to(mem, out)?;
+                        Ok(status as u32)
+                    }
+                    Err(NodesError::HttpError(err)) => {
+                        let err_bytes = bsatn::to_vec(&err).with_context(|| {
+                            format!("Failed to BSATN-serialize call_reducer_on_db transport error: {err:?}")
+                        })?;
+                        let bytes_source = WasmInstanceEnv::create_bytes_source(env, err_bytes.into())?;
+                        bytes_source.0.write_to(mem, out)?;
+                        Ok(errno::HTTP_ERROR.get() as u32)
+                    }
+                    Err(e) => Err(WasmError::Db(e)),
+                }
+            })()
+            .await;
+
+            (
+                caller,
+                res.or_else(|err| Self::convert_wasm_result(AbiCall::CallReducerOnDb, err)),
             )
         })
     }
