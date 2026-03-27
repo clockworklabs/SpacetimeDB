@@ -432,16 +432,16 @@ impl InstanceEnv {
         Ok(())
     }
 
-    /// Enqueue an outbox row into ST_MSG_ID atomically within the current transaction,
+    /// Enqueue an outbox row into ST_OUTBOUND_MSG atomically within the current transaction,
     /// and notify the IDC runtime so it delivers without waiting for the next poll cycle.
     ///
     /// Outbox tables follow the naming convention `__outbox_<reducer>` and have:
-    ///   - Col 0: auto-inc primary key (u64) — stored as `row_id` in ST_MSG_ID.
+    ///   - Col 0: auto-inc primary key (u64) — stored as `row_id` in ST_OUTBOUND_MSG.
     ///   - Col 1: target database Identity (stored as U256).
     ///   - Remaining cols: args for the remote reducer.
     ///
     /// The `on_result_reducer` and delivery data are resolved at delivery time from the
-    /// outbox table's schema and row, so ST_MSG_ID only stores the minimal reference.
+    /// outbox table's schema and row, so ST_OUTBOUND_MSG only stores the minimal reference.
     fn enqueue_outbox_row(
         &self,
         _stdb: &RelationalDB,
@@ -454,7 +454,7 @@ impl InstanceEnv {
         let row_ref = tx.get(table_id, row_ptr).map_err(DBError::from)?.unwrap();
         let pv = row_ref.to_product_value();
 
-        // Col 0 is the auto-inc primary key — this is the row_id we store in ST_MSG_ID.
+        // Col 0 is the auto-inc primary key — this is the row_id we store in ST_OUTBOUND_MSG.
         let row_id = match pv.elements.first() {
             Some(AlgebraicValue::U64(id)) => *id,
             other => {
@@ -466,7 +466,7 @@ impl InstanceEnv {
             }
         };
 
-        tx.insert_st_msg_id(table_id.0, row_id).map_err(DBError::from)?;
+        tx.insert_st_outbound_msg(table_id.0, row_id).map_err(DBError::from)?;
 
         // Wake the IDC runtime immediately so it doesn't wait for the next poll cycle.
         let _ = self.idc_sender.send(());

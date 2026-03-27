@@ -274,7 +274,7 @@ pub struct RawColumnDefaultValueV10 {
 /// Marks a table as an outbox table for inter-database communication.
 ///
 /// The table must have:
-/// - Col 0: `u64` with `#[primary_key] #[auto_inc]` — the row ID stored in `st_msg_id`.
+/// - Col 0: `u64` with `#[primary_key] #[auto_inc]` — the row ID stored in `st_outbound_msg`.
 /// - Col 1: `Identity` (encoded as U256) — the target database identity.
 /// - Remaining cols: arguments forwarded verbatim to the remote reducer.
 ///

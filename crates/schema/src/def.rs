@@ -713,7 +713,7 @@ pub struct TableDef {
 /// Configuration for an outbox table used in inter-database communication.
 ///
 /// An outbox table must have:
-/// - Col 0: `u64` with `#[primary_key] #[auto_inc]` — row ID tracked in `st_msg_id`.
+/// - Col 0: `u64` with `#[primary_key] #[auto_inc]` — row ID tracked in `st_outbound_msg`.
 /// - Col 1: `Identity` — target database identity.
 /// - Remaining cols: arguments forwarded to `remote_reducer` on the target database.
 #[derive(Debug, Clone, PartialEq, Eq)]

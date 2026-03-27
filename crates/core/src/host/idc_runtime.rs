@@ -1,20 +1,20 @@
 /// Inter-Database Communication (IDC) Runtime
 ///
 /// Background tokio task that:
-/// 1. Loads undelivered entries from `st_msg_id` on startup, resolving delivery data from outbox tables.
+/// 1. Loads undelivered entries from `st_outbound_msg` on startup, resolving delivery data from outbox tables.
 /// 2. Accepts immediate notifications via an mpsc channel when new outbox rows are inserted.
 /// 3. Delivers each message in msg_id order via HTTP POST to
 ///    `http://localhost:80/v1/database/{target_db}/call-from-database/{reducer}?sender_identity=<hex>&msg_id=<n>`
 /// 4. On transport errors (network, 5xx, 4xx except 422/402): retries infinitely with exponential
 ///    backoff, blocking only the affected target database (other targets continue unaffected).
 /// 5. On reducer errors (HTTP 422) or budget exceeded (HTTP 402): calls the configured
-///    `on_result_reducer` (read from the outbox table's schema) and deletes the st_msg_id row.
+///    `on_result_reducer` (read from the outbox table's schema) and deletes the st_outbound_msg row.
 /// 6. Enforces sequential delivery per target database: msg N+1 is only delivered after N is done.
 use crate::db::relational_db::RelationalDB;
 use crate::host::module_host::WeakModuleHost;
 use crate::host::FunctionArgs;
 use spacetimedb_datastore::execution_context::Workload;
-use spacetimedb_datastore::system_tables::{StMsgIdRow, ST_MSG_ID_ID};
+use spacetimedb_datastore::system_tables::{StOutboundMsgRow, ST_OUTBOUND_MSG_ID};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::{AlgebraicValue, Identity};
 use spacetimedb_primitives::{ColId, TableId};
@@ -207,19 +207,19 @@ async fn run_idc_loop(
 
 /// Decode the delivery outcome into `(result_status, result_payload)` for recording.
 fn outcome_to_result(outcome: &DeliveryOutcome) -> (u8, String) {
-    use spacetimedb_datastore::system_tables::st_inbound_msg_id_result_status;
+    use spacetimedb_datastore::system_tables::st_inbound_msg_result_status;
     match outcome {
-        DeliveryOutcome::Success => (st_inbound_msg_id_result_status::SUCCESS, String::new()),
-        DeliveryOutcome::ReducerError(msg) => (st_inbound_msg_id_result_status::REDUCER_ERROR, msg.clone()),
+        DeliveryOutcome::Success => (st_inbound_msg_result_status::SUCCESS, String::new()),
+        DeliveryOutcome::ReducerError(msg) => (st_inbound_msg_result_status::REDUCER_ERROR, msg.clone()),
         DeliveryOutcome::BudgetExceeded => (
-            st_inbound_msg_id_result_status::REDUCER_ERROR,
+            st_inbound_msg_result_status::REDUCER_ERROR,
             "budget exceeded".to_string(),
         ),
         DeliveryOutcome::TransportError(_) => unreachable!("transport errors never finalize"),
     }
 }
 
-/// Finalize a delivered message: call the on_result reducer (if any), then delete from ST_MSG_ID.
+/// Finalize a delivered message: call the on_result reducer (if any), then delete from ST_OUTBOUND_MSG.
 async fn finalize_message(
     db: &RelationalDB,
     module_host: &WeakModuleHost,
@@ -288,25 +288,28 @@ async fn finalize_message(
     delete_message(db, msg.msg_id);
 }
 
-/// Load all messages from ST_MSG_ID into the per-target queues, resolving delivery data
+/// Load all messages from ST_OUTBOUND_MSG into the per-target queues, resolving delivery data
 /// from the corresponding outbox table rows.
 ///
-/// A row's presence in ST_MSG_ID means it has not yet been processed.
+/// A row's presence in ST_OUTBOUND_MSG means it has not yet been processed.
 /// Messages already in a target's queue (by msg_id) are not re-added.
 fn load_pending_into_targets(db: &RelationalDB, targets: &mut HashMap<Identity, TargetState>) {
     let tx = db.begin_tx(Workload::Internal);
 
-    let st_msg_id_rows: Vec<StMsgIdRow> = db
-        .iter(&tx, ST_MSG_ID_ID)
-        .map(|iter| iter.filter_map(|row_ref| StMsgIdRow::try_from(row_ref).ok()).collect())
+    let st_outbound_msg_rows: Vec<StOutboundMsgRow> = db
+        .iter(&tx, ST_OUTBOUND_MSG_ID)
+        .map(|iter| {
+            iter.filter_map(|row_ref| StOutboundMsgRow::try_from(row_ref).ok())
+                .collect()
+        })
         .unwrap_or_else(|e| {
-            log::error!("idc_runtime: failed to read st_msg_id: {e}");
+            log::error!("idc_runtime: failed to read st_outbound_msg: {e}");
             Vec::new()
         });
 
-    let mut pending: Vec<PendingMessage> = Vec::with_capacity(st_msg_id_rows.len());
+    let mut pending: Vec<PendingMessage> = Vec::with_capacity(st_outbound_msg_rows.len());
 
-    for st_row in st_msg_id_rows {
+    for st_row in st_outbound_msg_rows {
         let outbox_table_id = TableId(st_row.outbox_table_id);
 
         // Read the outbox table schema for reducer name and on_result_reducer.
@@ -432,10 +435,10 @@ async fn attempt_delivery(
     }
 }
 
-/// Delete a message from ST_MSG_ID within a new transaction.
+/// Delete a message from ST_OUTBOUND_MSG within a new transaction.
 fn delete_message(db: &RelationalDB, msg_id: u64) {
     let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-    if let Err(e) = tx.delete_msg_id(msg_id) {
+    if let Err(e) = tx.delete_outbound_msg(msg_id) {
         log::error!("idc_runtime: failed to delete msg_id={msg_id}: {e}");
         let _ = db.rollback_mut_tx(tx);
         return;

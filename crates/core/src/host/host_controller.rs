@@ -889,7 +889,7 @@ struct Host {
     /// Handle to the task responsible for cleaning up old views.
     /// The task is aborted when [`Host`] is dropped.
     view_cleanup_task: AbortHandle,
-    /// IDC runtime: delivers outbound inter-database messages from `st_msg_id`.
+    /// IDC runtime: delivers outbound inter-database messages from `st_outbound_msg`.
     /// Stopped when [`Host`] is dropped.
     _idc_runtime: IdcRuntime,
 }
