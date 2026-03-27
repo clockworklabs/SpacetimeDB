@@ -1,5 +1,5 @@
 use crate::context::constants::docs_dir;
-use crate::context::paths::{gather_cursor_rules_files, resolve_mode_paths};
+use crate::context::paths::{gather_cursor_rules_files, gather_guidelines_files, resolve_mode_paths};
 use crate::eval::lang::Lang;
 use anyhow::{anyhow, bail, Context, Result};
 use regex::Regex;
@@ -11,7 +11,7 @@ use std::sync::LazyLock;
 /// Get the base directory for a given mode (used for stripping prefixes to get relative paths).
 fn base_for_mode(mode: &str) -> Result<PathBuf> {
     Ok(match mode {
-        "docs" | "llms.md" | "cursor_rules" | "no_context" | "none" | "no_guidelines" | "search" => docs_dir(),
+        "docs" | "llms.md" | "guidelines" | "cursor_rules" | "no_context" | "none" | "no_guidelines" | "search" => docs_dir(),
         // rustdoc_json is handled separately in build_context_from_rustdoc_json
         _ => bail!("unknown mode `{mode}` for base_for_mode"),
     })
@@ -39,7 +39,9 @@ pub fn build_context(mode: &str, lang: Option<Lang>) -> Result<String> {
     }
 
     let base = base_for_mode(mode)?;
-    let files = if mode == "cursor_rules" {
+    let files = if mode == "guidelines" {
+        gather_guidelines_files(base.join("static/ai-guidelines"), lang)?
+    } else if mode == "cursor_rules" {
         gather_cursor_rules_files(base.join("static/ai-rules"), lang)?
     } else {
         resolve_mode_paths(mode)?
@@ -49,8 +51,9 @@ pub fn build_context(mode: &str, lang: Option<Lang>) -> Result<String> {
         let rel = stable_rel_path(&base, &p);
         let contents = fs::read_to_string(&p).with_context(|| format!("read {}", rel))?;
 
-        // For cursor_rules we don't filter tabs; for other modes filter by lang if specified
-        let contents = if mode == "cursor_rules" {
+        // For guidelines/cursor_rules we don't filter tabs; for other modes filter by lang if specified
+        let skip_tab_filter = matches!(mode, "guidelines" | "cursor_rules");
+        let contents = if skip_tab_filter {
             contents
         } else if let Some(lang) = lang {
             filter_tabs_for_lang(&contents, lang)
@@ -59,8 +62,8 @@ pub fn build_context(mode: &str, lang: Option<Lang>) -> Result<String> {
         };
 
         // When building for a specific language, skip files that have no content for it
-        // (e.g. Rust-only pages with no TypeScript tab). Not used for cursor_rules.
-        if mode != "cursor_rules" && lang.is_some() && contents.trim().is_empty() {
+        // (e.g. Rust-only pages with no TypeScript tab). Not used for cursor_rules/guidelines.
+        if !skip_tab_filter && lang.is_some() && contents.trim().is_empty() {
             continue;
         }
 

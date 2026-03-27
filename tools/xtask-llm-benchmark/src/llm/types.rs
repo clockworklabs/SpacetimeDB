@@ -1,6 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+/// Output from an LLM generation call, including token usage.
+#[derive(Debug, Clone, Default)]
+pub struct LlmOutput {
+    pub text: String,
+    pub input_tokens: Option<u32>,
+    pub output_tokens: Option<u32>,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Vendor {
     OpenAi,

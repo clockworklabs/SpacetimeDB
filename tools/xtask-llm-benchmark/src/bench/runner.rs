@@ -190,7 +190,8 @@ impl TaskRunner {
         let prompt = prompt_builder.build_segmented(cfg.mode, cfg.context);
 
         println!("→ [{}] {}: calling provider", cfg.lang_name, cfg.route.display_name);
-        let llm_output = {
+        let gen_start = Instant::now();
+        let llm_result = {
             const MAX_ATTEMPTS: u32 = 3;
             // Slow models (Gemini 3.1 Pro, DeepSeek Reasoner) can take 8+ minutes on large contexts.
             let timeout_secs = match cfg.route.display_name.to_ascii_lowercase() {
@@ -237,6 +238,10 @@ impl TaskRunner {
             }
             result.ok_or_else(|| RunOneError::Other(last_err))?
         };
+        let generation_duration_ms = Some(gen_start.elapsed().as_millis() as u64);
+        let input_tokens = llm_result.input_tokens;
+        let output_tokens = llm_result.output_tokens;
+        let llm_output = llm_result.text;
 
         if debug_llm() {
             print_llm_output(cfg.route.display_name, &task_id, &llm_output);
@@ -339,6 +344,9 @@ impl TaskRunner {
                     .into_owned(),
             ),
             scorer_details: Some(scorer_details),
+            input_tokens,
+            output_tokens,
+            generation_duration_ms,
             started_at: Some(started),
             finished_at: Some(finished),
         })
@@ -699,6 +707,9 @@ fn build_fail_outcome(
         scorer_details: Some(sd),
 
         vendor: route.vendor.slug().to_string(),
+        input_tokens: None,
+        output_tokens: None,
+        generation_duration_ms: None,
         started_at: Some(now),
         finished_at: Some(now),
     }

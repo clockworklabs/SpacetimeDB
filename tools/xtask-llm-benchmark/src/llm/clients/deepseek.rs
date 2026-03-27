@@ -6,7 +6,7 @@ use crate::llm::prompt::BuiltPrompt;
 use crate::llm::segmentation::{
     deepseek_ctx_limit_tokens, deterministic_trim_prefix, estimate_tokens, non_context_reserve_tokens_env, Segment,
 };
-use crate::llm::types::Vendor;
+use crate::llm::types::{LlmOutput, Vendor};
 
 #[derive(Clone)]
 pub struct DeepSeekClient {
@@ -20,7 +20,7 @@ impl DeepSeekClient {
         Self { base, api_key, http }
     }
 
-    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<String> {
+    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput> {
         let url = format!("{}/chat/completions", self.base.trim_end_matches('/'));
 
         let system = prompt.system.clone();
@@ -82,13 +82,24 @@ impl DeepSeekClient {
         let auth = HttpClient::bearer(&self.api_key);
         let body = self.http.post_json(&url, &[auth], &req).await?;
         let resp: OACompatResp = serde_json::from_str(&body).context("parse deepseek resp")?;
-        resp.first_text().ok_or_else(|| anyhow!("no content from DeepSeek"))
+        let input_tokens = resp.usage.as_ref().and_then(|u| u.prompt_tokens);
+        let output_tokens = resp.usage.as_ref().and_then(|u| u.completion_tokens);
+        let text = resp
+            .first_text()
+            .ok_or_else(|| anyhow!("no content from DeepSeek"))?;
+        Ok(LlmOutput {
+            text,
+            input_tokens,
+            output_tokens,
+        })
     }
 }
 
 #[derive(Debug, Deserialize)]
 struct OACompatResp {
     choices: Vec<Choice>,
+    #[serde(default)]
+    usage: Option<UsageInfo>,
 }
 #[derive(Debug, Deserialize)]
 struct Choice {
@@ -97,6 +108,13 @@ struct Choice {
 #[derive(Debug, Deserialize)]
 struct MsgOut {
     content: String,
+}
+#[derive(Debug, Deserialize)]
+struct UsageInfo {
+    #[serde(default)]
+    prompt_tokens: Option<u32>,
+    #[serde(default)]
+    completion_tokens: Option<u32>,
 }
 impl OACompatResp {
     fn first_text(self) -> Option<String> {

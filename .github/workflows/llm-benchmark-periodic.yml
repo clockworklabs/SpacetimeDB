@@ -69,17 +69,22 @@ jobs:
           # Fallback to direct keys if set
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LLM_BENCHMARK_API_KEY: ${{ secrets.LLM_BENCHMARK_API_KEY }}
           MSBUILDDISABLENODEREUSE: "1"
           DOTNET_CLI_USE_MSBUILD_SERVER: "0"
         run: |
           LANGS="${{ inputs.languages || 'rust' }}"
           MODELS="${{ inputs.models || 'all' }}"
+          UPLOAD_FLAG=""
+          if [ -n "${{ secrets.LLM_BENCHMARK_UPLOAD_URL }}" ]; then
+            UPLOAD_FLAG="--upload-url ${{ secrets.LLM_BENCHMARK_UPLOAD_URL }}"
+          fi
 
           for LANG in $(echo "$LANGS" | tr ',' ' '); do
             if [ "$MODELS" = "all" ]; then
-              llm_benchmark run --lang "$LANG" || true
+              llm_benchmark run --lang "$LANG" $UPLOAD_FLAG || true
             else
-              llm_benchmark run --lang "$LANG" --models "$MODELS" || true
+              llm_benchmark run --lang "$LANG" --models "$MODELS" $UPLOAD_FLAG || true
             fi
           done
 

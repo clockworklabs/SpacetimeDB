@@ -6,7 +6,7 @@ use crate::llm::prompt::BuiltPrompt;
 use crate::llm::segmentation::{
     deterministic_trim_prefix, meta_ctx_limit_tokens, non_context_reserve_tokens_env, Segment,
 };
-use crate::llm::types::Vendor;
+use crate::llm::types::{LlmOutput, Vendor};
 
 #[derive(Clone)]
 pub struct MetaLlamaClient {
@@ -21,7 +21,7 @@ impl MetaLlamaClient {
         Self { base, api_key, http }
     }
 
-    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<String> {
+    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput> {
         let url = format!("{}/chat/completions", self.base.trim_end_matches('/'));
 
         // Build input like other clients
@@ -96,8 +96,16 @@ impl MetaLlamaClient {
             .with_context(|| format!("OpenRouter (Meta) POST {}", url))?;
 
         let resp: OACompatResp = serde_json::from_str(&body).context("parse OpenRouter (Meta) response")?;
-        resp.first_text()
-            .ok_or_else(|| anyhow!("no content from Meta/OpenRouter"))
+        let input_tokens = resp.usage.as_ref().and_then(|u| u.prompt_tokens);
+        let output_tokens = resp.usage.as_ref().and_then(|u| u.completion_tokens);
+        let text = resp
+            .first_text()
+            .ok_or_else(|| anyhow!("no content from Meta/OpenRouter"))?;
+        Ok(LlmOutput {
+            text,
+            input_tokens,
+            output_tokens,
+        })
     }
 }
 
@@ -128,6 +136,8 @@ fn normalize_meta_model(id: &str) -> &str {
 #[derive(Debug, Deserialize)]
 struct OACompatResp {
     choices: Vec<Choice>,
+    #[serde(default)]
+    usage: Option<UsageInfo>,
 }
 #[derive(Debug, Deserialize)]
 struct Choice {
@@ -136,6 +146,13 @@ struct Choice {
 #[derive(Debug, Deserialize)]
 struct MsgOut {
     content: String,
+}
+#[derive(Debug, Deserialize)]
+struct UsageInfo {
+    #[serde(default)]
+    prompt_tokens: Option<u32>,
+    #[serde(default)]
+    completion_tokens: Option<u32>,
 }
 impl OACompatResp {
     fn first_text(self) -> Option<String> {

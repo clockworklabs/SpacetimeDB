@@ -17,13 +17,44 @@ pub fn resolve_mode_paths(mode: &str) -> Result<Vec<PathBuf>> {
     match mode {
         "docs" => gather_docs_files(),
         "llms.md" => Ok(vec![docs_dir().join("static/llms.md")]),
+        "guidelines" => gather_guidelines_files(docs_dir().join("static/ai-guidelines"), None),
         "cursor_rules" => gather_cursor_rules_files(docs_dir().join("static/ai-rules"), None),
         "rustdoc_json" => resolve_rustdoc_json_paths_always(),
         "no_context" | "none" | "no_guidelines" | "search" => Ok(Vec::new()),
         other => bail!(
-            "unknown mode `{other}` (expected: docs | llms.md | cursor_rules | rustdoc_json | no_context | search)"
+            "unknown mode `{other}` (expected: docs | llms.md | guidelines | cursor_rules | rustdoc_json | no_context | search)"
         ),
     }
+}
+
+/// New constructive-only guidelines under docs/static/ai-guidelines/.
+/// Files are named spacetimedb-{lang}.md and selected by language tag.
+pub fn gather_guidelines_files(guidelines_dir: PathBuf, lang: Option<Lang>) -> Result<Vec<PathBuf>> {
+    if !guidelines_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut out: Vec<PathBuf> = fs::read_dir(&guidelines_dir)
+        .with_context(|| format!("read guidelines dir {}", guidelines_dir.display()))?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e == "md" || e == "mdc")
+                .unwrap_or(false)
+        })
+        .collect();
+    if let Some(l) = lang {
+        let tag = l.as_str();
+        out.retain(|p| {
+            let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+            let is_general = !name.contains("typescript") && !name.contains("rust") && !name.contains("csharp");
+            let is_lang = name.contains(tag);
+            is_general || is_lang
+        });
+    }
+    out.sort();
+    Ok(out)
 }
 
 /// Cursor rules under docs: include general rules + rules for the given language.
@@ -62,6 +93,7 @@ pub fn resolve_mode_paths_hashing(mode: &str) -> Result<Vec<PathBuf>> {
     match mode {
         "docs" => gather_docs_files(),
         "llms.md" => Ok(vec![docs_dir().join("static/llms.md")]),
+        "guidelines" => gather_guidelines_files(docs_dir().join("static/ai-guidelines"), None),
         "cursor_rules" => gather_cursor_rules_files(docs_dir().join("static/ai-rules"), None),
         "none" | "no_guidelines" | "no_context" | "search" => Ok(Vec::new()),
         "rustdoc_json" => {

@@ -4,7 +4,7 @@ use crate::llm::segmentation::{
     anthropic_ctx_limit_tokens, build_anthropic_messages, desired_output_tokens, deterministic_trim_prefix,
     estimate_tokens, headroom_tokens_env, non_context_reserve_tokens_env,
 };
-use crate::llm::types::Vendor;
+use crate::llm::types::{LlmOutput, Vendor};
 use anyhow::{anyhow, bail, Context, Result};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE};
 use reqwest::{Client, StatusCode};
@@ -30,7 +30,7 @@ impl AnthropicClient {
         format!("{}/v1/messages", self.base.trim_end_matches('/'))
     }
 
-    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<String> {
+    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput> {
         let system = prompt.system.clone();
         let segs = prompt.segments.clone();
         let mut static_prefix = prompt.static_prefix.clone().unwrap_or_default();
@@ -115,9 +115,18 @@ impl AnthropicClient {
         }
 
         #[derive(Deserialize)]
+        struct AnthropicUsage {
+            #[serde(default)]
+            input_tokens: Option<u32>,
+            #[serde(default)]
+            output_tokens: Option<u32>,
+        }
+        #[derive(Deserialize)]
         struct MsgResp {
             #[serde(default)]
             content: Vec<ContentPart>,
+            #[serde(default)]
+            usage: Option<AnthropicUsage>,
         }
         #[derive(Deserialize)]
         struct ContentPart {
@@ -128,11 +137,18 @@ impl AnthropicClient {
         }
 
         let parsed: MsgResp = serde_json::from_str(&body).context("parse anthropic resp")?;
-        parsed
+        let input_tokens = parsed.usage.as_ref().and_then(|u| u.input_tokens);
+        let output_tokens = parsed.usage.as_ref().and_then(|u| u.output_tokens);
+        let text = parsed
             .content
             .into_iter()
             .find_map(|p| p.text)
-            .ok_or_else(|| anyhow!("no text"))
+            .ok_or_else(|| anyhow!("no text"))?;
+        Ok(LlmOutput {
+            text,
+            input_tokens,
+            output_tokens,
+        })
     }
 
     async fn post_with_retries(

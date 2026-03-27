@@ -6,11 +6,11 @@ use crate::llm::clients::{
 };
 use crate::llm::model_routes::ModelRoute;
 use crate::llm::prompt::BuiltPrompt;
-use crate::llm::types::Vendor;
+use crate::llm::types::{LlmOutput, Vendor};
 
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
-    async fn generate(&self, route: &ModelRoute, prompt: &BuiltPrompt) -> Result<String>;
+    async fn generate(&self, route: &ModelRoute, prompt: &BuiltPrompt) -> Result<LlmOutput>;
 }
 
 pub struct RouterProvider {
@@ -52,7 +52,7 @@ impl RouterProvider {
 
 #[async_trait]
 impl LlmProvider for RouterProvider {
-    async fn generate(&self, route: &ModelRoute, prompt: &BuiltPrompt) -> Result<String> {
+    async fn generate(&self, route: &ModelRoute, prompt: &BuiltPrompt) -> Result<LlmOutput> {
         // Web search mode: route all models through OpenRouter with :online suffix.
         // OpenRouter's :online feature adds Bing-powered web search to any model.
         if prompt.search_enabled {
@@ -116,7 +116,7 @@ impl LlmProvider for RouterProvider {
 
 impl RouterProvider {
     /// Fall back to the OpenRouter client when a direct vendor client is not configured.
-    async fn fallback_openrouter(&self, route: &ModelRoute, prompt: &BuiltPrompt, vendor_name: &str) -> Result<String> {
+    async fn fallback_openrouter(&self, route: &ModelRoute, prompt: &BuiltPrompt, vendor_name: &str) -> Result<LlmOutput> {
         match self.openrouter.as_ref() {
             Some(cli) => {
                 let or_model = route

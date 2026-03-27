@@ -148,6 +148,11 @@ struct RunArgs {
     ///   --models "anthropic:Claude 4.5 Sonnet" --models openai:gpt-5
     #[arg(long, num_args = 1..)]
     models: Option<Vec<ModelGroup>>,
+
+    /// Upload results to a remote API endpoint after the run completes.
+    /// Requires LLM_BENCHMARK_API_KEY env var for authentication.
+    #[arg(long)]
+    upload_url: Option<String>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -186,8 +191,8 @@ struct StatusArgs {
     #[arg(long)]
     details: Option<PathBuf>,
 
-    /// Comma-separated modes to check (default: docs,none)
-    #[arg(long, value_delimiter = ',', default_value = "docs,none")]
+    /// Comma-separated modes to check (default: guidelines,no_context)
+    #[arg(long, value_delimiter = ',', default_value = "guidelines,no_context")]
     modes: Vec<String>,
 
     /// Comma-separated languages to check (default: all languages found in details.json)
@@ -285,7 +290,79 @@ fn cmd_run(args: RunArgs) -> Result<()> {
     let details_path = llm_comparison_details();
     let summary_path = llm_comparison_summary();
 
-    run_benchmarks(args, &details_path, &summary_path)
+    let upload_url = args.upload_url.clone();
+    run_benchmarks(args, &details_path, &summary_path)?;
+
+    // Upload results to remote API if --upload-url was provided
+    if let Some(url) = upload_url {
+        upload_results_to_api(&url, &details_path)?;
+    }
+
+    Ok(())
+}
+
+/// Upload the details JSON to a remote API endpoint (spacetime-web Postgres).
+fn upload_results_to_api(base_url: &str, details_path: &Path) -> Result<()> {
+    let api_key = std::env::var("LLM_BENCHMARK_API_KEY")
+        .context("LLM_BENCHMARK_API_KEY env var required for --upload-url")?;
+
+    let details_json = std::fs::read_to_string(details_path)
+        .context("failed to read details JSON for upload")?;
+
+    let details: serde_json::Value = serde_json::from_str(&details_json)
+        .context("failed to parse details JSON for upload")?;
+
+    let languages = details["languages"].as_array()
+        .context("details JSON missing 'languages' array")?;
+
+    let upload_url = format!("{}/api/llm-benchmark-upload", base_url.trim_end_matches('/'));
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .context("failed to build HTTP client for upload")?;
+
+    let mut total_uploaded = 0usize;
+
+    for lang_entry in languages {
+        let lang = lang_entry["lang"].as_str().unwrap_or("unknown");
+        let modes = lang_entry["modes"].as_array();
+        let Some(modes) = modes else { continue };
+
+        for mode_entry in modes {
+            let mode = mode_entry["mode"].as_str().unwrap_or("unknown");
+            let hash = mode_entry["hash"].as_str();
+
+            let payload = serde_json::json!({
+                "lang": lang,
+                "mode": mode,
+                "hash": hash,
+                "models": mode_entry["models"],
+            });
+
+            let resp = client
+                .post(&upload_url)
+                .header("Authorization", format!("Bearer {api_key}"))
+                .header("Content-Type", "application/json")
+                .json(&payload)
+                .send()
+                .with_context(|| format!("upload failed for {lang}/{mode}"))?;
+
+            if resp.status().is_success() {
+                let body: serde_json::Value = resp.json().unwrap_or_default();
+                let inserted = body["inserted"].as_u64().unwrap_or(0);
+                total_uploaded += inserted as usize;
+                println!("📤 uploaded {lang}/{mode}: {inserted} results");
+            } else {
+                let status = resp.status();
+                let body = resp.text().unwrap_or_default();
+                eprintln!("⚠️ upload failed for {lang}/{mode}: {status} — {body}");
+            }
+        }
+    }
+
+    println!("📤 total uploaded: {total_uploaded} results to {upload_url}");
+    Ok(())
 }
 
 /// Core benchmark runner used by both `run` and `ci-quickfix`
@@ -503,6 +580,7 @@ fn cmd_ci_quickfix() -> Result<()> {
             vendor: Vendor::OpenAi,
             models: vec!["gpt-5".to_string()],
         }]),
+        upload_url: None,
     };
     run_benchmarks(rust_rustdoc_args, &details_path, &summary_path)?;
 
@@ -520,6 +598,7 @@ fn cmd_ci_quickfix() -> Result<()> {
             vendor: Vendor::OpenAi,
             models: vec!["gpt-5".to_string()],
         }]),
+        upload_url: None,
     };
     run_benchmarks(rust_docs_args, &details_path, &summary_path)?;
 
@@ -537,6 +616,7 @@ fn cmd_ci_quickfix() -> Result<()> {
             vendor: Vendor::OpenAi,
             models: vec!["gpt-5".to_string()],
         }]),
+        upload_url: None,
     };
     run_benchmarks(csharp_args, &details_path, &summary_path)?;
 
@@ -554,6 +634,7 @@ fn cmd_ci_quickfix() -> Result<()> {
             vendor: Vendor::OpenAi,
             models: vec!["gpt-5".to_string()],
         }]),
+        upload_url: None,
     };
     run_benchmarks(typescript_args, &details_path, &summary_path)?;
 
@@ -1275,7 +1356,7 @@ fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
         search_enabled: false,
     };
 
-    let analysis = runtime.block_on(provider.generate(&route, &built_prompt))?;
+    let analysis = runtime.block_on(provider.generate(&route, &built_prompt))?.text;
 
     // Write markdown output
     let markdown = format!(
@@ -1490,7 +1571,61 @@ fn cmd_status(args: StatusArgs) -> Result<()> {
         }
     }
 
-    if !any_missing {
+    // ── Check for results missing started_at/finished_at timestamps ────────
+    // These can't be uploaded to Postgres and need to be re-run.
+    let mut missing_timestamps: Vec<(String, String, String, Vec<String>)> = Vec::new(); // (lang, mode, model, tasks)
+
+    if details_path.exists() {
+        let content = fs::read_to_string(&details_path)?;
+        let results: Results = serde_json::from_str(&content)?;
+        for lang_entry in &results.languages {
+            if !langs.contains(&lang_entry.lang) { continue; }
+            for mode_entry in &lang_entry.modes {
+                if !args.modes.contains(&mode_entry.mode) { continue; }
+                for model_entry in &mode_entry.models {
+                    let mut no_ts: Vec<String> = Vec::new();
+                    for (task_id, outcome) in &model_entry.tasks {
+                        if outcome.started_at.is_none() || outcome.finished_at.is_none() {
+                            // Only flag results that actually have LLM output (real results, not errors)
+                            if outcome.llm_output.is_some() {
+                                no_ts.push(task_id.clone());
+                            }
+                        }
+                    }
+                    if !no_ts.is_empty() {
+                        no_ts.sort();
+                        missing_timestamps.push((
+                            lang_entry.lang.clone(),
+                            mode_entry.mode.clone(),
+                            model_entry.name.clone(),
+                            no_ts,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    if !missing_timestamps.is_empty() {
+        let total: usize = missing_timestamps.iter().map(|(_, _, _, t)| t.len()).sum();
+        println!("---");
+        println!("⚠️  {} results missing started_at/finished_at timestamps (cannot upload to Postgres):\n", total);
+        for (lang, mode, model, tasks) in &missing_timestamps {
+            println!("# {} | {} | mode={} | {} tasks without timestamps", model, lang, mode, tasks.len());
+            // Find the route for this model to generate the rerun command
+            let route = routes.iter().find(|r| r.display_name == model.as_str());
+            if let Some(route) = route {
+                let vendor_str = format!("{:?}", route.vendor).to_ascii_lowercase();
+                println!(
+                    "cargo run -p xtask-llm-benchmark -- run --lang {} --modes {} --models {}:{} --tasks {}",
+                    lang, mode, vendor_str, route.api_model, tasks.join(",")
+                );
+            }
+            println!();
+        }
+    }
+
+    if !any_missing && missing_timestamps.is_empty() {
         println!("All models have real results for all tasks in modes: {}", args.modes.join(", "));
     }
     Ok(())
