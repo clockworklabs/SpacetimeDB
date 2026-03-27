@@ -1897,6 +1897,13 @@ pub struct StDatabasesTxOffsetRow {
     pub tx_offset: u64,
 }
 
+impl TryFrom<RowRef<'_>> for StDatabasesTxOffsetRow {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
+        read_via_bsatn(row)
+    }
+}
+
 thread_local! {
     static READ_BUF: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }

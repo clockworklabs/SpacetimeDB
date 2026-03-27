@@ -2,7 +2,7 @@ use super::instrumentation::CallTimes;
 use super::*;
 use crate::client::ClientActorId;
 use crate::database_logger;
-use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
+use crate::energy::{EnergyMonitor, EnergyQuanta, FunctionBudget, FunctionFingerprint};
 use crate::error::DBError;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{InstanceEnv, TxSlot};
@@ -820,6 +820,7 @@ impl InstanceCommon {
             reducer_id,
             args,
             timer,
+            dedup_sender,
         } = params;
         let caller_connection_id_opt = (caller_connection_id != ConnectionId::ZERO).then_some(caller_connection_id);
 
@@ -844,6 +845,25 @@ impl InstanceCommon {
 
         let workload = Workload::Reducer(ReducerContext::from(op.clone()));
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable, workload));
+
+        // Check the dedup index atomically within this transaction.
+        // If the incoming offset is ≤ the last delivered offset for this sender,
+        // the message is a duplicate; discard it and roll back.
+        if let Some((sender_identity, sender_tx_offset)) = dedup_sender {
+            let last_delivered = tx.get_databases_tx_offset(sender_identity);
+            if last_delivered.is_some_and(|last| sender_tx_offset <= last) {
+                let _ = stdb.rollback_mut_tx(tx);
+                return (
+                    ReducerCallResult {
+                        outcome: ReducerOutcome::Deduplicated,
+                        energy_used: EnergyQuanta::ZERO,
+                        execution_duration: Duration::ZERO,
+                    },
+                    false,
+                );
+            }
+        }
+
         let mut tx_slot = inst.tx_slot();
 
         let vm_metrics = self.vm_metrics.get_for_reducer_id(reducer_id);
@@ -885,12 +905,21 @@ impl InstanceCommon {
             Ok(return_value) => {
                 // If this is an OnDisconnect lifecycle event, remove the client from st_clients.
                 // We handle OnConnect events before running the reducer.
-                let res = match reducer_def.lifecycle {
+                let lifecycle_res = match reducer_def.lifecycle {
                     Some(Lifecycle::OnDisconnect) => {
                         tx.delete_st_client(caller_identity, caller_connection_id, info.database_identity)
                     }
                     _ => Ok(()),
                 };
+                // Atomically update the dedup index so this sender's tx_offset is recorded
+                // as delivered. This prevents re-processing if the message is retried.
+                let dedup_res = match dedup_sender {
+                    Some((sender_identity, sender_tx_offset)) => {
+                        tx.upsert_databases_tx_offset(sender_identity, sender_tx_offset)
+                    }
+                    None => Ok(()),
+                };
+                let res = lifecycle_res.and(dedup_res);
                 match res {
                     Ok(()) => (EventStatus::Committed(DatabaseUpdate::default()), return_value),
                     Err(err) => {

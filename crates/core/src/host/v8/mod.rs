@@ -613,7 +613,7 @@ enum JsWorkerRequest {
     },
 }
 
-static_assert_size!(CallReducerParams, 192);
+static_assert_size!(CallReducerParams, 256);
 
 fn send_worker_reply<T>(ctx: &str, reply_tx: JsReplyTx<T>, value: T, trapped: bool) {
     if reply_tx.send(JsWorkerReply { value, trapped }).is_err() {

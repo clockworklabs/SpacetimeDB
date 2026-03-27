@@ -589,7 +589,7 @@ pub fn call_identity_connected(
             // then insert into `st_client`,
             // but if we crashed in between, we'd be left in an inconsistent state
             // where the reducer had run but `st_client` was not yet updated.
-            ReducerOutcome::Committed => Ok(()),
+            ReducerOutcome::Committed | ReducerOutcome::Deduplicated => Ok(()),
 
             // If the reducer returned an error or couldn't run due to insufficient energy,
             // abort the connection: the module code has decided it doesn't want this client.
@@ -624,6 +624,15 @@ pub struct CallReducerParams {
     pub timer: Option<Instant>,
     pub reducer_id: ReducerId,
     pub args: ArgsTuple,
+    /// If set, enables at-most-once delivery semantics for database-to-database calls.
+    ///
+    /// The tuple is `(sender_database_identity, sender_tx_offset)`.
+    /// Before running the reducer, `st_databases_tx_offset` is consulted:
+    /// if `sender_tx_offset` ≤ the stored last-delivered offset for the sender,
+    /// the call is a duplicate and returns [`ReducerCallError::Deduplicated`].
+    /// Otherwise the reducer runs, and the stored offset is updated atomically
+    /// within the same transaction.
+    pub dedup_sender: Option<(Identity, u64)>,
 }
 
 impl CallReducerParams {
@@ -644,6 +653,7 @@ impl CallReducerParams {
             timer: None,
             reducer_id,
             args,
+            dedup_sender: None,
         }
     }
 }
@@ -1490,9 +1500,9 @@ impl ModuleHost {
                     ..
                 }) => fallback(),
 
-                // If it succeeded, as mentioned above, `st_client` is already updated.
+                // If it succeeded (or was deduplicated), as mentioned above, `st_client` is already updated.
                 Ok(ReducerCallResult {
-                    outcome: ReducerOutcome::Committed,
+                    outcome: ReducerOutcome::Committed | ReducerOutcome::Deduplicated,
                     ..
                 }) => Ok(()),
             }
@@ -1567,6 +1577,7 @@ impl ModuleHost {
             timer,
             reducer_id,
             args,
+            dedup_sender: None,
         })
     }
 
@@ -1594,6 +1605,7 @@ impl ModuleHost {
             timer,
             reducer_id,
             args,
+            dedup_sender: None,
         };
 
         self.call(
@@ -1640,6 +1652,80 @@ impl ModuleHost {
                 args,
             )
             .await
+        }
+        .await;
+
+        let log_message = match &res {
+            Err(ReducerCallError::NoSuchReducer) => Some(no_such_function_log_message("reducer", reducer_name)),
+            Err(ReducerCallError::Args(_)) => Some(args_error_log_message("reducer", reducer_name)),
+            _ => None,
+        };
+        if let Some(log_message) = log_message {
+            self.inject_logs(LogLevel::Error, reducer_name, &log_message)
+        }
+
+        res
+    }
+
+    /// Variant of [`Self::call_reducer`] for database-to-database calls.
+    ///
+    /// Behaves identically to `call_reducer`, except that it enforces at-most-once
+    /// delivery using the `st_databases_tx_offset` dedup index.
+    /// Before invoking the reducer, the receiver checks whether
+    /// `sender_tx_offset` ≤ the last delivered offset for `sender_database_identity`.
+    /// If so, the call is a duplicate and [`ReducerOutcome::Deduplicated`] is returned
+    /// without running the reducer.
+    /// Otherwise the reducer runs, and the dedup index is updated atomically
+    /// within the same transaction.
+    pub async fn call_reducer_from_database(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        client: Option<Arc<ClientConnectionSender>>,
+        request_id: Option<RequestId>,
+        timer: Option<Instant>,
+        reducer_name: &str,
+        args: FunctionArgs,
+        sender_database_identity: Identity,
+        sender_tx_offset: u64,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
+        let res = async {
+            let (reducer_id, reducer_def) = self
+                .info
+                .module_def
+                .reducer_full(reducer_name)
+                .ok_or(ReducerCallError::NoSuchReducer)?;
+            if let Some(lifecycle) = reducer_def.lifecycle {
+                return Err(ReducerCallError::LifecycleReducer(lifecycle));
+            }
+
+            if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+                return Err(ReducerCallError::NoSuchReducer);
+            }
+
+            let args = args
+                .into_tuple_for_def(&self.info.module_def, reducer_def)
+                .map_err(InvalidReducerArguments)?;
+            let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
+            let call_reducer_params = CallReducerParams {
+                timestamp: Timestamp::now(),
+                caller_identity,
+                caller_connection_id,
+                client,
+                request_id,
+                timer,
+                reducer_id,
+                args,
+                dedup_sender: Some((sender_database_identity, sender_tx_offset)),
+            };
+
+            self.call(
+                &reducer_def.name,
+                call_reducer_params,
+                async |p, inst| Ok(inst.call_reducer(p)),
+                async |p, inst| inst.call_reducer(p).await,
+            )
+            .await?
         }
         .await;
 
