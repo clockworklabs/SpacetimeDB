@@ -16,12 +16,14 @@ use crate::{
 };
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query, State};
+use axum::http::Request as AxumRequest;
 use axum::response::{ErrorResponse, IntoResponse};
 use axum::routing::MethodRouter;
 use axum::Extension;
 use axum_extra::TypedHeader;
 use futures::TryStreamExt;
 use http::StatusCode;
+use http_body_util::BodyExt;
 use log::{info, warn};
 use serde::Deserialize;
 use spacetimedb::database_logger::DatabaseLogger;
@@ -39,7 +41,9 @@ use spacetimedb_client_api_messages::name::{
 };
 use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
-use spacetimedb_lib::{sats, AlgebraicValue, Hash, ProductValue, Timestamp};
+use spacetimedb_lib::de as st_de;
+use spacetimedb_lib::sats::algebraic_value::de::ValueDeserializer;
+use spacetimedb_lib::{bsatn, http as st_http, sats, AlgebraicValue, Hash, ProductValue, Timestamp};
 use spacetimedb_schema::auto_migrate::{
     MigrationPolicy as SchemaMigrationPolicy, MigrationToken, PrettyPrintStyle as AutoMigratePrettyPrintStyle,
 };
@@ -216,6 +220,69 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     }
 }
 
+#[derive(Deserialize)]
+pub struct RouteParams {
+    name_or_identity: NameOrIdentity,
+    path: String,
+}
+
+pub async fn http_route<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    Path(RouteParams { name_or_identity, path }): Path<RouteParams>,
+    request: AxumRequest<Body>,
+) -> axum::response::Result<impl IntoResponse> {
+    let caller_identity = auth.claims.identity;
+
+    let (module, _database) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+
+    let (parts, body) = request.into_parts();
+    let route_path = format!("/{}", path);
+    let method = convert_method(parts.method.clone());
+
+    let Some((procedure_id, procedure_def)) = module.info.module_def.http_route(&method, &route_path) else {
+        return Ok(StatusCode::NOT_FOUND.into_response());
+    };
+
+    let body_bytes = body
+        .collect()
+        .await
+        .map_err(|err| (StatusCode::BAD_REQUEST, format!("Failed to read request body: {err}")))?
+        .to_bytes();
+
+    let request_and_body = convert_request_to_st(parts, body_bytes);
+    let args = bsatn::to_vec(&request_and_body).map_err(|err| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to encode request: {err}"),
+        )
+    })?;
+
+    let call_result = module
+        .call_procedure_internal(
+            caller_identity,
+            None,
+            None,
+            procedure_id,
+            procedure_def,
+            FunctionArgs::Bsatn(args.into()),
+        )
+        .await;
+
+    let result = match call_result.result {
+        Ok(result) => result,
+        Err(_) => return Ok(StatusCode::INTERNAL_SERVER_ERROR.into_response()),
+    };
+
+    let response =
+        decode_response_and_body(result.return_val).map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err))?;
+
+    let response = response_and_body_to_axum(response)
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, format!("Invalid response: {err}")))?;
+
+    Ok(response)
+}
+
 fn assert_content_type_json(content_type: headers::ContentType) -> axum::response::Result<()> {
     if content_type != headers::ContentType::json() {
         Err(axum::extract::rejection::MissingJsonContentType::default().into())
@@ -313,6 +380,88 @@ fn procedure_outcome_response(return_val: AlgebraicValue) -> (StatusCode, axum::
         StatusCode::OK,
         axum::Json(sats::serde::SerdeWrapper(return_val)).into_response(),
     )
+}
+
+fn convert_method(method: http::Method) -> st_http::Method {
+    match method {
+        http::Method::GET => st_http::Method::Get,
+        http::Method::HEAD => st_http::Method::Head,
+        http::Method::POST => st_http::Method::Post,
+        http::Method::PUT => st_http::Method::Put,
+        http::Method::DELETE => st_http::Method::Delete,
+        http::Method::CONNECT => st_http::Method::Connect,
+        http::Method::OPTIONS => st_http::Method::Options,
+        http::Method::TRACE => st_http::Method::Trace,
+        http::Method::PATCH => st_http::Method::Patch,
+        _ => st_http::Method::Extension(method.to_string()),
+    }
+}
+
+fn convert_version(version: http::Version) -> st_http::Version {
+    match version {
+        http::Version::HTTP_09 => st_http::Version::Http09,
+        http::Version::HTTP_10 => st_http::Version::Http10,
+        http::Version::HTTP_11 => st_http::Version::Http11,
+        http::Version::HTTP_2 => st_http::Version::Http2,
+        http::Version::HTTP_3 => st_http::Version::Http3,
+        _ => st_http::Version::Http11,
+    }
+}
+
+fn convert_request_to_st(parts: http::request::Parts, body: Bytes) -> st_http::RequestAndBody {
+    let http::request::Parts {
+        method,
+        uri,
+        version,
+        headers,
+        ..
+    } = parts;
+
+    let request = st_http::Request {
+        method: convert_method(method),
+        headers: headers
+            .into_iter()
+            .map(|(k, v)| (k.map(|k| k.as_str().into()), v.as_bytes().into()))
+            .collect(),
+        timeout: None,
+        uri: uri.to_string(),
+        version: convert_version(version),
+    };
+
+    st_http::RequestAndBody {
+        request,
+        body: body.to_vec().into_boxed_slice(),
+    }
+}
+
+fn decode_response_and_body(return_val: AlgebraicValue) -> Result<st_http::ResponseAndBody, String> {
+    <st_http::ResponseAndBody as st_de::Deserialize>::deserialize(ValueDeserializer::new(return_val))
+        .map_err(|err| format!("Failed to decode HTTP response: {err:?}"))
+}
+
+fn response_and_body_to_axum(response: st_http::ResponseAndBody) -> http::Result<axum::response::Response> {
+    let st_http::ResponseAndBody { response, body } = response;
+    let parts = convert_st_response(response)?;
+    Ok(http::Response::from_parts(parts, Body::from(Vec::from(body))))
+}
+
+fn convert_st_response(response: st_http::Response) -> http::Result<http::response::Parts> {
+    let st_http::Response { headers, version, code } = response;
+
+    let (mut response, ()) = http::Response::new(()).into_parts();
+    response.version = match version {
+        st_http::Version::Http09 => http::Version::HTTP_09,
+        st_http::Version::Http10 => http::Version::HTTP_10,
+        st_http::Version::Http11 => http::Version::HTTP_11,
+        st_http::Version::Http2 => http::Version::HTTP_2,
+        st_http::Version::Http3 => http::Version::HTTP_3,
+    };
+    response.status = http::StatusCode::from_u16(code)?;
+    response.headers = headers
+        .into_iter()
+        .map(|(k, v)| Ok((k.into_string().try_into()?, v.into_vec().try_into()?)))
+        .collect::<http::Result<_>>()?;
+    Ok(response)
 }
 
 #[derive(Deserialize)]
@@ -1189,6 +1338,8 @@ pub struct DatabaseRoutes<S> {
     pub subscribe_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/call/:reducer
     pub call_reducer_procedure_post: MethodRouter<S>,
+    /// ANY: /database/:name_or_identity/route/:path
+    pub route_any: MethodRouter<S>,
     /// GET: /database/:name_or_identity/schema
     pub schema_get: MethodRouter<S>,
     /// GET: /database/:name_or_identity/logs
@@ -1208,7 +1359,7 @@ where
     S: NodeDelegate + ControlStateDelegate + HasWebSocketOptions + Authorization + Clone + 'static,
 {
     fn default() -> Self {
-        use axum::routing::{delete, get, post, put};
+        use axum::routing::{any, delete, get, post, put};
         Self {
             root_post: post(publish::<S>),
             db_put: put(publish::<S>),
@@ -1220,6 +1371,7 @@ where
             identity_get: get(get_identity::<S>),
             subscribe_get: get(handle_websocket::<S>),
             call_reducer_procedure_post: post(call::<S>),
+            route_any: any(http_route::<S>),
             schema_get: get(schema::<S>),
             logs_get: get(logs::<S>),
             sql_post: post(sql::<S>),
@@ -1245,6 +1397,7 @@ where
             .route("/identity", self.identity_get)
             .route("/subscribe", self.subscribe_get)
             .route("/call/:reducer", self.call_reducer_procedure_post)
+            .route("/route/:path", self.route_any)
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)

@@ -6,6 +6,7 @@
 //! It allows easier future extensibility to add new kinds of definitions.
 
 use crate::db::raw_def::v9::{Lifecycle, RawIndexAlgorithm, TableAccess, TableType};
+use crate::http;
 use core::fmt;
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
@@ -89,6 +90,9 @@ pub enum RawModuleDefV10Section {
 
     /// Names provided explicitly by the user that do not follow from the case conversion policy.
     ExplicitNames(ExplicitNames),
+
+    /// HTTP route definitions.
+    HttpRoutes(Vec<RawHttpRouteDefV10>),
 }
 
 #[derive(Debug, Clone, Copy, Default, SpacetimeType)]
@@ -357,6 +361,28 @@ pub struct RawProcedureDefV10 {
     pub visibility: FunctionVisibility,
 }
 
+/// A path component of a URI.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct Path {
+    /// The trailing path component, including the leading `/`.
+    pub path: RawIdentifier,
+}
+
+/// A definition binding a procedure to an HTTP route.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawHttpRouteDefV10 {
+    /// Identifier for a procedure defined by the module.
+    pub handler_function: RawIdentifier,
+    /// One of the supported HTTP methods.
+    pub method: http::Method,
+    /// The user-configurable trailing part of the path to listen on.
+    pub path: Path,
+}
+
 /// A sequence definition for a database table column.
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
@@ -608,6 +634,14 @@ impl RawModuleDefV10 {
             _ => None,
         })
     }
+
+    /// Get the http routes section, if present.
+    pub fn http_routes(&self) -> Option<&Vec<RawHttpRouteDefV10>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::HttpRoutes(routes) => Some(routes),
+            _ => None,
+        })
+    }
 }
 
 /// A builder for a [`RawModuleDefV10`].
@@ -782,6 +816,26 @@ impl RawModuleDefV10Builder {
         match &mut self.module.sections[idx] {
             RawModuleDefV10Section::RowLevelSecurity(rls) => rls,
             _ => unreachable!("Just ensured RowLevelSecurity section exists"),
+        }
+    }
+
+    /// Get mutable access to the http routes section, creating it if missing.
+    fn http_routes_mut(&mut self) -> &mut Vec<RawHttpRouteDefV10> {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::HttpRoutes(_)))
+            .unwrap_or_else(|| {
+                self.module
+                    .sections
+                    .push(RawModuleDefV10Section::HttpRoutes(Vec::new()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::HttpRoutes(routes) => routes,
+            _ => unreachable!("Just ensured HttpRoutes section exists"),
         }
     }
 
@@ -968,11 +1022,22 @@ impl RawModuleDefV10Builder {
         params: ProductType,
         return_type: AlgebraicType,
     ) {
+        self.add_procedure_with_visibility(source_name, params, return_type, FunctionVisibility::ClientCallable);
+    }
+
+    /// Add a procedure to the in-progress module with explicit visibility.
+    pub fn add_procedure_with_visibility(
+        &mut self,
+        source_name: impl Into<RawIdentifier>,
+        params: ProductType,
+        return_type: AlgebraicType,
+        visibility: FunctionVisibility,
+    ) {
         self.procedures_mut().push(RawProcedureDefV10 {
             source_name: source_name.into(),
             params,
             return_type,
-            visibility: FunctionVisibility::ClientCallable,
+            visibility,
         })
     }
 
@@ -1048,6 +1113,20 @@ impl RawModuleDefV10Builder {
     pub fn add_row_level_security(&mut self, sql: &str) {
         self.row_level_security_mut()
             .push(RawRowLevelSecurityDefV10 { sql: sql.into() });
+    }
+
+    /// Add an HTTP route definition to the module.
+    pub fn add_http_route(
+        &mut self,
+        handler_function: impl Into<RawIdentifier>,
+        method: http::Method,
+        path: impl Into<RawIdentifier>,
+    ) {
+        self.http_routes_mut().push(RawHttpRouteDefV10 {
+            handler_function: handler_function.into(),
+            method,
+            path: Path { path: path.into() },
+        });
     }
 
     pub fn add_explicit_names(&mut self, names: ExplicitNames) {

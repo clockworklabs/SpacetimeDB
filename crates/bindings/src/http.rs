@@ -199,6 +199,90 @@ fn convert_response(response: st_http::Response) -> http::Result<http::response:
     Ok(response)
 }
 
+#[doc(hidden)]
+pub fn request_and_body_to_http(request: st_http::RequestAndBody) -> http::Result<http::Request<Body>> {
+    let st_http::RequestAndBody { request, body } = request;
+    let parts = convert_request_from_st(request)?;
+    Ok(http::Request::from_parts(parts, Body::from_bytes(body)))
+}
+
+#[doc(hidden)]
+pub fn response_to_response_and_body<B: Into<Body>>(response: http::Response<B>) -> st_http::ResponseAndBody {
+    let (parts, body) = response.map(Into::into).into_parts();
+    let response = convert_response_from_http(parts);
+    let body = body.into_bytes().to_vec().into_boxed_slice();
+    st_http::ResponseAndBody { response, body }
+}
+
+fn convert_request_from_st(request: st_http::Request) -> http::Result<http::request::Parts> {
+    let st_http::Request {
+        method,
+        headers,
+        timeout: _,
+        uri,
+        version,
+    } = request;
+
+    let (mut req, ()) = http::Request::new(()).into_parts();
+    req.method = match method {
+        st_http::Method::Get => http::Method::GET,
+        st_http::Method::Head => http::Method::HEAD,
+        st_http::Method::Post => http::Method::POST,
+        st_http::Method::Put => http::Method::PUT,
+        st_http::Method::Delete => http::Method::DELETE,
+        st_http::Method::Connect => http::Method::CONNECT,
+        st_http::Method::Options => http::Method::OPTIONS,
+        st_http::Method::Trace => http::Method::TRACE,
+        st_http::Method::Patch => http::Method::PATCH,
+        st_http::Method::Extension(method) => http::Method::from_bytes(method.as_bytes())?,
+    };
+    req.uri = uri.parse().map_err(http::Error::from)?;
+    req.version = match version {
+        st_http::Version::Http09 => http::Version::HTTP_09,
+        st_http::Version::Http10 => http::Version::HTTP_10,
+        st_http::Version::Http11 => http::Version::HTTP_11,
+        st_http::Version::Http2 => http::Version::HTTP_2,
+        st_http::Version::Http3 => http::Version::HTTP_3,
+    };
+    req.headers = headers
+        .into_iter()
+        .map(|(k, v)| {
+            let name = k.into_string().try_into()?;
+            let value = v.into_vec().try_into()?;
+            Ok((name, value))
+        })
+        .collect::<http::Result<_>>()?;
+    Ok(req)
+}
+
+fn convert_response_from_http(response: http::response::Parts) -> st_http::Response {
+    let http::response::Parts {
+        extensions,
+        headers,
+        status,
+        version,
+        ..
+    } = response;
+
+    let _ = extensions;
+
+    st_http::Response {
+        headers: headers
+            .into_iter()
+            .map(|(k, v)| (k.map(|k| k.as_str().into()), v.as_bytes().into()))
+            .collect(),
+        version: match version {
+            http::Version::HTTP_09 => st_http::Version::Http09,
+            http::Version::HTTP_10 => st_http::Version::Http10,
+            http::Version::HTTP_11 => st_http::Version::Http11,
+            http::Version::HTTP_2 => st_http::Version::Http2,
+            http::Version::HTTP_3 => st_http::Version::Http3,
+            _ => unreachable!("Unknown HTTP version: {version:?}"),
+        },
+        code: status.as_u16(),
+    }
+}
+
 /// Represents the body of an HTTP request or response.
 pub struct Body {
     inner: BodyInner,

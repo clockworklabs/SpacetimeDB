@@ -3,14 +3,15 @@ use spacetimedb_lib::bsatn::Deserializer;
 use spacetimedb_lib::db::raw_def::v10::*;
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::de::DeserializeSeed as _;
-use spacetimedb_sats::{Typespace, WithTypespace};
+use spacetimedb_lib::http;
+use spacetimedb_sats::{SpacetimeType, Typespace, WithTypespace};
 
 use crate::def::validate::v9::{
     check_function_names_are_unique, check_scheduled_functions_exist, generate_schedule_name,
     generate_unique_constraint_name, identifier, CoreValidator, TableValidator, ViewValidator,
 };
 use crate::def::*;
-use crate::error::ValidationError;
+use crate::error::{PrettyAlgebraicType, ValidationError};
 use crate::type_for_generate::ProductTypeDef;
 use crate::{def::validate::Result, error::TypeLocation};
 
@@ -249,13 +250,6 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 Ok((tables, types, reducers, procedures, views))
             },
         );
-    let CoreValidator {
-        stored_in_table_def,
-        typespace_for_generate,
-        lifecycle_reducers,
-        ..
-    } = validator.core;
-
     let row_level_security_raw = def
         .row_level_security()
         .into_iter()
@@ -265,6 +259,36 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
 
     let (tables, types, reducers, procedures, views) =
         (tables_types_reducers_procedures_views).map_err(|errors| errors.sort_deduplicate())?;
+
+    let (expected_request_ty, expected_response_ty) = http_route_expected_types(def.case_conversion_policy());
+
+    let http_routes = def
+        .http_routes()
+        .cloned()
+        .into_iter()
+        .flatten()
+        .map(|route| validator.validate_http_route_def(route, &procedures, &expected_request_ty, &expected_response_ty))
+        .collect_all_errors::<Vec<_>>()
+        .map_err(|errors| errors.sort_deduplicate())?;
+
+    let mut http_route_lookup: HashMap<HttpRouteKey, ProcedureId> = HashMap::default();
+    for route in &http_routes {
+        let key = HttpRouteKey::new(&route.method, &route.path);
+        if http_route_lookup.insert(key, route.procedure_id).is_some() {
+            return Err(ValidationError::DuplicateHttpRoute {
+                method: route.method.clone(),
+                path: route.path.clone().into(),
+            }
+            .into());
+        }
+    }
+
+    let CoreValidator {
+        stored_in_table_def,
+        typespace_for_generate,
+        lifecycle_reducers,
+        ..
+    } = validator.core;
 
     let typespace_for_generate = typespace_for_generate.finish();
 
@@ -280,6 +304,8 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         row_level_security_raw,
         lifecycle_reducers,
         procedures,
+        http_routes,
+        http_route_lookup,
         raw_module_def_version: RawModuleDefVersion::V10,
     })
 }
@@ -779,6 +805,116 @@ impl<'a> ModuleValidatorV10<'a> {
             param_columns,
         })
     }
+
+    fn validate_http_route_def(
+        &mut self,
+        route: RawHttpRouteDefV10,
+        procedures: &IndexMap<Identifier, ProcedureDef>,
+        expected_request: &AlgebraicType,
+        expected_response: &AlgebraicType,
+    ) -> Result<HttpRouteDef> {
+        let RawHttpRouteDefV10 {
+            handler_function,
+            method,
+            path,
+        } = route;
+
+        if !matches!(
+            method,
+            http::Method::Get | http::Method::Post | http::Method::Put | http::Method::Delete | http::Method::Patch
+        ) {
+            return Err(ValidationError::InvalidHttpRouteMethod { method }.into());
+        }
+
+        let raw_path = path.path.clone();
+        if !is_valid_http_route_path(raw_path.as_ref()) {
+            return Err(ValidationError::InvalidHttpRoutePath { path: raw_path }.into());
+        }
+
+        let handler_ident = self.core.resolve_function_ident(handler_function.clone())?;
+        let (procedure_id, procedure_def) = procedures
+            .iter()
+            .enumerate()
+            .find(|(_, (name, _))| *name == &handler_ident)
+            .map(|(idx, (_, def))| (ProcedureId(idx as u32), def))
+            .ok_or_else(|| ValidationError::HttpRouteHandlerNotProcedure {
+                handler: handler_function.clone(),
+            })?;
+
+        if !procedure_def.visibility.is_private() {
+            return Err(ValidationError::HttpRouteHandlerMustBePrivate {
+                handler: handler_function.clone(),
+            }
+            .into());
+        }
+
+        if procedure_def.params.elements.len() != 1 {
+            return Err(ValidationError::HttpRouteHandlerInvalidParams {
+                handler: handler_function.clone(),
+                expected: PrettyAlgebraicType(expected_request.clone()),
+                actual: PrettyAlgebraicType::from(procedure_def.params.clone()),
+            }
+            .into());
+        }
+
+        let actual_arg_ty = WithTypespace::new(self.core.typespace, &procedure_def.params.elements[0].algebraic_type)
+            .resolve_refs()
+            .expect("procedure arg types must be valid");
+        if actual_arg_ty != *expected_request {
+            return Err(ValidationError::HttpRouteHandlerInvalidParams {
+                handler: handler_function.clone(),
+                expected: PrettyAlgebraicType(expected_request.clone()),
+                actual: PrettyAlgebraicType(actual_arg_ty),
+            }
+            .into());
+        }
+
+        let actual_return_ty = WithTypespace::new(self.core.typespace, &procedure_def.return_type)
+            .resolve_refs()
+            .expect("procedure return types must be valid");
+        if actual_return_ty != *expected_response {
+            return Err(ValidationError::HttpRouteHandlerInvalidReturnType {
+                handler: handler_function.clone(),
+                expected: PrettyAlgebraicType(expected_response.clone()),
+                actual: PrettyAlgebraicType(actual_return_ty),
+            }
+            .into());
+        }
+
+        Ok(HttpRouteDef {
+            method,
+            path: raw_path.to_string(),
+            procedure_id,
+        })
+    }
+}
+
+fn http_route_expected_types(policy: CaseConversionPolicy) -> (AlgebraicType, AlgebraicType) {
+    let mut builder = RawModuleDefV10Builder::new();
+    builder.set_case_conversion_policy(policy);
+    let request_ty = <http::RequestAndBody as SpacetimeType>::make_type(&mut builder);
+    let response_ty = <http::ResponseAndBody as SpacetimeType>::make_type(&mut builder);
+    let typespace = builder
+        .finish()
+        .typespace()
+        .cloned()
+        .unwrap_or_else(|| Typespace::EMPTY.clone());
+
+    let request_ty = WithTypespace::new(&typespace, &request_ty)
+        .resolve_refs()
+        .expect("request type must be valid");
+    let response_ty = WithTypespace::new(&typespace, &response_ty)
+        .resolve_refs()
+        .expect("response type must be valid");
+
+    (request_ty, response_ty)
+}
+
+fn is_valid_http_route_path(path: &str) -> bool {
+    let Some(rest) = path.strip_prefix('/') else {
+        return false;
+    };
+    !rest.is_empty() && !rest.contains('/')
 }
 
 fn attach_lifecycles_to_reducers(
