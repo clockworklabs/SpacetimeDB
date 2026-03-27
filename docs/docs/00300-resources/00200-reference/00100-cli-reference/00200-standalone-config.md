@@ -12,6 +12,28 @@ database running in data directory <b>/home/user/.local/share/spacetime/data</b>
 
 On Linux and macOS, this directory is by default `~/.local/share/spacetime/data`. On Windows, it's `%LOCALAPPDATA%\SpacetimeDB\data`.
 
+## Project-level configuration (`spacetime.json`)
+
+You can set a persistent default listen address for `spacetime start` in your project's `spacetime.json` file. This is useful when port `3000` is already occupied (e.g. by a frontend dev server) or when your team standardizes on a different local port.
+
+### `listen-addr`
+
+```json
+{
+  "listen-addr": "0.0.0.0:4000"
+}
+```
+
+When present, `spacetime start` will use this address instead of the built-in default `0.0.0.0:3000`.
+
+**Precedence (highest to lowest):**
+
+1. Explicit CLI flag: `spacetime start --listen-addr 127.0.0.1:5000`
+2. Value from `spacetime.json`: `"listen-addr": "0.0.0.0:4000"`
+3. Built-in default: `0.0.0.0:3000`
+
+The config is discovered by searching the current directory and its parent directories for `spacetime.json`. If present, `spacetime.local.json` is layered on top of it before `listen-addr` is read.
+
 ## `config.toml`
 
 - [`certificate-authority`](#certificate-authority)
