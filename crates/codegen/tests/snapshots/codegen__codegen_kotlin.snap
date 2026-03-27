@@ -368,7 +368,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Table
  */
 @OptIn(InternalSpacetimeApi::class)
 object RemoteModule : ModuleDescriptor {
-    override val cliVersion: String = "2.0.3"
+    override val cliVersion: String = "2.1.0"
 
     val tableNames: List<String> = listOf(
         "logged_out_player",
