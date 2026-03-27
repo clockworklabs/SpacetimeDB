@@ -20,10 +20,11 @@ use crate::{
     error::{IndexError, SequenceError, TableError},
     system_tables::{
         with_sys_table_buf, StClientFields, StClientRow, StColumnAccessorFields, StColumnAccessorRow, StColumnFields,
-        StColumnRow, StConstraintFields, StConstraintRow, StEventTableRow, StFields as _, StIndexAccessorFields,
-        StIndexAccessorRow, StIndexFields, StIndexRow, StRowLevelSecurityFields, StRowLevelSecurityRow,
-        StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow,
-        StTableFields, StTableRow, SystemTable, ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID,
+        StColumnRow, StConstraintFields, StConstraintRow, StDatabasesTxOffsetFields, StDatabasesTxOffsetRow,
+        StEventTableRow, StFields as _, StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow,
+        StRowLevelSecurityFields, StRowLevelSecurityRow, StScheduledFields, StScheduledRow, StSequenceFields,
+        StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow, SystemTable,
+        ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_DATABASES_TX_OFFSET_ID,
         ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID,
         ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
     },
@@ -2609,6 +2610,44 @@ impl MutTxId {
         .expect("failed to read from st_client system table")
         .next()
         .map(|row| row.pointer())
+    }
+
+    /// Look up the last delivered tx offset for `sender_identity` in `st_databases_tx_offset`.
+    ///
+    /// Returns `None` if no entry exists for this sender (i.e., no message has been delivered yet).
+    pub fn get_databases_tx_offset(&self, sender_identity: Identity) -> Option<u64> {
+        self.iter_by_col_eq(
+            ST_DATABASES_TX_OFFSET_ID,
+            StDatabasesTxOffsetFields::DatabaseIdentity.col_id(),
+            &IdentityViaU256::from(sender_identity).into(),
+        )
+        .expect("failed to read from st_databases_tx_offset system table")
+        .next()
+        .and_then(|row_ref| StDatabasesTxOffsetRow::try_from(row_ref).ok())
+        .map(|row| row.tx_offset)
+    }
+
+    /// Update the last delivered tx offset for `sender_identity` in `st_databases_tx_offset`.
+    ///
+    /// If an entry already exists, it is replaced; otherwise a new entry is inserted.
+    pub fn upsert_databases_tx_offset(&mut self, sender_identity: Identity, tx_offset: u64) -> Result<()> {
+        // Delete the existing row if present.
+        self.delete_col_eq(
+            ST_DATABASES_TX_OFFSET_ID,
+            StDatabasesTxOffsetFields::DatabaseIdentity.col_id(),
+            &IdentityViaU256::from(sender_identity).into(),
+        )?;
+        let row = StDatabasesTxOffsetRow {
+            database_identity: sender_identity.into(),
+            tx_offset,
+        };
+        self.insert_via_serialize_bsatn(ST_DATABASES_TX_OFFSET_ID, &row)
+            .map(|_| ())
+            .inspect_err(|e| {
+                log::error!(
+                    "upsert_databases_tx_offset: failed to upsert tx offset for {sender_identity} to {tx_offset}: {e}"
+                );
+            })
     }
 
     pub fn insert_via_serialize_bsatn<'a, T: Serialize>(
