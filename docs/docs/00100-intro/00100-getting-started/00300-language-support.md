@@ -19,6 +19,7 @@ SpacetimeDB modules define your database schema and server-side business logic. 
 - **[Rust](../../00200-core-concepts/00600-clients/00500-rust-reference.md)** - [(Quickstart)](../00200-quickstarts/00500-rust.md)
 - **[C#](../../00200-core-concepts/00600-clients/00600-csharp-reference.md)** - [(Quickstart)](../00200-quickstarts/00600-c-sharp.md)
 - **[TypeScript](../../00200-core-concepts/00600-clients/00700-typescript-reference.md)** - [(Quickstart)](../00200-quickstarts/00400-typescript.md)
+- **[Kotlin](../../00200-core-concepts/00600-clients/00900-kotlin-reference.md)** - Kotlin Multiplatform [(Quickstart)](../00200-quickstarts/00800-kotlin.md)
 - **[Unreal Engine](../../00200-core-concepts/00600-clients/00800-unreal-reference.md)** - C++ and Blueprint support [(Tutorial)](../00300-tutorials/00400-unreal-tutorial/00200-part-1.md)
 
 ### Unity

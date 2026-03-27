@@ -17,6 +17,7 @@ import NodeJSLogo from '@site/static/images/logos/nodejs-logo.svg';
 import TypeScriptLogo from '@site/static/images/logos/typescript-logo.svg';
 import RustLogo from '@site/static/images/logos/rust-logo.svg';
 import CSharpLogo from '@site/static/images/logos/csharp-logo.svg';
+import KotlinLogo from '@site/static/images/logos/kotlin-logo.svg';
 import CppLogo from '@site/static/images/logos/cpp-logo.svg';
 
 const ALL_ITEMS: Item[] = [
@@ -109,6 +110,12 @@ const ALL_ITEMS: Item[] = [
     href: 'quickstarts/c-sharp',
     docId: 'intro/quickstarts/c-sharp',
     label: 'C#',
+  },
+  {
+    icon: <KotlinLogo height={40} />,
+    href: 'quickstarts/kotlin',
+    docId: 'intro/quickstarts/kotlin',
+    label: 'Kotlin',
   },
   {
     icon: <CppLogo height={40} />,

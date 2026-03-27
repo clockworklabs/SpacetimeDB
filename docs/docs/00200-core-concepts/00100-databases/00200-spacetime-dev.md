@@ -68,8 +68,10 @@ Choose from several built-in templates:
 - `basic-ts` - Basic TypeScript client and server stubs
 - `basic-cs` - Basic C# client and server stubs
 - `basic-rs` - Basic Rust client and server stubs
+- `basic-kt` - Basic Kotlin client and Rust server stubs
 - `basic-cpp` - Basic C++ server stubs
 - `react-ts` - React web app with TypeScript server
+- `compose-kt` - Compose Multiplatform chat app with Rust server
 - `chat-console-rs` - Complete Rust chat implementation
 - `chat-console-cs` - Complete C# chat implementation
 - `chat-react-ts` - Complete TypeScript chat implementation
