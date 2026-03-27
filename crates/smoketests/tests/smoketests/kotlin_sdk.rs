@@ -15,7 +15,7 @@ static GRADLE_LOCK: Mutex<()> = Mutex::new(());
 #[test]
 fn test_build_kotlin_client() {
     require_gradle!();
-    let _lock = GRADLE_LOCK.lock().unwrap();
+    let _lock = GRADLE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
     let workspace = workspace_root();
     let cli_path = ensure_binaries_built();
@@ -214,7 +214,7 @@ fun main() {
 #[test]
 fn test_kotlin_sdk_unit_tests() {
     require_gradle!();
-    let _lock = GRADLE_LOCK.lock().unwrap();
+    let _lock = GRADLE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
     let workspace = workspace_root();
     let cli_path = ensure_binaries_built();
@@ -273,7 +273,7 @@ fn test_kotlin_sdk_unit_tests() {
 #[test]
 fn test_kotlin_integration() {
     require_gradle!();
-    let _lock = GRADLE_LOCK.lock().unwrap();
+    let _lock = GRADLE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
     let workspace = workspace_root();
     let cli_path = ensure_binaries_built();

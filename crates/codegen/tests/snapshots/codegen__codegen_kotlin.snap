@@ -499,6 +499,7 @@ val EventContext.procedures: RemoteProcedures
  *     .build()
  * ```
  */
+@OptIn(InternalSpacetimeApi::class)
 fun DbConnection.Builder.withModuleBindings(): DbConnection.Builder {
     return withModule(RemoteModule)
 }

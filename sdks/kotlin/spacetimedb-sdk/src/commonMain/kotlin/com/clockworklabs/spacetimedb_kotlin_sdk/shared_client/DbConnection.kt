@@ -917,6 +917,7 @@ public open class DbConnection internal constructor(
          * Register the generated module bindings.
          * The generated `withModuleBindings()` extension calls this automatically.
          */
+        @InternalSpacetimeApi
         public fun withModule(descriptor: ModuleDescriptor): Builder = apply { module = descriptor }
 
         /** Registers a callback invoked when the connection is established. */
@@ -1008,6 +1009,7 @@ public interface ModuleReducers
 public interface ModuleProcedures
 
 /** Accessor instances created by [ModuleDescriptor.createAccessors]. */
+@InternalSpacetimeApi
 public data class ModuleAccessors(
     public val tables: ModuleTables,
     public val reducers: ModuleReducers,
@@ -1018,6 +1020,7 @@ public data class ModuleAccessors(
  * Describes a generated SpacetimeDB module's bindings.
  * Implemented by the generated code to register tables and dispatch reducer events.
  */
+@InternalSpacetimeApi
 public interface ModuleDescriptor {
     public val cliVersion: String
     /** Names of persistent (subscribable) tables. Event tables are excluded. */

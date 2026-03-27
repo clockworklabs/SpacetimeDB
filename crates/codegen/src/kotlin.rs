@@ -1929,6 +1929,7 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
     writeln!(out, " *     .build()");
     writeln!(out, " * ```");
     writeln!(out, " */");
+    writeln!(out, "@OptIn(InternalSpacetimeApi::class)");
     writeln!(
         out,
         "fun DbConnection.Builder.withModuleBindings(): DbConnection.Builder {{"
