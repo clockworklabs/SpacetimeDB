@@ -3,12 +3,14 @@
 
 #include "spacetimedb/bsatn/bsatn.h"
 #include "spacetimedb/reducer_context.h"
+#include "spacetimedb/query_builder.h"
 #include "spacetimedb/table.h"
 #include "spacetimedb/bsatn/traits.h"
 
 #include <string>
 #include <vector>
 #include <sstream>
+#include <utility>
 
 namespace SpacetimeDB {
 namespace Internal {
@@ -427,6 +429,71 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
 #define SPACETIMEDB_FE_49(MACRO, obj, extra, X, ...) MACRO(obj, extra, X) SPACETIMEDB_FE_48(MACRO, obj, extra, __VA_ARGS__)
 #define SPACETIMEDB_FE_50(MACRO, obj, extra, X, ...) MACRO(obj, extra, X) SPACETIMEDB_FE_49(MACRO, obj, extra, __VA_ARGS__)
 
+#define SPACETIMEDB_FOR_EACH_ARG_COMMA(MACRO, obj, extra, ...) \
+    SPACETIMEDB_GET_MACRO(__VA_ARGS__, \
+        SPACETIMEDB_FE_COMMA_50, SPACETIMEDB_FE_COMMA_49, SPACETIMEDB_FE_COMMA_48, SPACETIMEDB_FE_COMMA_47, SPACETIMEDB_FE_COMMA_46, \
+        SPACETIMEDB_FE_COMMA_45, SPACETIMEDB_FE_COMMA_44, SPACETIMEDB_FE_COMMA_43, SPACETIMEDB_FE_COMMA_42, SPACETIMEDB_FE_COMMA_41, \
+        SPACETIMEDB_FE_COMMA_40, SPACETIMEDB_FE_COMMA_39, SPACETIMEDB_FE_COMMA_38, SPACETIMEDB_FE_COMMA_37, SPACETIMEDB_FE_COMMA_36, \
+        SPACETIMEDB_FE_COMMA_35, SPACETIMEDB_FE_COMMA_34, SPACETIMEDB_FE_COMMA_33, SPACETIMEDB_FE_COMMA_32, SPACETIMEDB_FE_COMMA_31, \
+        SPACETIMEDB_FE_COMMA_30, SPACETIMEDB_FE_COMMA_29, SPACETIMEDB_FE_COMMA_28, SPACETIMEDB_FE_COMMA_27, SPACETIMEDB_FE_COMMA_26, \
+        SPACETIMEDB_FE_COMMA_25, SPACETIMEDB_FE_COMMA_24, SPACETIMEDB_FE_COMMA_23, SPACETIMEDB_FE_COMMA_22, SPACETIMEDB_FE_COMMA_21, \
+        SPACETIMEDB_FE_COMMA_20, SPACETIMEDB_FE_COMMA_19, SPACETIMEDB_FE_COMMA_18, SPACETIMEDB_FE_COMMA_17, SPACETIMEDB_FE_COMMA_16, \
+        SPACETIMEDB_FE_COMMA_15, SPACETIMEDB_FE_COMMA_14, SPACETIMEDB_FE_COMMA_13, SPACETIMEDB_FE_COMMA_12, SPACETIMEDB_FE_COMMA_11, \
+        SPACETIMEDB_FE_COMMA_10, SPACETIMEDB_FE_COMMA_9, SPACETIMEDB_FE_COMMA_8, SPACETIMEDB_FE_COMMA_7, SPACETIMEDB_FE_COMMA_6, \
+        SPACETIMEDB_FE_COMMA_5, SPACETIMEDB_FE_COMMA_4, SPACETIMEDB_FE_COMMA_3, SPACETIMEDB_FE_COMMA_2, SPACETIMEDB_FE_COMMA_1) \
+    (MACRO, obj, extra, __VA_ARGS__)
+
+#define SPACETIMEDB_FE_COMMA_1(MACRO, obj, extra, X) MACRO(obj, extra, X)
+#define SPACETIMEDB_FE_COMMA_2(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_1(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_3(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_2(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_4(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_3(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_5(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_4(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_6(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_5(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_7(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_6(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_8(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_7(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_9(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_8(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_10(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_9(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_11(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_10(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_12(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_11(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_13(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_12(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_14(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_13(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_15(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_14(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_16(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_15(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_17(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_16(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_18(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_17(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_19(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_18(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_20(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_19(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_21(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_20(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_22(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_21(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_23(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_22(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_24(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_23(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_25(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_24(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_26(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_25(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_27(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_26(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_28(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_27(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_29(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_28(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_30(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_29(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_31(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_30(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_32(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_31(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_33(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_32(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_34(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_33(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_35(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_34(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_36(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_35(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_37(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_36(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_38(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_37(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_39(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_38(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_40(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_39(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_41(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_40(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_42(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_41(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_43(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_42(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_44(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_43(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_45(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_44(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_46(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_45(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_47(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_46(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_48(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_47(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_49(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_48(MACRO, obj, extra, __VA_ARGS__)
+#define SPACETIMEDB_FE_COMMA_50(MACRO, obj, extra, X, ...) MACRO(obj, extra, X), SPACETIMEDB_FE_COMMA_49(MACRO, obj, extra, __VA_ARGS__)
+
 // =============================================================================
 // SPECIALIZED FOR_EACH MACROS FOR DIFFERENT USE CASES
 // =============================================================================
@@ -556,18 +623,31 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
 /**
  * @brief Register a client visibility filter with the SpacetimeDB module system
  * 
- * This macro registers a SQL string as a client visibility filter.
+ * This macro registers either a raw SQL string or a query-builder value as a
+ * client visibility filter.
  * 
  * @param filter_name The unique name for this filter
- * @param sql_query The SQL query string for the filter
+ * @param sql_query The SQL query string or query-builder value for the filter
  * 
  * Usage:
  *    SPACETIMEDB_CLIENT_VISIBILITY_FILTER(user_owns_data, "SELECT * FROM user_data WHERE owner_id = current_user_identity()")
+ *
+ *    // Typed query-builder form (preferred when possible):
+ *    SPACETIMEDB_CLIENT_VISIBILITY_FILTER(
+ *        online_users_only,
+ *        ::SpacetimeDB::QueryBuilder{}[user].where([](const auto& users) {
+ *            return users.online;
+ *        }))
+ *
+ * Note:
+ *    This macro runs during preinit registration, not inside a view callback.
+ *    `ctx.from` is not available here; use `QueryBuilder{}` directly.
  */
 #define SPACETIMEDB_CLIENT_VISIBILITY_FILTER(filter_name, sql_query) \
     __attribute__((export_name("__preinit__25_register_row_level_security_" #filter_name))) \
     extern "C" void __register_client_visibility_filter_##filter_name() { \
-        SpacetimeDB::Module::RegisterClientVisibilityFilter(sql_query); \
+        const auto _spacetimedb_filter = ::SpacetimeDB::Filter::Sql(sql_query); \
+        ::SpacetimeDB::Module::RegisterClientVisibilityFilter(_spacetimedb_filter.sql_text()); \
     }
 
 // =============================================================================
@@ -688,6 +768,7 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
             ); \
         } \
     }; \
+    SPACETIMEDB_QUERY_COLS_DECL(Type, __VA_ARGS__) \
     SPACETIMEDB_GENERATE_TYPE_REGISTRATION_BUNDLE_WITH_FIELDS(Type, __VA_ARGS__)
 
 // Field processing helper macros (used by SPACETIMEDB_STRUCT)
@@ -708,6 +789,60 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
     
 #define SPACETIMEDB_REGISTER_FIELDS(Type, builder, ...) \
     SPACETIMEDB_FOR_EACH_ARG(SPACETIMEDB_REGISTER_FIELD, Type, builder, __VA_ARGS__)
+
+#define SPACETIMEDB_QUERY_COL_DECL(Type, dummy, field) \
+    ::SpacetimeDB::query_builder::Col<Type, decltype(std::declval<Type>().field)> field;
+
+#define SPACETIMEDB_QUERY_COL_ASSIGN(Type, table_name, field) \
+    this->field = ::SpacetimeDB::query_builder::Col<Type, decltype(std::declval<Type>().field)>(table_name, #field);
+
+#define SPACETIMEDB_QUERY_IX_COL_BASE_DECL(Type, dummy, field) \
+    template<typename Dummy, bool Indexed = ::SpacetimeDB::query_builder::detail::delayed_is_indexed_member_v<Dummy, Type, &Type::field>> \
+    struct SPACETIMEDB_PASTE(Type, SPACETIMEDB_PASTE(_query_builder_ix_base_, field)); \
+    template<typename Dummy> \
+    struct SPACETIMEDB_PASTE(Type, SPACETIMEDB_PASTE(_query_builder_ix_base_, field))<Dummy, true> { \
+        ::SpacetimeDB::query_builder::IxCol<Type, decltype(std::declval<Type>().field)> field; \
+        explicit SPACETIMEDB_PASTE(Type, SPACETIMEDB_PASTE(_query_builder_ix_base_, field))(const char* table_name) \
+            : field(table_name, #field) {} \
+    }; \
+    template<typename Dummy> \
+    struct SPACETIMEDB_PASTE(Type, SPACETIMEDB_PASTE(_query_builder_ix_base_, field))<Dummy, false> { \
+        explicit SPACETIMEDB_PASTE(Type, SPACETIMEDB_PASTE(_query_builder_ix_base_, field))(const char*) {} \
+    };
+
+#define SPACETIMEDB_QUERY_IX_COL_BASE_NAME(Type, dummy, field) \
+    SPACETIMEDB_PASTE(Type, SPACETIMEDB_PASTE(_query_builder_ix_base_, field))<Dummy>
+
+#define SPACETIMEDB_QUERY_IX_COL_BASE_INIT(Type, table_name, field) \
+    SPACETIMEDB_PASTE(Type, SPACETIMEDB_PASTE(_query_builder_ix_base_, field))<Dummy>(table_name)
+
+#define SPACETIMEDB_QUERY_COLS_DECL(Type, ...) \
+    struct SPACETIMEDB_PASTE(Type, _query_builder_cols) { \
+        SPACETIMEDB_FOR_EACH_ARG(SPACETIMEDB_QUERY_COL_DECL, Type, dummy, __VA_ARGS__) \
+        explicit SPACETIMEDB_PASTE(Type, _query_builder_cols)(const char* table_name) { \
+            SPACETIMEDB_FOR_EACH_ARG(SPACETIMEDB_QUERY_COL_ASSIGN, Type, table_name, __VA_ARGS__) \
+        } \
+    }; \
+    SPACETIMEDB_FOR_EACH_ARG(SPACETIMEDB_QUERY_IX_COL_BASE_DECL, Type, dummy, __VA_ARGS__) \
+    template<typename Dummy = void> \
+    struct SPACETIMEDB_PASTE(Type, _query_builder_ix_cols) \
+        : SPACETIMEDB_FOR_EACH_ARG_COMMA(SPACETIMEDB_QUERY_IX_COL_BASE_NAME, Type, dummy, __VA_ARGS__) { \
+        explicit SPACETIMEDB_PASTE(Type, _query_builder_ix_cols)(const char* table_name) \
+            : SPACETIMEDB_FOR_EACH_ARG_COMMA(SPACETIMEDB_QUERY_IX_COL_BASE_INIT, Type, table_name, __VA_ARGS__) {} \
+    }; \
+    template<> \
+    struct ::SpacetimeDB::query_builder::HasCols<Type> { \
+        static auto get(const char* table_name) { \
+            return SPACETIMEDB_PASTE(Type, _query_builder_cols)(table_name); \
+        } \
+    }; \
+    template<> \
+    struct ::SpacetimeDB::query_builder::HasIxCols<Type> { \
+        template<typename Dummy = void> \
+        static auto get(const char* table_name) { \
+            return SPACETIMEDB_PASTE(Type, _query_builder_ix_cols)<Dummy>(table_name); \
+        } \
+    };
 
 // Field descriptor registration for runtime reflection
 #define SPACETIMEDB_REGISTER_FIELD_DESCRIPTOR(Type, dummy, field) \

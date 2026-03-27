@@ -76,30 +76,39 @@ option(BUILD_TESTS "Build the test suite" ${_is_top_level})
 
 if(BUILD_TESTS AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     enable_testing()
-    
-    # Add test executable
+
+    # Existing module-library unit-test target
     add_executable(test_bsatn tests/main.cpp tests/module_library_unit_tests.cpp)
-    
-    # Link against the module library
     target_link_libraries(test_bsatn PRIVATE spacetimedb_cpp_library)
-    
-    # Set C++20 standard for tests
     target_compile_features(test_bsatn PRIVATE cxx_std_20)
-    
-    # Add test to CTest
     add_test(NAME bsatn_tests COMMAND test_bsatn)
-    
-    # Add verbose test variant
     add_test(NAME bsatn_tests_verbose COMMAND test_bsatn -v)
-    
-    # Set test properties
-    set_tests_properties(bsatn_tests PROPERTIES 
+    set_tests_properties(bsatn_tests PROPERTIES
         TIMEOUT 30
         LABELS "unit"
     )
-    
-    set_tests_properties(bsatn_tests_verbose PROPERTIES 
+    set_tests_properties(bsatn_tests_verbose PROPERTIES
         TIMEOUT 30
         LABELS "unit;verbose"
     )
+    
+    # Query-builder SQL rendering tests
+    add_executable(query_builder_sql_tests
+        tests/query-builder-sql/main.cpp
+        tests/query-builder-sql/query_builder_sql_tests.cpp)
+    
+    target_include_directories(query_builder_sql_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    
+    # Set C++20 standard for tests
+    target_compile_features(query_builder_sql_tests PRIVATE cxx_std_20)
+    
+    # Add test to CTest
+    add_test(NAME query_builder_sql_tests COMMAND query_builder_sql_tests)
+    
+    # Set test properties
+    set_tests_properties(query_builder_sql_tests PROPERTIES 
+        TIMEOUT 30
+        LABELS "unit"
+    )
+
 endif()
