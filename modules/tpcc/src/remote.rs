@@ -58,6 +58,7 @@ pub fn call_remote_function(
             "{spacetimedb_uri}/v1/database/{database_ident}/call/{function_name}"
         ))
         .method("POST")
+        .header("Content-Type", "application/json")
         // TODO(auth): include a token.
         .body(serde_json::json!(arguments).to_string())
         .map_err(|e| format!("Error constructing `Request`: {e}"))?;
