@@ -16,7 +16,6 @@ pub struct Warehouse {
     pub w_zip: String,
     pub w_tax_bps: i32,
     pub w_ytd_cents: i64,
-    pub remote_database_home: Option<__sdk::Identity>,
 }
 
 impl __sdk::InModule for Warehouse {
@@ -36,7 +35,6 @@ pub struct WarehouseCols {
     pub w_zip: __sdk::__query_builder::Col<Warehouse, String>,
     pub w_tax_bps: __sdk::__query_builder::Col<Warehouse, i32>,
     pub w_ytd_cents: __sdk::__query_builder::Col<Warehouse, i64>,
-    pub remote_database_home: __sdk::__query_builder::Col<Warehouse, Option<__sdk::Identity>>,
 }
 
 impl __sdk::__query_builder::HasCols for Warehouse {
@@ -52,7 +50,6 @@ impl __sdk::__query_builder::HasCols for Warehouse {
             w_zip: __sdk::__query_builder::Col::new(table_name, "w_zip"),
             w_tax_bps: __sdk::__query_builder::Col::new(table_name, "w_tax_bps"),
             w_ytd_cents: __sdk::__query_builder::Col::new(table_name, "w_ytd_cents"),
-            remote_database_home: __sdk::__query_builder::Col::new(table_name, "remote_database_home"),
         }
     }
 }

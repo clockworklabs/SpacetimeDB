@@ -1,5 +1,7 @@
 use anyhow::{Context, Result};
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
+use spacetimedb_sdk::Identity;
+use std::ops::Range;
 use std::time::SystemTime;
 
 use crate::client::ModuleClient;
@@ -17,12 +19,61 @@ const HISTORY_INITIAL_AMOUNT_CENTS: i64 = 1_000;
 
 pub fn run(config: LoadConfig) -> Result<()> {
     log::info!(
+        "Loading tpcc dataset into {} databases, all running on {}",
+        config.num_databases,
+        config.connection.uri
+    );
+
+    let database_identities = lookup_database_identities(&config)?;
+
+    for database_number in 0..config.num_databases {
+        configure_one_database(&config, database_number, &database_identities)?;
+    }
+
+    log::info!("tpcc load finished");
+
+    Ok(())
+}
+
+fn lookup_database_identities(config: &LoadConfig) -> Result<Vec<Identity>> {
+    (0..config.num_databases)
+        .map(|database_number| {
+            let body = reqwest::blocking::get(format!(
+                "{}/v1/database/{}-{}",
+                config.connection.uri, config.connection.database_prefix, database_number
+            ))?;
+            let obj = match body.json::<serde_json::Value>()? {
+                serde_json::Value::Object(obj) => obj,
+                els => anyhow::bail!("Expected an object but got {els:?}"),
+            };
+            let Some(db_ident) = obj.get("database_identity") else {
+                anyhow::bail!("Expected a `database_identity` property but saw none in {obj:?}")
+            };
+            let serde_json::Value::Object(ident_obj) = db_ident else {
+                anyhow::bail!("Expected an object but got {db_ident:?}")
+            };
+            let Some(ident_str) = ident_obj.get("__identity__") else {
+                anyhow::bail!("Expected a `__identity__` property but saw none in {ident_obj:?}")
+            };
+            let serde_json::Value::String(ident_str) = ident_str else {
+                anyhow::bail!("Expected a string but got {ident_str:?}")
+            };
+            let ident = Identity::from_hex(ident_str)?;
+            Ok(ident)
+        })
+        .collect()
+}
+
+fn configure_one_database(config: &LoadConfig, database_number: u16, database_identities: &[Identity]) -> Result<()> {
+    let database = database_identities[database_number as usize];
+    log::info!(
         "loading tpcc dataset into {} / {} with {} warehouse(s)",
         config.connection.uri,
-        config.connection.database,
-        config.warehouses
+        database,
+        config.warehouses_per_database
     );
-    let client = ModuleClient::connect(&config.connection)?;
+
+    let client = ModuleClient::connect(&config.connection, database)?;
     if config.reset {
         client.reset_tpcc().context("failed to reset tpcc data")?;
     }
@@ -33,12 +84,34 @@ pub fn run(config: LoadConfig) -> Result<()> {
     let load_c_last = rng.random_range(0..=255);
     let base_ts = Timestamp::from(SystemTime::now());
 
+    load_remote_warehouses(
+        &client,
+        database_number,
+        config.num_databases,
+        config.warehouses_per_database,
+        config.batch_size,
+        database_identities,
+    )?;
     load_items(&client, config.batch_size, &mut rng)?;
-    load_warehouses_and_districts(&client, config.warehouses, config.batch_size, base_ts, &mut rng)?;
-    load_stock(&client, config.warehouses, config.batch_size, &mut rng)?;
+    load_warehouses_and_districts(
+        &client,
+        database_number,
+        config.warehouses_per_database,
+        config.batch_size,
+        base_ts,
+        &mut rng,
+    )?;
+    load_stock(
+        &client,
+        database_number,
+        config.warehouses_per_database,
+        config.batch_size,
+        &mut rng,
+    )?;
     load_customers_history_orders(
         &client,
-        config.warehouses,
+        database_number,
+        config.warehouses_per_database,
         config.batch_size,
         base_ts,
         load_c_last,
@@ -46,7 +119,8 @@ pub fn run(config: LoadConfig) -> Result<()> {
     )?;
 
     client.shutdown();
-    log::info!("tpcc load finished");
+    log::info!("tpcc load for database {database} finished");
+
     Ok(())
 }
 
@@ -70,9 +144,50 @@ fn load_items(client: &ModuleClient, batch_size: usize, rng: &mut StdRng) -> Res
     Ok(())
 }
 
+fn warehouses_range(database_number: u16, warehouses_per_database: u16) -> Range<u16> {
+    let start_warehouse_number = database_number * warehouses_per_database + 1;
+    let end_warehouse_number = start_warehouse_number + warehouses_per_database;
+    start_warehouse_number..end_warehouse_number
+}
+
+fn load_remote_warehouses(
+    client: &ModuleClient,
+    database_number: u16,
+    num_databases: u16,
+    warehouses_per_database: u16,
+    batch_size: usize,
+    database_identities: &[Identity],
+) -> Result<()> {
+    let mut warehouse_batch = Vec::with_capacity(batch_size);
+
+    for other_database_number in 0..num_databases {
+        if other_database_number == database_number {
+            continue;
+        }
+        let other_database_ident = database_identities[other_database_number as usize];
+
+        for w_id in warehouses_range(other_database_number, warehouses_per_database) {
+            warehouse_batch.push(RemoteWarehouse {
+                w_id,
+                remote_database_home: other_database_ident,
+            });
+        }
+    }
+
+    while !warehouse_batch.is_empty() {
+        let split_at = warehouse_batch.len().min(batch_size);
+        let remainder = warehouse_batch.split_off(split_at);
+        let rows = std::mem::replace(&mut warehouse_batch, remainder);
+        client.load_remote_warehouses(rows)?;
+    }
+
+    Ok(())
+}
+
 fn load_warehouses_and_districts(
     client: &ModuleClient,
-    warehouses: u16,
+    database_number: u16,
+    warehouses_per_database: u16,
     batch_size: usize,
     timestamp: Timestamp,
     rng: &mut StdRng,
@@ -80,7 +195,7 @@ fn load_warehouses_and_districts(
     let mut warehouse_batch = Vec::with_capacity(batch_size);
     let mut district_batch = Vec::with_capacity(batch_size);
 
-    for w_id in 1..=warehouses {
+    for w_id in warehouses_range(database_number, warehouses_per_database) {
         warehouse_batch.push(Warehouse {
             w_id,
             w_name: alpha_string(rng, 6, 10),
@@ -91,8 +206,6 @@ fn load_warehouses_and_districts(
             w_zip: zip_code(rng),
             w_tax_bps: rng.random_range(0..=2_000),
             w_ytd_cents: WAREHOUSE_YTD_CENTS,
-
-            remote_database_home: None,
         });
 
         for d_id in 1..=DISTRICTS_PER_WAREHOUSE {
@@ -129,9 +242,15 @@ fn load_warehouses_and_districts(
     Ok(())
 }
 
-fn load_stock(client: &ModuleClient, warehouses: u16, batch_size: usize, rng: &mut StdRng) -> Result<()> {
+fn load_stock(
+    client: &ModuleClient,
+    database_number: u16,
+    warehouses_per_database: u16,
+    batch_size: usize,
+    rng: &mut StdRng,
+) -> Result<()> {
     let mut batch = Vec::with_capacity(batch_size);
-    for w_id in 1..=warehouses {
+    for w_id in warehouses_range(database_number, warehouses_per_database) {
         for item_id in 1..=ITEMS {
             batch.push(Stock {
                 stock_key: pack_stock_key(w_id, item_id),
@@ -166,7 +285,8 @@ fn load_stock(client: &ModuleClient, warehouses: u16, batch_size: usize, rng: &m
 
 fn load_customers_history_orders(
     client: &ModuleClient,
-    warehouses: u16,
+    database_number: u16,
+    warehouses_per_database: u16,
     batch_size: usize,
     timestamp: Timestamp,
     load_c_last: u32,
@@ -178,7 +298,7 @@ fn load_customers_history_orders(
     let mut new_order_batch = Vec::with_capacity(batch_size);
     let mut order_line_batch = Vec::with_capacity(batch_size);
 
-    for w_id in 1..=warehouses {
+    for w_id in warehouses_range(database_number, warehouses_per_database) {
         for d_id in 1..=DISTRICTS_PER_WAREHOUSE {
             let mut permutation: Vec<u32> = (1..=CUSTOMERS_PER_DISTRICT).collect();
             permutation.shuffle(rng);

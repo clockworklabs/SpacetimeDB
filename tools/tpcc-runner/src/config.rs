@@ -24,7 +24,7 @@ pub enum Command {
 #[derive(Debug, Clone)]
 pub struct ConnectionConfig {
     pub uri: String,
-    pub database: String,
+    pub database_prefix: String,
     pub token: Option<String>,
     pub confirmed_reads: bool,
     pub timeout_secs: u64,
@@ -33,7 +33,8 @@ pub struct ConnectionConfig {
 #[derive(Debug, Clone)]
 pub struct LoadConfig {
     pub connection: ConnectionConfig,
-    pub warehouses: u16,
+    pub warehouses_per_database: u16,
+    pub num_databases: u16,
     pub batch_size: usize,
     pub reset: bool,
 }
@@ -70,7 +71,9 @@ pub struct LoadArgs {
     #[command(flatten)]
     pub connection: ConnectionArgs,
     #[arg(long)]
-    pub warehouses: Option<u16>,
+    pub num_databases: Option<u16>,
+    #[arg(long)]
+    pub warehouses_per_database: Option<u16>,
     #[arg(long)]
     pub batch_size: Option<usize>,
     #[arg(long)]
@@ -128,7 +131,7 @@ pub struct ConnectionArgs {
     #[arg(long)]
     pub uri: Option<String>,
     #[arg(long)]
-    pub database: Option<String>,
+    pub database_prefix: Option<String>,
     #[arg(long)]
     pub token: Option<String>,
     #[arg(long)]
@@ -152,7 +155,7 @@ pub struct FileConfig {
 #[derive(Debug, Clone, Default, Deserialize)]
 struct FileConnectionConfig {
     uri: Option<String>,
-    database: Option<String>,
+    database_prefix: Option<String>,
     token: Option<String>,
     confirmed_reads: Option<bool>,
     timeout_secs: Option<u64>,
@@ -160,7 +163,8 @@ struct FileConnectionConfig {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 struct FileLoadConfig {
-    warehouses: Option<u16>,
+    num_databases: Option<u16>,
+    warehouses_per_database: Option<u16>,
     batch_size: Option<usize>,
     reset: Option<bool>,
 }
@@ -209,10 +213,10 @@ impl ConnectionArgs {
                 .clone()
                 .or_else(|| file.uri.clone())
                 .unwrap_or_else(|| "http://127.0.0.1:3000".to_string()),
-            database: self
-                .database
+            database_prefix: self
+                .database_prefix
                 .clone()
-                .or_else(|| file.database.clone())
+                .or_else(|| file.database_prefix.clone())
                 .unwrap_or_else(|| "tpcc".to_string()),
             token: self.token.clone().or_else(|| file.token.clone()),
             confirmed_reads: self.confirmed_reads.or(file.confirmed_reads).unwrap_or(true),
@@ -225,7 +229,11 @@ impl LoadArgs {
     pub fn resolve(&self, file: &FileConfig) -> LoadConfig {
         LoadConfig {
             connection: self.connection.resolve(&file.connection),
-            warehouses: self.warehouses.or(file.load.warehouses).unwrap_or(1),
+            num_databases: self.num_databases.or(file.load.num_databases).unwrap_or(1),
+            warehouses_per_database: self
+                .warehouses_per_database
+                .or(file.load.warehouses_per_database)
+                .unwrap_or(1),
             batch_size: self.batch_size.or(file.load.batch_size).unwrap_or(500),
             reset: self.reset.or(file.load.reset).unwrap_or(true),
         }

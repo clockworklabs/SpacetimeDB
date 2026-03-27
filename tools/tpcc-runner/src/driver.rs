@@ -113,7 +113,7 @@ pub async fn run(config: DriverConfig) -> Result<()> {
         run_id: run_id.clone(),
         driver_id: config.driver_id.clone(),
         uri: config.connection.uri.clone(),
-        database: config.connection.database.clone(),
+        database: todo!("config.connection.database.clone()"),
         terminal_start: config.terminal_start,
         terminals: config.terminals,
         warehouse_count: config.warehouse_count,
@@ -143,7 +143,7 @@ fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
         assignment,
         seed,
     } = runtime;
-    let client = ModuleClient::connect(&config.connection)?;
+    let client = ModuleClient::connect(&config.connection, todo!())?;
     sleep_until_ms(schedule.warmup_start_ms);
 
     let mut rng = StdRng::seed_from_u64(seed);
@@ -524,7 +524,7 @@ async fn harvest_delivery_completions(
     if expected == 0 {
         return Ok(());
     }
-    let client = ModuleClient::connect(&config.connection)?;
+    let client = ModuleClient::connect(&config.connection, todo!())?;
     let progress = expect_ok("delivery_progress", client.delivery_progress(schedule.run_id.clone()))?;
     log::info!(
         "delivery progress before harvest: pending_jobs={} completed_jobs={}",

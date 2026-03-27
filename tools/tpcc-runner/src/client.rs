@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use crate::config::ConnectionConfig;
 use crate::module_bindings::*;
-use spacetimedb_sdk::DbContext;
+use spacetimedb_sdk::{DbContext, Identity};
 
 pub struct ModuleClient {
     conn: DbConnection,
@@ -14,13 +14,13 @@ pub struct ModuleClient {
 }
 
 impl ModuleClient {
-    pub fn connect(config: &ConnectionConfig) -> Result<Self> {
+    pub fn connect(config: &ConnectionConfig, database_identity: Identity) -> Result<Self> {
         let (ready_tx, ready_rx) = sync_channel(1);
         let success_tx = ready_tx.clone();
         let error_tx = ready_tx;
         let mut builder = DbConnection::builder()
             .with_uri(config.uri.clone())
-            .with_database_name(config.database.clone())
+            .with_database_name(database_identity.to_string())
             .with_confirmed_reads(config.confirmed_reads)
             .on_connect(move |_, _, _| {
                 let _ = success_tx.send(Ok::<(), anyhow::Error>(()));
@@ -71,6 +71,19 @@ impl ModuleClient {
             Ok(Ok(Err(message))) => bail!("reset_tpcc failed: {}", message),
             Ok(Err(err)) => Err(anyhow!("reset_tpcc internal error: {}", err)),
             Err(_) => bail!("timed out waiting for reset_tpcc"),
+        }
+    }
+
+    pub fn load_remote_warehouses(&self, rows: Vec<RemoteWarehouse>) -> Result<()> {
+        let (tx, rx) = sync_channel(1);
+        self.conn.reducers.load_remote_warehouses_then(rows, move |_, res| {
+            let _ = tx.send(res);
+        })?;
+        match rx.recv_timeout(self.timeout) {
+            Ok(Ok(Ok(()))) => Ok(()),
+            Ok(Ok(Err(message))) => bail!("load_remote_warehouses failed: {}", message),
+            Ok(Err(err)) => Err(anyhow!("load_remote_warehouses internal error: {}", err)),
+            Err(_) => bail!("timed out waiting for load_remote_warehouses"),
         }
     }
 
