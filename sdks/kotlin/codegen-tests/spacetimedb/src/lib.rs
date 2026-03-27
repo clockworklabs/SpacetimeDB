@@ -1,5 +1,6 @@
 use spacetimedb::{
-    ConnectionId, Identity, ReducerContext, ScheduleAt, SpacetimeType, Table, Timestamp,
+    ConnectionId, Identity, Query, ReducerContext, ScheduleAt, SpacetimeType, Table, Timestamp,
+    ViewContext,
 };
 use spacetimedb::sats::{i256, u256};
 
@@ -128,6 +129,17 @@ pub struct IndexedRow {
 pub struct NoPkRow {
     label: String,
     value: i32,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VIEWS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Query-builder view over a PK table — should inherit primary key and generate
+/// `RemotePersistentTableWithPrimaryKey` with `onUpdate` callbacks.
+#[spacetimedb::view(accessor = all_indexed_rows, public)]
+fn all_indexed_rows(ctx: &ViewContext) -> impl Query<IndexedRow> {
+    ctx.from.indexed_row()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
