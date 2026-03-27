@@ -190,7 +190,11 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     )
     .await?;
     worker_metrics::spawn_jemalloc_stats(listen_addr.clone());
-    worker_metrics::spawn_tokio_stats(listen_addr.clone());
+    worker_metrics::spawn_tokio_stats(
+        listen_addr.clone(),
+        "main".to_string(),
+        tokio::runtime::Handle::current(),
+    );
     worker_metrics::spawn_page_pool_stats(listen_addr.clone(), ctx.page_pool().clone());
     worker_metrics::spawn_bsatn_rlb_pool_stats(listen_addr.clone(), ctx.bsatn_rlb_pool().clone());
     let mut db_routes = DatabaseRoutes::default();
