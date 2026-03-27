@@ -1,88 +1,236 @@
-# SpacetimeDB TypeScript Server Module Guidelines
+# SpacetimeDB TypeScript Module Guidelines
 
 ## Imports
 
 ```typescript
 import { schema, table, t } from 'spacetimedb/server';
+import { ScheduleAt } from 'spacetimedb';        // for scheduled tables
 ```
 
-Additional imports when needed:
-```typescript
-import { ScheduleAt } from 'spacetimedb';        // For scheduled tables
-import { Timestamp } from 'spacetimedb';          // For timestamp arithmetic
-```
+## Tables
 
-## Table Definitions
-
-Tables are defined with `table(OPTIONS, COLUMNS)` — two arguments:
+`table(OPTIONS, COLUMNS)` — two arguments:
 
 ```typescript
 const user = table(
-  {
-    name: 'user',
-    public: true,
-    indexes: [{ name: 'user_email', algorithm: 'btree', columns: ['email'] }]
-  },
+  { name: 'user', public: true },
   {
     id: t.u64().primaryKey().autoInc(),
     email: t.string(),
     name: t.string(),
     active: t.bool(),
-    createdAt: t.timestamp(),
   }
 );
 ```
 
-Options (first argument):
-- `name` — required, the table's SQL name
-- `public` — optional, makes table visible to clients (default: private)
-- `event` — optional, marks as event table
-- `scheduled` — optional, `() => reducerRef` for scheduled tables
-- `indexes` — optional, array of `{ name, algorithm: 'btree', columns: [...] }`
+**IMPORTANT: The `name` string MUST be snake_case** — it becomes the SQL table name.
+The JS variable can be camelCase, but the `name` string is always snake_case:
+
+```typescript
+const orderDetail = table({ name: 'order_detail' }, { ... });  // ✓ snake_case name
+const userStats = table({ name: 'user_stats' }, { ... });      // ✓ snake_case name
+const eventLog = table({ name: 'event_log' }, { ... });        // ✓ snake_case name
+// WRONG: table({ name: 'orderDetail' }, { ... })              // ✗ never camelCase
+```
+
+**`ctx.db` accessor uses the JS variable name (camelCase), NOT the SQL name:**
+
+```typescript
+// schema({ orderDetail, userStats, eventLog }) → accessors are:
+ctx.db.orderDetail.insert({ ... });
+ctx.db.userStats.iter();
+ctx.db.eventLog.id.find(logId);
+```
+
+Options:
+- `name` — required, snake_case SQL name
+- `public: true` — visible to clients (default: private)
+- `event: true` — event table
+- `scheduled: (): any => reducerRef` — scheduled table
+- `indexes: [{ name, algorithm: 'btree', columns: [...] }]`
 
 ## Column Types
 
-| Type | Usage | Notes |
-|------|-------|-------|
-| `t.i32()` | `t.i32()` | Signed 32-bit integer |
-| `t.i64()` | `t.i64()` | Signed 64-bit (BigInt in JS) |
-| `t.u32()` | `t.u32()` | Unsigned 32-bit integer |
-| `t.u64()` | `t.u64()` | Unsigned 64-bit (BigInt in JS) |
-| `t.f32()` | `t.f32()` | 32-bit float |
-| `t.f64()` | `t.f64()` | 64-bit float |
-| `t.bool()` | `t.bool()` | Boolean |
-| `t.string()` | `t.string()` | Text |
-| `t.identity()` | `t.identity()` | User identity |
-| `t.timestamp()` | `t.timestamp()` | Timestamp |
-| `t.scheduleAt()` | `t.scheduleAt()` | Schedule metadata |
+| Builder | JS type | Notes |
+|---------|---------|-------|
+| `t.i32()` | number | |
+| `t.i64()` | bigint | Use `0n` literals |
+| `t.u32()` | number | |
+| `t.u64()` | bigint | Use `0n` literals |
+| `t.f32()` | number | |
+| `t.f64()` | number | |
+| `t.bool()` | boolean | |
+| `t.string()` | string | |
+| `t.identity()` | Identity | |
+| `t.timestamp()` | Timestamp | |
+| `t.scheduleAt()` | ScheduleAt | |
 
-Column modifiers:
+Modifiers: `.primaryKey()`, `.autoInc()`, `.unique()`, `.optional()`, `.index('btree')`
+
+Optional columns: `nickname: t.option(t.string())`
+
+## Schema Export
+
+Every module must have exactly this pattern:
+
 ```typescript
-t.u64().primaryKey()            // Primary key
-t.u64().primaryKey().autoInc()  // Auto-incrementing primary key
-t.string().unique()             // Unique constraint
-t.string().optional()           // Nullable (Option type)
-t.string().index('btree')       // Inline btree index
+const spacetimedb = schema({ user, message });
+export default spacetimedb;
 ```
 
-Optional fields use `t.option()`:
+`schema()` takes one object containing all table references. `export default` is mandatory.
+
+## Reducers
+
+Named exports on the schema object. The export name becomes the reducer name:
+
 ```typescript
-nickname: t.option(t.string()),   // nullable string
-score: t.option(t.i32()),         // nullable i32
+// No arguments — pass just the callback
+export const doReset = spacetimedb.reducer((ctx) => { ... });
+
+// With arguments — pass args object, then callback
+export const createUser = spacetimedb.reducer(
+  { name: t.string(), age: t.i32() },
+  (ctx, { name, age }) => {
+    ctx.db.user.insert({ id: 0n, name, age, active: true });
+  }
+);
 ```
 
-All `u64` and `i64` fields use JavaScript BigInt literals: `0n`, `1n`, `100n`.
+For no-arg reducers, omit the args object entirely — just pass the callback directly.
+
+## DB Operations
+
+```typescript
+// Insert (pass 0n for autoInc fields)
+ctx.db.user.insert({ id: 0n, name: 'Alice', age: 30 });
+
+// Find by primary key or unique index → row | undefined
+ctx.db.user.id.find(userId);
+ctx.db.player.identity.find(ctx.sender);
+
+// Filter by btree index → iterator (accessor = column name for inline indexes)
+for (const post of ctx.db.post.authorId.filter(authorId)) { }
+const posts = [...ctx.db.post.authorId.filter(authorId)];
+
+// Iterate all rows
+for (const row of ctx.db.user.iter()) { }
+
+// Update (spread + override)
+const existing = ctx.db.user.id.find(userId);
+if (existing) ctx.db.user.id.update({ ...existing, name: newName });
+
+// Delete by primary key value
+ctx.db.user.id.delete(userId);
+```
+
+## Index Access
+
+**Prefer inline `.index('btree')` on the column** — it's simpler and the accessor
+matches the column name. Only use named indexes in `indexes: [...]` for multi-column indexes.
+
+```typescript
+// Inline btree index (preferred for single-column):
+const post = table({ name: 'post' }, {
+  id: t.u64().primaryKey().autoInc(),
+  authorId: t.u64().index('btree'),       // inline index
+  title: t.string(),
+});
+// Access by column name:
+ctx.db.post.authorId.filter(authorId);
+
+// Multi-column index (must use named index):
+const log = table({
+  name: 'event_log',
+  indexes: [{ name: 'by_category_severity', algorithm: 'btree', columns: ['category', 'severity'] }],
+}, { ... });
+// Access by index name:
+ctx.db.eventLog.by_category_severity.filter(...);
+
+// Primary key — always accessible by column name
+ctx.db.user.id.find(1n);
+
+// Unique column
+ctx.db.player.identity.find(ctx.sender);
+```
+
+## Lifecycle Hooks
+
+```typescript
+// Init — runs once on first publish
+export const init = spacetimedb.init((ctx) => {
+  ctx.db.config.insert({ id: 0, value: 'default' });
+});
+
+// Client connected — must be exported
+export const onConnect = spacetimedb.clientConnected((ctx) => {
+  ctx.db.online.insert({ identity: ctx.sender, connectedAt: ctx.timestamp });
+});
+
+// Client disconnected — must be exported
+export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
+  ctx.db.online.identity.delete(ctx.sender);
+});
+```
+
+`init` uses `spacetimedb.init()`, NOT `spacetimedb.reducer()`.
+`clientConnected`/`clientDisconnected` must be `export const`.
+
+## Authentication
+
+```typescript
+// ctx.sender is the caller's Identity
+// Compare identities with .equals(), never ===
+if (!post.owner.equals(ctx.sender)) throw new Error('unauthorized');
+```
+
+## Scheduled Tables
+
+The scheduled table references a reducer, creating a circular dependency.
+Use `(): any =>` return type annotation to break the cycle:
+
+```typescript
+const tickTimer = table({
+  name: 'tick_timer',
+  scheduled: (): any => tick,   // (): any => is required
+}, {
+  scheduledId: t.u64().primaryKey().autoInc(),
+  scheduledAt: t.scheduleAt(),
+});
+
+const spacetimedb = schema({ tickTimer });
+export default spacetimedb;
+
+export const tick = spacetimedb.reducer(
+  { timer: tickTimer.rowType },
+  (ctx, { timer }) => {
+    // timer row is auto-deleted after this reducer runs
+  }
+);
+
+// Schedule a one-time job (accessor uses JS variable name, not SQL name)
+ctx.db.tickTimer.insert({
+  scheduledId: 0n,
+  scheduledAt: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch + delayMicros),
+});
+
+// Schedule a repeating job
+ctx.db.tickTimer.insert({
+  scheduledId: 0n,
+  scheduledAt: ScheduleAt.interval(60_000_000n),
+});
+
+// Cancel a scheduled job
+ctx.db.tickTimer.scheduledId.delete(jobId);
+```
 
 ## Product Types (Structs)
 
 ```typescript
 const Position = t.object('Position', { x: t.i32(), y: t.i32() });
-const Velocity = t.object('Velocity', { dx: t.f32(), dy: t.f32() });
-
 const entity = table({ name: 'entity' }, {
   id: t.u64().primaryKey().autoInc(),
   pos: Position,
-  vel: Velocity,
 });
 ```
 
@@ -93,233 +241,28 @@ const Shape = t.enum('Shape', {
   circle: t.i32(),
   rectangle: t.object('Rect', { w: t.i32(), h: t.i32() }),
 });
-
-// Values use { tag: 'variant', value: payload }
-const circle = { tag: 'circle', value: 10 };
-const rect = { tag: 'rectangle', value: { w: 5, h: 3 } };
-```
-
-## Schema Export
-
-Every module must export a schema containing all tables:
-
-```typescript
-const spacetimedb = schema({ user, product, note });
-export default spacetimedb;
-```
-
-The `schema()` function takes exactly one argument: an object with all table references.
-
-## Reducers
-
-Reducers are exported named constants defined on the schema object:
-
-```typescript
-// With arguments
-export const createUser = spacetimedb.reducer(
-  { name: t.string(), age: t.i32() },
-  (ctx, { name, age }) => {
-    ctx.db.user.insert({ id: 0n, name, age, active: true, createdAt: ctx.timestamp });
-  }
-);
-
-// Without arguments (empty object)
-export const resetAll = spacetimedb.reducer({}, (ctx) => {
-  for (const row of ctx.db.user.iter()) {
-    ctx.db.user.id.delete(row.id);
-  }
-});
-```
-
-Reducer names come from the export name, not from a string argument.
-
-## Database Operations
-
-### Insert
-```typescript
-ctx.db.user.insert({ id: 0n, name: 'Alice', age: 30, active: true });
-// insert() returns the inserted row
-const row = ctx.db.user.insert({ id: 0n, name: 'Bob', age: 25, active: true });
-const newId = row.id;
-```
-
-For auto-increment fields, pass `0n` as a placeholder.
-
-### Find (by primary key or unique index)
-```typescript
-const user = ctx.db.user.id.find(userId);       // returns row or undefined
-const player = ctx.db.player.identity.find(ctx.sender);
-```
-
-### Filter (by btree index — returns iterator)
-```typescript
-const msgs = [...ctx.db.message.message_room_id.filter(roomId)];
-// or
-for (const msg of ctx.db.message.message_room_id.filter(roomId)) {
-  // process each message
-}
-// or
-const msgs = Array.from(ctx.db.message.message_room_id.filter(roomId));
-```
-
-### Iterate all rows
-```typescript
-for (const row of ctx.db.user.iter()) {
-  // process each row
-}
-```
-
-### Update (by primary key — spread existing row, override fields)
-```typescript
-const existing = ctx.db.user.id.find(userId);
-if (!existing) throw new Error('not found');
-ctx.db.user.id.update({ ...existing, name: newName, active: false });
-```
-
-### Delete (by primary key value)
-```typescript
-ctx.db.user.id.delete(userId);
-ctx.db.player.identity.delete(ctx.sender);
-```
-
-## Index Access
-
-Index names are used verbatim as property accessors on `ctx.db.tableName`:
-
-```typescript
-// Primary key lookup
-ctx.db.user.id.find(userId);
-
-// Named index filter
-ctx.db.message.message_room_id.filter(roomId);
-
-// Inline index (column-level)
-// If defined as: owner: t.identity().index('btree')
-// Access as: ctx.db.task.owner.filter(ctx.sender)
-```
-
-For indexes defined in the `indexes` option, access by exact index name:
-```typescript
-// Definition: indexes: [{ name: 'user_email', algorithm: 'btree', columns: ['email'] }]
-// Access:
-ctx.db.user.user_email.find(emailValue);
-```
-
-## Authentication
-
-`ctx.sender` is the authenticated identity of the caller:
-
-```typescript
-export const createPost = spacetimedb.reducer(
-  { text: t.string() },
-  (ctx, { text }) => {
-    ctx.db.post.insert({ id: 0n, owner: ctx.sender, text, createdAt: ctx.timestamp });
-  }
-);
-
-export const deletePost = spacetimedb.reducer(
-  { postId: t.u64() },
-  (ctx, { postId }) => {
-    const post = ctx.db.post.id.find(postId);
-    if (!post) throw new Error('not found');
-    if (!post.owner.equals(ctx.sender)) throw new Error('unauthorized');
-    ctx.db.post.id.delete(postId);
-  }
-);
-```
-
-Always compare identities with `.equals()`, not `===`.
-
-## Lifecycle Hooks
-
-```typescript
-export const init = spacetimedb.init((ctx) => {
-  // Runs once when the module is first published
-  ctx.db.config.insert({ id: 0n, setting: 'default' });
-});
-
-export const onConnect = spacetimedb.clientConnected((ctx) => {
-  // ctx.sender — the connecting client's identity
-  ctx.db.onlinePlayer.insert({ identity: ctx.sender, connectedAt: ctx.timestamp });
-});
-
-export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
-  ctx.db.onlinePlayer.identity.delete(ctx.sender);
-});
+// Values: { tag: 'circle', value: 10 }
 ```
 
 ## Views
 
 ```typescript
-// Anonymous view (same result for all clients)
+// Anonymous view (same for all clients)
 export const activeAnnouncements = spacetimedb.anonymousView(
   { name: 'active_announcements', public: true },
   t.array(announcement.rowType),
-  (ctx) => {
-    return Array.from(ctx.db.announcement.active.filter(true));
-  }
+  (ctx) => Array.from(ctx.db.announcement.active.filter(true))
 );
 
-// Per-user view (result varies by ctx.sender)
-spacetimedb.view(
-  { name: 'my_items', public: true },
-  t.array(item.rowType),
-  (ctx) => {
-    return [...ctx.db.item.owner.filter(ctx.sender)];
-  }
+// Per-user view (varies by ctx.sender)
+export const my_profile = spacetimedb.view(
+  { name: 'my_profile', public: true },
+  t.option(profile.rowType),
+  (ctx) => ctx.db.profile.identity.find(ctx.sender) ?? undefined
 );
 ```
 
-Views should use index lookups for efficiency.
-
-## Scheduled Tables
-
-```typescript
-const reminderTable = table(
-  {
-    name: 'reminder',
-    scheduled: (): any => fireReminder,
-  },
-  {
-    scheduledId: t.u64().primaryKey().autoInc(),
-    scheduledAt: t.scheduleAt(),
-    message: t.string(),
-  }
-);
-
-export const fireReminder = spacetimedb.reducer(
-  { timer: reminderTable.rowType },
-  (ctx, { timer }) => {
-    // timer.message, timer.scheduledId available
-    // Row is auto-deleted after reducer completes
-  }
-);
-
-// Schedule a one-time job
-export const scheduleReminder = spacetimedb.reducer(
-  { message: t.string(), delayMicros: t.u64() },
-  (ctx, { message, delayMicros }) => {
-    const fireAt = ctx.timestamp.microsSinceUnixEpoch + delayMicros;
-    ctx.db.reminder.insert({
-      scheduledId: 0n,
-      scheduledAt: ScheduleAt.time(fireAt),
-      message,
-    });
-  }
-);
-
-// Schedule a repeating job (interval in microseconds)
-ctx.db.reminder.insert({
-  scheduledId: 0n,
-  scheduledAt: ScheduleAt.interval(60_000_000n), // every 60 seconds
-  message: 'periodic',
-});
-
-// Cancel a scheduled job
-ctx.db.reminder.scheduledId.delete(jobId);
-```
-
-## Complete Module Example
+## Complete Example
 
 ```typescript
 import { schema, table, t } from 'spacetimedb/server';
@@ -337,13 +280,12 @@ const message = table(
   {
     name: 'message',
     public: true,
-    indexes: [{ name: 'message_sender', algorithm: 'btree', columns: ['sender'] }]
+    indexes: [{ name: 'message_sender', algorithm: 'btree', columns: ['sender'] }],
   },
   {
     id: t.u64().primaryKey().autoInc(),
     sender: t.identity(),
     text: t.string(),
-    sentAt: t.timestamp(),
   }
 );
 
@@ -352,24 +294,18 @@ export default spacetimedb;
 
 export const onConnect = spacetimedb.clientConnected((ctx) => {
   const existing = ctx.db.user.identity.find(ctx.sender);
-  if (existing) {
-    ctx.db.user.identity.update({ ...existing, online: true });
-  }
+  if (existing) ctx.db.user.identity.update({ ...existing, online: true });
 });
 
 export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
   const existing = ctx.db.user.identity.find(ctx.sender);
-  if (existing) {
-    ctx.db.user.identity.update({ ...existing, online: false });
-  }
+  if (existing) ctx.db.user.identity.update({ ...existing, online: false });
 });
 
 export const register = spacetimedb.reducer(
   { name: t.string() },
   (ctx, { name }) => {
-    if (ctx.db.user.identity.find(ctx.sender)) {
-      throw new Error('already registered');
-    }
+    if (ctx.db.user.identity.find(ctx.sender)) throw new Error('already registered');
     ctx.db.user.insert({ identity: ctx.sender, name, online: true });
   }
 );
@@ -377,9 +313,8 @@ export const register = spacetimedb.reducer(
 export const sendMessage = spacetimedb.reducer(
   { text: t.string() },
   (ctx, { text }) => {
-    const user = ctx.db.user.identity.find(ctx.sender);
-    if (!user) throw new Error('not registered');
-    ctx.db.message.insert({ id: 0n, sender: ctx.sender, text, sentAt: ctx.timestamp });
+    if (!ctx.db.user.identity.find(ctx.sender)) throw new Error('not registered');
+    ctx.db.message.insert({ id: 0n, sender: ctx.sender, text });
   }
 );
 ```

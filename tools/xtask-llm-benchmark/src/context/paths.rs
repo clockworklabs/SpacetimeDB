@@ -60,6 +60,11 @@ pub fn gather_guidelines_files(guidelines_dir: PathBuf, lang: Option<Lang>) -> R
 /// Cursor rules under docs: include general rules + rules for the given language.
 /// General = filename (lowercase) does not contain "typescript", "rust", or "csharp".
 /// Lang-specific = filename contains lang (e.g. "typescript" for TypeScript).
+///
+/// Migration guides (filenames containing "migration") are excluded from benchmark
+/// context because they emphasize old/deprecated patterns alongside new ones, which
+/// confuses models doing one-shot generation. They're still valuable in an IDE context
+/// where the model is editing existing code.
 pub fn gather_cursor_rules_files(rules_dir: PathBuf, lang: Option<Lang>) -> Result<Vec<PathBuf>> {
     if !rules_dir.is_dir() {
         return Ok(Vec::new());
@@ -75,6 +80,13 @@ pub fn gather_cursor_rules_files(rules_dir: PathBuf, lang: Option<Lang>) -> Resu
                 .unwrap_or(false)
         })
         .collect();
+
+    // Exclude migration guides — they list old patterns that confuse one-shot generation.
+    out.retain(|p| {
+        let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+        !name.contains("migration")
+    });
+
     if let Some(l) = lang {
         let tag = l.as_str();
         out.retain(|p| {

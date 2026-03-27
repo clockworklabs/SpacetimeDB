@@ -2,7 +2,7 @@ import { ScheduleAt } from 'spacetimedb';
 import { schema, table, t } from 'spacetimedb/server';
 
 const cleanupJob = table({
-  name: 'cleanupJob',
+  name: 'cleanup_job',
   scheduled: (): any => runCleanup,
 }, {
   scheduledId: t.u64().primaryKey().autoInc(),

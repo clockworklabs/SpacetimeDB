@@ -55,6 +55,7 @@ const [items, isLoading] = useTable(tables.item);
 
 | Wrong | Right | Error |
 |-------|-------|-------|
+| `export const Foo = table(...)` | `const Foo = table(...)` | "exporting something that is not a spacetime export" |
 | Missing `package.json` | Create `package.json` | "could not detect language" |
 | Missing `tsconfig.json` | Create `tsconfig.json` | "TsconfigNotFound" |
 | Entrypoint not at `src/index.ts` | Use `src/index.ts` | Module won't bundle |
@@ -98,14 +99,14 @@ const [items, isLoading] = useTable(tables.item);
 import { schema, table, t } from 'spacetimedb/server';
 
 // ❌ WRONG — indexes in COLUMNS causes "reading 'tag'" error
-export const Task = table({ name: 'task' }, {
+const Task = table({ name: 'task' }, {
   id: t.u64().primaryKey().autoInc(),
   ownerId: t.identity(),
   indexes: [{ name: 'by_owner', algorithm: 'btree', columns: ['ownerId'] }]  // ❌ WRONG!
 });
 
 // ✅ RIGHT — indexes in OPTIONS (first argument)
-export const Task = table({ 
+const Task = table({
   name: 'task',
   public: true,
   indexes: [{ name: 'by_owner', algorithm: 'btree', columns: ['ownerId'] }]
@@ -169,6 +170,14 @@ export default spacetimedb;
 // ❌ WRONG — never pass tables directly or as multiple args
 schema(myTable);      // WRONG!
 schema(t1, t2, t3);   // WRONG!
+
+// ❌ WRONG — do NOT use `export const` on tables. Only reducers and the default schema are exported.
+export const myTable = table(...);  // WRONG! Causes "exporting something that is not a spacetime export"
+
+// ✅ RIGHT — tables are plain const, only schema gets export default
+const myTable = table({ name: 'my_table' }, { ... });
+const spacetimedb = schema({ myTable });
+export default spacetimedb;
 ```
 
 ---
@@ -195,7 +204,7 @@ for (const m of ctx.db.roomMember.iter()) {
 
 ```typescript
 // In table OPTIONS (first argument), not columns
-export const Message = table({ 
+const Message = table({
   name: 'message',
   public: true,
   indexes: [{ name: 'message_room_id', algorithm: 'btree', columns: ['roomId'] }]
@@ -344,7 +353,7 @@ conn.reducers.doSomething({ param: 'value' });
 
 ```typescript
 // 1. Define table first (scheduled: () => reducer — pass the exported reducer)
-export const CleanupJob = table({ 
+const CleanupJob = table({
   name: 'cleanup_job', 
   scheduled: () => run_cleanup  // reducer defined below
 }, {
@@ -449,7 +458,7 @@ conn.subscriptionBuilder()
 
 ```typescript
 // Private table with index on ownerId
-export const PrivateData = table(
+const PrivateData = table(
   { name: 'private_data',
     indexes: [{ name: 'by_owner', algorithm: 'btree', columns: ['ownerId'] }]
   },

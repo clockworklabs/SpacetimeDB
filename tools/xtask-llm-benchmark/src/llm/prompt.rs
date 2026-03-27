@@ -40,9 +40,24 @@ Rules:\n\
         } else if context.trim().is_empty() {
             "<<<DOCS START>>>\nUse your knowledge of the latest SpacetimeDB syntax and conventions.\n<<<DOCS END>>>\n".to_string()
         } else {
+            let preamble = match mode {
+                "cursor_rules" => format!(
+                    "The following are SpacetimeDB coding rules for {}. \
+                     Read ALL rules carefully before writing any code. \
+                     They contain ❌ WRONG examples showing common mistakes to AVOID \
+                     and ✅ CORRECT examples showing the right patterns to follow. \
+                     Focus on the ✅ patterns. Write SERVER-SIDE module code only.",
+                    self.lang
+                ),
+                "guidelines" => format!(
+                    "The following are SpacetimeDB {} guidelines. \
+                     All examples shown are correct patterns to follow.",
+                    self.lang
+                ),
+                _ => "Reference documentation:".to_string(),
+            };
             format!(
-                "<<<DOCS START>>>Context:\n{context}\n<<<DOCS END>>>\n",
-                context = context,
+                "<<<DOCS START>>>\n{preamble}\n\n{context}\n<<<DOCS END>>>\n",
             )
         });
 

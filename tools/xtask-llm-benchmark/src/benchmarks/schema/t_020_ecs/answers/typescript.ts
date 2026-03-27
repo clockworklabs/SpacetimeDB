@@ -33,7 +33,7 @@ const velocity = table(
 
 const nextPosition = table(
   {
-    name: 'nextPosition',
+    name: 'next_position',
   },
   {
     entityId: t.i32().primaryKey(),

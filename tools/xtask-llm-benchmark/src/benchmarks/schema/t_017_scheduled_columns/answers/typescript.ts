@@ -3,7 +3,7 @@ import { table, schema, t } from 'spacetimedb/server';
 
 const tickTimer = table(
   {
-    name: 'tickTimer',
+    name: 'tick_timer',
     scheduled: (): any => tick,
   },
   {

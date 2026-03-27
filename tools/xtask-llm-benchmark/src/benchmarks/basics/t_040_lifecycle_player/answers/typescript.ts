@@ -1,7 +1,7 @@
 import { schema, table, t } from 'spacetimedb/server';
 
 const onlinePlayer = table({
-  name: 'onlinePlayer',
+  name: 'online_player',
   public: true,
 }, {
   identity: t.identity().primaryKey(),
@@ -11,13 +11,13 @@ const onlinePlayer = table({
 const spacetimedb = schema({ onlinePlayer });
 export default spacetimedb;
 
-export const onConnect = spacetimedb.clientConnected(ctx => {
+export const clientConnected = spacetimedb.clientConnected(ctx => {
   ctx.db.onlinePlayer.insert({
     identity: ctx.sender,
     connectedAt: ctx.timestamp,
   });
 });
 
-export const onDisconnect = spacetimedb.clientDisconnected(ctx => {
+export const clientDisconnected = spacetimedb.clientDisconnected(ctx => {
   ctx.db.onlinePlayer.identity.delete(ctx.sender);
 });

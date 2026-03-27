@@ -13,7 +13,7 @@ const spacetimedb = schema({ announcement });
 export default spacetimedb;
 
 export const activeAnnouncements = spacetimedb.anonymousView(
-  { name: 'activeAnnouncements', public: true },
+  { name: 'active_announcements', public: true },
   t.array(announcement.rowType),
   (ctx) => {
     return Array.from(ctx.db.announcement.active.filter(true));

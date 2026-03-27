@@ -2,7 +2,7 @@ import { ScheduleAt } from 'spacetimedb';
 import { table, schema, t } from 'spacetimedb/server';
 
 const tickTimer = table({
-  name: 'tickTimer',
+  name: 'tick_timer',
   scheduled: (): any => tick,
 }, {
   scheduledId: t.u64().primaryKey().autoInc(),
