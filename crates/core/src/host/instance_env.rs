@@ -998,6 +998,10 @@ impl InstanceEnv {
         let client = self.replica_ctx.call_reducer_client.clone();
         let router = self.replica_ctx.call_reducer_router.clone();
         let reducer_name = reducer_name.to_owned();
+        // Node-level auth token: a single token minted at startup and shared by all replicas
+        // on this node. Passed as a Bearer token so `anon_auth_middleware` on the target node
+        // accepts the request without generating a fresh ephemeral identity per call.
+        let auth_token = self.replica_ctx.call_reducer_auth_token.clone();
 
         async move {
             let base_url = router
@@ -1010,13 +1014,14 @@ impl InstanceEnv {
                 database_identity.to_hex(),
                 reducer_name,
             );
-            let response = client
+            let mut req = client
                 .post(&url)
                 .header(http::header::CONTENT_TYPE, "application/octet-stream")
-                .body(args)
-                .send()
-                .await
-                .map_err(|e| NodesError::HttpError(e.to_string()))?;
+                .body(args);
+            if let Some(token) = auth_token {
+                req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+            }
+            let response = req.send().await.map_err(|e| NodesError::HttpError(e.to_string()))?;
 
             let status = response.status().as_u16();
             let body = response
@@ -1403,6 +1408,7 @@ mod test {
                 subscriptions: subs,
                 call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
                 call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
+                call_reducer_auth_token: None,
             },
             runtime,
         ))

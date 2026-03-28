@@ -56,6 +56,14 @@ pub struct ReplicaContext {
     /// - Standalone: always returns the local node URL ([`crate::host::reducer_router::LocalReducerRouter`]).
     /// - Cluster: queries the control DB to find the leader replica's node.
     pub call_reducer_router: Arc<dyn ReducerCallRouter>,
+    /// Pre-signed `Authorization: Bearer <token>` value for outgoing cross-DB reducer calls.
+    ///
+    /// Set at replica launch time by the deployment layer (standalone / cluster) using the
+    /// local JWT signing key. The token identifies this database as the caller, so the target
+    /// reducer sees a stable, verifiable identity instead of an anonymous ephemeral one.
+    ///
+    /// `None` in contexts where no JWT signer is configured (e.g. unit tests).
+    pub call_reducer_auth_token: Option<String>,
 }
 
 impl ReplicaContext {

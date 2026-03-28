@@ -128,6 +128,16 @@ pub struct HostController {
     /// Set to [`LocalReducerRouter`] by default; replaced with `ClusterReducerRouter`
     /// in cluster deployments via [`HostController::new`] receiving the router directly.
     pub call_reducer_router: Arc<dyn ReducerCallRouter>,
+    /// A single node-level Bearer token included in all outgoing cross-DB reducer calls.
+    ///
+    /// Set once at node startup by the deployment layer (standalone / cluster) so that
+    /// `anon_auth_middleware` on the target node accepts the request without generating a
+    /// fresh ephemeral identity on every call.  All replicas on this node share the same
+    /// token — the target only needs proof that the caller is a legitimate node, not which
+    /// specific database initiated the call.
+    ///
+    /// `None` in test/embedded contexts where no JWT signer is configured.
+    pub call_reducer_auth_token: Option<String>,
 }
 
 pub(crate) struct HostRuntimes {
@@ -241,6 +251,7 @@ impl HostController {
             db_cores,
             call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
             call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
+            call_reducer_auth_token: None,
         }
     }
 
@@ -679,6 +690,7 @@ async fn make_replica_ctx(
     bsatn_rlb_pool: BsatnRowListBuilderPool,
     call_reducer_client: reqwest::Client,
     call_reducer_router: Arc<dyn ReducerCallRouter>,
+    call_reducer_auth_token: Option<String>,
 ) -> anyhow::Result<ReplicaContext> {
     let logger = match module_logs {
         Some(path) => asyncify(move || Arc::new(DatabaseLogger::open_today(path))).await,
@@ -713,6 +725,7 @@ async fn make_replica_ctx(
         subscriptions,
         call_reducer_client,
         call_reducer_router,
+        call_reducer_auth_token,
     })
 }
 
@@ -790,6 +803,7 @@ struct ModuleLauncher<F> {
     bsatn_rlb_pool: BsatnRowListBuilderPool,
     call_reducer_client: reqwest::Client,
     call_reducer_router: Arc<dyn ReducerCallRouter>,
+    call_reducer_auth_token: Option<String>,
 }
 
 impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
@@ -811,6 +825,7 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
             self.bsatn_rlb_pool,
             self.call_reducer_client,
             self.call_reducer_router,
+            self.call_reducer_auth_token,
         )
         .await
         .map(Arc::new)?;
@@ -1014,6 +1029,7 @@ impl Host {
                     bsatn_rlb_pool: bsatn_rlb_pool.clone(),
                     call_reducer_client: host_controller.call_reducer_client.clone(),
                     call_reducer_router: host_controller.call_reducer_router.clone(),
+                    call_reducer_auth_token: host_controller.call_reducer_auth_token.clone(),
                 }
                 .launch_module()
                 .await?
@@ -1045,6 +1061,7 @@ impl Host {
                     bsatn_rlb_pool: bsatn_rlb_pool.clone(),
                     call_reducer_client: host_controller.call_reducer_client.clone(),
                     call_reducer_router: host_controller.call_reducer_router.clone(),
+                    call_reducer_auth_token: host_controller.call_reducer_auth_token.clone(),
                 }
                 .launch_module()
                 .await;
@@ -1070,6 +1087,7 @@ impl Host {
                             bsatn_rlb_pool: bsatn_rlb_pool.clone(),
                             call_reducer_client: host_controller.call_reducer_client.clone(),
                             call_reducer_router: host_controller.call_reducer_router.clone(),
+                            call_reducer_auth_token: host_controller.call_reducer_auth_token.clone(),
                         }
                         .launch_module()
                         .await;
@@ -1180,6 +1198,7 @@ impl Host {
             // Transient validation-only module; build its own client and router with defaults.
             call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
             call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
+            call_reducer_auth_token: None,
         }
         .launch_module()
         .await
