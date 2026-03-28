@@ -23,10 +23,7 @@
 //! }
 //! ```
 
-use crate::{
-    rt::read_bytes_source_into,
-    Identity, IterBuf,
-};
+use crate::{rt::read_bytes_source_into, Identity, IterBuf};
 
 /// Error returned by [`call_reducer_on_db`].
 #[derive(Debug)]
@@ -59,11 +56,7 @@ impl core::fmt::Display for RemoteCallError {
 /// Returns `Err(RemoteCallError::Failed(msg))` when the reducer ran but returned an error.
 /// Returns `Err(RemoteCallError::NotFound(msg))` when the database or reducer does not exist.
 /// Returns `Err(RemoteCallError::Unreachable(msg))` on transport failure (connection refused, timeout, …).
-pub fn call_reducer_on_db(
-    database_identity: Identity,
-    reducer_name: &str,
-    args: &[u8],
-) -> Result<(), RemoteCallError> {
+pub fn call_reducer_on_db(database_identity: Identity, reducer_name: &str, args: &[u8]) -> Result<(), RemoteCallError> {
     let identity_bytes = database_identity.to_byte_array();
     match spacetimedb_bindings_sys::call_reducer_on_db(identity_bytes, reducer_name, args) {
         Ok((status, body_source)) => {
