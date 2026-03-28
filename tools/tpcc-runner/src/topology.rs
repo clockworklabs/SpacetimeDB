@@ -65,36 +65,51 @@ pub fn required_database_count(warehouse_count: u16, warehouses_per_database: u1
 }
 
 pub async fn lookup_database_identities(connection: &ConnectionConfig, num_databases: u16) -> Result<Vec<Identity>> {
-    let client = Client::new();
-    let mut identities = Vec::with_capacity(num_databases as usize);
-    for database_number in 0..num_databases {
-        let body = client
-            .get(format!(
-                "{}/v1/database/{}-{}",
-                connection.uri, connection.database_prefix, database_number
-            ))
-            .send()
-            .await?
-            .error_for_status()?;
-        let obj = match body.json::<serde_json::Value>().await? {
-            serde_json::Value::Object(obj) => obj,
-            els => bail!("expected object while resolving database identity, got {els:?}"),
-        };
-        let Some(db_ident) = obj.get("database_identity") else {
-            bail!("missing database_identity in response {obj:?}");
-        };
-        let serde_json::Value::Object(ident_obj) = db_ident else {
-            bail!("expected database_identity object, got {db_ident:?}");
-        };
-        let Some(ident_str) = ident_obj.get("__identity__") else {
-            bail!("missing __identity__ in response {ident_obj:?}");
-        };
-        let serde_json::Value::String(ident_str) = ident_str else {
-            bail!("expected __identity__ string, got {ident_str:?}");
-        };
-        identities.push(Identity::from_hex(ident_str)?);
+    log::info!(
+        "Looking up identities for {num_databases} at {} / {}-*",
+        connection.uri,
+        connection.database_prefix
+    );
+    let result = async {
+        let client = Client::new();
+        let mut identities = Vec::with_capacity(num_databases as usize);
+        for database_number in 0..num_databases {
+            let body = client
+                .get(format!(
+                    "{}/v1/database/{}-{}",
+                    connection.uri, connection.database_prefix, database_number
+                ))
+                .send()
+                .await?
+                .error_for_status()?;
+            let obj = match body.json::<serde_json::Value>().await? {
+                serde_json::Value::Object(obj) => obj,
+                els => bail!("expected object while resolving database identity, got {els:?}"),
+            };
+            let Some(db_ident) = obj.get("database_identity") else {
+                bail!("missing database_identity in response {obj:?}");
+            };
+            let serde_json::Value::Object(ident_obj) = db_ident else {
+                bail!("expected database_identity object, got {db_ident:?}");
+            };
+            let Some(ident_str) = ident_obj.get("__identity__") else {
+                bail!("missing __identity__ in response {ident_obj:?}");
+            };
+            let serde_json::Value::String(ident_str) = ident_str else {
+                bail!("expected __identity__ string, got {ident_str:?}");
+            };
+            identities.push(Identity::from_hex(ident_str)?);
+        }
+        Ok(identities)
     }
-    Ok(identities)
+    .await;
+
+    match &result {
+        Ok(_) => log::info!("Successfully got database identities"),
+        Err(e) => log::error!("Failed to get database identities: {e}"),
+    }
+
+    result
 }
 
 fn ensure_warehouses_per_database(warehouses_per_database: u16) -> Result<()> {

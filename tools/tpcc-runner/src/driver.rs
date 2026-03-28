@@ -603,9 +603,13 @@ async fn harvest_delivery_completions(
         );
     }
 
-    for (_, client) in clients {
-        client.shutdown();
-    }
+    // It's not actually correct to shut down the clients here:
+    // they may still be synchronously waiting for a response to an outstanding TX in another thread,
+    // and if we shut them down it will never come, meaning they will fail and abort.
+    // Instead, just let them shut down in their own time.
+    // for (_, client) in clients {
+    //     client.shutdown();
+    // }
     Ok(())
 }
 
