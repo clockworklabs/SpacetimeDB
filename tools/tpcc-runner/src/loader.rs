@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 use std::ops::Range;
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::SystemTime;
 
@@ -88,6 +89,9 @@ fn configure_one_database(config: &LoadConfig, database_number: u16, topology: &
     let load_c_last = rng.random_range(0..=255);
     let base_ts = Timestamp::from(SystemTime::now());
 
+    let pending = Arc::new((Mutex::new(0_u64), Condvar::new()));
+    let errors = Arc::new(Mutex::new(None));
+
     load_remote_warehouses(
         &client,
         database_number,
@@ -95,8 +99,10 @@ fn configure_one_database(config: &LoadConfig, database_number: u16, topology: &
         config.warehouses_per_database,
         config.batch_size,
         topology,
+        &pending,
+        &errors,
     )?;
-    load_items(&client, config.batch_size, &mut rng)?;
+    load_items(&client, config.batch_size, &mut rng, &pending, &errors)?;
     load_warehouses_and_districts(
         &client,
         database_number,
@@ -104,6 +110,8 @@ fn configure_one_database(config: &LoadConfig, database_number: u16, topology: &
         config.batch_size,
         base_ts,
         &mut rng,
+        &pending,
+        &errors,
     )?;
     load_stock(
         &client,
@@ -111,6 +119,8 @@ fn configure_one_database(config: &LoadConfig, database_number: u16, topology: &
         config.warehouses_per_database,
         config.batch_size,
         &mut rng,
+        &pending,
+        &errors,
     )?;
     load_customers_history_orders(
         &client,
@@ -120,7 +130,12 @@ fn configure_one_database(config: &LoadConfig, database_number: u16, topology: &
         base_ts,
         load_c_last,
         &mut rng,
+        &pending,
+        &errors,
     )?;
+
+    wait_for_pending(&pending);
+    take_first_error(&errors)?;
 
     client.shutdown();
     log::info!("tpcc load for database {database} finished");
@@ -128,7 +143,13 @@ fn configure_one_database(config: &LoadConfig, database_number: u16, topology: &
     Ok(())
 }
 
-fn load_items(client: &ModuleClient, batch_size: usize, rng: &mut StdRng) -> Result<()> {
+fn load_items(
+    client: &ModuleClient,
+    batch_size: usize,
+    rng: &mut StdRng,
+    pending: &Arc<(Mutex<u64>, Condvar)>,
+    errors: &Arc<Mutex<Option<anyhow::Error>>>,
+) -> Result<()> {
     let mut batch = Vec::with_capacity(batch_size);
     for item_id in 1..=ITEMS {
         batch.push(Item {
@@ -139,11 +160,11 @@ fn load_items(client: &ModuleClient, batch_size: usize, rng: &mut StdRng) -> Res
             i_data: maybe_with_original(rng, 26, 50),
         });
         if batch.len() >= batch_size {
-            client.load_items(std::mem::take(&mut batch))?;
+            client.queue_load_items(std::mem::take(&mut batch), &pending, &errors)?;
         }
     }
     if !batch.is_empty() {
-        client.load_items(batch)?;
+        client.queue_load_items(batch, &pending, &errors)?;
     }
     Ok(())
 }
@@ -161,6 +182,8 @@ fn load_remote_warehouses(
     warehouses_per_database: u16,
     batch_size: usize,
     topology: &DatabaseTopology,
+    pending: &Arc<(Mutex<u64>, Condvar)>,
+    errors: &Arc<Mutex<Option<anyhow::Error>>>,
 ) -> Result<()> {
     let mut warehouse_batch = Vec::with_capacity(batch_size);
 
@@ -182,7 +205,7 @@ fn load_remote_warehouses(
         let split_at = warehouse_batch.len().min(batch_size);
         let remainder = warehouse_batch.split_off(split_at);
         let rows = std::mem::replace(&mut warehouse_batch, remainder);
-        client.load_remote_warehouses(rows)?;
+        client.queue_load_remote_warehouses(rows, &pending, &errors)?;
     }
 
     Ok(())
@@ -195,6 +218,8 @@ fn load_warehouses_and_districts(
     batch_size: usize,
     timestamp: Timestamp,
     rng: &mut StdRng,
+    pending: &Arc<(Mutex<u64>, Condvar)>,
+    errors: &Arc<Mutex<Option<anyhow::Error>>>,
 ) -> Result<()> {
     let mut warehouse_batch = Vec::with_capacity(batch_size);
     let mut district_batch = Vec::with_capacity(batch_size);
@@ -234,13 +259,13 @@ fn load_warehouses_and_districts(
         let split_at = warehouse_batch.len().min(batch_size);
         let remainder = warehouse_batch.split_off(split_at);
         let rows = std::mem::replace(&mut warehouse_batch, remainder);
-        client.load_warehouses(rows)?;
+        client.queue_load_warehouses(rows, &pending, &errors)?;
     }
     while !district_batch.is_empty() {
         let split_at = district_batch.len().min(batch_size);
         let remainder = district_batch.split_off(split_at);
         let rows = std::mem::replace(&mut district_batch, remainder);
-        client.load_districts(rows)?;
+        client.queue_load_districts(rows, &pending, &errors)?;
     }
     let _ = timestamp;
     Ok(())
@@ -252,6 +277,8 @@ fn load_stock(
     warehouses_per_database: u16,
     batch_size: usize,
     rng: &mut StdRng,
+    pending: &Arc<(Mutex<u64>, Condvar)>,
+    errors: &Arc<Mutex<Option<anyhow::Error>>>,
 ) -> Result<()> {
     let mut batch = Vec::with_capacity(batch_size);
     for w_id in warehouses_range(database_number, warehouses_per_database) {
@@ -277,12 +304,12 @@ fn load_stock(
                 s_data: maybe_with_original(rng, 26, 50),
             });
             if batch.len() >= batch_size {
-                client.load_stocks(std::mem::take(&mut batch))?;
+                client.queue_load_stocks(std::mem::take(&mut batch), &pending, &errors)?;
             }
         }
     }
     if !batch.is_empty() {
-        client.load_stocks(batch)?;
+        client.queue_load_stocks(batch, &pending, &errors)?;
     }
     Ok(())
 }
@@ -295,6 +322,8 @@ fn load_customers_history_orders(
     timestamp: Timestamp,
     load_c_last: u32,
     rng: &mut StdRng,
+    pending: &Arc<(Mutex<u64>, Condvar)>,
+    errors: &Arc<Mutex<Option<anyhow::Error>>>,
 ) -> Result<()> {
     let mut customer_batch = Vec::with_capacity(batch_size);
     let mut history_batch = Vec::with_capacity(batch_size);
@@ -351,10 +380,10 @@ fn load_customers_history_orders(
                 });
 
                 if customer_batch.len() >= batch_size {
-                    client.load_customers(std::mem::take(&mut customer_batch))?;
+                    client.queue_load_customers(std::mem::take(&mut customer_batch), &pending, &errors)?;
                 }
                 if history_batch.len() >= batch_size {
-                    client.load_history(std::mem::take(&mut history_batch))?;
+                    client.queue_load_history(std::mem::take(&mut history_batch), &pending, &errors)?;
                 }
             }
 
@@ -401,35 +430,56 @@ fn load_customers_history_orders(
                         ol_dist_info: alpha_string(rng, 24, 24),
                     });
                     if order_line_batch.len() >= batch_size {
-                        client.load_order_lines(std::mem::take(&mut order_line_batch))?;
+                        client.queue_load_order_lines(
+                            std::mem::take(&mut order_line_batch),
+                            &pending,
+                            &errors,
+                        )?;
                     }
                 }
 
                 if order_batch.len() >= batch_size {
-                    client.load_orders(std::mem::take(&mut order_batch))?;
+                    client.queue_load_orders(std::mem::take(&mut order_batch), &pending, &errors)?;
                 }
                 if new_order_batch.len() >= batch_size {
-                    client.load_new_orders(std::mem::take(&mut new_order_batch))?;
+                    client.queue_load_new_orders(std::mem::take(&mut new_order_batch), &pending, &errors)?;
                 }
             }
         }
     }
 
     if !customer_batch.is_empty() {
-        client.load_customers(customer_batch)?;
+        client.queue_load_customers(customer_batch, &pending, &errors)?;
     }
     if !history_batch.is_empty() {
-        client.load_history(history_batch)?;
+        client.queue_load_history(history_batch, &pending, &errors)?;
     }
     if !order_batch.is_empty() {
-        client.load_orders(order_batch)?;
+        client.queue_load_orders(order_batch, &pending, &errors)?;
     }
     if !new_order_batch.is_empty() {
-        client.load_new_orders(new_order_batch)?;
+        client.queue_load_new_orders(new_order_batch, &pending, &errors)?;
     }
     if !order_line_batch.is_empty() {
-        client.load_order_lines(order_line_batch)?;
+        client.queue_load_order_lines(order_line_batch, &pending, &errors)?;
     }
 
     Ok(())
+}
+
+fn wait_for_pending(pending: &Arc<(Mutex<u64>, Condvar)>) {
+    let (lock, cvar) = pending.as_ref();
+    let mut guard = lock.lock().unwrap();
+    while *guard > 0 {
+        guard = cvar.wait(guard).unwrap();
+    }
+}
+
+fn take_first_error(errors: &Arc<Mutex<Option<anyhow::Error>>>) -> Result<()> {
+    let mut guard = errors.lock().unwrap();
+    if let Some(err) = guard.take() {
+        Err(err)
+    } else {
+        Ok(())
+    }
 }
