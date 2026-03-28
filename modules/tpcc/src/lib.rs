@@ -598,6 +598,7 @@ pub fn run_delivery_job(ctx: &ReducerContext, job: DeliveryJob) -> Result<(), St
     } else {
         next_job.next_d_id += 1;
         next_job.scheduled_at = ctx.timestamp.into();
+        next_job.scheduled_id = 0;
         ctx.db.delivery_job().insert(next_job);
     }
 
