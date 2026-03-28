@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use http::Request;
 use spacetimedb::{
-    http::Timeout, reducer, table, Identity, ProcedureContext, ReducerContext, Serialize, Table, TimeDuration,
-    TxContext,
+    http::Timeout, log_stopwatch::LogStopwatch, reducer, table, Identity, ProcedureContext, ReducerContext, Serialize,
+    Table, TimeDuration, TxContext,
 };
 use spacetimedb_sats::bsatn;
 
@@ -38,10 +38,17 @@ pub struct RemoteWarehouse {
 
 #[reducer]
 fn load_remote_warehouses(ctx: &ReducerContext, rows: Vec<RemoteWarehouse>) -> Result<(), String> {
+    let _timer = LogStopwatch::new("load_remote_warehouses");
     for row in rows {
         ctx.db.remote_warehouse().try_insert(row)?;
     }
     Ok(())
+}
+
+pub fn clear_remote_warehouses(ctx: &ReducerContext) {
+    for row in ctx.db.remote_warehouse().iter() {
+        ctx.db.remote_warehouse().delete(row);
+    }
 }
 
 pub fn remote_warehouse_home(ctx: &ReducerContext, warehouse_id: WarehouseId) -> Option<Identity> {
