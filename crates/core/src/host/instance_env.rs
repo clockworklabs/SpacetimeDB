@@ -8,6 +8,7 @@ use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
 use crate::subscription::module_subscription_manager::{from_tx_offset, TransactionOffset};
 use crate::util::prometheus_handle::IntGaugeExt;
+use crate::worker_metrics::WORKER_METRICS;
 use chrono::{DateTime, Utc};
 use core::mem;
 use futures::TryFutureExt;
@@ -978,13 +979,13 @@ impl InstanceEnv {
         })
     }
 
-    /// Call a reducer on a remote database via the local reverse proxy (`localhost:80`).
+    /// Call a reducer on a remote database.
     ///
     /// Unlike [`Self::http_request`], this is explicitly allowed while a transaction is open —
     /// the caller is responsible for understanding the consistency implications.
     ///
     /// Uses [`ReplicaContext::call_reducer_router`] to resolve the leader node for
-    /// `database_identity`, then sends the request via the warmed HTTP/2 client in
+    /// `database_identity`, then sends the request via the warmed HTTP client in
     /// [`ReplicaContext::call_reducer_client`].
     ///
     /// Returns `(http_status, response_body)` on transport success,
@@ -1002,8 +1003,11 @@ impl InstanceEnv {
         // on this node. Passed as a Bearer token so `anon_auth_middleware` on the target node
         // accepts the request without generating a fresh ephemeral identity per call.
         let auth_token = self.replica_ctx.call_reducer_auth_token.clone();
+        let caller_identity = self.replica_ctx.database.database_identity;
 
         async move {
+            let start = Instant::now();
+
             let base_url = router
                 .resolve_base_url(database_identity)
                 .await
@@ -1021,15 +1025,24 @@ impl InstanceEnv {
             if let Some(token) = auth_token {
                 req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
             }
-            let response = req.send().await.map_err(|e| NodesError::HttpError(e.to_string()))?;
+            let result = async {
+                let response = req.send().await.map_err(|e| NodesError::HttpError(e.to_string()))?;
+                let status = response.status().as_u16();
+                let body = response.bytes().await.map_err(|e| NodesError::HttpError(e.to_string()))?;
+                Ok((status, body))
+            }
+            .await;
 
-            let status = response.status().as_u16();
-            let body = response
-                .bytes()
-                .await
-                .map_err(|e| NodesError::HttpError(e.to_string()))?;
+            WORKER_METRICS
+                .cross_db_reducer_calls_total
+                .with_label_values(&caller_identity)
+                .inc();
+            WORKER_METRICS
+                .cross_db_reducer_duration_seconds
+                .with_label_values(&caller_identity)
+                .observe(start.elapsed().as_secs_f64());
 
-            Ok((status, body))
+            result
         }
     }
 }
