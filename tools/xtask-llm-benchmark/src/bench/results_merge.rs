@@ -16,8 +16,34 @@ fn load_results(path: &Path) -> Result<Results> {
     let mut f = fs::File::open(path)?;
     let mut s = String::new();
     f.read_to_string(&mut s)?;
-    let root: Results = serde_json::from_str(&s).with_context(|| format!("failed parsing {}", path.display()))?;
+    let mut root: Results = serde_json::from_str(&s).with_context(|| format!("failed parsing {}", path.display()))?;
+    normalize_model_names(&mut root);
     Ok(root)
+}
+
+/// Normalize all model names in loaded results and merge duplicates.
+pub fn normalize_model_names(root: &mut Results) {
+    for lang in &mut root.languages {
+        for mode in &mut lang.modes {
+            let mut merged: Vec<ModelEntry> = Vec::new();
+            for mut model in mode.models.drain(..) {
+                let canonical = canonical_model_name(&model.name);
+                model.name = canonical;
+                if let Some(existing) = merged.iter_mut().find(|m| m.name == model.name) {
+                    // Merge tasks from duplicate into existing entry
+                    for (task_id, outcome) in model.tasks {
+                        existing.tasks.insert(task_id, outcome);
+                    }
+                    if existing.route_api_model.is_none() {
+                        existing.route_api_model = model.route_api_model;
+                    }
+                } else {
+                    merged.push(model);
+                }
+            }
+            mode.models = merged;
+        }
+    }
 }
 
 fn save_atomic(path: &Path, root: &Results) -> Result<()> {
@@ -78,6 +104,30 @@ fn canonical_mode(mode: &str) -> &str {
     }
 }
 
+/// Normalize model names so that OpenRouter-style IDs and case variants
+/// resolve to the canonical display name from model_routes.
+fn canonical_model_name(name: &str) -> String {
+    use crate::llm::model_routes::default_model_routes;
+    let lower = name.to_ascii_lowercase();
+    for route in default_model_routes() {
+        // Match by openrouter model id (e.g. "anthropic/claude-sonnet-4.6")
+        if let Some(or) = route.openrouter_model {
+            if lower == or.to_ascii_lowercase() {
+                return route.display_name.to_string();
+            }
+        }
+        // Match by api model id (e.g. "claude-sonnet-4-6")
+        if lower == route.api_model.to_ascii_lowercase() {
+            return route.display_name.to_string();
+        }
+        // Match by case-insensitive display name (e.g. "claude sonnet 4.6")
+        if lower == route.display_name.to_ascii_lowercase() {
+            return route.display_name.to_string();
+        }
+    }
+    name.to_string()
+}
+
 pub fn merge_task_runs(path: &Path, mode: &str, runs: &[RunOutcome]) -> Result<()> {
     if runs.is_empty() {
         return Ok(());
@@ -102,7 +152,8 @@ pub fn merge_task_runs(path: &Path, mode: &str, runs: &[RunOutcome]) -> Result<(
             // Always bump the mode hash to the latest run's hash
             let mode_v = ensure_mode(lang_v, mode, Some(r.hash.clone()));
 
-            let model_v = ensure_model(mode_v, &r.model_name);
+            let canonical_name = canonical_model_name(&r.model_name);
+            let model_v = ensure_model(mode_v, &canonical_name);
 
             // Always replace with the latest value (even if None)
             model_v.route_api_model = r.route_api_model.clone();

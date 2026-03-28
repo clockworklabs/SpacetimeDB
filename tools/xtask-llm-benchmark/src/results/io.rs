@@ -152,8 +152,15 @@ pub fn write_summary_from_details_file<PIn: AsRef<Path>, POut: AsRef<Path>>(
 ) -> Result<()> {
     let data = fs::read_to_string(details_json.as_ref())
         .with_context(|| format!("failed to read {}", details_json.as_ref().display()))?;
-    let results: Results =
+    let mut results: Results =
         serde_json::from_str(&data).with_context(|| "failed to deserialize Results from details file")?;
+    crate::bench::results_merge::normalize_model_names(&mut results);
+
+    // Write normalized details back to fix any model name inconsistencies
+    let details_pretty = serde_json::to_string_pretty(&results)?;
+    fs::write(details_json.as_ref(), details_pretty)
+        .with_context(|| format!("failed to write normalized {}", details_json.as_ref().display()))?;
+
     let summary = summary_from_results(&results);
     let pretty = serde_json::to_string_pretty(&summary)?;
     fs::write(out_json.as_ref(), pretty).with_context(|| format!("failed to write {}", out_json.as_ref().display()))?;
