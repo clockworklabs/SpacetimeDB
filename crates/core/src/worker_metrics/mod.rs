@@ -43,6 +43,16 @@ metrics_group!(
         #[labels(database_identity: Identity, protocol: str)]
         pub websocket_request_msg_size: HistogramVec,
 
+        #[name = spacetime_cross_db_reducer_calls_total]
+        #[help = "Total number of cross-database reducer calls made by this database."]
+        #[labels(caller_identity: Identity)]
+        pub cross_db_reducer_calls_total: IntCounterVec,
+
+        #[name = spacetime_cross_db_reducer_duration_seconds]
+        #[help = "Duration of cross-database reducer calls in seconds."]
+        #[labels(caller_identity: Identity)]
+        pub cross_db_reducer_duration_seconds: HistogramVec,
+
         #[name = jemalloc_active_bytes]
         #[help = "Number of bytes in jemallocs heap"]
         #[labels(node_id: str)]
