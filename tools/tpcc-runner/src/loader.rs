@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 use std::ops::Range;
+use std::thread;
 use std::time::SystemTime;
 
 use crate::client::ModuleClient;
@@ -19,20 +20,52 @@ const HISTORY_INITIAL_AMOUNT_CENTS: i64 = 1_000;
 
 pub async fn run(config: LoadConfig) -> Result<()> {
     log::info!(
-        "Loading tpcc dataset into {} databases, all running on {}",
+        "Loading tpcc dataset into {} databases on {} with parallelism {}",
         config.num_databases,
-        config.connection.uri
+        config.connection.uri,
+        config.load_parallelism
     );
 
     let topology = DatabaseTopology::for_load(&config).await?;
+    let chunks = database_number_chunks(config.num_databases, config.load_parallelism);
+    let mut handles = Vec::with_capacity(chunks.len());
 
-    for database_number in 0..config.num_databases {
-        configure_one_database(&config, database_number, &topology)?;
+    for (worker_idx, chunk) in chunks.into_iter().enumerate() {
+        let config = config.clone();
+        let topology = topology.clone();
+        let thread_name = format!("tpcc-load-{worker_idx}");
+        let handle = thread::Builder::new()
+            .name(thread_name.clone())
+            .spawn(move || -> Result<()> {
+                for database_number in chunk {
+                    configure_one_database(&config, database_number, &topology)?;
+                }
+                Ok(())
+            })
+            .with_context(|| format!("failed to spawn {thread_name}"))?;
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        match handle.join() {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => return Err(err),
+            Err(_) => anyhow::bail!("loader worker thread panicked"),
+        }
     }
 
     log::info!("tpcc load finished");
 
     Ok(())
+}
+
+fn database_number_chunks(num_databases: u16, parallelism: usize) -> Vec<Vec<u16>> {
+    let database_numbers: Vec<u16> = (0..num_databases).collect();
+    let chunk_size = database_numbers.len().div_ceil(parallelism);
+    database_numbers
+        .chunks(chunk_size)
+        .map(|chunk| chunk.to_vec())
+        .collect()
 }
 
 fn configure_one_database(config: &LoadConfig, database_number: u16, topology: &DatabaseTopology) -> Result<()> {

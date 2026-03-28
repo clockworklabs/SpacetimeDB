@@ -35,6 +35,7 @@ pub struct LoadConfig {
     pub connection: ConnectionConfig,
     pub warehouses_per_database: u16,
     pub num_databases: u16,
+    pub load_parallelism: usize,
     pub batch_size: usize,
     pub reset: bool,
 }
@@ -75,6 +76,8 @@ pub struct LoadArgs {
     pub num_databases: Option<u16>,
     #[arg(long)]
     pub warehouses_per_database: Option<u16>,
+    #[arg(long)]
+    pub load_parallelism: Option<usize>,
     #[arg(long)]
     pub batch_size: Option<usize>,
     #[arg(long)]
@@ -168,6 +171,7 @@ struct FileConnectionConfig {
 struct FileLoadConfig {
     num_databases: Option<u16>,
     warehouses_per_database: Option<u16>,
+    load_parallelism: Option<usize>,
     batch_size: Option<usize>,
     reset: Option<bool>,
 }
@@ -231,17 +235,33 @@ impl ConnectionArgs {
 }
 
 impl LoadArgs {
-    pub fn resolve(&self, file: &FileConfig) -> LoadConfig {
-        LoadConfig {
+    pub fn resolve(&self, file: &FileConfig) -> Result<LoadConfig> {
+        let num_databases = self.num_databases.or(file.load.num_databases).unwrap_or(1);
+        if num_databases == 0 {
+            bail!("num_databases must be positive");
+        }
+        let warehouses_per_database = self
+            .warehouses_per_database
+            .or(file.load.warehouses_per_database)
+            .unwrap_or(1);
+        if warehouses_per_database == 0 {
+            bail!("warehouses_per_database must be positive");
+        }
+        let load_parallelism = self
+            .load_parallelism
+            .or(file.load.load_parallelism)
+            .unwrap_or_else(|| usize::from(num_databases).min(8));
+        if load_parallelism == 0 {
+            bail!("load_parallelism must be positive");
+        }
+        Ok(LoadConfig {
             connection: self.connection.resolve(&file.connection),
-            num_databases: self.num_databases.or(file.load.num_databases).unwrap_or(1),
-            warehouses_per_database: self
-                .warehouses_per_database
-                .or(file.load.warehouses_per_database)
-                .unwrap_or(1),
+            num_databases,
+            warehouses_per_database,
+            load_parallelism: load_parallelism.min(usize::from(num_databases)),
             batch_size: self.batch_size.or(file.load.batch_size).unwrap_or(500),
             reset: self.reset.or(file.load.reset).unwrap_or(true),
-        }
+        })
     }
 }
 

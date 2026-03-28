@@ -103,6 +103,22 @@ cargo run --release -p tpcc-runner -- load \
   --reset true
 ```
 
+To load databases in parallel, add `--load-parallelism <N>`. The loader runs
+databases concurrently but still loads each individual database in the normal
+table order. If you omit the flag, it defaults to `min(num_databases, 8)`.
+
+For example, to load those two local databases in parallel:
+
+```bash
+cargo run --release -p tpcc-runner -- load \
+  --uri http://127.0.0.1:3000 \
+  --database-prefix tpcc \
+  --num-databases 2 \
+  --warehouses-per-database 1 \
+  --load-parallelism 2 \
+  --reset true
+```
+
 5. Run a single local driver against one warehouse:
 
 ```bash
@@ -195,6 +211,7 @@ timeout_secs = 30
 [load]
 num_databases = 1
 warehouses_per_database = 1
+load_parallelism = 1
 batch_size = 500
 reset = true
 
