@@ -865,6 +865,39 @@ pub mod raw {
         ) -> u16;
     }
 
+    #[link(wasm_import_module = "spacetime_10.5")]
+    unsafe extern "C" {
+        /// Call a reducer on another SpacetimeDB database.
+        ///
+        /// - `identity_ptr` must point to exactly 32 bytes — the BSATN (little-endian) encoding of
+        ///   the target database `Identity`.
+        /// - `reducer_ptr[..reducer_len]` is the UTF-8 name of the reducer to call.
+        /// - `args_ptr[..args_len]` is the BSATN-encoded reducer arguments.
+        ///
+        /// On transport success (any HTTP response received):
+        /// - Returns the HTTP status code (e.g. 200, 400, 530).
+        /// - Writes a [`BytesSource`] containing the response body bytes to `*out`.
+        ///
+        /// On transport failure (connection refused, timeout, etc.):
+        /// - Returns `errno::HTTP_ERROR` (21).
+        /// - Writes a [`BytesSource`] containing a BSATN-encoded error [`String`] to `*out`.
+        ///
+        /// Unlike `procedure_http_request`, this syscall may be called while a transaction
+        /// is open (i.e. from within a reducer body).
+        ///
+        /// # Traps
+        ///
+        /// Traps if any pointer is NULL or its range falls outside of linear memory.
+        pub fn call_reducer_on_db(
+            identity_ptr: *const u8, // exactly 32 bytes, BSATN-encoded Identity
+            reducer_ptr: *const u8,
+            reducer_len: u32,
+            args_ptr: *const u8,
+            args_len: u32,
+            out: *mut BytesSource,
+        ) -> u16;
+    }
+
     /// What strategy does the database index use?
     ///
     /// See also: <https://www.postgresql.org/docs/current/sql-createindex.html>
@@ -1436,6 +1469,45 @@ pub fn identity() -> [u8; 32] {
         raw::identity(buf.as_mut_ptr());
     }
     buf
+}
+
+/// Call a reducer on a remote database identified by `identity` (little-endian 32-byte array).
+///
+/// On transport success (any HTTP response received):
+/// - Returns `Ok((status, body_source))` where `status` is the HTTP status code and
+///   `body_source` is a [`raw::BytesSource`] containing the raw response body bytes.
+///
+/// On transport failure (connection refused, timeout, etc.):
+/// - Returns `Err(err_source)` where `err_source` is a [`raw::BytesSource`] containing
+///   a BSATN-encoded error [`String`].
+///
+/// Unlike HTTP requests, this syscall may be called while a transaction is open.
+#[inline]
+pub fn call_reducer_on_db(
+    identity: [u8; 32],
+    reducer_name: &str,
+    args: &[u8],
+) -> Result<(u16, raw::BytesSource), raw::BytesSource> {
+    let mut out = raw::BytesSource::INVALID;
+    let status = unsafe {
+        raw::call_reducer_on_db(
+            identity.as_ptr(),
+            reducer_name.as_ptr(),
+            reducer_name.len() as u32,
+            args.as_ptr(),
+            args.len() as u32,
+            &mut out,
+        )
+    };
+    // The raw ABI returns either the HTTP status code (100-599) or HTTP_ERROR errno
+    // on transport failure. Unlike other ABI functions, a non-zero return value here
+    // does NOT indicate a generic errno — it's the HTTP status code. Only HTTP_ERROR
+    // specifically signals a transport-level failure.
+    if status == Errno::HTTP_ERROR.code() {
+        Err(out)
+    } else {
+        Ok((status, out))
+    }
 }
 
 /// Finds the JWT payload associated with `connection_id`.

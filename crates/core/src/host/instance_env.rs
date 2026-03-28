@@ -8,6 +8,7 @@ use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
 use crate::subscription::module_subscription_manager::{from_tx_offset, TransactionOffset};
 use crate::util::prometheus_handle::IntGaugeExt;
+use crate::worker_metrics::WORKER_METRICS;
 use chrono::{DateTime, Utc};
 use core::mem;
 use futures::TryFutureExt;
@@ -977,6 +978,73 @@ impl InstanceEnv {
             Ok((response, body))
         })
     }
+
+    /// Call a reducer on a remote database.
+    ///
+    /// Unlike [`Self::http_request`], this is explicitly allowed while a transaction is open —
+    /// the caller is responsible for understanding the consistency implications.
+    ///
+    /// Uses [`ReplicaContext::call_reducer_router`] to resolve the leader node for
+    /// `database_identity`, then sends the request via the warmed HTTP client in
+    /// [`ReplicaContext::call_reducer_client`].
+    ///
+    /// Returns `(http_status, response_body)` on transport success,
+    /// or [`NodesError::HttpError`] if the connection itself fails.
+    pub fn call_reducer_on_db(
+        &self,
+        database_identity: Identity,
+        reducer_name: &str,
+        args: bytes::Bytes,
+    ) -> impl Future<Output = Result<(u16, bytes::Bytes), NodesError>> + use<> {
+        let client = self.replica_ctx.call_reducer_client.clone();
+        let router = self.replica_ctx.call_reducer_router.clone();
+        let reducer_name = reducer_name.to_owned();
+        // Node-level auth token: a single token minted at startup and shared by all replicas
+        // on this node. Passed as a Bearer token so `anon_auth_middleware` on the target node
+        // accepts the request without generating a fresh ephemeral identity per call.
+        let auth_token = self.replica_ctx.call_reducer_auth_token.clone();
+        let caller_identity = self.replica_ctx.database.database_identity;
+
+        async move {
+            let start = Instant::now();
+
+            let base_url = router
+                .resolve_base_url(database_identity)
+                .await
+                .map_err(|e| NodesError::HttpError(e.to_string()))?;
+            let url = format!(
+                "{}/v1/database/{}/call/{}",
+                base_url,
+                database_identity.to_hex(),
+                reducer_name,
+            );
+            let mut req = client
+                .post(&url)
+                .header(http::header::CONTENT_TYPE, "application/octet-stream")
+                .body(args);
+            if let Some(token) = auth_token {
+                req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+            }
+            let result = async {
+                let response = req.send().await.map_err(|e| NodesError::HttpError(e.to_string()))?;
+                let status = response.status().as_u16();
+                let body = response.bytes().await.map_err(|e| NodesError::HttpError(e.to_string()))?;
+                Ok((status, body))
+            }
+            .await;
+
+            WORKER_METRICS
+                .cross_db_reducer_calls_total
+                .with_label_values(&caller_identity)
+                .inc();
+            WORKER_METRICS
+                .cross_db_reducer_duration_seconds
+                .with_label_values(&caller_identity)
+                .observe(start.elapsed().as_secs_f64());
+
+            result
+        }
+    }
 }
 
 /// Default timeout for HTTP requests performed by [`InstanceEnv::http_request`].
@@ -1315,9 +1383,9 @@ mod test {
             tests_utils::{begin_mut_tx, with_auto_commit, with_read_only, TestDB},
             RelationalDB,
         },
-        host::Scheduler,
+        host::{reducer_router::LocalReducerRouter, Scheduler},
         messages::control_db::{Database, HostType},
-        replica_context::ReplicaContext,
+        replica_context::{CallReducerOnDbConfig, ReplicaContext},
         subscription::module_subscription_actor::ModuleSubscriptions,
     };
     use anyhow::{anyhow, Result};
@@ -1351,6 +1419,9 @@ mod test {
                 replica_id: 0,
                 logger,
                 subscriptions: subs,
+                call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
+                call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
+                call_reducer_auth_token: None,
             },
             runtime,
         ))

@@ -4272,7 +4272,7 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_confirmed_reads() -> anyhow::Result<()> {
         let (db, durability) = relational_db_with_manual_durability(tokio::runtime::Handle::current())?;
 

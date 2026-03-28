@@ -142,20 +142,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 ) -> axum::response::Result<impl IntoResponse> {
     let caller_identity = auth.claims.identity;
 
-    let args = if content_type == headers::ContentType::json() {
-        FunctionArgs::Json(
-            body.try_into()
-                .map_err(|e| (StatusCode::BAD_REQUEST, format!("JSON body was not valid UTF-8: {e}")))?,
-        )
-    } else if content_type == headers::ContentType::octet_stream() {
-        FunctionArgs::Bsatn(body)
-    } else {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Expected a `Content-Type` of either `application/json` or `application/octet-stream`",
-        )
-            .into());
-    };
+    let args = parse_call_args(content_type, body)?;
 
     // HTTP callers always need a connection ID to provide to connect/disconnect,
     // so generate one.
@@ -231,6 +218,26 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
                 .into_response())
         }
         Err(e) => Err((e.0, e.1).into()),
+    }
+}
+
+/// Parse call arguments from an HTTP body based on content type.
+///
+/// - `application/json` → [`FunctionArgs::Json`] (UTF-8 required).
+/// - `application/octet-stream` → [`FunctionArgs::Bsatn`] (raw BSATN bytes).
+fn parse_call_args(content_type: headers::ContentType, body: Bytes) -> axum::response::Result<FunctionArgs> {
+    if content_type == headers::ContentType::json() {
+        let s = bytestring::ByteString::try_from(body)
+            .map_err(|_| (StatusCode::BAD_REQUEST, "request body is not valid UTF-8").into_response())?;
+        Ok(FunctionArgs::Json(s))
+    } else if content_type == headers::ContentType::octet_stream() {
+        Ok(FunctionArgs::Bsatn(body))
+    } else {
+        Err((
+            StatusCode::BAD_REQUEST,
+            "Expected a `Content-Type` of either `application/json` or `application/octet-stream`",
+        )
+            .into())
     }
 }
 
