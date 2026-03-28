@@ -1,5 +1,10 @@
+use std::time::Duration;
+
 use http::Request;
-use spacetimedb::{reducer, table, Identity, ProcedureContext, ReducerContext, Serialize, Table, TxContext};
+use spacetimedb::{
+    http::Timeout, reducer, table, Identity, ProcedureContext, ReducerContext, Serialize, Table, TimeDuration,
+    TxContext,
+};
 use spacetimedb_sats::bsatn;
 
 use crate::WarehouseId;
@@ -60,6 +65,8 @@ pub fn call_remote_function(
         ))
         .method("POST")
         .header("Content-Type", "application/octet-stream")
+        // This absurdly long timeout will be clamped by the host to 3 minutes.
+        .extension(Timeout::from(TimeDuration::from_duration(Duration::from_hours(1))))
         // TODO(auth): include a token.
         .body(bsatn::to_vec(&arguments).map_err(|e| format!("Failed to BSATN-serialize arguments: {e}"))?)
         .map_err(|e| format!("Error constructing `Request`: {e}"))?;
