@@ -983,8 +983,9 @@ impl InstanceEnv {
     /// Unlike [`Self::http_request`], this is explicitly allowed while a transaction is open —
     /// the caller is responsible for understanding the consistency implications.
     ///
-    /// Uses the warmed HTTP/2 client stored in [`ReplicaContext::call_reducer_client`],
-    /// configured when the replica was constructed.
+    /// Uses [`ReplicaContext::call_reducer_router`] to resolve the leader node for
+    /// `database_identity`, then sends the request via the warmed HTTP/2 client in
+    /// [`ReplicaContext::call_reducer_client`].
     ///
     /// Returns `(http_status, response_body)` on transport success,
     /// or [`NodesError::HttpError`] if the connection itself fails.
@@ -995,13 +996,20 @@ impl InstanceEnv {
         args: bytes::Bytes,
     ) -> impl Future<Output = Result<(u16, bytes::Bytes), NodesError>> + use<> {
         let client = self.replica_ctx.call_reducer_client.clone();
-        let url = format!(
-            "http://localhost/v1/database/{}/call/{}",
-            database_identity.to_hex(),
-            reducer_name,
-        );
+        let router = self.replica_ctx.call_reducer_router.clone();
+        let reducer_name = reducer_name.to_owned();
 
         async move {
+            let base_url = router
+                .resolve_base_url(database_identity)
+                .await
+                .map_err(|e| NodesError::HttpError(e.to_string()))?;
+            let url = format!(
+                "{}/v1/database/{}/call/{}",
+                base_url,
+                database_identity.to_hex(),
+                reducer_name,
+            );
             let response = client
                 .post(&url)
                 .header(http::header::CONTENT_TYPE, "application/octet-stream")
@@ -1357,7 +1365,7 @@ mod test {
             tests_utils::{begin_mut_tx, with_auto_commit, with_read_only, TestDB},
             RelationalDB,
         },
-        host::Scheduler,
+        host::{reducer_router::LocalReducerRouter, Scheduler},
         messages::control_db::{Database, HostType},
         replica_context::{CallReducerOnDbConfig, ReplicaContext},
         subscription::module_subscription_actor::ModuleSubscriptions,
@@ -1394,6 +1402,7 @@ mod test {
                 logger,
                 subscriptions: subs,
                 call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
+                call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
             },
             runtime,
         ))

@@ -12,6 +12,7 @@ mod client_visibility_filter;
 pub mod http;
 pub mod log_stopwatch;
 mod logger;
+pub mod remote_reducer;
 #[cfg(feature = "rand08")]
 mod rng;
 #[doc(hidden)]

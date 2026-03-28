@@ -20,6 +20,7 @@ pub mod wasmtime;
 
 // Visible for integration testing.
 pub mod instance_env;
+pub mod reducer_router;
 pub mod v8; // only pub for testing
 mod wasm_common;
 

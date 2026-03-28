@@ -3,6 +3,7 @@ use spacetimedb_commitlog::SizeOnDisk;
 use super::database_logger::DatabaseLogger;
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
+use crate::host::reducer_router::ReducerCallRouter;
 use crate::messages::control_db::Database;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use std::io;
@@ -50,6 +51,11 @@ pub struct ReplicaContext {
     ///
     /// `reqwest::Client` is internally an `Arc`, so cloning `ReplicaContext` shares the pool.
     pub call_reducer_client: reqwest::Client,
+    /// Resolves the HTTP base URL of the leader node for a given database identity.
+    ///
+    /// - Standalone: always returns the local node URL ([`crate::host::reducer_router::LocalReducerRouter`]).
+    /// - Cluster: queries the control DB to find the leader replica's node.
+    pub call_reducer_router: Arc<dyn ReducerCallRouter>,
 }
 
 impl ReplicaContext {

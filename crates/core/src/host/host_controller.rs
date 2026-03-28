@@ -13,6 +13,7 @@ use crate::host::v8::V8Runtime;
 use crate::host::ProcedureCallError;
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
+use crate::host::reducer_router::{LocalReducerRouter, ReducerCallRouter};
 use crate::replica_context::{CallReducerOnDbConfig, ReplicaContext};
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager, TransactionOffset};
@@ -122,6 +123,11 @@ pub struct HostController {
     ///
     /// All per-replica clones share the same underlying connection pool.
     pub call_reducer_client: reqwest::Client,
+    /// Router that resolves the HTTP base URL of the leader node for a given database.
+    ///
+    /// Set to [`LocalReducerRouter`] by default; replaced with `ClusterReducerRouter`
+    /// in cluster deployments via [`HostController::new`] receiving the router directly.
+    pub call_reducer_router: Arc<dyn ReducerCallRouter>,
 }
 
 pub(crate) struct HostRuntimes {
@@ -234,6 +240,7 @@ impl HostController {
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
             db_cores,
             call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
+            call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
         }
     }
 
@@ -671,6 +678,7 @@ async fn make_replica_ctx(
     relational_db: Arc<RelationalDB>,
     bsatn_rlb_pool: BsatnRowListBuilderPool,
     call_reducer_client: reqwest::Client,
+    call_reducer_router: Arc<dyn ReducerCallRouter>,
 ) -> anyhow::Result<ReplicaContext> {
     let logger = match module_logs {
         Some(path) => asyncify(move || Arc::new(DatabaseLogger::open_today(path))).await,
@@ -704,6 +712,7 @@ async fn make_replica_ctx(
         logger,
         subscriptions,
         call_reducer_client,
+        call_reducer_router,
     })
 }
 
@@ -780,6 +789,7 @@ struct ModuleLauncher<F> {
     core: AllocatedJobCore,
     bsatn_rlb_pool: BsatnRowListBuilderPool,
     call_reducer_client: reqwest::Client,
+    call_reducer_router: Arc<dyn ReducerCallRouter>,
 }
 
 impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
@@ -800,6 +810,7 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
             self.relational_db,
             self.bsatn_rlb_pool,
             self.call_reducer_client,
+            self.call_reducer_router,
         )
         .await
         .map(Arc::new)?;
@@ -1002,6 +1013,7 @@ impl Host {
                     core: host_controller.db_cores.take(),
                     bsatn_rlb_pool: bsatn_rlb_pool.clone(),
                     call_reducer_client: host_controller.call_reducer_client.clone(),
+                    call_reducer_router: host_controller.call_reducer_router.clone(),
                 }
                 .launch_module()
                 .await?
@@ -1032,6 +1044,7 @@ impl Host {
                     core: host_controller.db_cores.take(),
                     bsatn_rlb_pool: bsatn_rlb_pool.clone(),
                     call_reducer_client: host_controller.call_reducer_client.clone(),
+                    call_reducer_router: host_controller.call_reducer_router.clone(),
                 }
                 .launch_module()
                 .await;
@@ -1056,6 +1069,7 @@ impl Host {
                             core: host_controller.db_cores.take(),
                             bsatn_rlb_pool: bsatn_rlb_pool.clone(),
                             call_reducer_client: host_controller.call_reducer_client.clone(),
+                            call_reducer_router: host_controller.call_reducer_router.clone(),
                         }
                         .launch_module()
                         .await;
@@ -1163,8 +1177,9 @@ impl Host {
             runtimes: runtimes.clone(),
             core,
             bsatn_rlb_pool,
-            // Transient validation-only module; build its own client with defaults.
+            // Transient validation-only module; build its own client and router with defaults.
             call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
+            call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
         }
         .launch_module()
         .await

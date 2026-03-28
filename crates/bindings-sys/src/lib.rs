@@ -1471,6 +1471,41 @@ pub fn identity() -> [u8; 32] {
     buf
 }
 
+/// Call a reducer on a remote database identified by `identity` (little-endian 32-byte array).
+///
+/// On transport success (any HTTP response received):
+/// - Returns `Ok((status, body_source))` where `status` is the HTTP status code and
+///   `body_source` is a [`raw::BytesSource`] containing the raw response body bytes.
+///
+/// On transport failure (connection refused, timeout, etc.):
+/// - Returns `Err(err_source)` where `err_source` is a [`raw::BytesSource`] containing
+///   a BSATN-encoded error [`String`].
+///
+/// Unlike HTTP requests, this syscall may be called while a transaction is open.
+#[inline]
+pub fn call_reducer_on_db(
+    identity: [u8; 32],
+    reducer_name: &str,
+    args: &[u8],
+) -> Result<(u16, raw::BytesSource), raw::BytesSource> {
+    let mut out = raw::BytesSource::INVALID;
+    let status = unsafe {
+        raw::call_reducer_on_db(
+            identity.as_ptr(),
+            reducer_name.as_ptr(),
+            reducer_name.len() as u32,
+            args.as_ptr(),
+            args.len() as u32,
+            &mut out,
+        )
+    };
+    match Errno::from_code(status) {
+        None => Ok((status, out)),
+        Some(errno) if errno == Errno::HTTP_ERROR => Err(out),
+        Some(errno) => panic!("call_reducer_on_db: unexpected errno {errno}"),
+    }
+}
+
 /// Finds the JWT payload associated with `connection_id`.
 /// If nothing is found for the connection, this returns None.
 /// If a payload is found, this will return a valid [`raw::BytesSource`].
