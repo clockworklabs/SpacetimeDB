@@ -40,7 +40,7 @@ struct TransactionContext<'a> {
 }
 
 pub async fn run(config: DriverConfig) -> Result<()> {
-    let schedule = resolve_schedule(&config).await?;
+    let (config, schedule) = resolve_driver_setup(config).await?;
     let run_id = schedule.run_id.clone();
     let output_dir = resolve_output_dir(&config, &run_id);
     fs::create_dir_all(&output_dir).with_context(|| format!("failed to create {}", output_dir.display()))?;
@@ -468,14 +468,11 @@ fn execute_stock_level(
     })
 }
 
-async fn resolve_schedule(config: &DriverConfig) -> Result<RunSchedule> {
+async fn resolve_driver_setup(config: DriverConfig) -> Result<(DriverConfig, RunSchedule)> {
     if let Some(coordinator_url) = &config.coordinator_url {
         let client = reqwest::Client::new();
         let register = RegisterDriverRequest {
             driver_id: config.driver_id.clone(),
-            terminal_start: config.terminal_start(),
-            terminals: config.terminals(),
-            warehouse_count: config.warehouse_count,
         };
         let response: RegisterDriverResponse = client
             .post(format!("{}/register", coordinator_url))
@@ -491,6 +488,10 @@ async fn resolve_schedule(config: &DriverConfig) -> Result<RunSchedule> {
         if !response.accepted {
             bail!("coordinator did not accept driver registration");
         }
+        let Some(assignment) = response.assignment else {
+            bail!("coordinator accepted driver registration without an assignment");
+        };
+        let config = config.with_assignment(&assignment);
         loop {
             let response: ScheduleResponse = client
                 .get(format!("{}/schedule", coordinator_url))
@@ -503,7 +504,7 @@ async fn resolve_schedule(config: &DriverConfig) -> Result<RunSchedule> {
                 .await
                 .context("failed to decode schedule response")?;
             if let Some(schedule) = response.schedule {
-                return Ok(schedule);
+                return Ok((config, schedule));
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
@@ -513,13 +514,16 @@ async fn resolve_schedule(config: &DriverConfig) -> Result<RunSchedule> {
     let warmup_start_ms = crate::summary::now_millis() + 2_000;
     let measure_start_ms = warmup_start_ms + (config.warmup_secs * 1_000);
     let measure_end_ms = measure_start_ms + (config.measure_secs * 1_000);
-    Ok(RunSchedule {
-        run_id,
-        warmup_start_ms,
-        measure_start_ms,
-        measure_end_ms,
-        stop_ms: measure_end_ms,
-    })
+    Ok((
+        config,
+        RunSchedule {
+            run_id,
+            warmup_start_ms,
+            measure_start_ms,
+            measure_end_ms,
+            stop_ms: measure_end_ms,
+        },
+    ))
 }
 
 async fn harvest_delivery_completions(

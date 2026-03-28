@@ -20,7 +20,7 @@ pub async fn run_cli(cli: Cli) -> anyhow::Result<()> {
     let file_config = FileConfig::load(cli.config.as_deref())?;
 
     match cli.command {
-        Command::Load(args) => loader::run(args.resolve(&file_config)).await,
+        Command::Load(args) => loader::run(args.resolve(&file_config)?).await,
         Command::Driver(args) => driver::run(args.resolve(&file_config)?).await,
         Command::Coordinator(args) => coordinator::run(args.resolve(&file_config)?).await,
     }

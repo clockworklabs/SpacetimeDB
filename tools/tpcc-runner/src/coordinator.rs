@@ -10,7 +10,8 @@ use std::sync::Arc;
 
 use crate::config::CoordinatorConfig;
 use crate::protocol::{
-    RegisterDriverRequest, RegisterDriverResponse, RunSchedule, ScheduleResponse, SubmitSummaryRequest,
+    DriverAssignment, RegisterDriverRequest, RegisterDriverResponse, RunSchedule, ScheduleResponse,
+    SubmitSummaryRequest,
 };
 use crate::summary::{aggregate_summaries, now_millis, write_json, AggregateSummary, DriverSummary};
 
@@ -21,9 +22,14 @@ struct AppState {
 
 struct CoordinatorState {
     config: CoordinatorConfig,
-    registrations: BTreeMap<String, RegisterDriverRequest>,
+    registrations: BTreeMap<String, DriverRegistration>,
+    registration_order: Vec<String>,
     schedule: Option<RunSchedule>,
     summaries: BTreeMap<String, DriverSummary>,
+}
+
+struct DriverRegistration {
+    assignment: DriverAssignment,
 }
 
 pub async fn run(config: CoordinatorConfig) -> Result<()> {
@@ -34,6 +40,7 @@ pub async fn run(config: CoordinatorConfig) -> Result<()> {
         inner: Arc::new(Mutex::new(CoordinatorState {
             config: config.clone(),
             registrations: BTreeMap::new(),
+            registration_order: Vec::new(),
             schedule: None,
             summaries: BTreeMap::new(),
         })),
@@ -57,9 +64,30 @@ async fn register_driver(
     Json(request): Json<RegisterDriverRequest>,
 ) -> Json<RegisterDriverResponse> {
     let mut inner = state.inner.lock();
-    inner.registrations.insert(request.driver_id.clone(), request);
+    let assignment = match inner.registrations.get(&request.driver_id) {
+        Some(existing) => existing.assignment.clone(),
+        None => {
+            if inner.registration_order.len() >= inner.config.expected_drivers {
+                return Json(RegisterDriverResponse {
+                    accepted: false,
+                    assignment: None,
+                });
+            }
+            let index = inner.registration_order.len();
+            let assignment = assignment_for_index(&inner.config, index);
+            inner.registration_order.push(request.driver_id.clone());
+            inner.registrations.insert(
+                request.driver_id.clone(),
+                DriverRegistration { assignment: assignment.clone() },
+            );
+            assignment
+        }
+    };
     maybe_create_schedule(&mut inner);
-    Json(RegisterDriverResponse { accepted: true })
+    Json(RegisterDriverResponse {
+        accepted: true,
+        assignment: Some(assignment),
+    })
 }
 
 async fn get_schedule(State(state): State<AppState>) -> Json<ScheduleResponse> {
@@ -116,6 +144,22 @@ fn maybe_create_schedule(inner: &mut CoordinatorState) {
         inner.config.expected_drivers,
         inner.config.run_id
     );
+}
+
+fn assignment_for_index(config: &CoordinatorConfig, index: usize) -> DriverAssignment {
+    let total_warehouses = usize::from(config.warehouses);
+    let expected_drivers = config.expected_drivers;
+    let base = total_warehouses / expected_drivers;
+    let remainder = total_warehouses % expected_drivers;
+    let driver_warehouse_count = base + usize::from(index < remainder);
+    let warehouse_start = 1 + (index * base) + index.min(remainder);
+
+    DriverAssignment {
+        warehouse_count: config.warehouses,
+        warehouses_per_database: config.warehouses_per_database,
+        warehouse_start: warehouse_start as u16,
+        driver_warehouse_count: driver_warehouse_count as u16,
+    }
 }
 
 fn write_aggregate(output_dir: &Path, aggregate: &AggregateSummary) -> Result<()> {

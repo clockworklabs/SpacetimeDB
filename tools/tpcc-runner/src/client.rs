@@ -1,5 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
 use std::sync::mpsc::sync_channel;
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -76,144 +77,198 @@ impl ModuleClient {
         }
     }
 
-    pub fn load_remote_warehouses(&self, rows: Vec<RemoteWarehouse>) -> Result<()> {
-        let (tx, rx) = sync_channel(1);
-        self.conn.reducers.load_remote_warehouses_then(rows, move |_, res| {
-            log::debug!("Got response from `load_remote_warehouse`: {res:?}");
-            let _ = tx.send(res);
-        })?;
-        match rx.recv_timeout(self.timeout) {
-            Ok(Ok(Ok(()))) => Ok(()),
-            Ok(Ok(Err(message))) => bail!("load_remote_warehouses failed: {}", message),
-            Ok(Err(err)) => Err(anyhow!("load_remote_warehouses internal error: {}", err)),
-            Err(_) => bail!("timed out waiting for load_remote_warehouses"),
+    pub fn queue_load_remote_warehouses(
+        &self,
+        rows: Vec<RemoteWarehouse>,
+        pending: &Arc<(Mutex<u64>, Condvar)>,
+        errors: &Arc<Mutex<Option<anyhow::Error>>>,
+    ) -> Result<()> {
+        increment_pending(pending);
+        let pending_for_callback = Arc::clone(pending);
+        let errors = Arc::clone(errors);
+        if let Err(err) = self
+            .conn
+            .reducers
+            .load_remote_warehouses_then(rows, move |_, res| {
+                handle_reducer_result("load_remote_warehouses", res, &errors);
+                decrement_pending(&pending_for_callback);
+            })
+        {
+            decrement_pending(pending);
+            return Err(anyhow!("load_remote_warehouses send error: {err}"));
         }
+        Ok(())
     }
 
-    pub fn load_warehouses(&self, rows: Vec<Warehouse>) -> Result<()> {
-        let (tx, rx) = sync_channel(1);
-        self.conn.reducers.load_warehouses_then(rows, move |_, res| {
-            log::debug!("Got response from `load_warehouses`: {res:?}");
-            let _ = tx.send(res);
-        })?;
-        match rx.recv_timeout(self.timeout) {
-            Ok(Ok(Ok(()))) => Ok(()),
-            Ok(Ok(Err(message))) => bail!("load_warehouses failed: {}", message),
-            Ok(Err(err)) => Err(anyhow!("load_warehouses internal error: {}", err)),
-            Err(_) => bail!("timed out waiting for load_warehouses"),
+    pub fn queue_load_warehouses(
+        &self,
+        rows: Vec<Warehouse>,
+        pending: &Arc<(Mutex<u64>, Condvar)>,
+        errors: &Arc<Mutex<Option<anyhow::Error>>>,
+    ) -> Result<()> {
+        increment_pending(pending);
+        let pending_for_callback = Arc::clone(pending);
+        let errors = Arc::clone(errors);
+        if let Err(err) = self.conn.reducers.load_warehouses_then(rows, move |_, res| {
+            handle_reducer_result("load_warehouses", res, &errors);
+            decrement_pending(&pending_for_callback);
+        }) {
+            decrement_pending(pending);
+            return Err(anyhow!("load_warehouses send error: {err}"));
         }
+        Ok(())
     }
 
-    pub fn load_districts(&self, rows: Vec<District>) -> Result<()> {
-        let (tx, rx) = sync_channel(1);
-        self.conn.reducers.load_districts_then(rows, move |_, res| {
-            log::debug!("Got response from `load_districts`: {res:?}");
-            let _ = tx.send(res);
-        })?;
-        match rx.recv_timeout(self.timeout) {
-            Ok(Ok(Ok(()))) => Ok(()),
-            Ok(Ok(Err(message))) => bail!("load_districts failed: {}", message),
-            Ok(Err(err)) => Err(anyhow!("load_districts internal error: {}", err)),
-            Err(_) => bail!("timed out waiting for load_districts"),
+    pub fn queue_load_districts(
+        &self,
+        rows: Vec<District>,
+        pending: &Arc<(Mutex<u64>, Condvar)>,
+        errors: &Arc<Mutex<Option<anyhow::Error>>>,
+    ) -> Result<()> {
+        increment_pending(pending);
+        let pending_for_callback = Arc::clone(pending);
+        let errors = Arc::clone(errors);
+        if let Err(err) = self.conn.reducers.load_districts_then(rows, move |_, res| {
+            handle_reducer_result("load_districts", res, &errors);
+            decrement_pending(&pending_for_callback);
+        }) {
+            decrement_pending(pending);
+            return Err(anyhow!("load_districts send error: {err}"));
         }
+        Ok(())
     }
 
-    pub fn load_customers(&self, rows: Vec<Customer>) -> Result<()> {
-        let (tx, rx) = sync_channel(1);
-        self.conn.reducers.load_customers_then(rows, move |_, res| {
-            log::debug!("Got response from `load_customers`: {res:?}");
-            let _ = tx.send(res);
-        })?;
-        match rx.recv_timeout(self.timeout) {
-            Ok(Ok(Ok(()))) => Ok(()),
-            Ok(Ok(Err(message))) => bail!("load_customers failed: {}", message),
-            Ok(Err(err)) => Err(anyhow!("load_customers internal error: {}", err)),
-            Err(_) => bail!("timed out waiting for load_customers"),
+    pub fn queue_load_customers(
+        &self,
+        rows: Vec<Customer>,
+        pending: &Arc<(Mutex<u64>, Condvar)>,
+        errors: &Arc<Mutex<Option<anyhow::Error>>>,
+    ) -> Result<()> {
+        increment_pending(pending);
+        let pending_for_callback = Arc::clone(pending);
+        let errors = Arc::clone(errors);
+        if let Err(err) = self.conn.reducers.load_customers_then(rows, move |_, res| {
+            handle_reducer_result("load_customers", res, &errors);
+            decrement_pending(&pending_for_callback);
+        }) {
+            decrement_pending(pending);
+            return Err(anyhow!("load_customers send error: {err}"));
         }
+        Ok(())
     }
 
-    pub fn load_history(&self, rows: Vec<History>) -> Result<()> {
-        let (tx, rx) = sync_channel(1);
-        self.conn.reducers.load_history_then(rows, move |_, res| {
-            log::debug!("Got response from `load_history`: {res:?}");
-            let _ = tx.send(res);
-        })?;
-        match rx.recv_timeout(self.timeout) {
-            Ok(Ok(Ok(()))) => Ok(()),
-            Ok(Ok(Err(message))) => bail!("load_history failed: {}", message),
-            Ok(Err(err)) => Err(anyhow!("load_history internal error: {}", err)),
-            Err(_) => bail!("timed out waiting for load_history"),
+    pub fn queue_load_history(
+        &self,
+        rows: Vec<History>,
+        pending: &Arc<(Mutex<u64>, Condvar)>,
+        errors: &Arc<Mutex<Option<anyhow::Error>>>,
+    ) -> Result<()> {
+        increment_pending(pending);
+        let pending_for_callback = Arc::clone(pending);
+        let errors = Arc::clone(errors);
+        if let Err(err) = self.conn.reducers.load_history_then(rows, move |_, res| {
+            handle_reducer_result("load_history", res, &errors);
+            decrement_pending(&pending_for_callback);
+        }) {
+            decrement_pending(pending);
+            return Err(anyhow!("load_history send error: {err}"));
         }
+        Ok(())
     }
 
-    pub fn load_items(&self, rows: Vec<Item>) -> Result<()> {
-        let (tx, rx) = sync_channel(1);
-        self.conn.reducers.load_items_then(rows, move |_, res| {
-            log::debug!("Got response from `load_items`: {res:?}");
-            let _ = tx.send(res);
-        })?;
-        match rx.recv_timeout(self.timeout) {
-            Ok(Ok(Ok(()))) => Ok(()),
-            Ok(Ok(Err(message))) => bail!("load_items failed: {}", message),
-            Ok(Err(err)) => Err(anyhow!("load_items internal error: {}", err)),
-            Err(_) => bail!("timed out waiting for load_items"),
+    pub fn queue_load_items(
+        &self,
+        rows: Vec<Item>,
+        pending: &Arc<(Mutex<u64>, Condvar)>,
+        errors: &Arc<Mutex<Option<anyhow::Error>>>,
+    ) -> Result<()> {
+        increment_pending(pending);
+        let pending_for_callback = Arc::clone(pending);
+        let errors = Arc::clone(errors);
+        if let Err(err) = self.conn.reducers.load_items_then(rows, move |_, res| {
+            handle_reducer_result("load_items", res, &errors);
+            decrement_pending(&pending_for_callback);
+        }) {
+            decrement_pending(pending);
+            return Err(anyhow!("load_items send error: {err}"));
         }
+        Ok(())
     }
 
-    pub fn load_stocks(&self, rows: Vec<Stock>) -> Result<()> {
-        let (tx, rx) = sync_channel(1);
-        self.conn.reducers.load_stocks_then(rows, move |_, res| {
-            log::debug!("Got response from `load_stocks`: {res:?}");
-            let _ = tx.send(res);
-        })?;
-        match rx.recv_timeout(self.timeout) {
-            Ok(Ok(Ok(()))) => Ok(()),
-            Ok(Ok(Err(message))) => bail!("load_stocks failed: {}", message),
-            Ok(Err(err)) => Err(anyhow!("load_stocks internal error: {}", err)),
-            Err(_) => bail!("timed out waiting for load_stocks"),
+    pub fn queue_load_stocks(
+        &self,
+        rows: Vec<Stock>,
+        pending: &Arc<(Mutex<u64>, Condvar)>,
+        errors: &Arc<Mutex<Option<anyhow::Error>>>,
+    ) -> Result<()> {
+        increment_pending(pending);
+        let pending_for_callback = Arc::clone(pending);
+        let errors = Arc::clone(errors);
+        if let Err(err) = self.conn.reducers.load_stocks_then(rows, move |_, res| {
+            handle_reducer_result("load_stocks", res, &errors);
+            decrement_pending(&pending_for_callback);
+        }) {
+            decrement_pending(pending);
+            return Err(anyhow!("load_stocks send error: {err}"));
         }
+        Ok(())
     }
 
-    pub fn load_orders(&self, rows: Vec<OOrder>) -> Result<()> {
-        let (tx, rx) = sync_channel(1);
-        self.conn.reducers.load_orders_then(rows, move |_, res| {
-            log::debug!("Got response from `load_orders`: {res:?}");
-            let _ = tx.send(res);
-        })?;
-        match rx.recv_timeout(self.timeout) {
-            Ok(Ok(Ok(()))) => Ok(()),
-            Ok(Ok(Err(message))) => bail!("load_orders failed: {}", message),
-            Ok(Err(err)) => Err(anyhow!("load_orders internal error: {}", err)),
-            Err(_) => bail!("timed out waiting for load_orders"),
+    pub fn queue_load_orders(
+        &self,
+        rows: Vec<OOrder>,
+        pending: &Arc<(Mutex<u64>, Condvar)>,
+        errors: &Arc<Mutex<Option<anyhow::Error>>>,
+    ) -> Result<()> {
+        increment_pending(pending);
+        let pending_for_callback = Arc::clone(pending);
+        let errors = Arc::clone(errors);
+        if let Err(err) = self.conn.reducers.load_orders_then(rows, move |_, res| {
+            handle_reducer_result("load_orders", res, &errors);
+            decrement_pending(&pending_for_callback);
+        }) {
+            decrement_pending(pending);
+            return Err(anyhow!("load_orders send error: {err}"));
         }
+        Ok(())
     }
 
-    pub fn load_new_orders(&self, rows: Vec<NewOrder>) -> Result<()> {
-        let (tx, rx) = sync_channel(1);
-        self.conn.reducers.load_new_orders_then(rows, move |_, res| {
-            log::debug!("Got response from `load_new_orders`: {res:?}");
-            let _ = tx.send(res);
-        })?;
-        match rx.recv_timeout(self.timeout) {
-            Ok(Ok(Ok(()))) => Ok(()),
-            Ok(Ok(Err(message))) => bail!("load_new_orders failed: {}", message),
-            Ok(Err(err)) => Err(anyhow!("load_new_orders internal error: {}", err)),
-            Err(_) => bail!("timed out waiting for load_new_orders"),
+    pub fn queue_load_new_orders(
+        &self,
+        rows: Vec<NewOrder>,
+        pending: &Arc<(Mutex<u64>, Condvar)>,
+        errors: &Arc<Mutex<Option<anyhow::Error>>>,
+    ) -> Result<()> {
+        increment_pending(pending);
+        let pending_for_callback = Arc::clone(pending);
+        let errors = Arc::clone(errors);
+        if let Err(err) = self.conn.reducers.load_new_orders_then(rows, move |_, res| {
+            handle_reducer_result("load_new_orders", res, &errors);
+            decrement_pending(&pending_for_callback);
+        }) {
+            decrement_pending(pending);
+            return Err(anyhow!("load_new_orders send error: {err}"));
         }
+        Ok(())
     }
 
-    pub fn load_order_lines(&self, rows: Vec<OrderLine>) -> Result<()> {
-        let (tx, rx) = sync_channel(1);
-        self.conn.reducers.load_order_lines_then(rows, move |_, res| {
-            log::debug!("Got response from `load_order_lines`: {res:?}");
-            let _ = tx.send(res);
-        })?;
-        match rx.recv_timeout(self.timeout) {
-            Ok(Ok(Ok(()))) => Ok(()),
-            Ok(Ok(Err(message))) => bail!("load_order_lines failed: {}", message),
-            Ok(Err(err)) => Err(anyhow!("load_order_lines internal error: {}", err)),
-            Err(_) => bail!("timed out waiting for load_order_lines"),
+    pub fn queue_load_order_lines(
+        &self,
+        rows: Vec<OrderLine>,
+        pending: &Arc<(Mutex<u64>, Condvar)>,
+        errors: &Arc<Mutex<Option<anyhow::Error>>>,
+    ) -> Result<()> {
+        increment_pending(pending);
+        let pending_for_callback = Arc::clone(pending);
+        let errors = Arc::clone(errors);
+        if let Err(err) = self.conn.reducers.load_order_lines_then(rows, move |_, res| {
+            handle_reducer_result("load_order_lines", res, &errors);
+            decrement_pending(&pending_for_callback);
+        }) {
+            decrement_pending(pending);
+            return Err(anyhow!("load_order_lines send error: {err}"));
         }
+        Ok(())
     }
 
     pub fn new_order(
@@ -367,6 +422,40 @@ impl ModuleClient {
         let _ = self.conn.disconnect();
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
+        }
+    }
+}
+
+fn increment_pending(pending: &Arc<(Mutex<u64>, Condvar)>) {
+    let (lock, _) = &**pending;
+    let mut guard = lock.lock().unwrap();
+    *guard += 1;
+}
+
+fn decrement_pending(pending: &Arc<(Mutex<u64>, Condvar)>) {
+    let (lock, cvar) = &**pending;
+    let mut guard = lock.lock().unwrap();
+    *guard = guard.saturating_sub(1);
+    if *guard == 0 {
+        cvar.notify_all();
+    }
+}
+
+fn handle_reducer_result(
+    name: &'static str,
+    res: Result<Result<(), String>, spacetimedb_sdk::__codegen::InternalError>,
+    errors: &Arc<Mutex<Option<anyhow::Error>>>,
+) {
+    let maybe_error = match res {
+        Ok(Ok(())) => None,
+        Ok(Err(message)) => Some(anyhow!("{name} failed: {message}")),
+        Err(err) => Some(anyhow!("{name} internal error: {err}")),
+    };
+
+    if let Some(err) = maybe_error {
+        let mut guard = errors.lock().unwrap();
+        if guard.is_none() {
+            *guard = Some(err);
         }
     }
 }
