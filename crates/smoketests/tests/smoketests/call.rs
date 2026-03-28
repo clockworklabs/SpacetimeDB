@@ -25,11 +25,7 @@ fn test_call_reducer_http_return_value() {
 
     let identity = test.database_identity.as_ref().unwrap();
     let response = test
-        .api_call_json(
-            "POST",
-            &format!("/v1/database/{}/call/return_greeting", identity),
-            "[]",
-        )
+        .api_call_json("POST", &format!("/v1/database/{}/call/return_greeting", identity), "[]")
         .unwrap();
 
     assert_eq!(response.status_code, 200);

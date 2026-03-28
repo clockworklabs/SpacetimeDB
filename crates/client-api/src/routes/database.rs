@@ -38,9 +38,9 @@ use spacetimedb_client_api_messages::name::{
     PrePublishResult, PrettyPrintStyle, PublishOp, PublishResult,
 };
 use spacetimedb_lib::bsatn;
-use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
+use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::{sats, AlgebraicValue, Hash, ProductValue, Timestamp};
 use spacetimedb_schema::auto_migrate::{
     MigrationPolicy as SchemaMigrationPolicy, MigrationToken, PrettyPrintStyle as AutoMigratePrettyPrintStyle,
@@ -253,14 +253,12 @@ fn reducer_outcome_response(
             if let Some(bytes) = reducer_return_value.filter(|value| !value.is_empty()) {
                 let seed = sats::WithTypespace::new(module.info.module_def.typespace(), &return_value);
                 let mut reader = &bytes[..];
-                let value: AlgebraicValue = seed
-                    .deserialize(bsatn::Deserializer::new(&mut reader))
-                    .map_err(|err| {
-                        (
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            format!("Failed to decode reducer return value: {err}"),
-                        )
-                    })?;
+                let value: AlgebraicValue = seed.deserialize(bsatn::Deserializer::new(&mut reader)).map_err(|err| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Failed to decode reducer return value: {err}"),
+                    )
+                })?;
                 Ok((
                     StatusCode::OK,
                     axum::Json(sats::serde::SerdeWrapper(value)).into_response(),
@@ -275,7 +273,10 @@ fn reducer_outcome_response(
         }
         ReducerOutcome::BudgetExceeded => {
             log::warn!("Node's energy budget exceeded for identity: {owner_identity} while executing {reducer}");
-            Ok((StatusCode::PAYMENT_REQUIRED, "Module energy budget exhausted.".into_response()))
+            Ok((
+                StatusCode::PAYMENT_REQUIRED,
+                "Module energy budget exhausted.".into_response(),
+            ))
         }
     }
 }

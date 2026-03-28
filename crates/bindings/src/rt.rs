@@ -231,10 +231,8 @@ where
 {
     #[inline]
     fn into_result(self) -> Result<Option<Vec<u8>>, Box<str>> {
-        self.map(|value| {
-            Some(bsatn::to_vec(&value).expect("Failed to serialize reducer return value"))
-        })
-        .map_err(|e| e.to_string().into())
+        self.map(|value| Some(bsatn::to_vec(&value).expect("Failed to serialize reducer return value")))
+            .map_err(|e| e.to_string().into())
     }
 
     #[inline]
