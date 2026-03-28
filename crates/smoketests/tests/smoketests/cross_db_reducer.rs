@@ -42,12 +42,12 @@ pub fn call_remote(ctx: &ReducerContext, target_hex: String, message: String, pr
     let payload = PingPayload { message, priority };
     let args = spacetimedb::spacetimedb_lib::bsatn::to_vec(&(payload,)).expect("failed to encode args");
     match spacetimedb::remote_reducer::call_reducer_on_db(target, "record_ping", &args) {
-        Ok((status, _body)) => {
-            log::info!("call_remote: got HTTP status {}", status);
+        Ok(()) => {
+            log::info!("call_remote: remote reducer succeeded");
         }
-        Err(err) => {
-            log::error!("call_remote: transport failure: {}", err);
-            panic!("call_reducer_on_db transport failure: {err}");
+        Err(e) => {
+            log::error!("call_remote: {}", e);
+            panic!("call_reducer_on_db error: {e}");
         }
     }
 }
