@@ -63,6 +63,6 @@ impl insert_vec_unit_struct for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertVecUnitStructArgs { s }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertVecUnitStructArgs { s }, callback)
     }
 }

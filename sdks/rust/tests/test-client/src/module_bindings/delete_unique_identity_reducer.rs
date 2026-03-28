@@ -61,6 +61,6 @@ impl delete_unique_identity for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(DeleteUniqueIdentityArgs { i }, callback)
+            .invoke_reducer_with_callback::<_, ()>(DeleteUniqueIdentityArgs { i }, callback)
     }
 }

@@ -63,6 +63,6 @@ impl insert_into_indexed_simple_enum for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertIntoIndexedSimpleEnumArgs { n }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertIntoIndexedSimpleEnumArgs { n }, callback)
     }
 }

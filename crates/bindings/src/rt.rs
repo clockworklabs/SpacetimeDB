@@ -48,7 +48,7 @@ pub fn invoke_reducer<'a, A: Args<'a>>(
     reducer: impl Reducer<'a, A>,
     ctx: &ReducerContext,
     args: &'a [u8],
-) -> Result<(), Box<str>> {
+) -> Result<Option<Vec<u8>>, Box<str>> {
     // Deserialize the arguments from a bsatn encoding.
     let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
 
@@ -76,8 +76,8 @@ pub fn invoke_procedure<'a, A: Args<'a>, Ret: IntoProcedureResult>(
     label = "this reducer signature is not valid",
     note = "",
     note = "reducer signatures must match the following pattern:",
-    note = "    `Fn(&ReducerContext, [T1, ...]) [-> Result<(), impl Display>]`",
-    note = "where each `Ti` type implements `SpacetimeType`.",
+    note = "    `Fn(&ReducerContext, [T1, ...]) [-> Result<T, impl Display>]`",
+    note = "where each `Ti` and `T` type implements `SpacetimeType`.",
     note = ""
 )]
 pub trait Reducer<'de, A: Args<'de>> {
@@ -170,7 +170,7 @@ pub trait FnInfo: ExplicitNames {
     const INVOKE: Self::Invoke;
 
     /// The return type of this function.
-    /// Currently only implemented for views.
+    /// Implemented for reducers, procedures, and views.
     fn return_type(_ts: &mut impl TypespaceBuilder) -> Option<AlgebraicType> {
         None
     }
@@ -203,23 +203,43 @@ pub trait Args<'de>: Sized {
 /// A trait of types representing the result of executing a reducer.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a valid reducer return type",
-    note = "reducers cannot return values -- you can only return `()` or `Result<(), impl Display>`"
+    note = "reducers can return `()` or `Result<T, impl Display>` where `T: SpacetimeType`"
 )]
 pub trait IntoReducerResult {
     /// Convert the result into form where there is no value
     /// and the error message is a string.
-    fn into_result(self) -> Result<(), Box<str>>;
+    fn into_result(self) -> Result<Option<Vec<u8>>, Box<str>>;
+
+    /// Return the ok type for schema generation.
+    fn ok_return_type(ts: &mut impl TypespaceBuilder) -> AlgebraicType;
 }
 impl IntoReducerResult for () {
     #[inline]
-    fn into_result(self) -> Result<(), Box<str>> {
-        Ok(self)
+    fn into_result(self) -> Result<Option<Vec<u8>>, Box<str>> {
+        Ok(None)
+    }
+
+    #[inline]
+    fn ok_return_type(_ts: &mut impl TypespaceBuilder) -> AlgebraicType {
+        ProductType::unit().into()
     }
 }
-impl<E: fmt::Display> IntoReducerResult for Result<(), E> {
+impl<T, E> IntoReducerResult for Result<T, E>
+where
+    T: SpacetimeType + Serialize,
+    E: fmt::Display,
+{
     #[inline]
-    fn into_result(self) -> Result<(), Box<str>> {
-        self.map_err(|e| e.to_string().into())
+    fn into_result(self) -> Result<Option<Vec<u8>>, Box<str>> {
+        self.map(|value| {
+            Some(bsatn::to_vec(&value).expect("Failed to serialize reducer return value"))
+        })
+        .map_err(|e| e.to_string().into())
+    }
+
+    #[inline]
+    fn ok_return_type(ts: &mut impl TypespaceBuilder) -> AlgebraicType {
+        T::make_type(ts)
     }
 }
 
@@ -625,7 +645,7 @@ macro_rules! impl_reducer_procedure_view {
             Ret: IntoReducerResult
         {
             #[allow(non_snake_case)]
-            fn invoke(&self, ctx: &ReducerContext, args: ($($T,)*)) -> Result<(), Box<str>> {
+            fn invoke(&self, ctx: &ReducerContext, args: ($($T,)*)) -> Result<Option<Vec<u8>>, Box<str>> {
                 let ($($T,)*) = args;
                 self(ctx, $($T),*).into_result()
             }
@@ -785,10 +805,15 @@ impl From<IndexAlgo<'_>> for RawIndexAlgorithm {
 pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl Reducer<'a, A>) {
     register_describer(|module| {
         let params = A::schema::<I>(&mut module.inner);
+        let ok_return_type = I::return_type(&mut module.inner).unwrap_or_else(|| ProductType::unit().into());
         if let Some(lifecycle) = I::LIFECYCLE {
-            module.inner.add_lifecycle_reducer(lifecycle, I::NAME, params);
+            module
+                .inner
+                .add_lifecycle_reducer_with_ok_return_type(lifecycle, I::NAME, params, ok_return_type);
         } else {
-            module.inner.add_reducer(I::NAME, params);
+            module
+                .inner
+                .add_reducer_with_ok_return_type(I::NAME, params, ok_return_type);
         }
         module.reducers.push(I::INVOKE);
 
@@ -978,8 +1003,8 @@ extern "C" fn __describe_module__(description: BytesSink) {
 ///
 /// The `error` is a `BytesSink`, registered on the host side,
 /// which can be written to with `bytes_sink_write`.
-/// When `error` is written to,
-/// it is expected that `HOST_CALL_FAILURE` is returned.
+/// On success, reducers write their return value to this sink (if any).
+/// On error, reducers write the error message to this sink and return `HOST_CALL_FAILURE`.
 /// Otherwise, `0` should be returned, i.e., the reducer completed successfully.
 /// Note that in the future, more failure codes could be supported.
 #[unsafe(no_mangle)]
@@ -1010,8 +1035,8 @@ extern "C" fn __call_reducer__(
     let reducers = REDUCERS.get().unwrap();
     // Dispatch to it with the arguments read.
     let res = with_read_args(args, |args| reducers[id](&ctx, args));
-    // Convert any error message to an error code and writes to the `error` sink.
-    convert_err_to_errno(res, error)
+    // Convert any error message to an error code and write return bytes on success.
+    convert_reducer_result_to_errno(res, error)
 }
 
 /// Reconstruct the `sender_i` args to [`__call_reducer__`] and [`__call_procedure__`] into an [`Identity`].
@@ -1038,9 +1063,13 @@ fn reconstruct_connection_id(conn_id_0: u64, conn_id_1: u64) -> Option<Connectio
 ///
 /// Called by [`__call_reducer__`] and [`__call_procedure__`]
 /// to convert the user-returned `Result` into a low-level errno return.
-fn convert_err_to_errno(res: Result<(), Box<str>>, out: BytesSink) -> i16 {
+fn convert_reducer_result_to_errno(res: Result<Option<Vec<u8>>, Box<str>>, out: BytesSink) -> i16 {
     match res {
-        Ok(()) => 0,
+        Ok(Some(bytes)) => {
+            write_to_sink(out, &bytes);
+            0
+        }
+        Ok(None) => 0,
         Err(msg) => {
             write_to_sink(out, msg.as_bytes());
             errno::HOST_CALL_FAILURE.get() as i16

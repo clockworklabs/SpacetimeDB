@@ -61,6 +61,6 @@ impl insert_result_i_32_string for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertResultI32StringArgs { r }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertResultI32StringArgs { r }, callback)
     }
 }

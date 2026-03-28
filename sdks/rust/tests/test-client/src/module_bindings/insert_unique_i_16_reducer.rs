@@ -67,6 +67,6 @@ impl insert_unique_i_16 for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertUniqueI16Args { n, data }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertUniqueI16Args { n, data }, callback)
     }
 }

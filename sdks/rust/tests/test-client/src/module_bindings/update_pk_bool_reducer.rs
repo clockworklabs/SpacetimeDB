@@ -67,6 +67,6 @@ impl update_pk_bool for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(UpdatePkBoolArgs { b, data }, callback)
+            .invoke_reducer_with_callback::<_, ()>(UpdatePkBoolArgs { b, data }, callback)
     }
 }

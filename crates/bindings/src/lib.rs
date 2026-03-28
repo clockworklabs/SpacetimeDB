@@ -56,7 +56,7 @@ pub use table::{
     UniqueColumn, UniqueColumnReadOnly, UniqueConstraintViolation,
 };
 
-pub type ReducerResult = core::result::Result<(), Box<str>>;
+pub type ReducerResult = core::result::Result<Option<Vec<u8>>, Box<str>>;
 
 pub type ProcedureResult = Vec<u8>;
 

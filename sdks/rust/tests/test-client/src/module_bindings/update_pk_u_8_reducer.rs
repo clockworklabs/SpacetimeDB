@@ -67,6 +67,6 @@ impl update_pk_u_8 for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(UpdatePkU8Args { n, data }, callback)
+            .invoke_reducer_with_callback::<_, ()>(UpdatePkU8Args { n, data }, callback)
     }
 }

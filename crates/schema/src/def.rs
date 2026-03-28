@@ -1678,6 +1678,9 @@ pub struct ReducerDef {
     /// The return type of the reducer on success.
     pub ok_return_type: AlgebraicType,
 
+    /// The return type of the reducer on success, formatted for client codegen.
+    pub ok_return_type_for_generate: AlgebraicTypeUse,
+
     /// The return type of the reducer on error.
     pub err_return_type: AlgebraicType,
 }

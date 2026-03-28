@@ -37,6 +37,8 @@ use spacetimedb_client_api_messages::name::{
     self, DatabaseName, DomainName, MigrationPolicy, PrePublishAutoMigrateResult, PrePublishManualMigrateResult,
     PrePublishResult, PrettyPrintStyle, PublishOp, PublishResult,
 };
+use spacetimedb_lib::bsatn;
+use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::{sats, AlgebraicValue, Hash, ProductValue, Timestamp};
@@ -168,8 +170,9 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         .await
         .map_err(client_connected_error_to_response)?;
 
+    let mut reducer_return_value: Option<Bytes> = None;
     let result = match module
-        .call_reducer(
+        .call_reducer_with_return(
             caller_identity,
             Some(connection_id),
             None,
@@ -180,7 +183,10 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         )
         .await
     {
-        Ok(rcr) => Ok(CallResult::Reducer(rcr)),
+        Ok((rcr, return_value)) => {
+            reducer_return_value = return_value;
+            Ok(CallResult::Reducer(rcr))
+        }
         Err(ReducerCallError::NoSuchReducer | ReducerCallError::ScheduleReducerNotFound) => {
             // Not a reducer — try procedure instead
             match module
@@ -202,7 +208,8 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 
     match result {
         Ok(CallResult::Reducer(result)) => {
-            let (status, body) = reducer_outcome_response(&owner_identity, &reducer, result.outcome);
+            let (status, body) =
+                reducer_outcome_response(&module, &owner_identity, &reducer, result.outcome, reducer_return_value)?;
             Ok((
                 status,
                 TypedHeader(SpacetimeEnergyUsed(result.energy_used)),
@@ -228,19 +235,47 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 }
 
 fn reducer_outcome_response(
+    module: &ModuleHost,
     owner_identity: &Identity,
     reducer: &str,
     outcome: ReducerOutcome,
-) -> (StatusCode, Box<str>) {
+    reducer_return_value: Option<Bytes>,
+) -> axum::response::Result<(StatusCode, axum::response::Response)> {
     match outcome {
-        ReducerOutcome::Committed => (StatusCode::OK, "".into()),
+        ReducerOutcome::Committed => {
+            let return_value = match module.info.module_def.reducer_full(reducer) {
+                Some((_, reducer_def)) => reducer_def.ok_return_type.clone(),
+                None => {
+                    return Err((StatusCode::NOT_FOUND, format!("No such reducer {reducer}")).into());
+                }
+            };
+
+            if let Some(bytes) = reducer_return_value.filter(|value| !value.is_empty()) {
+                let seed = sats::WithTypespace::new(module.info.module_def.typespace(), &return_value);
+                let mut reader = &bytes[..];
+                let value: AlgebraicValue = seed
+                    .deserialize(bsatn::Deserializer::new(&mut reader))
+                    .map_err(|err| {
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("Failed to decode reducer return value: {err}"),
+                        )
+                    })?;
+                Ok((
+                    StatusCode::OK,
+                    axum::Json(sats::serde::SerdeWrapper(value)).into_response(),
+                ))
+            } else {
+                Ok((StatusCode::OK, "".into_response()))
+            }
+        }
         ReducerOutcome::Failed(errmsg) => {
             // TODO: different status code? this is what cloudflare uses, sorta
-            (StatusCode::from_u16(530).unwrap(), *errmsg)
+            Ok((StatusCode::from_u16(530).unwrap(), (*errmsg).into_response()))
         }
         ReducerOutcome::BudgetExceeded => {
             log::warn!("Node's energy budget exceeded for identity: {owner_identity} while executing {reducer}");
-            (StatusCode::PAYMENT_REQUIRED, "Module energy budget exhausted.".into())
+            Ok((StatusCode::PAYMENT_REQUIRED, "Module energy budget exhausted.".into_response()))
         }
     }
 }

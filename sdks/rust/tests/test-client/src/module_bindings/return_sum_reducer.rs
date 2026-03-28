@@ -6,61 +6,64 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct DeleteUniqueU16Args {
-    pub n: u16,
+pub(super) struct ReturnSumArgs {
+    pub a: i32,
+    pub b: i32,
 }
 
-impl From<DeleteUniqueU16Args> for super::Reducer {
-    fn from(args: DeleteUniqueU16Args) -> Self {
-        Self::DeleteUniqueU16 { n: args.n }
+impl From<ReturnSumArgs> for super::Reducer {
+    fn from(args: ReturnSumArgs) -> Self {
+        Self::ReturnSum { a: args.a, b: args.b }
     }
 }
 
-impl __sdk::InModule for DeleteUniqueU16Args {
+impl __sdk::InModule for ReturnSumArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `delete_unique_u_16`.
+/// Extension trait for access to the reducer `return_sum`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait delete_unique_u_16 {
-    /// Request that the remote module invoke the reducer `delete_unique_u_16` to run as soon as possible.
+pub trait return_sum {
+    /// Request that the remote module invoke the reducer `return_sum` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`delete_unique_u_16:delete_unique_u_16_then`] to run a callback after the reducer completes.
-    fn delete_unique_u_16(&self, n: u16) -> __sdk::Result<()> {
-        self.delete_unique_u_16_then(n, |_, _| {})
+    /// /// Use [`return_sum:return_sum_then`] to run a callback after the reducer completes.
+    fn return_sum(&self, a: i32, b: i32) -> __sdk::Result<()> {
+        self.return_sum_then(a, b, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `delete_unique_u_16` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `return_sum` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn delete_unique_u_16_then(
+    fn return_sum_then(
         &self,
-        n: u16,
+        a: i32,
+        b: i32,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<i32, String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()>;
 }
 
-impl delete_unique_u_16 for super::RemoteReducers {
-    fn delete_unique_u_16_then(
+impl return_sum for super::RemoteReducers {
+    fn return_sum_then(
         &self,
-        n: u16,
+        a: i32,
+        b: i32,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<i32, String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback::<_, ()>(DeleteUniqueU16Args { n }, callback)
+            .invoke_reducer_with_callback::<_, i32>(ReturnSumArgs { a, b }, callback)
     }
 }

@@ -112,7 +112,7 @@ macro_rules! impl_unique_test_table {
             fn insert(ctx: &impl RemoteDbContext, key: Self::Key, value: i32) {
                 ctx.reducers().$insert_reducer_then(key, value, |ctx, outcome| {
                     match outcome {
-                        Ok(Ok(())) => assert!(Self::is_insert_reducer_event(&ctx.event.reducer)),
+                        Ok(Ok(_)) => assert!(Self::is_insert_reducer_event(&ctx.event.reducer)),
                         Ok(Err(msg)) => panic!("Insert reducer returned error: {msg}"),
                         Err(internal_error) => panic!("Insert reducer panicked: {internal_error:?}"),
                     }
@@ -121,7 +121,7 @@ macro_rules! impl_unique_test_table {
             fn delete(ctx: &impl RemoteDbContext, key: Self::Key) {
                 ctx.reducers().$delete_reducer_then(key, |ctx, outcome| {
                     match outcome {
-                        Ok(Ok(())) => assert!(Self::is_delete_reducer_event(&ctx.event.reducer)),
+                        Ok(Ok(_)) => assert!(Self::is_delete_reducer_event(&ctx.event.reducer)),
                         Ok(Err(msg)) => panic!("Delete reducer returned error: {msg}"),
                         Err(internal_error) => panic!("Delete reducer panicked: {internal_error:?}"),
                     }

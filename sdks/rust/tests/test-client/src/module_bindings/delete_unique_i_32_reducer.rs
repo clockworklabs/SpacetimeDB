@@ -61,6 +61,6 @@ impl delete_unique_i_32 for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(DeleteUniqueI32Args { n }, callback)
+            .invoke_reducer_with_callback::<_, ()>(DeleteUniqueI32Args { n }, callback)
     }
 }

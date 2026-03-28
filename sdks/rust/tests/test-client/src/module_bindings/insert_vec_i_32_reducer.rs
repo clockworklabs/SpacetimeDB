@@ -60,6 +60,7 @@ impl insert_vec_i_32 for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertVecI32Args { n }, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(InsertVecI32Args { n }, callback)
     }
 }

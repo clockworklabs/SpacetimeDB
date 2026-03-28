@@ -67,6 +67,6 @@ impl insert_unique_uuid for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertUniqueUuidArgs { u, data }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertUniqueUuidArgs { u, data }, callback)
     }
 }

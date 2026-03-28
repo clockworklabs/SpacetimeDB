@@ -122,12 +122,11 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
     let first_arg_ty = arg_tys.first().into_iter();
     let rest_arg_tys = arg_tys.iter().skip(1);
 
-    // Extract the return type.
-    let ret_ty = match &original_function.sig.output {
-        syn::ReturnType::Default => None,
-        syn::ReturnType::Type(_, t) => Some(&**t),
-    }
-    .into_iter();
+    // Extract the return type (defaulting to `()`).
+    let ret_ty_for_info: syn::Type = match &original_function.sig.output {
+        syn::ReturnType::Default => syn::parse_quote!(()),
+        syn::ReturnType::Type(_, t) => (**t).clone(),
+    };
 
     let register_describer_symbol = format!("__preinit__20_register_describer_{}", reducer_name.value());
 
@@ -151,7 +150,7 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
             fn _assert_args #lt_params () #lt_where_clause {
                 #(let _ = <#first_arg_ty as spacetimedb::rt::ReducerContextArg>::_ITEM;)*
                 #(let _ = <#rest_arg_tys as spacetimedb::rt::ReducerArg>::_ITEM;)*
-                #(let _ = <#ret_ty as spacetimedb::rt::IntoReducerResult>::into_result;)*
+                let _ = <#ret_ty_for_info as spacetimedb::rt::IntoReducerResult>::into_result;
             }
         };
         impl #func_name {
@@ -168,6 +167,11 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
             #(const LIFECYCLE: Option<spacetimedb::rt::LifecycleReducer> = Some(#lifecycle);)*
             const ARG_NAMES: &'static [Option<&'static str>] = &[#(#opt_arg_names),*];
             const INVOKE: Self::Invoke = #func_name::invoke;
+            fn return_type(
+                ts: &mut impl spacetimedb::sats::typespace::TypespaceBuilder,
+            ) -> Option<spacetimedb::sats::AlgebraicType> {
+                Some(<#ret_ty_for_info as spacetimedb::rt::IntoReducerResult>::ok_return_type(ts))
+            }
         }
 
         #generate_explicit_names

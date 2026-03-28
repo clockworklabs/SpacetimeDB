@@ -63,6 +63,6 @@ impl insert_primitives_as_strings for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertPrimitivesAsStringsArgs { s }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertPrimitivesAsStringsArgs { s }, callback)
     }
 }

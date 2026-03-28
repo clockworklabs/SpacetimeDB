@@ -61,6 +61,6 @@ impl insert_option_vec_option_i_32 for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertOptionVecOptionI32Args { v }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertOptionVecOptionI32Args { v }, callback)
     }
 }

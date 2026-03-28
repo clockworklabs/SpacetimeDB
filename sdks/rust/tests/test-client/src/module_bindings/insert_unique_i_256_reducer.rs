@@ -67,6 +67,6 @@ impl insert_unique_i_256 for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertUniqueI256Args { n, data }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertUniqueI256Args { n, data }, callback)
     }
 }

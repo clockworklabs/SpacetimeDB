@@ -347,6 +347,14 @@ impl ModuleValidatorV9<'_> {
                     arg_name,
                 });
 
+        let ok_return_type = reducer_default_ok_return_type();
+        let ok_return_type_for_generate = self.core.validate_for_type_use(
+            || TypeLocation::ReducerReturn {
+                reducer_name: name.clone(),
+            },
+            &ok_return_type,
+        );
+
         // Reducers share the "function namespace" with procedures.
         // Uniqueness is validated in a later pass, in `check_function_names_are_unique`.
         let name = identifier(name);
@@ -360,7 +368,8 @@ impl ModuleValidatorV9<'_> {
                 Some(_) => Err(ValidationError::DuplicateLifecycle { lifecycle }.into()),
             })
             .transpose();
-        let (reducer_name, params_for_generate, lifecycle) = (name, params_for_generate, lifecycle).combine_errors()?;
+        let (reducer_name, params_for_generate, lifecycle, ok_return_type_for_generate) =
+            (name, params_for_generate, lifecycle, ok_return_type_for_generate).combine_errors()?;
         let name = ReducerName::new(reducer_name.clone());
         let def = ReducerDef {
             name: name.clone(),
@@ -372,7 +381,8 @@ impl ModuleValidatorV9<'_> {
             },
             lifecycle,
             visibility: FunctionVisibility::ClientCallable,
-            ok_return_type: reducer_default_ok_return_type(),
+            ok_return_type,
+            ok_return_type_for_generate,
             err_return_type: reducer_default_err_return_type(),
         };
         Ok((reducer_name, def))

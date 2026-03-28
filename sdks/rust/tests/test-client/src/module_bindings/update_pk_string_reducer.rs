@@ -67,6 +67,6 @@ impl update_pk_string for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(UpdatePkStringArgs { s, data }, callback)
+            .invoke_reducer_with_callback::<_, ()>(UpdatePkStringArgs { s, data }, callback)
     }
 }

@@ -735,6 +735,11 @@ fn insert_call_uuid_v7(ctx: &ReducerContext) {
 }
 
 #[spacetimedb::reducer]
+fn return_sum(_ctx: &ReducerContext, a: i32, b: i32) -> Result<i32, String> {
+    Ok(a + b)
+}
+
+#[spacetimedb::reducer]
 fn insert_primitives_as_strings(ctx: &ReducerContext, s: EveryPrimitiveStruct) {
     ctx.db.vec_string().insert(VecString {
         s: vec![

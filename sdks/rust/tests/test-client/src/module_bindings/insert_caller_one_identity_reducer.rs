@@ -57,6 +57,6 @@ impl insert_caller_one_identity for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertCallerOneIdentityArgs {}, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertCallerOneIdentityArgs {}, callback)
     }
 }

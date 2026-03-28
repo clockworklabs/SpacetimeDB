@@ -67,6 +67,6 @@ impl insert_unique_bool for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertUniqueBoolArgs { b, data }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertUniqueBoolArgs { b, data }, callback)
     }
 }

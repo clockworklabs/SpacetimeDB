@@ -40,7 +40,7 @@ macro_rules! impl_simple_test_table {
             fn insert(ctx: &impl RemoteDbContext, contents: Self::Contents) {
                 ctx.reducers().$insert_reducer_then(contents, |ctx, outcome| {
                     match outcome {
-                        Ok(Ok(())) => assert!(Self::is_insert_reducer_event(&ctx.event.reducer)),
+                        Ok(Ok(_)) => assert!(Self::is_insert_reducer_event(&ctx.event.reducer)),
                         Ok(Err(msg)) => panic!("Insert reducer returned error: {msg}"),
                         Err(internal_error) => panic!("Insert reducer panicked: {internal_error:?}"),
                     }

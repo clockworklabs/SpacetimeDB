@@ -60,6 +60,7 @@ impl insert_vec_u_8 for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertVecU8Args { n }, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(InsertVecU8Args { n }, callback)
     }
 }

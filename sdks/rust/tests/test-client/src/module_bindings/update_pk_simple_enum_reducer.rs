@@ -69,6 +69,6 @@ impl update_pk_simple_enum for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(UpdatePkSimpleEnumArgs { a, data }, callback)
+            .invoke_reducer_with_callback::<_, ()>(UpdatePkSimpleEnumArgs { a, data }, callback)
     }
 }

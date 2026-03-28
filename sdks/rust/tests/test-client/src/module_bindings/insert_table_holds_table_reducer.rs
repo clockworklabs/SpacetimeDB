@@ -67,6 +67,6 @@ impl insert_table_holds_table for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertTableHoldsTableArgs { a, b }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertTableHoldsTableArgs { a, b }, callback)
     }
 }

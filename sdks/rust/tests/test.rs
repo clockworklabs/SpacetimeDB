@@ -90,6 +90,16 @@ fn platform_test_builder(client_project: &str, run_selector: Option<&str>) -> Te
     }
 }
 
+macro_rules! maybe_reducer_return_test {
+    (rust, $make_test:ident) => {
+        #[test]
+        fn reducer_return_values() {
+            $make_test("reducer-return-values").run();
+        }
+    };
+    ($other:ident, $make_test:ident) => {};
+}
+
 macro_rules! declare_tests_with_suffix {
     ($lang:ident, $suffix:literal) => {
         mod $lang {
@@ -221,6 +231,8 @@ macro_rules! declare_tests_with_suffix {
             fn fail_reducer() {
                 make_test("fail-reducer").run();
             }
+
+            maybe_reducer_return_test!($lang, make_test);
 
             #[test]
             fn insert_vec() {
