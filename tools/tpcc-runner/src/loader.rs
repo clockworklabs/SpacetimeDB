@@ -1,12 +1,12 @@
 use anyhow::{Context, Result};
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
-use spacetimedb_sdk::Identity;
 use std::ops::Range;
 use std::time::SystemTime;
 
 use crate::client::ModuleClient;
 use crate::config::LoadConfig;
 use crate::module_bindings::*;
+use crate::topology::DatabaseTopology;
 use crate::tpcc::*;
 use spacetimedb_sdk::Timestamp;
 
@@ -17,17 +17,17 @@ const CUSTOMER_INITIAL_BALANCE_CENTS: i64 = -1_000;
 const CUSTOMER_INITIAL_YTD_PAYMENT_CENTS: i64 = 1_000;
 const HISTORY_INITIAL_AMOUNT_CENTS: i64 = 1_000;
 
-pub fn run(config: LoadConfig) -> Result<()> {
+pub async fn run(config: LoadConfig) -> Result<()> {
     log::info!(
         "Loading tpcc dataset into {} databases, all running on {}",
         config.num_databases,
         config.connection.uri
     );
 
-    let database_identities = lookup_database_identities(&config)?;
+    let topology = DatabaseTopology::for_load(&config).await?;
 
     for database_number in 0..config.num_databases {
-        configure_one_database(&config, database_number, &database_identities)?;
+        configure_one_database(&config, database_number, &topology)?;
     }
 
     log::info!("tpcc load finished");
@@ -35,37 +35,8 @@ pub fn run(config: LoadConfig) -> Result<()> {
     Ok(())
 }
 
-fn lookup_database_identities(config: &LoadConfig) -> Result<Vec<Identity>> {
-    (0..config.num_databases)
-        .map(|database_number| {
-            let body = reqwest::blocking::get(format!(
-                "{}/v1/database/{}-{}",
-                config.connection.uri, config.connection.database_prefix, database_number
-            ))?;
-            let obj = match body.json::<serde_json::Value>()? {
-                serde_json::Value::Object(obj) => obj,
-                els => anyhow::bail!("Expected an object but got {els:?}"),
-            };
-            let Some(db_ident) = obj.get("database_identity") else {
-                anyhow::bail!("Expected a `database_identity` property but saw none in {obj:?}")
-            };
-            let serde_json::Value::Object(ident_obj) = db_ident else {
-                anyhow::bail!("Expected an object but got {db_ident:?}")
-            };
-            let Some(ident_str) = ident_obj.get("__identity__") else {
-                anyhow::bail!("Expected a `__identity__` property but saw none in {ident_obj:?}")
-            };
-            let serde_json::Value::String(ident_str) = ident_str else {
-                anyhow::bail!("Expected a string but got {ident_str:?}")
-            };
-            let ident = Identity::from_hex(ident_str)?;
-            Ok(ident)
-        })
-        .collect()
-}
-
-fn configure_one_database(config: &LoadConfig, database_number: u16, database_identities: &[Identity]) -> Result<()> {
-    let database = database_identities[database_number as usize];
+fn configure_one_database(config: &LoadConfig, database_number: u16, topology: &DatabaseTopology) -> Result<()> {
+    let database = topology.identity_for_database_number(database_number)?;
     log::info!(
         "loading tpcc dataset into {} / {} with {} warehouse(s)",
         config.connection.uri,
@@ -90,7 +61,7 @@ fn configure_one_database(config: &LoadConfig, database_number: u16, database_id
         config.num_databases,
         config.warehouses_per_database,
         config.batch_size,
-        database_identities,
+        topology,
     )?;
     load_items(&client, config.batch_size, &mut rng)?;
     load_warehouses_and_districts(
@@ -156,7 +127,7 @@ fn load_remote_warehouses(
     num_databases: u16,
     warehouses_per_database: u16,
     batch_size: usize,
-    database_identities: &[Identity],
+    topology: &DatabaseTopology,
 ) -> Result<()> {
     let mut warehouse_batch = Vec::with_capacity(batch_size);
 
@@ -164,7 +135,7 @@ fn load_remote_warehouses(
         if other_database_number == database_number {
             continue;
         }
-        let other_database_ident = database_identities[other_database_number as usize];
+        let other_database_ident = topology.identity_for_database_number(other_database_number)?;
 
         for w_id in warehouses_range(other_database_number, warehouses_per_database) {
             warehouse_batch.push(RemoteWarehouse {

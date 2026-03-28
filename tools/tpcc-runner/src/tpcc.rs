@@ -27,18 +27,10 @@ pub struct TerminalAssignment {
     pub district_id: u8,
 }
 
-pub fn assign_terminal(terminal_id: u32, warehouse_count: u16) -> Option<TerminalAssignment> {
-    let zero = terminal_id.checked_sub(1)?;
-    let warehouse_zero = zero / u32::from(DISTRICTS_PER_WAREHOUSE);
-    if warehouse_zero >= u32::from(warehouse_count) {
-        return None;
-    }
-    let district_zero = zero % u32::from(DISTRICTS_PER_WAREHOUSE);
-    Some(TerminalAssignment {
-        terminal_id,
-        warehouse_id: (warehouse_zero + 1) as u16,
-        district_id: (district_zero + 1) as u8,
-    })
+pub fn terminal_id(warehouse_id: u16, district_id: u8) -> u32 {
+    debug_assert!(warehouse_id > 0);
+    debug_assert!((1..=DISTRICTS_PER_WAREHOUSE).contains(&district_id));
+    (u32::from(warehouse_id) - 1) * u32::from(DISTRICTS_PER_WAREHOUSE) + u32::from(district_id)
 }
 
 pub fn choose_transaction<R: Rng>(rng: &mut R) -> TransactionKind {

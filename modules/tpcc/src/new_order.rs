@@ -265,7 +265,7 @@ fn reserve_remote_items(
     {
         match call_remote_function(
             ctx,
-            &spacetimedb_uri,
+            spacetimedb_uri,
             *remote_database_identity,
             "reserve_item_for_remote_order",
             ReserveItemInput {
@@ -276,7 +276,7 @@ fn reserve_remote_items(
             Err(e) => {
                 rollback_all_remote_item_reservations(
                     ctx,
-                    &spacetimedb_uri,
+                    spacetimedb_uri,
                     remote_database_items,
                     remote_item_reservations,
                 );
@@ -290,7 +290,7 @@ fn reserve_remote_items(
                     Err(e) => {
                         rollback_all_remote_item_reservations(
                             ctx,
-                            &spacetimedb_uri,
+                            spacetimedb_uri,
                             remote_database_items,
                             remote_item_reservations,
                         );
@@ -311,7 +311,7 @@ fn rollback_all_remote_item_reservations(
     remote_items: &[RemoteDatabaseItem],
     reservations: Vec<ReserveItemOutput>,
 ) {
-    for (remote_item, reservation) in remote_items.into_iter().zip(reservations.into_iter()) {
+    for (remote_item, reservation) in remote_items.iter().zip(reservations.into_iter()) {
         if let Err(e) = call_remote_function(
             ctx,
             spacetimedb_uri,
@@ -330,7 +330,7 @@ fn confirm_all_remote_item_reservations(
     remote_items: &[RemoteDatabaseItem],
     reservations: Vec<ReserveItemOutput>,
 ) {
-    for (remote_item, reservation) in remote_items.into_iter().zip(reservations.into_iter()) {
+    for (remote_item, reservation) in remote_items.iter().zip(reservations.into_iter()) {
         if let Err(e) = call_remote_function(
             ctx,
             spacetimedb_uri,

@@ -44,9 +44,10 @@ pub struct DriverConfig {
     pub connection: ConnectionConfig,
     pub run_id: Option<String>,
     pub driver_id: String,
-    pub terminal_start: u32,
-    pub terminals: u32,
     pub warehouse_count: u16,
+    pub warehouse_start: u16,
+    pub driver_warehouse_count: u16,
+    pub warehouses_per_database: u16,
     pub warmup_secs: u64,
     pub measure_secs: u64,
     pub output_dir: Option<PathBuf>,
@@ -89,11 +90,13 @@ pub struct DriverArgs {
     #[arg(long)]
     pub driver_id: Option<String>,
     #[arg(long)]
-    pub terminal_start: Option<u32>,
-    #[arg(long)]
-    pub terminals: Option<u32>,
+    pub warehouse_start: Option<u16>,
+    #[arg(long = "warehouse-count")]
+    pub driver_warehouse_count: Option<u16>,
     #[arg(long)]
     pub warehouses: Option<u16>,
+    #[arg(long)]
+    pub warehouses_per_database: Option<u16>,
     #[arg(long)]
     pub warmup_secs: Option<u64>,
     #[arg(long)]
@@ -173,9 +176,11 @@ struct FileLoadConfig {
 struct FileDriverConfig {
     run_id: Option<String>,
     driver_id: Option<String>,
-    terminal_start: Option<u32>,
-    terminals: Option<u32>,
+    warehouse_start: Option<u16>,
+    #[serde(rename = "warehouse_count")]
+    driver_warehouse_count: Option<u16>,
     warehouses: Option<u16>,
+    warehouses_per_database: Option<u16>,
     warmup_secs: Option<u64>,
     measure_secs: Option<u64>,
     output_dir: Option<PathBuf>,
@@ -244,13 +249,43 @@ impl DriverArgs {
     pub fn resolve(&self, file: &FileConfig) -> Result<DriverConfig> {
         let connection = self.connection.resolve(&file.connection);
         let warehouse_count = self.warehouses.or(file.driver.warehouses).unwrap_or(1);
-        let terminals = self
-            .terminals
-            .or(file.driver.terminals)
-            .unwrap_or(u32::from(warehouse_count) * 10);
-        let terminal_start = self.terminal_start.or(file.driver.terminal_start).unwrap_or(1);
-        if terminals == 0 {
-            bail!("terminal count must be positive");
+        let warehouse_start = self.warehouse_start.or(file.driver.warehouse_start).unwrap_or(1);
+        if warehouse_start == 0 {
+            bail!("warehouse_start must be positive");
+        }
+        if warehouse_start > warehouse_count {
+            bail!(
+                "warehouse_start {} exceeds total warehouses {}",
+                warehouse_start,
+                warehouse_count
+            );
+        }
+        let remaining_warehouses = warehouse_count - warehouse_start + 1;
+        let driver_warehouse_count = self
+            .driver_warehouse_count
+            .or(file.driver.driver_warehouse_count)
+            .unwrap_or(remaining_warehouses);
+        if driver_warehouse_count == 0 {
+            bail!("warehouse_count must be positive");
+        }
+        let warehouse_end = warehouse_start
+            .checked_add(driver_warehouse_count - 1)
+            .context("warehouse range overflowed")?;
+        if warehouse_end > warehouse_count {
+            bail!(
+                "warehouse range {}..={} exceeds total warehouses {}",
+                warehouse_start,
+                warehouse_end,
+                warehouse_count
+            );
+        }
+        let warehouses_per_database = self
+            .warehouses_per_database
+            .or(file.driver.warehouses_per_database)
+            .or(file.load.warehouses_per_database)
+            .unwrap_or(warehouse_count);
+        if warehouses_per_database == 0 {
+            bail!("warehouses_per_database must be positive");
         }
         Ok(DriverConfig {
             connection,
@@ -260,9 +295,10 @@ impl DriverArgs {
                 .clone()
                 .or_else(|| file.driver.driver_id.clone())
                 .unwrap_or_else(default_driver_id),
-            terminal_start,
-            terminals,
             warehouse_count,
+            warehouse_start,
+            driver_warehouse_count,
+            warehouses_per_database,
             warmup_secs: self.warmup_secs.or(file.driver.warmup_secs).unwrap_or(5),
             measure_secs: self.measure_secs.or(file.driver.measure_secs).unwrap_or(30),
             output_dir: self.output_dir.clone().or_else(|| file.driver.output_dir.clone()),
@@ -311,4 +347,18 @@ pub fn default_run_id() -> String {
 
 pub fn default_driver_id() -> String {
     format!("driver-{}", std::process::id())
+}
+
+impl DriverConfig {
+    pub fn warehouse_end(&self) -> u16 {
+        self.warehouse_start + self.driver_warehouse_count - 1
+    }
+
+    pub fn terminal_start(&self) -> u32 {
+        (u32::from(self.warehouse_start) - 1) * u32::from(crate::tpcc::DISTRICTS_PER_WAREHOUSE) + 1
+    }
+
+    pub fn terminals(&self) -> u32 {
+        u32::from(self.driver_warehouse_count) * u32::from(crate::tpcc::DISTRICTS_PER_WAREHOUSE)
+    }
 }

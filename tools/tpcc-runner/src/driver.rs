@@ -14,6 +14,7 @@ use crate::protocol::{
     RegisterDriverRequest, RegisterDriverResponse, RunSchedule, ScheduleResponse, SubmitSummaryRequest,
 };
 use crate::summary::{write_json, DriverSummary, DriverSummaryMeta, SharedMetrics, TransactionKind, TransactionRecord};
+use crate::topology::DatabaseTopology;
 use crate::tpcc::*;
 
 struct TerminalRuntime {
@@ -24,6 +25,7 @@ struct TerminalRuntime {
     schedule: RunSchedule,
     run_constants: RunConstants,
     assignment: TerminalAssignment,
+    database_identity: spacetimedb_sdk::Identity,
     seed: u64,
 }
 
@@ -42,47 +44,51 @@ pub async fn run(config: DriverConfig) -> Result<()> {
     let run_id = schedule.run_id.clone();
     let output_dir = resolve_output_dir(&config, &run_id);
     fs::create_dir_all(&output_dir).with_context(|| format!("failed to create {}", output_dir.display()))?;
+    let topology = DatabaseTopology::for_driver(&config).await?;
+    let used_database_numbers = databases_for_warehouse_slice(&config);
+    let database_summary = describe_databases(&topology, &used_database_numbers);
 
     let events_path = output_dir.join("txn_events.ndjson");
     let summary_path = output_dir.join("summary.json");
     let metrics = SharedMetrics::create(&run_id, &config.driver_id, &events_path)?;
 
     let run_constants = {
-        let mut rng = StdRng::seed_from_u64(schedule.measure_start_ms ^ u64::from(config.terminal_start));
+        let mut rng = StdRng::seed_from_u64(schedule.measure_start_ms ^ u64::from(config.warehouse_start));
         generate_run_constants(&mut rng)
     };
 
     let abort = Arc::new(AtomicBool::new(false));
     let request_ids = Arc::new(AtomicU64::new(1));
-    let mut handles = Vec::with_capacity(config.terminals as usize);
+    let mut handles = Vec::with_capacity(config.terminals() as usize);
 
-    for offset in 0..config.terminals {
-        let terminal_id = config.terminal_start + offset;
-        let assignment = assign_terminal(terminal_id, config.warehouse_count).ok_or_else(|| {
-            anyhow!(
-                "terminal {} exceeds warehouse capacity {}",
-                terminal_id,
-                config.warehouse_count
-            )
-        })?;
-        let terminal_seed = schedule.measure_start_ms ^ ((terminal_id as u64) << 32) ^ 0xabcdu64;
-        let terminal_config = config.clone();
-        let terminal_metrics = metrics.clone();
-        let terminal_abort = abort.clone();
-        let terminal_constants = run_constants.clone();
-        let terminal_schedule = schedule.clone();
-        let terminal_request_ids = request_ids.clone();
-        let runtime = TerminalRuntime {
-            config: terminal_config,
-            metrics: terminal_metrics,
-            abort: terminal_abort,
-            request_ids: terminal_request_ids,
-            schedule: terminal_schedule,
-            run_constants: terminal_constants,
-            assignment,
-            seed: terminal_seed,
-        };
-        handles.push(thread::spawn(move || run_terminal(runtime)));
+    for warehouse_id in config.warehouse_start..=config.warehouse_end() {
+        let database_identity = topology.identity_for_warehouse(warehouse_id)?;
+        for district_id in 1..=DISTRICTS_PER_WAREHOUSE {
+            let assignment = TerminalAssignment {
+                terminal_id: terminal_id(warehouse_id, district_id),
+                warehouse_id,
+                district_id,
+            };
+            let terminal_seed = schedule.measure_start_ms ^ ((assignment.terminal_id as u64) << 32) ^ 0xabcdu64;
+            let terminal_config = config.clone();
+            let terminal_metrics = metrics.clone();
+            let terminal_abort = abort.clone();
+            let terminal_constants = run_constants.clone();
+            let terminal_schedule = schedule.clone();
+            let terminal_request_ids = request_ids.clone();
+            let runtime = TerminalRuntime {
+                config: terminal_config,
+                metrics: terminal_metrics,
+                abort: terminal_abort,
+                request_ids: terminal_request_ids,
+                schedule: terminal_schedule,
+                run_constants: terminal_constants,
+                assignment,
+                database_identity,
+                seed: terminal_seed,
+            };
+            handles.push(thread::spawn(move || run_terminal(runtime)));
+        }
     }
 
     let mut first_error: Option<anyhow::Error> = None;
@@ -107,15 +113,15 @@ pub async fn run(config: DriverConfig) -> Result<()> {
         return Err(err);
     }
 
-    harvest_delivery_completions(&config, &schedule, &metrics).await?;
+    harvest_delivery_completions(&config, &schedule, &metrics, &topology, &used_database_numbers).await?;
 
     let summary = metrics.finalize(DriverSummaryMeta {
         run_id: run_id.clone(),
         driver_id: config.driver_id.clone(),
         uri: config.connection.uri.clone(),
-        database: todo!("config.connection.database.clone()"),
-        terminal_start: config.terminal_start,
-        terminals: config.terminals,
+        database: database_summary,
+        terminal_start: config.terminal_start(),
+        terminals: config.terminals(),
         warehouse_count: config.warehouse_count,
         warmup_secs: config.warmup_secs,
         measure_secs: config.measure_secs,
@@ -141,9 +147,10 @@ fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
         schedule,
         run_constants,
         assignment,
+        database_identity,
         seed,
     } = runtime;
-    let client = ModuleClient::connect(&config.connection, todo!())?;
+    let client = ModuleClient::connect(&config.connection, database_identity)?;
     sleep_until_ms(schedule.warmup_start_ms);
 
     let mut rng = StdRng::seed_from_u64(seed);
@@ -466,8 +473,8 @@ async fn resolve_schedule(config: &DriverConfig) -> Result<RunSchedule> {
         let client = reqwest::Client::new();
         let register = RegisterDriverRequest {
             driver_id: config.driver_id.clone(),
-            terminal_start: config.terminal_start,
-            terminals: config.terminals,
+            terminal_start: config.terminal_start(),
+            terminals: config.terminals(),
             warehouse_count: config.warehouse_count,
         };
         let response: RegisterDriverResponse = client
@@ -519,43 +526,71 @@ async fn harvest_delivery_completions(
     config: &DriverConfig,
     schedule: &RunSchedule,
     metrics: &SharedMetrics,
+    topology: &DatabaseTopology,
+    used_database_numbers: &[u16],
 ) -> Result<()> {
     let expected = metrics.delivery_queued();
     if expected == 0 {
         return Ok(());
     }
-    let client = ModuleClient::connect(&config.connection, todo!())?;
-    let progress = expect_ok("delivery_progress", client.delivery_progress(schedule.run_id.clone()))?;
+    let clients = used_database_numbers
+        .iter()
+        .map(|database_number| {
+            let database_identity = topology.identity_for_database_number(*database_number)?;
+            ModuleClient::connect(&config.connection, database_identity)
+                .map(|client| (*database_number, client))
+                .with_context(|| {
+                    format!(
+                        "failed to connect delivery harvester to {}",
+                        topology.database_name(*database_number)
+                    )
+                })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let mut pending_jobs = 0u64;
+    let mut completed_jobs = 0u64;
+    for (_, client) in &clients {
+        let progress = expect_ok("delivery_progress", client.delivery_progress(schedule.run_id.clone()))?;
+        pending_jobs += progress.pending_jobs;
+        completed_jobs += progress.completed_jobs;
+    }
     log::info!(
         "delivery progress before harvest: pending_jobs={} completed_jobs={}",
-        progress.pending_jobs,
-        progress.completed_jobs
+        pending_jobs,
+        completed_jobs
     );
     let deadline = crate::summary::now_millis() + (config.delivery_wait_secs * 1_000);
     let mut seen_for_driver = 0u64;
-    let mut after_completion_id = 0u64;
+    let mut after_completion_ids = vec![0u64; clients.len()];
 
     loop {
         if seen_for_driver >= expected {
             break;
         }
-        let batch = expect_ok(
-            "fetch_delivery_completions",
-            client.fetch_delivery_completions(schedule.run_id.clone(), after_completion_id, 512),
-        )?;
-        if batch.is_empty() {
+        let mut saw_rows = false;
+        for ((_, client), after_completion_id) in clients.iter().zip(after_completion_ids.iter_mut()) {
+            let batch = expect_ok(
+                "fetch_delivery_completions",
+                client.fetch_delivery_completions(schedule.run_id.clone(), *after_completion_id, 512),
+            )?;
+            if batch.is_empty() {
+                continue;
+            }
+            saw_rows = true;
+            for row in batch {
+                *after_completion_id = (*after_completion_id).max(row.completion_id);
+                if row.driver_id == config.driver_id {
+                    seen_for_driver += 1;
+                    metrics.record_delivery_completion(&row);
+                }
+            }
+        }
+        if !saw_rows {
             if crate::summary::now_millis() >= deadline {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(250)).await;
-            continue;
-        }
-        for row in batch {
-            after_completion_id = after_completion_id.max(row.completion_id);
-            if row.driver_id == config.driver_id {
-                seen_for_driver += 1;
-                metrics.record_delivery_completion(&row);
-            }
         }
     }
 
@@ -568,8 +603,24 @@ async fn harvest_delivery_completions(
         );
     }
 
-    client.shutdown();
+    for (_, client) in clients {
+        client.shutdown();
+    }
     Ok(())
+}
+
+fn databases_for_warehouse_slice(config: &DriverConfig) -> Vec<u16> {
+    let first = (config.warehouse_start - 1) / config.warehouses_per_database;
+    let last = (config.warehouse_end() - 1) / config.warehouses_per_database;
+    (first..=last).collect()
+}
+
+fn describe_databases(topology: &DatabaseTopology, used_database_numbers: &[u16]) -> String {
+    used_database_numbers
+        .iter()
+        .map(|database_number| topology.database_name(*database_number))
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 async fn submit_summary(coordinator_url: &str, summary: DriverSummary) -> Result<()> {
