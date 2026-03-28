@@ -5,6 +5,8 @@ use std::fs;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
+use crate::protocol::DriverAssignment;
+
 #[derive(Debug, Parser)]
 #[command(name = "tpcc-runner")]
 pub struct Cli {
@@ -63,6 +65,8 @@ pub struct CoordinatorConfig {
     pub run_id: String,
     pub listen: SocketAddr,
     pub expected_drivers: usize,
+    pub warehouses: u16,
+    pub warehouses_per_database: u16,
     pub warmup_secs: u64,
     pub measure_secs: u64,
     pub output_dir: PathBuf,
@@ -124,6 +128,10 @@ pub struct CoordinatorArgs {
     pub listen: Option<SocketAddr>,
     #[arg(long)]
     pub expected_drivers: Option<usize>,
+    #[arg(long)]
+    pub warehouses: Option<u16>,
+    #[arg(long)]
+    pub warehouses_per_database: Option<u16>,
     #[arg(long)]
     pub warmup_secs: Option<u64>,
     #[arg(long)]
@@ -199,6 +207,8 @@ struct FileCoordinatorConfig {
     run_id: Option<String>,
     listen: Option<SocketAddr>,
     expected_drivers: Option<usize>,
+    warehouses: Option<u16>,
+    warehouses_per_database: Option<u16>,
     warmup_secs: Option<u64>,
     measure_secs: Option<u64>,
     output_dir: Option<PathBuf>,
@@ -339,6 +349,24 @@ impl CoordinatorArgs {
         if expected_drivers == 0 {
             bail!("expected_drivers must be positive");
         }
+        let warehouses = self.warehouses.or(file.coordinator.warehouses).unwrap_or(1);
+        if warehouses == 0 {
+            bail!("warehouses must be positive");
+        }
+        let warehouses_per_database = self
+            .warehouses_per_database
+            .or(file.coordinator.warehouses_per_database)
+            .unwrap_or(warehouses);
+        if warehouses_per_database == 0 {
+            bail!("warehouses_per_database must be positive");
+        }
+        if expected_drivers > usize::from(warehouses) {
+            bail!(
+                "expected_drivers {} exceeds total warehouses {}",
+                expected_drivers,
+                warehouses
+            );
+        }
         Ok(CoordinatorConfig {
             run_id: self
                 .run_id
@@ -350,6 +378,8 @@ impl CoordinatorArgs {
                 .or(file.coordinator.listen)
                 .unwrap_or_else(|| "127.0.0.1:7878".parse().expect("hard-coded coordinator address")),
             expected_drivers,
+            warehouses,
+            warehouses_per_database,
             warmup_secs: self.warmup_secs.or(file.coordinator.warmup_secs).unwrap_or(5),
             measure_secs: self.measure_secs.or(file.coordinator.measure_secs).unwrap_or(30),
             output_dir: self
@@ -370,6 +400,15 @@ pub fn default_driver_id() -> String {
 }
 
 impl DriverConfig {
+    pub fn with_assignment(&self, assignment: &DriverAssignment) -> Self {
+        let mut updated = self.clone();
+        updated.warehouse_count = assignment.warehouse_count;
+        updated.warehouse_start = assignment.warehouse_start;
+        updated.driver_warehouse_count = assignment.driver_warehouse_count;
+        updated.warehouses_per_database = assignment.warehouses_per_database;
+        updated
+    }
+
     pub fn warehouse_end(&self) -> u16 {
         self.warehouse_start + self.driver_warehouse_count - 1
     }
