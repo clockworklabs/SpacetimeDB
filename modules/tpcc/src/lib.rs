@@ -1,7 +1,5 @@
-use remote::clear_remote_warehouses;
 use spacetimedb::{
-    log_stopwatch::LogStopwatch, procedure, reducer, table, ProcedureContext, ReducerContext, ScheduleAt,
-    SpacetimeType, Table, Timestamp,
+    procedure, reducer, table, ProcedureContext, ReducerContext, ScheduleAt, SpacetimeType, Table, Timestamp,
 };
 use std::collections::BTreeSet;
 
@@ -344,13 +342,11 @@ pub fn reset_tpcc(ctx: &ReducerContext) -> Result<(), String> {
     for row in ctx.db.warehouse().iter() {
         ctx.db.warehouse().delete(row);
     }
-    clear_remote_warehouses(ctx);
     Ok(())
 }
 
 #[reducer]
 pub fn load_warehouses(ctx: &ReducerContext, rows: Vec<Warehouse>) -> Result<(), String> {
-    let _timer = LogStopwatch::new("load_warehouses");
     for row in rows {
         validate_warehouse_row(&row)?;
         ctx.db.warehouse().insert(row);
@@ -360,7 +356,6 @@ pub fn load_warehouses(ctx: &ReducerContext, rows: Vec<Warehouse>) -> Result<(),
 
 #[reducer]
 pub fn load_districts(ctx: &ReducerContext, rows: Vec<District>) -> Result<(), String> {
-    let _timer = LogStopwatch::new("load_districts");
     for row in rows {
         validate_district_row(&row)?;
         ctx.db.district().insert(row);
@@ -370,7 +365,6 @@ pub fn load_districts(ctx: &ReducerContext, rows: Vec<District>) -> Result<(), S
 
 #[reducer]
 pub fn load_customers(ctx: &ReducerContext, rows: Vec<Customer>) -> Result<(), String> {
-    let _timer = LogStopwatch::new("load_customers");
     for row in rows {
         validate_customer_row(&row)?;
         ctx.db.customer().insert(row);
@@ -380,7 +374,6 @@ pub fn load_customers(ctx: &ReducerContext, rows: Vec<Customer>) -> Result<(), S
 
 #[reducer]
 pub fn load_history(ctx: &ReducerContext, rows: Vec<History>) -> Result<(), String> {
-    let _timer = LogStopwatch::new("load_history");
     for mut row in rows {
         row.history_id = 0;
         ctx.db.history().insert(row);
@@ -390,7 +383,6 @@ pub fn load_history(ctx: &ReducerContext, rows: Vec<History>) -> Result<(), Stri
 
 #[reducer]
 pub fn load_items(ctx: &ReducerContext, rows: Vec<Item>) -> Result<(), String> {
-    let _timer = LogStopwatch::new("load_items");
     for row in rows {
         validate_item_row(&row)?;
         ctx.db.item().insert(row);
@@ -400,18 +392,15 @@ pub fn load_items(ctx: &ReducerContext, rows: Vec<Item>) -> Result<(), String> {
 
 #[reducer]
 pub fn load_stocks(ctx: &ReducerContext, rows: Vec<Stock>) -> Result<(), String> {
-    let _timer = LogStopwatch::new("load_stocks");
     for row in rows {
         validate_stock_row(&row)?;
         ctx.db.stock().insert(row);
     }
-
     Ok(())
 }
 
 #[reducer]
 pub fn load_orders(ctx: &ReducerContext, rows: Vec<OOrder>) -> Result<(), String> {
-    let _timer = LogStopwatch::new("load_orders");
     for row in rows {
         ctx.db.oorder().insert(row);
     }
@@ -420,7 +409,6 @@ pub fn load_orders(ctx: &ReducerContext, rows: Vec<OOrder>) -> Result<(), String
 
 #[reducer]
 pub fn load_new_orders(ctx: &ReducerContext, rows: Vec<NewOrder>) -> Result<(), String> {
-    let _timer = LogStopwatch::new("load_new_orders");
     for row in rows {
         ctx.db.new_order_row().insert(row);
     }
@@ -429,7 +417,6 @@ pub fn load_new_orders(ctx: &ReducerContext, rows: Vec<NewOrder>) -> Result<(), 
 
 #[reducer]
 pub fn load_order_lines(ctx: &ReducerContext, rows: Vec<OrderLine>) -> Result<(), String> {
-    let _timer = LogStopwatch::new("load_order_lines");
     for row in rows {
         ctx.db.order_line().insert(row);
     }
