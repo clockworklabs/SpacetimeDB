@@ -67,6 +67,6 @@ impl update_unique_connection_id for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(UpdateUniqueConnectionIdArgs { a, data }, callback)
+            .invoke_reducer_with_callback::<_, ()>(UpdateUniqueConnectionIdArgs { a, data }, callback)
     }
 }

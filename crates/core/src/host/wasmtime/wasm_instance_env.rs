@@ -1925,9 +1925,9 @@ impl WasmInstanceEnv {
                         Ok(0u32)
                     }
                     Err(NodesError::HttpError(err)) => {
-                        let result = bsatn::to_vec(&err).with_context(|| {
-                            format!("Failed to BSATN serialize `spacetimedb_lib::http::Error` object {err:#?}")
-                        })?;
+                        let message = err.to_string();
+                        let result = bsatn::to_vec(&message)
+                            .with_context(|| format!("Failed to BSATN serialize HTTP error message {message:?}"))?;
                         let bytes_source = WasmInstanceEnv::create_bytes_source(env, result.into())?;
                         bytes_source.0.write_to(mem, out)?;
                         Ok(errno::HTTP_ERROR.get() as u32)

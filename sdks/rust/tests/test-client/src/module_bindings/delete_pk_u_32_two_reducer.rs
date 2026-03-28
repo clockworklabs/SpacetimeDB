@@ -61,6 +61,6 @@ impl delete_pk_u_32_two for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(DeletePkU32TwoArgs { n }, callback)
+            .invoke_reducer_with_callback::<_, ()>(DeletePkU32TwoArgs { n }, callback)
     }
 }

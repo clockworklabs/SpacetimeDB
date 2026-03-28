@@ -195,6 +195,8 @@ pub enum TypeLocation {
         position: usize,
         arg_name: Option<RawIdentifier>,
     },
+    /// A reducer return type.
+    ReducerReturn { reducer_name: RawIdentifier },
     /// A procedure argument.
     ProcedureArg {
         procedure_name: RawIdentifier,
@@ -231,6 +233,9 @@ impl fmt::Display for TypeLocation {
                     write!(f, " (`{arg_name}`)")?;
                 }
                 Ok(())
+            }
+            TypeLocation::ReducerReturn { reducer_name } => {
+                write!(f, "reducer `{reducer_name}` return value")
             }
             TypeLocation::ProcedureArg {
                 procedure_name,

@@ -346,7 +346,7 @@ async fn exec_schedule_procedure(db_name: &str) {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
                 ctx.reducers
                     .schedule_proc_then(|_ctx, outcome| match outcome {
-                        Ok(Ok(())) => (),
+                        Ok(Ok(_)) => (),
                         Ok(Err(msg)) => panic!("`schedule_proc` reducer returned error: {msg}"),
                         Err(internal_error) => panic!("`schedule_proc` reducer panicked: {internal_error:?}"),
                     })

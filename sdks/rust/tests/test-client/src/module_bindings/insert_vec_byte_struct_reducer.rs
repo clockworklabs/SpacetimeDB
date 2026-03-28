@@ -63,6 +63,6 @@ impl insert_vec_byte_struct for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertVecByteStructArgs { s }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertVecByteStructArgs { s }, callback)
     }
 }

@@ -60,6 +60,7 @@ impl delete_pk_u_8 for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(DeletePkU8Args { n }, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(DeletePkU8Args { n }, callback)
     }
 }

@@ -57,6 +57,6 @@ impl insert_caller_one_connection_id for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertCallerOneConnectionIdArgs {}, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertCallerOneConnectionIdArgs {}, callback)
     }
 }

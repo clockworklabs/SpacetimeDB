@@ -66,6 +66,6 @@ impl insert_result_every_primitive_struct_string for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertResultEveryPrimitiveStructStringArgs { r }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertResultEveryPrimitiveStructStringArgs { r }, callback)
     }
 }

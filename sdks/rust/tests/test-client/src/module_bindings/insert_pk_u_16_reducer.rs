@@ -67,6 +67,6 @@ impl insert_pk_u_16 for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertPkU16Args { n, data }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertPkU16Args { n, data }, callback)
     }
 }

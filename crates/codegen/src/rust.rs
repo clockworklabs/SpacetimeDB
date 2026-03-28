@@ -379,13 +379,10 @@ pub(super) fn parse_table_update(
 
         out.newline();
 
-        gen_and_print_imports(
-            module,
-            out,
-            &reducer.params_for_generate.elements,
-            // No need to skip any imports; we're not emitting a type that other modules can import.
-            &[],
-        );
+        let mut imports = Imports::new();
+        gen_imports(&mut imports, &reducer.params_for_generate.elements);
+        add_one_import(&mut imports, &reducer.ok_return_type_for_generate);
+        print_imports(module, out, imports);
 
         out.newline();
 
@@ -393,6 +390,7 @@ pub(super) fn parse_table_update(
         let func_name = reducer_function_name(reducer);
         let args_type = function_args_type_name(&reducer.accessor_name);
         let enum_variant_name = reducer_variant_name(&reducer.accessor_name);
+        let ok_ty_name = type_name(module, &reducer.ok_return_type_for_generate);
 
         // Define an "args struct" for the reducer.
         // This is not user-facing (note the `pub(super)` visibility);
@@ -484,7 +482,7 @@ pub trait {func_name} {{
     fn {func_name}_then(
         &self,
         {arglist_no_delimiters}
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<{ok_ty_name}, String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()>;
@@ -494,11 +492,12 @@ impl {func_name} for super::RemoteReducers {{
     fn {func_name}_then(
         &self,
         {arglist_no_delimiters}
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<{ok_ty_name}, String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {{
-        self.imp.invoke_reducer_with_callback({args_type} {{ {arg_names} }}, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, {ok_ty_name}>({args_type} {{ {arg_names} }}, callback)
     }}
 }}
 "

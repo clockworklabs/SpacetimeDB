@@ -67,6 +67,6 @@ impl update_pk_uuid for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(UpdatePkUuidArgs { u, data }, callback)
+            .invoke_reducer_with_callback::<_, ()>(UpdatePkUuidArgs { u, data }, callback)
     }
 }

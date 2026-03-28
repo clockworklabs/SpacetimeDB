@@ -16,6 +16,23 @@ fn test_call_reducer_procedure() {
     assert_eq!(msg.trim(), r#"["World"]"#);
 }
 
+/// Check calling a reducer with an HTTP client returns its value.
+#[test]
+fn test_call_reducer_http_return_value() {
+    let test = Smoketest::builder()
+        .precompiled_module("call-reducer-procedure")
+        .build();
+
+    let identity = test.database_identity.as_ref().unwrap();
+    let response = test
+        .api_call_json("POST", &format!("/v1/database/{}/call/return_greeting", identity), "[]")
+        .unwrap();
+
+    assert_eq!(response.status_code, 200);
+    let body = String::from_utf8_lossy(&response.body);
+    assert_eq!(body.trim(), r#""Hello""#);
+}
+
 /// Check calling a non-existent reducer/procedure raises error
 #[test]
 fn test_call_errors() {
@@ -36,6 +53,7 @@ Error: No such reducer OR procedure `non_existent_reducer` for database `{identi
 
 Here are some existing reducers:
 - say_hello
+- return_greeting
 
 Here are some existing procedures:
 - return_person"
@@ -58,6 +76,7 @@ Error: No such reducer OR procedure `non_existent_procedure` for database `{iden
 
 Here are some existing reducers:
 - say_hello
+- return_greeting
 
 Here are some existing procedures:
 - return_person"

@@ -67,6 +67,6 @@ impl update_pk_identity for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(UpdatePkIdentityArgs { i, data }, callback)
+            .invoke_reducer_with_callback::<_, ()>(UpdatePkIdentityArgs { i, data }, callback)
     }
 }

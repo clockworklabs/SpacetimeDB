@@ -206,7 +206,7 @@ impl<M: SpacetimeModule> TableCallbacks<M> {
 /// and a wrapper inserted by the SDK will destructure the contained `Event`
 /// before invoking the user-supplied function.
 pub(crate) type ReducerCallback<M> = Box<
-    dyn FnOnce(&<M as SpacetimeModule>::ReducerEventContext, Result<Result<(), String>, InternalError>)
+    dyn FnOnce(&<M as SpacetimeModule>::ReducerEventContext, Result<Result<Bytes, String>, InternalError>)
         + Send
         + 'static,
 >;

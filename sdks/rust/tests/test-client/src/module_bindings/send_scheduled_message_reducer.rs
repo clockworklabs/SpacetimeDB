@@ -63,6 +63,6 @@ impl send_scheduled_message for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(SendScheduledMessageArgs { arg }, callback)
+            .invoke_reducer_with_callback::<_, ()>(SendScheduledMessageArgs { arg }, callback)
     }
 }

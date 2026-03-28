@@ -61,6 +61,6 @@ impl insert_vec_string for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertVecStringArgs { s }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertVecStringArgs { s }, callback)
     }
 }

@@ -67,6 +67,6 @@ impl insert_pk_uuid for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertPkUuidArgs { u, data }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertPkUuidArgs { u, data }, callback)
     }
 }

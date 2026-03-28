@@ -60,6 +60,7 @@ impl insert_vec_f_64 for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertVecF64Args { f }, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(InsertVecF64Args { f }, callback)
     }
 }

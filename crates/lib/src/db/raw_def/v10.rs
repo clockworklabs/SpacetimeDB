@@ -943,11 +943,21 @@ impl RawModuleDefV10Builder {
     /// This is because `SpacetimeType` is not implemented for `ReducerContext`,
     /// so it can never act like an ordinary argument.)
     pub fn add_reducer(&mut self, source_name: impl Into<RawIdentifier>, params: ProductType) {
+        self.add_reducer_with_ok_return_type(source_name, params, reducer_default_ok_return_type());
+    }
+
+    /// Add a reducer with an explicit ok return type.
+    pub fn add_reducer_with_ok_return_type(
+        &mut self,
+        source_name: impl Into<RawIdentifier>,
+        params: ProductType,
+        ok_return_type: AlgebraicType,
+    ) {
         self.reducers_mut().push(RawReducerDefV10 {
             source_name: source_name.into(),
             params,
             visibility: FunctionVisibility::ClientCallable,
-            ok_return_type: reducer_default_ok_return_type(),
+            ok_return_type,
             err_return_type: reducer_default_err_return_type(),
         });
     }
@@ -1005,6 +1015,22 @@ impl RawModuleDefV10Builder {
         function_name: impl Into<RawIdentifier>,
         params: ProductType,
     ) {
+        self.add_lifecycle_reducer_with_ok_return_type(
+            lifecycle_spec,
+            function_name,
+            params,
+            reducer_default_ok_return_type(),
+        );
+    }
+
+    /// Add a lifecycle reducer assignment with an explicit ok return type.
+    pub fn add_lifecycle_reducer_with_ok_return_type(
+        &mut self,
+        lifecycle_spec: Lifecycle,
+        function_name: impl Into<RawIdentifier>,
+        params: ProductType,
+        ok_return_type: AlgebraicType,
+    ) {
         let function_name = function_name.into();
         self.lifecycle_reducers_mut().push(RawLifeCycleReducerDefV10 {
             lifecycle_spec,
@@ -1015,7 +1041,7 @@ impl RawModuleDefV10Builder {
             source_name: function_name,
             params,
             visibility: FunctionVisibility::Private,
-            ok_return_type: reducer_default_ok_return_type(),
+            ok_return_type,
             err_return_type: reducer_default_err_return_type(),
         });
     }

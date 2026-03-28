@@ -56,6 +56,7 @@ impl insert_call_uuid_v_7 for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertCallUuidV7Args {}, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(InsertCallUuidV7Args {}, callback)
     }
 }

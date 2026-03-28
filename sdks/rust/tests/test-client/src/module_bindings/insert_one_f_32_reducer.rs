@@ -60,6 +60,7 @@ impl insert_one_f_32 for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertOneF32Args { f }, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(InsertOneF32Args { f }, callback)
     }
 }

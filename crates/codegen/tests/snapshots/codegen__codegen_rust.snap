@@ -74,7 +74,8 @@ impl add_player for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(AddPlayerArgs { name,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(AddPlayerArgs { name,  }, callback)
     }
 }
 
@@ -151,7 +152,8 @@ impl add_private for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(AddPrivateArgs { name,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(AddPrivateArgs { name,  }, callback)
     }
 }
 
@@ -233,7 +235,8 @@ age: u8,
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(AddArgs { name, age,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(AddArgs { name, age,  }, callback)
     }
 }
 
@@ -304,7 +307,8 @@ impl assert_caller_identity_is_module_identity for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(AssertCallerIdentityIsModuleIdentityArgs {  }, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(AssertCallerIdentityIsModuleIdentityArgs {  }, callback)
     }
 }
 
@@ -406,7 +410,8 @@ impl delete_player for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(DeletePlayerArgs { id,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(DeletePlayerArgs { id,  }, callback)
     }
 }
 
@@ -483,7 +488,8 @@ impl delete_players_by_name for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(DeletePlayersByNameArgs { name,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(DeletePlayersByNameArgs { name,  }, callback)
     }
 }
 
@@ -709,7 +715,8 @@ impl list_over_age for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(ListOverAgeArgs { age,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(ListOverAgeArgs { age,  }, callback)
     }
 }
 
@@ -780,7 +787,8 @@ impl log_module_identity for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(LogModuleIdentityArgs {  }, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(LogModuleIdentityArgs {  }, callback)
     }
 }
 
@@ -2976,7 +2984,8 @@ impl query_private for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(QueryPrivateArgs {  }, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(QueryPrivateArgs {  }, callback)
     }
 }
 
@@ -3234,7 +3243,8 @@ impl say_hello for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(SayHelloArgs {  }, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(SayHelloArgs {  }, callback)
     }
 }
 
@@ -3452,7 +3462,8 @@ impl test_btree_index_args for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(TestBtreeIndexArgsArgs {  }, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(TestBtreeIndexArgsArgs {  }, callback)
     }
 }
 
@@ -3973,7 +3984,8 @@ arg_4: NamespaceTestF,
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(TestArgs { arg, arg_2, arg_3, arg_4,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(TestArgs { arg, arg_2, arg_3, arg_4,  }, callback)
     }
 }
 

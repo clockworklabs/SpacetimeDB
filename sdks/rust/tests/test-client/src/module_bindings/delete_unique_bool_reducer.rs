@@ -61,6 +61,6 @@ impl delete_unique_bool for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(DeleteUniqueBoolArgs { b }, callback)
+            .invoke_reducer_with_callback::<_, ()>(DeleteUniqueBoolArgs { b }, callback)
     }
 }

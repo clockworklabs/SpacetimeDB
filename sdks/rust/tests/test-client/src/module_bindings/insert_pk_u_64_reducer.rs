@@ -67,6 +67,6 @@ impl insert_pk_u_64 for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertPkU64Args { n, data }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertPkU64Args { n, data }, callback)
     }
 }

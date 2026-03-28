@@ -57,6 +57,6 @@ impl sorted_uuids_insert for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(SortedUuidsInsertArgs {}, callback)
+            .invoke_reducer_with_callback::<_, ()>(SortedUuidsInsertArgs {}, callback)
     }
 }

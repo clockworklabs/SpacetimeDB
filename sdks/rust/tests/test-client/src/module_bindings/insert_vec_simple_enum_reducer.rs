@@ -63,6 +63,6 @@ impl insert_vec_simple_enum for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertVecSimpleEnumArgs { e }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertVecSimpleEnumArgs { e }, callback)
     }
 }

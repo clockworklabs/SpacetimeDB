@@ -67,6 +67,6 @@ impl insert_pk_u_256 for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertPkU256Args { n, data }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertPkU256Args { n, data }, callback)
     }
 }

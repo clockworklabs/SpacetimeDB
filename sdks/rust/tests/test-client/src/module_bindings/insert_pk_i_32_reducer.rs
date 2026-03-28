@@ -67,6 +67,6 @@ impl insert_pk_i_32 for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertPkI32Args { n, data }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertPkI32Args { n, data }, callback)
     }
 }

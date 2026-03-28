@@ -61,6 +61,6 @@ impl delete_pk_identity for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(DeletePkIdentityArgs { i }, callback)
+            .invoke_reducer_with_callback::<_, ()>(DeletePkIdentityArgs { i }, callback)
     }
 }
