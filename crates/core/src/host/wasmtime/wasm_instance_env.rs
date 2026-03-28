@@ -1965,64 +1965,60 @@ impl WasmInstanceEnv {
     /// # Traps
     ///
     /// Traps if any pointer is NULL or its range falls outside of linear memory.
-    pub fn call_reducer_on_db<'caller>(
-        caller: Caller<'caller, Self>,
-        (identity_ptr, reducer_ptr, reducer_len, args_ptr, args_len, out): (
-            WasmPtr<u8>,
-            WasmPtr<u8>,
-            u32,
-            WasmPtr<u8>,
-            u32,
-            WasmPtr<u32>,
-        ),
-    ) -> Fut<'caller, RtResult<u32>> {
-        Self::async_with_span(caller, AbiCall::CallReducerOnDb, move |mut caller| async move {
-            let (mem, env) = Self::mem_env(&mut caller);
+    pub fn call_reducer_on_db(
+        caller: Caller<'_, Self>,
+        identity_ptr: WasmPtr<u8>,
+        reducer_ptr: WasmPtr<u8>,
+        reducer_len: u32,
+        args_ptr: WasmPtr<u8>,
+        args_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_custom(caller, AbiCall::CallReducerOnDb, |caller| {
+            let (mem, env) = Self::mem_env(caller);
 
-            #[allow(clippy::redundant_closure_call)]
-            let res = (async move || {
-                // Read the 32-byte BSATN-encoded Identity (little-endian).
-                let identity_slice = mem.deref_slice(identity_ptr, 32)?;
-                let identity_bytes: [u8; 32] = identity_slice
-                    .try_into()
-                    .expect("deref_slice(ptr, 32) always yields exactly 32 bytes");
-                let database_identity = Identity::from_byte_array(identity_bytes);
+            // Read the 32-byte BSATN-encoded Identity (little-endian).
+            let identity_slice = mem.deref_slice(identity_ptr, 32)?;
+            let identity_bytes: [u8; 32] = identity_slice
+                .try_into()
+                .expect("deref_slice(ptr, 32) always yields exactly 32 bytes");
+            let database_identity = Identity::from_byte_array(identity_bytes);
 
-                // Read the reducer name as a UTF-8 string.
-                let reducer_name = mem.deref_str(reducer_ptr, reducer_len)?;
+            // Read the reducer name as a UTF-8 string.
+            let reducer_name = mem.deref_str(reducer_ptr, reducer_len)?.to_owned();
 
-                // Read the BSATN-encoded args as raw bytes.
-                let args_buf = mem.deref_slice(args_ptr, args_len)?;
-                let args = bytes::Bytes::copy_from_slice(args_buf);
+            // Read the BSATN-encoded args as raw bytes.
+            let args_buf = mem.deref_slice(args_ptr, args_len)?;
+            let args = bytes::Bytes::copy_from_slice(args_buf);
 
-                let result = env
-                    .instance_env
-                    .call_reducer_on_db(database_identity, reducer_name, args)
-                    .await;
+            // Reducers run inside a tokio LocalSet (single-threaded), so block_in_place
+            // is unavailable and futures::executor::block_on can't drive tokio I/O.
+            // Spawn a new OS thread and call Handle::block_on from there, which is
+            // designed to be called from synchronous (non-async) contexts.
+            let handle = tokio::runtime::Handle::current();
+            let fut = env.instance_env.call_reducer_on_db(database_identity, &reducer_name, args);
+            let result = std::thread::scope(|s| {
+                s.spawn(|| handle.block_on(fut))
+                    .join()
+                    .expect("call_reducer_on_db: worker thread panicked")
+            });
 
-                match result {
-                    Ok((status, body)) => {
-                        let bytes_source = WasmInstanceEnv::create_bytes_source(env, body)?;
-                        bytes_source.0.write_to(mem, out)?;
-                        Ok(status as u32)
-                    }
-                    Err(NodesError::HttpError(err)) => {
-                        let err_bytes = bsatn::to_vec(&err).with_context(|| {
-                            format!("Failed to BSATN-serialize call_reducer_on_db transport error: {err:?}")
-                        })?;
-                        let bytes_source = WasmInstanceEnv::create_bytes_source(env, err_bytes.into())?;
-                        bytes_source.0.write_to(mem, out)?;
-                        Ok(errno::HTTP_ERROR.get() as u32)
-                    }
-                    Err(e) => Err(WasmError::Db(e)),
+            match result {
+                Ok((status, body)) => {
+                    let bytes_source = WasmInstanceEnv::create_bytes_source(env, body)?;
+                    bytes_source.0.write_to(mem, out)?;
+                    Ok(status as u32)
                 }
-            })()
-            .await;
-
-            (
-                caller,
-                res.or_else(|err| Self::convert_wasm_result(AbiCall::CallReducerOnDb, err)),
-            )
+                Err(NodesError::HttpError(err)) => {
+                    let err_bytes = bsatn::to_vec(&err).with_context(|| {
+                        format!("Failed to BSATN-serialize call_reducer_on_db transport error: {err:?}")
+                    })?;
+                    let bytes_source = WasmInstanceEnv::create_bytes_source(env, err_bytes.into())?;
+                    bytes_source.0.write_to(mem, out)?;
+                    Ok(errno::HTTP_ERROR.get() as u32)
+                }
+                Err(e) => Err(WasmError::Db(e)),
+            }
         })
     }
 }

@@ -62,13 +62,12 @@ impl ReplicaContext {
     /// Build a warmed `reqwest::Client` from `config`.
     pub fn new_call_reducer_client(config: &CallReducerOnDbConfig) -> reqwest::Client {
         reqwest::Client::builder()
-            .http2_prior_knowledge()
             .tcp_keepalive(config.tcp_keepalive)
             .pool_idle_timeout(config.pool_idle_timeout)
             .pool_max_idle_per_host(config.pool_max_idle_per_host)
             .timeout(config.request_timeout)
             .build()
-            .expect("failed to build call_reducer_on_db HTTP/2 client")
+            .expect("failed to build call_reducer_on_db HTTP client")
     }
 }
 

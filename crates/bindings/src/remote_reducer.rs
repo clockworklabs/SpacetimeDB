@@ -40,9 +40,15 @@ pub fn call_reducer_on_db(
     let identity_bytes = database_identity.to_byte_array();
     match spacetimedb_bindings_sys::call_reducer_on_db(identity_bytes, reducer_name, args) {
         Ok((status, body_source)) => {
-            let mut buf = IterBuf::take();
-            read_bytes_source_into(body_source, &mut buf);
-            Ok((status, buf.to_vec()))
+            // INVALID signals an empty body (host optimization to avoid allocation).
+            let body = if body_source == spacetimedb_bindings_sys::raw::BytesSource::INVALID {
+                Vec::new()
+            } else {
+                let mut buf = IterBuf::take();
+                read_bytes_source_into(body_source, &mut buf);
+                buf.to_vec()
+            };
+            Ok((status, body))
         }
         Err(err_source) => {
             let message = read_bytes_source_as::<String>(err_source);

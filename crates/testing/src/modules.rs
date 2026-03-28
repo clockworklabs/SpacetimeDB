@@ -202,6 +202,8 @@ impl CompiledModule {
                 db_config: config,
                 websocket: WebSocketOptions::default(),
                 v8_heap_policy: Default::default(),
+                // Tests use internal routing; cross-DB HTTP calls aren't tested here.
+                local_api_url: "http://127.0.0.1:3000".to_owned(),
             },
             &certs,
             paths.data_dir.into(),

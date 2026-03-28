@@ -14,7 +14,9 @@ use spacetimedb::config::{CertificateAuthority, MetadataFile, V8HeapPolicyConfig
 use spacetimedb::db;
 use spacetimedb::db::persistence::LocalPersistenceProvider;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
-use spacetimedb::host::{DiskStorage, HostController, MigratePlanResult, UpdateDatabaseResult};
+use spacetimedb::host::{
+    reducer_router::LocalReducerRouter, DiskStorage, HostController, MigratePlanResult, UpdateDatabaseResult,
+};
 use spacetimedb::identity::{AuthCtx, Identity};
 use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
@@ -38,11 +40,15 @@ use std::time::Duration;
 
 pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL};
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct StandaloneOptions {
     pub db_config: db::Config,
     pub websocket: WebSocketOptions,
     pub v8_heap_policy: V8HeapPolicyConfig,
+    /// HTTP base URL of this node's API server (e.g. `"http://127.0.0.1:3000"`).
+    /// Used to configure the `LocalReducerRouter` so that cross-DB reducer calls
+    /// reach the correct address when the server listens on a dynamic port.
+    pub local_api_url: String,
 }
 
 pub struct StandaloneEnv {
@@ -76,7 +82,7 @@ impl StandaloneEnv {
         let program_store = Arc::new(DiskStorage::new(data_dir.program_bytes().0).await?);
 
         let persistence_provider = Arc::new(LocalPersistenceProvider::new(data_dir.clone()));
-        let host_controller = HostController::new(
+        let mut host_controller = HostController::new(
             data_dir,
             config.db_config,
             config.v8_heap_policy,
@@ -85,6 +91,7 @@ impl StandaloneEnv {
             persistence_provider,
             db_cores,
         );
+        host_controller.call_reducer_router = Arc::new(LocalReducerRouter::new(config.local_api_url));
         let client_actor_index = ClientActorIndex::new();
         let jwt_keys = certs.get_or_create_keys()?;
 
@@ -651,9 +658,10 @@ mod tests {
             },
             websocket: WebSocketOptions::default(),
             v8_heap_policy: V8HeapPolicyConfig::default(),
+            local_api_url: "http://127.0.0.1:3000".to_owned(),
         };
 
-        let _env = StandaloneEnv::init(config, &ca, data_dir.clone(), JobCores::without_pinned_cores()).await?;
+        let _env = StandaloneEnv::init(config.clone(), &ca, data_dir.clone(), JobCores::without_pinned_cores()).await?;
         // Ensure that we have a lock.
         assert!(
             StandaloneEnv::init(config, &ca, data_dir.clone(), JobCores::without_pinned_cores())

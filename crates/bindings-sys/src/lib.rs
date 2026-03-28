@@ -1499,10 +1499,14 @@ pub fn call_reducer_on_db(
             &mut out,
         )
     };
-    match Errno::from_code(status) {
-        None => Ok((status, out)),
-        Some(errno) if errno == Errno::HTTP_ERROR => Err(out),
-        Some(errno) => panic!("call_reducer_on_db: unexpected errno {errno}"),
+    // The raw ABI returns either the HTTP status code (100-599) or HTTP_ERROR errno
+    // on transport failure. Unlike other ABI functions, a non-zero return value here
+    // does NOT indicate a generic errno — it's the HTTP status code. Only HTTP_ERROR
+    // specifically signals a transport-level failure.
+    if status == Errno::HTTP_ERROR.code() {
+        Err(out)
+    } else {
+        Ok((status, out))
     }
 }
 

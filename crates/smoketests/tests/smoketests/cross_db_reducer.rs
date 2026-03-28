@@ -9,7 +9,7 @@ use spacetimedb_smoketests::Smoketest;
 const MODULE_CODE: &str = r#"
 use spacetimedb::{log, ReducerContext, Table, Identity};
 
-#[spacetimedb::table(name = ping_log, public)]
+#[spacetimedb::table(accessor = ping_log, public)]
 pub struct PingLog {
     #[primary_key]
     #[auto_inc]
@@ -24,13 +24,15 @@ pub fn record_ping(ctx: &ReducerContext, message: String) {
     ctx.db.ping_log().insert(PingLog { id: 0, message });
 }
 
-/// Calls `record_ping(message)` on `target` via the cross-database ABI.
+/// Calls `record_ping(message)` on `target_hex` via the cross-database ABI.
 ///
+/// `target_hex` is the hex-encoded identity of the target database.
 /// Args are BSATN-encoded as a 1-tuple `(message,)` — the same layout the host-side
 /// `invoke_reducer` expects when decoding a single-`String` reducer.
 #[spacetimedb::reducer]
-pub fn call_remote(ctx: &ReducerContext, target: Identity, message: String) {
-    let args = spacetimedb::bsatn::to_vec(&(message,)).expect("failed to encode args");
+pub fn call_remote(ctx: &ReducerContext, target_hex: String, message: String) {
+    let target = Identity::from_hex(&target_hex).expect("invalid target identity hex");
+    let args = spacetimedb::spacetimedb_lib::bsatn::to_vec(&(message,)).expect("failed to encode args");
     match spacetimedb::remote_reducer::call_reducer_on_db(target, "record_ping", &args) {
         Ok((status, _body)) => {
             log::info!("call_remote: got HTTP status {}", status);
