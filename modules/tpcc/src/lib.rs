@@ -1,4 +1,3 @@
-use remote::reset_remote_warehouses;
 use spacetimedb::{
     log_stopwatch::LogStopwatch, procedure, reducer, table, ProcedureContext, ReducerContext, ScheduleAt,
     SpacetimeType, Table, Timestamp,
@@ -13,6 +12,7 @@ macro_rules! ensure {
     };
 }
 
+mod load;
 mod new_order;
 mod payment;
 mod remote;
@@ -311,6 +311,12 @@ pub struct DeliveryCompletion {
 
 #[reducer]
 pub fn reset_tpcc(ctx: &ReducerContext) -> Result<(), String> {
+    clear_tpcc_business_tables(ctx);
+    load::clear_load_metadata(ctx);
+    Ok(())
+}
+
+pub(crate) fn clear_tpcc_business_tables(ctx: &ReducerContext) {
     for row in ctx.db.delivery_job().iter() {
         ctx.db.delivery_job().delete(row);
     }
@@ -344,8 +350,6 @@ pub fn reset_tpcc(ctx: &ReducerContext) -> Result<(), String> {
     for row in ctx.db.warehouse().iter() {
         ctx.db.warehouse().delete(row);
     }
-    reset_remote_warehouses(ctx);
-    Ok(())
 }
 
 #[reducer]

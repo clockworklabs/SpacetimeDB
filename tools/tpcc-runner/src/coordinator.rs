@@ -78,7 +78,9 @@ async fn register_driver(
             inner.registration_order.push(request.driver_id.clone());
             inner.registrations.insert(
                 request.driver_id.clone(),
-                DriverRegistration { assignment: assignment.clone() },
+                DriverRegistration {
+                    assignment: assignment.clone(),
+                },
             );
             assignment
         }

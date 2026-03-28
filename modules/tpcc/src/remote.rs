@@ -16,10 +16,18 @@ struct SpacetimeDbUri {
 
 #[reducer]
 fn set_spacetimedb_uri(ctx: &ReducerContext, uri: String) {
+    replace_spacetimedb_uri(ctx, uri);
+}
+
+pub fn replace_spacetimedb_uri(ctx: &ReducerContext, uri: String) {
+    clear_spacetimedb_uri(ctx);
+    ctx.db.spacetimedb_uri().insert(SpacetimeDbUri { uri });
+}
+
+pub fn clear_spacetimedb_uri(ctx: &ReducerContext) {
     for row in ctx.db.spacetimedb_uri().iter() {
         ctx.db.spacetimedb_uri().delete(row);
     }
-    ctx.db.spacetimedb_uri().insert(SpacetimeDbUri { uri });
 }
 
 pub fn get_spacetimedb_uri(tx: &TxContext) -> String {
@@ -38,13 +46,18 @@ pub struct RemoteWarehouse {
 
 #[reducer]
 fn load_remote_warehouses(ctx: &ReducerContext, rows: Vec<RemoteWarehouse>) -> Result<(), String> {
+    replace_remote_warehouses(ctx, rows)
+}
+
+pub fn replace_remote_warehouses(ctx: &ReducerContext, rows: Vec<RemoteWarehouse>) -> Result<(), String> {
+    clear_remote_warehouses(ctx);
     for row in rows {
         ctx.db.remote_warehouse().try_insert(row)?;
     }
     Ok(())
 }
 
-pub fn reset_remote_warehouses(ctx: &ReducerContext) {
+pub fn clear_remote_warehouses(ctx: &ReducerContext) {
     for row in ctx.db.remote_warehouse().iter() {
         ctx.db.remote_warehouse().delete(row);
     }

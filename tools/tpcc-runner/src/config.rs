@@ -19,6 +19,7 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     Load(LoadArgs),
+    LoadClient(LoadArgs),
     Driver(DriverArgs),
     Coordinator(CoordinatorArgs),
 }
@@ -264,12 +265,16 @@ impl LoadArgs {
         if load_parallelism == 0 {
             bail!("load_parallelism must be positive");
         }
+        let batch_size = self.batch_size.or(file.load.batch_size).unwrap_or(500);
+        if batch_size == 0 {
+            bail!("batch_size must be positive");
+        }
         Ok(LoadConfig {
             connection: self.connection.resolve(&file.connection),
             num_databases,
             warehouses_per_database,
             load_parallelism: load_parallelism.min(usize::from(num_databases)),
-            batch_size: self.batch_size.or(file.load.batch_size).unwrap_or(500),
+            batch_size,
             reset: self.reset.or(file.load.reset).unwrap_or(true),
         })
     }
@@ -419,5 +424,25 @@ impl DriverConfig {
 
     pub fn terminals(&self) -> u32 {
         u32::from(self.driver_warehouse_count) * u32::from(crate::tpcc::DISTRICTS_PER_WAREHOUSE)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_args_reject_zero_batch_size() {
+        let args = LoadArgs {
+            connection: ConnectionArgs::default(),
+            num_databases: Some(1),
+            warehouses_per_database: Some(1),
+            load_parallelism: Some(1),
+            batch_size: Some(0),
+            reset: Some(true),
+        };
+
+        let err = args.resolve(&FileConfig::default()).unwrap_err().to_string();
+        assert!(err.contains("batch_size must be positive"), "{err}");
     }
 }
