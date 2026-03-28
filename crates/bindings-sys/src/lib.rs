@@ -867,7 +867,7 @@ pub mod raw {
 
     #[link(wasm_import_module = "spacetime_10.5")]
     unsafe extern "C" {
-        /// Call a reducer on another SpacetimeDB database via the local reverse proxy at `localhost:80`.
+        /// Call a reducer on another SpacetimeDB database.
         ///
         /// - `identity_ptr` must point to exactly 32 bytes — the BSATN (little-endian) encoding of
         ///   the target database `Identity`.
@@ -879,7 +879,7 @@ pub mod raw {
         /// - Writes a [`BytesSource`] containing the response body bytes to `*out`.
         ///
         /// On transport failure (connection refused, timeout, etc.):
-        /// - Returns [`errno::HTTP_ERROR`] (21).
+        /// - Returns `errno::HTTP_ERROR` (21).
         /// - Writes a [`BytesSource`] containing a BSATN-encoded error [`String`] to `*out`.
         ///
         /// Unlike `procedure_http_request`, this syscall may be called while a transaction

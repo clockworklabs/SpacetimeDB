@@ -1944,7 +1944,7 @@ impl WasmInstanceEnv {
         })
     }
 
-    /// Call a reducer on another SpacetimeDB database via the local reverse proxy at `localhost:80`.
+    /// Call a reducer on another SpacetimeDB database.
     ///
     /// - `identity_ptr` must point to exactly 32 bytes — the BSATN (little-endian) encoding of the
     ///   target [`Identity`].
