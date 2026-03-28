@@ -51,6 +51,7 @@ impl ModuleClient {
         self.conn
             .reducers
             .set_spacetimedb_uri_then(uri.to_string(), move |_, res| {
+                log::debug!("Got response from `set_spacetimedb_uri`: {res:?}");
                 let _ = tx.send(res);
             })?;
         match rx.recv_timeout(self.timeout) {
@@ -64,6 +65,7 @@ impl ModuleClient {
     pub fn reset_tpcc(&self) -> Result<()> {
         let (tx, rx) = sync_channel(1);
         self.conn.reducers.reset_tpcc_then(move |_, res| {
+            log::debug!("Got response from `reset_tpcc`: {res:?}");
             let _ = tx.send(res);
         })?;
         match rx.recv_timeout(self.timeout) {
@@ -77,6 +79,7 @@ impl ModuleClient {
     pub fn load_remote_warehouses(&self, rows: Vec<RemoteWarehouse>) -> Result<()> {
         let (tx, rx) = sync_channel(1);
         self.conn.reducers.load_remote_warehouses_then(rows, move |_, res| {
+            log::debug!("Got response from `load_remote_warehouse`: {res:?}");
             let _ = tx.send(res);
         })?;
         match rx.recv_timeout(self.timeout) {
@@ -90,6 +93,7 @@ impl ModuleClient {
     pub fn load_warehouses(&self, rows: Vec<Warehouse>) -> Result<()> {
         let (tx, rx) = sync_channel(1);
         self.conn.reducers.load_warehouses_then(rows, move |_, res| {
+            log::debug!("Got response from `load_warehouses`: {res:?}");
             let _ = tx.send(res);
         })?;
         match rx.recv_timeout(self.timeout) {
@@ -103,6 +107,7 @@ impl ModuleClient {
     pub fn load_districts(&self, rows: Vec<District>) -> Result<()> {
         let (tx, rx) = sync_channel(1);
         self.conn.reducers.load_districts_then(rows, move |_, res| {
+            log::debug!("Got response from `load_districts`: {res:?}");
             let _ = tx.send(res);
         })?;
         match rx.recv_timeout(self.timeout) {
@@ -116,6 +121,7 @@ impl ModuleClient {
     pub fn load_customers(&self, rows: Vec<Customer>) -> Result<()> {
         let (tx, rx) = sync_channel(1);
         self.conn.reducers.load_customers_then(rows, move |_, res| {
+            log::debug!("Got response from `load_customers`: {res:?}");
             let _ = tx.send(res);
         })?;
         match rx.recv_timeout(self.timeout) {
@@ -129,6 +135,7 @@ impl ModuleClient {
     pub fn load_history(&self, rows: Vec<History>) -> Result<()> {
         let (tx, rx) = sync_channel(1);
         self.conn.reducers.load_history_then(rows, move |_, res| {
+            log::debug!("Got response from `load_history`: {res:?}");
             let _ = tx.send(res);
         })?;
         match rx.recv_timeout(self.timeout) {
@@ -142,6 +149,7 @@ impl ModuleClient {
     pub fn load_items(&self, rows: Vec<Item>) -> Result<()> {
         let (tx, rx) = sync_channel(1);
         self.conn.reducers.load_items_then(rows, move |_, res| {
+            log::debug!("Got response from `load_items`: {res:?}");
             let _ = tx.send(res);
         })?;
         match rx.recv_timeout(self.timeout) {
@@ -155,6 +163,7 @@ impl ModuleClient {
     pub fn load_stocks(&self, rows: Vec<Stock>) -> Result<()> {
         let (tx, rx) = sync_channel(1);
         self.conn.reducers.load_stocks_then(rows, move |_, res| {
+            log::debug!("Got response from `load_stocks`: {res:?}");
             let _ = tx.send(res);
         })?;
         match rx.recv_timeout(self.timeout) {
@@ -168,6 +177,7 @@ impl ModuleClient {
     pub fn load_orders(&self, rows: Vec<OOrder>) -> Result<()> {
         let (tx, rx) = sync_channel(1);
         self.conn.reducers.load_orders_then(rows, move |_, res| {
+            log::debug!("Got response from `load_orders`: {res:?}");
             let _ = tx.send(res);
         })?;
         match rx.recv_timeout(self.timeout) {
@@ -181,6 +191,7 @@ impl ModuleClient {
     pub fn load_new_orders(&self, rows: Vec<NewOrder>) -> Result<()> {
         let (tx, rx) = sync_channel(1);
         self.conn.reducers.load_new_orders_then(rows, move |_, res| {
+            log::debug!("Got response from `load_new_orders`: {res:?}");
             let _ = tx.send(res);
         })?;
         match rx.recv_timeout(self.timeout) {
@@ -194,6 +205,7 @@ impl ModuleClient {
     pub fn load_order_lines(&self, rows: Vec<OrderLine>) -> Result<()> {
         let (tx, rx) = sync_channel(1);
         self.conn.reducers.load_order_lines_then(rows, move |_, res| {
+            log::debug!("Got response from `load_order_lines`: {res:?}");
             let _ = tx.send(res);
         })?;
         match rx.recv_timeout(self.timeout) {
@@ -215,6 +227,7 @@ impl ModuleClient {
         self.conn
             .procedures
             .new_order_then(w_id, d_id, c_id, order_lines, move |_, res| {
+                log::debug!("Got response from `new_order`: {res:?}");
                 let _ = tx.send(res);
             });
         match rx.recv_timeout(self.timeout) {
@@ -242,6 +255,7 @@ impl ModuleClient {
             customer,
             payment_amount_cents,
             move |_, res| {
+                log::debug!("Got response from `payment`: {res:?}");
                 let _ = tx.send(res);
             },
         );
@@ -262,6 +276,7 @@ impl ModuleClient {
         self.conn
             .procedures
             .order_status_then(w_id, d_id, customer, move |_, res| {
+                log::debug!("Got response from `order_status`: {res:?}");
                 let _ = tx.send(res);
             });
         match rx.recv_timeout(self.timeout) {
@@ -276,6 +291,7 @@ impl ModuleClient {
         self.conn
             .procedures
             .stock_level_then(w_id, d_id, threshold, move |_, res| {
+                log::debug!("Got response from `stock_level`: {res:?}");
                 let _ = tx.send(res);
             });
         match rx.recv_timeout(self.timeout) {
@@ -303,6 +319,7 @@ impl ModuleClient {
             w_id,
             carrier_id,
             move |_, res| {
+                log::debug!("Got response from `queue_delivery`: {res:?}");
                 let _ = tx.send(res);
             },
         );
@@ -316,6 +333,7 @@ impl ModuleClient {
     pub fn delivery_progress(&self, run_id: String) -> Result<Result<DeliveryProgress, String>> {
         let (tx, rx) = sync_channel(1);
         self.conn.procedures.delivery_progress_then(run_id, move |_, res| {
+            log::debug!("Got response from `delivery_progress`: {res:?}");
             let _ = tx.send(res);
         });
         match rx.recv_timeout(self.timeout) {
@@ -335,6 +353,7 @@ impl ModuleClient {
         self.conn
             .procedures
             .fetch_delivery_completions_then(run_id, after_completion_id, limit, move |_, res| {
+                log::debug!("Got response from `fetch_delivery_completions`: {res:?}");
                 let _ = tx.send(res);
             });
         match rx.recv_timeout(self.timeout) {

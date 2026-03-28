@@ -430,7 +430,15 @@ pub fn order_status(
     d_id: u8,
     customer: CustomerSelector,
 ) -> Result<OrderStatusResult, String> {
-    ctx.try_with_tx(|tx| order_status_tx(tx, w_id, d_id, &customer))
+    let start_time = ctx.timestamp;
+    log::debug!("Starting `order_status` at {start_time:?}");
+    let res = ctx.try_with_tx(|tx| order_status_tx(tx, w_id, d_id, &customer));
+
+    match &res {
+        Ok(_) => log::debug!("Succesfully finished `order_status` at {start_time:?}"),
+        Err(e) => log::error!("Failed `order_status` at {start_time:?}: {e}"),
+    }
+    res
 }
 
 #[procedure]
@@ -440,7 +448,15 @@ pub fn stock_level(
     d_id: u8,
     threshold: i32,
 ) -> Result<StockLevelResult, String> {
-    ctx.try_with_tx(|tx| stock_level_tx(tx, w_id, d_id, threshold))
+    let start_time = ctx.timestamp;
+    log::debug!("Starting `stock_level` at {start_time:?}");
+    let res = ctx.try_with_tx(|tx| stock_level_tx(tx, w_id, d_id, threshold));
+
+    match &res {
+        Ok(_) => log::debug!("Succesfully finished `stock_level` at {start_time:?}"),
+        Err(e) => log::error!("Failed `stock_level` at {start_time:?}: {e}"),
+    }
+    res
 }
 
 #[procedure]
@@ -454,7 +470,8 @@ pub fn queue_delivery(
     carrier_id: u8,
 ) -> Result<DeliveryQueueAck, String> {
     let queued_at = ctx.timestamp;
-    ctx.try_with_tx(|tx| {
+    log::debug!("Starting `queue_delivery` at {queued_at:?}");
+    let res = ctx.try_with_tx(|tx| {
         ensure_warehouse_exists(tx, w_id)?;
         ensure!((1..=10).contains(&carrier_id), "carrier_id must be in the range 1..=10");
 
@@ -479,12 +496,20 @@ pub fn queue_delivery(
             warehouse_id: w_id,
             carrier_id,
         })
-    })
+    });
+
+    match &res {
+        Ok(_) => log::debug!("Succesfully finished `queue_delivery` at {queued_at:?}"),
+        Err(e) => log::error!("Failed `queue_delivery` at {queued_at:?}: {e}"),
+    }
+    res
 }
 
 #[procedure]
 pub fn delivery_progress(ctx: &mut ProcedureContext, run_id: String) -> Result<DeliveryProgress, String> {
-    ctx.try_with_tx(|tx| {
+    let start_time = ctx.timestamp;
+    log::debug!("Starting `delivery_progress` at {start_time:?}");
+    let res = ctx.try_with_tx(|tx| {
         let pending_jobs = tx.db.delivery_job().by_run_id().filter(&run_id).count() as u64;
         let completed_jobs = tx
             .db
@@ -497,7 +522,17 @@ pub fn delivery_progress(ctx: &mut ProcedureContext, run_id: String) -> Result<D
             pending_jobs,
             completed_jobs,
         })
-    })
+    });
+
+    match &res {
+        Ok(_) => {
+            log::debug!("Successfully finished `delivery_progress` at {start_time:?}");
+        }
+        Err(e) => {
+            log::error!("Failed `delivery_progress` at {start_time:?}: {e}");
+        }
+    }
+    res
 }
 
 #[procedure]
@@ -507,7 +542,9 @@ pub fn fetch_delivery_completions(
     after_completion_id: u64,
     limit: u32,
 ) -> Result<Vec<DeliveryCompletionView>, String> {
-    ctx.try_with_tx(|tx| {
+    let start_time = ctx.timestamp;
+    log::debug!("Starting `fetch_delivery_completions` at {start_time:?}");
+    let res = ctx.try_with_tx(|tx| {
         let limit = limit as usize;
         let rows = tx
             .db
@@ -518,7 +555,17 @@ pub fn fetch_delivery_completions(
             .map(as_delivery_completion_view)
             .collect();
         Ok(rows)
-    })
+    });
+
+    match &res {
+        Ok(_) => {
+            log::debug!("Successfully finished `fetch_delivery_completions` at {start_time:?}");
+        }
+        Err(e) => {
+            log::error!("Failed `fetch_delivery_completions` at {start_time:?}: {e}");
+        }
+    }
+    res
 }
 
 #[reducer]

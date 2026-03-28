@@ -50,31 +50,35 @@ pub fn new_order(
     c_id: u32,
     order_lines: Vec<NewOrderLineInput>,
 ) -> Result<NewOrderResult, String> {
-    ensure!(
-        (1..=DISTRICTS_PER_WAREHOUSE).contains(&d_id),
-        "district id out of range"
-    );
-    ensure!(
-        (5..=15).contains(&order_lines.len()),
-        "new-order requires between 5 and 15 order lines"
-    );
+    let start_time = ctx.timestamp;
+    log::debug!("Starting `new_order` transaction at {start_time:?}");
 
-    // Setup TX: validate warehouse, district, customer ID.
-    // NON-CONFORMANT: These never change in TPC-C,
-    // so we don't need to include the checks in the same transaction as the rest of the work.
-    let (warehouse, district, customer, spacetimedb_uri) = ctx.try_with_tx(|tx| {
-        let warehouse = find_warehouse(tx, w_id)?;
-        let district = find_district(tx, w_id, d_id)?;
-        let customer = find_customer_by_id(tx, w_id, d_id, c_id)?;
-        let spacetimedb_uri = get_spacetimedb_uri(tx);
-        Ok::<_, String>((warehouse, district, customer, spacetimedb_uri))
-    })?;
+    let res = (|| {
+        ensure!(
+            (1..=DISTRICTS_PER_WAREHOUSE).contains(&d_id),
+            "district id out of range"
+        );
+        ensure!(
+            (5..=15).contains(&order_lines.len()),
+            "new-order requires between 5 and 15 order lines"
+        );
 
-    let PartitionedItems {
-        local_database_items,
-        remote_database_items,
-        all_local_warehouse,
-    } =
+        // Setup TX: validate warehouse, district, customer ID.
+        // NON-CONFORMANT: These never change in TPC-C,
+        // so we don't need to include the checks in the same transaction as the rest of the work.
+        let (warehouse, district, customer, spacetimedb_uri) = ctx.try_with_tx(|tx| {
+            let warehouse = find_warehouse(tx, w_id)?;
+            let district = find_district(tx, w_id, d_id)?;
+            let customer = find_customer_by_id(tx, w_id, d_id, c_id)?;
+            let spacetimedb_uri = get_spacetimedb_uri(tx);
+            Ok::<_, String>((warehouse, district, customer, spacetimedb_uri))
+        })?;
+
+        let PartitionedItems {
+            local_database_items,
+            remote_database_items,
+            all_local_warehouse,
+        } =
         // Look up all of the items in the order, and fail if any of them doesn't exist.
         // If they all exist, sort them into two groups:
         // - `local_database_items`, items in warehouses managed by this database.
@@ -84,80 +88,91 @@ pub fn new_order(
         // which updates stock quantities for the local items and records the new order.
         // In a real system, an item might change between the two, but none of the TPC-C transactions writes to items.
         // We (ab)use this knowledge to skip compensating for writes to items.
-        partition_local_from_remote_database_items(ctx, w_id, &order_lines)?;
+            partition_local_from_remote_database_items(ctx, w_id, &order_lines)?;
 
-    // NON-CONFORMANT: We reserve items from the remote database extra-transactionally.
-    // If our TPC-C transaction fails, we'll roll back those reservations.
-    // This opens us up to dirty read isolation hazards,
-    // where a concurrent transaction may observe a change in stock quantity that later rolls back.
-    // This will never happen with only the TPC-C transactions,
-    // as stock quantity is only written by the `new_order` transaction,
-    // and `new_order` can only fail prior to updating the stock quantity, due to non-existent items.
-    // We (ab)use this knowledge to skip compensating for rollbacks to prevent dirty reads.
-    let remote_item_reservations = reserve_remote_items(ctx, &spacetimedb_uri, d_id, &remote_database_items)?;
+        // NON-CONFORMANT: We reserve items from the remote database extra-transactionally.
+        // If our TPC-C transaction fails, we'll roll back those reservations.
+        // This opens us up to dirty read isolation hazards,
+        // where a concurrent transaction may observe a change in stock quantity that later rolls back.
+        // This will never happen with only the TPC-C transactions,
+        // as stock quantity is only written by the `new_order` transaction,
+        // and `new_order` can only fail prior to updating the stock quantity, due to non-existent items.
+        // We (ab)use this knowledge to skip compensating for rollbacks to prevent dirty reads.
+        let remote_item_reservations = reserve_remote_items(ctx, &spacetimedb_uri, d_id, &remote_database_items)?;
 
-    match ctx.try_with_tx(|tx| {
-        let district = tx
-            .db
-            .district()
-            .district_key()
-            .find(district.district_key)
-            .expect("District should not have been removed since we retrieved it last");
-        let order_id = district.d_next_o_id;
-        tx.db.district().district_key().update(District {
-            d_next_o_id: order_id + 1,
-            ..district
-        });
+        match ctx.try_with_tx(|tx| {
+            let district = tx
+                .db
+                .district()
+                .district_key()
+                .find(district.district_key)
+                .expect("District should not have been removed since we retrieved it last");
+            let order_id = district.d_next_o_id;
+            tx.db.district().district_key().update(District {
+                d_next_o_id: order_id + 1,
+                ..district
+            });
 
-        let line_results = local_database_items
-            .iter()
-            .map(|local_item| claim_stock_for_local_database_item(tx, local_item, d_id))
-            .chain(remote_database_items.iter().zip(remote_item_reservations.iter()).map(
-                |(remote_item, reserved_item)| remote_item_to_processed_new_order_item(remote_item, reserved_item),
-            ))
-            .map(|processed_item| insert_order_line(tx, w_id, d_id, order_id, processed_item))
-            .collect::<Vec<_>>();
+            let line_results = local_database_items
+                .iter()
+                .map(|local_item| claim_stock_for_local_database_item(tx, local_item, d_id))
+                .chain(remote_database_items.iter().zip(remote_item_reservations.iter()).map(
+                    |(remote_item, reserved_item)| remote_item_to_processed_new_order_item(remote_item, reserved_item),
+                ))
+                .map(|processed_item| insert_order_line(tx, w_id, d_id, order_id, processed_item))
+                .collect::<Vec<_>>();
 
-        let subtotal_cents = line_results.iter().map(|line_result| line_result.amount_cents).sum();
+            let subtotal_cents = line_results.iter().map(|line_result| line_result.amount_cents).sum();
 
-        let taxed = apply_tax(
-            subtotal_cents,
-            i64::from(warehouse.w_tax_bps) + i64::from(district.d_tax_bps),
-        );
-        let total_amount_cents = apply_discount(taxed, i64::from(customer.c_discount_bps));
-
-        Ok(NewOrderResult {
-            warehouse_tax_bps: warehouse.w_tax_bps,
-            district_tax_bps: district.d_tax_bps,
-            customer_discount_bps: customer.c_discount_bps,
-            customer_last: customer.c_last.clone(),
-            customer_credit: customer.c_credit.clone(),
-            order_id,
-            entry_d: tx.timestamp,
-            total_amount_cents,
-            all_local: all_local_warehouse,
-            lines: line_results,
-        })
-    }) {
-        Ok(result) => {
-            confirm_all_remote_item_reservations(
-                ctx,
-                &spacetimedb_uri,
-                &remote_database_items,
-                remote_item_reservations,
+            let taxed = apply_tax(
+                subtotal_cents,
+                i64::from(warehouse.w_tax_bps) + i64::from(district.d_tax_bps),
             );
-            Ok(result)
+            let total_amount_cents = apply_discount(taxed, i64::from(customer.c_discount_bps));
+
+            Ok(NewOrderResult {
+                warehouse_tax_bps: warehouse.w_tax_bps,
+                district_tax_bps: district.d_tax_bps,
+                customer_discount_bps: customer.c_discount_bps,
+                customer_last: customer.c_last.clone(),
+                customer_credit: customer.c_credit.clone(),
+                order_id,
+                entry_d: tx.timestamp,
+                total_amount_cents,
+                all_local: all_local_warehouse,
+                lines: line_results,
+            })
+        }) {
+            Ok(result) => {
+                confirm_all_remote_item_reservations(
+                    ctx,
+                    &spacetimedb_uri,
+                    &remote_database_items,
+                    remote_item_reservations,
+                );
+                Ok(result)
+            }
+            Err(e) => {
+                rollback_all_remote_item_reservations(
+                    ctx,
+                    &spacetimedb_uri,
+                    &remote_database_items,
+                    remote_item_reservations,
+                );
+                Err(e)
+            }
+        }
+    })();
+
+    match &res {
+        Ok(_) => {
+            log::debug!("Successfully finished `new_order` at {start_time:?}");
         }
         Err(e) => {
-            rollback_all_remote_item_reservations(
-                ctx,
-                &spacetimedb_uri,
-                &remote_database_items,
-                remote_item_reservations,
-            );
-            Err(e)
+            log::error!("Failed `new_order` at {start_time:?}: {e}");
         }
     }
+    res
 }
 
 struct LocalDatabaseItem {

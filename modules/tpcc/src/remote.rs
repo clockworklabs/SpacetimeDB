@@ -70,9 +70,23 @@ pub fn call_remote_function(
         // TODO(auth): include a token.
         .body(bsatn::to_vec(&arguments).map_err(|e| format!("Failed to BSATN-serialize arguments: {e}"))?)
         .map_err(|e| format!("Error constructing `Request`: {e}"))?;
+    log::debug!("Sending remote request to run {function_name} on {spacetimedb_uri} / {database_ident}");
     match ctx.http.send(request) {
-        Err(e) => Err(format!("Error sending request to remote database {database_ident} at URI {spacetimedb_uri} to call {function_name}: {e}")),
-        Ok(response) if response.status() != http::status::StatusCode::OK => Err(format!("Got non-200 response code {} from request to remote database {database_ident} at URI {spacetimedb_uri} when calling {function_name}: {}", response.status(), response.into_body().into_string_lossy())),
-        Ok(response) => Ok(response.into_body()),
+        Err(e) => {
+            let msg = format!("Error sending request to remote database {database_ident} at URI {spacetimedb_uri} to call {function_name}: {e}");
+            log::error!("{}", msg);
+            Err(msg)
+        }
+        Ok(response) if response.status() != http::status::StatusCode::OK => {
+            let msg = format!("Got non-200 response code {} from request to remote database {database_ident} at URI {spacetimedb_uri} when calling {function_name}: {}", response.status(), response.into_body().into_string_lossy());
+            log::error!("{}", msg);
+            Err(msg)
+        }
+        Ok(response) => {
+            log::debug!(
+                "Got successful response from {spacetimedb_uri} / {database_ident} when running {function_name}"
+            );
+            Ok(response.into_body())
+        }
     }
 }
