@@ -3,16 +3,22 @@ use serde::{Deserialize, Serialize};
 use crate::summary::DriverSummary;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DriverAssignment {
+    pub warehouse_count: u16,
+    pub warehouses_per_database: u16,
+    pub warehouse_start: u16,
+    pub driver_warehouse_count: u16,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RegisterDriverRequest {
     pub driver_id: String,
-    pub terminal_start: u32,
-    pub terminals: u32,
-    pub warehouse_count: u16,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RegisterDriverResponse {
     pub accepted: bool,
+    pub assignment: Option<DriverAssignment>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

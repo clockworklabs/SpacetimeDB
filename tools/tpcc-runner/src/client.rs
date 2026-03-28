@@ -147,6 +147,7 @@ impl ModuleClient {
     }
 
     pub fn load_items(&self, rows: Vec<Item>) -> Result<()> {
+        let id = rows[0].i_id;
         let (tx, rx) = sync_channel(1);
         self.conn.reducers.load_items_then(rows, move |_, res| {
             log::debug!("Got response from `load_items`: {res:?}");
@@ -156,7 +157,7 @@ impl ModuleClient {
             Ok(Ok(Ok(()))) => Ok(()),
             Ok(Ok(Err(message))) => bail!("load_items failed: {}", message),
             Ok(Err(err)) => Err(anyhow!("load_items internal error: {}", err)),
-            Err(_) => bail!("timed out waiting for load_items"),
+            Err(_) => bail!("timed out waiting for load_items {}", id),
         }
     }
 

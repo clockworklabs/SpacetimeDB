@@ -16,9 +16,12 @@ Warehouses are assigned to databases in contiguous ranges:
 - database `1` owns the next `warehouses_per_database`
 - and so on
 
-`--warehouses` is the total logical warehouse count in the benchmark.
-`--warehouse-start` and `--warehouse-count` define the warehouse slice owned by
-one driver. The driver always uses exactly `10` terminals per owned warehouse.
+Without a coordinator, `--warehouses` is the total logical warehouse count in
+the benchmark, and `--warehouse-start` plus `--warehouse-count` define the
+warehouse slice owned by one driver. With a coordinator, the coordinator
+assigns each driver its warehouse slice and the database topology, so those
+warehouse flags are not needed on the driver command line. The driver always
+uses exactly `10` terminals per owned warehouse.
 
 For multi-database runs, the `uri` passed to the loader and driver is also
 stored in the module and used for cross-database HTTP calls. In normal builds,
@@ -103,6 +106,22 @@ cargo run --release -p tpcc-runner -- load \
   --reset true
 ```
 
+To load databases in parallel, add `--load-parallelism <N>`. The loader runs
+databases concurrently but still loads each individual database in the normal
+table order. If you omit the flag, it defaults to `min(num_databases, 8)`.
+
+For example, to load those two local databases in parallel:
+
+```bash
+cargo run --release -p tpcc-runner -- load \
+  --uri http://127.0.0.1:3000 \
+  --database-prefix tpcc \
+  --num-databases 2 \
+  --warehouses-per-database 1 \
+  --load-parallelism 2 \
+  --reset true
+```
+
 5. Run a single local driver against one warehouse:
 
 ```bash
@@ -151,29 +170,26 @@ running the commands below.
 Start the coordinator:
 
 ```bash
-cargo run -p tpcc-runner -- coordinator --expected-drivers 2 --warmup-secs 5 --measure-secs 30
+cargo run -p tpcc-runner -- coordinator \
+  --expected-drivers 2 \
+  --warehouses 2 \
+  --warehouses-per-database 1 \
+  --warmup-secs 5 \
+  --measure-secs 30
 ```
 
-Start each remote driver with a disjoint warehouse slice. This example assumes
-two databases with one warehouse each:
+Start each remote driver. The coordinator assigns the warehouse slices. This
+example assumes two databases with one warehouse each:
 
 ```bash
 cargo run --release -p tpcc-runner -- driver \
   --uri http://public-server-host:3000 \
   --database-prefix tpcc \
-  --warehouses 2 \
-  --warehouses-per-database 1 \
-  --warehouse-start 1 \
-  --warehouse-count 1 \
   --coordinator-url http://coordinator-host:7878
 
 cargo run --release -p tpcc-runner -- driver \
   --uri http://public-server-host:3000 \
   --database-prefix tpcc \
-  --warehouses 2 \
-  --warehouses-per-database 1 \
-  --warehouse-start 2 \
-  --warehouse-count 1 \
   --coordinator-url http://coordinator-host:7878
 ```
 
@@ -195,6 +211,7 @@ timeout_secs = 30
 [load]
 num_databases = 1
 warehouses_per_database = 1
+load_parallelism = 1
 batch_size = 500
 reset = true
 
@@ -214,6 +231,8 @@ think_time_scale = 1.0
 run_id = "tpcc-demo"
 listen = "127.0.0.1:7878"
 expected_drivers = 2
+warehouses = 2
+warehouses_per_database = 1
 warmup_secs = 5
 measure_secs = 30
 output_dir = "tpcc-results/coordinator"
