@@ -22,7 +22,7 @@ use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics::WORKER_METRICS;
-use spacetimedb_client_api::auth::{self, JwtAuthProvider, LOCALHOST};
+use spacetimedb_client_api::auth::{self, LOCALHOST};
 use spacetimedb_client_api::routes::subscribe::{HasWebSocketOptions, WebSocketOptions};
 use spacetimedb_client_api::{ControlStateReadAccess, DatabaseResetDef, Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{

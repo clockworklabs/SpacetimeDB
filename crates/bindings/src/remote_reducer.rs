@@ -22,7 +22,10 @@
 //! }
 //! ```
 
-use crate::{rt::{read_bytes_source_as, read_bytes_source_into}, IterBuf, Identity};
+use crate::{
+    rt::{read_bytes_source_as, read_bytes_source_into},
+    Identity, IterBuf,
+};
 
 /// Call a reducer on a remote database.
 ///

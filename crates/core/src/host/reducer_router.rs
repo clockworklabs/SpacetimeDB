@@ -49,7 +49,9 @@ pub struct LocalReducerRouter {
 
 impl LocalReducerRouter {
     pub fn new(base_url: impl Into<String>) -> Self {
-        Self { base_url: base_url.into() }
+        Self {
+            base_url: base_url.into(),
+        }
     }
 }
 

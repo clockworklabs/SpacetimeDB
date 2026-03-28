@@ -9,11 +9,11 @@ use crate::db::persistence::PersistenceProvider;
 use crate::db::relational_db::{self, spawn_view_cleanup_loop, DiskSizeFn, RelationalDB, Txdata};
 use crate::db::{self, spawn_tx_metrics_recorder};
 use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
+use crate::host::reducer_router::{LocalReducerRouter, ReducerCallRouter};
 use crate::host::v8::V8Runtime;
 use crate::host::ProcedureCallError;
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
-use crate::host::reducer_router::{LocalReducerRouter, ReducerCallRouter};
 use crate::replica_context::{CallReducerOnDbConfig, ReplicaContext};
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager, TransactionOffset};
@@ -682,6 +682,7 @@ fn stored_program_hash(db: &RelationalDB) -> anyhow::Result<Option<Hash>> {
     Ok(meta.map(|meta| meta.program_hash))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn make_replica_ctx(
     module_logs: Option<ModuleLogsDir>,
     database: Database,
