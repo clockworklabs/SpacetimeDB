@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 
 use crate::protocol::DriverAssignment;
 
+const DEFAULT_LOAD_BATCH_SIZE: usize = 10_000;
+
 #[derive(Debug, Parser)]
 #[command(name = "tpcc-runner")]
 pub struct Cli {
@@ -265,7 +267,10 @@ impl LoadArgs {
         if load_parallelism == 0 {
             bail!("load_parallelism must be positive");
         }
-        let batch_size = self.batch_size.or(file.load.batch_size).unwrap_or(500);
+        let batch_size = self
+            .batch_size
+            .or(file.load.batch_size)
+            .unwrap_or(DEFAULT_LOAD_BATCH_SIZE);
         if batch_size == 0 {
             bail!("batch_size must be positive");
         }
@@ -444,5 +449,20 @@ mod tests {
 
         let err = args.resolve(&FileConfig::default()).unwrap_err().to_string();
         assert!(err.contains("batch_size must be positive"), "{err}");
+    }
+
+    #[test]
+    fn load_args_default_batch_size_is_10000() {
+        let args = LoadArgs {
+            connection: ConnectionArgs::default(),
+            num_databases: Some(1),
+            warehouses_per_database: Some(1),
+            load_parallelism: Some(1),
+            batch_size: None,
+            reset: Some(true),
+        };
+
+        let config = args.resolve(&FileConfig::default()).unwrap();
+        assert_eq!(config.batch_size, DEFAULT_LOAD_BATCH_SIZE);
     }
 }

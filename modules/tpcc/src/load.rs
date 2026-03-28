@@ -1,5 +1,8 @@
 use spacetimedb::rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
-use spacetimedb::{reducer, table, Identity, ReducerContext, ScheduleAt, SpacetimeType, Table, Timestamp};
+use spacetimedb::{
+    log_stopwatch::LogStopwatch, reducer, table, Identity, ReducerContext, ScheduleAt, SpacetimeType, Table,
+    Timestamp,
+};
 
 use crate::{
     customer, district, history, item,
@@ -217,6 +220,7 @@ pub(crate) fn clear_load_metadata(ctx: &ReducerContext) {
 }
 
 fn configure_tpcc_load_internal(ctx: &ReducerContext, request: TpccLoadConfigRequest) -> Result<(), String> {
+    let _timer = LogStopwatch::new("configure_tpcc_load");
     validate_request(&request)?;
     clear_load_metadata(ctx);
 
@@ -374,6 +378,7 @@ fn run_chunk(ctx: &ReducerContext, config: &TpccLoadConfig, job: &TpccLoadJob) -
 }
 
 fn load_item_chunk(ctx: &ReducerContext, config: &TpccLoadConfig, job: &TpccLoadJob) -> Result<ChunkAdvance, String> {
+    let _timer = LogStopwatch::new("load_items");
     if job.next_item_id == 0 || job.next_item_id > ITEMS {
         return Err(format!("invalid item cursor {}", job.next_item_id));
     }
@@ -403,6 +408,7 @@ fn load_warehouse_district_chunk(
     config: &TpccLoadConfig,
     job: &TpccLoadJob,
 ) -> Result<ChunkAdvance, String> {
+    let _timer = LogStopwatch::new("load_warehouses_districts");
     let end_warehouse = warehouse_end(config.database_number, config.warehouses_per_database);
     if job.next_warehouse_id < warehouse_start(config.database_number, config.warehouses_per_database)
         || job.next_warehouse_id > end_warehouse
@@ -439,6 +445,7 @@ fn load_warehouse_district_chunk(
 }
 
 fn load_stock_chunk(ctx: &ReducerContext, config: &TpccLoadConfig, job: &TpccLoadJob) -> Result<ChunkAdvance, String> {
+    let _timer = LogStopwatch::new("load_stocks");
     let start_warehouse = warehouse_start(config.database_number, config.warehouses_per_database);
     let end_warehouse = warehouse_end(config.database_number, config.warehouses_per_database);
     if job.next_warehouse_id < start_warehouse || job.next_warehouse_id > end_warehouse {
@@ -479,6 +486,7 @@ fn load_customer_history_chunk(
     config: &TpccLoadConfig,
     job: &TpccLoadJob,
 ) -> Result<ChunkAdvance, String> {
+    let _timer = LogStopwatch::new("load_customers_history");
     let start_warehouse = warehouse_start(config.database_number, config.warehouses_per_database);
     let end_warehouse = warehouse_end(config.database_number, config.warehouses_per_database);
     if job.next_warehouse_id < start_warehouse || job.next_warehouse_id > end_warehouse {
@@ -528,6 +536,7 @@ fn load_customer_history_chunk(
 }
 
 fn load_order_chunk(ctx: &ReducerContext, config: &TpccLoadConfig, job: &TpccLoadJob) -> Result<ChunkAdvance, String> {
+    let _timer = LogStopwatch::new("load_orders");
     let start_warehouse = warehouse_start(config.database_number, config.warehouses_per_database);
     let end_warehouse = warehouse_end(config.database_number, config.warehouses_per_database);
     if job.next_warehouse_id < start_warehouse || job.next_warehouse_id > end_warehouse {
