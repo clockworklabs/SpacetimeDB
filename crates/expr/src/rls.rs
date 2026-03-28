@@ -1,6 +1,7 @@
 use std::rc::Rc;
+use std::sync::Arc;
 
-use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::identity::{AuthCtx, SqlPermission};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sql_parser::ast::BinOp;
@@ -212,6 +213,10 @@ fn resolve_views_for_expr(
     suffix: &mut usize,
     auth: &AuthCtx,
 ) -> anyhow::Result<Vec<RelExpr>> {
+    if auth.bypass_rls() {
+        return Ok([view].into());
+    }
+
     let is_return_table = |relvar: &Relvar| return_table_id.is_some_and(|id| relvar.schema.table_id == id);
 
     // Collect the table ids queried by this view.
@@ -266,7 +271,17 @@ fn resolve_views_for_expr(
                 ResolveList::new(table_id, resolving.clone()),
                 has_param,
                 suffix,
-                auth,
+                // Bypass RLS when evaluating the RLS query (but not original query) joins
+                &AuthCtx::with_permissions(
+                    auth.caller(),
+                    {
+                        let auth = auth.clone();
+                        Arc::new(move |p| match p {
+                            SqlPermission::BypassRLS => true,
+                            _ => auth.has_permission(p),
+                        })
+                    },
+                ),
             )?;
 
             // Run alpha conversion on each view definition
@@ -483,7 +498,7 @@ mod tests {
         def::ModuleDef,
         schema::{Schema, TableOrViewSchema, TableSchema},
     };
-    use spacetimedb_sql_parser::ast::BinOp;
+    use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 
     use crate::{
         check::{parse_and_type_sub, test_utils::build_module_def, SchemaView},
@@ -500,6 +515,8 @@ mod tests {
                 "users" => Some(TableId(0)),
                 "admins" => Some(TableId(1)),
                 "player" => Some(TableId(2)),
+                "secret" => Some(TableId(3)),
+                "access" => Some(TableId(4)),
                 _ => None,
             }
         }
@@ -509,6 +526,8 @@ mod tests {
                 0 => Some((TableId(0), "users")),
                 1 => Some((TableId(1), "admins")),
                 2 => Some((TableId(2), "player")),
+                3 => Some((TableId(3), "secret")),
+                4 => Some((TableId(4), "access")),
                 _ => None,
             }
             .and_then(|(table_id, name)| {
@@ -528,6 +547,8 @@ mod tests {
                     "select player.* from player join users u on player.id = u.id".into(),
                     "select player.* from player join admins".into(),
                 ]),
+                TableId(3) => Ok(vec!["select secret.* from secret join access where access.identity = :sender and access.allowed = true".into()]),
+                TableId(4) => Ok(vec!["select * from access where false".into()]),
                 _ => Ok(vec![]),
             }
         }
@@ -546,6 +567,14 @@ mod tests {
             (
                 "player",
                 ProductType::from([("id", AlgebraicType::U64), ("level_num", AlgebraicType::U64)]),
+            ),
+            (
+                "secret",
+                ProductType::from([("id", AlgebraicType::U64)]),
+            ),
+            (
+                "access",
+                ProductType::from([("identity", AlgebraicType::identity()), ("allowed", AlgebraicType::Bool)]),
             ),
         ])
     }
@@ -628,43 +657,29 @@ mod tests {
             vec![
                 ProjectName::Some(
                     RelExpr::Select(
-                        Box::new(RelExpr::Select(
-                            Box::new(RelExpr::Select(
-                                Box::new(RelExpr::LeftDeepJoin(LeftDeepJoin {
-                                    lhs: Box::new(RelExpr::RelVar(Relvar {
-                                        schema: player_schema.clone(),
-                                        alias: "player".into(),
-                                        delta: None,
-                                    })),
-                                    rhs: Relvar {
-                                        schema: users_schema.clone(),
-                                        alias: "u_2".into(),
-                                        delta: None,
-                                    },
+                        Box::new(RelExpr::EqJoin(
+                            LeftDeepJoin {
+                                lhs: Box::new(RelExpr::RelVar(Relvar {
+                                    schema: player_schema.clone(),
+                                    alias: "player".into(),
+                                    delta: None,
                                 })),
-                                Expr::BinOp(
-                                    BinOp::Eq,
-                                    Box::new(Expr::Field(FieldProject {
-                                        table: "u_2".into(),
-                                        field: 0,
-                                        ty: AlgebraicType::identity(),
-                                    })),
-                                    Box::new(Expr::Value(Identity::ONE.into(), AlgebraicType::identity())),
-                                ),
-                            )),
-                            Expr::BinOp(
-                                BinOp::Eq,
-                                Box::new(Expr::Field(FieldProject {
-                                    table: "player".into(),
-                                    field: 0,
-                                    ty: AlgebraicType::U64,
-                                })),
-                                Box::new(Expr::Field(FieldProject {
-                                    table: "u_2".into(),
-                                    field: 1,
-                                    ty: AlgebraicType::U64,
-                                })),
-                            ),
+                                rhs: Relvar {
+                                    schema: users_schema.clone(),
+                                    alias: "u_1".into(),
+                                    delta: None,
+                                },
+                            },
+                            FieldProject {
+                                table: "player".into(),
+                                field: 0,
+                                ty: AlgebraicType::U64,
+                            },
+                            FieldProject {
+                                table: "u_1".into(),
+                                field: 1,
+                                ty: AlgebraicType::U64,
+                            },
                         )),
                         Expr::BinOp(
                             BinOp::Eq,
@@ -680,29 +695,18 @@ mod tests {
                 ),
                 ProjectName::Some(
                     RelExpr::Select(
-                        Box::new(RelExpr::Select(
-                            Box::new(RelExpr::LeftDeepJoin(LeftDeepJoin {
-                                lhs: Box::new(RelExpr::RelVar(Relvar {
-                                    schema: player_schema.clone(),
-                                    alias: "player".into(),
-                                    delta: None,
-                                })),
-                                rhs: Relvar {
-                                    schema: admins_schema.clone(),
-                                    alias: "admins_4".into(),
-                                    delta: None,
-                                },
+                        Box::new(RelExpr::LeftDeepJoin(LeftDeepJoin {
+                            lhs: Box::new(RelExpr::RelVar(Relvar {
+                                schema: player_schema.clone(),
+                                alias: "player".into(),
+                                delta: None,
                             })),
-                            Expr::BinOp(
-                                BinOp::Eq,
-                                Box::new(Expr::Field(FieldProject {
-                                    table: "admins_4".into(),
-                                    field: 0,
-                                    ty: AlgebraicType::identity(),
-                                })),
-                                Box::new(Expr::Value(Identity::ONE.into(), AlgebraicType::identity())),
-                            ),
-                        )),
+                            rhs: Relvar {
+                                schema: admins_schema.clone(),
+                                alias: "admins_2".into(),
+                                delta: None,
+                            },
+                        })),
                         Expr::BinOp(
                             BinOp::Eq,
                             Box::new(Expr::Field(FieldProject {
@@ -714,6 +718,63 @@ mod tests {
                         ),
                     ),
                     "player".into(),
+                ),
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_multiple_rls_rules_for_multiple_tables() -> anyhow::Result<()> {
+        let tx = SchemaViewer(module_def());
+        let auth = AuthCtx::new(Identity::ZERO, Identity::ONE);
+        let sql = "select * from secret";
+        let resolved = resolve(sql, &tx, &auth)?;
+
+        let secret_schema = tx.schema("secret").unwrap();
+        let access_schema = tx.schema("access").unwrap();
+
+        pretty::assert_eq!(
+            resolved,
+            vec![
+                ProjectName::Some(
+                    RelExpr::Select(
+                        Box::new(RelExpr::LeftDeepJoin(LeftDeepJoin {
+                            lhs: Box::new(RelExpr::RelVar(Relvar {
+                                schema: secret_schema.clone(),
+                                alias: "secret".into(),
+                                delta: None,
+                            })),
+                            rhs: Relvar {
+                                schema: access_schema.clone(),
+                                alias: "access_1".into(),
+                                delta: None,
+                            },
+                        })),
+                        Expr::LogOp(
+                            LogOp::And,
+                            Box::new(Expr::BinOp(
+                                BinOp::Eq,
+                                Box::new(Expr::Field(FieldProject {
+                                    table: "access_1".into(),
+                                    field: 0,
+                                    ty: AlgebraicType::identity(),
+                                })),
+                                Box::new(Expr::Value(Identity::ONE.into(), AlgebraicType::identity())),
+                            )),
+                            Box::new(Expr::BinOp(
+                                BinOp::Eq,
+                                Box::new(Expr::Field(FieldProject {
+                                    table: "access_1".into(),
+                                    field: 1,
+                                    ty: AlgebraicType::Bool,
+                                })),
+                                Box::new(Expr::Value(AlgebraicValue::Bool(true), AlgebraicType::Bool)),
+                            )),
+                        ),
+                    ),
+                    "secret".into(),
                 ),
             ]
         );
