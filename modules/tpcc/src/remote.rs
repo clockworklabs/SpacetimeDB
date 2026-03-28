@@ -44,6 +44,12 @@ fn load_remote_warehouses(ctx: &ReducerContext, rows: Vec<RemoteWarehouse>) -> R
     Ok(())
 }
 
+pub fn reset_remote_warehouses(ctx: &ReducerContext) {
+    for row in ctx.db.remote_warehouse().iter() {
+        ctx.db.remote_warehouse().delete(row);
+    }
+}
+
 pub fn remote_warehouse_home(ctx: &ReducerContext, warehouse_id: WarehouseId) -> Option<Identity> {
     ctx.db
         .remote_warehouse()
