@@ -1,6 +1,5 @@
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
-import com.ionspin.kotlin.bignum.integer.BigInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith

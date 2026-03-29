@@ -34,7 +34,6 @@ kotlin {
         commonMain.dependencies {
             implementation(libs.kotlinx.collections.immutable)
             implementation(libs.kotlinx.atomicfu)
-            implementation(libs.bignum)
 
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.websockets)

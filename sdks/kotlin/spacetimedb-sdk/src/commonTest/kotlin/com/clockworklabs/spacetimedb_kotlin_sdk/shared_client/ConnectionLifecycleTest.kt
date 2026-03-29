@@ -2,7 +2,6 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.*
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
-import com.ionspin.kotlin.bignum.integer.BigInteger
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest

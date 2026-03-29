@@ -4,7 +4,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.UInt128
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.UInt256
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
-import com.ionspin.kotlin.bignum.integer.BigInteger
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.BigInteger
 import module_bindings.BigIntRow
 import module_bindings.InsertBigIntsArgs
 import kotlin.test.Test

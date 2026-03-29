@@ -7,7 +7,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Int256
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.UInt128
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.UInt256
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
-import com.ionspin.kotlin.bignum.integer.BigInteger
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.BigInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout

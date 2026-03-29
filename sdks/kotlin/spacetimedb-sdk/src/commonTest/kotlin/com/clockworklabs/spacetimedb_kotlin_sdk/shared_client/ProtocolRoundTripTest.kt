@@ -7,7 +7,6 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.TimeDuration
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Timestamp
-import com.ionspin.kotlin.bignum.integer.BigInteger
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals

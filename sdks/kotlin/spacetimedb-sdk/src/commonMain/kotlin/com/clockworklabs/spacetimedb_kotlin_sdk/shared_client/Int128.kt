@@ -2,7 +2,6 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
-import com.ionspin.kotlin.bignum.integer.BigInteger
 
 /** A signed 128-bit integer, backed by [BigInteger]. */
 @JvmInline

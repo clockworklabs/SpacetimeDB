@@ -1,8 +1,7 @@
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn
 
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.BigInteger
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.InternalSpacetimeApi
-import com.ionspin.kotlin.bignum.integer.BigInteger
-import com.ionspin.kotlin.bignum.integer.util.toTwosComplementByteArray
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -122,45 +121,24 @@ public class BsatnWriter(initialCapacity: Int = 256) {
     public fun writeU256(value: BigInteger): Unit = writeUnsignedBigIntLE(value, 32)
 
     private fun writeSignedBigIntLE(value: BigInteger, byteSize: Int) {
-        val bitSize = byteSize * 8
-        val min = -BigInteger.ONE.shl(bitSize - 1)       // -2^(n-1)
-        val max = BigInteger.ONE.shl(bitSize - 1) - BigInteger.ONE  // 2^(n-1) - 1
-        require(value in min..max) {
-            "Signed value does not fit in $byteSize bytes (range $min..$max): $value"
+        require(value.fitsInSignedBytes(byteSize)) {
+            "Signed value does not fit in $byteSize bytes: $value"
         }
-        writeBigIntLE(value, byteSize)
+        expandBuffer(byteSize)
+        value.writeLeBytes(buffer.buffer, offset, byteSize)
+        offset += byteSize
     }
 
     private fun writeUnsignedBigIntLE(value: BigInteger, byteSize: Int) {
         require(value.signum() >= 0) {
             "Unsigned value must be non-negative: $value"
         }
-        val max = BigInteger.ONE.shl(byteSize * 8) - BigInteger.ONE  // 2^n - 1
-        require(value <= max) {
-            "Unsigned value does not fit in $byteSize bytes (max $max): $value"
+        require(value.fitsInUnsignedBytes(byteSize)) {
+            "Unsigned value does not fit in $byteSize bytes: $value"
         }
-        writeBigIntLE(value, byteSize)
-    }
-
-    private fun writeBigIntLE(value: BigInteger, byteSize: Int) {
         expandBuffer(byteSize)
-        // Two's complement big-endian bytes (sign-aware, like java.math.BigInteger)
-        val beBytes = value.toTwosComplementByteArray()
-        val padByte: Byte = if (value.signum() < 0) 0xFF.toByte() else 0
-        if (beBytes.size > byteSize) {
-            val srcStart = beBytes.size - byteSize
-            val isSignExtensionOnly = (0 until srcStart).all { beBytes[it] == padByte }
-            require(isSignExtensionOnly) {
-                "BigInteger value does not fit in $byteSize bytes: $value"
-            }
-        }
-        val padded = ByteArray(byteSize) { padByte }
-        // Copy big-endian bytes right-aligned into padded, then reverse for LE
-        val srcStart = maxOf(0, beBytes.size - byteSize)
-        val dstStart = maxOf(0, byteSize - beBytes.size)
-        beBytes.copyInto(padded, dstStart, srcStart, beBytes.size)
-        padded.reverse()
-        writeRawBytes(padded)
+        value.writeLeBytes(buffer.buffer, offset, byteSize)
+        offset += byteSize
     }
 
     // ---------- Strings / Byte Arrays ----------

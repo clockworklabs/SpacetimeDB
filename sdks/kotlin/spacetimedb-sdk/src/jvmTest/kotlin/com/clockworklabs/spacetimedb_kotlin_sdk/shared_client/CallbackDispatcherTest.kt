@@ -3,7 +3,6 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ServerMessage
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
-import com.ionspin.kotlin.bignum.integer.BigInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi

@@ -7,7 +7,6 @@ kotlinx-coroutines = "1.10.2"
 kotlinxAtomicfu = "0.31.0"
 kotlinxCollectionsImmutable = "0.4.0"
 ktor = "3.4.1"
-bignum = "0.3.10"
 brotli = "0.1.2"
 
 [libraries]
@@ -18,7 +17,6 @@ ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
 ktor-client-websockets = { module = "io.ktor:ktor-client-websockets", version.ref = "ktor" }
 
-bignum = { module = "com.ionspin.kotlin:bignum", version.ref = "bignum" }
 brotli-dec = { module = "org.brotli:dec", version.ref = "brotli" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }

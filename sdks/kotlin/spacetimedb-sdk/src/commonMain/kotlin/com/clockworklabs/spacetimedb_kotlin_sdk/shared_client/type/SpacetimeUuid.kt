@@ -1,10 +1,10 @@
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type
 
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.BigInteger
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Sign
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.toEpochMicroseconds
-import com.ionspin.kotlin.bignum.integer.BigInteger
-import com.ionspin.kotlin.bignum.integer.Sign
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.getAndUpdate
 import kotlin.time.Instant

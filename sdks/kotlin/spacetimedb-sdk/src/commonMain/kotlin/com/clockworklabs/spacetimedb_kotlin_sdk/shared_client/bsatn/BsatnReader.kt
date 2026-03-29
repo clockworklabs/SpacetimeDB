@@ -1,16 +1,12 @@
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn
 
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.BigInteger
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.InternalSpacetimeApi
-import com.ionspin.kotlin.bignum.integer.BigInteger
 
 /**
  * Binary reader for BSATN decoding. All multi-byte values are little-endian.
  */
 public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private var limit: Int = data.size) {
-    internal companion object {
-        /** Convert a signed Long to an unsigned BigInteger (0..2^64-1). */
-        private fun unsignedBigInt(v: Long): BigInteger = BigInteger.fromULong(v.toULong())
-    }
 
     /** Current read position within the buffer. */
     @InternalSpacetimeApi
@@ -113,46 +109,34 @@ public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private 
 
     /** Reads a signed 128-bit integer (little-endian) as a [BigInteger]. */
     public fun readI128(): BigInteger {
-        val p0 = readI64()
-        val p1 = readI64() // signed top chunk
-
-        return BigInteger(p1).shl(64)
-            .add(unsignedBigInt(p0))
+        ensure(16)
+        val result = BigInteger.fromLeBytes(data, offset, 16)
+        offset += 16
+        return result
     }
 
     /** Reads an unsigned 128-bit integer (little-endian) as a [BigInteger]. */
     public fun readU128(): BigInteger {
-        val p0 = readI64()
-        val p1 = readI64()
-
-        return unsignedBigInt(p1).shl(64)
-            .add(unsignedBigInt(p0))
+        ensure(16)
+        val result = BigInteger.fromLeBytesUnsigned(data, offset, 16)
+        offset += 16
+        return result
     }
 
     /** Reads a signed 256-bit integer (little-endian) as a [BigInteger]. */
     public fun readI256(): BigInteger {
-        val p0 = readI64()
-        val p1 = readI64()
-        val p2 = readI64()
-        val p3 = readI64() // signed top chunk
-
-        return BigInteger(p3).shl(64 * 3)
-            .add(unsignedBigInt(p2).shl(64 * 2))
-            .add(unsignedBigInt(p1).shl(64))
-            .add(unsignedBigInt(p0))
+        ensure(32)
+        val result = BigInteger.fromLeBytes(data, offset, 32)
+        offset += 32
+        return result
     }
 
     /** Reads an unsigned 256-bit integer (little-endian) as a [BigInteger]. */
     public fun readU256(): BigInteger {
-        val p0 = readI64()
-        val p1 = readI64()
-        val p2 = readI64()
-        val p3 = readI64()
-
-        return unsignedBigInt(p3).shl(64 * 3)
-            .add(unsignedBigInt(p2).shl(64 * 2))
-            .add(unsignedBigInt(p1).shl(64))
-            .add(unsignedBigInt(p0))
+        ensure(32)
+        val result = BigInteger.fromLeBytesUnsigned(data, offset, 32)
+        offset += 32
+        return result
     }
 
     /** Reads a BSATN length-prefixed UTF-8 string. */

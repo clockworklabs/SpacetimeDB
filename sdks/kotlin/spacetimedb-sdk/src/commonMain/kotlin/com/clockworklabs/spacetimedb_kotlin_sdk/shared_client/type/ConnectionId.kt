@@ -1,11 +1,11 @@
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type
 
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.BigInteger
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.parseHexString
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.randomBigInteger
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.toHexString
-import com.ionspin.kotlin.bignum.integer.BigInteger
 
 /** A 128-bit connection identifier in SpacetimeDB. */
 public data class ConnectionId(val data: BigInteger) {
@@ -19,17 +19,7 @@ public data class ConnectionId(val data: BigInteger) {
     /**
      * Returns the 16-byte little-endian representation, matching BSATN wire format.
      */
-    public fun toByteArray(): ByteArray {
-        val beBytes = data.toByteArray()
-        require(beBytes.size <= 16) {
-            "ConnectionId value too large: ${beBytes.size} bytes exceeds U128 (16 bytes)"
-        }
-        val padded = ByteArray(16)
-        val dstStart = 16 - beBytes.size
-        beBytes.copyInto(padded, dstStart)
-        padded.reverse()
-        return padded
-    }
+    public fun toByteArray(): ByteArray = data.toLeBytesFixedWidth(16)
 
     public companion object {
         /** Decodes a [ConnectionId] from BSATN. */

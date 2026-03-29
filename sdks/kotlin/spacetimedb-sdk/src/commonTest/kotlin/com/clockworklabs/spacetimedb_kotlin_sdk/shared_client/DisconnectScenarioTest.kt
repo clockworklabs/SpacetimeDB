@@ -4,7 +4,6 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.*
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.transport.Transport
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
-import com.ionspin.kotlin.bignum.integer.BigInteger
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
