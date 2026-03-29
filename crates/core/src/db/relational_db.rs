@@ -96,24 +96,12 @@ pub struct PersistenceBarrier {
     inner: std::sync::Mutex<PersistenceBarrierInner>,
 }
 
-#[derive(Default, PartialEq, Eq, Debug, Clone, Copy)]
-enum BarrierState {
-    /// No 2PC in progress. Durability requests go through normally.
-    #[default]
-    Inactive,
-    /// A 2PC is about to commit. The NEXT durability request is the PREPARE
-    /// and should go through to the worker. After that request, the barrier
-    /// transitions to Active automatically.
-    Armed,
-    /// A 2PC PREPARE has been sent to durability. All subsequent durability
-    /// requests are buffered until the barrier is deactivated (COMMIT or ABORT).
-    Active,
-}
-
 #[derive(Default)]
 struct PersistenceBarrierInner {
-    state: BarrierState,
-    /// Buffered durability requests that arrived while the barrier was Active.
+    /// Whether the barrier is active. When active, all durability requests
+    /// are buffered instead of being sent to the worker.
+    active: bool,
+    /// Buffered durability requests that arrived while the barrier was active.
     buffered: Vec<BufferedDurabilityRequest>,
 }
 
@@ -122,54 +110,34 @@ impl PersistenceBarrier {
         Self::default()
     }
 
-    /// Arm the barrier. The next durability request will go through (it's the
-    /// PREPARE), and then the barrier transitions to Active, buffering all
-    /// subsequent requests.
+    /// Activate the barrier. All subsequent durability requests will be buffered.
     ///
-    /// This must be called BEFORE the transaction commits, while the write lock
-    /// is still held. This ensures no other transaction can send a durability
-    /// request between the PREPARE and the barrier activation.
-    pub fn arm(&self) {
+    /// Called after committing in-memory and sending PREPARE to the durability
+    /// worker. No race is possible because this runs on the same thread that
+    /// just released the write lock, before any other transaction can commit.
+    pub fn activate(&self) {
         let mut inner = self.inner.lock().unwrap();
-        assert_eq!(
-            inner.state,
-            BarrierState::Inactive,
-            "persistence barrier must be Inactive to arm, but is {:?}",
-            inner.state,
-        );
-        inner.state = BarrierState::Armed;
+        assert!(!inner.active, "persistence barrier already active");
+        inner.active = true;
         inner.buffered.clear();
     }
 
-    /// Called by `send_or_buffer_durability` for every durability request.
-    ///
-    /// Returns `Some(reducer_context)` if the request should be sent to the
-    /// durability worker (barrier is Inactive, or barrier is Armed and this is
-    /// the PREPARE). Returns `None` if the request was buffered (barrier is Active).
-    pub fn filter_durability_request(
+    /// If the barrier is active, buffer the durability request and return None.
+    /// If inactive, return the arguments back (caller should send normally).
+    pub fn try_buffer(
         &self,
         reducer_context: Option<ReducerContext>,
         tx_data: &Arc<TxData>,
     ) -> Option<Option<ReducerContext>> {
         let mut inner = self.inner.lock().unwrap();
-        match inner.state {
-            BarrierState::Inactive => {
-                // No barrier. Let it through.
-                Some(reducer_context)
-            }
-            BarrierState::Armed => {
-                // This is the PREPARE request. Let it through, then go Active.
-                inner.state = BarrierState::Active;
-                Some(reducer_context)
-            }
-            BarrierState::Active => {
-                // Buffer this request.
-                inner.buffered.push(BufferedDurabilityRequest {
-                    reducer_context,
-                    tx_data: tx_data.clone(),
-                });
-                None
-            }
+        if inner.active {
+            inner.buffered.push(BufferedDurabilityRequest {
+                reducer_context,
+                tx_data: tx_data.clone(),
+            });
+            None
+        } else {
+            Some(reducer_context)
         }
     }
 
@@ -177,7 +145,7 @@ impl PersistenceBarrier {
     /// Called on COMMIT (to flush them) or ABORT (to discard them).
     pub fn deactivate(&self) -> Vec<BufferedDurabilityRequest> {
         let mut inner = self.inner.lock().unwrap();
-        inner.state = BarrierState::Inactive;
+        inner.active = false;
         std::mem::take(&mut inner.buffered)
     }
 }
@@ -952,32 +920,26 @@ impl RelationalDB {
 
     /// Send a durability request, or buffer it if the persistence barrier is active.
     fn send_or_buffer_durability(&self, reducer_context: Option<ReducerContext>, tx_data: &Arc<TxData>) {
-        match self.persistence_barrier.filter_durability_request(reducer_context, tx_data) {
+        match self.persistence_barrier.try_buffer(reducer_context, tx_data) {
+            None => {
+                // Buffered behind the persistence barrier.
+            }
             Some(reducer_context) => {
-                // Either barrier is Inactive (normal path) or Armed (this is the PREPARE).
-                // Send to durability worker.
+                // Barrier not active. Send to durability worker.
                 if let Some(durability) = &self.durability {
                     durability.request_durability(reducer_context, tx_data);
                 }
             }
-            None => {
-                // Buffered behind the persistence barrier (Active state).
-            }
         }
     }
 
-    /// Arm the persistence barrier for a 2PC PREPARE.
+    /// Activate the persistence barrier for a 2PC PREPARE.
     ///
-    /// Call this BEFORE committing the transaction (while the write lock is
-    /// still held). The next durability request (the PREPARE) will go through
-    /// to the worker normally. After that, all subsequent durability requests
-    /// are buffered until `finalize_prepare_commit()` or `finalize_prepare_abort()`.
-    ///
-    /// This ensures no speculative transaction can reach the durability worker
-    /// between the PREPARE and the COMMIT/ABORT decision, even though the
-    /// write lock is released by `commit_tx_downgrade`.
-    pub fn arm_persistence_barrier(&self) {
-        self.persistence_barrier.arm();
+    /// Call this AFTER committing in-memory and sending PREPARE to the
+    /// durability worker. All subsequent durability requests will be buffered
+    /// until `finalize_prepare_commit()` or `finalize_prepare_abort()`.
+    pub fn activate_persistence_barrier(&self) {
+        self.persistence_barrier.activate();
     }
 
     /// Finalize a 2PC transaction as COMMIT.

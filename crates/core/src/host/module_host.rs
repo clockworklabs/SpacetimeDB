@@ -1787,9 +1787,7 @@ impl ModuleHost {
             // been sent to the durability worker (via the normal commit path).
             // The barrier prevents any subsequent transactions from being persisted
             // until we finalize with COMMIT or ABORT.
-            //
-            // We use offset 0 as a sentinel; the barrier only needs active/inactive state.
-            self.relational_db().persistence_barrier().activate(0);
+            self.relational_db().activate_persistence_barrier();
 
             let info = super::prepared_tx::PreparedTxInfo {
                 tx_offset: 0, // TODO: thread TxOffset from commit path

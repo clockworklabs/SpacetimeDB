@@ -153,17 +153,19 @@ On replay, when encountering a PREPARE:
 
 ## Persistence barrier
 
-The barrier in `relational_db.rs` has three states: `Inactive`, `Armed`, `Active`.
+The barrier in `relational_db.rs` has two states: `Inactive` and `Active`.
 
 - **Inactive**: normal operation, durability requests go through.
-- **Armed**: set BEFORE committing the transaction (while write lock is held). The NEXT durability request (the PREPARE) goes through to the worker and transitions the barrier to Active.
-- **Active**: all subsequent durability requests are buffered.
+- **Active**: all durability requests are buffered.
 
-This ensures no race between the write lock release and the barrier activation. Since the barrier is Armed while the write lock is held, no other transaction can commit and send a durability request before the barrier transitions to Active.
+No race is possible because the barrier is activated on the same thread that holds the write lock. The sequence on both coordinator and participant is:
 
-Used by both coordinator and participant:
-- Arm before committing the 2PC transaction
-- The commit's durability request (the PREPARE) transitions Armed -> Active
+1. Commit in-memory (releases write lock)
+2. Send PREPARE to durability worker (direct call, bypasses barrier)
+3. Activate barrier
+
+Steps 1-3 happen sequentially on one thread. No other transaction can commit between 1 and 3 because steps 2 and 3 are immediate (no async, no lock release between them). By the time another transaction acquires the write lock and commits, the barrier is already active and its durability request is buffered.
+
 - On COMMIT: deactivate, flush buffered requests
 - On ABORT: deactivate, discard buffered requests
 

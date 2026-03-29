@@ -993,7 +993,7 @@ impl InstanceCommon {
                 // (via commit_and_broadcast_event -> commit_tx_downgrade -> send_or_buffer_durability).
                 // No subsequent transactions should be persisted until we confirm all
                 // participants are prepared and we decide COMMIT.
-                stdb.persistence_barrier().activate(0);
+                stdb.activate_persistence_barrier();
             }
 
             let replica_ctx = inst.replica_ctx().clone();
