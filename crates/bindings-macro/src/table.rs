@@ -243,10 +243,6 @@ impl IndexArg {
                     check_duplicate(&accessor, &meta)?;
                     accessor = Some(meta.value()?.parse()?);
                 }
-                sym::name => {
-                    check_duplicate(&canonical_name, &meta)?;
-                    canonical_name = Some(meta.value()?.parse()?);
-                }
 
                 sym::btree => {
                     check_duplicate_msg(&algo, &meta, "index algorithm specified twice")?;
@@ -263,18 +259,15 @@ impl IndexArg {
                 sym::name => {
                     // If the user is trying to specify a `name`, do a bit of guessing at what their goal is.
                     // This is going to be best-effort, and we're not going to try to do lookahead or anything.
+                    let val = meta.value()?;
 
-                    return Err(if accessor.is_some() {
-                        // If the user's already specified an `accessor`,
-                        // then probably they're trying to specify the canonical name,
-                        // like you can for tables.
-                        // Print an error that says this is unsupported.
-                        meta.error(
-                            "Unexpected argument `name` in index definition.
-
-Overwriting the `name` of an index is currently unsupported.",
-                        )
-                    } else if let Ok(sym) = meta.value().and_then(|val| val.parse::<Ident>()) {
+                    if let Ok(name) = val.parse::<LitStr>() {
+                        // User provided a string literal - use it as custom index name
+                        check_duplicate(&canonical_name, &meta)?;
+                        canonical_name = Some(name);
+                    } else if accessor.is_none()
+                        && let Ok(sym) = val.parse::<Ident>()
+                    {
                         // If we haven't seen an `accessor` yet, and the value is an ident,
                         // then probably this is 1.* syntax that needs a migration.
                         // Note that, if the user specifies `name = {ident}` followed by `accessor = {ident}`,
@@ -282,21 +275,17 @@ Overwriting the `name` of an index is currently unsupported.",
                         // I (pgoldman 2026-02-18) don't see a good way to distinguish this case
                         // without making our parsing dramatically more complicated,
                         // and it seems unlikely to occur.
-                        meta.error(format_args!(
+                        return Err(meta.error(format_args!(
                             "Expected an `accessor` in index definition, but got a `name` instead.
 
-If you're migrating from SpacetimeDB 1.*, replace `name = {sym}` with `accessor = {sym}`."
-                        ))
+If you're migrating from SpacetimeDB 1.*, replace `name = {sym}` with `accessor = {sym}`.
+If you want to specify custom index name use string literal, replace `name = {sym}` with `name = \"{sym}\"`"
+                        )));
                     } else {
-                        // If we haven't seen an `accessor` yet, but the value is not an ident,
-                        // then we're not really sure what's going wrong, so print a more generic error message.
-                        meta.error(format_args!(
-                            "Unexpected argument `name` in index definition.
-
-Overwriting the `name` of an index is currently unsupported.
-Did you mean to specify an `accessor` instead? Do so with `accessor = my_index`, where `my_index` is an unquoted identifier."
-                        ))
-                    });
+                        return Err(meta.error(format_args!(
+                            "Use a string literal for a custom index name: `name = \"{val}\"`.",
+                        )));
+                    }
                 }
             });
             Ok(())
@@ -369,6 +358,7 @@ Did you mean to specify an `accessor` instead? Do so with `accessor = my_index`,
     /// Parses an inline `#[index(btree)]`, `#[index(hash)]`, or `#[index(direct)]` attribute on a field.
     fn parse_index_attr(field: &Ident, attr: &syn::Attribute) -> syn::Result<Self> {
         let mut kind = None;
+        let mut name = None;
         attr.parse_nested_meta(|meta| {
             match_meta!(match meta {
                 sym::btree => {
@@ -387,6 +377,10 @@ Did you mean to specify an `accessor` instead? Do so with `accessor = my_index`,
                     check_duplicate_msg(&kind, &meta, "index type specified twice")?;
                     kind = Some(IndexType::Direct { column: field.clone() })
                 }
+                sym::name => {
+                    check_duplicate(&name, &meta)?;
+                    name = Some(meta.value()?.parse()?);
+                }
             });
             Ok(())
         })?;
@@ -395,7 +389,7 @@ Did you mean to specify an `accessor` instead? Do so with `accessor = my_index`,
 
         // Default accessor = field name if not provided
         let accessor = field.clone();
-        Ok(IndexArg::new(accessor, kind, None))
+        Ok(IndexArg::new(accessor, kind, name))
     }
 
     fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'a>> {
@@ -436,7 +430,10 @@ Did you mean to specify an `accessor` instead? Do so with `accessor = my_index`,
             is_unique: self.is_unique,
             // This must be the canonical name (name used internally in database),
             // as it is used in `index_id_from_name` abi.
-            index_name: gen_index_name(),
+            index_name: match self.canonical_name.as_ref() {
+                Some(s) => s.value(),
+                None => gen_index_name(),
+            },
             accessor_name: &self.accessor,
             kind,
             canonical_name: self.canonical_name.as_ref().map(|s| s.value()),
