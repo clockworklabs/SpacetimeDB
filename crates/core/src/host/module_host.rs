@@ -1745,17 +1745,12 @@ impl ModuleHost {
         res
     }
 
-    /// Execute a reducer in 2PC prepare mode.
+    /// Execute a reducer as a 2PC PREPARE on behalf of a remote coordinator.
     ///
-    /// Execute a reducer as a 2PC PREPARE.
-    ///
-    /// 1. Executes the reducer and commits in-memory (releasing the write lock).
-    /// 2. Sends the PREPARE to the durability worker.
-    /// 3. Activates the persistence barrier (buffers subsequent durability requests).
-    /// 4. Waits for the PREPARE to become durable.
-    /// 5. Returns the prepare_id, result, and return value.
-    ///
-    /// The caller should then send PREPARED to the coordinator.
+    /// Holds the write lock (exclusive tx) open until a COMMIT or ABORT is received.
+    /// The `st_2pc_state` marker is committed atomically with the reducer's data changes at
+    /// actual COMMIT time.  This means no other transaction can interleave between PREPARE
+    /// and COMMIT/ABORT, and there is no separate persistence barrier needed.
     pub async fn prepare_reducer(
         &self,
         caller_identity: Identity,
@@ -1763,79 +1758,118 @@ impl ModuleHost {
         reducer_name: &str,
         args: FunctionArgs,
     ) -> Result<(String, ReducerCallResult, Option<Bytes>), ReducerCallError> {
-        // Call the reducer using the 2PC prepare commit path.
-        // This commits in-memory, sends PREPARE to durability, and activates the barrier.
-        let (result, return_value) = self
-            .call_reducer_with_return(
-                caller_identity,
-                caller_connection_id,
-                None,  // no websocket client
-                None,  // no request_id
-                None,  // no timer
-                reducer_name,
-                args,
-            )
-            .await?;
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static PREPARE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
-        // Only store prepared tx info and activate barrier if the reducer succeeded.
-        if matches!(result.outcome, ReducerOutcome::Committed) {
-            use std::sync::atomic::{AtomicU64, Ordering};
-            static PREPARE_COUNTER: AtomicU64 = AtomicU64::new(1);
-            let prepare_id = format!("prepare-{}", PREPARE_COUNTER.fetch_add(1, Ordering::Relaxed));
+        let (reducer_id, reducer_def) = self
+            .info
+            .module_def
+            .reducer_full(reducer_name)
+            .ok_or(ReducerCallError::NoSuchReducer)?;
+        if let Some(lifecycle) = reducer_def.lifecycle {
+            return Err(ReducerCallError::LifecycleReducer(lifecycle));
+        }
+        if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+            return Err(ReducerCallError::NoSuchReducer);
+        }
 
-            // Activate the persistence barrier. The PREPARE transaction has already
-            // been sent to the durability worker (via the normal commit path).
-            // The barrier prevents any subsequent transactions from being persisted
-            // until we finalize with COMMIT or ABORT.
-            self.relational_db().activate_persistence_barrier();
+        let args = args
+            .into_tuple_for_def(&self.info.module_def, reducer_def)
+            .map_err(InvalidReducerArguments)?;
+        let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
+        let params = CallReducerParams {
+            timestamp: Timestamp::now(),
+            caller_identity,
+            caller_connection_id,
+            client: None,
+            request_id: None,
+            timer: None,
+            reducer_id,
+            args,
+        };
 
-            let info = super::prepared_tx::PreparedTxInfo {
-                tx_offset: 0, // TODO: thread TxOffset from commit path
-                tx_data: std::sync::Arc::new(spacetimedb_datastore::traits::TxData::default()),
-                reducer_context: None,
-            };
-            self.prepared_txs.insert(prepare_id.clone(), info);
+        let prepare_id = format!("prepare-{}", PREPARE_COUNTER.fetch_add(1, Ordering::Relaxed));
 
-            // Wait for the PREPARE to become durable before returning.
-            // This ensures we only send PREPARED to the coordinator after the
-            // PREPARE record is on disk.
-            if let Some(mut durable_offset) = self.relational_db().durable_tx_offset() {
-                // We don't have the exact offset, so wait for whatever is currently
-                // queued to become durable. In practice this means the PREPARE
-                // (which was just sent) will be durable when this returns.
-                let current = durable_offset.last_seen().unwrap_or(0);
-                // Wait for at least one more offset to become durable.
-                let _ = durable_offset.wait_for(current + 1).await;
+        // Channel for signalling PREPARED result back to this task.
+        let (prepared_tx, prepared_rx) =
+            tokio::sync::oneshot::channel::<(ReducerCallResult, Option<Bytes>)>();
+        // Channel for sending the COMMIT/ABORT decision to the executor thread.
+        let (decision_tx, decision_rx) = std::sync::mpsc::channel::<bool>();
+
+        self.prepared_txs.insert(
+            prepare_id.clone(),
+            super::prepared_tx::PreparedTxInfo {
+                decision_sender: decision_tx,
+            },
+        );
+
+        // Spawn a background task that runs the reducer and holds the write lock
+        // until we send a decision.  The executor thread blocks inside
+        // `call_reducer_prepare_and_hold` on `decision_rx.recv()`.
+        let this = self.clone();
+        let reducer_name_owned = reducer_def.name.clone();
+        let prepare_id_clone = prepare_id.clone();
+        tokio::spawn(async move {
+            let _ = this
+                .call(
+                    &reducer_name_owned,
+                    (params, prepare_id_clone, prepared_tx, decision_rx),
+                    async |(p, pid, ptx, drx), inst| {
+                        inst.call_reducer_prepare_and_hold(p, pid, ptx, drx);
+                        Ok::<(), ReducerCallError>(())
+                    },
+                    // JS modules: no 2PC support yet.
+                    async |(p, _pid, ptx, _drx), inst| {
+                        let (res, rv) = inst.call_reducer(p).await.map(|r| (r, None)).unwrap_or_else(|e| {
+                            log::error!("prepare_reducer JS fallback: {e}");
+                            (
+                                ReducerCallResult {
+                                    outcome: ReducerOutcome::Failed(Box::new(Box::from("reducer error"))),
+                                    energy_used: EnergyQuanta::ZERO,
+                                    execution_duration: Default::default(),
+                                },
+                                None,
+                            )
+                        });
+                        let _ = ptx.send((res, rv));
+                        Ok(())
+                    },
+                )
+                .await;
+        });
+
+        // Wait for the PREPARED result (or failure) from `call_reducer_prepare_and_hold`.
+        match prepared_rx.await {
+            Ok((result, return_value)) => {
+                if matches!(result.outcome, ReducerOutcome::Committed) {
+                    Ok((prepare_id, result, return_value))
+                } else {
+                    // Reducer failed — remove the entry we registered (no hold in progress).
+                    self.prepared_txs.remove(&prepare_id);
+                    Ok((String::new(), result, return_value))
+                }
             }
-
-            Ok((prepare_id, result, return_value))
-        } else {
-            // Reducer failed -- no prepare_id since nothing to commit/abort.
-            Ok((String::new(), result, return_value))
+            Err(_) => Err(ReducerCallError::NoSuchModule(NoSuchModule)),
         }
     }
 
     /// Finalize a prepared transaction as COMMIT.
-    ///
-    /// Deactivates the persistence barrier and flushes all buffered durability
-    /// requests to the durability worker.
     pub fn commit_prepared(&self, prepare_id: &str) -> Result<(), String> {
-        let _info = self.prepared_txs
+        let info = self.prepared_txs
             .remove(prepare_id)
             .ok_or_else(|| format!("no such prepared transaction: {prepare_id}"))?;
-        self.relational_db().finalize_prepare_commit();
+        // Unblock the executor thread to commit.
+        let _ = info.decision_sender.send(true);
         Ok(())
     }
 
     /// Abort a prepared transaction.
-    ///
-    /// Deactivates the persistence barrier, discards all buffered durability
-    /// requests, and inverts the PREPARE's in-memory changes.
     pub fn abort_prepared(&self, prepare_id: &str) -> Result<(), String> {
         let info = self.prepared_txs
             .remove(prepare_id)
             .ok_or_else(|| format!("no such prepared transaction: {prepare_id}"))?;
-        self.relational_db().finalize_prepare_abort(&info.tx_data);
+        // Unblock the executor thread to abort.
+        let _ = info.decision_sender.send(false);
         Ok(())
     }
 

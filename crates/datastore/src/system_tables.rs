@@ -88,6 +88,9 @@ pub const ST_TABLE_ACCESSOR_ID: TableId = TableId(18);
 pub const ST_INDEX_ACCESSOR_ID: TableId = TableId(19);
 /// The static ID of the table that maps canonical column names to accessor names
 pub const ST_COLUMN_ACCESSOR_ID: TableId = TableId(20);
+/// The static ID of the 2PC participant state table
+pub const ST_2PC_STATE_ID: TableId = TableId(21);
+pub(crate) const ST_2PC_STATE_NAME: &str = "st_2pc_state";
 
 pub(crate) const ST_CONNECTION_CREDENTIALS_NAME: &str = "st_connection_credentials";
 pub const ST_TABLE_NAME: &str = "st_table";
@@ -205,7 +208,7 @@ pub enum SystemTable {
     st_table_accessor,
 }
 
-pub fn system_tables() -> [TableSchema; 20] {
+pub fn system_tables() -> [TableSchema; 21] {
     [
         // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
         st_table_schema(),
@@ -228,6 +231,7 @@ pub fn system_tables() -> [TableSchema; 20] {
         st_table_accessor_schema(),
         st_index_accessor_schema(),
         st_column_accessor_schema(),
+        st_2pc_state_schema(),
     ]
 }
 
@@ -450,6 +454,11 @@ st_fields_enum!(enum StColumnAccessorFields {
     "accessor_name", AccessorName = 2,
 });
 
+// WARNING: For a stable schema, don't change the field names and discriminants.
+st_fields_enum!(enum St2pcStateFields {
+    "prepare_id", PrepareId = 0,
+});
+
 /// Helper method to check that a system table has the correct fields.
 /// Does not check field types since those aren't included in `StFields` types.
 /// If anything in here is not true, the system is completely broken, so it's fine to assert.
@@ -668,6 +677,14 @@ fn system_module_def() -> ModuleDef {
         .with_unique_constraint(st_column_accessor_table_alias_cols)
         .with_index_no_accessor_name(btree(st_column_accessor_table_alias_cols));
 
+    let st_2pc_state_type = builder.add_type::<St2pcStateRow>();
+    builder
+        .build_table(ST_2PC_STATE_NAME, *st_2pc_state_type.as_ref().expect("should be ref"))
+        .with_type(TableType::System)
+        .with_unique_constraint(St2pcStateFields::PrepareId)
+        .with_index_no_accessor_name(btree(St2pcStateFields::PrepareId))
+        .with_access(v9::TableAccess::Private);
+
     let result = builder
         .finish()
         .try_into()
@@ -693,6 +710,7 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StTableAccessorFields>(&result, ST_TABLE_ACCESSOR_NAME);
     validate_system_table::<StIndexAccessorFields>(&result, ST_INDEX_ACCESSOR_NAME);
     validate_system_table::<StColumnAccessorFields>(&result, ST_COLUMN_ACCESSOR_NAME);
+    validate_system_table::<St2pcStateFields>(&result, ST_2PC_STATE_NAME);
 
     result
 }
@@ -892,6 +910,10 @@ fn st_client_schema() -> TableSchema {
     st_schema(ST_CLIENT_NAME, ST_CLIENT_ID)
 }
 
+fn st_2pc_state_schema() -> TableSchema {
+    st_schema(ST_2PC_STATE_NAME, ST_2PC_STATE_ID)
+}
+
 fn st_connection_credential_schema() -> TableSchema {
     st_schema(ST_CONNECTION_CREDENTIALS_NAME, ST_CONNECTION_CREDENTIALS_ID)
 }
@@ -968,6 +990,7 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_TABLE_ACCESSOR_ID => Some(st_table_accessor_schema()),
         ST_INDEX_ACCESSOR_ID => Some(st_index_accessor_schema()),
         ST_COLUMN_ACCESSOR_ID => Some(st_column_accessor_schema()),
+        ST_2PC_STATE_ID => Some(st_2pc_state_schema()),
         _ => None,
     }
 }
@@ -1855,6 +1878,35 @@ impl TryFrom<RowRef<'_>> for StColumnAccessorRow {
 
 impl From<StColumnAccessorRow> for ProductValue {
     fn from(x: StColumnAccessorRow) -> Self {
+        to_product_value(&x)
+    }
+}
+
+/// System table [ST_2PC_STATE_NAME]
+///
+/// Tracks in-flight 2PC participant transactions.
+/// A row is inserted when B enters PREPARE state and deleted on COMMIT or ABORT.
+/// On recovery, any row here indicates a pending prepared transaction that must
+/// be resumed (retransmit PREPARED to the coordinator and await the decision).
+///
+/// | prepare_id  |
+/// |-------------|
+/// | "prepare-1" |
+#[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct St2pcStateRow {
+    pub prepare_id: String,
+}
+
+impl TryFrom<RowRef<'_>> for St2pcStateRow {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
+        read_via_bsatn(row)
+    }
+}
+
+impl From<St2pcStateRow> for ProductValue {
+    fn from(x: St2pcStateRow) -> Self {
         to_product_value(&x)
     }
 }

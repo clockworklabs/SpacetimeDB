@@ -1,19 +1,10 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use spacetimedb_datastore::execution_context::ReducerContext;
-use spacetimedb_datastore::traits::TxData;
-use spacetimedb_durability::TxOffset;
-
-/// Information about a transaction that has been prepared (committed in-memory,
-/// PREPARE sent to durability) but not yet finalized (COMMIT or ABORT).
+/// Information about a prepared (but not yet committed or aborted) 2PC transaction.
+/// Sending `true` commits; sending `false` aborts.
 pub struct PreparedTxInfo {
-    /// The offset of the PREPARE record in the commitlog.
-    pub tx_offset: TxOffset,
-    /// The transaction data (row changes) for potential abort inversion.
-    pub tx_data: Arc<TxData>,
-    /// The reducer context for the prepared transaction.
-    pub reducer_context: Option<ReducerContext>,
+    pub decision_sender: std::sync::mpsc::Sender<bool>,
 }
 
 /// Thread-safe registry of prepared transactions, keyed by prepare_id.

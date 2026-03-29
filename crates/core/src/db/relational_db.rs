@@ -12,7 +12,7 @@ use spacetimedb_commitlog::{self as commitlog, Commitlog, SizeOnDisk};
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
-use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
+use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, StateView,
@@ -76,79 +76,6 @@ type RowCountFn = Arc<dyn Fn(TableId, &str) -> i64 + Send + Sync>;
 /// The type of transactions committed by [RelationalDB].
 pub type Txdata = commitlog::payload::Txdata<ProductValue>;
 
-/// A buffered durability request, held behind the persistence barrier.
-pub struct BufferedDurabilityRequest {
-    pub reducer_context: Option<ReducerContext>,
-    pub tx_data: Arc<TxData>,
-}
-
-/// The persistence barrier prevents durability requests from being sent to the
-/// durability worker while a 2PC PREPARE is pending.
-///
-/// When active:
-/// - The PREPARE's own durability request has already been sent to the worker.
-/// - All subsequent durability requests are buffered here.
-/// - Once the PREPARE is confirmed durable and a COMMIT/ABORT decision is made:
-///   - COMMIT: buffered requests are flushed to the worker.
-///   - ABORT: buffered requests are discarded.
-#[derive(Default)]
-pub struct PersistenceBarrier {
-    inner: std::sync::Mutex<PersistenceBarrierInner>,
-}
-
-#[derive(Default)]
-struct PersistenceBarrierInner {
-    /// Whether the barrier is active. When active, all durability requests
-    /// are buffered instead of being sent to the worker.
-    active: bool,
-    /// Buffered durability requests that arrived while the barrier was active.
-    buffered: Vec<BufferedDurabilityRequest>,
-}
-
-impl PersistenceBarrier {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Activate the barrier. All subsequent durability requests will be buffered.
-    ///
-    /// Called after committing in-memory and sending PREPARE to the durability
-    /// worker. No race is possible because this runs on the same thread that
-    /// just released the write lock, before any other transaction can commit.
-    pub fn activate(&self) {
-        let mut inner = self.inner.lock().unwrap();
-        assert!(!inner.active, "persistence barrier already active");
-        inner.active = true;
-        inner.buffered.clear();
-    }
-
-    /// If the barrier is active, buffer the durability request and return None.
-    /// If inactive, return the arguments back (caller should send normally).
-    pub fn try_buffer(
-        &self,
-        reducer_context: Option<ReducerContext>,
-        tx_data: &Arc<TxData>,
-    ) -> Option<Option<ReducerContext>> {
-        let mut inner = self.inner.lock().unwrap();
-        if inner.active {
-            inner.buffered.push(BufferedDurabilityRequest {
-                reducer_context,
-                tx_data: tx_data.clone(),
-            });
-            None
-        } else {
-            Some(reducer_context)
-        }
-    }
-
-    /// Deactivate the barrier and return the buffered requests.
-    /// Called on COMMIT (to flush them) or ABORT (to discard them).
-    pub fn deactivate(&self) -> Vec<BufferedDurabilityRequest> {
-        let mut inner = self.inner.lock().unwrap();
-        inner.active = false;
-        std::mem::take(&mut inner.buffered)
-    }
-}
 
 /// We've added a module version field to the system tables, but we don't yet
 /// have the infrastructure to support multiple versions.
@@ -185,10 +112,6 @@ pub struct RelationalDB {
 
     /// An async queue for recording transaction metrics off the main thread
     metrics_recorder_queue: Option<MetricsRecorderQueue>,
-
-    /// 2PC persistence barrier. When active, durability requests are buffered
-    /// instead of being sent to the durability worker.
-    persistence_barrier: PersistenceBarrier,
 }
 
 /// Perform a snapshot every `SNAPSHOT_FREQUENCY` transactions.
@@ -253,7 +176,6 @@ impl RelationalDB {
 
             workload_type_to_exec_counters,
             metrics_recorder_queue,
-            persistence_barrier: PersistenceBarrier::new(),
         }
     }
 
@@ -530,6 +452,17 @@ impl RelationalDB {
     /// Note that a `Some` result may yield an empty slice.
     pub fn program(&self) -> Result<Option<Program>, DBError> {
         Ok(self.with_read_only(Workload::Internal, |tx| self.inner.program(tx))?)
+    }
+
+    /// Read any 2PC participant transactions that were in PREPARE state when the database
+    /// last shut down (or crashed). Each returned string is a `prepare_id`.
+    ///
+    /// If non-empty, the caller must resume these transactions: retransmit PREPARED to
+    /// the coordinator and await a COMMIT or ABORT decision before allowing normal operation.
+    pub fn pending_2pc_prepares(&self) -> Result<Vec<String>, DBError> {
+        self.with_auto_commit(Workload::Internal, |tx| {
+            tx.scan_st_2pc_state().map_err(DBError::from)
+        })
     }
 
     /// Read the set of clients currently connected to the database.
@@ -899,7 +832,9 @@ impl RelationalDB {
         self.maybe_do_snapshot(&tx_data);
 
         let tx_data = Arc::new(tx_data);
-        self.send_or_buffer_durability(reducer_context, &tx_data);
+        if let Some(durability) = &self.durability {
+            durability.request_durability(reducer_context, &tx_data);
+        }
 
         Ok(Some((tx_offset, tx_data, tx_metrics, reducer)))
     }
@@ -913,64 +848,11 @@ impl RelationalDB {
         self.maybe_do_snapshot(&tx_data);
 
         let tx_data = Arc::new(tx_data);
-        self.send_or_buffer_durability(tx.ctx.reducer_context().cloned(), &tx_data);
+        if let Some(durability) = &self.durability {
+            durability.request_durability(tx.ctx.reducer_context().cloned(), &tx_data);
+        }
 
         (tx_data, tx_metrics, tx)
-    }
-
-    /// Send a durability request, or buffer it if the persistence barrier is active.
-    fn send_or_buffer_durability(&self, reducer_context: Option<ReducerContext>, tx_data: &Arc<TxData>) {
-        match self.persistence_barrier.try_buffer(reducer_context, tx_data) {
-            None => {
-                // Buffered behind the persistence barrier.
-            }
-            Some(reducer_context) => {
-                // Barrier not active. Send to durability worker.
-                if let Some(durability) = &self.durability {
-                    durability.request_durability(reducer_context, tx_data);
-                }
-            }
-        }
-    }
-
-    /// Activate the persistence barrier for a 2PC PREPARE.
-    ///
-    /// Call this AFTER committing in-memory and sending PREPARE to the
-    /// durability worker. All subsequent durability requests will be buffered
-    /// until `finalize_prepare_commit()` or `finalize_prepare_abort()`.
-    pub fn activate_persistence_barrier(&self) {
-        self.persistence_barrier.activate();
-    }
-
-    /// Finalize a 2PC transaction as COMMIT.
-    /// Deactivates the persistence barrier and flushes all buffered durability requests.
-    pub fn finalize_prepare_commit(&self) {
-        let buffered = self.persistence_barrier.deactivate();
-        if let Some(durability) = &self.durability {
-            for req in buffered {
-                durability.request_durability(req.reducer_context, &req.tx_data);
-            }
-        }
-    }
-
-    /// Finalize a 2PC transaction as ABORT.
-    /// Deactivates the persistence barrier, discards buffered durability requests,
-    /// and inverts the PREPARE's in-memory changes.
-    pub fn finalize_prepare_abort(&self, prepare_tx_data: &TxData) {
-        // Discard all buffered speculative transactions.
-        let _discarded = self.persistence_barrier.deactivate();
-        // TODO: Invert in-memory state using prepare_tx_data.
-        // For now, log a warning. Full inversion requires:
-        // 1. Begin new MutTx
-        // 2. Delete rows from prepare_tx_data.persistent_inserts()
-        // 3. Re-insert rows from prepare_tx_data.persistent_deletes()
-        // 4. Commit without durability
-        // 5. Re-execute discarded speculative transactions
-        log::warn!(
-            "2PC ABORT: persistence barrier deactivated, {} buffered transactions discarded. \
-             In-memory state inversion not yet implemented.",
-            _discarded.len()
-        );
     }
 
     /// Get the [`DurableOffset`] of this database, or `None` if this is an
@@ -979,11 +861,6 @@ impl RelationalDB {
         self.durability
             .as_ref()
             .map(|durability| durability.durable_tx_offset())
-    }
-
-    /// Get a reference to the persistence barrier (for 2PC).
-    pub fn persistence_barrier(&self) -> &PersistenceBarrier {
-        &self.persistence_barrier
     }
 
     /// Decide based on the `committed_state.next_tx_offset`

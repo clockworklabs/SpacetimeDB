@@ -26,7 +26,7 @@ use crate::{
         StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow,
         StTableFields, StTableRow, SystemTable, ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID,
         ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID,
-        ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
+        ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID, St2pcStateFields, St2pcStateRow, ST_2PC_STATE_ID,
     },
 };
 use crate::{execution_context::ExecutionContext, system_tables::StViewColumnRow};
@@ -2688,6 +2688,86 @@ impl MutTxId {
         .expect("failed to read from st_client system table")
         .next()
         .map(|row| row.pointer())
+    }
+
+    /// Insert a row into `st_2pc_state` to record that this database is a 2PC participant
+    /// in the given prepared transaction. The row persists until `delete_st_2pc_state` is
+    /// called on COMMIT or ABORT. On crash-recovery, any rows here indicate transactions
+    /// that need to be resumed.
+    pub fn insert_st_2pc_state(&mut self, prepare_id: &str) -> Result<()> {
+        let row = &St2pcStateRow {
+            prepare_id: prepare_id.to_owned(),
+        };
+        self.insert_via_serialize_bsatn(ST_2PC_STATE_ID, row)
+            .map(|_| ())
+            .inspect_err(|e| {
+                log::error!("insert_st_2pc_state: failed to insert prepare_id ({prepare_id}), error: {e}");
+            })
+    }
+
+    /// Delete the `st_2pc_state` row for the given `prepare_id`, called on COMMIT or ABORT.
+    pub fn delete_st_2pc_state(&mut self, prepare_id: &str) -> Result<()> {
+        if let Err(e) = self.delete_col_eq(
+            ST_2PC_STATE_ID,
+            St2pcStateFields::PrepareId.col_id(),
+            &AlgebraicValue::String(prepare_id.into()),
+        ) {
+            log::error!("delete_st_2pc_state: no row for prepare_id ({prepare_id}), error: {e}");
+        }
+        Ok(())
+    }
+
+    /// Return all `prepare_id`s currently in `st_2pc_state`.
+    /// Used on recovery to find prepared transactions that need to be resumed.
+    pub fn scan_st_2pc_state(&self) -> Result<Vec<String>> {
+        self.iter(ST_2PC_STATE_ID)?
+            .map(|row| St2pcStateRow::try_from(row).map(|r| r.prepare_id))
+            .collect()
+    }
+
+    /// Return the [`TxData`] that would result from committing this transaction,
+    /// without actually committing it.
+    ///
+    /// The write lock on the committed state remains held and the [`TxState`] is
+    /// left intact.  This is used during 2PC PREPARE so that a durability record
+    /// can be written while still holding the exclusive lock, preventing any
+    /// interleaved transactions between PREPARE and COMMIT/ABORT.
+    pub fn peek_tx_data(&self) -> TxData {
+        let mut tx_data = TxData::default();
+
+        // Collect inserts: scan tx_state.insert_tables without mutating anything.
+        for (table_id, tx_table) in &self.tx_state.insert_tables {
+            let rows: std::sync::Arc<[ProductValue]> = tx_table
+                .scan_rows(&self.tx_state.blob_store)
+                .map(|row| row.to_product_value())
+                .collect();
+            if !rows.is_empty() {
+                tx_data.set_inserts_for_table(*table_id, &tx_table.get_schema().table_name, rows);
+            }
+        }
+
+        // Collect deletes: row pointers live in the committed state; read them
+        // without deleting.
+        for (table_id, delete_table) in &self.tx_state.delete_tables {
+            if let Ok((table, blob_store, _)) =
+                self.committed_state_write_lock.get_table_and_blob_store(*table_id)
+            {
+                let rows: std::sync::Arc<[ProductValue]> = delete_table
+                    .iter()
+                    .map(|row_ptr| {
+                        table
+                            .get_row_ref(blob_store, row_ptr)
+                            .expect("delete_tables references non-existent row in committed state")
+                            .to_product_value()
+                    })
+                    .collect();
+                if !rows.is_empty() {
+                    tx_data.set_deletes_for_table(*table_id, &table.get_schema().table_name, rows);
+                }
+            }
+        }
+
+        tx_data
     }
 
     pub fn insert_via_serialize_bsatn<'a, T: Serialize>(
