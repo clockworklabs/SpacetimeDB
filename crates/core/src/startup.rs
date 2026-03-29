@@ -317,8 +317,6 @@ impl Cores {
         let tokio = TokioCores {
             workers: Some(tokio_workers),
             #[cfg(target_os = "linux")]
-            workers_shared: None,
-            #[cfg(target_os = "linux")]
             blocking: remaining,
         };
 
@@ -352,7 +350,6 @@ impl Cores {
         #[cfg(target_os = "linux")]
         let tokio = TokioCores {
             workers: None,
-            workers_shared: Some((shared.len(), shared_cpuset)),
             blocking: Some(shared_cpuset),
         };
 
@@ -381,7 +378,7 @@ impl Cores {
     }
 
     #[cfg(target_os = "linux")]
-    fn get_core_ids() -> Option<Vec<CoreId>> {
+    pub fn get_core_ids() -> Option<Vec<CoreId>> {
         if cfg!(feature = "no-core-pinning") {
             return None;
         }
@@ -422,11 +419,17 @@ fn cores_to_cpuset(cores: &[CoreId]) -> Option<nix::sched::CpuSet> {
     })
 }
 
+#[cfg(target_os = "linux")]
+fn cpuset_cardinality(cpuset: &nix::sched::CpuSet) -> usize {
+    (0..nix::sched::CpuSet::count())
+        .filter_map(|cpu| cpuset.is_set(cpu).ok())
+        .filter(|is_set| *is_set)
+        .count()
+}
+
 #[derive(Default)]
 pub struct TokioCores {
     pub workers: Option<Vec<CoreId>>,
-    #[cfg(target_os = "linux")]
-    pub workers_shared: Option<(usize, nix::sched::CpuSet)>,
     // For blocking threads, we don't want to limit them to a specific number
     // and pin them to their own cores - they're supposed to run concurrently
     // with each other. However, `core_affinity` doesn't support affinity masks,
@@ -463,8 +466,8 @@ impl TokioCores {
             });
         } else {
             #[cfg(target_os = "linux")]
-            if let Some((threads, cpuset)) = self.workers_shared {
-                builder.worker_threads(threads);
+            if let Some(cpuset) = self.blocking {
+                builder.worker_threads(cpuset_cardinality(&cpuset));
                 builder.on_thread_start(move || {
                     let this = nix::unistd::Pid::from_raw(0);
                     let _ = nix::sched::sched_setaffinity(this, &cpuset);
@@ -588,7 +591,10 @@ mod tests {
         #[cfg(target_os = "linux")]
         {
             assert!(split.tokio.workers.is_none());
-            assert_eq!(split.tokio.workers_shared.as_ref().unwrap().0, 20);
+            assert_eq!(
+                cpuset_cardinality(split.tokio.blocking.as_ref().unwrap()),
+                20
+            );
             assert!(split.rayon.dedicated.is_none());
             assert_eq!(split.rayon.shared.as_ref().unwrap().0, 20);
         }

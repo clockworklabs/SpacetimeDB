@@ -180,7 +180,7 @@ fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
                 // Some metrics depend on knowing all completed orders, even outside the
                 // measurement window
                 if record.kind == TransactionKind::NewOrder && record.success {
-                    metrics_client.reducers.register_completed_order();
+                    let _ = metrics_client.reducers.register_completed_order();
                 }
 
                 if record.timestamp_ms >= schedule.measure_start_ms && record.timestamp_ms < schedule.measure_end_ms {

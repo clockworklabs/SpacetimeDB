@@ -9,7 +9,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::config::CoordinatorConfig;
-use crate::metrics_module_bindings::{register_completed_order, reset};
+use crate::metrics_module_bindings::reset_reducer::reset;
 use crate::metrics_module_client::connect_metrics_module;
 use crate::protocol::{
     DriverAssignment, RegisterDriverRequest, RegisterDriverResponse, RunSchedule, ScheduleResponse,
@@ -138,7 +138,7 @@ fn maybe_create_schedule(inner: &mut CoordinatorState) {
     let measure_end_ms = measure_start_ms + (inner.config.measure_secs * 1_000);
 
     let metrics_client = connect_metrics_module(&inner.config.connection).unwrap();
-    metrics_client
+    let _ = metrics_client
         .reducers
         .reset(inner.config.warmup_secs * 1000, measure_start_ms, measure_end_ms);
 
