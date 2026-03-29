@@ -1996,19 +1996,11 @@ impl WasmInstanceEnv {
             let args_buf = mem.deref_slice(args_ptr, args_len)?;
             let args = bytes::Bytes::copy_from_slice(args_buf);
 
-            // Reducers run inside a tokio LocalSet (single-threaded), so block_in_place
-            // is unavailable and futures::executor::block_on can't drive tokio I/O.
-            // Spawn a new OS thread and call Handle::block_on from there, which is
-            // designed to be called from synchronous (non-async) contexts.
             let handle = tokio::runtime::Handle::current();
             let fut = env
                 .instance_env
                 .call_reducer_on_db(database_identity, &reducer_name, args);
-            let result = std::thread::scope(|s| {
-                s.spawn(|| handle.block_on(fut))
-                    .join()
-                    .expect("call_reducer_on_db: worker thread panicked")
-            });
+            let result = super::super::block_on_scoped(&handle, fut);
 
             match result {
                 Ok((status, body)) => {
@@ -2067,11 +2059,7 @@ impl WasmInstanceEnv {
             let fut = env
                 .instance_env
                 .call_reducer_on_db_2pc(database_identity, &reducer_name, args);
-            let result = std::thread::scope(|s| {
-                s.spawn(|| handle.block_on(fut))
-                    .join()
-                    .expect("call_reducer_on_db_2pc: worker thread panicked")
-            });
+            let result = super::super::block_on_scoped(&handle, fut);
 
             match result {
                 Ok((status, body, prepare_id)) => {

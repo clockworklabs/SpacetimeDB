@@ -13,6 +13,7 @@ use crate::host::module_host::{
     ViewCallResult, ViewCommand, ViewCommandResult, ViewOutcome,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
+use crate::host::block_on_scoped;
 use crate::host::{
     ArgsTuple, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult, ReducerId,
     ReducerOutcome, Scheduler, UpdateDatabaseResult,
@@ -698,7 +699,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         if let Some(prepare_offset) = marker_tx_data.tx_offset() {
             if let Some(mut durable) = stdb.durable_tx_offset() {
                 let handle = tokio::runtime::Handle::current();
-                let _ = handle.block_on(durable.wait_for(prepare_offset));
+                let _ = block_on_scoped(&handle, durable.wait_for(prepare_offset));
             }
         }
 
@@ -725,11 +726,13 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             // Without this, A could delete its coordinator log entry while B's commit
             // is still in-memory — a B crash at that point would leave the tx uncommitted
             // with no way to recover (A has already forgotten it committed).
-            let handle = tokio::runtime::Handle::current();
             if let Some(mut durable) = stdb.durable_tx_offset() {
-                if let Ok(offset) = handle.block_on(commit_result.tx_offset) {
-                    let _ = handle.block_on(durable.wait_for(offset));
-                }
+                let handle = tokio::runtime::Handle::current();
+                block_on_scoped(&handle, async move {
+                    if let Ok(offset) = commit_result.tx_offset.await {
+                        let _ = durable.wait_for(offset).await;
+                    }
+                });
             }
 
             // Notify coordinator that B has committed so it can delete its coordinator log entry.
@@ -738,7 +741,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             let router = replica_ctx.call_reducer_router.clone();
             let client_http = replica_ctx.call_reducer_client.clone();
             let auth_token = replica_ctx.call_reducer_auth_token.clone();
-            handle.spawn(send_ack_commit_to_coordinator(
+            tokio::runtime::Handle::current().spawn(send_ack_commit_to_coordinator(
                 client_http,
                 router,
                 auth_token,
@@ -787,19 +790,13 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let auth_token = replica_ctx.call_reducer_auth_token.clone();
         let prepare_id_owned = prepare_id.to_owned();
         loop {
-            let decision = std::thread::scope(|s| {
-                s.spawn(|| {
-                    handle.block_on(Self::query_coordinator_status(
-                        &client,
-                        &router,
-                        auth_token.clone(),
-                        coordinator_identity,
-                        &prepare_id_owned,
-                    ))
-                })
-                .join()
-                .expect("coordinator poll thread panicked")
-            });
+            let decision = block_on_scoped(&handle, Self::query_coordinator_status(
+                &client,
+                &router,
+                auth_token.clone(),
+                coordinator_identity,
+                &prepare_id_owned,
+            ));
             match decision {
                 Some(commit) => return commit,
                 None => std::thread::sleep(Duration::from_secs(5)),
@@ -1157,9 +1154,7 @@ impl InstanceCommon {
 
             let replica_ctx = inst.replica_ctx().clone();
             let handle = tokio::runtime::Handle::current();
-            std::thread::scope(|s| {
-                s.spawn(|| {
-                    handle.block_on(async {
+            block_on_scoped(&handle, async {
                         // Wait for A's coordinator log (committed atomically with the tx) to be
                         // durable before sending COMMIT to B.  This guarantees that if A crashes
                         // after sending COMMIT, recovery can retransmit from the durable log.
@@ -1218,10 +1213,6 @@ impl InstanceCommon {
                                 }
                             }
                         }
-                    });
-                })
-                .join()
-                .expect("2PC coordination thread panicked");
             });
         }
 

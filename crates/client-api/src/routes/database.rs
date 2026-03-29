@@ -263,21 +263,12 @@ pub async fn prepare<S: ControlStateDelegate + NodeDelegate>(
 
     let (module, Database { owner_identity, .. }) = find_module_and_database(&worker_ctx, name_or_identity).await?;
 
-    let connection_id = generate_random_connection_id();
-
-    module
-        .call_identity_connected(auth.into(), connection_id)
-        .await
-        .map_err(client_connected_error_to_response)?;
-
+    // 2PC prepare is a server-to-server call; no client lifecycle management needed.
+    // call_identity_connected/disconnected submit jobs to the module's executor, which
+    // will be blocked holding the 2PC write lock after prepare_reducer returns — deadlock.
     let result = module
-        .prepare_reducer(caller_identity, Some(connection_id), &reducer, args)
+        .prepare_reducer(caller_identity, None, &reducer, args)
         .await;
-
-    module
-        .call_identity_disconnected(caller_identity, connection_id)
-        .await
-        .map_err(client_disconnected_error_to_response)?;
 
     match result {
         Ok((prepare_id, rcr, return_value)) => {

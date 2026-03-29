@@ -286,6 +286,8 @@ pub(crate) const ST_EVENT_TABLE_IDX: usize = 16;
 pub(crate) const ST_TABLE_ACCESSOR_IDX: usize = 17;
 pub(crate) const ST_INDEX_ACCESSOR_IDX: usize = 18;
 pub(crate) const ST_COLUMN_ACCESSOR_IDX: usize = 19;
+pub(crate) const ST_2PC_STATE_IDX: usize = 20;
+pub(crate) const ST_2PC_COORDINATOR_LOG_IDX: usize = 21;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
