@@ -374,6 +374,30 @@ pub async fn status_2pc<S: ControlStateDelegate + NodeDelegate>(
     Ok((StatusCode::OK, decision))
 }
 
+/// 2PC commit-ack endpoint.
+///
+/// Called by participant B after it commits via the status-poll recovery path,
+/// so that the coordinator can delete its `st_2pc_coordinator_log` entry.
+///
+/// `POST /v1/database/:name_or_identity/2pc/ack-commit/:prepare_id`
+pub async fn ack_commit_2pc<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    Extension(_auth): Extension<SpacetimeAuth>,
+    Path(TwoPcParams {
+        name_or_identity,
+        prepare_id,
+    }): Path<TwoPcParams>,
+) -> axum::response::Result<impl IntoResponse> {
+    let (module, _database) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+
+    module.ack_2pc_coordinator_commit(&prepare_id).map_err(|e| {
+        log::error!("2PC ack-commit failed: {e}");
+        (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+    })?;
+
+    Ok(StatusCode::OK)
+}
+
 fn reducer_outcome_response(
     module: &ModuleHost,
     owner_identity: &Identity,
@@ -1388,6 +1412,8 @@ pub struct DatabaseRoutes<S> {
     pub abort_2pc_post: MethodRouter<S>,
     /// GET: /database/:name_or_identity/2pc/status/:prepare_id
     pub status_2pc_get: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/2pc/ack-commit/:prepare_id
+    pub ack_commit_2pc_post: MethodRouter<S>,
 }
 
 impl<S> Default for DatabaseRoutes<S>
@@ -1417,6 +1443,7 @@ where
             commit_2pc_post: post(commit_2pc::<S>),
             abort_2pc_post: post(abort_2pc::<S>),
             status_2pc_get: get(status_2pc::<S>),
+            ack_commit_2pc_post: post(ack_commit_2pc::<S>),
         }
     }
 }
@@ -1445,7 +1472,8 @@ where
             .route("/prepare/:reducer", self.prepare_post)
             .route("/2pc/commit/:prepare_id", self.commit_2pc_post)
             .route("/2pc/abort/:prepare_id", self.abort_2pc_post)
-            .route("/2pc/status/:prepare_id", self.status_2pc_get);
+            .route("/2pc/status/:prepare_id", self.status_2pc_get)
+            .route("/2pc/ack-commit/:prepare_id", self.ack_commit_2pc_post);
 
         axum::Router::new()
             .route("/", self.root_post)

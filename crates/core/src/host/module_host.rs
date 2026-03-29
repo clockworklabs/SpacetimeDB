@@ -1875,6 +1875,16 @@ impl ModuleHost {
         Ok(())
     }
 
+    /// Delete a coordinator log entry for `prepare_id`.
+    /// Called when B has confirmed it committed, so A can stop retransmitting.
+    pub fn ack_2pc_coordinator_commit(&self, prepare_id: &str) -> Result<(), anyhow::Error> {
+        let db = self.relational_db().clone();
+        db.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |tx| {
+            tx.delete_st_2pc_coordinator_log(prepare_id)
+                .map_err(anyhow::Error::from)
+        })
+    }
+
     /// Check whether `prepare_id` is present in the coordinator log of this database.
     /// Used by participant B to ask coordinator A: "did you commit?"
     pub fn has_2pc_coordinator_commit(&self, prepare_id: &str) -> bool {
@@ -2039,6 +2049,14 @@ impl ModuleHost {
                             Some(commit) => {
                                 if commit {
                                     let _ = this2.commit_prepared(&new_prepare_id);
+                                    // Tell A we committed so it can delete its coordinator log entry.
+                                    Self::send_ack_commit_to_coordinator(
+                                        &client,
+                                        &router,
+                                        auth_token.clone(),
+                                        coordinator_identity,
+                                        &original_prepare_id,
+                                    ).await;
                                 } else {
                                     let _ = this2.abort_prepared(&new_prepare_id);
                                 }
@@ -2095,6 +2113,45 @@ impl ModuleHost {
             Err(e) => {
                 log::warn!("2PC recovery status poll: transport error: {e}");
                 None
+            }
+        }
+    }
+
+    /// POST `POST /v1/database/{coordinator}/2pc/ack-commit/{prepare_id}` to tell A that
+    /// B has committed, so A can delete its coordinator log entry.
+    async fn send_ack_commit_to_coordinator(
+        client: &reqwest::Client,
+        router: &std::sync::Arc<dyn crate::host::reducer_router::ReducerCallRouter>,
+        auth_token: Option<String>,
+        coordinator_identity: Identity,
+        prepare_id: &str,
+    ) {
+        let base_url = match router.resolve_base_url(coordinator_identity).await {
+            Ok(url) => url,
+            Err(e) => {
+                log::warn!("2PC ack-commit: cannot resolve coordinator URL: {e}");
+                return;
+            }
+        };
+        let url = format!(
+            "{}/v1/database/{}/2pc/ack-commit/{}",
+            base_url,
+            coordinator_identity.to_hex(),
+            prepare_id,
+        );
+        let mut req = client.post(&url);
+        if let Some(token) = &auth_token {
+            req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+        }
+        match req.send().await {
+            Ok(resp) if resp.status().is_success() => {
+                log::info!("2PC ack-commit: notified coordinator for {prepare_id}");
+            }
+            Ok(resp) => {
+                log::warn!("2PC ack-commit: coordinator returned {} for {prepare_id}", resp.status());
+            }
+            Err(e) => {
+                log::warn!("2PC ack-commit: transport error for {prepare_id}: {e}");
             }
         }
     }
