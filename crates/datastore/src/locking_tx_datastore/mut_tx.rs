@@ -2705,6 +2705,31 @@ impl MutTxId {
             })
     }
 
+    /// Write the `st_2pc_state` PREPARE marker directly to the committed state and allocate a
+    /// `tx_offset` for it, **without** releasing the write lock or committing the pending
+    /// reducer changes in `tx_state`.
+    ///
+    /// Returns the `TxData` containing just the `st_2pc_state` insert together with its
+    /// assigned `tx_offset`.  The caller is responsible for forwarding this to the durability
+    /// worker so that the PREPARE record becomes durable in the commitlog.
+    ///
+    /// Because the write lock remains held, no other transaction can begin between this call
+    /// and the eventual `commit` / `rollback` of the enclosing `MutTxId`.  On ABORT the
+    /// caller must delete the `st_2pc_state` row in a subsequent transaction (the row was
+    /// inserted directly into the committed state and is not part of `tx_state`).
+    pub fn flush_2pc_prepare_marker(&mut self, prepare_id: &str) -> Result<TxData> {
+        let schema = self
+            .committed_state_write_lock
+            .get_schema(ST_2PC_STATE_ID)
+            .cloned()
+            .expect("st_2pc_state system table must exist in committed state");
+        let row = ProductValue::from(St2pcStateRow {
+            prepare_id: prepare_id.to_owned(),
+        });
+        self.committed_state_write_lock
+            .insert_row_and_consume_offset(ST_2PC_STATE_ID, &schema, &row)
+    }
+
     /// Delete the `st_2pc_state` row for the given `prepare_id`, called on COMMIT or ABORT.
     pub fn delete_st_2pc_state(&mut self, prepare_id: &str) -> Result<()> {
         if let Err(e) = self.delete_col_eq(

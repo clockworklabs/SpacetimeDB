@@ -12,7 +12,7 @@ use spacetimedb_commitlog::{self as commitlog, Commitlog, SizeOnDisk};
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
-use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
+use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, StateView,
@@ -853,6 +853,16 @@ impl RelationalDB {
         }
 
         (tx_data, tx_metrics, tx)
+    }
+
+    /// Forward a pre-built `TxData` directly to the durability worker.
+    ///
+    /// Used by the 2PC participant path to make the `st_2pc_state` PREPARE marker durable
+    /// while the main write lock is still held (i.e. without going through a full commit).
+    pub fn request_durability_for_tx_data(&self, reducer_context: Option<ReducerContext>, tx_data: &Arc<TxData>) {
+        if let Some(durability) = &self.durability {
+            durability.request_durability(reducer_context, tx_data);
+        }
     }
 
     /// Get the [`DurableOffset`] of this database, or `None` if this is an

@@ -568,24 +568,22 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
     /// Run the reducer as a 2PC participant PREPARE.
     ///
-    /// Holds the write lock (MutTxId) open until a COMMIT or ABORT decision arrives.
-    /// The flow:
-    /// 1. Run reducer (no commit).
-    /// 2. If reducer failed: send failure via `prepared_tx`; rollback; return.
-    /// 3. If reducer succeeded: insert `st_2pc_state` row; send PREPARED result via `prepared_tx`.
-    /// 4. Block on `decision_rx`:
-    ///    - `true`  (COMMIT): commit via `commit_and_broadcast_event`, then delete `st_2pc_state`.
-    ///    - `false` (ABORT) or channel closed: roll back.
     /// Run the reducer as a 2PC participant PREPARE.
     ///
     /// Holds the write lock (MutTxId) open until a COMMIT or ABORT decision arrives.
     /// The flow:
-    /// 1. Run reducer (no commit).
+    /// 1. Run reducer (no commit); hold open MutTxId (write lock).
     /// 2. If reducer failed: send failure via `prepared_tx`; rollback; return.
-    /// 3. If reducer succeeded: insert `st_2pc_state` row; send PREPARED result via `prepared_tx`.
-    /// 4. Block on `decision_rx`:
-    ///    - `true`  (COMMIT): commit via `commit_and_broadcast_event`, then delete `st_2pc_state`.
-    ///    - `false` (ABORT) or channel closed: roll back.
+    /// 3. If reducer succeeded: call `flush_2pc_prepare_marker` — inserts `st_2pc_state`
+    ///    directly into committed state (bumps tx_offset), returns `TxData` for the marker.
+    ///    Forward the `TxData` to the durability worker so the PREPARE is in the commitlog.
+    ///    The write lock remains held throughout.
+    /// 4. Signal PREPARED via `prepared_tx`.
+    /// 5. Block on `decision_rx`:
+    ///    - `true`  (COMMIT): commit main tx (reducer changes get the next tx_offset), then
+    ///      delete `st_2pc_state` in a new tx.
+    ///    - `false` (ABORT) or channel closed: roll back main tx; delete `st_2pc_state` in
+    ///      a new tx (the marker row is already in committed state from step 3).
     pub fn call_reducer_prepare_and_hold(
         &mut self,
         params: CallReducerParams,
@@ -593,17 +591,19 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         prepared_tx: tokio::sync::oneshot::Sender<(ReducerCallResult, Option<Bytes>)>,
         decision_rx: std::sync::mpsc::Receiver<bool>,
     ) {
-        let (mut tx, event, client, trapped) =
-            crate::callgrind_flag::invoke_allowing_callgrind(|| {
-                self.common.run_reducer_no_commit(None, params, &mut self.instance)
-            });
+        let stdb = self.instance.replica_ctx().relational_db().clone();
+
+        // Step 1: run the reducer and hold the write lock open.
+        let (mut tx, event, client, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
+            self.common.run_reducer_no_commit(None, params, &mut self.instance)
+        });
         self.trapped = trapped;
 
         let energy_quanta_used = event.energy_quanta_used;
         let total_duration = event.host_execution_duration;
 
         if !matches!(event.status, EventStatus::Committed(_)) {
-            // Reducer failed — roll back and signal failure to the waiter.
+            // Reducer failed — roll back and signal failure; no marker was written.
             let res = ReducerCallResult {
                 outcome: ReducerOutcome::from(&event.status),
                 energy_used: energy_quanta_used,
@@ -611,45 +611,51 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             };
             let return_value = event.reducer_return_value.clone();
             let _ = prepared_tx.send((res, return_value));
-            // commit_and_broadcast_event handles rollback for non-Committed status.
-            commit_and_broadcast_event(&self.common.info.subscriptions, client, event, tx);
+            let _ = stdb.rollback_mut_tx(tx);
             return;
         }
 
-        // Insert the st_2pc_state marker into the held tx atomically with the reducer's changes.
-        if let Err(e) = tx.insert_st_2pc_state(&prepare_id) {
-            log::error!("call_reducer_prepare_and_hold: failed to insert st_2pc_state for {prepare_id}: {e}");
-        }
+        // Step 3: flush the st_2pc_state marker directly into committed state, assign
+        // a tx_offset, and forward to durability — all while holding the write lock.
+        let marker_tx_data = match tx.flush_2pc_prepare_marker(&prepare_id) {
+            Ok(td) => std::sync::Arc::new(td),
+            Err(e) => {
+                log::error!("call_reducer_prepare_and_hold: flush_2pc_prepare_marker failed for {prepare_id}: {e}");
+                let _ = stdb.rollback_mut_tx(tx);
+                return;
+            }
+        };
+        stdb.request_durability_for_tx_data(None, &marker_tx_data);
 
+        // Step 4: signal PREPARED.
         let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
             energy_used: energy_quanta_used,
             execution_duration: total_duration,
         };
         let return_value = event.reducer_return_value.clone();
-        // Signal PREPARED — the coordinator can now send COMMIT or ABORT.
         let _ = prepared_tx.send((res, return_value));
 
-        // Block the executor thread until we receive a decision.
+        // Step 5: block the executor thread until we receive a decision.
         let commit = decision_rx.recv().unwrap_or(false);
 
         if commit {
+            // Delete the marker in the same tx as the reducer changes so they are
+            // committed atomically. The row is in committed state (inserted by
+            // flush_2pc_prepare_marker), so delete_st_2pc_state finds it via iter.
+            if let Err(e) = tx.delete_st_2pc_state(&prepare_id) {
+                log::error!("call_reducer_prepare_and_hold: failed to delete st_2pc_state for {prepare_id}: {e}");
+            }
             commit_and_broadcast_event(&self.common.info.subscriptions, client, event, tx);
-
-            // Delete the st_2pc_state row in a new tx so recovery knows COMMIT is done.
-            let stdb = self.instance.replica_ctx().relational_db();
+        } else {
+            // ABORT: roll back reducer changes (tx_state discarded).
+            // The marker row is already in committed state; clean it up in a new tx.
+            let _ = stdb.rollback_mut_tx(tx);
             if let Err(e) = stdb.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
                 Ok(del_tx.delete_st_2pc_state(&prepare_id)?)
             }) {
-                log::error!("call_reducer_prepare_and_hold: failed to delete st_2pc_state for {prepare_id}: {e}");
+                log::error!("call_reducer_prepare_and_hold: abort: failed to delete st_2pc_state for {prepare_id}: {e}");
             }
-        } else {
-            // ABORT: roll back by passing a failure event.
-            let abort_event = ModuleEvent {
-                status: EventStatus::FailedInternal("2PC abort".into()),
-                ..event
-            };
-            commit_and_broadcast_event(&self.common.info.subscriptions, None, abort_event, tx);
         }
     }
 
@@ -975,10 +981,7 @@ impl InstanceCommon {
                             );
                             let mut req = client.post(&url);
                             if let Some(ref token) = auth_token {
-                                req = req.header(
-                                    http::header::AUTHORIZATION,
-                                    format!("Bearer {token}"),
-                                );
+                                req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
                             }
                             match req.send().await {
                                 Ok(resp) if resp.status().is_success() => {
@@ -991,9 +994,7 @@ impl InstanceCommon {
                                     );
                                 }
                                 Err(e) => {
-                                    log::error!(
-                                        "2PC {action}: transport error for {prepare_id} on {db_identity}: {e}"
-                                    );
+                                    log::error!("2PC {action}: transport error for {prepare_id} on {db_identity}: {e}");
                                 }
                             }
                         }
@@ -1026,7 +1027,12 @@ impl InstanceCommon {
         tx: Option<MutTxId>,
         params: CallReducerParams,
         inst: &mut I,
-    ) -> (MutTxId, ModuleEvent, Option<Arc<crate::client::ClientConnectionSender>>, bool) {
+    ) -> (
+        MutTxId,
+        ModuleEvent,
+        Option<Arc<crate::client::ClientConnectionSender>>,
+        bool,
+    ) {
         let CallReducerParams {
             timestamp,
             caller_identity,
