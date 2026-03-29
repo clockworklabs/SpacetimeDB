@@ -454,12 +454,23 @@ impl RelationalDB {
     }
 
     /// Read any 2PC participant transactions that were in PREPARE state when the database
-    /// last shut down (or crashed). Each returned string is a `prepare_id`.
+    /// last shut down (or crashed).
     ///
-    /// If non-empty, the caller must resume these transactions: retransmit PREPARED to
-    /// the coordinator and await a COMMIT or ABORT decision before allowing normal operation.
-    pub fn pending_2pc_prepares(&self) -> Result<Vec<String>, DBError> {
+    /// Each returned row contains all the information needed to resume the transaction:
+    /// the prepare_id, coordinator identity, reducer name/args, and caller context.
+    /// B never aborts on its own — it polls the coordinator for a decision.
+    pub fn pending_2pc_prepares(&self) -> Result<Vec<spacetimedb_datastore::system_tables::St2pcStateRow>, DBError> {
         self.with_auto_commit(Workload::Internal, |tx| tx.scan_st_2pc_state().map_err(DBError::from))
+    }
+
+    /// Read any 2PC coordinator log entries that have not yet been acknowledged by their
+    /// participants. Used on coordinator crash-recovery to retransmit COMMIT decisions.
+    pub fn pending_2pc_coordinator_commits(
+        &self,
+    ) -> Result<Vec<spacetimedb_datastore::system_tables::St2pcCoordinatorLogRow>, DBError> {
+        self.with_auto_commit(Workload::Internal, |tx| {
+            tx.scan_st_2pc_coordinator_log().map_err(DBError::from)
+        })
     }
 
     /// Read the set of clients currently connected to the database.

@@ -20,13 +20,15 @@ use crate::{
 use crate::{
     error::{IndexError, SequenceError, TableError},
     system_tables::{
-        with_sys_table_buf, St2pcStateFields, St2pcStateRow, StClientFields, StClientRow, StColumnAccessorFields,
-        StColumnAccessorRow, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StEventTableRow,
+        with_sys_table_buf, St2pcCoordinatorLogFields, St2pcCoordinatorLogRow, St2pcStateFields, St2pcStateRow,
+        StClientFields, StClientRow, StColumnAccessorFields, StColumnAccessorRow, StColumnFields, StColumnRow,
+        StConstraintFields, StConstraintRow, StEventTableRow,
         StFields as _, StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StRowLevelSecurityFields,
         StRowLevelSecurityRow, StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow,
-        StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow, SystemTable, ST_2PC_STATE_ID,
-        ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID,
-        ST_INDEX_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
+        StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow, SystemTable,
+        ST_2PC_COORDINATOR_LOG_ID, ST_2PC_STATE_ID, ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID,
+        ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_ROW_LEVEL_SECURITY_ID,
+        ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
     },
 };
 use crate::{execution_context::ExecutionContext, system_tables::StViewColumnRow};
@@ -2690,34 +2692,30 @@ impl MutTxId {
         .map(|row| row.pointer())
     }
 
-    /// Insert a row into `st_2pc_state` to record that this database is a 2PC participant
-    /// in the given prepared transaction. The row persists until `delete_st_2pc_state` is
-    /// called on COMMIT or ABORT. On crash-recovery, any rows here indicate transactions
-    /// that need to be resumed.
-    pub fn insert_st_2pc_state(&mut self, prepare_id: &str) -> Result<()> {
-        let row = &St2pcStateRow {
-            prepare_id: prepare_id.to_owned(),
-        };
-        self.insert_via_serialize_bsatn(ST_2PC_STATE_ID, row)
-            .map(|_| ())
-            .inspect_err(|e| {
-                log::error!("insert_st_2pc_state: failed to insert prepare_id ({prepare_id}), error: {e}");
-            })
-    }
-
     /// Write the `st_2pc_state` PREPARE marker directly to the committed state and allocate a
     /// `tx_offset` for it, **without** releasing the write lock or committing the pending
     /// reducer changes in `tx_state`.
     ///
-    /// Returns the `TxData` containing just the `st_2pc_state` insert together with its
-    /// assigned `tx_offset`.  The caller is responsible for forwarding this to the durability
-    /// worker so that the PREPARE record becomes durable in the commitlog.
+    /// Stores all fields needed for crash recovery (coordinator identity, reducer name/args,
+    /// caller context) so that, on restart, the participant can re-run the reducer and poll
+    /// the coordinator for a COMMIT or ABORT decision.
     ///
-    /// Because the write lock remains held, no other transaction can begin between this call
-    /// and the eventual `commit` / `rollback` of the enclosing `MutTxId`.  On ABORT the
-    /// caller must delete the `st_2pc_state` row in a subsequent transaction (the row was
-    /// inserted directly into the committed state and is not part of `tx_state`).
-    pub fn flush_2pc_prepare_marker(&mut self, prepare_id: &str) -> Result<TxData> {
+    /// Returns the `TxData` for the marker row (with its own `tx_offset`).  The caller must
+    /// forward this to the durability worker so the PREPARE record becomes durable.
+    ///
+    /// The write lock remains held after this call.  On ABORT the caller must delete the
+    /// `st_2pc_state` row in a subsequent transaction.
+    #[allow(clippy::too_many_arguments)]
+    pub fn flush_2pc_prepare_marker(
+        &mut self,
+        prepare_id: &str,
+        coordinator_identity_hex: String,
+        reducer_name: String,
+        args_bsatn: Vec<u8>,
+        caller_identity_hex: String,
+        caller_connection_id_hex: String,
+        timestamp_micros: i64,
+    ) -> Result<TxData> {
         let schema = self
             .committed_state_write_lock
             .get_schema(ST_2PC_STATE_ID)
@@ -2725,6 +2723,12 @@ impl MutTxId {
             .expect("st_2pc_state system table must exist in committed state");
         let row = ProductValue::from(St2pcStateRow {
             prepare_id: prepare_id.to_owned(),
+            coordinator_identity_hex,
+            reducer_name,
+            args_bsatn,
+            caller_identity_hex,
+            caller_connection_id_hex,
+            timestamp_micros,
         });
         self.committed_state_write_lock
             .insert_row_and_consume_offset(ST_2PC_STATE_ID, &schema, &row)
@@ -2742,55 +2746,58 @@ impl MutTxId {
         Ok(())
     }
 
-    /// Return all `prepare_id`s currently in `st_2pc_state`.
-    /// Used on recovery to find prepared transactions that need to be resumed.
-    pub fn scan_st_2pc_state(&self) -> Result<Vec<String>> {
+    /// Return all rows in `st_2pc_state` (prepared but not yet committed/aborted).
+    /// Used on recovery: each row describes a transaction to resume.
+    pub fn scan_st_2pc_state(&self) -> Result<Vec<St2pcStateRow>> {
         self.iter(ST_2PC_STATE_ID)?
-            .map(|row| St2pcStateRow::try_from(row).map(|r| r.prepare_id))
+            .map(|row| St2pcStateRow::try_from(row))
             .collect()
     }
 
-    /// Return the [`TxData`] that would result from committing this transaction,
-    /// without actually committing it.
+    /// Insert a row into `st_2pc_coordinator_log` recording that the coordinator has
+    /// decided COMMIT for `participant_prepare_id` on `participant_identity_hex`.
     ///
-    /// The write lock on the committed state remains held and the [`TxState`] is
-    /// left intact.  This is used during 2PC PREPARE so that a durability record
-    /// can be written while still holding the exclusive lock, preventing any
-    /// interleaved transactions between PREPARE and COMMIT/ABORT.
-    pub fn peek_tx_data(&self) -> TxData {
-        let mut tx_data = TxData::default();
+    /// Called inside the coordinator's open `MutTxId` so the entry is committed
+    /// atomically with the coordinator's own changes.
+    pub fn insert_st_2pc_coordinator_log(
+        &mut self,
+        participant_prepare_id: &str,
+        participant_identity_hex: &str,
+    ) -> Result<()> {
+        let row = &St2pcCoordinatorLogRow {
+            participant_prepare_id: participant_prepare_id.to_owned(),
+            participant_identity_hex: participant_identity_hex.to_owned(),
+        };
+        self.insert_via_serialize_bsatn(ST_2PC_COORDINATOR_LOG_ID, row)
+            .map(|_| ())
+            .inspect_err(|e| {
+                log::error!(
+                    "insert_st_2pc_coordinator_log: failed for prepare_id ({participant_prepare_id}): {e}"
+                );
+            })
+    }
 
-        // Collect inserts: scan tx_state.insert_tables without mutating anything.
-        for (table_id, tx_table) in &self.tx_state.insert_tables {
-            let rows: std::sync::Arc<[ProductValue]> = tx_table
-                .scan_rows(&self.tx_state.blob_store)
-                .map(|row| row.to_product_value())
-                .collect();
-            if !rows.is_empty() {
-                tx_data.set_inserts_for_table(*table_id, &tx_table.get_schema().table_name, rows);
-            }
+    /// Delete the coordinator log entry for `participant_prepare_id` once the participant
+    /// has acknowledged COMMIT.
+    pub fn delete_st_2pc_coordinator_log(&mut self, participant_prepare_id: &str) -> Result<()> {
+        if let Err(e) = self.delete_col_eq(
+            ST_2PC_COORDINATOR_LOG_ID,
+            St2pcCoordinatorLogFields::ParticipantPrepareId.col_id(),
+            &AlgebraicValue::String(participant_prepare_id.into()),
+        ) {
+            log::error!(
+                "delete_st_2pc_coordinator_log: no row for prepare_id ({participant_prepare_id}): {e}"
+            );
         }
+        Ok(())
+    }
 
-        // Collect deletes: row pointers live in the committed state; read them
-        // without deleting.
-        for (table_id, delete_table) in &self.tx_state.delete_tables {
-            if let Ok((table, blob_store, _)) = self.committed_state_write_lock.get_table_and_blob_store(*table_id) {
-                let rows: std::sync::Arc<[ProductValue]> = delete_table
-                    .iter()
-                    .map(|row_ptr| {
-                        table
-                            .get_row_ref(blob_store, row_ptr)
-                            .expect("delete_tables references non-existent row in committed state")
-                            .to_product_value()
-                    })
-                    .collect();
-                if !rows.is_empty() {
-                    tx_data.set_deletes_for_table(*table_id, &table.get_schema().table_name, rows);
-                }
-            }
-        }
-
-        tx_data
+    /// Return all entries in the coordinator log (COMMIT decisions not yet acknowledged).
+    /// Used on coordinator crash-recovery to retransmit COMMIT to participants.
+    pub fn scan_st_2pc_coordinator_log(&self) -> Result<Vec<St2pcCoordinatorLogRow>> {
+        self.iter(ST_2PC_COORDINATOR_LOG_ID)?
+            .map(|row| St2pcCoordinatorLogRow::try_from(row))
+            .collect()
     }
 
     pub fn insert_via_serialize_bsatn<'a, T: Serialize>(

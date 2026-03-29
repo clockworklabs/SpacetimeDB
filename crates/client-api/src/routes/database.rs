@@ -349,6 +349,31 @@ pub async fn abort_2pc<S: ControlStateDelegate + NodeDelegate>(
     Ok(StatusCode::OK)
 }
 
+/// 2PC coordinator status endpoint.
+///
+/// Returns `"commit"` if the coordinator has durably decided COMMIT for `prepare_id`,
+/// or `"abort"` otherwise.  Participant B polls this to recover from a timeout or crash.
+///
+/// `GET /v1/database/:name_or_identity/2pc/status/:prepare_id`
+pub async fn status_2pc<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    Extension(_auth): Extension<SpacetimeAuth>,
+    Path(TwoPcParams {
+        name_or_identity,
+        prepare_id,
+    }): Path<TwoPcParams>,
+) -> axum::response::Result<impl IntoResponse> {
+    let (module, _database) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+
+    let decision = if module.has_2pc_coordinator_commit(&prepare_id) {
+        "commit"
+    } else {
+        "abort"
+    };
+
+    Ok((StatusCode::OK, decision))
+}
+
 fn reducer_outcome_response(
     module: &ModuleHost,
     owner_identity: &Identity,
@@ -1361,6 +1386,8 @@ pub struct DatabaseRoutes<S> {
     pub commit_2pc_post: MethodRouter<S>,
     /// POST: /database/:name_or_identity/2pc/abort/:prepare_id
     pub abort_2pc_post: MethodRouter<S>,
+    /// GET: /database/:name_or_identity/2pc/status/:prepare_id
+    pub status_2pc_get: MethodRouter<S>,
 }
 
 impl<S> Default for DatabaseRoutes<S>
@@ -1389,6 +1416,7 @@ where
             prepare_post: post(prepare::<S>),
             commit_2pc_post: post(commit_2pc::<S>),
             abort_2pc_post: post(abort_2pc::<S>),
+            status_2pc_get: get(status_2pc::<S>),
         }
     }
 }
@@ -1416,7 +1444,8 @@ where
             .route("/reset", self.db_reset)
             .route("/prepare/:reducer", self.prepare_post)
             .route("/2pc/commit/:prepare_id", self.commit_2pc_post)
-            .route("/2pc/abort/:prepare_id", self.abort_2pc_post);
+            .route("/2pc/abort/:prepare_id", self.abort_2pc_post)
+            .route("/2pc/status/:prepare_id", self.status_2pc_get);
 
         axum::Router::new()
             .route("/", self.root_post)
