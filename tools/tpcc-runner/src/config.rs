@@ -65,6 +65,7 @@ pub struct DriverConfig {
 
 #[derive(Debug, Clone)]
 pub struct CoordinatorConfig {
+    pub connection: ConnectionConfig,
     pub run_id: String,
     pub listen: SocketAddr,
     pub expected_drivers: usize,
@@ -125,6 +126,8 @@ pub struct DriverArgs {
 
 #[derive(Debug, Clone, Args)]
 pub struct CoordinatorArgs {
+    #[command(flatten)]
+    pub connection: ConnectionArgs,
     #[arg(long)]
     pub run_id: Option<String>,
     #[arg(long)]
@@ -378,6 +381,7 @@ impl CoordinatorArgs {
             );
         }
         Ok(CoordinatorConfig {
+            connection: self.connection.resolve(&file.connection),
             run_id: self
                 .run_id
                 .clone()

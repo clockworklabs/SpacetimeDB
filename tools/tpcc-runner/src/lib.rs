@@ -4,6 +4,8 @@ pub mod coordinator;
 pub mod driver;
 pub mod legacy_loader;
 pub mod loader;
+mod metrics_module_bindings;
+mod metrics_module_client;
 mod module_bindings;
 mod protocol;
 pub mod summary;
