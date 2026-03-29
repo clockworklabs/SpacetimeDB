@@ -60,33 +60,58 @@ fn database_number_chunks(num_databases: u16, parallelism: usize) -> Vec<Vec<u16
         .collect()
 }
 
+macro_rules! time {
+    ($span_name:literal { $($body:tt)*}) => {{
+        let before = std::time::Instant::now();
+        log::info!("Span {} starting at {:?}", $span_name, before);
+        let res = (|| Ok::<_, anyhow::Error>({ $($body)* }))();
+        let elapsed = before.elapsed();
+        log::info!("Span {} ended after {:?}", $span_name, elapsed);
+        res?
+    }}
+}
+
 fn run_one_database(config: &LoadConfig, database_number: u16, topology: &DatabaseTopology) -> Result<()> {
-    let database_identity = topology.identity_for_database_number(database_number)?;
-    log::info!(
-        "starting tpcc load into {} / {} with {} warehouse(s)",
-        config.connection.uri,
-        database_identity,
-        config.warehouses_per_database
-    );
+    time!("run_one_database" {
+        let database_identity = topology.identity_for_database_number(database_number)?;
+        log::info!(
+            "starting tpcc load into {} / {} with {} warehouse(s)",
+            config.connection.uri,
+            database_identity,
+            config.warehouses_per_database
+        );
 
-    let mut client = ModuleClient::connect(&config.connection, database_identity)?;
-    client.subscribe_load_state()?;
+        let mut client = ModuleClient::connect(&config.connection, database_identity)?;
+        client.subscribe_load_state()?;
 
-    if config.reset {
-        client.reset_tpcc().context("failed to reset tpcc data")?;
-    }
+        time!("reset" {
+            if config.reset {
+                client.reset_tpcc().context("failed to reset tpcc data")?;
+            }
+        });
 
-    let request = build_load_request(config, database_number, topology)?;
-    client
-        .configure_tpcc_load(request)
-        .context("failed to configure tpcc load")?;
-    client.start_tpcc_load().context("failed to start tpcc load")?;
+        let request = time!("build_load_request" {
+            build_load_request(config, database_number, topology)?
+        });
+        time!("configure_tpcc_load" {client
+                                     .configure_tpcc_load(request)
+                                     .context("failed to configure tpcc load")})?;
 
-    wait_for_load_completion(&client, database_identity)?;
-    client.shutdown();
+        time!("start_tpcc_load" {
+            client.start_tpcc_load().context("failed to start tpcc load")?
+        });
 
-    log::info!("tpcc load for database {database_identity} finished");
-    Ok(())
+        time!("wait_for_load_completion" {
+            wait_for_load_completion(&client, database_identity)?
+        });
+
+        time!("shutdown" {
+            client.shutdown()
+        });
+
+        log::info!("tpcc load for database {database_identity} finished");
+        Ok(())
+    })
 }
 
 fn build_load_request(
