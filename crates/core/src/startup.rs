@@ -179,6 +179,17 @@ pub fn pin_threads_with_reservations(reservations: CoreReservations) -> Cores {
     Cores::get(reservations).unwrap_or_default()
 }
 
+/// Like [`pin_threads`], but reserves exactly `database_threads` cores for databases.
+///
+/// Database executors are pinned one-per-core. On Linux, Tokio workers, Tokio
+/// blocking threads, and Rayon threads are constrained to the remaining cores
+/// via a shared affinity mask so the OS can schedule them freely within that
+/// set. No separate IRQ or extra reserved cores are carved out in this mode.
+#[must_use]
+pub fn pin_threads_with_dedicated_database_cores(database_threads: usize) -> Cores {
+    Cores::get_with_dedicated_database_cores(database_threads).unwrap_or_default()
+}
+
 /// The desired distribution of available cores to purposes.
 ///
 /// Note that, in addition to `reserved`, [`Cores`] reserves two additional
@@ -288,7 +299,11 @@ impl Cores {
 
         let databases = DatabaseCores(databases);
         let reserved = (!reserved.is_empty()).then(|| reserved.into());
-        let rayon = RayonCores((!rayon.is_empty()).then_some(rayon));
+        let rayon = RayonCores {
+            dedicated: (!rayon.is_empty()).then_some(rayon),
+            #[cfg(target_os = "linux")]
+            shared: None,
+        };
 
         // see comment on `TokioCores.blocking`
         #[cfg(target_os = "linux")]
@@ -301,6 +316,8 @@ impl Cores {
 
         let tokio = TokioCores {
             workers: Some(tokio_workers),
+            #[cfg(target_os = "linux")]
+            workers_shared: None,
             #[cfg(target_os = "linux")]
             blocking: remaining,
         };
@@ -315,11 +332,74 @@ impl Cores {
         })
     }
 
+    fn get_with_dedicated_database_cores(database_threads: usize) -> Option<Self> {
+        let cores = Self::get_core_ids()?;
+        Self::from_core_ids_with_dedicated_database_cores(cores, database_threads)
+    }
+
+    fn from_core_ids_with_dedicated_database_cores(mut cores: Vec<CoreId>, database_threads: usize) -> Option<Self> {
+        if database_threads == 0 || database_threads >= cores.len() {
+            return None;
+        }
+
+        let databases = cores.drain(..database_threads).collect_vec();
+        let shared = cores;
+
+        let databases = DatabaseCores(databases);
+        #[cfg(target_os = "linux")]
+        let shared_cpuset = cores_to_cpuset(&shared)?;
+
+        #[cfg(target_os = "linux")]
+        let tokio = TokioCores {
+            workers: None,
+            workers_shared: Some((shared.len(), shared_cpuset)),
+            blocking: Some(shared_cpuset),
+        };
+
+        #[cfg(not(target_os = "linux"))]
+        let tokio = TokioCores {
+            workers: (!shared.is_empty()).then_some(shared.clone()),
+        };
+
+        let rayon = RayonCores {
+            #[cfg(not(target_os = "linux"))]
+            dedicated: (!shared.is_empty()).then_some(shared.clone()),
+            #[cfg(target_os = "linux")]
+            dedicated: None,
+            #[cfg(target_os = "linux")]
+            shared: Some((shared.len(), shared_cpuset)),
+        };
+
+        Some(Self {
+            databases,
+            tokio,
+            rayon,
+            reserved: None,
+            #[cfg(target_os = "linux")]
+            blocking,
+        })
+    }
+
+    #[cfg(target_os = "linux")]
+    fn get_core_ids() -> Option<Vec<CoreId>> {
+        if cfg!(feature = "no-core-pinning") {
+            return None;
+        }
+
+        let cores = core_affinity::get_core_ids()
+            .filter(|cores| cores.len() >= 10)?
+            .into_iter()
+            .collect_vec();
+
+        (!cores.is_empty()).then_some(cores)
+    }
+
     /// Get the cores of the local host, as reported by the operating system.
     ///
     /// Returns `None` if `num_cpus` is less than 8
     /// or if core pinning is disabled.
     /// If `Some` is returned, the `Vec` is non-empty.
+    #[cfg(not(target_os = "linux"))]
     pub fn get_core_ids() -> Option<Vec<CoreId>> {
         if cfg!(feature = "no-core-pinning") {
             return None;
@@ -334,9 +414,19 @@ impl Cores {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn cores_to_cpuset(cores: &[CoreId]) -> Option<nix::sched::CpuSet> {
+    cores.iter().copied().try_fold(nix::sched::CpuSet::new(), |mut cpuset, core| {
+        cpuset.set(core.id).ok()?;
+        Some(cpuset)
+    })
+}
+
 #[derive(Default)]
 pub struct TokioCores {
     pub workers: Option<Vec<CoreId>>,
+    #[cfg(target_os = "linux")]
+    pub workers_shared: Option<(usize, nix::sched::CpuSet)>,
     // For blocking threads, we don't want to limit them to a specific number
     // and pin them to their own cores - they're supposed to run concurrently
     // with each other. However, `core_affinity` doesn't support affinity masks,
@@ -371,25 +461,62 @@ impl TokioCores {
                     }
                 }
             });
+        } else {
+            #[cfg(target_os = "linux")]
+            if let Some((threads, cpuset)) = self.workers_shared {
+                builder.worker_threads(threads);
+                builder.on_thread_start(move || {
+                    let this = nix::unistd::Pid::from_raw(0);
+                    let _ = nix::sched::sched_setaffinity(this, &cpuset);
+                });
+            }
         }
     }
 }
 
 #[derive(Default)]
-pub struct RayonCores(Option<Vec<CoreId>>);
+pub struct RayonCores {
+    dedicated: Option<Vec<CoreId>>,
+    #[cfg(target_os = "linux")]
+    shared: Option<(usize, nix::sched::CpuSet)>,
+}
 
 impl RayonCores {
     /// Configures a global rayon threadpool, pinning its threads to specific cores.
     ///
     /// All rayon threads will be run with `tokio_handle` enetered into.
     pub fn configure(self, tokio_handle: &tokio::runtime::Handle) {
+        let dedicated = self.dedicated;
+        #[cfg(target_os = "linux")]
+        let shared = self.shared;
+
+        let num_threads = dedicated.as_ref().map_or_else(
+            || {
+                #[cfg(target_os = "linux")]
+                {
+                    shared.as_ref().map_or(0, |(threads, _)| *threads)
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    0
+                }
+            },
+            |cores| cores.len(),
+        );
+
         rayon_core::ThreadPoolBuilder::new()
             .thread_name(|_idx| "rayon-worker".to_string())
             .spawn_handler(thread_spawn_handler(tokio_handle))
-            .num_threads(self.0.as_ref().map_or(0, |cores| cores.len()))
+            .num_threads(num_threads)
             .start_handler(move |i| {
-                if let Some(cores) = &self.0 {
+                if let Some(cores) = &dedicated {
                     core_affinity::set_for_current(cores[i]);
+                } else {
+                    #[cfg(target_os = "linux")]
+                    if let Some((_, cpuset)) = &shared {
+                        let this = nix::unistd::Pid::from_raw(0);
+                        let _ = nix::sched::sched_setaffinity(this, cpuset);
+                    }
                 }
             })
             .build_global()
@@ -443,5 +570,42 @@ impl DatabaseCores {
     /// ```
     pub fn make_database_runners(self) -> JobCores {
         JobCores::from_pinned_cores(self.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dedicated_database_core_mode_splits_database_and_shared_cores() {
+        let cores = (0..32).map(|id| CoreId { id }).collect_vec();
+        let split = Cores::from_core_ids_with_dedicated_database_cores(cores, 12).unwrap();
+
+        assert_eq!(split.databases.0.len(), 12);
+        assert_eq!(split.databases.0[0].id, 0);
+        assert_eq!(split.databases.0[11].id, 11);
+        #[cfg(target_os = "linux")]
+        {
+            assert!(split.tokio.workers.is_none());
+            assert_eq!(split.tokio.workers_shared.as_ref().unwrap().0, 20);
+            assert!(split.rayon.dedicated.is_none());
+            assert_eq!(split.rayon.shared.as_ref().unwrap().0, 20);
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            assert_eq!(split.tokio.workers.as_ref().unwrap().len(), 20);
+            assert_eq!(split.tokio.workers.as_ref().unwrap()[0].id, 12);
+            assert_eq!(split.tokio.workers.as_ref().unwrap()[19].id, 31);
+            assert_eq!(split.rayon.dedicated.as_ref().unwrap().len(), 20);
+        }
+    }
+
+    #[test]
+    fn dedicated_database_core_mode_requires_one_non_database_core() {
+        let cores = (0..12).map(|id| CoreId { id }).collect_vec();
+        assert!(Cores::from_core_ids_with_dedicated_database_cores(cores.clone(), 0).is_none());
+        assert!(Cores::from_core_ids_with_dedicated_database_cores(cores.clone(), 12).is_none());
+        assert!(Cores::from_core_ids_with_dedicated_database_cores(cores, 13).is_none());
     }
 }

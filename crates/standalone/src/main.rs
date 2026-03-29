@@ -1,4 +1,5 @@
-use clap::Command;
+use anyhow::Context as _;
+use clap::{ArgMatches, Command};
 
 use spacetimedb::startup;
 use spacetimedb::util::jobs::JobCores;
@@ -8,8 +9,7 @@ use spacetimedb_standalone::*;
 use std::panic;
 use std::process;
 
-async fn async_main(db_cores: JobCores) -> anyhow::Result<()> {
-    let matches = get_command().get_matches();
+async fn async_main(matches: ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     let (cmd, subcommand_args) = matches.subcommand().unwrap();
     exec_subcommand(cmd, subcommand_args, db_cores).await?;
     Ok(())
@@ -68,7 +68,27 @@ fn main() -> anyhow::Result<()> {
         process::exit(1);
     }));
 
-    let cores = startup::pin_threads();
+    let matches = get_command().get_matches();
+    let cores = match matches.subcommand() {
+        Some(("start", args)) => {
+            if let Some(&database_cores) = args.get_one::<usize>("dedicated_database_cores") {
+                let available = startup::Cores::get_core_ids().context(
+                    "dedicated database core pinning requires core pinning support and at least 10 visible CPUs",
+                )?;
+                if database_cores >= available.len() {
+                    anyhow::bail!(
+                        "--dedicated-database-cores={} requires at least one remaining non-database core, but only {} pinnable cores are available",
+                        database_cores,
+                        available.len()
+                    );
+                }
+                startup::pin_threads_with_dedicated_database_cores(database_cores)
+            } else {
+                startup::pin_threads()
+            }
+        }
+        _ => startup::pin_threads(),
+    };
 
     // Create a multi-threaded run loop
     let mut builder = Builder::new_multi_thread();
@@ -81,7 +101,7 @@ fn main() -> anyhow::Result<()> {
     // Keep a handle on the `database_cores` alive outside of `async_main`
     // and explicitly drop it to avoid dropping it from an `async` context -
     // Tokio gets angry when you drop a runtime within another runtime.
-    let res = rt.block_on(async_main(database_cores.clone()));
+    let res = rt.block_on(async_main(matches, database_cores.clone()));
     drop(database_cores);
 
     res
