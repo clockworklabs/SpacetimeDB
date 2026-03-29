@@ -52,6 +52,7 @@ members = [
   "modules/sdk-test-view-pk",
   "modules/sdk-test-event-table",
   "modules/tpcc",
+  "modules/tpcc-metrics",
   "sdks/rust/tests/test-client",
   "sdks/rust/tests/test-counter",
   "sdks/rust/tests/connect_disconnect_client",

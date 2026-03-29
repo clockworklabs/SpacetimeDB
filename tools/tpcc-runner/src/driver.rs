@@ -9,6 +9,8 @@ use std::time::Duration;
 
 use crate::client::{expect_ok, ModuleClient};
 use crate::config::{default_run_id, DriverConfig};
+use crate::metrics_module_bindings::register_completed_order;
+use crate::metrics_module_client::connect_metrics_module;
 use crate::module_bindings::*;
 use crate::protocol::{
     RegisterDriverRequest, RegisterDriverResponse, RunSchedule, ScheduleResponse, SubmitSummaryRequest,
@@ -151,6 +153,7 @@ fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
         seed,
     } = runtime;
     let client = ModuleClient::connect(&config.connection, database_identity)?;
+    let metrics_client = connect_metrics_module(&config.connection)?;
     sleep_until_ms(schedule.warmup_start_ms);
 
     let mut rng = StdRng::seed_from_u64(seed);
@@ -174,6 +177,12 @@ fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
 
         match event {
             Ok(record) => {
+                // Some metrics depend on knowing all completed orders, even outside the
+                // measurement window
+                if record.kind == TransactionKind::NewOrder && record.success {
+                    metrics_client.reducers.register_completed_order();
+                }
+
                 if record.timestamp_ms >= schedule.measure_start_ms && record.timestamp_ms < schedule.measure_end_ms {
                     metrics.record(record)?;
                 }
