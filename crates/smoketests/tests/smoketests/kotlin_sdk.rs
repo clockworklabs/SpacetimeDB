@@ -280,6 +280,21 @@ fn test_kotlin_integration() {
     let kotlin_sdk_path = workspace.join("sdks/kotlin");
     let module_path = kotlin_sdk_path.join("integration-tests/spacetimedb");
 
+    // Isolate CLI config so we don't reuse stale tokens from the user's home config.
+    // This mirrors what Smoketest.spacetime_cmd() does via --config-path.
+    let config_dir = tempfile::tempdir().expect("Failed to create temp config dir");
+    let config_path = config_dir.path().join("config.toml");
+
+    // Helper: build a Command with --config-path already set.
+    let cli = |extra_args: &[&str]| -> std::process::Output {
+        Command::new(&cli_path)
+            .arg("--config-path")
+            .arg(&config_path)
+            .args(extra_args)
+            .output()
+            .expect("Failed to run spacetime CLI command")
+    };
+
     // Step 1: Spawn a local SpacetimeDB server
     let guard = SpacetimeDbGuard::spawn_in_temp_data_dir_with_pg_port(None);
     let server_url = &guard.host_url;
@@ -288,18 +303,15 @@ fn test_kotlin_integration() {
     // Step 2: Regenerate Kotlin bindings from the module source
     let bindings_dir = kotlin_sdk_path.join("integration-tests/src/test/kotlin/module_bindings");
     let _ = fs::remove_dir_all(&bindings_dir);
-    let output = Command::new(&cli_path)
-        .args([
-            "generate",
-            "--lang",
-            "kotlin",
-            "--out-dir",
-            bindings_dir.to_str().unwrap(),
-            "--module-path",
-            module_path.to_str().unwrap(),
-        ])
-        .output()
-        .expect("Failed to run spacetime generate");
+    let output = cli(&[
+        "generate",
+        "--lang",
+        "kotlin",
+        "--out-dir",
+        bindings_dir.to_str().unwrap(),
+        "--module-path",
+        module_path.to_str().unwrap(),
+    ]);
     assert!(
         output.status.success(),
         "spacetime generate failed:\nstdout: {}\nstderr: {}",
@@ -316,10 +328,7 @@ fn test_kotlin_integration() {
         fs::copy(&toolchain_src, module_path.join("rust-toolchain.toml")).expect("Failed to copy rust-toolchain.toml");
     }
 
-    let output = Command::new(&cli_path)
-        .args(["build", "--module-path", module_path.to_str().unwrap()])
-        .output()
-        .expect("Failed to run spacetime build");
+    let output = cli(&["build", "--module-path", module_path.to_str().unwrap()]);
     assert!(
         output.status.success(),
         "spacetime build failed:\nstdout: {}\nstderr: {}",
@@ -329,19 +338,16 @@ fn test_kotlin_integration() {
 
     // Step 4: Publish the module
     let db_name = "kotlin-integration-test";
-    let output = Command::new(&cli_path)
-        .args([
-            "publish",
-            "--server",
-            server_url,
-            "--module-path",
-            module_path.to_str().unwrap(),
-            "--no-config",
-            "-y",
-            db_name,
-        ])
-        .output()
-        .expect("Failed to run spacetime publish");
+    let output = cli(&[
+        "publish",
+        "--server",
+        server_url,
+        "--module-path",
+        module_path.to_str().unwrap(),
+        "--no-config",
+        "-y",
+        db_name,
+    ]);
     assert!(
         output.status.success(),
         "spacetime publish failed:\nstdout: {}\nstderr: {}",
