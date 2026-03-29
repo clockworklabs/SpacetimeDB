@@ -654,7 +654,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             if let Err(e) = stdb.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
                 Ok(del_tx.delete_st_2pc_state(&prepare_id)?)
             }) {
-                log::error!("call_reducer_prepare_and_hold: abort: failed to delete st_2pc_state for {prepare_id}: {e}");
+                log::error!(
+                    "call_reducer_prepare_and_hold: abort: failed to delete st_2pc_state for {prepare_id}: {e}"
+                );
             }
         }
     }
@@ -953,11 +955,9 @@ impl InstanceCommon {
             std::thread::scope(|s| {
                 s.spawn(|| {
                     handle.block_on(async {
-                        if committed {
-                            if let Some(mut durable_offset) = stdb.durable_tx_offset() {
-                                let current: u64 = durable_offset.last_seen().unwrap_or(0);
-                                let _ = durable_offset.wait_for(current + 1).await;
-                            }
+                        if committed && let Some(mut durable_offset) = stdb.durable_tx_offset() {
+                            let current: u64 = durable_offset.last_seen().unwrap_or(0);
+                            let _ = durable_offset.wait_for(current + 1).await;
                         }
 
                         let client = replica_ctx.call_reducer_client.clone();

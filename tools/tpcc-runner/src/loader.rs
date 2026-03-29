@@ -430,11 +430,7 @@ fn load_customers_history_orders(
                         ol_dist_info: alpha_string(rng, 24, 24),
                     });
                     if order_line_batch.len() >= batch_size {
-                        client.queue_load_order_lines(
-                            std::mem::take(&mut order_line_batch),
-                            &pending,
-                            &errors,
-                        )?;
+                        client.queue_load_order_lines(std::mem::take(&mut order_line_batch), &pending, &errors)?;
                     }
                 }
 

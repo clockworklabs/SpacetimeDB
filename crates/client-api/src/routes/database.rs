@@ -291,10 +291,9 @@ pub async fn prepare<S: ControlStateDelegate + NodeDelegate>(
             )
                 .into_response();
             if !prepare_id.is_empty() {
-                response.headers_mut().insert(
-                    "X-Prepare-Id",
-                    http::HeaderValue::from_str(&prepare_id).unwrap(),
-                );
+                response
+                    .headers_mut()
+                    .insert("X-Prepare-Id", http::HeaderValue::from_str(&prepare_id).unwrap());
             }
             Ok(response)
         }

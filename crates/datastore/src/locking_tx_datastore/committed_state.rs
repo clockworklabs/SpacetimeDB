@@ -1430,13 +1430,11 @@ impl CommittedState {
         row: &ProductValue,
     ) -> Result<TxData> {
         let (table, blob_store, pool) = self.get_table_and_blob_store_or_create(table_id, schema);
-        table
-            .insert(pool, blob_store, row)
-            .map_err(|e| match e {
-                InsertError::Duplicate(e) => DatastoreError::from(TableError::Duplicate(e)),
-                InsertError::Bflatn(e) => DatastoreError::from(TableError::Bflatn(e)),
-                InsertError::IndexError(e) => DatastoreError::from(IndexError::UniqueConstraintViolation(e)),
-            })?;
+        table.insert(pool, blob_store, row).map_err(|e| match e {
+            InsertError::Duplicate(e) => DatastoreError::from(TableError::Duplicate(e)),
+            InsertError::Bflatn(e) => DatastoreError::from(TableError::Bflatn(e)),
+            InsertError::IndexError(e) => DatastoreError::from(IndexError::UniqueConstraintViolation(e)),
+        })?;
 
         let row_arc: Arc<[ProductValue]> = Arc::from([row.clone()]);
         let mut tx_data = TxData::default();

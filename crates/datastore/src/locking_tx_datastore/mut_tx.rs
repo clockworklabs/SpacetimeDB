@@ -20,13 +20,13 @@ use crate::{
 use crate::{
     error::{IndexError, SequenceError, TableError},
     system_tables::{
-        with_sys_table_buf, StClientFields, StClientRow, StColumnAccessorFields, StColumnAccessorRow, StColumnFields,
-        StColumnRow, StConstraintFields, StConstraintRow, StEventTableRow, StFields as _, StIndexAccessorFields,
-        StIndexAccessorRow, StIndexFields, StIndexRow, StRowLevelSecurityFields, StRowLevelSecurityRow,
-        StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow,
-        StTableFields, StTableRow, SystemTable, ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID,
-        ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID,
-        ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID, St2pcStateFields, St2pcStateRow, ST_2PC_STATE_ID,
+        with_sys_table_buf, St2pcStateFields, St2pcStateRow, StClientFields, StClientRow, StColumnAccessorFields,
+        StColumnAccessorRow, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StEventTableRow,
+        StFields as _, StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StRowLevelSecurityFields,
+        StRowLevelSecurityRow, StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow,
+        StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow, SystemTable, ST_2PC_STATE_ID,
+        ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID,
+        ST_INDEX_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
     },
 };
 use crate::{execution_context::ExecutionContext, system_tables::StViewColumnRow};
@@ -2774,9 +2774,7 @@ impl MutTxId {
         // Collect deletes: row pointers live in the committed state; read them
         // without deleting.
         for (table_id, delete_table) in &self.tx_state.delete_tables {
-            if let Ok((table, blob_store, _)) =
-                self.committed_state_write_lock.get_table_and_blob_store(*table_id)
-            {
+            if let Ok((table, blob_store, _)) = self.committed_state_write_lock.get_table_and_blob_store(*table_id) {
                 let rows: std::sync::Arc<[ProductValue]> = delete_table
                     .iter()
                     .map(|row_ptr| {

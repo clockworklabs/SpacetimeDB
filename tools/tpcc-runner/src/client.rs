@@ -86,14 +86,10 @@ impl ModuleClient {
         increment_pending(pending);
         let pending_for_callback = Arc::clone(pending);
         let errors = Arc::clone(errors);
-        if let Err(err) = self
-            .conn
-            .reducers
-            .load_remote_warehouses_then(rows, move |_, res| {
-                handle_reducer_result("load_remote_warehouses", res, &errors);
-                decrement_pending(&pending_for_callback);
-            })
-        {
+        if let Err(err) = self.conn.reducers.load_remote_warehouses_then(rows, move |_, res| {
+            handle_reducer_result("load_remote_warehouses", res, &errors);
+            decrement_pending(&pending_for_callback);
+        }) {
             decrement_pending(pending);
             return Err(anyhow!("load_remote_warehouses send error: {err}"));
         }

@@ -1034,7 +1034,10 @@ impl InstanceEnv {
             let result = async {
                 let response = req.send().await.map_err(|e| NodesError::HttpError(e.to_string()))?;
                 let status = response.status().as_u16();
-                let body = response.bytes().await.map_err(|e| NodesError::HttpError(e.to_string()))?;
+                let body = response
+                    .bytes()
+                    .await
+                    .map_err(|e| NodesError::HttpError(e.to_string()))?;
                 Ok((status, body))
             }
             .await;
@@ -1102,7 +1105,10 @@ impl InstanceEnv {
                     .get("X-Prepare-Id")
                     .and_then(|v| v.to_str().ok())
                     .map(|s| s.to_owned());
-                let body = response.bytes().await.map_err(|e| NodesError::HttpError(e.to_string()))?;
+                let body = response
+                    .bytes()
+                    .await
+                    .map_err(|e| NodesError::HttpError(e.to_string()))?;
                 Ok((status, body, prepare_id))
             }
             .await;
@@ -1121,9 +1127,7 @@ impl InstanceEnv {
     }
 
     /// Commit all prepared participants (called after coordinator's reducer succeeds).
-    pub fn commit_all_prepared(
-        &mut self,
-    ) -> impl Future<Output = ()> + use<> {
+    pub fn commit_all_prepared(&mut self) -> impl Future<Output = ()> + use<> {
         let participants = mem::take(&mut self.prepared_participants);
         let client = self.replica_ctx.call_reducer_client.clone();
         let router = self.replica_ctx.call_reducer_router.clone();
@@ -1167,9 +1171,7 @@ impl InstanceEnv {
     }
 
     /// Abort all prepared participants (called when coordinator's reducer fails).
-    pub fn abort_all_prepared(
-        &mut self,
-    ) -> impl Future<Output = ()> + use<> {
+    pub fn abort_all_prepared(&mut self) -> impl Future<Output = ()> + use<> {
         let participants = mem::take(&mut self.prepared_participants);
         let client = self.replica_ctx.call_reducer_client.clone();
         let router = self.replica_ctx.call_reducer_router.clone();

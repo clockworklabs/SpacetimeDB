@@ -91,18 +91,12 @@ fn test_cross_db_2pc_happy_path() {
     // Publish bank B (the participant that will be debited).
     test.publish_module_named(&db_b_name, false)
         .expect("failed to publish bank B");
-    let db_b_identity = test
-        .database_identity
-        .clone()
-        .expect("bank B identity not set");
+    let db_b_identity = test.database_identity.clone().expect("bank B identity not set");
 
     // Publish bank A (the coordinator that will be credited).
     test.publish_module_named(&db_a_name, false)
         .expect("failed to publish bank A");
-    let _db_a_identity = test
-        .database_identity
-        .clone()
-        .expect("bank A identity not set");
+    let _db_a_identity = test.database_identity.clone().expect("bank A identity not set");
 
     // Transfer 50 from B's alice to A's alice.
     // The coordinator is bank A. It credits locally, then calls debit on B via 2PC.
@@ -155,10 +149,7 @@ fn test_cross_db_2pc_abort_insufficient_funds() {
     // Publish bank B.
     test.publish_module_named(&db_b_name, false)
         .expect("failed to publish bank B");
-    let db_b_identity = test
-        .database_identity
-        .clone()
-        .expect("bank B identity not set");
+    let db_b_identity = test.database_identity.clone().expect("bank B identity not set");
 
     // Publish bank A.
     test.publish_module_named(&db_a_name, false)
@@ -167,7 +158,10 @@ fn test_cross_db_2pc_abort_insufficient_funds() {
     // Try to transfer 200 -- B only has 100, so the remote debit will fail.
     let result = test.call("transfer_funds", &[&db_b_identity, "alice", "alice", "200"]);
     // The call should fail because the remote debit panicked.
-    assert!(result.is_err(), "Expected transfer_funds to fail due to insufficient funds");
+    assert!(
+        result.is_err(),
+        "Expected transfer_funds to fail due to insufficient funds"
+    );
 
     // Verify bank A: alice should still have 100 (the local credit was rolled back).
     let result_a = test

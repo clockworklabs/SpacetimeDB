@@ -1791,8 +1791,7 @@ impl ModuleHost {
         let prepare_id = format!("prepare-{}", PREPARE_COUNTER.fetch_add(1, Ordering::Relaxed));
 
         // Channel for signalling PREPARED result back to this task.
-        let (prepared_tx, prepared_rx) =
-            tokio::sync::oneshot::channel::<(ReducerCallResult, Option<Bytes>)>();
+        let (prepared_tx, prepared_rx) = tokio::sync::oneshot::channel::<(ReducerCallResult, Option<Bytes>)>();
         // Channel for sending the COMMIT/ABORT decision to the executor thread.
         let (decision_tx, decision_rx) = std::sync::mpsc::channel::<bool>();
 
@@ -1855,7 +1854,8 @@ impl ModuleHost {
 
     /// Finalize a prepared transaction as COMMIT.
     pub fn commit_prepared(&self, prepare_id: &str) -> Result<(), String> {
-        let info = self.prepared_txs
+        let info = self
+            .prepared_txs
             .remove(prepare_id)
             .ok_or_else(|| format!("no such prepared transaction: {prepare_id}"))?;
         // Unblock the executor thread to commit.
@@ -1865,7 +1865,8 @@ impl ModuleHost {
 
     /// Abort a prepared transaction.
     pub fn abort_prepared(&self, prepare_id: &str) -> Result<(), String> {
-        let info = self.prepared_txs
+        let info = self
+            .prepared_txs
             .remove(prepare_id)
             .ok_or_else(|| format!("no such prepared transaction: {prepare_id}"))?;
         // Unblock the executor thread to abort.

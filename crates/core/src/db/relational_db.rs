@@ -76,7 +76,6 @@ type RowCountFn = Arc<dyn Fn(TableId, &str) -> i64 + Send + Sync>;
 /// The type of transactions committed by [RelationalDB].
 pub type Txdata = commitlog::payload::Txdata<ProductValue>;
 
-
 /// We've added a module version field to the system tables, but we don't yet
 /// have the infrastructure to support multiple versions.
 /// All modules are currently locked to this version, but this will be
@@ -460,9 +459,7 @@ impl RelationalDB {
     /// If non-empty, the caller must resume these transactions: retransmit PREPARED to
     /// the coordinator and await a COMMIT or ABORT decision before allowing normal operation.
     pub fn pending_2pc_prepares(&self) -> Result<Vec<String>, DBError> {
-        self.with_auto_commit(Workload::Internal, |tx| {
-            tx.scan_st_2pc_state().map_err(DBError::from)
-        })
+        self.with_auto_commit(Workload::Internal, |tx| tx.scan_st_2pc_state().map_err(DBError::from))
     }
 
     /// Read the set of clients currently connected to the database.

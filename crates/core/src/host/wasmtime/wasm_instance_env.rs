@@ -2076,12 +2076,10 @@ impl WasmInstanceEnv {
             match result {
                 Ok((status, body, prepare_id)) => {
                     // If we got a prepare_id, register this participant.
-                    if let Some(pid) = prepare_id {
-                        if status < 300 {
-                            env.instance_env
-                                .prepared_participants
-                                .push((database_identity, pid));
-                        }
+                    if let Some(pid) = prepare_id
+                        && status < 300
+                    {
+                        env.instance_env.prepared_participants.push((database_identity, pid));
                     }
                     let bytes_source = WasmInstanceEnv::create_bytes_source(env, body)?;
                     bytes_source.0.write_to(mem, out)?;
