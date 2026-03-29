@@ -984,18 +984,37 @@ impl InstanceCommon {
         // 2PC post-commit coordination: commit or abort all prepared participants.
         let prepared_participants = inst.take_prepared_participants();
         if !prepared_participants.is_empty() {
-            let replica_ctx = inst.replica_ctx().clone();
             let committed = matches!(event.status, EventStatus::Committed(_));
+            let stdb = info.subscriptions.relational_db();
+
+            if committed {
+                // Coordinator's PREPARE: activate the persistence barrier.
+                // The coordinator's transaction was just sent to the durability worker
+                // (via commit_and_broadcast_event -> commit_tx_downgrade -> send_or_buffer_durability).
+                // No subsequent transactions should be persisted until we confirm all
+                // participants are prepared and we decide COMMIT.
+                stdb.persistence_barrier().activate(0);
+            }
+
+            let replica_ctx = inst.replica_ctx().clone();
             let handle = tokio::runtime::Handle::current();
             std::thread::scope(|s| {
                 s.spawn(|| {
                     handle.block_on(async {
+                        if committed {
+                            // Wait for coordinator's PREPARE to become durable.
+                            if let Some(mut durable_offset) = stdb.durable_tx_offset() {
+                                let current: u64 = durable_offset.last_seen().unwrap_or(0);
+                                let _ = durable_offset.wait_for(current + 1).await;
+                            }
+                        }
+
                         let client = replica_ctx.call_reducer_client.clone();
                         let router = replica_ctx.call_reducer_router.clone();
                         let auth_token = replica_ctx.call_reducer_auth_token.clone();
-                        for (db_identity, prepare_id) in prepared_participants {
+                        for (db_identity, prepare_id) in &prepared_participants {
                             let action = if committed { "commit" } else { "abort" };
-                            let base_url = match router.resolve_base_url(db_identity).await {
+                            let base_url = match router.resolve_base_url(*db_identity).await {
                                 Ok(url) => url,
                                 Err(e) => {
                                     log::error!("2PC {action}: failed to resolve base URL for {db_identity}: {e}");
@@ -1038,6 +1057,14 @@ impl InstanceCommon {
                 .join()
                 .expect("2PC coordination thread panicked");
             });
+
+            // Deactivate the barrier and flush buffered durability requests.
+            if committed {
+                stdb.finalize_prepare_commit();
+            } else {
+                // On abort, discard buffered requests. No barrier was activated
+                // (we only activate on committed), so this is a no-op.
+            }
         }
 
         let res = ReducerCallResult {
