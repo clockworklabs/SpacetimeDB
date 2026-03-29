@@ -399,6 +399,47 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
     }
 }
 
+/// Notify coordinator A that B has committed, so A can delete its coordinator log entry.
+///
+/// Called AFTER B's commit is durable.  Fire-and-forget: failure is tolerated because
+/// `recover_2pc_coordinator` on A will retransmit COMMIT on restart.
+async fn send_ack_commit_to_coordinator(
+    client: reqwest::Client,
+    router: std::sync::Arc<dyn crate::host::reducer_router::ReducerCallRouter>,
+    auth_token: Option<String>,
+    coordinator_identity: crate::identity::Identity,
+    prepare_id: String,
+) {
+    let base_url = match router.resolve_base_url(coordinator_identity).await {
+        Ok(url) => url,
+        Err(e) => {
+            log::warn!("2PC ack-commit: cannot resolve coordinator URL: {e}");
+            return;
+        }
+    };
+    let url = format!(
+        "{}/v1/database/{}/2pc/ack-commit/{}",
+        base_url,
+        coordinator_identity.to_hex(),
+        prepare_id,
+    );
+    let mut req = client.post(&url);
+    if let Some(token) = &auth_token {
+        req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+    }
+    match req.send().await {
+        Ok(resp) if resp.status().is_success() => {
+            log::info!("2PC ack-commit: notified coordinator for {prepare_id}");
+        }
+        Ok(resp) => {
+            log::warn!("2PC ack-commit: coordinator returned {} for {prepare_id}", resp.status());
+        }
+        Err(e) => {
+            log::warn!("2PC ack-commit: transport error for {prepare_id}: {e}");
+        }
+    }
+}
+
 impl<T: WasmModule> WasmModuleHostActor<T> {
     fn make_from_instance(&self, mut instance: T::Instance) -> WasmModuleInstance<T::Instance> {
         let common = InstanceCommon::new(&self.common);
@@ -648,7 +689,17 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         };
         stdb.request_durability_for_tx_data(None, &marker_tx_data);
 
-        // Step 3: signal PREPARED.
+        // Step 3: wait for the PREPARE marker to be durable before signalling PREPARED.
+        // B must not claim PREPARED until the marker is on disk — if B crashes after
+        // claiming PREPARED but before the marker is durable, recovery has nothing to recover.
+        if let Some(prepare_offset) = marker_tx_data.tx_offset() {
+            if let Some(mut durable) = stdb.durable_tx_offset() {
+                let handle = tokio::runtime::Handle::current();
+                let _ = handle.block_on(durable.wait_for(prepare_offset));
+            }
+        }
+
+        // Step 4: signal PREPARED.
         let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
             energy_used: energy_quanta_used,
@@ -666,7 +717,32 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             if let Err(e) = tx.delete_st_2pc_state(&prepare_id) {
                 log::error!("call_reducer_prepare_and_hold: failed to delete st_2pc_state for {prepare_id}: {e}");
             }
-            commit_and_broadcast_event(&self.common.info.subscriptions, client, event, tx);
+            let commit_result = commit_and_broadcast_event(&self.common.info.subscriptions, client, event, tx);
+
+            // Wait for B's COMMIT to be durable before acking to coordinator.
+            // Without this, A could delete its coordinator log entry while B's commit
+            // is still in-memory — a B crash at that point would leave the tx uncommitted
+            // with no way to recover (A has already forgotten it committed).
+            let handle = tokio::runtime::Handle::current();
+            if let Some(mut durable) = stdb.durable_tx_offset() {
+                if let Ok(offset) = handle.block_on(commit_result.tx_offset) {
+                    let _ = handle.block_on(durable.wait_for(offset));
+                }
+            }
+
+            // Notify coordinator that B has committed so it can delete its coordinator log entry.
+            // Fire-and-forget: if this fails, coordinator's recover_2pc_coordinator will retry on
+            // restart, and B's commit_prepared will then return a harmless "not found" error.
+            let router = replica_ctx.call_reducer_router.clone();
+            let client_http = replica_ctx.call_reducer_client.clone();
+            let auth_token = replica_ctx.call_reducer_auth_token.clone();
+            handle.spawn(send_ack_commit_to_coordinator(
+                client_http,
+                router,
+                auth_token,
+                coordinator_identity,
+                prepare_id,
+            ));
         } else {
             // ABORT: roll back reducer changes; clean up the already-committed marker.
             let _ = stdb.rollback_mut_tx(tx);
@@ -1068,7 +1144,9 @@ impl InstanceCommon {
             }
         }
 
-        let event = commit_and_broadcast_event(&self.info.subscriptions, client, event, tx).event;
+        let commit_result = commit_and_broadcast_event(&self.info.subscriptions, client, event, tx);
+        let commit_tx_offset = commit_result.tx_offset;
+        let event = commit_result.event;
 
         // 2PC post-commit coordination: send COMMIT or ABORT to each participant.
         if !prepared_participants.is_empty() {
@@ -1080,9 +1158,13 @@ impl InstanceCommon {
             std::thread::scope(|s| {
                 s.spawn(|| {
                     handle.block_on(async {
+                        // Wait for A's coordinator log (committed atomically with the tx) to be
+                        // durable before sending COMMIT to B.  This guarantees that if A crashes
+                        // after sending COMMIT, recovery can retransmit from the durable log.
                         if committed && let Some(mut durable_offset) = stdb.durable_tx_offset() {
-                            let current: u64 = durable_offset.last_seen().unwrap_or(0);
-                            let _ = durable_offset.wait_for(current + 1).await;
+                            if let Ok(offset) = commit_tx_offset.await {
+                                let _ = durable_offset.wait_for(offset).await;
+                            }
                         }
 
                         let client = replica_ctx.call_reducer_client.clone();

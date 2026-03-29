@@ -2049,14 +2049,9 @@ impl ModuleHost {
                             Some(commit) => {
                                 if commit {
                                     let _ = this2.commit_prepared(&new_prepare_id);
-                                    // Tell A we committed so it can delete its coordinator log entry.
-                                    Self::send_ack_commit_to_coordinator(
-                                        &client,
-                                        &router,
-                                        auth_token.clone(),
-                                        coordinator_identity,
-                                        &original_prepare_id,
-                                    ).await;
+                                    // The actor thread (call_reducer_prepare_and_hold) will wait
+                                    // for B's commit to be durable and then send the ack-commit
+                                    // to the coordinator.  Nothing to do here.
                                 } else {
                                     let _ = this2.abort_prepared(&new_prepare_id);
                                 }
@@ -2113,45 +2108,6 @@ impl ModuleHost {
             Err(e) => {
                 log::warn!("2PC recovery status poll: transport error: {e}");
                 None
-            }
-        }
-    }
-
-    /// POST `POST /v1/database/{coordinator}/2pc/ack-commit/{prepare_id}` to tell A that
-    /// B has committed, so A can delete its coordinator log entry.
-    async fn send_ack_commit_to_coordinator(
-        client: &reqwest::Client,
-        router: &std::sync::Arc<dyn crate::host::reducer_router::ReducerCallRouter>,
-        auth_token: Option<String>,
-        coordinator_identity: Identity,
-        prepare_id: &str,
-    ) {
-        let base_url = match router.resolve_base_url(coordinator_identity).await {
-            Ok(url) => url,
-            Err(e) => {
-                log::warn!("2PC ack-commit: cannot resolve coordinator URL: {e}");
-                return;
-            }
-        };
-        let url = format!(
-            "{}/v1/database/{}/2pc/ack-commit/{}",
-            base_url,
-            coordinator_identity.to_hex(),
-            prepare_id,
-        );
-        let mut req = client.post(&url);
-        if let Some(token) = &auth_token {
-            req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
-        }
-        match req.send().await {
-            Ok(resp) if resp.status().is_success() => {
-                log::info!("2PC ack-commit: notified coordinator for {prepare_id}");
-            }
-            Ok(resp) => {
-                log::warn!("2PC ack-commit: coordinator returned {} for {prepare_id}", resp.status());
-            }
-            Err(e) => {
-                log::warn!("2PC ack-commit: transport error for {prepare_id}: {e}");
             }
         }
     }
