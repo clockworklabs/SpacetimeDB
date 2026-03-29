@@ -1,7 +1,9 @@
+use std::collections::HashMap;
+
 use crate::{
     district, find_customer_by_id, find_district, find_stock, find_warehouse, item, order_line, pack_order_key,
     remote::{call_remote_reducer, remote_warehouse_home},
-    stock, District, Item, OrderLine, Stock, DISTRICTS_PER_WAREHOUSE, TAX_SCALE,
+    stock, District, Item, OrderLine, Stock, WarehouseId, DISTRICTS_PER_WAREHOUSE, TAX_SCALE,
 };
 use spacetimedb::{log_stopwatch::LogStopwatch, reducer, Identity, ReducerContext, SpacetimeType, Table, Timestamp};
 
@@ -71,51 +73,61 @@ pub fn new_order(
 
     let all_local_warehouse = order_lines.iter().all(|order_line| order_line.supply_w_id == w_id);
 
-    let line_results = order_lines
+    // TECHNICALLY NON-CONFORMANT: If we encounter a non-existent item in the order,
+    // we'll short-circuit and exit here.
+    // TPC-C technically requires, in 2.4.2.3, that we still retrieve and process all the valid item numbers.
+    // This would be a horrendous pain to implement, so we won't.
+    // We don't do the things the spec tells us it doesn't want us to do, namely:
+    // - changing the execution of other steps
+    // - using a different type of transaction
+    // But we do skip inspecting some number of valid items and stocks.
+    let items = order_lines
+        .iter()
+        .map(|line| find_item(ctx, line.item_id))
+        .collect::<Result<Vec<Item>, String>>()?;
+
+    let (remote_order_lines, local_order_lines) = partition_lines_by_database(ctx, &order_lines);
+
+    let remote_order_outputs = remote_order_lines
         .into_iter()
-        .enumerate()
-        .map(|(idx, line)| {
-            ensure!(line.quantity > 0, "order line quantity must be positive");
-
-            // TECHNICALLY NON-CONFORMANT: If we encounter a non-existent item in the order,
-            // we'll short-circuit and exit here.
-            // TPC-C technically requires, in 2.4.2.3, that we still retrieve and process all the valid item numbers.
-            // This would be a horrendous pain to implement, so we won't.
-            // We don't do the things the spec tells us it doesn't want us to do, namely:
-            // - changing the execution of other steps
-            // - using a different type of transaction
-            // But we do skip inspecting some number of valid items and stocks.
-            let item = find_item(ctx, line.item_id)?;
-
-            let is_remote_warehouse = w_id == line.supply_w_id;
-            let supply_warehouse_id = line.supply_w_id;
-
-            let input = OrderItemInput {
-                line: line.clone(),
+        .map(|(remote_database_identity, lines)| {
+            let input = OrderMultipleItemsInput {
+                lines,
                 district: d_id,
-                is_remote_warehouse,
+                terminal_warehouse: w_id,
             };
-
-            let order_item_output = match remote_warehouse_home(ctx, supply_warehouse_id) {
-                None => order_item_and_decrement_stock(ctx, input)?,
-                Some(remote_database_identity) => {
-                    call_remote_order_item_and_decrement_stock(ctx, remote_database_identity, input)?
-                }
-            };
-
-            Ok(ProcessedNewOrderItem {
-                idx,
-                line,
-                item,
-                district_stock_info: order_item_output.s_dist,
-                stock_data: order_item_output.s_data,
-                updated_quantity: order_item_output.updated_quantity,
-            })
+            call_remote_order_multiple_items_and_decrement_stock(ctx, remote_database_identity, input)
         })
-        .map(|processed_item| {
-            processed_item.map(|processed_item| insert_order_line(ctx, w_id, d_id, order_id, processed_item))
-        })
+        .collect::<Result<Vec<_>, String>>()?
+        .into_iter()
+        .flat_map(|v| v.into_iter())
+        .collect::<Vec<OrderItemOutput>>();
+
+    let local_order_outputs = local_order_lines
+        .into_iter()
+        .map(|line| order_item_and_decrement_stock(ctx, line.line, line.index, d_id, w_id))
         .collect::<Result<Vec<_>, String>>()?;
+
+    let line_results = remote_order_outputs
+        .into_iter()
+        .chain(local_order_outputs)
+        .map(|output| {
+            (
+                items[output.index as usize].clone(),
+                order_lines[output.index as usize].clone(),
+                output,
+            )
+        })
+        .map(|(item, line, order_item_output)| ProcessedNewOrderItem {
+            index: order_item_output.index,
+            line,
+            item,
+            district_stock_info: order_item_output.s_dist,
+            stock_data: order_item_output.s_data,
+            updated_quantity: order_item_output.updated_quantity,
+        })
+        .map(|processed_item| insert_order_line(ctx, w_id, d_id, order_id, processed_item))
+        .collect::<Vec<_>>();
 
     let subtotal_cents = line_results.iter().map(|line_result| line_result.amount_cents).sum();
 
@@ -139,16 +151,48 @@ pub fn new_order(
     })
 }
 
-fn call_remote_order_item_and_decrement_stock(
+#[derive(SpacetimeType)]
+struct NewOrderLineAndIndex {
+    line: NewOrderLineInput,
+    index: u8,
+}
+
+fn partition_lines_by_database(
+    ctx: &ReducerContext,
+    order_lines: &[NewOrderLineInput],
+) -> (HashMap<Identity, Vec<NewOrderLineAndIndex>>, Vec<NewOrderLineAndIndex>) {
+    let mut remote_lines: HashMap<Identity, Vec<_>> = HashMap::new();
+    let mut local_lines = Vec::with_capacity(order_lines.len());
+    for (index, line) in order_lines.iter().cloned().enumerate() {
+        let index = index as u8;
+        if let Some(remote_database_identity) = remote_warehouse_home(ctx, line.supply_w_id) {
+            remote_lines
+                .entry(remote_database_identity)
+                .or_default()
+                .push(NewOrderLineAndIndex { line, index });
+        } else {
+            local_lines.push(NewOrderLineAndIndex { line, index });
+        }
+    }
+
+    (remote_lines, local_lines)
+}
+
+fn call_remote_order_multiple_items_and_decrement_stock(
     ctx: &ReducerContext,
     remote_database_identity: Identity,
-    input: OrderItemInput,
-) -> Result<OrderItemOutput, String> {
-    call_remote_reducer(ctx, remote_database_identity, "order_item_and_decrement_stock", &input)
+    input: OrderMultipleItemsInput,
+) -> Result<Vec<OrderItemOutput>, String> {
+    call_remote_reducer(
+        ctx,
+        remote_database_identity,
+        "order_multiple_items_and_decrement_stock",
+        &input,
+    )
 }
 
 struct ProcessedNewOrderItem {
-    idx: usize,
+    index: u8,
     line: NewOrderLineInput,
     item: Item,
     district_stock_info: String,
@@ -164,7 +208,7 @@ fn insert_order_line(
     processed_item: ProcessedNewOrderItem,
 ) -> NewOrderLineResult {
     let ProcessedNewOrderItem {
-        idx,
+        index,
         line,
         item,
         district_stock_info,
@@ -178,11 +222,11 @@ fn insert_order_line(
         "G"
     };
     tx.db.order_line().insert(OrderLine {
-        order_line_key: pack_order_line_key(warehouse_id, district_id, order_id, (idx + 1) as u8),
+        order_line_key: pack_order_line_key(warehouse_id, district_id, order_id, index + 1),
         ol_w_id: warehouse_id,
         ol_d_id: district_id,
         ol_o_id: order_id,
-        ol_number: (idx + 1) as u8,
+        ol_number: index + 1,
         ol_i_id: line.item_id,
         ol_supply_w_id: line.supply_w_id,
         ol_delivery_d: None,
@@ -208,23 +252,42 @@ pub struct OrderItemOutput {
     s_dist: String,
     s_data: String,
     updated_quantity: i32,
+    index: u8,
 }
 
 #[derive(SpacetimeType)]
-pub struct OrderItemInput {
-    line: NewOrderLineInput,
+pub struct OrderMultipleItemsInput {
+    lines: Vec<NewOrderLineAndIndex>,
     district: u8,
-    is_remote_warehouse: bool,
+    terminal_warehouse: WarehouseId,
 }
 
 #[reducer]
-pub fn order_item_and_decrement_stock(ctx: &ReducerContext, input: OrderItemInput) -> Result<OrderItemOutput, String> {
-    let _timer = LogStopwatch::new("order_item_and_decrement_stock");
-    let OrderItemInput {
-        line,
+fn order_multiple_items_and_decrement_stocks(
+    ctx: &ReducerContext,
+    input: OrderMultipleItemsInput,
+) -> Result<Vec<OrderItemOutput>, String> {
+    let _timer = LogStopwatch::new("order_multiple_items_and_decrement_stock");
+    let OrderMultipleItemsInput {
+        lines,
         district,
-        is_remote_warehouse,
+        terminal_warehouse,
     } = input;
+    lines
+        .into_iter()
+        .map(|line| order_item_and_decrement_stock(ctx, line.line, line.index, district, terminal_warehouse))
+        .collect()
+}
+
+fn order_item_and_decrement_stock(
+    ctx: &ReducerContext,
+    line: NewOrderLineInput,
+    index: u8,
+    district: u8,
+    terminal_warehouse: WarehouseId,
+) -> Result<OrderItemOutput, String> {
+    let is_remote_warehouse = terminal_warehouse == line.supply_w_id;
+
     let stock = find_stock(ctx, line.supply_w_id, line.item_id)?;
 
     let ordered_quantity = line.quantity;
@@ -234,6 +297,7 @@ pub fn order_item_and_decrement_stock(ctx: &ReducerContext, input: OrderItemInpu
         s_dist: district_stock_info(&stock, district),
         s_data: stock.s_data.clone(),
         updated_quantity,
+        index,
     };
 
     ctx.db.stock().stock_key().update(Stock {
