@@ -1788,7 +1788,14 @@ impl ModuleHost {
             args,
         };
 
-        let prepare_id = format!("prepare-{}", PREPARE_COUNTER.fetch_add(1, Ordering::Relaxed));
+        // Include the coordinator identity so prepare_ids from different coordinators
+        // cannot collide on the participant's st_2pc_state table.
+        let coordinator_hex = caller_identity.to_hex();
+        let prepare_id = format!(
+            "prepare-{}-{}",
+            &coordinator_hex.to_string()[..16],
+            PREPARE_COUNTER.fetch_add(1, Ordering::Relaxed),
+        );
 
         // Channel for signalling PREPARED result back to this task.
         let (prepared_tx, prepared_rx) = tokio::sync::oneshot::channel::<(ReducerCallResult, Option<Bytes>)>();
