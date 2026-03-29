@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use crate::protocol::DriverAssignment;
 
-const DEFAULT_LOAD_BATCH_SIZE: usize = 10_000;
+const DEFAULT_LOAD_BATCH_SIZE: usize = 500;
 
 #[derive(Debug, Parser)]
 #[command(name = "tpcc-runner")]
@@ -452,7 +452,7 @@ mod tests {
     }
 
     #[test]
-    fn load_args_default_batch_size_is_10000() {
+    fn load_args_default_batch_size_is_500() {
         let args = LoadArgs {
             connection: ConnectionArgs::default(),
             num_databases: Some(1),

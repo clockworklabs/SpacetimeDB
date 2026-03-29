@@ -130,7 +130,7 @@ cargo run --release -p tpcc-runner -- load \
 
 `--batch-size` still matters for `load`, but it now controls the server-side
 chunk size for phases like items, stock, and orders instead of the number of
-rows pushed over the websocket by the client. The default is `10000`.
+rows pushed over the websocket by the client. The default is `500`.
 
 If a server-side load fails, the current `load` command does not resume it
 automatically. Resume each affected database manually with:
@@ -257,7 +257,7 @@ timeout_secs = 30
 num_databases = 1
 warehouses_per_database = 1
 load_parallelism = 1
-batch_size = 10000
+batch_size = 500
 reset = true
 
 [driver]
