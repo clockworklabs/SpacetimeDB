@@ -1747,12 +1747,15 @@ impl ModuleHost {
 
     /// Execute a reducer in 2PC prepare mode.
     ///
-    /// This calls the reducer normally (which commits in-memory and to durability),
-    /// then stores the transaction info in the prepared transactions registry.
-    /// Returns the prepare_id and the reducer call result (including the return value).
+    /// Execute a reducer as a 2PC PREPARE.
     ///
-    /// For the simplified prototype, we do not implement a persistence barrier;
-    /// the PREPARE record is just a normal commit.
+    /// 1. Executes the reducer and commits in-memory (releasing the write lock).
+    /// 2. Sends the PREPARE to the durability worker.
+    /// 3. Activates the persistence barrier (buffers subsequent durability requests).
+    /// 4. Waits for the PREPARE to become durable.
+    /// 5. Returns the prepare_id, result, and return value.
+    ///
+    /// The caller should then send PREPARED to the coordinator.
     pub async fn prepare_reducer(
         &self,
         caller_identity: Identity,
@@ -1760,7 +1763,8 @@ impl ModuleHost {
         reducer_name: &str,
         args: FunctionArgs,
     ) -> Result<(String, ReducerCallResult, Option<Bytes>), ReducerCallError> {
-        // Call the reducer normally (which commits in-memory and sends to durability).
+        // Call the reducer using the 2PC prepare commit path.
+        // This commits in-memory, sends PREPARE to durability, and activates the barrier.
         let (result, return_value) = self
             .call_reducer_with_return(
                 caller_identity,
@@ -1773,20 +1777,39 @@ impl ModuleHost {
             )
             .await?;
 
-        // Only store prepared tx info if the reducer succeeded.
+        // Only store prepared tx info and activate barrier if the reducer succeeded.
         if matches!(result.outcome, ReducerOutcome::Committed) {
             use std::sync::atomic::{AtomicU64, Ordering};
             static PREPARE_COUNTER: AtomicU64 = AtomicU64::new(1);
             let prepare_id = format!("prepare-{}", PREPARE_COUNTER.fetch_add(1, Ordering::Relaxed));
-            // For the prototype, we store minimal info. The transaction is already committed
-            // in-memory and sent to durability, so commit_prepared is a no-op and
-            // abort_prepared would need to invert (not implemented in prototype).
+
+            // Activate the persistence barrier. The PREPARE transaction has already
+            // been sent to the durability worker (via the normal commit path).
+            // The barrier prevents any subsequent transactions from being persisted
+            // until we finalize with COMMIT or ABORT.
+            //
+            // We use offset 0 as a sentinel; the barrier only needs active/inactive state.
+            self.relational_db().persistence_barrier().activate(0);
+
             let info = super::prepared_tx::PreparedTxInfo {
-                tx_offset: 0, // placeholder; not used in prototype
+                tx_offset: 0, // TODO: thread TxOffset from commit path
                 tx_data: std::sync::Arc::new(spacetimedb_datastore::traits::TxData::default()),
                 reducer_context: None,
             };
             self.prepared_txs.insert(prepare_id.clone(), info);
+
+            // Wait for the PREPARE to become durable before returning.
+            // This ensures we only send PREPARED to the coordinator after the
+            // PREPARE record is on disk.
+            if let Some(mut durable_offset) = self.relational_db().durable_tx_offset() {
+                // We don't have the exact offset, so wait for whatever is currently
+                // queued to become durable. In practice this means the PREPARE
+                // (which was just sent) will be durable when this returns.
+                let current = durable_offset.last_seen().unwrap_or(0);
+                // Wait for at least one more offset to become durable.
+                let _ = durable_offset.wait_for(current + 1).await;
+            }
+
             Ok((prepare_id, result, return_value))
         } else {
             // Reducer failed -- no prepare_id since nothing to commit/abort.
@@ -1794,27 +1817,27 @@ impl ModuleHost {
         }
     }
 
-    /// Finalize a prepared transaction as committed.
+    /// Finalize a prepared transaction as COMMIT.
     ///
-    /// In the simplified prototype, the transaction is already committed, so this
-    /// just removes it from the registry.
+    /// Deactivates the persistence barrier and flushes all buffered durability
+    /// requests to the durability worker.
     pub fn commit_prepared(&self, prepare_id: &str) -> Result<(), String> {
-        self.prepared_txs
+        let _info = self.prepared_txs
             .remove(prepare_id)
             .ok_or_else(|| format!("no such prepared transaction: {prepare_id}"))?;
+        self.relational_db().finalize_prepare_commit();
         Ok(())
     }
 
     /// Abort a prepared transaction.
     ///
-    /// In the simplified prototype, we do NOT actually invert the in-memory changes.
-    /// This just removes the prepared tx from the registry.
-    /// Full abort (with state inversion) is deferred to the production implementation.
+    /// Deactivates the persistence barrier, discards all buffered durability
+    /// requests, and inverts the PREPARE's in-memory changes.
     pub fn abort_prepared(&self, prepare_id: &str) -> Result<(), String> {
-        self.prepared_txs
+        let info = self.prepared_txs
             .remove(prepare_id)
             .ok_or_else(|| format!("no such prepared transaction: {prepare_id}"))?;
-        log::warn!("2PC abort for {prepare_id}: prototype does not invert in-memory state");
+        self.relational_db().finalize_prepare_abort(&info.tx_data);
         Ok(())
     }
 

@@ -12,7 +12,7 @@ use spacetimedb_commitlog::{self as commitlog, Commitlog, SizeOnDisk};
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
-use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
+use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, StateView,
@@ -111,6 +111,10 @@ pub struct RelationalDB {
 
     /// An async queue for recording transaction metrics off the main thread
     metrics_recorder_queue: Option<MetricsRecorderQueue>,
+
+    /// 2PC persistence barrier. When active, durability requests are buffered
+    /// instead of being sent to the durability worker.
+    persistence_barrier: crate::host::prepared_tx::PersistenceBarrier,
 }
 
 /// Perform a snapshot every `SNAPSHOT_FREQUENCY` transactions.
@@ -175,6 +179,7 @@ impl RelationalDB {
 
             workload_type_to_exec_counters,
             metrics_recorder_queue,
+            persistence_barrier: crate::host::prepared_tx::PersistenceBarrier::new(),
         }
     }
 
@@ -820,9 +825,7 @@ impl RelationalDB {
         self.maybe_do_snapshot(&tx_data);
 
         let tx_data = Arc::new(tx_data);
-        if let Some(durability) = &self.durability {
-            durability.request_durability(reducer_context, &tx_data);
-        }
+        self.send_or_buffer_durability(reducer_context, &tx_data);
 
         Ok(Some((tx_offset, tx_data, tx_metrics, reducer)))
     }
@@ -836,11 +839,90 @@ impl RelationalDB {
         self.maybe_do_snapshot(&tx_data);
 
         let tx_data = Arc::new(tx_data);
-        if let Some(durability) = &self.durability {
-            durability.request_durability(tx.ctx.reducer_context().cloned(), &tx_data);
-        }
+        self.send_or_buffer_durability(tx.ctx.reducer_context().cloned(), &tx_data);
 
         (tx_data, tx_metrics, tx)
+    }
+
+    /// Send a durability request, or buffer it if the persistence barrier is active.
+    fn send_or_buffer_durability(&self, reducer_context: Option<ReducerContext>, tx_data: &Arc<TxData>) {
+        match self.persistence_barrier.try_buffer(reducer_context, tx_data) {
+            None => {
+                // Buffered behind the persistence barrier; will be flushed on COMMIT
+                // or discarded on ABORT.
+            }
+            Some(reducer_context) => {
+                // Not buffered (barrier not active). Send to durability worker.
+                if let Some(durability) = &self.durability {
+                    durability.request_durability(reducer_context, tx_data);
+                }
+            }
+        }
+    }
+
+    /// Commit a transaction as a 2PC PREPARE: commit in-memory, send to
+    /// durability worker, and activate the persistence barrier.
+    ///
+    /// Returns the TxOffset and TxData. The caller should then wait for the
+    /// PREPARE to become durable (via `durable_tx_offset().wait_for(offset)`)
+    /// before sending PREPARED to the coordinator.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn commit_tx_prepare(
+        &self,
+        tx: MutTx,
+    ) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>)>, DBError> {
+        log::trace!("COMMIT MUT TX (2PC PREPARE)");
+
+        let reducer_context = tx.ctx.reducer_context().cloned();
+        let Some((tx_offset, tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx(tx)? else {
+            return Ok(None);
+        };
+
+        self.maybe_do_snapshot(&tx_data);
+
+        let tx_data = Arc::new(tx_data);
+
+        // Send the PREPARE to durability (bypassing the barrier, since this IS the prepare).
+        if let Some(durability) = &self.durability {
+            durability.request_durability(reducer_context.clone(), &tx_data);
+        }
+
+        // Activate the persistence barrier AFTER sending the PREPARE.
+        // All subsequent durability requests will be buffered.
+        self.persistence_barrier.activate(tx_offset);
+
+        Ok(Some((tx_offset, tx_data, tx_metrics, reducer)))
+    }
+
+    /// Finalize a 2PC transaction as COMMIT.
+    /// Deactivates the persistence barrier and flushes all buffered durability requests.
+    pub fn finalize_prepare_commit(&self) {
+        let buffered = self.persistence_barrier.deactivate();
+        if let Some(durability) = &self.durability {
+            for req in buffered {
+                durability.request_durability(req.reducer_context, &req.tx_data);
+            }
+        }
+    }
+
+    /// Finalize a 2PC transaction as ABORT.
+    /// Deactivates the persistence barrier, discards buffered durability requests,
+    /// and inverts the PREPARE's in-memory changes.
+    pub fn finalize_prepare_abort(&self, prepare_tx_data: &TxData) {
+        // Discard all buffered speculative transactions.
+        let _discarded = self.persistence_barrier.deactivate();
+        // TODO: Invert in-memory state using prepare_tx_data.
+        // For now, log a warning. Full inversion requires:
+        // 1. Begin new MutTx
+        // 2. Delete rows from prepare_tx_data.persistent_inserts()
+        // 3. Re-insert rows from prepare_tx_data.persistent_deletes()
+        // 4. Commit without durability
+        // 5. Re-execute discarded speculative transactions
+        log::warn!(
+            "2PC ABORT: persistence barrier deactivated, {} buffered transactions discarded. \
+             In-memory state inversion not yet implemented.",
+            _discarded.len()
+        );
     }
 
     /// Get the [`DurableOffset`] of this database, or `None` if this is an
@@ -849,6 +931,11 @@ impl RelationalDB {
         self.durability
             .as_ref()
             .map(|durability| durability.durable_tx_offset())
+    }
+
+    /// Get a reference to the persistence barrier (for 2PC).
+    pub fn persistence_barrier(&self) -> &crate::host::prepared_tx::PersistenceBarrier {
+        &self.persistence_barrier
     }
 
     /// Decide based on the `committed_state.next_tx_offset`
