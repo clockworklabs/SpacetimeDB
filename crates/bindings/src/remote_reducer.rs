@@ -84,3 +84,43 @@ pub fn call_reducer_on_db(database_identity: Identity, reducer_name: &str, args:
         }
     }
 }
+
+/// Call a reducer on a remote database using the 2PC prepare protocol.
+///
+/// This is the 2PC variant of [`call_reducer_on_db`]. It calls the target database's
+/// `/prepare/{reducer}` endpoint. On success, the runtime stores the prepare_id internally.
+/// After the coordinator's reducer commits, all participants are committed automatically.
+/// If the coordinator's reducer fails (panics or returns Err), all participants are aborted.
+///
+/// Returns and errors are identical to [`call_reducer_on_db`].
+pub fn call_reducer_on_db_2pc(
+    database_identity: Identity,
+    reducer_name: &str,
+    args: &[u8],
+) -> Result<(), RemoteCallError> {
+    let identity_bytes = database_identity.to_byte_array();
+    match spacetimedb_bindings_sys::call_reducer_on_db_2pc(identity_bytes, reducer_name, args) {
+        Ok((status, body_source)) => {
+            if status < 300 {
+                return Ok(());
+            }
+            let msg = if body_source == spacetimedb_bindings_sys::raw::BytesSource::INVALID {
+                String::new()
+            } else {
+                let mut buf = IterBuf::take();
+                read_bytes_source_into(body_source, &mut buf);
+                String::from_utf8_lossy(&buf).into_owned()
+            };
+            if status == 404 {
+                Err(RemoteCallError::NotFound(msg))
+            } else {
+                Err(RemoteCallError::Failed(msg))
+            }
+        }
+        Err(err_source) => {
+            use crate::rt::read_bytes_source_as;
+            let msg = read_bytes_source_as::<String>(err_source);
+            Err(RemoteCallError::Unreachable(msg))
+        }
+    }
+}

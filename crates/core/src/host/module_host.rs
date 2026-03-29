@@ -890,6 +890,9 @@ pub struct ModuleHost {
     ///
     /// When this is true, most operations will fail with [`NoSuchModule`].
     closed: Arc<AtomicBool>,
+
+    /// Registry of prepared (but not yet finalized) 2PC transactions.
+    prepared_txs: super::prepared_tx::PreparedTransactions,
 }
 
 impl fmt::Debug for ModuleHost {
@@ -906,6 +909,7 @@ pub struct WeakModuleHost {
     inner: Weak<ModuleHostInner>,
     on_panic: Weak<dyn Fn() + Send + Sync + 'static>,
     closed: Weak<AtomicBool>,
+    prepared_txs: super::prepared_tx::PreparedTransactions,
 }
 
 #[derive(Debug)]
@@ -1093,6 +1097,7 @@ impl ModuleHost {
             inner,
             on_panic,
             closed: Arc::new(AtomicBool::new(false)),
+            prepared_txs: super::prepared_tx::PreparedTransactions::new(),
         }
     }
 
@@ -1738,6 +1743,79 @@ impl ModuleHost {
         }
 
         res
+    }
+
+    /// Execute a reducer in 2PC prepare mode.
+    ///
+    /// This calls the reducer normally (which commits in-memory and to durability),
+    /// then stores the transaction info in the prepared transactions registry.
+    /// Returns the prepare_id and the reducer call result (including the return value).
+    ///
+    /// For the simplified prototype, we do not implement a persistence barrier;
+    /// the PREPARE record is just a normal commit.
+    pub async fn prepare_reducer(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        reducer_name: &str,
+        args: FunctionArgs,
+    ) -> Result<(String, ReducerCallResult, Option<Bytes>), ReducerCallError> {
+        // Call the reducer normally (which commits in-memory and sends to durability).
+        let (result, return_value) = self
+            .call_reducer_with_return(
+                caller_identity,
+                caller_connection_id,
+                None,  // no websocket client
+                None,  // no request_id
+                None,  // no timer
+                reducer_name,
+                args,
+            )
+            .await?;
+
+        // Only store prepared tx info if the reducer succeeded.
+        if matches!(result.outcome, ReducerOutcome::Committed) {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static PREPARE_COUNTER: AtomicU64 = AtomicU64::new(1);
+            let prepare_id = format!("prepare-{}", PREPARE_COUNTER.fetch_add(1, Ordering::Relaxed));
+            // For the prototype, we store minimal info. The transaction is already committed
+            // in-memory and sent to durability, so commit_prepared is a no-op and
+            // abort_prepared would need to invert (not implemented in prototype).
+            let info = super::prepared_tx::PreparedTxInfo {
+                tx_offset: 0, // placeholder; not used in prototype
+                tx_data: std::sync::Arc::new(spacetimedb_datastore::traits::TxData::default()),
+                reducer_context: None,
+            };
+            self.prepared_txs.insert(prepare_id.clone(), info);
+            Ok((prepare_id, result, return_value))
+        } else {
+            // Reducer failed -- no prepare_id since nothing to commit/abort.
+            Ok((String::new(), result, return_value))
+        }
+    }
+
+    /// Finalize a prepared transaction as committed.
+    ///
+    /// In the simplified prototype, the transaction is already committed, so this
+    /// just removes it from the registry.
+    pub fn commit_prepared(&self, prepare_id: &str) -> Result<(), String> {
+        self.prepared_txs
+            .remove(prepare_id)
+            .ok_or_else(|| format!("no such prepared transaction: {prepare_id}"))?;
+        Ok(())
+    }
+
+    /// Abort a prepared transaction.
+    ///
+    /// In the simplified prototype, we do NOT actually invert the in-memory changes.
+    /// This just removes the prepared tx from the registry.
+    /// Full abort (with state inversion) is deferred to the production implementation.
+    pub fn abort_prepared(&self, prepare_id: &str) -> Result<(), String> {
+        self.prepared_txs
+            .remove(prepare_id)
+            .ok_or_else(|| format!("no such prepared transaction: {prepare_id}"))?;
+        log::warn!("2PC abort for {prepare_id}: prototype does not invert in-memory state");
+        Ok(())
     }
 
     pub async fn call_view_add_single_subscription(
@@ -2561,6 +2639,7 @@ impl ModuleHost {
             inner: Arc::downgrade(&self.inner),
             on_panic: Arc::downgrade(&self.on_panic),
             closed: Arc::downgrade(&self.closed),
+            prepared_txs: self.prepared_txs.clone(),
         }
     }
 
@@ -2605,6 +2684,7 @@ impl WeakModuleHost {
             inner,
             on_panic,
             closed,
+            prepared_txs: self.prepared_txs.clone(),
         })
     }
 }

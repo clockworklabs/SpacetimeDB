@@ -1398,6 +1398,11 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
         log_traceback(self.replica_ctx, func_type, func, trap)
     }
 
+    fn take_prepared_participants(&mut self) -> Vec<(Identity, String)> {
+        // V8/JS does not currently support 2PC, so always return empty.
+        Vec::new()
+    }
+
     async fn call_procedure(
         &mut self,
         op: ProcedureOp,

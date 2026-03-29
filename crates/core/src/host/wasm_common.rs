@@ -438,6 +438,10 @@ macro_rules! abi_funcs {
             // Implemented as a sync host function (using block_in_place) so it can be called
             // from within a reducer body where only synchronous host functions are allowed.
             "spacetime_10.5"::call_reducer_on_db,
+
+            // 2PC variant: calls /prepare/{reducer} instead of /call/{reducer}.
+            // Stores the prepare_id for post-commit coordination.
+            "spacetime_10.5"::call_reducer_on_db_2pc,
         }
 
         $link_async! {
