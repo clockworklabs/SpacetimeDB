@@ -76,6 +76,84 @@ type RowCountFn = Arc<dyn Fn(TableId, &str) -> i64 + Send + Sync>;
 /// The type of transactions committed by [RelationalDB].
 pub type Txdata = commitlog::payload::Txdata<ProductValue>;
 
+/// A buffered durability request, held behind the persistence barrier.
+pub struct BufferedDurabilityRequest {
+    pub reducer_context: Option<ReducerContext>,
+    pub tx_data: Arc<TxData>,
+}
+
+/// The persistence barrier prevents durability requests from being sent to the
+/// durability worker while a 2PC PREPARE is pending.
+///
+/// When active:
+/// - The PREPARE's own durability request has already been sent to the worker.
+/// - All subsequent durability requests are buffered here.
+/// - Once the PREPARE is confirmed durable and a COMMIT/ABORT decision is made:
+///   - COMMIT: buffered requests are flushed to the worker.
+///   - ABORT: buffered requests are discarded.
+#[derive(Default)]
+pub struct PersistenceBarrier {
+    inner: std::sync::Mutex<PersistenceBarrierInner>,
+}
+
+#[derive(Default)]
+struct PersistenceBarrierInner {
+    /// If Some, a PREPARE is pending at this offset. All durability requests
+    /// are buffered until the barrier is lifted.
+    active_prepare: Option<TxOffset>,
+    /// Buffered durability requests that arrived while the barrier was active.
+    buffered: Vec<BufferedDurabilityRequest>,
+}
+
+impl PersistenceBarrier {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Activate the barrier for a PREPARE at the given offset.
+    pub fn activate(&self, prepare_offset: TxOffset) {
+        let mut inner = self.inner.lock().unwrap();
+        assert!(
+            inner.active_prepare.is_none(),
+            "persistence barrier already active at offset {:?}, cannot activate for {prepare_offset}",
+            inner.active_prepare,
+        );
+        inner.active_prepare = Some(prepare_offset);
+        inner.buffered.clear();
+    }
+
+    /// If the barrier is active, buffer the durability request and return None.
+    /// If the barrier is not active, return the arguments back unchanged.
+    pub fn try_buffer(
+        &self,
+        reducer_context: Option<ReducerContext>,
+        tx_data: &Arc<TxData>,
+    ) -> Option<Option<ReducerContext>> {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.active_prepare.is_some() {
+            inner.buffered.push(BufferedDurabilityRequest {
+                reducer_context,
+                tx_data: tx_data.clone(),
+            });
+            None // buffered
+        } else {
+            Some(reducer_context) // not buffered, return back
+        }
+    }
+
+    /// Deactivate the barrier and return the buffered requests.
+    pub fn deactivate(&self) -> Vec<BufferedDurabilityRequest> {
+        let mut inner = self.inner.lock().unwrap();
+        inner.active_prepare = None;
+        std::mem::take(&mut inner.buffered)
+    }
+
+    /// Check if the barrier is currently active.
+    pub fn is_active(&self) -> bool {
+        self.inner.lock().unwrap().active_prepare.is_some()
+    }
+}
+
 /// We've added a module version field to the system tables, but we don't yet
 /// have the infrastructure to support multiple versions.
 /// All modules are currently locked to this version, but this will be
@@ -114,7 +192,7 @@ pub struct RelationalDB {
 
     /// 2PC persistence barrier. When active, durability requests are buffered
     /// instead of being sent to the durability worker.
-    persistence_barrier: crate::host::prepared_tx::PersistenceBarrier,
+    persistence_barrier: PersistenceBarrier,
 }
 
 /// Perform a snapshot every `SNAPSHOT_FREQUENCY` transactions.
@@ -179,7 +257,7 @@ impl RelationalDB {
 
             workload_type_to_exec_counters,
             metrics_recorder_queue,
-            persistence_barrier: crate::host::prepared_tx::PersistenceBarrier::new(),
+            persistence_barrier: PersistenceBarrier::new(),
         }
     }
 
@@ -934,7 +1012,7 @@ impl RelationalDB {
     }
 
     /// Get a reference to the persistence barrier (for 2PC).
-    pub fn persistence_barrier(&self) -> &crate::host::prepared_tx::PersistenceBarrier {
+    pub fn persistence_barrier(&self) -> &PersistenceBarrier {
         &self.persistence_barrier
     }
 
