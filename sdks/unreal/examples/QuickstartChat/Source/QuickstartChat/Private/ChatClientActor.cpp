@@ -90,11 +90,9 @@ void AChatClientActor::RegisterCallbacks()
 	// Conn->Db->Message->OnDelete.RemoveAll(this);
 	// UNBIND_DELEGATE_SAFE(Conn->Db->Message->OnDelete, this, AChatClientActor, OnMessageDelete);
 
-	// Opt in to receive the reducer result and any table updates
-	Conn->SetReducerFlags->SendMessage(ECallReducerFlags::FullUpdate);
+	// Bind reducer callbacks.
 	Conn->Reducers->OnSendMessage.AddDynamic(this, &AChatClientActor::OnReducerOnSendMessage);
 
-	Conn->SetReducerFlags->SetName(ECallReducerFlags::FullUpdate);
 	Conn->Reducers->OnSetName.AddDynamic(this, &AChatClientActor::OnReducerOnSetName);
 
 	// Hook error delegate for any reducers without explicit bindings

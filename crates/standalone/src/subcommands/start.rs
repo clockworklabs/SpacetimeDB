@@ -182,6 +182,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
         StandaloneOptions {
             db_config,
             websocket: config.websocket,
+            v8_heap_policy: config.common.v8_heap_policy,
         },
         &certs,
         data_dir,
@@ -506,6 +507,13 @@ mod tests {
             [websocket]
             idle-timeout = "1min"
             close-handshake-timeout = "500ms"
+
+            [v8-heap-policy]
+            heap-check-request-interval = 0
+            heap-check-time-interval = "45s"
+            heap-gc-trigger-fraction = 0.6
+            heap-retire-fraction = 0.8
+            heap-limit-mb = 128
 "#;
 
         let config: ConfigFile = toml::from_str(toml).unwrap();
@@ -514,6 +522,14 @@ mod tests {
         // so check `common` in a pedestrian way.
         assert_eq!(&config.common.logs.directives, &["banana_shake=strawberry"]);
         assert!(config.common.certificate_authority.is_none());
+        assert_eq!(config.common.v8_heap_policy.heap_check_request_interval, None);
+        assert_eq!(
+            config.common.v8_heap_policy.heap_check_time_interval,
+            Some(Duration::from_secs(45))
+        );
+        assert_eq!(config.common.v8_heap_policy.heap_gc_trigger_fraction, 0.6);
+        assert_eq!(config.common.v8_heap_policy.heap_retire_fraction, 0.8);
+        assert_eq!(config.common.v8_heap_policy.heap_limit_bytes, Some(128 * 1024 * 1024));
 
         assert_eq!(
             config.websocket,

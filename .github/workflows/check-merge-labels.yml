@@ -2,7 +2,7 @@ name: Check merge labels
 
 on:
   pull_request:
-    types: [opened, reopened, labeled, unlabeled]
+    types: [opened, reopened, synchronize, labeled, unlabeled]
   merge_group:
 
 permissions: read-all

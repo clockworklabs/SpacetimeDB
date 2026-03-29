@@ -239,7 +239,12 @@ export type ReadonlyTable<TableDef extends UntypedTableDef> = Prettify<
 >;
 
 export interface ReadonlyTableMethods<TableDef extends UntypedTableDef> {
-  /** Returns the number of rows in the TX state. */
+  /**
+   * Returns the number of rows in this table.
+   *
+   * This reads datastore metadata, so it runs in constant time.
+   * It also takes into account modifications by the current transaction.
+   */
   count(): bigint;
 
   /** Iterate over all rows in the TX state. Rust Iterator<Item=Row> → TS IterableIterator<Row>. */

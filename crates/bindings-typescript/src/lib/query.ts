@@ -348,7 +348,8 @@ function createRowExpr<TableDef extends TypedTableDef>(
       columnBuilder.typeBuilder.algebraicType as InferSpacetimeTypeOfColumn<
         TableDef,
         typeof columnName
-      >
+      >,
+      columnBuilder.columnMetadata.name
     );
     row[columnName] = Object.freeze(column);
   }
@@ -438,7 +439,10 @@ export class ColumnExpression<
   ColumnName extends ColumnNames<TableDef>,
 > {
   readonly type = 'column' as const;
+  // This is the column accessor
   readonly column: ColumnName;
+  // The name of the column in the database.
+  readonly columnName: string;
   readonly table: TableDef['sourceName'];
   // phantom: actual runtime value is undefined
   readonly tsValueType?: RowType<TableDef>[ColumnName];
@@ -447,10 +451,12 @@ export class ColumnExpression<
   constructor(
     table: TableDef['sourceName'],
     column: ColumnName,
-    spacetimeType: InferSpacetimeTypeOfColumn<TableDef, ColumnName>
+    spacetimeType: InferSpacetimeTypeOfColumn<TableDef, ColumnName>,
+    columnName?: string
   ) {
     this.table = table;
     this.column = column;
+    this.columnName = columnName || column;
     this.spacetimeType = spacetimeType;
   }
 
@@ -710,15 +716,38 @@ type BooleanExprData<Table extends TypedTableDef> = (
   _tableType?: Table;
 };
 
+type AndOrMixedTableScopeError = {
+  readonly 'Cannot combine predicates from different table scopes with and/or. In semijoin on(...), keep only the join equality and move extra predicates to .where(...).': never;
+};
+
+type RequireSameAndOrTable<
+  Expected extends TypedTableDef,
+  Actual extends TypedTableDef,
+> = [Expected] extends [Actual]
+  ? [Actual] extends [Expected]
+    ? unknown
+    : AndOrMixedTableScopeError
+  : AndOrMixedTableScopeError;
+
 export class BooleanExpr<Table extends TypedTableDef> {
   constructor(readonly data: BooleanExprData<Table>) {}
 
-  and(other: BooleanExpr<Table>): BooleanExpr<Table> {
-    return new BooleanExpr({ type: 'and', clauses: [this.data, other.data] });
+  and<OtherTable extends TypedTableDef>(
+    other: BooleanExpr<OtherTable> & RequireSameAndOrTable<Table, OtherTable>
+  ): BooleanExpr<Table> {
+    return new BooleanExpr({
+      type: 'and',
+      clauses: [this.data, other.data as BooleanExprData<Table>],
+    });
   }
 
-  or(other: BooleanExpr<Table>): BooleanExpr<Table> {
-    return new BooleanExpr({ type: 'or', clauses: [this.data, other.data] });
+  or<OtherTable extends TypedTableDef>(
+    other: BooleanExpr<OtherTable> & RequireSameAndOrTable<Table, OtherTable>
+  ): BooleanExpr<Table> {
+    return new BooleanExpr({
+      type: 'or',
+      clauses: [this.data, other.data as BooleanExprData<Table>],
+    });
   }
 
   not(): BooleanExpr<Table> {
@@ -732,28 +761,40 @@ export function not<T extends TypedTableDef>(
   return new BooleanExpr({ type: 'not', clause: clause.data });
 }
 
-export function and<T extends TypedTableDef>(
-  ...clauses: readonly [BooleanExpr<T>, BooleanExpr<T>, ...BooleanExpr<T>[]]
-): BooleanExpr<T> {
+export function and<
+  Table extends TypedTableDef,
+  OtherTable extends TypedTableDef,
+>(
+  first: BooleanExpr<Table>,
+  second: BooleanExpr<OtherTable> & RequireSameAndOrTable<Table, OtherTable>,
+  ...rest: readonly BooleanExpr<Table>[]
+): BooleanExpr<Table> {
+  const clauses = [first, second, ...rest];
   return new BooleanExpr({
     type: 'and',
     clauses: clauses.map(c => c.data) as [
-      BooleanExprData<T>,
-      BooleanExprData<T>,
-      ...BooleanExprData<T>[],
+      BooleanExprData<Table>,
+      BooleanExprData<Table>,
+      ...BooleanExprData<Table>[],
     ],
   });
 }
 
-export function or<T extends TypedTableDef>(
-  ...clauses: readonly [BooleanExpr<T>, BooleanExpr<T>, ...BooleanExpr<T>[]]
-): BooleanExpr<T> {
+export function or<
+  Table extends TypedTableDef,
+  OtherTable extends TypedTableDef,
+>(
+  first: BooleanExpr<Table>,
+  second: BooleanExpr<OtherTable> & RequireSameAndOrTable<Table, OtherTable>,
+  ...rest: readonly BooleanExpr<Table>[]
+): BooleanExpr<Table> {
+  const clauses = [first, second, ...rest];
   return new BooleanExpr({
     type: 'or',
     clauses: clauses.map(c => c.data) as [
-      BooleanExprData<T>,
-      BooleanExprData<T>,
-      ...BooleanExprData<T>[],
+      BooleanExprData<Table>,
+      BooleanExprData<Table>,
+      ...BooleanExprData<Table>[],
     ],
   });
 }
@@ -803,7 +844,7 @@ function valueExprToSql<Table extends TypedTableDef>(
     return literalValueToSql(expr.value);
   }
   const table = tableAlias ?? expr.table;
-  return `${quoteIdentifier(table)}.${quoteIdentifier(expr.column)}`;
+  return `${quoteIdentifier(table)}.${quoteIdentifier(expr.columnName)}`;
 }
 
 function literalValueToSql(value: unknown): string {

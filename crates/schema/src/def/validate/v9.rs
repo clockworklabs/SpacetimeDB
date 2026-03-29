@@ -10,6 +10,7 @@ use spacetimedb_data_structures::map::{HashMap, HashSet};
 use spacetimedb_lib::db::default_element_ordering::{product_type_has_default_ordering, sum_type_has_default_ordering};
 use spacetimedb_lib::db::raw_def::v10::{reducer_default_err_return_type, reducer_default_ok_return_type};
 use spacetimedb_lib::db::raw_def::v9::RawViewDefV9;
+use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::ProductType;
 use spacetimedb_primitives::col_list;
 use spacetimedb_sats::{bsatn::de::Deserializer, de::DeserializeSeed, WithTypespace};
@@ -438,21 +439,12 @@ impl ModuleValidatorV9<'_> {
             })
         };
 
-        // The possible return types of a view are `Vec<T>` or `Option<T>`,
+        // The possible return types of a view are `Vec<T>`, `Option<T>`, or `Query<T>`,
         // where `T` is a `ProductType` in the `Typespace`.
         // Here we extract the inner product type ref `T`.
         // We exit early for errors since this breaks all the other checks.
-        let product_type_ref = return_type
-            .as_option()
-            .and_then(AlgebraicType::as_ref)
-            .or_else(|| {
-                return_type
-                    .as_array()
-                    .map(|array_type| array_type.elem_ty.as_ref())
-                    .and_then(AlgebraicType::as_ref)
-            })
-            .cloned()
-            .ok_or_else(invalid_return_type)?;
+        let (product_type_ref, return_kind) =
+            extract_view_return_product_type_ref(&return_type).ok_or_else(invalid_return_type)?;
 
         let product_type = self
             .core
@@ -474,11 +466,18 @@ impl ModuleValidatorV9<'_> {
                     arg_name,
                 })?;
 
+        let return_type_for_generate_input = match return_kind {
+            ViewKind::Procedural => return_type.clone(),
+            // Query-builder views still return rows from the client's perspective.
+            // For codegen purposes we model this as `Vec<T>`.
+            ViewKind::Query => AlgebraicType::array(product_type_ref.into()),
+        };
+
         let return_type_for_generate = self.core.validate_for_type_use(
             || TypeLocation::ViewReturn {
                 view_name: name.clone(),
             },
-            &return_type,
+            &return_type_for_generate_input,
         );
 
         let mut view_in_progress = ViewValidator::new(
@@ -525,6 +524,7 @@ impl ModuleValidatorV9<'_> {
             return_type,
             return_type_for_generate,
             product_type_ref,
+            primary_key: None,
             return_columns,
             param_columns,
             accessor_name: name,

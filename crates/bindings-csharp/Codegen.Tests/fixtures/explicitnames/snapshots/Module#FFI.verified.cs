@@ -294,6 +294,12 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<DemoTable, global::DemoTable>.DoCount();
 
@@ -366,13 +372,14 @@ sealed class demo_viewViewDispatcher : global::SpacetimeDB.Internal.IView
         try
         {
             var returnValue = Reducers.DemoView((SpacetimeDB.ViewContext)ctx);
-            SpacetimeDB.BSATN.List<DemoTable, DemoTable.BSATN> returnRW = new();
+            var listSerializer = new SpacetimeDB.BSATN.List<DemoTable, DemoTable.BSATN>();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
             var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
             var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
             headerRW.Write(writer, header);
-            returnRW.Write(writer, returnValue);
+            listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
         catch (System.Exception e)
@@ -391,6 +398,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal DemoTableReadOnly()
             : base("DemoTable") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class IdIndex

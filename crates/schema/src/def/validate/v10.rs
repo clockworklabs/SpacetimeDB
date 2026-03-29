@@ -1,6 +1,7 @@
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::bsatn::Deserializer;
 use spacetimedb_lib::db::raw_def::v10::*;
+use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::de::DeserializeSeed as _;
 use spacetimedb_sats::{Typespace, WithTypespace};
 
@@ -234,7 +235,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .combine_errors()
         .and_then(
             |(mut tables, types, reducers, procedures, views, schedules, lifecycles)| {
-                let (mut reducers, mut procedures, views) =
+                let (mut reducers, mut procedures, mut views) =
                     check_function_names_are_unique(reducers, procedures, views)?;
                 check_function_accessor_names_are_unique_with_types_and_each_other(
                     reducers.values(),
@@ -249,6 +250,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
 
                 check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
                 change_scheduled_functions_and_lifetimes_visibility(&tables, &mut reducers, &mut procedures)?;
+                assign_query_view_primary_keys(&tables, &mut views);
 
                 Ok((tables, types, reducers, procedures, views))
             },
@@ -750,17 +752,8 @@ impl<'a> ModuleValidatorV10<'a> {
             })
         };
 
-        let product_type_ref = return_type
-            .as_option()
-            .and_then(AlgebraicType::as_ref)
-            .or_else(|| {
-                return_type
-                    .as_array()
-                    .map(|array_type| array_type.elem_ty.as_ref())
-                    .and_then(AlgebraicType::as_ref)
-            })
-            .cloned()
-            .ok_or_else(invalid_return_type)?;
+        let (product_type_ref, return_kind) =
+            extract_view_return_product_type_ref(&return_type).ok_or_else(invalid_return_type)?;
 
         let product_type = self
             .core
@@ -782,11 +775,18 @@ impl<'a> ModuleValidatorV10<'a> {
                     arg_name,
                 })?;
 
+        let return_type_for_generate_input = match return_kind {
+            ViewKind::Procedural => return_type.clone(),
+            // Query-builder views still return rows from the client's perspective.
+            // For codegen purposes we model this as `Vec<T>`.
+            ViewKind::Query => AlgebraicType::array(product_type_ref.into()),
+        };
+
         let return_type_for_generate = self.core.validate_for_type_use(
             || TypeLocation::ViewReturn {
                 view_name: accessor_name.clone(),
             },
-            &return_type,
+            &return_type_for_generate_input,
         );
 
         let name = self.core.resolve_function_ident(accessor_name.clone())?;
@@ -840,6 +840,7 @@ impl<'a> ModuleValidatorV10<'a> {
             return_type,
             return_type_for_generate,
             product_type_ref,
+            primary_key: None,
             return_columns,
             param_columns,
         })
@@ -893,6 +894,37 @@ fn attach_schedules_to_tables(
     }
 
     Ok(())
+}
+
+fn assign_query_view_primary_keys(tables: &IdentifierMap<TableDef>, views: &mut IndexMap<Identifier, ViewDef>) {
+    let primary_key_for_product_type_ref = |product_type_ref: AlgebraicTypeRef| {
+        let mut primary_key = None;
+        for table in tables
+            .values()
+            .filter(|table| table.product_type_ref == product_type_ref)
+        {
+            let Some(table_primary_key) = table.primary_key else {
+                continue;
+            };
+            match primary_key {
+                Some(existing) if existing != table_primary_key => {
+                    // Ambiguous source table: keep the view without a primary key.
+                    return None;
+                }
+                None => primary_key = Some(table_primary_key),
+                Some(_) => {}
+            }
+        }
+        primary_key
+    };
+
+    for view in views.values_mut() {
+        view.primary_key = match extract_view_return_product_type_ref(&view.return_type) {
+            Some((_, ViewKind::Procedural)) => None,
+            Some((product_type_ref, ViewKind::Query)) => primary_key_for_product_type_ref(product_type_ref),
+            None => None,
+        };
+    }
 }
 
 #[cfg(test)]

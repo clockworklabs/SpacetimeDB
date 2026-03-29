@@ -11,52 +11,12 @@
 #include "ModuleBindings/Tables/FoodTable.g.h"
 #include "ModuleBindings/Tables/PlayerTable.g.h"
 
-static FReducer DecodeReducer(const FReducerEvent& Event)
-{
-    const FString& ReducerName = Event.ReducerCall.ReducerName;
-
-    if (ReducerName == TEXT("enter_game"))
-    {
-        FEnterGameArgs Args = UE::SpacetimeDB::Deserialize<FEnterGameArgs>(Event.ReducerCall.Args);
-        return FReducer::EnterGame(Args);
-    }
-
-    if (ReducerName == TEXT("player_split"))
-    {
-        FPlayerSplitArgs Args = UE::SpacetimeDB::Deserialize<FPlayerSplitArgs>(Event.ReducerCall.Args);
-        return FReducer::PlayerSplit(Args);
-    }
-
-    if (ReducerName == TEXT("respawn"))
-    {
-        FRespawnArgs Args = UE::SpacetimeDB::Deserialize<FRespawnArgs>(Event.ReducerCall.Args);
-        return FReducer::Respawn(Args);
-    }
-
-    if (ReducerName == TEXT("suicide"))
-    {
-        FSuicideArgs Args = UE::SpacetimeDB::Deserialize<FSuicideArgs>(Event.ReducerCall.Args);
-        return FReducer::Suicide(Args);
-    }
-
-    if (ReducerName == TEXT("update_player_input"))
-    {
-        FUpdatePlayerInputArgs Args = UE::SpacetimeDB::Deserialize<FUpdatePlayerInputArgs>(Event.ReducerCall.Args);
-        return FReducer::UpdatePlayerInput(Args);
-    }
-
-    return FReducer();
-}
-
 UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
-	SetReducerFlags = ObjectInitializer.CreateDefaultSubobject<USetReducerFlags>(this, TEXT("SetReducerFlags"));
-
 	Db = ObjectInitializer.CreateDefaultSubobject<URemoteTables>(this, TEXT("RemoteTables"));
 	Db->Initialize();
 	
 	Reducers = ObjectInitializer.CreateDefaultSubobject<URemoteReducers>(this, TEXT("RemoteReducers"));
-	Reducers->SetCallReducerFlags = SetReducerFlags;
 	Reducers->Conn = this;
 
 	Procedures = ObjectInitializer.CreateDefaultSubobject<URemoteProcedures>(this, TEXT("RemoteProcedures"));
@@ -74,7 +34,6 @@ FContextBase::FContextBase(UDbConnection* InConn)
 {
 	Db = InConn->Db;
 	Reducers = InConn->Reducers;
-	SetReducerFlags = InConn->SetReducerFlags;
 	Procedures = InConn->Procedures;
 	Conn = InConn;
 }
@@ -121,27 +80,6 @@ void URemoteTables::Initialize()
 	/**/
 }
 
-void USetReducerFlags::EnterGame(ECallReducerFlags Flag)
-{
-	FlagMap.Add("EnterGame", Flag);
-}
-void USetReducerFlags::PlayerSplit(ECallReducerFlags Flag)
-{
-	FlagMap.Add("PlayerSplit", Flag);
-}
-void USetReducerFlags::Respawn(ECallReducerFlags Flag)
-{
-	FlagMap.Add("Respawn", Flag);
-}
-void USetReducerFlags::Suicide(ECallReducerFlags Flag)
-{
-	FlagMap.Add("Suicide", Flag);
-}
-void USetReducerFlags::UpdatePlayerInput(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdatePlayerInput", Flag);
-}
-
 void URemoteReducers::EnterGame(const FString& Name)
 {
     if (!Conn)
@@ -150,7 +88,9 @@ void URemoteReducers::EnterGame(const FString& Name)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("enter_game"), FEnterGameArgs(Name), SetCallReducerFlags);
+	FEnterGameArgs ReducerArgs(Name);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("enter_game"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::EnterGame(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeEnterGame(const FReducerEventContext& Context, const UEnterGameReducer* Args)
@@ -194,7 +134,9 @@ void URemoteReducers::PlayerSplit()
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("player_split"), FPlayerSplitArgs(), SetCallReducerFlags);
+	FPlayerSplitArgs ReducerArgs;
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("player_split"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::PlayerSplit(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokePlayerSplit(const FReducerEventContext& Context, const UPlayerSplitReducer* Args)
@@ -238,7 +180,9 @@ void URemoteReducers::Respawn()
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("respawn"), FRespawnArgs(), SetCallReducerFlags);
+	FRespawnArgs ReducerArgs;
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("respawn"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::Respawn(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeRespawn(const FReducerEventContext& Context, const URespawnReducer* Args)
@@ -282,7 +226,9 @@ void URemoteReducers::Suicide()
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("suicide"), FSuicideArgs(), SetCallReducerFlags);
+	FSuicideArgs ReducerArgs;
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("suicide"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::Suicide(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeSuicide(const FReducerEventContext& Context, const USuicideReducer* Args)
@@ -326,7 +272,9 @@ void URemoteReducers::UpdatePlayerInput(const FDbVector2Type& Direction)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_player_input"), FUpdatePlayerInputArgs(Direction), SetCallReducerFlags);
+	FUpdatePlayerInputArgs ReducerArgs(Direction);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_player_input"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdatePlayerInput(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdatePlayerInput(const FReducerEventContext& Context, const UUpdatePlayerInputReducer* Args)
@@ -397,11 +345,45 @@ void UDbConnection::OnUnhandledProcedureErrorHandler(const FProcedureEventContex
     }
 }
 
+void UDbConnection::RegisterPendingTypedReducer(uint32 RequestId, FReducer Reducer)
+{
+    Reducer.RequestId = RequestId;
+    PendingTypedReducers.Add(RequestId, MoveTemp(Reducer));
+}
+
+bool UDbConnection::TryGetPendingTypedReducer(uint32 RequestId, FReducer& OutReducer) const
+{
+    if (const FReducer* Found = PendingTypedReducers.Find(RequestId))
+    {
+        OutReducer = *Found;
+        return true;
+    }
+    return false;
+}
+
+bool UDbConnection::TryTakePendingTypedReducer(uint32 RequestId, FReducer& OutReducer)
+{
+    if (FReducer* Found = PendingTypedReducers.Find(RequestId))
+    {
+        OutReducer = *Found;
+        PendingTypedReducers.Remove(RequestId);
+        return true;
+    }
+    return false;
+}
+
 void UDbConnection::ReducerEvent(const FReducerEvent& Event)
 {
     if (!Reducers) { return; }
 
-    FReducer DecodedReducer = DecodeReducer(Event);
+    FReducer DecodedReducer;
+    if (!TryTakePendingTypedReducer(Event.RequestId, DecodedReducer))
+    {
+        const FString ErrorMessage = FString::Printf(TEXT("Reducer result for unknown request_id %u"), Event.RequestId);
+        UE_LOG(LogTemp, Error, TEXT("%s"), *ErrorMessage);
+        ReducerEventFailed(Event, ErrorMessage);
+        return;
+    }
 
     FClientUnrealReducerEvent ReducerEvent;
     ReducerEvent.CallerConnectionId = Event.CallerConnectionId;
@@ -413,8 +395,8 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
 
     FReducerEventContext Context(this, ReducerEvent);
 
-    // Use hardcoded string matching for reducer dispatching
-    const FString& ReducerName = Event.ReducerCall.ReducerName;
+    // Dispatch by typed reducer metadata
+    const FString& ReducerName = ReducerEvent.Reducer.ReducerName;
 
     if (ReducerName == TEXT("enter_game"))
     {
@@ -638,7 +620,13 @@ void UDbConnection::DbUpdate(const FDatabaseUpdateType& Update, const FSpacetime
     case ESpacetimeDBEventTag::Reducer:
     {
         FReducerEvent ReducerEvent = Event.GetAsReducer();
-        FReducer Reducer = DecodeReducer(ReducerEvent);
+        FReducer Reducer;
+        if (!TryGetPendingTypedReducer(ReducerEvent.RequestId, Reducer))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("Missing typed reducer for request_id %u while building table-update event context; using UnknownTransaction event"), ReducerEvent.RequestId);
+            BaseEvent = FClientUnrealEvent::UnknownTransaction(FSpacetimeDBUnit());
+            break;
+        }
         BaseEvent = FClientUnrealEvent::Reducer(Reducer);
         break;
     }
@@ -653,6 +641,10 @@ void UDbConnection::DbUpdate(const FDatabaseUpdateType& Update, const FSpacetime
 
     case ESpacetimeDBEventTag::Disconnected:
         BaseEvent = FClientUnrealEvent::Disconnected(Event.GetAsDisconnected());
+        break;
+
+    case ESpacetimeDBEventTag::Transaction:
+        BaseEvent = FClientUnrealEvent::Transaction(Event.GetAsTransaction());
         break;
 
     case ESpacetimeDBEventTag::SubscribeError:

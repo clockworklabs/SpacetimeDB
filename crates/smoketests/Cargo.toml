@@ -15,6 +15,7 @@ anyhow.workspace = true
 which = "8.0.0"
 
 [dev-dependencies]
+spacetimedb-core.workspace = true
 cargo_metadata.workspace = true
 assert_cmd = "2"
 predicates = "3"

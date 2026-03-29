@@ -27,8 +27,9 @@
 //! * [UniqueHashJoinRule]
 //!   Mark hash join as unique
 use anyhow::{bail, Result};
+use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColId, ColSet, IndexId};
-use spacetimedb_schema::schema::IndexSchema;
+use spacetimedb_schema::schema::{IndexSchema, TableSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 
 use crate::plan::{
@@ -1061,21 +1062,204 @@ impl RewriteRule for PullFilterAboveHashJoin {
 /// Always prefer an index join to a hash join
 pub(crate) struct HashToIxJoin;
 
+/// A filter term of the form `rhs_col = constant`.
+type EqConstFilterTerm = (ColId, AlgebraicValue);
+
+/// Planning metadata derived while proving `HashJoin -> IxJoin` is valid.
+#[derive(Clone)]
+pub(crate) struct HashToIxJoinInfo {
+    /// The index to probe on the RHS table.
+    rhs_index: IndexId,
+    /// The join column on the RHS.
+    /// This must be the final probe component for the chosen index.
+    rhs_field: ColId,
+    /// Constant leading key components for a multi-column index probe.
+    /// For an index `(a, b, c)` and join on `c`, this stores `[a_const, b_const]`.
+    rhs_prefix: Vec<AlgebraicValue>,
+    /// RHS filter terms consumed into `rhs_prefix` and therefore removable
+    /// from the residual filter.
+    consumed_filter_terms: Vec<EqConstFilterTerm>,
+}
+
+/// Collect RHS predicates of the form `rhs.col = constant`.
+///
+/// This is intentionally narrow: only equality predicates over RHS fields are
+/// useful for building exact prefix probes into multi-column indexes.
+fn rhs_eq_constants(expr: &PhysicalExpr, rhs_label: Label) -> Vec<EqConstFilterTerm> {
+    match expr {
+        PhysicalExpr::BinOp(BinOp::Eq, lhs, rhs)
+            if matches!(
+                (&**lhs, &**rhs),
+                (PhysicalExpr::Field(TupleField { label, .. }), PhysicalExpr::Value(_)) if *label == rhs_label
+            ) =>
+        {
+            match (&**lhs, &**rhs) {
+                (PhysicalExpr::Field(TupleField { field_pos, .. }), PhysicalExpr::Value(value)) => {
+                    vec![(ColId(*field_pos as u16), value.clone())]
+                }
+                _ => vec![],
+            }
+        }
+        PhysicalExpr::LogOp(LogOp::And, exprs) => exprs
+            .iter()
+            .flat_map(|expr| rhs_eq_constants(expr, rhs_label))
+            .collect(),
+        _ => vec![],
+    }
+}
+
+/// Collect equality constants from a list of filter expressions.
+fn rhs_eq_constants_from_filters<'a>(
+    filters: impl IntoIterator<Item = &'a PhysicalExpr>,
+    rhs_label: Label,
+) -> Vec<EqConstFilterTerm> {
+    filters
+        .into_iter()
+        .flat_map(|expr| rhs_eq_constants(expr, rhs_label))
+        .collect()
+}
+
+/// Peel a chain of `Filter` nodes and return:
+/// 1) the non-filter base plan
+/// 2) all filter expressions in that chain
+fn peel_filters_ref(mut plan: &PhysicalPlan) -> (&PhysicalPlan, Vec<&PhysicalExpr>) {
+    let mut filters = Vec::new();
+    while let PhysicalPlan::Filter(input, expr) = plan {
+        filters.push(expr);
+        plan = input;
+    }
+    (plan, filters)
+}
+
+/// Owned variant of `peel_filters_ref`.
+fn peel_filters_owned(mut plan: PhysicalPlan) -> (PhysicalPlan, Vec<PhysicalExpr>) {
+    let mut filters = Vec::new();
+    while let PhysicalPlan::Filter(input, expr) = plan {
+        filters.push(expr);
+        plan = *input;
+    }
+    (plan, filters)
+}
+
+fn and_expr(exprs: Vec<PhysicalExpr>) -> Option<PhysicalExpr> {
+    match exprs.len() {
+        0 => None,
+        1 => exprs.into_iter().next(),
+        _ => Some(PhysicalExpr::LogOp(LogOp::And, exprs)),
+    }
+}
+
+fn ix_join_candidate(
+    schema: &TableSchema,
+    rhs_field_pos: usize,
+    constants: &[EqConstFilterTerm],
+) -> Option<HashToIxJoinInfo> {
+    let rhs_field = ColId(rhs_field_pos as u16);
+    schema.indexes.iter().find_map(|ix| {
+        let cols = ix.index_algorithm.columns();
+        // For point-probe index joins we require:
+        // 1) join key is the last index column,
+        // 2) every leading index column is fixed by an RHS equality constant.
+        if cols.iter().last()? != rhs_field {
+            return None;
+        };
+
+        let mut rhs_prefix: Vec<AlgebraicValue> = vec![];
+        let mut consumed_filter_terms: Vec<EqConstFilterTerm> = vec![];
+        for col in cols.iter().take(cols.len().saturating_sub(1).into()) {
+            let (_, value) = constants.iter().find(|(candidate, _)| *candidate == col)?;
+            rhs_prefix.push(value.clone());
+            consumed_filter_terms.push((col, value.clone()));
+        }
+
+        Some(HashToIxJoinInfo {
+            rhs_index: ix.index_id,
+            rhs_field,
+            rhs_prefix,
+            consumed_filter_terms,
+        })
+    })
+}
+
+/// Extract equality constants encoded directly in an `IxScan`.
+///
+/// We only support `Eq` SARGs here because index joins require exact probe
+/// values for all leading index columns.
+fn rhs_eq_constants_from_ixscan(scan: &IxScan) -> Option<Vec<EqConstFilterTerm>> {
+    let mut constants = scan
+        .prefix
+        .iter()
+        .map(|(col, value)| (*col, value.clone()))
+        .collect::<Vec<_>>();
+
+    let Sarg::Eq(col, value) = &scan.arg else {
+        return None;
+    };
+    constants.push((*col, value.clone()));
+    Some(constants)
+}
+
+/// Ensure we do not drop predicates that were previously represented by an
+/// `IxScan` when rewriting to an `IxJoin`.
+fn all_terms_consumed(required: &[EqConstFilterTerm], consumed: &[EqConstFilterTerm]) -> bool {
+    required
+        .iter()
+        .all(|term| consumed.iter().any(|consumed_term| consumed_term == term))
+}
+
+fn remove_consumed_filter_terms(
+    expr: PhysicalExpr,
+    rhs_label: Label,
+    consumed_filter_terms: &[EqConstFilterTerm],
+) -> Option<PhysicalExpr> {
+    // These terms are now represented by `rhs_prefix`; keeping them in a
+    // residual filter is redundant work.
+    let is_consumed = |col_id: ColId, value: &AlgebraicValue| {
+        consumed_filter_terms
+            .iter()
+            .any(|(consumed_col, consumed_val)| consumed_col == &col_id && consumed_val == value)
+    };
+
+    match expr {
+        PhysicalExpr::BinOp(BinOp::Eq, lhs, rhs)
+            if matches!(
+                (&*lhs, &*rhs),
+                (PhysicalExpr::Field(TupleField { label, field_pos, .. }), PhysicalExpr::Value(value))
+                    if *label == rhs_label && is_consumed(ColId(*field_pos as u16), value)
+            ) =>
+        {
+            None
+        }
+        PhysicalExpr::LogOp(LogOp::And, exprs) => {
+            let mut kept: Vec<_> = exprs
+                .into_iter()
+                .filter_map(|expr| remove_consumed_filter_terms(expr, rhs_label, consumed_filter_terms))
+                .collect();
+
+            match kept.len() {
+                0 => None,
+                1 => Some(kept.swap_remove(0)),
+                _ => Some(PhysicalExpr::LogOp(LogOp::And, kept)),
+            }
+        }
+        expr => Some(expr),
+    }
+}
+
 impl RewriteRule for HashToIxJoin {
     type Plan = PhysicalPlan;
-    type Info = (IndexId, ColId);
+    type Info = HashToIxJoinInfo;
 
     fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
-        if let PhysicalPlan::HashJoin(
-            HashJoin {
-                rhs,
-                rhs_field: TupleField { field_pos, .. },
-                ..
-            },
-            _,
-        ) = plan
-        {
-            return match &**rhs {
+        match plan {
+            PhysicalPlan::HashJoin(
+                HashJoin {
+                    rhs,
+                    rhs_field: TupleField { field_pos, .. },
+                    ..
+                },
+                _,
+            ) => match &**rhs {
                 PhysicalPlan::TableScan(
                     TableScan {
                         schema,
@@ -1083,48 +1267,180 @@ impl RewriteRule for HashToIxJoin {
                         delta: _,
                     },
                     _,
+                ) => ix_join_candidate(schema, *field_pos, &[]),
+                PhysicalPlan::IxScan(
+                    scan @ IxScan {
+                        schema,
+                        limit: None,
+                        delta: _,
+                        ..
+                    },
+                    _,
                 ) => {
-                    // Is there a single column index on this field?
-                    schema.indexes.iter().find_map(|ix| {
-                        ix.index_algorithm
-                            .columns()
-                            .as_singleton()
-                            .filter(|col_id| col_id.idx() == *field_pos)
-                            .map(|col_id| (ix.index_id, col_id))
-                    })
+                    // If earlier rules already lowered an RHS filter to `IxScan(sender = const)`,
+                    // reuse those constants when proving that a multi-column join index can be probed.
+                    let constants = rhs_eq_constants_from_ixscan(scan)?;
+                    let info = ix_join_candidate(schema, *field_pos, &constants)?;
+                    // Guardrail: do not rewrite unless every scan-encoded predicate is
+                    // represented in the chosen `rhs_prefix` + join key.
+                    all_terms_consumed(&constants, &info.consumed_filter_terms).then_some(info)
                 }
-                _ => None,
-            };
+                _ => {
+                    // We prefer to pull filters above an index join where possible.
+                    let (base, filters) = peel_filters_ref(rhs);
+                    match base {
+                        PhysicalPlan::TableScan(
+                            TableScan {
+                                schema,
+                                limit: None,
+                                delta: _,
+                            },
+                            rhs_label,
+                        ) => {
+                            let constants = rhs_eq_constants_from_filters(filters, *rhs_label);
+                            ix_join_candidate(schema, *field_pos, &constants)
+                        }
+                        _ => None,
+                    }
+                }
+            },
+            PhysicalPlan::Filter(input, expr) => {
+                let PhysicalPlan::HashJoin(
+                    HashJoin {
+                        rhs,
+                        rhs_field: TupleField { field_pos, .. },
+                        ..
+                    },
+                    _,
+                ) = &**input
+                else {
+                    return None;
+                };
+
+                let PhysicalPlan::TableScan(
+                    TableScan {
+                        schema,
+                        limit: None,
+                        delta: _,
+                    },
+                    rhs_label,
+                ) = &**rhs
+                else {
+                    return None;
+                };
+
+                let constants = rhs_eq_constants(expr, *rhs_label);
+                ix_join_candidate(schema, *field_pos, &constants)
+            }
+            _ => None,
         }
-        None
     }
 
-    fn rewrite(plan: PhysicalPlan, (rhs_index, rhs_field): Self::Info) -> Result<PhysicalPlan> {
-        if let PhysicalPlan::HashJoin(join, semi) = plan
-            && let PhysicalPlan::TableScan(
-                TableScan {
-                    schema: rhs,
-                    limit: None,
-                    delta: rhs_delta,
-                },
-                rhs_label,
-            ) = *join.rhs
-        {
-            return Ok(PhysicalPlan::IxJoin(
-                IxJoin {
-                    lhs: join.lhs,
-                    rhs,
-                    rhs_label,
+    fn rewrite(plan: PhysicalPlan, info: Self::Info) -> Result<PhysicalPlan> {
+        match plan {
+            PhysicalPlan::HashJoin(join, semi) => {
+                let HashToIxJoinInfo {
                     rhs_index,
                     rhs_field,
-                    rhs_delta,
-                    unique: false,
-                    lhs_field: join.lhs_field,
-                },
-                semi,
-            ));
+                    rhs_prefix,
+                    consumed_filter_terms,
+                } = info;
+
+                let (rhs_plan, rhs_filters) = peel_filters_owned(*join.rhs);
+                let (rhs, rhs_label, rhs_delta) = match rhs_plan {
+                    PhysicalPlan::TableScan(
+                        TableScan {
+                            schema: rhs,
+                            limit: None,
+                            delta: rhs_delta,
+                        },
+                        rhs_label,
+                    ) => (rhs, rhs_label, rhs_delta),
+                    PhysicalPlan::IxScan(
+                        IxScan {
+                            schema: rhs,
+                            limit: None,
+                            delta: rhs_delta,
+                            ..
+                        },
+                        rhs_label,
+                    ) => (rhs, rhs_label, rhs_delta),
+                    _ => bail!("{INVARIANT_VIOLATION}: Failed to rewrite hash join as index join"),
+                };
+
+                let ix_join = PhysicalPlan::IxJoin(
+                    IxJoin {
+                        lhs: join.lhs,
+                        rhs,
+                        rhs_label,
+                        rhs_index,
+                        rhs_prefix,
+                        rhs_field,
+                        rhs_delta,
+                        unique: false,
+                        lhs_field: join.lhs_field,
+                    },
+                    semi,
+                );
+
+                let residual_filters = rhs_filters
+                    .into_iter()
+                    .filter_map(|expr| remove_consumed_filter_terms(expr, rhs_label, &consumed_filter_terms))
+                    .collect();
+
+                if let Some(expr) = and_expr(residual_filters) {
+                    Ok(PhysicalPlan::Filter(Box::new(ix_join), expr))
+                } else {
+                    Ok(ix_join)
+                }
+            }
+            PhysicalPlan::Filter(input, expr) => {
+                let HashToIxJoinInfo {
+                    rhs_index,
+                    rhs_field,
+                    rhs_prefix,
+                    consumed_filter_terms,
+                } = info;
+
+                let PhysicalPlan::HashJoin(join, semi) = *input else {
+                    bail!("{INVARIANT_VIOLATION}: Failed to rewrite filtered hash join as index join");
+                };
+
+                let PhysicalPlan::TableScan(
+                    TableScan {
+                        schema: rhs,
+                        limit: None,
+                        delta: rhs_delta,
+                    },
+                    rhs_label,
+                ) = *join.rhs
+                else {
+                    bail!("{INVARIANT_VIOLATION}: Failed to rewrite filtered hash join as index join");
+                };
+
+                let ix_join = PhysicalPlan::IxJoin(
+                    IxJoin {
+                        lhs: join.lhs,
+                        rhs,
+                        rhs_label,
+                        rhs_index,
+                        rhs_prefix,
+                        rhs_field,
+                        rhs_delta,
+                        unique: false,
+                        lhs_field: join.lhs_field,
+                    },
+                    semi,
+                );
+
+                if let Some(expr) = remove_consumed_filter_terms(expr, rhs_label, &consumed_filter_terms) {
+                    Ok(PhysicalPlan::Filter(Box::new(ix_join), expr))
+                } else {
+                    Ok(ix_join)
+                }
+            }
+            _ => bail!("{INVARIANT_VIOLATION}: Failed to rewrite hash join as index join"),
         }
-        bail!("{INVARIANT_VIOLATION}: Failed to rewrite hash join as index join")
     }
 }
 

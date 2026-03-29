@@ -7,7 +7,7 @@ A benchmark suite comparing SpacetimeDB against traditional web application stac
 See SpacetimeDB's performance advantage with one command:
 
 ```bash
-npm install
+pnpm install
 npm run demo
 ```
 
@@ -15,7 +15,8 @@ The demo compares SpacetimeDB and Convex by default, since both are easy for any
 
 **Options:** `--systems a,b,c` | `--seconds N` | `--skip-prep` | `--no-animation`
 
-**Note:** You will need to [install Rust](https://rust-lang.org/tools/install/) to run the spacetimedb benchmark, because we run a [Rust Client](#rust-client).
+**Note:** `demo` always runs the built-in `test-1` scenario. Use `bench` if you need to specify a test name directly.
+**Note:** `demo` selects targets with `--systems`; `bench` filters test connectors with `--connectors`.
 
 ## Results Summary
 
@@ -180,6 +181,7 @@ for the other backends/databases as they maxed out before the client.
 ## Running the Benchmarks
 
 See [DEVELOP.md](./DEVELOP.md) for detailed setup and execution instructions.
+The distributed TypeScript SpacetimeDB workflow is documented there as `Run the distributed TypeScript SpacetimeDB benchmark`.
 
 ### Quick Start
 
@@ -197,7 +199,7 @@ docker compose up -d pg crdb
 npm run prep
 
 # Run benchmark
-npm run bench -- --seconds 10 --concurrency 50 --alpha 1.5 --connectors spacetimedb,postgres_rpc,sqlite_rpc
+npm run bench -- test-1 --seconds 10 --concurrency 50 --alpha 1.5 --connectors spacetimedb,postgres_rpc,sqlite_rpc
 ```
 
 ## Output
