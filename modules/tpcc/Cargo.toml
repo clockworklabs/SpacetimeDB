@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 [dependencies]
 anyhow.workspace = true
 log.workspace = true
-spacetimedb = { workspace = true, features = ["unstable"] }
+spacetimedb = { workspace = true, features = ["unstable", "rand"] }
 spacetimedb-sats = { workspace = true, features = ["serde"] }
 http.workspace = true
 serde_json.workspace = true

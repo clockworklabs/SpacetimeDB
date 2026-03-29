@@ -18,13 +18,18 @@ pub struct RemoteWarehouse {
 
 #[reducer]
 fn load_remote_warehouses(ctx: &ReducerContext, rows: Vec<RemoteWarehouse>) -> Result<(), String> {
+    replace_remote_warehouses(ctx, rows)
+}
+
+pub fn replace_remote_warehouses(ctx: &ReducerContext, rows: Vec<RemoteWarehouse>) -> Result<(), String> {
+    clear_remote_warehouses(ctx);
     for row in rows {
         ctx.db.remote_warehouse().try_insert(row)?;
     }
     Ok(())
 }
 
-pub fn reset_remote_warehouses(ctx: &ReducerContext) {
+pub fn clear_remote_warehouses(ctx: &ReducerContext) {
     for row in ctx.db.remote_warehouse().iter() {
         ctx.db.remote_warehouse().delete(row);
     }

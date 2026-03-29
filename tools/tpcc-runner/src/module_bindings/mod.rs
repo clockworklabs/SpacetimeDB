@@ -6,6 +6,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+pub mod configure_tpcc_load_reducer;
 pub mod customer_selector_type;
 pub mod customer_type;
 pub mod delivery_completion_type;
@@ -49,12 +50,23 @@ pub mod queue_delivery_reducer;
 pub mod remote_warehouse_type;
 pub mod reset_tpcc_reducer;
 pub mod resolve_and_update_customer_for_payment_reducer;
+pub mod restart_tpcc_load_reducer;
+pub mod resume_tpcc_load_reducer;
+pub mod start_tpcc_load_reducer;
 pub mod stock_level_reducer;
 pub mod stock_level_result_type;
 pub mod stock_type;
 pub mod test_procedure;
+pub mod tpcc_load_config_request_type;
+pub mod tpcc_load_config_type;
+pub mod tpcc_load_job_type;
+pub mod tpcc_load_phase_type;
+pub mod tpcc_load_state_table;
+pub mod tpcc_load_state_type;
+pub mod tpcc_load_status_type;
 pub mod warehouse_type;
 
+pub use configure_tpcc_load_reducer::configure_tpcc_load;
 pub use customer_selector_type::CustomerSelector;
 pub use customer_type::Customer;
 pub use delivery_completion_type::DeliveryCompletion;
@@ -98,10 +110,20 @@ pub use queue_delivery_reducer::queue_delivery;
 pub use remote_warehouse_type::RemoteWarehouse;
 pub use reset_tpcc_reducer::reset_tpcc;
 pub use resolve_and_update_customer_for_payment_reducer::resolve_and_update_customer_for_payment;
+pub use restart_tpcc_load_reducer::restart_tpcc_load;
+pub use resume_tpcc_load_reducer::resume_tpcc_load;
+pub use start_tpcc_load_reducer::start_tpcc_load;
 pub use stock_level_reducer::stock_level;
 pub use stock_level_result_type::StockLevelResult;
 pub use stock_type::Stock;
 pub use test_procedure::test;
+pub use tpcc_load_config_request_type::TpccLoadConfigRequest;
+pub use tpcc_load_config_type::TpccLoadConfig;
+pub use tpcc_load_job_type::TpccLoadJob;
+pub use tpcc_load_phase_type::TpccLoadPhase;
+pub use tpcc_load_state_table::*;
+pub use tpcc_load_state_type::TpccLoadState;
+pub use tpcc_load_status_type::TpccLoadStatus;
 pub use warehouse_type::Warehouse;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -112,6 +134,9 @@ pub use warehouse_type::Warehouse;
 /// to indicate which reducer caused the event.
 
 pub enum Reducer {
+    ConfigureTpccLoad {
+        request: TpccLoadConfigRequest,
+    },
     DeliveryProgress {
         run_id: String,
     },
@@ -184,6 +209,9 @@ pub enum Reducer {
     ResolveAndUpdateCustomerForPayment {
         request: PaymentRequest,
     },
+    RestartTpccLoad,
+    ResumeTpccLoad,
+    StartTpccLoad,
     StockLevel {
         w_id: u16,
         d_id: u8,
@@ -198,6 +226,7 @@ impl __sdk::InModule for Reducer {
 impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
+            Reducer::ConfigureTpccLoad { .. } => "configure_tpcc_load",
             Reducer::DeliveryProgress { .. } => "delivery_progress",
             Reducer::FetchDeliveryCompletions { .. } => "fetch_delivery_completions",
             Reducer::LoadCustomers { .. } => "load_customers",
@@ -217,6 +246,9 @@ impl __sdk::Reducer for Reducer {
             Reducer::QueueDelivery { .. } => "queue_delivery",
             Reducer::ResetTpcc => "reset_tpcc",
             Reducer::ResolveAndUpdateCustomerForPayment { .. } => "resolve_and_update_customer_for_payment",
+            Reducer::RestartTpccLoad => "restart_tpcc_load",
+            Reducer::ResumeTpccLoad => "resume_tpcc_load",
+            Reducer::StartTpccLoad => "start_tpcc_load",
             Reducer::StockLevel { .. } => "stock_level",
             _ => unreachable!(),
         }
@@ -224,6 +256,11 @@ impl __sdk::Reducer for Reducer {
     #[allow(clippy::clone_on_copy)]
     fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {
         match self {
+            Reducer::ConfigureTpccLoad { request } => {
+                __sats::bsatn::to_vec(&configure_tpcc_load_reducer::ConfigureTpccLoadArgs {
+                    request: request.clone(),
+                })
+            }
             Reducer::DeliveryProgress { run_id } => {
                 __sats::bsatn::to_vec(&delivery_progress_reducer::DeliveryProgressArgs { run_id: run_id.clone() })
             }
@@ -323,6 +360,9 @@ impl __sdk::Reducer for Reducer {
                     request: request.clone(),
                 },
             ),
+            Reducer::RestartTpccLoad => __sats::bsatn::to_vec(&restart_tpcc_load_reducer::RestartTpccLoadArgs {}),
+            Reducer::ResumeTpccLoad => __sats::bsatn::to_vec(&resume_tpcc_load_reducer::ResumeTpccLoadArgs {}),
+            Reducer::StartTpccLoad => __sats::bsatn::to_vec(&start_tpcc_load_reducer::StartTpccLoadArgs {}),
             Reducer::StockLevel { w_id, d_id, threshold } => {
                 __sats::bsatn::to_vec(&stock_level_reducer::StockLevelArgs {
                     w_id: w_id.clone(),
@@ -338,7 +378,9 @@ impl __sdk::Reducer for Reducer {
 #[derive(Default, Debug)]
 #[allow(non_snake_case)]
 #[doc(hidden)]
-pub struct DbUpdate {}
+pub struct DbUpdate {
+    tpcc_load_state: __sdk::TableUpdate<TpccLoadState>,
+}
 
 impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
     type Error = __sdk::Error;
@@ -346,6 +388,10 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_update in __sdk::transaction_update_iter_table_updates(raw) {
             match &table_update.table_name[..] {
+                "tpcc_load_state" => db_update
+                    .tpcc_load_state
+                    .append(tpcc_load_state_table::parse_table_update(table_update)?),
+
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name("table", unknown, "DatabaseUpdate").into());
                 }
@@ -363,12 +409,19 @@ impl __sdk::DbUpdate for DbUpdate {
     fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) -> AppliedDiff<'_> {
         let mut diff = AppliedDiff::default();
 
+        diff.tpcc_load_state = cache
+            .apply_diff_to_table::<TpccLoadState>("tpcc_load_state", &self.tpcc_load_state)
+            .with_updates_by_pk(|row| &row.singleton_id);
+
         diff
     }
     fn parse_initial_rows(raw: __ws::v2::QueryRows) -> __sdk::Result<Self> {
         let mut db_update = DbUpdate::default();
         for table_rows in raw.tables {
             match &table_rows.table[..] {
+                "tpcc_load_state" => db_update
+                    .tpcc_load_state
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into());
                 }
@@ -380,6 +433,9 @@ impl __sdk::DbUpdate for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_rows in raw.tables {
             match &table_rows.table[..] {
+                "tpcc_load_state" => db_update
+                    .tpcc_load_state
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into());
                 }
@@ -393,6 +449,7 @@ impl __sdk::DbUpdate for DbUpdate {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
+    tpcc_load_state: __sdk::TableAppliedDiff<'r, TpccLoadState>,
     __unused: std::marker::PhantomData<&'r ()>,
 }
 
@@ -401,7 +458,9 @@ impl __sdk::InModule for AppliedDiff<'_> {
 }
 
 impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
-    fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {}
+    fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {
+        callbacks.invoke_table_row_callbacks::<TpccLoadState>("tpcc_load_state", &self.tpcc_load_state, event);
+    }
 }
 
 #[doc(hidden)]
@@ -1057,6 +1116,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type SubscriptionHandle = SubscriptionHandle;
     type QueryBuilder = __sdk::QueryBuilder;
 
-    fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {}
-    const ALL_TABLE_NAMES: &'static [&'static str] = &[];
+    fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
+        tpcc_load_state_table::register_table(client_cache);
+    }
+    const ALL_TABLE_NAMES: &'static [&'static str] = &["tpcc_load_state"];
 }

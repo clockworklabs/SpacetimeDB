@@ -6,12 +6,14 @@ use std::time::Duration;
 
 use crate::config::ConnectionConfig;
 use crate::module_bindings::*;
-use spacetimedb_sdk::{DbContext, Identity};
+use spacetimedb_sdk::{DbContext, Identity, Table as _};
 
 pub struct ModuleClient {
     conn: DbConnection,
     thread: Option<JoinHandle<()>>,
     timeout: Duration,
+    disconnect_error: Arc<Mutex<Option<String>>>,
+    load_state_subscription: Option<SubscriptionHandle>,
 }
 
 impl ModuleClient {
@@ -19,6 +21,8 @@ impl ModuleClient {
         let (ready_tx, ready_rx) = sync_channel(1);
         let success_tx = ready_tx.clone();
         let error_tx = ready_tx;
+        let disconnect_error = Arc::new(Mutex::new(None));
+        let disconnect_error_callback = Arc::clone(&disconnect_error);
         let mut builder = DbConnection::builder()
             .with_uri(config.uri.clone())
             .with_database_name(database_identity.to_string())
@@ -28,6 +32,13 @@ impl ModuleClient {
             })
             .on_connect_error(move |_, error| {
                 let _ = error_tx.send(Err(anyhow!("connection failed: {error}")));
+            })
+            .on_disconnect(move |_, error| {
+                let message = match error {
+                    Some(error) => format!("connection closed: {error}"),
+                    None => "connection closed".to_string(),
+                };
+                *disconnect_error_callback.lock().expect("disconnect mutex poisoned") = Some(message);
             });
 
         if let Some(token) = &config.token {
@@ -44,7 +55,51 @@ impl ModuleClient {
             conn,
             thread: Some(thread),
             timeout: Duration::from_secs(config.timeout_secs),
+            disconnect_error,
+            load_state_subscription: None,
         })
+    }
+
+    pub fn subscribe_load_state(&mut self) -> Result<()> {
+        if self.load_state_subscription.is_some() {
+            return Ok(());
+        }
+
+        let (tx, rx) = sync_channel(1);
+        let success_tx = tx.clone();
+        let handle = self
+            .conn
+            .subscription_builder()
+            .on_applied(move |_| {
+                let _ = success_tx.send(Ok::<(), anyhow::Error>(()));
+            })
+            .on_error(move |_, error| {
+                let _ = tx.send(Err(anyhow!("load state subscription failed: {error}")));
+            })
+            .subscribe(["SELECT * FROM tpcc_load_state"]);
+
+        match rx.recv_timeout(self.timeout) {
+            Ok(Ok(())) => {
+                self.load_state_subscription = Some(handle);
+                Ok(())
+            }
+            Ok(Err(err)) => Err(err),
+            Err(_) => {
+                self.ensure_connected()?;
+                bail!("timed out waiting for load state subscription")
+            }
+        }
+    }
+
+    pub fn load_state(&self) -> Option<TpccLoadState> {
+        self.conn.db.tpcc_load_state().iter().next()
+    }
+
+    pub fn ensure_connected(&self) -> Result<()> {
+        if let Some(message) = self.disconnect_error.lock().expect("disconnect mutex poisoned").clone() {
+            bail!("{message}");
+        }
+        Ok(())
     }
 
     pub fn reset_tpcc(&self) -> Result<()> {
@@ -249,6 +304,40 @@ impl ModuleClient {
             return Err(anyhow!("load_order_lines send error: {err}"));
         }
         Ok(())
+    }
+
+    pub fn configure_tpcc_load(&self, request: TpccLoadConfigRequest) -> Result<()> {
+        let (tx, rx) = sync_channel(1);
+        self.conn.reducers.configure_tpcc_load_then(request, move |_, res| {
+            log::debug!("Got response from `configure_tpcc_load`: {res:?}");
+            let _ = tx.send(res);
+        })?;
+        match rx.recv_timeout(self.timeout) {
+            Ok(Ok(Ok(()))) => Ok(()),
+            Ok(Ok(Err(message))) => bail!("configure_tpcc_load failed: {}", message),
+            Ok(Err(err)) => Err(anyhow!("configure_tpcc_load internal error: {}", err)),
+            Err(_) => {
+                self.ensure_connected()?;
+                bail!("timed out waiting for configure_tpcc_load")
+            }
+        }
+    }
+
+    pub fn start_tpcc_load(&self) -> Result<()> {
+        let (tx, rx) = sync_channel(1);
+        self.conn.reducers.start_tpcc_load_then(move |_, res| {
+            log::debug!("Got response from `start_tpcc_load`: {res:?}");
+            let _ = tx.send(res);
+        })?;
+        match rx.recv_timeout(self.timeout) {
+            Ok(Ok(Ok(()))) => Ok(()),
+            Ok(Ok(Err(message))) => bail!("start_tpcc_load failed: {}", message),
+            Ok(Err(err)) => Err(anyhow!("start_tpcc_load internal error: {}", err)),
+            Err(_) => {
+                self.ensure_connected()?;
+                bail!("timed out waiting for start_tpcc_load")
+            }
+        }
     }
 
     pub fn new_order(
