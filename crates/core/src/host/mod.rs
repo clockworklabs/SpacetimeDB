@@ -15,6 +15,7 @@ mod host_controller;
 mod module_common;
 #[allow(clippy::too_many_arguments)]
 pub mod module_host;
+pub mod prepared_tx;
 pub mod scheduler;
 pub mod wasmtime;
 

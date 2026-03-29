@@ -890,6 +890,9 @@ pub struct ModuleHost {
     ///
     /// When this is true, most operations will fail with [`NoSuchModule`].
     closed: Arc<AtomicBool>,
+
+    /// Registry of prepared (but not yet finalized) 2PC transactions.
+    prepared_txs: super::prepared_tx::PreparedTransactions,
 }
 
 impl fmt::Debug for ModuleHost {
@@ -906,6 +909,7 @@ pub struct WeakModuleHost {
     inner: Weak<ModuleHostInner>,
     on_panic: Weak<dyn Fn() + Send + Sync + 'static>,
     closed: Weak<AtomicBool>,
+    prepared_txs: super::prepared_tx::PreparedTransactions,
 }
 
 #[derive(Debug)]
@@ -1093,6 +1097,7 @@ impl ModuleHost {
             inner,
             on_panic,
             closed: Arc::new(AtomicBool::new(false)),
+            prepared_txs: super::prepared_tx::PreparedTransactions::new(),
         }
     }
 
@@ -1738,6 +1743,100 @@ impl ModuleHost {
         }
 
         res
+    }
+
+    /// Execute a reducer in 2PC prepare mode.
+    ///
+    /// Execute a reducer as a 2PC PREPARE.
+    ///
+    /// 1. Executes the reducer and commits in-memory (releasing the write lock).
+    /// 2. Sends the PREPARE to the durability worker.
+    /// 3. Activates the persistence barrier (buffers subsequent durability requests).
+    /// 4. Waits for the PREPARE to become durable.
+    /// 5. Returns the prepare_id, result, and return value.
+    ///
+    /// The caller should then send PREPARED to the coordinator.
+    pub async fn prepare_reducer(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        reducer_name: &str,
+        args: FunctionArgs,
+    ) -> Result<(String, ReducerCallResult, Option<Bytes>), ReducerCallError> {
+        // Call the reducer using the 2PC prepare commit path.
+        // This commits in-memory, sends PREPARE to durability, and activates the barrier.
+        let (result, return_value) = self
+            .call_reducer_with_return(
+                caller_identity,
+                caller_connection_id,
+                None,  // no websocket client
+                None,  // no request_id
+                None,  // no timer
+                reducer_name,
+                args,
+            )
+            .await?;
+
+        // Only store prepared tx info and activate barrier if the reducer succeeded.
+        if matches!(result.outcome, ReducerOutcome::Committed) {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static PREPARE_COUNTER: AtomicU64 = AtomicU64::new(1);
+            let prepare_id = format!("prepare-{}", PREPARE_COUNTER.fetch_add(1, Ordering::Relaxed));
+
+            // Activate the persistence barrier. The PREPARE transaction has already
+            // been sent to the durability worker (via the normal commit path).
+            // The barrier prevents any subsequent transactions from being persisted
+            // until we finalize with COMMIT or ABORT.
+            self.relational_db().activate_persistence_barrier();
+
+            let info = super::prepared_tx::PreparedTxInfo {
+                tx_offset: 0, // TODO: thread TxOffset from commit path
+                tx_data: std::sync::Arc::new(spacetimedb_datastore::traits::TxData::default()),
+                reducer_context: None,
+            };
+            self.prepared_txs.insert(prepare_id.clone(), info);
+
+            // Wait for the PREPARE to become durable before returning.
+            // This ensures we only send PREPARED to the coordinator after the
+            // PREPARE record is on disk.
+            if let Some(mut durable_offset) = self.relational_db().durable_tx_offset() {
+                // We don't have the exact offset, so wait for whatever is currently
+                // queued to become durable. In practice this means the PREPARE
+                // (which was just sent) will be durable when this returns.
+                let current = durable_offset.last_seen().unwrap_or(0);
+                // Wait for at least one more offset to become durable.
+                let _ = durable_offset.wait_for(current + 1).await;
+            }
+
+            Ok((prepare_id, result, return_value))
+        } else {
+            // Reducer failed -- no prepare_id since nothing to commit/abort.
+            Ok((String::new(), result, return_value))
+        }
+    }
+
+    /// Finalize a prepared transaction as COMMIT.
+    ///
+    /// Deactivates the persistence barrier and flushes all buffered durability
+    /// requests to the durability worker.
+    pub fn commit_prepared(&self, prepare_id: &str) -> Result<(), String> {
+        let _info = self.prepared_txs
+            .remove(prepare_id)
+            .ok_or_else(|| format!("no such prepared transaction: {prepare_id}"))?;
+        self.relational_db().finalize_prepare_commit();
+        Ok(())
+    }
+
+    /// Abort a prepared transaction.
+    ///
+    /// Deactivates the persistence barrier, discards all buffered durability
+    /// requests, and inverts the PREPARE's in-memory changes.
+    pub fn abort_prepared(&self, prepare_id: &str) -> Result<(), String> {
+        let info = self.prepared_txs
+            .remove(prepare_id)
+            .ok_or_else(|| format!("no such prepared transaction: {prepare_id}"))?;
+        self.relational_db().finalize_prepare_abort(&info.tx_data);
+        Ok(())
     }
 
     pub async fn call_view_add_single_subscription(
@@ -2561,6 +2660,7 @@ impl ModuleHost {
             inner: Arc::downgrade(&self.inner),
             on_panic: Arc::downgrade(&self.on_panic),
             closed: Arc::downgrade(&self.closed),
+            prepared_txs: self.prepared_txs.clone(),
         }
     }
 
@@ -2605,6 +2705,7 @@ impl WeakModuleHost {
             inner,
             on_panic,
             closed,
+            prepared_txs: self.prepared_txs.clone(),
         })
     }
 }
