@@ -1810,6 +1810,11 @@ impl ModuleHost {
                 let _ = durable_offset.wait_for(current + 1).await;
             }
 
+            // PREPARE is now durable. Deactivate the barrier and flush all
+            // buffered speculative transactions to the durability worker.
+            // Subsequent transactions can persist normally until the next PREPARE.
+            self.relational_db().finalize_prepare_commit();
+
             Ok((prepare_id, result, return_value))
         } else {
             // Reducer failed -- no prepare_id since nothing to commit/abort.
@@ -1819,25 +1824,30 @@ impl ModuleHost {
 
     /// Finalize a prepared transaction as COMMIT.
     ///
-    /// Deactivates the persistence barrier and flushes all buffered durability
-    /// requests to the durability worker.
+    /// The persistence barrier was already deactivated (and buffered requests
+    /// flushed) when the PREPARE became durable in `prepare_reducer`. This
+    /// method just removes the prepared tx from the registry.
+    ///
+    /// TODO: Write a COMMIT record to the commitlog so replay knows to apply
+    /// the PREPARE.
     pub fn commit_prepared(&self, prepare_id: &str) -> Result<(), String> {
-        let _info = self.prepared_txs
+        self.prepared_txs
             .remove(prepare_id)
             .ok_or_else(|| format!("no such prepared transaction: {prepare_id}"))?;
-        self.relational_db().finalize_prepare_commit();
         Ok(())
     }
 
     /// Abort a prepared transaction.
     ///
-    /// Deactivates the persistence barrier, discards all buffered durability
-    /// requests, and inverts the PREPARE's in-memory changes.
+    /// Inverts the PREPARE's in-memory changes and writes an ABORT record
+    /// so replay knows to skip the PREPARE.
+    ///
+    /// TODO: Actually invert in-memory state and write ABORT to commitlog.
     pub fn abort_prepared(&self, prepare_id: &str) -> Result<(), String> {
-        let info = self.prepared_txs
+        let _info = self.prepared_txs
             .remove(prepare_id)
             .ok_or_else(|| format!("no such prepared transaction: {prepare_id}"))?;
-        self.relational_db().finalize_prepare_abort(&info.tx_data);
+        log::warn!("2PC abort for {prepare_id}: in-memory inversion not yet implemented");
         Ok(())
     }
 
