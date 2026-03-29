@@ -4,15 +4,16 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::new_order_line_input_type::NewOrderLineInput;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct ReserveItemOutput {
-    pub s_dist: String,
-    pub s_data: String,
-    pub updated_quantity: i32,
-    pub rollback_token: u64,
+pub struct OrderItemInput {
+    pub line: NewOrderLineInput,
+    pub district: u8,
+    pub is_remote_warehouse: bool,
 }
 
-impl __sdk::InModule for ReserveItemOutput {
+impl __sdk::InModule for OrderItemInput {
     type Module = super::RemoteModule;
 }

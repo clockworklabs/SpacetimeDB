@@ -83,8 +83,6 @@ fn configure_one_database(config: &LoadConfig, database_number: u16, topology: &
         client.reset_tpcc().context("failed to reset tpcc data")?;
     }
 
-    client.set_spacetimedb_uri(&config.connection.uri)?;
-
     let mut rng = StdRng::seed_from_u64(0x5eed_5eed);
     let load_c_last = rng.random_range(0..=255);
     let base_ts = Timestamp::from(SystemTime::now());
@@ -430,11 +428,7 @@ fn load_customers_history_orders(
                         ol_dist_info: alpha_string(rng, 24, 24),
                     });
                     if order_line_batch.len() >= batch_size {
-                        client.queue_load_order_lines(
-                            std::mem::take(&mut order_line_batch),
-                            &pending,
-                            &errors,
-                        )?;
+                        client.queue_load_order_lines(std::mem::take(&mut order_line_batch), &pending, &errors)?;
                     }
                 }
 

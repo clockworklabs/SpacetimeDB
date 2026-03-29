@@ -52,16 +52,22 @@ impl core::fmt::Display for RemoteCallError {
 /// - `reducer_name`: the name of the reducer to invoke (must be valid UTF-8).
 /// - `args`: BSATN-encoded reducer arguments.
 ///
-/// Returns `Ok(())` when the remote reducer ran and succeeded.
+/// Returns `Ok(bytes)` when the remote reducer ran and succeeded, with `bytes` being the reducer's output.
 /// Returns `Err(RemoteCallError::Failed(msg))` when the reducer ran but returned an error.
 /// Returns `Err(RemoteCallError::NotFound(msg))` when the database or reducer does not exist.
 /// Returns `Err(RemoteCallError::Unreachable(msg))` on transport failure (connection refused, timeout, …).
-pub fn call_reducer_on_db(database_identity: Identity, reducer_name: &str, args: &[u8]) -> Result<(), RemoteCallError> {
+pub fn call_reducer_on_db(
+    database_identity: Identity,
+    reducer_name: &str,
+    args: &[u8],
+) -> Result<Vec<u8>, RemoteCallError> {
     let identity_bytes = database_identity.to_byte_array();
     match spacetimedb_bindings_sys::call_reducer_on_db(identity_bytes, reducer_name, args) {
         Ok((status, body_source)) => {
             if status < 300 {
-                return Ok(());
+                let mut out = Vec::new();
+                read_bytes_source_into(body_source, &mut out);
+                return Ok(out);
             }
             // Decode the response body as the error message.
             let msg = if body_source == spacetimedb_bindings_sys::raw::BytesSource::INVALID {

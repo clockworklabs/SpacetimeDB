@@ -47,22 +47,6 @@ impl ModuleClient {
         })
     }
 
-    pub fn set_spacetimedb_uri(&self, uri: &str) -> Result<()> {
-        let (tx, rx) = sync_channel(1);
-        self.conn
-            .reducers
-            .set_spacetimedb_uri_then(uri.to_string(), move |_, res| {
-                log::debug!("Got response from `set_spacetimedb_uri`: {res:?}");
-                let _ = tx.send(res);
-            })?;
-        match rx.recv_timeout(self.timeout) {
-            Ok(Ok(Ok(()))) => Ok(()),
-            Ok(Ok(Err(message))) => bail!("set_spacetimedb_uri failed: {}", message),
-            Ok(Err(err)) => Err(anyhow!("set_spacetimedb_uri internal error: {}", err)),
-            Err(_) => bail!("timed out waiting for set_spacetimedb_uri"),
-        }
-    }
-
     pub fn reset_tpcc(&self) -> Result<()> {
         let (tx, rx) = sync_channel(1);
         self.conn.reducers.reset_tpcc_then(move |_, res| {
@@ -86,14 +70,10 @@ impl ModuleClient {
         increment_pending(pending);
         let pending_for_callback = Arc::clone(pending);
         let errors = Arc::clone(errors);
-        if let Err(err) = self
-            .conn
-            .reducers
-            .load_remote_warehouses_then(rows, move |_, res| {
-                handle_reducer_result("load_remote_warehouses", res, &errors);
-                decrement_pending(&pending_for_callback);
-            })
-        {
+        if let Err(err) = self.conn.reducers.load_remote_warehouses_then(rows, move |_, res| {
+            handle_reducer_result("load_remote_warehouses", res, &errors);
+            decrement_pending(&pending_for_callback);
+        }) {
             decrement_pending(pending);
             return Err(anyhow!("load_remote_warehouses send error: {err}"));
         }
@@ -280,11 +260,11 @@ impl ModuleClient {
     ) -> Result<Result<NewOrderResult, String>> {
         let (tx, rx) = sync_channel(1);
         self.conn
-            .procedures
+            .reducers
             .new_order_then(w_id, d_id, c_id, order_lines, move |_, res| {
                 log::debug!("Got response from `new_order`: {res:?}");
                 let _ = tx.send(res);
-            });
+            })?;
         match rx.recv_timeout(self.timeout) {
             Ok(Ok(value)) => Ok(value),
             Ok(Err(err)) => Err(anyhow!("new_order internal error: {}", err)),
@@ -302,7 +282,7 @@ impl ModuleClient {
         payment_amount_cents: i64,
     ) -> Result<Result<PaymentResult, String>> {
         let (tx, rx) = sync_channel(1);
-        self.conn.procedures.payment_then(
+        self.conn.reducers.payment_then(
             w_id,
             d_id,
             c_w_id,
@@ -313,7 +293,7 @@ impl ModuleClient {
                 log::debug!("Got response from `payment`: {res:?}");
                 let _ = tx.send(res);
             },
-        );
+        )?;
         match rx.recv_timeout(self.timeout) {
             Ok(Ok(value)) => Ok(value),
             Ok(Err(err)) => Err(anyhow!("payment internal error: {}", err)),
@@ -329,11 +309,11 @@ impl ModuleClient {
     ) -> Result<Result<OrderStatusResult, String>> {
         let (tx, rx) = sync_channel(1);
         self.conn
-            .procedures
+            .reducers
             .order_status_then(w_id, d_id, customer, move |_, res| {
                 log::debug!("Got response from `order_status`: {res:?}");
                 let _ = tx.send(res);
-            });
+            })?;
         match rx.recv_timeout(self.timeout) {
             Ok(Ok(value)) => Ok(value),
             Ok(Err(err)) => Err(anyhow!("order_status internal error: {}", err)),
@@ -344,11 +324,11 @@ impl ModuleClient {
     pub fn stock_level(&self, w_id: u16, d_id: u8, threshold: i32) -> Result<Result<StockLevelResult, String>> {
         let (tx, rx) = sync_channel(1);
         self.conn
-            .procedures
+            .reducers
             .stock_level_then(w_id, d_id, threshold, move |_, res| {
                 log::debug!("Got response from `stock_level`: {res:?}");
                 let _ = tx.send(res);
-            });
+            })?;
         match rx.recv_timeout(self.timeout) {
             Ok(Ok(value)) => Ok(value),
             Ok(Err(err)) => Err(anyhow!("stock_level internal error: {}", err)),
@@ -366,7 +346,7 @@ impl ModuleClient {
         carrier_id: u8,
     ) -> Result<Result<DeliveryQueueAck, String>> {
         let (tx, rx) = sync_channel(1);
-        self.conn.procedures.queue_delivery_then(
+        self.conn.reducers.queue_delivery_then(
             run_id,
             driver_id,
             terminal_id,
@@ -377,7 +357,7 @@ impl ModuleClient {
                 log::debug!("Got response from `queue_delivery`: {res:?}");
                 let _ = tx.send(res);
             },
-        );
+        )?;
         match rx.recv_timeout(self.timeout) {
             Ok(Ok(value)) => Ok(value),
             Ok(Err(err)) => Err(anyhow!("queue_delivery internal error: {}", err)),
@@ -387,10 +367,10 @@ impl ModuleClient {
 
     pub fn delivery_progress(&self, run_id: String) -> Result<Result<DeliveryProgress, String>> {
         let (tx, rx) = sync_channel(1);
-        self.conn.procedures.delivery_progress_then(run_id, move |_, res| {
+        self.conn.reducers.delivery_progress_then(run_id, move |_, res| {
             log::debug!("Got response from `delivery_progress`: {res:?}");
             let _ = tx.send(res);
-        });
+        })?;
         match rx.recv_timeout(self.timeout) {
             Ok(Ok(value)) => Ok(value),
             Ok(Err(err)) => Err(anyhow!("delivery_progress internal error: {}", err)),
@@ -406,11 +386,11 @@ impl ModuleClient {
     ) -> Result<Result<Vec<DeliveryCompletionView>, String>> {
         let (tx, rx) = sync_channel(1);
         self.conn
-            .procedures
+            .reducers
             .fetch_delivery_completions_then(run_id, after_completion_id, limit, move |_, res| {
                 log::debug!("Got response from `fetch_delivery_completions`: {res:?}");
                 let _ = tx.send(res);
-            });
+            })?;
         match rx.recv_timeout(self.timeout) {
             Ok(Ok(value)) => Ok(value),
             Ok(Err(err)) => Err(anyhow!("fetch_delivery_completions internal error: {}", err)),

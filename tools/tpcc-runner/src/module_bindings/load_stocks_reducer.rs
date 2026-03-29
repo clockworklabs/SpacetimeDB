@@ -62,6 +62,7 @@ impl load_stocks for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(LoadStocksArgs { rows }, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(LoadStocksArgs { rows }, callback)
     }
 }

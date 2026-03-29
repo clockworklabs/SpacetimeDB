@@ -1,13 +1,9 @@
-use spacetimedb::{
-    procedure, reducer, table, Identity, ProcedureContext, ReducerContext, SpacetimeType, Table, Timestamp, TxContext,
-};
-use spacetimedb_sats::serde::SerdeWrapper;
-
 use crate::{
     district, find_customer_by_id, find_district, find_stock, find_warehouse, item, order_line, pack_order_key,
-    remote::{call_remote_function, get_spacetimedb_uri, remote_warehouse_home},
+    remote::{call_remote_reducer, remote_warehouse_home},
     stock, District, Item, OrderLine, Stock, WarehouseId, DISTRICTS_PER_WAREHOUSE, TAX_SCALE,
 };
+use spacetimedb::{log_stopwatch::LogStopwatch, reducer, Identity, ReducerContext, SpacetimeType, Table, Timestamp};
 
 #[derive(Clone, Debug, SpacetimeType)]
 pub struct NewOrderLineInput {
@@ -42,183 +38,44 @@ pub struct NewOrderResult {
     pub lines: Vec<NewOrderLineResult>,
 }
 
-#[procedure]
+#[reducer]
 pub fn new_order(
-    ctx: &mut ProcedureContext,
+    ctx: &ReducerContext,
     w_id: WarehouseId,
     d_id: u8,
     c_id: u32,
     order_lines: Vec<NewOrderLineInput>,
 ) -> Result<NewOrderResult, String> {
-    let start_time = ctx.timestamp;
-    log::debug!("Starting `new_order` transaction at {start_time:?}");
+    let _timer = LogStopwatch::new("new_order");
+    log::debug!("Starting `new_order` transaction at {}", ctx.timestamp);
 
-    let res = (|| {
-        ensure!(
-            (1..=DISTRICTS_PER_WAREHOUSE).contains(&d_id),
-            "district id out of range"
-        );
-        ensure!(
-            (5..=15).contains(&order_lines.len()),
-            "new-order requires between 5 and 15 order lines"
-        );
+    ensure!(
+        (1..=DISTRICTS_PER_WAREHOUSE).contains(&d_id),
+        "district id out of range"
+    );
+    ensure!(
+        (5..=15).contains(&order_lines.len()),
+        "new-order requires between 5 and 15 order lines"
+    );
 
-        // Setup TX: validate warehouse, district, customer ID.
-        // NON-CONFORMANT: These never change in TPC-C,
-        // so we don't need to include the checks in the same transaction as the rest of the work.
-        let (warehouse, district, customer, spacetimedb_uri) = ctx.try_with_tx(|tx| {
-            let warehouse = find_warehouse(tx, w_id)?;
-            let district = find_district(tx, w_id, d_id)?;
-            let customer = find_customer_by_id(tx, w_id, d_id, c_id)?;
-            let spacetimedb_uri = get_spacetimedb_uri(tx);
-            Ok::<_, String>((warehouse, district, customer, spacetimedb_uri))
-        })?;
+    let warehouse = find_warehouse(ctx, w_id)?;
 
-        let PartitionedItems {
-            local_database_items,
-            remote_database_items,
-            all_local_warehouse,
-        } =
-        // Look up all of the items in the order, and fail if any of them doesn't exist.
-        // If they all exist, sort them into two groups:
-        // - `local_database_items`, items in warehouses managed by this database.
-        // - `remote_database_items`, items in warehouses managed by remote databases.
-        // Also compute `all_local_warehouse`, which says if all of the items are in the warehouse `w_id`.
-        // NON-CONFORMANT: This is a separate transaction from the later one,
-        // which updates stock quantities for the local items and records the new order.
-        // In a real system, an item might change between the two, but none of the TPC-C transactions writes to items.
-        // We (ab)use this knowledge to skip compensating for writes to items.
-            partition_local_from_remote_database_items(ctx, w_id, &order_lines)?;
+    let district = find_district(ctx, w_id, d_id)?;
+    let order_id = district.d_next_o_id;
+    ctx.db.district().district_key().update(District {
+        d_next_o_id: order_id + 1,
+        ..district
+    });
 
-        // NON-CONFORMANT: We reserve items from the remote database extra-transactionally.
-        // If our TPC-C transaction fails, we'll roll back those reservations.
-        // This opens us up to dirty read isolation hazards,
-        // where a concurrent transaction may observe a change in stock quantity that later rolls back.
-        // This will never happen with only the TPC-C transactions,
-        // as stock quantity is only written by the `new_order` transaction,
-        // and `new_order` can only fail prior to updating the stock quantity, due to non-existent items.
-        // We (ab)use this knowledge to skip compensating for rollbacks to prevent dirty reads.
-        let remote_item_reservations = reserve_remote_items(ctx, &spacetimedb_uri, d_id, &remote_database_items)?;
+    let customer = find_customer_by_id(ctx, w_id, d_id, c_id)?;
 
-        match ctx.try_with_tx(|tx| {
-            let district = tx
-                .db
-                .district()
-                .district_key()
-                .find(district.district_key)
-                .expect("District should not have been removed since we retrieved it last");
-            let order_id = district.d_next_o_id;
-            tx.db.district().district_key().update(District {
-                d_next_o_id: order_id + 1,
-                ..district
-            });
+    let all_local_warehouse = order_lines.iter().all(|order_line| order_line.supply_w_id == w_id);
 
-            let line_results = local_database_items
-                .iter()
-                .map(|local_item| claim_stock_for_local_database_item(tx, local_item, d_id))
-                .chain(remote_database_items.iter().zip(remote_item_reservations.iter()).map(
-                    |(remote_item, reserved_item)| remote_item_to_processed_new_order_item(remote_item, reserved_item),
-                ))
-                .map(|processed_item| insert_order_line(tx, w_id, d_id, order_id, processed_item))
-                .collect::<Vec<_>>();
-
-            let subtotal_cents = line_results.iter().map(|line_result| line_result.amount_cents).sum();
-
-            let taxed = apply_tax(
-                subtotal_cents,
-                i64::from(warehouse.w_tax_bps) + i64::from(district.d_tax_bps),
-            );
-            let total_amount_cents = apply_discount(taxed, i64::from(customer.c_discount_bps));
-
-            Ok(NewOrderResult {
-                warehouse_tax_bps: warehouse.w_tax_bps,
-                district_tax_bps: district.d_tax_bps,
-                customer_discount_bps: customer.c_discount_bps,
-                customer_last: customer.c_last.clone(),
-                customer_credit: customer.c_credit.clone(),
-                order_id,
-                entry_d: tx.timestamp,
-                total_amount_cents,
-                all_local: all_local_warehouse,
-                lines: line_results,
-            })
-        }) {
-            Ok(result) => {
-                confirm_all_remote_item_reservations(
-                    ctx,
-                    &spacetimedb_uri,
-                    &remote_database_items,
-                    remote_item_reservations,
-                );
-                Ok(result)
-            }
-            Err(e) => {
-                rollback_all_remote_item_reservations(
-                    ctx,
-                    &spacetimedb_uri,
-                    &remote_database_items,
-                    remote_item_reservations,
-                );
-                Err(e)
-            }
-        }
-    })();
-
-    match &res {
-        Ok(_) => {
-            log::debug!("Successfully finished `new_order` at {start_time:?}");
-        }
-        Err(e) => {
-            log::error!("Failed `new_order` at {start_time:?}: {e}");
-        }
-    }
-    res
-}
-
-struct LocalDatabaseItem {
-    idx: usize,
-    line: NewOrderLineInput,
-    item: Item,
-    is_remote_warehouse: bool,
-}
-
-struct RemoteDatabaseItem {
-    idx: usize,
-    line: NewOrderLineInput,
-    item: Item,
-    remote_database_identity: Identity,
-}
-
-struct PartitionedItems {
-    local_database_items: Vec<LocalDatabaseItem>,
-    remote_database_items: Vec<RemoteDatabaseItem>,
-
-    /// Are all items from the same warehouse as the requesting terminal?
-    ///
-    /// Note that this may be false even if all items are partitioned into [`Self::local_database_items`],
-    /// as we may manage multiple warehouses with a single database.
-    all_local_warehouse: bool,
-}
-
-fn partition_local_from_remote_database_items(
-    ctx: &mut ProcedureContext,
-    local_warehouse_id: WarehouseId,
-    order_lines: &[NewOrderLineInput],
-) -> Result<PartitionedItems, String> {
-    ctx.try_with_tx(|tx| {
-        let mut local_database_items: Vec<LocalDatabaseItem> = Vec::with_capacity(order_lines.len());
-        let mut remote_database_items: Vec<RemoteDatabaseItem> = Vec::with_capacity(order_lines.len());
-
-        // Whether this order applies only to a single warehouse.
-        // This may be `false` even when `remote_database_items_to_get` is non-empty,
-        // as we may run multiple warehouses from the same database.
-        let mut all_local_warehouse = true;
-
-        for (idx, line) in order_lines.iter().enumerate() {
+    let line_results = order_lines
+        .into_iter()
+        .enumerate()
+        .map(|(idx, line)| {
             ensure!(line.quantity > 0, "order line quantity must be positive");
-
-            let is_remote_warehouse = line.supply_w_id == local_warehouse_id;
-            all_local_warehouse &= !is_remote_warehouse;
 
             // TECHNICALLY NON-CONFORMANT: If we encounter a non-existent item in the order,
             // we'll short-circuit and exit here.
@@ -228,134 +85,66 @@ fn partition_local_from_remote_database_items(
             // - changing the execution of other steps
             // - using a different type of transaction
             // But we do skip inspecting some number of valid items and stocks.
-            let item = find_item(tx, line.item_id)?;
+            let item = find_item(ctx, line.item_id)?;
 
-            match remote_warehouse_home(tx, line.supply_w_id) {
-                None => {
-                    // Warehouse is local to this database.
-                    // We'll actually "process" the items, i.e. decrement the stock and sum the order price,
-                    // after we look up and process all the remote items.
-                    local_database_items.push(LocalDatabaseItem {
-                        idx,
-                        line: line.clone(),
-                        item,
-                        is_remote_warehouse,
-                    });
-                }
+            let is_remote_warehouse = w_id == line.supply_w_id;
+            let supply_warehouse_id = line.supply_w_id;
+
+            let input = OrderItemInput {
+                line: line.clone(),
+                district: d_id,
+                is_remote_warehouse,
+            };
+
+            let order_item_output = match remote_warehouse_home(ctx, supply_warehouse_id) {
+                None => order_item_and_decrement_stock(ctx, input)?,
                 Some(remote_database_identity) => {
-                    // Warehouse is on another database; we'll have to do a remote request.
-                    // This is *really* non-conformant.
-                    // TODO(docs): link to blog post justifying this.
-                    remote_database_items.push(RemoteDatabaseItem {
-                        idx,
-                        line: line.clone(),
-                        item,
-                        remote_database_identity,
-                    });
+                    call_remote_order_item_and_decrement_stock(ctx, remote_database_identity, input)?
                 }
-            }
-        }
+            };
 
-        Ok(PartitionedItems {
-            local_database_items,
-            remote_database_items,
-            all_local_warehouse,
+            Ok(ProcessedNewOrderItem {
+                idx,
+                line,
+                item,
+                district_stock_info: order_item_output.s_dist,
+                stock_data: order_item_output.s_data,
+                updated_quantity: order_item_output.updated_quantity,
+            })
         })
+        .map(|processed_item| {
+            processed_item.map(|processed_item| insert_order_line(ctx, w_id, d_id, order_id, processed_item))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    let subtotal_cents = line_results.iter().map(|line_result| line_result.amount_cents).sum();
+
+    let taxed = apply_tax(
+        subtotal_cents,
+        i64::from(warehouse.w_tax_bps) + i64::from(district.d_tax_bps),
+    );
+    let total_amount_cents = apply_discount(taxed, i64::from(customer.c_discount_bps));
+
+    Ok(NewOrderResult {
+        warehouse_tax_bps: warehouse.w_tax_bps,
+        district_tax_bps: district.d_tax_bps,
+        customer_discount_bps: customer.c_discount_bps,
+        customer_last: customer.c_last.clone(),
+        customer_credit: customer.c_credit.clone(),
+        order_id,
+        entry_d: ctx.timestamp,
+        total_amount_cents,
+        all_local: all_local_warehouse,
+        lines: line_results,
     })
 }
 
-fn reserve_remote_items(
-    ctx: &mut ProcedureContext,
-    spacetimedb_uri: &str,
-    district_id: u8,
-    remote_database_items: &[RemoteDatabaseItem],
-) -> Result<Vec<ReserveItemOutput>, String> {
-    let mut remote_item_reservations: Vec<ReserveItemOutput> = Vec::with_capacity(remote_database_items.len());
-
-    for RemoteDatabaseItem {
-        line,
-        remote_database_identity,
-        ..
-    } in remote_database_items
-    {
-        match call_remote_function(
-            ctx,
-            spacetimedb_uri,
-            *remote_database_identity,
-            "reserve_item_for_remote_order",
-            ReserveItemInput {
-                line: NewOrderLineInput::clone(line),
-                district: district_id,
-            },
-        ) {
-            Err(e) => {
-                rollback_all_remote_item_reservations(
-                    ctx,
-                    spacetimedb_uri,
-                    remote_database_items,
-                    remote_item_reservations,
-                );
-                return Err(format!("Error reserving remote item: {e}"));
-            }
-            Ok(body) => {
-                let body = body.into_string().expect("Body should be valid UTF-8");
-                let res: SerdeWrapper<Result<ReserveItemOutput, String>> =
-                    serde_json::from_str(&body).expect("Response does not conform to expected schema");
-                match res.0 {
-                    Err(e) => {
-                        rollback_all_remote_item_reservations(
-                            ctx,
-                            spacetimedb_uri,
-                            remote_database_items,
-                            remote_item_reservations,
-                        );
-                        return Err(format!("Error reserving remote item from database: {e}"));
-                    }
-                    Ok(output) => remote_item_reservations.push(output),
-                }
-            }
-        };
-    }
-
-    Ok(remote_item_reservations)
-}
-
-fn rollback_all_remote_item_reservations(
-    ctx: &mut ProcedureContext,
-    spacetimedb_uri: &str,
-    remote_items: &[RemoteDatabaseItem],
-    reservations: Vec<ReserveItemOutput>,
-) {
-    for (remote_item, reservation) in remote_items.iter().zip(reservations.into_iter()) {
-        if let Err(e) = call_remote_function(
-            ctx,
-            spacetimedb_uri,
-            remote_item.remote_database_identity,
-            "rollback_item_reservation",
-            reservation.rollback_token,
-        ) {
-            log::error!("Error rollinb back item reservation: {e}");
-        }
-    }
-}
-
-fn confirm_all_remote_item_reservations(
-    ctx: &mut ProcedureContext,
-    spacetimedb_uri: &str,
-    remote_items: &[RemoteDatabaseItem],
-    reservations: Vec<ReserveItemOutput>,
-) {
-    for (remote_item, reservation) in remote_items.iter().zip(reservations.into_iter()) {
-        if let Err(e) = call_remote_function(
-            ctx,
-            spacetimedb_uri,
-            remote_item.remote_database_identity,
-            "confirm_item_reservation",
-            reservation.rollback_token,
-        ) {
-            log::error!("Error confirming item reservation: {e}");
-        }
-    }
+fn call_remote_order_item_and_decrement_stock(
+    ctx: &ReducerContext,
+    remote_database_identity: Identity,
+    input: OrderItemInput,
+) -> Result<OrderItemOutput, String> {
+    call_remote_reducer(ctx, remote_database_identity, "order_item_and_decrement_stock", &input)
 }
 
 struct ProcessedNewOrderItem {
@@ -367,48 +156,8 @@ struct ProcessedNewOrderItem {
     updated_quantity: i32,
 }
 
-fn claim_stock_for_local_database_item(
-    tx: &TxContext,
-    local_item: &LocalDatabaseItem,
-    district_id: u8,
-) -> ProcessedNewOrderItem {
-    let stock =
-        find_stock(tx, local_item.line.supply_w_id, local_item.line.item_id).expect("Stock should exist for all items");
-    let updated_quantity = adjust_stock_quantity(stock.s_quantity, local_item.line.quantity as i32);
-    tx.db.stock().stock_key().update(Stock {
-        s_quantity: updated_quantity,
-        s_ytd: stock.s_ytd + local_item.line.quantity as u64,
-        s_order_cnt: stock.s_order_cnt + 1,
-        s_remote_cnt: stock.s_remote_cnt + u32::from(local_item.is_remote_warehouse),
-        ..stock.clone()
-    });
-
-    ProcessedNewOrderItem {
-        idx: local_item.idx,
-        line: local_item.line.clone(),
-        item: local_item.item.clone(),
-        district_stock_info: district_stock_info(&stock, district_id),
-        stock_data: stock.s_data.clone(),
-        updated_quantity,
-    }
-}
-
-fn remote_item_to_processed_new_order_item(
-    remote_item: &RemoteDatabaseItem,
-    reserved_item: &ReserveItemOutput,
-) -> ProcessedNewOrderItem {
-    ProcessedNewOrderItem {
-        idx: remote_item.idx,
-        line: remote_item.line.clone(),
-        item: remote_item.item.clone(),
-        district_stock_info: reserved_item.s_dist.clone(),
-        stock_data: reserved_item.s_data.clone(),
-        updated_quantity: reserved_item.updated_quantity,
-    }
-}
-
 fn insert_order_line(
-    tx: &TxContext,
+    tx: &ReducerContext,
     warehouse_id: WarehouseId,
     district_id: u8,
     order_id: u32,
@@ -455,89 +204,47 @@ fn insert_order_line(
 }
 
 #[derive(SpacetimeType)]
-pub struct ReserveItemOutput {
+pub struct OrderItemOutput {
     s_dist: String,
     s_data: String,
     updated_quantity: i32,
-    rollback_token: u64,
-}
-
-#[table(accessor = reserved_item_log)]
-pub struct ReservedItemLog {
-    #[primary_key]
-    #[auto_inc]
-    rollback_token: u64,
-    line: NewOrderLineInput,
 }
 
 #[derive(SpacetimeType)]
-pub struct ReserveItemInput {
+pub struct OrderItemInput {
     line: NewOrderLineInput,
     district: u8,
-}
-
-#[procedure]
-pub fn reserve_item_for_remote_order(
-    ctx: &mut ProcedureContext,
-    input: ReserveItemInput,
-) -> Result<ReserveItemOutput, String> {
-    let ReserveItemInput { line, district } = input;
-    ctx.try_with_tx(|tx| {
-        let stock = find_stock(tx, line.supply_w_id, line.item_id)?;
-
-        let ReservedItemLog { rollback_token, .. } = tx.db.reserved_item_log().insert(ReservedItemLog {
-            rollback_token: 0,
-            line: line.clone(),
-        });
-
-        let reserved_quantity = line.quantity;
-        let updated_quantity = adjust_stock_quantity(stock.s_quantity, reserved_quantity as i32);
-
-        let reserved = ReserveItemOutput {
-            s_dist: district_stock_info(&stock, district),
-            s_data: stock.s_data.clone(),
-            updated_quantity,
-            rollback_token,
-        };
-
-        tx.db.stock().stock_key().update(Stock {
-            s_quantity: updated_quantity,
-            s_ytd: stock.s_ytd + u64::from(reserved_quantity),
-            s_order_cnt: stock.s_order_cnt + 1,
-            // This must be an order from a remote warehouse, it's coming from a whole different database.
-            s_remote_cnt: stock.s_remote_cnt + 1,
-            ..stock
-        });
-
-        Ok(reserved)
-    })
+    is_remote_warehouse: bool,
 }
 
 #[reducer]
-pub fn rollback_item_reservation(ctx: &ReducerContext, rollback_token: u64) -> Result<(), String> {
-    let line = ctx
-        .db
-        .reserved_item_log()
-        .rollback_token()
-        .find(rollback_token)
-        .ok_or_else(|| format!("No such rollback token: {rollback_token}"))?
-        .line;
+pub fn order_item_and_decrement_stock(ctx: &ReducerContext, input: OrderItemInput) -> Result<OrderItemOutput, String> {
+    let _timer = LogStopwatch::new("order_item_and_decrement_stock");
+    let OrderItemInput {
+        line,
+        district,
+        is_remote_warehouse,
+    } = input;
     let stock = find_stock(ctx, line.supply_w_id, line.item_id)?;
-    let quantity = line.quantity;
+
+    let ordered_quantity = line.quantity;
+    let updated_quantity = adjust_stock_quantity(stock.s_quantity, ordered_quantity as i32);
+
+    let output = OrderItemOutput {
+        s_dist: district_stock_info(&stock, district),
+        s_data: stock.s_data.clone(),
+        updated_quantity,
+    };
+
     ctx.db.stock().stock_key().update(Stock {
-        s_quantity: reverse_stock_quantity(stock.s_quantity, quantity as i32),
-        s_ytd: stock.s_ytd - line.quantity as u64,
-        s_order_cnt: stock.s_order_cnt - 1,
-        s_remote_cnt: stock.s_remote_cnt - 1,
+        s_quantity: updated_quantity,
+        s_ytd: stock.s_ytd + u64::from(ordered_quantity),
+        s_order_cnt: stock.s_order_cnt + 1,
+        s_remote_cnt: stock.s_remote_cnt + is_remote_warehouse as u32,
         ..stock
     });
-    ctx.db.reserved_item_log().rollback_token().delete(rollback_token);
-    Ok(())
-}
 
-#[reducer]
-pub fn confirm_item_reservation(ctx: &ReducerContext, rollback_token: u64) {
-    ctx.db.reserved_item_log().rollback_token().delete(rollback_token);
+    Ok(output)
 }
 
 fn apply_tax(amount_cents: i64, total_tax_bps: i64) -> i64 {
@@ -548,7 +255,7 @@ fn apply_discount(amount_cents: i64, discount_bps: i64) -> i64 {
     amount_cents * (TAX_SCALE - discount_bps) / TAX_SCALE
 }
 
-fn find_item(tx: &spacetimedb::TxContext, item_id: u32) -> Result<Item, String> {
+fn find_item(tx: &ReducerContext, item_id: u32) -> Result<Item, String> {
     tx.db
         .item()
         .i_id()
@@ -564,18 +271,6 @@ pub fn adjust_stock_quantity(current_quantity: i32, ordered_quantity: i32) -> i3
         current_quantity - ordered_quantity
     } else {
         current_quantity - ordered_quantity + 91
-    }
-}
-
-/// NON-CONFORMANT: we're abusing the fact that TPC-C updates stock quantities in a predictable way
-/// which is both commutative and associative to be able to roll back stock reservations.
-fn reverse_stock_quantity(current_quantity: i32, ordered_quantity: i32) -> i32 {
-    assert!(ordered_quantity >= 1);
-    assert!(ordered_quantity <= 10);
-    if current_quantity + ordered_quantity >= 91 {
-        current_quantity + ordered_quantity - 91
-    } else {
-        current_quantity + ordered_quantity
     }
 }
 

@@ -63,6 +63,6 @@ impl load_remote_warehouses for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(LoadRemoteWarehousesArgs { rows }, callback)
+            .invoke_reducer_with_callback::<_, ()>(LoadRemoteWarehousesArgs { rows }, callback)
     }
 }

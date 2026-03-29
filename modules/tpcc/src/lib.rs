@@ -1,7 +1,6 @@
 use remote::reset_remote_warehouses;
 use spacetimedb::{
-    log_stopwatch::LogStopwatch, procedure, reducer, table, ProcedureContext, ReducerContext, ScheduleAt,
-    SpacetimeType, Table, Timestamp,
+    log_stopwatch::LogStopwatch, reducer, table, ReducerContext, ScheduleAt, SpacetimeType, Table, Timestamp,
 };
 use std::collections::BTreeSet;
 
@@ -435,45 +434,95 @@ pub fn load_order_lines(ctx: &ReducerContext, rows: Vec<OrderLine>) -> Result<()
     Ok(())
 }
 
-#[procedure]
+#[reducer]
 pub fn order_status(
-    ctx: &mut ProcedureContext,
+    ctx: &ReducerContext,
     w_id: u16,
     d_id: u8,
     customer: CustomerSelector,
 ) -> Result<OrderStatusResult, String> {
-    let start_time = ctx.timestamp;
-    log::debug!("Starting `order_status` at {start_time:?}");
-    let res = ctx.try_with_tx(|tx| order_status_tx(tx, w_id, d_id, &customer));
+    let _timer = LogStopwatch::new("order_status");
 
-    match &res {
-        Ok(_) => log::debug!("Succesfully finished `order_status` at {start_time:?}"),
-        Err(e) => log::error!("Failed `order_status` at {start_time:?}: {e}"),
+    let customer = resolve_customer(ctx, w_id, d_id, &customer)?;
+
+    let mut latest_order: Option<OOrder> = None;
+    for row in ctx
+        .db
+        .oorder()
+        .by_w_d_c_o_id()
+        .filter((w_id, d_id, customer.c_id, 0u32..))
+    {
+        latest_order = Some(row);
     }
-    res
+
+    let mut lines = Vec::new();
+    if let Some(order) = &latest_order {
+        for line in ctx
+            .db
+            .order_line()
+            .by_w_d_o_number()
+            .filter((w_id, d_id, order.o_id, 0u8..))
+        {
+            lines.push(OrderStatusLineResult {
+                item_id: line.ol_i_id,
+                supply_w_id: line.ol_supply_w_id,
+                quantity: line.ol_quantity,
+                amount_cents: line.ol_amount_cents,
+                delivery_d: line.ol_delivery_d,
+            });
+        }
+    }
+
+    Ok(OrderStatusResult {
+        customer_id: customer.c_id,
+        customer_first: customer.c_first,
+        customer_middle: customer.c_middle,
+        customer_last: customer.c_last,
+        customer_balance_cents: customer.c_balance_cents,
+        order_id: latest_order.as_ref().map(|row| row.o_id),
+        order_entry_d: latest_order.as_ref().map(|row| row.o_entry_d),
+        carrier_id: latest_order.as_ref().and_then(|row| row.o_carrier_id),
+        lines,
+    })
 }
 
-#[procedure]
-pub fn stock_level(
-    ctx: &mut ProcedureContext,
-    w_id: u16,
-    d_id: u8,
-    threshold: i32,
-) -> Result<StockLevelResult, String> {
-    let start_time = ctx.timestamp;
-    log::debug!("Starting `stock_level` at {start_time:?}");
-    let res = ctx.try_with_tx(|tx| stock_level_tx(tx, w_id, d_id, threshold));
+#[reducer]
+pub fn stock_level(ctx: &ReducerContext, w_id: u16, d_id: u8, threshold: i32) -> Result<StockLevelResult, String> {
+    let _timer = LogStopwatch::new("stock_level");
 
-    match &res {
-        Ok(_) => log::debug!("Succesfully finished `stock_level` at {start_time:?}"),
-        Err(e) => log::error!("Failed `stock_level` at {start_time:?}: {e}"),
+    let district = find_district(ctx, w_id, d_id)?;
+    let start_o_id = district.d_next_o_id.saturating_sub(20);
+    let end_o_id = district.d_next_o_id;
+
+    let mut item_ids = BTreeSet::new();
+    for line in ctx
+        .db
+        .order_line()
+        .by_w_d_o_number()
+        .filter((w_id, d_id, start_o_id..end_o_id))
+    {
+        item_ids.insert(line.ol_i_id);
     }
-    res
+
+    let mut low_stock_count = 0u32;
+    for item_id in item_ids {
+        let stock = find_stock(ctx, w_id, item_id)?;
+        if stock.s_quantity < threshold {
+            low_stock_count += 1;
+        }
+    }
+
+    Ok(StockLevelResult {
+        warehouse_id: w_id,
+        district_id: d_id,
+        threshold,
+        low_stock_count,
+    })
 }
 
-#[procedure]
+#[reducer]
 pub fn queue_delivery(
-    ctx: &mut ProcedureContext,
+    ctx: &ReducerContext,
     run_id: String,
     driver_id: String,
     terminal_id: u32,
@@ -481,103 +530,72 @@ pub fn queue_delivery(
     w_id: u16,
     carrier_id: u8,
 ) -> Result<DeliveryQueueAck, String> {
+    let _timer = LogStopwatch::new("queue_delivery");
+
     let queued_at = ctx.timestamp;
-    log::debug!("Starting `queue_delivery` at {queued_at:?}");
-    let res = ctx.try_with_tx(|tx| {
-        ensure_warehouse_exists(tx, w_id)?;
-        ensure!((1..=10).contains(&carrier_id), "carrier_id must be in the range 1..=10");
 
-        let job = tx.db.delivery_job().insert(DeliveryJob {
-            scheduled_id: 0,
-            scheduled_at: queued_at.into(),
-            run_id: run_id.clone(),
-            driver_id: driver_id.clone(),
-            terminal_id,
-            request_id,
-            queued_at,
-            w_id,
-            carrier_id,
-            next_d_id: 1,
-            skipped_districts: 0,
-            processed_districts: 0,
-        });
+    ensure_warehouse_exists(ctx, w_id)?;
+    ensure!((1..=10).contains(&carrier_id), "carrier_id must be in the range 1..=10");
 
-        Ok(DeliveryQueueAck {
-            scheduled_id: job.scheduled_id,
-            queued_at,
-            warehouse_id: w_id,
-            carrier_id,
-        })
+    let job = ctx.db.delivery_job().insert(DeliveryJob {
+        scheduled_id: 0,
+        scheduled_at: queued_at.into(),
+        run_id: run_id.clone(),
+        driver_id: driver_id.clone(),
+        terminal_id,
+        request_id,
+        queued_at,
+        w_id,
+        carrier_id,
+        next_d_id: 1,
+        skipped_districts: 0,
+        processed_districts: 0,
     });
 
-    match &res {
-        Ok(_) => log::debug!("Succesfully finished `queue_delivery` at {queued_at:?}"),
-        Err(e) => log::error!("Failed `queue_delivery` at {queued_at:?}: {e}"),
-    }
-    res
+    Ok(DeliveryQueueAck {
+        scheduled_id: job.scheduled_id,
+        queued_at,
+        warehouse_id: w_id,
+        carrier_id,
+    })
 }
 
-#[procedure]
-pub fn delivery_progress(ctx: &mut ProcedureContext, run_id: String) -> Result<DeliveryProgress, String> {
-    let start_time = ctx.timestamp;
-    log::debug!("Starting `delivery_progress` at {start_time:?}");
-    let res = ctx.try_with_tx(|tx| {
-        let pending_jobs = tx.db.delivery_job().by_run_id().filter(&run_id).count() as u64;
-        let completed_jobs = tx
-            .db
-            .delivery_completion()
-            .by_run_completion()
-            .filter((&run_id, 0u64..))
-            .count() as u64;
-        Ok(DeliveryProgress {
-            run_id: run_id.clone(),
-            pending_jobs,
-            completed_jobs,
-        })
-    });
-
-    match &res {
-        Ok(_) => {
-            log::debug!("Successfully finished `delivery_progress` at {start_time:?}");
-        }
-        Err(e) => {
-            log::error!("Failed `delivery_progress` at {start_time:?}: {e}");
-        }
-    }
-    res
+#[reducer]
+pub fn delivery_progress(ctx: &ReducerContext, run_id: String) -> Result<DeliveryProgress, String> {
+    let _timer = LogStopwatch::new("delivery_progress");
+    let pending_jobs = ctx.db.delivery_job().by_run_id().filter(&run_id).count() as u64;
+    let completed_jobs = ctx
+        .db
+        .delivery_completion()
+        .by_run_completion()
+        .filter((&run_id, 0u64..))
+        .count() as u64;
+    Ok(DeliveryProgress {
+        run_id: run_id.clone(),
+        pending_jobs,
+        completed_jobs,
+    })
 }
 
-#[procedure]
+#[reducer]
 pub fn fetch_delivery_completions(
-    ctx: &mut ProcedureContext,
+    ctx: &ReducerContext,
     run_id: String,
     after_completion_id: u64,
     limit: u32,
 ) -> Result<Vec<DeliveryCompletionView>, String> {
-    let start_time = ctx.timestamp;
-    log::debug!("Starting `fetch_delivery_completions` at {start_time:?}");
-    let res = ctx.try_with_tx(|tx| {
-        let limit = limit as usize;
-        let rows = tx
-            .db
-            .delivery_completion()
-            .by_run_completion()
-            .filter((&run_id, after_completion_id.saturating_add(1)..))
-            .take(limit)
-            .map(as_delivery_completion_view)
-            .collect();
-        Ok(rows)
-    });
+    let _timer = LogStopwatch::new("fetch_delivery_completions");
 
-    match &res {
-        Ok(_) => {
-            log::debug!("Successfully finished `fetch_delivery_completions` at {start_time:?}");
-        }
-        Err(e) => {
-            log::error!("Failed `fetch_delivery_completions` at {start_time:?}: {e}");
-        }
-    }
-    res
+    let limit = limit as usize;
+    let rows = ctx
+        .db
+        .delivery_completion()
+        .by_run_completion()
+        .filter((&run_id, after_completion_id.saturating_add(1)..))
+        .take(limit)
+        .map(as_delivery_completion_view)
+        .collect();
+    Ok(rows)
 }
 
 #[reducer]
@@ -667,91 +685,6 @@ fn validate_stock_row(row: &Stock) -> Result<(), String> {
     Ok(())
 }
 
-fn order_status_tx(
-    tx: &spacetimedb::TxContext,
-    w_id: u16,
-    d_id: u8,
-    customer_selector: &CustomerSelector,
-) -> Result<OrderStatusResult, String> {
-    let customer = resolve_customer(tx, w_id, d_id, customer_selector)?;
-
-    let mut latest_order: Option<OOrder> = None;
-    for row in tx
-        .db
-        .oorder()
-        .by_w_d_c_o_id()
-        .filter((w_id, d_id, customer.c_id, 0u32..))
-    {
-        latest_order = Some(row);
-    }
-
-    let mut lines = Vec::new();
-    if let Some(order) = &latest_order {
-        for line in tx
-            .db
-            .order_line()
-            .by_w_d_o_number()
-            .filter((w_id, d_id, order.o_id, 0u8..))
-        {
-            lines.push(OrderStatusLineResult {
-                item_id: line.ol_i_id,
-                supply_w_id: line.ol_supply_w_id,
-                quantity: line.ol_quantity,
-                amount_cents: line.ol_amount_cents,
-                delivery_d: line.ol_delivery_d,
-            });
-        }
-    }
-
-    Ok(OrderStatusResult {
-        customer_id: customer.c_id,
-        customer_first: customer.c_first,
-        customer_middle: customer.c_middle,
-        customer_last: customer.c_last,
-        customer_balance_cents: customer.c_balance_cents,
-        order_id: latest_order.as_ref().map(|row| row.o_id),
-        order_entry_d: latest_order.as_ref().map(|row| row.o_entry_d),
-        carrier_id: latest_order.as_ref().and_then(|row| row.o_carrier_id),
-        lines,
-    })
-}
-
-fn stock_level_tx(
-    tx: &spacetimedb::TxContext,
-    w_id: u16,
-    d_id: u8,
-    threshold: i32,
-) -> Result<StockLevelResult, String> {
-    let district = find_district(tx, w_id, d_id)?;
-    let start_o_id = district.d_next_o_id.saturating_sub(20);
-    let end_o_id = district.d_next_o_id;
-
-    let mut item_ids = BTreeSet::new();
-    for line in tx
-        .db
-        .order_line()
-        .by_w_d_o_number()
-        .filter((w_id, d_id, start_o_id..end_o_id))
-    {
-        item_ids.insert(line.ol_i_id);
-    }
-
-    let mut low_stock_count = 0u32;
-    for item_id in item_ids {
-        let stock = find_stock(tx, w_id, item_id)?;
-        if stock.s_quantity < threshold {
-            low_stock_count += 1;
-        }
-    }
-
-    Ok(StockLevelResult {
-        warehouse_id: w_id,
-        district_id: d_id,
-        threshold,
-        low_stock_count,
-    })
-}
-
 fn process_delivery_district(
     ctx: &ReducerContext,
     w_id: u16,
@@ -803,12 +736,7 @@ fn process_delivery_district(
     Ok(true)
 }
 
-fn resolve_customer(
-    tx: &spacetimedb::TxContext,
-    w_id: u16,
-    d_id: u8,
-    selector: &CustomerSelector,
-) -> Result<Customer, String> {
+fn resolve_customer(tx: &ReducerContext, w_id: u16, d_id: u8, selector: &CustomerSelector) -> Result<Customer, String> {
     match selector {
         CustomerSelector::ById(id) => find_customer_by_id(tx, w_id, d_id, *id),
         CustomerSelector::ByLastName(last_name) => {
@@ -824,7 +752,7 @@ fn resolve_customer(
     }
 }
 
-fn find_warehouse(tx: &spacetimedb::TxContext, w_id: u16) -> Result<Warehouse, String> {
+fn find_warehouse(tx: &ReducerContext, w_id: u16) -> Result<Warehouse, String> {
     tx.db
         .warehouse()
         .w_id()
@@ -832,11 +760,11 @@ fn find_warehouse(tx: &spacetimedb::TxContext, w_id: u16) -> Result<Warehouse, S
         .ok_or_else(|| format!("warehouse {w_id} not found"))
 }
 
-fn ensure_warehouse_exists(tx: &spacetimedb::TxContext, w_id: u16) -> Result<(), String> {
+fn ensure_warehouse_exists(tx: &ReducerContext, w_id: u16) -> Result<(), String> {
     find_warehouse(tx, w_id).map(|_| ())
 }
 
-fn find_district(tx: &spacetimedb::TxContext, w_id: u16, d_id: u8) -> Result<District, String> {
+fn find_district(tx: &ReducerContext, w_id: u16, d_id: u8) -> Result<District, String> {
     tx.db
         .district()
         .by_w_d()
@@ -896,6 +824,8 @@ fn as_delivery_completion_view(row: DeliveryCompletion) -> DeliveryCompletionVie
 }
 
 mod test {
+    use spacetimedb::{procedure, ProcedureContext};
+
     use crate::new_order::{adjust_stock_quantity, pack_order_line_key};
 
     use super::*;
