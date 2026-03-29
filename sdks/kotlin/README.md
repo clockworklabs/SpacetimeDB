@@ -257,8 +257,7 @@ This applies to all table, reducer, subscription, and connection callbacks.
 
 | Library | Version | Purpose |
 |---------|---------|---------|
-| Ktor Client | 3.4.0 | WebSocket transport |
+| Ktor Client | 3.4.1 | WebSocket transport |
 | kotlinx-coroutines | 1.10.2 | Async runtime |
 | kotlinx-atomicfu | 0.31.0 | Lock-free atomics |
 | kotlinx-collections-immutable | 0.4.0 | Persistent data structures |
-| bignum | 0.3.10 | Arbitrary-precision integers (U128/I128/U256/I256) |

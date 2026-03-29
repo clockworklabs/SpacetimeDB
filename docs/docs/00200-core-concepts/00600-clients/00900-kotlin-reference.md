@@ -76,15 +76,15 @@ The SDK requires JDK 21+ and uses [Ktor](https://ktor.io/) for WebSocket transpo
 
 ```kotlin
 // JVM / Android
-implementation("io.ktor:ktor-client-okhttp:3.1.3")
+implementation("io.ktor:ktor-client-okhttp:3.4.1")
 
 // iOS / Native
-implementation("io.ktor:ktor-client-darwin:3.1.3")
+implementation("io.ktor:ktor-client-darwin:3.4.1")
 ```
 
 ```kotlin
 // All platforms need the WebSockets plugin
-implementation("io.ktor:ktor-client-websockets:3.1.3")
+implementation("io.ktor:ktor-client-websockets:3.4.1")
 ```
 
 ## Generate module bindings
