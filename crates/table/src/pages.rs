@@ -9,6 +9,7 @@ use super::var_len::VarLenMembers;
 use core::ops::{ControlFlow, Deref, Index, IndexMut};
 use spacetimedb_sats::layout::Size;
 use spacetimedb_sats::memory_usage::MemoryUsage;
+use std::collections::BTreeSet;
 use std::ops::DerefMut;
 use thiserror::Error;
 
@@ -39,8 +40,10 @@ impl IndexMut<PageIndex> for Pages {
 pub struct Pages {
     /// The collection of pages under management.
     pages: Vec<Box<Page>>,
-    /// The set of pages that aren't yet full.
-    non_full_pages: Vec<PageIndex>,
+
+    /// The set of pages that aren't yet full,
+    /// sorted by the number of var-len granules available in each page.
+    non_full_pages: BTreeSet<(usize, PageIndex)>,
 }
 
 impl MemoryUsage for Pages {
@@ -78,7 +81,9 @@ impl Pages {
             page.clear();
         }
         // Mark every page non-full.
-        self.non_full_pages = (0..self.pages.len()).map(|idx| PageIndex(idx as u64)).collect();
+        self.non_full_pages = (0..self.pages.len())
+            .map(|idx| (self.pages[idx].available_var_len_granules(), PageIndex(idx as u64)))
+            .collect();
     }
 
     /// Get a reference to fixed-len row data.
@@ -113,14 +118,15 @@ impl Pages {
 
     /// Mark the page at `idx` as non-full.
     pub fn mark_page_non_full(&mut self, idx: PageIndex) {
-        self.non_full_pages.push(idx);
+        let available_granules = self.pages[idx.idx()].available_var_len_granules();
+        self.non_full_pages.insert((available_granules, idx));
     }
 
     /// If the page at `page_index` is not full,
     /// add it to the non-full set so that later insertions can access it.
     pub fn maybe_mark_page_non_full(&mut self, page_index: PageIndex, fixed_row_size: Size) {
         if !self[page_index].is_full(fixed_row_size) {
-            self.non_full_pages.push(page_index);
+            self.mark_page_non_full(page_index);
         }
     }
 
@@ -151,14 +157,13 @@ impl Pages {
         fixed_row_size: Size,
         num_var_len_granules: usize,
     ) -> Result<PageIndex, Error> {
-        if let Some((page_idx_idx, page_idx)) = self
+        if let Some((page_num_free_granules, page_idx)) = self
             .non_full_pages
-            .iter()
+            .range((num_var_len_granules, PageIndex(0))..)
             .copied()
-            .enumerate()
             .find(|(_, page_idx)| self[*page_idx].has_space_for_row(fixed_row_size, num_var_len_granules))
         {
-            self.non_full_pages.swap_remove(page_idx_idx);
+            self.non_full_pages.remove(&(page_num_free_granules, page_idx));
             return Ok(page_idx);
         }
 
@@ -358,7 +363,9 @@ impl Pages {
         self.non_full_pages = pages
             .iter()
             .enumerate()
-            .filter_map(|(idx, page)| (!page.is_full(fixed_row_size)).then_some(PageIndex(idx as _)))
+            .filter_map(|(idx, page)| {
+                (!page.is_full(fixed_row_size)).then_some((page.available_var_len_granules(), PageIndex(idx as _)))
+            })
             .collect();
         self.pages = pages;
     }
