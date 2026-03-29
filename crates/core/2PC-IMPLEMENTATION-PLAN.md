@@ -44,46 +44,70 @@ The TPC-C benchmark on branch `origin/phoebe/tpcc/reducer-return-value` (public 
 - **Two responses from participant**: The immediate result (step 3) and the later PREPARED notification (step 10). The coordinator collects both: results during reducer execution, PREPARED notifications before deciding COMMIT.
 - **Pipelining benefit**: Locks are held only during reducer execution (steps 1-6), not during persistence (steps 7-14). The persistence and 2PC handshake happen after locks are released on both sides.
 
-## Holding MutTxId: dedicated blocking thread
+## Holding MutTxId: reuse existing blocking pattern
 
-`MutTxId` is `!Send` (holds `SharedWriteGuard`). The participant must hold it across multiple CALL requests from the coordinator for serializable isolation. The solution: a **dedicated blocking thread per participant transaction** that holds the `MutTxId` for its entire lifetime. Async HTTP handlers communicate with this thread via channels. The `MutTxId` never crosses a thread boundary or touches an async context.
+`MutTxId` is `!Send` (holds `SharedWriteGuard`). The participant must hold it across multiple CALL requests from the coordinator for serializable isolation.
+
+The codebase already has a blocking pattern: on the coordinator side, `call_reducer_on_db` uses `std::thread::scope` + `Handle::block_on` to block the WASM thread while making an async HTTP call. The same pattern works for the participant: instead of returning from the reducer execution, the participant's thread blocks on a channel (`blocking_recv`) waiting for the next command. The `MutTxId` stays alive on that same thread. No new threading model is needed.
 
 ```
-HTTP handler (async)          Blocking thread (sync, holds MutTxId)
----------------------         -------------------------------------
-CALL request arrives    --->  receive on channel, execute reducer
-                        <---  send result back on channel
-return HTTP response
+Coordinator thread                 Participant thread
+(WASM reducer running,             (holds MutTxId, holds WASM instance)
+ holds coordinator MutTxId)
 
-CALL request arrives    --->  execute next reducer (same MutTxId)
-                        <---  send result
-return HTTP response
-
-END_CALLS arrives       --->  commit in-memory, release write lock
-                              send PREPARE to durability, barrier up
-                              wait for durability...
-                        <---  send PREPARED
-return HTTP response
-
-COMMIT arrives          --->  send COMMIT to durability, barrier down
-                              thread exits
+call_reducer_on_db_2pc()
+  |
+  |-- HTTP POST /2pc/begin/debit -> spawn thread, create MutTxId
+  |                                 execute reducer
+  |                                 send result via channel
+  |   <-- HTTP response (result     block on channel (blocking_recv)
+  |        + session_id)              |
+  |                                   |   [MutTxId held, write lock held]
+  |                                   |
+call_reducer_on_db_2pc() (2nd call)   |
+  |                                   |
+  |-- HTTP POST /2pc/{sid}/call/x -> send command via channel
+  |                                  wake up, execute reducer
+  |                                  send result via channel
+  |   <-- HTTP response              block on channel
+  |                                   |
+reducer finishes                      |
+  |                                   |
+[post-commit coordination]            |
+  |                                   |
+  |-- HTTP POST /2pc/{sid}/end  ---> wake up, commit in-memory
+  |                                  release write lock
+  |                                  send PREPARE to durability
+  |                                  barrier up
+  |                                  wait for PREPARE durable...
+  |   <-- HTTP response (PREPARED)   block on channel
+  |                                   |
+  |-- HTTP POST /2pc/{sid}/commit -> wake up
+  |                                  send COMMIT to durability
+  |                                  barrier down, flush
+  |   <-- HTTP response              thread exits
 ```
+
+### Implementation
 
 On first CALL for a new 2PC transaction:
-1. Spawn a blocking thread (`std::thread::spawn` or `tokio::task::spawn_blocking`)
-2. Thread creates `MutTxId` (acquires write lock)
-3. Thread blocks on a command channel (`mpsc::Receiver<TxCommand>`)
-4. Store the command sender (`mpsc::Sender<TxCommand>`) in a session map keyed by session_id
-5. Return session_id to coordinator along with the first CALL's result
+1. The async HTTP handler spawns a blocking thread (via `std::thread::scope` or `tokio::task::spawn_blocking`)
+2. The blocking thread takes a WASM instance from the module's instance pool
+3. The blocking thread creates `MutTxId` (acquires write lock)
+4. The blocking thread executes the first reducer
+5. The blocking thread sends the result back via a `oneshot` channel
+6. The async HTTP handler receives the result and returns the HTTP response with a `session_id`
+7. The blocking thread blocks on a `mpsc::Receiver<TxCommand>` waiting for the next command
+8. The async HTTP handler stores the `mpsc::Sender<TxCommand>` in a session map keyed by `session_id`
 
-Subsequent CALLs and END_CALLS look up the session_id, send commands on the channel. The blocking thread processes them sequentially on the same `MutTxId`.
+Subsequent CALLs and END_CALLS look up the `session_id`, send commands on the channel. The blocking thread processes them sequentially on the same `MutTxId`.
 
-The blocking thread also needs access to a WASM module instance to execute reducers. The instance must be taken from the pool on thread creation and returned on thread exit (after COMMIT or ABORT).
+When the thread exits (after COMMIT or ABORT), it returns the WASM instance to the pool.
 
 ```rust
 enum TxCommand {
     Call { reducer: String, args: Bytes, reply: oneshot::Sender<CallResult> },
-    EndCalls { reply: oneshot::Sender<()> },
+    EndCalls { reply: oneshot::Sender<PreparedResult> },
     Commit { reply: oneshot::Sender<()> },
     Abort { reply: oneshot::Sender<()> },
 }
@@ -127,14 +151,30 @@ On replay, when encountering a PREPARE:
   - ABORT: skip the PREPARE
   - No next record (crash): transaction is still in progress, wait for coordinator or timeout and abort
 
+## Persistence barrier
+
+The barrier in `relational_db.rs` has three states: `Inactive`, `Armed`, `Active`.
+
+- **Inactive**: normal operation, durability requests go through.
+- **Armed**: set BEFORE committing the transaction (while write lock is held). The NEXT durability request (the PREPARE) goes through to the worker and transitions the barrier to Active.
+- **Active**: all subsequent durability requests are buffered.
+
+This ensures no race between the write lock release and the barrier activation. Since the barrier is Armed while the write lock is held, no other transaction can commit and send a durability request before the barrier transitions to Active.
+
+Used by both coordinator and participant:
+- Arm before committing the 2PC transaction
+- The commit's durability request (the PREPARE) transitions Armed -> Active
+- On COMMIT: deactivate, flush buffered requests
+- On ABORT: deactivate, discard buffered requests
+
 ## Key files
 
-- `crates/core/src/db/relational_db.rs` -- PersistenceBarrier, send_or_buffer_durability, finalize_prepare_commit/abort
-- `crates/core/src/host/prepared_tx.rs` -- PreparedTxInfo, PreparedTransactions registry
-- `crates/core/src/host/module_host.rs` -- prepare_reducer, commit_prepared, abort_prepared
-- `crates/core/src/host/wasm_common/module_host_actor.rs` -- coordinator post-commit coordination
+- `crates/core/src/db/relational_db.rs` -- PersistenceBarrier (Inactive/Armed/Active), send_or_buffer_durability, finalize_prepare_commit/abort
+- `crates/core/src/host/prepared_tx.rs` -- TxCommand, TxSession, PreparedTransactions registry, session map
+- `crates/core/src/host/module_host.rs` -- begin_2pc_session, commit_prepared, abort_prepared
+- `crates/core/src/host/wasm_common/module_host_actor.rs` -- coordinator post-commit coordination (END_CALLS, wait PREPARED, COMMIT)
 - `crates/core/src/host/instance_env.rs` -- call_reducer_on_db_2pc, prepared_participants tracking
 - `crates/core/src/host/wasmtime/wasm_instance_env.rs` -- WASM host function
-- `crates/client-api/src/routes/database.rs` -- HTTP endpoints (CALL, END_CALLS, COMMIT, ABORT, PREPARED notification)
+- `crates/client-api/src/routes/database.rs` -- HTTP endpoints: /2pc/begin/:reducer, /2pc/:sid/call/:reducer, /2pc/:sid/end, /2pc/:sid/commit, /2pc/:sid/abort
 - `crates/bindings-sys/src/lib.rs` -- FFI
 - `crates/bindings/src/remote_reducer.rs` -- safe wrapper
