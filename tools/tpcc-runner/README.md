@@ -132,6 +132,27 @@ cargo run --release -p tpcc-runner -- load \
 chunk size for phases like items, stock, and orders instead of the number of
 rows pushed over the websocket by the client. The default is `10000`.
 
+If a server-side load fails, the current `load` command does not resume it
+automatically. Resume each affected database manually with:
+
+```bash
+cargo run -p spacetimedb-cli -- call -s http://127.0.0.1:3000 tpcc-0 resume_tpcc_load
+```
+
+Repeat that for each database, for example:
+
+```bash
+cargo run -p spacetimedb-cli -- call -s http://127.0.0.1:3000 tpcc-0 resume_tpcc_load
+cargo run -p spacetimedb-cli -- call -s http://127.0.0.1:3000 tpcc-1 resume_tpcc_load
+```
+
+To discard partial progress for a database and start that shard over from the
+saved load configuration, call:
+
+```bash
+cargo run -p spacetimedb-cli -- call -s http://127.0.0.1:3000 tpcc-0 restart_tpcc_load
+```
+
 If you need the old behavior for comparison or debugging, `load-client` keeps
 the previous client-side row-push path and uses the same `--num-databases`,
 `--warehouses-per-database`, `--load-parallelism`, `--batch-size`, and
