@@ -376,7 +376,7 @@ impl Cores {
             rayon,
             reserved: None,
             #[cfg(target_os = "linux")]
-            blocking,
+            blocking: Some(shared_cpuset),
         })
     }
 
