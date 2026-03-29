@@ -58,7 +58,9 @@ cargo run --release -p spacetimedb-cli -- start --listen-addr 127.0.0.1:3000
 
 For standalone multi-database runs, it is usually worth setting
 `--dedicated-database-cores` to the number of databases so each database gets
-its own dedicated database executor core. For example, with `12` databases:
+its own dedicated database executor core. The current standalone default is
+`13`, so override it when your database count differs. For example, with `12`
+databases:
 
 ```bash
 cargo run --release -p spacetimedb-cli -- start \

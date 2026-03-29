@@ -94,6 +94,7 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("dedicated_database_cores")
                 .long("dedicated-database-cores")
+                .default_value("13")
                 .value_parser(clap::value_parser!(usize))
                 .help(
                     "Pin exactly this many database executors to dedicated cores. On Linux, Tokio, Rayon, and blocking threads are restricted to the remaining cores while the OS schedules them within that set.",
