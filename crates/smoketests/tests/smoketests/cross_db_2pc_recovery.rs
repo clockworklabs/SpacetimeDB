@@ -166,10 +166,7 @@ fn setup_two_banks(test: &mut Smoketest, pid: u32, suffix: &str) -> (String, Str
 fn test_2pc_committed_data_survives_restart() {
     require_local_server!();
     let pid = std::process::id();
-    let mut test = Smoketest::builder()
-        .module_code(MODULE_CODE)
-        .autopublish(false)
-        .build();
+    let mut test = Smoketest::builder().module_code(MODULE_CODE).autopublish(false).build();
 
     let (db_a_identity, db_b_identity) = setup_two_banks(&mut test, pid, "dur");
 
@@ -178,8 +175,16 @@ fn test_2pc_committed_data_survives_restart() {
         .expect("transfer_funds failed");
 
     // Verify pre-restart state.
-    assert_eq!(alice_balance(&test, &db_a_identity), 150, "A should have 150 before restart");
-    assert_eq!(alice_balance(&test, &db_b_identity), 50, "B should have 50 before restart");
+    assert_eq!(
+        alice_balance(&test, &db_a_identity),
+        150,
+        "A should have 150 before restart"
+    );
+    assert_eq!(
+        alice_balance(&test, &db_b_identity),
+        50,
+        "B should have 50 before restart"
+    );
 
     // Restart the server — exercises recovery path even though there's nothing to recover.
     test.restart_server();
@@ -207,18 +212,23 @@ fn test_2pc_committed_data_survives_restart() {
 fn test_2pc_aborted_state_survives_restart() {
     require_local_server!();
     let pid = std::process::id();
-    let mut test = Smoketest::builder()
-        .module_code(MODULE_CODE)
-        .autopublish(false)
-        .build();
+    let mut test = Smoketest::builder().module_code(MODULE_CODE).autopublish(false).build();
 
     let (db_a_identity, db_b_identity) = setup_two_banks(&mut test, pid, "abort-dur");
 
     // Try to transfer 200 — B only has 100, so the remote debit panics → abort.
     let _ = test.call("transfer_funds", &[&db_b_identity, "alice", "alice", "200"]);
 
-    assert_eq!(alice_balance(&test, &db_a_identity), 100, "A should still be 100 after abort");
-    assert_eq!(alice_balance(&test, &db_b_identity), 100, "B should still be 100 after abort");
+    assert_eq!(
+        alice_balance(&test, &db_a_identity),
+        100,
+        "A should still be 100 after abort"
+    );
+    assert_eq!(
+        alice_balance(&test, &db_b_identity),
+        100,
+        "B should still be 100 after abort"
+    );
 
     test.restart_server();
 
@@ -243,10 +253,7 @@ fn test_2pc_aborted_state_survives_restart() {
 #[test]
 fn test_2pc_status_endpoint_unknown_returns_abort() {
     let pid = std::process::id();
-    let mut test = Smoketest::builder()
-        .module_code(MODULE_CODE)
-        .autopublish(false)
-        .build();
+    let mut test = Smoketest::builder().module_code(MODULE_CODE).autopublish(false).build();
 
     let (db_a_identity, _db_b_identity) = setup_two_banks(&mut test, pid, "status");
 
@@ -284,10 +291,7 @@ fn test_2pc_status_endpoint_unknown_returns_abort() {
 fn test_2pc_atomicity_under_crash() {
     require_local_server!();
     let pid = std::process::id();
-    let mut test = Smoketest::builder()
-        .module_code(MODULE_CODE)
-        .autopublish(false)
-        .build();
+    let mut test = Smoketest::builder().module_code(MODULE_CODE).autopublish(false).build();
 
     let (db_a_identity, db_b_identity) = setup_two_banks(&mut test, pid, "crash");
 
@@ -340,10 +344,7 @@ fn test_2pc_atomicity_under_crash() {
 fn test_2pc_coordinator_recovery() {
     require_local_server!();
     let pid = std::process::id();
-    let mut test = Smoketest::builder()
-        .module_code(MODULE_CODE)
-        .autopublish(false)
-        .build();
+    let mut test = Smoketest::builder().module_code(MODULE_CODE).autopublish(false).build();
 
     let (db_a_identity, db_b_identity) = setup_two_banks(&mut test, pid, "coord-rec");
 
@@ -378,10 +379,7 @@ fn test_2pc_coordinator_recovery() {
     let bal_a = alice_balance(&test, &db_a_identity);
     let bal_b = alice_balance(&test, &db_b_identity);
 
-    assert_eq!(
-        bal_a, 150,
-        "A should have committed (alice_a=150) before crash"
-    );
+    assert_eq!(bal_a, 150, "A should have committed (alice_a=150) before crash");
     assert_eq!(
         bal_b, 50,
         "B should have committed via coordinator recovery (alice_b=50), got {bal_b}"
@@ -407,10 +405,7 @@ fn test_2pc_coordinator_recovery() {
 fn test_2pc_participant_recovery_polls_and_aborts() {
     require_local_server!();
     let pid = std::process::id();
-    let mut test = Smoketest::builder()
-        .module_code(MODULE_CODE)
-        .autopublish(false)
-        .build();
+    let mut test = Smoketest::builder().module_code(MODULE_CODE).autopublish(false).build();
 
     let (db_a_identity, db_b_identity) = setup_two_banks(&mut test, pid, "part-rec");
 

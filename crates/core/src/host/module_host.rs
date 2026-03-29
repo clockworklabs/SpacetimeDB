@@ -1928,7 +1928,10 @@ impl ModuleHost {
                 let participant_identity = match Identity::from_hex(&row.participant_identity_hex) {
                     Ok(id) => id,
                     Err(e) => {
-                        log::error!("recover_2pc_coordinator: invalid participant identity hex {}: {e}", row.participant_identity_hex);
+                        log::error!(
+                            "recover_2pc_coordinator: invalid participant identity hex {}: {e}",
+                            row.participant_identity_hex
+                        );
                         continue;
                     }
                 };
@@ -1959,7 +1962,10 @@ impl ModuleHost {
                         }
                     }
                     Ok(resp) => {
-                        log::warn!("recover_2pc_coordinator: commit for {prepare_id} returned {}", resp.status());
+                        log::warn!(
+                            "recover_2pc_coordinator: commit for {prepare_id} returned {}",
+                            resp.status()
+                        );
                     }
                     Err(e) => {
                         log::warn!("recover_2pc_coordinator: transport error for {prepare_id}: {e}");
@@ -1994,14 +2000,18 @@ impl ModuleHost {
                 let coordinator_identity = match Identity::from_hex(&row.coordinator_identity_hex) {
                     Ok(id) => id,
                     Err(e) => {
-                        log::error!("recover_2pc_participant: invalid coordinator identity hex for {original_prepare_id}: {e}");
+                        log::error!(
+                            "recover_2pc_participant: invalid coordinator identity hex for {original_prepare_id}: {e}"
+                        );
                         continue;
                     }
                 };
                 let caller_identity = match Identity::from_hex(&row.caller_identity_hex) {
                     Ok(id) => id,
                     Err(e) => {
-                        log::error!("recover_2pc_participant: invalid caller identity hex for {original_prepare_id}: {e}");
+                        log::error!(
+                            "recover_2pc_participant: invalid caller identity hex for {original_prepare_id}: {e}"
+                        );
                         continue;
                     }
                 };
@@ -2051,7 +2061,8 @@ impl ModuleHost {
                             auth_token.clone(),
                             coordinator_identity,
                             &original_prepare_id,
-                        ).await;
+                        )
+                        .await;
                         match decision {
                             Some(commit) => {
                                 if commit {

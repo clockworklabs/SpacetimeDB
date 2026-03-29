@@ -432,7 +432,10 @@ async fn send_ack_commit_to_coordinator(
             log::info!("2PC ack-commit: notified coordinator for {prepare_id}");
         }
         Ok(resp) => {
-            log::warn!("2PC ack-commit: coordinator returned {} for {prepare_id}", resp.status());
+            log::warn!(
+                "2PC ack-commit: coordinator returned {} for {prepare_id}",
+                resp.status()
+            );
         }
         Err(e) => {
             log::warn!("2PC ack-commit: transport error for {prepare_id}: {e}");
@@ -709,8 +712,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let _ = prepared_tx.send((res, return_value));
 
         // Step 4: wait for coordinator's decision (B never aborts on its own).
-        let commit =
-            Self::wait_for_2pc_decision(decision_rx, &prepare_id, coordinator_identity, &replica_ctx);
+        let commit = Self::wait_for_2pc_decision(decision_rx, &prepare_id, coordinator_identity, &replica_ctx);
 
         if commit {
             // Delete the marker in the same tx as the reducer changes (atomic commit).
@@ -1196,9 +1198,11 @@ impl InstanceCommon {
                                     // B acknowledged COMMIT — remove coordinator log entry
                                     // (best-effort; recovery will clean up on restart if missed).
                                     if committed {
-                                        if let Err(e) = stdb.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
-                                            Ok(del_tx.delete_st_2pc_coordinator_log(prepare_id)?)
-                                        }) {
+                                        if let Err(e) = stdb
+                                            .with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
+                                                Ok(del_tx.delete_st_2pc_coordinator_log(prepare_id)?)
+                                            })
+                                        {
                                             log::warn!("delete_st_2pc_coordinator_log failed for {prepare_id}: {e}");
                                         }
                                     }

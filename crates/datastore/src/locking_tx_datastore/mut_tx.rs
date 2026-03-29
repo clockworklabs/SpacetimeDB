@@ -22,11 +22,10 @@ use crate::{
     system_tables::{
         with_sys_table_buf, St2pcCoordinatorLogFields, St2pcCoordinatorLogRow, St2pcStateFields, St2pcStateRow,
         StClientFields, StClientRow, StColumnAccessorFields, StColumnAccessorRow, StColumnFields, StColumnRow,
-        StConstraintFields, StConstraintRow, StEventTableRow,
-        StFields as _, StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StRowLevelSecurityFields,
-        StRowLevelSecurityRow, StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow,
-        StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow, SystemTable,
-        ST_2PC_COORDINATOR_LOG_ID, ST_2PC_STATE_ID, ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID,
+        StConstraintFields, StConstraintRow, StEventTableRow, StFields as _, StIndexAccessorFields, StIndexAccessorRow,
+        StIndexFields, StIndexRow, StRowLevelSecurityFields, StRowLevelSecurityRow, StScheduledFields, StScheduledRow,
+        StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow,
+        SystemTable, ST_2PC_COORDINATOR_LOG_ID, ST_2PC_STATE_ID, ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID,
         ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_ROW_LEVEL_SECURITY_ID,
         ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
     },
@@ -2771,9 +2770,7 @@ impl MutTxId {
         self.insert_via_serialize_bsatn(ST_2PC_COORDINATOR_LOG_ID, row)
             .map(|_| ())
             .inspect_err(|e| {
-                log::error!(
-                    "insert_st_2pc_coordinator_log: failed for prepare_id ({participant_prepare_id}): {e}"
-                );
+                log::error!("insert_st_2pc_coordinator_log: failed for prepare_id ({participant_prepare_id}): {e}");
             })
     }
 
@@ -2785,9 +2782,7 @@ impl MutTxId {
             St2pcCoordinatorLogFields::ParticipantPrepareId.col_id(),
             &AlgebraicValue::String(participant_prepare_id.into()),
         ) {
-            log::error!(
-                "delete_st_2pc_coordinator_log: no row for prepare_id ({participant_prepare_id}): {e}"
-            );
+            log::error!("delete_st_2pc_coordinator_log: no row for prepare_id ({participant_prepare_id}): {e}");
         }
         Ok(())
     }
