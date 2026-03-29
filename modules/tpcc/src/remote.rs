@@ -4,7 +4,6 @@ use spacetimedb::{
 };
 use spacetimedb_sats::bsatn;
 
-use crate::WarehouseId;
 
 /// For warehouses not managed by this database, stores the [`Identity`] of the remote database which manages that warehouse.
 ///
@@ -12,7 +11,7 @@ use crate::WarehouseId;
 #[table(accessor = remote_warehouse)]
 pub struct RemoteWarehouse {
     #[primary_key]
-    pub w_id: WarehouseId,
+    pub w_id: u32,
     pub remote_database_home: Identity,
 }
 
@@ -35,7 +34,7 @@ pub fn clear_remote_warehouses(ctx: &ReducerContext) {
     }
 }
 
-pub fn remote_warehouse_home(ctx: &ReducerContext, warehouse_id: WarehouseId) -> Option<Identity> {
+pub fn remote_warehouse_home(ctx: &ReducerContext, warehouse_id: u32) -> Option<Identity> {
     ctx.db
         .remote_warehouse()
         .w_id()

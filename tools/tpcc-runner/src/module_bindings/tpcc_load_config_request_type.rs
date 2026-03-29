@@ -7,9 +7,9 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct TpccLoadConfigRequest {
-    pub database_number: u16,
-    pub num_databases: u16,
-    pub warehouses_per_database: u16,
+    pub database_number: u32,
+    pub num_databases: u32,
+    pub warehouses_per_database: u32,
     pub batch_size: u32,
     pub seed: u64,
     pub load_c_last: u32,

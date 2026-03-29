@@ -51,8 +51,8 @@ pub async fn run(config: LoadConfig) -> Result<()> {
     Ok(())
 }
 
-fn database_number_chunks(num_databases: u16, parallelism: usize) -> Vec<Vec<u16>> {
-    let database_numbers: Vec<u16> = (0..num_databases).collect();
+fn database_number_chunks(num_databases: u32, parallelism: usize) -> Vec<Vec<u32>> {
+    let database_numbers: Vec<u32> = (0..num_databases).collect();
     let chunk_size = database_numbers.len().div_ceil(parallelism);
     database_numbers
         .chunks(chunk_size)
@@ -62,16 +62,18 @@ fn database_number_chunks(num_databases: u16, parallelism: usize) -> Vec<Vec<u16
 
 macro_rules! time {
     ($span_name:literal { $($body:tt)*}) => {{
+        #[allow(clippy::redundant_closure_call)]
         let before = std::time::Instant::now();
         log::info!("Span {} starting at {:?}", $span_name, before);
-        let res = (|| Ok::<_, anyhow::Error>({ $($body)* }))();
+        let run = || -> anyhow::Result<_> { Ok({ $($body)* }) };
+        let res = run();
         let elapsed = before.elapsed();
         log::info!("Span {} ended after {:?}", $span_name, elapsed);
         res?
     }}
 }
 
-fn run_one_database(config: &LoadConfig, database_number: u16, topology: &DatabaseTopology) -> Result<()> {
+fn run_one_database(config: &LoadConfig, database_number: u32, topology: &DatabaseTopology) -> Result<()> {
     time!("run_one_database" {
         let database_identity = topology.identity_for_database_number(database_number)?;
         log::info!(
@@ -116,7 +118,7 @@ fn run_one_database(config: &LoadConfig, database_number: u16, topology: &Databa
 
 fn build_load_request(
     config: &LoadConfig,
-    database_number: u16,
+    database_number: u32,
     topology: &DatabaseTopology,
 ) -> Result<TpccLoadConfigRequest> {
     let mut rng = StdRng::seed_from_u64(LOAD_SEED);

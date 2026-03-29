@@ -28,12 +28,12 @@ pub enum CustomerSelector {
     ByLastName(String),
 }
 
-type WarehouseId = u16;
+type WarehouseId = u32;
 
 #[derive(Clone, Debug, SpacetimeType)]
 pub struct OrderStatusLineResult {
     pub item_id: u32,
-    pub supply_w_id: WarehouseId,
+    pub supply_w_id: u32,
     pub quantity: u32,
     pub amount_cents: i64,
     pub delivery_d: Option<Timestamp>,
@@ -54,7 +54,7 @@ pub struct OrderStatusResult {
 
 #[derive(Clone, Debug, SpacetimeType)]
 pub struct StockLevelResult {
-    pub warehouse_id: WarehouseId,
+    pub warehouse_id: u32,
     pub district_id: u8,
     pub threshold: i32,
     pub low_stock_count: u32,
@@ -64,7 +64,7 @@ pub struct StockLevelResult {
 pub struct DeliveryQueueAck {
     pub scheduled_id: u64,
     pub queued_at: Timestamp,
-    pub warehouse_id: WarehouseId,
+    pub warehouse_id: u32,
     pub carrier_id: u8,
 }
 
@@ -82,7 +82,7 @@ pub struct DeliveryCompletionView {
     pub driver_id: String,
     pub terminal_id: u32,
     pub request_id: u64,
-    pub warehouse_id: WarehouseId,
+    pub warehouse_id: u32,
     pub carrier_id: u8,
     pub queued_at: Timestamp,
     pub completed_at: Timestamp,
@@ -94,7 +94,7 @@ pub struct DeliveryCompletionView {
 #[derive(Clone, Debug)]
 pub struct Warehouse {
     #[primary_key]
-    pub w_id: WarehouseId,
+    pub w_id: u32,
     pub w_name: String,
     pub w_street_1: String,
     pub w_street_2: String,
@@ -113,7 +113,7 @@ pub struct Warehouse {
 pub struct District {
     #[primary_key]
     pub district_key: u32,
-    pub d_w_id: WarehouseId,
+    pub d_w_id: u32,
     pub d_id: u8,
     pub d_name: String,
     pub d_street_1: String,
@@ -135,7 +135,7 @@ pub struct District {
 pub struct Customer {
     #[primary_key]
     pub customer_key: u64,
-    pub c_w_id: WarehouseId,
+    pub c_w_id: u32,
     pub c_d_id: u8,
     pub c_id: u32,
     pub c_first: String,
@@ -166,9 +166,9 @@ pub struct History {
     pub history_id: u64,
     pub h_c_id: u32,
     pub h_c_d_id: u8,
-    pub h_c_w_id: WarehouseId,
+    pub h_c_w_id: u32,
     pub h_d_id: u8,
-    pub h_w_id: u16,
+    pub h_w_id: u32,
     pub h_date: Timestamp,
     pub h_amount_cents: i64,
     pub h_data: String,
@@ -193,7 +193,7 @@ pub struct Item {
 pub struct Stock {
     #[primary_key]
     pub stock_key: u64,
-    pub s_w_id: WarehouseId,
+    pub s_w_id: u32,
     pub s_i_id: u32,
     pub s_quantity: i32,
     pub s_dist_01: String,
@@ -221,7 +221,7 @@ pub struct Stock {
 pub struct OOrder {
     #[primary_key]
     pub order_key: u64,
-    pub o_w_id: WarehouseId,
+    pub o_w_id: u32,
     pub o_d_id: u8,
     pub o_id: u32,
     pub o_c_id: u32,
@@ -239,7 +239,7 @@ pub struct OOrder {
 pub struct NewOrder {
     #[primary_key]
     pub new_order_key: u64,
-    pub no_w_id: WarehouseId,
+    pub no_w_id: u32,
     pub no_d_id: u8,
     pub no_o_id: u32,
 }
@@ -252,12 +252,12 @@ pub struct NewOrder {
 pub struct OrderLine {
     #[primary_key]
     pub order_line_key: u64,
-    pub ol_w_id: WarehouseId,
+    pub ol_w_id: u32,
     pub ol_d_id: u8,
     pub ol_o_id: u32,
     pub ol_number: u8,
     pub ol_i_id: u32,
-    pub ol_supply_w_id: u16,
+    pub ol_supply_w_id: u32,
     pub ol_delivery_d: Option<Timestamp>,
     pub ol_quantity: u32,
     pub ol_amount_cents: i64,
@@ -280,7 +280,7 @@ pub struct DeliveryJob {
     pub terminal_id: u32,
     pub request_id: u64,
     pub queued_at: Timestamp,
-    pub w_id: WarehouseId,
+    pub w_id: u32,
     pub carrier_id: u8,
     pub next_d_id: u8,
     pub skipped_districts: u8,
@@ -300,7 +300,7 @@ pub struct DeliveryCompletion {
     pub driver_id: String,
     pub terminal_id: u32,
     pub request_id: u64,
-    pub warehouse_id: WarehouseId,
+    pub warehouse_id: u32,
     pub carrier_id: u8,
     pub queued_at: Timestamp,
     pub completed_at: Timestamp,
@@ -441,7 +441,7 @@ pub fn load_order_lines(ctx: &ReducerContext, rows: Vec<OrderLine>) -> Result<()
 #[reducer]
 pub fn order_status(
     ctx: &ReducerContext,
-    w_id: u16,
+    w_id: u32,
     d_id: u8,
     customer: CustomerSelector,
 ) -> Result<OrderStatusResult, String> {
@@ -491,7 +491,12 @@ pub fn order_status(
 }
 
 #[reducer]
-pub fn stock_level(ctx: &ReducerContext, w_id: u16, d_id: u8, threshold: i32) -> Result<StockLevelResult, String> {
+pub fn stock_level(
+    ctx: &ReducerContext,
+    w_id: u32,
+    d_id: u8,
+    threshold: i32,
+) -> Result<StockLevelResult, String> {
     let _timer = LogStopwatch::new("stock_level");
 
     let district = find_district(ctx, w_id, d_id)?;
@@ -531,7 +536,7 @@ pub fn queue_delivery(
     driver_id: String,
     terminal_id: u32,
     request_id: u64,
-    w_id: u16,
+    w_id: u32,
     carrier_id: u8,
 ) -> Result<DeliveryQueueAck, String> {
     let _timer = LogStopwatch::new("queue_delivery");
@@ -640,10 +645,7 @@ pub fn run_delivery_job(ctx: &ReducerContext, job: DeliveryJob) -> Result<(), St
 }
 
 fn validate_warehouse_row(row: &Warehouse) -> Result<(), String> {
-    ensure!(
-        (1..=i32::from(u16::MAX)).contains(&(row.w_id as i32)),
-        "warehouse id must be positive"
-    );
+    ensure!(row.w_id > 0, "warehouse id must be positive");
     Ok(())
 }
 
@@ -691,7 +693,7 @@ fn validate_stock_row(row: &Stock) -> Result<(), String> {
 
 fn process_delivery_district(
     ctx: &ReducerContext,
-    w_id: u16,
+    w_id: WarehouseId,
     d_id: u8,
     carrier_id: u8,
     delivered_at: Timestamp,
@@ -740,7 +742,12 @@ fn process_delivery_district(
     Ok(true)
 }
 
-fn resolve_customer(tx: &ReducerContext, w_id: u16, d_id: u8, selector: &CustomerSelector) -> Result<Customer, String> {
+fn resolve_customer(
+    tx: &ReducerContext,
+    w_id: WarehouseId,
+    d_id: u8,
+    selector: &CustomerSelector,
+) -> Result<Customer, String> {
     match selector {
         CustomerSelector::ById(id) => find_customer_by_id(tx, w_id, d_id, *id),
         CustomerSelector::ByLastName(last_name) => {
@@ -756,7 +763,7 @@ fn resolve_customer(tx: &ReducerContext, w_id: u16, d_id: u8, selector: &Custome
     }
 }
 
-fn find_warehouse(tx: &ReducerContext, w_id: u16) -> Result<Warehouse, String> {
+fn find_warehouse(tx: &ReducerContext, w_id: WarehouseId) -> Result<Warehouse, String> {
     tx.db
         .warehouse()
         .w_id()
@@ -764,11 +771,11 @@ fn find_warehouse(tx: &ReducerContext, w_id: u16) -> Result<Warehouse, String> {
         .ok_or_else(|| format!("warehouse {w_id} not found"))
 }
 
-fn ensure_warehouse_exists(tx: &ReducerContext, w_id: u16) -> Result<(), String> {
+fn ensure_warehouse_exists(tx: &ReducerContext, w_id: WarehouseId) -> Result<(), String> {
     find_warehouse(tx, w_id).map(|_| ())
 }
 
-fn find_district(tx: &ReducerContext, w_id: u16, d_id: u8) -> Result<District, String> {
+fn find_district(tx: &ReducerContext, w_id: WarehouseId, d_id: u8) -> Result<District, String> {
     tx.db
         .district()
         .by_w_d()
@@ -777,7 +784,7 @@ fn find_district(tx: &ReducerContext, w_id: u16, d_id: u8) -> Result<District, S
         .ok_or_else(|| format!("district ({w_id}, {d_id}) not found"))
 }
 
-fn find_customer_by_id(tx: &ReducerContext, w_id: u16, d_id: u8, c_id: u32) -> Result<Customer, String> {
+fn find_customer_by_id(tx: &ReducerContext, w_id: WarehouseId, d_id: u8, c_id: u32) -> Result<Customer, String> {
     tx.db
         .customer()
         .by_w_d_c_id()
@@ -786,7 +793,7 @@ fn find_customer_by_id(tx: &ReducerContext, w_id: u16, d_id: u8, c_id: u32) -> R
         .ok_or_else(|| format!("customer ({w_id}, {d_id}, {c_id}) not found"))
 }
 
-fn find_stock(tx: &ReducerContext, w_id: u16, item_id: u32) -> Result<Stock, String> {
+fn find_stock(tx: &ReducerContext, w_id: WarehouseId, item_id: u32) -> Result<Stock, String> {
     tx.db
         .stock()
         .by_w_i()
@@ -795,19 +802,19 @@ fn find_stock(tx: &ReducerContext, w_id: u16, item_id: u32) -> Result<Stock, Str
         .ok_or_else(|| format!("stock ({w_id}, {item_id}) not found"))
 }
 
-fn pack_district_key(w_id: u16, d_id: u8) -> u32 {
-    (u32::from(w_id) * 100) + u32::from(d_id)
+fn pack_district_key(w_id: WarehouseId, d_id: u8) -> u32 {
+    (w_id * 100) + u32::from(d_id)
 }
 
-fn pack_customer_key(w_id: u16, d_id: u8, c_id: u32) -> u64 {
+fn pack_customer_key(w_id: WarehouseId, d_id: u8, c_id: u32) -> u64 {
     ((u64::from(w_id) * 100) + u64::from(d_id)) * 10_000 + u64::from(c_id)
 }
 
-fn pack_stock_key(w_id: u16, item_id: u32) -> u64 {
+fn pack_stock_key(w_id: WarehouseId, item_id: u32) -> u64 {
     u64::from(w_id) * 1_000_000 + u64::from(item_id)
 }
 
-fn pack_order_key(w_id: u16, d_id: u8, o_id: u32) -> u64 {
+fn pack_order_key(w_id: WarehouseId, d_id: u8, o_id: u32) -> u64 {
     ((u64::from(w_id) * 100) + u64::from(d_id)) * 10_000_000 + u64::from(o_id)
 }
 

@@ -10,7 +10,7 @@ use super::order_status_result_type::OrderStatusResult;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct OrderStatusArgs {
-    pub w_id: u16,
+    pub w_id: u32,
     pub d_id: u8,
     pub customer: CustomerSelector,
 }
@@ -40,7 +40,7 @@ pub trait order_status {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`order_status:order_status_then`] to run a callback after the reducer completes.
-    fn order_status(&self, w_id: u16, d_id: u8, customer: CustomerSelector) -> __sdk::Result<()> {
+    fn order_status(&self, w_id: u32, d_id: u8, customer: CustomerSelector) -> __sdk::Result<()> {
         self.order_status_then(w_id, d_id, customer, |_, _| {})
     }
 
@@ -52,7 +52,7 @@ pub trait order_status {
     ///  and its status can be observed with the `callback`.
     fn order_status_then(
         &self,
-        w_id: u16,
+        w_id: u32,
         d_id: u8,
         customer: CustomerSelector,
 
@@ -65,7 +65,7 @@ pub trait order_status {
 impl order_status for super::RemoteReducers {
     fn order_status_then(
         &self,
-        w_id: u16,
+        w_id: u32,
         d_id: u8,
         customer: CustomerSelector,
 

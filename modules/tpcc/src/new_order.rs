@@ -1,14 +1,14 @@
 use crate::{
     district, find_customer_by_id, find_district, find_stock, find_warehouse, item, order_line, pack_order_key,
     remote::{call_remote_reducer, remote_warehouse_home},
-    stock, District, Item, OrderLine, Stock, WarehouseId, DISTRICTS_PER_WAREHOUSE, TAX_SCALE,
+    stock, District, Item, OrderLine, Stock, DISTRICTS_PER_WAREHOUSE, TAX_SCALE,
 };
 use spacetimedb::{log_stopwatch::LogStopwatch, reducer, Identity, ReducerContext, SpacetimeType, Table, Timestamp};
 
 #[derive(Clone, Debug, SpacetimeType)]
 pub struct NewOrderLineInput {
     pub item_id: u32,
-    pub supply_w_id: WarehouseId,
+    pub supply_w_id: u32,
     pub quantity: u32,
 }
 
@@ -16,7 +16,7 @@ pub struct NewOrderLineInput {
 pub struct NewOrderLineResult {
     pub item_id: u32,
     pub item_name: String,
-    pub supply_w_id: WarehouseId,
+    pub supply_w_id: u32,
     pub quantity: u32,
     pub stock_quantity: i32,
     pub item_price_cents: i64,
@@ -41,7 +41,7 @@ pub struct NewOrderResult {
 #[reducer]
 pub fn new_order(
     ctx: &ReducerContext,
-    w_id: WarehouseId,
+    w_id: u32,
     d_id: u8,
     c_id: u32,
     order_lines: Vec<NewOrderLineInput>,
@@ -158,7 +158,7 @@ struct ProcessedNewOrderItem {
 
 fn insert_order_line(
     tx: &ReducerContext,
-    warehouse_id: WarehouseId,
+    warehouse_id: u32,
     district_id: u8,
     order_id: u32,
     processed_item: ProcessedNewOrderItem,
@@ -295,6 +295,6 @@ fn contains_original(data: &str) -> bool {
 }
 
 // public for test in lib.rs
-pub fn pack_order_line_key(w_id: u16, d_id: u8, o_id: u32, ol_number: u8) -> u64 {
+pub fn pack_order_line_key(w_id: u32, d_id: u8, o_id: u32, ol_number: u8) -> u64 {
     pack_order_key(w_id, d_id, o_id) * 100 + u64::from(ol_number)
 }

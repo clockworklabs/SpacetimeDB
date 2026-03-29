@@ -8,9 +8,9 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct TpccLoadConfig {
     pub singleton_id: u8,
-    pub database_number: u16,
-    pub num_databases: u16,
-    pub warehouses_per_database: u16,
+    pub database_number: u32,
+    pub num_databases: u32,
+    pub warehouses_per_database: u32,
     pub batch_size: u32,
     pub seed: u64,
     pub load_c_last: u32,
@@ -28,9 +28,9 @@ impl __sdk::InModule for TpccLoadConfig {
 /// Provides typed access to columns for query building.
 pub struct TpccLoadConfigCols {
     pub singleton_id: __sdk::__query_builder::Col<TpccLoadConfig, u8>,
-    pub database_number: __sdk::__query_builder::Col<TpccLoadConfig, u16>,
-    pub num_databases: __sdk::__query_builder::Col<TpccLoadConfig, u16>,
-    pub warehouses_per_database: __sdk::__query_builder::Col<TpccLoadConfig, u16>,
+    pub database_number: __sdk::__query_builder::Col<TpccLoadConfig, u32>,
+    pub num_databases: __sdk::__query_builder::Col<TpccLoadConfig, u32>,
+    pub warehouses_per_database: __sdk::__query_builder::Col<TpccLoadConfig, u32>,
     pub batch_size: __sdk::__query_builder::Col<TpccLoadConfig, u32>,
     pub seed: __sdk::__query_builder::Col<TpccLoadConfig, u64>,
     pub load_c_last: __sdk::__query_builder::Col<TpccLoadConfig, u32>,

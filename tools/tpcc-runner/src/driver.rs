@@ -236,7 +236,7 @@ fn execute_transaction(
 
 fn execute_new_order(
     client: &ModuleClient,
-    warehouse_count: u16,
+    warehouse_count: u32,
     assignment: &TerminalAssignment,
     constants: &RunConstants,
     rng: &mut StdRng,
@@ -315,7 +315,7 @@ fn execute_new_order(
 
 fn execute_payment(
     client: &ModuleClient,
-    warehouse_count: u16,
+    warehouse_count: u32,
     assignment: &TerminalAssignment,
     constants: &RunConstants,
     rng: &mut StdRng,
@@ -531,7 +531,7 @@ async fn harvest_delivery_completions(
     schedule: &RunSchedule,
     metrics: &SharedMetrics,
     topology: &DatabaseTopology,
-    used_database_numbers: &[u16],
+    used_database_numbers: &[u32],
 ) -> Result<()> {
     let expected = metrics.delivery_queued();
     if expected == 0 {
@@ -617,13 +617,13 @@ async fn harvest_delivery_completions(
     Ok(())
 }
 
-fn databases_for_warehouse_slice(config: &DriverConfig) -> Vec<u16> {
+fn databases_for_warehouse_slice(config: &DriverConfig) -> Vec<u32> {
     let first = (config.warehouse_start - 1) / config.warehouses_per_database;
     let last = (config.warehouse_end() - 1) / config.warehouses_per_database;
     (first..=last).collect()
 }
 
-fn describe_databases(topology: &DatabaseTopology, used_database_numbers: &[u16]) -> String {
+fn describe_databases(topology: &DatabaseTopology, used_database_numbers: &[u32]) -> String {
     used_database_numbers
         .iter()
         .map(|database_number| topology.database_name(*database_number))

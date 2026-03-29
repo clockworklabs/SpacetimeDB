@@ -10,7 +10,7 @@ use super::new_order_result_type::NewOrderResult;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct NewOrderArgs {
-    pub w_id: u16,
+    pub w_id: u32,
     pub d_id: u8,
     pub c_id: u32,
     pub order_lines: Vec<NewOrderLineInput>,
@@ -42,7 +42,7 @@ pub trait new_order {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`new_order:new_order_then`] to run a callback after the reducer completes.
-    fn new_order(&self, w_id: u16, d_id: u8, c_id: u32, order_lines: Vec<NewOrderLineInput>) -> __sdk::Result<()> {
+    fn new_order(&self, w_id: u32, d_id: u8, c_id: u32, order_lines: Vec<NewOrderLineInput>) -> __sdk::Result<()> {
         self.new_order_then(w_id, d_id, c_id, order_lines, |_, _| {})
     }
 
@@ -54,7 +54,7 @@ pub trait new_order {
     ///  and its status can be observed with the `callback`.
     fn new_order_then(
         &self,
-        w_id: u16,
+        w_id: u32,
         d_id: u8,
         c_id: u32,
         order_lines: Vec<NewOrderLineInput>,
@@ -68,7 +68,7 @@ pub trait new_order {
 impl new_order for super::RemoteReducers {
     fn new_order_then(
         &self,
-        w_id: u16,
+        w_id: u32,
         d_id: u8,
         c_id: u32,
         order_lines: Vec<NewOrderLineInput>,

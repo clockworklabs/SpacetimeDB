@@ -10,9 +10,9 @@ use super::payment_result_type::PaymentResult;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct PaymentArgs {
-    pub w_id: u16,
+    pub w_id: u32,
     pub d_id: u8,
-    pub c_w_id: u16,
+    pub c_w_id: u32,
     pub c_d_id: u8,
     pub customer: CustomerSelector,
     pub payment_amount_cents: i64,
@@ -48,9 +48,9 @@ pub trait payment {
     /// /// Use [`payment:payment_then`] to run a callback after the reducer completes.
     fn payment(
         &self,
-        w_id: u16,
+        w_id: u32,
         d_id: u8,
-        c_w_id: u16,
+        c_w_id: u32,
         c_d_id: u8,
         customer: CustomerSelector,
         payment_amount_cents: i64,
@@ -66,9 +66,9 @@ pub trait payment {
     ///  and its status can be observed with the `callback`.
     fn payment_then(
         &self,
-        w_id: u16,
+        w_id: u32,
         d_id: u8,
-        c_w_id: u16,
+        c_w_id: u32,
         c_d_id: u8,
         customer: CustomerSelector,
         payment_amount_cents: i64,
@@ -82,9 +82,9 @@ pub trait payment {
 impl payment for super::RemoteReducers {
     fn payment_then(
         &self,
-        w_id: u16,
+        w_id: u32,
         d_id: u8,
-        c_w_id: u16,
+        c_w_id: u32,
         c_d_id: u8,
         customer: CustomerSelector,
         payment_amount_cents: i64,

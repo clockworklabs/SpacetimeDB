@@ -342,7 +342,7 @@ impl ModuleClient {
 
     pub fn new_order(
         &self,
-        w_id: u16,
+        w_id: u32,
         d_id: u8,
         c_id: u32,
         order_lines: Vec<NewOrderLineInput>,
@@ -363,9 +363,9 @@ impl ModuleClient {
 
     pub fn payment(
         &self,
-        w_id: u16,
+        w_id: u32,
         d_id: u8,
-        c_w_id: u16,
+        c_w_id: u32,
         c_d_id: u8,
         customer: CustomerSelector,
         payment_amount_cents: i64,
@@ -392,7 +392,7 @@ impl ModuleClient {
 
     pub fn order_status(
         &self,
-        w_id: u16,
+        w_id: u32,
         d_id: u8,
         customer: CustomerSelector,
     ) -> Result<Result<OrderStatusResult, String>> {
@@ -410,7 +410,7 @@ impl ModuleClient {
         }
     }
 
-    pub fn stock_level(&self, w_id: u16, d_id: u8, threshold: i32) -> Result<Result<StockLevelResult, String>> {
+    pub fn stock_level(&self, w_id: u32, d_id: u8, threshold: i32) -> Result<Result<StockLevelResult, String>> {
         let (tx, rx) = sync_channel(1);
         self.conn
             .reducers
@@ -431,7 +431,7 @@ impl ModuleClient {
         driver_id: String,
         terminal_id: u32,
         request_id: u64,
-        w_id: u16,
+        w_id: u32,
         carrier_id: u8,
     ) -> Result<Result<DeliveryQueueAck, String>> {
         let (tx, rx) = sync_channel(1);

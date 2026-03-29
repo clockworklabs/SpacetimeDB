@@ -12,7 +12,7 @@ pub struct DeliveryCompletionView {
     pub driver_id: String,
     pub terminal_id: u32,
     pub request_id: u64,
-    pub warehouse_id: u16,
+    pub warehouse_id: u32,
     pub carrier_id: u8,
     pub queued_at: __sdk::Timestamp,
     pub completed_at: __sdk::Timestamp,

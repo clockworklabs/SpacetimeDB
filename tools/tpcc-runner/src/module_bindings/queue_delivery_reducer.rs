@@ -13,7 +13,7 @@ pub(super) struct QueueDeliveryArgs {
     pub driver_id: String,
     pub terminal_id: u32,
     pub request_id: u64,
-    pub w_id: u16,
+    pub w_id: u32,
     pub carrier_id: u8,
 }
 
@@ -51,7 +51,7 @@ pub trait queue_delivery {
         driver_id: String,
         terminal_id: u32,
         request_id: u64,
-        w_id: u16,
+        w_id: u32,
         carrier_id: u8,
     ) -> __sdk::Result<()> {
         self.queue_delivery_then(run_id, driver_id, terminal_id, request_id, w_id, carrier_id, |_, _| {})
@@ -69,7 +69,7 @@ pub trait queue_delivery {
         driver_id: String,
         terminal_id: u32,
         request_id: u64,
-        w_id: u16,
+        w_id: u32,
         carrier_id: u8,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<DeliveryQueueAck, String>, __sdk::InternalError>)
@@ -85,7 +85,7 @@ impl queue_delivery for super::RemoteReducers {
         driver_id: String,
         terminal_id: u32,
         request_id: u64,
-        w_id: u16,
+        w_id: u32,
         carrier_id: u8,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<DeliveryQueueAck, String>, __sdk::InternalError>)

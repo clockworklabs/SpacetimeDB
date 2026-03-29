@@ -9,7 +9,7 @@ use super::stock_level_result_type::StockLevelResult;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct StockLevelArgs {
-    pub w_id: u16,
+    pub w_id: u32,
     pub d_id: u8,
     pub threshold: i32,
 }
@@ -39,7 +39,7 @@ pub trait stock_level {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`stock_level:stock_level_then`] to run a callback after the reducer completes.
-    fn stock_level(&self, w_id: u16, d_id: u8, threshold: i32) -> __sdk::Result<()> {
+    fn stock_level(&self, w_id: u32, d_id: u8, threshold: i32) -> __sdk::Result<()> {
         self.stock_level_then(w_id, d_id, threshold, |_, _| {})
     }
 
@@ -51,7 +51,7 @@ pub trait stock_level {
     ///  and its status can be observed with the `callback`.
     fn stock_level_then(
         &self,
-        w_id: u16,
+        w_id: u32,
         d_id: u8,
         threshold: i32,
 
@@ -64,7 +64,7 @@ pub trait stock_level {
 impl stock_level for super::RemoteReducers {
     fn stock_level_then(
         &self,
-        w_id: u16,
+        w_id: u32,
         d_id: u8,
         threshold: i32,
 

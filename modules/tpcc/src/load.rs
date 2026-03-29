@@ -50,9 +50,9 @@ pub enum TpccLoadPhase {
 
 #[derive(Clone, Debug, SpacetimeType)]
 pub struct TpccLoadConfigRequest {
-    pub database_number: u16,
-    pub num_databases: u16,
-    pub warehouses_per_database: u16,
+    pub database_number: u32,
+    pub num_databases: u32,
+    pub warehouses_per_database: u32,
     pub batch_size: u32,
     pub seed: u64,
     pub load_c_last: u32,
@@ -66,9 +66,9 @@ pub struct TpccLoadConfigRequest {
 pub struct TpccLoadConfig {
     #[primary_key]
     pub singleton_id: u8,
-    pub database_number: u16,
-    pub num_databases: u16,
-    pub warehouses_per_database: u16,
+    pub database_number: u32,
+    pub num_databases: u32,
+    pub warehouses_per_database: u32,
     pub batch_size: u32,
     pub seed: u64,
     pub load_c_last: u32,
@@ -84,7 +84,7 @@ pub struct TpccLoadState {
     pub singleton_id: u8,
     pub status: TpccLoadStatus,
     pub phase: TpccLoadPhase,
-    pub next_warehouse_id: WarehouseId,
+    pub next_warehouse_id: u32,
     pub next_district_id: u8,
     pub next_item_id: u32,
     pub next_order_id: u32,
@@ -104,7 +104,7 @@ pub struct TpccLoadJob {
     pub scheduled_id: u64,
     pub scheduled_at: ScheduleAt,
     pub phase: TpccLoadPhase,
-    pub next_warehouse_id: WarehouseId,
+    pub next_warehouse_id: u32,
     pub next_district_id: u8,
     pub next_item_id: u32,
     pub next_order_id: u32,
@@ -249,11 +249,21 @@ fn validate_request(request: &TpccLoadConfigRequest) -> Result<(), String> {
     if request.batch_size == 0 {
         return Err("batch_size must be positive".into());
     }
-    if usize::from(request.num_databases) != request.database_identities.len() {
+    if usize::try_from(request.num_databases).ok() != Some(request.database_identities.len()) {
         return Err("database_identities length must match num_databases".into());
     }
     if request.database_number >= request.num_databases {
         return Err("database_number must be less than num_databases".into());
+    }
+    if request
+        .num_databases
+        .checked_mul(request.warehouses_per_database)
+        .is_none()
+    {
+        return Err(format!(
+            "total warehouses overflow u32 (num_databases={} * warehouses_per_database={})",
+            request.num_databases, request.warehouses_per_database
+        ));
     }
     Ok(())
 }
@@ -296,7 +306,7 @@ fn build_remote_warehouses(request: &TpccLoadConfigRequest) -> Vec<RemoteWarehou
         if other_database_number == request.database_number {
             continue;
         }
-        let database_ident = request.database_identities[usize::from(other_database_number)];
+        let database_ident = request.database_identities[usize::try_from(other_database_number).expect("u32 fits usize")];
         for w_id in warehouse_range(other_database_number, request.warehouses_per_database) {
             rows.push(RemoteWarehouse {
                 w_id,
@@ -824,17 +834,20 @@ fn customer_permutation(config: &TpccLoadConfig, warehouse_id: WarehouseId, dist
     permutation
 }
 
-fn warehouse_range(database_number: u16, warehouses_per_database: u16) -> std::ops::Range<WarehouseId> {
+fn warehouse_range(database_number: u32, warehouses_per_database: u32) -> std::ops::Range<WarehouseId> {
     let start = warehouse_start(database_number, warehouses_per_database);
     let end = start + warehouses_per_database;
     start..end
 }
 
-fn warehouse_start(database_number: u16, warehouses_per_database: u16) -> WarehouseId {
-    database_number * warehouses_per_database + 1
+fn warehouse_start(database_number: u32, warehouses_per_database: u32) -> WarehouseId {
+    database_number
+        .checked_mul(warehouses_per_database)
+        .and_then(|value| value.checked_add(1))
+        .expect("warehouse id arithmetic validated at configure_tpcc_load time")
 }
 
-fn warehouse_end(database_number: u16, warehouses_per_database: u16) -> WarehouseId {
+fn warehouse_end(database_number: u32, warehouses_per_database: u32) -> WarehouseId {
     warehouse_start(database_number, warehouses_per_database) + warehouses_per_database - 1
 }
 

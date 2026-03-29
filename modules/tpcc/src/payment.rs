@@ -1,7 +1,7 @@
 use crate::{
     customer, district, find_district, find_warehouse, history,
     remote::{call_remote_reducer, remote_warehouse_home},
-    resolve_customer, warehouse, Customer, CustomerSelector, District, History, Warehouse, WarehouseId, MAX_C_DATA_LEN,
+    resolve_customer, warehouse, Customer, CustomerSelector, District, History, Warehouse, MAX_C_DATA_LEN,
 };
 use spacetimedb::{
     log_stopwatch::LogStopwatch, procedure, reducer, Identity, ProcedureContext, ReducerContext, SpacetimeType, Table,
@@ -26,9 +26,9 @@ pub struct PaymentResult {
 #[reducer]
 fn payment(
     ctx: &ReducerContext,
-    w_id: WarehouseId,
+    w_id: u32,
     d_id: u8,
-    c_w_id: WarehouseId,
+    c_w_id: u32,
     c_d_id: u8,
     customer: CustomerSelector,
     payment_amount_cents: i64,
@@ -102,9 +102,9 @@ fn payment(
 
 #[derive(SpacetimeType, Clone)]
 struct PaymentRequest {
-    terminal_warehouse_id: WarehouseId,
+    terminal_warehouse_id: u32,
     terminal_district_id: u8,
-    customer_warehouse_id: WarehouseId,
+    customer_warehouse_id: u32,
     customer_district_id: u8,
     customer_selector: CustomerSelector,
     payment_amount_cents: i64,

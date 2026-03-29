@@ -8,7 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct NewOrder {
     pub new_order_key: u64,
-    pub no_w_id: u16,
+    pub no_w_id: u32,
     pub no_d_id: u8,
     pub no_o_id: u32,
 }
@@ -22,7 +22,7 @@ impl __sdk::InModule for NewOrder {
 /// Provides typed access to columns for query building.
 pub struct NewOrderCols {
     pub new_order_key: __sdk::__query_builder::Col<NewOrder, u64>,
-    pub no_w_id: __sdk::__query_builder::Col<NewOrder, u16>,
+    pub no_w_id: __sdk::__query_builder::Col<NewOrder, u32>,
     pub no_d_id: __sdk::__query_builder::Col<NewOrder, u8>,
     pub no_o_id: __sdk::__query_builder::Col<NewOrder, u32>,
 }

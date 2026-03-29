@@ -60,8 +60,8 @@ pub async fn run(config: LoadConfig) -> Result<()> {
     Ok(())
 }
 
-fn database_number_chunks(num_databases: u16, parallelism: usize) -> Vec<Vec<u16>> {
-    let database_numbers: Vec<u16> = (0..num_databases).collect();
+fn database_number_chunks(num_databases: u32, parallelism: usize) -> Vec<Vec<u32>> {
+    let database_numbers: Vec<u32> = (0..num_databases).collect();
     let chunk_size = database_numbers.len().div_ceil(parallelism);
     database_numbers
         .chunks(chunk_size)
@@ -69,7 +69,7 @@ fn database_number_chunks(num_databases: u16, parallelism: usize) -> Vec<Vec<u16
         .collect()
 }
 
-fn configure_one_database(config: &LoadConfig, database_number: u16, topology: &DatabaseTopology) -> Result<()> {
+fn configure_one_database(config: &LoadConfig, database_number: u32, topology: &DatabaseTopology) -> Result<()> {
     let database = topology.identity_for_database_number(database_number)?;
     log::info!(
         "loading tpcc dataset into {} / {} with {} warehouse(s)",
@@ -167,7 +167,7 @@ fn load_items(
     Ok(())
 }
 
-fn warehouses_range(database_number: u16, warehouses_per_database: u16) -> Range<u16> {
+fn warehouses_range(database_number: u32, warehouses_per_database: u32) -> Range<u32> {
     let start_warehouse_number = database_number * warehouses_per_database + 1;
     let end_warehouse_number = start_warehouse_number + warehouses_per_database;
     start_warehouse_number..end_warehouse_number
@@ -176,9 +176,9 @@ fn warehouses_range(database_number: u16, warehouses_per_database: u16) -> Range
 #[allow(clippy::too_many_arguments)]
 fn load_remote_warehouses(
     client: &ModuleClient,
-    database_number: u16,
-    num_databases: u16,
-    warehouses_per_database: u16,
+    database_number: u32,
+    num_databases: u32,
+    warehouses_per_database: u32,
     batch_size: usize,
     topology: &DatabaseTopology,
     pending: &Arc<(Mutex<u64>, Condvar)>,
@@ -213,8 +213,8 @@ fn load_remote_warehouses(
 #[allow(clippy::too_many_arguments)]
 fn load_warehouses_and_districts(
     client: &ModuleClient,
-    database_number: u16,
-    warehouses_per_database: u16,
+    database_number: u32,
+    warehouses_per_database: u32,
     batch_size: usize,
     timestamp: Timestamp,
     rng: &mut StdRng,
@@ -273,8 +273,8 @@ fn load_warehouses_and_districts(
 
 fn load_stock(
     client: &ModuleClient,
-    database_number: u16,
-    warehouses_per_database: u16,
+    database_number: u32,
+    warehouses_per_database: u32,
     batch_size: usize,
     rng: &mut StdRng,
     pending: &Arc<(Mutex<u64>, Condvar)>,
@@ -317,8 +317,8 @@ fn load_stock(
 #[allow(clippy::too_many_arguments)]
 fn load_customers_history_orders(
     client: &ModuleClient,
-    database_number: u16,
-    warehouses_per_database: u16,
+    database_number: u32,
+    warehouses_per_database: u32,
     batch_size: usize,
     timestamp: Timestamp,
     load_c_last: u32,

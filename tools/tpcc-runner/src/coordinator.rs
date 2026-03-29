@@ -149,18 +149,18 @@ fn maybe_create_schedule(inner: &mut CoordinatorState) {
 }
 
 fn assignment_for_index(config: &CoordinatorConfig, index: usize) -> DriverAssignment {
-    let total_warehouses = usize::from(config.warehouses);
+    let total_warehouses = usize::try_from(config.warehouses).unwrap_or(usize::MAX);
     let expected_drivers = config.expected_drivers;
     let base = total_warehouses / expected_drivers;
     let remainder = total_warehouses % expected_drivers;
-    let driver_warehouse_count = base + usize::from(index < remainder);
+    let driver_warehouse_count = base + (index < remainder) as usize;
     let warehouse_start = 1 + (index * base) + index.min(remainder);
 
     DriverAssignment {
         warehouse_count: config.warehouses,
         warehouses_per_database: config.warehouses_per_database,
-        warehouse_start: warehouse_start as u16,
-        driver_warehouse_count: driver_warehouse_count as u16,
+        warehouse_start: warehouse_start as u32,
+        driver_warehouse_count: driver_warehouse_count as u32,
     }
 }
 
