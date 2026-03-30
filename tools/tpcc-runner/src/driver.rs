@@ -1,5 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
 use rand::{rngs::StdRng, Rng, SeedableRng};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -10,6 +11,7 @@ use tokio::task::JoinSet;
 use crate::client::{expect_ok, ModuleClient};
 use crate::config::{default_run_id, DriverConfig};
 use crate::metrics_module_bindings::register_completed_order;
+use crate::metrics_module_bindings::DbConnection as MetricsDbConnection;
 use crate::metrics_module_client::connect_metrics_module_async;
 use crate::module_bindings::*;
 use crate::protocol::{
@@ -23,34 +25,17 @@ use crate::tpcc::*;
 
 struct TerminalRuntime {
     config: DriverConfig,
+    client: Arc<ModuleClient>,
     metrics: SharedMetrics,
+    metrics_client: Arc<MetricsDbConnection>,
     abort: Arc<AtomicBool>,
     start_logged: Arc<AtomicBool>,
-    startup_progress: Arc<StartupProgress>,
     request_ids: Arc<AtomicU64>,
     schedule: RunSchedule,
     run_constants: RunConstants,
     assignment: TerminalAssignment,
     database_identity: spacetimedb_sdk::Identity,
     seed: u64,
-}
-
-struct StartupProgress {
-    primary_connect_started: AtomicU64,
-    primary_connect_ready: AtomicU64,
-    metrics_connect_started: AtomicU64,
-    metrics_connect_ready: AtomicU64,
-}
-
-impl StartupProgress {
-    fn new() -> Self {
-        Self {
-            primary_connect_started: AtomicU64::new(0),
-            primary_connect_ready: AtomicU64::new(0),
-            metrics_connect_started: AtomicU64::new(0),
-            metrics_connect_ready: AtomicU64::new(0),
-        }
-    }
 }
 
 struct TransactionContext<'a> {
@@ -83,10 +68,10 @@ pub async fn run(config: DriverConfig) -> Result<()> {
 
     let abort = Arc::new(AtomicBool::new(false));
     let start_logged = Arc::new(AtomicBool::new(false));
-    let startup_progress = Arc::new(StartupProgress::new());
     let request_ids = Arc::new(AtomicU64::new(1));
     let mut tasks = JoinSet::new();
-    let terminal_count = u64::from(config.terminals());
+    let metrics_client = Arc::new(connect_metrics_module_async(&config.connection).await?);
+    let shared_database_clients = connect_shared_database_clients(&config, &topology, &used_database_numbers).await?;
 
     log::info!(
         "driver {} ready for run {}: warehouses {}..={} terminals={} warmup_start_ms={} measure_start_ms={} measure_end_ms={}",
@@ -100,57 +85,21 @@ pub async fn run(config: DriverConfig) -> Result<()> {
         schedule.measure_end_ms
     );
     log::info!(
-        "driver {} launching {} terminal task(s); this run will attempt {} primary database connections and {} metrics connections",
+        "driver {} shared metrics connection ready; launching {} terminal task(s) across {} shared database connection(s)",
         config.driver_id,
-        terminal_count,
-        terminal_count,
-        terminal_count
+        config.terminals(),
+        shared_database_clients.len()
     );
 
-    {
-        let reporter_driver_id = config.driver_id.clone();
-        let reporter_run_id = run_id.clone();
-        let reporter_start_logged = start_logged.clone();
-        let reporter_abort = abort.clone();
-        let reporter_progress = startup_progress.clone();
-        tokio::spawn(async move {
-            loop {
-                if reporter_abort.load(Ordering::Relaxed) || reporter_start_logged.load(Ordering::Relaxed) {
-                    break;
-                }
-
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                if reporter_abort.load(Ordering::Relaxed) || reporter_start_logged.load(Ordering::Relaxed) {
-                    break;
-                }
-
-                let primary_started = reporter_progress.primary_connect_started.load(Ordering::Relaxed);
-                let primary_ready = reporter_progress.primary_connect_ready.load(Ordering::Relaxed);
-                let metrics_started = reporter_progress.metrics_connect_started.load(Ordering::Relaxed);
-                let metrics_ready = reporter_progress.metrics_connect_ready.load(Ordering::Relaxed);
-                log::info!(
-                    "driver {} startup progress for run {}: primary_connect_started={}/{} primary_connected={}/{} metrics_connect_started={}/{} metrics_connected={}/{}",
-                    reporter_driver_id,
-                    reporter_run_id,
-                    primary_started,
-                    terminal_count,
-                    primary_ready,
-                    terminal_count,
-                    metrics_started,
-                    terminal_count,
-                    metrics_ready,
-                    terminal_count
-                );
-
-                if metrics_ready >= terminal_count {
-                    break;
-                }
-            }
-        });
-    }
-
     for warehouse_id in config.warehouse_start..=config.warehouse_end() {
+        let database_number = topology.database_number_for_warehouse(warehouse_id)?;
         let database_identity = topology.identity_for_warehouse(warehouse_id)?;
+        let client = shared_database_clients.get(&database_number).cloned().ok_or_else(|| {
+            anyhow!(
+                "missing shared database client for {}",
+                topology.database_name(database_number)
+            )
+        })?;
         for district_id in 1..=DISTRICTS_PER_WAREHOUSE {
             let assignment = TerminalAssignment {
                 terminal_id: terminal_id(warehouse_id, district_id),
@@ -167,10 +116,11 @@ pub async fn run(config: DriverConfig) -> Result<()> {
             let terminal_request_ids = request_ids.clone();
             let runtime = TerminalRuntime {
                 config: terminal_config,
+                client: client.clone(),
                 metrics: terminal_metrics,
+                metrics_client: metrics_client.clone(),
                 abort: terminal_abort,
                 start_logged: terminal_start_logged,
-                startup_progress: startup_progress.clone(),
                 request_ids: terminal_request_ids,
                 schedule: terminal_schedule,
                 run_constants: terminal_constants,
@@ -214,10 +164,12 @@ pub async fn run(config: DriverConfig) -> Result<()> {
         }
     }
     if let Some(err) = first_error {
+        shutdown_shared_database_clients(shared_database_clients).await;
         return Err(err);
     }
 
-    harvest_delivery_completions(&config, &schedule, &metrics, &topology, &used_database_numbers).await?;
+    harvest_delivery_completions(&config, &schedule, &metrics, &shared_database_clients).await?;
+    shutdown_shared_database_clients(shared_database_clients).await;
 
     let summary = metrics.finalize(DriverSummaryMeta {
         run_id: run_id.clone(),
@@ -245,10 +197,11 @@ pub async fn run(config: DriverConfig) -> Result<()> {
 async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
     let TerminalRuntime {
         config,
+        client,
         metrics,
+        metrics_client,
         abort,
         start_logged,
-        startup_progress,
         request_ids,
         schedule,
         run_constants,
@@ -256,12 +209,6 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
         database_identity,
         seed,
     } = runtime;
-    startup_progress.primary_connect_started.fetch_add(1, Ordering::Relaxed);
-    let client = ModuleClient::connect_async(&config.connection, database_identity).await?;
-    startup_progress.primary_connect_ready.fetch_add(1, Ordering::Relaxed);
-    startup_progress.metrics_connect_started.fetch_add(1, Ordering::Relaxed);
-    let metrics_client = connect_metrics_module_async(&config.connection).await?;
-    startup_progress.metrics_connect_ready.fetch_add(1, Ordering::Relaxed);
     log::info!(
         "driver {} terminal {} connected to {} for warehouse {} district {}",
         config.driver_id,
@@ -289,7 +236,7 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
         let kind = choose_transaction(&mut rng);
         let started_ms = crate::summary::now_millis();
         let context = TransactionContext {
-            client: &client,
+            client: client.as_ref(),
             config: &config,
             run_id: &schedule.run_id,
             driver_id: &config.driver_id,
@@ -313,7 +260,6 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
             }
             Err(err) => {
                 abort.store(true, Ordering::Relaxed);
-                client.shutdown_async().await;
                 return Err(err);
             }
         }
@@ -323,8 +269,6 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
             tokio::time::sleep(delay).await;
         }
     }
-
-    client.shutdown_async().await;
     Ok(())
 }
 
@@ -718,26 +662,13 @@ async fn harvest_delivery_completions(
     config: &DriverConfig,
     schedule: &RunSchedule,
     metrics: &SharedMetrics,
-    topology: &DatabaseTopology,
-    used_database_numbers: &[u32],
+    shared_database_clients: &BTreeMap<u32, Arc<ModuleClient>>,
 ) -> Result<()> {
     let expected = metrics.delivery_queued();
     if expected == 0 {
         return Ok(());
     }
-    let mut harvest_clients = Vec::with_capacity(used_database_numbers.len());
-    for database_number in used_database_numbers {
-        let database_identity = topology.identity_for_database_number(*database_number)?;
-        let client = ModuleClient::connect_async(&config.connection, database_identity)
-            .await
-            .with_context(|| {
-                format!(
-                    "failed to connect delivery harvester to {}",
-                    topology.database_name(*database_number)
-                )
-            })?;
-        harvest_clients.push((*database_number, client));
-    }
+    let harvest_clients: Vec<_> = shared_database_clients.iter().collect();
 
     let mut pending_jobs = 0u64;
     let mut completed_jobs = 0u64;
@@ -847,5 +778,56 @@ async fn sleep_until_ms_async(target_ms: u64) {
     let now_ms = crate::summary::now_millis();
     if target_ms > now_ms {
         tokio::time::sleep(Duration::from_millis(target_ms - now_ms)).await;
+    }
+}
+
+async fn connect_shared_database_clients(
+    config: &DriverConfig,
+    topology: &DatabaseTopology,
+    used_database_numbers: &[u32],
+) -> Result<BTreeMap<u32, Arc<ModuleClient>>> {
+    let mut connect_tasks = JoinSet::new();
+    for database_number in used_database_numbers {
+        let database_number = *database_number;
+        let database_identity = topology.identity_for_database_number(database_number)?;
+        let database_name = topology.database_name(database_number);
+        let connection = config.connection.clone();
+        connect_tasks.spawn(async move {
+            let client = ModuleClient::connect_async(&connection, database_identity)
+                .await
+                .with_context(|| format!("failed to connect shared client to {database_name}"))?;
+            Ok::<_, anyhow::Error>((database_number, database_name, Arc::new(client)))
+        });
+    }
+
+    let mut shared_clients = BTreeMap::new();
+    while let Some(result) = connect_tasks.join_next().await {
+        match result {
+            Ok(Ok((database_number, database_name, client))) => {
+                log::info!(
+                    "driver {} shared database client connected to {}",
+                    config.driver_id,
+                    database_name
+                );
+                shared_clients.insert(database_number, client);
+            }
+            Ok(Err(err)) => {
+                connect_tasks.abort_all();
+                return Err(err);
+            }
+            Err(err) => {
+                connect_tasks.abort_all();
+                return Err(anyhow!("shared database connection task failed: {}", err));
+            }
+        }
+    }
+    Ok(shared_clients)
+}
+
+async fn shutdown_shared_database_clients(shared_database_clients: BTreeMap<u32, Arc<ModuleClient>>) {
+    for (_, client) in shared_database_clients {
+        if let Some(client) = Arc::into_inner(client) {
+            client.shutdown_async().await;
+        }
     }
 }
