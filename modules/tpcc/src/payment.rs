@@ -1,6 +1,6 @@
 use crate::{
     customer, district, find_district, find_warehouse, history,
-    remote::{call_remote_reducer, remote_warehouse_home},
+    remote::{remote_warehouse_home, simulate_remote_call},
     resolve_customer, warehouse, Customer, CustomerSelector, District, History, Warehouse, MAX_C_DATA_LEN,
 };
 use spacetimedb::{
@@ -128,12 +128,19 @@ fn call_remote_resolve_and_update_customer_for_payment(
     remote_database_identity: Identity,
     request: &PaymentRequest,
 ) -> Result<Customer, String> {
-    call_remote_reducer(
+    // call_remote_reducer(
+    //     ctx,
+    //     remote_database_identity,
+    //     "resolve_and_update_customer_for_payment",
+    //     request,
+    // )
+    simulate_remote_call(
         ctx,
         remote_database_identity,
         "resolve_and_update_customer_for_payment",
         request,
-    )
+    )?;
+    Ok(simulated_remote_customer(request))
 }
 
 #[procedure]
@@ -147,6 +154,53 @@ fn process_remote_payment(ctx: &mut ProcedureContext, request: PaymentRequest) -
         )?;
         Ok(update_customer(tx, &request, customer))
     })
+}
+
+fn simulated_remote_customer(request: &PaymentRequest) -> Customer {
+    let (customer_id, customer_first, customer_last) = match &request.customer_selector {
+        CustomerSelector::ById(customer_id) => (
+            *customer_id,
+            format!("Remote{customer_id}"),
+            format!("Customer{customer_id}"),
+        ),
+        CustomerSelector::ByLastName(last_name) => (
+            simulated_customer_id_from_last_name(last_name),
+            "Remote".to_string(),
+            last_name.clone(),
+        ),
+    };
+
+    Customer {
+        customer_key: 0,
+        c_w_id: request.customer_warehouse_id,
+        c_d_id: request.customer_district_id,
+        c_id: customer_id,
+        c_first: customer_first,
+        c_middle: "OE".to_string(),
+        c_last: customer_last,
+        c_street_1: "REMOTE".to_string(),
+        c_street_2: "SIMULATED".to_string(),
+        c_city: "REMOTE".to_string(),
+        c_state: "RM".to_string(),
+        c_zip: "000000000".to_string(),
+        c_phone: "0000000000000000".to_string(),
+        c_since: request.now,
+        c_credit: "GC".to_string(),
+        c_credit_lim_cents: 5_000_000,
+        c_discount_bps: 0,
+        c_balance_cents: -request.payment_amount_cents,
+        c_ytd_payment_cents: request.payment_amount_cents,
+        c_payment_cnt: 1,
+        c_delivery_cnt: 0,
+        c_data: "SIMULATED_REMOTE_PAYMENT".to_string(),
+    }
+}
+
+fn simulated_customer_id_from_last_name(last_name: &str) -> u32 {
+    let hash = last_name.bytes().fold(0_u32, |acc, byte| {
+        acc.wrapping_mul(31).wrapping_add(u32::from(byte))
+    });
+    (hash % crate::CUSTOMERS_PER_DISTRICT) + 1
 }
 
 fn update_customer(tx: &ReducerContext, request: &PaymentRequest, customer: Customer) -> Customer {
