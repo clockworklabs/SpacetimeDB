@@ -381,9 +381,7 @@ impl ToProtocol for TransactionUpdateMessage {
                 EventStatus::Committed(_) => ws_v1::UpdateStatus::Committed(update),
                 EventStatus::FailedUser(errmsg)
                 | EventStatus::FailedInternal(errmsg)
-                | EventStatus::Wounded(errmsg) => {
-                    ws_v1::UpdateStatus::Failed(errmsg.clone().into())
-                }
+                | EventStatus::Wounded(errmsg) => ws_v1::UpdateStatus::Failed(errmsg.clone().into()),
                 EventStatus::OutOfEnergy => ws_v1::UpdateStatus::OutOfEnergy,
             };
 

@@ -4,6 +4,7 @@ use crate::client::ClientActorId;
 use crate::database_logger;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
 use crate::error::DBError;
+use crate::host::block_on_scoped;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
@@ -13,7 +14,6 @@ use crate::host::module_host::{
     ViewCallResult, ViewCommand, ViewCommandResult, ViewOutcome,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
-use crate::host::block_on_scoped;
 use crate::host::{
     ArgsTuple, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult, ReducerId,
     ReducerOutcome, Scheduler, UpdateDatabaseResult,
@@ -452,7 +452,8 @@ fn wounded_status(replica_ctx: &ReplicaContext, tx_id: spacetimedb_lib::GlobalTx
 }
 
 fn check_wounded(replica_ctx: &ReplicaContext, tx_id: Option<spacetimedb_lib::GlobalTxId>) -> Option<EventStatus> {
-    tx_id.filter(|tx_id| replica_ctx.global_tx_manager.is_wounded(tx_id))
+    tx_id
+        .filter(|tx_id| replica_ctx.global_tx_manager.is_wounded(tx_id))
         .map(|tx_id| wounded_status(replica_ctx, tx_id))
 }
 
@@ -723,12 +724,11 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         // Step 3: wait for the PREPARE marker to be durable before signalling PREPARED.
         // B must not claim PREPARED until the marker is on disk — if B crashes after
         // claiming PREPARED but before the marker is durable, recovery has nothing to recover.
-        if let Some(prepare_offset) = marker_tx_data.tx_offset() {
-            if let Some(mut durable) = stdb.durable_tx_offset() {
+        if let Some(prepare_offset) = marker_tx_data.tx_offset()
+            && let Some(mut durable) = stdb.durable_tx_offset() {
                 let handle = tokio::runtime::Handle::current();
                 let _ = block_on_scoped(&handle, durable.wait_for(prepare_offset));
             }
-        }
 
         // Step 4: signal PREPARED.
         let res = ReducerCallResult {
@@ -746,6 +746,12 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             && Self::wait_for_2pc_decision(decision_rx, &prepare_id, coordinator_identity, &replica_ctx);
 
         if commit {
+            if let Some(tx_id) = global_tx_id {
+                log::info!(
+                    "2PC participant {} committing prepared transaction {tx_id} ({prepare_id})",
+                    replica_ctx.database.database_identity
+                );
+            }
             // Delete the marker in the same tx as the reducer changes (atomic commit).
             if let Err(e) = tx.delete_st_2pc_state(&prepare_id) {
                 log::error!("call_reducer_prepare_and_hold: failed to delete st_2pc_state for {prepare_id}: {e}");
@@ -786,6 +792,12 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 replica_ctx.global_tx_manager.remove_session(&tx_id);
             }
         } else {
+            if let Some(tx_id) = global_tx_id {
+                log::info!(
+                    "2PC participant {} aborting prepared transaction {tx_id} ({prepare_id})",
+                    replica_ctx.database.database_identity
+                );
+            }
             // ABORT: roll back reducer changes; clean up the already-committed marker.
             let _ = stdb.rollback_mut_tx(tx);
             if let Err(e) = stdb.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
@@ -834,13 +846,16 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let auth_token = replica_ctx.call_reducer_auth_token.clone();
         let prepare_id_owned = prepare_id.to_owned();
         loop {
-            let decision = block_on_scoped(&handle, Self::query_coordinator_status(
-                &client,
-                &router,
-                auth_token.clone(),
-                coordinator_identity,
-                &prepare_id_owned,
-            ));
+            let decision = block_on_scoped(
+                &handle,
+                Self::query_coordinator_status(
+                    &client,
+                    &router,
+                    auth_token.clone(),
+                    coordinator_identity,
+                    &prepare_id_owned,
+                ),
+            );
             match decision {
                 Some(commit) => return commit,
                 None => std::thread::sleep(Duration::from_secs(5)),
@@ -1182,7 +1197,7 @@ impl InstanceCommon {
         // crash recovery).
         if matches!(event.status, EventStatus::Committed(_)) && !prepared_participants.is_empty() {
             for (db_identity, prepare_id) in &prepared_participants {
-                if let Err(e) = tx.insert_st_2pc_coordinator_log(prepare_id, &db_identity.to_hex().to_string()) {
+                if let Err(e) = tx.insert_st_2pc_coordinator_log(prepare_id, db_identity.to_hex().as_ref()) {
                     log::error!("insert_st_2pc_coordinator_log failed for {prepare_id}: {e}");
                 }
             }
@@ -1207,64 +1222,62 @@ impl InstanceCommon {
             let replica_ctx = inst.replica_ctx().clone();
             let handle = tokio::runtime::Handle::current();
             block_on_scoped(&handle, async {
-                        // Wait for A's coordinator log (committed atomically with the tx) to be
-                        // durable before sending COMMIT to B.  This guarantees that if A crashes
-                        // after sending COMMIT, recovery can retransmit from the durable log.
-                        if committed && let Some(mut durable_offset) = stdb.durable_tx_offset() {
-                            if let Ok(offset) = commit_tx_offset.await {
-                                let _ = durable_offset.wait_for(offset).await;
-                            }
-                        }
+                // Wait for A's coordinator log (committed atomically with the tx) to be
+                // durable before sending COMMIT to B.  This guarantees that if A crashes
+                // after sending COMMIT, recovery can retransmit from the durable log.
+                if committed && let Some(mut durable_offset) = stdb.durable_tx_offset()
+                    && let Ok(offset) = commit_tx_offset.await {
+                        let _ = durable_offset.wait_for(offset).await;
+                    }
 
-                        let client = replica_ctx.call_reducer_client.clone();
-                        let router = replica_ctx.call_reducer_router.clone();
-                        let auth_token = replica_ctx.call_reducer_auth_token.clone();
-                        for (db_identity, prepare_id) in &prepared_participants {
-                            let action = if committed { "commit" } else { "abort" };
-                            let base_url = match router.resolve_base_url(*db_identity).await {
-                                Ok(url) => url,
-                                Err(e) => {
-                                    log::error!("2PC {action}: failed to resolve base URL for {db_identity}: {e}");
-                                    continue;
-                                }
-                            };
-                            let url = format!(
-                                "{}/v1/database/{}/2pc/{}/{}",
-                                base_url,
-                                db_identity.to_hex(),
-                                action,
-                                prepare_id,
-                            );
-                            let mut req = client.post(&url);
-                            if let Some(ref token) = auth_token {
-                                req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
-                            }
-                            match req.send().await {
-                                Ok(resp) if resp.status().is_success() => {
-                                    log::info!("2PC {action}: {prepare_id} on {db_identity}");
-                                    // B acknowledged COMMIT — remove coordinator log entry
-                                    // (best-effort; recovery will clean up on restart if missed).
-                                    if committed {
-                                        if let Err(e) = stdb
-                                            .with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
-                                                Ok(del_tx.delete_st_2pc_coordinator_log(prepare_id)?)
-                                            })
-                                        {
-                                            log::warn!("delete_st_2pc_coordinator_log failed for {prepare_id}: {e}");
-                                        }
-                                    }
-                                }
-                                Ok(resp) => {
-                                    log::error!(
-                                        "2PC {action}: failed for {prepare_id} on {db_identity}: status {}",
-                                        resp.status()
-                                    );
-                                }
-                                Err(e) => {
-                                    log::error!("2PC {action}: transport error for {prepare_id} on {db_identity}: {e}");
-                                }
-                            }
+                let client = replica_ctx.call_reducer_client.clone();
+                let router = replica_ctx.call_reducer_router.clone();
+                let auth_token = replica_ctx.call_reducer_auth_token.clone();
+                for (db_identity, prepare_id) in &prepared_participants {
+                    let action = if committed { "commit" } else { "abort" };
+                    let base_url = match router.resolve_base_url(*db_identity).await {
+                        Ok(url) => url,
+                        Err(e) => {
+                            log::error!("2PC {action}: failed to resolve base URL for {db_identity}: {e}");
+                            continue;
                         }
+                    };
+                    let url = format!(
+                        "{}/v1/database/{}/2pc/{}/{}",
+                        base_url,
+                        db_identity.to_hex(),
+                        action,
+                        prepare_id,
+                    );
+                    let mut req = client.post(&url);
+                    if let Some(ref token) = auth_token {
+                        req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+                    }
+                    match req.send().await {
+                        Ok(resp) if resp.status().is_success() => {
+                            log::info!("2PC {action}: {prepare_id} on {db_identity}");
+                            // B acknowledged COMMIT — remove coordinator log entry
+                            // (best-effort; recovery will clean up on restart if missed).
+                            if committed
+                                && let Err(e) = stdb
+                                    .with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
+                                        Ok(del_tx.delete_st_2pc_coordinator_log(prepare_id)?)
+                                    })
+                                {
+                                    log::warn!("delete_st_2pc_coordinator_log failed for {prepare_id}: {e}");
+                                }
+                        }
+                        Ok(resp) => {
+                            log::error!(
+                                "2PC {action}: failed for {prepare_id} on {db_identity}: status {}",
+                                resp.status()
+                            );
+                        }
+                        Err(e) => {
+                            log::error!("2PC {action}: transport error for {prepare_id} on {db_identity}: {e}");
+                        }
+                    }
+                }
             });
         }
 

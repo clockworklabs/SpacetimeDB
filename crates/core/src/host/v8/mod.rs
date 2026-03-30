@@ -1446,12 +1446,7 @@ where
 
     // Start the timer.
     // We'd like this tightly around `call`.
-    env.start_funcall(
-        op.name().clone(),
-        op.timestamp(),
-        op.call_type(),
-        op.tx_id(),
-    );
+    env.start_funcall(op.name().clone(), op.timestamp(), op.call_type(), op.tx_id());
 
     v8::tc_scope!(scope, scope);
     let call_result = call(scope, op).map_err(|mut e| {

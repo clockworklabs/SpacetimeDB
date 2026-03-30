@@ -14,7 +14,7 @@ use crate::error::DBError;
 use crate::host::module_host::ClientConnectedError;
 use crate::host::{
     CallProcedureReturn, FunctionArgs, ModuleHost, NoSuchModule, ProcedureCallResult, ReducerCallError,
-    ReducerCallResult,
+    ReducerCallResult, ReducerOutcome,
 };
 use crate::subscription::module_subscription_manager::BroadcastError;
 use crate::subscription::row_list_builder_pool::JsonRowListBuilderFakePool;
@@ -870,18 +870,33 @@ impl ClientConnection {
         timer: Instant,
         _flags: ws_v2::CallReducerFlags,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        self.module()
-            .call_reducer(
-                self.id.identity,
-                Some(self.id.connection_id),
-                None,
-                Some(self.sender()),
-                Some(request_id),
-                Some(timer),
-                reducer,
-                FunctionArgs::Bsatn(args),
-            )
-            .await
+        const MAX_WOUNDED_RETRIES: usize = 3;
+
+        let module = self.module();
+        let mut tx_id = module.replica_ctx().mint_global_tx_id(Timestamp::now());
+
+        for attempt in 0..=MAX_WOUNDED_RETRIES {
+            let result = module
+                .call_reducer(
+                    self.id.identity,
+                    Some(self.id.connection_id),
+                    Some(tx_id),
+                    Some(self.sender()),
+                    Some(request_id),
+                    Some(timer),
+                    reducer,
+                    FunctionArgs::Bsatn(args.clone()),
+                )
+                .await?;
+
+            if !matches!(result.outcome, ReducerOutcome::Wounded(_)) || attempt == MAX_WOUNDED_RETRIES {
+                return Ok(result);
+            }
+
+            tx_id = tx_id.next_attempt();
+        }
+
+        unreachable!("retry loop should return before exhausting attempts")
     }
 
     pub async fn call_procedure(

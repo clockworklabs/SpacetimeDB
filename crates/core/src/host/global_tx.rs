@@ -1,6 +1,7 @@
 use crate::identity::Identity;
 use spacetimedb_lib::GlobalTxId;
-use std::collections::{HashMap, HashSet};
+use std::cmp::Ordering as CmpOrdering;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -98,18 +99,52 @@ impl GlobalTxSession {
 
 struct LockState {
     owner: Option<GlobalTxId>,
-    waiting: HashSet<GlobalTxId>,
+    // An set of waiters ordered by tx_id with the oldest first.
+    waiting: BTreeSet<WaitKey>,
+    // A map from wait_id to the corresponding wait entry, which contains the notify object to wake up the waiter when its turn comes.
+    wait_entries: HashMap<u64, WaitEntry>,
+    waiter_ids_by_tx: HashMap<GlobalTxId, u64>,
     wounded_owners: HashSet<GlobalTxId>,
+    next_wait_id: u64,
 }
 
 impl Default for LockState {
     fn default() -> Self {
         Self {
             owner: None,
-            waiting: HashSet::new(),
+            waiting: BTreeSet::new(),
+            wait_entries: HashMap::new(),
+            waiter_ids_by_tx: HashMap::new(),
             wounded_owners: HashSet::new(),
+            next_wait_id: 1,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct WaitKey {
+    tx_id: GlobalTxId,
+    wait_id: u64,
+}
+
+impl Ord for WaitKey {
+    fn cmp(&self, other: &Self) -> CmpOrdering {
+        self.tx_id
+            .cmp(&other.tx_id)
+            .then_with(|| self.wait_id.cmp(&other.wait_id))
+    }
+}
+
+impl PartialOrd for WaitKey {
+    fn partial_cmp(&self, other: &Self) -> Option<CmpOrdering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[derive(Debug)]
+struct WaitEntry {
+    tx_id: GlobalTxId,
+    notify: Arc<Notify>,
 }
 
 pub enum AcquireDisposition<'a> {
@@ -120,6 +155,37 @@ pub enum AcquireDisposition<'a> {
 pub struct GlobalTxLockGuard<'a> {
     manager: &'a GlobalTxManager,
     tx_id: Option<GlobalTxId>,
+}
+
+struct WaitRegistration<'a> {
+    manager: &'a GlobalTxManager,
+    wait_id: Option<u64>,
+}
+
+impl<'a> WaitRegistration<'a> {
+    fn new(manager: &'a GlobalTxManager, wait_id: u64) -> Self {
+        Self {
+            manager,
+            wait_id: Some(wait_id),
+        }
+    }
+
+    fn wait_id(&self) -> u64 {
+        self.wait_id.expect("registered waiter must still have a wait id")
+    }
+
+    fn disarm(mut self) {
+        self.wait_id = None;
+    }
+}
+
+impl Drop for WaitRegistration<'_> {
+    fn drop(&mut self) {
+        if let Some(wait_id) = self.wait_id.take() {
+            let mut ls = self.manager.lock_state.lock().unwrap();
+            self.manager.remove_waiter_by_id(&mut ls, wait_id);
+        }
+    }
 }
 
 impl<'a> GlobalTxLockGuard<'a> {
@@ -152,7 +218,6 @@ pub struct GlobalTxManager {
     sessions: Mutex<HashMap<GlobalTxId, Arc<GlobalTxSession>>>,
     prepare_to_tx: Mutex<HashMap<String, GlobalTxId>>,
     lock_state: Mutex<LockState>,
-    lock_notify: Notify,
 }
 
 impl GlobalTxManager {
@@ -218,11 +283,20 @@ impl GlobalTxManager {
         self.get_session(tx_id).map(|s| s.subscribe_wounded())
     }
 
+    // This should only be called by the coordinator.
+    // Arguably we should have a separate state for wounded and aborted, in case we wound a remote tx before we send write the prepare.
     pub fn wound(&self, tx_id: &GlobalTxId) -> Option<Arc<GlobalTxSession>> {
         let session = self.get_session(tx_id)?;
-        let _ = session.wound();
+        let was_fresh = session.wound();
         if !matches!(session.state(), GlobalTxState::Committed | GlobalTxState::Aborted) {
             session.set_state(GlobalTxState::Aborting);
+        }
+        if was_fresh {
+            log::info!(
+                "global transaction {tx_id} marked wounded; role={:?} coordinator={}",
+                session.role,
+                session.coordinator_identity
+            );
         }
         Some(session)
     }
@@ -236,46 +310,90 @@ impl GlobalTxManager {
             Some(rx) => rx,
             None => return AcquireDisposition::Cancelled,
         };
+        let mut registration: Option<WaitRegistration<'_>> = None;
         loop {
-            // self.is_wounded(&tx_id)
             if *wounded_rx.borrow() {
-                self.remove_waiter(&tx_id);
                 return AcquireDisposition::Cancelled;
             }
 
-            let (waiter, owner_to_wound) = {
+            let (notify, owner_to_wound, new_registration) = {
                 let mut state = self.lock_state.lock().unwrap();
                 match state.owner {
-                    None => {
+                    None if self.is_next_waiter_locked(&state, tx_id) => {
                         state.owner = Some(tx_id);
-                        state.waiting.remove(&tx_id);
+                        self.remove_waiter_locked(&mut state, &tx_id);
+                        if let Some(registration) = registration.take() {
+                            registration.disarm();
+                        }
                         return AcquireDisposition::Acquired(GlobalTxLockGuard::new(self, tx_id));
                     }
+                    None => {
+                        let (wait_id, notify) = if let Some(registration) = registration.as_ref() {
+                            let wait_id = registration.wait_id();
+                            let notify = state
+                                .wait_entries
+                                .get(&wait_id)
+                                .expect("wait entry must exist for registered waiter")
+                                .notify
+                                .clone();
+                            (wait_id, notify)
+                        } else {
+                            self.ensure_waiter_locked(&mut state, tx_id)
+                        };
+                        let new_registration = registration.is_none().then(|| WaitRegistration::new(self, wait_id));
+                        (notify, None, new_registration)
+                    }
                     Some(owner) if owner == tx_id => {
-                        state.waiting.remove(&tx_id);
+                        self.remove_waiter_locked(&mut state, &tx_id);
+                        if let Some(registration) = registration.take() {
+                            registration.disarm();
+                        }
                         return AcquireDisposition::Acquired(GlobalTxLockGuard::new(self, tx_id));
                     }
                     Some(owner) => {
-                        state.waiting.insert(tx_id);
+                        let (wait_id, notify) = if let Some(registration) = registration.as_ref() {
+                            let wait_id = registration.wait_id();
+                            let notify = state
+                                .wait_entries
+                                .get(&wait_id)
+                                .expect("wait entry must exist for registered waiter")
+                                .notify
+                                .clone();
+                            (wait_id, notify)
+                        } else {
+                            self.ensure_waiter_locked(&mut state, tx_id)
+                        };
                         let owner_to_wound = (tx_id < owner && state.wounded_owners.insert(owner)).then_some(owner);
-                        (self.lock_notify.notified(), owner_to_wound)
+                        let new_registration = registration.is_none().then(|| WaitRegistration::new(self, wait_id));
+                        (notify, owner_to_wound, new_registration)
                     }
                 }
             };
+            if let Some(new_registration) = new_registration {
+                registration = Some(new_registration);
+            }
 
             if let Some(owner) = owner_to_wound {
-                let _ = self.wound(&owner);
+                log::info!(
+                    "global transaction {tx_id} is waiting behind younger owner {owner}; triggering wound flow"
+                );
+                if self.should_wound_locally(&owner) {
+                    let _ = self.wound(&owner);
+                } else {
+                    log::info!(
+                        "global transaction {tx_id} observed prepared participant owner {owner}; notifying coordinator without local wound"
+                    );
+                }
                 on_wound(owner).await;
             }
 
             tokio::select! {
                 changed = wounded_rx.changed(), if !*wounded_rx.borrow() => {
                     if changed.is_ok() && *wounded_rx.borrow() {
-                        self.remove_waiter(&tx_id);
                         return AcquireDisposition::Cancelled;
                     }
                 }
-                _ = waiter => {}
+                _ = notify.notified() => {}
             }
         }
     }
@@ -285,13 +403,79 @@ impl GlobalTxManager {
         if state.owner.as_ref() == Some(tx_id) {
             state.owner = None;
             state.wounded_owners.remove(tx_id);
-            self.lock_notify.notify_waiters();
+            self.notify_next_waiter_locked(&state);
+        } else {
+            log::warn!("Release a lock that isn't actually held. This should not happen");
         }
-        state.waiting.remove(tx_id);
+        self.remove_waiter_locked(&mut state, tx_id);
     }
 
-    fn remove_waiter(&self, tx_id: &GlobalTxId) {
-        self.lock_state.lock().unwrap().waiting.remove(tx_id);
+    fn ensure_waiter_locked(&self, state: &mut LockState, tx_id: GlobalTxId) -> (u64, Arc<Notify>) {
+        if let Some(wait_id) = state.waiter_ids_by_tx.get(&tx_id).copied() {
+            let notify = state
+                .wait_entries
+                .get(&wait_id)
+                .expect("wait entry must exist for registered waiter")
+                .notify
+                .clone();
+            return (wait_id, notify);
+        }
+
+        let wait_id = state.next_wait_id;
+        state.next_wait_id += 1;
+        let notify = Arc::new(Notify::new());
+        state.wait_entries.insert(
+            wait_id,
+            WaitEntry {
+                tx_id,
+                notify: notify.clone(),
+            },
+        );
+        state.waiter_ids_by_tx.insert(tx_id, wait_id);
+        state.waiting.insert(WaitKey { tx_id, wait_id });
+        (wait_id, notify)
+    }
+
+    fn is_next_waiter_locked(&self, state: &LockState, tx_id: GlobalTxId) -> bool {
+        match state.waiting.first() {
+            None => true,
+            Some(wait_key) => wait_key.tx_id == tx_id,
+        }
+    }
+
+    fn notify_next_waiter_locked(&self, state: &LockState) {
+        if let Some(wait_key) = state.waiting.first()
+            && let Some(wait_entry) = state.wait_entries.get(&wait_key.wait_id)
+        {
+            wait_entry.notify.notify_one();
+        }
+    }
+
+    fn remove_waiter_locked(&self, state: &mut LockState, tx_id: &GlobalTxId) {
+        if let Some(wait_id) = state.waiter_ids_by_tx.remove(tx_id) {
+            state.wait_entries.remove(&wait_id);
+            state.waiting.remove(&WaitKey { tx_id: *tx_id, wait_id });
+        }
+    }
+
+    fn remove_waiter_by_id(&self, state: &mut LockState, wait_id: u64) {
+        let was_head = state.waiting.first().map(|w| w.wait_id) == Some(wait_id);
+        if let Some(wait_entry) = state.wait_entries.remove(&wait_id) {
+            state.waiter_ids_by_tx.remove(&wait_entry.tx_id);
+            state.waiting.remove(&WaitKey {
+                tx_id: wait_entry.tx_id,
+                wait_id,
+            });
+            if was_head && state.owner.is_none() {
+                self.notify_next_waiter_locked(state);
+            }
+        }
+    }
+
+    fn should_wound_locally(&self, tx_id: &GlobalTxId) -> bool {
+        self.get_session(tx_id)
+            .map(|session| !(session.role == GlobalTxRole::Participant && session.state() == GlobalTxState::Prepared))
+            .unwrap_or(true)
     }
 }
 
@@ -300,6 +484,7 @@ mod tests {
     use super::{AcquireDisposition, GlobalTxManager};
     use crate::identity::Identity;
     use spacetimedb_lib::{GlobalTxId, Timestamp};
+    use std::sync::atomic::Ordering;
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::runtime::Runtime;
@@ -309,6 +494,7 @@ mod tests {
             Timestamp::from_micros_since_unix_epoch(ts),
             Identity::from_byte_array([db_byte; 32]),
             nonce,
+            0,
         )
     }
 
@@ -317,11 +503,7 @@ mod tests {
         let manager = Arc::new(GlobalTxManager::default());
         let younger = tx_id(20, 2, 0);
         let older = tx_id(10, 1, 0);
-        manager.ensure_session(
-            younger,
-            super::GlobalTxRole::Participant,
-            younger.creator_db,
-        );
+        manager.ensure_session(younger, super::GlobalTxRole::Participant, younger.creator_db);
         manager.ensure_session(older, super::GlobalTxRole::Participant, older.creator_db);
 
         let rt = Runtime::new().unwrap();
@@ -340,10 +522,7 @@ mod tests {
         std::thread::sleep(Duration::from_millis(10));
         assert!(manager.is_wounded(&younger));
         drop(younger_guard);
-        assert!(matches!(
-            rt.block_on(older_task).expect("task should complete"),
-            true
-        ));
+        assert!(matches!(rt.block_on(older_task).expect("task should complete"), true));
     }
 
     #[test]
@@ -434,6 +613,46 @@ mod tests {
     }
 
     #[test]
+    fn prepared_participant_only_signals_coordinator() {
+        let manager = Arc::new(GlobalTxManager::default());
+        let owner = tx_id(20, 2, 0);
+        let older = tx_id(10, 1, 0);
+        let owner_session = manager.ensure_session(owner, super::GlobalTxRole::Participant, owner.creator_db);
+        owner_session.set_state(super::GlobalTxState::Prepared);
+        manager.ensure_session(older, super::GlobalTxRole::Participant, older.creator_db);
+
+        let rt = Runtime::new().unwrap();
+        let owner_guard = match rt.block_on(manager.acquire(owner, |_| async {})) {
+            AcquireDisposition::Acquired(guard) => guard,
+            AcquireDisposition::Cancelled => panic!("owner should acquire immediately"),
+        };
+
+        let coordinator_wounded = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = coordinator_wounded.clone();
+        let manager_for_task = manager.clone();
+        let older_task = rt.spawn(async move {
+            match manager_for_task
+                .acquire(older, move |_| {
+                    let flag = flag.clone();
+                    async move {
+                        flag.store(true, Ordering::SeqCst);
+                    }
+                })
+                .await
+            {
+                AcquireDisposition::Acquired(_guard) => true,
+                AcquireDisposition::Cancelled => false,
+            }
+        });
+
+        std::thread::sleep(Duration::from_millis(10));
+        assert!(coordinator_wounded.load(Ordering::SeqCst));
+        assert!(!manager.is_wounded(&owner));
+        drop(owner_guard);
+        assert!(rt.block_on(older_task).expect("task should complete"));
+    }
+
+    #[test]
     fn wounded_waiter_is_cancelled() {
         let manager = Arc::new(GlobalTxManager::default());
         let owner = tx_id(10, 1, 0);
@@ -458,9 +677,6 @@ mod tests {
         manager.wound(&waiter).expect("waiter session should exist");
         drop(owner_guard);
 
-        assert!(matches!(
-            rt.block_on(waiter_task).expect("task should complete"),
-            true
-        ));
+        assert!(matches!(rt.block_on(waiter_task).expect("task should complete"), true));
     }
 }

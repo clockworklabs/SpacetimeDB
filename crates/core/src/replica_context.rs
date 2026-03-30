@@ -7,9 +7,10 @@ use crate::host::global_tx::GlobalTxManager;
 use crate::host::reducer_router::ReducerCallRouter;
 use crate::messages::control_db::Database;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+use spacetimedb_lib::{GlobalTxId, Timestamp};
 use std::io;
 use std::ops::Deref;
-use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -82,6 +83,11 @@ impl ReplicaContext {
             .timeout(config.request_timeout)
             .build()
             .expect("failed to build call_reducer_on_db HTTP client")
+    }
+
+    pub fn mint_global_tx_id(&self, start_ts: Timestamp) -> GlobalTxId {
+        let nonce = self.tx_id_nonce.fetch_add(1, Ordering::Relaxed);
+        GlobalTxId::new(start_ts, self.database.database_identity, nonce, 0)
     }
 }
 

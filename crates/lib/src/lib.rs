@@ -39,7 +39,6 @@ pub use filterable_value::Private;
 pub use filterable_value::{FilterableValue, IndexScanRangeBoundsTerminator, TermBound};
 pub use identity::Identity;
 pub use scheduler::ScheduleAt;
-pub use tx_id::{GlobalTxId, TX_ID_HEADER};
 pub use spacetimedb_sats::hash::{self, hash_bytes, Hash};
 pub use spacetimedb_sats::time_duration::TimeDuration;
 pub use spacetimedb_sats::timestamp::Timestamp;
@@ -49,6 +48,7 @@ pub use spacetimedb_sats::__make_register_reftype;
 pub use spacetimedb_sats::{self as sats, bsatn, buffer, de, ser};
 pub use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, SumType};
 pub use spacetimedb_sats::{AlgebraicValue, ProductValue};
+pub use tx_id::{GlobalTxId, TX_ID_HEADER};
 
 pub const MODULE_ABI_MAJOR_VERSION: u16 = 10;
 

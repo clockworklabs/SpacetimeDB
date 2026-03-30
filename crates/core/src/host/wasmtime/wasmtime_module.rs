@@ -582,10 +582,13 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let [conn_id_0, conn_id_1] = prepare_connection_id_for_call(op.caller_connection_id);
 
         // Prepare arguments to the reducer + the error sink & start timings.
-        let (args_source, result_sink) =
-            store
-                .data_mut()
-                .start_funcall(op.name.clone(), op.arg_bytes, op.timestamp, FuncCallType::Procedure, None);
+        let (args_source, result_sink) = store.data_mut().start_funcall(
+            op.name.clone(),
+            op.arg_bytes,
+            op.timestamp,
+            FuncCallType::Procedure,
+            None,
+        );
 
         let Some(call_procedure) = self.call_procedure.as_ref() else {
             let res = module_host_actor::ProcedureExecuteResult {

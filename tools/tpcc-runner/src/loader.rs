@@ -160,11 +160,11 @@ fn load_items(
             i_data: maybe_with_original(rng, 26, 50),
         });
         if batch.len() >= batch_size {
-            client.queue_load_items(std::mem::take(&mut batch), &pending, &errors)?;
+            client.queue_load_items(std::mem::take(&mut batch), pending, errors)?;
         }
     }
     if !batch.is_empty() {
-        client.queue_load_items(batch, &pending, &errors)?;
+        client.queue_load_items(batch, pending, errors)?;
     }
     Ok(())
 }
@@ -205,7 +205,7 @@ fn load_remote_warehouses(
         let split_at = warehouse_batch.len().min(batch_size);
         let remainder = warehouse_batch.split_off(split_at);
         let rows = std::mem::replace(&mut warehouse_batch, remainder);
-        client.queue_load_remote_warehouses(rows, &pending, &errors)?;
+        client.queue_load_remote_warehouses(rows, pending, errors)?;
     }
 
     Ok(())
@@ -259,13 +259,13 @@ fn load_warehouses_and_districts(
         let split_at = warehouse_batch.len().min(batch_size);
         let remainder = warehouse_batch.split_off(split_at);
         let rows = std::mem::replace(&mut warehouse_batch, remainder);
-        client.queue_load_warehouses(rows, &pending, &errors)?;
+        client.queue_load_warehouses(rows, pending, errors)?;
     }
     while !district_batch.is_empty() {
         let split_at = district_batch.len().min(batch_size);
         let remainder = district_batch.split_off(split_at);
         let rows = std::mem::replace(&mut district_batch, remainder);
-        client.queue_load_districts(rows, &pending, &errors)?;
+        client.queue_load_districts(rows, pending, errors)?;
     }
     let _ = timestamp;
     Ok(())
@@ -304,12 +304,12 @@ fn load_stock(
                 s_data: maybe_with_original(rng, 26, 50),
             });
             if batch.len() >= batch_size {
-                client.queue_load_stocks(std::mem::take(&mut batch), &pending, &errors)?;
+                client.queue_load_stocks(std::mem::take(&mut batch), pending, errors)?;
             }
         }
     }
     if !batch.is_empty() {
-        client.queue_load_stocks(batch, &pending, &errors)?;
+        client.queue_load_stocks(batch, pending, errors)?;
     }
     Ok(())
 }
@@ -380,10 +380,10 @@ fn load_customers_history_orders(
                 });
 
                 if customer_batch.len() >= batch_size {
-                    client.queue_load_customers(std::mem::take(&mut customer_batch), &pending, &errors)?;
+                    client.queue_load_customers(std::mem::take(&mut customer_batch), pending, errors)?;
                 }
                 if history_batch.len() >= batch_size {
-                    client.queue_load_history(std::mem::take(&mut history_batch), &pending, &errors)?;
+                    client.queue_load_history(std::mem::take(&mut history_batch), pending, errors)?;
                 }
             }
 
@@ -430,34 +430,34 @@ fn load_customers_history_orders(
                         ol_dist_info: alpha_string(rng, 24, 24),
                     });
                     if order_line_batch.len() >= batch_size {
-                        client.queue_load_order_lines(std::mem::take(&mut order_line_batch), &pending, &errors)?;
+                        client.queue_load_order_lines(std::mem::take(&mut order_line_batch), pending, errors)?;
                     }
                 }
 
                 if order_batch.len() >= batch_size {
-                    client.queue_load_orders(std::mem::take(&mut order_batch), &pending, &errors)?;
+                    client.queue_load_orders(std::mem::take(&mut order_batch), pending, errors)?;
                 }
                 if new_order_batch.len() >= batch_size {
-                    client.queue_load_new_orders(std::mem::take(&mut new_order_batch), &pending, &errors)?;
+                    client.queue_load_new_orders(std::mem::take(&mut new_order_batch), pending, errors)?;
                 }
             }
         }
     }
 
     if !customer_batch.is_empty() {
-        client.queue_load_customers(customer_batch, &pending, &errors)?;
+        client.queue_load_customers(customer_batch, pending, errors)?;
     }
     if !history_batch.is_empty() {
-        client.queue_load_history(history_batch, &pending, &errors)?;
+        client.queue_load_history(history_batch, pending, errors)?;
     }
     if !order_batch.is_empty() {
-        client.queue_load_orders(order_batch, &pending, &errors)?;
+        client.queue_load_orders(order_batch, pending, errors)?;
     }
     if !new_order_batch.is_empty() {
-        client.queue_load_new_orders(new_order_batch, &pending, &errors)?;
+        client.queue_load_new_orders(new_order_batch, pending, errors)?;
     }
     if !order_line_batch.is_empty() {
-        client.queue_load_order_lines(order_line_batch, &pending, &errors)?;
+        client.queue_load_order_lines(order_line_batch, pending, errors)?;
     }
 
     Ok(())

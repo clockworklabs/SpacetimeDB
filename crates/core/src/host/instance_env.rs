@@ -35,7 +35,6 @@ use std::fmt::Display;
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::ops::DerefMut;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::vec::IntoIter;
@@ -258,7 +257,13 @@ impl InstanceEnv {
     }
 
     /// Signal to this `InstanceEnv` that a function call is beginning.
-    pub fn start_funcall(&mut self, name: Identifier, ts: Timestamp, func_type: FuncCallType, tx_id: Option<GlobalTxId>) {
+    pub fn start_funcall(
+        &mut self,
+        name: Identifier,
+        ts: Timestamp,
+        func_type: FuncCallType,
+        tx_id: Option<GlobalTxId>,
+    ) {
         let is_reducer = matches!(func_type, FuncCallType::Reducer);
         self.start_time = ts;
         self.start_instant = Instant::now();
@@ -282,8 +287,7 @@ impl InstanceEnv {
     }
 
     fn mint_tx_id(&self, start_ts: Timestamp) -> GlobalTxId {
-        let nonce = self.replica_ctx.tx_id_nonce.fetch_add(1, Ordering::Relaxed);
-        GlobalTxId::new(start_ts, self.replica_ctx.database.database_identity, nonce)
+        self.replica_ctx.mint_global_tx_id(start_ts)
     }
 
     /// Returns the name of the most recent reducer to be run in this environment,
@@ -1123,16 +1127,24 @@ impl InstanceEnv {
                 .is_wounded(&tx_id)
                 .then(|| self.wounded_tx_error(tx_id))
         });
+        let wounded_rx = tx_id.and_then(|tx_id| self.replica_ctx.global_tx_manager.subscribe_wounded(&tx_id));
+        let wounded_message =
+            tx_id.map(|tx_id| format!("distributed transaction {tx_id} was wounded by an older transaction"));
 
         if let Some(tx_id) = tx_id {
-            let session = self
-                .replica_ctx
-                .global_tx_manager
-                .ensure_session(tx_id, GlobalTxRole::Coordinator, tx_id.creator_db);
+            let session =
+                self.replica_ctx
+                    .global_tx_manager
+                    .ensure_session(tx_id, GlobalTxRole::Coordinator, tx_id.creator_db);
             session.set_state(GlobalTxState::Preparing);
         }
 
         async move {
+            let tx_id = tx_id.ok_or_else(|| {
+                NodesError::HttpError(
+                    "2PC remote reducer call requires an active distributed transaction id".to_owned(),
+                )
+            })?;
             if let Some(err) = wounded_error {
                 return Err(err);
             }
@@ -1156,11 +1168,8 @@ impl InstanceEnv {
             if let Some(token) = auth_token {
                 req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
             }
-            if let Some(tx_id) = tx_id {
-                req = req.header(TX_ID_HEADER, tx_id.to_string());
-            }
-            // TODO: This needs to select on subscribe_wounded as well, so we can stop waiting for the response when wounded.
-            let result = async {
+            req = req.header(TX_ID_HEADER, tx_id.to_string());
+            let request_fut = async {
                 let response = req.send().await.map_err(|e| NodesError::HttpError(e.to_string()))?;
                 let status = response.status().as_u16();
                 let prepare_id = response
@@ -1173,8 +1182,33 @@ impl InstanceEnv {
                     .await
                     .map_err(|e| NodesError::HttpError(e.to_string()))?;
                 Ok((status, body, prepare_id))
-            }
-            .await;
+            };
+            tokio::pin!(request_fut);
+            let result = if let Some(mut wounded_rx) = wounded_rx {
+                tokio::select! {
+                    result = &mut request_fut => result,
+                    changed = wounded_rx.changed() => {
+                        match changed {
+                            Ok(()) if *wounded_rx.borrow() => {
+                                log::info!(
+                                    "transaction {tx_id} was wounded during remote reducer call to {}/{}; aborting call",
+                                    database_identity.to_hex(),
+                                    reducer_name
+                                );
+                                Err(NodesError::Wounded(
+                                wounded_message
+                                    .clone()
+                                    .expect("wounded message should exist when tx_id exists"),
+                            ))
+                        },
+                            Ok(()) => request_fut.as_mut().await,
+                            Err(_) => request_fut.as_mut().await,
+                        }
+                    }
+                }
+            } else {
+                request_fut.as_mut().await
+            };
 
             WORKER_METRICS
                 .cross_db_reducer_calls_total

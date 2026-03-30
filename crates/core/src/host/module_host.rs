@@ -1645,13 +1645,14 @@ impl ModuleHost {
             args,
         };
 
-        let result = self.call(
-            &reducer_def.name,
-            call_reducer_params,
-            async |p, inst| Ok(inst.call_reducer(p)),
-            async |p, inst| inst.call_reducer(p).await,
-        )
-        .await;
+        let result = self
+            .call(
+                &reducer_def.name,
+                call_reducer_params,
+                async |p, inst| Ok(inst.call_reducer(p)),
+                async |p, inst| inst.call_reducer(p).await,
+            )
+            .await;
         if let Some(guard) = admission_guard {
             guard.disarm();
         }
@@ -1703,13 +1704,14 @@ impl ModuleHost {
             args,
         };
 
-        let result = self.call(
-            &reducer_def.name,
-            call_reducer_params,
-            async |p, inst| Ok(inst.call_reducer_with_return(p)),
-            async |p, inst| inst.call_reducer(p).await.map(|res| (res, None)),
-        )
-        .await;
+        let result = self
+            .call(
+                &reducer_def.name,
+                call_reducer_params,
+                async |p, inst| Ok(inst.call_reducer_with_return(p)),
+                async |p, inst| inst.call_reducer(p).await.map(|res| (res, None)),
+            )
+            .await;
         if let Some(guard) = admission_guard {
             guard.disarm();
         }
@@ -1888,10 +1890,11 @@ impl ModuleHost {
             },
         );
         if let Some(tx_id) = tx_id {
-            let session = self
-                .replica_ctx()
-                .global_tx_manager
-                .ensure_session(tx_id, super::global_tx::GlobalTxRole::Participant, tx_id.creator_db);
+            let session = self.replica_ctx().global_tx_manager.ensure_session(
+                tx_id,
+                super::global_tx::GlobalTxRole::Participant,
+                tx_id.creator_db,
+            );
             session.set_state(super::global_tx::GlobalTxState::Preparing);
             self.replica_ctx()
                 .global_tx_manager
@@ -2004,9 +2007,12 @@ impl ModuleHost {
     /// Abort a prepared transaction.
     pub fn abort_prepared(&self, prepare_id: &str) -> Result<(), String> {
         if let Some(tx_id) = self.replica_ctx().global_tx_manager.remove_prepare_mapping(prepare_id) {
+            log::info!("2PC abort_prepared: aborting prepared transaction {tx_id} ({prepare_id})");
             self.replica_ctx()
                 .global_tx_manager
                 .mark_state(&tx_id, super::global_tx::GlobalTxState::Aborting);
+        } else {
+            log::info!("2PC abort_prepared: aborting legacy/unmapped prepare_id {prepare_id}");
         }
         let info = self
             .prepared_txs
@@ -2027,14 +2033,26 @@ impl ModuleHost {
         }
 
         let Some(session) = self.replica_ctx().global_tx_manager.get_session(&tx_id) else {
+            log::info!("2PC wound: received wound for unknown transaction {tx_id} on {local_db}");
             return Ok(());
         };
         match session.state() {
             super::global_tx::GlobalTxState::Committed
             | super::global_tx::GlobalTxState::Aborted
-            | super::global_tx::GlobalTxState::Aborting => return Ok(()),
+            | super::global_tx::GlobalTxState::Aborting => {
+                log::info!(
+                    "2PC wound: transaction {tx_id} on {local_db} already in terminal/aborting state {:?}",
+                    session.state()
+                );
+                return Ok(());
+            }
             _ => {}
         }
+        log::info!(
+            "2PC wound: coordinator {} is aborting transaction {tx_id} from state {:?}",
+            local_db,
+            session.state()
+        );
         let session = self
             .replica_ctx()
             .global_tx_manager
@@ -2078,9 +2096,7 @@ impl ModuleHost {
                     );
                 }
                 Err(e) => {
-                    log::warn!(
-                        "2PC wound: transport error aborting {prepare_id} on {participant_identity}: {e}"
-                    );
+                    log::warn!("2PC wound: transport error aborting {prepare_id} on {participant_identity}: {e}");
                 }
             }
         }
@@ -2098,32 +2114,33 @@ impl ModuleHost {
         };
         manager.ensure_session(tx_id, role, tx_id.creator_db);
         if let Some(outcome) = self.check_global_tx_wounded(tx_id) {
+            log::info!("global transaction {tx_id} arrived already wounded before scheduler admission");
             self.abort_global_tx_locally(tx_id, true);
             return Err(outcome);
         }
 
-        loop {
-            match manager
-                .acquire(tx_id, |owner| async move {
-                    if owner.creator_db != local_db {
-                        self.send_wound_to_coordinator(owner).await;
-                    }
-                })
-                .await
-            {
-                super::global_tx::AcquireDisposition::Acquired(lock_guard) => {
-                    if let Some(outcome) = self.check_global_tx_wounded(tx_id) {
-                        self.abort_global_tx_locally(tx_id, true);
-                        return Err(outcome);
-                    }
-                    return Ok(GlobalTxAdmissionGuard::new(lock_guard));
+        match manager
+            .acquire(tx_id, |owner| async move {
+                if owner.creator_db != local_db {
+                    self.send_wound_to_coordinator(owner).await;
                 }
-                super::global_tx::AcquireDisposition::Cancelled => {
+            })
+            .await
+        {
+            super::global_tx::AcquireDisposition::Acquired(lock_guard) => {
+                if let Some(outcome) = self.check_global_tx_wounded(tx_id) {
+                    log::info!("global transaction {tx_id} was wounded immediately after scheduler admission");
                     self.abort_global_tx_locally(tx_id, true);
-                    return Err(self
-                        .check_global_tx_wounded(tx_id)
-                        .unwrap_or_else(|| ReducerOutcome::Wounded(Box::new(Box::from(Self::wounded_message(tx_id))))));
+                    return Err(outcome);
                 }
+                return Ok(GlobalTxAdmissionGuard::new(lock_guard));
+            }
+            super::global_tx::AcquireDisposition::Cancelled => {
+                log::info!("global transaction {tx_id} was cancelled while waiting for scheduler admission");
+                self.abort_global_tx_locally(tx_id, true);
+                return Err(self
+                    .check_global_tx_wounded(tx_id)
+                    .unwrap_or_else(|| ReducerOutcome::Wounded(Box::new(Box::from(Self::wounded_message(tx_id))))));
             }
         }
     }
@@ -2136,6 +2153,10 @@ impl ModuleHost {
     }
 
     fn abort_global_tx_locally(&self, tx_id: GlobalTxId, remove_session: bool) {
+        log::info!(
+            "global transaction {tx_id} aborting locally on {}; remove_session={remove_session}",
+            self.replica_ctx().database.database_identity
+        );
         self.replica_ctx()
             .global_tx_manager
             .mark_state(&tx_id, super::global_tx::GlobalTxState::Aborted);

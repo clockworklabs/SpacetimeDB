@@ -20,8 +20,8 @@ use axum::response::{ErrorResponse, IntoResponse};
 use axum::routing::MethodRouter;
 use axum::Extension;
 use axum_extra::TypedHeader;
-use http::HeaderMap;
 use futures::TryStreamExt;
+use http::HeaderMap;
 use http::StatusCode;
 use log::{info, warn};
 use serde::Deserialize;
@@ -421,7 +421,12 @@ pub async fn wound_2pc<S: ControlStateDelegate + NodeDelegate>(
     let tx_id = global_tx_id
         .parse::<GlobalTxId>()
         .map_err(|e| (StatusCode::BAD_REQUEST, e).into_response())?;
-    let (module, _database) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+    let (module, database) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+
+    log::info!(
+        "received 2PC wound request for transaction {tx_id} on database {}",
+        database.database_identity
+    );
 
     module.wound_global_tx(tx_id).await.map_err(|e| {
         log::warn!("2PC wound failed for {tx_id}: {e}");
