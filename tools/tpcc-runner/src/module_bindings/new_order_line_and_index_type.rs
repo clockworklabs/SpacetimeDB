@@ -8,12 +8,11 @@ use super::new_order_line_input_type::NewOrderLineInput;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct OrderItemInput {
+pub struct NewOrderLineAndIndex {
     pub line: NewOrderLineInput,
-    pub district: u8,
-    pub is_remote_warehouse: bool,
+    pub index: u8,
 }
 
-impl __sdk::InModule for OrderItemInput {
+impl __sdk::InModule for NewOrderLineAndIndex {
     type Module = super::RemoteModule;
 }

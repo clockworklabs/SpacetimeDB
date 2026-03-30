@@ -4,15 +4,16 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::new_order_line_and_index_type::NewOrderLineAndIndex;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct OrderItemOutput {
-    pub s_dist: String,
-    pub s_data: String,
-    pub updated_quantity: i32,
-    pub index: u8,
+pub struct OrderMultipleItemsInput {
+    pub lines: Vec<NewOrderLineAndIndex>,
+    pub district: u8,
+    pub terminal_warehouse: u32,
 }
 
-impl __sdk::InModule for OrderItemOutput {
+impl __sdk::InModule for OrderMultipleItemsInput {
     type Module = super::RemoteModule;
 }
