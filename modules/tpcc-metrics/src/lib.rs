@@ -9,46 +9,62 @@ pub struct State {
     pub run_end_ms: u64,
     pub measure_start_ms: u64,
     pub measure_end_ms: u64,
+    pub warehouse_count: u64,
+}
 
-    pub order_count: u64,
+#[table(accessor = txn, public)]
+pub struct Txn {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
     pub measurement_time_ms: u64,
+    pub latency_ms: u16,
 }
 
 #[reducer]
-pub fn reset(ctx: &ReducerContext, warmup_duration_ms: u64, measure_start_ms: u64, measure_end_ms: u64) {
+pub fn reset(
+    ctx: &ReducerContext,
+    warehouse_count: u64,
+    warmup_duration_ms: u64,
+    measure_start_ms: u64,
+    measure_end_ms: u64,
+) {
     for row in ctx.db.state().iter() {
-        ctx.db.state().delete(row);
+        ctx.db.state().id().delete(row.id);
+    }
+
+    for row in ctx.db.txn().iter() {
+        ctx.db.txn().id().delete(row.id);
     }
 
     ctx.db.state().insert(State {
         id: 0,
-        order_count: 0,
-        measurement_time_ms: 0,
         run_start_ms: measure_start_ms - warmup_duration_ms,
         run_end_ms: measure_end_ms + warmup_duration_ms,
         measure_start_ms,
         measure_end_ms,
+        warehouse_count,
     });
 }
 
 #[reducer]
 pub fn clear_state(ctx: &ReducerContext) {
     for row in ctx.db.state().iter() {
-        ctx.db.state().delete(row);
+        ctx.db.state().id().delete(row.id);
+    }
+
+    for row in ctx.db.txn().iter() {
+        ctx.db.txn().id().delete(row.id);
     }
 }
 
 #[reducer]
-pub fn register_completed_order(ctx: &ReducerContext) {
-    // We intentionally do not check if the current time is within the measurement window,
-    // this is the driver's reponsibility
-
+pub fn record_txn(ctx: &ReducerContext, latency_ms: u16) {
     let current_time_ms = ctx.timestamp.to_duration_since_unix_epoch().unwrap().as_millis() as u64;
 
-    let mut state = ctx.db.state().id().find(0).unwrap();
-
-    state.order_count += 1;
-    state.measurement_time_ms = current_time_ms;
-
-    ctx.db.state().id().update(state);
+    ctx.db.txn().insert(Txn {
+        id: 0,
+        measurement_time_ms: current_time_ms,
+        latency_ms,
+    });
 }

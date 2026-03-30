@@ -177,9 +177,12 @@ fn maybe_create_schedule(inner: &mut CoordinatorState) {
     let measure_end_ms = measure_start_ms + (inner.config.measure_secs * 1_000);
 
     let metrics_client = connect_metrics_module(&inner.config.connection).unwrap();
-    let _ = metrics_client
-        .reducers
-        .reset(inner.config.warmup_secs * 1000, measure_start_ms, measure_end_ms);
+    let _ = metrics_client.reducers.reset(
+        inner.config.warehouses as u64,
+        inner.config.warmup_secs * 1000,
+        measure_start_ms,
+        measure_end_ms,
+    );
 
     let schedule = RunSchedule {
         run_id: inner.config.run_id.clone(),

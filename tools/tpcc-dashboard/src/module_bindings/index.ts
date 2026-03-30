@@ -35,13 +35,14 @@ import {
 
 // Import all reducer arg schemas
 import ClearStateReducer from "./clear_state_reducer";
-import RegisterCompletedOrderReducer from "./register_completed_order_reducer";
+import RecordTxnReducer from "./record_txn_reducer";
 import ResetReducer from "./reset_reducer";
 
 // Import all procedure arg schemas
 
 // Import all table schema definitions
 import StateRow from "./state_table";
+import TxnRow from "./txn_table";
 
 /** Type-only namespace exports for generated type groups. */
 
@@ -58,12 +59,23 @@ const tablesSchema = __schema({
       { name: 'state_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, StateRow),
+  txn: __table({
+    name: 'txn',
+    indexes: [
+      { accessor: 'id', name: 'txn_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'txn_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, TxnRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
   __reducerSchema("clear_state", ClearStateReducer),
-  __reducerSchema("register_completed_order", RegisterCompletedOrderReducer),
+  __reducerSchema("record_txn", RecordTxnReducer),
   __reducerSchema("reset", ResetReducer),
 );
 

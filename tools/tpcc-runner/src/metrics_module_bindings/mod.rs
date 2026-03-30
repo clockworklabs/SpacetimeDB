@@ -7,16 +7,20 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 pub mod clear_state_reducer;
-pub mod register_completed_order_reducer;
+pub mod record_txn_reducer;
 pub mod reset_reducer;
 pub mod state_table;
 pub mod state_type;
+pub mod txn_table;
+pub mod txn_type;
 
 pub use clear_state_reducer::clear_state;
-pub use register_completed_order_reducer::register_completed_order;
+pub use record_txn_reducer::record_txn;
 pub use reset_reducer::reset;
 pub use state_table::*;
 pub use state_type::State;
+pub use txn_table::*;
+pub use txn_type::Txn;
 
 #[derive(Clone, PartialEq, Debug)]
 
@@ -27,8 +31,11 @@ pub use state_type::State;
 
 pub enum Reducer {
     ClearState,
-    RegisterCompletedOrder,
+    RecordTxn {
+        latency_ms: u16,
+    },
     Reset {
+        warehouse_count: u64,
         warmup_duration_ms: u64,
         measure_start_ms: u64,
         measure_end_ms: u64,
@@ -43,7 +50,7 @@ impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
             Reducer::ClearState => "clear_state",
-            Reducer::RegisterCompletedOrder => "register_completed_order",
+            Reducer::RecordTxn { .. } => "record_txn",
             Reducer::Reset { .. } => "reset",
             _ => unreachable!(),
         }
@@ -52,14 +59,16 @@ impl __sdk::Reducer for Reducer {
     fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {
         match self {
             Reducer::ClearState => __sats::bsatn::to_vec(&clear_state_reducer::ClearStateArgs {}),
-            Reducer::RegisterCompletedOrder => {
-                __sats::bsatn::to_vec(&register_completed_order_reducer::RegisterCompletedOrderArgs {})
-            }
+            Reducer::RecordTxn { latency_ms } => __sats::bsatn::to_vec(&record_txn_reducer::RecordTxnArgs {
+                latency_ms: latency_ms.clone(),
+            }),
             Reducer::Reset {
+                warehouse_count,
                 warmup_duration_ms,
                 measure_start_ms,
                 measure_end_ms,
             } => __sats::bsatn::to_vec(&reset_reducer::ResetArgs {
+                warehouse_count: warehouse_count.clone(),
                 warmup_duration_ms: warmup_duration_ms.clone(),
                 measure_start_ms: measure_start_ms.clone(),
                 measure_end_ms: measure_end_ms.clone(),
@@ -74,6 +83,7 @@ impl __sdk::Reducer for Reducer {
 #[doc(hidden)]
 pub struct DbUpdate {
     state: __sdk::TableUpdate<State>,
+    txn: __sdk::TableUpdate<Txn>,
 }
 
 impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
@@ -83,6 +93,7 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
         for table_update in __sdk::transaction_update_iter_table_updates(raw) {
             match &table_update.table_name[..] {
                 "state" => db_update.state.append(state_table::parse_table_update(table_update)?),
+                "txn" => db_update.txn.append(txn_table::parse_table_update(table_update)?),
 
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name("table", unknown, "DatabaseUpdate").into());
@@ -104,6 +115,9 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.state = cache
             .apply_diff_to_table::<State>("state", &self.state)
             .with_updates_by_pk(|row| &row.id);
+        diff.txn = cache
+            .apply_diff_to_table::<Txn>("txn", &self.txn)
+            .with_updates_by_pk(|row| &row.id);
 
         diff
     }
@@ -114,6 +128,7 @@ impl __sdk::DbUpdate for DbUpdate {
                 "state" => db_update
                     .state
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "txn" => db_update.txn.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into());
                 }
@@ -128,6 +143,7 @@ impl __sdk::DbUpdate for DbUpdate {
                 "state" => db_update
                     .state
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "txn" => db_update.txn.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into());
                 }
@@ -142,6 +158,7 @@ impl __sdk::DbUpdate for DbUpdate {
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
     state: __sdk::TableAppliedDiff<'r, State>,
+    txn: __sdk::TableAppliedDiff<'r, Txn>,
     __unused: std::marker::PhantomData<&'r ()>,
 }
 
@@ -152,6 +169,7 @@ impl __sdk::InModule for AppliedDiff<'_> {
 impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
     fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {
         callbacks.invoke_table_row_callbacks::<State>("state", &self.state, event);
+        callbacks.invoke_table_row_callbacks::<Txn>("txn", &self.txn, event);
     }
 }
 
@@ -810,6 +828,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         state_table::register_table(client_cache);
+        txn_table::register_table(client_cache);
     }
-    const ALL_TABLE_NAMES: &'static [&'static str] = &["state"];
+    const ALL_TABLE_NAMES: &'static [&'static str] = &["state", "txn"];
 }

@@ -18,6 +18,10 @@ charset = utf-8
 trim_trailing_whitespace = true
 max_line_length = 120
 
+[*.{html,css}]
+indent_style = space
+indent_size = 2
+
 [*.json]
 indent_style = space
 indent_size = 2
