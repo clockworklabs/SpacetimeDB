@@ -492,11 +492,14 @@ pub fn stock_level(
 ) -> Result<StockLevelResult, String> {
     let _timer = LogStopwatch::new("stock_level");
 
+    let _timer_district = LogStopwatch::new("stock_level_district");
     let district = find_district(ctx, w_id, d_id)?;
+    _timer_district.end();
     let start_o_id = district.d_next_o_id.saturating_sub(20);
     let end_o_id = district.d_next_o_id;
 
     let mut item_ids = BTreeSet::new();
+    let _timer_filter = LogStopwatch::new("stock_level_filter");
     for line in ctx
         .db
         .order_line()
@@ -505,14 +508,17 @@ pub fn stock_level(
     {
         item_ids.insert(line.ol_i_id);
     }
+    _timer_filter.end();
 
     let mut low_stock_count = 0u32;
+    let _timer_count= LogStopwatch::new("stock_level_count");
     for item_id in item_ids {
         let stock = find_stock(ctx, w_id, item_id)?;
         if stock.s_quantity < threshold {
             low_stock_count += 1;
         }
     }
+    _timer_count.end();
 
     Ok(StockLevelResult {
         warehouse_id: w_id,
