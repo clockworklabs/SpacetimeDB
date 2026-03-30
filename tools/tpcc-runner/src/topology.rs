@@ -7,7 +7,7 @@ use crate::config::{ConnectionConfig, DriverConfig, LoadConfig};
 #[derive(Clone, Debug)]
 pub struct DatabaseTopology {
     database_prefix: String,
-    warehouses_per_database: u16,
+    warehouses_per_database: u32,
     identities: Vec<Identity>,
 }
 
@@ -34,37 +34,40 @@ impl DatabaseTopology {
         })
     }
 
-    pub fn database_name(&self, database_number: u16) -> String {
+    pub fn database_name(&self, database_number: u32) -> String {
         format!("{}-{}", self.database_prefix, database_number)
     }
 
-    pub fn identity_for_database_number(&self, database_number: u16) -> Result<Identity> {
-        self.identities.get(database_number as usize).copied().ok_or_else(|| {
-            anyhow::anyhow!(
-                "missing database identity for database {}",
-                self.database_name(database_number)
-            )
-        })
+    pub fn identity_for_database_number(&self, database_number: u32) -> Result<Identity> {
+        self.identities
+            .get(usize::try_from(database_number).expect("u32 fits usize"))
+            .copied()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "missing database identity for database {}",
+                    self.database_name(database_number)
+                )
+            })
     }
 
-    pub fn database_number_for_warehouse(&self, warehouse_id: u16) -> Result<u16> {
+    pub fn database_number_for_warehouse(&self, warehouse_id: u32) -> Result<u32> {
         if warehouse_id == 0 {
             bail!("warehouse id must be positive");
         }
         Ok((warehouse_id - 1) / self.warehouses_per_database)
     }
 
-    pub fn identity_for_warehouse(&self, warehouse_id: u16) -> Result<Identity> {
+    pub fn identity_for_warehouse(&self, warehouse_id: u32) -> Result<Identity> {
         let database_number = self.database_number_for_warehouse(warehouse_id)?;
         self.identity_for_database_number(database_number)
     }
 }
 
-pub fn required_database_count(warehouse_count: u16, warehouses_per_database: u16) -> u16 {
+pub fn required_database_count(warehouse_count: u32, warehouses_per_database: u32) -> u32 {
     warehouse_count.div_ceil(warehouses_per_database)
 }
 
-pub async fn lookup_database_identities(connection: &ConnectionConfig, num_databases: u16) -> Result<Vec<Identity>> {
+pub async fn lookup_database_identities(connection: &ConnectionConfig, num_databases: u32) -> Result<Vec<Identity>> {
     log::info!(
         "Looking up identities for {num_databases} at {} / {}-*",
         connection.uri,
@@ -72,7 +75,7 @@ pub async fn lookup_database_identities(connection: &ConnectionConfig, num_datab
     );
     let result = async {
         let client = Client::new();
-        let mut identities = Vec::with_capacity(num_databases as usize);
+        let mut identities = Vec::with_capacity(usize::try_from(num_databases).expect("u32 fits usize"));
         for database_number in 0..num_databases {
             let body = client
                 .get(format!(
@@ -112,7 +115,7 @@ pub async fn lookup_database_identities(connection: &ConnectionConfig, num_datab
     result
 }
 
-fn ensure_warehouses_per_database(warehouses_per_database: u16) -> Result<()> {
+fn ensure_warehouses_per_database(warehouses_per_database: u32) -> Result<()> {
     if warehouses_per_database == 0 {
         bail!("warehouses_per_database must be positive");
     }

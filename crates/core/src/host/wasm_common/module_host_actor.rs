@@ -1218,21 +1218,31 @@ impl InstanceCommon {
         if !prepared_participants.is_empty() {
             let committed = matches!(event.status, EventStatus::Committed(_));
             let stdb = self.info.subscriptions.relational_db().clone();
-
-            let replica_ctx = inst.replica_ctx().clone();
             let handle = tokio::runtime::Handle::current();
-            block_on_scoped(&handle, async {
-                // Wait for A's coordinator log (committed atomically with the tx) to be
-                // durable before sending COMMIT to B.  This guarantees that if A crashes
-                // after sending COMMIT, recovery can retransmit from the durable log.
-                if committed && let Some(mut durable_offset) = stdb.durable_tx_offset()
-                    && let Ok(offset) = commit_tx_offset.await {
-                        let _ = durable_offset.wait_for(offset).await;
-                    }
 
+            // Wait for A's coordinator log (committed atomically with the tx) to be
+            // durable before sending COMMIT to B.  This guarantees that if A crashes
+            // after sending COMMIT, recovery can retransmit from the durable log.
+            // Only needed for COMMIT; ABORT carries no durability requirement.
+            if committed {
+                if let Some(mut durable_offset) = stdb.durable_tx_offset() {
+                    block_on_scoped(&handle, async move {
+                        if let Ok(offset) = commit_tx_offset.await {
+                            let _ = durable_offset.wait_for(offset).await;
+                        }
+                    });
+                }
+            }
+
+            // Fire-and-forget: send COMMIT/ABORT to each participant.
+            // The coordinator log (written atomically with A's tx above) is the
+            // durability guarantee. If a send fails, recovery retransmits.
+            let replica_ctx = inst.replica_ctx().clone();
+            handle.spawn(async move {
                 let client = replica_ctx.call_reducer_client.clone();
                 let router = replica_ctx.call_reducer_router.clone();
                 let auth_token = replica_ctx.call_reducer_auth_token.clone();
+
                 for (db_identity, prepare_id) in &prepared_participants {
                     let action = if committed { "commit" } else { "abort" };
                     let base_url = match router.resolve_base_url(*db_identity).await {
@@ -1242,6 +1252,7 @@ impl InstanceCommon {
                             continue;
                         }
                     };
+
                     let url = format!(
                         "{}/v1/database/{}/2pc/{}/{}",
                         base_url,
@@ -1253,19 +1264,19 @@ impl InstanceCommon {
                     if let Some(ref token) = auth_token {
                         req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
                     }
+
                     match req.send().await {
                         Ok(resp) if resp.status().is_success() => {
                             log::info!("2PC {action}: {prepare_id} on {db_identity}");
-                            // B acknowledged COMMIT — remove coordinator log entry
-                            // (best-effort; recovery will clean up on restart if missed).
-                            if committed
-                                && let Err(e) = stdb
-                                    .with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
+                            if committed {
+                                if let Err(e) =
+                                    stdb.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
                                         Ok(del_tx.delete_st_2pc_coordinator_log(prepare_id)?)
                                     })
                                 {
                                     log::warn!("delete_st_2pc_coordinator_log failed for {prepare_id}: {e}");
                                 }
+                            }
                         }
                         Ok(resp) => {
                             log::error!(

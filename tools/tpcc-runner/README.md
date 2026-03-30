@@ -2,9 +2,10 @@
 
 `tpcc-runner` is the Rust-side harness for the SpacetimeDB TPC-C module in `modules/tpcc`.
 
-It supports three subcommands:
+It supports four subcommands:
 
-- `load`: populate the module with the initial TPC-C dataset
+- `load`: configure and start server-side generation of the initial TPC-C dataset
+- `load-client`: use the legacy client-push loader that sends row batches over the SDK connection
 - `driver`: run one benchmark driver with one logical terminal per SDK connection
 - `coordinator`: synchronize multiple remote drivers and aggregate their summaries
 
@@ -55,6 +56,18 @@ cargo build --release -p spacetimedb-cli -p spacetimedb-standalone -p tpcc-runne
 cargo run --release -p spacetimedb-cli -- start --listen-addr 127.0.0.1:3000
 ```
 
+For standalone multi-database runs, it is usually worth setting
+`--dedicated-database-cores` to the number of databases so each database gets
+its own dedicated database executor core. The current standalone default is
+`13`, so override it when your database count differs. For example, with `12`
+databases:
+
+```bash
+cargo run --release -p spacetimedb-cli -- start \
+  --listen-addr 127.0.0.1:3000 \
+  --dedicated-database-cores 12
+```
+
 3. Publish the TPC-C module to one or more databases. For a single database:
 
 ```bash
@@ -84,7 +97,11 @@ cargo run -p spacetimedb-cli -- publish \
   tpcc-1
 ```
 
-4. Load data. For one warehouse in one database:
+4. Load data. The loader configures each database once, starts a server-side
+chunked load, and waits for the module's public load-state row to reach
+`Complete`.
+
+For one warehouse in one database:
 
 ```bash
 cargo run --release -p tpcc-runner -- load \
@@ -106,9 +123,10 @@ cargo run --release -p tpcc-runner -- load \
   --reset true
 ```
 
-To load databases in parallel, add `--load-parallelism <N>`. The loader runs
-databases concurrently but still loads each individual database in the normal
-table order. If you omit the flag, it defaults to `min(num_databases, 8)`.
+To load databases in parallel, add `--load-parallelism <N>`. The loader starts
+that many databases concurrently and each database then loads itself
+server-side in chunks. If you omit the flag, it defaults to
+`min(num_databases, 8)`.
 
 For example, to load those two local databases in parallel:
 
@@ -119,6 +137,45 @@ cargo run --release -p tpcc-runner -- load \
   --num-databases 2 \
   --warehouses-per-database 1 \
   --load-parallelism 2 \
+  --reset true
+```
+
+`--batch-size` still matters for `load`, but it now controls the server-side
+chunk size for phases like items, stock, and orders instead of the number of
+rows pushed over the websocket by the client. The default is `500`.
+
+If a server-side load fails, the current `load` command does not resume it
+automatically. Resume each affected database manually with:
+
+```bash
+cargo run -p spacetimedb-cli -- call -s http://127.0.0.1:3000 tpcc-0 resume_tpcc_load
+```
+
+Repeat that for each database, for example:
+
+```bash
+cargo run -p spacetimedb-cli -- call -s http://127.0.0.1:3000 tpcc-0 resume_tpcc_load
+cargo run -p spacetimedb-cli -- call -s http://127.0.0.1:3000 tpcc-1 resume_tpcc_load
+```
+
+To discard partial progress for a database and start that shard over from the
+saved load configuration, call:
+
+```bash
+cargo run -p spacetimedb-cli -- call -s http://127.0.0.1:3000 tpcc-0 restart_tpcc_load
+```
+
+If you need the old behavior for comparison or debugging, `load-client` keeps
+the previous client-side row-push path and uses the same `--num-databases`,
+`--warehouses-per-database`, `--load-parallelism`, `--batch-size`, and
+`--reset` flags:
+
+```bash
+cargo run --release -p tpcc-runner -- load-client \
+  --uri http://127.0.0.1:3000 \
+  --database-prefix tpcc \
+  --num-databases 1 \
+  --warehouses-per-database 1 \
   --reset true
 ```
 

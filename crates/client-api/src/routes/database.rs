@@ -148,7 +148,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<GlobalTxId>().ok());
 
-    let args = parse_call_args(content_type, body)?;
+    let (args, want_bsatn) = parse_call_args(content_type, body)?;
 
     // HTTP callers always need a connection ID to provide to connect/disconnect,
     // so generate one.
@@ -202,8 +202,14 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 
     match result {
         Ok(CallResult::Reducer(result)) => {
-            let (status, body) =
-                reducer_outcome_response(&module, &owner_identity, &reducer, result.outcome, reducer_return_value)?;
+            let (status, body) = reducer_outcome_response(
+                &module,
+                &owner_identity,
+                &reducer,
+                result.outcome,
+                reducer_return_value,
+                want_bsatn,
+            )?;
             Ok((
                 status,
                 TypedHeader(SpacetimeEnergyUsed(result.energy_used)),
@@ -216,7 +222,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
             // Procedures don't assign a special meaning to error returns, unlike reducers,
             // as there's no transaction for them to automatically abort.
             // Instead, we just pass on their return value with the OK status so long as we successfully invoked the procedure.
-            let (status, body) = procedure_outcome_response(result.return_val);
+            let (status, body) = procedure_outcome_response(result.return_val, want_bsatn);
             Ok((
                 status,
                 TypedHeader(SpacetimeExecutionDurationMicros(result.execution_duration)),
@@ -232,13 +238,15 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 ///
 /// - `application/json` → [`FunctionArgs::Json`] (UTF-8 required).
 /// - `application/octet-stream` → [`FunctionArgs::Bsatn`] (raw BSATN bytes).
-fn parse_call_args(content_type: headers::ContentType, body: Bytes) -> axum::response::Result<FunctionArgs> {
+///
+/// Also returns `want_bsatn`, a bool, which is true if and only if the response should be BSATN-encoded.
+fn parse_call_args(content_type: headers::ContentType, body: Bytes) -> axum::response::Result<(FunctionArgs, bool)> {
     if content_type == headers::ContentType::json() {
         let s = bytestring::ByteString::try_from(body)
             .map_err(|_| (StatusCode::BAD_REQUEST, "request body is not valid UTF-8").into_response())?;
-        Ok(FunctionArgs::Json(s))
+        Ok((FunctionArgs::Json(s), false))
     } else if content_type == headers::ContentType::octet_stream() {
-        Ok(FunctionArgs::Bsatn(body))
+        Ok((FunctionArgs::Bsatn(body), true))
     } else {
         Err((
             StatusCode::BAD_REQUEST,
@@ -258,12 +266,12 @@ fn parse_call_args(content_type: headers::ContentType, body: Bytes) -> axum::res
 pub async fn prepare<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
     Extension(auth): Extension<SpacetimeAuth>,
-    headers: HeaderMap,
     Path(CallParams {
         name_or_identity,
         reducer,
     }): Path<CallParams>,
     TypedHeader(content_type): TypedHeader<headers::ContentType>,
+    headers: axum::http::HeaderMap,
     body: Bytes,
 ) -> axum::response::Result<impl IntoResponse> {
     let args = parse_call_args(content_type, body)?;
@@ -273,19 +281,27 @@ pub async fn prepare<S: ControlStateDelegate + NodeDelegate>(
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<GlobalTxId>().ok());
 
+    // The coordinator sends its actual database identity in `X-Coordinator-Identity`.
+    // Without this, `anon_auth_middleware` gives the HTTP caller an ephemeral random
+    // identity, which gets stored in `st_2pc_state` and breaks recovery polling.
+    let coordinator_identity = headers
+        .get("X-Coordinator-Identity")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| spacetimedb_lib::Identity::from_hex(s).ok());
+
     let (module, Database { owner_identity, .. }) = find_module_and_database(&worker_ctx, name_or_identity).await?;
 
     // 2PC prepare is a server-to-server call; no client lifecycle management needed.
     // call_identity_connected/disconnected submit jobs to the module's executor, which
     // will be blocked holding the 2PC write lock after prepare_reducer returns — deadlock.
     let result = module
-        .prepare_reducer(caller_identity, None, tx_id, &reducer, args)
+        .prepare_reducer(caller_identity, None, tx_id, &reducer, args.0, coordinator_identity)
         .await;
 
     match result {
         Ok((prepare_id, rcr, return_value)) => {
             let (status, body) =
-                reducer_outcome_response(&module, &owner_identity, &reducer, rcr.outcome, return_value)?;
+                reducer_outcome_response(&module, &owner_identity, &reducer, rcr.outcome, return_value, args.1)?;
             let mut response = (
                 status,
                 TypedHeader(SpacetimeEnergyUsed(rcr.energy_used)),
@@ -436,12 +452,18 @@ pub async fn wound_2pc<S: ControlStateDelegate + NodeDelegate>(
     Ok(StatusCode::OK)
 }
 
+/// Encode a reducer return value as an HTTP response.
+///
+/// If the outcome is an error, return a raw string with `application/text`. Ignore `want_bsatn` in this case.
+/// If the outcome is successful, and `want_bsatn`, send BSATN with `application/octet-stream`.
+/// If the outcome is successful, and not `want_bsatn`, send JSON with `application/json`.
 fn reducer_outcome_response(
     module: &ModuleHost,
     owner_identity: &Identity,
     reducer: &str,
     outcome: ReducerOutcome,
     reducer_return_value: Option<Bytes>,
+    want_bsatn: bool,
 ) -> axum::response::Result<(StatusCode, axum::response::Response)> {
     match outcome {
         ReducerOutcome::Committed => {
@@ -453,18 +475,25 @@ fn reducer_outcome_response(
             };
 
             if let Some(bytes) = reducer_return_value.filter(|value| !value.is_empty()) {
-                let seed = sats::WithTypespace::new(module.info.module_def.typespace(), &return_value);
-                let mut reader = &bytes[..];
-                let value: AlgebraicValue = seed.deserialize(bsatn::Deserializer::new(&mut reader)).map_err(|err| {
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        format!("Failed to decode reducer return value: {err}"),
-                    )
-                })?;
-                Ok((
-                    StatusCode::OK,
-                    axum::Json(sats::serde::SerdeWrapper(value)).into_response(),
-                ))
+                if want_bsatn {
+                    Ok((StatusCode::OK, bytes.into_response()))
+                } else {
+                    let seed = sats::WithTypespace::new(module.info.module_def.typespace(), &return_value);
+                    let mut reader = &bytes[..];
+                    let value: AlgebraicValue =
+                        seed.deserialize(bsatn::Deserializer::new(&mut reader)).map_err(|err| {
+                            (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                format!("Failed to decode reducer return value: {err}"),
+                            )
+                        })?;
+                    Ok((
+                        StatusCode::OK,
+                        axum::Json(sats::serde::SerdeWrapper(value)).into_response(),
+                    ))
+                }
+            } else if want_bsatn {
+                Ok((StatusCode::OK, Vec::<u8>::new().into_response()))
             } else {
                 Ok((StatusCode::OK, "".into_response()))
             }
@@ -550,10 +579,20 @@ pub enum DBCallErr {
     InstanceNotScheduled,
 }
 
-fn procedure_outcome_response(return_val: AlgebraicValue) -> (StatusCode, axum::response::Response) {
+/// Encode a procedure's result as an HTTP response.
+///
+/// If `want_bsatn`, send BSATN bytes as `application/octet-stream`.
+/// If not `want_bsatn`, send JSON as `application/json`.
+fn procedure_outcome_response(return_val: AlgebraicValue, want_bsatn: bool) -> (StatusCode, axum::response::Response) {
     (
         StatusCode::OK,
-        axum::Json(sats::serde::SerdeWrapper(return_val)).into_response(),
+        if want_bsatn {
+            bsatn::to_vec(&return_val)
+                .expect("BSATN serializing an AlgebraicValue should be infallible")
+                .into_response()
+        } else {
+            axum::Json(sats::serde::SerdeWrapper(return_val)).into_response()
+        },
     )
 }
 

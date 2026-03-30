@@ -8,7 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct NewOrderLineInput {
     pub item_id: u32,
-    pub supply_w_id: u16,
+    pub supply_w_id: u32,
     pub quantity: u32,
 }
 

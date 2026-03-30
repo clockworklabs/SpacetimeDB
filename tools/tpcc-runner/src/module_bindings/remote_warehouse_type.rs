@@ -7,7 +7,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct RemoteWarehouse {
-    pub w_id: u16,
+    pub w_id: u32,
     pub remote_database_home: __sdk::Identity,
 }
 
@@ -19,7 +19,7 @@ impl __sdk::InModule for RemoteWarehouse {
 ///
 /// Provides typed access to columns for query building.
 pub struct RemoteWarehouseCols {
-    pub w_id: __sdk::__query_builder::Col<RemoteWarehouse, u16>,
+    pub w_id: __sdk::__query_builder::Col<RemoteWarehouse, u32>,
     pub remote_database_home: __sdk::__query_builder::Col<RemoteWarehouse, __sdk::Identity>,
 }
 
@@ -37,7 +37,7 @@ impl __sdk::__query_builder::HasCols for RemoteWarehouse {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct RemoteWarehouseIxCols {
-    pub w_id: __sdk::__query_builder::IxCol<RemoteWarehouse, u16>,
+    pub w_id: __sdk::__query_builder::IxCol<RemoteWarehouse, u32>,
 }
 
 impl __sdk::__query_builder::HasIxCols for RemoteWarehouse {

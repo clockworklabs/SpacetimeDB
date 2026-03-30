@@ -9,9 +9,9 @@ use super::customer_selector_type::CustomerSelector;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct PaymentRequest {
-    pub terminal_warehouse_id: u16,
+    pub terminal_warehouse_id: u32,
     pub terminal_district_id: u8,
-    pub customer_warehouse_id: u16,
+    pub customer_warehouse_id: u32,
     pub customer_district_id: u8,
     pub customer_selector: CustomerSelector,
     pub payment_amount_cents: i64,

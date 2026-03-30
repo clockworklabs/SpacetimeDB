@@ -7,7 +7,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct StockLevelResult {
-    pub warehouse_id: u16,
+    pub warehouse_id: u32,
     pub district_id: u8,
     pub threshold: i32,
     pub low_stock_count: u32,

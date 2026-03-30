@@ -1,7 +1,5 @@
-use remote::reset_remote_warehouses;
 use spacetimedb::{
-    log_stopwatch::LogStopwatch, procedure, reducer, table, ProcedureContext, ReducerContext, ScheduleAt,
-    SpacetimeType, Table, Timestamp,
+    log_stopwatch::LogStopwatch, reducer, table, ReducerContext, ScheduleAt, SpacetimeType, Table, Timestamp,
 };
 use std::collections::BTreeSet;
 
@@ -13,6 +11,7 @@ macro_rules! ensure {
     };
 }
 
+mod load;
 mod new_order;
 mod payment;
 mod remote;
@@ -29,12 +28,12 @@ pub enum CustomerSelector {
     ByLastName(String),
 }
 
-type WarehouseId = u16;
+type WarehouseId = u32;
 
 #[derive(Clone, Debug, SpacetimeType)]
 pub struct OrderStatusLineResult {
     pub item_id: u32,
-    pub supply_w_id: WarehouseId,
+    pub supply_w_id: u32,
     pub quantity: u32,
     pub amount_cents: i64,
     pub delivery_d: Option<Timestamp>,
@@ -55,7 +54,7 @@ pub struct OrderStatusResult {
 
 #[derive(Clone, Debug, SpacetimeType)]
 pub struct StockLevelResult {
-    pub warehouse_id: WarehouseId,
+    pub warehouse_id: u32,
     pub district_id: u8,
     pub threshold: i32,
     pub low_stock_count: u32,
@@ -65,7 +64,7 @@ pub struct StockLevelResult {
 pub struct DeliveryQueueAck {
     pub scheduled_id: u64,
     pub queued_at: Timestamp,
-    pub warehouse_id: WarehouseId,
+    pub warehouse_id: u32,
     pub carrier_id: u8,
 }
 
@@ -83,7 +82,7 @@ pub struct DeliveryCompletionView {
     pub driver_id: String,
     pub terminal_id: u32,
     pub request_id: u64,
-    pub warehouse_id: WarehouseId,
+    pub warehouse_id: u32,
     pub carrier_id: u8,
     pub queued_at: Timestamp,
     pub completed_at: Timestamp,
@@ -95,7 +94,7 @@ pub struct DeliveryCompletionView {
 #[derive(Clone, Debug)]
 pub struct Warehouse {
     #[primary_key]
-    pub w_id: WarehouseId,
+    pub w_id: u32,
     pub w_name: String,
     pub w_street_1: String,
     pub w_street_2: String,
@@ -106,15 +105,12 @@ pub struct Warehouse {
     pub w_ytd_cents: i64,
 }
 
-#[table(
-    accessor = district,
-    index(accessor = by_w_d, btree(columns = [d_w_id, d_id]))
-)]
+#[table(accessor = district)]
 #[derive(Clone, Debug)]
 pub struct District {
     #[primary_key]
     pub district_key: u32,
-    pub d_w_id: WarehouseId,
+    pub d_w_id: u32,
     pub d_id: u8,
     pub d_name: String,
     pub d_street_1: String,
@@ -129,14 +125,13 @@ pub struct District {
 
 #[table(
     accessor = customer,
-    index(accessor = by_w_d_c_id, btree(columns = [c_w_id, c_d_id, c_id])),
     index(accessor = by_w_d_last_first_id, btree(columns = [c_w_id, c_d_id, c_last, c_first, c_id]))
 )]
 #[derive(Clone, Debug)]
 pub struct Customer {
     #[primary_key]
     pub customer_key: u64,
-    pub c_w_id: WarehouseId,
+    pub c_w_id: u32,
     pub c_d_id: u8,
     pub c_id: u32,
     pub c_first: String,
@@ -167,9 +162,9 @@ pub struct History {
     pub history_id: u64,
     pub h_c_id: u32,
     pub h_c_d_id: u8,
-    pub h_c_w_id: WarehouseId,
+    pub h_c_w_id: u32,
     pub h_d_id: u8,
-    pub h_w_id: u16,
+    pub h_w_id: u32,
     pub h_date: Timestamp,
     pub h_amount_cents: i64,
     pub h_data: String,
@@ -186,15 +181,12 @@ pub struct Item {
     pub i_data: String,
 }
 
-#[table(
-    accessor = stock,
-    index(accessor = by_w_i, btree(columns = [s_w_id, s_i_id]))
-)]
+#[table(accessor = stock)]
 #[derive(Clone, Debug)]
 pub struct Stock {
     #[primary_key]
     pub stock_key: u64,
-    pub s_w_id: WarehouseId,
+    pub s_w_id: u32,
     pub s_i_id: u32,
     pub s_quantity: i32,
     pub s_dist_01: String,
@@ -222,7 +214,7 @@ pub struct Stock {
 pub struct OOrder {
     #[primary_key]
     pub order_key: u64,
-    pub o_w_id: WarehouseId,
+    pub o_w_id: u32,
     pub o_d_id: u8,
     pub o_id: u32,
     pub o_c_id: u32,
@@ -240,7 +232,7 @@ pub struct OOrder {
 pub struct NewOrder {
     #[primary_key]
     pub new_order_key: u64,
-    pub no_w_id: WarehouseId,
+    pub no_w_id: u32,
     pub no_d_id: u8,
     pub no_o_id: u32,
 }
@@ -253,12 +245,12 @@ pub struct NewOrder {
 pub struct OrderLine {
     #[primary_key]
     pub order_line_key: u64,
-    pub ol_w_id: WarehouseId,
+    pub ol_w_id: u32,
     pub ol_d_id: u8,
     pub ol_o_id: u32,
     pub ol_number: u8,
     pub ol_i_id: u32,
-    pub ol_supply_w_id: u16,
+    pub ol_supply_w_id: u32,
     pub ol_delivery_d: Option<Timestamp>,
     pub ol_quantity: u32,
     pub ol_amount_cents: i64,
@@ -281,7 +273,7 @@ pub struct DeliveryJob {
     pub terminal_id: u32,
     pub request_id: u64,
     pub queued_at: Timestamp,
-    pub w_id: WarehouseId,
+    pub w_id: u32,
     pub carrier_id: u8,
     pub next_d_id: u8,
     pub skipped_districts: u8,
@@ -301,7 +293,7 @@ pub struct DeliveryCompletion {
     pub driver_id: String,
     pub terminal_id: u32,
     pub request_id: u64,
-    pub warehouse_id: WarehouseId,
+    pub warehouse_id: u32,
     pub carrier_id: u8,
     pub queued_at: Timestamp,
     pub completed_at: Timestamp,
@@ -311,6 +303,12 @@ pub struct DeliveryCompletion {
 
 #[reducer]
 pub fn reset_tpcc(ctx: &ReducerContext) -> Result<(), String> {
+    clear_tpcc_business_tables(ctx);
+    load::clear_load_metadata(ctx);
+    Ok(())
+}
+
+pub(crate) fn clear_tpcc_business_tables(ctx: &ReducerContext) {
     for row in ctx.db.delivery_job().iter() {
         ctx.db.delivery_job().delete(row);
     }
@@ -344,8 +342,6 @@ pub fn reset_tpcc(ctx: &ReducerContext) -> Result<(), String> {
     for row in ctx.db.warehouse().iter() {
         ctx.db.warehouse().delete(row);
     }
-    reset_remote_warehouses(ctx);
-    Ok(())
 }
 
 #[reducer]
@@ -435,149 +431,173 @@ pub fn load_order_lines(ctx: &ReducerContext, rows: Vec<OrderLine>) -> Result<()
     Ok(())
 }
 
-#[procedure]
+#[reducer]
 pub fn order_status(
-    ctx: &mut ProcedureContext,
-    w_id: u16,
+    ctx: &ReducerContext,
+    w_id: u32,
     d_id: u8,
     customer: CustomerSelector,
 ) -> Result<OrderStatusResult, String> {
-    let start_time = ctx.timestamp;
-    log::debug!("Starting `order_status` at {start_time:?}");
-    let res = ctx.try_with_tx(|tx| order_status_tx(tx, w_id, d_id, &customer));
+    let _timer = LogStopwatch::new("order_status");
 
-    match &res {
-        Ok(_) => log::debug!("Succesfully finished `order_status` at {start_time:?}"),
-        Err(e) => log::error!("Failed `order_status` at {start_time:?}: {e}"),
+    let customer = resolve_customer(ctx, w_id, d_id, &customer)?;
+
+    let mut latest_order: Option<OOrder> = None;
+    for row in ctx
+        .db
+        .oorder()
+        .by_w_d_c_o_id()
+        .filter((w_id, d_id, customer.c_id, 0u32..))
+    {
+        latest_order = Some(row);
     }
-    res
+
+    let mut lines = Vec::new();
+    if let Some(order) = &latest_order {
+        for line in ctx
+            .db
+            .order_line()
+            .by_w_d_o_number()
+            .filter((w_id, d_id, order.o_id, 0u8..))
+        {
+            lines.push(OrderStatusLineResult {
+                item_id: line.ol_i_id,
+                supply_w_id: line.ol_supply_w_id,
+                quantity: line.ol_quantity,
+                amount_cents: line.ol_amount_cents,
+                delivery_d: line.ol_delivery_d,
+            });
+        }
+    }
+
+    Ok(OrderStatusResult {
+        customer_id: customer.c_id,
+        customer_first: customer.c_first,
+        customer_middle: customer.c_middle,
+        customer_last: customer.c_last,
+        customer_balance_cents: customer.c_balance_cents,
+        order_id: latest_order.as_ref().map(|row| row.o_id),
+        order_entry_d: latest_order.as_ref().map(|row| row.o_entry_d),
+        carrier_id: latest_order.as_ref().and_then(|row| row.o_carrier_id),
+        lines,
+    })
 }
 
-#[procedure]
+#[reducer]
 pub fn stock_level(
-    ctx: &mut ProcedureContext,
-    w_id: u16,
+    ctx: &ReducerContext,
+    w_id: u32,
     d_id: u8,
     threshold: i32,
 ) -> Result<StockLevelResult, String> {
-    let start_time = ctx.timestamp;
-    log::debug!("Starting `stock_level` at {start_time:?}");
-    let res = ctx.try_with_tx(|tx| stock_level_tx(tx, w_id, d_id, threshold));
+    let _timer = LogStopwatch::new("stock_level");
 
-    match &res {
-        Ok(_) => log::debug!("Succesfully finished `stock_level` at {start_time:?}"),
-        Err(e) => log::error!("Failed `stock_level` at {start_time:?}: {e}"),
+    let district = find_district(ctx, w_id, d_id)?;
+    let start_o_id = district.d_next_o_id.saturating_sub(20);
+    let end_o_id = district.d_next_o_id;
+
+    let mut item_ids = BTreeSet::new();
+    for line in ctx
+        .db
+        .order_line()
+        .by_w_d_o_number()
+        .filter((w_id, d_id, start_o_id..end_o_id))
+    {
+        item_ids.insert(line.ol_i_id);
     }
-    res
+
+    let mut low_stock_count = 0u32;
+    for item_id in item_ids {
+        let stock = find_stock(ctx, w_id, item_id)?;
+        if stock.s_quantity < threshold {
+            low_stock_count += 1;
+        }
+    }
+
+    Ok(StockLevelResult {
+        warehouse_id: w_id,
+        district_id: d_id,
+        threshold,
+        low_stock_count,
+    })
 }
 
-#[procedure]
+#[reducer]
 pub fn queue_delivery(
-    ctx: &mut ProcedureContext,
+    ctx: &ReducerContext,
     run_id: String,
     driver_id: String,
     terminal_id: u32,
     request_id: u64,
-    w_id: u16,
+    w_id: u32,
     carrier_id: u8,
 ) -> Result<DeliveryQueueAck, String> {
+    let _timer = LogStopwatch::new("queue_delivery");
+
     let queued_at = ctx.timestamp;
-    log::debug!("Starting `queue_delivery` at {queued_at:?}");
-    let res = ctx.try_with_tx(|tx| {
-        ensure_warehouse_exists(tx, w_id)?;
-        ensure!((1..=10).contains(&carrier_id), "carrier_id must be in the range 1..=10");
 
-        let job = tx.db.delivery_job().insert(DeliveryJob {
-            scheduled_id: 0,
-            scheduled_at: queued_at.into(),
-            run_id: run_id.clone(),
-            driver_id: driver_id.clone(),
-            terminal_id,
-            request_id,
-            queued_at,
-            w_id,
-            carrier_id,
-            next_d_id: 1,
-            skipped_districts: 0,
-            processed_districts: 0,
-        });
+    ensure_warehouse_exists(ctx, w_id)?;
+    ensure!((1..=10).contains(&carrier_id), "carrier_id must be in the range 1..=10");
 
-        Ok(DeliveryQueueAck {
-            scheduled_id: job.scheduled_id,
-            queued_at,
-            warehouse_id: w_id,
-            carrier_id,
-        })
+    let job = ctx.db.delivery_job().insert(DeliveryJob {
+        scheduled_id: 0,
+        scheduled_at: queued_at.into(),
+        run_id: run_id.clone(),
+        driver_id: driver_id.clone(),
+        terminal_id,
+        request_id,
+        queued_at,
+        w_id,
+        carrier_id,
+        next_d_id: 1,
+        skipped_districts: 0,
+        processed_districts: 0,
     });
 
-    match &res {
-        Ok(_) => log::debug!("Succesfully finished `queue_delivery` at {queued_at:?}"),
-        Err(e) => log::error!("Failed `queue_delivery` at {queued_at:?}: {e}"),
-    }
-    res
+    Ok(DeliveryQueueAck {
+        scheduled_id: job.scheduled_id,
+        queued_at,
+        warehouse_id: w_id,
+        carrier_id,
+    })
 }
 
-#[procedure]
-pub fn delivery_progress(ctx: &mut ProcedureContext, run_id: String) -> Result<DeliveryProgress, String> {
-    let start_time = ctx.timestamp;
-    log::debug!("Starting `delivery_progress` at {start_time:?}");
-    let res = ctx.try_with_tx(|tx| {
-        let pending_jobs = tx.db.delivery_job().by_run_id().filter(&run_id).count() as u64;
-        let completed_jobs = tx
-            .db
-            .delivery_completion()
-            .by_run_completion()
-            .filter((&run_id, 0u64..))
-            .count() as u64;
-        Ok(DeliveryProgress {
-            run_id: run_id.clone(),
-            pending_jobs,
-            completed_jobs,
-        })
-    });
-
-    match &res {
-        Ok(_) => {
-            log::debug!("Successfully finished `delivery_progress` at {start_time:?}");
-        }
-        Err(e) => {
-            log::error!("Failed `delivery_progress` at {start_time:?}: {e}");
-        }
-    }
-    res
+#[reducer]
+pub fn delivery_progress(ctx: &ReducerContext, run_id: String) -> Result<DeliveryProgress, String> {
+    let _timer = LogStopwatch::new("delivery_progress");
+    let pending_jobs = ctx.db.delivery_job().by_run_id().filter(&run_id).count() as u64;
+    let completed_jobs = ctx
+        .db
+        .delivery_completion()
+        .by_run_completion()
+        .filter((&run_id, 0u64..))
+        .count() as u64;
+    Ok(DeliveryProgress {
+        run_id: run_id.clone(),
+        pending_jobs,
+        completed_jobs,
+    })
 }
 
-#[procedure]
+#[reducer]
 pub fn fetch_delivery_completions(
-    ctx: &mut ProcedureContext,
+    ctx: &ReducerContext,
     run_id: String,
     after_completion_id: u64,
     limit: u32,
 ) -> Result<Vec<DeliveryCompletionView>, String> {
-    let start_time = ctx.timestamp;
-    log::debug!("Starting `fetch_delivery_completions` at {start_time:?}");
-    let res = ctx.try_with_tx(|tx| {
-        let limit = limit as usize;
-        let rows = tx
-            .db
-            .delivery_completion()
-            .by_run_completion()
-            .filter((&run_id, after_completion_id.saturating_add(1)..))
-            .take(limit)
-            .map(as_delivery_completion_view)
-            .collect();
-        Ok(rows)
-    });
+    let _timer = LogStopwatch::new("fetch_delivery_completions");
 
-    match &res {
-        Ok(_) => {
-            log::debug!("Successfully finished `fetch_delivery_completions` at {start_time:?}");
-        }
-        Err(e) => {
-            log::error!("Failed `fetch_delivery_completions` at {start_time:?}: {e}");
-        }
-    }
-    res
+    let limit = limit as usize;
+    let rows = ctx
+        .db
+        .delivery_completion()
+        .by_run_completion()
+        .filter((&run_id, after_completion_id.saturating_add(1)..))
+        .take(limit)
+        .map(as_delivery_completion_view)
+        .collect();
+    Ok(rows)
 }
 
 #[reducer]
@@ -618,10 +638,7 @@ pub fn run_delivery_job(ctx: &ReducerContext, job: DeliveryJob) -> Result<(), St
 }
 
 fn validate_warehouse_row(row: &Warehouse) -> Result<(), String> {
-    ensure!(
-        (1..=i32::from(u16::MAX)).contains(&(row.w_id as i32)),
-        "warehouse id must be positive"
-    );
+    ensure!(row.w_id > 0, "warehouse id must be positive");
     Ok(())
 }
 
@@ -667,94 +684,9 @@ fn validate_stock_row(row: &Stock) -> Result<(), String> {
     Ok(())
 }
 
-fn order_status_tx(
-    tx: &spacetimedb::TxContext,
-    w_id: u16,
-    d_id: u8,
-    customer_selector: &CustomerSelector,
-) -> Result<OrderStatusResult, String> {
-    let customer = resolve_customer(tx, w_id, d_id, customer_selector)?;
-
-    let mut latest_order: Option<OOrder> = None;
-    for row in tx
-        .db
-        .oorder()
-        .by_w_d_c_o_id()
-        .filter((w_id, d_id, customer.c_id, 0u32..))
-    {
-        latest_order = Some(row);
-    }
-
-    let mut lines = Vec::new();
-    if let Some(order) = &latest_order {
-        for line in tx
-            .db
-            .order_line()
-            .by_w_d_o_number()
-            .filter((w_id, d_id, order.o_id, 0u8..))
-        {
-            lines.push(OrderStatusLineResult {
-                item_id: line.ol_i_id,
-                supply_w_id: line.ol_supply_w_id,
-                quantity: line.ol_quantity,
-                amount_cents: line.ol_amount_cents,
-                delivery_d: line.ol_delivery_d,
-            });
-        }
-    }
-
-    Ok(OrderStatusResult {
-        customer_id: customer.c_id,
-        customer_first: customer.c_first,
-        customer_middle: customer.c_middle,
-        customer_last: customer.c_last,
-        customer_balance_cents: customer.c_balance_cents,
-        order_id: latest_order.as_ref().map(|row| row.o_id),
-        order_entry_d: latest_order.as_ref().map(|row| row.o_entry_d),
-        carrier_id: latest_order.as_ref().and_then(|row| row.o_carrier_id),
-        lines,
-    })
-}
-
-fn stock_level_tx(
-    tx: &spacetimedb::TxContext,
-    w_id: u16,
-    d_id: u8,
-    threshold: i32,
-) -> Result<StockLevelResult, String> {
-    let district = find_district(tx, w_id, d_id)?;
-    let start_o_id = district.d_next_o_id.saturating_sub(20);
-    let end_o_id = district.d_next_o_id;
-
-    let mut item_ids = BTreeSet::new();
-    for line in tx
-        .db
-        .order_line()
-        .by_w_d_o_number()
-        .filter((w_id, d_id, start_o_id..end_o_id))
-    {
-        item_ids.insert(line.ol_i_id);
-    }
-
-    let mut low_stock_count = 0u32;
-    for item_id in item_ids {
-        let stock = find_stock(tx, w_id, item_id)?;
-        if stock.s_quantity < threshold {
-            low_stock_count += 1;
-        }
-    }
-
-    Ok(StockLevelResult {
-        warehouse_id: w_id,
-        district_id: d_id,
-        threshold,
-        low_stock_count,
-    })
-}
-
 fn process_delivery_district(
     ctx: &ReducerContext,
-    w_id: u16,
+    w_id: WarehouseId,
     d_id: u8,
     carrier_id: u8,
     delivered_at: Timestamp,
@@ -804,8 +736,8 @@ fn process_delivery_district(
 }
 
 fn resolve_customer(
-    tx: &spacetimedb::TxContext,
-    w_id: u16,
+    tx: &ReducerContext,
+    w_id: WarehouseId,
     d_id: u8,
     selector: &CustomerSelector,
 ) -> Result<Customer, String> {
@@ -824,7 +756,7 @@ fn resolve_customer(
     }
 }
 
-fn find_warehouse(tx: &spacetimedb::TxContext, w_id: u16) -> Result<Warehouse, String> {
+fn find_warehouse(tx: &ReducerContext, w_id: WarehouseId) -> Result<Warehouse, String> {
     tx.db
         .warehouse()
         .w_id()
@@ -832,50 +764,50 @@ fn find_warehouse(tx: &spacetimedb::TxContext, w_id: u16) -> Result<Warehouse, S
         .ok_or_else(|| format!("warehouse {w_id} not found"))
 }
 
-fn ensure_warehouse_exists(tx: &spacetimedb::TxContext, w_id: u16) -> Result<(), String> {
+fn ensure_warehouse_exists(tx: &ReducerContext, w_id: WarehouseId) -> Result<(), String> {
     find_warehouse(tx, w_id).map(|_| ())
 }
 
-fn find_district(tx: &spacetimedb::TxContext, w_id: u16, d_id: u8) -> Result<District, String> {
+fn find_district(tx: &ReducerContext, w_id: WarehouseId, d_id: u8) -> Result<District, String> {
+    let district_key = pack_district_key(w_id, d_id);
     tx.db
         .district()
-        .by_w_d()
-        .filter((w_id, d_id))
-        .next()
+        .district_key()
+        .find(district_key)
         .ok_or_else(|| format!("district ({w_id}, {d_id}) not found"))
 }
 
-fn find_customer_by_id(tx: &ReducerContext, w_id: u16, d_id: u8, c_id: u32) -> Result<Customer, String> {
+fn find_customer_by_id(tx: &ReducerContext, w_id: WarehouseId, d_id: u8, c_id: u32) -> Result<Customer, String> {
+    let customer_key = pack_customer_key(w_id, d_id, c_id);
     tx.db
         .customer()
-        .by_w_d_c_id()
-        .filter((w_id, d_id, c_id))
-        .next()
+        .customer_key()
+        .find(customer_key)
         .ok_or_else(|| format!("customer ({w_id}, {d_id}, {c_id}) not found"))
 }
 
-fn find_stock(tx: &ReducerContext, w_id: u16, item_id: u32) -> Result<Stock, String> {
+fn find_stock(tx: &ReducerContext, w_id: WarehouseId, item_id: u32) -> Result<Stock, String> {
+    let stock_key = pack_stock_key(w_id, item_id);
     tx.db
         .stock()
-        .by_w_i()
-        .filter((w_id, item_id))
-        .next()
+        .stock_key()
+        .find(stock_key)
         .ok_or_else(|| format!("stock ({w_id}, {item_id}) not found"))
 }
 
-fn pack_district_key(w_id: u16, d_id: u8) -> u32 {
-    (u32::from(w_id) * 100) + u32::from(d_id)
+fn pack_district_key(w_id: WarehouseId, d_id: u8) -> u32 {
+    (w_id * 100) + u32::from(d_id)
 }
 
-fn pack_customer_key(w_id: u16, d_id: u8, c_id: u32) -> u64 {
+fn pack_customer_key(w_id: WarehouseId, d_id: u8, c_id: u32) -> u64 {
     ((u64::from(w_id) * 100) + u64::from(d_id)) * 10_000 + u64::from(c_id)
 }
 
-fn pack_stock_key(w_id: u16, item_id: u32) -> u64 {
+fn pack_stock_key(w_id: WarehouseId, item_id: u32) -> u64 {
     u64::from(w_id) * 1_000_000 + u64::from(item_id)
 }
 
-fn pack_order_key(w_id: u16, d_id: u8, o_id: u32) -> u64 {
+fn pack_order_key(w_id: WarehouseId, d_id: u8, o_id: u32) -> u64 {
     ((u64::from(w_id) * 100) + u64::from(d_id)) * 10_000_000 + u64::from(o_id)
 }
 
@@ -896,6 +828,8 @@ fn as_delivery_completion_view(row: DeliveryCompletion) -> DeliveryCompletionVie
 }
 
 mod test {
+    use spacetimedb::{procedure, ProcedureContext};
+
     use crate::new_order::{adjust_stock_quantity, pack_order_line_key};
 
     use super::*;

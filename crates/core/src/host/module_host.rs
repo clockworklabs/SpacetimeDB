@@ -1835,9 +1835,25 @@ impl ModuleHost {
         tx_id: Option<GlobalTxId>,
         reducer_name: &str,
         args: FunctionArgs,
+        // The actual coordinator database identity (from `X-Coordinator-Identity` header).
+        // When `Some`, used for `prepare_id` namespacing and stored in `st_2pc_state` for
+        // recovery.  Falls back to `caller_identity` when `None` (e.g., internal calls).
+        coordinator_identity_override: Option<Identity>,
     ) -> Result<(String, ReducerCallResult, Option<Bytes>), ReducerCallError> {
         use std::sync::atomic::{AtomicU64, Ordering};
-        static PREPARE_COUNTER: AtomicU64 = AtomicU64::new(1);
+        use std::sync::OnceLock;
+        // Counter seeded from current time on first use so that restarts begin from a
+        // different value than any existing st_2pc_state entries (which hold IDs from
+        // previous sessions starting at much smaller counter values).
+        static PREPARE_COUNTER: AtomicU64 = AtomicU64::new(0);
+        static PREPARE_COUNTER_INIT: OnceLock<()> = OnceLock::new();
+        PREPARE_COUNTER_INIT.get_or_init(|| {
+            let seed = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_micros() as u64;
+            PREPARE_COUNTER.store(seed, Ordering::Relaxed);
+        });
 
         let (reducer_id, reducer_def) = self
             .info
@@ -1867,11 +1883,16 @@ impl ModuleHost {
             args,
         };
 
+        // Resolve the effective coordinator identity before generating the prepare_id so
+        // the prefix is namespaced correctly even when called from the HTTP prepare handler.
+        let coordinator_identity = coordinator_identity_override.unwrap_or(caller_identity);
+
         // Include the coordinator identity so prepare_ids from different coordinators
         // cannot collide on the participant's st_2pc_state table.
         let prepare_tx_component = tx_id
             .map(|tx_id| tx_id.to_string())
             .unwrap_or_else(|| format!("legacy:{}:00000000", caller_identity.to_hex()));
+        let coordinator_hex = coordinator_identity.to_hex();
         let prepare_id = format!(
             "prepare-{}-{}",
             prepare_tx_component,
@@ -1930,7 +1951,6 @@ impl ModuleHost {
         let this = self.clone();
         let reducer_name_owned = reducer_def.name.clone();
         let prepare_id_clone = prepare_id.clone();
-        let coordinator_identity = caller_identity;
         tokio::spawn(async move {
             let _ = this
                 .call(
@@ -1941,21 +1961,7 @@ impl ModuleHost {
                         Ok::<(), ReducerCallError>(())
                     },
                     // JS modules: no 2PC support yet.
-                    async |(p, _pid, _cid, ptx, _drx), inst| {
-                        let (res, rv) = inst.call_reducer(p).await.map(|r| (r, None)).unwrap_or_else(|e| {
-                            log::error!("prepare_reducer JS fallback: {e}");
-                            (
-                                ReducerCallResult {
-                                    outcome: ReducerOutcome::Failed(Box::new(Box::from("reducer error"))),
-                                    energy_used: EnergyQuanta::ZERO,
-                                    execution_duration: Default::default(),
-                                },
-                                None,
-                            )
-                        });
-                        let _ = ptx.send((res, rv));
-                        Ok(())
-                    },
+                    async |(_p, _pid, _cid, _ptx, _drx), _inst| Err(ReducerCallError::NoSuchReducer),
                 )
                 .await;
         });
@@ -2384,13 +2390,7 @@ impl ModuleHost {
 
                 // Step 1: Re-run the reducer to reacquire the write lock.
                 let new_prepare_id = match this
-                    .prepare_reducer(
-                        caller_identity,
-                        Some(caller_connection_id),
-                        recovered_tx_id,
-                        &row.reducer_name,
-                        args,
-                    )
+                    .prepare_reducer(caller_identity, Some(caller_connection_id), recovered_tx_id, &row.reducer_name, args, Some(coordinator_identity))
                     .await
                 {
                     Ok((pid, result, _rv)) if !pid.is_empty() => {

@@ -9,7 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct NewOrderLineResult {
     pub item_id: u32,
     pub item_name: String,
-    pub supply_w_id: u16,
+    pub supply_w_id: u32,
     pub quantity: u32,
     pub stock_quantity: i32,
     pub item_price_cents: i64,
