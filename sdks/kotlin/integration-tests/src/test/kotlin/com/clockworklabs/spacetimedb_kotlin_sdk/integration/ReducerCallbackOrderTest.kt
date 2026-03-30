@@ -1,5 +1,6 @@
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Status
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -11,11 +12,10 @@ import kotlin.test.assertTrue
 
 /**
  * Reducer/row callback interaction tests.
- * Mirrors TS db_connection.test.ts: row callback ordering, reducer error no callbacks.
  */
 class ReducerCallbackOrderTest {
 
-    // --- Row callbacks fire during reducer event (TS: fires row callbacks after reducer resolution) ---
+    // --- Row callbacks fire during reducer event ---
 
     @Test
     fun `onInsert fires during reducer callback`() = runBlocking {
@@ -47,7 +47,7 @@ class ReducerCallbackOrderTest {
         assertEquals(2, events.size, "Should have exactly 2 events: $events")
     }
 
-    // --- Failed reducer produces Status.Failed (TS: reducer error rejects) ---
+    // --- Failed reducer produces Status.Failed ---
 
     @Test
     fun `failed reducer has Status Failed`() = runBlocking {
@@ -118,7 +118,7 @@ class ReducerCallbackOrderTest {
         client.cleanup()
     }
 
-    // --- onUpdate fires for modified row (TS: onUpdate callback with Identity PK) ---
+    // --- onUpdate fires for modified row ---
 
     @Test
     fun `onUpdate fires when row is modified`() = runBlocking {
@@ -156,14 +156,14 @@ class ReducerCallbackOrderTest {
         client.cleanup()
     }
 
-    // --- Reducer callerIdentity matches connection (TS: context includes identity/connectionId) ---
+    // --- Reducer callerIdentity matches connection ---
 
     @Test
     fun `reducer context has correct callerIdentity`() = runBlocking {
         val client = connectToDb()
         client.subscribeAll()
 
-        val callerIdentity = CompletableDeferred<com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity>()
+        val callerIdentity = CompletableDeferred<Identity>()
         client.conn.reducers.onAddNote { ctx, _, _ ->
             if (ctx.callerIdentity == client.identity) {
                 callerIdentity.complete(ctx.callerIdentity)
@@ -217,7 +217,7 @@ class ReducerCallbackOrderTest {
         client.cleanup()
     }
 
-    // --- Multi-client: one client's reducer is observed by another (TS: db_connection cross-client) ---
+    // --- Multi-client: one client's reducer is observed by another ---
 
     @Test
     fun `client B observes client A reducer via onInsert`() = runBlocking {

@@ -49,7 +49,6 @@ public class UniqueIndex<Row, Col>(
  *
  * Uses [PersistentSet] (not List) so that add is idempotent — if the listener
  * and the population loop both add the same row during init, no duplicate is produced.
- * This matches C#'s `HashSet<Row>` approach.
  *
  * Subscribes to the TableCache's internal insert/delete hooks
  * to stay synchronized with the cache contents.

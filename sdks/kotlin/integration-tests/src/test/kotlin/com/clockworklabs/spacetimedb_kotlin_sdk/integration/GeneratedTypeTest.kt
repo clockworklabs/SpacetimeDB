@@ -14,7 +14,6 @@ import kotlin.time.Duration.Companion.minutes
 
 /**
  * Generated data class equality, hashCode, toString, and copy tests.
- * Mirrors C#: GeneratedProductEqualsWorks, GeneratedToString.
  */
 class GeneratedTypeTest {
 
@@ -22,7 +21,7 @@ class GeneratedTypeTest {
     private val identity2 = Identity.fromHexString("bb".repeat(32))
     private val ts = Timestamp.fromMillis(1700000000000L)
 
-    // --- User equals/hashCode (C#: GeneratedProductEqualsWorks) ---
+    // --- User equals/hashCode ---
 
     @Test
     fun `User equals same values`() {
@@ -81,7 +80,7 @@ class GeneratedTypeTest {
         assertNotEquals(a.hashCode(), b.hashCode())
     }
 
-    // --- User toString (C#: GeneratedToString) ---
+    // --- User toString ---
 
     @Test
     fun `User toString contains field values`() {

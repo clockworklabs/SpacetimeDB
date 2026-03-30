@@ -338,7 +338,7 @@ public open class DbConnection internal constructor(
     }
 
     /**
-     * Fail all in-flight operations on disconnect (matches C#'s FailPendingOperations).
+     * Fail all in-flight operations on disconnect.
      * Clears callback maps so captured lambdas can be GC'd, and marks all
      * subscription handles as ENDED so callers don't try to use stale handles.
      */

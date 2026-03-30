@@ -6,13 +6,12 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Query builder SQL generation edge cases.
- * Mirrors C# QueryBuilderTests and TS client_query.test.ts — tests not already in
+ * Query builder SQL generation edge cases not already in
  * TypeSafeQueryTest, ColComparisonTest, JoinTest.
  */
 class QueryBuilderEdgeCaseTest {
 
-    // --- NOT expression (C#: BoolExpr_Not_FormatsCorrectly) ---
+    // --- NOT expression ---
 
     @Test
     fun `NOT wraps expression in parentheses`() {
@@ -24,7 +23,7 @@ class QueryBuilderEdgeCaseTest {
         assertTrue(sql.contains("(NOT"), "NOT should be parenthesized: $sql")
     }
 
-    // --- NOT with AND (C#: BoolExpr_NotWithAnd_FormatsCorrectly) ---
+    // --- NOT with AND ---
 
     @Test
     fun `NOT combined with AND`() {
@@ -37,7 +36,7 @@ class QueryBuilderEdgeCaseTest {
         assertTrue(sql.contains("AND"), "Should contain AND: $sql")
     }
 
-    // --- Method-style .and() / .or() chaining (TS: method-style chaining) ---
+    // --- Method-style .and() / .or() chaining ---
 
     @Test
     fun `method-style and chaining`() {
@@ -74,7 +73,7 @@ class QueryBuilderEdgeCaseTest {
         assertTrue(sql.contains("OR"), "Should contain OR: $sql")
     }
 
-    // --- String escaping in WHERE (C#: Where_Eq_String_EscapesSingleQuote) ---
+    // --- String escaping in WHERE ---
 
     @Test
     fun `string with single quotes is escaped in WHERE`() {
@@ -94,7 +93,7 @@ class QueryBuilderEdgeCaseTest {
         assertTrue(sql.contains("it''s Bob''s"), "All single quotes escaped: $sql")
     }
 
-    // --- Bool formatting (C#: Where_Eq_Bool_FormatsAsTrueFalse) ---
+    // --- Bool formatting ---
 
     @Test
     fun `bool true formats as TRUE`() {
@@ -114,7 +113,7 @@ class QueryBuilderEdgeCaseTest {
         assertTrue(sql.contains("FALSE"), "Should contain FALSE: $sql")
     }
 
-    // --- Identity hex literal in WHERE (C#: FormatLiteral_SpacetimeDbTypes_AreQuoted) ---
+    // --- Identity hex literal in WHERE ---
 
     @Test
     fun `Identity formats as hex literal in WHERE`() {
@@ -127,7 +126,7 @@ class QueryBuilderEdgeCaseTest {
         assertTrue(sql.contains("ab".repeat(32)), "Should contain hex value: $sql")
     }
 
-    // --- IxCol eq/neq formatting (C#: IxCol_EqNeq_FormatsCorrectly) ---
+    // --- IxCol eq/neq formatting ---
 
     @Test
     fun `IxCol eq generates correct SQL`() {
@@ -168,7 +167,7 @@ class QueryBuilderEdgeCaseTest {
         assertTrue(messageSql.contains("\"message\""), "Should contain message table: $messageSql")
     }
 
-    // --- Column name quoting (C#: QuoteIdent_EscapesDoubleQuotesInColumnName) ---
+    // --- Column name quoting ---
     // Note: we can't create columns with quotes in our schema, but we can verify
     // that existing column names are properly quoted
 
@@ -191,7 +190,7 @@ class QueryBuilderEdgeCaseTest {
         assertTrue(sql.contains("\"note\".\"content\""), "Column should be table-qualified: $sql")
     }
 
-    // --- Semijoin with WHERE on both sides (C#: RightSemijoin_WithLeftAndRightWhere) ---
+    // --- Semijoin with WHERE on both sides ---
 
     @Test
     fun `left semijoin with where on left table`() {
@@ -225,7 +224,7 @@ class QueryBuilderEdgeCaseTest {
         assertTrue(sql.contains("\"note\".*"), "Left semijoin should select note.*: $sql")
     }
 
-    // --- Integer formatting (C#: Where_Gt_Int_FormatsInvariant) ---
+    // --- Integer formatting ---
 
     @Test
     fun `integer values format without locale separators`() {

@@ -1,5 +1,7 @@
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Status
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Timestamp
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -18,7 +20,7 @@ class EventContextTest {
         val client = connectToDb()
         client.subscribeAll()
 
-        val callerIdentityDeferred = CompletableDeferred<com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity>()
+        val callerIdentityDeferred = CompletableDeferred<Identity>()
         client.conn.reducers.onSetName { c, _ ->
             if (c.callerIdentity == client.identity) callerIdentityDeferred.complete(c.callerIdentity)
         }
@@ -106,7 +108,7 @@ class EventContextTest {
         val client = connectToDb()
         client.subscribeAll()
 
-        val tsDeferred = CompletableDeferred<com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Timestamp>()
+        val tsDeferred = CompletableDeferred<Timestamp>()
         client.conn.reducers.onSetName { c, _ ->
             if (c.callerIdentity == client.identity) tsDeferred.complete(c.timestamp)
         }

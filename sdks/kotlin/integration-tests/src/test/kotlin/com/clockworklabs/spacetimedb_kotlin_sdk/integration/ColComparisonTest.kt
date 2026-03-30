@@ -1,3 +1,4 @@
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.SqlLit
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
@@ -53,7 +54,7 @@ class ColComparisonTest {
         // Insert a note so we have at least one
         val insertDone = CompletableDeferred<ULong>()
         client.conn.db.note.onInsert { ctx, note ->
-            if (ctx !is com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext.SubscribeApplied
+            if (ctx !is EventContext.SubscribeApplied
                 && note.owner == client.identity && note.tag == "gt-test") {
                 insertDone.complete(note.id)
             }
@@ -115,7 +116,7 @@ class ColComparisonTest {
         // Insert a note with known tag+content
         val insertDone = CompletableDeferred<Unit>()
         client.conn.db.note.onInsert { ctx, note ->
-            if (ctx !is com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext.SubscribeApplied
+            if (ctx !is EventContext.SubscribeApplied
                 && note.owner == client.identity && note.tag == "chain-test") {
                 insertDone.complete(Unit)
             }

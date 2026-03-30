@@ -127,7 +127,7 @@ class TableCacheTest {
         client.subscribeAll()
 
         var callbackFired = false
-        val cb: (com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext, module_bindings.Note) -> Unit =
+        val cb: (EventContext, module_bindings.Note) -> Unit =
             { _, _ -> callbackFired = true }
 
         client.conn.db.note.onInsert(cb)
@@ -154,7 +154,7 @@ class TableCacheTest {
         client.subscribeAll()
 
         var callbackFired = false
-        val cb: (com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext, module_bindings.Note) -> Unit =
+        val cb: (EventContext, module_bindings.Note) -> Unit =
             { _, _ -> callbackFired = true }
 
         client.conn.db.note.onDelete(cb)
@@ -163,7 +163,7 @@ class TableCacheTest {
         // Insert then delete a note
         val insertDone = CompletableDeferred<ULong>()
         client.conn.db.note.onInsert { ctx, note ->
-            if (ctx !is com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext.SubscribeApplied
+            if (ctx !is EventContext.SubscribeApplied
                 && note.owner == client.identity && note.tag == "rm-del-test") {
                 insertDone.complete(note.id)
             }
@@ -192,7 +192,7 @@ class TableCacheTest {
         // Insert a note first
         val insertDone = CompletableDeferred<ULong>()
         client.conn.db.note.onInsert { ctx, note ->
-            if (ctx !is com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext.SubscribeApplied
+            if (ctx !is EventContext.SubscribeApplied
                 && note.owner == client.identity && note.tag == "before-del-test") {
                 insertDone.complete(note.id)
             }

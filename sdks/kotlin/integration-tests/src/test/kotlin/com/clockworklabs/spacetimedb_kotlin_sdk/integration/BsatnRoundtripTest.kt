@@ -16,11 +16,10 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * BSATN binary serialization roundtrip tests.
- * Mirrors C# BSATN.Runtime.Tests and TS binary_read_write.test.ts / serde.test.ts.
  */
 class BsatnRoundtripTest {
 
-    // --- Primitive type roundtrips (C#/TS: binary_read_write) ---
+    // --- Primitive type roundtrips ---
 
     @Test
     fun `bool roundtrip`() {
@@ -161,7 +160,7 @@ class BsatnRoundtripTest {
         assertTrue(value.contentEquals(reader.readByteArray()))
     }
 
-    // --- Multiple values in sequence (TS: binary_read_write little-endian test) ---
+    // --- Multiple values in sequence ---
 
     @Test
     fun `multiple primitives in sequence`() {
@@ -180,7 +179,7 @@ class BsatnRoundtripTest {
         assertEquals(3.14, reader.readF64())
     }
 
-    // --- SDK type roundtrips (C#: IdentityRoundtrips, ConnectionIdRoundtrips, TimestampConversionChecks) ---
+    // --- SDK type roundtrips ---
 
     @Test
     fun `Identity encode-decode roundtrip`() {
@@ -268,7 +267,7 @@ class BsatnRoundtripTest {
         assertEquals(original, decoded)
     }
 
-    // --- Generated type roundtrips (C#: GeneratedProductRoundTrip) ---
+    // --- Generated type roundtrips ---
 
     @Test
     fun `User encode-decode roundtrip with name`() {
@@ -346,7 +345,7 @@ class BsatnRoundtripTest {
         assertEquals(original, decoded)
     }
 
-    // --- Writer utilities (TS: toBase64, reset) ---
+    // --- Writer utilities ---
 
     @Test
     fun `writer toByteArray returns correct length`() {
@@ -398,7 +397,7 @@ class BsatnRoundtripTest {
         assertEquals(12, reader.offset)
     }
 
-    // --- SumTag and ArrayLen (TS: serde.test.ts sum types) ---
+    // --- SumTag and ArrayLen ---
 
     @Test
     fun `sumTag roundtrip`() {
@@ -420,7 +419,7 @@ class BsatnRoundtripTest {
         }
     }
 
-    // --- Little-endian byte order verification (TS: binary_read_write pre-computed vectors) ---
+    // --- Little-endian byte order verification ---
 
     @Test
     fun `i32 is little-endian`() {

@@ -1,5 +1,7 @@
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol
 
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.CompressionMode
+
 /**
  * Compression tags matching the SpacetimeDB wire protocol.
  * First byte of every WebSocket message indicates compression.
@@ -38,10 +40,10 @@ internal expect fun decompressMessage(data: ByteArray): DecompressedPayload
  * Default compression mode for this platform.
  * Native targets default to NONE (no decompression support); JVM/Android default to GZIP.
  */
-internal expect val defaultCompressionMode: com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.CompressionMode
+internal expect val defaultCompressionMode: CompressionMode
 
 /**
  * Compression modes supported on this platform.
  * The builder validates that the user-selected mode is in this set.
  */
-internal expect val availableCompressionModes: Set<com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.CompressionMode>
+internal expect val availableCompressionModes: Set<CompressionMode>

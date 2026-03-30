@@ -282,7 +282,7 @@ class ConnectionLifecycleTest {
         advanceUntilIdle()
 
         // Calling subscribe on a closed connection is a graceful no-op
-        // (logs warning, does not throw — matching C# SDK behavior)
+        // (logs warning, does not throw)
         conn.subscribe(listOf("SELECT * FROM player"))
     }
 

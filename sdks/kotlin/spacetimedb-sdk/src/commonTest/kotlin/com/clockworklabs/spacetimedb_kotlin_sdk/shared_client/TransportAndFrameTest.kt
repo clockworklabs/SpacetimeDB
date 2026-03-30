@@ -2,6 +2,7 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.*
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.transport.SpacetimeTransport
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -448,7 +449,7 @@ class TransportAndFrameTest {
 
     @Test
     fun invalidProtocolThrowsOnConnect() = runTest {
-        val transport = com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.transport.SpacetimeTransport(
+        val transport = SpacetimeTransport(
             client = HttpClient(),
             baseUrl = "ftp://example.com",
             nameOrAddress = "test",

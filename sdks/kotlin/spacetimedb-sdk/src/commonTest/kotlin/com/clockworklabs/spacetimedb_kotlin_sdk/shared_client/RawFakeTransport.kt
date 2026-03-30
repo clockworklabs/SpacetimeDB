@@ -2,6 +2,7 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ClientMessage
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ServerMessage
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.transport.SpacetimeTransport
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.transport.Transport
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.update
@@ -12,7 +13,7 @@ import kotlinx.coroutines.flow.flow
 
 /**
  * A test transport that accepts raw byte arrays and decodes BSATN inside the
- * [incoming] flow, mirroring [com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.transport.SpacetimeTransport]'s
+ * [incoming] flow, mirroring [SpacetimeTransport]'s
  * decode-in-flow behavior.
  *
  * This allows testing how [DbConnection] reacts to malformed frames:

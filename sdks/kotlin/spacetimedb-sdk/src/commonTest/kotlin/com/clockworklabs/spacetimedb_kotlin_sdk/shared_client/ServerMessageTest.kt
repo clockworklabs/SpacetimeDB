@@ -5,6 +5,7 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.Procedure
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryResult
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ReducerOutcome
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ServerMessage
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.TransactionUpdate
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.TimeDuration
@@ -296,9 +297,9 @@ class ServerMessageTest {
 
     @Test
     fun reducerOutcomeOkEquality() {
-        val a = ReducerOutcome.Ok(byteArrayOf(1, 2), com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.TransactionUpdate(emptyList()))
-        val b = ReducerOutcome.Ok(byteArrayOf(1, 2), com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.TransactionUpdate(emptyList()))
-        val c = ReducerOutcome.Ok(byteArrayOf(3, 4), com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.TransactionUpdate(emptyList()))
+        val a = ReducerOutcome.Ok(byteArrayOf(1, 2), TransactionUpdate(emptyList()))
+        val b = ReducerOutcome.Ok(byteArrayOf(1, 2), TransactionUpdate(emptyList()))
+        val c = ReducerOutcome.Ok(byteArrayOf(3, 4), TransactionUpdate(emptyList()))
 
         assertEquals(a, b)
         assertEquals(a.hashCode(), b.hashCode())
