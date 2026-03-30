@@ -1,7 +1,7 @@
 use anyhow::{anyhow, bail, Context, Result};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,7 +15,10 @@ use crate::module_bindings::*;
 use crate::protocol::{
     RegisterDriverRequest, RegisterDriverResponse, RunSchedule, ScheduleResponse, SubmitSummaryRequest,
 };
-use crate::summary::{write_json, DriverSummary, DriverSummaryMeta, SharedMetrics, TransactionKind, TransactionRecord};
+use crate::summary::{
+    log_driver_summary, write_json, DriverSummary, DriverSummaryMeta, SharedMetrics, TransactionKind,
+    TransactionRecord,
+};
 use crate::topology::DatabaseTopology;
 use crate::tpcc::*;
 
@@ -23,6 +26,7 @@ struct TerminalRuntime {
     config: DriverConfig,
     metrics: SharedMetrics,
     abort: Arc<AtomicBool>,
+    start_logged: Arc<AtomicBool>,
     request_ids: Arc<AtomicU64>,
     schedule: RunSchedule,
     run_constants: RunConstants,
@@ -60,8 +64,21 @@ pub async fn run(config: DriverConfig) -> Result<()> {
     };
 
     let abort = Arc::new(AtomicBool::new(false));
+    let start_logged = Arc::new(AtomicBool::new(false));
     let request_ids = Arc::new(AtomicU64::new(1));
     let mut tasks = JoinSet::new();
+
+    log::info!(
+        "driver {} ready for run {}: warehouses {}..={} terminals={} warmup_start_ms={} measure_start_ms={} measure_end_ms={}",
+        config.driver_id,
+        run_id,
+        config.warehouse_start,
+        config.warehouse_end(),
+        config.terminals(),
+        schedule.warmup_start_ms,
+        schedule.measure_start_ms,
+        schedule.measure_end_ms
+    );
 
     for warehouse_id in config.warehouse_start..=config.warehouse_end() {
         let database_identity = topology.identity_for_warehouse(warehouse_id)?;
@@ -75,6 +92,7 @@ pub async fn run(config: DriverConfig) -> Result<()> {
             let terminal_config = config.clone();
             let terminal_metrics = metrics.clone();
             let terminal_abort = abort.clone();
+            let terminal_start_logged = start_logged.clone();
             let terminal_constants = run_constants.clone();
             let terminal_schedule = schedule.clone();
             let terminal_request_ids = request_ids.clone();
@@ -82,6 +100,7 @@ pub async fn run(config: DriverConfig) -> Result<()> {
                 config: terminal_config,
                 metrics: terminal_metrics,
                 abort: terminal_abort,
+                start_logged: terminal_start_logged,
                 request_ids: terminal_request_ids,
                 schedule: terminal_schedule,
                 run_constants: terminal_constants,
@@ -131,7 +150,7 @@ pub async fn run(config: DriverConfig) -> Result<()> {
         measure_end_ms: schedule.measure_end_ms,
     })?;
     write_json(&summary_path, &summary)?;
-    print_summary(&summary, &summary_path, &events_path);
+    log_driver_summary(&summary, &summary_path, &events_path);
 
     if let Some(coordinator_url) = &config.coordinator_url {
         submit_summary(coordinator_url, summary).await?;
@@ -145,6 +164,7 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
         config,
         metrics,
         abort,
+        start_logged,
         request_ids,
         schedule,
         run_constants,
@@ -154,7 +174,23 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
     } = runtime;
     let client = ModuleClient::connect_async(&config.connection, database_identity).await?;
     let metrics_client = connect_metrics_module_async(&config.connection).await?;
+    log::info!(
+        "driver {} terminal {} connected to {} for warehouse {} district {}",
+        config.driver_id,
+        assignment.terminal_id,
+        database_identity,
+        assignment.warehouse_id,
+        assignment.district_id
+    );
     sleep_until_ms_async(schedule.warmup_start_ms).await;
+    if !start_logged.swap(true, Ordering::Relaxed) {
+        log::info!(
+            "driver {} starting run {} with {} terminal(s)",
+            config.driver_id,
+            schedule.run_id,
+            config.terminals()
+        );
+    }
 
     let mut rng = StdRng::seed_from_u64(seed);
     while !abort.load(Ordering::Relaxed) {
@@ -681,32 +717,6 @@ fn resolve_output_dir(config: &DriverConfig, run_id: &str) -> PathBuf {
         Some(path) => path.clone(),
         None => PathBuf::from("tpcc-results").join(run_id).join(&config.driver_id),
     }
-}
-
-fn print_summary(summary: &DriverSummary, summary_path: &Path, events_path: &Path) {
-    log::info!("run_id={}", summary.run_id);
-    log::info!("driver_id={}", summary.driver_id);
-    log::info!("tpmc_like={:.2}", summary.tpmc_like);
-    log::info!("total_transactions={}", summary.total_transactions);
-    for (name, txn) in &summary.transactions {
-        log::info!(
-            "{} count={} success={} failure={} p95_ms={} p99_ms={}",
-            name,
-            txn.count,
-            txn.success,
-            txn.failure,
-            txn.p95_latency_ms,
-            txn.p99_latency_ms
-        );
-    }
-    log::info!(
-        "delivery queued={} completed={} pending={}",
-        summary.delivery.queued,
-        summary.delivery.completed,
-        summary.delivery.pending
-    );
-    log::info!("summary={}", summary_path.display());
-    log::info!("events={}", events_path.display());
 }
 
 async fn sleep_until_ms_async(target_ms: u64) {

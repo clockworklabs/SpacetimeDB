@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::config::CoordinatorConfig;
 use crate::metrics_module_bindings::reset_reducer::reset;
@@ -15,7 +16,9 @@ use crate::protocol::{
     DriverAssignment, RegisterDriverRequest, RegisterDriverResponse, RunSchedule, ScheduleResponse,
     SubmitSummaryRequest,
 };
-use crate::summary::{aggregate_summaries, now_millis, write_json, AggregateSummary, DriverSummary};
+use crate::summary::{
+    aggregate_summaries, log_aggregate_summary, now_millis, write_json, AggregateSummary, DriverSummary,
+};
 
 #[derive(Clone)]
 struct AppState {
@@ -66,8 +69,8 @@ async fn register_driver(
     Json(request): Json<RegisterDriverRequest>,
 ) -> Json<RegisterDriverResponse> {
     let mut inner = state.inner.lock();
-    let assignment = match inner.registrations.get(&request.driver_id) {
-        Some(existing) => existing.assignment.clone(),
+    let (assignment, is_new_registration) = match inner.registrations.get(&request.driver_id) {
+        Some(existing) => (existing.assignment.clone(), false),
         None => {
             if inner.registration_order.len() >= inner.config.expected_drivers {
                 return Json(RegisterDriverResponse {
@@ -84,10 +87,30 @@ async fn register_driver(
                     assignment: assignment.clone(),
                 },
             );
-            assignment
+            (assignment, true)
         }
     };
     maybe_create_schedule(&mut inner);
+    let registered = inner.registrations.len();
+    let warehouse_end = assignment_end(&assignment);
+    if is_new_registration {
+        log::info!(
+            "driver {} registered and ready ({}/{}): warehouses {}..={} ({} warehouse(s))",
+            request.driver_id,
+            registered,
+            inner.config.expected_drivers,
+            assignment.warehouse_start,
+            warehouse_end,
+            assignment.driver_warehouse_count
+        );
+    } else {
+        log::info!(
+            "driver {} re-registered and remains ready: warehouses {}..={}",
+            request.driver_id,
+            assignment.warehouse_start,
+            warehouse_end
+        );
+    }
     Json(RegisterDriverResponse {
         accepted: true,
         assignment: Some(assignment),
@@ -108,16 +131,32 @@ async fn submit_summary(
 ) -> Result<Json<AggregateSummary>, axum::http::StatusCode> {
     let aggregate = {
         let mut inner = state.inner.lock();
-        inner
+        let replaced = inner
             .summaries
-            .insert(request.summary.driver_id.clone(), request.summary.clone());
-        if inner.summaries.len() == inner.config.expected_drivers {
+            .insert(request.summary.driver_id.clone(), request.summary.clone())
+            .is_some();
+        let received = inner.summaries.len();
+        log::info!(
+            "received summary from driver {} ({}/{}{})",
+            request.summary.driver_id,
+            received,
+            inner.config.expected_drivers,
+            if replaced { ", replaced existing summary" } else { "" }
+        );
+        if received == inner.config.expected_drivers {
             let summaries: Vec<_> = inner.summaries.values().cloned().collect();
             let aggregate = aggregate_summaries(inner.config.run_id.clone(), &summaries);
+            let summary_path = aggregate_summary_path(&inner.config.output_dir, &aggregate);
             if let Err(err) = write_aggregate(&inner.config.output_dir, &aggregate) {
                 log::error!("failed to write aggregate summary: {err:#}");
                 return Err(axum::http::StatusCode::INTERNAL_SERVER_ERROR);
             }
+            log::info!(
+                "received all {} summary(s) for run {}",
+                inner.config.expected_drivers,
+                inner.config.run_id
+            );
+            log_aggregate_summary(&aggregate, &summary_path);
             aggregate
         } else {
             aggregate_summaries(
@@ -142,18 +181,23 @@ fn maybe_create_schedule(inner: &mut CoordinatorState) {
         .reducers
         .reset(inner.config.warmup_secs * 1000, measure_start_ms, measure_end_ms);
 
-    inner.schedule = Some(RunSchedule {
+    let schedule = RunSchedule {
         run_id: inner.config.run_id.clone(),
         warmup_start_ms,
         measure_start_ms,
         measure_end_ms,
         stop_ms: measure_end_ms,
-    });
+    };
+    inner.schedule = Some(schedule.clone());
     log::info!(
-        "all {} driver(s) registered; schedule ready for run {}",
+        "all {} driver(s) registered; schedule ready for run {} (warmup_start_ms={} measure_start_ms={} measure_end_ms={})",
         inner.config.expected_drivers,
-        inner.config.run_id
+        inner.config.run_id,
+        warmup_start_ms,
+        measure_start_ms,
+        measure_end_ms
     );
+    tokio::spawn(log_schedule_events(schedule));
 }
 
 fn assignment_for_index(config: &CoordinatorConfig, index: usize) -> DriverAssignment {
@@ -173,7 +217,35 @@ fn assignment_for_index(config: &CoordinatorConfig, index: usize) -> DriverAssig
 }
 
 fn write_aggregate(output_dir: &Path, aggregate: &AggregateSummary) -> Result<()> {
-    let run_dir = output_dir.join(&aggregate.run_id);
-    fs::create_dir_all(&run_dir).with_context(|| format!("failed to create {}", run_dir.display()))?;
-    write_json(&run_dir.join("summary.json"), aggregate)
+    let summary_path = aggregate_summary_path(output_dir, aggregate);
+    if let Some(run_dir) = summary_path.parent() {
+        fs::create_dir_all(run_dir).with_context(|| format!("failed to create {}", run_dir.display()))?;
+    }
+    write_json(&summary_path, aggregate)
+}
+
+fn aggregate_summary_path(output_dir: &Path, aggregate: &AggregateSummary) -> std::path::PathBuf {
+    output_dir.join(&aggregate.run_id).join("summary.json")
+}
+
+fn assignment_end(assignment: &DriverAssignment) -> u32 {
+    assignment
+        .warehouse_start
+        .saturating_add(assignment.driver_warehouse_count.saturating_sub(1))
+}
+
+async fn log_schedule_events(schedule: RunSchedule) {
+    sleep_until_ms(schedule.warmup_start_ms).await;
+    log::info!("run {} warmup started", schedule.run_id);
+    sleep_until_ms(schedule.measure_start_ms).await;
+    log::info!("run {} measurement started", schedule.run_id);
+    sleep_until_ms(schedule.measure_end_ms).await;
+    log::info!("run {} measurement ended", schedule.run_id);
+}
+
+async fn sleep_until_ms(target_ms: u64) {
+    let now_ms = now_millis();
+    if target_ms > now_ms {
+        tokio::time::sleep(Duration::from_millis(target_ms - now_ms)).await;
+    }
 }
