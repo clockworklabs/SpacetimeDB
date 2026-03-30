@@ -181,7 +181,10 @@ pub struct Item {
     pub i_data: String,
 }
 
-#[table(accessor = stock)]
+#[table(
+    accessor = stock,
+    index(accessor = by_stock_key_quantity, btree(columns = [stock_key, s_quantity])),
+)]
 #[derive(Clone, Debug)]
 pub struct Stock {
     #[primary_key]
@@ -513,8 +516,7 @@ pub fn stock_level(
     let mut low_stock_count = 0u32;
     let _timer_count= LogStopwatch::new("stock_level_count");
     for item_id in item_ids {
-        let stock = find_stock(ctx, w_id, item_id)?;
-        if stock.s_quantity < threshold {
+        if find_low_stock(ctx, w_id, item_id, threshold).is_some() {
             low_stock_count += 1;
         }
     }
@@ -790,6 +792,15 @@ fn find_customer_by_id(tx: &ReducerContext, w_id: WarehouseId, d_id: u8, c_id: u
         .customer_key()
         .find(customer_key)
         .ok_or_else(|| format!("customer ({w_id}, {d_id}, {c_id}) not found"))
+}
+
+fn find_low_stock(tx: &ReducerContext, w_id: WarehouseId, item_id: u32, threshold: i32) -> Option<Stock> {
+    let stock_key = pack_stock_key(w_id, item_id);
+    tx.db
+        .stock()
+        .by_stock_key_quantity()
+        .filter((stock_key, 0..threshold))
+        .next()
 }
 
 fn find_stock(tx: &ReducerContext, w_id: WarehouseId, item_id: u32) -> Result<Stock, String> {
