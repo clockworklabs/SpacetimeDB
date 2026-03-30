@@ -9,7 +9,7 @@ class IndexTest {
     // ---- UniqueIndex ----
 
     @Test
-    fun uniqueIndexFindReturnsCorrectRow() {
+    fun `unique index find returns correct row`() {
         val cache = createSampleCache()
         val alice = SampleRow(1, "alice")
         val bob = SampleRow(2, "bob")
@@ -22,7 +22,7 @@ class IndexTest {
     }
 
     @Test
-    fun uniqueIndexTracksInserts() {
+    fun `unique index tracks inserts`() {
         val cache = createSampleCache()
         val index = UniqueIndex(cache) { it.id }
 
@@ -35,7 +35,7 @@ class IndexTest {
     }
 
     @Test
-    fun uniqueIndexTracksDeletes() {
+    fun `unique index tracks deletes`() {
         val cache = createSampleCache()
         val alice = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(alice.encode()))
@@ -52,7 +52,7 @@ class IndexTest {
     // ---- BTreeIndex ----
 
     @Test
-    fun btreeIndexFilterReturnsAllMatching() {
+    fun `btree index filter returns all matching`() {
         val cache = createSampleCache()
         val alice = SampleRow(1, "alice")
         val bob = SampleRow(2, "bob")
@@ -67,7 +67,7 @@ class IndexTest {
     }
 
     @Test
-    fun btreeIndexHandlesDuplicateKeys() {
+    fun `btree index handles duplicate keys`() {
         val cache = createSampleCache()
         val r1 = SampleRow(1, "same")
         val r2 = SampleRow(2, "same")
@@ -79,7 +79,7 @@ class IndexTest {
     }
 
     @Test
-    fun btreeIndexTracksInserts() {
+    fun `btree index tracks inserts`() {
         val cache = createSampleCache()
         val index = BTreeIndex(cache) { it.name }
 
@@ -92,7 +92,7 @@ class IndexTest {
     }
 
     @Test
-    fun btreeIndexRemovesEmptyKeyOnDelete() {
+    fun `btree index removes empty key on delete`() {
         val cache = createSampleCache()
         val alice = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(alice.encode()))
@@ -107,7 +107,7 @@ class IndexTest {
     }
 
     @Test
-    fun btreeIndexPartialDeleteKeepsRemainingRows() {
+    fun `btree index partial delete keeps remaining rows`() {
         val cache = createSampleCache()
         val r1 = SampleRow(1, "group")
         val r2 = SampleRow(2, "group")
@@ -127,7 +127,7 @@ class IndexTest {
     // ---- Null key handling ----
 
     @Test
-    fun uniqueIndexHandlesNullKeys() {
+    fun `unique index handles null keys`() {
         val cache = createSampleCache()
         val nullKeyRow = SampleRow(0, "null-key")
         val normalRow = SampleRow(1, "normal")
@@ -141,7 +141,7 @@ class IndexTest {
     }
 
     @Test
-    fun btreeIndexHandlesNullKeys() {
+    fun `btree index handles null keys`() {
         val cache = createSampleCache()
         val r1 = SampleRow(0, "a")
         val r2 = SampleRow(1, "b")

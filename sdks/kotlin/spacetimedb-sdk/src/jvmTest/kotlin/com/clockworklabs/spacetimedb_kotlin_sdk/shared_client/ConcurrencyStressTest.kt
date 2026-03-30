@@ -36,7 +36,7 @@ class ConcurrencyStressTest {
     // ---- TableCache: concurrent inserts ----
 
     @Test
-    fun tableCacheConcurrentInsertsAreNotLost() = runBlocking(Dispatchers.Default) {
+    fun `table cache concurrent inserts are not lost`() = runBlocking(Dispatchers.Default) {
         val cache = createSampleCache()
         val totalRows = THREAD_COUNT * OPS_PER_THREAD
         val barrier = CyclicBarrier(THREAD_COUNT)
@@ -65,7 +65,7 @@ class ConcurrencyStressTest {
     // ---- TableCache: concurrent inserts and deletes ----
 
     @Test
-    fun tableCacheConcurrentInsertAndDeleteConverges() = runBlocking(Dispatchers.Default) {
+    fun `table cache concurrent insert and delete converges`() = runBlocking(Dispatchers.Default) {
         val cache = createSampleCache()
         val barrier = CyclicBarrier(THREAD_COUNT)
 
@@ -111,7 +111,7 @@ class ConcurrencyStressTest {
     // ---- TableCache: concurrent reads during writes ----
 
     @Test
-    fun tableCacheReadsAreConsistentSnapshotsDuringWrites() = runBlocking(Dispatchers.Default) {
+    fun `table cache reads are consistent snapshots during writes`() = runBlocking(Dispatchers.Default) {
         val cache = createSampleCache()
         val barrier = CyclicBarrier(THREAD_COUNT)
 
@@ -146,7 +146,7 @@ class ConcurrencyStressTest {
     // ---- TableCache: concurrent ref count increments and decrements ----
 
     @Test
-    fun tableCacheRefCountSurvivesConcurrentIncrementDecrement() = runBlocking(Dispatchers.Default) {
+    fun `table cache ref count survives concurrent increment decrement`() = runBlocking(Dispatchers.Default) {
         val cache = createSampleCache()
         val sharedRow = SampleRow(42, "shared")
         cache.applyInserts(STUB_CTX, buildRowList(sharedRow.encode()))
@@ -175,7 +175,7 @@ class ConcurrencyStressTest {
     // ---- UniqueIndex: consistent with cache under concurrent mutations ----
 
     @Test
-    fun uniqueIndexStaysConsistentUnderConcurrentInserts() = runBlocking(Dispatchers.Default) {
+    fun `unique index stays consistent under concurrent inserts`() = runBlocking(Dispatchers.Default) {
         val cache = createSampleCache()
         val index = UniqueIndex(cache) { it.id }
         val totalRows = THREAD_COUNT * OPS_PER_THREAD
@@ -201,7 +201,7 @@ class ConcurrencyStressTest {
     }
 
     @Test
-    fun uniqueIndexStaysConsistentUnderConcurrentInsertsAndDeletes() = runBlocking(Dispatchers.Default) {
+    fun `unique index stays consistent under concurrent inserts and deletes`() = runBlocking(Dispatchers.Default) {
         val cache = createSampleCache()
         val index = UniqueIndex(cache) { it.id }
 
@@ -252,7 +252,7 @@ class ConcurrencyStressTest {
     // ---- BTreeIndex: consistent under concurrent mutations ----
 
     @Test
-    fun btreeIndexStaysConsistentUnderConcurrentInserts() = runBlocking(Dispatchers.Default) {
+    fun `btree index stays consistent under concurrent inserts`() = runBlocking(Dispatchers.Default) {
         val cache = createSampleCache()
         // Key on name — groups of rows share the same name
         val groupCount = 10
@@ -283,7 +283,7 @@ class ConcurrencyStressTest {
     // ---- Callback registration: concurrent add/remove during iteration ----
 
     @Test
-    fun callbackRegistrationSurvivesConcurrentAddRemove() = runBlocking(Dispatchers.Default) {
+    fun `callback registration survives concurrent add remove`() = runBlocking(Dispatchers.Default) {
         val cache = createSampleCache()
         val callCount = AtomicInteger(0)
         val barrier = CyclicBarrier(THREAD_COUNT)
@@ -324,7 +324,7 @@ class ConcurrencyStressTest {
     // ---- ClientCache.getOrCreateTable: concurrent creation of same table ----
 
     @Test
-    fun clientCacheGetOrCreateTableIsIdempotentUnderContention() = runBlocking(Dispatchers.Default) {
+    fun `client cache get or create table is idempotent under contention`() = runBlocking(Dispatchers.Default) {
         val clientCache = ClientCache()
         val barrier = CyclicBarrier(THREAD_COUNT)
         val creationCount = AtomicInteger(0)
@@ -358,7 +358,7 @@ class ConcurrencyStressTest {
     // ---- NetworkRequestTracker: concurrent start/finish ----
 
     @Test
-    fun networkRequestTrackerConcurrentStartFinish() = runBlocking(Dispatchers.Default) {
+    fun `network request tracker concurrent start finish`() = runBlocking(Dispatchers.Default) {
         val tracker = NetworkRequestTracker()
         val barrier = CyclicBarrier(THREAD_COUNT)
         val totalOps = THREAD_COUNT * OPS_PER_THREAD
@@ -380,7 +380,7 @@ class ConcurrencyStressTest {
     }
 
     @Test
-    fun networkRequestTrackerConcurrentInsertSample() = runBlocking(Dispatchers.Default) {
+    fun `network request tracker concurrent insert sample`() = runBlocking(Dispatchers.Default) {
         val tracker = NetworkRequestTracker()
         val barrier = CyclicBarrier(THREAD_COUNT)
         val totalOps = THREAD_COUNT * OPS_PER_THREAD
@@ -406,7 +406,7 @@ class ConcurrencyStressTest {
     // ---- Logger: concurrent level/handler read/write ----
 
     @Test
-    fun loggerConcurrentLevelAndHandlerChanges() = runBlocking(Dispatchers.Default) {
+    fun `logger concurrent level and handler changes`() = runBlocking(Dispatchers.Default) {
         val originalLevel = Logger.level
         val originalHandler = Logger.handler
         val barrier = CyclicBarrier(THREAD_COUNT)
@@ -444,7 +444,7 @@ class ConcurrencyStressTest {
     // ---- Internal listeners: concurrent listener fire during add ----
 
     @Test
-    fun internalListenersFireSafelyDuringConcurrentRegistration() = runBlocking(Dispatchers.Default) {
+    fun `internal listeners fire safely during concurrent registration`() = runBlocking(Dispatchers.Default) {
         val cache = createSampleCache()
         val listenerCallCount = AtomicInteger(0)
         val barrier = CyclicBarrier(THREAD_COUNT)
@@ -480,7 +480,7 @@ class ConcurrencyStressTest {
     // ---- TableCache clear() racing with inserts ----
 
     @Test
-    fun tableCacheClearRacingWithInserts() = runBlocking(Dispatchers.Default) {
+    fun `table cache clear racing with inserts`() = runBlocking(Dispatchers.Default) {
         val cache = createSampleCache()
         val barrier = CyclicBarrier(THREAD_COUNT)
 
@@ -515,7 +515,7 @@ class ConcurrencyStressTest {
     // ---- UniqueIndex: reads during concurrent mutations ----
 
     @Test
-    fun uniqueIndexReadsReturnConsistentSnapshotsDuringMutations() = runBlocking(Dispatchers.Default) {
+    fun `unique index reads return consistent snapshots during mutations`() = runBlocking(Dispatchers.Default) {
         val cache = createSampleCache()
         val index = UniqueIndex(cache) { it.id }
         val barrier = CyclicBarrier(THREAD_COUNT)
@@ -551,7 +551,7 @@ class ConcurrencyStressTest {
     // ---- BTreeIndex: concurrent insert/delete with group verification ----
 
     @Test
-    fun btreeIndexGroupCountConvergesAfterConcurrentInsertDelete() = runBlocking(Dispatchers.Default) {
+    fun `btree index group count converges after concurrent insert delete`() = runBlocking(Dispatchers.Default) {
         val cache = createSampleCache()
         val index = BTreeIndex(cache) { it.name }
         val groupName = "shared-group"
@@ -600,7 +600,7 @@ class ConcurrencyStressTest {
     // ---- DbConnection: concurrent disconnect from multiple threads ----
 
     @Test
-    fun concurrentDisconnectFiresCallbackExactlyOnce() = runBlocking(Dispatchers.Default) {
+    fun `concurrent disconnect fires callback exactly once`() = runBlocking(Dispatchers.Default) {
         val transport = FakeTransport()
         val disconnectCount = AtomicInteger(0)
 
@@ -644,7 +644,7 @@ class ConcurrencyStressTest {
     // ---- TableCache: concurrent updates (combined delete+insert) ----
 
     @Test
-    fun tableCacheConcurrentUpdatesReplaceCorrectly() = runBlocking(Dispatchers.Default) {
+    fun `table cache concurrent updates replace correctly`() = runBlocking(Dispatchers.Default) {
         val cache = createSampleCache()
         val totalRows = THREAD_COUNT * OPS_PER_THREAD
         // Pre-insert all rows with original names
@@ -683,7 +683,7 @@ class ConcurrencyStressTest {
     // ---- TableCache: two-phase deletes under contention ----
 
     @Test
-    fun twoPhaseDeletesUnderContention() = runBlocking(Dispatchers.Default) {
+    fun `two phase deletes under contention`() = runBlocking(Dispatchers.Default) {
         val cache = createSampleCache()
         val totalRows = THREAD_COUNT * OPS_PER_THREAD
         for (i in 0 until totalRows) {
@@ -720,7 +720,7 @@ class ConcurrencyStressTest {
     // ---- TableCache: two-phase updates under contention ----
 
     @Test
-    fun twoPhaseUpdatesUnderContention() = runBlocking(Dispatchers.Default) {
+    fun `two phase updates under contention`() = runBlocking(Dispatchers.Default) {
         val cache = createSampleCache()
         val totalRows = THREAD_COUNT * OPS_PER_THREAD
         for (i in 0 until totalRows) {
@@ -762,7 +762,7 @@ class ConcurrencyStressTest {
     // ---- Content-key table: concurrent operations without primary key ----
 
     @Test
-    fun contentKeyTableConcurrentInserts() = runBlocking(Dispatchers.Default) {
+    fun `content key table concurrent inserts`() = runBlocking(Dispatchers.Default) {
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val totalRows = THREAD_COUNT * OPS_PER_THREAD
         val barrier = CyclicBarrier(THREAD_COUNT)
@@ -785,7 +785,7 @@ class ConcurrencyStressTest {
     }
 
     @Test
-    fun contentKeyTableConcurrentInsertAndDelete() = runBlocking(Dispatchers.Default) {
+    fun `content key table concurrent insert and delete`() = runBlocking(Dispatchers.Default) {
         val cache = TableCache.withContentKey(::decodeSampleRow)
 
         // Pre-insert rows to delete
@@ -828,7 +828,7 @@ class ConcurrencyStressTest {
     // ---- Event table: concurrent fire-and-forget ----
 
     @Test
-    fun eventTableConcurrentUpdatesNeverStoreRows() = runBlocking(Dispatchers.Default) {
+    fun `event table concurrent updates never store rows`() = runBlocking(Dispatchers.Default) {
         val cache = createSampleCache()
         val insertCallbackCount = AtomicInteger(0)
         cache.onInsert { _, _ -> insertCallbackCount.incrementAndGet() }
@@ -860,7 +860,7 @@ class ConcurrencyStressTest {
     // ---- Index construction from pre-populated cache under contention ----
 
     @Test
-    fun indexConstructionDuringConcurrentInserts() = runBlocking(Dispatchers.Default) {
+    fun `index construction during concurrent inserts`() = runBlocking(Dispatchers.Default) {
         val cache = createSampleCache()
         val totalRows = THREAD_COUNT * OPS_PER_THREAD
         val barrier = CyclicBarrier(THREAD_COUNT + 1) // +1 for index builder
@@ -905,7 +905,7 @@ class ConcurrencyStressTest {
     // ---- ClientCache: concurrent operations across multiple tables ----
 
     @Test
-    fun clientCacheConcurrentMultiTableOperations() = runBlocking(Dispatchers.Default) {
+    fun `client cache concurrent multi table operations`() = runBlocking(Dispatchers.Default) {
         val clientCache = ClientCache()
         val tableCount = 8
         val barrier = CyclicBarrier(THREAD_COUNT)

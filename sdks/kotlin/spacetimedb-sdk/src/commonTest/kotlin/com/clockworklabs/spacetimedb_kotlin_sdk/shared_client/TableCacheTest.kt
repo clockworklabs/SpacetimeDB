@@ -10,7 +10,7 @@ import kotlin.test.assertTrue
 class TableCacheTest {
 
     @Test
-    fun insertAddsRow() {
+    fun `insert adds row`() {
         val cache = createSampleCache()
         val row = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -19,7 +19,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun insertMultipleRows() {
+    fun `insert multiple rows`() {
         val cache = createSampleCache()
         val r1 = SampleRow(1, "alice")
         val r2 = SampleRow(2, "bob")
@@ -30,7 +30,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun insertDuplicateKeyIncrementsRefCount() {
+    fun `insert duplicate key increments ref count`() {
         val cache = createSampleCache()
         val row = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -41,7 +41,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun deleteRemovesRow() {
+    fun `delete removes row`() {
         val cache = createSampleCache()
         val row = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -53,7 +53,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun deleteDecrementsRefCount() {
+    fun `delete decrements ref count`() {
         val cache = createSampleCache()
         val row = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -70,7 +70,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun updateReplacesRow() {
+    fun `update replaces row`() {
         val cache = createSampleCache()
         val oldRow = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(oldRow.encode()))
@@ -88,7 +88,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun updateFiresInternalListeners() {
+    fun `update fires internal listeners`() {
         val cache = createSampleCache()
         val oldRow = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(oldRow.encode()))
@@ -111,7 +111,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun eventTableDoesNotStoreRows() {
+    fun `event table does not store rows`() {
         val cache = createSampleCache()
         val row = SampleRow(1, "alice")
         val event = TableUpdateRows.EventTable(
@@ -124,7 +124,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun clearEmptiesAllRows() {
+    fun `clear empties all rows`() {
         val cache = createSampleCache()
         val r1 = SampleRow(1, "alice")
         val r2 = SampleRow(2, "bob")
@@ -137,7 +137,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun clearFiresInternalDeleteListeners() {
+    fun `clear fires internal delete listeners`() {
         val cache = createSampleCache()
         val r1 = SampleRow(1, "alice")
         val r2 = SampleRow(2, "bob")
@@ -152,7 +152,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun iterReturnsAllRows() {
+    fun `iter returns all rows`() {
         val cache = createSampleCache()
         val r1 = SampleRow(1, "alice")
         val r2 = SampleRow(2, "bob")
@@ -163,7 +163,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun internalInsertListenerFiresOnInsert() {
+    fun `internal insert listener fires on insert`() {
         val cache = createSampleCache()
         val inserted = mutableListOf<SampleRow>()
         cache.addInternalInsertListener { inserted.add(it) }
@@ -175,7 +175,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun internalDeleteListenerFiresOnDelete() {
+    fun `internal delete listener fires on delete`() {
         val cache = createSampleCache()
         val row = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -190,7 +190,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun pureDeleteViaUpdateRemovesRow() {
+    fun `pure delete via update removes row`() {
         val cache = createSampleCache()
         val row = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -206,7 +206,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun pureInsertViaUpdateAddsRow() {
+    fun `pure insert via update adds row`() {
         val cache = createSampleCache()
         val row = SampleRow(1, "alice")
 
@@ -222,7 +222,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeyTableWorks() {
+    fun `content key table works`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val row = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -232,7 +232,7 @@ class TableCacheTest {
     // ---- Content-based keying extended coverage ----
 
     @Test
-    fun contentKeyInsertMultipleDistinctRows() {
+    fun `content key insert multiple distinct rows`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val r1 = SampleRow(1, "alice")
         val r2 = SampleRow(2, "bob")
@@ -244,7 +244,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeyDuplicateInsertIncrementsRefCount() {
+    fun `content key duplicate insert increments ref count`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val row = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -264,7 +264,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeyDeleteMatchesByBytesNotFieldValues() {
+    fun `content key delete matches by bytes not field values`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val row = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -282,7 +282,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeyOnInsertCallbackFires() {
+    fun `content key on insert callback fires`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val inserted = mutableListOf<SampleRow>()
         cache.onInsert { _, row -> inserted.add(row) }
@@ -295,7 +295,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeyOnInsertDoesNotFireForDuplicateContent() {
+    fun `content key on insert does not fire for duplicate content`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val row = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -310,7 +310,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeyOnDeleteCallbackFires() {
+    fun `content key on delete callback fires`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val row = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -326,7 +326,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeyOnDeleteDoesNotFireWhenRefCountStillPositive() {
+    fun `content key on delete does not fire when ref count still positive`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val row = SampleRow(1, "alice")
         // Insert twice — refcount = 2
@@ -345,7 +345,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeyOnBeforeDeleteFires() {
+    fun `content key on before delete fires`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val row = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -360,7 +360,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeyOnBeforeDeleteSkipsWhenRefCountHigh() {
+    fun `content key on before delete skips when ref count high`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val row = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -376,7 +376,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeyTwoPhaseDeleteOrder() {
+    fun `content key two phase delete order`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val row = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -394,7 +394,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeyUpdateAlwaysDecomposesIntoDeleteAndInsert() {
+    fun `content key update always decomposes into delete and insert`() {
         // For content-key tables, old and new content have different bytes = different keys.
         // So a PersistentTable update with delete(old) + insert(new) is never merged into onUpdate.
         val cache = TableCache.withContentKey(::decodeSampleRow)
@@ -425,7 +425,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeySameContentDeleteAndInsertMergesIntoUpdate() {
+    fun `content key same content delete and insert merges into update`() {
         // Edge case: if delete and insert have IDENTICAL content (same bytes),
         // they share the same content key and ARE merged into an onUpdate.
         val cache = TableCache.withContentKey(::decodeSampleRow)
@@ -458,7 +458,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeyPreApplyUpdateFiresBeforeDeleteForPureDeletes() {
+    fun `content key pre apply update fires before delete for pure deletes`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val row1 = SampleRow(1, "alice")
         val row2 = SampleRow(2, "bob")
@@ -479,7 +479,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeyPreApplyUpdateSkipsDeletesThatAreUpdates() {
+    fun `content key pre apply update skips deletes that are updates`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val row = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -499,7 +499,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeyInternalListenersFireCorrectly() {
+    fun `content key internal listeners fire correctly`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val internalInserts = mutableListOf<SampleRow>()
         val internalDeletes = mutableListOf<SampleRow>()
@@ -519,7 +519,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeyInternalListenersDoNotFireForRefCountBump() {
+    fun `content key internal listeners do not fire for ref count bump`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val internalInserts = mutableListOf<SampleRow>()
         cache.addInternalInsertListener { internalInserts.add(it) }
@@ -534,7 +534,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeyIterAndAll() {
+    fun `content key iter and all`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val r1 = SampleRow(1, "alice")
         val r2 = SampleRow(2, "bob")
@@ -549,7 +549,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeyClearRemovesAllAndFiresInternalListeners() {
+    fun `content key clear removes all and fires internal listeners`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val r1 = SampleRow(1, "alice")
         val r2 = SampleRow(2, "bob")
@@ -566,7 +566,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeyIndexesWorkWithContentKeyCache() {
+    fun `content key indexes work with content key cache`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val uniqueById = UniqueIndex(cache) { it.id }
         val btreeByName = BTreeIndex(cache) { it.name }
@@ -590,7 +590,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeyMixedUpdateWithPureDeleteAndPureInsert() {
+    fun `content key mixed update with pure delete and pure insert`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val existing1 = SampleRow(1, "alice")
         val existing2 = SampleRow(2, "bob")
@@ -620,7 +620,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeyDeleteOfNonExistentContentIsNoOp() {
+    fun `content key delete of non existent content is no op`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val row = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -639,7 +639,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun contentKeyRefCountWithCallbackLifecycle() {
+    fun `content key ref count with callback lifecycle`() {
         // Full lifecycle: insert x3 (same content), delete x3, verify callback timing
         val cache = TableCache.withContentKey(::decodeSampleRow)
         val row = SampleRow(1, "alice")
@@ -681,7 +681,7 @@ class TableCacheTest {
     // ---- Public callback tests ----
 
     @Test
-    fun onInsertCallbackFires() {
+    fun `on insert callback fires`() {
         val cache = createSampleCache()
         val inserted = mutableListOf<SampleRow>()
         cache.onInsert { _, row -> inserted.add(row) }
@@ -694,7 +694,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun onInsertCallbackDoesNotFireForDuplicate() {
+    fun `on insert callback does not fire for duplicate`() {
         val cache = createSampleCache()
         val row = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -710,7 +710,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun onDeleteCallbackFires() {
+    fun `on delete callback fires`() {
         val cache = createSampleCache()
         val row = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -726,7 +726,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun onUpdateCallbackFires() {
+    fun `on update callback fires`() {
         val cache = createSampleCache()
         val oldRow = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(oldRow.encode()))
@@ -749,7 +749,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun onBeforeDeleteFires() {
+    fun `on before delete fires`() {
         val cache = createSampleCache()
         val row = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -764,7 +764,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun preApplyThenApplyDeletesOrderCorrect() {
+    fun `pre apply then apply deletes order correct`() {
         val cache = createSampleCache()
         val row = SampleRow(1, "alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -782,7 +782,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun removeOnInsertStopsCallback() {
+    fun `remove on insert stops callback`() {
         val cache = createSampleCache()
         val inserted = mutableListOf<SampleRow>()
         val cb: (EventContext, SampleRow) -> Unit = { _, row -> inserted.add(row) }
@@ -802,7 +802,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun eventTableFiresInsertCallbacks() {
+    fun `event table fires insert callbacks`() {
         val cache = createSampleCache()
         val inserted = mutableListOf<SampleRow>()
         cache.onInsert { _, row -> inserted.add(row) }
@@ -823,7 +823,7 @@ class TableCacheTest {
     // ---- Event table extended coverage ----
 
     @Test
-    fun eventTableBatchMultipleRows() {
+    fun `event table batch multiple rows`() {
         val cache = createSampleCache()
         val inserted = mutableListOf<SampleRow>()
         cache.onInsert { _, row -> inserted.add(row) }
@@ -842,7 +842,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun eventTableOnDeleteCallbackNeverFires() {
+    fun `event table on delete callback never fires`() {
         val cache = createSampleCache()
         var deleteFired = false
         cache.onDelete { _, _ -> deleteFired = true }
@@ -858,7 +858,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun eventTableOnUpdateCallbackNeverFires() {
+    fun `event table on update callback never fires`() {
         val cache = createSampleCache()
         var updateFired = false
         cache.onUpdate { _, _, _ -> updateFired = true }
@@ -874,7 +874,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun eventTableOnBeforeDeleteNeverFires() {
+    fun `event table on before delete never fires`() {
         val cache = createSampleCache()
         var beforeDeleteFired = false
         cache.onBeforeDelete { _, _ -> beforeDeleteFired = true }
@@ -891,7 +891,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun eventTableRemoveOnInsertStopsCallback() {
+    fun `event table remove on insert stops callback`() {
         val cache = createSampleCache()
         val inserted = mutableListOf<SampleRow>()
         val cb: (EventContext, SampleRow) -> Unit = { _, row -> inserted.add(row) }
@@ -916,7 +916,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun eventTableSequentialUpdatesNeverAccumulate() {
+    fun `event table sequential updates never accumulate`() {
         val cache = createSampleCache()
         val allInserted = mutableListOf<SampleRow>()
         cache.onInsert { _, row -> allInserted.add(row) }
@@ -939,7 +939,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun eventTableDoesNotAffectInternalListeners() {
+    fun `event table does not affect internal listeners`() {
         val cache = createSampleCache()
         val internalInserts = mutableListOf<SampleRow>()
         val internalDeletes = mutableListOf<SampleRow>()
@@ -958,7 +958,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun eventTableIndexesStayEmpty() {
+    fun `event table indexes stay empty`() {
         val cache = createSampleCache()
         val uniqueIndex = UniqueIndex(cache) { it.id }
         val btreeIndex = BTreeIndex(cache) { it.name }
@@ -981,7 +981,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun eventTableDuplicateRowsBothFireCallbacks() {
+    fun `event table duplicate rows both fire callbacks`() {
         val cache = createSampleCache()
         val inserted = mutableListOf<SampleRow>()
         cache.onInsert { _, row -> inserted.add(row) }
@@ -1001,7 +1001,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun eventTableAfterPersistentInsertDoesNotAffectCachedRows() {
+    fun `event table after persistent insert does not affect cached rows`() {
         val cache = createSampleCache()
 
         // Persistent insert
@@ -1021,7 +1021,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun eventTableEmptyEventsProducesNoCallbacks() {
+    fun `event table empty events produces no callbacks`() {
         val cache = createSampleCache()
         var callbackCount = 0
         cache.onInsert { _, _ -> callbackCount++ }
@@ -1038,7 +1038,7 @@ class TableCacheTest {
     }
 
     @Test
-    fun eventTableMultipleCallbacksAllFire() {
+    fun `event table multiple callbacks all fire`() {
         val cache = createSampleCache()
         val cb1 = mutableListOf<SampleRow>()
         val cb2 = mutableListOf<SampleRow>()

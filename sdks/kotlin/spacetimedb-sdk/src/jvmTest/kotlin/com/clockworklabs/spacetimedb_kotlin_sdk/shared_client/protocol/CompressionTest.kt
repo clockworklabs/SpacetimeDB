@@ -14,7 +14,7 @@ class CompressionTest {
         data.copyOfRange(offset, data.size)
 
     @Test
-    fun noneTagReturnsPayloadUnchanged() {
+    fun `none tag returns payload unchanged`() {
         val payload = byteArrayOf(10, 20, 30, 40)
         val message = byteArrayOf(Compression.NONE) + payload
 
@@ -26,7 +26,7 @@ class CompressionTest {
     }
 
     @Test
-    fun gzipTagDecompressesPayload() {
+    fun `gzip tag decompresses payload`() {
         val original = "Hello SpacetimeDB".encodeToByteArray()
 
         // Compress with java.util.zip
@@ -44,14 +44,14 @@ class CompressionTest {
     }
 
     @Test
-    fun emptyInputThrows() {
+    fun `empty input throws`() {
         assertFailsWith<IllegalArgumentException> {
             decompressMessage(byteArrayOf())
         }
     }
 
     @Test
-    fun brotliTagRejectsInvalidData() {
+    fun `brotli tag rejects invalid data`() {
         // Brotli decoder is wired up — invalid data throws IOException (not IllegalStateException)
         assertFailsWith<java.io.IOException> {
             decompressMessage(byteArrayOf(Compression.BROTLI, 1, 2, 3))
@@ -59,14 +59,14 @@ class CompressionTest {
     }
 
     @Test
-    fun unknownTagThrows() {
+    fun `unknown tag throws`() {
         assertFailsWith<IllegalStateException> {
             decompressMessage(byteArrayOf(0x7F, 1, 2, 3))
         }
     }
 
     @Test
-    fun noneTagEmptyPayload() {
+    fun `none tag empty payload`() {
         val message = byteArrayOf(Compression.NONE)
         val result = decompressMessage(message)
         assertEquals(0, result.size)

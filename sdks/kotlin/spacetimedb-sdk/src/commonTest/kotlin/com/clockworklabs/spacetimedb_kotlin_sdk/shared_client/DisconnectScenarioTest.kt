@@ -27,7 +27,7 @@ class DisconnectScenarioTest {
     // =========================================================================
 
     @Test
-    fun disconnectDuringPendingOneOffQueryFailsCallback() = runTest {
+    fun `disconnect during pending one off query fails callback`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -49,7 +49,7 @@ class DisconnectScenarioTest {
     }
 
     @Test
-    fun disconnectDuringPendingSuspendOneOffQueryThrows() = runTest {
+    fun `disconnect during pending suspend one off query throws`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -80,7 +80,7 @@ class DisconnectScenarioTest {
     }
 
     @Test
-    fun serverCloseDuringMultiplePendingOperations() = runTest {
+    fun `server close during multiple pending operations`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -106,7 +106,7 @@ class DisconnectScenarioTest {
     }
 
     @Test
-    fun transactionUpdateDuringDisconnectDoesNotCrash() = runTest {
+    fun `transaction update during disconnect does not crash`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         val cache = createSampleCache()
@@ -145,7 +145,7 @@ class DisconnectScenarioTest {
     // =========================================================================
 
     @Test
-    fun disconnectWhileConnectingDoesNotCrash() = runTest {
+    fun `disconnect while connecting does not crash`() = runTest {
         // Use a transport that suspends forever in connect()
         val suspendingTransport = object : Transport {
             override suspend fun connect() {
@@ -182,7 +182,7 @@ class DisconnectScenarioTest {
     }
 
     @Test
-    fun multipleSequentialDisconnectsFireCallbackOnlyOnce() = runTest {
+    fun `multiple sequential disconnects fire callback only once`() = runTest {
         val transport = FakeTransport()
         var disconnectCount = 0
         val conn = buildTestConnection(transport, onDisconnect = { _, _ ->
@@ -202,7 +202,7 @@ class DisconnectScenarioTest {
     }
 
     @Test
-    fun disconnectDuringSubscribeAppliedProcessing() = runTest {
+    fun `disconnect during subscribe applied processing`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         val cache = createSampleCache()
@@ -229,7 +229,7 @@ class DisconnectScenarioTest {
     }
 
     @Test
-    fun disconnectClearsClientCacheCompletely() = runTest {
+    fun `disconnect clears client cache completely`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         val cache = createSampleCache()
@@ -266,7 +266,7 @@ class DisconnectScenarioTest {
     }
 
     @Test
-    fun disconnectClearsIndexesConsistentlyWithCache() = runTest {
+    fun `disconnect clears indexes consistently with cache`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         val cache = createSampleCache()
@@ -328,7 +328,7 @@ class DisconnectScenarioTest {
     }
 
     @Test
-    fun serverCloseFollowedByClientDisconnectDoesNotDoubleFailPending() = runTest {
+    fun `server close followed by client disconnect does not double fail pending`() = runTest {
         val transport = FakeTransport()
         var disconnectCount = 0
         val conn = buildTestConnection(transport, onDisconnect = { _, _ ->
@@ -356,7 +356,7 @@ class DisconnectScenarioTest {
     // =========================================================================
 
     @Test
-    fun freshConnectionWorksAfterPreviousDisconnect() = runTest {
+    fun `fresh connection works after previous disconnect`() = runTest {
         val transport1 = FakeTransport()
         val conn1 = buildTestConnection(transport1, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport1.sendToClient(initialConnectionMsg())
@@ -396,7 +396,7 @@ class DisconnectScenarioTest {
     }
 
     @Test
-    fun freshConnectionCacheIsIndependentFromOld() = runTest {
+    fun `fresh connection cache is independent from old`() = runTest {
         val transport1 = FakeTransport()
         val conn1 = buildTestConnection(transport1, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         val cache1 = createSampleCache()
@@ -438,7 +438,7 @@ class DisconnectScenarioTest {
     // =========================================================================
 
     @Test
-    fun sendMessageAfterDisconnectDoesNotCrash() = runTest {
+    fun `send message after disconnect does not crash`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -455,7 +455,7 @@ class DisconnectScenarioTest {
     }
 
     @Test
-    fun sendMessageOnClosedChannelDoesNotCrash() = runTest {
+    fun `send message on closed channel does not crash`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -471,7 +471,7 @@ class DisconnectScenarioTest {
     }
 
     @Test
-    fun reducerCallbackDoesNotFireOnFailedSend() = runTest {
+    fun `reducer callback does not fire on failed send`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())

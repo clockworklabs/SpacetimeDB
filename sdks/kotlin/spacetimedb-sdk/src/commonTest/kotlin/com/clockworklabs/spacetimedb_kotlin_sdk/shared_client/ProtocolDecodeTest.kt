@@ -21,7 +21,7 @@ class ProtocolDecodeTest {
     // ---- RowSizeHint ----
 
     @Test
-    fun rowSizeHintFixedSizeDecode() {
+    fun `row size hint fixed size decode`() {
         val writer = BsatnWriter()
         writer.writeSumTag(0u) // tag = FixedSize
         writer.writeU16(4u)    // 4 bytes per row
@@ -32,7 +32,7 @@ class ProtocolDecodeTest {
     }
 
     @Test
-    fun rowSizeHintRowOffsetsDecode() {
+    fun `row size hint row offsets decode`() {
         val writer = BsatnWriter()
         writer.writeSumTag(1u) // tag = RowOffsets
         writer.writeArrayLen(3)
@@ -46,7 +46,7 @@ class ProtocolDecodeTest {
     }
 
     @Test
-    fun rowSizeHintUnknownTagThrows() {
+    fun `row size hint unknown tag throws`() {
         val writer = BsatnWriter()
         writer.writeSumTag(99u) // invalid tag
 
@@ -58,7 +58,7 @@ class ProtocolDecodeTest {
     // ---- BsatnRowList ----
 
     @Test
-    fun bsatnRowListDecodeWithFixedSize() {
+    fun `bsatn row list decode with fixed size`() {
         val writer = BsatnWriter()
         // RowSizeHint::FixedSize(4)
         writer.writeSumTag(0u)
@@ -74,7 +74,7 @@ class ProtocolDecodeTest {
     }
 
     @Test
-    fun bsatnRowListDecodeWithRowOffsets() {
+    fun `bsatn row list decode with row offsets`() {
         val writer = BsatnWriter()
         // RowSizeHint::RowOffsets([0, 5])
         writer.writeSumTag(1u)
@@ -92,7 +92,7 @@ class ProtocolDecodeTest {
     }
 
     @Test
-    fun bsatnRowListDecodeOverflowLengthThrows() {
+    fun `bsatn row list decode overflow length throws`() {
         val writer = BsatnWriter()
         // RowSizeHint::FixedSize(4)
         writer.writeSumTag(0u)
@@ -109,7 +109,7 @@ class ProtocolDecodeTest {
     // ---- SingleTableRows ----
 
     @Test
-    fun singleTableRowsDecode() {
+    fun `single table rows decode`() {
         val writer = BsatnWriter()
         writer.writeString("Players")
         // BsatnRowList: FixedSize(4), 4 bytes of data
@@ -126,7 +126,7 @@ class ProtocolDecodeTest {
     // ---- QueryRows ----
 
     @Test
-    fun queryRowsDecodeEmpty() {
+    fun `query rows decode empty`() {
         val writer = BsatnWriter()
         writer.writeArrayLen(0)
 
@@ -135,7 +135,7 @@ class ProtocolDecodeTest {
     }
 
     @Test
-    fun queryRowsDecodeWithTables() {
+    fun `query rows decode with tables`() {
         val writer = BsatnWriter()
         writer.writeArrayLen(2)
         // Table 1
@@ -156,7 +156,7 @@ class ProtocolDecodeTest {
     // ---- TableUpdateRows ----
 
     @Test
-    fun tableUpdateRowsPersistentTableDecode() {
+    fun `table update rows persistent table decode`() {
         val writer = BsatnWriter()
         writer.writeSumTag(0u) // tag = PersistentTable
         // inserts: BsatnRowList
@@ -174,7 +174,7 @@ class ProtocolDecodeTest {
     }
 
     @Test
-    fun tableUpdateRowsEventTableDecode() {
+    fun `table update rows event table decode`() {
         val writer = BsatnWriter()
         writer.writeSumTag(1u) // tag = EventTable
         // events: BsatnRowList
@@ -188,7 +188,7 @@ class ProtocolDecodeTest {
     }
 
     @Test
-    fun tableUpdateRowsUnknownTagThrows() {
+    fun `table update rows unknown tag throws`() {
         val writer = BsatnWriter()
         writer.writeSumTag(99u)
 
@@ -200,7 +200,7 @@ class ProtocolDecodeTest {
     // ---- ReducerOutcome ----
 
     @Test
-    fun reducerOutcomeOkDecode() {
+    fun `reducer outcome ok decode`() {
         val writer = BsatnWriter()
         writer.writeSumTag(0u) // tag = Ok
         writer.writeByteArray(byteArrayOf(42)) // retValue
@@ -213,7 +213,7 @@ class ProtocolDecodeTest {
     }
 
     @Test
-    fun reducerOutcomeOkEmptyDecode() {
+    fun `reducer outcome ok empty decode`() {
         val writer = BsatnWriter()
         writer.writeSumTag(1u) // tag = OkEmpty
 
@@ -222,7 +222,7 @@ class ProtocolDecodeTest {
     }
 
     @Test
-    fun reducerOutcomeErrDecode() {
+    fun `reducer outcome err decode`() {
         val writer = BsatnWriter()
         writer.writeSumTag(2u) // tag = Err
         writer.writeByteArray(byteArrayOf(0xDE.toByte()))
@@ -233,7 +233,7 @@ class ProtocolDecodeTest {
     }
 
     @Test
-    fun reducerOutcomeInternalErrorDecode() {
+    fun `reducer outcome internal error decode`() {
         val writer = BsatnWriter()
         writer.writeSumTag(3u) // tag = InternalError
         writer.writeString("panic in reducer")
@@ -244,7 +244,7 @@ class ProtocolDecodeTest {
     }
 
     @Test
-    fun reducerOutcomeUnknownTagThrows() {
+    fun `reducer outcome unknown tag throws`() {
         val writer = BsatnWriter()
         writer.writeSumTag(99u)
 
@@ -256,7 +256,7 @@ class ProtocolDecodeTest {
     // ---- ProcedureStatus ----
 
     @Test
-    fun procedureStatusReturnedDecode() {
+    fun `procedure status returned decode`() {
         val writer = BsatnWriter()
         writer.writeSumTag(0u) // tag = Returned
         writer.writeByteArray(byteArrayOf(1, 2, 3))
@@ -267,7 +267,7 @@ class ProtocolDecodeTest {
     }
 
     @Test
-    fun procedureStatusInternalErrorDecode() {
+    fun `procedure status internal error decode`() {
         val writer = BsatnWriter()
         writer.writeSumTag(1u) // tag = InternalError
         writer.writeString("procedure crashed")
@@ -278,7 +278,7 @@ class ProtocolDecodeTest {
     }
 
     @Test
-    fun procedureStatusUnknownTagThrows() {
+    fun `procedure status unknown tag throws`() {
         val writer = BsatnWriter()
         writer.writeSumTag(99u)
 
@@ -290,35 +290,35 @@ class ProtocolDecodeTest {
     // ---- DecompressedPayload offset validation ----
 
     @Test
-    fun decompressedPayloadValidOffset() {
+    fun `decompressed payload valid offset`() {
         val data = byteArrayOf(1, 2, 3, 4)
         val payload = DecompressedPayload(data, 1)
         assertEquals(3, payload.size)
     }
 
     @Test
-    fun decompressedPayloadZeroOffset() {
+    fun `decompressed payload zero offset`() {
         val data = byteArrayOf(1, 2, 3)
         val payload = DecompressedPayload(data, 0)
         assertEquals(3, payload.size)
     }
 
     @Test
-    fun decompressedPayloadOffsetAtEnd() {
+    fun `decompressed payload offset at end`() {
         val data = byteArrayOf(1, 2)
         val payload = DecompressedPayload(data, 2)
         assertEquals(0, payload.size)
     }
 
     @Test
-    fun decompressedPayloadNegativeOffsetRejects() {
+    fun `decompressed payload negative offset rejects`() {
         assertFailsWith<IllegalArgumentException> {
             DecompressedPayload(byteArrayOf(1, 2), -1)
         }
     }
 
     @Test
-    fun decompressedPayloadOffsetBeyondSizeRejects() {
+    fun `decompressed payload offset beyond size rejects`() {
         assertFailsWith<IllegalArgumentException> {
             DecompressedPayload(byteArrayOf(1, 2), 3)
         }

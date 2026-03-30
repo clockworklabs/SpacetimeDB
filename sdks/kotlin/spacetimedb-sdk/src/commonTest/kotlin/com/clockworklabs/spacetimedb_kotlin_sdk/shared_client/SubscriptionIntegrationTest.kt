@@ -16,7 +16,7 @@ class SubscriptionIntegrationTest {
     // --- Subscriptions ---
 
     @Test
-    fun subscribeSendsClientMessage() = runTest {
+    fun `subscribe sends client message`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -32,7 +32,7 @@ class SubscriptionIntegrationTest {
     }
 
     @Test
-    fun subscribeAppliedFiresOnAppliedCallback() = runTest {
+    fun `subscribe applied fires on applied callback`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -59,7 +59,7 @@ class SubscriptionIntegrationTest {
     }
 
     @Test
-    fun subscriptionErrorFiresOnErrorCallback() = runTest {
+    fun `subscription error fires on error callback`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -88,7 +88,7 @@ class SubscriptionIntegrationTest {
     // --- Unsubscribe lifecycle ---
 
     @Test
-    fun unsubscribeThenCallbackFiresOnUnsubscribeApplied() = runTest {
+    fun `unsubscribe then callback fires on unsubscribe applied`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -136,7 +136,7 @@ class SubscriptionIntegrationTest {
     }
 
     @Test
-    fun unsubscribeThenCallbackIsSetBeforeMessageSent() = runTest {
+    fun `unsubscribe then callback is set before message sent`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -179,7 +179,7 @@ class SubscriptionIntegrationTest {
     // --- Unsubscribe from wrong state ---
 
     @Test
-    fun unsubscribeFromPendingStateThrows() = runTest {
+    fun `unsubscribe from pending state throws`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -196,7 +196,7 @@ class SubscriptionIntegrationTest {
     }
 
     @Test
-    fun unsubscribeFromEndedStateThrows() = runTest {
+    fun `unsubscribe from ended state throws`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -227,7 +227,7 @@ class SubscriptionIntegrationTest {
     // --- Unsubscribe with custom flags ---
 
     @Test
-    fun unsubscribeWithSendDroppedRowsFlag() = runTest {
+    fun `unsubscribe with send dropped rows flag`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -256,7 +256,7 @@ class SubscriptionIntegrationTest {
     // --- Subscription state machine edge cases ---
 
     @Test
-    fun subscriptionErrorWhileUnsubscribingMovesToEnded() = runTest {
+    fun `subscription error while unsubscribing moves to ended`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -298,7 +298,7 @@ class SubscriptionIntegrationTest {
     }
 
     @Test
-    fun transactionUpdateDuringUnsubscribeStillApplies() = runTest {
+    fun `transaction update during unsubscribe still applies`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         val cache = createSampleCache()
@@ -355,7 +355,7 @@ class SubscriptionIntegrationTest {
     // --- Overlapping subscriptions ---
 
     @Test
-    fun overlappingSubscriptionsRefCountRows() = runTest {
+    fun `overlapping subscriptions ref count rows`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         val cache = createSampleCache()
@@ -429,7 +429,7 @@ class SubscriptionIntegrationTest {
     }
 
     @Test
-    fun overlappingSubscriptionTransactionUpdateAffectsBothHandles() = runTest {
+    fun `overlapping subscription transaction update affects both handles`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         val cache = createSampleCache()
@@ -518,7 +518,7 @@ class SubscriptionIntegrationTest {
     // --- Multi-subscription conflict scenarios ---
 
     @Test
-    fun multipleSubscriptionsIndependentLifecycle() = runTest {
+    fun `multiple subscriptions independent lifecycle`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -587,7 +587,7 @@ class SubscriptionIntegrationTest {
     }
 
     @Test
-    fun subscribeAppliedDuringUnsubscribeOfOverlappingSubscription() = runTest {
+    fun `subscribe applied during unsubscribe of overlapping subscription`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         val cache = createSampleCache()
@@ -654,7 +654,7 @@ class SubscriptionIntegrationTest {
     }
 
     @Test
-    fun subscriptionErrorDoesNotAffectOtherSubscriptionCachedRows() = runTest {
+    fun `subscription error does not affect other subscription cached rows`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         val cache = createSampleCache()
@@ -707,7 +707,7 @@ class SubscriptionIntegrationTest {
     }
 
     @Test
-    fun transactionUpdateSpansMultipleQuerySets() = runTest {
+    fun `transaction update spans multiple query sets`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         val cache = createSampleCache()
@@ -784,7 +784,7 @@ class SubscriptionIntegrationTest {
     }
 
     @Test
-    fun resubscribeAfterUnsubscribeCompletes() = runTest {
+    fun `resubscribe after unsubscribe completes`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         val cache = createSampleCache()
@@ -845,7 +845,7 @@ class SubscriptionIntegrationTest {
     }
 
     @Test
-    fun threeOverlappingSubscriptionsUnsubscribeMiddle() = runTest {
+    fun `three overlapping subscriptions unsubscribe middle`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         val cache = createSampleCache()
@@ -945,7 +945,7 @@ class SubscriptionIntegrationTest {
     }
 
     @Test
-    fun unsubscribeDropsUniqueRowsButKeepsSharedRows() = runTest {
+    fun `unsubscribe drops unique rows but keeps shared rows`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         val cache = createSampleCache()

@@ -16,7 +16,7 @@ class CacheOperationsEdgeCaseTest {
     // =========================================================================
 
     @Test
-    fun clearFiresInternalDeleteListenersForAllRows() {
+    fun `clear fires internal delete listeners for all rows`() {
         val cache = createSampleCache()
         val deletedRows = mutableListOf<SampleRow>()
         cache.addInternalDeleteListener { deletedRows.add(it) }
@@ -33,7 +33,7 @@ class CacheOperationsEdgeCaseTest {
     }
 
     @Test
-    fun clearOnEmptyCacheIsNoOp() {
+    fun `clear on empty cache is no op`() {
         val cache = createSampleCache()
         var listenerFired = false
         cache.addInternalDeleteListener { listenerFired = true }
@@ -43,7 +43,7 @@ class CacheOperationsEdgeCaseTest {
     }
 
     @Test
-    fun deleteNonexistentRowIsNoOp() {
+    fun `delete nonexistent row is no op`() {
         val cache = createSampleCache()
         val row = SampleRow(99, "Ghost")
 
@@ -58,7 +58,7 @@ class CacheOperationsEdgeCaseTest {
     }
 
     @Test
-    fun insertEmptyRowListIsNoOp() {
+    fun `insert empty row list is no op`() {
         val cache = createSampleCache()
         var insertFired = false
         cache.onInsert { _, _ -> insertFired = true }
@@ -71,7 +71,7 @@ class CacheOperationsEdgeCaseTest {
     }
 
     @Test
-    fun removeCallbackPreventsItFromFiring() {
+    fun `remove callback prevents it from firing`() {
         val cache = createSampleCache()
         var fired = false
         val cb: (EventContext, SampleRow) -> Unit = { _, _ -> fired = true }
@@ -87,7 +87,7 @@ class CacheOperationsEdgeCaseTest {
     }
 
     @Test
-    fun internalListenersFiredOnInsertAfterCAS() {
+    fun `internal listeners fired on insert after cas`() {
         val cache = createSampleCache()
         val internalInserts = mutableListOf<SampleRow>()
         cache.addInternalInsertListener { internalInserts.add(it) }
@@ -99,7 +99,7 @@ class CacheOperationsEdgeCaseTest {
     }
 
     @Test
-    fun internalListenersFiredOnDeleteAfterCAS() {
+    fun `internal listeners fired on delete after cas`() {
         val cache = createSampleCache()
         val internalDeletes = mutableListOf<SampleRow>()
         cache.addInternalDeleteListener { internalDeletes.add(it) }
@@ -114,7 +114,7 @@ class CacheOperationsEdgeCaseTest {
     }
 
     @Test
-    fun internalListenersFiredOnUpdateForBothOldAndNew() {
+    fun `internal listeners fired on update for both old and new`() {
         val cache = createSampleCache()
         val internalInserts = mutableListOf<SampleRow>()
         val internalDeletes = mutableListOf<SampleRow>()
@@ -139,7 +139,7 @@ class CacheOperationsEdgeCaseTest {
     }
 
     @Test
-    fun batchInsertMultipleRowsFiresCallbacksForEach() {
+    fun `batch insert multiple rows fires callbacks for each`() {
         val cache = createSampleCache()
         val inserted = mutableListOf<SampleRow>()
         cache.onInsert { _, row -> inserted.add(row) }
@@ -160,7 +160,7 @@ class CacheOperationsEdgeCaseTest {
     // =========================================================================
 
     @Test
-    fun clientCacheGetTableThrowsForUnknownTable() {
+    fun `client cache get table throws for unknown table`() {
         val cc = ClientCache()
         assertFailsWith<IllegalStateException> {
             cc.getTable<SampleRow>("nonexistent")
@@ -168,13 +168,13 @@ class CacheOperationsEdgeCaseTest {
     }
 
     @Test
-    fun clientCacheGetTableOrNullReturnsNull() {
+    fun `client cache get table or null returns null`() {
         val cc = ClientCache()
         assertNull(cc.getTableOrNull<SampleRow>("nonexistent"))
     }
 
     @Test
-    fun clientCacheGetOrCreateTableCreatesOnce() {
+    fun `client cache get or create table creates once`() {
         val cc = ClientCache()
         var factoryCalls = 0
 
@@ -192,7 +192,7 @@ class CacheOperationsEdgeCaseTest {
     }
 
     @Test
-    fun clientCacheTableNames() {
+    fun `client cache table names`() {
         val cc = ClientCache()
         cc.register("alpha", createSampleCache())
         cc.register("beta", createSampleCache())
@@ -201,7 +201,7 @@ class CacheOperationsEdgeCaseTest {
     }
 
     @Test
-    fun clientCacheClearClearsAllTables() {
+    fun `client cache clear clears all tables`() {
         val cc = ClientCache()
         val cacheA = createSampleCache()
         val cacheB = createSampleCache()
@@ -222,7 +222,7 @@ class CacheOperationsEdgeCaseTest {
     // =========================================================================
 
     @Test
-    fun refCountSurvivesUpdateOnMultiRefRow() {
+    fun `ref count survives update on multi ref row`() {
         val cache = createSampleCache()
         val row = SampleRow(1, "Alice")
 
@@ -251,7 +251,7 @@ class CacheOperationsEdgeCaseTest {
     }
 
     @Test
-    fun deleteWithHighRefCountOnlyDecrements() {
+    fun `delete with high ref count only decrements`() {
         val cache = createSampleCache()
         val row = SampleRow(1, "Alice")
 
@@ -288,7 +288,7 @@ class CacheOperationsEdgeCaseTest {
     // =========================================================================
 
     @Test
-    fun bsatnRowKeyEqualityAndHashCode() {
+    fun `bsatn row key equality and hash code`() {
         val a = BsatnRowKey(byteArrayOf(1, 2, 3))
         val b = BsatnRowKey(byteArrayOf(1, 2, 3))
         val c = BsatnRowKey(byteArrayOf(1, 2, 4))
@@ -299,7 +299,7 @@ class CacheOperationsEdgeCaseTest {
     }
 
     @Test
-    fun bsatnRowKeyWorksAsMapKey() {
+    fun `bsatn row key works as map key`() {
         val map = mutableMapOf<BsatnRowKey, String>()
         val key1 = BsatnRowKey(byteArrayOf(10, 20))
         val key2 = BsatnRowKey(byteArrayOf(10, 20))
@@ -319,7 +319,7 @@ class CacheOperationsEdgeCaseTest {
     // =========================================================================
 
     @Test
-    fun decodedRowEquality() {
+    fun `decoded row equality`() {
         val row1 = DecodedRow(SampleRow(1, "A"), byteArrayOf(1, 2, 3))
         val row2 = DecodedRow(SampleRow(1, "A"), byteArrayOf(1, 2, 3))
         val row3 = DecodedRow(SampleRow(1, "A"), byteArrayOf(4, 5, 6))
@@ -334,7 +334,7 @@ class CacheOperationsEdgeCaseTest {
     // =========================================================================
 
     @Test
-    fun fixedSizeHintNonDivisibleRowsDataThrows() {
+    fun `fixed size hint non divisible rows data throws`() {
         val cache = createSampleCache()
         // 7 bytes of data with FixedSize(4) → 7 % 4 != 0
         val rowList = BsatnRowList(

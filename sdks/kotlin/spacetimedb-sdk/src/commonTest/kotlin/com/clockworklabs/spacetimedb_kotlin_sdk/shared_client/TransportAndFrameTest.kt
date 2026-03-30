@@ -24,7 +24,7 @@ class TransportAndFrameTest {
     // --- Mid-stream transport failures ---
 
     @Test
-    fun transportErrorFiresOnDisconnectWithError() = runTest {
+    fun `transport error fires on disconnect with error`() = runTest {
         val transport = FakeTransport()
         var disconnectError: Throwable? = null
         var disconnected = false
@@ -48,7 +48,7 @@ class TransportAndFrameTest {
     }
 
     @Test
-    fun transportErrorFailsPendingSubscription() = runTest {
+    fun `transport error fails pending subscription`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -68,7 +68,7 @@ class TransportAndFrameTest {
     }
 
     @Test
-    fun transportErrorFailsPendingReducerCallback() = runTest {
+    fun `transport error fails pending reducer callback`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -91,7 +91,7 @@ class TransportAndFrameTest {
     }
 
     @Test
-    fun sendErrorDoesNotCrashReceiveLoop() = runTest {
+    fun `send error does not crash receive loop`() = runTest {
         val transport = FakeTransport()
         // Use a CoroutineExceptionHandler so the unhandled send-loop exception
         // doesn't propagate to runTest — we're testing that the receive loop survives.
@@ -142,7 +142,7 @@ class TransportAndFrameTest {
     // --- Raw transport: partial/corrupted frame handling ---
 
     @Test
-    fun truncatedBsatnFrameFiresOnDisconnect() = runTest {
+    fun `truncated bsatn frame fires on disconnect`() = runTest {
         val rawTransport = RawFakeTransport()
         var disconnectError: Throwable? = null
         val conn = createConnectionWithTransport(rawTransport, onDisconnect = { _, err ->
@@ -169,7 +169,7 @@ class TransportAndFrameTest {
     }
 
     @Test
-    fun invalidServerMessageTagFiresOnDisconnect() = runTest {
+    fun `invalid server message tag fires on disconnect`() = runTest {
         val rawTransport = RawFakeTransport()
         var disconnectError: Throwable? = null
         val conn = createConnectionWithTransport(rawTransport, onDisconnect = { _, err ->
@@ -188,7 +188,7 @@ class TransportAndFrameTest {
     }
 
     @Test
-    fun emptyFrameFiresOnDisconnect() = runTest {
+    fun `empty frame fires on disconnect`() = runTest {
         val rawTransport = RawFakeTransport()
         var disconnectError: Throwable? = null
         val conn = createConnectionWithTransport(rawTransport, onDisconnect = { _, err ->
@@ -206,7 +206,7 @@ class TransportAndFrameTest {
     }
 
     @Test
-    fun truncatedMidFieldDisconnects() = runTest {
+    fun `truncated mid field disconnects`() = runTest {
         // Valid tag (6 = ReducerResultMsg) + valid requestId, but truncated before timestamp
         val rawTransport = RawFakeTransport()
         var disconnectError: Throwable? = null
@@ -230,7 +230,7 @@ class TransportAndFrameTest {
     }
 
     @Test
-    fun invalidNestedOptionTagDisconnects() = runTest {
+    fun `invalid nested option tag disconnects`() = runTest {
         // SubscriptionError (tag 3) has Option<u32> for requestId — inject invalid option tag
         val rawTransport = RawFakeTransport()
         var disconnectError: Throwable? = null
@@ -252,7 +252,7 @@ class TransportAndFrameTest {
     }
 
     @Test
-    fun invalidResultTagInOneOffQueryDisconnects() = runTest {
+    fun `invalid result tag in one off query disconnects`() = runTest {
         // OneOffQueryResult (tag 5) has Result<QueryRows, String> — inject invalid result tag
         val rawTransport = RawFakeTransport()
         var disconnectError: Throwable? = null
@@ -275,7 +275,7 @@ class TransportAndFrameTest {
     }
 
     @Test
-    fun oversizedStringLengthDisconnects() = runTest {
+    fun `oversized string length disconnects`() = runTest {
         // Valid InitialConnection tag + identity + connectionId + string with huge length prefix
         val rawTransport = RawFakeTransport()
         var disconnectError: Throwable? = null
@@ -297,7 +297,7 @@ class TransportAndFrameTest {
     }
 
     @Test
-    fun invalidReducerOutcomeTagDisconnects() = runTest {
+    fun `invalid reducer outcome tag disconnects`() = runTest {
         // ReducerResultMsg (tag 6) with valid fields but invalid ReducerOutcome tag
         val rawTransport = RawFakeTransport()
         var disconnectError: Throwable? = null
@@ -320,7 +320,7 @@ class TransportAndFrameTest {
     }
 
     @Test
-    fun corruptFrameAfterEstablishedConnectionFailsPendingOps() = runTest {
+    fun `corrupt frame after established connection fails pending ops`() = runTest {
         // Establish full connection with subscriptions/reducers, then corrupt frame
         val rawTransport = RawFakeTransport()
         var disconnectError: Throwable? = null
@@ -349,7 +349,7 @@ class TransportAndFrameTest {
     }
 
     @Test
-    fun garbageAfterValidMessageIsIgnored() = runTest {
+    fun `garbage after valid message is ignored`() = runTest {
         // A fully valid InitialConnection with extra trailing bytes appended.
         // BsatnReader doesn't check that all bytes are consumed, so this should work.
         val rawTransport = RawFakeTransport()
@@ -381,7 +381,7 @@ class TransportAndFrameTest {
     }
 
     @Test
-    fun allZeroBytesFrameDisconnects() = runTest {
+    fun `all zero bytes frame disconnects`() = runTest {
         // A frame of all zeroes — tag 0 (InitialConnection) but fields are all zeroes,
         // which will produce a truncated read since the string length is 0 but
         // Identity (32 bytes) and ConnectionId (16 bytes) consume the buffer first
@@ -401,7 +401,7 @@ class TransportAndFrameTest {
     }
 
     @Test
-    fun validTagWithRandomGarbageFieldsDisconnects() = runTest {
+    fun `valid tag with random garbage fields disconnects`() = runTest {
         // SubscribeApplied (tag 1) followed by random garbage that doesn't form valid QueryRows
         val rawTransport = RawFakeTransport()
         var disconnectError: Throwable? = null
@@ -425,7 +425,7 @@ class TransportAndFrameTest {
     }
 
     @Test
-    fun validFrameAfterCorruptedFrameIsNotProcessed() = runTest {
+    fun `valid frame after corrupted frame is not processed`() = runTest {
         val rawTransport = RawFakeTransport()
         var disconnected = false
         val conn = createConnectionWithTransport(rawTransport, onDisconnect = { _, _ ->
@@ -448,7 +448,7 @@ class TransportAndFrameTest {
     // --- Protocol validation ---
 
     @Test
-    fun invalidProtocolThrowsOnConnect() = runTest {
+    fun `invalid protocol throws on connect`() = runTest {
         val transport = SpacetimeTransport(
             client = HttpClient(),
             baseUrl = "ftp://example.com",

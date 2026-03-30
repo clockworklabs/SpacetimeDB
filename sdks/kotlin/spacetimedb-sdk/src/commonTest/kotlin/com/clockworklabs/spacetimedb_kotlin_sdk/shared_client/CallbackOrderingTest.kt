@@ -18,7 +18,7 @@ class CallbackOrderingTest {
     // =========================================================================
 
     @Test
-    fun preApplyDeleteFiresBeforeApplyDeleteAcrossTables() = runTest {
+    fun `pre apply delete fires before apply delete across tables`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
 
@@ -101,7 +101,7 @@ class CallbackOrderingTest {
     }
 
     @Test
-    fun updateDoesNotFireOnBeforeDeleteForUpdatedRow() {
+    fun `update does not fire on before delete for updated row`() {
         val cache = createSampleCache()
         val oldRow = SampleRow(1, "Alice")
         cache.applyInserts(STUB_CTX, buildRowList(oldRow.encode()))
@@ -123,7 +123,7 @@ class CallbackOrderingTest {
     }
 
     @Test
-    fun pureDeleteFiresOnBeforeDelete() {
+    fun `pure delete fires on before delete`() {
         val cache = createSampleCache()
         val row = SampleRow(1, "Alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -143,7 +143,7 @@ class CallbackOrderingTest {
     }
 
     @Test
-    fun callbackFiringOrderInsertUpdateDelete() {
+    fun `callback firing order insert update delete`() {
         val cache = createSampleCache()
 
         // Pre-populate
@@ -191,7 +191,7 @@ class CallbackOrderingTest {
     // =========================================================================
 
     @Test
-    fun onConnectExceptionDoesNotPreventSubsequentMessages() = runTest {
+    fun `on connect exception does not prevent subsequent messages`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, onConnect = { _, _, _ ->
             error("connect callback explosion")
@@ -218,7 +218,7 @@ class CallbackOrderingTest {
     }
 
     @Test
-    fun onBeforeDeleteExceptionDoesNotPreventMutation() {
+    fun `on before delete exception does not prevent mutation`() {
         val cache = createSampleCache()
         val row = SampleRow(1, "Alice")
         cache.applyInserts(STUB_CTX, buildRowList(row.encode()))
@@ -251,7 +251,7 @@ class CallbackOrderingTest {
     // =========================================================================
 
     @Test
-    fun subscribeAppliedContextType() = runTest {
+    fun `subscribe applied context type`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         val cache = createSampleCache()
@@ -278,7 +278,7 @@ class CallbackOrderingTest {
     }
 
     @Test
-    fun transactionUpdateContextType() = runTest {
+    fun `transaction update context type`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         val cache = createSampleCache()
@@ -317,7 +317,7 @@ class CallbackOrderingTest {
     // =========================================================================
 
     @Test
-    fun onDisconnectAddedAfterBuildStillFires() = runTest {
+    fun `on disconnect added after build still fires`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -334,7 +334,7 @@ class CallbackOrderingTest {
     }
 
     @Test
-    fun onConnectErrorAddedAfterBuildStillFires() = runTest {
+    fun `on connect error added after build still fires`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
 

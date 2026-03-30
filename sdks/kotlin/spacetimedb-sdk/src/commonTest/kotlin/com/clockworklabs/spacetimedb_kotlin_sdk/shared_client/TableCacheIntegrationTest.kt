@@ -15,7 +15,7 @@ class TableCacheIntegrationTest {
     // --- Table cache ---
 
     @Test
-    fun tableCacheUpdatesOnSubscribeApplied() = runTest {
+    fun `table cache updates on subscribe applied`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         val cache = createSampleCache()
@@ -42,7 +42,7 @@ class TableCacheIntegrationTest {
     }
 
     @Test
-    fun tableCacheInsertsAndDeletesViaTransactionUpdate() = runTest {
+    fun `table cache inserts and deletes via transaction update`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         val cache = createSampleCache()
@@ -95,7 +95,7 @@ class TableCacheIntegrationTest {
     // --- Table callbacks through integration ---
 
     @Test
-    fun tableOnInsertFiresOnSubscribeApplied() = runTest {
+    fun `table on insert fires on subscribe applied`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         val cache = createSampleCache()
@@ -122,7 +122,7 @@ class TableCacheIntegrationTest {
     }
 
     @Test
-    fun tableOnDeleteFiresOnTransactionUpdate() = runTest {
+    fun `table on delete fires on transaction update`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         val cache = createSampleCache()
@@ -177,7 +177,7 @@ class TableCacheIntegrationTest {
     }
 
     @Test
-    fun tableOnUpdateFiresOnTransactionUpdate() = runTest {
+    fun `table on update fires on transaction update`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         val cache = createSampleCache()
@@ -240,7 +240,7 @@ class TableCacheIntegrationTest {
     // --- onBeforeDelete ---
 
     @Test
-    fun onBeforeDeleteFiresBeforeMutation() = runTest {
+    fun `on before delete fires before mutation`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         val cache = createSampleCache()
@@ -303,7 +303,7 @@ class TableCacheIntegrationTest {
     // --- Cross-table preApply ordering ---
 
     @Test
-    fun crossTablePreApplyRunsBeforeAnyApply() = runTest {
+    fun `cross table pre apply runs before any apply`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
 
@@ -370,7 +370,7 @@ class TableCacheIntegrationTest {
     // --- Unknown querySetId / requestId (silent early returns) ---
 
     @Test
-    fun subscribeAppliedForUnknownQuerySetIdIsIgnored() = runTest {
+    fun `subscribe applied for unknown query set id is ignored`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         val cache = createSampleCache()
@@ -400,7 +400,7 @@ class TableCacheIntegrationTest {
     }
 
     @Test
-    fun reducerResultForUnknownRequestIdIsIgnored() = runTest {
+    fun `reducer result for unknown request id is ignored`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         val cache = createSampleCache()
@@ -426,7 +426,7 @@ class TableCacheIntegrationTest {
     }
 
     @Test
-    fun oneOffQueryResultForUnknownRequestIdIsIgnored() = runTest {
+    fun `one off query result for unknown request id is ignored`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())

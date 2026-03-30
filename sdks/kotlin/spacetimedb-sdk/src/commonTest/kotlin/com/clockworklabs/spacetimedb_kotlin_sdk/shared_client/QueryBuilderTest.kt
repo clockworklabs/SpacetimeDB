@@ -11,85 +11,85 @@ class QueryBuilderTest {
     // ---- SqlFormat ----
 
     @Test
-    fun quoteIdentSimple() {
+    fun `quote ident simple`() {
         assertEquals("\"players\"", SqlFormat.quoteIdent("players"))
     }
 
     @Test
-    fun quoteIdentEscapesDoubleQuotes() {
+    fun `quote ident escapes double quotes`() {
         assertEquals("\"my\"\"table\"", SqlFormat.quoteIdent("my\"table"))
     }
 
     @Test
-    fun formatStringLiteralSimple() {
+    fun `format string literal simple`() {
         assertEquals("'hello'", SqlFormat.formatStringLiteral("hello"))
     }
 
     @Test
-    fun formatStringLiteralEscapesSingleQuotes() {
+    fun `format string literal escapes single quotes`() {
         assertEquals("'it''s'", SqlFormat.formatStringLiteral("it's"))
     }
 
     @Test
-    fun formatHexLiteralStrips0xPrefix() {
+    fun `format hex literal strips 0x prefix`() {
         assertEquals("0xABCD", SqlFormat.formatHexLiteral("0xABCD"))
     }
 
     @Test
-    fun formatHexLiteralWithoutPrefix() {
+    fun `format hex literal without prefix`() {
         assertEquals("0xABCD", SqlFormat.formatHexLiteral("ABCD"))
     }
 
     // ---- SqlLit NaN/Infinity rejection ----
 
     @Test
-    fun floatNanThrows() {
+    fun `float nan throws`() {
         assertFailsWith<IllegalArgumentException> { SqlLit.float(Float.NaN) }
     }
 
     @Test
-    fun floatPositiveInfinityThrows() {
+    fun `float positive infinity throws`() {
         assertFailsWith<IllegalArgumentException> { SqlLit.float(Float.POSITIVE_INFINITY) }
     }
 
     @Test
-    fun floatNegativeInfinityThrows() {
+    fun `float negative infinity throws`() {
         assertFailsWith<IllegalArgumentException> { SqlLit.float(Float.NEGATIVE_INFINITY) }
     }
 
     @Test
-    fun doubleNanThrows() {
+    fun `double nan throws`() {
         assertFailsWith<IllegalArgumentException> { SqlLit.double(Double.NaN) }
     }
 
     @Test
-    fun doublePositiveInfinityThrows() {
+    fun `double positive infinity throws`() {
         assertFailsWith<IllegalArgumentException> { SqlLit.double(Double.POSITIVE_INFINITY) }
     }
 
     @Test
-    fun doubleNegativeInfinityThrows() {
+    fun `double negative infinity throws`() {
         assertFailsWith<IllegalArgumentException> { SqlLit.double(Double.NEGATIVE_INFINITY) }
     }
 
     @Test
-    fun finiteFloatSucceeds() {
+    fun `finite float succeeds`() {
         assertEquals("3.14", SqlLit.float(3.14f).sql)
     }
 
     @Test
-    fun finiteDoubleSucceeds() {
+    fun `finite double succeeds`() {
         assertEquals("2.718", SqlLit.double(2.718).sql)
     }
 
     @Test
-    fun floatScientificNotationProducesPlainDecimal() {
+    fun `float scientific notation produces plain decimal`() {
         val sql = SqlLit.float(1.0E-7f).sql
         assertFalse(sql.contains("E", ignoreCase = true), "Expected plain decimal, got: $sql")
     }
 
     @Test
-    fun doubleScientificNotationProducesPlainDecimal() {
+    fun `double scientific notation produces plain decimal`() {
         val sql = SqlLit.double(1.0E-7).sql
         assertFalse(sql.contains("E", ignoreCase = true), "Expected plain decimal, got: $sql")
     }
@@ -97,21 +97,21 @@ class QueryBuilderTest {
     // ---- BoolExpr ----
 
     @Test
-    fun boolExprAnd() {
+    fun `bool expr and`() {
         val a = BoolExpr<Unit>("a = 1")
         val b = BoolExpr<Unit>("b = 2")
         assertEquals("(a = 1 AND b = 2)", a.and(b).sql)
     }
 
     @Test
-    fun boolExprOr() {
+    fun `bool expr or`() {
         val a = BoolExpr<Unit>("a = 1")
         val b = BoolExpr<Unit>("b = 2")
         assertEquals("(a = 1 OR b = 2)", a.or(b).sql)
     }
 
     @Test
-    fun boolExprNot() {
+    fun `bool expr not`() {
         val a = BoolExpr<Unit>("x > 5")
         assertEquals("(NOT x > 5)", a.not().sql)
     }
@@ -119,26 +119,26 @@ class QueryBuilderTest {
     // ---- Col comparisons ----
 
     @Test
-    fun colEqLiteral() {
+    fun `col eq literal`() {
         val col = Col<Unit, Int>("t", "x")
         assertEquals("(\"t\".\"x\" = 42)", col.eq(SqlLiteral("42")).sql)
     }
 
     @Test
-    fun colEqOtherCol() {
+    fun `col eq other col`() {
         val a = Col<Unit, Int>("t", "x")
         val b = Col<Unit, Int>("t", "y")
         assertEquals("(\"t\".\"x\" = \"t\".\"y\")", a.eq(b).sql)
     }
 
     @Test
-    fun colNeq() {
+    fun `col neq`() {
         val col = Col<Unit, String>("t", "name")
         assertEquals("(\"t\".\"name\" <> 'alice')", col.neq(SqlLit.string("alice")).sql)
     }
 
     @Test
-    fun colLtLteGtGte() {
+    fun `col lt lte gt gte`() {
         val col = Col<Unit, Int>("t", "score")
         assertEquals("(\"t\".\"score\" < 10)", col.lt(SqlLit.int(10)).sql)
         assertEquals("(\"t\".\"score\" <= 10)", col.lte(SqlLit.int(10)).sql)
@@ -149,19 +149,19 @@ class QueryBuilderTest {
     // ---- Col convenience extensions ----
 
     @Test
-    fun colEqRawInt() {
+    fun `col eq raw int`() {
         val col = Col<Unit, Int>("t", "x")
         assertEquals("(\"t\".\"x\" = 42)", col.eq(42).sql)
     }
 
     @Test
-    fun colEqRawString() {
+    fun `col eq raw string`() {
         val col = Col<Unit, String>("t", "name")
         assertEquals("(\"t\".\"name\" = 'bob')", col.eq("bob").sql)
     }
 
     @Test
-    fun colEqRawBool() {
+    fun `col eq raw bool`() {
         val col = Col<Unit, Boolean>("t", "active")
         assertEquals("(\"t\".\"active\" = TRUE)", col.eq(true).sql)
     }
@@ -169,7 +169,7 @@ class QueryBuilderTest {
     // ---- IxCol join equality ----
 
     @Test
-    fun ixColJoinEq() {
+    fun `ix col join eq`() {
         val left = IxCol<Unit, Int>("l", "id")
         val right = IxCol<Unit, Int>("r", "lid")
         val join = left.eq(right)
@@ -180,7 +180,7 @@ class QueryBuilderTest {
     // ---- Table.toSql ----
 
     @Test
-    fun tableToSql() {
+    fun `table to sql`() {
         val t = Table<Unit, Unit, Unit>("players", Unit, Unit)
         assertEquals("SELECT * FROM \"players\"", t.toSql())
     }
@@ -195,28 +195,28 @@ class QueryBuilderTest {
     }
 
     @Test
-    fun tableWhereBoolCol() {
+    fun `table where bool col`() {
         val t = Table<FakeRow, FakeCols, Unit>("player", FakeCols("player"), Unit)
         val q = t.where { c -> c.active }
         assertEquals("SELECT * FROM \"player\" WHERE (\"player\".\"active\" = TRUE)", q.toSql())
     }
 
     @Test
-    fun tableWhereNotBoolCol() {
+    fun `table where not bool col`() {
         val t = Table<FakeRow, FakeCols, Unit>("player", FakeCols("player"), Unit)
         val q = t.where { c -> !c.active }
         assertEquals("SELECT * FROM \"player\" WHERE (NOT (\"player\".\"active\" = TRUE))", q.toSql())
     }
 
     @Test
-    fun tableWhereToSql() {
+    fun `table where to sql`() {
         val t = Table<FakeRow, FakeCols, Unit>("player", FakeCols("player"), Unit)
         val q = t.where { c -> c.health.gt(50) }
         assertEquals("SELECT * FROM \"player\" WHERE (\"player\".\"health\" > 50)", q.toSql())
     }
 
     @Test
-    fun fromWhereChainedAnd() {
+    fun `from where chained and`() {
         val t = Table<FakeRow, FakeCols, Unit>("player", FakeCols("player"), Unit)
         val q = t.where { c -> c.health.gt(50) }
             .where { c -> c.name.eq("alice") }
@@ -240,7 +240,7 @@ class QueryBuilderTest {
     }
 
     @Test
-    fun leftSemiJoinToSql() {
+    fun `left semi join to sql`() {
         val left = Table<LeftRow, Unit, LeftIxCols>("a", Unit, LeftIxCols("a"))
         val right = Table<RightRow, Unit, RightIxCols>("b", Unit, RightIxCols("b"))
         val q = left.leftSemijoin(right) { l, r -> l.id.eq(r.lid) }
@@ -253,7 +253,7 @@ class QueryBuilderTest {
     // ---- RightSemiJoin ----
 
     @Test
-    fun rightSemiJoinToSql() {
+    fun `right semi join to sql`() {
         val left = Table<LeftRow, Unit, LeftIxCols>("a", Unit, LeftIxCols("a"))
         val right = Table<RightRow, Unit, RightIxCols>("b", Unit, RightIxCols("b"))
         val q = left.rightSemijoin(right) { l, r -> l.id.eq(r.lid) }
@@ -270,7 +270,7 @@ class QueryBuilderTest {
     }
 
     @Test
-    fun fromWhereLeftSemiJoinToSql() {
+    fun `from where left semi join to sql`() {
         val left = Table<LeftRow, LeftCols, LeftIxCols>("a", LeftCols("a"), LeftIxCols("a"))
         val right = Table<RightRow, Unit, RightIxCols>("b", Unit, RightIxCols("b"))
         val q = left.where { c: LeftCols -> c.status.eq("active") }
@@ -284,14 +284,14 @@ class QueryBuilderTest {
     // ---- where with IxCol<Boolean> ----
 
     @Test
-    fun tableWhereIxColBool() {
+    fun `table where ix col bool`() {
         val t = Table<LeftRow, LeftCols, LeftIxCols>("a", LeftCols("a"), LeftIxCols("a"))
         val q = t.where { _, ix -> ix.verified }
         assertEquals("SELECT * FROM \"a\" WHERE (\"a\".\"verified\" = TRUE)", q.toSql())
     }
 
     @Test
-    fun tableWhereNotIxColBool() {
+    fun `table where not ix col bool`() {
         val t = Table<LeftRow, LeftCols, LeftIxCols>("a", LeftCols("a"), LeftIxCols("a"))
         val q = t.where { _, ix -> !ix.verified }
         assertEquals("SELECT * FROM \"a\" WHERE (NOT (\"a\".\"verified\" = TRUE))", q.toSql())
@@ -300,13 +300,13 @@ class QueryBuilderTest {
     // ---- SqlLit factory methods ----
 
     @Test
-    fun sqlLitBool() {
+    fun `sql lit bool`() {
         assertEquals("TRUE", SqlLit.bool(true).sql)
         assertEquals("FALSE", SqlLit.bool(false).sql)
     }
 
     @Test
-    fun sqlLitNumericTypes() {
+    fun `sql lit numeric types`() {
         assertEquals("42", SqlLit.int(42).sql)
         assertEquals("100", SqlLit.long(100L).sql)
         assertEquals("7", SqlLit.byte(7).sql)
@@ -316,7 +316,7 @@ class QueryBuilderTest {
     }
 
     @Test
-    fun sqlLitString() {
+    fun `sql lit string`() {
         assertEquals("'hello world'", SqlLit.string("hello world").sql)
     }
 }

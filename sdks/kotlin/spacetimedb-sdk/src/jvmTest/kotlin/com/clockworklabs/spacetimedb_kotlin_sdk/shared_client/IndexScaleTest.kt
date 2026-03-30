@@ -30,7 +30,7 @@ class IndexScaleTest {
     // ---- UniqueIndex: large-scale population via incremental inserts ----
 
     @Test
-    fun uniqueIndexIncrementalInsert10K() {
+    fun `unique index incremental insert10 k`() {
         val cache = createSampleCache()
         val index = UniqueIndex(cache) { it.id }
 
@@ -48,7 +48,7 @@ class IndexScaleTest {
     }
 
     @Test
-    fun uniqueIndexIncrementalInsert50K() {
+    fun `unique index incremental insert50 k`() {
         val cache = createSampleCache()
         val index = UniqueIndex(cache) { it.id }
 
@@ -81,7 +81,7 @@ class IndexScaleTest {
     // ---- UniqueIndex: construction from pre-populated cache ----
 
     @Test
-    fun uniqueIndexConstructionFromPrePopulatedCache10K() {
+    fun `unique index construction from pre populated cache10 k`() {
         val cache = createSampleCache()
         for (i in 0 until MEDIUM) {
             cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, "row-$i").encode()))
@@ -100,7 +100,7 @@ class IndexScaleTest {
     }
 
     @Test
-    fun uniqueIndexConstructionFromPrePopulatedCache50K() {
+    fun `unique index construction from pre populated cache50 k`() {
         val cache = createSampleCache()
         for (i in 0 until LARGE) {
             cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, "row-$i").encode()))
@@ -118,7 +118,7 @@ class IndexScaleTest {
     // ---- BTreeIndex: high cardinality (many unique keys) ----
 
     @Test
-    fun btreeIndexHighCardinality10K() {
+    fun `btree index high cardinality10 k`() {
         val cache = createSampleCache()
         // Each row has a unique name — 10K unique keys, 1 row per key
         val index = BTreeIndex(cache) { it.name }
@@ -137,7 +137,7 @@ class IndexScaleTest {
     // ---- BTreeIndex: low cardinality (few keys, many rows per key) ----
 
     @Test
-    fun btreeIndexLowCardinality10K() {
+    fun `btree index low cardinality10 k`() {
         val cache = createSampleCache()
         val groupCount = 10
         val index = BTreeIndex(cache) { it.name }
@@ -157,7 +157,7 @@ class IndexScaleTest {
     }
 
     @Test
-    fun btreeIndexSingleKeyWith50KRows() {
+    fun `btree index single key with50 k rows`() {
         val cache = createSampleCache()
         val index = BTreeIndex(cache) { it.name }
 
@@ -184,7 +184,7 @@ class IndexScaleTest {
     // ---- BTreeIndex: construction from pre-populated cache ----
 
     @Test
-    fun btreeIndexConstructionFromPrePopulatedCache10K() {
+    fun `btree index construction from pre populated cache10 k`() {
         val cache = createSampleCache()
         val groupCount = 100
         for (i in 0 until MEDIUM) {
@@ -204,7 +204,7 @@ class IndexScaleTest {
     // ---- Bulk delete at scale ----
 
     @Test
-    fun uniqueIndexBulkDelete50K() {
+    fun `unique index bulk delete50 k`() {
         val cache = createSampleCache()
         val index = UniqueIndex(cache) { it.id }
 
@@ -233,7 +233,7 @@ class IndexScaleTest {
     }
 
     @Test
-    fun btreeIndexBulkDeleteConverges() {
+    fun `btree index bulk delete converges`() {
         val cache = createSampleCache()
         val groupCount = 10
         val index = BTreeIndex(cache) { it.name }
@@ -268,7 +268,7 @@ class IndexScaleTest {
     // ---- Mixed read/write workload at scale ----
 
     @Test
-    fun uniqueIndexReadHeavyMixedWorkload() = runBlocking(Dispatchers.Default) {
+    fun `unique index read heavy mixed workload`() = runBlocking(Dispatchers.Default) {
         val cache = createSampleCache()
         val index = UniqueIndex(cache) { it.id }
 
@@ -316,7 +316,7 @@ class IndexScaleTest {
     }
 
     @Test
-    fun btreeIndexReadHeavyMixedWorkload() = runBlocking(Dispatchers.Default) {
+    fun `btree index read heavy mixed workload`() = runBlocking(Dispatchers.Default) {
         val cache = createSampleCache()
         val groupCount = 50
         val index = BTreeIndex(cache) { it.name }
@@ -370,7 +370,7 @@ class IndexScaleTest {
     // ---- Insert then delete then re-insert at scale ----
 
     @Test
-    fun uniqueIndexInsertDeleteReinsertCycle() {
+    fun `unique index insert delete reinsert cycle`() {
         val cache = createSampleCache()
         val index = UniqueIndex(cache) { it.id }
 
@@ -405,7 +405,7 @@ class IndexScaleTest {
     // ---- Multiple indexes on the same cache ----
 
     @Test
-    fun multipleIndexesOnSameCacheAtScale() {
+    fun `multiple indexes on same cache at scale`() {
         val cache = createSampleCache()
         val uniqueById = UniqueIndex(cache) { it.id }
         val btreeByName = BTreeIndex(cache) { it.name }

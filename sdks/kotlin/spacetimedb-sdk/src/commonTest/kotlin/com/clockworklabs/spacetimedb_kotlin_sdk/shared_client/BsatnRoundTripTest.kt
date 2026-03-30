@@ -21,13 +21,13 @@ class BsatnRoundTripTest {
     // ---- Bool ----
 
     @Test
-    fun boolTrue() {
+    fun `bool true`() {
         val result = roundTrip({ it.writeBool(true) }, { it.readBool() })
         assertTrue(result as Boolean)
     }
 
     @Test
-    fun boolFalse() {
+    fun `bool false`() {
         val result = roundTrip({ it.writeBool(false) }, { it.readBool() })
         assertFalse(result as Boolean)
     }
@@ -35,7 +35,7 @@ class BsatnRoundTripTest {
     // ---- I8 / U8 ----
 
     @Test
-    fun i8RoundTrip() {
+    fun `i8 round trip`() {
         for (v in listOf<Byte>(Byte.MIN_VALUE, -1, 0, 1, Byte.MAX_VALUE)) {
             val result = roundTrip({ it.writeI8(v) }, { it.readI8() })
             assertEquals(v, result)
@@ -43,7 +43,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun u8RoundTrip() {
+    fun `u8 round trip`() {
         for (v in listOf(0u, 1u, 127u, 255u)) {
             val result = roundTrip({ it.writeU8(v.toUByte()) }, { it.readU8() })
             assertEquals(v.toUByte(), result)
@@ -53,7 +53,7 @@ class BsatnRoundTripTest {
     // ---- I16 / U16 ----
 
     @Test
-    fun i16RoundTrip() {
+    fun `i16 round trip`() {
         for (v in listOf<Short>(Short.MIN_VALUE, -1, 0, 1, Short.MAX_VALUE)) {
             val result = roundTrip({ it.writeI16(v) }, { it.readI16() })
             assertEquals(v, result)
@@ -61,7 +61,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun u16RoundTrip() {
+    fun `u16 round trip`() {
         for (v in listOf(0u, 1u, 32767u, 65535u)) {
             val result = roundTrip({ it.writeU16(v.toUShort()) }, { it.readU16() })
             assertEquals(v.toUShort(), result)
@@ -71,7 +71,7 @@ class BsatnRoundTripTest {
     // ---- I32 / U32 ----
 
     @Test
-    fun i32RoundTrip() {
+    fun `i32 round trip`() {
         for (v in listOf(Int.MIN_VALUE, -1, 0, 1, Int.MAX_VALUE)) {
             val result = roundTrip({ it.writeI32(v) }, { it.readI32() })
             assertEquals(v, result)
@@ -79,7 +79,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun u32RoundTrip() {
+    fun `u32 round trip`() {
         for (v in listOf(0u, 1u, UInt.MAX_VALUE)) {
             val result = roundTrip({ it.writeU32(v) }, { it.readU32() })
             assertEquals(v, result)
@@ -89,7 +89,7 @@ class BsatnRoundTripTest {
     // ---- I64 / U64 ----
 
     @Test
-    fun i64RoundTrip() {
+    fun `i64 round trip`() {
         for (v in listOf(Long.MIN_VALUE, -1L, 0L, 1L, Long.MAX_VALUE)) {
             val result = roundTrip({ it.writeI64(v) }, { it.readI64() })
             assertEquals(v, result)
@@ -97,7 +97,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun u64RoundTrip() {
+    fun `u64 round trip`() {
         for (v in listOf(0uL, 1uL, ULong.MAX_VALUE)) {
             val result = roundTrip({ it.writeU64(v) }, { it.readU64() })
             assertEquals(v, result)
@@ -107,7 +107,7 @@ class BsatnRoundTripTest {
     // ---- F32 / F64 ----
 
     @Test
-    fun f32RoundTrip() {
+    fun `f32 round trip`() {
         for (v in listOf(0.0f, -1.5f, Float.MAX_VALUE, Float.MIN_VALUE, Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY)) {
             val writer = BsatnWriter()
             writer.writeF32(v)
@@ -122,7 +122,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun f64RoundTrip() {
+    fun `f64 round trip`() {
         for (v in listOf(0.0, -1.5, Double.MAX_VALUE, Double.MIN_VALUE, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY)) {
             val writer = BsatnWriter()
             writer.writeF64(v)
@@ -139,7 +139,7 @@ class BsatnRoundTripTest {
     // ---- I128 / U128 ----
 
     @Test
-    fun i128RoundTrip() {
+    fun `i128 round trip`() {
         val values = listOf(
             BigInteger.ZERO,
             BigInteger.ONE,
@@ -154,7 +154,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun i128NegativeEdgeCases() {
+    fun `i128 negative edge cases`() {
         val ONE = BigInteger.ONE
         val values = listOf(
             BigInteger(-2),                                 // 0xFF...FE — near -1
@@ -174,7 +174,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun i128ChunkBoundaryValues() {
+    fun `i128 chunk boundary values`() {
         val ONE = BigInteger.ONE
         val values = listOf(
             ONE.shl(63) - ONE,   // 2^63 - 1 = Long.MAX_VALUE in p0
@@ -190,7 +190,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun u128RoundTrip() {
+    fun `u128 round trip`() {
         val values = listOf(
             BigInteger.ZERO,
             BigInteger.ONE,
@@ -203,7 +203,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun u128ChunkBoundaryValues() {
+    fun `u128 chunk boundary values`() {
         val ONE = BigInteger.ONE
         val values = listOf(
             ONE.shl(63) - ONE,   // 2^63 - 1: p0 just below Long sign bit
@@ -221,7 +221,7 @@ class BsatnRoundTripTest {
     // ---- I256 / U256 ----
 
     @Test
-    fun i256RoundTrip() {
+    fun `i256 round trip`() {
         val values = listOf(
             BigInteger.ZERO,
             BigInteger.ONE,
@@ -238,7 +238,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun i256NegativeEdgeCases() {
+    fun `i256 negative edge cases`() {
         val ONE = BigInteger.ONE
         val values = listOf(
             BigInteger(-2),                                 // near -1
@@ -261,7 +261,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun i256ChunkBoundaryValues() {
+    fun `i256 chunk boundary values`() {
         val ONE = BigInteger.ONE
         val values = listOf(
             ONE.shl(63),    // chunk 0 high bit
@@ -278,7 +278,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun u256RoundTrip() {
+    fun `u256 round trip`() {
         val values = listOf(
             BigInteger.ZERO,
             BigInteger.ONE,
@@ -292,7 +292,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun u256ChunkBoundaryValues() {
+    fun `u256 chunk boundary values`() {
         val ONE = BigInteger.ONE
         val values = listOf(
             ONE.shl(63),    // chunk 0 high bit (read as negative Long)
@@ -312,7 +312,7 @@ class BsatnRoundTripTest {
     // ---- Overflow detection ----
 
     @Test
-    fun i128OverflowRejects() {
+    fun `i128 overflow rejects`() {
         val ONE = BigInteger.ONE
         val tooLarge = ONE.shl(127)            // 2^127 = I128 max + 1
         val tooSmall = -ONE.shl(127) - ONE     // -2^127 - 1
@@ -327,7 +327,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun u128OverflowRejects() {
+    fun `u128 overflow rejects`() {
         val tooLarge = BigInteger.ONE.shl(128)  // 2^128 = U128 max + 1
         assertFailsWith<IllegalArgumentException> {
             val writer = BsatnWriter()
@@ -336,7 +336,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun u128NegativeRejects() {
+    fun `u128 negative rejects`() {
         assertFailsWith<IllegalArgumentException> {
             val writer = BsatnWriter()
             writer.writeU128(BigInteger(-1))
@@ -344,7 +344,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun i256OverflowRejects() {
+    fun `i256 overflow rejects`() {
         val ONE = BigInteger.ONE
         val tooLarge = ONE.shl(255)            // 2^255 = I256 max + 1
         val tooSmall = -ONE.shl(255) - ONE     // -2^255 - 1
@@ -359,7 +359,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun u256OverflowRejects() {
+    fun `u256 overflow rejects`() {
         val tooLarge = BigInteger.ONE.shl(256)  // 2^256 = U256 max + 1
         assertFailsWith<IllegalArgumentException> {
             val writer = BsatnWriter()
@@ -368,7 +368,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun u256NegativeRejects() {
+    fun `u256 negative rejects`() {
         assertFailsWith<IllegalArgumentException> {
             val writer = BsatnWriter()
             writer.writeU256(BigInteger(-1))
@@ -378,19 +378,19 @@ class BsatnRoundTripTest {
     // ---- String ----
 
     @Test
-    fun stringEmpty() {
+    fun `string empty`() {
         val result = roundTrip({ it.writeString("") }, { it.readString() })
         assertEquals("", result)
     }
 
     @Test
-    fun stringAscii() {
+    fun `string ascii`() {
         val result = roundTrip({ it.writeString("hello world") }, { it.readString() })
         assertEquals("hello world", result)
     }
 
     @Test
-    fun stringMultiByteUtf8() {
+    fun `string multi byte utf8`() {
         val s = "\u00E9\u00F1\u00FC\u2603\uD83D\uDE00" // e-acute, n-tilde, u-umlaut, snowman, emoji
         val result = roundTrip({ it.writeString(s) }, { it.readString() })
         assertEquals(s, result)
@@ -399,13 +399,13 @@ class BsatnRoundTripTest {
     // ---- ByteArray ----
 
     @Test
-    fun byteArrayEmpty() {
+    fun `byte array empty`() {
         val result = roundTrip({ it.writeByteArray(byteArrayOf()) }, { it.readByteArray() })
         assertTrue((result as ByteArray).isEmpty())
     }
 
     @Test
-    fun byteArrayNonEmpty() {
+    fun `byte array non empty`() {
         val input = byteArrayOf(0, 1, 127, -128, -1)
         val result = roundTrip({ it.writeByteArray(input) }, { it.readByteArray() })
         assertTrue(input.contentEquals(result as ByteArray))
@@ -414,7 +414,7 @@ class BsatnRoundTripTest {
     // ---- ArrayLen ----
 
     @Test
-    fun arrayLenRoundTrip() {
+    fun `array len round trip`() {
         for (v in listOf(0, 1, 1000, Int.MAX_VALUE)) {
             val result = roundTrip({ it.writeArrayLen(v) }, { it.readArrayLen() })
             assertEquals(v, result)
@@ -422,7 +422,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun arrayLenRejectsNegative() {
+    fun `array len rejects negative`() {
         val writer = BsatnWriter()
         assertFailsWith<IllegalArgumentException> {
             writer.writeArrayLen(-1)
@@ -432,7 +432,7 @@ class BsatnRoundTripTest {
     // ---- Overflow checks ----
 
     @Test
-    fun readStringOverflowRejects() {
+    fun `read string overflow rejects`() {
         // Encode a length that exceeds Int.MAX_VALUE (use UInt.MAX_VALUE = 4294967295)
         val writer = BsatnWriter()
         writer.writeU32(UInt.MAX_VALUE) // length prefix > Int.MAX_VALUE
@@ -443,7 +443,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun readByteArrayOverflowRejects() {
+    fun `read byte array overflow rejects`() {
         val writer = BsatnWriter()
         writer.writeU32(UInt.MAX_VALUE)
         val reader = BsatnReader(writer.toByteArray())
@@ -453,7 +453,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun readArrayLenOverflowRejects() {
+    fun `read array len overflow rejects`() {
         val writer = BsatnWriter()
         writer.writeU32(UInt.MAX_VALUE)
         val reader = BsatnReader(writer.toByteArray())
@@ -465,7 +465,7 @@ class BsatnRoundTripTest {
     // ---- Reader underflow ----
 
     @Test
-    fun readerUnderflowThrows() {
+    fun `reader underflow throws`() {
         val reader = BsatnReader(byteArrayOf())
         assertFailsWith<IllegalStateException> {
             reader.readByte()
@@ -473,7 +473,7 @@ class BsatnRoundTripTest {
     }
 
     @Test
-    fun readerRemainingTracksCorrectly() {
+    fun `reader remaining tracks correctly`() {
         val writer = BsatnWriter()
         writer.writeI32(42)
         writer.writeI32(99)
@@ -488,7 +488,7 @@ class BsatnRoundTripTest {
     // ---- Writer reset ----
 
     @Test
-    fun writerResetClearsState() {
+    fun `writer reset clears state`() {
         val writer = BsatnWriter()
         writer.writeI32(42)
         assertEquals(4, writer.offset)

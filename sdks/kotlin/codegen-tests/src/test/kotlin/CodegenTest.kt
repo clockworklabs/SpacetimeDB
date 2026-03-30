@@ -9,14 +9,14 @@ import kotlin.test.assertSame
 class CodegenTest {
 
     @Test
-    fun emptyProductTypeIsDataObject() {
+    fun `empty product type is data object`() {
         // data object: equals by identity, singleton
         assertSame(UnitStruct, UnitStruct)
         assertEquals(UnitStruct.toString(), "UnitStruct")
     }
 
     @Test
-    fun emptyProductTypeRoundTrips() {
+    fun `empty product type round trips`() {
         val writer = BsatnWriter()
         UnitStruct.encode(writer)
         val bytes = writer.toByteArray()
@@ -28,7 +28,7 @@ class CodegenTest {
     }
 
     @Test
-    fun tableWithEmptyProductTypeRoundTrips() {
+    fun `table with empty product type round trips`() {
         val row = UnitTestRow(id = 42u, value = UnitStruct)
         val writer = BsatnWriter()
         row.encode(writer)

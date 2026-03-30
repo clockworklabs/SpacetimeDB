@@ -13,7 +13,7 @@ class ClientMessageTest {
     // ---- Subscribe (tag 0) ----
 
     @Test
-    fun subscribeEncodesCorrectly() {
+    fun `subscribe encodes correctly`() {
         val msg = ClientMessage.Subscribe(
             requestId = 42u,
             querySetId = QuerySetId(7u),
@@ -32,7 +32,7 @@ class ClientMessageTest {
     }
 
     @Test
-    fun subscribeEmptyQueries() {
+    fun `subscribe empty queries`() {
         val msg = ClientMessage.Subscribe(
             requestId = 0u,
             querySetId = QuerySetId(0u),
@@ -51,7 +51,7 @@ class ClientMessageTest {
     // ---- Unsubscribe (tag 1) ----
 
     @Test
-    fun unsubscribeDefaultFlags() {
+    fun `unsubscribe default flags`() {
         val msg = ClientMessage.Unsubscribe(
             requestId = 10u,
             querySetId = QuerySetId(5u),
@@ -68,7 +68,7 @@ class ClientMessageTest {
     }
 
     @Test
-    fun unsubscribeSendDroppedRowsFlags() {
+    fun `unsubscribe send dropped rows flags`() {
         val msg = ClientMessage.Unsubscribe(
             requestId = 10u,
             querySetId = QuerySetId(5u),
@@ -87,7 +87,7 @@ class ClientMessageTest {
     // ---- OneOffQuery (tag 2) ----
 
     @Test
-    fun oneOffQueryEncodesCorrectly() {
+    fun `one off query encodes correctly`() {
         val msg = ClientMessage.OneOffQuery(
             requestId = 99u,
             queryString = "SELECT * FROM Players WHERE id = 1",
@@ -104,7 +104,7 @@ class ClientMessageTest {
     // ---- CallReducer (tag 3) ----
 
     @Test
-    fun callReducerEncodesCorrectly() {
+    fun `call reducer encodes correctly`() {
         val args = byteArrayOf(1, 2, 3, 4)
         val msg = ClientMessage.CallReducer(
             requestId = 7u,
@@ -124,7 +124,7 @@ class ClientMessageTest {
     }
 
     @Test
-    fun callReducerEquality() {
+    fun `call reducer equality`() {
         val msg1 = ClientMessage.CallReducer(1u, 0u, "test", byteArrayOf(1, 2, 3))
         val msg2 = ClientMessage.CallReducer(1u, 0u, "test", byteArrayOf(1, 2, 3))
         val msg3 = ClientMessage.CallReducer(1u, 0u, "test", byteArrayOf(4, 5, 6))
@@ -137,7 +137,7 @@ class ClientMessageTest {
     // ---- CallProcedure (tag 4) ----
 
     @Test
-    fun callProcedureEncodesCorrectly() {
+    fun `call procedure encodes correctly`() {
         val args = byteArrayOf(10, 20)
         val msg = ClientMessage.CallProcedure(
             requestId = 3u,
@@ -157,7 +157,7 @@ class ClientMessageTest {
     }
 
     @Test
-    fun callProcedureEquality() {
+    fun `call procedure equality`() {
         val msg1 = ClientMessage.CallProcedure(1u, 0u, "proc", byteArrayOf(1))
         val msg2 = ClientMessage.CallProcedure(1u, 0u, "proc", byteArrayOf(1))
         val msg3 = ClientMessage.CallProcedure(1u, 0u, "proc", byteArrayOf(2))

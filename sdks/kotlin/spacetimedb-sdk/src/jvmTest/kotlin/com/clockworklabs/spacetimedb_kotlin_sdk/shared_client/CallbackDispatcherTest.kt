@@ -30,7 +30,7 @@ class CallbackDispatcherTest {
     )
 
     @Test
-    fun callbackDispatcherIsUsedForCallbacks() = runTest {
+    fun `callback dispatcher is used for callbacks`() = runTest {
         val transport = FakeTransport()
 
         val callbackDispatcher = newSingleThreadContext("TestCallbackThread")

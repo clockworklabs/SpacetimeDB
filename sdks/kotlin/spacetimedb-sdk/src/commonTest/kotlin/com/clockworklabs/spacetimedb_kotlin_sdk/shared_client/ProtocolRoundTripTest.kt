@@ -25,7 +25,7 @@ class ProtocolRoundTripTest {
     // ---- ClientMessage round-trips (encode → decode → assertEquals) ----
 
     @Test
-    fun clientMessageSubscribeRoundTrip() {
+    fun `client message subscribe round trip`() {
         val original = ClientMessage.Subscribe(
             requestId = 42u,
             querySetId = QuerySetId(7u),
@@ -36,7 +36,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun clientMessageSubscribeEmptyQueriesRoundTrip() {
+    fun `client message subscribe empty queries round trip`() {
         val original = ClientMessage.Subscribe(
             requestId = 0u,
             querySetId = QuerySetId(0u),
@@ -47,7 +47,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun clientMessageUnsubscribeDefaultRoundTrip() {
+    fun `client message unsubscribe default round trip`() {
         val original = ClientMessage.Unsubscribe(
             requestId = 10u,
             querySetId = QuerySetId(3u),
@@ -58,7 +58,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun clientMessageUnsubscribeSendDroppedRowsRoundTrip() {
+    fun `client message unsubscribe send dropped rows round trip`() {
         val original = ClientMessage.Unsubscribe(
             requestId = 10u,
             querySetId = QuerySetId(3u),
@@ -69,7 +69,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun clientMessageOneOffQueryRoundTrip() {
+    fun `client message one off query round trip`() {
         val original = ClientMessage.OneOffQuery(
             requestId = 99u,
             queryString = "SELECT count(*) FROM users",
@@ -79,7 +79,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun clientMessageCallReducerRoundTrip() {
+    fun `client message call reducer round trip`() {
         val original = ClientMessage.CallReducer(
             requestId = 5u,
             flags = 0u,
@@ -91,7 +91,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun clientMessageCallReducerEmptyArgsRoundTrip() {
+    fun `client message call reducer empty args round trip`() {
         val original = ClientMessage.CallReducer(
             requestId = 0u,
             flags = 1u,
@@ -103,7 +103,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun clientMessageCallProcedureRoundTrip() {
+    fun `client message call procedure round trip`() {
         val original = ClientMessage.CallProcedure(
             requestId = 77u,
             flags = 0u,
@@ -119,7 +119,7 @@ class ProtocolRoundTripTest {
     // so we verify encode→decode→re-encode produces identical bytes.
 
     @Test
-    fun serverMessageInitialConnectionRoundTrip() {
+    fun `server message initial connection round trip`() {
         val original = ServerMessage.InitialConnection(
             identity = Identity(BigInteger.parseString("123456789ABCDEF", 16)),
             connectionId = ConnectionId(BigInteger.parseString("FEDCBA987654321", 16)),
@@ -129,7 +129,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun serverMessageSubscribeAppliedRoundTrip() {
+    fun `server message subscribe applied round trip`() {
         val original = ServerMessage.SubscribeApplied(
             requestId = 1u,
             querySetId = QuerySetId(5u),
@@ -141,7 +141,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun serverMessageSubscribeAppliedEmptyRowsRoundTrip() {
+    fun `server message subscribe applied empty rows round trip`() {
         val original = ServerMessage.SubscribeApplied(
             requestId = 0u,
             querySetId = QuerySetId(0u),
@@ -151,7 +151,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun serverMessageUnsubscribeAppliedWithRowsRoundTrip() {
+    fun `server message unsubscribe applied with rows round trip`() {
         val original = ServerMessage.UnsubscribeApplied(
             requestId = 2u,
             querySetId = QuerySetId(3u),
@@ -163,7 +163,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun serverMessageUnsubscribeAppliedNullRowsRoundTrip() {
+    fun `server message unsubscribe applied null rows round trip`() {
         val original = ServerMessage.UnsubscribeApplied(
             requestId = 2u,
             querySetId = QuerySetId(3u),
@@ -173,7 +173,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun serverMessageSubscriptionErrorWithRequestIdRoundTrip() {
+    fun `server message subscription error with request id round trip`() {
         val original = ServerMessage.SubscriptionError(
             requestId = 10u,
             querySetId = QuerySetId(4u),
@@ -183,7 +183,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun serverMessageSubscriptionErrorNullRequestIdRoundTrip() {
+    fun `server message subscription error null request id round trip`() {
         val original = ServerMessage.SubscriptionError(
             requestId = null,
             querySetId = QuerySetId(4u),
@@ -193,7 +193,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun serverMessageTransactionUpdateRoundTrip() {
+    fun `server message transaction update round trip`() {
         val row1 = SampleRow(1, "Alice").encode()
         val row2 = SampleRow(2, "Bob").encode()
         val original = ServerMessage.TransactionUpdateMsg(
@@ -215,7 +215,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun serverMessageTransactionUpdateEventTableRoundTrip() {
+    fun `server message transaction update event table round trip`() {
         val row = SampleRow(1, "event_data").encode()
         val original = ServerMessage.TransactionUpdateMsg(
             TransactionUpdate(listOf(
@@ -233,7 +233,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun serverMessageOneOffQueryResultOkRoundTrip() {
+    fun `server message one off query result ok round trip`() {
         val original = ServerMessage.OneOffQueryResult(
             requestId = 55u,
             result = QueryResult.Ok(QueryRows(listOf(
@@ -244,7 +244,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun serverMessageOneOffQueryResultErrRoundTrip() {
+    fun `server message one off query result err round trip`() {
         val original = ServerMessage.OneOffQueryResult(
             requestId = 55u,
             result = QueryResult.Err("syntax error near 'SELEC'"),
@@ -253,7 +253,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun serverMessageReducerResultOkRoundTrip() {
+    fun `server message reducer result ok round trip`() {
         val original = ServerMessage.ReducerResultMsg(
             requestId = 8u,
             timestamp = Timestamp.fromEpochMicroseconds(1_700_000_000_000_000L),
@@ -266,7 +266,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun serverMessageReducerResultOkEmptyRoundTrip() {
+    fun `server message reducer result ok empty round trip`() {
         val original = ServerMessage.ReducerResultMsg(
             requestId = 9u,
             timestamp = Timestamp.UNIX_EPOCH,
@@ -276,7 +276,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun serverMessageReducerResultErrRoundTrip() {
+    fun `server message reducer result err round trip`() {
         val original = ServerMessage.ReducerResultMsg(
             requestId = 10u,
             timestamp = Timestamp.UNIX_EPOCH,
@@ -286,7 +286,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun serverMessageReducerResultInternalErrorRoundTrip() {
+    fun `server message reducer result internal error round trip`() {
         val original = ServerMessage.ReducerResultMsg(
             requestId = 11u,
             timestamp = Timestamp.UNIX_EPOCH,
@@ -296,7 +296,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun serverMessageProcedureResultReturnedRoundTrip() {
+    fun `server message procedure result returned round trip`() {
         val original = ServerMessage.ProcedureResultMsg(
             status = ProcedureStatus.Returned(byteArrayOf(1, 2, 3)),
             timestamp = Timestamp.fromEpochMicroseconds(1_000_000L),
@@ -307,7 +307,7 @@ class ProtocolRoundTripTest {
     }
 
     @Test
-    fun serverMessageProcedureResultInternalErrorRoundTrip() {
+    fun `server message procedure result internal error round trip`() {
         val original = ServerMessage.ProcedureResultMsg(
             status = ProcedureStatus.InternalError("proc failed"),
             timestamp = Timestamp.UNIX_EPOCH,

@@ -41,7 +41,7 @@ class ServerMessageTest {
     // ---- InitialConnection (tag 0) ----
 
     @Test
-    fun initialConnectionDecode() {
+    fun `initial connection decode`() {
         val identityValue = BigInteger.parseString("12345678", 16)
         val connIdValue = BigInteger.parseString("ABCD", 16)
 
@@ -61,7 +61,7 @@ class ServerMessageTest {
     // ---- SubscribeApplied (tag 1) ----
 
     @Test
-    fun subscribeAppliedEmptyRows() {
+    fun `subscribe applied empty rows`() {
         val writer = BsatnWriter()
         writer.writeSumTag(1u) // tag = SubscribeApplied
         writer.writeU32(42u)   // requestId
@@ -78,7 +78,7 @@ class ServerMessageTest {
     // ---- UnsubscribeApplied (tag 2) ----
 
     @Test
-    fun unsubscribeAppliedWithRows() {
+    fun `unsubscribe applied with rows`() {
         val writer = BsatnWriter()
         writer.writeSumTag(2u) // tag = UnsubscribeApplied
         writer.writeU32(10u)   // requestId
@@ -94,7 +94,7 @@ class ServerMessageTest {
     }
 
     @Test
-    fun unsubscribeAppliedWithoutRows() {
+    fun `unsubscribe applied without rows`() {
         val writer = BsatnWriter()
         writer.writeSumTag(2u) // tag = UnsubscribeApplied
         writer.writeU32(10u)   // requestId
@@ -109,7 +109,7 @@ class ServerMessageTest {
     // ---- SubscriptionError (tag 3) ----
 
     @Test
-    fun subscriptionErrorWithRequestId() {
+    fun `subscription error with request id`() {
         val writer = BsatnWriter()
         writer.writeSumTag(3u) // tag = SubscriptionError
         writer.writeSumTag(0u) // Option::Some(requestId)
@@ -125,7 +125,7 @@ class ServerMessageTest {
     }
 
     @Test
-    fun subscriptionErrorWithoutRequestId() {
+    fun `subscription error without request id`() {
         val writer = BsatnWriter()
         writer.writeSumTag(3u) // tag = SubscriptionError
         writer.writeSumTag(1u) // Option::None
@@ -141,7 +141,7 @@ class ServerMessageTest {
     // ---- TransactionUpdateMsg (tag 4) ----
 
     @Test
-    fun transactionUpdateEmptyQuerySets() {
+    fun `transaction update empty query sets`() {
         val writer = BsatnWriter()
         writer.writeSumTag(4u) // tag = TransactionUpdateMsg
         writer.writeEmptyTransactionUpdate()
@@ -154,7 +154,7 @@ class ServerMessageTest {
     // ---- OneOffQueryResult (tag 5) ----
 
     @Test
-    fun oneOffQueryResultOk() {
+    fun `one off query result ok`() {
         val writer = BsatnWriter()
         writer.writeSumTag(5u)  // tag = OneOffQueryResult
         writer.writeU32(100u)   // requestId
@@ -168,7 +168,7 @@ class ServerMessageTest {
     }
 
     @Test
-    fun oneOffQueryResultErr() {
+    fun `one off query result err`() {
         val writer = BsatnWriter()
         writer.writeSumTag(5u)  // tag = OneOffQueryResult
         writer.writeU32(100u)   // requestId
@@ -185,7 +185,7 @@ class ServerMessageTest {
     // ---- ReducerResultMsg (tag 6) ----
 
     @Test
-    fun reducerResultOk() {
+    fun `reducer result ok`() {
         val writer = BsatnWriter()
         writer.writeSumTag(6u)        // tag = ReducerResultMsg
         writer.writeU32(20u)          // requestId
@@ -203,7 +203,7 @@ class ServerMessageTest {
     }
 
     @Test
-    fun reducerResultOkEmpty() {
+    fun `reducer result ok empty`() {
         val writer = BsatnWriter()
         writer.writeSumTag(6u)        // tag = ReducerResultMsg
         writer.writeU32(21u)          // requestId
@@ -216,7 +216,7 @@ class ServerMessageTest {
     }
 
     @Test
-    fun reducerResultErr() {
+    fun `reducer result err`() {
         val writer = BsatnWriter()
         writer.writeSumTag(6u)        // tag = ReducerResultMsg
         writer.writeU32(22u)          // requestId
@@ -231,7 +231,7 @@ class ServerMessageTest {
     }
 
     @Test
-    fun reducerResultInternalError() {
+    fun `reducer result internal error`() {
         val writer = BsatnWriter()
         writer.writeSumTag(6u)        // tag = ReducerResultMsg
         writer.writeU32(23u)          // requestId
@@ -248,7 +248,7 @@ class ServerMessageTest {
     // ---- ProcedureResultMsg (tag 7) ----
 
     @Test
-    fun procedureResultReturned() {
+    fun `procedure result returned`() {
         val writer = BsatnWriter()
         writer.writeSumTag(7u)        // tag = ProcedureResultMsg
         writer.writeSumTag(0u)        // ProcedureStatus::Returned
@@ -265,7 +265,7 @@ class ServerMessageTest {
     }
 
     @Test
-    fun procedureResultInternalError() {
+    fun `procedure result internal error`() {
         val writer = BsatnWriter()
         writer.writeSumTag(7u)        // tag = ProcedureResultMsg
         writer.writeSumTag(1u)        // ProcedureStatus::InternalError
@@ -284,7 +284,7 @@ class ServerMessageTest {
     // ---- Unknown tag ----
 
     @Test
-    fun unknownTagThrows() {
+    fun `unknown tag throws`() {
         val writer = BsatnWriter()
         writer.writeSumTag(255u) // invalid tag
 
@@ -296,7 +296,7 @@ class ServerMessageTest {
     // ---- ReducerOutcome equality ----
 
     @Test
-    fun reducerOutcomeOkEquality() {
+    fun `reducer outcome ok equality`() {
         val a = ReducerOutcome.Ok(byteArrayOf(1, 2), TransactionUpdate(emptyList()))
         val b = ReducerOutcome.Ok(byteArrayOf(1, 2), TransactionUpdate(emptyList()))
         val c = ReducerOutcome.Ok(byteArrayOf(3, 4), TransactionUpdate(emptyList()))
@@ -307,7 +307,7 @@ class ServerMessageTest {
     }
 
     @Test
-    fun reducerOutcomeErrEquality() {
+    fun `reducer outcome err equality`() {
         val a = ReducerOutcome.Err(byteArrayOf(1, 2))
         val b = ReducerOutcome.Err(byteArrayOf(1, 2))
         val c = ReducerOutcome.Err(byteArrayOf(3, 4))
@@ -318,7 +318,7 @@ class ServerMessageTest {
     }
 
     @Test
-    fun procedureStatusReturnedEquality() {
+    fun `procedure status returned equality`() {
         val a = ProcedureStatus.Returned(byteArrayOf(10))
         val b = ProcedureStatus.Returned(byteArrayOf(10))
         val c = ProcedureStatus.Returned(byteArrayOf(20))

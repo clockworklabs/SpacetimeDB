@@ -16,20 +16,20 @@ class StatsTest {
     // ---- Start / finish tracking ----
 
     @Test
-    fun startAndFinishReturnsTrue() {
+    fun `start and finish returns true`() {
         val tracker = NetworkRequestTracker()
         val id = tracker.startTrackingRequest("test")
         assertTrue(tracker.finishTrackingRequest(id))
     }
 
     @Test
-    fun finishUnknownIdReturnsFalse() {
+    fun `finish unknown id returns false`() {
         val tracker = NetworkRequestTracker()
         assertFalse(tracker.finishTrackingRequest(999u))
     }
 
     @Test
-    fun sampleCountIncrementsAfterFinish() {
+    fun `sample count increments after finish`() {
         val tracker = NetworkRequestTracker()
         assertEquals(0, tracker.sampleCount)
 
@@ -40,7 +40,7 @@ class StatsTest {
     }
 
     @Test
-    fun requestsAwaitingResponseTracksActiveRequests() {
+    fun `requests awaiting response tracks active requests`() {
         val tracker = NetworkRequestTracker()
         assertEquals(0, tracker.requestsAwaitingResponse)
 
@@ -58,7 +58,7 @@ class StatsTest {
     // ---- All-time min/max ----
 
     @Test
-    fun allTimeMinMaxTracksExtremes() {
+    fun `all time min max tracks extremes`() {
         val tracker = NetworkRequestTracker()
         assertNull(tracker.allTimeMinMax)
 
@@ -74,13 +74,13 @@ class StatsTest {
     }
 
     @Test
-    fun getAllTimeMinMaxReturnsNullWhenEmpty() {
+    fun `get all time min max returns null when empty`() {
         val tracker = NetworkRequestTracker()
         assertNull(tracker.allTimeMinMax)
     }
 
     @Test
-    fun getAllTimeMinMaxReturnsConsistentPair() {
+    fun `get all time min max returns consistent pair`() {
         val tracker = NetworkRequestTracker()
         tracker.insertSample(100.milliseconds, "fast")
         tracker.insertSample(500.milliseconds, "slow")
@@ -93,7 +93,7 @@ class StatsTest {
     }
 
     @Test
-    fun getAllTimeMinMaxWithSingleSampleReturnsSameForBoth() {
+    fun `get all time min max with single sample returns same for both`() {
         val tracker = NetworkRequestTracker()
         tracker.insertSample(250.milliseconds, "only")
 
@@ -105,7 +105,7 @@ class StatsTest {
     // ---- Insert sample ----
 
     @Test
-    fun insertSampleIncrementsSampleCount() {
+    fun `insert sample increments sample count`() {
         val tracker = NetworkRequestTracker()
         tracker.insertSample(50.milliseconds)
         tracker.insertSample(100.milliseconds)
@@ -115,14 +115,14 @@ class StatsTest {
     // ---- Metadata passthrough ----
 
     @Test
-    fun metadataPassesThroughToSample() {
+    fun `metadata passes through to sample`() {
         val tracker = NetworkRequestTracker()
         tracker.insertSample(10.milliseconds, "reducer:AddPlayer")
         assertEquals("reducer:AddPlayer", tracker.allTimeMinMax?.min?.metadata)
     }
 
     @Test
-    fun finishTrackingWithOverrideMetadata() {
+    fun `finish tracking with override metadata`() {
         val tracker = NetworkRequestTracker()
         val id = tracker.startTrackingRequest("original")
         tracker.finishTrackingRequest(id, "override")
@@ -132,7 +132,7 @@ class StatsTest {
     // ---- Windowed min/max ----
 
     @Test
-    fun getMinMaxTimesReturnsNullBeforeWindowElapses() {
+    fun `get min max times returns null before window elapses`() {
         val tracker = NetworkRequestTracker()
         tracker.insertSample(100.milliseconds)
         // The first window hasn't completed yet, so lastWindow is null
@@ -140,7 +140,7 @@ class StatsTest {
     }
 
     @Test
-    fun multipleWindowSizesWorkIndependently() {
+    fun `multiple window sizes work independently`() {
         val ts = TestTimeSource()
         val tracker = NetworkRequestTracker(ts)
 
@@ -176,7 +176,7 @@ class StatsTest {
     }
 
     @Test
-    fun windowRotationReturnsMinMaxAfterWindowElapses() {
+    fun `window rotation returns min max after window elapses`() {
         val ts = TestTimeSource()
         val tracker = NetworkRequestTracker(ts)
 
@@ -203,7 +203,7 @@ class StatsTest {
     }
 
     @Test
-    fun windowRotationReplacesWithNewWindowData() {
+    fun `window rotation replaces with new window data`() {
         val ts = TestTimeSource()
         val tracker = NetworkRequestTracker(ts)
 
@@ -235,7 +235,7 @@ class StatsTest {
     }
 
     @Test
-    fun windowRotationReturnsNullAfterTwoWindowsWithNoData() {
+    fun `window rotation returns null after two windows with no data`() {
         val ts = TestTimeSource()
         val tracker = NetworkRequestTracker(ts)
 
@@ -254,7 +254,7 @@ class StatsTest {
     }
 
     @Test
-    fun windowRotationEmptyWindowPreservesNullMinMax() {
+    fun `window rotation empty window preserves null min max`() {
         val ts = TestTimeSource()
         val tracker = NetworkRequestTracker(ts)
 
@@ -276,7 +276,7 @@ class StatsTest {
     }
 
     @Test
-    fun windowMinMaxTracksExtremesWithinWindow() {
+    fun `window min max tracks extremes within window`() {
         val ts = TestTimeSource()
         val tracker = NetworkRequestTracker(ts)
         tracker.minMaxTimes(1)
@@ -297,7 +297,7 @@ class StatsTest {
     }
 
     @Test
-    fun maxTrackersLimitEnforced() {
+    fun `max trackers limit enforced`() {
         val tracker = NetworkRequestTracker()
         // Register 16 distinct window sizes (the max)
         for (i in 1..16) {
@@ -312,7 +312,7 @@ class StatsTest {
     // ---- Stats aggregator ----
 
     @Test
-    fun statsHasAllTrackers() {
+    fun `stats has all trackers`() {
         val stats = Stats()
         // Just verify the trackers are distinct instances
         assertNotNull(stats.reducerRequestTracker)

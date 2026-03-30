@@ -17,7 +17,7 @@ class SubscriptionEdgeCaseTest {
     // =========================================================================
 
     @Test
-    fun subscriptionStateTransitionsPendingToActiveToEnded() = runTest {
+    fun `subscription state transitions pending to active to ended`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -57,7 +57,7 @@ class SubscriptionEdgeCaseTest {
     }
 
     @Test
-    fun unsubscribeFromUnsubscribingStateThrows() = runTest {
+    fun `unsubscribe from unsubscribing state throws`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -84,7 +84,7 @@ class SubscriptionEdgeCaseTest {
     }
 
     @Test
-    fun subscriptionErrorFromPendingStateEndsSubscription() = runTest {
+    fun `subscription error from pending state ends subscription`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -114,7 +114,7 @@ class SubscriptionEdgeCaseTest {
     }
 
     @Test
-    fun multipleSubscriptionsTrackIndependently() = runTest {
+    fun `multiple subscriptions track independently`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -156,7 +156,7 @@ class SubscriptionEdgeCaseTest {
     }
 
     @Test
-    fun disconnectMarksAllPendingAndActiveSubscriptionsAsEnded() = runTest {
+    fun `disconnect marks all pending and active subscriptions as ended`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -185,7 +185,7 @@ class SubscriptionEdgeCaseTest {
     }
 
     @Test
-    fun unsubscribeAppliedWithRowsRemovesFromCache() = runTest {
+    fun `unsubscribe applied with rows removes from cache`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         val cache = createSampleCache()
@@ -226,7 +226,7 @@ class SubscriptionEdgeCaseTest {
     // =========================================================================
 
     @Test
-    fun unsubscribeAppliedWithNullRowsDoesNotDeleteFromCache() = runTest {
+    fun `unsubscribe applied with null rows does not delete from cache`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         val cache = createSampleCache()
@@ -269,7 +269,7 @@ class SubscriptionEdgeCaseTest {
     // =========================================================================
 
     @Test
-    fun multipleOnAppliedCallbacksAllFire() = runTest {
+    fun `multiple on applied callbacks all fire`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -298,7 +298,7 @@ class SubscriptionEdgeCaseTest {
     }
 
     @Test
-    fun multipleOnErrorCallbacksAllFire() = runTest {
+    fun `multiple on error callbacks all fire`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -330,7 +330,7 @@ class SubscriptionEdgeCaseTest {
     // =========================================================================
 
     @Test
-    fun subscribeAppliedWithManyRows() = runTest {
+    fun `subscribe applied with many rows`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         val cache = createSampleCache()
@@ -366,7 +366,7 @@ class SubscriptionEdgeCaseTest {
     // =========================================================================
 
     @Test
-    fun subscribeAppliedForUnregisteredTableIgnoresRows() = runTest {
+    fun `subscribe applied for unregistered table ignores rows`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         // No cache registered for "sample"
@@ -397,7 +397,7 @@ class SubscriptionEdgeCaseTest {
     // =========================================================================
 
     @Test
-    fun unsubscribeOnEndedSubscriptionDoesNotLeakCallback() = runTest {
+    fun `unsubscribe on ended subscription does not leak callback`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -443,7 +443,7 @@ class SubscriptionEdgeCaseTest {
     // =========================================================================
 
     @Test
-    fun subscribeAndImmediateUnsubscribeTransitionsCorrectly() = runTest {
+    fun `subscribe and immediate unsubscribe transitions correctly`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -488,7 +488,7 @@ class SubscriptionEdgeCaseTest {
     }
 
     @Test
-    fun unsubscribeBeforeAppliedThrows() = runTest {
+    fun `unsubscribe before applied throws`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -506,7 +506,7 @@ class SubscriptionEdgeCaseTest {
     }
 
     @Test
-    fun doubleUnsubscribeThrows() = runTest {
+    fun `double unsubscribe throws`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())

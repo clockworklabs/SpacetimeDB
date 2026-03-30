@@ -11,26 +11,26 @@ class BigIntegerTest {
     // ---- Construction from Long ----
 
     @Test
-    fun constructFromZero() {
+    fun `construct from zero`() {
         assertEquals("0", BigInteger(0L).toString())
         assertEquals(0, BigInteger(0L).signum())
     }
 
     @Test
-    fun constructFromPositiveLong() {
+    fun `construct from positive long`() {
         assertEquals("42", BigInteger(42L).toString())
         assertEquals("9223372036854775807", BigInteger(Long.MAX_VALUE).toString())
     }
 
     @Test
-    fun constructFromNegativeLong() {
+    fun `construct from negative long`() {
         assertEquals("-1", BigInteger(-1L).toString())
         assertEquals("-42", BigInteger(-42L).toString())
         assertEquals("-9223372036854775808", BigInteger(Long.MIN_VALUE).toString())
     }
 
     @Test
-    fun constructFromInt() {
+    fun `construct from int`() {
         assertEquals("42", BigInteger(42).toString())
         assertEquals("-1", BigInteger(-1).toString())
     }
@@ -38,7 +38,7 @@ class BigIntegerTest {
     // ---- Constants ----
 
     @Test
-    fun constants() {
+    fun `constants`() {
         assertEquals("0", BigInteger.ZERO.toString())
         assertEquals("1", BigInteger.ONE.toString())
         assertEquals("2", BigInteger.TWO.toString())
@@ -48,17 +48,17 @@ class BigIntegerTest {
     // ---- fromULong ----
 
     @Test
-    fun fromULongZero() {
+    fun `from u long zero`() {
         assertEquals(BigInteger.ZERO, BigInteger.fromULong(0UL))
     }
 
     @Test
-    fun fromULongSmall() {
+    fun `from u long small`() {
         assertEquals(BigInteger(42L), BigInteger.fromULong(42UL))
     }
 
     @Test
-    fun fromULongMax() {
+    fun `from u long max`() {
         // ULong.MAX_VALUE = 2^64 - 1 = 18446744073709551615
         val v = BigInteger.fromULong(ULong.MAX_VALUE)
         assertEquals("18446744073709551615", v.toString())
@@ -66,7 +66,7 @@ class BigIntegerTest {
     }
 
     @Test
-    fun fromULongHighBitSet() {
+    fun `from u long high bit set`() {
         // 2^63 = 9223372036854775808 (high bit of Long set, but unsigned)
         val v = BigInteger.fromULong(9223372036854775808UL)
         assertEquals("9223372036854775808", v.toString())
@@ -76,22 +76,22 @@ class BigIntegerTest {
     // ---- parseString decimal ----
 
     @Test
-    fun parseDecimalZero() {
+    fun `parse decimal zero`() {
         assertEquals(BigInteger.ZERO, BigInteger.parseString("0"))
     }
 
     @Test
-    fun parseDecimalPositive() {
+    fun `parse decimal positive`() {
         assertEquals(BigInteger(42L), BigInteger.parseString("42"))
     }
 
     @Test
-    fun parseDecimalNegative() {
+    fun `parse decimal negative`() {
         assertEquals(BigInteger(-42L), BigInteger.parseString("-42"))
     }
 
     @Test
-    fun parseDecimalLargePositive() {
+    fun `parse decimal large positive`() {
         // 2^127 - 1 = I128 max
         val s = "170141183460469231731687303715884105727"
         val v = BigInteger.parseString(s)
@@ -99,7 +99,7 @@ class BigIntegerTest {
     }
 
     @Test
-    fun parseDecimalLargeNegative() {
+    fun `parse decimal large negative`() {
         // -2^127 = I128 min
         val s = "-170141183460469231731687303715884105728"
         val v = BigInteger.parseString(s)
@@ -107,7 +107,7 @@ class BigIntegerTest {
     }
 
     @Test
-    fun parseDecimalU256Max() {
+    fun `parse decimal u256 max`() {
         // 2^256 - 1
         val s = "115792089237316195423570985008687907853269984665640564039457584007913129639935"
         val v = BigInteger.parseString(s)
@@ -117,28 +117,28 @@ class BigIntegerTest {
     // ---- parseString hex ----
 
     @Test
-    fun parseHexZero() {
+    fun `parse hex zero`() {
         assertEquals(BigInteger.ZERO, BigInteger.parseString("0", 16))
     }
 
     @Test
-    fun parseHexSmall() {
+    fun `parse hex small`() {
         assertEquals(BigInteger(255L), BigInteger.parseString("ff", 16))
         assertEquals(BigInteger(256L), BigInteger.parseString("100", 16))
     }
 
     @Test
-    fun parseHexUpperCase() {
+    fun `parse hex upper case`() {
         assertEquals(BigInteger(255L), BigInteger.parseString("FF", 16))
     }
 
     @Test
-    fun parseHexNegative() {
+    fun `parse hex negative`() {
         assertEquals(BigInteger(-255L), BigInteger.parseString("-ff", 16))
     }
 
     @Test
-    fun parseHexLarge() {
+    fun `parse hex large`() {
         // 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF = U128 max
         val v = BigInteger.parseString("ffffffffffffffffffffffffffffffff", 16)
         assertEquals("340282366920938463463374607431768211455", v.toString())
@@ -147,25 +147,25 @@ class BigIntegerTest {
     // ---- toString hex ----
 
     @Test
-    fun toStringHexZero() {
+    fun `to string hex zero`() {
         assertEquals("0", BigInteger.ZERO.toString(16))
     }
 
     @Test
-    fun toStringHexPositive() {
+    fun `to string hex positive`() {
         assertEquals("ff", BigInteger(255L).toString(16))
         assertEquals("100", BigInteger(256L).toString(16))
         assertEquals("1", BigInteger(1L).toString(16))
     }
 
     @Test
-    fun toStringHexNegative() {
+    fun `to string hex negative`() {
         assertEquals("-1", BigInteger(-1L).toString(16))
         assertEquals("-ff", BigInteger(-255L).toString(16))
     }
 
     @Test
-    fun hexRoundTrip() {
+    fun `hex round trip`() {
         val original = "deadbeef01234567890abcdef"
         val v = BigInteger.parseString(original, 16)
         assertEquals(original, v.toString(16))
@@ -174,30 +174,30 @@ class BigIntegerTest {
     // ---- Arithmetic: shl ----
 
     @Test
-    fun shlZero() {
+    fun `shl zero`() {
         assertEquals(BigInteger(1L), BigInteger(1L).shl(0))
     }
 
     @Test
-    fun shlByOne() {
+    fun `shl by one`() {
         assertEquals(BigInteger(2L), BigInteger(1L).shl(1))
         assertEquals(BigInteger(254L), BigInteger(127L).shl(1))
     }
 
     @Test
-    fun shlByEight() {
+    fun `shl by eight`() {
         assertEquals(BigInteger(256L), BigInteger(1L).shl(8))
     }
 
     @Test
-    fun shlLarge() {
+    fun `shl large`() {
         // 1 << 127 = 2^127
         val v = BigInteger.ONE.shl(127)
         assertEquals("170141183460469231731687303715884105728", v.toString())
     }
 
     @Test
-    fun shlNegative() {
+    fun `shl negative`() {
         // -1 << 8 = -256
         assertEquals(BigInteger(-256L), BigInteger(-1L).shl(8))
         // -1 << 1 = -2
@@ -205,29 +205,29 @@ class BigIntegerTest {
     }
 
     @Test
-    fun shlZeroValue() {
+    fun `shl zero value`() {
         assertEquals(BigInteger.ZERO, BigInteger.ZERO.shl(100))
     }
 
     // ---- Arithmetic: add ----
 
     @Test
-    fun addPositive() {
+    fun `add positive`() {
         assertEquals(BigInteger(3L), BigInteger(1L).add(BigInteger(2L)))
     }
 
     @Test
-    fun addNegative() {
+    fun `add negative`() {
         assertEquals(BigInteger(-3L), BigInteger(-1L).add(BigInteger(-2L)))
     }
 
     @Test
-    fun addMixed() {
+    fun `add mixed`() {
         assertEquals(BigInteger.ZERO, BigInteger(1L).add(BigInteger(-1L)))
     }
 
     @Test
-    fun addLarge() {
+    fun `add large`() {
         // (2^127 - 1) + 1 = 2^127
         val max = BigInteger.ONE.shl(127) - BigInteger.ONE
         val result = max + BigInteger.ONE
@@ -237,34 +237,34 @@ class BigIntegerTest {
     // ---- Arithmetic: subtract ----
 
     @Test
-    fun subtractPositive() {
+    fun `subtract positive`() {
         assertEquals(BigInteger(-1L), BigInteger(1L) - BigInteger(2L))
     }
 
     @Test
-    fun subtractSame() {
+    fun `subtract same`() {
         assertEquals(BigInteger.ZERO, BigInteger(42L) - BigInteger(42L))
     }
 
     // ---- Arithmetic: negate ----
 
     @Test
-    fun negatePositive() {
+    fun `negate positive`() {
         assertEquals(BigInteger(-42L), -BigInteger(42L))
     }
 
     @Test
-    fun negateNegative() {
+    fun `negate negative`() {
         assertEquals(BigInteger(42L), -BigInteger(-42L))
     }
 
     @Test
-    fun negateZero() {
+    fun `negate zero`() {
         assertEquals(BigInteger.ZERO, -BigInteger.ZERO)
     }
 
     @Test
-    fun negateLongMin() {
+    fun `negate long min`() {
         // -(Long.MIN_VALUE) = Long.MAX_VALUE + 1 = 9223372036854775808
         val v = -BigInteger(Long.MIN_VALUE)
         assertEquals("9223372036854775808", v.toString())
@@ -274,7 +274,7 @@ class BigIntegerTest {
     // ---- signum ----
 
     @Test
-    fun signumValues() {
+    fun `signum values`() {
         assertEquals(0, BigInteger.ZERO.signum())
         assertEquals(1, BigInteger.ONE.signum())
         assertEquals(-1, BigInteger(-1L).signum())
@@ -283,23 +283,23 @@ class BigIntegerTest {
     // ---- compareTo ----
 
     @Test
-    fun compareToSameValue() {
+    fun `compare to same value`() {
         assertEquals(0, BigInteger(42L).compareTo(BigInteger(42L)))
     }
 
     @Test
-    fun compareToPositive() {
+    fun `compare to positive`() {
         assertTrue(BigInteger(1L) < BigInteger(2L))
         assertTrue(BigInteger(2L) > BigInteger(1L))
     }
 
     @Test
-    fun compareToNegative() {
+    fun `compare to negative`() {
         assertTrue(BigInteger(-2L) < BigInteger(-1L))
     }
 
     @Test
-    fun compareToCrossSign() {
+    fun `compare to cross sign`() {
         assertTrue(BigInteger(-1L) < BigInteger(1L))
         assertTrue(BigInteger(1L) > BigInteger(-1L))
         assertTrue(BigInteger(-1L) < BigInteger.ZERO)
@@ -307,7 +307,7 @@ class BigIntegerTest {
     }
 
     @Test
-    fun compareToLargeValues() {
+    fun `compare to large values`() {
         val a = BigInteger.ONE.shl(127)
         val b = BigInteger.ONE.shl(127) - BigInteger.ONE
         assertTrue(a > b)
@@ -317,12 +317,12 @@ class BigIntegerTest {
     // ---- equals and hashCode ----
 
     @Test
-    fun equalsIdentical() {
+    fun `equals identical`() {
         assertEquals(BigInteger(42L), BigInteger(42L))
     }
 
     @Test
-    fun equalsFromDifferentPaths() {
+    fun `equals from different paths`() {
         // Same value constructed differently should be equal
         val a = BigInteger.parseString("255")
         val b = BigInteger.parseString("ff", 16)
@@ -331,28 +331,28 @@ class BigIntegerTest {
     }
 
     @Test
-    fun notEqualsDifferentValues() {
+    fun `not equals different values`() {
         assertNotEquals(BigInteger(1L), BigInteger(2L))
     }
 
     // ---- toByteArray (BE two's complement) ----
 
     @Test
-    fun toByteArrayZero() {
+    fun `to byte array zero`() {
         val bytes = BigInteger.ZERO.toByteArray()
         assertEquals(1, bytes.size)
         assertEquals(0.toByte(), bytes[0])
     }
 
     @Test
-    fun toByteArrayPositive() {
+    fun `to byte array positive`() {
         val bytes = BigInteger(1L).toByteArray()
         assertEquals(1, bytes.size)
         assertEquals(1.toByte(), bytes[0])
     }
 
     @Test
-    fun toByteArrayNegative() {
+    fun `to byte array negative`() {
         // -1 in BE two's complement = [0xFF]
         val bytes = BigInteger(-1L).toByteArray()
         assertEquals(1, bytes.size)
@@ -360,7 +360,7 @@ class BigIntegerTest {
     }
 
     @Test
-    fun toByteArray128() {
+    fun `to byte array128`() {
         // 128 needs 2 bytes in BE: [0x00, 0x80]
         val bytes = BigInteger(128L).toByteArray()
         assertEquals(2, bytes.size)
@@ -371,7 +371,7 @@ class BigIntegerTest {
     // ---- fromLeBytes / toLeBytesFixedWidth round-trip ----
 
     @Test
-    fun leBytesRoundTrip16() {
+    fun `le bytes round trip16`() {
         val values = listOf(BigInteger.ZERO, BigInteger.ONE, BigInteger(-1L),
             BigInteger.ONE.shl(127) - BigInteger.ONE, // I128 max
             -BigInteger.ONE.shl(127))                  // I128 min
@@ -384,7 +384,7 @@ class BigIntegerTest {
     }
 
     @Test
-    fun leBytesRoundTrip32() {
+    fun `le bytes round trip32`() {
         val values = listOf(BigInteger.ZERO, BigInteger.ONE, BigInteger(-1L),
             BigInteger.ONE.shl(255) - BigInteger.ONE, // I256 max
             -BigInteger.ONE.shl(255))                  // I256 min
@@ -397,7 +397,7 @@ class BigIntegerTest {
     }
 
     @Test
-    fun fromLeBytesUnsignedMaxU128() {
+    fun `from le bytes unsigned max u128`() {
         // All 0xFF bytes = U128 max
         val le = ByteArray(16) { 0xFF.toByte() }
         val v = BigInteger.fromLeBytesUnsigned(le, 0, 16)
@@ -408,27 +408,27 @@ class BigIntegerTest {
     // ---- fromByteArray with Sign ----
 
     @Test
-    fun fromByteArrayPositive() {
+    fun `from byte array positive`() {
         // BE magnitude [0xFF] with POSITIVE sign = 255
         val v = BigInteger.fromByteArray(byteArrayOf(0xFF.toByte()), Sign.POSITIVE)
         assertEquals(BigInteger(255L), v)
     }
 
     @Test
-    fun fromByteArrayNegative() {
+    fun `from byte array negative`() {
         val v = BigInteger.fromByteArray(byteArrayOf(0x01), Sign.NEGATIVE)
         assertEquals(BigInteger(-1L), v)
     }
 
     @Test
-    fun fromByteArrayZero() {
+    fun `from byte array zero`() {
         assertEquals(BigInteger.ZERO, BigInteger.fromByteArray(byteArrayOf(0), Sign.ZERO))
     }
 
     // ---- fitsInSignedBytes / fitsInUnsignedBytes ----
 
     @Test
-    fun fitsInSignedBytesI128() {
+    fun `fits in signed bytes i128`() {
         val max = BigInteger.ONE.shl(127) - BigInteger.ONE
         val min = -BigInteger.ONE.shl(127)
         assertTrue(max.fitsInSignedBytes(16))
@@ -439,7 +439,7 @@ class BigIntegerTest {
     }
 
     @Test
-    fun fitsInUnsignedBytesU128() {
+    fun `fits in unsigned bytes u128`() {
         val max = BigInteger.ONE.shl(128) - BigInteger.ONE
         assertTrue(max.fitsInUnsignedBytes(16))
 
@@ -452,7 +452,7 @@ class BigIntegerTest {
     // ---- Chunk boundary values (128-bit) ----
 
     @Test
-    fun chunkBoundary128() {
+    fun `chunk boundary128`() {
         val ONE = BigInteger.ONE
         val values = listOf(
             ONE.shl(63) - ONE,   // 2^63 - 1
@@ -471,7 +471,7 @@ class BigIntegerTest {
     // ---- Chunk boundary values (256-bit) ----
 
     @Test
-    fun chunkBoundary256() {
+    fun `chunk boundary256`() {
         val ONE = BigInteger.ONE
         val values = listOf(
             ONE.shl(63),
@@ -492,7 +492,7 @@ class BigIntegerTest {
     // ---- Negative LE round-trips (signed) ----
 
     @Test
-    fun negativeLeBytesRoundTrip() {
+    fun `negative le bytes round trip`() {
         val ONE = BigInteger.ONE
         val values = listOf(
             BigInteger(-2),
@@ -511,7 +511,7 @@ class BigIntegerTest {
     // ---- Decimal toString round-trip for large values ----
 
     @Test
-    fun decimalRoundTripLargeValues() {
+    fun `decimal round trip large values`() {
         val values = listOf(
             "170141183460469231731687303715884105727",   // I128 max
             "-170141183460469231731687303715884105728",  // I128 min
@@ -529,7 +529,7 @@ class BigIntegerTest {
     // ---- writeLeBytes ----
 
     @Test
-    fun writeLeBytesDirectly() {
+    fun `write le bytes directly`() {
         val v = BigInteger(0x0102030405060708L)
         val dest = ByteArray(16)
         v.writeLeBytes(dest, 0, 16)
@@ -548,7 +548,7 @@ class BigIntegerTest {
     }
 
     @Test
-    fun writeLeBytesNegative() {
+    fun `write le bytes negative`() {
         val v = BigInteger(-1L)
         val dest = ByteArray(16)
         v.writeLeBytes(dest, 0, 16)

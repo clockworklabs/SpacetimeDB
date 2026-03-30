@@ -20,7 +20,7 @@ class ConnectionStateTransitionTest {
     // =========================================================================
 
     @Test
-    fun connectionStateProgression() = runTest {
+    fun `connection state progression`() = runTest {
         val transport = FakeTransport()
         val conn = createTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
 
@@ -38,7 +38,7 @@ class ConnectionStateTransitionTest {
     }
 
     @Test
-    fun connectAfterDisconnectThrows() = runTest {
+    fun `connect after disconnect throws`() = runTest {
         val transport = FakeTransport()
         val conn = createTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         conn.connect()
@@ -52,7 +52,7 @@ class ConnectionStateTransitionTest {
     }
 
     @Test
-    fun doubleConnectThrows() = runTest {
+    fun `double connect throws`() = runTest {
         val transport = FakeTransport()
         val conn = createTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         conn.connect()
@@ -65,7 +65,7 @@ class ConnectionStateTransitionTest {
     }
 
     @Test
-    fun connectFailureRendersConnectionInactive() = runTest {
+    fun `connect failure renders connection inactive`() = runTest {
         val error = RuntimeException("connection refused")
         val transport = FakeTransport(connectError = error)
         val conn = createTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
@@ -78,7 +78,7 @@ class ConnectionStateTransitionTest {
     }
 
     @Test
-    fun serverCloseRendersConnectionInactive() = runTest {
+    fun `server close renders connection inactive`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -92,7 +92,7 @@ class ConnectionStateTransitionTest {
     }
 
     @Test
-    fun disconnectFromNeverConnectedIsNoOp() = runTest {
+    fun `disconnect from never connected is no op`() = runTest {
         val transport = FakeTransport()
         val conn = createTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
 
@@ -102,7 +102,7 @@ class ConnectionStateTransitionTest {
     }
 
     @Test
-    fun disconnectAfterConnectRendersInactive() = runTest {
+    fun `disconnect after connect renders inactive`() = runTest {
         val transport = FakeTransport()
         val conn = createTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         conn.connect()
@@ -119,7 +119,7 @@ class ConnectionStateTransitionTest {
     // =========================================================================
 
     @Test
-    fun callReducerAfterDisconnectCleansUpTracking() = runTest {
+    fun `call reducer after disconnect cleans up tracking`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -135,7 +135,7 @@ class ConnectionStateTransitionTest {
     }
 
     @Test
-    fun callProcedureAfterDisconnectCleansUpTracking() = runTest {
+    fun `call procedure after disconnect cleans up tracking`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -150,7 +150,7 @@ class ConnectionStateTransitionTest {
     }
 
     @Test
-    fun oneOffQueryAfterDisconnectCleansUpTracking() = runTest {
+    fun `one off query after disconnect cleans up tracking`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -165,7 +165,7 @@ class ConnectionStateTransitionTest {
     }
 
     @Test
-    fun subscribeAfterDisconnectCleansUpTracking() = runTest {
+    fun `subscribe after disconnect cleans up tracking`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -185,7 +185,7 @@ class ConnectionStateTransitionTest {
     // =========================================================================
 
     @Test
-    fun disconnectWithReasonPassesReasonToCallbacks() = runTest {
+    fun `disconnect with reason passes reason to callbacks`() = runTest {
         val transport = FakeTransport()
         var receivedReason: Throwable? = null
         val conn = buildTestConnection(transport, onDisconnect = { _, err ->
@@ -202,7 +202,7 @@ class ConnectionStateTransitionTest {
     }
 
     @Test
-    fun disconnectWithoutReasonPassesNull() = runTest {
+    fun `disconnect without reason passes null`() = runTest {
         val transport = FakeTransport()
         var receivedReason: Throwable? = Throwable("sentinel")
         val conn = buildTestConnection(transport, onDisconnect = { _, err ->
@@ -222,7 +222,7 @@ class ConnectionStateTransitionTest {
     // =========================================================================
 
     @Test
-    fun subscribeWithQueryDoesNotMergeAccumulatedAddQueryCalls() = runTest {
+    fun `subscribe with query does not merge accumulated add query calls`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -243,7 +243,7 @@ class ConnectionStateTransitionTest {
     }
 
     @Test
-    fun subscribeWithListDoesNotMergeAccumulatedAddQueryCalls() = runTest {
+    fun `subscribe with list does not merge accumulated add query calls`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -268,7 +268,7 @@ class ConnectionStateTransitionTest {
     // =========================================================================
 
     @Test
-    fun subscribeWithEmptyQueryListSendsMessage() = runTest {
+    fun `subscribe with empty query list sends message`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -289,7 +289,7 @@ class ConnectionStateTransitionTest {
     // =========================================================================
 
     @Test
-    fun subscriptionHandleStoresOriginalQueries() = runTest {
+    fun `subscription handle stores original queries`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -307,7 +307,7 @@ class ConnectionStateTransitionTest {
     // =========================================================================
 
     @Test
-    fun connectThenImmediateDisconnectEndsAsClosed() = runTest {
+    fun `connect then immediate disconnect ends as closed`() = runTest {
         val transport = FakeTransport()
         val conn = createTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
 

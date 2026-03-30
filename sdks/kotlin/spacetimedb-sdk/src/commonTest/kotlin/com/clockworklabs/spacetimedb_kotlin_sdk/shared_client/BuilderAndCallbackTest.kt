@@ -22,7 +22,7 @@ class BuilderAndCallbackTest {
     // --- Builder validation ---
 
     @Test
-    fun builderFailsWithoutUri() = runTest {
+    fun `builder fails without uri`() = runTest {
         assertFailsWith<IllegalArgumentException> {
             DbConnection.Builder()
                 .withDatabaseName("test")
@@ -31,7 +31,7 @@ class BuilderAndCallbackTest {
     }
 
     @Test
-    fun builderFailsWithoutDatabaseName() = runTest {
+    fun `builder fails without database name`() = runTest {
         assertFailsWith<IllegalArgumentException> {
             DbConnection.Builder()
                 .withUri("ws://localhost:3000")
@@ -42,7 +42,7 @@ class BuilderAndCallbackTest {
     // --- Builder ensureMinimumVersion ---
 
     @Test
-    fun builderRejectsOldCliVersion() = runTest {
+    fun `builder rejects old cli version`() = runTest {
         val oldModule = object : ModuleDescriptor {
             override val subscribableTableNames = emptyList<String>()
             override val cliVersion = "1.0.0"
@@ -67,7 +67,7 @@ class BuilderAndCallbackTest {
     // --- ensureMinimumVersion edge cases ---
 
     @Test
-    fun builderAcceptsExactMinimumVersion() = runTest {
+    fun `builder accepts exact minimum version`() = runTest {
         val module = object : ModuleDescriptor {
             override val subscribableTableNames = emptyList<String>()
             override val cliVersion = "2.0.0"
@@ -86,7 +86,7 @@ class BuilderAndCallbackTest {
     }
 
     @Test
-    fun builderAcceptsNewerVersion() = runTest {
+    fun `builder accepts newer version`() = runTest {
         val module = object : ModuleDescriptor {
             override val subscribableTableNames = emptyList<String>()
             override val cliVersion = "3.1.0"
@@ -104,7 +104,7 @@ class BuilderAndCallbackTest {
     }
 
     @Test
-    fun builderAcceptsPreReleaseSuffix() = runTest {
+    fun `builder accepts pre release suffix`() = runTest {
         val module = object : ModuleDescriptor {
             override val subscribableTableNames = emptyList<String>()
             override val cliVersion = "2.1.0-beta.1"
@@ -123,7 +123,7 @@ class BuilderAndCallbackTest {
     }
 
     @Test
-    fun builderRejectsOldMinorVersion() = runTest {
+    fun `builder rejects old minor version`() = runTest {
         val module = object : ModuleDescriptor {
             override val subscribableTableNames = emptyList<String>()
             override val cliVersion = "1.9.9"
@@ -148,7 +148,7 @@ class BuilderAndCallbackTest {
     // --- Module descriptor integration ---
 
     @Test
-    fun dbConnectionConstructorDoesNotCallRegisterTables() = runTest {
+    fun `db connection constructor does not call register tables`() = runTest {
         val transport = FakeTransport()
         var tablesRegistered = false
 
@@ -185,7 +185,7 @@ class BuilderAndCallbackTest {
     // --- handleReducerEvent fires from module descriptor ---
 
     @Test
-    fun moduleDescriptorHandleReducerEventFires() = runTest {
+    fun `module descriptor handle reducer event fires`() = runTest {
         val transport = FakeTransport()
         var reducerEventName: String? = null
 
@@ -227,7 +227,7 @@ class BuilderAndCallbackTest {
     // --- Callback removal ---
 
     @Test
-    fun removeOnDisconnectPreventsCallback() = runTest {
+    fun `remove on disconnect prevents callback`() = runTest {
         val transport = FakeTransport()
         var fired = false
         val cb: (DbConnectionView, Throwable?) -> Unit = { _, _ -> fired = true }
@@ -249,7 +249,7 @@ class BuilderAndCallbackTest {
     // --- removeOnConnectError ---
 
     @Test
-    fun removeOnConnectErrorPreventsCallback() = runTest {
+    fun `remove on connect error prevents callback`() = runTest {
         val transport = FakeTransport(connectError = RuntimeException("fail"))
         var fired = false
         val cb: (DbConnectionView, Throwable) -> Unit = { _, _ -> fired = true }
@@ -269,7 +269,7 @@ class BuilderAndCallbackTest {
     // --- Multiple callbacks ---
 
     @Test
-    fun multipleOnConnectCallbacksAllFire() = runTest {
+    fun `multiple on connect callbacks all fire`() = runTest {
         val transport = FakeTransport()
         var count = 0
         val cb: (DbConnectionView, Identity, String) -> Unit = { _, _, _ -> count++ }
@@ -296,7 +296,7 @@ class BuilderAndCallbackTest {
     // --- User callback exception does not crash receive loop ---
 
     @Test
-    fun userCallbackExceptionDoesNotCrashConnection() = runTest {
+    fun `user callback exception does not crash connection`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         val cache = createSampleCache()
@@ -328,7 +328,7 @@ class BuilderAndCallbackTest {
     // --- Callback exception handling ---
 
     @Test
-    fun onConnectCallbackExceptionDoesNotPreventOtherCallbacks() = runTest {
+    fun `on connect callback exception does not prevent other callbacks`() = runTest {
         val transport = FakeTransport()
         var secondFired = false
         val conn = DbConnection(
@@ -355,7 +355,7 @@ class BuilderAndCallbackTest {
     }
 
     @Test
-    fun onDeleteCallbackExceptionDoesNotPreventRowRemoval() = runTest {
+    fun `on delete callback exception does not prevent row removal`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         val cache = createSampleCache()
@@ -409,7 +409,7 @@ class BuilderAndCallbackTest {
     }
 
     @Test
-    fun reducerCallbackExceptionDoesNotCrashConnection() = runTest {
+    fun `reducer callback exception does not crash connection`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())

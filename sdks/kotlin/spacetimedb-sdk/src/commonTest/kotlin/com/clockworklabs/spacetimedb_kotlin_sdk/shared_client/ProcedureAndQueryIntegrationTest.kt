@@ -20,7 +20,7 @@ class ProcedureAndQueryIntegrationTest {
     // --- Procedures ---
 
     @Test
-    fun callProcedureSendsClientMessage() = runTest {
+    fun `call procedure sends client message`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -37,7 +37,7 @@ class ProcedureAndQueryIntegrationTest {
     }
 
     @Test
-    fun procedureResultFiresCallback() = runTest {
+    fun `procedure result fires callback`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -66,7 +66,7 @@ class ProcedureAndQueryIntegrationTest {
     }
 
     @Test
-    fun procedureResultInternalErrorFiresCallback() = runTest {
+    fun `procedure result internal error fires callback`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -98,7 +98,7 @@ class ProcedureAndQueryIntegrationTest {
     // --- One-off queries ---
 
     @Test
-    fun oneOffQueryCallbackReceivesResult() = runTest {
+    fun `one off query callback receives result`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -125,7 +125,7 @@ class ProcedureAndQueryIntegrationTest {
     }
 
     @Test
-    fun oneOffQuerySuspendReturnsResult() = runTest {
+    fun `one off query suspend returns result`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -162,7 +162,7 @@ class ProcedureAndQueryIntegrationTest {
     // --- One-off query error ---
 
     @Test
-    fun oneOffQueryCallbackReceivesError() = runTest {
+    fun `one off query callback receives error`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -194,7 +194,7 @@ class ProcedureAndQueryIntegrationTest {
     // --- oneOffQuery cancellation ---
 
     @Test
-    fun oneOffQuerySuspendCancellationCleansUpCallback() = runTest {
+    fun `one off query suspend cancellation cleans up callback`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -227,7 +227,7 @@ class ProcedureAndQueryIntegrationTest {
     // --- oneOffQuery suspend with finite timeout ---
 
     @Test
-    fun oneOffQuerySuspendTimesOutWhenNoResponse() = runTest {
+    fun `one off query suspend times out when no response`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -243,7 +243,7 @@ class ProcedureAndQueryIntegrationTest {
     // --- callProcedure without callback (fire-and-forget) ---
 
     @Test
-    fun callProcedureWithoutCallbackSendsMessage() = runTest {
+    fun `call procedure without callback sends message`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -274,7 +274,7 @@ class ProcedureAndQueryIntegrationTest {
     // --- Procedure result before identity is set ---
 
     @Test
-    fun procedureResultBeforeIdentitySetIsIgnored() = runTest {
+    fun `procedure result before identity set is ignored`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         // Do NOT send InitialConnection — identity stays null

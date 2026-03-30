@@ -19,7 +19,7 @@ class ConnectionLifecycleTest {
     // --- Connection lifecycle ---
 
     @Test
-    fun onConnectFiresAfterInitialConnection() = runTest {
+    fun `on connect fires after initial connection`() = runTest {
         val transport = FakeTransport()
         var connectIdentity: Identity? = null
         var connectToken: String? = null
@@ -37,7 +37,7 @@ class ConnectionLifecycleTest {
     }
 
     @Test
-    fun identityAndTokenSetAfterConnect() = runTest {
+    fun `identity and token set after connect`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
 
@@ -54,7 +54,7 @@ class ConnectionLifecycleTest {
     }
 
     @Test
-    fun onDisconnectFiresOnServerClose() = runTest {
+    fun `on disconnect fires on server close`() = runTest {
         val transport = FakeTransport()
         var disconnected = false
         var disconnectError: Throwable? = null
@@ -77,7 +77,7 @@ class ConnectionLifecycleTest {
     // --- onConnectError ---
 
     @Test
-    fun onConnectErrorFiresWhenTransportFails() = runTest {
+    fun `on connect error fires when transport fails`() = runTest {
         val error = RuntimeException("connection refused")
         val transport = FakeTransport(connectError = error)
         var capturedError: Throwable? = null
@@ -94,7 +94,7 @@ class ConnectionLifecycleTest {
     // --- Identity mismatch ---
 
     @Test
-    fun identityMismatchFiresOnConnectErrorAndDisconnects() = runTest {
+    fun `identity mismatch fires on connect error and disconnects`() = runTest {
         val transport = FakeTransport()
         var errorMsg: String? = null
         var disconnectReason: Throwable? = null
@@ -138,7 +138,7 @@ class ConnectionLifecycleTest {
     // --- close() ---
 
     @Test
-    fun closeFiresOnDisconnect() = runTest {
+    fun `close fires on disconnect`() = runTest {
         val transport = FakeTransport()
         var disconnected = false
         val conn = buildTestConnection(transport, onDisconnect = { _, _ ->
@@ -156,7 +156,7 @@ class ConnectionLifecycleTest {
     // --- disconnect() states ---
 
     @Test
-    fun disconnectWhenAlreadyDisconnectedIsNoOp() = runTest {
+    fun `disconnect when already disconnected is no op`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -171,7 +171,7 @@ class ConnectionLifecycleTest {
     // --- close() from never-connected state ---
 
     @Test
-    fun closeFromNeverConnectedState() = runTest {
+    fun `close from never connected state`() = runTest {
         val transport = FakeTransport()
         val conn = createTestConnection(transport)
         // close() on a freshly created connection that was never connected should not throw
@@ -181,7 +181,7 @@ class ConnectionLifecycleTest {
     // --- use {} block ---
 
     @Test
-    fun useBlockDisconnectsOnNormalReturn() = runTest {
+    fun `use block disconnects on normal return`() = runTest {
         val transport = FakeTransport()
         var disconnected = false
         val conn = buildTestConnection(transport, onDisconnect = { _, _ -> disconnected = true })
@@ -196,7 +196,7 @@ class ConnectionLifecycleTest {
     }
 
     @Test
-    fun useBlockDisconnectsOnException() = runTest {
+    fun `use block disconnects on exception`() = runTest {
         val transport = FakeTransport()
         var disconnected = false
         val conn = buildTestConnection(transport, onDisconnect = { _, _ -> disconnected = true })
@@ -213,7 +213,7 @@ class ConnectionLifecycleTest {
     }
 
     @Test
-    fun useBlockReturnsValue() = runTest {
+    fun `use block returns value`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -225,7 +225,7 @@ class ConnectionLifecycleTest {
     }
 
     @Test
-    fun useBlockDisconnectsOnCancellation() = runTest {
+    fun `use block disconnects on cancellation`() = runTest {
         val transport = FakeTransport()
         var disconnected = false
         val conn = buildTestConnection(transport, onDisconnect = { _, _ -> disconnected = true })
@@ -246,7 +246,7 @@ class ConnectionLifecycleTest {
     // --- Token not overwritten if already set ---
 
     @Test
-    fun tokenNotOverwrittenOnSecondInitialConnection() = runTest {
+    fun `token not overwritten on second initial connection`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
 
@@ -272,7 +272,7 @@ class ConnectionLifecycleTest {
     // --- sendMessage after close ---
 
     @Test
-    fun subscribeAfterCloseDoesNotCrash() = runTest {
+    fun `subscribe after close does not crash`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -289,7 +289,7 @@ class ConnectionLifecycleTest {
     // --- Disconnect race conditions ---
 
     @Test
-    fun disconnectDuringServerCloseDoesNotDoubleFireCallbacks() = runTest {
+    fun `disconnect during server close does not double fire callbacks`() = runTest {
         val transport = FakeTransport()
         var disconnectCount = 0
         val conn = buildTestConnection(transport, onDisconnect = { _, _ ->
@@ -307,7 +307,7 @@ class ConnectionLifecycleTest {
     }
 
     @Test
-    fun disconnectPassesReasonToCallbacks() = runTest {
+    fun `disconnect passes reason to callbacks`() = runTest {
         val transport = FakeTransport()
         var receivedError: Throwable? = null
         val conn = buildTestConnection(transport, onDisconnect = { _, err ->
@@ -326,7 +326,7 @@ class ConnectionLifecycleTest {
     // --- SubscriptionError with null requestId triggers disconnect ---
 
     @Test
-    fun subscriptionErrorWithNullRequestIdDisconnects() = runTest {
+    fun `subscription error with null request id disconnects`() = runTest {
         val transport = FakeTransport()
         var disconnected = false
         val conn = buildTestConnection(transport, onDisconnect = { _, _ ->

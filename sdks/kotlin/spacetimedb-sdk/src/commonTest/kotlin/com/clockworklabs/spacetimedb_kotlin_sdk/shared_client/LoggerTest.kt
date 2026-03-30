@@ -19,7 +19,7 @@ class LoggerTest {
     // ---- Redaction ----
 
     @Test
-    fun redactsTokenEquals() {
+    fun `redacts token equals`() {
         val messages = mutableListOf<String>()
         Logger.level = LogLevel.INFO
         Logger.handler = LogHandler { _, msg -> messages.add(msg) }
@@ -32,7 +32,7 @@ class LoggerTest {
     }
 
     @Test
-    fun redactsTokenColon() {
+    fun `redacts token colon`() {
         val messages = mutableListOf<String>()
         Logger.level = LogLevel.INFO
         Logger.handler = LogHandler { _, msg -> messages.add(msg) }
@@ -44,7 +44,7 @@ class LoggerTest {
     }
 
     @Test
-    fun redactsCaseInsensitive() {
+    fun `redacts case insensitive`() {
         val messages = mutableListOf<String>()
         Logger.level = LogLevel.INFO
         Logger.handler = LogHandler { _, msg -> messages.add(msg) }
@@ -60,7 +60,7 @@ class LoggerTest {
     }
 
     @Test
-    fun redactsMultiplePatternsInOneMessage() {
+    fun `redacts multiple patterns in one message`() {
         val messages = mutableListOf<String>()
         Logger.level = LogLevel.INFO
         Logger.handler = LogHandler { _, msg -> messages.add(msg) }
@@ -73,7 +73,7 @@ class LoggerTest {
     }
 
     @Test
-    fun nonSensitivePassesThrough() {
+    fun `non sensitive passes through`() {
         val messages = mutableListOf<String>()
         Logger.level = LogLevel.INFO
         Logger.handler = LogHandler { _, msg -> messages.add(msg) }
@@ -87,7 +87,7 @@ class LoggerTest {
     // ---- Log level filtering ----
 
     @Test
-    fun shouldLogOrdinalLogic() {
+    fun `should log ordinal logic`() {
         // EXCEPTION(0) should log at any level
         assertTrue(LogLevel.EXCEPTION.shouldLog(LogLevel.EXCEPTION))
         assertTrue(LogLevel.EXCEPTION.shouldLog(LogLevel.TRACE))
@@ -99,7 +99,7 @@ class LoggerTest {
     }
 
     @Test
-    fun logLevelFiltersSuppressesLowerPriority() {
+    fun `log level filters suppresses lower priority`() {
         val messages = mutableListOf<LogLevel>()
         Logger.level = LogLevel.WARN
         Logger.handler = LogHandler { lvl, _ -> messages.add(lvl) }
@@ -116,7 +116,7 @@ class LoggerTest {
     // ---- Custom handler ----
 
     @Test
-    fun customHandlerReceivesCorrectLevelAndMessage() {
+    fun `custom handler receives correct level and message`() {
         var capturedLevel: LogLevel? = null
         var capturedMessage: String? = null
         Logger.level = LogLevel.DEBUG

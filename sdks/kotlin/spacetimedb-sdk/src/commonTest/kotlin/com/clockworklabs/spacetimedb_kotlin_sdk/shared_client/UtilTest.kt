@@ -9,7 +9,7 @@ class UtilTest {
     // ---- BigInteger hex round-trip ----
 
     @Test
-    fun hexRoundTrip16Bytes() {
+    fun `hex round trip 16 bytes`() {
         val value = BigInteger.parseString("12345678901234567890abcdef", 16)
         val hex = value.toHexString(16) // 16 bytes = 32 hex chars
         assertEquals(32, hex.length)
@@ -18,7 +18,7 @@ class UtilTest {
     }
 
     @Test
-    fun hexRoundTrip32Bytes() {
+    fun `hex round trip 32 bytes`() {
         val value = BigInteger.parseString("abcdef0123456789abcdef0123456789", 16)
         val hex = value.toHexString(32) // 32 bytes = 64 hex chars
         assertEquals(64, hex.length)
@@ -27,7 +27,7 @@ class UtilTest {
     }
 
     @Test
-    fun hexZeroValue() {
+    fun `hex zero value`() {
         val zero = BigInteger.ZERO
         val hex16 = zero.toHexString(16)
         assertEquals("00000000000000000000000000000000", hex16)
@@ -41,7 +41,7 @@ class UtilTest {
     // ---- Instant microsecond round-trip ----
 
     @Test
-    fun instantMicrosecondRoundTrip() {
+    fun `instant microsecond round trip`() {
         val micros = 1_700_000_000_123_456L
         val instant = Instant.fromEpochMicroseconds(micros)
         val roundTripped = instant.toEpochMicroseconds()
@@ -49,27 +49,27 @@ class UtilTest {
     }
 
     @Test
-    fun instantMicrosecondZero() {
+    fun `instant microsecond zero`() {
         val instant = Instant.fromEpochMicroseconds(0L)
         assertEquals(0L, instant.toEpochMicroseconds())
     }
 
     @Test
-    fun instantMicrosecondNegative() {
+    fun `instant microsecond negative`() {
         val micros = -1_000_000L // 1 second before epoch
         val instant = Instant.fromEpochMicroseconds(micros)
         assertEquals(micros, instant.toEpochMicroseconds())
     }
 
     @Test
-    fun instantMicrosecondMaxRoundTrips() {
+    fun `instant microsecond max round trips`() {
         val micros = Long.MAX_VALUE
         val instant = Instant.fromEpochMicroseconds(micros)
         assertEquals(micros, instant.toEpochMicroseconds())
     }
 
     @Test
-    fun instantMicrosecondMinRoundTrips() {
+    fun `instant microsecond min round trips`() {
         // Long.MIN_VALUE doesn't land on an exact second boundary, so
         // floorDiv pushes it one second beyond the representable range.
         // Use the actual minimum that round-trips cleanly.
@@ -80,7 +80,7 @@ class UtilTest {
     }
 
     @Test
-    fun instantBeyondMicrosecondRangeThrows() {
+    fun `instant beyond microsecond range throws`() {
         // An Instant far beyond the I64 microsecond wire format range
         val farFuture = Instant.fromEpochSeconds(Long.MAX_VALUE / 1_000_000L + 1)
         assertFailsWith<IllegalArgumentException> {

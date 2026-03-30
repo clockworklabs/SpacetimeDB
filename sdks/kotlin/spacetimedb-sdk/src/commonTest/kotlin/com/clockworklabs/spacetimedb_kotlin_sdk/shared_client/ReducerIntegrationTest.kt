@@ -17,7 +17,7 @@ class ReducerIntegrationTest {
     // --- Reducers ---
 
     @Test
-    fun callReducerSendsClientMessage() = runTest {
+    fun `call reducer sends client message`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -34,7 +34,7 @@ class ReducerIntegrationTest {
     }
 
     @Test
-    fun reducerResultOkFiresCallbackWithCommitted() = runTest {
+    fun `reducer result ok fires callback with committed`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -66,7 +66,7 @@ class ReducerIntegrationTest {
     }
 
     @Test
-    fun reducerResultErrFiresCallbackWithFailed() = runTest {
+    fun `reducer result err fires callback with failed`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -103,7 +103,7 @@ class ReducerIntegrationTest {
     // --- Reducer outcomes ---
 
     @Test
-    fun reducerResultOkEmptyFiresCallbackWithCommitted() = runTest {
+    fun `reducer result ok empty fires callback with committed`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -132,7 +132,7 @@ class ReducerIntegrationTest {
     }
 
     @Test
-    fun reducerResultInternalErrorFiresCallbackWithFailed() = runTest {
+    fun `reducer result internal error fires callback with failed`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -164,7 +164,7 @@ class ReducerIntegrationTest {
     // --- callReducer without callback (fire-and-forget) ---
 
     @Test
-    fun callReducerWithoutCallbackSendsMessage() = runTest {
+    fun `call reducer without callback sends message`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -194,7 +194,7 @@ class ReducerIntegrationTest {
     // --- Reducer result before identity is set ---
 
     @Test
-    fun reducerResultBeforeIdentitySetIsIgnored() = runTest {
+    fun `reducer result before identity set is ignored`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         // Do NOT send InitialConnection — identity stays null
@@ -214,7 +214,7 @@ class ReducerIntegrationTest {
     }
 
     @Test
-    fun reducerResultBeforeIdentityCleansUpCallInfoAndCallbacks() = runTest {
+    fun `reducer result before identity cleans up call info and callbacks`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         // Do NOT send InitialConnection — identity stays null
@@ -241,7 +241,7 @@ class ReducerIntegrationTest {
     // --- decodeReducerError with corrupted BSATN ---
 
     @Test
-    fun reducerErrWithCorruptedBsatnDoesNotCrash() = runTest {
+    fun `reducer err with corrupted bsatn does not crash`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -274,7 +274,7 @@ class ReducerIntegrationTest {
     // --- Reducer timeout and burst scenarios ---
 
     @Test
-    fun pendingReducerCallbacksClearedOnDisconnectNeverFire() = runTest {
+    fun `pending reducer callbacks cleared on disconnect never fire`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -297,7 +297,7 @@ class ReducerIntegrationTest {
     }
 
     @Test
-    fun burstReducerCallsAllGetUniqueRequestIds() = runTest {
+    fun `burst reducer calls all get unique request ids`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -338,7 +338,7 @@ class ReducerIntegrationTest {
     }
 
     @Test
-    fun burstReducerCallsRespondedOutOfOrder() = runTest {
+    fun `burst reducer calls responded out of order`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -373,7 +373,7 @@ class ReducerIntegrationTest {
     }
 
     @Test
-    fun reducerResultAfterDisconnectIsDropped() = runTest {
+    fun `reducer result after disconnect is dropped`() = runTest {
         val transport = FakeTransport()
         var callbackFired = false
         val conn = buildTestConnection(transport)
@@ -395,7 +395,7 @@ class ReducerIntegrationTest {
     }
 
     @Test
-    fun reducerWithTableMutationsAndCallbackBothFire() = runTest {
+    fun `reducer with table mutations and callback both fire`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         val cache = createSampleCache()
@@ -463,7 +463,7 @@ class ReducerIntegrationTest {
     }
 
     @Test
-    fun manyPendingReducersAllClearedOnDisconnect() = runTest {
+    fun `many pending reducers all cleared on disconnect`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -484,7 +484,7 @@ class ReducerIntegrationTest {
     }
 
     @Test
-    fun mixedReducerOutcomesInBurst() = runTest {
+    fun `mixed reducer outcomes in burst`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -529,7 +529,7 @@ class ReducerIntegrationTest {
     // --- typedArgs round-trip through ReducerCallInfo ---
 
     @Test
-    fun callReducerTypedArgsRoundTripThroughCallInfo() = runTest {
+    fun `call reducer typed args round trip through call info`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())

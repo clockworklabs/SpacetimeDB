@@ -15,7 +15,7 @@ class StatsIntegrationTest {
     // --- Stats tracking ---
 
     @Test
-    fun statsSubscriptionTrackerIncrementsOnSubscribeApplied() = runTest {
+    fun `stats subscription tracker increments on subscribe applied`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -43,7 +43,7 @@ class StatsIntegrationTest {
     }
 
     @Test
-    fun statsReducerTrackerIncrementsOnReducerResult() = runTest {
+    fun `stats reducer tracker increments on reducer result`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -71,7 +71,7 @@ class StatsIntegrationTest {
     }
 
     @Test
-    fun statsProcedureTrackerIncrementsOnProcedureResult() = runTest {
+    fun `stats procedure tracker increments on procedure result`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -100,7 +100,7 @@ class StatsIntegrationTest {
     }
 
     @Test
-    fun statsOneOffTrackerIncrementsOnQueryResult() = runTest {
+    fun `stats one off tracker increments on query result`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())
@@ -127,7 +127,7 @@ class StatsIntegrationTest {
     }
 
     @Test
-    fun statsApplyMessageTrackerIncrementsOnEveryServerMessage() = runTest {
+    fun `stats apply message tracker increments on every server message`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport)
         transport.sendToClient(initialConnectionMsg())

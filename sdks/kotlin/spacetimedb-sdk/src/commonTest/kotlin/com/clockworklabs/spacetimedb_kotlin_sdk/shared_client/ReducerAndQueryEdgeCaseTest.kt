@@ -20,7 +20,7 @@ class ReducerAndQueryEdgeCaseTest {
     // =========================================================================
 
     @Test
-    fun multipleOneOffQueriesConcurrently() = runTest {
+    fun `multiple one off queries concurrently`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -56,7 +56,7 @@ class ReducerAndQueryEdgeCaseTest {
     }
 
     @Test
-    fun oneOffQueryCallbackIsRemovedAfterFiring() = runTest {
+    fun `one off query callback is removed after firing`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -85,7 +85,7 @@ class ReducerAndQueryEdgeCaseTest {
     // =========================================================================
 
     @Test
-    fun reducerCallbackIsRemovedAfterFiring() = runTest {
+    fun `reducer callback is removed after firing`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -118,7 +118,7 @@ class ReducerAndQueryEdgeCaseTest {
     }
 
     @Test
-    fun reducerResultOkWithTableUpdatesMutatesCache() = runTest {
+    fun `reducer result ok with table updates mutates cache`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         val cache = createSampleCache()
@@ -180,7 +180,7 @@ class ReducerAndQueryEdgeCaseTest {
     }
 
     @Test
-    fun reducerResultWithEmptyErrorBytes() = runTest {
+    fun `reducer result with empty error bytes`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -210,7 +210,7 @@ class ReducerAndQueryEdgeCaseTest {
     // =========================================================================
 
     @Test
-    fun transactionUpdateAcrossMultipleTables() = runTest {
+    fun `transaction update across multiple tables`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
 
@@ -275,7 +275,7 @@ class ReducerAndQueryEdgeCaseTest {
     }
 
     @Test
-    fun transactionUpdateWithUnknownTableIsSkipped() = runTest {
+    fun `transaction update with unknown table is skipped`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         val cache = createSampleCache()
@@ -339,7 +339,7 @@ class ReducerAndQueryEdgeCaseTest {
     // =========================================================================
 
     @Test
-    fun multipleConcurrentReducerCallsGetCorrectCallbacks() = runTest {
+    fun `multiple concurrent reducer calls get correct callbacks`() = runTest {
         val transport = FakeTransport()
         val conn = buildTestConnection(transport, exceptionHandler = CoroutineExceptionHandler { _, _ -> })
         transport.sendToClient(initialConnectionMsg())
@@ -395,7 +395,7 @@ class ReducerAndQueryEdgeCaseTest {
     // =========================================================================
 
     @Test
-    fun contentKeyedCacheInsertAndDelete() {
+    fun `content keyed cache insert and delete`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
 
         val row1 = SampleRow(1, "Alice")
@@ -414,7 +414,7 @@ class ReducerAndQueryEdgeCaseTest {
     }
 
     @Test
-    fun contentKeyedCacheDuplicateInsertIncrementsRefCount() {
+    fun `content keyed cache duplicate insert increments ref count`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
 
         val row = SampleRow(1, "Alice")
@@ -435,7 +435,7 @@ class ReducerAndQueryEdgeCaseTest {
     }
 
     @Test
-    fun contentKeyedCacheUpdateByContent() {
+    fun `content keyed cache update by content`() {
         val cache = TableCache.withContentKey(::decodeSampleRow)
 
         val oldRow = SampleRow(1, "Alice")
@@ -461,7 +461,7 @@ class ReducerAndQueryEdgeCaseTest {
     // =========================================================================
 
     @Test
-    fun eventTableDoesNotStoreRowsButFiresCallbacks() {
+    fun `event table does not store rows but fires callbacks`() {
         val cache = createSampleCache()
         val events = mutableListOf<SampleRow>()
         cache.onInsert { _, row -> events.add(row) }
@@ -480,7 +480,7 @@ class ReducerAndQueryEdgeCaseTest {
     }
 
     @Test
-    fun eventTableDoesNotFireOnBeforeDelete() {
+    fun `event table does not fire on before delete`() {
         val cache = createSampleCache()
         var beforeDeleteFired = false
         cache.onBeforeDelete { _, _ -> beforeDeleteFired = true }
