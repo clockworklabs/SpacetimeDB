@@ -180,6 +180,7 @@ impl From<ReducerCallResult> for Result<(), anyhow::Error> {
 pub enum ReducerOutcome {
     Committed,
     Failed(Box<Box<str>>),
+    Wounded(Box<Box<str>>),
     BudgetExceeded,
 }
 
@@ -188,6 +189,7 @@ impl ReducerOutcome {
         match self {
             Self::Committed => Ok(()),
             Self::Failed(e) => Err(anyhow::anyhow!(e)),
+            Self::Wounded(e) => Err(anyhow::anyhow!(e)),
             Self::BudgetExceeded => Err(anyhow::anyhow!("reducer ran out of energy")),
         }
     }
@@ -204,6 +206,7 @@ impl From<&EventStatus> for ReducerOutcome {
             EventStatus::FailedUser(e) | EventStatus::FailedInternal(e) => {
                 ReducerOutcome::Failed(Box::new((&**e).into()))
             }
+            EventStatus::Wounded(e) => ReducerOutcome::Wounded(Box::new((&**e).into())),
             EventStatus::OutOfEnergy => ReducerOutcome::BudgetExceeded,
         }
     }
@@ -727,6 +730,8 @@ async fn make_replica_ctx(
         call_reducer_client,
         call_reducer_router,
         call_reducer_auth_token,
+        tx_id_nonce: Arc::default(),
+        global_tx_manager: Arc::default(),
     })
 }
 

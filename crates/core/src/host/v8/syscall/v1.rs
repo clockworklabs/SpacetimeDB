@@ -496,6 +496,7 @@ pub(super) fn call_call_reducer(
         caller_identity: sender,
         caller_connection_id: conn_id,
         timestamp,
+        tx_id: _,
         args: reducer_args,
     } = op;
     // Serialize the arguments.

@@ -444,6 +444,18 @@ async fn send_ack_commit_to_coordinator(
     }
 }
 
+fn wounded_status(replica_ctx: &ReplicaContext, tx_id: spacetimedb_lib::GlobalTxId) -> EventStatus {
+    let _ = replica_ctx.global_tx_manager.wound(&tx_id);
+    EventStatus::Wounded(format!(
+        "distributed transaction {tx_id} was wounded by an older transaction"
+    ))
+}
+
+fn check_wounded(replica_ctx: &ReplicaContext, tx_id: Option<spacetimedb_lib::GlobalTxId>) -> Option<EventStatus> {
+    tx_id.filter(|tx_id| replica_ctx.global_tx_manager.is_wounded(tx_id))
+        .map(|tx_id| wounded_status(replica_ctx, tx_id))
+}
+
 impl<T: WasmModule> WasmModuleHostActor<T> {
     fn make_from_instance(&self, mut instance: T::Instance) -> WasmModuleInstance<T::Instance> {
         let common = InstanceCommon::new(&self.common);
@@ -637,6 +649,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     ) {
         let stdb = self.instance.replica_ctx().relational_db().clone();
         let replica_ctx = self.instance.replica_ctx().clone();
+        let global_tx_id = params.tx_id;
 
         // Extract recovery info before params are consumed.
         let recovery_reducer_name = self
@@ -652,13 +665,20 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let recovery_timestamp_micros = params.timestamp.to_micros_since_unix_epoch();
 
         // Step 1: run the reducer and hold the write lock open.
-        let (mut tx, event, client, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
+        let (mut tx, mut event, client, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
             self.common.run_reducer_no_commit(None, params, &mut self.instance)
         });
         self.trapped = trapped;
 
         let energy_quanta_used = event.energy_quanta_used;
         let total_duration = event.host_execution_duration;
+
+        if let Some(status) = check_wounded(&replica_ctx, global_tx_id)
+            && matches!(event.status, EventStatus::Committed(_))
+        {
+            event.status = status;
+            event.reducer_return_value = None;
+        }
 
         if !matches!(event.status, EventStatus::Committed(_)) {
             // Reducer failed — roll back and signal failure; no marker was written.
@@ -670,6 +690,13 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             let return_value = event.reducer_return_value.clone();
             let _ = prepared_tx.send((res, return_value));
             let _ = stdb.rollback_mut_tx(tx);
+            if let Some(tx_id) = global_tx_id {
+                replica_ctx
+                    .global_tx_manager
+                    .mark_state(&tx_id, crate::host::global_tx::GlobalTxState::Aborted);
+                replica_ctx.global_tx_manager.release(&tx_id);
+                replica_ctx.global_tx_manager.remove_session(&tx_id);
+            }
             return;
         }
 
@@ -713,7 +740,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let _ = prepared_tx.send((res, return_value));
 
         // Step 4: wait for coordinator's decision (B never aborts on its own).
-        let commit = Self::wait_for_2pc_decision(decision_rx, &prepare_id, coordinator_identity, &replica_ctx);
+        let commit = !global_tx_id
+            .map(|tx_id| replica_ctx.global_tx_manager.is_wounded(&tx_id))
+            .unwrap_or(false)
+            && Self::wait_for_2pc_decision(decision_rx, &prepare_id, coordinator_identity, &replica_ctx);
 
         if commit {
             // Delete the marker in the same tx as the reducer changes (atomic commit).
@@ -748,6 +778,13 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 coordinator_identity,
                 prepare_id,
             ));
+            if let Some(tx_id) = global_tx_id {
+                replica_ctx
+                    .global_tx_manager
+                    .mark_state(&tx_id, crate::host::global_tx::GlobalTxState::Committed);
+                replica_ctx.global_tx_manager.release(&tx_id);
+                replica_ctx.global_tx_manager.remove_session(&tx_id);
+            }
         } else {
             // ABORT: roll back reducer changes; clean up the already-committed marker.
             let _ = stdb.rollback_mut_tx(tx);
@@ -757,6 +794,13 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 log::error!(
                     "call_reducer_prepare_and_hold: abort: failed to delete st_2pc_state for {prepare_id}: {e}"
                 );
+            }
+            if let Some(tx_id) = global_tx_id {
+                replica_ctx
+                    .global_tx_manager
+                    .mark_state(&tx_id, crate::host::global_tx::GlobalTxState::Aborted);
+                replica_ctx.global_tx_manager.release(&tx_id);
+                replica_ctx.global_tx_manager.remove_session(&tx_id);
             }
         }
     }
@@ -1123,7 +1167,8 @@ impl InstanceCommon {
         params: CallReducerParams,
         inst: &mut I,
     ) -> (ReducerCallResult, Option<Bytes>, bool) {
-        let (mut tx, event, client, trapped) = self.run_reducer_no_commit(tx, params, inst);
+        let managed_global_tx_id = if tx.is_none() { params.tx_id } else { None };
+        let (mut tx, mut event, client, trapped) = self.run_reducer_no_commit(tx, params, inst);
 
         let energy_quanta_used = event.energy_quanta_used;
         let total_duration = event.host_execution_duration;
@@ -1141,6 +1186,13 @@ impl InstanceCommon {
                     log::error!("insert_st_2pc_coordinator_log failed for {prepare_id}: {e}");
                 }
             }
+        }
+
+        if let Some(status) = check_wounded(inst.replica_ctx(), managed_global_tx_id)
+            && matches!(event.status, EventStatus::Committed(_))
+        {
+            event.status = status;
+            event.reducer_return_value = None;
         }
 
         let commit_result = commit_and_broadcast_event(&self.info.subscriptions, client, event, tx);
@@ -1216,6 +1268,20 @@ impl InstanceCommon {
             });
         }
 
+        if let Some(tx_id) = managed_global_tx_id {
+            let manager = &inst.replica_ctx().global_tx_manager;
+            manager.mark_state(
+                &tx_id,
+                if matches!(event.status, EventStatus::Committed(_)) {
+                    crate::host::global_tx::GlobalTxState::Committed
+                } else {
+                    crate::host::global_tx::GlobalTxState::Aborted
+                },
+            );
+            manager.release(&tx_id);
+            manager.remove_session(&tx_id);
+        }
+
         let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
             energy_used: energy_quanta_used,
@@ -1248,6 +1314,7 @@ impl InstanceCommon {
             timestamp,
             caller_identity,
             caller_connection_id,
+            tx_id,
             client,
             request_id,
             reducer_id,
@@ -1256,7 +1323,7 @@ impl InstanceCommon {
         } = params;
         let caller_connection_id_opt = (caller_connection_id != ConnectionId::ZERO).then_some(caller_connection_id);
 
-        let replica_ctx = inst.replica_ctx();
+        let replica_ctx = inst.replica_ctx().clone();
         let stdb = replica_ctx.relational_db();
         let info = self.info.clone();
         let reducer_def = info.module_def.reducer_by_id(reducer_id);
@@ -1272,6 +1339,7 @@ impl InstanceCommon {
             caller_identity: &caller_identity,
             caller_connection_id: &caller_connection_id,
             timestamp,
+            tx_id,
             args: &args,
         };
 
@@ -1341,6 +1409,15 @@ impl InstanceCommon {
             }
         };
 
+        let status = if let Some(status) = check_wounded(&replica_ctx, tx_id)
+            && matches!(status, EventStatus::Committed(_))
+        {
+            reducer_return_value = None;
+            status
+        } else {
+            status
+        };
+
         // Only re-evaluate and update views if the reducer's execution was successful
         let (out, trapped) = if !trapped && matches!(status, EventStatus::Committed(_)) {
             self.call_views_with_tx(tx, caller_identity, inst, timestamp)
@@ -1353,11 +1430,16 @@ impl InstanceCommon {
         vm_metrics.report_total_duration(out.total_duration);
         vm_metrics.report_abi_duration(out.abi_duration);
 
-        let status = match &out.outcome {
+        let mut status = match &out.outcome {
             ViewOutcome::BudgetExceeded => EventStatus::OutOfEnergy,
             ViewOutcome::Failed(err) => EventStatus::FailedInternal(err.clone()),
             ViewOutcome::Success => status,
         };
+        if let Some(wounded) = check_wounded(&replica_ctx, tx_id)
+            && matches!(status, EventStatus::Committed(_))
+        {
+            status = wounded;
+        }
         if !matches!(status, EventStatus::Committed(_)) {
             reducer_return_value = None;
         }
@@ -2032,6 +2114,9 @@ pub trait InstanceOp {
     fn name(&self) -> &Identifier;
     fn timestamp(&self) -> Timestamp;
     fn call_type(&self) -> FuncCallType;
+    fn tx_id(&self) -> Option<spacetimedb_lib::GlobalTxId> {
+        None
+    }
 }
 
 /// Describes a view call in a cheaply shareable way.
@@ -2103,6 +2188,7 @@ pub struct ReducerOp<'a> {
     pub caller_identity: &'a Identity,
     pub caller_connection_id: &'a ConnectionId,
     pub timestamp: Timestamp,
+    pub tx_id: Option<spacetimedb_lib::GlobalTxId>,
     /// The arguments passed to the reducer.
     pub args: &'a ArgsTuple,
 }
@@ -2117,6 +2203,9 @@ impl InstanceOp for ReducerOp<'_> {
     fn call_type(&self) -> FuncCallType {
         FuncCallType::Reducer
     }
+    fn tx_id(&self) -> Option<spacetimedb_lib::GlobalTxId> {
+        self.tx_id
+    }
 }
 
 impl From<ReducerOp<'_>> for execution_context::ReducerContext {
@@ -2127,6 +2216,7 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
             caller_identity,
             caller_connection_id,
             timestamp,
+            tx_id: _,
             args,
         }: ReducerOp<'_>,
     ) -> Self {

@@ -55,7 +55,7 @@ use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::{ConnectionId, Timestamp};
+use spacetimedb_lib::{ConnectionId, GlobalTxId, Timestamp};
 use spacetimedb_primitives::{ArgId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
@@ -170,6 +170,7 @@ pub enum EventStatus {
     Committed(DatabaseUpdate),
     FailedUser(String),
     FailedInternal(String),
+    Wounded(String),
     OutOfEnergy,
 }
 
@@ -229,6 +230,32 @@ pub struct ModuleInfo {
     pub subscriptions: ModuleSubscriptions,
     /// Metrics handles for this module.
     pub metrics: ModuleMetrics,
+}
+
+struct GlobalTxAdmissionGuard<'a> {
+    module_host: &'a ModuleHost,
+    tx_id: Option<GlobalTxId>,
+}
+
+impl<'a> GlobalTxAdmissionGuard<'a> {
+    fn new(module_host: &'a ModuleHost, tx_id: GlobalTxId) -> Self {
+        Self {
+            module_host,
+            tx_id: Some(tx_id),
+        }
+    }
+
+    fn disarm(mut self) {
+        self.tx_id = None;
+    }
+}
+
+impl Drop for GlobalTxAdmissionGuard<'_> {
+    fn drop(&mut self) {
+        if let Some(tx_id) = self.tx_id.take() {
+            self.module_host.abort_global_tx_locally(tx_id, true);
+        }
+    }
 }
 
 impl fmt::Debug for ModuleInfo {
@@ -570,6 +597,7 @@ pub fn call_identity_connected(
             None,
             None,
             None,
+            None,
             reducer_id,
             reducer_def,
             FunctionArgs::Nullary,
@@ -594,6 +622,7 @@ pub fn call_identity_connected(
             // If the reducer returned an error or couldn't run due to insufficient energy,
             // abort the connection: the module code has decided it doesn't want this client.
             ReducerOutcome::Failed(message) => Err(ClientConnectedError::Rejected(*message)),
+            ReducerOutcome::Wounded(message) => Err(ClientConnectedError::Rejected(*message)),
             ReducerOutcome::BudgetExceeded => Err(ClientConnectedError::OutOfEnergy),
         }
     } else {
@@ -619,6 +648,7 @@ pub struct CallReducerParams {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
     pub caller_connection_id: ConnectionId,
+    pub tx_id: Option<GlobalTxId>,
     pub client: Option<Arc<ClientConnectionSender>>,
     pub request_id: Option<RequestId>,
     pub timer: Option<Instant>,
@@ -639,6 +669,7 @@ impl CallReducerParams {
             timestamp,
             caller_identity,
             caller_connection_id: ConnectionId::ZERO,
+            tx_id: None,
             client: None,
             request_id: None,
             timer: None,
@@ -963,7 +994,9 @@ impl From<EventStatus> for ViewOutcome {
     fn from(status: EventStatus) -> Self {
         match status {
             EventStatus::Committed(_) => ViewOutcome::Success,
-            EventStatus::FailedUser(e) | EventStatus::FailedInternal(e) => ViewOutcome::Failed(e),
+            EventStatus::FailedUser(e) | EventStatus::FailedInternal(e) | EventStatus::Wounded(e) => {
+                ViewOutcome::Failed(e)
+            }
             EventStatus::OutOfEnergy => ViewOutcome::BudgetExceeded,
         }
     }
@@ -1468,6 +1501,7 @@ impl ModuleHost {
                 None,
                 None,
                 None,
+                None,
                 reducer_id,
                 reducer_def,
                 FunctionArgs::Nullary,
@@ -1491,7 +1525,7 @@ impl ModuleHost {
                     fallback()
                 }
                 Ok(ReducerCallResult {
-                    outcome: ReducerOutcome::Failed(_) | ReducerOutcome::BudgetExceeded,
+                    outcome: ReducerOutcome::Failed(_) | ReducerOutcome::Wounded(_) | ReducerOutcome::BudgetExceeded,
                     ..
                 }) => fallback(),
 
@@ -1552,6 +1586,7 @@ impl ModuleHost {
         module: &ModuleInfo,
         caller_identity: Identity,
         caller_connection_id: Option<ConnectionId>,
+        tx_id: Option<GlobalTxId>,
         client: Option<Arc<ClientConnectionSender>>,
         request_id: Option<RequestId>,
         timer: Option<Instant>,
@@ -1567,6 +1602,7 @@ impl ModuleHost {
             timestamp: Timestamp::now(),
             caller_identity,
             caller_connection_id,
+            tx_id,
             client,
             request_id,
             timer,
@@ -1579,6 +1615,7 @@ impl ModuleHost {
         &self,
         caller_identity: Identity,
         caller_connection_id: Option<ConnectionId>,
+        tx_id: Option<GlobalTxId>,
         client: Option<Arc<ClientConnectionSender>>,
         request_id: Option<RequestId>,
         timer: Option<Instant>,
@@ -1589,11 +1626,26 @@ impl ModuleHost {
         let args = args
             .into_tuple_for_def(&self.info.module_def, reducer_def)
             .map_err(InvalidReducerArguments)?;
+        let admission_guard = if let Some(tx_id) = tx_id {
+            match self.acquire_global_tx_slot(tx_id).await {
+                Ok(guard) => Some(guard),
+                Err(outcome) => {
+                    return Ok(ReducerCallResult {
+                        outcome,
+                        energy_used: EnergyQuanta::ZERO,
+                        execution_duration: Default::default(),
+                    })
+                }
+            }
+        } else {
+            None
+        };
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
         let call_reducer_params = CallReducerParams {
             timestamp: Timestamp::now(),
             caller_identity,
             caller_connection_id,
+            tx_id,
             client,
             request_id,
             timer,
@@ -1601,19 +1653,24 @@ impl ModuleHost {
             args,
         };
 
-        self.call(
+        let result = self.call(
             &reducer_def.name,
             call_reducer_params,
             async |p, inst| Ok(inst.call_reducer(p)),
             async |p, inst| inst.call_reducer(p).await,
         )
-        .await?
+        .await;
+        if let Some(guard) = admission_guard {
+            guard.disarm();
+        }
+        result?
     }
 
     async fn call_reducer_inner_with_return(
         &self,
         caller_identity: Identity,
         caller_connection_id: Option<ConnectionId>,
+        tx_id: Option<GlobalTxId>,
         client: Option<Arc<ClientConnectionSender>>,
         request_id: Option<RequestId>,
         timer: Option<Instant>,
@@ -1624,11 +1681,29 @@ impl ModuleHost {
         let args = args
             .into_tuple_for_def(&self.info.module_def, reducer_def)
             .map_err(InvalidReducerArguments)?;
+        let admission_guard = if let Some(tx_id) = tx_id {
+            match self.acquire_global_tx_slot(tx_id).await {
+                Ok(guard) => Some(guard),
+                Err(outcome) => {
+                    return Ok((
+                        ReducerCallResult {
+                            outcome,
+                            energy_used: EnergyQuanta::ZERO,
+                            execution_duration: Default::default(),
+                        },
+                        None,
+                    ))
+                }
+            }
+        } else {
+            None
+        };
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
         let call_reducer_params = CallReducerParams {
             timestamp: Timestamp::now(),
             caller_identity,
             caller_connection_id,
+            tx_id,
             client,
             request_id,
             timer,
@@ -1636,19 +1711,24 @@ impl ModuleHost {
             args,
         };
 
-        self.call(
+        let result = self.call(
             &reducer_def.name,
             call_reducer_params,
             async |p, inst| Ok(inst.call_reducer_with_return(p)),
             async |p, inst| inst.call_reducer(p).await.map(|res| (res, None)),
         )
-        .await?
+        .await;
+        if let Some(guard) = admission_guard {
+            guard.disarm();
+        }
+        result?
     }
 
     pub async fn call_reducer(
         &self,
         caller_identity: Identity,
         caller_connection_id: Option<ConnectionId>,
+        tx_id: Option<GlobalTxId>,
         client: Option<Arc<ClientConnectionSender>>,
         request_id: Option<RequestId>,
         timer: Option<Instant>,
@@ -1672,6 +1752,7 @@ impl ModuleHost {
             self.call_reducer_inner(
                 caller_identity,
                 caller_connection_id,
+                tx_id,
                 client,
                 request_id,
                 timer,
@@ -1699,6 +1780,7 @@ impl ModuleHost {
         &self,
         caller_identity: Identity,
         caller_connection_id: Option<ConnectionId>,
+        tx_id: Option<GlobalTxId>,
         client: Option<Arc<ClientConnectionSender>>,
         request_id: Option<RequestId>,
         timer: Option<Instant>,
@@ -1722,6 +1804,7 @@ impl ModuleHost {
             self.call_reducer_inner_with_return(
                 caller_identity,
                 caller_connection_id,
+                tx_id,
                 client,
                 request_id,
                 timer,
@@ -1755,6 +1838,7 @@ impl ModuleHost {
         &self,
         caller_identity: Identity,
         caller_connection_id: Option<ConnectionId>,
+        tx_id: Option<GlobalTxId>,
         reducer_name: &str,
         args: FunctionArgs,
     ) -> Result<(String, ReducerCallResult, Option<Bytes>), ReducerCallError> {
@@ -1781,6 +1865,7 @@ impl ModuleHost {
             timestamp: Timestamp::now(),
             caller_identity,
             caller_connection_id,
+            tx_id,
             client: None,
             request_id: None,
             timer: None,
@@ -1790,10 +1875,12 @@ impl ModuleHost {
 
         // Include the coordinator identity so prepare_ids from different coordinators
         // cannot collide on the participant's st_2pc_state table.
-        let coordinator_hex = caller_identity.to_hex();
+        let prepare_tx_component = tx_id
+            .map(|tx_id| tx_id.to_string())
+            .unwrap_or_else(|| format!("legacy:{}:00000000", caller_identity.to_hex()));
         let prepare_id = format!(
             "prepare-{}-{}",
-            &coordinator_hex.to_string()[..16],
+            prepare_tx_component,
             PREPARE_COUNTER.fetch_add(1, Ordering::Relaxed),
         );
 
@@ -1808,6 +1895,39 @@ impl ModuleHost {
                 decision_sender: decision_tx,
             },
         );
+        if let Some(tx_id) = tx_id {
+            let session = self
+                .replica_ctx()
+                .global_tx_manager
+                .ensure_session(tx_id, super::global_tx::GlobalTxRole::Participant, tx_id.creator_db);
+            session.set_state(super::global_tx::GlobalTxState::Preparing);
+            self.replica_ctx()
+                .global_tx_manager
+                .set_prepare_mapping(tx_id, prepare_id.clone());
+            match self.acquire_global_tx_slot(tx_id).await {
+                Ok(guard) => {
+                    guard.disarm();
+                }
+                Err(outcome) => {
+                    self.prepared_txs.remove(&prepare_id);
+                    self.replica_ctx().global_tx_manager.remove_prepare_mapping(&prepare_id);
+                    self.replica_ctx()
+                        .global_tx_manager
+                        .mark_state(&tx_id, super::global_tx::GlobalTxState::Aborted);
+                    self.replica_ctx().global_tx_manager.release(&tx_id);
+                    self.replica_ctx().global_tx_manager.remove_session(&tx_id);
+                    return Ok((
+                        String::new(),
+                        ReducerCallResult {
+                            outcome,
+                            energy_used: EnergyQuanta::ZERO,
+                            execution_duration: Default::default(),
+                        },
+                        None,
+                    ));
+                }
+            }
+        }
 
         // Spawn a background task that runs the reducer and holds the write lock
         // until we send a decision.  The executor thread blocks inside
@@ -1849,10 +1969,23 @@ impl ModuleHost {
         match prepared_rx.await {
             Ok((result, return_value)) => {
                 if matches!(result.outcome, ReducerOutcome::Committed) {
+                    if let Some(tx_id) = tx_id {
+                        self.replica_ctx()
+                            .global_tx_manager
+                            .mark_state(&tx_id, super::global_tx::GlobalTxState::Prepared);
+                    }
                     Ok((prepare_id, result, return_value))
                 } else {
                     // Reducer failed — remove the entry we registered (no hold in progress).
                     self.prepared_txs.remove(&prepare_id);
+                    if let Some(tx_id) = tx_id {
+                        self.replica_ctx().global_tx_manager.remove_prepare_mapping(&prepare_id);
+                        self.replica_ctx()
+                            .global_tx_manager
+                            .mark_state(&tx_id, super::global_tx::GlobalTxState::Aborted);
+                        self.replica_ctx().global_tx_manager.release(&tx_id);
+                        self.replica_ctx().global_tx_manager.remove_session(&tx_id);
+                    }
                     Ok((String::new(), result, return_value))
                 }
             }
@@ -1862,6 +1995,11 @@ impl ModuleHost {
 
     /// Finalize a prepared transaction as COMMIT.
     pub fn commit_prepared(&self, prepare_id: &str) -> Result<(), String> {
+        if let Some(tx_id) = self.replica_ctx().global_tx_manager.remove_prepare_mapping(prepare_id) {
+            self.replica_ctx()
+                .global_tx_manager
+                .mark_state(&tx_id, super::global_tx::GlobalTxState::Committing);
+        }
         let info = self
             .prepared_txs
             .remove(prepare_id)
@@ -1873,6 +2011,11 @@ impl ModuleHost {
 
     /// Abort a prepared transaction.
     pub fn abort_prepared(&self, prepare_id: &str) -> Result<(), String> {
+        if let Some(tx_id) = self.replica_ctx().global_tx_manager.remove_prepare_mapping(prepare_id) {
+            self.replica_ctx()
+                .global_tx_manager
+                .mark_state(&tx_id, super::global_tx::GlobalTxState::Aborting);
+        }
         let info = self
             .prepared_txs
             .remove(prepare_id)
@@ -1880,6 +2023,175 @@ impl ModuleHost {
         // Unblock the executor thread to abort.
         let _ = info.decision_sender.send(false);
         Ok(())
+    }
+
+    pub async fn wound_global_tx(&self, tx_id: GlobalTxId) -> Result<(), String> {
+        let local_db = self.replica_ctx().database.database_identity;
+        if tx_id.creator_db != local_db {
+            return Err(format!(
+                "global transaction {tx_id} is coordinated by {}, not {}",
+                tx_id.creator_db, local_db
+            ));
+        }
+
+        let Some(session) = self.replica_ctx().global_tx_manager.get_session(&tx_id) else {
+            return Ok(());
+        };
+        match session.state() {
+            super::global_tx::GlobalTxState::Committed
+            | super::global_tx::GlobalTxState::Aborted
+            | super::global_tx::GlobalTxState::Aborting => return Ok(()),
+            _ => {}
+        }
+        let session = self
+            .replica_ctx()
+            .global_tx_manager
+            .wound(&tx_id)
+            .ok_or_else(|| format!("no such global transaction: {tx_id}"))?;
+
+        if let Some(prepare_id) = session.prepare_id() {
+            let _ = self.abort_prepared(&prepare_id);
+        }
+
+        let participants = session.participants();
+        let client = self.replica_ctx().call_reducer_client.clone();
+        let router = self.replica_ctx().call_reducer_router.clone();
+        let auth_token = self.replica_ctx().call_reducer_auth_token.clone();
+        for (participant_identity, prepare_id) in participants {
+            if participant_identity == local_db {
+                let _ = self.abort_prepared(&prepare_id);
+                continue;
+            }
+
+            let base_url = router
+                .resolve_base_url(participant_identity)
+                .await
+                .map_err(|e| format!("failed to resolve participant {participant_identity}: {e}"))?;
+            let url = format!(
+                "{}/v1/database/{}/2pc/abort/{}",
+                base_url,
+                participant_identity.to_hex(),
+                prepare_id,
+            );
+            let mut req = client.post(&url);
+            if let Some(token) = &auth_token {
+                req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+            }
+            match req.send().await {
+                Ok(resp) if resp.status().is_success() => {}
+                Ok(resp) => {
+                    log::warn!(
+                        "2PC wound: participant abort for {prepare_id} on {participant_identity} returned {}",
+                        resp.status()
+                    );
+                }
+                Err(e) => {
+                    log::warn!(
+                        "2PC wound: transport error aborting {prepare_id} on {participant_identity}: {e}"
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn acquire_global_tx_slot(&self, tx_id: GlobalTxId) -> Result<GlobalTxAdmissionGuard<'_>, ReducerOutcome> {
+        let manager = &self.replica_ctx().global_tx_manager;
+        let local_db = self.replica_ctx().database.database_identity;
+        let role = if tx_id.creator_db == local_db {
+            super::global_tx::GlobalTxRole::Coordinator
+        } else {
+            super::global_tx::GlobalTxRole::Participant
+        };
+        manager.ensure_session(tx_id, role, tx_id.creator_db);
+        if let Some(outcome) = self.check_global_tx_wounded(tx_id) {
+            self.abort_global_tx_locally(tx_id, true);
+            return Err(outcome);
+        }
+
+        loop {
+            match manager.acquire(tx_id).await {
+                super::global_tx::AcquireDisposition::Acquired => {
+                    if let Some(outcome) = self.check_global_tx_wounded(tx_id) {
+                        self.abort_global_tx_locally(tx_id, true);
+                        return Err(outcome);
+                    }
+                    return Ok(GlobalTxAdmissionGuard::new(self, tx_id));
+                }
+                super::global_tx::AcquireDisposition::Wound(owner) => {
+                    let _ = manager.wound(&owner);
+                    if owner.creator_db != local_db {
+                        self.send_wound_to_coordinator(owner).await;
+                    }
+                }
+                super::global_tx::AcquireDisposition::Wait => {}
+            }
+        }
+    }
+
+    fn check_global_tx_wounded(&self, tx_id: GlobalTxId) -> Option<ReducerOutcome> {
+        self.replica_ctx()
+            .global_tx_manager
+            .is_wounded(&tx_id)
+            .then(|| ReducerOutcome::Wounded(Box::new(Box::from(Self::wounded_message(tx_id)))))
+    }
+
+    fn abort_global_tx_locally(&self, tx_id: GlobalTxId, remove_session: bool) {
+        self.replica_ctx()
+            .global_tx_manager
+            .mark_state(&tx_id, super::global_tx::GlobalTxState::Aborted);
+        self.replica_ctx().global_tx_manager.release(&tx_id);
+        if remove_session {
+            self.replica_ctx().global_tx_manager.remove_session(&tx_id);
+        }
+    }
+
+    fn wounded_message(tx_id: GlobalTxId) -> String {
+        format!("distributed transaction {tx_id} was wounded by an older transaction")
+    }
+
+    fn tx_id_from_prepare_id(prepare_id: &str) -> Option<GlobalTxId> {
+        let raw = prepare_id.strip_prefix("prepare-")?;
+        let (tx_component, _) = raw.rsplit_once('-')?;
+        if tx_component.starts_with("legacy:") {
+            return None;
+        }
+        tx_component.parse().ok()
+    }
+
+    async fn send_wound_to_coordinator(&self, tx_id: GlobalTxId) {
+        let client = self.replica_ctx().call_reducer_client.clone();
+        let router = self.replica_ctx().call_reducer_router.clone();
+        let auth_token = self.replica_ctx().call_reducer_auth_token.clone();
+        let base_url = match router.resolve_base_url(tx_id.creator_db).await {
+            Ok(url) => url,
+            Err(e) => {
+                log::warn!("2PC wound: cannot resolve coordinator URL for {tx_id}: {e}");
+                return;
+            }
+        };
+        let url = format!(
+            "{}/v1/database/{}/2pc/wound/{}",
+            base_url,
+            tx_id.creator_db.to_hex(),
+            tx_id,
+        );
+        let mut req = client.post(&url);
+        if let Some(token) = &auth_token {
+            req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+        }
+        match req.send().await {
+            Ok(resp) if resp.status().is_success() => {
+                log::info!("2PC wound: notified coordinator for {tx_id}");
+            }
+            Ok(resp) => {
+                log::warn!("2PC wound: coordinator returned {} for {tx_id}", resp.status());
+            }
+            Err(e) => {
+                log::warn!("2PC wound: transport error for {tx_id}: {e}");
+            }
+        }
     }
 
     /// Delete a coordinator log entry for `prepare_id`.
@@ -1925,6 +2237,7 @@ impl ModuleHost {
             let auth_token = replica_ctx.call_reducer_auth_token.clone();
             for row in rows {
                 let prepare_id = row.participant_prepare_id.clone();
+                let recovered_tx_id = Self::tx_id_from_prepare_id(&prepare_id);
                 let participant_identity = match Identity::from_hex(&row.participant_identity_hex) {
                     Ok(id) => id,
                     Err(e) => {
@@ -1935,6 +2248,15 @@ impl ModuleHost {
                         continue;
                     }
                 };
+                if let Some(tx_id) = recovered_tx_id {
+                    let session = replica_ctx.global_tx_manager.ensure_session(
+                        tx_id,
+                        super::global_tx::GlobalTxRole::Coordinator,
+                        tx_id.creator_db,
+                    );
+                    session.set_state(super::global_tx::GlobalTxState::Committing);
+                    session.add_participant(participant_identity, prepare_id.clone());
+                }
                 let base_url = match router.resolve_base_url(participant_identity).await {
                     Ok(url) => url,
                     Err(e) => {
@@ -1959,6 +2281,13 @@ impl ModuleHost {
                             Ok(tx.delete_st_2pc_coordinator_log(&prepare_id)?)
                         }) {
                             log::warn!("recover_2pc_coordinator: delete coordinator log failed for {prepare_id}: {e}");
+                        }
+                        if let Some(tx_id) = recovered_tx_id {
+                            replica_ctx
+                                .global_tx_manager
+                                .mark_state(&tx_id, super::global_tx::GlobalTxState::Committed);
+                            replica_ctx.global_tx_manager.release(&tx_id);
+                            replica_ctx.global_tx_manager.remove_session(&tx_id);
                         }
                     }
                     Ok(resp) => {
@@ -2019,13 +2348,34 @@ impl ModuleHost {
                     .map(ConnectionId::from_u128)
                     .unwrap_or(ConnectionId::ZERO);
                 let args = FunctionArgs::Bsatn(row.args_bsatn.clone().into());
+                let recovered_tx_id = Self::tx_id_from_prepare_id(&original_prepare_id);
+                if let Some(tx_id) = recovered_tx_id {
+                    let session = this.replica_ctx().global_tx_manager.ensure_session(
+                        tx_id,
+                        super::global_tx::GlobalTxRole::Participant,
+                        coordinator_identity,
+                    );
+                    session.set_state(super::global_tx::GlobalTxState::Prepared);
+                    this.replica_ctx()
+                        .global_tx_manager
+                        .set_prepare_mapping(tx_id, original_prepare_id.clone());
+                }
 
                 // Step 1: Re-run the reducer to reacquire the write lock.
                 let new_prepare_id = match this
-                    .prepare_reducer(caller_identity, Some(caller_connection_id), &row.reducer_name, args)
+                    .prepare_reducer(
+                        caller_identity,
+                        Some(caller_connection_id),
+                        recovered_tx_id,
+                        &row.reducer_name,
+                        args,
+                    )
                     .await
                 {
                     Ok((pid, result, _rv)) if !pid.is_empty() => {
+                        this.replica_ctx()
+                            .global_tx_manager
+                            .remove_prepare_mapping(&original_prepare_id);
                         log::info!(
                             "recover_2pc_participant: re-prepared {original_prepare_id} as {pid}: {:?}",
                             result.outcome

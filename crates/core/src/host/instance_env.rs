@@ -2,6 +2,7 @@ use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
+use crate::host::global_tx::{GlobalTxRole, GlobalTxState};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
@@ -20,7 +21,7 @@ use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
 use spacetimedb_datastore::traits::IsolationLevel;
-use spacetimedb_lib::{http as st_http, ConnectionId, Identity, Timestamp};
+use spacetimedb_lib::{http as st_http, ConnectionId, GlobalTxId, Identity, Timestamp, TX_ID_HEADER};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
@@ -34,6 +35,7 @@ use std::fmt::Display;
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::ops::DerefMut;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::vec::IntoIter;
@@ -50,6 +52,8 @@ pub struct InstanceEnv {
     pub func_type: FuncCallType,
     /// The name of the last, including current, function to be executed by this environment.
     pub func_name: Option<Identifier>,
+    /// Distributed transaction id for the current reducer invocation.
+    current_tx_id: Option<GlobalTxId>,
     /// Are we in an anonymous tx context?
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
@@ -241,6 +245,7 @@ impl InstanceEnv {
             // run a function
             func_type: FuncCallType::Reducer,
             func_name: None,
+            current_tx_id: None,
             in_anon_tx: false,
             procedure_last_tx_offset: None,
             prepared_participants: Vec::new(),
@@ -253,11 +258,32 @@ impl InstanceEnv {
     }
 
     /// Signal to this `InstanceEnv` that a function call is beginning.
-    pub fn start_funcall(&mut self, name: Identifier, ts: Timestamp, func_type: FuncCallType) {
+    pub fn start_funcall(&mut self, name: Identifier, ts: Timestamp, func_type: FuncCallType, tx_id: Option<GlobalTxId>) {
+        let is_reducer = matches!(func_type, FuncCallType::Reducer);
         self.start_time = ts;
         self.start_instant = Instant::now();
         self.func_type = func_type;
         self.func_name = Some(name);
+        self.current_tx_id = if is_reducer {
+            Some(tx_id.unwrap_or_else(|| self.mint_tx_id(ts)))
+        } else {
+            None
+        };
+    }
+
+    pub fn current_tx_id(&self) -> Option<GlobalTxId> {
+        self.current_tx_id
+    }
+
+    fn wounded_tx_error(&self, tx_id: GlobalTxId) -> NodesError {
+        NodesError::Wounded(format!(
+            "distributed transaction {tx_id} was wounded by an older transaction"
+        ))
+    }
+
+    fn mint_tx_id(&self, start_ts: Timestamp) -> GlobalTxId {
+        let nonce = self.replica_ctx.tx_id_nonce.fetch_add(1, Ordering::Relaxed);
+        GlobalTxId::new(start_ts, self.replica_ctx.database.database_identity, nonce)
     }
 
     /// Returns the name of the most recent reducer to be run in this environment,
@@ -1010,8 +1036,19 @@ impl InstanceEnv {
         // accepts the request without generating a fresh ephemeral identity per call.
         let auth_token = self.replica_ctx.call_reducer_auth_token.clone();
         let caller_identity = self.replica_ctx.database.database_identity;
+        let tx_id = self.current_tx_id();
+        let wounded_error = tx_id.and_then(|tx_id| {
+            self.replica_ctx
+                .global_tx_manager
+                .is_wounded(&tx_id)
+                .then(|| self.wounded_tx_error(tx_id))
+        });
 
         async move {
+            if let Some(err) = wounded_error {
+                return Err(err);
+            }
+
             let start = Instant::now();
 
             let base_url = router
@@ -1030,6 +1067,9 @@ impl InstanceEnv {
                 .body(args);
             if let Some(token) = auth_token {
                 req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+            }
+            if let Some(tx_id) = tx_id {
+                req = req.header(TX_ID_HEADER, tx_id.to_string());
             }
             let result = async {
                 let response = req.send().await.map_err(|e| NodesError::HttpError(e.to_string()))?;
@@ -1076,8 +1116,27 @@ impl InstanceEnv {
         let reducer_name = reducer_name.to_owned();
         let auth_token = self.replica_ctx.call_reducer_auth_token.clone();
         let caller_identity = self.replica_ctx.database.database_identity;
+        let tx_id = self.current_tx_id();
+        let wounded_error = tx_id.and_then(|tx_id| {
+            self.replica_ctx
+                .global_tx_manager
+                .is_wounded(&tx_id)
+                .then(|| self.wounded_tx_error(tx_id))
+        });
+
+        if let Some(tx_id) = tx_id {
+            let session = self
+                .replica_ctx
+                .global_tx_manager
+                .ensure_session(tx_id, GlobalTxRole::Coordinator, tx_id.creator_db);
+            session.set_state(GlobalTxState::Preparing);
+        }
 
         async move {
+            if let Some(err) = wounded_error {
+                return Err(err);
+            }
+
             let start = Instant::now();
 
             let base_url = router
@@ -1096,6 +1155,9 @@ impl InstanceEnv {
                 .body(args);
             if let Some(token) = auth_token {
                 req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+            }
+            if let Some(tx_id) = tx_id {
+                req = req.header(TX_ID_HEADER, tx_id.to_string());
             }
             let result = async {
                 let response = req.send().await.map_err(|e| NodesError::HttpError(e.to_string()))?;
@@ -1502,6 +1564,8 @@ mod test {
                 call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
                 call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
                 call_reducer_auth_token: None,
+                tx_id_nonce: Arc::default(),
+                global_tx_manager: Arc::default(),
             },
             runtime,
         ))

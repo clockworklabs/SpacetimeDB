@@ -37,6 +37,7 @@ where
 }
 
 mod disk_storage;
+pub mod global_tx;
 mod host_controller;
 mod module_common;
 #[allow(clippy::too_many_arguments)]

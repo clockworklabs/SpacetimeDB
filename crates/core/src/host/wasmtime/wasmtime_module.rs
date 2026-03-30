@@ -463,7 +463,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, errors_sink) =
             store
                 .data_mut()
-                .start_funcall(reducer_name, args_bytes, op.timestamp, op.call_type());
+                .start_funcall(reducer_name, args_bytes, op.timestamp, op.call_type(), op.tx_id);
 
         let call_result = call_sync_typed_func(
             &self.call_reducer,
@@ -502,7 +502,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, errors_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name.clone(), args_bytes, op.timestamp, op.call_type());
+                .start_funcall(op.name.clone(), args_bytes, op.timestamp, op.call_type(), None);
 
         let call_result = call_view_export(
             &mut *store,
@@ -538,7 +538,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, errors_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name.clone(), args_bytes, op.timestamp, op.call_type());
+                .start_funcall(op.name.clone(), args_bytes, op.timestamp, op.call_type(), None);
 
         let call_result = call_view_export(
             &mut *store,
@@ -585,7 +585,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, result_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name.clone(), op.arg_bytes, op.timestamp, FuncCallType::Procedure);
+                .start_funcall(op.name.clone(), op.arg_bytes, op.timestamp, FuncCallType::Procedure, None);
 
         let Some(call_procedure) = self.call_procedure.as_ref() else {
             let res = module_host_actor::ProcedureExecuteResult {

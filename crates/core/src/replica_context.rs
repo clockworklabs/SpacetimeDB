@@ -3,11 +3,13 @@ use spacetimedb_commitlog::SizeOnDisk;
 use super::database_logger::DatabaseLogger;
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
+use crate::host::global_tx::GlobalTxManager;
 use crate::host::reducer_router::ReducerCallRouter;
 use crate::messages::control_db::Database;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use std::io;
 use std::ops::Deref;
+use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -64,6 +66,10 @@ pub struct ReplicaContext {
     ///
     /// `None` in contexts where no auth token is configured (e.g. unit tests).
     pub call_reducer_auth_token: Option<String>,
+    /// Per-database nonce used when minting reducer transaction ids.
+    pub tx_id_nonce: Arc<AtomicU32>,
+    /// In-memory distributed transaction sessions and lock scheduling state.
+    pub global_tx_manager: Arc<GlobalTxManager>,
 }
 
 impl ReplicaContext {

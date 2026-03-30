@@ -22,6 +22,7 @@ pub mod operator;
 pub mod query;
 pub mod scheduler;
 pub mod st_var;
+pub mod tx_id;
 pub mod version;
 
 pub mod type_def {
@@ -38,6 +39,7 @@ pub use filterable_value::Private;
 pub use filterable_value::{FilterableValue, IndexScanRangeBoundsTerminator, TermBound};
 pub use identity::Identity;
 pub use scheduler::ScheduleAt;
+pub use tx_id::{GlobalTxId, TX_ID_HEADER};
 pub use spacetimedb_sats::hash::{self, hash_bytes, Hash};
 pub use spacetimedb_sats::time_duration::TimeDuration;
 pub use spacetimedb_sats::timestamp::Timestamp;

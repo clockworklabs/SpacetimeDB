@@ -275,6 +275,8 @@ pub enum NodesError {
     BadIndexType(u8),
     #[error("Failed to scheduled timer: {0}")]
     ScheduleError(#[source] ScheduleError),
+    #[error("Distributed transaction wounded: {0}")]
+    Wounded(String),
     #[error("HTTP request failed: {0}")]
     HttpError(String),
 }

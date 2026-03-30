@@ -20,6 +20,7 @@ use axum::response::{ErrorResponse, IntoResponse};
 use axum::routing::MethodRouter;
 use axum::Extension;
 use axum_extra::TypedHeader;
+use http::HeaderMap;
 use futures::TryStreamExt;
 use http::StatusCode;
 use log::{info, warn};
@@ -41,7 +42,7 @@ use spacetimedb_lib::bsatn;
 use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::de::DeserializeSeed;
-use spacetimedb_lib::{sats, AlgebraicValue, Hash, ProductValue, Timestamp};
+use spacetimedb_lib::{sats, AlgebraicValue, GlobalTxId, Hash, ProductValue, Timestamp, TX_ID_HEADER};
 use spacetimedb_schema::auto_migrate::{
     MigrationPolicy as SchemaMigrationPolicy, MigrationToken, PrettyPrintStyle as AutoMigratePrettyPrintStyle,
 };
@@ -133,6 +134,7 @@ fn map_procedure_error(e: ProcedureCallError, procedure: &str) -> (StatusCode, S
 pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
     Extension(auth): Extension<SpacetimeAuth>,
+    headers: HeaderMap,
     Path(CallParams {
         name_or_identity,
         reducer,
@@ -141,6 +143,10 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     body: Bytes,
 ) -> axum::response::Result<impl IntoResponse> {
     let caller_identity = auth.claims.identity;
+    let tx_id = headers
+        .get(TX_ID_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<GlobalTxId>().ok());
 
     let args = parse_call_args(content_type, body)?;
 
@@ -162,6 +168,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         .call_reducer_with_return(
             caller_identity,
             Some(connection_id),
+            tx_id,
             None,
             None,
             None,
@@ -251,6 +258,7 @@ fn parse_call_args(content_type: headers::ContentType, body: Bytes) -> axum::res
 pub async fn prepare<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
     Extension(auth): Extension<SpacetimeAuth>,
+    headers: HeaderMap,
     Path(CallParams {
         name_or_identity,
         reducer,
@@ -260,6 +268,10 @@ pub async fn prepare<S: ControlStateDelegate + NodeDelegate>(
 ) -> axum::response::Result<impl IntoResponse> {
     let args = parse_call_args(content_type, body)?;
     let caller_identity = auth.claims.identity;
+    let tx_id = headers
+        .get(TX_ID_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<GlobalTxId>().ok());
 
     let (module, Database { owner_identity, .. }) = find_module_and_database(&worker_ctx, name_or_identity).await?;
 
@@ -267,7 +279,7 @@ pub async fn prepare<S: ControlStateDelegate + NodeDelegate>(
     // call_identity_connected/disconnected submit jobs to the module's executor, which
     // will be blocked holding the 2PC write lock after prepare_reducer returns — deadlock.
     let result = module
-        .prepare_reducer(caller_identity, None, &reducer, args)
+        .prepare_reducer(caller_identity, None, tx_id, &reducer, args)
         .await;
 
     match result {
@@ -296,6 +308,12 @@ pub async fn prepare<S: ControlStateDelegate + NodeDelegate>(
 pub struct TwoPcParams {
     name_or_identity: NameOrIdentity,
     prepare_id: String,
+}
+
+#[derive(Deserialize)]
+pub struct GlobalTxParams {
+    name_or_identity: NameOrIdentity,
+    global_tx_id: String,
 }
 
 /// 2PC commit endpoint: finalize a prepared transaction.
@@ -389,6 +407,30 @@ pub async fn ack_commit_2pc<S: ControlStateDelegate + NodeDelegate>(
     Ok(StatusCode::OK)
 }
 
+/// 2PC wound endpoint.
+///
+/// `POST /v1/database/:name_or_identity/2pc/wound/:global_tx_id`
+pub async fn wound_2pc<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    Extension(_auth): Extension<SpacetimeAuth>,
+    Path(GlobalTxParams {
+        name_or_identity,
+        global_tx_id,
+    }): Path<GlobalTxParams>,
+) -> axum::response::Result<impl IntoResponse> {
+    let tx_id = global_tx_id
+        .parse::<GlobalTxId>()
+        .map_err(|e| (StatusCode::BAD_REQUEST, e).into_response())?;
+    let (module, _database) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+
+    module.wound_global_tx(tx_id).await.map_err(|e| {
+        log::warn!("2PC wound failed for {tx_id}: {e}");
+        (StatusCode::NOT_FOUND, e).into_response()
+    })?;
+
+    Ok(StatusCode::OK)
+}
+
 fn reducer_outcome_response(
     module: &ModuleHost,
     owner_identity: &Identity,
@@ -426,6 +468,7 @@ fn reducer_outcome_response(
             // TODO: different status code? this is what cloudflare uses, sorta
             Ok((StatusCode::from_u16(530).unwrap(), (*errmsg).into_response()))
         }
+        ReducerOutcome::Wounded(errmsg) => Ok((StatusCode::CONFLICT, (*errmsg).into_response())),
         ReducerOutcome::BudgetExceeded => {
             log::warn!("Node's energy budget exceeded for identity: {owner_identity} while executing {reducer}");
             Ok((
@@ -1401,6 +1444,8 @@ pub struct DatabaseRoutes<S> {
     pub commit_2pc_post: MethodRouter<S>,
     /// POST: /database/:name_or_identity/2pc/abort/:prepare_id
     pub abort_2pc_post: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/2pc/wound/:global_tx_id
+    pub wound_2pc_post: MethodRouter<S>,
     /// GET: /database/:name_or_identity/2pc/status/:prepare_id
     pub status_2pc_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/2pc/ack-commit/:prepare_id
@@ -1433,6 +1478,7 @@ where
             prepare_post: post(prepare::<S>),
             commit_2pc_post: post(commit_2pc::<S>),
             abort_2pc_post: post(abort_2pc::<S>),
+            wound_2pc_post: post(wound_2pc::<S>),
             status_2pc_get: get(status_2pc::<S>),
             ack_commit_2pc_post: post(ack_commit_2pc::<S>),
         }
@@ -1463,6 +1509,7 @@ where
             .route("/prepare/:reducer", self.prepare_post)
             .route("/2pc/commit/:prepare_id", self.commit_2pc_post)
             .route("/2pc/abort/:prepare_id", self.abort_2pc_post)
+            .route("/2pc/wound/:global_tx_id", self.wound_2pc_post)
             .route("/2pc/status/:prepare_id", self.status_2pc_get)
             .route("/2pc/ack-commit/:prepare_id", self.ack_commit_2pc_post);
 

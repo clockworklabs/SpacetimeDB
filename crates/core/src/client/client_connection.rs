@@ -852,6 +852,7 @@ impl ClientConnection {
             .call_reducer(
                 self.id.identity,
                 Some(self.id.connection_id),
+                None,
                 caller,
                 Some(request_id),
                 Some(timer),
@@ -873,6 +874,7 @@ impl ClientConnection {
             .call_reducer(
                 self.id.identity,
                 Some(self.id.connection_id),
+                None,
                 Some(self.sender()),
                 Some(request_id),
                 Some(timer),
