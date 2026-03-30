@@ -728,6 +728,7 @@ async fn make_replica_ctx(
         call_reducer_router,
         call_reducer_auth_token,
         prepared_txs: crate::host::prepared_tx::PreparedTransactions::new(),
+        on_panic: std::sync::Arc::new(std::sync::OnceLock::new()),
     })
 }
 
@@ -831,6 +832,15 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
         )
         .await
         .map(Arc::new)?;
+
+        // Share the unregister function with the replica context so that async tasks
+        // (e.g., 2PC Round 2) can trigger module restart without holding the executor thread.
+        let on_panic = std::sync::Arc::new(self.on_panic);
+        let _ = replica_ctx.on_panic.set(Box::new({
+            let op = on_panic.clone();
+            move || op()
+        }));
+
         let (scheduler, scheduler_starter) = Scheduler::open(replica_ctx.relational_db().clone());
         let (program, module_host) = make_module_host(
             self.runtimes.clone(),
@@ -838,7 +848,7 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
             scheduler.clone(),
             self.program,
             self.energy_monitor,
-            self.on_panic,
+            move || on_panic(),
             self.core,
         )
         .await?;

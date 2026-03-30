@@ -1504,6 +1504,7 @@ mod test {
                 call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
                 call_reducer_auth_token: None,
                 prepared_txs: crate::host::prepared_tx::PreparedTransactions::new(),
+                on_panic: std::sync::Arc::new(std::sync::OnceLock::new()),
             },
             runtime,
         ))

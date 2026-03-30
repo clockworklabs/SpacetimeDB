@@ -1817,8 +1817,9 @@ impl ModuleHost {
         let (prepared_tx, prepared_rx) = tokio::sync::oneshot::channel::<(ReducerCallResult, Option<Bytes>)>();
         // Channel for sending the Round 1 COMMIT/ABORT decision to the executor thread.
         let (decision_tx, decision_rx) = std::sync::mpsc::channel::<bool>();
-        // Channel for sending the Round 2 COMMIT_PERSIST decision to the executor thread.
-        let (commit_persist_tx, commit_persist_rx) = std::sync::mpsc::channel::<bool>();
+        // Channel for sending the Round 2 COMMIT_PERSIST decision to the async Round 2 task.
+        // Oneshot: sender dropped without sending ⇒ abort; sending `()` ⇒ commit persist.
+        let (commit_persist_tx, commit_persist_rx) = tokio::sync::oneshot::channel::<()>();
 
         self.replica_ctx().prepared_txs.insert(
             prepare_id.clone(),

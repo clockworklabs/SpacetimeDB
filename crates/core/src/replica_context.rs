@@ -9,7 +9,7 @@ use crate::messages::control_db::Database;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use std::io;
 use std::ops::Deref;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 pub type Result<T> = anyhow::Result<T>;
@@ -68,6 +68,10 @@ pub struct ReplicaContext {
     /// 2PC prepared transactions registry. Shared between actor code and HTTP handlers
     /// for both participant (decision channels) and coordinator (persist waiters) roles.
     pub prepared_txs: PreparedTransactions,
+    /// Called to unregister (restart) this module when a critical error occurs in an
+    /// async task that can't panic on the WASM executor thread (e.g., 2PC persistence
+    /// abort in Round 2).  Set once by `launch_module`; empty in tests.
+    pub on_panic: Arc<OnceLock<Box<dyn Fn() + Send + Sync + 'static>>>,
 }
 
 impl ReplicaContext {

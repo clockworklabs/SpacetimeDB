@@ -447,6 +447,49 @@ async fn send_prepared_to_persist_to_coordinator(
     }
 }
 
+/// Query `GET /v1/database/{coordinator}/2pc/status/{prepare_id}`.
+///
+/// Returns `Some(true)` = COMMIT, `Some(false)` = ABORT, `None` = transient error (retry).
+async fn query_coordinator_status(
+    client: &reqwest::Client,
+    router: &std::sync::Arc<dyn crate::host::reducer_router::ReducerCallRouter>,
+    auth_token: Option<String>,
+    coordinator_identity: crate::identity::Identity,
+    prepare_id: &str,
+) -> Option<bool> {
+    let base_url = match router.resolve_base_url(coordinator_identity).await {
+        Ok(url) => url,
+        Err(e) => {
+            log::warn!("2PC status poll: cannot resolve coordinator URL: {e}");
+            return None;
+        }
+    };
+    let url = format!(
+        "{}/v1/database/{}/2pc/status/{}",
+        base_url,
+        coordinator_identity.to_hex(),
+        prepare_id,
+    );
+    let mut req = client.get(&url);
+    if let Some(token) = &auth_token {
+        req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+    }
+    match req.send().await {
+        Ok(resp) if resp.status().is_success() => {
+            let body = resp.text().await.unwrap_or_default();
+            Some(body.trim() == "commit")
+        }
+        Ok(resp) => {
+            log::warn!("2PC status poll: coordinator returned {}", resp.status());
+            None
+        }
+        Err(e) => {
+            log::warn!("2PC status poll: transport error: {e}");
+            None
+        }
+    }
+}
+
 impl<T: WasmModule> WasmModuleHostActor<T> {
     fn make_from_instance(&self, mut instance: T::Instance) -> WasmModuleInstance<T::Instance> {
         let common = InstanceCommon::new(&self.common);
@@ -630,7 +673,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         coordinator_identity: crate::identity::Identity,
         prepared_tx: tokio::sync::oneshot::Sender<(ReducerCallResult, Option<Bytes>)>,
         decision_rx: std::sync::mpsc::Receiver<bool>,
-        commit_persist_rx: std::sync::mpsc::Receiver<bool>,
+        commit_persist_rx: tokio::sync::oneshot::Receiver<()>,
     ) {
         let stdb = self.instance.replica_ctx().relational_db().clone();
         let replica_ctx = self.instance.replica_ctx().clone();
@@ -727,77 +770,104 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let commit_result = commit_and_broadcast_event(&self.common.info.subscriptions, client, event, tx);
 
         // ═══ WRITE LOCK RELEASED ═══════════════════════════════
-        // ── Round 2: Persistence Commit ────────────────────────
+        // ── Round 2: Persistence Commit (async — does not block executor) ──
 
-        // Step 8: wait for PREPARE PERSIST durability (offset N fsynced).
-        if let Some(prepare_offset) = marker_tx_data.tx_offset() {
-            if let Some(mut durable) = stdb.durable_tx_offset() {
-                let handle = tokio::runtime::Handle::current();
-                let _ = block_on_scoped(&handle, durable.wait_for(prepare_offset));
+        let handle = tokio::runtime::Handle::current();
+        handle.spawn(async move {
+            // Step 8: wait for PREPARE PERSIST durability (offset N fsynced).
+            if let Some(prepare_offset) = marker_tx_data.tx_offset() {
+                if let Some(mut durable) = stdb.durable_tx_offset() {
+                    let _ = durable.wait_for(prepare_offset).await;
+                }
             }
-        }
 
-        // Step 9: signal coordinator that B's PREPARE_PERSIST is durable.
-        let router = replica_ctx.call_reducer_router.clone();
-        let client_http = replica_ctx.call_reducer_client.clone();
-        let auth_token = replica_ctx.call_reducer_auth_token.clone();
-        {
-            let handle = tokio::runtime::Handle::current();
-            block_on_scoped(&handle, send_prepared_to_persist_to_coordinator(
-                client_http.clone(),
-                router.clone(),
-                auth_token.clone(),
+            // Step 9: signal coordinator that B's PREPARE_PERSIST is durable.
+            send_prepared_to_persist_to_coordinator(
+                replica_ctx.call_reducer_client.clone(),
+                replica_ctx.call_reducer_router.clone(),
+                replica_ctx.call_reducer_auth_token.clone(),
                 coordinator_identity,
                 prepare_id.clone(),
-            ));
-        }
+            )
+            .await;
 
-        // Step 10: wait for COMMIT_PERSIST from coordinator.
-        let persist_commit = Self::wait_for_commit_persist(
-            commit_persist_rx,
-            &prepare_id,
-            coordinator_identity,
-            &replica_ctx,
-        );
+            // Step 10: wait for COMMIT_PERSIST from coordinator (tokio oneshot).
+            // Sender dropped without sending ⇒ coordinator restarted / aborted ⇒ treat as abort.
+            let persist_commit = match tokio::time::timeout(
+                Duration::from_secs(60),
+                commit_persist_rx,
+            )
+            .await
+            {
+                Ok(Ok(())) => true,
+                Ok(Err(_)) => {
+                    // Sender dropped: coordinator crashed / aborted.
+                    log::warn!("2PC persist {prepare_id}: commit_persist channel closed, treating as abort");
+                    false
+                }
+                Err(_) => {
+                    // Timeout: fall back to polling coordinator status.
+                    log::warn!("2PC persist {prepare_id}: no COMMIT_PERSIST after 60s, polling coordinator");
+                    let client = replica_ctx.call_reducer_client.clone();
+                    let router = replica_ctx.call_reducer_router.clone();
+                    let auth_token = replica_ctx.call_reducer_auth_token.clone();
+                    loop {
+                        let status = query_coordinator_status(
+                            &client,
+                            &router,
+                            auth_token.clone(),
+                            coordinator_identity,
+                            &prepare_id,
+                        )
+                        .await;
+                        match status {
+                            Some(false) => {
+                                log::warn!("2PC persist {prepare_id}: coordinator status is abort");
+                                break false;
+                            }
+                            Some(true) => {
+                                // Round 1 done, Round 2 in progress — keep waiting.
+                            }
+                            None => {}
+                        }
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                    }
+                }
+            };
 
-        if persist_commit {
-            // Step 11: clear the durability barrier. The deferred TxData at offset
-            // N+1 (containing the reducer's actual row changes) now flushes to the
-            // durability worker. This IS the COMMIT PERSIST commitlog entry.
-            stdb.clear_durability_barrier(barrier_offset);
+            if persist_commit {
+                // Step 11: clear the durability barrier so the deferred TxData
+                // (offset N+1, reducer row changes) flushes to the durability worker.
+                stdb.clear_durability_barrier(barrier_offset);
 
-            // Step 12: wait for COMMIT PERSIST durability (offset N+1 fsynced).
-            if let Some(mut durable) = stdb.durable_tx_offset() {
-                let handle = tokio::runtime::Handle::current();
-                block_on_scoped(&handle, async move {
+                // Step 12: wait for COMMIT PERSIST durability (offset N+1 fsynced).
+                if let Some(mut durable) = stdb.durable_tx_offset() {
                     if let Ok(offset) = commit_result.tx_offset.await {
                         let _ = durable.wait_for(offset).await;
                     }
-                });
-            }
+                }
 
-            // Step 13: delete the st_2pc_state marker (cleanup).
-            if let Err(e) = stdb.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
-                Ok(del_tx.delete_st_2pc_state(&prepare_id)?)
-            }) {
-                log::error!(
-                    "call_reducer_prepare_and_hold: failed to delete st_2pc_state for {prepare_id}: {e}"
-                );
+                // Step 13: delete the st_2pc_state marker (cleanup).
+                if let Err(e) = stdb.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
+                    Ok(del_tx.delete_st_2pc_state(&prepare_id)?)
+                }) {
+                    log::error!(
+                        "call_reducer_prepare_and_hold: failed to delete st_2pc_state for {prepare_id}: {e}"
+                    );
+                }
+            } else {
+                // Round 2 abort: discard all deferred transactions.
+                stdb.abort_durability_barrier(barrier_offset);
+                // Trigger module restart via the on_panic hook rather than panicking,
+                // since we're in an async task outside the WASM executor thread.
+                if let Some(on_panic) = replica_ctx.on_panic.get() {
+                    log::error!(
+                        "2PC persistence aborted for {prepare_id}: triggering module restart"
+                    );
+                    on_panic();
+                }
             }
-        } else {
-            // Round 2 abort: discard ALL deferred transactions (the reducer's
-            // row changes and any dependent transactions). They are tainted and
-            // must not reach disk. On restart, the in-memory state is lost.
-            stdb.abort_durability_barrier(barrier_offset);
-            // Panic to trigger module restart. The defer_on_unwind! in
-            // ModuleHost::call will call on_panic(), which unregisters the
-            // module. On next access, it is re-created from the commitlog
-            // (which does not contain the tainted data).
-            panic!(
-                "2PC persistence aborted for {prepare_id}: \
-                 flushing tainted in-memory state via module restart"
-            );
-        }
+        });
     }
 
     /// Wait for a 2PC COMMIT or ABORT decision for `prepare_id`.
@@ -831,7 +901,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         loop {
             let decision = block_on_scoped(
                 &handle,
-                Self::query_coordinator_status(
+                query_coordinator_status(
                     &client,
                     &router,
                     auth_token.clone(),
@@ -842,117 +912,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             match decision {
                 Some(commit) => return commit,
                 None => std::thread::sleep(Duration::from_secs(5)),
-            }
-        }
-    }
-
-    /// Wait for Round 2 COMMIT_PERSIST from the coordinator.
-    ///
-    /// Unlike [`Self::wait_for_2pc_decision`], this does NOT treat a Round 1 "commit"
-    /// status from the coordinator as completion. The coordinator's status endpoint
-    /// returns "commit" when the coordinator log exists in memory (Round 1 committed)
-    /// but COMMIT_PERSIST may not have been sent yet.
-    ///
-    /// Returns `true` (commit persist) or `false` (abort -- coordinator lost its state).
-    fn wait_for_commit_persist(
-        commit_persist_rx: std::sync::mpsc::Receiver<bool>,
-        prepare_id: &str,
-        coordinator_identity: crate::identity::Identity,
-        replica_ctx: &std::sync::Arc<crate::replica_context::ReplicaContext>,
-    ) -> bool {
-        // First try the channel.
-        match commit_persist_rx.recv_timeout(Duration::from_secs(60)) {
-            Ok(commit) => return commit,
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                log::warn!("2PC persist prepare_id={prepare_id}: no COMMIT_PERSIST after 60s, polling coordinator");
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                log::warn!("2PC persist prepare_id={prepare_id}: commit_persist channel closed, polling coordinator");
-            }
-        }
-
-        // Poll: if coordinator returns "abort", the coordinator lost its state (crash).
-        // If coordinator returns "commit", Round 1 is done but Round 2 is still in progress
-        // -- keep waiting. Also check the channel between polls.
-        let handle = tokio::runtime::Handle::current();
-        let client = replica_ctx.call_reducer_client.clone();
-        let router = replica_ctx.call_reducer_router.clone();
-        let auth_token = replica_ctx.call_reducer_auth_token.clone();
-        let prepare_id_owned = prepare_id.to_owned();
-        loop {
-            // Check channel (non-blocking) before each poll.
-            match commit_persist_rx.try_recv() {
-                Ok(commit) => return commit,
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    log::warn!("2PC persist prepare_id={prepare_id}: channel disconnected during poll");
-                }
-                Err(std::sync::mpsc::TryRecvError::Empty) => {}
-            }
-
-            let status = block_on_scoped(&handle, Self::query_coordinator_status(
-                &client,
-                &router,
-                auth_token.clone(),
-                coordinator_identity,
-                &prepare_id_owned,
-            ));
-            match status {
-                Some(false) => {
-                    // Coordinator says "abort" -- it lost its state. Abort persistence.
-                    log::warn!("2PC persist prepare_id={prepare_id}: coordinator status is abort");
-                    return false;
-                }
-                Some(true) => {
-                    // Coordinator says "commit" (Round 1 done, Round 2 in progress).
-                    // Keep waiting for COMMIT_PERSIST.
-                }
-                None => {
-                    // Transient error, retry.
-                }
-            }
-            std::thread::sleep(Duration::from_secs(5));
-        }
-    }
-
-    /// Query `GET /v1/database/{coordinator}/2pc/status/{prepare_id}`.
-    ///
-    /// Returns `Some(true)` = COMMIT, `Some(false)` = ABORT, `None` = transient error (retry).
-    async fn query_coordinator_status(
-        client: &reqwest::Client,
-        router: &std::sync::Arc<dyn crate::host::reducer_router::ReducerCallRouter>,
-        auth_token: Option<String>,
-        coordinator_identity: crate::identity::Identity,
-        prepare_id: &str,
-    ) -> Option<bool> {
-        let base_url = match router.resolve_base_url(coordinator_identity).await {
-            Ok(url) => url,
-            Err(e) => {
-                log::warn!("2PC status poll: cannot resolve coordinator URL: {e}");
-                return None;
-            }
-        };
-        let url = format!(
-            "{}/v1/database/{}/2pc/status/{}",
-            base_url,
-            coordinator_identity.to_hex(),
-            prepare_id,
-        );
-        let mut req = client.get(&url);
-        if let Some(token) = &auth_token {
-            req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
-        }
-        match req.send().await {
-            Ok(resp) if resp.status().is_success() => {
-                let body = resp.text().await.unwrap_or_default();
-                Some(body.trim() == "commit")
-            }
-            Ok(resp) => {
-                log::warn!("2PC status poll: coordinator returned {}", resp.status());
-                None
-            }
-            Err(e) => {
-                log::warn!("2PC status poll: transport error: {e}");
-                None
             }
         }
     }
@@ -1266,13 +1225,12 @@ impl InstanceCommon {
         let commit_tx_offset = commit_result.tx_offset;
         let event = commit_result.event;
 
-        // Pipelined 2PC post-commit coordination.
+        // Pipelined 2PC post-commit coordination (fire-and-forget — does not block executor).
         if !prepared_participants.is_empty() {
             let committed = matches!(event.status, EventStatus::Committed(_));
             let stdb = self.info.subscriptions.relational_db().clone();
             let replica_ctx = inst.replica_ctx().clone();
-            let handle = tokio::runtime::Handle::current();
-            block_on_scoped(&handle, async {
+            tokio::task::spawn(async move {
                 let client = replica_ctx.call_reducer_client.clone();
                 let router = replica_ctx.call_reducer_router.clone();
                 let auth_token = replica_ctx.call_reducer_auth_token.clone();
@@ -1374,14 +1332,15 @@ impl InstanceCommon {
                     if let Some(offset) = coordinator_barrier_offset {
                         stdb.abort_durability_barrier(offset);
                     }
-                    // Panic to trigger module restart. The defer_on_unwind! in
-                    // ModuleHost::call will call on_panic(), which unregisters the
-                    // module. On next access, it is re-created from the commitlog
-                    // (which does not contain the tainted data).
-                    panic!(
-                        "2PC Round 2: persistence aborted (timeout waiting for PREPARED_TO_PERSIST); \
-                         flushing tainted in-memory state via module restart"
-                    );
+                    // Trigger module restart via on_panic (can't panic in a spawned task).
+                    if let Some(on_panic) = replica_ctx.on_panic.get() {
+                        log::error!(
+                            "2PC Round 2: persistence aborted (timeout waiting for PREPARED_TO_PERSIST); \
+                             flushing tainted in-memory state via module restart"
+                        );
+                        on_panic();
+                    }
+                    return;
                 }
 
                 // All participants' PREPAREs are durable. Lift A's barrier so A's

@@ -10,9 +10,10 @@ use std::sync::{Arc, Mutex};
 pub struct PreparedTxInfo {
     /// Round 1: sending `true` commits to memory; `false` aborts.
     pub decision_sender: std::sync::mpsc::Sender<bool>,
-    /// Round 2: sending `true` signals that the coordinator's persist decision
-    /// (COMMIT_PERSIST) has arrived and the participant should finalize.
-    pub commit_persist_sender: std::sync::mpsc::Sender<bool>,
+    /// Round 2: sending `()` signals that the coordinator's COMMIT_PERSIST has
+    /// arrived and the participant should finalize persistence.
+    /// If the sender is dropped without sending, the receiver sees `Err` = abort.
+    pub commit_persist_sender: tokio::sync::oneshot::Sender<()>,
 }
 
 /// Coordinator-side: a waiter that gets signalled when a participant sends
@@ -55,7 +56,7 @@ impl PreparedTransactions {
     pub fn send_commit_persist(&self, id: &str) -> Result<(), String> {
         let mut guard = self.inner.lock().unwrap();
         let info = guard.remove(id).ok_or_else(|| format!("no such prepared transaction: {id}"))?;
-        let _ = info.commit_persist_sender.send(true);
+        let _ = info.commit_persist_sender.send(());
         Ok(())
     }
 
