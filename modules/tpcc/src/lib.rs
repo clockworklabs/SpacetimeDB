@@ -105,10 +105,7 @@ pub struct Warehouse {
     pub w_ytd_cents: i64,
 }
 
-#[table(
-    accessor = district,
-    index(accessor = by_w_d, btree(columns = [d_w_id, d_id]))
-)]
+#[table(accessor = district)]
 #[derive(Clone, Debug)]
 pub struct District {
     #[primary_key]
@@ -128,7 +125,6 @@ pub struct District {
 
 #[table(
     accessor = customer,
-    index(accessor = by_w_d_c_id, btree(columns = [c_w_id, c_d_id, c_id])),
     index(accessor = by_w_d_last_first_id, btree(columns = [c_w_id, c_d_id, c_last, c_first, c_id]))
 )]
 #[derive(Clone, Debug)]
@@ -185,10 +181,7 @@ pub struct Item {
     pub i_data: String,
 }
 
-#[table(
-    accessor = stock,
-    index(accessor = by_w_i, btree(columns = [s_w_id, s_i_id]))
-)]
+#[table(accessor = stock)]
 #[derive(Clone, Debug)]
 pub struct Stock {
     #[primary_key]
@@ -776,29 +769,29 @@ fn ensure_warehouse_exists(tx: &ReducerContext, w_id: WarehouseId) -> Result<(),
 }
 
 fn find_district(tx: &ReducerContext, w_id: WarehouseId, d_id: u8) -> Result<District, String> {
+    let district_key = pack_district_key(w_id, d_id);
     tx.db
         .district()
-        .by_w_d()
-        .filter((w_id, d_id))
-        .next()
+        .district_key()
+        .find(district_key)
         .ok_or_else(|| format!("district ({w_id}, {d_id}) not found"))
 }
 
 fn find_customer_by_id(tx: &ReducerContext, w_id: WarehouseId, d_id: u8, c_id: u32) -> Result<Customer, String> {
+    let customer_key = pack_customer_key(w_id, d_id, c_id);
     tx.db
         .customer()
-        .by_w_d_c_id()
-        .filter((w_id, d_id, c_id))
-        .next()
+        .customer_key()
+        .find(customer_key)
         .ok_or_else(|| format!("customer ({w_id}, {d_id}, {c_id}) not found"))
 }
 
 fn find_stock(tx: &ReducerContext, w_id: WarehouseId, item_id: u32) -> Result<Stock, String> {
+    let stock_key = pack_stock_key(w_id, item_id);
     tx.db
         .stock()
-        .by_w_i()
-        .filter((w_id, item_id))
-        .next()
+        .stock_key()
+        .find(stock_key)
         .ok_or_else(|| format!("stock ({w_id}, {item_id}) not found"))
 }
 

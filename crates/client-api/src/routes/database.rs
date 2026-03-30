@@ -289,12 +289,10 @@ fn reducer_outcome_response(
                         axum::Json(sats::serde::SerdeWrapper(value)).into_response(),
                     ))
                 }
+            } else if want_bsatn {
+                Ok((StatusCode::OK, Vec::<u8>::new().into_response()))
             } else {
-                if want_bsatn {
-                    Ok((StatusCode::OK, Vec::<u8>::new().into_response()))
-                } else {
-                    Ok((StatusCode::OK, "".into_response()))
-                }
+                Ok((StatusCode::OK, "".into_response()))
             }
         }
         ReducerOutcome::Failed(errmsg) => {
