@@ -968,6 +968,11 @@ impl Locking {
     pub fn commit_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> (TxData, TxMetrics, TxId) {
         tx.commit_downgrade(workload)
     }
+
+    /// The tx_offset that will be assigned to the next committed transaction.
+    pub fn next_tx_offset(&self) -> u64 {
+        self.committed_state.read_arc().next_tx_offset
+    }
 }
 
 #[derive(Debug, Error)]

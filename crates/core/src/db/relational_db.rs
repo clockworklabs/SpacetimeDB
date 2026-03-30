@@ -94,6 +94,20 @@ pub const ONLY_MODULE_VERSION: &str = "0.0.1";
 /// for each entry in [`ConnectedClients`].
 pub type ConnectedClients = HashSet<(Identity, ConnectionId)>;
 
+/// Durability barrier for pipelined 2PC.
+///
+/// Supports multiple concurrent 2PC transactions. Each active barrier is
+/// identified by its tx_offset. Transactions above the *minimum* active
+/// barrier offset are deferred. When a barrier is cleared, pending
+/// transactions up to the new minimum (or all, if no barriers remain)
+/// are flushed to the durability worker.
+struct DurabilityBarrier {
+    /// Active barrier offsets (one per in-flight 2PC transaction).
+    active: std::collections::BTreeSet<u64>,
+    /// Transactions deferred by the barrier.
+    pending: Vec<(Option<ReducerContext>, Arc<TxData>)>,
+}
+
 pub struct RelationalDB {
     database_identity: Identity,
     owner_identity: Identity,
@@ -112,6 +126,10 @@ pub struct RelationalDB {
 
     /// An async queue for recording transaction metrics off the main thread
     metrics_recorder_queue: Option<MetricsRecorderQueue>,
+
+    /// Pipelined 2PC durability barrier.
+    /// When set, transactions past the barrier offset are deferred (not sent to disk).
+    durability_barrier: std::sync::Mutex<Option<DurabilityBarrier>>,
 }
 
 /// Perform a snapshot every `SNAPSHOT_FREQUENCY` transactions.
@@ -176,6 +194,7 @@ impl RelationalDB {
 
             workload_type_to_exec_counters,
             metrics_recorder_queue,
+            durability_barrier: std::sync::Mutex::new(None),
         }
     }
 
@@ -462,6 +481,14 @@ impl RelationalDB {
     /// B never aborts on its own — it polls the coordinator for a decision.
     pub fn pending_2pc_prepares(&self) -> Result<Vec<spacetimedb_datastore::system_tables::St2pcStateRow>, DBError> {
         self.with_auto_commit(Workload::Internal, |tx| tx.scan_st_2pc_state().map_err(DBError::from))
+    }
+
+    /// The offset that will be assigned to the next committed transaction.
+    ///
+    /// Safe to call while holding the write lock (MutTxId) -- the offset won't change
+    /// until the write lock is released via commit.
+    pub fn next_tx_offset(&self) -> u64 {
+        self.inner.next_tx_offset()
     }
 
     /// Read any 2PC coordinator log entries that have not yet been acknowledged by their
@@ -841,9 +868,7 @@ impl RelationalDB {
         self.maybe_do_snapshot(&tx_data);
 
         let tx_data = Arc::new(tx_data);
-        if let Some(durability) = &self.durability {
-            durability.request_durability(reducer_context, &tx_data);
-        }
+        self.request_durability_maybe_barrier(reducer_context, &tx_data);
 
         Ok(Some((tx_offset, tx_data, tx_metrics, reducer)))
     }
@@ -857,9 +882,7 @@ impl RelationalDB {
         self.maybe_do_snapshot(&tx_data);
 
         let tx_data = Arc::new(tx_data);
-        if let Some(durability) = &self.durability {
-            durability.request_durability(tx.ctx.reducer_context().cloned(), &tx_data);
-        }
+        self.request_durability_maybe_barrier(tx.ctx.reducer_context().cloned(), &tx_data);
 
         (tx_data, tx_metrics, tx)
     }
@@ -869,8 +892,106 @@ impl RelationalDB {
     /// Used by the 2PC participant path to make the `st_2pc_state` PREPARE marker durable
     /// while the main write lock is still held (i.e. without going through a full commit).
     pub fn request_durability_for_tx_data(&self, reducer_context: Option<ReducerContext>, tx_data: &Arc<TxData>) {
+        self.request_durability_maybe_barrier(reducer_context, tx_data);
+    }
+
+    /// Send a tx to the durability worker, unless a durability barrier is active
+    /// and the tx's offset exceeds the minimum active barrier. In that case, defer the tx.
+    fn request_durability_maybe_barrier(
+        &self,
+        reducer_context: Option<ReducerContext>,
+        tx_data: &Arc<TxData>,
+    ) {
+        let Some(durability) = &self.durability else {
+            return;
+        };
+
+        let mut barrier = self.durability_barrier.lock().unwrap();
+        if let Some(ref mut b) = *barrier {
+            if let Some(&min_barrier) = b.active.first() {
+                if let Some(offset) = tx_data.tx_offset() {
+                    if offset > min_barrier {
+                        // Past the lowest active barrier: defer.
+                        b.pending.push((reducer_context, tx_data.clone()));
+                        return;
+                    }
+                }
+            }
+        }
+        // At or before the barrier (or no barrier): normal path.
+        durability.request_durability(reducer_context, tx_data);
+    }
+
+    /// Set a durability barrier at `barrier_offset`.
+    ///
+    /// Transactions at this offset pass through to the durability worker normally.
+    /// Transactions with higher offsets are deferred until all barriers are cleared.
+    /// Multiple concurrent barriers are supported; the effective barrier is the minimum.
+    ///
+    /// Call while holding the database write lock to prevent races.
+    pub fn set_durability_barrier(&self, barrier_offset: u64) {
+        let mut barrier = self.durability_barrier.lock().unwrap();
+        let b = barrier.get_or_insert_with(|| DurabilityBarrier {
+            active: std::collections::BTreeSet::new(),
+            pending: Vec::new(),
+        });
+        b.active.insert(barrier_offset);
+    }
+
+    /// Abort a durability barrier, discarding ALL deferred transactions.
+    ///
+    /// Used when Round 2 of pipelined 2PC aborts. All transactions behind the
+    /// barrier are tainted (they may have read data from the aborted 2PC tx)
+    /// and must not reach disk. On restart, the in-memory state is lost and
+    /// the pipeline is effectively flushed.
+    pub fn abort_durability_barrier(&self, barrier_offset: u64) {
+        let mut barrier = self.durability_barrier.lock().unwrap();
+        let Some(ref mut b) = *barrier else {
+            return;
+        };
+        b.active.remove(&barrier_offset);
+        if b.active.is_empty() {
+            // Drop all pending transactions -- they are tainted.
+            *barrier = None;
+        }
+        // If other barriers remain, the pending list stays (those transactions
+        // are still blocked by the other barriers and will be resolved by them).
+    }
+
+    /// Clear one durability barrier, flushing deferred transactions that are now
+    /// below the new minimum barrier (or all if no barriers remain).
+    pub fn clear_durability_barrier(&self, barrier_offset: u64) {
+        let to_flush = {
+            let mut barrier = self.durability_barrier.lock().unwrap();
+            let Some(ref mut b) = *barrier else {
+                return;
+            };
+            b.active.remove(&barrier_offset);
+            if b.active.is_empty() {
+                // No more barriers: flush everything.
+                let pending = std::mem::take(&mut b.pending);
+                *barrier = None;
+                pending
+            } else {
+                // Flush pending transactions up to the new minimum barrier.
+                let &new_min = b.active.first().unwrap();
+                let mut flush = Vec::new();
+                b.pending.retain(|(ctx, td)| {
+                    if let Some(offset) = td.tx_offset() {
+                        if offset <= new_min {
+                            flush.push((ctx.clone(), td.clone()));
+                            return false;
+                        }
+                    }
+                    true
+                });
+                flush
+            }
+        };
         if let Some(durability) = &self.durability {
-            durability.request_durability(reducer_context, tx_data);
+            for (reducer_context, tx_data) in to_flush {
+                durability.request_durability(reducer_context, &tx_data);
+            }
         }
     }
 

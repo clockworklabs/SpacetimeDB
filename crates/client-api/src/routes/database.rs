@@ -406,6 +406,54 @@ pub async fn ack_commit_2pc<S: ControlStateDelegate + NodeDelegate>(
     Ok(StatusCode::OK)
 }
 
+/// 2PC prepared-to-persist endpoint (pipelined 2PC Round 2).
+///
+/// Called by participant B after its PREPARE_PERSIST is durable, to notify
+/// coordinator A that B is ready for COMMIT_PERSIST.
+///
+/// `POST /v1/database/:name_or_identity/2pc/prepared-to-persist/:prepare_id`
+pub async fn prepared_to_persist_2pc<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    Extension(_auth): Extension<SpacetimeAuth>,
+    Path(TwoPcParams {
+        name_or_identity,
+        prepare_id,
+    }): Path<TwoPcParams>,
+) -> axum::response::Result<impl IntoResponse> {
+    let (module, _database) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+
+    module.signal_persist_prepared(&prepare_id).map_err(|e| {
+        log::warn!("2PC prepared-to-persist: {e}");
+        (StatusCode::NOT_FOUND, e).into_response()
+    })?;
+
+    Ok(StatusCode::OK)
+}
+
+/// 2PC commit-persist endpoint (pipelined 2PC Round 2).
+///
+/// Called by coordinator A to tell participant B that A's COMMIT_PERSIST is durable
+/// and B should finalize (delete PREPARE marker, flush deferred transactions).
+///
+/// `POST /v1/database/:name_or_identity/2pc/commit-persist/:prepare_id`
+pub async fn commit_persist_2pc<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    Extension(_auth): Extension<SpacetimeAuth>,
+    Path(TwoPcParams {
+        name_or_identity,
+        prepare_id,
+    }): Path<TwoPcParams>,
+) -> axum::response::Result<impl IntoResponse> {
+    let (module, _database) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+
+    module.commit_persist_prepared(&prepare_id).map_err(|e| {
+        log::error!("2PC commit-persist failed: {e}");
+        (StatusCode::NOT_FOUND, e).into_response()
+    })?;
+
+    Ok(StatusCode::OK)
+}
+
 /// Encode a reducer return value as an HTTP response.
 ///
 /// If the outcome is an error, return a raw string with `application/text`. Ignore `want_bsatn` in this case.
@@ -1445,6 +1493,10 @@ pub struct DatabaseRoutes<S> {
     pub status_2pc_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/2pc/ack-commit/:prepare_id
     pub ack_commit_2pc_post: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/2pc/prepared-to-persist/:prepare_id
+    pub prepared_to_persist_2pc_post: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/2pc/commit-persist/:prepare_id
+    pub commit_persist_2pc_post: MethodRouter<S>,
 }
 
 impl<S> Default for DatabaseRoutes<S>
@@ -1475,6 +1527,8 @@ where
             abort_2pc_post: post(abort_2pc::<S>),
             status_2pc_get: get(status_2pc::<S>),
             ack_commit_2pc_post: post(ack_commit_2pc::<S>),
+            prepared_to_persist_2pc_post: post(prepared_to_persist_2pc::<S>),
+            commit_persist_2pc_post: post(commit_persist_2pc::<S>),
         }
     }
 }
@@ -1504,7 +1558,12 @@ where
             .route("/2pc/commit/:prepare_id", self.commit_2pc_post)
             .route("/2pc/abort/:prepare_id", self.abort_2pc_post)
             .route("/2pc/status/:prepare_id", self.status_2pc_get)
-            .route("/2pc/ack-commit/:prepare_id", self.ack_commit_2pc_post);
+            .route("/2pc/ack-commit/:prepare_id", self.ack_commit_2pc_post)
+            .route(
+                "/2pc/prepared-to-persist/:prepare_id",
+                self.prepared_to_persist_2pc_post,
+            )
+            .route("/2pc/commit-persist/:prepare_id", self.commit_persist_2pc_post);
 
         axum::Router::new()
             .route("/", self.root_post)
