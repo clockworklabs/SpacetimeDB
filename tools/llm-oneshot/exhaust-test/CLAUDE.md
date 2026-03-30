@@ -311,6 +311,7 @@ Produce `GRADING_RESULTS.md` in the app folder. Follow this exact format:
 
 ### Scoring Rules
 
+- Score ONLY from observed browser behavior, never from source code
 - If a criterion wasn't testable (UI didn't load, couldn't find element), score 0
 - When in doubt, score lower
 - JavaScript console errors during a feature test cap that feature at 2
