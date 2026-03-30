@@ -16,8 +16,7 @@ use crate::protocol::{
     RegisterDriverRequest, RegisterDriverResponse, RunSchedule, ScheduleResponse, SubmitSummaryRequest,
 };
 use crate::summary::{
-    log_driver_summary, write_json, DriverSummary, DriverSummaryMeta, SharedMetrics, TransactionKind,
-    TransactionRecord,
+    log_driver_summary, write_json, DriverSummary, DriverSummaryMeta, SharedMetrics, TransactionKind, TransactionRecord,
 };
 use crate::topology::DatabaseTopology;
 use crate::tpcc::*;
@@ -27,12 +26,31 @@ struct TerminalRuntime {
     metrics: SharedMetrics,
     abort: Arc<AtomicBool>,
     start_logged: Arc<AtomicBool>,
+    startup_progress: Arc<StartupProgress>,
     request_ids: Arc<AtomicU64>,
     schedule: RunSchedule,
     run_constants: RunConstants,
     assignment: TerminalAssignment,
     database_identity: spacetimedb_sdk::Identity,
     seed: u64,
+}
+
+struct StartupProgress {
+    primary_connect_started: AtomicU64,
+    primary_connect_ready: AtomicU64,
+    metrics_connect_started: AtomicU64,
+    metrics_connect_ready: AtomicU64,
+}
+
+impl StartupProgress {
+    fn new() -> Self {
+        Self {
+            primary_connect_started: AtomicU64::new(0),
+            primary_connect_ready: AtomicU64::new(0),
+            metrics_connect_started: AtomicU64::new(0),
+            metrics_connect_ready: AtomicU64::new(0),
+        }
+    }
 }
 
 struct TransactionContext<'a> {
@@ -65,8 +83,10 @@ pub async fn run(config: DriverConfig) -> Result<()> {
 
     let abort = Arc::new(AtomicBool::new(false));
     let start_logged = Arc::new(AtomicBool::new(false));
+    let startup_progress = Arc::new(StartupProgress::new());
     let request_ids = Arc::new(AtomicU64::new(1));
     let mut tasks = JoinSet::new();
+    let terminal_count = u64::from(config.terminals());
 
     log::info!(
         "driver {} ready for run {}: warehouses {}..={} terminals={} warmup_start_ms={} measure_start_ms={} measure_end_ms={}",
@@ -79,6 +99,55 @@ pub async fn run(config: DriverConfig) -> Result<()> {
         schedule.measure_start_ms,
         schedule.measure_end_ms
     );
+    log::info!(
+        "driver {} launching {} terminal task(s); this run will attempt {} primary database connections and {} metrics connections",
+        config.driver_id,
+        terminal_count,
+        terminal_count,
+        terminal_count
+    );
+
+    {
+        let reporter_driver_id = config.driver_id.clone();
+        let reporter_run_id = run_id.clone();
+        let reporter_start_logged = start_logged.clone();
+        let reporter_abort = abort.clone();
+        let reporter_progress = startup_progress.clone();
+        tokio::spawn(async move {
+            loop {
+                if reporter_abort.load(Ordering::Relaxed) || reporter_start_logged.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                if reporter_abort.load(Ordering::Relaxed) || reporter_start_logged.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                let primary_started = reporter_progress.primary_connect_started.load(Ordering::Relaxed);
+                let primary_ready = reporter_progress.primary_connect_ready.load(Ordering::Relaxed);
+                let metrics_started = reporter_progress.metrics_connect_started.load(Ordering::Relaxed);
+                let metrics_ready = reporter_progress.metrics_connect_ready.load(Ordering::Relaxed);
+                log::info!(
+                    "driver {} startup progress for run {}: primary_connect_started={}/{} primary_connected={}/{} metrics_connect_started={}/{} metrics_connected={}/{}",
+                    reporter_driver_id,
+                    reporter_run_id,
+                    primary_started,
+                    terminal_count,
+                    primary_ready,
+                    terminal_count,
+                    metrics_started,
+                    terminal_count,
+                    metrics_ready,
+                    terminal_count
+                );
+
+                if metrics_ready >= terminal_count {
+                    break;
+                }
+            }
+        });
+    }
 
     for warehouse_id in config.warehouse_start..=config.warehouse_end() {
         let database_identity = topology.identity_for_warehouse(warehouse_id)?;
@@ -101,6 +170,7 @@ pub async fn run(config: DriverConfig) -> Result<()> {
                 metrics: terminal_metrics,
                 abort: terminal_abort,
                 start_logged: terminal_start_logged,
+                startup_progress: startup_progress.clone(),
                 request_ids: terminal_request_ids,
                 schedule: terminal_schedule,
                 run_constants: terminal_constants,
@@ -119,13 +189,26 @@ pub async fn run(config: DriverConfig) -> Result<()> {
             Ok(Err(err)) => {
                 abort.store(true, Ordering::Relaxed);
                 if first_error.is_none() {
+                    log::error!(
+                        "driver {} aborting run {} after terminal task error: {err:#}",
+                        config.driver_id,
+                        run_id
+                    );
                     first_error = Some(err);
+                    tasks.abort_all();
                 }
             }
             Err(err) => {
                 abort.store(true, Ordering::Relaxed);
                 if first_error.is_none() {
-                    first_error = Some(anyhow!("terminal task failed: {}", err));
+                    let err = anyhow!("terminal task failed: {}", err);
+                    log::error!(
+                        "driver {} aborting run {} after terminal task failure: {err:#}",
+                        config.driver_id,
+                        run_id
+                    );
+                    first_error = Some(err);
+                    tasks.abort_all();
                 }
             }
         }
@@ -165,6 +248,7 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
         metrics,
         abort,
         start_logged,
+        startup_progress,
         request_ids,
         schedule,
         run_constants,
@@ -172,8 +256,12 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
         database_identity,
         seed,
     } = runtime;
+    startup_progress.primary_connect_started.fetch_add(1, Ordering::Relaxed);
     let client = ModuleClient::connect_async(&config.connection, database_identity).await?;
+    startup_progress.primary_connect_ready.fetch_add(1, Ordering::Relaxed);
+    startup_progress.metrics_connect_started.fetch_add(1, Ordering::Relaxed);
     let metrics_client = connect_metrics_module_async(&config.connection).await?;
+    startup_progress.metrics_connect_ready.fetch_add(1, Ordering::Relaxed);
     log::info!(
         "driver {} terminal {} connected to {} for warehouse {} district {}",
         config.driver_id,
@@ -582,8 +670,7 @@ async fn resolve_driver_setup(config: DriverConfig) -> Result<(DriverConfig, Run
         let response = match response {
             Some(response) => response,
             None => {
-                return Err(last_error
-                    .unwrap_or_else(|| anyhow!("driver registration failed without an error")));
+                return Err(last_error.unwrap_or_else(|| anyhow!("driver registration failed without an error")));
             }
         };
         if !response.accepted {

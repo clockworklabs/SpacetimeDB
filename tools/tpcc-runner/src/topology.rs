@@ -43,11 +43,11 @@ impl DatabaseTopology {
             .get(usize::try_from(database_number).expect("u32 fits usize"))
             .copied()
             .ok_or_else(|| {
-            anyhow::anyhow!(
-                "missing database identity for database {}",
-                self.database_name(database_number)
-            )
-        })
+                anyhow::anyhow!(
+                    "missing database identity for database {}",
+                    self.database_name(database_number)
+                )
+            })
     }
 
     pub fn database_number_for_warehouse(&self, warehouse_id: u32) -> Result<u32> {
