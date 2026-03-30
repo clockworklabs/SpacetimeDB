@@ -1038,7 +1038,7 @@ impl InstanceEnv {
                     .bytes()
                     .await
                     .map_err(|e| NodesError::HttpError(e.to_string()))?;
-                Ok((status, body))
+                Ok::<_, NodesError>((status, body))
             }
             .await;
 
@@ -1093,6 +1093,7 @@ impl InstanceEnv {
             let mut req = client
                 .post(&url)
                 .header(http::header::CONTENT_TYPE, "application/octet-stream")
+                .header("X-Coordinator-Identity", caller_identity.to_hex().to_string())
                 .body(args);
             if let Some(token) = auth_token {
                 req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
