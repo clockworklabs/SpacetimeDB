@@ -17,13 +17,11 @@ The commitlog serves several purposes:
 - **Replication.** The log is streamed to replicas in the same binary format used on disk, requiring no re-encoding.
 - **Historical reconstruction.** Because the log is never compacted, any past database state can be reconstructed by replaying a prefix of the log up to a given transaction offset.
 
-The commitlog replaced an earlier design that stored large payloads in a separate object database (backed by sled). That approach was removed because it could not guarantee write atomicity with the log, suffered from poor read performance during replay, and complicated replication.
-
 ## Terminology
 
 | Term | Meaning |
 |------|---------|
-| **Commitlog** | The full sequence of committed transaction data, stored across one or more segment files. Written without a space. |
+| **Commitlog** | The full sequence of committed transaction data, stored across one or more segment files. |
 | **Commit** | A single entry in the commitlog. Contains one or more transaction records. |
 | **Segment** | A single file within the commitlog. Segments are created when the current file approaches a configurable maximum size. |
 | **Transaction offset** | A monotonically increasing, gapless sequence number assigned to each transaction record. Starts at zero. |
@@ -42,6 +40,8 @@ The commitlog is stored as a sequence of files called segments. Each segment is 
 A new segment is created when the encoded size of the next commit would exceed a configurable maximum segment size. The default maximum is 1 GiB (1,073,741,824 bytes).
 
 Because segment boundaries are determined by commit size, segments may be slightly smaller or larger than the maximum. A commit whose encoded size exceeds the maximum is written to a dedicated segment.
+
+Segments may be compressed using the [zstd seekable format](https://github.com/facebook/zstd/tree/dev/contrib/seekable_format). This compression format preserves random access, so the offset index remains valid after compression.
 
 ### Segment Header
 
@@ -92,7 +92,9 @@ The commitlog writer must reject any attempt to set the epoch to a value smaller
 
 ## Transaction Records
 
-The `records` payload of a commit contains `n` transaction records. Each record is called `txdata` and has the following structure:
+The `records` payload of a commit contains `n` transaction records. The payload is defined and interpreted by the datastore (not the commitlog itself).
+
+Each committed datastore transaction is encoded into a record called `txdata` with the following structure:
 
 ```
 ┌───────┬──────────┬─────────┬───────────┐
