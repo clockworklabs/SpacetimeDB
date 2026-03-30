@@ -739,8 +739,16 @@ public abstract record BaseTypeDeclaration<M>
             // This avoids EqualityComparer<T>.Default which allocates and causes issues with NativeAOT-LLVM.
             // The pattern mirrors GetHashCode generation - use statements, not expressions.
             var declEqName = (MemberDeclaration decl) => $"___eq{decl.Name}";
-            var equalsStatements = string.Join("\n        ", bsatnDecls.Select(decl =>
-                decl.Type.EqualsStatement($"this.{decl.Identifier}", $"that.{decl.Identifier}", declEqName(decl))));
+            var equalsStatements = string.Join(
+                "\n        ",
+                bsatnDecls.Select(decl =>
+                    decl.Type.EqualsStatement(
+                        $"this.{decl.Identifier}",
+                        $"that.{decl.Identifier}",
+                        declEqName(decl)
+                    )
+                )
+            );
             var equalsReturn = JoinOrValue(
                 " && ",
                 bsatnDecls.Select(declEqName),
@@ -750,40 +758,42 @@ public abstract record BaseTypeDeclaration<M>
             extensions.Contents.Append(
                 $$"""
 
-            #nullable enable
-                public bool Equals({{fullNameMaybeRef}} that)
-                {
-                    {{(Scope.IsStruct ? "" : "if (((object?)that) == null) { return false; }\n        ")}}
-                    {{equalsStatements}}
-                    return {{equalsReturn}};
-                }
+                #nullable enable
+                    public bool Equals({{fullNameMaybeRef}} that)
+                    {
+                        {{(
+                    Scope.IsStruct ? "" : "if (((object?)that) == null) { return false; }\n        "
+                )}}
+                        {{equalsStatements}}
+                        return {{equalsReturn}};
+                    }
 
-                public override bool Equals(object? that) {
-                    if (that == null) {
-                        return false;
+                    public override bool Equals(object? that) {
+                        if (that == null) {
+                            return false;
+                        }
+                        var that_ = that as {{FullName}}{{(Scope.IsStruct ? "?" : "")}};
+                        if (((object?)that_) == null) {
+                            return false;
+                        }
+                        return Equals(that_);
                     }
-                    var that_ = that as {{FullName}}{{(Scope.IsStruct ? "?" : "")}};
-                    if (((object?)that_) == null) {
-                        return false;
-                    }
-                    return Equals(that_);
-                }
 
-                public static bool operator == ({{fullNameMaybeRef}} this_, {{fullNameMaybeRef}} that) {
-                    if (((object?)this_) == null || ((object?)that) == null) {
-                        return object.Equals(this_, that);
+                    public static bool operator == ({{fullNameMaybeRef}} this_, {{fullNameMaybeRef}} that) {
+                        if (((object?)this_) == null || ((object?)that) == null) {
+                            return object.Equals(this_, that);
+                        }
+                        return this_.Equals(that);
                     }
-                    return this_.Equals(that);
-                }
 
-                public static bool operator != ({{fullNameMaybeRef}} this_, {{fullNameMaybeRef}} that) {
-                    if (((object?)this_) == null || ((object?)that) == null) {
-                        return !object.Equals(this_, that);
+                    public static bool operator != ({{fullNameMaybeRef}} this_, {{fullNameMaybeRef}} that) {
+                        if (((object?)this_) == null || ((object?)that) == null) {
+                            return !object.Equals(this_, that);
+                        }
+                        return !this_.Equals(that);
                     }
-                    return !this_.Equals(that);
-                }
-            #nullable restore
-            """
+                #nullable restore
+                """
             );
         }
 
