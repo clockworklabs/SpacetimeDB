@@ -7,6 +7,9 @@ import { schema, table, t } from 'spacetimedb/server';
 import { ScheduleAt } from 'spacetimedb';        // for scheduled tables
 ```
 
+⚠️ CRITICAL: The `name` field in table() MUST be snake_case (e.g. 'order_detail', NOT 'orderDetail').
+This is the single most common mistake. The JS variable can be camelCase, the `name` string cannot.
+
 ## Tables
 
 `table(OPTIONS, COLUMNS)` — two arguments:
@@ -115,6 +118,8 @@ const posts = [...ctx.db.post.authorId.filter(authorId)];
 
 // Iterate all rows
 for (const row of ctx.db.user.iter()) { }
+const allUsers = [...ctx.db.user.iter()]; // spread to Array for .sort(), .filter(), .forEach()
+// Note: iter() and filter() return IteratorObject, NOT Array. Use [...spread] first.
 
 // Update (spread + override)
 const existing = ctx.db.user.id.find(userId);
@@ -128,6 +133,7 @@ ctx.db.user.id.delete(userId);
 
 **Prefer inline `.index('btree')` on the column** — it's simpler and the accessor
 matches the column name. Only use named indexes in `indexes: [...]` for multi-column indexes.
+Do NOT use both inline `.index('btree')` AND a named index on the same column — this causes a duplicate name error.
 
 ```typescript
 // Inline btree index (preferred for single-column):
@@ -175,6 +181,10 @@ export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
 
 `init` uses `spacetimedb.init()`, NOT `spacetimedb.reducer()`.
 `clientConnected`/`clientDisconnected` must be `export const`.
+
+The EXPORT NAME determines the reducer name visible in the schema:
+✓ `export const onConnect = spacetimedb.clientConnected(...)` → reducer "on_connect"
+✗ `export const clientConnected = spacetimedb.clientConnected(...)` → WRONG reducer name
 
 ## Authentication
 

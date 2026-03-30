@@ -3,15 +3,16 @@ Write a SpacetimeDB backend module in TypeScript that demonstrates looking up ro
 TABLES
 - user
   - Fields:
-    - id: number (i32, primary key)
+    - id: number (u64, primary key, autoInc)
     - name: string
     - age: number (i32)
     - active: boolean
 
 - result
   - Fields:
-    - id: number (i32, primary key)
+    - id: number (u64, primary key)
     - name: string
 
 REDUCERS
+- insertUser: given name:string, age:number, active:boolean, insert a new row into user (id is auto-assigned)
 - lookupUserName: given id:number, find user by id, insert projection (id, name) into result table

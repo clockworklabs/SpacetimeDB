@@ -80,7 +80,10 @@ impl LlmProvider for RouterProvider {
                 .openrouter
                 .as_ref()
                 .context("OpenRouter client not configured (set OPENROUTER_API_KEY)")?;
-            return cli.generate(route.api_model, prompt).await;
+            let model = route
+                .openrouter_model
+                .unwrap_or(route.api_model);
+            return cli.generate(model, prompt).await;
         }
 
         // Try direct client first, fall back to OpenRouter if available.

@@ -1,5 +1,5 @@
 use crate::eval::defaults::{
-    default_schema_parity_scorers, make_reducer_data_parity_scorer, make_sql_exec_both_scorer,
+    default_schema_parity_scorers, make_reducer_call_both_scorer, make_reducer_data_parity_scorer,
 };
 use crate::eval::{casing_for_lang, ident, table_name, BenchmarkSpec, ReducerDataParityConfig, SqlBuilder};
 use serde_json::Value;
@@ -11,27 +11,22 @@ pub fn spec() -> BenchmarkSpec {
 
         let casing = casing_for_lang(lang);
         let sb = SqlBuilder::new(casing);
-        let reducer_name = ident("LookupUserName", crate::eval::Casing::Snake);
-        let user_table = table_name("user", lang);
+        let insert_reducer = ident("InsertUser", crate::eval::Casing::Snake);
+        let lookup_reducer = ident("LookupUserName", crate::eval::Casing::Snake);
         let result_table = table_name("result", lang);
 
-        // Seed a user row in both DBs so the lookup has something to find
-        let seed_users = sb.insert_values(
-            &user_table,
-            &["id", "name", "age", "active"],
-            &["1", "'Alice'", "30", "true"],
-        );
-
-        v.push(make_sql_exec_both_scorer(
+        // Seed a user row via reducer on both DBs (auto-inc assigns id=1)
+        v.push(make_reducer_call_both_scorer(
             host_url,
             file!(),
             route_tag,
-            &seed_users,
-            "seed_user_row",
+            &insert_reducer,
+            vec![Value::from("Alice"), Value::from(30), Value::from(true)],
+            "seed_user_via_reducer",
             Duration::from_secs(10),
         ));
 
-        // After calling the reducer, the projection should be present in results
+        // After calling the lookup reducer, the projection should be present in results
         let select_result = sb.select_by_id(&result_table, &["id", "name"], "id", 1);
 
         v.push(make_reducer_data_parity_scorer(
@@ -39,7 +34,7 @@ pub fn spec() -> BenchmarkSpec {
             ReducerDataParityConfig {
                 src_file: file!(),
                 route_tag,
-                reducer: reducer_name.into(),
+                reducer: lookup_reducer.into(),
                 args: vec![Value::from(1)],
                 select_query: select_result.clone(),
                 id_str: "index_lookup_projection_parity",

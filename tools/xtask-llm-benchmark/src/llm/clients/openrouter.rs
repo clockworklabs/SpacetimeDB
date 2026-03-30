@@ -104,6 +104,10 @@ impl OpenRouterClient {
             .with_context(|| format!("OpenRouter POST {}", url))?;
 
         let resp: OACompatResp = serde_json::from_str(&body).context("parse OpenRouter response")?;
+        // Check for upstream provider errors returned by OpenRouter.
+        if let Some(err) = resp.error {
+            anyhow::bail!("OpenRouter upstream error (model={}): {}", model, err.message);
+        }
         let input_tokens = resp.usage.as_ref().and_then(|u| u.prompt_tokens);
         let output_tokens = resp.usage.as_ref().and_then(|u| u.completion_tokens);
         let text = resp
@@ -168,9 +172,17 @@ pub fn openrouter_ctx_limit_tokens(model: &str) -> usize {
 
 #[derive(Debug, Deserialize)]
 struct OACompatResp {
+    #[serde(default)]
     choices: Vec<Choice>,
     #[serde(default)]
     usage: Option<UsageInfo>,
+    /// OpenRouter returns an `error` object when the upstream provider fails.
+    #[serde(default)]
+    error: Option<OAError>,
+}
+#[derive(Debug, Deserialize)]
+struct OAError {
+    message: String,
 }
 #[derive(Debug, Deserialize)]
 struct Choice {

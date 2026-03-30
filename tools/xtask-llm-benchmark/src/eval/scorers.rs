@@ -600,3 +600,50 @@ impl Scorer for SqlExecBothScorer {
         }
     }
 }
+
+pub struct ReducerCallBothScorer {
+    pub server: String,
+    pub golden_db: String,
+    pub llm_db: String,
+    pub reducer: String,
+    pub args: Vec<Value>,
+    pub timeout: Duration,
+    pub id_str: &'static str,
+}
+
+impl Scorer for ReducerCallBothScorer {
+    fn id(&self) -> &'static str {
+        self.id_str
+    }
+
+    fn score(&self, _llm_output: &str) -> ScoreDetails {
+        if debug_llm_verbose() {
+            eprintln!(
+                "[dbg] ReducerCallBothScorer: reducer={} args={:?} golden_db={} llm_db={} server={}",
+                self.reducer, self.args, self.golden_db, self.llm_db, self.server
+            );
+        }
+        if let Err(e) = call_reducer_json_out(&self.golden_db, &self.reducer, &self.args, Some(&self.server)) {
+            return ScoreDetails {
+                pass: false,
+                partial: 0.0,
+                notes: json!({ "phase":"call_reducer_golden", "error": e, "reducer": self.reducer }),
+            };
+        }
+        if let Err(e) = call_reducer_json_out(&self.llm_db, &self.reducer, &self.args, Some(&self.server)) {
+            return ScoreDetails {
+                pass: false,
+                partial: 0.0,
+                notes: json!({ "phase":"call_reducer_llm", "error": e, "reducer": self.reducer }),
+            };
+        }
+        if debug_llm_verbose() {
+            eprintln!("[dbg] ReducerCallBothScorer: success");
+        }
+        ScoreDetails {
+            pass: true,
+            partial: 1.0,
+            notes: json!({ "reducer": self.reducer, "args": self.args }),
+        }
+    }
+}

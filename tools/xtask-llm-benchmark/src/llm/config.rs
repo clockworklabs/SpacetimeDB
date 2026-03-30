@@ -37,13 +37,15 @@ fn force_vendor_from_env() -> Option<Vendor> {
 pub fn make_provider_from_env() -> Result<Arc<dyn LlmProvider>> {
     let http = HttpClient::new()?;
 
-    let openai_key = env::var("OPENAI_API_KEY").ok();
-    let anth_key = env::var("ANTHROPIC_API_KEY").ok();
-    let google_key = env::var("GOOGLE_API_KEY").ok();
-    let xai_key = env::var("XAI_API_KEY").ok();
-    let deep_key = env::var("DEEPSEEK_API_KEY").ok();
-    let meta_key = env::var("META_API_KEY").ok();
-    let openrouter_key = env::var("OPENROUTER_API_KEY").ok();
+    // Filter out empty strings so an empty env var falls through to OpenRouter.
+    let non_empty = |k: &str| env::var(k).ok().filter(|v| !v.trim().is_empty());
+    let openai_key = non_empty("OPENAI_API_KEY");
+    let anth_key = non_empty("ANTHROPIC_API_KEY");
+    let google_key = non_empty("GOOGLE_API_KEY");
+    let xai_key = non_empty("XAI_API_KEY");
+    let deep_key = non_empty("DEEPSEEK_API_KEY");
+    let meta_key = non_empty("META_API_KEY");
+    let openrouter_key = non_empty("OPENROUTER_API_KEY");
 
     // IMPORTANT: no trailing /v1 here; clients append their own versioned paths.
     let openai_base = env::var("OPENAI_BASE_URL").unwrap_or_else(|_| "https://api.openai.com".to_string());

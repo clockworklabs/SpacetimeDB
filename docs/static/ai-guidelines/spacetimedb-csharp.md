@@ -88,6 +88,12 @@ public partial struct TickTimer
 | `ScheduleAt` | Schedule metadata |
 | `T?` (nullable) | Optional field |
 
+Timestamp arithmetic — use `TimeDuration`:
+```csharp
+ctx.Timestamp + new TimeDuration { Microseconds = 60_000_000 }  // add 60 seconds
+ctx.Timestamp.MicrosecondsSinceUnixEpoch  // raw long value
+```
+
 ## Constraints and Indexes
 
 ```csharp
@@ -107,7 +113,7 @@ Named single-column index:
 [SpacetimeDB.Index.BTree(Accessor = "by_name", Columns = [nameof(Name)])]
 ```
 
-Multi-column index (on table attribute):
+Multi-column index (on table attribute — MUST include Accessor):
 ```csharp
 [Table(Accessor = "Log")]
 [SpacetimeDB.Index.BTree(Accessor = "by_user_day", Columns = new[] { nameof(UserId), nameof(Day) })]
@@ -312,6 +318,7 @@ public static List<Announcement> ActiveAnnouncements(AnonymousViewContext ctx)
 
 Per-user view:
 ```csharp
+// Return types: T? for single, List<T> for multiple. Never IEnumerable<T>.
 [SpacetimeDB.View(Accessor = "MyProfile", Public = true)]
 public static Profile? MyProfile(ViewContext ctx)
 {

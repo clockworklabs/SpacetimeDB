@@ -1,14 +1,15 @@
-﻿Write a SpacetimeDB backend module in Rust that defines one table and a reducer that updates a row.
+Write a SpacetimeDB backend module in Rust that defines one table and two reducers: one that inserts a row and one that updates a row.
 
 TABLE
 - user
   - Struct: User
   - Fields:
-    - id: i32 (primary key)
+    - id: u64 (primary key, auto_inc)
     - name: String
     - age: i32
     - active: bool
 
 REDUCERS
-- update_user: given id:i32, name:String, age:i32, active:bool, update the row in user with id=id to exactly these values
+- insert_user: given name:String, age:i32, active:bool, insert a new row (id is auto-assigned)
+- update_user: given id:u64, name:String, age:i32, active:bool, update the row in user with id=id to exactly these values
   - (id=id, name=name, age=age, active=active)
