@@ -23,6 +23,7 @@ use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use bytes::Bytes;
 use bytestring::ByteString;
+use std::time::Duration;
 use derive_more::From;
 use futures::prelude::*;
 use prometheus::{Histogram, IntCounter, IntGauge};
@@ -35,6 +36,7 @@ use spacetimedb_lib::{bsatn, Identity, TimeDuration, Timestamp};
 use tokio::sync::mpsc::error::{SendError, TrySendError};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
+use tokio::time::sleep;
 use tracing::{trace, warn};
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
@@ -870,10 +872,12 @@ impl ClientConnection {
         timer: Instant,
         _flags: ws_v2::CallReducerFlags,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        const MAX_WOUNDED_RETRIES: usize = 3;
+        const MAX_WOUNDED_RETRIES: usize = 10;
+        const MAX_BACKOFF: Duration = Duration::from_millis(100);
 
         let module = self.module();
         let mut tx_id = module.replica_ctx().mint_global_tx_id(Timestamp::now());
+        let mut wound_backoff = Duration::from_millis(10);
 
         for attempt in 0..=MAX_WOUNDED_RETRIES {
             let result = module
@@ -890,8 +894,15 @@ impl ClientConnection {
                 .await?;
 
             if !matches!(result.outcome, ReducerOutcome::Wounded(_)) || attempt == MAX_WOUNDED_RETRIES {
+                if attempt == MAX_WOUNDED_RETRIES && matches!(result.outcome, ReducerOutcome::Wounded(_)) {
+                    log::warn!("Reducer call was wounded on final attempt. Returning error to client.");
+                }
                 return Ok(result);
             }
+            
+            log::info!("Reducer call was wounded on attempt {attempt}, retrying after {wound_backoff:?} with new transaction ID {tx_id}");
+            sleep(wound_backoff).await;
+            wound_backoff = wound_backoff.mul_f32(2.0).min(MAX_BACKOFF);
 
             tx_id = tx_id.next_attempt();
         }
