@@ -2733,6 +2733,46 @@ impl MutTxId {
             .insert_row_and_consume_offset(ST_2PC_STATE_ID, &schema, &row)
     }
 
+    /// The tx_offset that will be assigned to this transaction when it commits.
+    ///
+    /// Safe to call while the write lock is held (reads through the existing write guard,
+    /// does NOT acquire a separate read lock).
+    pub fn next_tx_offset(&self) -> u64 {
+        self.committed_state_write_lock.next_tx_offset
+    }
+
+    /// Insert a `st_2pc_state` row into the transaction's write set (pipelined 2PC).
+    ///
+    /// Unlike [`flush_2pc_prepare_marker`] which writes directly to committed state,
+    /// this inserts through the normal tx path so the marker is committed atomically
+    /// with the reducer's data changes.
+    #[allow(clippy::too_many_arguments)]
+    pub fn insert_st_2pc_state(
+        &mut self,
+        prepare_id: &str,
+        coordinator_identity_hex: String,
+        reducer_name: String,
+        args_bsatn: Vec<u8>,
+        caller_identity_hex: String,
+        caller_connection_id_hex: String,
+        timestamp_micros: i64,
+    ) -> Result<()> {
+        let row = &St2pcStateRow {
+            prepare_id: prepare_id.to_owned(),
+            coordinator_identity_hex,
+            reducer_name,
+            args_bsatn,
+            caller_identity_hex,
+            caller_connection_id_hex,
+            timestamp_micros,
+        };
+        self.insert_via_serialize_bsatn(ST_2PC_STATE_ID, row)
+            .map(|_| ())
+            .inspect_err(|e| {
+                log::error!("insert_st_2pc_state: failed for prepare_id ({prepare_id}): {e}");
+            })
+    }
+
     /// Delete the `st_2pc_state` row for the given `prepare_id`, called on COMMIT or ABORT.
     pub fn delete_st_2pc_state(&mut self, prepare_id: &str) -> Result<()> {
         if let Err(e) = self.delete_col_eq(

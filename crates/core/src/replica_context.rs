@@ -3,6 +3,7 @@ use spacetimedb_commitlog::SizeOnDisk;
 use super::database_logger::DatabaseLogger;
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
+use crate::host::prepared_tx::PreparedTransactions;
 use crate::host::reducer_router::ReducerCallRouter;
 use crate::messages::control_db::Database;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
@@ -64,6 +65,9 @@ pub struct ReplicaContext {
     ///
     /// `None` in contexts where no auth token is configured (e.g. unit tests).
     pub call_reducer_auth_token: Option<String>,
+    /// 2PC prepared transactions registry. Shared between actor code and HTTP handlers
+    /// for both participant (decision channels) and coordinator (persist waiters) roles.
+    pub prepared_txs: PreparedTransactions,
 }
 
 impl ReplicaContext {

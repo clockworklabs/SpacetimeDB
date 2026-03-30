@@ -891,8 +891,6 @@ pub struct ModuleHost {
     /// When this is true, most operations will fail with [`NoSuchModule`].
     closed: Arc<AtomicBool>,
 
-    /// Registry of prepared (but not yet finalized) 2PC transactions.
-    prepared_txs: super::prepared_tx::PreparedTransactions,
 }
 
 impl fmt::Debug for ModuleHost {
@@ -909,7 +907,6 @@ pub struct WeakModuleHost {
     inner: Weak<ModuleHostInner>,
     on_panic: Weak<dyn Fn() + Send + Sync + 'static>,
     closed: Weak<AtomicBool>,
-    prepared_txs: super::prepared_tx::PreparedTransactions,
 }
 
 #[derive(Debug)]
@@ -1097,7 +1094,6 @@ impl ModuleHost {
             inner,
             on_panic,
             closed: Arc::new(AtomicBool::new(false)),
-            prepared_txs: super::prepared_tx::PreparedTransactions::new(),
         }
     }
 
@@ -1799,13 +1795,16 @@ impl ModuleHost {
 
         // Channel for signalling PREPARED result back to this task.
         let (prepared_tx, prepared_rx) = tokio::sync::oneshot::channel::<(ReducerCallResult, Option<Bytes>)>();
-        // Channel for sending the COMMIT/ABORT decision to the executor thread.
+        // Channel for sending the Round 1 COMMIT/ABORT decision to the executor thread.
         let (decision_tx, decision_rx) = std::sync::mpsc::channel::<bool>();
+        // Channel for sending the Round 2 COMMIT_PERSIST decision to the executor thread.
+        let (commit_persist_tx, commit_persist_rx) = std::sync::mpsc::channel::<bool>();
 
-        self.prepared_txs.insert(
+        self.replica_ctx().prepared_txs.insert(
             prepare_id.clone(),
             super::prepared_tx::PreparedTxInfo {
                 decision_sender: decision_tx,
+                commit_persist_sender: commit_persist_tx,
             },
         );
 
@@ -1820,13 +1819,13 @@ impl ModuleHost {
             let _ = this
                 .call(
                     &reducer_name_owned,
-                    (params, prepare_id_clone, coordinator_identity, prepared_tx, decision_rx),
-                    async |(p, pid, cid, ptx, drx), inst| {
-                        inst.call_reducer_prepare_and_hold(p, pid, cid, ptx, drx);
+                    (params, prepare_id_clone, coordinator_identity, prepared_tx, decision_rx, commit_persist_rx),
+                    async |(p, pid, cid, ptx, drx, cprx), inst| {
+                        inst.call_reducer_prepare_and_hold(p, pid, cid, ptx, drx, cprx);
                         Ok::<(), ReducerCallError>(())
                     },
                     // JS modules: no 2PC support yet.
-                    async |(p, _pid, _cid, ptx, _drx), inst| {
+                    async |(p, _pid, _cid, ptx, _drx, _cprx), inst| {
                         let (res, rv) = inst.call_reducer(p).await.map(|r| (r, None)).unwrap_or_else(|e| {
                             log::error!("prepare_reducer JS fallback: {e}");
                             (
@@ -1852,7 +1851,7 @@ impl ModuleHost {
                     Ok((prepare_id, result, return_value))
                 } else {
                     // Reducer failed — remove the entry we registered (no hold in progress).
-                    self.prepared_txs.remove(&prepare_id);
+                    self.replica_ctx().prepared_txs.remove(&prepare_id);
                     Ok((String::new(), result, return_value))
                 }
             }
@@ -1860,26 +1859,36 @@ impl ModuleHost {
         }
     }
 
-    /// Finalize a prepared transaction as COMMIT.
+    /// Finalize a prepared transaction as Round 1 COMMIT (pipelined 2PC).
+    ///
+    /// Sends the COMMIT decision but keeps the entry for Round 2 (COMMIT_PERSIST).
     pub fn commit_prepared(&self, prepare_id: &str) -> Result<(), String> {
-        let info = self
-            .prepared_txs
-            .remove(prepare_id)
-            .ok_or_else(|| format!("no such prepared transaction: {prepare_id}"))?;
-        // Unblock the executor thread to commit.
-        let _ = info.decision_sender.send(true);
-        Ok(())
+        self.replica_ctx().prepared_txs.send_decision(prepare_id, true)
     }
 
-    /// Abort a prepared transaction.
+    /// Abort a prepared transaction (Round 1).
+    /// Sends ABORT and removes the entry (no Round 2 needed).
     pub fn abort_prepared(&self, prepare_id: &str) -> Result<(), String> {
         let info = self
+            .replica_ctx()
             .prepared_txs
             .remove(prepare_id)
             .ok_or_else(|| format!("no such prepared transaction: {prepare_id}"))?;
         // Unblock the executor thread to abort.
         let _ = info.decision_sender.send(false);
         Ok(())
+    }
+
+    /// Finalize a prepared transaction as Round 2 COMMIT_PERSIST (pipelined 2PC).
+    ///
+    /// Sends the COMMIT_PERSIST signal and removes the entry.
+    pub fn commit_persist_prepared(&self, prepare_id: &str) -> Result<(), String> {
+        self.replica_ctx().prepared_txs.send_commit_persist(prepare_id)
+    }
+
+    /// Signal that a participant's PREPARED_TO_PERSIST has arrived (coordinator side).
+    pub fn signal_persist_prepared(&self, prepare_id: &str) -> Result<(), String> {
+        self.replica_ctx().prepared_txs.signal_persist_prepared(prepare_id)
     }
 
     /// Delete a coordinator log entry for `prepare_id`.
@@ -1975,12 +1984,15 @@ impl ModuleHost {
         });
     }
 
-    /// Crash recovery for the **participant** role.
+    /// Crash recovery for the **participant** role (pipelined 2PC).
     ///
-    /// Scans `st_2pc_state` for any prepared-but-not-decided transactions, re-runs
-    /// each reducer to reacquire the write lock, then polls the coordinator for a decision.
+    /// In pipelined 2PC, only the PREPARE PERSIST entry (st_2pc_state with reducer
+    /// inputs) is on disk. The reducer's actual row changes were deferred by the
+    /// durability barrier and never reached the commitlog.
     ///
-    /// **B never aborts on its own** — only the coordinator's response yields ABORT.
+    /// For each PREPARE marker: poll the coordinator for a decision.
+    ///   - If COMMIT: re-run the reducer from stored inputs, commit + broadcast.
+    ///   - If ABORT: delete the marker, done.
     pub fn recover_2pc_participant(&self) {
         let db = self.relational_db().clone();
         let rows = match db.pending_2pc_prepares() {
@@ -2020,7 +2032,9 @@ impl ModuleHost {
                     .unwrap_or(ConnectionId::ZERO);
                 let args = FunctionArgs::Bsatn(row.args_bsatn.clone().into());
 
-                // Step 1: Re-run the reducer to reacquire the write lock.
+                // Step 1: Re-run the reducer to reconstruct the row changes.
+                // The PREPARE PERSIST only stored the reducer inputs, not the row
+                // mutations. We re-run to get a fresh MutTxId with the mutations.
                 let new_prepare_id = match this
                     .prepare_reducer(caller_identity, Some(caller_connection_id), &row.reducer_name, args)
                     .await
@@ -2047,7 +2061,6 @@ impl ModuleHost {
                 };
 
                 // Step 2: Poll coordinator with the ORIGINAL prepare_id until we get a decision.
-                // We do this in a separate task so the loop can proceed to the next row.
                 let this2 = this.clone();
                 let db2 = db.clone();
                 let client = this.replica_ctx().call_reducer_client.clone();
@@ -2066,10 +2079,10 @@ impl ModuleHost {
                         match decision {
                             Some(commit) => {
                                 if commit {
+                                    // Coordinator committed: send Round 1 COMMIT to the
+                                    // re-prepared reducer. The actor thread will proceed
+                                    // through Round 2 (persist, signal, wait, commit).
                                     let _ = this2.commit_prepared(&new_prepare_id);
-                                    // The actor thread (call_reducer_prepare_and_hold) will wait
-                                    // for B's commit to be durable and then send the ack-commit
-                                    // to the coordinator.  Nothing to do here.
                                 } else {
                                     let _ = this2.abort_prepared(&new_prepare_id);
                                 }
@@ -2951,7 +2964,6 @@ impl ModuleHost {
             inner: Arc::downgrade(&self.inner),
             on_panic: Arc::downgrade(&self.on_panic),
             closed: Arc::downgrade(&self.closed),
-            prepared_txs: self.prepared_txs.clone(),
         }
     }
 
@@ -2996,7 +3008,6 @@ impl WeakModuleHost {
             inner,
             on_panic,
             closed,
-            prepared_txs: self.prepared_txs.clone(),
         })
     }
 }

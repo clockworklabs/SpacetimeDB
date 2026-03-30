@@ -727,6 +727,7 @@ async fn make_replica_ctx(
         call_reducer_client,
         call_reducer_router,
         call_reducer_auth_token,
+        prepared_txs: crate::host::prepared_tx::PreparedTransactions::new(),
     })
 }
 
