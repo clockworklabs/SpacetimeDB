@@ -12,8 +12,8 @@ use std::{env, fs};
 use crate::common_args::ClearMode;
 use crate::config::Config;
 use crate::spacetime_config::{
-    find_and_load_with_env, find_and_load_with_env_from, CommandConfig, CommandSchema, CommandSchemaBuilder, FlatTarget, Key, LoadedConfig,
-    SpacetimeConfig,
+    find_and_load_with_env, find_and_load_with_env_from, CommandConfig, CommandSchema, CommandSchemaBuilder, FlatTarget,
+    Key, LoadedConfig, SpacetimeConfig,
 };
 use crate::util::{add_auth_header_opt, get_auth_header, strip_verbatim_prefix, AuthHeader, ResponseExt};
 use crate::util::{decode_identity, y_or_n};
@@ -308,14 +308,14 @@ pub async fn exec_with_options(
     } else {
         // First, try to load config from current directory
         owned_loaded = find_and_load_with_env(env)?;
-        
+
         // If no config found and --module-path is specified, try loading from module path
         if owned_loaded.is_none() && args.contains_id("module_path") {
             if let Some(module_path) = args.get_one::<PathBuf>("module_path") {
                 owned_loaded = find_and_load_with_env_from(env, module_path.clone())?;
             }
         }
-        
+
         owned_loaded.as_ref().inspect(|loaded| {
             if !quiet_config {
                 for path in &loaded.loaded_files {
