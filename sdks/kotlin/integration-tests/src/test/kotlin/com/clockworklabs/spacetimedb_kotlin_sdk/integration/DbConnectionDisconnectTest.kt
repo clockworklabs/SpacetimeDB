@@ -64,8 +64,7 @@ class DbConnectionDisconnectTest {
         var threw = false
         try {
             withTimeout(2000) {
-                @Suppress("UNUSED_VARIABLE")
-                val result = client.conn.oneOffQuery("SELECT * FROM user")
+                client.conn.oneOffQuery("SELECT * FROM user")
             }
         } catch (_: TimeoutCancellationException) {
             threw = true

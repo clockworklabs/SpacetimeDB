@@ -76,7 +76,6 @@ class GeneratedTypeTest {
     fun `User hashCode differs for different values`() {
         val a = User(identity1, "Alice", true)
         val b = User(identity2, "Bob", false)
-        // Not guaranteed but extremely likely for different values
         assertNotEquals(a.hashCode(), b.hashCode())
     }
 

@@ -60,9 +60,7 @@ class StatsTest {
 
         val before = client.conn.stats.oneOffRequestTracker.sampleCount
 
-        // Use suspend variant — no flaky delay needed
-        @Suppress("UNUSED_VARIABLE")
-        val result = client.conn.oneOffQuery("SELECT * FROM user")
+        client.conn.oneOffQuery("SELECT * FROM user")
 
         val after = client.conn.stats.oneOffRequestTracker.sampleCount
         assertTrue(after > before, "oneOffRequestTracker should increment, before=$before after=$after")
