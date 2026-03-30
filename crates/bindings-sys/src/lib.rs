@@ -896,6 +896,23 @@ pub mod raw {
             args_len: u32,
             out: *mut BytesSource,
         ) -> u16;
+
+        /// 2PC variant of `call_reducer_on_db`.
+        ///
+        /// Calls the target database's `/prepare/{reducer}` endpoint instead of `/call/{reducer}`.
+        /// On success, the runtime stores the `prepare_id` internally.
+        /// After the coordinator's reducer commits, all participants are committed.
+        /// If the coordinator's reducer fails, all participants are aborted.
+        ///
+        /// Returns and errors are identical to `call_reducer_on_db`.
+        pub fn call_reducer_on_db_2pc(
+            identity_ptr: *const u8, // exactly 32 bytes, BSATN-encoded Identity
+            reducer_ptr: *const u8,
+            reducer_len: u32,
+            args_ptr: *const u8,
+            args_len: u32,
+            out: *mut BytesSource,
+        ) -> u16;
     }
 
     /// What strategy does the database index use?
@@ -1503,6 +1520,37 @@ pub fn call_reducer_on_db(
     // on transport failure. Unlike other ABI functions, a non-zero return value here
     // does NOT indicate a generic errno — it's the HTTP status code. Only HTTP_ERROR
     // specifically signals a transport-level failure.
+    if status == Errno::HTTP_ERROR.code() {
+        Err(out)
+    } else {
+        Ok((status, out))
+    }
+}
+
+/// 2PC variant of [`call_reducer_on_db`].
+///
+/// Calls `/prepare/{reducer}` on the target database. On success, the runtime
+/// stores the prepare_id internally. After the coordinator's reducer commits,
+/// all participants are committed. On failure, all participants are aborted.
+///
+/// Returns and errors are identical to [`call_reducer_on_db`].
+#[inline]
+pub fn call_reducer_on_db_2pc(
+    identity: [u8; 32],
+    reducer_name: &str,
+    args: &[u8],
+) -> Result<(u16, raw::BytesSource), raw::BytesSource> {
+    let mut out = raw::BytesSource::INVALID;
+    let status = unsafe {
+        raw::call_reducer_on_db_2pc(
+            identity.as_ptr(),
+            reducer_name.as_ptr(),
+            reducer_name.len() as u32,
+            args.as_ptr(),
+            args.len() as u32,
+            &mut out,
+        )
+    };
     if status == Errno::HTTP_ERROR.code() {
         Err(out)
     } else {

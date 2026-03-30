@@ -88,6 +88,14 @@ pub const ST_TABLE_ACCESSOR_ID: TableId = TableId(18);
 pub const ST_INDEX_ACCESSOR_ID: TableId = TableId(19);
 /// The static ID of the table that maps canonical column names to accessor names
 pub const ST_COLUMN_ACCESSOR_ID: TableId = TableId(20);
+/// The static ID of the 2PC participant state table
+pub const ST_2PC_STATE_ID: TableId = TableId(21);
+pub(crate) const ST_2PC_STATE_NAME: &str = "st_2pc_state";
+/// The static ID of the 2PC coordinator log table.
+/// A row is written atomically with the coordinator's commit, before sending COMMIT to participants.
+/// Used on coordinator crash-recovery to retransmit COMMIT decisions.
+pub const ST_2PC_COORDINATOR_LOG_ID: TableId = TableId(22);
+pub(crate) const ST_2PC_COORDINATOR_LOG_NAME: &str = "st_2pc_coordinator_log";
 
 pub(crate) const ST_CONNECTION_CREDENTIALS_NAME: &str = "st_connection_credentials";
 pub const ST_TABLE_NAME: &str = "st_table";
@@ -205,7 +213,7 @@ pub enum SystemTable {
     st_table_accessor,
 }
 
-pub fn system_tables() -> [TableSchema; 20] {
+pub fn system_tables() -> [TableSchema; 22] {
     [
         // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
         st_table_schema(),
@@ -228,6 +236,8 @@ pub fn system_tables() -> [TableSchema; 20] {
         st_table_accessor_schema(),
         st_index_accessor_schema(),
         st_column_accessor_schema(),
+        st_2pc_state_schema(),
+        st_2pc_coordinator_log_schema(),
     ]
 }
 
@@ -276,6 +286,8 @@ pub(crate) const ST_EVENT_TABLE_IDX: usize = 16;
 pub(crate) const ST_TABLE_ACCESSOR_IDX: usize = 17;
 pub(crate) const ST_INDEX_ACCESSOR_IDX: usize = 18;
 pub(crate) const ST_COLUMN_ACCESSOR_IDX: usize = 19;
+pub(crate) const ST_2PC_STATE_IDX: usize = 20;
+pub(crate) const ST_2PC_COORDINATOR_LOG_IDX: usize = 21;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -448,6 +460,23 @@ st_fields_enum!(enum StColumnAccessorFields {
     "table_name", TableName = 0,
     "col_name", ColName = 1,
     "accessor_name", AccessorName = 2,
+});
+
+// WARNING: For a stable schema, don't change the field names and discriminants.
+st_fields_enum!(enum St2pcStateFields {
+    "prepare_id",              PrepareId            = 0,
+    "coordinator_identity_hex",CoordinatorIdentityHex = 1,
+    "reducer_name",            ReducerName          = 2,
+    "args_bsatn",              ArgsBsatn            = 3,
+    "caller_identity_hex",       CallerIdentityHex      = 4,
+    "caller_connection_id_hex",  CallerConnectionIdHex  = 5,
+    "timestamp_micros",          TimestampMicros        = 6,
+});
+
+// WARNING: For a stable schema, don't change the field names and discriminants.
+st_fields_enum!(enum St2pcCoordinatorLogFields {
+    "participant_prepare_id",    ParticipantPrepareId   = 0,
+    "participant_identity_hex",  ParticipantIdentityHex = 1,
 });
 
 /// Helper method to check that a system table has the correct fields.
@@ -668,6 +697,25 @@ fn system_module_def() -> ModuleDef {
         .with_unique_constraint(st_column_accessor_table_alias_cols)
         .with_index_no_accessor_name(btree(st_column_accessor_table_alias_cols));
 
+    let st_2pc_state_type = builder.add_type::<St2pcStateRow>();
+    builder
+        .build_table(ST_2PC_STATE_NAME, *st_2pc_state_type.as_ref().expect("should be ref"))
+        .with_type(TableType::System)
+        .with_unique_constraint(St2pcStateFields::PrepareId)
+        .with_index_no_accessor_name(btree(St2pcStateFields::PrepareId))
+        .with_access(v9::TableAccess::Private);
+
+    let st_2pc_coordinator_log_type = builder.add_type::<St2pcCoordinatorLogRow>();
+    builder
+        .build_table(
+            ST_2PC_COORDINATOR_LOG_NAME,
+            *st_2pc_coordinator_log_type.as_ref().expect("should be ref"),
+        )
+        .with_type(TableType::System)
+        .with_unique_constraint(St2pcCoordinatorLogFields::ParticipantPrepareId)
+        .with_index_no_accessor_name(btree(St2pcCoordinatorLogFields::ParticipantPrepareId))
+        .with_access(v9::TableAccess::Private);
+
     let result = builder
         .finish()
         .try_into()
@@ -693,6 +741,8 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StTableAccessorFields>(&result, ST_TABLE_ACCESSOR_NAME);
     validate_system_table::<StIndexAccessorFields>(&result, ST_INDEX_ACCESSOR_NAME);
     validate_system_table::<StColumnAccessorFields>(&result, ST_COLUMN_ACCESSOR_NAME);
+    validate_system_table::<St2pcStateFields>(&result, ST_2PC_STATE_NAME);
+    validate_system_table::<St2pcCoordinatorLogFields>(&result, ST_2PC_COORDINATOR_LOG_NAME);
 
     result
 }
@@ -741,6 +791,8 @@ lazy_static::lazy_static! {
         m.insert("st_index_accessor_accessor_name_key", ConstraintId(23));
         m.insert("st_column_accessor_table_name_col_name_key", ConstraintId(24));
         m.insert("st_column_accessor_table_name_accessor_name_key", ConstraintId(25));
+        m.insert("st_2pc_state_prepare_id_key", ConstraintId(26));
+        m.insert("st_2pc_coordinator_log_participant_prepare_id_key", ConstraintId(27));
         m
     };
 }
@@ -779,6 +831,8 @@ lazy_static::lazy_static! {
         m.insert("st_index_accessor_accessor_name_idx_btree", IndexId(27));
         m.insert("st_column_accessor_table_name_col_name_idx_btree", IndexId(28));
         m.insert("st_column_accessor_table_name_accessor_name_idx_btree", IndexId(29));
+        m.insert("st_2pc_state_prepare_id_idx_btree", IndexId(30));
+        m.insert("st_2pc_coordinator_log_participant_prepare_id_idx_btree", IndexId(31));
         m
     };
 }
@@ -892,6 +946,14 @@ fn st_client_schema() -> TableSchema {
     st_schema(ST_CLIENT_NAME, ST_CLIENT_ID)
 }
 
+fn st_2pc_state_schema() -> TableSchema {
+    st_schema(ST_2PC_STATE_NAME, ST_2PC_STATE_ID)
+}
+
+fn st_2pc_coordinator_log_schema() -> TableSchema {
+    st_schema(ST_2PC_COORDINATOR_LOG_NAME, ST_2PC_COORDINATOR_LOG_ID)
+}
+
 fn st_connection_credential_schema() -> TableSchema {
     st_schema(ST_CONNECTION_CREDENTIALS_NAME, ST_CONNECTION_CREDENTIALS_ID)
 }
@@ -968,6 +1030,8 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_TABLE_ACCESSOR_ID => Some(st_table_accessor_schema()),
         ST_INDEX_ACCESSOR_ID => Some(st_index_accessor_schema()),
         ST_COLUMN_ACCESSOR_ID => Some(st_column_accessor_schema()),
+        ST_2PC_STATE_ID => Some(st_2pc_state_schema()),
+        ST_2PC_COORDINATOR_LOG_ID => Some(st_2pc_coordinator_log_schema()),
         _ => None,
     }
 }
@@ -1855,6 +1919,77 @@ impl TryFrom<RowRef<'_>> for StColumnAccessorRow {
 
 impl From<StColumnAccessorRow> for ProductValue {
     fn from(x: StColumnAccessorRow) -> Self {
+        to_product_value(&x)
+    }
+}
+
+/// System table [ST_2PC_STATE_NAME]
+///
+/// Tracks in-flight 2PC participant transactions.
+/// A row is inserted when B enters PREPARE state and deleted on COMMIT or ABORT.
+/// On recovery, any row here indicates a pending prepared transaction that must
+/// be resumed: B re-runs the reducer with the stored args, then polls the coordinator
+/// for a COMMIT or ABORT decision (B never aborts on its own).
+#[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct St2pcStateRow {
+    /// The unique prepare ID for this transaction, generated by this participant.
+    pub prepare_id: String,
+    /// Hex-encoded identity of the coordinator database (A). Used on recovery to query
+    /// `GET /v1/database/{coordinator}/2pc/status/{prepare_id}` for the decision.
+    pub coordinator_identity_hex: String,
+    /// Name of the reducer that was prepared.
+    pub reducer_name: String,
+    /// BSATN-encoded reducer arguments. Re-used when replaying the reducer on recovery.
+    pub args_bsatn: Vec<u8>,
+    /// Hex-encoded identity of the original caller.
+    pub caller_identity_hex: String,
+    /// Hex-encoded connection ID of the original caller ("0" if none).
+    pub caller_connection_id_hex: String,
+    /// Timestamp of the original call (microseconds since Unix epoch).
+    pub timestamp_micros: i64,
+}
+
+impl TryFrom<RowRef<'_>> for St2pcStateRow {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
+        read_via_bsatn(row)
+    }
+}
+
+impl From<St2pcStateRow> for ProductValue {
+    fn from(x: St2pcStateRow) -> Self {
+        to_product_value(&x)
+    }
+}
+
+/// System table [ST_2PC_COORDINATOR_LOG_NAME]
+///
+/// Written atomically with the coordinator's COMMIT transaction (one row per participant).
+/// Used on coordinator crash-recovery to retransmit COMMIT decisions to participants.
+/// Also serves as the authoritative answer for the status endpoint:
+/// - present → COMMIT (coordinator decided COMMIT for this participant prepare_id)
+/// - absent  → ABORT  (coordinator never committed, or already cleaned up)
+///
+/// A row is deleted after the participant acknowledges the COMMIT.
+#[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct St2pcCoordinatorLogRow {
+    /// The participant's prepare_id (B's prepare_id).
+    pub participant_prepare_id: String,
+    /// Hex-encoded identity of the participant database (B).
+    pub participant_identity_hex: String,
+}
+
+impl TryFrom<RowRef<'_>> for St2pcCoordinatorLogRow {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
+        read_via_bsatn(row)
+    }
+}
+
+impl From<St2pcCoordinatorLogRow> for ProductValue {
+    fn from(x: St2pcCoordinatorLogRow) -> Self {
         to_product_value(&x)
     }
 }

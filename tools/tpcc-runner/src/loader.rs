@@ -112,7 +112,7 @@ fn run_one_database(config: &LoadConfig, database_number: u32, topology: &Databa
         });
 
         log::info!("tpcc load for database {database_identity} finished");
-        Ok(())
+       Ok(())
     })
 }
 

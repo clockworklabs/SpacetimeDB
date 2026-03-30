@@ -232,6 +232,11 @@ impl WasmInstanceEnv {
         &self.instance_env
     }
 
+    /// Return a mutable reference to the `InstanceEnv`.
+    pub fn instance_env_mut(&mut self) -> &mut InstanceEnv {
+        &mut self.instance_env
+    }
+
     /// Setup the standard bytes sink and return a handle to it for writing.
     pub fn setup_standard_bytes_sink(&mut self) -> u32 {
         self.standard_bytes_sink = Some(Vec::new());
@@ -1991,19 +1996,11 @@ impl WasmInstanceEnv {
             let args_buf = mem.deref_slice(args_ptr, args_len)?;
             let args = bytes::Bytes::copy_from_slice(args_buf);
 
-            // Reducers run inside a tokio LocalSet (single-threaded), so block_in_place
-            // is unavailable and futures::executor::block_on can't drive tokio I/O.
-            // Spawn a new OS thread and call Handle::block_on from there, which is
-            // designed to be called from synchronous (non-async) contexts.
             let handle = tokio::runtime::Handle::current();
             let fut = env
                 .instance_env
                 .call_reducer_on_db(database_identity, &reducer_name, args);
-            let result = std::thread::scope(|s| {
-                s.spawn(|| handle.block_on(fut))
-                    .join()
-                    .expect("call_reducer_on_db: worker thread panicked")
-            });
+            let result = super::super::block_on_scoped(&handle, fut);
 
             match result {
                 Ok((status, body)) => {
@@ -2014,6 +2011,71 @@ impl WasmInstanceEnv {
                 Err(NodesError::HttpError(err)) => {
                     let err_bytes = bsatn::to_vec(&err).with_context(|| {
                         format!("Failed to BSATN-serialize call_reducer_on_db transport error: {err:?}")
+                    })?;
+                    let bytes_source = WasmInstanceEnv::create_bytes_source(env, err_bytes.into())?;
+                    bytes_source.0.write_to(mem, out)?;
+                    Ok(errno::HTTP_ERROR.get() as u32)
+                }
+                Err(e) => Err(WasmError::Db(e)),
+            }
+        })
+    }
+
+    /// 2PC variant of `call_reducer_on_db`.
+    ///
+    /// Calls the remote database's `/prepare/{reducer}` endpoint instead of `/call/{reducer}`.
+    /// On success, parses the `X-Prepare-Id` header and stores the participant info in
+    /// `InstanceEnv::prepared_participants` so the runtime can commit/abort after the
+    /// coordinator's reducer completes.
+    ///
+    /// Returns the HTTP status code on success, writing the response body to `*out`
+    /// as a [`BytesSource`].
+    ///
+    /// On transport failure:
+    /// - Returns `HTTP_ERROR` errno, writing a BSATN-encoded error [`String`] to `*out`.
+    pub fn call_reducer_on_db_2pc(
+        caller: Caller<'_, Self>,
+        identity_ptr: WasmPtr<u8>,
+        reducer_ptr: WasmPtr<u8>,
+        reducer_len: u32,
+        args_ptr: WasmPtr<u8>,
+        args_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_custom(caller, AbiCall::CallReducerOnDb, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+
+            let identity_slice = mem.deref_slice(identity_ptr, 32)?;
+            let identity_bytes: [u8; 32] = identity_slice
+                .try_into()
+                .expect("deref_slice(ptr, 32) always yields exactly 32 bytes");
+            let database_identity = Identity::from_byte_array(identity_bytes);
+
+            let reducer_name = mem.deref_str(reducer_ptr, reducer_len)?.to_owned();
+            let args_buf = mem.deref_slice(args_ptr, args_len)?;
+            let args = bytes::Bytes::copy_from_slice(args_buf);
+
+            let handle = tokio::runtime::Handle::current();
+            let fut = env
+                .instance_env
+                .call_reducer_on_db_2pc(database_identity, &reducer_name, args);
+            let result = super::super::block_on_scoped(&handle, fut);
+
+            match result {
+                Ok((status, body, prepare_id)) => {
+                    // If we got a prepare_id, register this participant.
+                    if let Some(pid) = prepare_id
+                        && status < 300
+                    {
+                        env.instance_env.prepared_participants.push((database_identity, pid));
+                    }
+                    let bytes_source = WasmInstanceEnv::create_bytes_source(env, body)?;
+                    bytes_source.0.write_to(mem, out)?;
+                    Ok(status as u32)
+                }
+                Err(NodesError::HttpError(err)) => {
+                    let err_bytes = bsatn::to_vec(&err).with_context(|| {
+                        format!("Failed to BSATN-serialize call_reducer_on_db_2pc transport error: {err:?}")
                     })?;
                     let bytes_source = WasmInstanceEnv::create_bytes_source(env, err_bytes.into())?;
                     bytes_source.0.write_to(mem, out)?;

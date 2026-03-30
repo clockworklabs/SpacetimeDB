@@ -1,6 +1,7 @@
 use anyhow::Context;
 use bytes::Bytes;
 use bytestring::ByteString;
+use core::future::Future;
 use derive_more::Display;
 use enum_map::Enum;
 use once_cell::sync::OnceCell;
@@ -10,11 +11,37 @@ use spacetimedb_lib::ProductValue;
 use spacetimedb_schema::def::deserialize::{ArgsSeed, FunctionDef};
 use spacetimedb_schema::def::ModuleDef;
 
+/// Block on `fut` from a synchronous context that may be inside a Tokio runtime.
+///
+/// `Handle::block_on` and `block_in_place` both panic when the calling thread is
+/// a custom (`std::thread::spawn`) thread that has entered the runtime via
+/// `Handle::enter()` — which is exactly the pattern used by `SingleCoreExecutor`.
+///
+/// The fix (same as the non-2PC `call_reducer_on_db` path): spawn a **scoped**
+/// OS thread.  The scoped thread starts with no Tokio context, so `Handle::block_on`
+/// works normally and drives the future using the **original** runtime's I/O reactor
+/// and connection pools.
+///
+/// Use this for every place in the 2PC / cross-DB call paths that needs to
+/// synchronously drive a future from blocking (WASM executor) context.
+pub(crate) fn block_on_scoped<F>(handle: &tokio::runtime::Handle, fut: F) -> F::Output
+where
+    F: Future + Send,
+    F::Output: Send,
+{
+    std::thread::scope(|s| {
+        s.spawn(|| handle.block_on(fut))
+            .join()
+            .expect("block_on_scoped: thread panicked")
+    })
+}
+
 mod disk_storage;
 mod host_controller;
 mod module_common;
 #[allow(clippy::too_many_arguments)]
 pub mod module_host;
+pub mod prepared_tx;
 pub mod scheduler;
 pub mod wasmtime;
 

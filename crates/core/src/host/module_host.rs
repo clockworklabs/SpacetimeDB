@@ -890,6 +890,9 @@ pub struct ModuleHost {
     ///
     /// When this is true, most operations will fail with [`NoSuchModule`].
     closed: Arc<AtomicBool>,
+
+    /// Registry of prepared (but not yet finalized) 2PC transactions.
+    prepared_txs: super::prepared_tx::PreparedTransactions,
 }
 
 impl fmt::Debug for ModuleHost {
@@ -906,6 +909,7 @@ pub struct WeakModuleHost {
     inner: Weak<ModuleHostInner>,
     on_panic: Weak<dyn Fn() + Send + Sync + 'static>,
     closed: Weak<AtomicBool>,
+    prepared_txs: super::prepared_tx::PreparedTransactions,
 }
 
 #[derive(Debug)]
@@ -1093,6 +1097,7 @@ impl ModuleHost {
             inner,
             on_panic,
             closed: Arc::new(AtomicBool::new(false)),
+            prepared_txs: super::prepared_tx::PreparedTransactions::new(),
         }
     }
 
@@ -1738,6 +1743,396 @@ impl ModuleHost {
         }
 
         res
+    }
+
+    /// Execute a reducer as a 2PC PREPARE on behalf of a remote coordinator.
+    ///
+    /// Holds the write lock (exclusive tx) open until a COMMIT or ABORT is received.
+    /// The `st_2pc_state` marker is committed atomically with the reducer's data changes at
+    /// actual COMMIT time.  This means no other transaction can interleave between PREPARE
+    /// and COMMIT/ABORT, and there is no separate persistence barrier needed.
+    pub async fn prepare_reducer(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        reducer_name: &str,
+        args: FunctionArgs,
+        // The actual coordinator database identity (from `X-Coordinator-Identity` header).
+        // When `Some`, used for `prepare_id` namespacing and stored in `st_2pc_state` for
+        // recovery.  Falls back to `caller_identity` when `None` (e.g., internal calls).
+        coordinator_identity_override: Option<Identity>,
+    ) -> Result<(String, ReducerCallResult, Option<Bytes>), ReducerCallError> {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::sync::OnceLock;
+        // Counter seeded from current time on first use so that restarts begin from a
+        // different value than any existing st_2pc_state entries (which hold IDs from
+        // previous sessions starting at much smaller counter values).
+        static PREPARE_COUNTER: AtomicU64 = AtomicU64::new(0);
+        static PREPARE_COUNTER_INIT: OnceLock<()> = OnceLock::new();
+        PREPARE_COUNTER_INIT.get_or_init(|| {
+            let seed = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_micros() as u64;
+            PREPARE_COUNTER.store(seed, Ordering::Relaxed);
+        });
+
+        let (reducer_id, reducer_def) = self
+            .info
+            .module_def
+            .reducer_full(reducer_name)
+            .ok_or(ReducerCallError::NoSuchReducer)?;
+        if let Some(lifecycle) = reducer_def.lifecycle {
+            return Err(ReducerCallError::LifecycleReducer(lifecycle));
+        }
+        if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+            return Err(ReducerCallError::NoSuchReducer);
+        }
+
+        let args = args
+            .into_tuple_for_def(&self.info.module_def, reducer_def)
+            .map_err(InvalidReducerArguments)?;
+        let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
+        let params = CallReducerParams {
+            timestamp: Timestamp::now(),
+            caller_identity,
+            caller_connection_id,
+            client: None,
+            request_id: None,
+            timer: None,
+            reducer_id,
+            args,
+        };
+
+        // Resolve the effective coordinator identity before generating the prepare_id so
+        // the prefix is namespaced correctly even when called from the HTTP prepare handler.
+        let coordinator_identity = coordinator_identity_override.unwrap_or(caller_identity);
+
+        // Include the coordinator identity so prepare_ids from different coordinators
+        // cannot collide on the participant's st_2pc_state table.
+        let coordinator_hex = coordinator_identity.to_hex();
+        let prepare_id = format!(
+            "prepare-{}-{}",
+            &coordinator_hex.to_string()[..16],
+            PREPARE_COUNTER.fetch_add(1, Ordering::Relaxed),
+        );
+
+        // Channel for signalling PREPARED result back to this task.
+        let (prepared_tx, prepared_rx) = tokio::sync::oneshot::channel::<(ReducerCallResult, Option<Bytes>)>();
+        // Channel for sending the COMMIT/ABORT decision to the executor thread.
+        let (decision_tx, decision_rx) = std::sync::mpsc::channel::<bool>();
+
+        self.prepared_txs.insert(
+            prepare_id.clone(),
+            super::prepared_tx::PreparedTxInfo {
+                decision_sender: decision_tx,
+            },
+        );
+
+        // Spawn a background task that runs the reducer and holds the write lock
+        // until we send a decision.  The executor thread blocks inside
+        // `call_reducer_prepare_and_hold` on `decision_rx.recv()`.
+        let this = self.clone();
+        let reducer_name_owned = reducer_def.name.clone();
+        let prepare_id_clone = prepare_id.clone();
+        tokio::spawn(async move {
+            let _ = this
+                .call(
+                    &reducer_name_owned,
+                    (params, prepare_id_clone, coordinator_identity, prepared_tx, decision_rx),
+                    async |(p, pid, cid, ptx, drx), inst| {
+                        inst.call_reducer_prepare_and_hold(p, pid, cid, ptx, drx);
+                        Ok::<(), ReducerCallError>(())
+                    },
+                    // JS modules: no 2PC support yet.
+                    async |(_p, _pid, _cid, _ptx, _drx), _inst| Err(ReducerCallError::NoSuchReducer),
+                )
+                .await;
+        });
+
+        // Wait for the PREPARED result (or failure) from `call_reducer_prepare_and_hold`.
+        match prepared_rx.await {
+            Ok((result, return_value)) => {
+                if matches!(result.outcome, ReducerOutcome::Committed) {
+                    Ok((prepare_id, result, return_value))
+                } else {
+                    // Reducer failed — remove the entry we registered (no hold in progress).
+                    self.prepared_txs.remove(&prepare_id);
+                    Ok((String::new(), result, return_value))
+                }
+            }
+            Err(_) => Err(ReducerCallError::NoSuchModule(NoSuchModule)),
+        }
+    }
+
+    /// Finalize a prepared transaction as COMMIT.
+    pub fn commit_prepared(&self, prepare_id: &str) -> Result<(), String> {
+        let info = self
+            .prepared_txs
+            .remove(prepare_id)
+            .ok_or_else(|| format!("no such prepared transaction: {prepare_id}"))?;
+        // Unblock the executor thread to commit.
+        let _ = info.decision_sender.send(true);
+        Ok(())
+    }
+
+    /// Abort a prepared transaction.
+    pub fn abort_prepared(&self, prepare_id: &str) -> Result<(), String> {
+        let info = self
+            .prepared_txs
+            .remove(prepare_id)
+            .ok_or_else(|| format!("no such prepared transaction: {prepare_id}"))?;
+        // Unblock the executor thread to abort.
+        let _ = info.decision_sender.send(false);
+        Ok(())
+    }
+
+    /// Delete a coordinator log entry for `prepare_id`.
+    /// Called when B has confirmed it committed, so A can stop retransmitting.
+    pub fn ack_2pc_coordinator_commit(&self, prepare_id: &str) -> Result<(), anyhow::Error> {
+        let db = self.relational_db().clone();
+        db.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |tx| {
+            tx.delete_st_2pc_coordinator_log(prepare_id)
+                .map_err(anyhow::Error::from)
+        })
+    }
+
+    /// Check whether `prepare_id` is present in the coordinator log of this database.
+    /// Used by participant B to ask coordinator A: "did you commit?"
+    pub fn has_2pc_coordinator_commit(&self, prepare_id: &str) -> bool {
+        let db = self.relational_db();
+        db.pending_2pc_coordinator_commits()
+            .map(|rows| rows.iter().any(|r| r.participant_prepare_id == prepare_id))
+            .unwrap_or(false)
+    }
+
+    /// Crash recovery for the **coordinator** role.
+    ///
+    /// Scans `st_2pc_coordinator_log` for participants that have not yet acked
+    /// COMMIT and retransmits the HTTP commit call.  Deletes the log entry on success.
+    pub fn recover_2pc_coordinator(&self) {
+        let db = self.relational_db().clone();
+        let rows = match db.pending_2pc_coordinator_commits() {
+            Ok(r) => r,
+            Err(e) => {
+                log::error!("recover_2pc_coordinator: scan failed: {e}");
+                return;
+            }
+        };
+        if rows.is_empty() {
+            return;
+        }
+        let replica_ctx = self.replica_ctx().clone();
+        let db2 = db.clone();
+        tokio::spawn(async move {
+            let client = replica_ctx.call_reducer_client.clone();
+            let router = replica_ctx.call_reducer_router.clone();
+            let auth_token = replica_ctx.call_reducer_auth_token.clone();
+            for row in rows {
+                let prepare_id = row.participant_prepare_id.clone();
+                let participant_identity = match Identity::from_hex(&row.participant_identity_hex) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        log::error!(
+                            "recover_2pc_coordinator: invalid participant identity hex {}: {e}",
+                            row.participant_identity_hex
+                        );
+                        continue;
+                    }
+                };
+                let base_url = match router.resolve_base_url(participant_identity).await {
+                    Ok(url) => url,
+                    Err(e) => {
+                        log::warn!("recover_2pc_coordinator: cannot resolve URL for {participant_identity}: {e}");
+                        continue;
+                    }
+                };
+                let url = format!(
+                    "{}/v1/database/{}/2pc/commit/{}",
+                    base_url,
+                    participant_identity.to_hex(),
+                    prepare_id,
+                );
+                let mut req = client.post(&url);
+                if let Some(ref token) = auth_token {
+                    req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+                }
+                match req.send().await {
+                    Ok(resp) if resp.status().is_success() => {
+                        log::info!("recover_2pc_coordinator: re-committed {prepare_id} on {participant_identity}");
+                        if let Err(e) = db2.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |tx| {
+                            Ok(tx.delete_st_2pc_coordinator_log(&prepare_id)?)
+                        }) {
+                            log::warn!("recover_2pc_coordinator: delete coordinator log failed for {prepare_id}: {e}");
+                        }
+                    }
+                    Ok(resp) => {
+                        log::warn!(
+                            "recover_2pc_coordinator: commit for {prepare_id} returned {}",
+                            resp.status()
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!("recover_2pc_coordinator: transport error for {prepare_id}: {e}");
+                    }
+                }
+            }
+        });
+    }
+
+    /// Crash recovery for the **participant** role.
+    ///
+    /// Scans `st_2pc_state` for any prepared-but-not-decided transactions, re-runs
+    /// each reducer to reacquire the write lock, then polls the coordinator for a decision.
+    ///
+    /// **B never aborts on its own** — only the coordinator's response yields ABORT.
+    pub fn recover_2pc_participant(&self) {
+        let db = self.relational_db().clone();
+        let rows = match db.pending_2pc_prepares() {
+            Ok(r) => r,
+            Err(e) => {
+                log::error!("recover_2pc_participant: scan failed: {e}");
+                return;
+            }
+        };
+        if rows.is_empty() {
+            return;
+        }
+        let this = self.clone();
+        tokio::spawn(async move {
+            for row in rows {
+                let original_prepare_id = row.prepare_id.clone();
+                let coordinator_identity = match Identity::from_hex(&row.coordinator_identity_hex) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        log::error!(
+                            "recover_2pc_participant: invalid coordinator identity hex for {original_prepare_id}: {e}"
+                        );
+                        continue;
+                    }
+                };
+                let caller_identity = match Identity::from_hex(&row.caller_identity_hex) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        log::error!(
+                            "recover_2pc_participant: invalid caller identity hex for {original_prepare_id}: {e}"
+                        );
+                        continue;
+                    }
+                };
+                let caller_connection_id = u128::from_str_radix(&row.caller_connection_id_hex, 16)
+                    .map(ConnectionId::from_u128)
+                    .unwrap_or(ConnectionId::ZERO);
+                let args = FunctionArgs::Bsatn(row.args_bsatn.clone().into());
+
+                // Step 1: Re-run the reducer to reacquire the write lock.
+                let new_prepare_id = match this
+                    .prepare_reducer(caller_identity, Some(caller_connection_id), &row.reducer_name, args, Some(coordinator_identity))
+                    .await
+                {
+                    Ok((pid, result, _rv)) if !pid.is_empty() => {
+                        log::info!(
+                            "recover_2pc_participant: re-prepared {original_prepare_id} as {pid}: {:?}",
+                            result.outcome
+                        );
+                        pid
+                    }
+                    Ok(_) => {
+                        // Reducer failed — treat as abort, clean up old marker.
+                        log::warn!("recover_2pc_participant: reducer failed on re-run for {original_prepare_id}");
+                        let _ = db.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |tx| {
+                            Ok(tx.delete_st_2pc_state(&original_prepare_id)?)
+                        });
+                        continue;
+                    }
+                    Err(e) => {
+                        log::error!("recover_2pc_participant: prepare_reducer error for {original_prepare_id}: {e:?}");
+                        continue;
+                    }
+                };
+
+                // Step 2: Poll coordinator with the ORIGINAL prepare_id until we get a decision.
+                // We do this in a separate task so the loop can proceed to the next row.
+                let this2 = this.clone();
+                let db2 = db.clone();
+                let client = this.replica_ctx().call_reducer_client.clone();
+                let router = this.replica_ctx().call_reducer_router.clone();
+                let auth_token = this.replica_ctx().call_reducer_auth_token.clone();
+                tokio::spawn(async move {
+                    loop {
+                        let decision = Self::query_coordinator_status_with_client(
+                            &client,
+                            &router,
+                            auth_token.clone(),
+                            coordinator_identity,
+                            &original_prepare_id,
+                        )
+                        .await;
+                        match decision {
+                            Some(commit) => {
+                                if commit {
+                                    let _ = this2.commit_prepared(&new_prepare_id);
+                                    // The actor thread (call_reducer_prepare_and_hold) will wait
+                                    // for B's commit to be durable and then send the ack-commit
+                                    // to the coordinator.  Nothing to do here.
+                                } else {
+                                    let _ = this2.abort_prepared(&new_prepare_id);
+                                }
+                                // Clean up the old st_2pc_state entry.
+                                let _ = db2.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |tx| {
+                                    Ok(tx.delete_st_2pc_state(&original_prepare_id)?)
+                                });
+                                break;
+                            }
+                            None => tokio::time::sleep(std::time::Duration::from_secs(5)).await,
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    /// Query `GET /v1/database/{coordinator}/2pc/status/{prepare_id}`.
+    ///
+    /// Returns `Some(true)` = COMMIT, `Some(false)` = ABORT, `None` = transient error (retry).
+    async fn query_coordinator_status_with_client(
+        client: &reqwest::Client,
+        router: &std::sync::Arc<dyn crate::host::reducer_router::ReducerCallRouter>,
+        auth_token: Option<String>,
+        coordinator_identity: Identity,
+        prepare_id: &str,
+    ) -> Option<bool> {
+        let base_url = match router.resolve_base_url(coordinator_identity).await {
+            Ok(url) => url,
+            Err(e) => {
+                log::warn!("2PC recovery status poll: cannot resolve coordinator URL: {e}");
+                return None;
+            }
+        };
+        let url = format!(
+            "{}/v1/database/{}/2pc/status/{}",
+            base_url,
+            coordinator_identity.to_hex(),
+            prepare_id,
+        );
+        let mut req = client.get(&url);
+        if let Some(token) = &auth_token {
+            req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+        }
+        match req.send().await {
+            Ok(resp) if resp.status().is_success() => {
+                let body = resp.text().await.unwrap_or_default();
+                Some(body.trim() == "commit")
+            }
+            Ok(resp) => {
+                log::warn!("2PC recovery status poll: coordinator returned {}", resp.status());
+                None
+            }
+            Err(e) => {
+                log::warn!("2PC recovery status poll: transport error: {e}");
+                None
+            }
+        }
     }
 
     pub async fn call_view_add_single_subscription(
@@ -2561,6 +2956,7 @@ impl ModuleHost {
             inner: Arc::downgrade(&self.inner),
             on_panic: Arc::downgrade(&self.on_panic),
             closed: Arc::downgrade(&self.closed),
+            prepared_txs: self.prepared_txs.clone(),
         }
     }
 
@@ -2605,6 +3001,7 @@ impl WeakModuleHost {
             inner,
             on_panic,
             closed,
+            prepared_txs: self.prepared_txs.clone(),
         })
     }
 }

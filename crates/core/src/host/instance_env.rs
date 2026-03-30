@@ -54,6 +54,11 @@ pub struct InstanceEnv {
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
     procedure_last_tx_offset: Option<TransactionOffset>,
+    /// 2PC: prepared participants from `call_reducer_on_db_2pc` calls.
+    /// Each entry is (database_identity, prepare_id).
+    /// After the coordinator's reducer commits, these are committed;
+    /// on failure, they are aborted.
+    pub prepared_participants: Vec<(Identity, String)>,
 }
 
 /// `InstanceEnv` needs to be `Send` because it is created on the host thread
@@ -238,6 +243,7 @@ impl InstanceEnv {
             func_name: None,
             in_anon_tx: false,
             procedure_last_tx_offset: None,
+            prepared_participants: Vec::new(),
         }
     }
 
@@ -1034,8 +1040,83 @@ impl InstanceEnv {
             let result = async {
                 let response = req.send().await.map_err(|e| NodesError::HttpError(e.to_string()))?;
                 let status = response.status().as_u16();
-                let body = response.bytes().await.map_err(|e| NodesError::HttpError(e.to_string()))?;
-                Ok((status, body))
+                let body = response
+                    .bytes()
+                    .await
+                    .map_err(|e| NodesError::HttpError(e.to_string()))?;
+                Ok::<_, NodesError>((status, body))
+            }
+            .await;
+
+            WORKER_METRICS
+                .cross_db_reducer_calls_total
+                .with_label_values(&caller_identity)
+                .inc();
+            WORKER_METRICS
+                .cross_db_reducer_duration_seconds
+                .with_label_values(&caller_identity)
+                .observe(start.elapsed().as_secs_f64());
+
+            result
+        }
+    }
+
+    /// Call a reducer on a remote database using the 2PC prepare protocol.
+    ///
+    /// Like [`Self::call_reducer_on_db`], but POSTs to `/prepare/{reducer}` instead of
+    /// `/call/{reducer}`. On success, parses the `X-Prepare-Id` response header and stores
+    /// `(database_identity, prepare_id)` in [`Self::prepared_participants`].
+    ///
+    /// Returns `(http_status, response_body)` on transport success.
+    /// The caller (coordinator reducer) is responsible for checking the status;
+    /// if the coordinator's reducer commits, the runtime will commit all participants,
+    /// and if it fails, the runtime will abort them.
+    pub fn call_reducer_on_db_2pc(
+        &mut self,
+        database_identity: Identity,
+        reducer_name: &str,
+        args: bytes::Bytes,
+    ) -> impl Future<Output = Result<(u16, bytes::Bytes, Option<String>), NodesError>> + use<> {
+        let client = self.replica_ctx.call_reducer_client.clone();
+        let router = self.replica_ctx.call_reducer_router.clone();
+        let reducer_name = reducer_name.to_owned();
+        let auth_token = self.replica_ctx.call_reducer_auth_token.clone();
+        let caller_identity = self.replica_ctx.database.database_identity;
+
+        async move {
+            let start = Instant::now();
+
+            let base_url = router
+                .resolve_base_url(database_identity)
+                .await
+                .map_err(|e| NodesError::HttpError(e.to_string()))?;
+            let url = format!(
+                "{}/v1/database/{}/prepare/{}",
+                base_url,
+                database_identity.to_hex(),
+                reducer_name,
+            );
+            let mut req = client
+                .post(&url)
+                .header(http::header::CONTENT_TYPE, "application/octet-stream")
+                .header("X-Coordinator-Identity", caller_identity.to_hex().to_string())
+                .body(args);
+            if let Some(token) = auth_token {
+                req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+            }
+            let result = async {
+                let response = req.send().await.map_err(|e| NodesError::HttpError(e.to_string()))?;
+                let status = response.status().as_u16();
+                let prepare_id = response
+                    .headers()
+                    .get("X-Prepare-Id")
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.to_owned());
+                let body = response
+                    .bytes()
+                    .await
+                    .map_err(|e| NodesError::HttpError(e.to_string()))?;
+                Ok((status, body, prepare_id))
             }
             .await;
 

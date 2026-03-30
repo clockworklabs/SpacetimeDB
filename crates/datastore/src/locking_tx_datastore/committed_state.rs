@@ -29,6 +29,7 @@ use crate::{
 use crate::{
     locking_tx_datastore::ViewCallInfo,
     system_tables::{
+        ST_2PC_COORDINATOR_LOG_ID, ST_2PC_COORDINATOR_LOG_IDX, ST_2PC_STATE_ID, ST_2PC_STATE_IDX,
         ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ACCESSOR_IDX, ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX,
         ST_EVENT_TABLE_ID, ST_EVENT_TABLE_IDX, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_IDX, ST_TABLE_ACCESSOR_ID,
         ST_TABLE_ACCESSOR_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID, ST_VIEW_IDX, ST_VIEW_PARAM_ID,
@@ -476,6 +477,9 @@ impl CommittedState {
         self.create_table(ST_TABLE_ACCESSOR_ID, schemas[ST_TABLE_ACCESSOR_IDX].clone());
         self.create_table(ST_INDEX_ACCESSOR_ID, schemas[ST_INDEX_ACCESSOR_IDX].clone());
         self.create_table(ST_COLUMN_ACCESSOR_ID, schemas[ST_COLUMN_ACCESSOR_IDX].clone());
+
+        self.create_table(ST_2PC_STATE_ID, schemas[ST_2PC_STATE_IDX].clone());
+        self.create_table(ST_2PC_COORDINATOR_LOG_ID, schemas[ST_2PC_COORDINATOR_LOG_IDX].clone());
 
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store, pool) =
@@ -1378,6 +1382,35 @@ impl CommittedState {
 
     fn create_table(&mut self, table_id: TableId, schema: Arc<TableSchema>) {
         self.tables.insert(table_id, Self::make_table(schema));
+    }
+
+    /// Insert a single row directly into the committed state, bypassing `TxState`.
+    ///
+    /// Assigns the next `tx_offset` to the resulting `TxData` and increments the counter.
+    /// The write lock (and therefore the transaction) is **not** released.
+    ///
+    /// Used by the 2PC participant path to flush the `st_2pc_state` PREPARE marker to the
+    /// commitlog (via the durability worker) while keeping the reducer's write lock open,
+    /// so that no other transaction can interleave between PREPARE and COMMIT/ABORT.
+    pub(super) fn insert_row_and_consume_offset(
+        &mut self,
+        table_id: TableId,
+        schema: &Arc<TableSchema>,
+        row: &ProductValue,
+    ) -> Result<TxData> {
+        let (table, blob_store, pool) = self.get_table_and_blob_store_or_create(table_id, schema);
+        table.insert(pool, blob_store, row).map_err(|e| match e {
+            InsertError::Duplicate(e) => DatastoreError::from(TableError::Duplicate(e)),
+            InsertError::Bflatn(e) => DatastoreError::from(TableError::Bflatn(e)),
+            InsertError::IndexError(e) => DatastoreError::from(IndexError::UniqueConstraintViolation(e)),
+        })?;
+
+        let row_arc: Arc<[ProductValue]> = Arc::from([row.clone()]);
+        let mut tx_data = TxData::default();
+        tx_data.set_inserts_for_table(table_id, &schema.table_name, row_arc);
+        tx_data.set_tx_offset(self.next_tx_offset);
+        self.next_tx_offset += 1;
+        Ok(tx_data)
     }
 
     pub(super) fn get_table_and_blob_store_or_create<'this>(

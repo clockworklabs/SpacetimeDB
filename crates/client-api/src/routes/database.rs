@@ -249,6 +249,163 @@ fn parse_call_args(content_type: headers::ContentType, body: Bytes) -> axum::res
     }
 }
 
+/// 2PC prepare endpoint: execute a reducer and return a prepare_id.
+///
+/// `POST /v1/database/:name_or_identity/prepare/:reducer`
+///
+/// On success, the response includes:
+/// - `X-Prepare-Id` header with the prepare_id
+/// - Body contains the reducer return value (if any)
+pub async fn prepare<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    Path(CallParams {
+        name_or_identity,
+        reducer,
+    }): Path<CallParams>,
+    TypedHeader(content_type): TypedHeader<headers::ContentType>,
+    headers: axum::http::HeaderMap,
+    body: Bytes,
+) -> axum::response::Result<impl IntoResponse> {
+    let args = parse_call_args(content_type, body)?;
+    let caller_identity = auth.claims.identity;
+
+    // The coordinator sends its actual database identity in `X-Coordinator-Identity`.
+    // Without this, `anon_auth_middleware` gives the HTTP caller an ephemeral random
+    // identity, which gets stored in `st_2pc_state` and breaks recovery polling.
+    let coordinator_identity = headers
+        .get("X-Coordinator-Identity")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| spacetimedb_lib::Identity::from_hex(s).ok());
+
+    let (module, Database { owner_identity, .. }) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+
+    // 2PC prepare is a server-to-server call; no client lifecycle management needed.
+    // call_identity_connected/disconnected submit jobs to the module's executor, which
+    // will be blocked holding the 2PC write lock after prepare_reducer returns — deadlock.
+    let result = module
+        .prepare_reducer(caller_identity, None, &reducer, args.0, coordinator_identity)
+        .await;
+
+    match result {
+        Ok((prepare_id, rcr, return_value)) => {
+            let (status, body) =
+                reducer_outcome_response(&module, &owner_identity, &reducer, rcr.outcome, return_value, args.1)?;
+            let mut response = (
+                status,
+                TypedHeader(SpacetimeEnergyUsed(rcr.energy_used)),
+                TypedHeader(SpacetimeExecutionDurationMicros(rcr.execution_duration)),
+                body,
+            )
+                .into_response();
+            if !prepare_id.is_empty() {
+                response
+                    .headers_mut()
+                    .insert("X-Prepare-Id", http::HeaderValue::from_str(&prepare_id).unwrap());
+            }
+            Ok(response)
+        }
+        Err(e) => Err(map_reducer_error(e, &reducer).into()),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct TwoPcParams {
+    name_or_identity: NameOrIdentity,
+    prepare_id: String,
+}
+
+/// 2PC commit endpoint: finalize a prepared transaction.
+///
+/// `POST /v1/database/:name_or_identity/2pc/commit/:prepare_id`
+pub async fn commit_2pc<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    Extension(_auth): Extension<SpacetimeAuth>,
+    Path(TwoPcParams {
+        name_or_identity,
+        prepare_id,
+    }): Path<TwoPcParams>,
+) -> axum::response::Result<impl IntoResponse> {
+    let (module, _database) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+
+    module.commit_prepared(&prepare_id).map_err(|e| {
+        log::error!("2PC commit failed: {e}");
+        (StatusCode::NOT_FOUND, e).into_response()
+    })?;
+
+    Ok(StatusCode::OK)
+}
+
+/// 2PC abort endpoint: abort a prepared transaction.
+///
+/// `POST /v1/database/:name_or_identity/2pc/abort/:prepare_id`
+pub async fn abort_2pc<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    Extension(_auth): Extension<SpacetimeAuth>,
+    Path(TwoPcParams {
+        name_or_identity,
+        prepare_id,
+    }): Path<TwoPcParams>,
+) -> axum::response::Result<impl IntoResponse> {
+    let (module, _database) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+
+    module.abort_prepared(&prepare_id).map_err(|e| {
+        log::error!("2PC abort failed: {e}");
+        (StatusCode::NOT_FOUND, e).into_response()
+    })?;
+
+    Ok(StatusCode::OK)
+}
+
+/// 2PC coordinator status endpoint.
+///
+/// Returns `"commit"` if the coordinator has durably decided COMMIT for `prepare_id`,
+/// or `"abort"` otherwise.  Participant B polls this to recover from a timeout or crash.
+///
+/// `GET /v1/database/:name_or_identity/2pc/status/:prepare_id`
+pub async fn status_2pc<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    Extension(_auth): Extension<SpacetimeAuth>,
+    Path(TwoPcParams {
+        name_or_identity,
+        prepare_id,
+    }): Path<TwoPcParams>,
+) -> axum::response::Result<impl IntoResponse> {
+    let (module, _database) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+
+    let decision = if module.has_2pc_coordinator_commit(&prepare_id) {
+        "commit"
+    } else {
+        "abort"
+    };
+
+    Ok((StatusCode::OK, decision))
+}
+
+/// 2PC commit-ack endpoint.
+///
+/// Called by participant B after it commits via the status-poll recovery path,
+/// so that the coordinator can delete its `st_2pc_coordinator_log` entry.
+///
+/// `POST /v1/database/:name_or_identity/2pc/ack-commit/:prepare_id`
+pub async fn ack_commit_2pc<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    Extension(_auth): Extension<SpacetimeAuth>,
+    Path(TwoPcParams {
+        name_or_identity,
+        prepare_id,
+    }): Path<TwoPcParams>,
+) -> axum::response::Result<impl IntoResponse> {
+    let (module, _database) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+
+    module.ack_2pc_coordinator_commit(&prepare_id).map_err(|e| {
+        log::error!("2PC ack-commit failed: {e}");
+        (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+    })?;
+
+    Ok(StatusCode::OK)
+}
+
 /// Encode a reducer return value as an HTTP response.
 ///
 /// If the outcome is an error, return a raw string with `application/text`. Ignore `want_bsatn` in this case.
@@ -1278,6 +1435,16 @@ pub struct DatabaseRoutes<S> {
     pub db_reset: MethodRouter<S>,
     /// GET: /database/: name_or_identity/unstable/timestamp
     pub timestamp_get: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/prepare/:reducer
+    pub prepare_post: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/2pc/commit/:prepare_id
+    pub commit_2pc_post: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/2pc/abort/:prepare_id
+    pub abort_2pc_post: MethodRouter<S>,
+    /// GET: /database/:name_or_identity/2pc/status/:prepare_id
+    pub status_2pc_get: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/2pc/ack-commit/:prepare_id
+    pub ack_commit_2pc_post: MethodRouter<S>,
 }
 
 impl<S> Default for DatabaseRoutes<S>
@@ -1303,6 +1470,11 @@ where
             pre_publish: post(pre_publish::<S>),
             db_reset: put(reset::<S>),
             timestamp_get: get(get_timestamp::<S>),
+            prepare_post: post(prepare::<S>),
+            commit_2pc_post: post(commit_2pc::<S>),
+            abort_2pc_post: post(abort_2pc::<S>),
+            status_2pc_get: get(status_2pc::<S>),
+            ack_commit_2pc_post: post(ack_commit_2pc::<S>),
         }
     }
 }
@@ -1327,7 +1499,12 @@ where
             .route("/sql", self.sql_post)
             .route("/unstable/timestamp", self.timestamp_get)
             .route("/pre_publish", self.pre_publish)
-            .route("/reset", self.db_reset);
+            .route("/reset", self.db_reset)
+            .route("/prepare/:reducer", self.prepare_post)
+            .route("/2pc/commit/:prepare_id", self.commit_2pc_post)
+            .route("/2pc/abort/:prepare_id", self.abort_2pc_post)
+            .route("/2pc/status/:prepare_id", self.status_2pc_get)
+            .route("/2pc/ack-commit/:prepare_id", self.ack_commit_2pc_post);
 
         axum::Router::new()
             .route("/", self.root_post)

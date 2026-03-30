@@ -4,6 +4,7 @@ use crate::client::ClientActorId;
 use crate::database_logger;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
 use crate::error::DBError;
+use crate::host::block_on_scoped;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
@@ -91,6 +92,10 @@ pub trait WasmInstance {
     fn call_view_anon(&mut self, op: AnonymousViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult;
 
     fn log_traceback(&self, func_type: &str, func: &str, trap: &anyhow::Error);
+
+    /// Take the list of 2PC prepared participants accumulated during this reducer call.
+    /// Returns the participants and clears the internal list.
+    fn take_prepared_participants(&mut self) -> Vec<(Identity, String)>;
 
     fn call_procedure(
         &mut self,
@@ -395,6 +400,50 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
     }
 }
 
+/// Notify coordinator A that B has committed, so A can delete its coordinator log entry.
+///
+/// Called AFTER B's commit is durable.  Fire-and-forget: failure is tolerated because
+/// `recover_2pc_coordinator` on A will retransmit COMMIT on restart.
+async fn send_ack_commit_to_coordinator(
+    client: reqwest::Client,
+    router: std::sync::Arc<dyn crate::host::reducer_router::ReducerCallRouter>,
+    auth_token: Option<String>,
+    coordinator_identity: crate::identity::Identity,
+    prepare_id: String,
+) {
+    let base_url = match router.resolve_base_url(coordinator_identity).await {
+        Ok(url) => url,
+        Err(e) => {
+            log::warn!("2PC ack-commit: cannot resolve coordinator URL: {e}");
+            return;
+        }
+    };
+    let url = format!(
+        "{}/v1/database/{}/2pc/ack-commit/{}",
+        base_url,
+        coordinator_identity.to_hex(),
+        prepare_id,
+    );
+    let mut req = client.post(&url);
+    if let Some(token) = &auth_token {
+        req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+    }
+    match req.send().await {
+        Ok(resp) if resp.status().is_success() => {
+            log::info!("2PC ack-commit: notified coordinator for {prepare_id}");
+        }
+        Ok(resp) => {
+            log::warn!(
+                "2PC ack-commit: coordinator returned {} for {prepare_id}",
+                resp.status()
+            );
+        }
+        Err(e) => {
+            log::warn!("2PC ack-commit: transport error for {prepare_id}: {e}");
+        }
+    }
+}
+
 impl<T: WasmModule> WasmModuleHostActor<T> {
     fn make_from_instance(&self, mut instance: T::Instance) -> WasmModuleInstance<T::Instance> {
         let common = InstanceCommon::new(&self.common);
@@ -560,6 +609,245 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             self.common
                 .call_reducer_with_tx_and_return(tx, params, &mut self.instance)
         })
+    }
+
+    /// Run the reducer as a 2PC participant PREPARE.
+    ///
+    /// Holds the write lock (MutTxId) open until a COMMIT or ABORT decision arrives.
+    /// The flow:
+    /// 1. Extract recovery info from `params` (reducer name, args, caller context).
+    /// 2. Run reducer (no commit); hold open MutTxId (write lock).
+    /// 3. If reducer failed: send failure via `prepared_tx`; rollback; return.
+    /// 4. Flush `st_2pc_state` marker (with recovery fields) directly into committed state.
+    ///    The marker's `TxData` is forwarded to durability so PREPARE is durable.
+    /// 5. Signal PREPARED via `prepared_tx`.
+    /// 6. Wait for decision:
+    ///    - Fast path: `decision_rx.recv_timeout(60s)` delivers COMMIT or ABORT.
+    ///    - Slow path: on timeout/disconnect, poll coordinator status endpoint every 5s.
+    ///      **B never aborts on its own** — only A's response can yield ABORT.
+    ///    - COMMIT: delete `st_2pc_state` in the same tx as reducer changes (atomic).
+    ///    - ABORT: rollback, delete `st_2pc_state` in a new tx.
+    pub fn call_reducer_prepare_and_hold(
+        &mut self,
+        params: CallReducerParams,
+        prepare_id: String,
+        coordinator_identity: crate::identity::Identity,
+        prepared_tx: tokio::sync::oneshot::Sender<(ReducerCallResult, Option<Bytes>)>,
+        decision_rx: std::sync::mpsc::Receiver<bool>,
+    ) {
+        let stdb = self.instance.replica_ctx().relational_db().clone();
+        let replica_ctx = self.instance.replica_ctx().clone();
+
+        // Extract recovery info before params are consumed.
+        let recovery_reducer_name = self
+            .common
+            .info
+            .module_def
+            .reducer_by_id(params.reducer_id)
+            .name
+            .to_string();
+        let recovery_args_bsatn = params.args.get_bsatn().to_vec();
+        let recovery_caller_identity_hex = params.caller_identity.to_hex().to_string();
+        let recovery_caller_connection_id_hex = format!("{:x}", params.caller_connection_id.to_u128());
+        let recovery_timestamp_micros = params.timestamp.to_micros_since_unix_epoch();
+
+        // Step 1: run the reducer and hold the write lock open.
+        let (mut tx, event, client, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
+            self.common.run_reducer_no_commit(None, params, &mut self.instance)
+        });
+        self.trapped = trapped;
+
+        let energy_quanta_used = event.energy_quanta_used;
+        let total_duration = event.host_execution_duration;
+
+        if !matches!(event.status, EventStatus::Committed(_)) {
+            // Reducer failed — roll back and signal failure; no marker was written.
+            let res = ReducerCallResult {
+                outcome: ReducerOutcome::from(&event.status),
+                energy_used: energy_quanta_used,
+                execution_duration: total_duration,
+            };
+            let return_value = event.reducer_return_value.clone();
+            let _ = prepared_tx.send((res, return_value));
+            let _ = stdb.rollback_mut_tx(tx);
+            return;
+        }
+
+        // Step 2: flush the st_2pc_state marker with recovery fields directly into committed
+        // state, assign a tx_offset, and forward to durability — while holding the write lock.
+        let marker_tx_data = match tx.flush_2pc_prepare_marker(
+            &prepare_id,
+            coordinator_identity.to_hex().to_string(),
+            recovery_reducer_name,
+            recovery_args_bsatn,
+            recovery_caller_identity_hex,
+            recovery_caller_connection_id_hex,
+            recovery_timestamp_micros,
+        ) {
+            Ok(td) => std::sync::Arc::new(td),
+            Err(e) => {
+                log::error!("call_reducer_prepare_and_hold: flush_2pc_prepare_marker failed for {prepare_id}: {e}");
+                let _ = stdb.rollback_mut_tx(tx);
+                return;
+            }
+        };
+        stdb.request_durability_for_tx_data(None, &marker_tx_data);
+
+        // Step 3: wait for the PREPARE marker to be durable before signalling PREPARED.
+        // B must not claim PREPARED until the marker is on disk — if B crashes after
+        // claiming PREPARED but before the marker is durable, recovery has nothing to recover.
+        if let Some(prepare_offset) = marker_tx_data.tx_offset() {
+            if let Some(mut durable) = stdb.durable_tx_offset() {
+                let handle = tokio::runtime::Handle::current();
+                let _ = block_on_scoped(&handle, durable.wait_for(prepare_offset));
+            }
+        }
+
+        // Step 4: signal PREPARED.
+        let res = ReducerCallResult {
+            outcome: ReducerOutcome::from(&event.status),
+            energy_used: energy_quanta_used,
+            execution_duration: total_duration,
+        };
+        let return_value = event.reducer_return_value.clone();
+        let _ = prepared_tx.send((res, return_value));
+
+        // Step 4: wait for coordinator's decision (B never aborts on its own).
+        let commit = Self::wait_for_2pc_decision(decision_rx, &prepare_id, coordinator_identity, &replica_ctx);
+
+        if commit {
+            // Delete the marker in the same tx as the reducer changes (atomic commit).
+            if let Err(e) = tx.delete_st_2pc_state(&prepare_id) {
+                log::error!("call_reducer_prepare_and_hold: failed to delete st_2pc_state for {prepare_id}: {e}");
+            }
+            let commit_result = commit_and_broadcast_event(&self.common.info.subscriptions, client, event, tx);
+
+            // Wait for B's COMMIT to be durable before acking to coordinator.
+            // Without this, A could delete its coordinator log entry while B's commit
+            // is still in-memory — a B crash at that point would leave the tx uncommitted
+            // with no way to recover (A has already forgotten it committed).
+            if let Some(mut durable) = stdb.durable_tx_offset() {
+                let handle = tokio::runtime::Handle::current();
+                block_on_scoped(&handle, async move {
+                    if let Ok(offset) = commit_result.tx_offset.await {
+                        let _ = durable.wait_for(offset).await;
+                    }
+                });
+            }
+
+            // Notify coordinator that B has committed so it can delete its coordinator log entry.
+            // Fire-and-forget: if this fails, coordinator's recover_2pc_coordinator will retry on
+            // restart, and B's commit_prepared will then return a harmless "not found" error.
+            let router = replica_ctx.call_reducer_router.clone();
+            let client_http = replica_ctx.call_reducer_client.clone();
+            let auth_token = replica_ctx.call_reducer_auth_token.clone();
+            tokio::runtime::Handle::current().spawn(send_ack_commit_to_coordinator(
+                client_http,
+                router,
+                auth_token,
+                coordinator_identity,
+                prepare_id,
+            ));
+        } else {
+            // ABORT: roll back reducer changes; clean up the already-committed marker.
+            let _ = stdb.rollback_mut_tx(tx);
+            if let Err(e) = stdb.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
+                Ok(del_tx.delete_st_2pc_state(&prepare_id)?)
+            }) {
+                log::error!(
+                    "call_reducer_prepare_and_hold: abort: failed to delete st_2pc_state for {prepare_id}: {e}"
+                );
+            }
+        }
+    }
+
+    /// Wait for a 2PC COMMIT or ABORT decision for `prepare_id`.
+    ///
+    /// First waits on `decision_rx` for up to 60 seconds.  If no decision arrives,
+    /// switches to polling the coordinator's `GET /2pc/status/{prepare_id}` endpoint
+    /// every 5 seconds until a definitive answer is received.
+    ///
+    /// **B never aborts on its own** — ABORT is only returned when A explicitly says so.
+    fn wait_for_2pc_decision(
+        decision_rx: std::sync::mpsc::Receiver<bool>,
+        prepare_id: &str,
+        coordinator_identity: crate::identity::Identity,
+        replica_ctx: &std::sync::Arc<crate::replica_context::ReplicaContext>,
+    ) -> bool {
+        match decision_rx.recv_timeout(Duration::from_secs(60)) {
+            Ok(commit) => return commit,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                log::warn!("2PC prepare_id={prepare_id}: no decision after 60s, polling coordinator");
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                log::warn!("2PC prepare_id={prepare_id}: decision channel closed, polling coordinator");
+            }
+        }
+
+        let handle = tokio::runtime::Handle::current();
+        let client = replica_ctx.call_reducer_client.clone();
+        let router = replica_ctx.call_reducer_router.clone();
+        let auth_token = replica_ctx.call_reducer_auth_token.clone();
+        let prepare_id_owned = prepare_id.to_owned();
+        loop {
+            let decision = block_on_scoped(
+                &handle,
+                Self::query_coordinator_status(
+                    &client,
+                    &router,
+                    auth_token.clone(),
+                    coordinator_identity,
+                    &prepare_id_owned,
+                ),
+            );
+            match decision {
+                Some(commit) => return commit,
+                None => std::thread::sleep(Duration::from_secs(5)),
+            }
+        }
+    }
+
+    /// Query `GET /v1/database/{coordinator}/2pc/status/{prepare_id}`.
+    ///
+    /// Returns `Some(true)` = COMMIT, `Some(false)` = ABORT, `None` = transient error (retry).
+    async fn query_coordinator_status(
+        client: &reqwest::Client,
+        router: &std::sync::Arc<dyn crate::host::reducer_router::ReducerCallRouter>,
+        auth_token: Option<String>,
+        coordinator_identity: crate::identity::Identity,
+        prepare_id: &str,
+    ) -> Option<bool> {
+        let base_url = match router.resolve_base_url(coordinator_identity).await {
+            Ok(url) => url,
+            Err(e) => {
+                log::warn!("2PC status poll: cannot resolve coordinator URL: {e}");
+                return None;
+            }
+        };
+        let url = format!(
+            "{}/v1/database/{}/2pc/status/{}",
+            base_url,
+            coordinator_identity.to_hex(),
+            prepare_id,
+        );
+        let mut req = client.get(&url);
+        if let Some(token) = &auth_token {
+            req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+        }
+        match req.send().await {
+            Ok(resp) if resp.status().is_success() => {
+                let body = resp.text().await.unwrap_or_default();
+                Some(body.trim() == "commit")
+            }
+            Ok(resp) => {
+                log::warn!("2PC status poll: coordinator returned {}", resp.status());
+                None
+            }
+            Err(e) => {
+                log::warn!("2PC status poll: transport error: {e}");
+                None
+            }
+        }
     }
 
     pub fn call_view(&mut self, cmd: ViewCommand) -> ViewCommandResult {
@@ -838,6 +1126,138 @@ impl InstanceCommon {
         params: CallReducerParams,
         inst: &mut I,
     ) -> (ReducerCallResult, Option<Bytes>, bool) {
+        let (mut tx, event, client, trapped) = self.run_reducer_no_commit(tx, params, inst);
+
+        let energy_quanta_used = event.energy_quanta_used;
+        let total_duration = event.host_execution_duration;
+
+        // Take participants before commit so we can write the coordinator log atomically.
+        let prepared_participants = inst.take_prepared_participants();
+
+        // If this coordinator tx is committed and has participants, write coordinator log
+        // entries into the still-open tx.  They are committed atomically with the tx,
+        // making A's COMMIT decision durable before any HTTP is sent to B (scenario 2
+        // crash recovery).
+        if matches!(event.status, EventStatus::Committed(_)) && !prepared_participants.is_empty() {
+            for (db_identity, prepare_id) in &prepared_participants {
+                if let Err(e) = tx.insert_st_2pc_coordinator_log(prepare_id, &db_identity.to_hex().to_string()) {
+                    log::error!("insert_st_2pc_coordinator_log failed for {prepare_id}: {e}");
+                }
+            }
+        }
+
+        let commit_result = commit_and_broadcast_event(&self.info.subscriptions, client, event, tx);
+        let commit_tx_offset = commit_result.tx_offset;
+        let event = commit_result.event;
+
+        // 2PC post-commit coordination: send COMMIT or ABORT to each participant.
+        if !prepared_participants.is_empty() {
+            let committed = matches!(event.status, EventStatus::Committed(_));
+            let stdb = self.info.subscriptions.relational_db().clone();
+            let handle = tokio::runtime::Handle::current();
+
+            // Wait for A's coordinator log (committed atomically with the tx) to be
+            // durable before sending COMMIT to B.  This guarantees that if A crashes
+            // after sending COMMIT, recovery can retransmit from the durable log.
+            // Only needed for COMMIT — ABORT carries no durability requirement.
+            if committed {
+                if let Some(mut durable_offset) = stdb.durable_tx_offset() {
+                    block_on_scoped(&handle, async move {
+                        if let Ok(offset) = commit_tx_offset.await {
+                            let _ = durable_offset.wait_for(offset).await;
+                        }
+                    });
+                }
+            }
+
+            // Fire-and-forget: send COMMIT/ABORT to each participant.
+            // The coordinator log (written atomically with A's tx above) is the
+            // durability guarantee — if a send fails, recover_2pc_coordinator retransmits
+            // on restart and recover_2pc_participant polls the status endpoint.
+            // Blocking the executor here would stall A's next reducer for up to
+            // 30 s × number of participants with no correctness benefit.
+            let replica_ctx = inst.replica_ctx().clone();
+            handle.spawn(async move {
+                let client = replica_ctx.call_reducer_client.clone();
+                let router = replica_ctx.call_reducer_router.clone();
+                let auth_token = replica_ctx.call_reducer_auth_token.clone();
+                for (db_identity, prepare_id) in &prepared_participants {
+                    let action = if committed { "commit" } else { "abort" };
+                    let base_url = match router.resolve_base_url(*db_identity).await {
+                        Ok(url) => url,
+                        Err(e) => {
+                            log::error!("2PC {action}: failed to resolve base URL for {db_identity}: {e}");
+                            continue;
+                        }
+                    };
+                    let url = format!(
+                        "{}/v1/database/{}/2pc/{}/{}",
+                        base_url,
+                        db_identity.to_hex(),
+                        action,
+                        prepare_id,
+                    );
+                    let mut req = client.post(&url);
+                    if let Some(ref token) = auth_token {
+                        req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+                    }
+                    match req.send().await {
+                        Ok(resp) if resp.status().is_success() => {
+                            log::info!("2PC {action}: {prepare_id} on {db_identity}");
+                            // B acknowledged COMMIT — remove coordinator log entry
+                            // (best-effort; recovery will clean up on restart if missed).
+                            if committed {
+                                if let Err(e) = stdb
+                                    .with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
+                                        Ok(del_tx.delete_st_2pc_coordinator_log(prepare_id)?)
+                                    })
+                                {
+                                    log::warn!("delete_st_2pc_coordinator_log failed for {prepare_id}: {e}");
+                                }
+                            }
+                        }
+                        Ok(resp) => {
+                            log::error!(
+                                "2PC {action}: failed for {prepare_id} on {db_identity}: status {}",
+                                resp.status()
+                            );
+                        }
+                        Err(e) => {
+                            log::error!("2PC {action}: transport error for {prepare_id} on {db_identity}: {e}");
+                        }
+                    }
+                }
+            });
+        }
+
+        let res = ReducerCallResult {
+            outcome: ReducerOutcome::from(&event.status),
+            energy_used: energy_quanta_used,
+            execution_duration: total_duration,
+        };
+
+        (res, event.reducer_return_value.clone(), trapped)
+    }
+
+    /// Run the reducer and views, but do NOT commit or broadcast yet.
+    ///
+    /// Returns `(open_tx, event, client, trapped)`.  The `MutTxId` write lock is
+    /// still held.  The caller is responsible for either committing (via
+    /// [`commit_and_broadcast_event`]) or rolling back.
+    ///
+    /// This is the building block for both the normal path and the 2PC participant
+    /// PREPARE path.
+    pub(crate) fn run_reducer_no_commit<I: WasmInstance>(
+        &mut self,
+        tx: Option<MutTxId>,
+        params: CallReducerParams,
+        inst: &mut I,
+    ) -> (
+        MutTxId,
+        ModuleEvent,
+        Option<Arc<crate::client::ClientConnectionSender>>,
+        bool,
+    ) {
         let CallReducerParams {
             timestamp,
             caller_identity,
@@ -947,9 +1367,9 @@ impl InstanceCommon {
         vm_metrics.report_total_duration(out.total_duration);
         vm_metrics.report_abi_duration(out.abi_duration);
 
-        let status = match out.outcome {
+        let status = match &out.outcome {
             ViewOutcome::BudgetExceeded => EventStatus::OutOfEnergy,
-            ViewOutcome::Failed(err) => EventStatus::FailedInternal(err),
+            ViewOutcome::Failed(err) => EventStatus::FailedInternal(err.clone()),
             ViewOutcome::Success => status,
         };
         if !matches!(status, EventStatus::Committed(_)) {
@@ -975,15 +1395,7 @@ impl InstanceCommon {
             request_id,
             timer,
         };
-        let event = commit_and_broadcast_event(&info.subscriptions, client, event, out.tx).event;
-
-        let res = ReducerCallResult {
-            outcome: ReducerOutcome::from(&event.status),
-            energy_used: energy_quanta_used,
-            execution_duration: total_duration,
-        };
-
-        (res, event.reducer_return_value.clone(), trapped)
+        (out.tx, event, client, trapped)
     }
 
     fn handle_outer_error(&mut self, energy: &EnergyStats, reducer_name: &str) -> EventStatus {

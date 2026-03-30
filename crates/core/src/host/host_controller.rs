@@ -1141,6 +1141,11 @@ impl Host {
         module_host.clear_all_clients().await?;
 
         scheduler_starter.start(&module_host)?;
+
+        // Crash recovery: retransmit any pending 2PC decisions from before the restart.
+        module_host.recover_2pc_coordinator();
+        module_host.recover_2pc_participant();
+
         let disk_metrics_recorder_task = tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle();
         let view_cleanup_task = spawn_view_cleanup_loop(replica_ctx.relational_db().clone());
 

@@ -564,6 +564,10 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         log_traceback(func_type, func, trap)
     }
 
+    fn take_prepared_participants(&mut self) -> Vec<(Identity, String)> {
+        core::mem::take(&mut self.store.data_mut().instance_env_mut().prepared_participants)
+    }
+
     #[tracing::instrument(level = "trace", skip_all)]
     async fn call_procedure(
         &mut self,
