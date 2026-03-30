@@ -2009,13 +2009,21 @@ impl WasmInstanceEnv {
                     bytes_source.0.write_to(mem, out)?;
                     Ok(status as u32)
                 }
-                Err(NodesError::HttpError(err) | NodesError::Wounded(err)) => {
+                Err(NodesError::HttpError(err)) => {
                     let err_bytes = bsatn::to_vec(&err).with_context(|| {
                         format!("Failed to BSATN-serialize call_reducer_on_db transport error: {err:?}")
                     })?;
                     let bytes_source = WasmInstanceEnv::create_bytes_source(env, err_bytes.into())?;
                     bytes_source.0.write_to(mem, out)?;
                     Ok(errno::HTTP_ERROR.get() as u32)
+                }
+                Err(NodesError::Wounded(err)) => {
+                    let err_bytes = bsatn::to_vec(&err).with_context(|| {
+                        format!("Failed to BSATN-serialize call_reducer_on_db wounded error: {err:?}")
+                    })?;
+                    let bytes_source = WasmInstanceEnv::create_bytes_source(env, err_bytes.into())?;
+                    bytes_source.0.write_to(mem, out)?;
+                    Ok(errno::WOUNDED_TRANSACTION.get() as u32)
                 }
                 Err(e) => Err(WasmError::Db(e)),
             }
@@ -2082,13 +2090,21 @@ impl WasmInstanceEnv {
                     bytes_source.0.write_to(mem, out)?;
                     Ok(status as u32)
                 }
-                Err(NodesError::HttpError(err) | NodesError::Wounded(err)) => {
+                Err(NodesError::HttpError(err)) => {
                     let err_bytes = bsatn::to_vec(&err).with_context(|| {
                         format!("Failed to BSATN-serialize call_reducer_on_db_2pc transport error: {err:?}")
                     })?;
                     let bytes_source = WasmInstanceEnv::create_bytes_source(env, err_bytes.into())?;
                     bytes_source.0.write_to(mem, out)?;
                     Ok(errno::HTTP_ERROR.get() as u32)
+                }
+                Err(NodesError::Wounded(err)) => {
+                    let err_bytes = bsatn::to_vec(&err).with_context(|| {
+                        format!("Failed to BSATN-serialize call_reducer_on_db_2pc wounded error: {err:?}")
+                    })?;
+                    let bytes_source = WasmInstanceEnv::create_bytes_source(env, err_bytes.into())?;
+                    bytes_source.0.write_to(mem, out)?;
+                    Ok(errno::WOUNDED_TRANSACTION.get() as u32)
                 }
                 Err(e) => Err(WasmError::Db(e)),
             }

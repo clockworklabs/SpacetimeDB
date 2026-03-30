@@ -252,6 +252,7 @@ impl ExecutionStats {
 
 pub enum ExecutionError {
     User(Box<str>),
+    Wounded(Box<str>),
     Recoverable(anyhow::Error),
     Trap(anyhow::Error),
 }
@@ -1405,6 +1406,7 @@ impl InstanceCommon {
                 );
                 (EventStatus::FailedUser(err.into()), None)
             }
+            Err(ExecutionError::Wounded(err)) => (EventStatus::Wounded(err.into()), None),
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
             // for us and replace this with the actual database update.
             Ok(return_value) => {
@@ -1727,6 +1729,10 @@ impl InstanceCommon {
             }
             // TODO: maybe do something else with user errors?
             (Err(ExecutionError::User(err)), _) => {
+                inst.log_traceback("view", &view_name, &anyhow::anyhow!(err));
+                self.handle_outer_error(&result.stats.energy, &view_name).into()
+            }
+            (Err(ExecutionError::Wounded(err)), _) => {
                 inst.log_traceback("view", &view_name, &anyhow::anyhow!(err));
                 self.handle_outer_error(&result.stats.energy, &view_name).into()
             }

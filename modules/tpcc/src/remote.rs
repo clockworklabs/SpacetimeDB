@@ -1,6 +1,7 @@
 use spacetimedb::{
-    reducer, remote_reducer::call_reducer_on_db, table, DeserializeOwned, Identity, ReducerContext, Serialize,
-    SpacetimeType, Table,
+    reducer,
+    remote_reducer::{call_reducer_on_db, into_reducer_error_message, RemoteCallError},
+    table, DeserializeOwned, Identity, ReducerContext, Serialize, SpacetimeType, Table,
 };
 use spacetimedb_sats::bsatn;
 
@@ -55,8 +56,10 @@ where
     let args = bsatn::to_vec(args).map_err(|e| {
         format!("Failed to BSATN-serialize args for remote reducer {reducer_name} on database {database_ident}: {e}")
     })?;
-    let out = call_reducer_on_db(database_ident, reducer_name, &args)
-        .map_err(|e| format!("Failed to call remote reducer {reducer_name} on database {database_ident}: {e}"))?;
+    let out = call_reducer_on_db(database_ident, reducer_name, &args).map_err(|e| match e {
+        RemoteCallError::Wounded(_) => into_reducer_error_message(e),
+        _ => format!("Failed to call remote reducer {reducer_name} on database {database_ident}: {e}"),
+    })?;
     bsatn::from_slice(&out).map_err(|e| {
         format!(
             "Failed to BSATN-deserialize result from remote reducer {reducer_name} on database {database_ident}: {e}"

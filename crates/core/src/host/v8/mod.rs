@@ -1420,6 +1420,7 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
         .map_result(|call_result| {
             call_result.map_err(|e| match e {
                 ExecutionError::User(e) => anyhow::Error::msg(e),
+                ExecutionError::Wounded(e) => anyhow::Error::msg(e),
                 ExecutionError::Recoverable(e) | ExecutionError::Trap(e) => e,
             })
         });
