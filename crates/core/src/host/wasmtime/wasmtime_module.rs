@@ -107,6 +107,17 @@ pub(super) enum ViewResultSinkError {
     UnexpectedCode(i32),
 }
 
+const WOUNDED_ERROR_PREFIX: &str = "__STDB_WOUNDED__:";
+
+fn decode_reducer_failure(result: Vec<u8>) -> ExecutionError {
+    let message = string_from_utf8_lossy_owned(result);
+    if let Some(message) = message.strip_prefix(WOUNDED_ERROR_PREFIX) {
+        ExecutionError::Wounded(message.into())
+    } else {
+        ExecutionError::User(message.into())
+    }
+}
+
 /// Handle the return code from a function using a result sink.
 ///
 /// On success, returns the result bytes.
@@ -114,7 +125,7 @@ pub(super) enum ViewResultSinkError {
 fn handle_result_sink_code(code: i32, result: Vec<u8>) -> Result<Vec<u8>, ExecutionError> {
     match code {
         0 => Ok(result),
-        CALL_FAILURE => Err(ExecutionError::User(string_from_utf8_lossy_owned(result).into())),
+        CALL_FAILURE => Err(decode_reducer_failure(result)),
         _ => Err(ExecutionError::Recoverable(anyhow::anyhow!("unknown return code"))),
     }
 }
@@ -253,6 +264,7 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
 
             res.map_err(|e| match e {
                 ExecutionError::User(err) => InitializationError::Setup(err),
+                ExecutionError::Wounded(err) => InitializationError::Setup(err),
                 ExecutionError::Recoverable(err) | ExecutionError::Trap(err) => {
                     let func = SETUP_DUNDER.to_owned();
                     InitializationError::RuntimeError { err, func }

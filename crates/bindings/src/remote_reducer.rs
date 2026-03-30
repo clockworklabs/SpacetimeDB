@@ -19,6 +19,7 @@
 //!         Err(remote_reducer::RemoteCallError::Failed(msg)) => log::error!("reducer failed: {msg}"),
 //!         Err(remote_reducer::RemoteCallError::NotFound(msg)) => log::error!("not found: {msg}"),
 //!         Err(remote_reducer::RemoteCallError::Unreachable(msg)) => log::error!("unreachable: {msg}"),
+//!         Err(remote_reducer::RemoteCallError::Wounded(msg)) => log::warn!("wounded: {msg}"),
 //!     }
 //! }
 //! ```
@@ -34,6 +35,8 @@ pub enum RemoteCallError {
     NotFound(String),
     /// The call could not be delivered (connection refused, timeout, network error, etc.).
     Unreachable(String),
+    /// The distributed transaction was wounded by an older transaction.
+    Wounded(String),
 }
 
 impl core::fmt::Display for RemoteCallError {
@@ -42,7 +45,15 @@ impl core::fmt::Display for RemoteCallError {
             RemoteCallError::Failed(msg) => write!(f, "remote reducer failed: {msg}"),
             RemoteCallError::NotFound(msg) => write!(f, "remote database or reducer not found: {msg}"),
             RemoteCallError::Unreachable(msg) => write!(f, "remote database unreachable: {msg}"),
+            RemoteCallError::Wounded(msg) => write!(f, "{msg}"),
         }
+    }
+}
+
+pub fn into_reducer_error_message(error: RemoteCallError) -> String {
+    match error {
+        RemoteCallError::Wounded(msg) => crate::rt::encode_wounded_error_message(msg),
+        other => other.to_string(),
     }
 }
 
@@ -56,6 +67,7 @@ impl core::fmt::Display for RemoteCallError {
 /// Returns `Err(RemoteCallError::Failed(msg))` when the reducer ran but returned an error.
 /// Returns `Err(RemoteCallError::NotFound(msg))` when the database or reducer does not exist.
 /// Returns `Err(RemoteCallError::Unreachable(msg))` on transport failure (connection refused, timeout, …).
+/// Returns `Err(RemoteCallError::Wounded(msg))` if the surrounding distributed transaction was wounded.
 pub fn call_reducer_on_db(
     database_identity: Identity,
     reducer_name: &str,
@@ -83,10 +95,14 @@ pub fn call_reducer_on_db(
                 Err(RemoteCallError::Failed(msg))
             }
         }
-        Err(err_source) => {
+        Err((errno, err_source)) => {
             use crate::rt::read_bytes_source_as;
             let msg = read_bytes_source_as::<String>(err_source);
-            Err(RemoteCallError::Unreachable(msg))
+            Err(if errno == spacetimedb_bindings_sys::Errno::WOUNDED_TRANSACTION {
+                RemoteCallError::Wounded(msg)
+            } else {
+                RemoteCallError::Unreachable(msg)
+            })
         }
     }
 }
@@ -125,10 +141,14 @@ pub fn call_reducer_on_db_2pc(
                 Err(RemoteCallError::Failed(msg))
             }
         }
-        Err(err_source) => {
+        Err((errno, err_source)) => {
             use crate::rt::read_bytes_source_as;
             let msg = read_bytes_source_as::<String>(err_source);
-            Err(RemoteCallError::Unreachable(msg))
+            Err(if errno == spacetimedb_bindings_sys::Errno::WOUNDED_TRANSACTION {
+                RemoteCallError::Wounded(msg)
+            } else {
+                RemoteCallError::Unreachable(msg)
+            })
         }
     }
 }
