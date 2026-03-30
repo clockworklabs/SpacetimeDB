@@ -789,11 +789,14 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             // row changes and any dependent transactions). They are tainted and
             // must not reach disk. On restart, the in-memory state is lost.
             stdb.abort_durability_barrier(barrier_offset);
-            log::error!(
-                "call_reducer_prepare_and_hold: persistence aborted for {prepare_id}; \
-                 in-memory state is tainted, restart required"
+            // Panic to trigger module restart. The defer_on_unwind! in
+            // ModuleHost::call will call on_panic(), which unregisters the
+            // module. On next access, it is re-created from the commitlog
+            // (which does not contain the tainted data).
+            panic!(
+                "2PC persistence aborted for {prepare_id}: \
+                 flushing tainted in-memory state via module restart"
             );
-            // TODO: trigger module restart to flush tainted in-memory state.
         }
     }
 
@@ -1369,22 +1372,14 @@ impl InstanceCommon {
                     if let Some(offset) = coordinator_barrier_offset {
                         stdb.abort_durability_barrier(offset);
                     }
-                    log::error!(
+                    // Panic to trigger module restart. The defer_on_unwind! in
+                    // ModuleHost::call will call on_panic(), which unregisters the
+                    // module. On next access, it is re-created from the commitlog
+                    // (which does not contain the tainted data).
+                    panic!(
                         "2PC Round 2: persistence aborted (timeout waiting for PREPARED_TO_PERSIST); \
-                         in-memory state is tainted, restart required"
+                         flushing tainted in-memory state via module restart"
                     );
-                    // Clean up coordinator log from committed state (in-memory only).
-                    for (_db_identity, prepare_id) in &prepared_participants {
-                        if let Err(e) = stdb
-                            .with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
-                                Ok(del_tx.delete_st_2pc_coordinator_log(prepare_id)?)
-                            })
-                        {
-                            log::warn!("delete_st_2pc_coordinator_log failed for {prepare_id}: {e}");
-                        }
-                    }
-                    // TODO: trigger module restart to flush tainted in-memory state.
-                    return;
                 }
 
                 // All participants' PREPAREs are durable. Lift A's barrier so A's
