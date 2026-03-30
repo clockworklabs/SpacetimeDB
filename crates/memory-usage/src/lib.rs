@@ -126,6 +126,13 @@ impl<K: MemoryUsage, V: MemoryUsage> MemoryUsage for std::collections::BTreeMap<
     }
 }
 
+impl<T: MemoryUsage> MemoryUsage for std::collections::BTreeSet<T> {
+    fn heap_usage(&self) -> usize {
+        // NB: this is best-effort, since we don't have a `capacity()` method on `BTreeMap`.
+        self.len() * mem::size_of::<T>() + self.iter().map(|t| t.heap_usage()).sum::<usize>()
+    }
+}
+
 #[cfg(feature = "smallvec")]
 impl<A: smallvec::Array> MemoryUsage for smallvec::SmallVec<A>
 where

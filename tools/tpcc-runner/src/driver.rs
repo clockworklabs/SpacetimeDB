@@ -1,26 +1,35 @@
 use anyhow::{anyhow, bail, Context, Result};
 use rand::{rngs::StdRng, Rng, SeedableRng};
+use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
+use tokio::task::JoinSet;
 
 use crate::client::{expect_ok, ModuleClient};
 use crate::config::{default_run_id, DriverConfig};
+use crate::metrics_module_bindings::register_completed_order;
+use crate::metrics_module_bindings::DbConnection as MetricsDbConnection;
+use crate::metrics_module_client::connect_metrics_module_async;
 use crate::module_bindings::*;
 use crate::protocol::{
     RegisterDriverRequest, RegisterDriverResponse, RunSchedule, ScheduleResponse, SubmitSummaryRequest,
 };
-use crate::summary::{write_json, DriverSummary, DriverSummaryMeta, SharedMetrics, TransactionKind, TransactionRecord};
+use crate::summary::{
+    log_driver_summary, write_json, DriverSummary, DriverSummaryMeta, SharedMetrics, TransactionKind, TransactionRecord,
+};
 use crate::topology::DatabaseTopology;
 use crate::tpcc::*;
 
 struct TerminalRuntime {
     config: DriverConfig,
+    client: Arc<ModuleClient>,
     metrics: SharedMetrics,
+    metrics_client: Arc<MetricsDbConnection>,
     abort: Arc<AtomicBool>,
+    start_logged: Arc<AtomicBool>,
     request_ids: Arc<AtomicU64>,
     schedule: RunSchedule,
     run_constants: RunConstants,
@@ -58,11 +67,39 @@ pub async fn run(config: DriverConfig) -> Result<()> {
     };
 
     let abort = Arc::new(AtomicBool::new(false));
+    let start_logged = Arc::new(AtomicBool::new(false));
     let request_ids = Arc::new(AtomicU64::new(1));
-    let mut handles = Vec::with_capacity(config.terminals() as usize);
+    let mut tasks = JoinSet::new();
+    let metrics_client = Arc::new(connect_metrics_module_async(&config.connection).await?);
+    let shared_database_clients = connect_shared_database_clients(&config, &topology, &used_database_numbers).await?;
+
+    log::info!(
+        "driver {} ready for run {}: warehouses {}..={} terminals={} warmup_start_ms={} measure_start_ms={} measure_end_ms={}",
+        config.driver_id,
+        run_id,
+        config.warehouse_start,
+        config.warehouse_end(),
+        config.terminals(),
+        schedule.warmup_start_ms,
+        schedule.measure_start_ms,
+        schedule.measure_end_ms
+    );
+    log::info!(
+        "driver {} shared metrics connection ready; launching {} terminal task(s) across {} shared database connection(s)",
+        config.driver_id,
+        config.terminals(),
+        shared_database_clients.len()
+    );
 
     for warehouse_id in config.warehouse_start..=config.warehouse_end() {
+        let database_number = topology.database_number_for_warehouse(warehouse_id)?;
         let database_identity = topology.identity_for_warehouse(warehouse_id)?;
+        let client = shared_database_clients.get(&database_number).cloned().ok_or_else(|| {
+            anyhow!(
+                "missing shared database client for {}",
+                topology.database_name(database_number)
+            )
+        })?;
         for district_id in 1..=DISTRICTS_PER_WAREHOUSE {
             let assignment = TerminalAssignment {
                 terminal_id: terminal_id(warehouse_id, district_id),
@@ -73,13 +110,17 @@ pub async fn run(config: DriverConfig) -> Result<()> {
             let terminal_config = config.clone();
             let terminal_metrics = metrics.clone();
             let terminal_abort = abort.clone();
+            let terminal_start_logged = start_logged.clone();
             let terminal_constants = run_constants.clone();
             let terminal_schedule = schedule.clone();
             let terminal_request_ids = request_ids.clone();
             let runtime = TerminalRuntime {
                 config: terminal_config,
+                client: client.clone(),
                 metrics: terminal_metrics,
+                metrics_client: metrics_client.clone(),
                 abort: terminal_abort,
+                start_logged: terminal_start_logged,
                 request_ids: terminal_request_ids,
                 schedule: terminal_schedule,
                 run_constants: terminal_constants,
@@ -87,33 +128,48 @@ pub async fn run(config: DriverConfig) -> Result<()> {
                 database_identity,
                 seed: terminal_seed,
             };
-            handles.push(thread::spawn(move || run_terminal(runtime)));
+            tasks.spawn(run_terminal(runtime));
         }
     }
 
     let mut first_error: Option<anyhow::Error> = None;
-    for handle in handles {
-        match handle.join() {
+    while let Some(result) = tasks.join_next().await {
+        match result {
             Ok(Ok(())) => {}
             Ok(Err(err)) => {
                 abort.store(true, Ordering::Relaxed);
                 if first_error.is_none() {
+                    log::error!(
+                        "driver {} aborting run {} after terminal task error: {err:#}",
+                        config.driver_id,
+                        run_id
+                    );
                     first_error = Some(err);
+                    tasks.abort_all();
                 }
             }
-            Err(_) => {
+            Err(err) => {
                 abort.store(true, Ordering::Relaxed);
                 if first_error.is_none() {
-                    first_error = Some(anyhow!("terminal thread panicked"));
+                    let err = anyhow!("terminal task failed: {}", err);
+                    log::error!(
+                        "driver {} aborting run {} after terminal task failure: {err:#}",
+                        config.driver_id,
+                        run_id
+                    );
+                    first_error = Some(err);
+                    tasks.abort_all();
                 }
             }
         }
     }
     if let Some(err) = first_error {
+        shutdown_shared_database_clients(shared_database_clients).await;
         return Err(err);
     }
 
-    harvest_delivery_completions(&config, &schedule, &metrics, &topology, &used_database_numbers).await?;
+    harvest_delivery_completions(&config, &schedule, &metrics, &shared_database_clients).await?;
+    shutdown_shared_database_clients(shared_database_clients).await;
 
     let summary = metrics.finalize(DriverSummaryMeta {
         run_id: run_id.clone(),
@@ -129,7 +185,7 @@ pub async fn run(config: DriverConfig) -> Result<()> {
         measure_end_ms: schedule.measure_end_ms,
     })?;
     write_json(&summary_path, &summary)?;
-    print_summary(&summary, &summary_path, &events_path);
+    log_driver_summary(&summary, &summary_path, &events_path);
 
     if let Some(coordinator_url) = &config.coordinator_url {
         submit_summary(coordinator_url, summary).await?;
@@ -138,11 +194,14 @@ pub async fn run(config: DriverConfig) -> Result<()> {
     Ok(())
 }
 
-fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
+async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
     let TerminalRuntime {
         config,
+        client,
         metrics,
+        metrics_client,
         abort,
+        start_logged,
         request_ids,
         schedule,
         run_constants,
@@ -150,8 +209,23 @@ fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
         database_identity,
         seed,
     } = runtime;
-    let client = ModuleClient::connect(&config.connection, database_identity)?;
-    sleep_until_ms(schedule.warmup_start_ms);
+    log::info!(
+        "driver {} terminal {} connected to {} for warehouse {} district {}",
+        config.driver_id,
+        assignment.terminal_id,
+        database_identity,
+        assignment.warehouse_id,
+        assignment.district_id
+    );
+    sleep_until_ms_async(schedule.warmup_start_ms).await;
+    if !start_logged.swap(true, Ordering::Relaxed) {
+        log::info!(
+            "driver {} starting run {} with {} terminal(s)",
+            config.driver_id,
+            schedule.run_id,
+            config.terminals()
+        );
+    }
 
     let mut rng = StdRng::seed_from_u64(seed);
     while !abort.load(Ordering::Relaxed) {
@@ -162,7 +236,7 @@ fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
         let kind = choose_transaction(&mut rng);
         let started_ms = crate::summary::now_millis();
         let context = TransactionContext {
-            client: &client,
+            client: client.as_ref(),
             config: &config,
             run_id: &schedule.run_id,
             driver_id: &config.driver_id,
@@ -170,73 +244,85 @@ fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
             constants: &run_constants,
             request_ids: &request_ids,
         };
-        let event = execute_transaction(&context, kind, &mut rng, started_ms);
+        let event = execute_transaction(&context, kind, &mut rng, started_ms).await;
 
         match event {
             Ok(record) => {
+                // Some metrics depend on knowing all completed orders, even outside the
+                // measurement window
+                if record.kind == TransactionKind::NewOrder && record.success {
+                    let _ = metrics_client.reducers.register_completed_order();
+                }
+
                 if record.timestamp_ms >= schedule.measure_start_ms && record.timestamp_ms < schedule.measure_end_ms {
                     metrics.record(record)?;
                 }
             }
             Err(err) => {
                 abort.store(true, Ordering::Relaxed);
-                client.shutdown();
                 return Err(err);
             }
         }
 
         let delay = keying_time(kind, config.keying_time_scale) + think_time(kind, config.think_time_scale, &mut rng);
         if !delay.is_zero() && crate::summary::now_millis() < schedule.stop_ms {
-            thread::sleep(delay);
+            tokio::time::sleep(delay).await;
         }
     }
-
-    client.shutdown();
     Ok(())
 }
 
-fn execute_transaction(
+async fn execute_transaction(
     context: &TransactionContext<'_>,
     kind: TransactionKind,
     rng: &mut StdRng,
     started_ms: u64,
 ) -> Result<TransactionRecord> {
     match kind {
-        TransactionKind::NewOrder => execute_new_order(
-            context.client,
-            context.config.warehouse_count,
-            context.assignment,
-            context.constants,
-            rng,
-            started_ms,
-        ),
-        TransactionKind::Payment => execute_payment(
-            context.client,
-            context.config.warehouse_count,
-            context.assignment,
-            context.constants,
-            rng,
-            started_ms,
-        ),
-        TransactionKind::OrderStatus => {
-            execute_order_status(context.client, context.assignment, context.constants, rng, started_ms)
+        TransactionKind::NewOrder => {
+            execute_new_order(
+                context.client,
+                context.config.warehouse_count,
+                context.assignment,
+                context.constants,
+                rng,
+                started_ms,
+            )
+            .await
         }
-        TransactionKind::Delivery => execute_delivery(
-            context.client,
-            context.run_id,
-            context.driver_id,
-            context.assignment,
-            context.request_ids,
-            rng,
-            started_ms,
-        ),
-        TransactionKind::StockLevel => execute_stock_level(context.client, context.assignment, rng, started_ms),
+        TransactionKind::Payment => {
+            execute_payment(
+                context.client,
+                context.config.warehouse_count,
+                context.assignment,
+                context.constants,
+                rng,
+                started_ms,
+            )
+            .await
+        }
+        TransactionKind::OrderStatus => {
+            execute_order_status(context.client, context.assignment, context.constants, rng, started_ms).await
+        }
+        TransactionKind::Delivery => {
+            execute_delivery(
+                context.client,
+                context.run_id,
+                context.driver_id,
+                context.assignment,
+                context.request_ids,
+                rng,
+                started_ms,
+            )
+            .await
+        }
+        TransactionKind::StockLevel => execute_stock_level(context.client, context.assignment, rng, started_ms).await,
     }
 }
 
-fn execute_new_order(
+async fn execute_new_order(
     client: &ModuleClient,
-    warehouse_count: u16,
+    warehouse_count: u32,
     assignment: &TerminalAssignment,
     constants: &RunConstants,
     rng: &mut StdRng,
@@ -271,12 +357,14 @@ fn execute_new_order(
         });
     }
 
-    let result = client.new_order(
-        assignment.warehouse_id,
-        assignment.district_id,
-        customer_id,
-        order_lines,
-    )?;
+    let result = client
+        .new_order_async(
+            assignment.warehouse_id,
+            assignment.district_id,
+            customer_id,
+            order_lines,
+        )
+        .await?;
     let finished_ms = crate::summary::now_millis();
     match result {
         Ok(_) => Ok(TransactionRecord {
@@ -313,9 +401,9 @@ fn execute_new_order(
     }
 }
 
-fn execute_payment(
+async fn execute_payment(
     client: &ModuleClient,
-    warehouse_count: u16,
+    warehouse_count: u32,
     assignment: &TerminalAssignment,
     constants: &RunConstants,
     rng: &mut StdRng,
@@ -345,14 +433,16 @@ fn execute_payment(
     let amount_cents = rng.random_range(100..=500_000);
     let finished = expect_ok(
         "payment",
-        client.payment(
-            assignment.warehouse_id,
-            assignment.district_id,
-            c_w_id,
-            c_d_id,
-            selector,
-            amount_cents,
-        ),
+        client
+            .payment_async(
+                assignment.warehouse_id,
+                assignment.district_id,
+                c_w_id,
+                c_d_id,
+                selector,
+                amount_cents,
+            )
+            .await,
     )?;
     let _ = finished;
     let finished_ms = crate::summary::now_millis();
@@ -371,7 +461,7 @@ fn execute_payment(
     })
 }
 
-fn execute_order_status(
+async fn execute_order_status(
     client: &ModuleClient,
     assignment: &TerminalAssignment,
     constants: &RunConstants,
@@ -386,7 +476,9 @@ fn execute_order_status(
     };
     let _ = expect_ok(
         "order_status",
-        client.order_status(assignment.warehouse_id, assignment.district_id, selector),
+        client
+            .order_status_async(assignment.warehouse_id, assignment.district_id, selector)
+            .await,
     )?;
     let finished_ms = crate::summary::now_millis();
     Ok(TransactionRecord {
@@ -404,7 +496,7 @@ fn execute_order_status(
     })
 }
 
-fn execute_delivery(
+async fn execute_delivery(
     client: &ModuleClient,
     run_id: &str,
     driver_id: &str,
@@ -416,14 +508,16 @@ fn execute_delivery(
     let request_id = request_ids.fetch_add(1, Ordering::Relaxed);
     let _ = expect_ok(
         "queue_delivery",
-        client.queue_delivery(
-            run_id.to_string(),
-            driver_id.to_string(),
-            assignment.terminal_id,
-            request_id,
-            assignment.warehouse_id,
-            rng.random_range(1..=10),
-        ),
+        client
+            .queue_delivery_async(
+                run_id.to_string(),
+                driver_id.to_string(),
+                assignment.terminal_id,
+                request_id,
+                assignment.warehouse_id,
+                rng.random_range(1..=10),
+            )
+            .await,
     )?;
     let finished_ms = crate::summary::now_millis();
     Ok(TransactionRecord {
@@ -441,7 +535,7 @@ fn execute_delivery(
     })
 }
 
-fn execute_stock_level(
+async fn execute_stock_level(
     client: &ModuleClient,
     assignment: &TerminalAssignment,
     rng: &mut StdRng,
@@ -450,7 +544,9 @@ fn execute_stock_level(
     let threshold = rng.random_range(10..=20);
     let _ = expect_ok(
         "stock_level",
-        client.stock_level(assignment.warehouse_id, assignment.district_id, threshold),
+        client
+            .stock_level_async(assignment.warehouse_id, assignment.district_id, threshold)
+            .await,
     )?;
     let finished_ms = crate::summary::now_millis();
     Ok(TransactionRecord {
@@ -470,21 +566,57 @@ fn execute_stock_level(
 
 async fn resolve_driver_setup(config: DriverConfig) -> Result<(DriverConfig, RunSchedule)> {
     if let Some(coordinator_url) = &config.coordinator_url {
+        const REGISTER_ATTEMPTS: u32 = 5;
+        const REGISTER_RETRY_DELAY_MS: u64 = 500;
         let client = reqwest::Client::new();
         let register = RegisterDriverRequest {
             driver_id: config.driver_id.clone(),
         };
-        let response: RegisterDriverResponse = client
-            .post(format!("{}/register", coordinator_url))
-            .json(&register)
-            .send()
-            .await
-            .context("failed to register driver with coordinator")?
-            .error_for_status()
-            .context("coordinator rejected register request")?
-            .json()
-            .await
-            .context("failed to decode register response")?;
+        let mut last_error = None;
+        let mut response = None;
+        for attempt in 1..=REGISTER_ATTEMPTS {
+            match client
+                .post(format!("{}/register", coordinator_url))
+                .json(&register)
+                .send()
+                .await
+            {
+                Ok(http_response) => match http_response.error_for_status() {
+                    Ok(http_response) => match http_response.json::<RegisterDriverResponse>().await {
+                        Ok(parsed) => {
+                            response = Some(parsed);
+                            break;
+                        }
+                        Err(err) => {
+                            last_error = Some(anyhow!("failed to decode register response: {err}"));
+                        }
+                    },
+                    Err(err) => {
+                        last_error = Some(anyhow!("coordinator rejected register request: {err}"));
+                    }
+                },
+                Err(err) => {
+                    last_error = Some(anyhow!("failed to register driver with coordinator: {err}"));
+                }
+            }
+
+            if attempt < REGISTER_ATTEMPTS {
+                log::warn!(
+                    "driver {} failed to register with coordinator on attempt {}/{}; retrying in {}ms",
+                    config.driver_id,
+                    attempt,
+                    REGISTER_ATTEMPTS,
+                    REGISTER_RETRY_DELAY_MS
+                );
+                tokio::time::sleep(Duration::from_millis(REGISTER_RETRY_DELAY_MS)).await;
+            }
+        }
+        let response = match response {
+            Some(response) => response,
+            None => {
+                return Err(last_error.unwrap_or_else(|| anyhow!("driver registration failed without an error")));
+            }
+        };
         if !response.accepted {
             bail!("coordinator did not accept driver registration");
         }
@@ -530,32 +662,21 @@ async fn harvest_delivery_completions(
     config: &DriverConfig,
     schedule: &RunSchedule,
     metrics: &SharedMetrics,
-    topology: &DatabaseTopology,
-    used_database_numbers: &[u16],
+    shared_database_clients: &BTreeMap<u32, Arc<ModuleClient>>,
 ) -> Result<()> {
     let expected = metrics.delivery_queued();
     if expected == 0 {
         return Ok(());
     }
-    let clients = used_database_numbers
-        .iter()
-        .map(|database_number| {
-            let database_identity = topology.identity_for_database_number(*database_number)?;
-            ModuleClient::connect(&config.connection, database_identity)
-                .map(|client| (*database_number, client))
-                .with_context(|| {
-                    format!(
-                        "failed to connect delivery harvester to {}",
-                        topology.database_name(*database_number)
-                    )
-                })
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let harvest_clients: Vec<_> = shared_database_clients.iter().collect();
 
     let mut pending_jobs = 0u64;
     let mut completed_jobs = 0u64;
-    for (_, client) in &clients {
-        let progress = expect_ok("delivery_progress", client.delivery_progress(schedule.run_id.clone()))?;
+    for (_, client) in &harvest_clients {
+        let progress = expect_ok(
+            "delivery_progress",
+            client.delivery_progress_async(schedule.run_id.clone()).await,
+        )?;
         pending_jobs += progress.pending_jobs;
         completed_jobs += progress.completed_jobs;
     }
@@ -566,17 +687,19 @@ async fn harvest_delivery_completions(
     );
     let deadline = crate::summary::now_millis() + (config.delivery_wait_secs * 1_000);
     let mut seen_for_driver = 0u64;
-    let mut after_completion_ids = vec![0u64; clients.len()];
+    let mut after_completion_ids = vec![0u64; harvest_clients.len()];
 
     loop {
         if seen_for_driver >= expected {
             break;
         }
         let mut saw_rows = false;
-        for ((_, client), after_completion_id) in clients.iter().zip(after_completion_ids.iter_mut()) {
+        for ((_, client), after_completion_id) in harvest_clients.iter().zip(after_completion_ids.iter_mut()) {
             let batch = expect_ok(
                 "fetch_delivery_completions",
-                client.fetch_delivery_completions(schedule.run_id.clone(), *after_completion_id, 512),
+                client
+                    .fetch_delivery_completions_async(schedule.run_id.clone(), *after_completion_id, 512)
+                    .await,
             )?;
             if batch.is_empty() {
                 continue;
@@ -617,13 +740,13 @@ async fn harvest_delivery_completions(
     Ok(())
 }
 
-fn databases_for_warehouse_slice(config: &DriverConfig) -> Vec<u16> {
+fn databases_for_warehouse_slice(config: &DriverConfig) -> Vec<u32> {
     let first = (config.warehouse_start - 1) / config.warehouses_per_database;
     let last = (config.warehouse_end() - 1) / config.warehouses_per_database;
     (first..=last).collect()
 }
 
-fn describe_databases(topology: &DatabaseTopology, used_database_numbers: &[u16]) -> String {
+fn describe_databases(topology: &DatabaseTopology, used_database_numbers: &[u32]) -> String {
     used_database_numbers
         .iter()
         .map(|database_number| topology.database_name(*database_number))
@@ -651,28 +774,60 @@ fn resolve_output_dir(config: &DriverConfig, run_id: &str) -> PathBuf {
     }
 }
 
-fn print_summary(summary: &DriverSummary, summary_path: &Path, events_path: &Path) {
-    log::info!("run_id={}", summary.run_id);
-    log::info!("driver_id={}", summary.driver_id);
-    log::info!("tpmc_like={:.2}", summary.tpmc_like);
-    log::info!("total_transactions={}", summary.total_transactions);
-    for (name, txn) in &summary.transactions {
-        log::info!(
-            "{} count={} success={} failure={} p95_ms={} p99_ms={}",
-            name,
-            txn.count,
-            txn.success,
-            txn.failure,
-            txn.p95_latency_ms,
-            txn.p99_latency_ms
-        );
+async fn sleep_until_ms_async(target_ms: u64) {
+    let now_ms = crate::summary::now_millis();
+    if target_ms > now_ms {
+        tokio::time::sleep(Duration::from_millis(target_ms - now_ms)).await;
     }
-    log::info!(
-        "delivery queued={} completed={} pending={}",
-        summary.delivery.queued,
-        summary.delivery.completed,
-        summary.delivery.pending
-    );
-    log::info!("summary={}", summary_path.display());
-    log::info!("events={}", events_path.display());
+}
+
+async fn connect_shared_database_clients(
+    config: &DriverConfig,
+    topology: &DatabaseTopology,
+    used_database_numbers: &[u32],
+) -> Result<BTreeMap<u32, Arc<ModuleClient>>> {
+    let mut connect_tasks = JoinSet::new();
+    for database_number in used_database_numbers {
+        let database_number = *database_number;
+        let database_identity = topology.identity_for_database_number(database_number)?;
+        let database_name = topology.database_name(database_number);
+        let connection = config.connection.clone();
+        connect_tasks.spawn(async move {
+            let client = ModuleClient::connect_async(&connection, database_identity)
+                .await
+                .with_context(|| format!("failed to connect shared client to {database_name}"))?;
+            Ok::<_, anyhow::Error>((database_number, database_name, Arc::new(client)))
+        });
+    }
+
+    let mut shared_clients = BTreeMap::new();
+    while let Some(result) = connect_tasks.join_next().await {
+        match result {
+            Ok(Ok((database_number, database_name, client))) => {
+                log::info!(
+                    "driver {} shared database client connected to {}",
+                    config.driver_id,
+                    database_name
+                );
+                shared_clients.insert(database_number, client);
+            }
+            Ok(Err(err)) => {
+                connect_tasks.abort_all();
+                return Err(err);
+            }
+            Err(err) => {
+                connect_tasks.abort_all();
+                return Err(anyhow!("shared database connection task failed: {}", err));
+            }
+        }
+    }
+    Ok(shared_clients)
+}
+
+async fn shutdown_shared_database_clients(shared_database_clients: BTreeMap<u32, Arc<ModuleClient>>) {
+    for (_, client) in shared_database_clients {
+        if let Some(client) = Arc::into_inner(client) {
+            client.shutdown_async().await;
+        }
+    }
 }

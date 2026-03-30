@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 
 use crate::protocol::DriverAssignment;
 
+const DEFAULT_LOAD_BATCH_SIZE: usize = 500;
+
 #[derive(Debug, Parser)]
 #[command(name = "tpcc-runner")]
 pub struct Cli {
@@ -19,6 +21,7 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     Load(LoadArgs),
+    LoadClient(LoadArgs),
     Driver(DriverArgs),
     Coordinator(CoordinatorArgs),
 }
@@ -35,8 +38,8 @@ pub struct ConnectionConfig {
 #[derive(Debug, Clone)]
 pub struct LoadConfig {
     pub connection: ConnectionConfig,
-    pub warehouses_per_database: u16,
-    pub num_databases: u16,
+    pub warehouses_per_database: u32,
+    pub num_databases: u32,
     pub load_parallelism: usize,
     pub batch_size: usize,
     pub reset: bool,
@@ -47,10 +50,10 @@ pub struct DriverConfig {
     pub connection: ConnectionConfig,
     pub run_id: Option<String>,
     pub driver_id: String,
-    pub warehouse_count: u16,
-    pub warehouse_start: u16,
-    pub driver_warehouse_count: u16,
-    pub warehouses_per_database: u16,
+    pub warehouse_count: u32,
+    pub warehouse_start: u32,
+    pub driver_warehouse_count: u32,
+    pub warehouses_per_database: u32,
     pub warmup_secs: u64,
     pub measure_secs: u64,
     pub output_dir: Option<PathBuf>,
@@ -62,11 +65,12 @@ pub struct DriverConfig {
 
 #[derive(Debug, Clone)]
 pub struct CoordinatorConfig {
+    pub connection: ConnectionConfig,
     pub run_id: String,
     pub listen: SocketAddr,
     pub expected_drivers: usize,
-    pub warehouses: u16,
-    pub warehouses_per_database: u16,
+    pub warehouses: u32,
+    pub warehouses_per_database: u32,
     pub warmup_secs: u64,
     pub measure_secs: u64,
     pub output_dir: PathBuf,
@@ -77,9 +81,9 @@ pub struct LoadArgs {
     #[command(flatten)]
     pub connection: ConnectionArgs,
     #[arg(long)]
-    pub num_databases: Option<u16>,
+    pub num_databases: Option<u32>,
     #[arg(long)]
-    pub warehouses_per_database: Option<u16>,
+    pub warehouses_per_database: Option<u32>,
     #[arg(long)]
     pub load_parallelism: Option<usize>,
     #[arg(long)]
@@ -97,13 +101,13 @@ pub struct DriverArgs {
     #[arg(long)]
     pub driver_id: Option<String>,
     #[arg(long)]
-    pub warehouse_start: Option<u16>,
+    pub warehouse_start: Option<u32>,
     #[arg(long = "warehouse-count")]
-    pub driver_warehouse_count: Option<u16>,
+    pub driver_warehouse_count: Option<u32>,
     #[arg(long)]
-    pub warehouses: Option<u16>,
+    pub warehouses: Option<u32>,
     #[arg(long)]
-    pub warehouses_per_database: Option<u16>,
+    pub warehouses_per_database: Option<u32>,
     #[arg(long)]
     pub warmup_secs: Option<u64>,
     #[arg(long)]
@@ -122,6 +126,8 @@ pub struct DriverArgs {
 
 #[derive(Debug, Clone, Args)]
 pub struct CoordinatorArgs {
+    #[command(flatten)]
+    pub connection: ConnectionArgs,
     #[arg(long)]
     pub run_id: Option<String>,
     #[arg(long)]
@@ -129,9 +135,9 @@ pub struct CoordinatorArgs {
     #[arg(long)]
     pub expected_drivers: Option<usize>,
     #[arg(long)]
-    pub warehouses: Option<u16>,
+    pub warehouses: Option<u32>,
     #[arg(long)]
-    pub warehouses_per_database: Option<u16>,
+    pub warehouses_per_database: Option<u32>,
     #[arg(long)]
     pub warmup_secs: Option<u64>,
     #[arg(long)]
@@ -177,8 +183,8 @@ struct FileConnectionConfig {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 struct FileLoadConfig {
-    num_databases: Option<u16>,
-    warehouses_per_database: Option<u16>,
+    num_databases: Option<u32>,
+    warehouses_per_database: Option<u32>,
     load_parallelism: Option<usize>,
     batch_size: Option<usize>,
     reset: Option<bool>,
@@ -188,11 +194,11 @@ struct FileLoadConfig {
 struct FileDriverConfig {
     run_id: Option<String>,
     driver_id: Option<String>,
-    warehouse_start: Option<u16>,
+    warehouse_start: Option<u32>,
     #[serde(rename = "warehouse_count")]
-    driver_warehouse_count: Option<u16>,
-    warehouses: Option<u16>,
-    warehouses_per_database: Option<u16>,
+    driver_warehouse_count: Option<u32>,
+    warehouses: Option<u32>,
+    warehouses_per_database: Option<u32>,
     warmup_secs: Option<u64>,
     measure_secs: Option<u64>,
     output_dir: Option<PathBuf>,
@@ -207,8 +213,8 @@ struct FileCoordinatorConfig {
     run_id: Option<String>,
     listen: Option<SocketAddr>,
     expected_drivers: Option<usize>,
-    warehouses: Option<u16>,
-    warehouses_per_database: Option<u16>,
+    warehouses: Option<u32>,
+    warehouses_per_database: Option<u32>,
     warmup_secs: Option<u64>,
     measure_secs: Option<u64>,
     output_dir: Option<PathBuf>,
@@ -260,16 +266,23 @@ impl LoadArgs {
         let load_parallelism = self
             .load_parallelism
             .or(file.load.load_parallelism)
-            .unwrap_or_else(|| usize::from(num_databases).min(8));
+            .unwrap_or_else(|| usize::try_from(num_databases).unwrap_or(usize::MAX).min(8));
         if load_parallelism == 0 {
             bail!("load_parallelism must be positive");
+        }
+        let batch_size = self
+            .batch_size
+            .or(file.load.batch_size)
+            .unwrap_or(DEFAULT_LOAD_BATCH_SIZE);
+        if batch_size == 0 {
+            bail!("batch_size must be positive");
         }
         Ok(LoadConfig {
             connection: self.connection.resolve(&file.connection),
             num_databases,
             warehouses_per_database,
-            load_parallelism: load_parallelism.min(usize::from(num_databases)),
-            batch_size: self.batch_size.or(file.load.batch_size).unwrap_or(500),
+            load_parallelism: load_parallelism.min(usize::try_from(num_databases).unwrap_or(usize::MAX)),
+            batch_size,
             reset: self.reset.or(file.load.reset).unwrap_or(true),
         })
     }
@@ -360,7 +373,7 @@ impl CoordinatorArgs {
         if warehouses_per_database == 0 {
             bail!("warehouses_per_database must be positive");
         }
-        if expected_drivers > usize::from(warehouses) {
+        if expected_drivers > usize::try_from(warehouses).unwrap_or(usize::MAX) {
             bail!(
                 "expected_drivers {} exceeds total warehouses {}",
                 expected_drivers,
@@ -368,6 +381,7 @@ impl CoordinatorArgs {
             );
         }
         Ok(CoordinatorConfig {
+            connection: self.connection.resolve(&file.connection),
             run_id: self
                 .run_id
                 .clone()
@@ -409,15 +423,50 @@ impl DriverConfig {
         updated
     }
 
-    pub fn warehouse_end(&self) -> u16 {
+    pub fn warehouse_end(&self) -> u32 {
         self.warehouse_start + self.driver_warehouse_count - 1
     }
 
     pub fn terminal_start(&self) -> u32 {
-        (u32::from(self.warehouse_start) - 1) * u32::from(crate::tpcc::DISTRICTS_PER_WAREHOUSE) + 1
+        (self.warehouse_start - 1) * u32::from(crate::tpcc::DISTRICTS_PER_WAREHOUSE) + 1
     }
 
     pub fn terminals(&self) -> u32 {
-        u32::from(self.driver_warehouse_count) * u32::from(crate::tpcc::DISTRICTS_PER_WAREHOUSE)
+        self.driver_warehouse_count * u32::from(crate::tpcc::DISTRICTS_PER_WAREHOUSE)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_args_reject_zero_batch_size() {
+        let args = LoadArgs {
+            connection: ConnectionArgs::default(),
+            num_databases: Some(1),
+            warehouses_per_database: Some(1),
+            load_parallelism: Some(1),
+            batch_size: Some(0),
+            reset: Some(true),
+        };
+
+        let err = args.resolve(&FileConfig::default()).unwrap_err().to_string();
+        assert!(err.contains("batch_size must be positive"), "{err}");
+    }
+
+    #[test]
+    fn load_args_default_batch_size_is_500() {
+        let args = LoadArgs {
+            connection: ConnectionArgs::default(),
+            num_databases: Some(1),
+            warehouses_per_database: Some(1),
+            load_parallelism: Some(1),
+            batch_size: None,
+            reset: Some(true),
+        };
+
+        let config = args.resolve(&FileConfig::default()).unwrap();
+        assert_eq!(config.batch_size, DEFAULT_LOAD_BATCH_SIZE);
     }
 }

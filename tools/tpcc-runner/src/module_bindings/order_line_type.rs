@@ -8,12 +8,12 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct OrderLine {
     pub order_line_key: u64,
-    pub ol_w_id: u16,
+    pub ol_w_id: u32,
     pub ol_d_id: u8,
     pub ol_o_id: u32,
     pub ol_number: u8,
     pub ol_i_id: u32,
-    pub ol_supply_w_id: u16,
+    pub ol_supply_w_id: u32,
     pub ol_delivery_d: Option<__sdk::Timestamp>,
     pub ol_quantity: u32,
     pub ol_amount_cents: i64,
@@ -29,12 +29,12 @@ impl __sdk::InModule for OrderLine {
 /// Provides typed access to columns for query building.
 pub struct OrderLineCols {
     pub order_line_key: __sdk::__query_builder::Col<OrderLine, u64>,
-    pub ol_w_id: __sdk::__query_builder::Col<OrderLine, u16>,
+    pub ol_w_id: __sdk::__query_builder::Col<OrderLine, u32>,
     pub ol_d_id: __sdk::__query_builder::Col<OrderLine, u8>,
     pub ol_o_id: __sdk::__query_builder::Col<OrderLine, u32>,
     pub ol_number: __sdk::__query_builder::Col<OrderLine, u8>,
     pub ol_i_id: __sdk::__query_builder::Col<OrderLine, u32>,
-    pub ol_supply_w_id: __sdk::__query_builder::Col<OrderLine, u16>,
+    pub ol_supply_w_id: __sdk::__query_builder::Col<OrderLine, u32>,
     pub ol_delivery_d: __sdk::__query_builder::Col<OrderLine, Option<__sdk::Timestamp>>,
     pub ol_quantity: __sdk::__query_builder::Col<OrderLine, u32>,
     pub ol_amount_cents: __sdk::__query_builder::Col<OrderLine, i64>,

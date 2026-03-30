@@ -62,6 +62,7 @@ impl load_orders for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(LoadOrdersArgs { rows }, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(LoadOrdersArgs { rows }, callback)
     }
 }

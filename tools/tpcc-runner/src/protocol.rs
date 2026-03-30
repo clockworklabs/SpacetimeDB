@@ -4,10 +4,10 @@ use crate::summary::DriverSummary;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DriverAssignment {
-    pub warehouse_count: u16,
-    pub warehouses_per_database: u16,
-    pub warehouse_start: u16,
-    pub driver_warehouse_count: u16,
+    pub warehouse_count: u32,
+    pub warehouses_per_database: u32,
+    pub warehouse_start: u32,
+    pub driver_warehouse_count: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

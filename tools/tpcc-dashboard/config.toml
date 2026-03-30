@@ -1,0 +1,29 @@
+[connection]
+uri = "http://127.0.0.1:3000"
+database = "tpcc"
+confirmed_reads = true
+timeout_secs = 30
+
+[load]
+warehouses = 1
+batch_size = 500
+reset = true
+
+[driver]
+driver_id = "driver-a"
+terminal_start = 1
+terminals = 10
+warehouses = 1
+warmup_secs = 5
+measure_secs = 30
+delivery_wait_secs = 60
+keying_time_scale = 1.0
+think_time_scale = 1.0
+
+[coordinator]
+run_id = "tpcc-demo"
+listen = "127.0.0.1:7878"
+expected_drivers = 2
+warmup_secs = 5
+measure_secs = 30
+output_dir = "tpcc-results/coordinator"

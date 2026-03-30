@@ -63,6 +63,6 @@ impl load_customers for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(LoadCustomersArgs { rows }, callback)
+            .invoke_reducer_with_callback::<_, ()>(LoadCustomersArgs { rows }, callback)
     }
 }

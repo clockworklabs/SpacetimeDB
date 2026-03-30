@@ -9,7 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct DeliveryQueueAck {
     pub scheduled_id: u64,
     pub queued_at: __sdk::Timestamp,
-    pub warehouse_id: u16,
+    pub warehouse_id: u32,
     pub carrier_id: u8,
 }
 

@@ -1,0 +1,19 @@
+[package]
+name = "tpcc-metrics"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+anyhow.workspace = true
+log.workspace = true
+spacetimedb = { workspace = true, features = ["unstable"] }
+spacetimedb-sats = { workspace = true, features = ["serde"] }
+http.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
