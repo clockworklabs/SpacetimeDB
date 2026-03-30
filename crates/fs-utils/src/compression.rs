@@ -150,6 +150,27 @@ pub fn new_zstd_writer<'a, W: io::Write>(inner: W, max_frame_size: Option<u32>) 
     .build()
 }
 
+/// Compress `src` to `dst` in one go.
+///
+/// Like a `FnOnce` closure, but polymorphic over the arguments.
+pub trait CompressOnce {
+    fn compress(self, src: impl io::Read, dst: impl io::Write) -> io::Result<CompressionStats>;
+}
+
+/// Implements [CompressOnce] for the zstd compression algorithm.
+pub struct Zstd {
+    /// If `Some`, add a seek table with `max_frame_size` to the compressed output.
+    ///
+    /// See [zstd_framed::writer::ZstdWriterBuilder::with_seek_table].
+    pub max_frame_size: Option<u32>,
+}
+
+impl CompressOnce for Zstd {
+    fn compress(self, src: impl io::Read, dst: impl io::Write) -> io::Result<CompressionStats> {
+        compress_with_zstd(src, dst, self.max_frame_size)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CompressionStats {
     pub bytes_read: u64,

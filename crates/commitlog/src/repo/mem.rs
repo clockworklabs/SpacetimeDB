@@ -104,7 +104,7 @@ impl Repo for Memory {
         Ok(())
     }
 
-    fn compress_segment(&self, _offset: u64) -> io::Result<CompressionStats> {
+    fn compress_segment_with(&self, _: u64, _: impl super::CompressOnce) -> io::Result<CompressionStats> {
         Ok(<_>::default())
     }
 
