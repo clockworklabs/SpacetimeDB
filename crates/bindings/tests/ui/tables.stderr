@@ -63,6 +63,36 @@ note: required by a bound in `spacetimedb::spacetimedb_lib::de::SeqProductAccess
   |     fn next_element<T: Deserialize<'de>>(&mut self) -> Result<Option<T>, Self::Error> {
   |                        ^^^^^^^^^^^^^^^^ required by this bound in `SeqProductAccess::next_element`
 
+error[E0277]: the trait bound `Test: Deserialize<'de>` is not satisfied
+ --> tests/ui/tables.rs:5:8
+  |
+3 | #[spacetimedb::table(accessor = table)]
+  | --------------------------------------- required by a bound introduced by this call
+4 | struct Table {
+5 |     x: Test,
+  |        ^^^^ unsatisfied trait bound
+  |
+help: the trait `Deserialize<'de>` is not implemented for `Test`
+ --> tests/ui/tables.rs:1:1
+  |
+1 | struct Test;
+  | ^^^^^^^^^^^
+  = help: the following other types implement trait `Deserialize<'de>`:
+            &'de [u8]
+            &'de str
+            ()
+            (T0, T1)
+            (T0, T1, T2)
+            (T0, T1, T2, T3)
+            (T0, T1, T2, T3, T4)
+            (T0, T1, T2, T3, T4, T5)
+          and $N others
+note: required by a bound in `spacetimedb::spacetimedb_lib::de::SeqProductAccess::validate_next_element`
+ --> $WORKSPACE/crates/sats/src/de.rs
+  |
+  |     fn validate_next_element<T: Deserialize<'de>>(&mut self) -> Result<Option<()>, Self::Error> {
+  |                                 ^^^^^^^^^^^^^^^^ required by this bound in `SeqProductAccess::validate_next_element`
+
 error[E0277]: the trait bound `Test: Deserialize<'_>` is not satisfied
  --> tests/ui/tables.rs:5:8
   |
@@ -89,6 +119,33 @@ note: required by a bound in `get_field_value`
   |
   |     fn get_field_value<T: Deserialize<'de>>(&mut self) -> Result<T, Self::Error> {
   |                           ^^^^^^^^^^^^^^^^ required by this bound in `NamedProductAccess::get_field_value`
+
+error[E0277]: the trait bound `Test: Deserialize<'_>` is not satisfied
+ --> tests/ui/tables.rs:5:8
+  |
+5 |     x: Test,
+  |        ^^^^ unsatisfied trait bound
+  |
+help: the trait `Deserialize<'_>` is not implemented for `Test`
+ --> tests/ui/tables.rs:1:1
+  |
+1 | struct Test;
+  | ^^^^^^^^^^^
+  = help: the following other types implement trait `Deserialize<'de>`:
+            &'de [u8]
+            &'de str
+            ()
+            (T0, T1)
+            (T0, T1, T2)
+            (T0, T1, T2, T3)
+            (T0, T1, T2, T3, T4)
+            (T0, T1, T2, T3, T4, T5)
+          and $N others
+note: required by a bound in `validate_field_value`
+ --> $WORKSPACE/crates/sats/src/de.rs
+  |
+  |     fn validate_field_value<T: Deserialize<'de>>(&mut self) -> Result<(), Self::Error> {
+  |                                ^^^^^^^^^^^^^^^^ required by this bound in `NamedProductAccess::validate_field_value`
 
 error[E0277]: the trait bound `Test: Serialize` is not satisfied
  --> tests/ui/tables.rs:5:8

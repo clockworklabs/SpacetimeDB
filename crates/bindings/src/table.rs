@@ -21,13 +21,12 @@ pub trait Table: TableInternal + ExplicitNames {
     /// The type of rows stored in this table.
     type Row: SpacetimeType + Serialize + DeserializeOwned + Sized + 'static;
 
-    /// Returns the number of rows of this table.
+    /// Returns the number of rows in this table.
     ///
-    /// This takes into account modifications by the current transaction,
-    /// even though those modifications have not yet been committed or broadcast to clients.
-    /// This applies generally to insertions, deletions, updates, and iteration as well.
+    /// This reads datastore metadata, so it runs in constant time.
+    /// It also takes into account modifications by the current transaction.
     fn count(&self) -> u64 {
-        sys::datastore_table_row_count(Self::table_id()).expect("datastore_table_row_count() call failed")
+        count::<Self>()
     }
 
     /// Iterate over all rows of the table.
@@ -117,6 +116,12 @@ pub trait Table: TableInternal + ExplicitNames {
     // Re-integrates the BSATN of the `generated_cols` into `row`.
     #[doc(hidden)]
     fn integrate_generated_columns(row: &mut Self::Row, generated_cols: &[u8]);
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn count<Tbl: Table>() -> u64 {
+    sys::datastore_table_row_count(Tbl::table_id()).expect("datastore_table_row_count() call failed")
 }
 
 #[doc(hidden)]

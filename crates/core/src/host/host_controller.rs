@@ -3,6 +3,7 @@ use super::scheduler::SchedulerStarter;
 use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::client::{ClientActorId, ClientName};
+use crate::config::V8HeapPolicyConfig;
 use crate::database_logger::DatabaseLogger;
 use crate::db::persistence::PersistenceProvider;
 use crate::db::relational_db::{self, spawn_view_cleanup_loop, DiskSizeFn, RelationalDB, Txdata};
@@ -30,6 +31,8 @@ use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{IntMap, IntSet};
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
+use spacetimedb_datastore::execution_context::Workload;
+use spacetimedb_datastore::system_tables::ModuleKind;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_durability::{self as durability};
 use spacetimedb_lib::{AlgebraicValue, Identity, Timestamp};
@@ -122,9 +125,9 @@ pub(crate) struct HostRuntimes {
 }
 
 impl HostRuntimes {
-    fn new(data_dir: Option<&ServerDataDir>) -> Arc<Self> {
+    fn new(data_dir: Option<&ServerDataDir>, v8_heap_policy: V8HeapPolicyConfig) -> Arc<Self> {
         let wasmtime = WasmtimeRuntime::new(data_dir);
-        let v8 = V8Runtime::default();
+        let v8 = V8Runtime::new(v8_heap_policy);
         Arc::new(Self { wasmtime, v8 })
     }
 }
@@ -208,6 +211,7 @@ impl HostController {
     pub fn new(
         data_dir: Arc<ServerDataDir>,
         default_config: db::Config,
+        v8_heap_policy: V8HeapPolicyConfig,
         program_storage: ProgramStorage,
         energy_monitor: Arc<impl EnergyMonitor>,
         persistence: Arc<dyn PersistenceProvider>,
@@ -219,7 +223,7 @@ impl HostController {
             program_storage,
             energy_monitor,
             persistence,
-            runtimes: HostRuntimes::new(Some(&data_dir)),
+            runtimes: HostRuntimes::new(Some(&data_dir), v8_heap_policy),
             data_dir,
             page_pool: PagePool::new(default_config.page_pool_max_size),
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
@@ -382,7 +386,7 @@ impl HostController {
             on_panic();
         });
 
-        let db = module.replica_ctx().relational_db.clone();
+        let db = module.relational_db().clone();
         let result = module.on_module_thread_async("using_database", move || f(db)).await?;
         Ok(result)
     }
@@ -541,9 +545,8 @@ impl HostController {
 
             info!("replica={replica_id} database={database_identity} exiting module");
             module.exit().await;
-            let db = &module.replica_ctx().relational_db;
             info!("replica={replica_id} database={database_identity} exiting database");
-            db.shutdown().await;
+            module.relational_db().shutdown().await;
             info!("replica={replica_id} database={database_identity} module host exited");
         })
         .await;
@@ -672,8 +675,7 @@ async fn make_replica_ctx(
         send_worker_queue.clone(),
     )));
     let downgraded = Arc::downgrade(&subscriptions);
-    let subscriptions =
-        ModuleSubscriptions::new(relational_db.clone(), subscriptions, send_worker_queue, bsatn_rlb_pool);
+    let subscriptions = ModuleSubscriptions::new(relational_db, subscriptions, send_worker_queue, bsatn_rlb_pool);
 
     // If an error occurs when evaluating a subscription,
     // we mark each client that was affected,
@@ -694,7 +696,6 @@ async fn make_replica_ctx(
         replica_id,
         logger,
         subscriptions,
-        relational_db,
     })
 }
 
@@ -792,7 +793,7 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
         )
         .await
         .map(Arc::new)?;
-        let (scheduler, scheduler_starter) = Scheduler::open(replica_ctx.relational_db.clone());
+        let (scheduler, scheduler_starter) = Scheduler::open(replica_ctx.relational_db().clone());
         let (program, module_host) = make_module_host(
             self.runtimes.clone(),
             replica_ctx.clone(),
@@ -898,7 +899,6 @@ impl Host {
             bsatn_rlb_pool,
             ..
         } = host_controller;
-        let on_panic = host_controller.unregister_fn(replica_id);
         let replica_dir = data_dir.replica(replica_id);
         let (tx_metrics_queue, tx_metrics_recorder_task) = spawn_tx_metrics_recorder();
 
@@ -947,7 +947,7 @@ impl Host {
                 (db, clients)
             }
         };
-        let (program, program_needs_init) = match db.program()? {
+        let (mut program, program_needs_init) = match db.program()? {
             // Launch module with program from existing database.
             Some(program) => {
                 info!(
@@ -974,23 +974,89 @@ impl Host {
             }
         };
 
-        let (program, launched) = ModuleLauncher {
-            database,
-            replica_id,
-            program,
-            on_panic,
-            relational_db: Arc::new(db),
-            energy_monitor: energy_monitor.clone(),
-            module_logs: match config.storage {
-                db::Storage::Memory => None,
-                db::Storage::Disk => Some(replica_dir.module_logs()),
-            },
-            runtimes: runtimes.clone(),
-            core: host_controller.db_cores.take(),
-            bsatn_rlb_pool: bsatn_rlb_pool.clone(),
-        }
-        .launch_module()
-        .await?;
+        let relational_db = Arc::new(db);
+        let (program, launched) = match HostType::from(program.kind) {
+            HostType::Js => {
+                ModuleLauncher {
+                    database,
+                    replica_id,
+                    program,
+                    on_panic: host_controller.unregister_fn(replica_id),
+                    relational_db,
+                    energy_monitor: energy_monitor.clone(),
+                    module_logs: match config.storage {
+                        db::Storage::Memory => None,
+                        db::Storage::Disk => Some(replica_dir.module_logs()),
+                    },
+                    runtimes: runtimes.clone(),
+                    core: host_controller.db_cores.take(),
+                    bsatn_rlb_pool: bsatn_rlb_pool.clone(),
+                }
+                .launch_module()
+                .await?
+            }
+            HostType::Wasm => {
+                // Prior to https://github.com/clockworklabs/SpacetimeDB/pull/4549
+                // the host type in `st_module` was always set to wasm.
+                // We now correctly use the host type from the database, but the
+                // module may in fact be a JS module.
+                // So if launching it as a wasm module fails, try JS instead.
+                // If this succeeds, the module is definitely a JS module, so
+                // attempt to repair `st_module` in this case.
+                //
+                // TODO: This code should eventually be removed once all
+                // databases have been repaired.
+                let launch_wasm_result = ModuleLauncher {
+                    database: database.clone(),
+                    replica_id,
+                    program: program.clone(),
+                    on_panic: host_controller.unregister_fn(replica_id),
+                    relational_db: relational_db.clone(),
+                    energy_monitor: energy_monitor.clone(),
+                    module_logs: match config.storage {
+                        db::Storage::Memory => None,
+                        db::Storage::Disk => Some(replica_dir.clone().module_logs()),
+                    },
+                    runtimes: runtimes.clone(),
+                    core: host_controller.db_cores.take(),
+                    bsatn_rlb_pool: bsatn_rlb_pool.clone(),
+                }
+                .launch_module()
+                .await;
+                match launch_wasm_result {
+                    Ok(program_and_module_host) => program_and_module_host,
+                    Err(e) => {
+                        warn!("failed to launch wasm module, trying js: {e:#}");
+
+                        program.kind = ModuleKind::JS;
+                        let res = ModuleLauncher {
+                            database,
+                            replica_id,
+                            program: program.clone(),
+                            on_panic: host_controller.unregister_fn(replica_id),
+                            relational_db: relational_db.clone(),
+                            energy_monitor: energy_monitor.clone(),
+                            module_logs: match config.storage {
+                                db::Storage::Memory => None,
+                                db::Storage::Disk => Some(replica_dir.module_logs()),
+                            },
+                            runtimes: runtimes.clone(),
+                            core: host_controller.db_cores.take(),
+                            bsatn_rlb_pool: bsatn_rlb_pool.clone(),
+                        }
+                        .launch_module()
+                        .await;
+
+                        if res.is_ok() {
+                            let _ = relational_db
+                                .with_auto_commit(Workload::Internal, |tx| relational_db.update_program(tx, program));
+                        }
+
+                        res?
+                    }
+                }
+            }
+        };
 
         if program_needs_init {
             let call_result = launched.module_host.init_database(program).await?;
@@ -1030,7 +1096,7 @@ impl Host {
 
         scheduler_starter.start(&module_host)?;
         let disk_metrics_recorder_task = tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle();
-        let view_cleanup_task = spawn_view_cleanup_loop(replica_ctx.relational_db.clone());
+        let view_cleanup_task = spawn_view_cleanup_loop(replica_ctx.relational_db().clone());
 
         let module = watch::Sender::new(module_host);
 
@@ -1112,7 +1178,7 @@ impl Host {
         core: AllocatedJobCore,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
-        let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db.clone());
+        let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db().clone());
 
         let (program, module) = make_module_host(
             runtimes,
@@ -1129,7 +1195,7 @@ impl Host {
         let old_module_info = self.module.borrow().info.clone();
 
         let update_result =
-            update_module(&replica_ctx.relational_db, &module, program, old_module_info, policy).await?;
+            update_module(replica_ctx.relational_db(), &module, program, old_module_info, policy).await?;
 
         // Only replace the module + scheduler if the update succeeded.
         // Otherwise, we want the database to continue running with the old state.
@@ -1147,7 +1213,7 @@ impl Host {
                 let old_watcher = std::mem::replace(&mut self.module, watch::Sender::new(module.clone()));
 
                 // Disconnect all clients connected to the old module.
-                let connected_clients = replica_ctx.relational_db.connected_clients()?;
+                let connected_clients = replica_ctx.relational_db().connected_clients()?;
                 for (identity, connection_id) in connected_clients {
                     let client_actor_id = ClientActorId {
                         identity,
@@ -1323,7 +1389,7 @@ pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> an
     extract_schema_with_pools(
         PagePool::new(None),
         BsatnRowListBuilderPool::new(),
-        &HostRuntimes::new(None),
+        &HostRuntimes::new(None, V8HeapPolicyConfig::default()),
         program_bytes,
         host_type,
     )
@@ -1357,4 +1423,12 @@ where
         .data_size_blob_store_bytes_used_by_blobs
         .remove_label_values(db);
     let _ = WORKER_METRICS.wasm_memory_bytes.remove_label_values(db);
+    let _ = WORKER_METRICS.v8_total_heap_size_bytes.remove_label_values(db);
+    let _ = WORKER_METRICS.v8_total_physical_size_bytes.remove_label_values(db);
+    let _ = WORKER_METRICS.v8_used_global_handles_size_bytes.remove_label_values(db);
+    let _ = WORKER_METRICS.v8_used_heap_size_bytes.remove_label_values(db);
+    let _ = WORKER_METRICS.v8_heap_size_limit_bytes.remove_label_values(db);
+    let _ = WORKER_METRICS.v8_external_memory_bytes.remove_label_values(db);
+    let _ = WORKER_METRICS.v8_native_contexts.remove_label_values(db);
+    let _ = WORKER_METRICS.v8_detached_contexts.remove_label_values(db);
 }

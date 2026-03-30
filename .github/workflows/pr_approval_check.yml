@@ -1,7 +1,17 @@
 name: Review Checks
 
+# SECURITY: This workflow uses pull_request_target so that it has write access to
+# set commit statuses on external (fork) PRs. pull_request_target runs in the
+# context of the base branch, which grants the GITHUB_TOKEN write permissions
+# that a regular pull_request event on a fork would not have.
+#
+# IMPORTANT: This workflow must NEVER check out, build, or execute code from the
+# PR branch. Doing so would allow a malicious fork to run arbitrary code with
+# write access to the repository. This workflow only reads PR metadata via the
+# GitHub API, which is safe.
+
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened]
   pull_request_review:
     types: [submitted, dismissed]
@@ -20,7 +30,11 @@ jobs:
   publish-approval-status:
     name: Set approval status
     runs-on: ubuntu-latest
+    # Disabled until we can spend some more focus on making this work consistently.
+    # See https://github.com/clockworklabs/SpacetimeDB/pull/4673.
+    if: false
 
+    # SECURITY: Do not add a checkout step to this job. See comment at the top of this file.
     steps:
       - name: Evaluate and publish approval status
         uses: actions/github-script@v7

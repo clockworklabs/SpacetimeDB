@@ -12,12 +12,52 @@
 #include "DBCache/TableCache.h"
 #include "EntityTable.g.generated.h"
 
+UCLASS(Blueprintable)
+class CLIENT_UNREAL_API UEntityEntityIdUniqueIndex : public UObject
+{
+    GENERATED_BODY()
+
+private:
+    // Declare an instance of your templated helper.
+    // It's private because the UObject wrapper will expose its functionality.
+    FUniqueIndexHelper<FEntityType, int32, FTableCache<FEntityType>> EntityIdIndexHelper;
+
+public:
+    UEntityEntityIdUniqueIndex()
+        // Initialize the helper with the specific unique index name
+        : EntityIdIndexHelper("entity_id") {
+    }
+
+    /**
+     * Finds a Entity by their unique entityid.
+     * @param Key The entityid to search for.
+     * @return The found FEntityType, or a default-constructed FEntityType if not found.
+     */
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|EntityIndex")
+    FEntityType Find(int32 Key)
+    {
+        // Simply delegate the call to the internal helper
+        return EntityIdIndexHelper.FindUniqueIndex(Key);
+    }
+
+    // A public setter to provide the cache to the helper after construction
+    // This is a common pattern when the cache might be created or provided by another system.
+    void SetCache(TSharedPtr<const FTableCache<FEntityType>> InEntityCache)
+    {
+        EntityIdIndexHelper.Cache = InEntityCache;
+    }
+};
+/***/
+
 UCLASS(BlueprintType)
 class CLIENT_UNREAL_API UEntityTable : public URemoteTable
 {
     GENERATED_BODY()
 
 public:
+    UPROPERTY(BlueprintReadOnly)
+    UEntityEntityIdUniqueIndex* EntityId;
+
     void PostInitialize();
 
     /** Update function for entity table*/

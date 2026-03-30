@@ -1,3 +1,4 @@
+use spacetimedb::messages::control_db::HostType;
 use spacetimedb_smoketests::{require_local_server, require_pnpm, Smoketest};
 
 const TS_MODULE_BASIC: &str = r#"import { schema, t, table } from "spacetimedb/server";
@@ -82,4 +83,39 @@ fn assert_has_rows(test: &Smoketest, names: &[&str], context: &str) {
             .all(|row| names.iter().any(|name| row.contains(name))),
         "{context}: expected all of {names:?} to be in result: {output}"
     )
+}
+
+/// Tests that a legacy database that has a wrong host type in `st_module` is
+/// auto-repaired upon startup.
+///
+/// NOTE: The repair mechanism shall be removed eventually, and so shall this
+/// test (which will fail when the mechanism is sunset).
+///
+/// This test restarts the server.
+#[test]
+fn test_repair_host_type() {
+    require_pnpm!();
+    require_local_server!();
+
+    let mut test = Smoketest::builder().autopublish(false).build();
+
+    test.publish_typescript_module_source("modules-basic-ts", "basic-ts", TS_MODULE_BASIC)
+        .unwrap();
+    assert_host_type(&test, HostType::Js);
+    // Set the program kind to the wrong value.
+    test.sql_confirmed("update st_module set program_kind=0").unwrap();
+    assert_host_type(&test, HostType::Wasm);
+
+    // After restarting, the database both comes up and has the right host type.
+    test.restart_server();
+    assert_host_type(&test, HostType::Js);
+}
+
+fn assert_host_type(test: &Smoketest, host_type: HostType) {
+    let output = test.sql_confirmed("select program_kind from st_module").unwrap();
+    let rows = output.lines().skip(2).map(|s| s.trim()).collect::<Vec<_>>();
+    match host_type {
+        HostType::Wasm => assert_eq!(&rows, &["0"]),
+        HostType::Js => assert_eq!(&rows, &["1"]),
+    }
 }
