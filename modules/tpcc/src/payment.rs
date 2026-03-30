@@ -128,19 +128,19 @@ fn call_remote_resolve_and_update_customer_for_payment(
     remote_database_identity: Identity,
     request: &PaymentRequest,
 ) -> Result<Customer, String> {
-    // call_remote_reducer(
-    //     ctx,
-    //     remote_database_identity,
-    //     "resolve_and_update_customer_for_payment",
-    //     request,
-    // )
-    simulate_remote_call(
+    call_remote_reducer(
         ctx,
         remote_database_identity,
         "resolve_and_update_customer_for_payment",
         request,
-    )?;
-    Ok(simulated_remote_customer(request))
+    )
+    // simulate_remote_call(
+    //     ctx,
+    //     remote_database_identity,
+    //     "resolve_and_update_customer_for_payment",
+    //     request,
+    // )?;
+    // Ok(simulated_remote_customer(request))
 }
 
 #[procedure]
