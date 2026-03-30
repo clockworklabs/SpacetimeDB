@@ -534,21 +534,58 @@ async fn execute_stock_level(
 
 async fn resolve_driver_setup(config: DriverConfig) -> Result<(DriverConfig, RunSchedule)> {
     if let Some(coordinator_url) = &config.coordinator_url {
+        const REGISTER_ATTEMPTS: u32 = 5;
+        const REGISTER_RETRY_DELAY_MS: u64 = 500;
         let client = reqwest::Client::new();
         let register = RegisterDriverRequest {
             driver_id: config.driver_id.clone(),
         };
-        let response: RegisterDriverResponse = client
-            .post(format!("{}/register", coordinator_url))
-            .json(&register)
-            .send()
-            .await
-            .context("failed to register driver with coordinator")?
-            .error_for_status()
-            .context("coordinator rejected register request")?
-            .json()
-            .await
-            .context("failed to decode register response")?;
+        let mut last_error = None;
+        let mut response = None;
+        for attempt in 1..=REGISTER_ATTEMPTS {
+            match client
+                .post(format!("{}/register", coordinator_url))
+                .json(&register)
+                .send()
+                .await
+            {
+                Ok(http_response) => match http_response.error_for_status() {
+                    Ok(http_response) => match http_response.json::<RegisterDriverResponse>().await {
+                        Ok(parsed) => {
+                            response = Some(parsed);
+                            break;
+                        }
+                        Err(err) => {
+                            last_error = Some(anyhow!("failed to decode register response: {err}"));
+                        }
+                    },
+                    Err(err) => {
+                        last_error = Some(anyhow!("coordinator rejected register request: {err}"));
+                    }
+                },
+                Err(err) => {
+                    last_error = Some(anyhow!("failed to register driver with coordinator: {err}"));
+                }
+            }
+
+            if attempt < REGISTER_ATTEMPTS {
+                log::warn!(
+                    "driver {} failed to register with coordinator on attempt {}/{}; retrying in {}ms",
+                    config.driver_id,
+                    attempt,
+                    REGISTER_ATTEMPTS,
+                    REGISTER_RETRY_DELAY_MS
+                );
+                tokio::time::sleep(Duration::from_millis(REGISTER_RETRY_DELAY_MS)).await;
+            }
+        }
+        let response = match response {
+            Some(response) => response,
+            None => {
+                return Err(last_error
+                    .unwrap_or_else(|| anyhow!("driver registration failed without an error")));
+            }
+        };
         if !response.accepted {
             bail!("coordinator did not accept driver registration");
         }
