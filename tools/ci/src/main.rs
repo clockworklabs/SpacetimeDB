@@ -338,6 +338,20 @@ fn main() -> Result<()> {
                 "unreal"
             )
             .run()?;
+            // Run the same SDK suite against wasm/browser test clients.
+            cmd!(
+                "cargo",
+                "test",
+                "-p",
+                "spacetimedb-sdk",
+                "--features",
+                "allow_loopback_http_for_tests,browser",
+                "--",
+                "--test-threads=2",
+                "--skip",
+                "unreal"
+            )
+            .run()?;
             // TODO: This should check for a diff at the start. If there is one, we should alert the user
             // that we're disabling diff checks because they have a dirty git repo, and to re-run in a clean one
             // if they want those checks.
@@ -388,6 +402,19 @@ fn main() -> Result<()> {
                 "cargo",
                 "clippy",
                 "--all",
+                "--tests",
+                "--benches",
+                "--",
+                "-D",
+                "warnings",
+            )
+            .run()?;
+            cmd!(
+                "cargo",
+                "clippy",
+                "--no-default-features",
+                "--features=browser",
+                "-pspacetimedb-sdk",
                 "--tests",
                 "--benches",
                 "--",

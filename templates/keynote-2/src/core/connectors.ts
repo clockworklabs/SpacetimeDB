@@ -1,4 +1,4 @@
-﻿export interface BaseConnector {
+export interface BaseConnector {
   name: string;
   open(workers?: number): Promise<void>;
   close(): Promise<void>;

@@ -24,7 +24,7 @@ const DURATION: &str = "5s";
 const ALPHA: f32 = 1.5;
 const CONNECTIONS: usize = 10;
 const INIT_BALANCE: i64 = 1_000_000;
-const AMOUNT: u32 = 1;
+const AMOUNT: i64 = 1;
 const ACCOUNTS: u32 = 100_000;
 const CONFIRMED_READS: bool = true;
 // Max inflight reducer calls imposed by the server.
@@ -57,7 +57,7 @@ async fn init_conn(cli: &Common, handle: &Handle) -> (JoinHandle<()>, Recv, Send
     let params = WsParams {
         compression: Compression::None,
         light: true,
-        confirmed: cli.confirmed_reads.into(),
+        confirmed: cli.confirmed_reads.unwrap_or(CONFIRMED_READS).into(),
     };
 
     let conn = websocket::WsConnection::connect(uri, &cli.module, None, None, params)
@@ -146,7 +146,7 @@ fn bench(cli: &Common, bench: &Bench) {
 
     // Initialize connections.
     let connections = bench.connections;
-    let confirmed_reads = cli.confirmed_reads;
+    let confirmed_reads = cli.confirmed_reads.unwrap_or(CONFIRMED_READS);
     if !cli.quiet {
         println!("initializing {connections} connections with confirmed-reads={confirmed_reads}");
     }
@@ -261,8 +261,8 @@ struct Common {
     #[arg(short, long, default_value = MODULE)]
     module: String,
 
-    #[arg(long, default_value_t = CONFIRMED_READS)]
-    confirmed_reads: bool,
+    #[arg(long)]
+    confirmed_reads: Option<bool>,
 
     #[arg(long, default_value_t = ACCOUNTS)]
     accounts: u32,
@@ -292,7 +292,7 @@ struct Bench {
     alpha: f32,
 
     #[arg(long, default_value_t = AMOUNT)]
-    amount: u32,
+    amount: i64,
 
     #[arg(short, long, default_value_t = CONNECTIONS)]
     connections: usize,

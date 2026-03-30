@@ -256,7 +256,7 @@ public partial struct TestDefaultFieldValues
             
             var returnValue = Module.ViewDefWrongContext((SpacetimeDB.ViewContext)ctx);
                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-                SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
+                var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();
 */
     Message: Argument 1: cannot convert from 'SpacetimeDB.ViewContext' to 'SpacetimeDB.ReducerContext',
     Severity: Error,
@@ -325,7 +325,7 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
             
             var returnValue = Module.ViewDefNoContext((SpacetimeDB.ViewContext)ctx);
                                      ^^^^^^^^^^^^^^^^
-                SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
+                var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();
 */
     Message: No overload for method 'ViewDefNoContext' takes 1 arguments,
     Severity: Error,
