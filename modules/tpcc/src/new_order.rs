@@ -186,7 +186,7 @@ fn call_remote_order_multiple_items_and_decrement_stock(
     call_remote_reducer(
         ctx,
         remote_database_identity,
-        "order_multiple_items_and_decrement_stock",
+        "order_multiple_items_and_decrement_stocks",
         &input,
     )
 }
