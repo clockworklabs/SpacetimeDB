@@ -1826,21 +1826,7 @@ impl ModuleHost {
                         Ok::<(), ReducerCallError>(())
                     },
                     // JS modules: no 2PC support yet.
-                    async |(p, _pid, _cid, ptx, _drx), inst| {
-                        let (res, rv) = inst.call_reducer(p).await.map(|r| (r, None)).unwrap_or_else(|e| {
-                            log::error!("prepare_reducer JS fallback: {e}");
-                            (
-                                ReducerCallResult {
-                                    outcome: ReducerOutcome::Failed(Box::new(Box::from("reducer error"))),
-                                    energy_used: EnergyQuanta::ZERO,
-                                    execution_duration: Default::default(),
-                                },
-                                None,
-                            )
-                        });
-                        let _ = ptx.send((res, rv));
-                        Ok(())
-                    },
+                    async |(p, _pid, _cid, ptx, _drx), inst| Err(ReducerCallError::NoSuchReducer),
                 )
                 .await;
         });
