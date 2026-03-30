@@ -1,5 +1,4 @@
 use rand::Rng;
-use std::thread;
 use std::time::Duration;
 
 use crate::summary::TransactionKind;
@@ -169,16 +168,5 @@ fn scaled_duration(base_secs: f64, scale: f64) -> Duration {
         Duration::ZERO
     } else {
         Duration::from_secs_f64(base_secs * scale)
-    }
-}
-
-pub fn sleep_until_ms(target_ms: u64) {
-    loop {
-        let now = crate::summary::now_millis();
-        if now >= target_ms {
-            return;
-        }
-        let remaining = target_ms - now;
-        thread::sleep(Duration::from_millis(remaining.min(100)));
     }
 }
