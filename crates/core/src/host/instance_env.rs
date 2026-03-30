@@ -1159,6 +1159,7 @@ impl InstanceEnv {
             if let Some(tx_id) = tx_id {
                 req = req.header(TX_ID_HEADER, tx_id.to_string());
             }
+            // TODO: This needs to select on subscribe_wounded as well, so we can stop waiting for the response when wounded.
             let result = async {
                 let response = req.send().await.map_err(|e| NodesError::HttpError(e.to_string()))?;
                 let status = response.status().as_u16();

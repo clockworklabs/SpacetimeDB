@@ -1,9 +1,10 @@
 use crate::identity::Identity;
 use spacetimedb_lib::GlobalTxId;
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use tokio::sync::Notify;
+use tokio::sync::{watch, Notify};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GlobalTxRole {
@@ -28,6 +29,7 @@ pub struct GlobalTxSession {
     pub role: GlobalTxRole,
     pub coordinator_identity: Identity,
     wounded: AtomicBool,
+    wounded_tx: watch::Sender<bool>,
     state: Mutex<GlobalTxState>,
     prepare_id: Mutex<Option<String>>,
     participants: Mutex<HashMap<Identity, String>>,
@@ -35,11 +37,13 @@ pub struct GlobalTxSession {
 
 impl GlobalTxSession {
     fn new(tx_id: GlobalTxId, role: GlobalTxRole, coordinator_identity: Identity) -> Self {
+        let (wounded_tx, _) = watch::channel(false);
         Self {
             tx_id,
             role,
             coordinator_identity,
             wounded: AtomicBool::new(false),
+            wounded_tx,
             state: Mutex::new(GlobalTxState::Running),
             prepare_id: Mutex::new(None),
             participants: Mutex::new(HashMap::new()),
@@ -51,7 +55,15 @@ impl GlobalTxSession {
     }
 
     pub fn wound(&self) -> bool {
-        !self.wounded.swap(true, Ordering::SeqCst)
+        let was_fresh = !self.wounded.swap(true, Ordering::SeqCst);
+        if was_fresh {
+            let _ = self.wounded_tx.send(true);
+        }
+        was_fresh
+    }
+
+    pub fn subscribe_wounded(&self) -> watch::Receiver<bool> {
+        self.wounded_tx.subscribe()
     }
 
     pub fn state(&self) -> GlobalTxState {
@@ -100,11 +112,39 @@ impl Default for LockState {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AcquireDisposition {
-    Acquired,
-    Wound(GlobalTxId),
-    Wait,
+pub enum AcquireDisposition<'a> {
+    Acquired(GlobalTxLockGuard<'a>),
+    Cancelled,
+}
+
+pub struct GlobalTxLockGuard<'a> {
+    manager: &'a GlobalTxManager,
+    tx_id: Option<GlobalTxId>,
+}
+
+impl<'a> GlobalTxLockGuard<'a> {
+    fn new(manager: &'a GlobalTxManager, tx_id: GlobalTxId) -> Self {
+        Self {
+            manager,
+            tx_id: Some(tx_id),
+        }
+    }
+
+    pub fn tx_id(&self) -> GlobalTxId {
+        self.tx_id.expect("lock guard must always have a tx_id before drop")
+    }
+
+    pub fn disarm(mut self) {
+        self.tx_id = None;
+    }
+}
+
+impl Drop for GlobalTxLockGuard<'_> {
+    fn drop(&mut self) {
+        if let Some(tx_id) = self.tx_id.take() {
+            self.manager.release(&tx_id);
+        }
+    }
 }
 
 #[derive(Default)]
@@ -174,6 +214,10 @@ impl GlobalTxManager {
         self.get_session(tx_id).map(|s| s.is_wounded()).unwrap_or(false)
     }
 
+    pub fn subscribe_wounded(&self, tx_id: &GlobalTxId) -> Option<watch::Receiver<bool>> {
+        self.get_session(tx_id).map(|s| s.subscribe_wounded())
+    }
+
     pub fn wound(&self, tx_id: &GlobalTxId) -> Option<Arc<GlobalTxSession>> {
         let session = self.get_session(tx_id)?;
         let _ = session.wound();
@@ -183,30 +227,56 @@ impl GlobalTxManager {
         Some(session)
     }
 
-    pub async fn acquire(&self, tx_id: GlobalTxId) -> AcquireDisposition {
+    pub async fn acquire<F, Fut>(&self, tx_id: GlobalTxId, mut on_wound: F) -> AcquireDisposition<'_>
+    where
+        F: FnMut(GlobalTxId) -> Fut,
+        Fut: Future<Output = ()>,
+    {
+        let mut wounded_rx = match self.subscribe_wounded(&tx_id) {
+            Some(rx) => rx,
+            None => return AcquireDisposition::Cancelled,
+        };
         loop {
-            let waiter = {
+            // self.is_wounded(&tx_id)
+            if *wounded_rx.borrow() {
+                self.remove_waiter(&tx_id);
+                return AcquireDisposition::Cancelled;
+            }
+
+            let (waiter, owner_to_wound) = {
                 let mut state = self.lock_state.lock().unwrap();
                 match state.owner {
                     None => {
                         state.owner = Some(tx_id);
                         state.waiting.remove(&tx_id);
-                        return AcquireDisposition::Acquired;
+                        return AcquireDisposition::Acquired(GlobalTxLockGuard::new(self, tx_id));
                     }
                     Some(owner) if owner == tx_id => {
                         state.waiting.remove(&tx_id);
-                        return AcquireDisposition::Acquired;
+                        return AcquireDisposition::Acquired(GlobalTxLockGuard::new(self, tx_id));
                     }
                     Some(owner) => {
                         state.waiting.insert(tx_id);
-                        if tx_id < owner && state.wounded_owners.insert(owner) {
-                            return AcquireDisposition::Wound(owner);
-                        }
-                        self.lock_notify.notified()
+                        let owner_to_wound = (tx_id < owner && state.wounded_owners.insert(owner)).then_some(owner);
+                        (self.lock_notify.notified(), owner_to_wound)
                     }
                 }
             };
-            waiter.await;
+
+            if let Some(owner) = owner_to_wound {
+                let _ = self.wound(&owner);
+                on_wound(owner).await;
+            }
+
+            tokio::select! {
+                changed = wounded_rx.changed(), if !*wounded_rx.borrow() => {
+                    if changed.is_ok() && *wounded_rx.borrow() {
+                        self.remove_waiter(&tx_id);
+                        return AcquireDisposition::Cancelled;
+                    }
+                }
+                _ = waiter => {}
+            }
         }
     }
 
@@ -219,6 +289,10 @@ impl GlobalTxManager {
         }
         state.waiting.remove(tx_id);
     }
+
+    fn remove_waiter(&self, tx_id: &GlobalTxId) {
+        self.lock_state.lock().unwrap().waiting.remove(tx_id);
+    }
 }
 
 #[cfg(test)]
@@ -227,8 +301,8 @@ mod tests {
     use crate::identity::Identity;
     use spacetimedb_lib::{GlobalTxId, Timestamp};
     use std::sync::Arc;
-    use tokio::runtime::Runtime;
     use std::time::Duration;
+    use tokio::runtime::Runtime;
 
     fn tx_id(ts: i64, db_byte: u8, nonce: u32) -> GlobalTxId {
         GlobalTxId::new(
@@ -240,7 +314,7 @@ mod tests {
 
     #[test]
     fn older_requester_wounds_younger_owner() {
-        let manager = GlobalTxManager::default();
+        let manager = Arc::new(GlobalTxManager::default());
         let younger = tx_id(20, 2, 0);
         let older = tx_id(10, 1, 0);
         manager.ensure_session(
@@ -248,12 +322,28 @@ mod tests {
             super::GlobalTxRole::Participant,
             younger.creator_db,
         );
+        manager.ensure_session(older, super::GlobalTxRole::Participant, older.creator_db);
 
         let rt = Runtime::new().unwrap();
-        assert_eq!(rt.block_on(manager.acquire(younger)), AcquireDisposition::Acquired);
-        assert_eq!(rt.block_on(manager.acquire(older)), AcquireDisposition::Wound(younger));
-        assert!(manager.wound(&younger).is_some());
+        let younger_guard = match rt.block_on(manager.acquire(younger, |_| async {})) {
+            AcquireDisposition::Acquired(guard) => guard,
+            AcquireDisposition::Cancelled => panic!("younger tx should acquire immediately"),
+        };
+
+        let manager_for_task = manager.clone();
+        let older_task = rt.spawn(async move {
+            match manager_for_task.acquire(older, |_| async {}).await {
+                AcquireDisposition::Acquired(_guard) => true,
+                AcquireDisposition::Cancelled => false,
+            }
+        });
+        std::thread::sleep(Duration::from_millis(10));
         assert!(manager.is_wounded(&younger));
+        drop(younger_guard);
+        assert!(matches!(
+            rt.block_on(older_task).expect("task should complete"),
+            true
+        ));
     }
 
     #[test]
@@ -261,13 +351,19 @@ mod tests {
         let manager = GlobalTxManager::default();
         let older = tx_id(10, 1, 0);
         let younger = tx_id(20, 2, 0);
+        manager.ensure_session(older, super::GlobalTxRole::Participant, older.creator_db);
+        manager.ensure_session(younger, super::GlobalTxRole::Participant, younger.creator_db);
         let rt = Runtime::new().unwrap();
 
-        assert_eq!(rt.block_on(manager.acquire(older)), AcquireDisposition::Acquired);
+        let older_guard = match rt.block_on(manager.acquire(older, |_| async {})) {
+            AcquireDisposition::Acquired(guard) => guard,
+            AcquireDisposition::Cancelled => panic!("older tx should acquire immediately"),
+        };
         let wait = rt.block_on(async {
-            tokio::time::timeout(Duration::from_millis(25), manager.acquire(younger)).await
+            tokio::time::timeout(Duration::from_millis(25), manager.acquire(younger, |_| async {})).await
         });
         assert!(wait.is_err());
+        drop(older_guard);
     }
 
     #[test]
@@ -275,19 +371,26 @@ mod tests {
         let manager = Arc::new(GlobalTxManager::default());
         let owner = tx_id(10, 1, 0);
         let waiter = tx_id(20, 2, 0);
+        manager.ensure_session(owner, super::GlobalTxRole::Participant, owner.creator_db);
+        manager.ensure_session(waiter, super::GlobalTxRole::Participant, waiter.creator_db);
         let rt = Runtime::new().unwrap();
 
-        assert_eq!(rt.block_on(manager.acquire(owner)), AcquireDisposition::Acquired);
+        let owner_guard = match rt.block_on(manager.acquire(owner, |_| async {})) {
+            AcquireDisposition::Acquired(guard) => guard,
+            AcquireDisposition::Cancelled => panic!("owner should acquire immediately"),
+        };
 
         let manager_for_thread = manager.clone();
         let handle = std::thread::spawn(move || {
             let rt = Runtime::new().unwrap();
-            assert_eq!(rt.block_on(manager_for_thread.acquire(waiter)), AcquireDisposition::Acquired);
-            manager_for_thread.release(&waiter);
+            match rt.block_on(manager_for_thread.acquire(waiter, |_| async {})) {
+                AcquireDisposition::Acquired(_guard) => {}
+                AcquireDisposition::Cancelled => panic!("waiter should acquire after release"),
+            }
         });
 
         std::thread::sleep(Duration::from_millis(25));
-        manager.release(&owner);
+        drop(owner_guard);
         handle.join().unwrap();
     }
 
@@ -302,5 +405,62 @@ mod tests {
         assert!(session.is_wounded());
         assert!(manager.wound(&tx_id).is_some());
         assert!(session.is_wounded());
+    }
+
+    #[test]
+    fn wound_subscription_notifies_waiter() {
+        let manager = GlobalTxManager::default();
+        let tx_id = tx_id(10, 1, 0);
+        let _session = manager.ensure_session(tx_id, super::GlobalTxRole::Coordinator, tx_id.creator_db);
+        let mut wounded_rx = manager.subscribe_wounded(&tx_id).expect("session should exist");
+
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            let notifier = async {
+                if !*wounded_rx.borrow() {
+                    wounded_rx.changed().await.expect("sender should still exist");
+                }
+                *wounded_rx.borrow()
+            };
+
+            let trigger = async {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                manager.wound(&tx_id).expect("session should still exist");
+            };
+
+            let (wounded, ()) = tokio::join!(notifier, trigger);
+            assert!(wounded);
+        });
+    }
+
+    #[test]
+    fn wounded_waiter_is_cancelled() {
+        let manager = Arc::new(GlobalTxManager::default());
+        let owner = tx_id(10, 1, 0);
+        let waiter = tx_id(20, 2, 0);
+        manager.ensure_session(owner, super::GlobalTxRole::Participant, owner.creator_db);
+        manager.ensure_session(waiter, super::GlobalTxRole::Participant, waiter.creator_db);
+
+        let rt = Runtime::new().unwrap();
+        let owner_guard = match rt.block_on(manager.acquire(owner, |_| async {})) {
+            AcquireDisposition::Acquired(guard) => guard,
+            AcquireDisposition::Cancelled => panic!("owner should acquire immediately"),
+        };
+
+        let manager_for_task = manager.clone();
+        let waiter_task = rt.spawn(async move {
+            matches!(
+                manager_for_task.acquire(waiter, |_| async {}).await,
+                AcquireDisposition::Cancelled
+            )
+        });
+        std::thread::sleep(Duration::from_millis(10));
+        manager.wound(&waiter).expect("waiter session should exist");
+        drop(owner_guard);
+
+        assert!(matches!(
+            rt.block_on(waiter_task).expect("task should complete"),
+            true
+        ));
     }
 }

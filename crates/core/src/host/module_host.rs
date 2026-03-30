@@ -233,27 +233,19 @@ pub struct ModuleInfo {
 }
 
 struct GlobalTxAdmissionGuard<'a> {
-    module_host: &'a ModuleHost,
-    tx_id: Option<GlobalTxId>,
+    lock_guard: Option<super::global_tx::GlobalTxLockGuard<'a>>,
 }
 
 impl<'a> GlobalTxAdmissionGuard<'a> {
-    fn new(module_host: &'a ModuleHost, tx_id: GlobalTxId) -> Self {
+    fn new(lock_guard: super::global_tx::GlobalTxLockGuard<'a>) -> Self {
         Self {
-            module_host,
-            tx_id: Some(tx_id),
+            lock_guard: Some(lock_guard),
         }
     }
 
     fn disarm(mut self) {
-        self.tx_id = None;
-    }
-}
-
-impl Drop for GlobalTxAdmissionGuard<'_> {
-    fn drop(&mut self) {
-        if let Some(tx_id) = self.tx_id.take() {
-            self.module_host.abort_global_tx_locally(tx_id, true);
+        if let Some(lock_guard) = self.lock_guard.take() {
+            lock_guard.disarm();
         }
     }
 }
@@ -2111,21 +2103,27 @@ impl ModuleHost {
         }
 
         loop {
-            match manager.acquire(tx_id).await {
-                super::global_tx::AcquireDisposition::Acquired => {
+            match manager
+                .acquire(tx_id, |owner| async move {
+                    if owner.creator_db != local_db {
+                        self.send_wound_to_coordinator(owner).await;
+                    }
+                })
+                .await
+            {
+                super::global_tx::AcquireDisposition::Acquired(lock_guard) => {
                     if let Some(outcome) = self.check_global_tx_wounded(tx_id) {
                         self.abort_global_tx_locally(tx_id, true);
                         return Err(outcome);
                     }
-                    return Ok(GlobalTxAdmissionGuard::new(self, tx_id));
+                    return Ok(GlobalTxAdmissionGuard::new(lock_guard));
                 }
-                super::global_tx::AcquireDisposition::Wound(owner) => {
-                    let _ = manager.wound(&owner);
-                    if owner.creator_db != local_db {
-                        self.send_wound_to_coordinator(owner).await;
-                    }
+                super::global_tx::AcquireDisposition::Cancelled => {
+                    self.abort_global_tx_locally(tx_id, true);
+                    return Err(self
+                        .check_global_tx_wounded(tx_id)
+                        .unwrap_or_else(|| ReducerOutcome::Wounded(Box::new(Box::from(Self::wounded_message(tx_id))))));
                 }
-                super::global_tx::AcquireDisposition::Wait => {}
             }
         }
     }
@@ -2160,6 +2158,7 @@ impl ModuleHost {
         tx_component.parse().ok()
     }
 
+    // Notify a remote coordinator that a transaction should be wounded.
     async fn send_wound_to_coordinator(&self, tx_id: GlobalTxId) {
         let client = self.replica_ctx().call_reducer_client.clone();
         let router = self.replica_ctx().call_reducer_router.clone();
@@ -2181,6 +2180,7 @@ impl ModuleHost {
         if let Some(token) = &auth_token {
             req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
         }
+        log::info!("2PC wound: sending wound for {tx_id} to coordinator at {url}");
         match req.send().await {
             Ok(resp) if resp.status().is_success() => {
                 log::info!("2PC wound: notified coordinator for {tx_id}");
