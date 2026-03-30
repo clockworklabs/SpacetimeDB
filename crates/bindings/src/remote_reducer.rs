@@ -103,12 +103,14 @@ pub fn call_reducer_on_db_2pc(
     database_identity: Identity,
     reducer_name: &str,
     args: &[u8],
-) -> Result<(), RemoteCallError> {
+) -> Result<Vec<u8>, RemoteCallError> {
     let identity_bytes = database_identity.to_byte_array();
     match spacetimedb_bindings_sys::call_reducer_on_db_2pc(identity_bytes, reducer_name, args) {
         Ok((status, body_source)) => {
             if status < 300 {
-                return Ok(());
+                let mut out = Vec::new();
+                read_bytes_source_into(body_source, &mut out);
+                return Ok(out);
             }
             let msg = if body_source == spacetimedb_bindings_sys::raw::BytesSource::INVALID {
                 String::new()
