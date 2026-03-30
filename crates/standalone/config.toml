@@ -34,4 +34,8 @@ directives = [
 # Apply a V8 heap limit in MiB. Set to 0 to use V8's default limit.
 # heap-limit-mb = 0
 
+[global-tx]
+# Delay before an older transaction wounds a younger owner.
+# wound-grace-period = "10ms"
+
 # vim: set nowritebackup: << otherwise triggers cargo-watch

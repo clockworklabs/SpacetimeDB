@@ -136,6 +136,8 @@ pub struct ConfigFile {
     pub logs: LogConfig,
     #[serde(default)]
     pub v8_heap_policy: V8HeapPolicyConfig,
+    #[serde(default)]
+    pub global_tx: GlobalTxConfig,
 }
 
 impl ConfigFile {
@@ -189,6 +191,21 @@ pub struct V8HeapPolicyConfig {
     pub heap_limit_bytes: Option<usize>,
 }
 
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct GlobalTxConfig {
+    #[serde(default = "default_wound_grace_period", deserialize_with = "de_duration")]
+    pub wound_grace_period: Duration,
+}
+
+impl Default for GlobalTxConfig {
+    fn default() -> Self {
+        Self {
+            wound_grace_period: default_wound_grace_period(),
+        }
+    }
+}
+
 impl Default for V8HeapPolicyConfig {
     fn default() -> Self {
         Self {
@@ -237,6 +254,10 @@ fn def_retire() -> f64 {
     0.75
 }
 
+fn default_wound_grace_period() -> Duration {
+    Duration::from_millis(10)
+}
+
 fn de_nz_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -262,6 +283,23 @@ where
     };
 
     Ok((!duration.is_zero()).then_some(duration))
+}
+
+fn de_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum DurationValue {
+        String(String),
+        Seconds(u64),
+    }
+
+    match DurationValue::deserialize(deserializer)? {
+        DurationValue::String(value) => humantime::parse_duration(&value).map_err(serde::de::Error::custom),
+        DurationValue::Seconds(value) => Ok(Duration::from_secs(value)),
+    }
 }
 
 fn de_fraction<'de, D>(deserializer: D) -> Result<f64, D::Error>
@@ -444,5 +482,22 @@ mod tests {
         assert_eq!(config.v8_heap_policy.heap_gc_trigger_fraction, 0.6);
         assert_eq!(config.v8_heap_policy.heap_retire_fraction, 0.8);
         assert_eq!(config.v8_heap_policy.heap_limit_bytes, Some(256 * 1024 * 1024));
+    }
+
+    #[test]
+    fn global_tx_defaults_when_omitted() {
+        let config: ConfigFile = toml::from_str("").unwrap();
+        assert_eq!(config.global_tx.wound_grace_period, Duration::from_millis(10));
+    }
+
+    #[test]
+    fn global_tx_parses_from_toml() {
+        let toml = r#"
+            [global-tx]
+            wound-grace-period = "25ms"
+        "#;
+
+        let config: ConfigFile = toml::from_str(toml).unwrap();
+        assert_eq!(config.global_tx.wound_grace_period, Duration::from_millis(25));
     }
 }

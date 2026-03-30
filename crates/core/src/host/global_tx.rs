@@ -5,7 +5,10 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::sync::{watch, Notify};
+
+const DEFAULT_WOUND_GRACE_PERIOD: Duration = Duration::from_millis(10);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GlobalTxRole {
@@ -213,14 +216,33 @@ impl Drop for GlobalTxLockGuard<'_> {
     }
 }
 
-#[derive(Default)]
 pub struct GlobalTxManager {
     sessions: Mutex<HashMap<GlobalTxId, Arc<GlobalTxSession>>>,
     prepare_to_tx: Mutex<HashMap<String, GlobalTxId>>,
     lock_state: Mutex<LockState>,
+    wound_grace_period: Duration,
+}
+
+impl Default for GlobalTxManager {
+    fn default() -> Self {
+        Self::new(DEFAULT_WOUND_GRACE_PERIOD)
+    }
 }
 
 impl GlobalTxManager {
+    pub fn new(wound_grace_period: Duration) -> Self {
+        Self {
+            sessions: Mutex::default(),
+            prepare_to_tx: Mutex::default(),
+            lock_state: Mutex::default(),
+            wound_grace_period,
+        }
+    }
+
+    pub fn wound_grace_period(&self) -> Duration {
+        self.wound_grace_period
+    }
+
     pub fn ensure_session(
         &self,
         tx_id: GlobalTxId,
@@ -304,7 +326,7 @@ impl GlobalTxManager {
     pub async fn acquire<F, Fut>(&self, tx_id: GlobalTxId, mut on_wound: F) -> AcquireDisposition<'_>
     where
         F: FnMut(GlobalTxId) -> Fut,
-        Fut: Future<Output = ()>,
+        Fut: Future<Output = ()> + Send + 'static,
     {
         let mut wounded_rx = match self.subscribe_wounded(&tx_id) {
             Some(rx) => rx,
@@ -374,17 +396,44 @@ impl GlobalTxManager {
             }
 
             if let Some(owner) = owner_to_wound {
+                let wound_grace_period = self.wound_grace_period;
                 log::info!(
-                    "global transaction {tx_id} is waiting behind younger owner {owner}; triggering wound flow"
+                    "global transaction {tx_id} is waiting behind younger owner {owner}; giving it {:?} to finish before wound flow",
+                    wound_grace_period
                 );
-                if self.should_wound_locally(&owner) {
-                    let _ = self.wound(&owner);
-                } else {
-                    log::info!(
-                        "global transaction {tx_id} observed prepared participant owner {owner}; notifying coordinator without local wound"
-                    );
+                let owner_finished = tokio::select! {
+                    changed = wounded_rx.changed(), if !*wounded_rx.borrow() => {
+                        if changed.is_ok() && *wounded_rx.borrow() {
+                            return AcquireDisposition::Cancelled;
+                        }
+                        false
+                    }
+                    _ = notify.notified() => true,
+                    _ = tokio::time::sleep(wound_grace_period) => false,
+                };
+                if owner_finished {
+                    log::info!("global transaction {tx_id} observed owner {owner} finish within grace period; not triggering wound",);
+                    continue;
                 }
-                on_wound(owner).await;
+
+                let should_trigger_wound = {
+                    let state = self.lock_state.lock().unwrap();
+                    state.owner == Some(owner)
+                };
+                if should_trigger_wound {
+                    log::info!(
+                        "global transaction {tx_id} is still waiting behind younger owner {owner} after {:?}; triggering wound flow",
+                        wound_grace_period
+                    );
+                    if self.should_wound_locally(&owner) {
+                        let _ = self.wound(&owner);
+                    } else {
+                        log::info!(
+                            "global transaction {tx_id} observed prepared participant owner {owner}; notifying coordinator without local wound"
+                        );
+                    }
+                    tokio::spawn(on_wound(owner));
+                }
             }
 
             tokio::select! {
@@ -499,6 +548,12 @@ mod tests {
     }
 
     #[test]
+    fn manager_uses_configured_wound_grace_period() {
+        let manager = GlobalTxManager::new(Duration::from_millis(42));
+        assert_eq!(manager.wound_grace_period(), Duration::from_millis(42));
+    }
+
+    #[test]
     fn older_requester_wounds_younger_owner() {
         let manager = Arc::new(GlobalTxManager::default());
         let younger = tx_id(20, 2, 0);
@@ -519,10 +574,39 @@ mod tests {
                 AcquireDisposition::Cancelled => false,
             }
         });
-        std::thread::sleep(Duration::from_millis(10));
+        std::thread::sleep(Duration::from_millis(25));
         assert!(manager.is_wounded(&younger));
         drop(younger_guard);
         assert!(matches!(rt.block_on(older_task).expect("task should complete"), true));
+    }
+
+    #[test]
+    fn younger_owner_finishing_within_grace_period_is_not_wounded() {
+        let manager = Arc::new(GlobalTxManager::default());
+        let younger = tx_id(20, 2, 0);
+        let older = tx_id(10, 1, 0);
+        manager.ensure_session(younger, super::GlobalTxRole::Participant, younger.creator_db);
+        manager.ensure_session(older, super::GlobalTxRole::Participant, older.creator_db);
+
+        let rt = Runtime::new().unwrap();
+        let younger_guard = match rt.block_on(manager.acquire(younger, |_| async {})) {
+            AcquireDisposition::Acquired(guard) => guard,
+            AcquireDisposition::Cancelled => panic!("younger tx should acquire immediately"),
+        };
+
+        let manager_for_task = manager.clone();
+        let older_task = rt.spawn(async move {
+            match manager_for_task.acquire(older, |_| async {}).await {
+                AcquireDisposition::Acquired(_guard) => true,
+                AcquireDisposition::Cancelled => false,
+            }
+        });
+
+        std::thread::sleep(Duration::from_millis(5));
+        drop(younger_guard);
+
+        assert!(matches!(rt.block_on(older_task).expect("task should complete"), true));
+        assert!(!manager.is_wounded(&younger));
     }
 
     #[test]
@@ -628,14 +712,17 @@ mod tests {
         };
 
         let coordinator_wounded = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (wound_tx, wound_rx) = std::sync::mpsc::channel();
         let flag = coordinator_wounded.clone();
         let manager_for_task = manager.clone();
         let older_task = rt.spawn(async move {
             match manager_for_task
                 .acquire(older, move |_| {
                     let flag = flag.clone();
+                    let wound_tx = wound_tx.clone();
                     async move {
                         flag.store(true, Ordering::SeqCst);
+                        let _ = wound_tx.send(());
                     }
                 })
                 .await
@@ -645,7 +732,9 @@ mod tests {
             }
         });
 
-        std::thread::sleep(Duration::from_millis(10));
+        wound_rx
+            .recv_timeout(Duration::from_millis(50))
+            .expect("coordinator should be notified");
         assert!(coordinator_wounded.load(Ordering::SeqCst));
         assert!(!manager.is_wounded(&owner));
         drop(owner_guard);

@@ -2125,10 +2125,14 @@ impl ModuleHost {
             return Err(outcome);
         }
 
+        let this = self.clone();
         match manager
-            .acquire(tx_id, |owner| async move {
-                if owner.creator_db != local_db {
-                    self.send_wound_to_coordinator(owner).await;
+            .acquire(tx_id, move |owner| {
+                let this = this.clone();
+                async move {
+                    if owner.creator_db != local_db {
+                        this.send_wound_to_coordinator(owner).await;
+                    }
                 }
             })
             .await

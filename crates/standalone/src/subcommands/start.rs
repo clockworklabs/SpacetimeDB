@@ -244,6 +244,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
             db_config,
             websocket: config.websocket,
             v8_heap_policy: config.common.v8_heap_policy,
+            global_tx: config.common.global_tx,
             local_api_url: format!("http://127.0.0.1:{local_port}"),
         },
         &certs,

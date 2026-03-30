@@ -3,7 +3,7 @@ use super::scheduler::SchedulerStarter;
 use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::client::{ClientActorId, ClientName};
-use crate::config::V8HeapPolicyConfig;
+use crate::config::{GlobalTxConfig, V8HeapPolicyConfig};
 use crate::database_logger::DatabaseLogger;
 use crate::db::persistence::PersistenceProvider;
 use crate::db::relational_db::{self, spawn_view_cleanup_loop, DiskSizeFn, RelationalDB, Txdata};
@@ -138,6 +138,8 @@ pub struct HostController {
     ///
     /// `None` in test/embedded contexts where no JWT signer is configured.
     pub call_reducer_auth_token: Option<String>,
+    /// Global distributed transaction tuning.
+    pub global_tx_config: GlobalTxConfig,
 }
 
 pub(crate) struct HostRuntimes {
@@ -236,6 +238,7 @@ impl HostController {
         data_dir: Arc<ServerDataDir>,
         default_config: db::Config,
         v8_heap_policy: V8HeapPolicyConfig,
+        global_tx_config: GlobalTxConfig,
         program_storage: ProgramStorage,
         energy_monitor: Arc<impl EnergyMonitor>,
         persistence: Arc<dyn PersistenceProvider>,
@@ -255,6 +258,7 @@ impl HostController {
             call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
             call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
             call_reducer_auth_token: None,
+            global_tx_config,
         }
     }
 
@@ -695,6 +699,7 @@ async fn make_replica_ctx(
     call_reducer_client: reqwest::Client,
     call_reducer_router: Arc<dyn ReducerCallRouter>,
     call_reducer_auth_token: Option<String>,
+    global_tx_config: GlobalTxConfig,
 ) -> anyhow::Result<ReplicaContext> {
     let logger = match module_logs {
         Some(path) => asyncify(move || Arc::new(DatabaseLogger::open_today(path))).await,
@@ -731,7 +736,9 @@ async fn make_replica_ctx(
         call_reducer_router,
         call_reducer_auth_token,
         tx_id_nonce: Arc::default(),
-        global_tx_manager: Arc::default(),
+        global_tx_manager: Arc::new(crate::host::global_tx::GlobalTxManager::new(
+            global_tx_config.wound_grace_period,
+        )),
     })
 }
 
@@ -810,6 +817,7 @@ struct ModuleLauncher<F> {
     call_reducer_client: reqwest::Client,
     call_reducer_router: Arc<dyn ReducerCallRouter>,
     call_reducer_auth_token: Option<String>,
+    global_tx_config: GlobalTxConfig,
 }
 
 impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
@@ -832,6 +840,7 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
             self.call_reducer_client,
             self.call_reducer_router,
             self.call_reducer_auth_token,
+            self.global_tx_config,
         )
         .await
         .map(Arc::new)?;
@@ -1036,6 +1045,7 @@ impl Host {
                     call_reducer_client: host_controller.call_reducer_client.clone(),
                     call_reducer_router: host_controller.call_reducer_router.clone(),
                     call_reducer_auth_token: host_controller.call_reducer_auth_token.clone(),
+                    global_tx_config: host_controller.global_tx_config,
                 }
                 .launch_module()
                 .await?
@@ -1068,6 +1078,7 @@ impl Host {
                     call_reducer_client: host_controller.call_reducer_client.clone(),
                     call_reducer_router: host_controller.call_reducer_router.clone(),
                     call_reducer_auth_token: host_controller.call_reducer_auth_token.clone(),
+                    global_tx_config: host_controller.global_tx_config,
                 }
                 .launch_module()
                 .await;
@@ -1094,6 +1105,7 @@ impl Host {
                             call_reducer_client: host_controller.call_reducer_client.clone(),
                             call_reducer_router: host_controller.call_reducer_router.clone(),
                             call_reducer_auth_token: host_controller.call_reducer_auth_token.clone(),
+                            global_tx_config: host_controller.global_tx_config,
                         }
                         .launch_module()
                         .await;
@@ -1210,6 +1222,7 @@ impl Host {
             call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
             call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
             call_reducer_auth_token: None,
+            global_tx_config: GlobalTxConfig::default(),
         }
         .launch_module()
         .await
