@@ -8,7 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct District {
     pub district_key: u32,
-    pub d_w_id: u16,
+    pub d_w_id: u32,
     pub d_id: u8,
     pub d_name: String,
     pub d_street_1: String,
@@ -30,7 +30,7 @@ impl __sdk::InModule for District {
 /// Provides typed access to columns for query building.
 pub struct DistrictCols {
     pub district_key: __sdk::__query_builder::Col<District, u32>,
-    pub d_w_id: __sdk::__query_builder::Col<District, u16>,
+    pub d_w_id: __sdk::__query_builder::Col<District, u32>,
     pub d_id: __sdk::__query_builder::Col<District, u8>,
     pub d_name: __sdk::__query_builder::Col<District, String>,
     pub d_street_1: __sdk::__query_builder::Col<District, String>,

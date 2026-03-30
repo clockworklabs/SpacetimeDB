@@ -7,7 +7,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct Warehouse {
-    pub w_id: u16,
+    pub w_id: u32,
     pub w_name: String,
     pub w_street_1: String,
     pub w_street_2: String,
@@ -26,7 +26,7 @@ impl __sdk::InModule for Warehouse {
 ///
 /// Provides typed access to columns for query building.
 pub struct WarehouseCols {
-    pub w_id: __sdk::__query_builder::Col<Warehouse, u16>,
+    pub w_id: __sdk::__query_builder::Col<Warehouse, u32>,
     pub w_name: __sdk::__query_builder::Col<Warehouse, String>,
     pub w_street_1: __sdk::__query_builder::Col<Warehouse, String>,
     pub w_street_2: __sdk::__query_builder::Col<Warehouse, String>,
@@ -58,7 +58,7 @@ impl __sdk::__query_builder::HasCols for Warehouse {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct WarehouseIxCols {
-    pub w_id: __sdk::__query_builder::IxCol<Warehouse, u16>,
+    pub w_id: __sdk::__query_builder::IxCol<Warehouse, u32>,
 }
 
 impl __sdk::__query_builder::HasIxCols for Warehouse {

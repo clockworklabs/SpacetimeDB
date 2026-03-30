@@ -8,7 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct Customer {
     pub customer_key: u64,
-    pub c_w_id: u16,
+    pub c_w_id: u32,
     pub c_d_id: u8,
     pub c_id: u32,
     pub c_first: String,
@@ -40,7 +40,7 @@ impl __sdk::InModule for Customer {
 /// Provides typed access to columns for query building.
 pub struct CustomerCols {
     pub customer_key: __sdk::__query_builder::Col<Customer, u64>,
-    pub c_w_id: __sdk::__query_builder::Col<Customer, u16>,
+    pub c_w_id: __sdk::__query_builder::Col<Customer, u32>,
     pub c_d_id: __sdk::__query_builder::Col<Customer, u8>,
     pub c_id: __sdk::__query_builder::Col<Customer, u32>,
     pub c_first: __sdk::__query_builder::Col<Customer, String>,

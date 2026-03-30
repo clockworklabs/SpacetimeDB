@@ -167,7 +167,7 @@ pub struct DriverSummary {
     pub database: String,
     pub terminal_start: u32,
     pub terminals: u32,
-    pub warehouse_count: u16,
+    pub warehouse_count: u32,
     pub warmup_secs: u64,
     pub measure_secs: u64,
     pub measure_start_ms: u64,
@@ -281,7 +281,7 @@ pub struct DriverSummaryMeta {
     pub database: String,
     pub terminal_start: u32,
     pub terminals: u32,
-    pub warehouse_count: u16,
+    pub warehouse_count: u32,
     pub warmup_secs: u64,
     pub measure_secs: u64,
     pub measure_start_ms: u64,
@@ -570,6 +570,57 @@ pub fn aggregate_summaries(run_id: String, summaries: &[DriverSummary]) -> Aggre
             completion_histogram: delivery_histogram,
         },
     }
+}
+
+pub fn log_driver_summary(summary: &DriverSummary, summary_path: &Path, events_path: &Path) {
+    log::info!("run_id={}", summary.run_id);
+    log::info!("driver_id={}", summary.driver_id);
+    log::info!("tpmc_like={:.2}", summary.tpmc_like);
+    log::info!("total_transactions={}", summary.total_transactions);
+    for (name, txn) in &summary.transactions {
+        log::info!(
+            "{} count={} success={} failure={} p95_ms={} p99_ms={}",
+            name,
+            txn.count,
+            txn.success,
+            txn.failure,
+            txn.p95_latency_ms,
+            txn.p99_latency_ms
+        );
+    }
+    log::info!(
+        "delivery queued={} completed={} pending={}",
+        summary.delivery.queued,
+        summary.delivery.completed,
+        summary.delivery.pending
+    );
+    log::info!("summary={}", summary_path.display());
+    log::info!("events={}", events_path.display());
+}
+
+pub fn log_aggregate_summary(summary: &AggregateSummary, summary_path: &Path) {
+    log::info!("run_id={}", summary.run_id);
+    log::info!("driver_count={}", summary.driver_count);
+    log::info!("tpmc_like={:.2}", summary.tpmc_like);
+    log::info!("total_transactions={}", summary.total_transactions);
+    for (name, txn) in &summary.transactions {
+        log::info!(
+            "{} count={} success={} failure={} p95_ms={} p99_ms={}",
+            name,
+            txn.count,
+            txn.success,
+            txn.failure,
+            txn.p95_latency_ms,
+            txn.p99_latency_ms
+        );
+    }
+    log::info!(
+        "delivery queued={} completed={} pending={}",
+        summary.delivery.queued,
+        summary.delivery.completed,
+        summary.delivery.pending
+    );
+    log::info!("summary={}", summary_path.display());
 }
 
 pub fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
