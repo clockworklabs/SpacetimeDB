@@ -734,7 +734,18 @@ public abstract record BaseTypeDeclaration<M>
             // If we are a reference type, various equality methods need to take nullable references.
             // If we are a value type, everything is pleasantly by-value.
             var fullNameMaybeRef = $"{FullName}{(Scope.IsStruct ? "" : "?")}";
-            var declEqualsName = (MemberDeclaration decl) => $"___eq{decl.Name}";
+
+            // Generate equality using EqualsStatement from each TypeUse.
+            // This avoids EqualityComparer<T>.Default which allocates and causes issues with NativeAOT-LLVM.
+            // The pattern mirrors GetHashCode generation - use statements, not expressions.
+            var declEqName = (MemberDeclaration decl) => $"___eq{decl.Name}";
+            var equalsStatements = string.Join("\n        ", bsatnDecls.Select(decl =>
+                decl.Type.EqualsStatement($"this.{decl.Identifier}", $"that.{decl.Identifier}", declEqName(decl))));
+            var equalsReturn = JoinOrValue(
+                " && ",
+                bsatnDecls.Select(declEqName),
+                "true" // if there are no members, the types are equal
+            );
 
             extensions.Contents.Append(
                 $$"""
@@ -743,12 +754,8 @@ public abstract record BaseTypeDeclaration<M>
                 public bool Equals({{fullNameMaybeRef}} that)
                 {
                     {{(Scope.IsStruct ? "" : "if (((object?)that) == null) { return false; }\n        ")}}
-                    {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.EqualsStatement($"this.{decl.Identifier}", $"that.{decl.Identifier}", declEqualsName(decl))))}}
-                    return {{JoinOrValue(
-                        " &&\n        ",
-                        bsatnDecls.Select(declEqualsName),
-                        "true" // if there are no elements, the structs are equal :)
-                    )}};
+                    {{equalsStatements}}
+                    return {{equalsReturn}};
                 }
 
                 public override bool Equals(object? that) {
