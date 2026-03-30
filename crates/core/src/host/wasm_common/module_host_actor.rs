@@ -4,6 +4,7 @@ use crate::client::ClientActorId;
 use crate::database_logger;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
 use crate::error::DBError;
+use crate::host::block_on_scoped;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
@@ -13,7 +14,6 @@ use crate::host::module_host::{
     ViewCallResult, ViewCommand, ViewCommandResult, ViewOutcome,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
-use crate::host::block_on_scoped;
 use crate::host::{
     ArgsTuple, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult, ReducerId,
     ReducerOutcome, Scheduler, UpdateDatabaseResult,
@@ -829,13 +829,16 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let auth_token = replica_ctx.call_reducer_auth_token.clone();
         let prepare_id_owned = prepare_id.to_owned();
         loop {
-            let decision = block_on_scoped(&handle, Self::query_coordinator_status(
-                &client,
-                &router,
-                auth_token.clone(),
-                coordinator_identity,
-                &prepare_id_owned,
-            ));
+            let decision = block_on_scoped(
+                &handle,
+                Self::query_coordinator_status(
+                    &client,
+                    &router,
+                    auth_token.clone(),
+                    coordinator_identity,
+                    &prepare_id_owned,
+                ),
+            );
             match decision {
                 Some(commit) => return commit,
                 None => std::thread::sleep(Duration::from_secs(5)),
@@ -1267,7 +1270,6 @@ impl InstanceCommon {
         if !prepared_participants.is_empty() {
             let committed = matches!(event.status, EventStatus::Committed(_));
             let stdb = self.info.subscriptions.relational_db().clone();
-
             let replica_ctx = inst.replica_ctx().clone();
             let handle = tokio::runtime::Handle::current();
             block_on_scoped(&handle, async {

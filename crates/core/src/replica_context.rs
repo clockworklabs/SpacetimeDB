@@ -72,12 +72,16 @@ pub struct ReplicaContext {
 
 impl ReplicaContext {
     /// Build a warmed `reqwest::Client` from `config`.
+    ///
+    /// Uses HTTP/2 prior knowledge (h2c) for all connections.
+    /// The server must be configured to accept h2c (HTTP/2 cleartext) connections.
     pub fn new_call_reducer_client(config: &CallReducerOnDbConfig) -> reqwest::Client {
         reqwest::Client::builder()
             .tcp_keepalive(config.tcp_keepalive)
             .pool_idle_timeout(config.pool_idle_timeout)
             .pool_max_idle_per_host(config.pool_max_idle_per_host)
             .timeout(config.request_timeout)
+            .http2_prior_knowledge()
             .build()
             .expect("failed to build call_reducer_on_db HTTP client")
     }

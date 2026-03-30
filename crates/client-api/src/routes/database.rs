@@ -256,10 +256,19 @@ pub async fn prepare<S: ControlStateDelegate + NodeDelegate>(
         reducer,
     }): Path<CallParams>,
     TypedHeader(content_type): TypedHeader<headers::ContentType>,
+    headers: axum::http::HeaderMap,
     body: Bytes,
 ) -> axum::response::Result<impl IntoResponse> {
     let args = parse_call_args(content_type, body)?;
     let caller_identity = auth.claims.identity;
+
+    // The coordinator sends its actual database identity in `X-Coordinator-Identity`.
+    // Without this, `anon_auth_middleware` gives the HTTP caller an ephemeral random
+    // identity, which gets stored in `st_2pc_state` and breaks recovery polling.
+    let coordinator_identity = headers
+        .get("X-Coordinator-Identity")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| spacetimedb_lib::Identity::from_hex(s).ok());
 
     let (module, Database { owner_identity, .. }) = find_module_and_database(&worker_ctx, name_or_identity).await?;
 
@@ -267,7 +276,7 @@ pub async fn prepare<S: ControlStateDelegate + NodeDelegate>(
     // call_identity_connected/disconnected submit jobs to the module's executor, which
     // will be blocked holding the 2PC write lock after prepare_reducer returns — deadlock.
     let result = module
-        .prepare_reducer(caller_identity, None, &reducer, args)
+        .prepare_reducer(caller_identity, None, &reducer, args, coordinator_identity)
         .await;
 
     match result {
