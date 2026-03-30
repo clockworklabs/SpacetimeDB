@@ -197,9 +197,9 @@ fn simulated_remote_customer(request: &PaymentRequest) -> Customer {
 }
 
 fn simulated_customer_id_from_last_name(last_name: &str) -> u32 {
-    let hash = last_name.bytes().fold(0_u32, |acc, byte| {
-        acc.wrapping_mul(31).wrapping_add(u32::from(byte))
-    });
+    let hash = last_name
+        .bytes()
+        .fold(0_u32, |acc, byte| acc.wrapping_mul(31).wrapping_add(u32::from(byte)));
     (hash % crate::CUSTOMERS_PER_DISTRICT) + 1
 }
 

@@ -413,10 +413,13 @@ impl Cores {
 
 #[cfg(target_os = "linux")]
 fn cores_to_cpuset(cores: &[CoreId]) -> Option<nix::sched::CpuSet> {
-    cores.iter().copied().try_fold(nix::sched::CpuSet::new(), |mut cpuset, core| {
-        cpuset.set(core.id).ok()?;
-        Some(cpuset)
-    })
+    cores
+        .iter()
+        .copied()
+        .try_fold(nix::sched::CpuSet::new(), |mut cpuset, core| {
+            cpuset.set(core.id).ok()?;
+            Some(cpuset)
+        })
 }
 
 #[cfg(target_os = "linux")]
@@ -591,10 +594,7 @@ mod tests {
         #[cfg(target_os = "linux")]
         {
             assert!(split.tokio.workers.is_none());
-            assert_eq!(
-                cpuset_cardinality(split.tokio.blocking.as_ref().unwrap()),
-                20
-            );
+            assert_eq!(cpuset_cardinality(split.tokio.blocking.as_ref().unwrap()), 20);
             assert!(split.rayon.dedicated.is_none());
             assert_eq!(split.rayon.shared.as_ref().unwrap().0, 20);
         }

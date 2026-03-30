@@ -897,11 +897,7 @@ impl RelationalDB {
 
     /// Send a tx to the durability worker, unless a durability barrier is active
     /// and the tx's offset exceeds the minimum active barrier. In that case, defer the tx.
-    fn request_durability_maybe_barrier(
-        &self,
-        reducer_context: Option<ReducerContext>,
-        tx_data: &Arc<TxData>,
-    ) {
+    fn request_durability_maybe_barrier(&self, reducer_context: Option<ReducerContext>, tx_data: &Arc<TxData>) {
         let Some(durability) = &self.durability else {
             return;
         };

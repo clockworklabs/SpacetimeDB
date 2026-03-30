@@ -793,12 +793,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
             // Step 10: wait for COMMIT_PERSIST from coordinator (tokio oneshot).
             // Sender dropped without sending ⇒ coordinator restarted / aborted ⇒ treat as abort.
-            let persist_commit = match tokio::time::timeout(
-                Duration::from_secs(60),
-                commit_persist_rx,
-            )
-            .await
-            {
+            let persist_commit = match tokio::time::timeout(Duration::from_secs(60), commit_persist_rx).await {
                 Ok(Ok(())) => true,
                 Ok(Err(_)) => {
                     // Sender dropped: coordinator crashed / aborted.
@@ -851,9 +846,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 if let Err(e) = stdb.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
                     Ok(del_tx.delete_st_2pc_state(&prepare_id)?)
                 }) {
-                    log::error!(
-                        "call_reducer_prepare_and_hold: failed to delete st_2pc_state for {prepare_id}: {e}"
-                    );
+                    log::error!("call_reducer_prepare_and_hold: failed to delete st_2pc_state for {prepare_id}: {e}");
                 }
             } else {
                 // Round 2 abort: discard all deferred transactions.
@@ -861,9 +854,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 // Trigger module restart via the on_panic hook rather than panicking,
                 // since we're in an async task outside the WASM executor thread.
                 if let Some(on_panic) = replica_ctx.on_panic.get() {
-                    log::error!(
-                        "2PC persistence aborted for {prepare_id}: triggering module restart"
-                    );
+                    log::error!("2PC persistence aborted for {prepare_id}: triggering module restart");
                     on_panic();
                 }
             }
@@ -1215,7 +1206,10 @@ impl InstanceCommon {
             // through), A's own tx must also be deferred. Set barrier at offset - 1
             // so A's tx (at offset) is > barrier and gets deferred.
             let barrier_offset = tx.next_tx_offset().saturating_sub(1);
-            self.info.subscriptions.relational_db().set_durability_barrier(barrier_offset);
+            self.info
+                .subscriptions
+                .relational_db()
+                .set_durability_barrier(barrier_offset);
             Some(barrier_offset)
         } else {
             None
@@ -1247,7 +1241,9 @@ impl InstanceCommon {
                         };
                         let url = format!(
                             "{}/v1/database/{}/2pc/abort/{}",
-                            base_url, db_identity.to_hex(), prepare_id,
+                            base_url,
+                            db_identity.to_hex(),
+                            prepare_id,
                         );
                         let mut req = client.post(&url);
                         if let Some(ref token) = auth_token {
@@ -1258,7 +1254,10 @@ impl InstanceCommon {
                                 log::info!("2PC abort: {prepare_id} on {db_identity}");
                             }
                             Ok(resp) => {
-                                log::error!("2PC abort: failed for {prepare_id} on {db_identity}: status {}", resp.status());
+                                log::error!(
+                                    "2PC abort: failed for {prepare_id} on {db_identity}: status {}",
+                                    resp.status()
+                                );
                             }
                             Err(e) => {
                                 log::error!("2PC abort: transport error for {prepare_id} on {db_identity}: {e}");
@@ -1289,7 +1288,9 @@ impl InstanceCommon {
                     };
                     let url = format!(
                         "{}/v1/database/{}/2pc/commit/{}",
-                        base_url, db_identity.to_hex(), prepare_id,
+                        base_url,
+                        db_identity.to_hex(),
+                        prepare_id,
                     );
                     let mut req = client.post(&url);
                     if let Some(ref token) = auth_token {
@@ -1300,7 +1301,10 @@ impl InstanceCommon {
                             log::info!("2PC commit (Round 1): {prepare_id} on {db_identity}");
                         }
                         Ok(resp) => {
-                            log::error!("2PC commit: failed for {prepare_id} on {db_identity}: status {}", resp.status());
+                            log::error!(
+                                "2PC commit: failed for {prepare_id} on {db_identity}: status {}",
+                                resp.status()
+                            );
                         }
                         Err(e) => {
                             log::error!("2PC commit: transport error for {prepare_id} on {db_identity}: {e}");
@@ -1367,7 +1371,9 @@ impl InstanceCommon {
                     };
                     let url = format!(
                         "{}/v1/database/{}/2pc/commit-persist/{}",
-                        base_url, db_identity.to_hex(), prepare_id,
+                        base_url,
+                        db_identity.to_hex(),
+                        prepare_id,
                     );
                     let mut req = client.post(&url);
                     if let Some(ref token) = auth_token {
@@ -1377,16 +1383,17 @@ impl InstanceCommon {
                         Ok(resp) if resp.status().is_success() => {
                             log::info!("2PC commit-persist: {prepare_id} on {db_identity}");
                             // Round 2 complete — delete coordinator log entry.
-                            if let Err(e) = stdb
-                                .with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
-                                    Ok(del_tx.delete_st_2pc_coordinator_log(prepare_id)?)
-                                })
-                            {
+                            if let Err(e) = stdb.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
+                                Ok(del_tx.delete_st_2pc_coordinator_log(prepare_id)?)
+                            }) {
                                 log::warn!("delete_st_2pc_coordinator_log failed for {prepare_id}: {e}");
                             }
                         }
                         Ok(resp) => {
-                            log::error!("2PC commit-persist: failed for {prepare_id} on {db_identity}: status {}", resp.status());
+                            log::error!(
+                                "2PC commit-persist: failed for {prepare_id} on {db_identity}: status {}",
+                                resp.status()
+                            );
                         }
                         Err(e) => {
                             log::error!("2PC commit-persist: transport error for {prepare_id} on {db_identity}: {e}");

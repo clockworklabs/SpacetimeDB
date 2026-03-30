@@ -487,12 +487,7 @@ pub fn order_status(
 }
 
 #[reducer]
-pub fn stock_level(
-    ctx: &ReducerContext,
-    w_id: u32,
-    d_id: u8,
-    threshold: i32,
-) -> Result<StockLevelResult, String> {
+pub fn stock_level(ctx: &ReducerContext, w_id: u32, d_id: u8, threshold: i32) -> Result<StockLevelResult, String> {
     let _timer = LogStopwatch::new("stock_level");
 
     let _timer_district = LogStopwatch::new("stock_level_district");
@@ -514,7 +509,7 @@ pub fn stock_level(
     _timer_filter.end();
 
     let mut low_stock_count = 0u32;
-    let _timer_count= LogStopwatch::new("stock_level_count");
+    let _timer_count = LogStopwatch::new("stock_level_count");
     for item_id in item_ids {
         if find_low_stock(ctx, w_id, item_id, threshold).is_some() {
             low_stock_count += 1;

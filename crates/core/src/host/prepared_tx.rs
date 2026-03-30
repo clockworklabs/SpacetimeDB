@@ -47,7 +47,9 @@ impl PreparedTransactions {
     /// The entry stays for Round 2 (commit_persist).
     pub fn send_decision(&self, id: &str, commit: bool) -> Result<(), String> {
         let guard = self.inner.lock().unwrap();
-        let info = guard.get(id).ok_or_else(|| format!("no such prepared transaction: {id}"))?;
+        let info = guard
+            .get(id)
+            .ok_or_else(|| format!("no such prepared transaction: {id}"))?;
         let _ = info.decision_sender.send(commit);
         Ok(())
     }
@@ -55,7 +57,9 @@ impl PreparedTransactions {
     /// Send a Round 2 COMMIT_PERSIST signal and remove the entry.
     pub fn send_commit_persist(&self, id: &str) -> Result<(), String> {
         let mut guard = self.inner.lock().unwrap();
-        let info = guard.remove(id).ok_or_else(|| format!("no such prepared transaction: {id}"))?;
+        let info = guard
+            .remove(id)
+            .ok_or_else(|| format!("no such prepared transaction: {id}"))?;
         let _ = info.commit_persist_sender.send(());
         Ok(())
     }

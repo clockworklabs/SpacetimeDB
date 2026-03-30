@@ -306,7 +306,8 @@ fn build_remote_warehouses(request: &TpccLoadConfigRequest) -> Vec<RemoteWarehou
         if other_database_number == request.database_number {
             continue;
         }
-        let database_ident = request.database_identities[usize::try_from(other_database_number).expect("u32 fits usize")];
+        let database_ident =
+            request.database_identities[usize::try_from(other_database_number).expect("u32 fits usize")];
         for w_id in warehouse_range(other_database_number, request.warehouses_per_database) {
             rows.push(RemoteWarehouse {
                 w_id,

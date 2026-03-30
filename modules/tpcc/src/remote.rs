@@ -67,11 +67,8 @@ where
         state = mix_remote_work(state ^ u64::from(byte));
     }
 
-    let rounds = SIMULATED_REMOTE_CALL_WORK.saturating_add(
-        u32::try_from(args.len())
-            .unwrap_or(u32::MAX)
-            .saturating_mul(128),
-    );
+    let rounds =
+        SIMULATED_REMOTE_CALL_WORK.saturating_add(u32::try_from(args.len()).unwrap_or(u32::MAX).saturating_mul(128));
     for _ in 0..rounds {
         state = mix_remote_work(state);
     }

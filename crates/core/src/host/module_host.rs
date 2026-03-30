@@ -890,7 +890,6 @@ pub struct ModuleHost {
     ///
     /// When this is true, most operations will fail with [`NoSuchModule`].
     closed: Arc<AtomicBool>,
-
 }
 
 impl fmt::Debug for ModuleHost {
@@ -1839,7 +1838,14 @@ impl ModuleHost {
             let _ = this
                 .call(
                     &reducer_name_owned,
-                    (params, prepare_id_clone, coordinator_identity, prepared_tx, decision_rx, commit_persist_rx),
+                    (
+                        params,
+                        prepare_id_clone,
+                        coordinator_identity,
+                        prepared_tx,
+                        decision_rx,
+                        commit_persist_rx,
+                    ),
                     async |(p, pid, cid, ptx, drx, cprx), inst| {
                         inst.call_reducer_prepare_and_hold(p, pid, cid, ptx, drx, cprx);
                         Ok::<(), ReducerCallError>(())
@@ -2056,7 +2062,13 @@ impl ModuleHost {
                 // The PREPARE PERSIST only stored the reducer inputs, not the row
                 // mutations. We re-run to get a fresh MutTxId with the mutations.
                 let new_prepare_id = match this
-                    .prepare_reducer(caller_identity, Some(caller_connection_id), &row.reducer_name, args, Some(coordinator_identity))
+                    .prepare_reducer(
+                        caller_identity,
+                        Some(caller_connection_id),
+                        &row.reducer_name,
+                        args,
+                        Some(coordinator_identity),
+                    )
                     .await
                 {
                     Ok((pid, result, _rv)) if !pid.is_empty() => {
