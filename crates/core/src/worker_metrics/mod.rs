@@ -481,6 +481,12 @@ metrics_group!(
         #[labels(db: Identity, scan_type: str, table: str, unindexed_columns: str)]
         pub subscription_queries_total: IntCounterVec,
 
+        #[name = spacetime_durability_blocking_send_duration_sec]
+        #[help = "Latency of blocking sends in request_durability (seconds); _count gives the number of times the channel was full"]
+        #[labels(database_identity: Identity)]
+        #[buckets(0.001, 0.01, 0.1, 1.0, 10.0)]
+        pub durability_blocking_send_duration: HistogramVec,
+
         #[name = spacetime_durability_worker_reorder_window_length]
         #[help = "The number of transactions currently being held in the reorder window"]
         #[labels(db: Identity)]

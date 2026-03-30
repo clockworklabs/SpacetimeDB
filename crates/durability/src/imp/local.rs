@@ -40,6 +40,8 @@ pub struct Options {
     /// transactions that are currently in the queue, but shrink the buffer to
     /// `batch_capacity` if it had to make additional space during a burst.
     ///
+    /// The internal queue of [Local] is bounded to `2 * batch_capacity`.
+    ///
     /// Default: 4096
     pub batch_capacity: NonZeroUsize,
     /// [`Commitlog`] configuration.
@@ -89,8 +91,8 @@ pub struct Local<T> {
     /// Backlog of transactions to be written to disk by the background
     /// [`PersisterTask`].
     ///
-    /// Note that this is unbounded!
-    queue: mpsc::UnboundedSender<Transaction<Txdata<T>>>,
+    /// The queue is bounded to `4 * Option::batch_capacity`.
+    queue: mpsc::Sender<Transaction<Txdata<T>>>,
     /// How many transactions are sitting in the `queue`.
     ///
     /// This is mainly for observability purposes, and can thus be updated with
@@ -128,7 +130,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
             opts.commitlog,
             on_new_segment,
         )?);
-        let (queue, txdata_rx) = mpsc::unbounded_channel();
+        let (queue, txdata_rx) = mpsc::channel(4 * opts.batch_capacity.get());
         let queue_depth = Arc::new(AtomicU64::new(0));
         let (durable_tx, durable_rx) = watch::channel(clog.max_committed_offset());
         let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
@@ -209,7 +211,7 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
     #[instrument(name = "durability::local::actor", skip_all)]
     async fn run(
         self,
-        mut transactions_rx: mpsc::UnboundedReceiver<Transaction<Txdata<T>>>,
+        mut transactions_rx: mpsc::Receiver<Transaction<Txdata<T>>>,
         mut shutdown_rx: mpsc::Receiver<oneshot::Sender<OwnedNotified>>,
     ) {
         info!("starting durability actor");
@@ -330,7 +332,22 @@ impl<T: Send + Sync + 'static> Durability for Local<T> {
     type TxData = Txdata<T>;
 
     fn append_tx(&self, tx: Transaction<Self::TxData>) {
-        self.queue.send(tx).expect("durability actor crashed");
+        match self.queue.try_reserve() {
+            Ok(permit) => permit.send(tx),
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                panic!("durability actor crashed");
+            }
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                let send = || self.queue.blocking_send(tx);
+                if tokio::runtime::Handle::try_current().is_ok() {
+                    tokio::task::block_in_place(send)
+                } else {
+                    send()
+                }
+                .expect("durability actor crashed");
+            }
+        }
+
         self.queue_depth.fetch_add(1, Relaxed);
     }
 

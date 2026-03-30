@@ -477,6 +477,8 @@ impl<'de, T: Deserialize<'de>, U: Deserialize<'de>> VariantVisitor<'de> for Resu
     }
 }
 
+impl_deserialize!([T: Deserialize<'de>] Bound<T>, de => WithBound(PhantomData).deserialize(de));
+
 /// The visitor deserializes a `Bound<T>`.
 #[derive(Clone, Copy)]
 pub struct WithBound<S>(pub S);
