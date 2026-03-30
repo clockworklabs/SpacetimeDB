@@ -15,16 +15,14 @@ kotlin {
         namespace = "com.clockworklabs.spacetimedb_kotlin_sdk.shared_client"
     }
 
-    if (org.gradle.internal.os.OperatingSystem.current().isMacOsX) {
-        listOf(
-            iosX64(),
-            iosArm64(),
-            iosSimulatorArm64()
-        ).forEach { iosTarget ->
-            iosTarget.binaries.framework {
-                baseName = "SpacetimeDBSdk"
-                isStatic = true
-            }
+    listOf(
+        iosX64(),
+        iosArm64(),
+        iosSimulatorArm64()
+    ).forEach { iosTarget ->
+        iosTarget.binaries.framework {
+            baseName = "SpacetimeDBSdk"
+            isStatic = true
         }
     }
 

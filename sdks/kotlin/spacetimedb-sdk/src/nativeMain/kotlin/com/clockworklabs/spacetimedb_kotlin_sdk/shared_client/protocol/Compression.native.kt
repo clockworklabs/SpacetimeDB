@@ -13,8 +13,8 @@ internal actual fun decompressMessage(data: ByteArray): DecompressedPayload {
     return when (val tag = data[0]) {
         Compression.NONE -> DecompressedPayload(data, offset = 1)
         // https://github.com/google/brotli/issues/1123
-        Compression.BROTLI -> error("Brotli compression not supported on native. Use gzip or none.")
-        Compression.GZIP -> error("Gzip decompression not yet implemented for native targets.")
+        Compression.BROTLI -> error("Brotli compression not supported on native.")
+        Compression.GZIP -> error("Gzip compression not supported on native.")
         else -> error("Unknown compression tag: $tag")
     }
 }
