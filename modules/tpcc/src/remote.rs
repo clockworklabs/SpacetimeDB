@@ -1,9 +1,8 @@
 use spacetimedb::{
-    reducer, remote_reducer::call_reducer_on_db, table, DeserializeOwned, Identity, ReducerContext, Serialize,
+    reducer, remote_reducer::call_reducer_on_db_2pc, table, DeserializeOwned, Identity, ReducerContext, Serialize,
     SpacetimeType, Table,
 };
 use spacetimedb_sats::bsatn;
-
 
 /// For warehouses not managed by this database, stores the [`Identity`] of the remote database which manages that warehouse.
 ///
@@ -55,7 +54,7 @@ where
     let args = bsatn::to_vec(args).map_err(|e| {
         format!("Failed to BSATN-serialize args for remote reducer {reducer_name} on database {database_ident}: {e}")
     })?;
-    let out = call_reducer_on_db(database_ident, reducer_name, &args)
+    let out = call_reducer_on_db_2pc(database_ident, reducer_name, &args)
         .map_err(|e| format!("Failed to call remote reducer {reducer_name} on database {database_ident}: {e}"))?;
     bsatn::from_slice(&out).map_err(|e| {
         format!(
