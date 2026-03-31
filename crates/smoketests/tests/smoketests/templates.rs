@@ -554,14 +554,19 @@ fn setup_kotlin_client_sdk(project_path: &Path) -> Result<()> {
     let kotlin_sdk_path = workspace.join("sdks/kotlin");
     let cli_path = spacetimedb_guard::ensure_binaries_built();
 
-    // Append includeBuild to settings.gradle.kts
+    // Uncomment includeBuild lines in settings.gradle.kts
     let settings_path = project_path.join("settings.gradle.kts");
     let settings = fs::read_to_string(&settings_path).with_context(|| format!("Failed to read {:?}", settings_path))?;
     let sdk_path_str = kotlin_sdk_path.display().to_string().replace('\\', "/");
-    let patched = settings.replace(
-        "// includeBuild(\"<path-to-spacetimedb-kotlin-sdk>\")",
-        &format!("includeBuild(\"{}\")", sdk_path_str),
-    );
+    let patched = settings
+        .replace(
+            "// includeBuild(\"<path-to-spacetimedb-kotlin-sdk>/gradle-plugin\")",
+            &format!("includeBuild(\"{}/gradle-plugin\")", sdk_path_str),
+        )
+        .replace(
+            "// includeBuild(\"<path-to-spacetimedb-kotlin-sdk>\")",
+            &format!("includeBuild(\"{}\")", sdk_path_str),
+        );
     fs::write(&settings_path, patched).with_context(|| format!("Failed to write {:?}", settings_path))?;
 
     // Find the build.gradle.kts that applies the spacetimedb plugin (not `apply false`)

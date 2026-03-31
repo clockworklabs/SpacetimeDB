@@ -11,7 +11,10 @@ class SpacetimeDbPlugin : Plugin<Project> {
     override fun apply(project: Project) {
         val ext = project.extensions.create("spacetimedb", SpacetimeDbExtension::class.java)
 
-        ext.modulePath.convention(project.rootProject.layout.projectDirectory.dir("spacetimedb"))
+        val rootDir = project.rootProject.layout.projectDirectory
+        ext.modulePath.convention(rootDir.dir("spacetimedb"))
+        ext.localConfig.convention(rootDir.file("spacetime.local.json"))
+        ext.mainConfig.convention(rootDir.file("spacetime.json"))
 
         val bindingsDir = project.layout.buildDirectory.dir("generated/spacetimedb/bindings")
         val configDir = project.layout.buildDirectory.dir("generated/spacetimedb/config")
@@ -36,9 +39,10 @@ class SpacetimeDbPlugin : Plugin<Project> {
         }
 
         val configTask = project.tasks.register("generateSpacetimeConfig", GenerateConfigTask::class.java) {
-            val rootDir = project.rootProject.layout.projectDirectory
-            it.localConfig.set(rootDir.file("spacetime.local.json"))
-            it.mainConfig.set(rootDir.file("spacetime.json"))
+            val localFile = ext.localConfig
+            val mainFile = ext.mainConfig
+            if (localFile.isPresent && localFile.get().asFile.exists()) it.localConfig.set(localFile)
+            if (mainFile.isPresent && mainFile.get().asFile.exists()) it.mainConfig.set(mainFile)
             it.outputDir.set(configDir)
         }
 

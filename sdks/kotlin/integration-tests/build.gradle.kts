@@ -1,5 +1,11 @@
 plugins {
     alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.spacetimedb)
+}
+
+spacetimedb {
+    modulePath.set(layout.projectDirectory.dir("spacetimedb"))
+    providers.environmentVariable("SPACETIMEDB_CLI").orNull?.let { cli.set(file(it)) }
 }
 
 kotlin {
@@ -11,18 +17,12 @@ kotlin {
 }
 
 dependencies {
-    testImplementation(project(":spacetimedb-sdk"))
+    implementation(project(":spacetimedb-sdk"))
     testImplementation(libs.kotlin.test)
     testImplementation(libs.ktor.client.okhttp)
     testImplementation(libs.ktor.client.websockets)
     testImplementation(libs.kotlinx.coroutines.core)
 }
-
-// Generated bindings live in src/jvmTest/kotlin/module_bindings/.
-// Regenerate with:
-//   spacetimedb-cli generate --lang kotlin \
-//       --out-dir integration-tests/src/jvmTest/kotlin/module_bindings/ \
-//       --module-path integration-tests/spacetimedb
 
 val integrationEnabled = providers.gradleProperty("integrationTests").isPresent
     || providers.environmentVariable("SPACETIMEDB_HOST").isPresent
@@ -30,8 +30,5 @@ val integrationEnabled = providers.gradleProperty("integrationTests").isPresent
 tasks.test {
     useJUnitPlatform()
     testLogging.exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
-    // Requires a running SpacetimeDB server — skip unless explicitly requested.
-    // Run with: ./gradlew :integration-tests:test -PintegrationTests
-    // CI sets SPACETIMEDB_HOST to enable automatically.
     enabled = integrationEnabled
 }
