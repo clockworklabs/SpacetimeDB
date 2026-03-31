@@ -1347,9 +1347,9 @@ impl Table {
     }
 
     /// Clears this table, removing all present rows from it.
-    pub fn clear(&mut self, blob_store: &mut dyn BlobStore) -> usize {
+    pub fn clear(&mut self, blob_store: &mut dyn BlobStore) -> u64 {
         let ptrs = self.scan_all_row_ptrs();
-        let len = ptrs.len();
+        let len = ptrs.len() as u64;
         for ptr in ptrs {
             // SAFETY: `ptr` came rom `self.scan_rows(...)`, so it's present.
             unsafe { self.delete_unchecked(blob_store, ptr) };
