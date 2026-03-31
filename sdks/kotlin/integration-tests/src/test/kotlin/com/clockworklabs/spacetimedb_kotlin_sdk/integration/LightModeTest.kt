@@ -1,3 +1,5 @@
+package com.clockworklabs.spacetimedb_kotlin_sdk.integration
+
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 import kotlinx.coroutines.CompletableDeferred
@@ -8,7 +10,6 @@ import module_bindings.reducers
 import module_bindings.withModuleBindings
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 /**
  * Verifies that light mode connections work correctly.
@@ -73,10 +74,7 @@ class LightModeTest {
 
         // In light mode, the cache should be empty after subscription
         // (no initial rows sent by server)
-        assertTrue(
-            client.conn.db.note.count() == 0,
-            "Light mode should not receive initial rows"
-        )
+        assertEquals(client.conn.db.note.count(), 0, "Light mode should not receive initial rows")
         client.conn.disconnect()
     }
 }

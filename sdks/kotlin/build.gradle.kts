@@ -1,3 +1,6 @@
+buildscript {
+    val SPACETIMEDB_CLI by extra("/home/fromml/Projects/SpacetimeDB/target/release/spacetimedb-cli")
+}
 plugins {
     alias(libs.plugins.kotlinJvm) apply false
     alias(libs.plugins.kotlinMultiplatform) apply false

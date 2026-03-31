@@ -2,6 +2,7 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
+import kotlin.jvm.JvmInline
 
 /** An unsigned 256-bit integer, backed by [BigInteger]. */
 @JvmInline

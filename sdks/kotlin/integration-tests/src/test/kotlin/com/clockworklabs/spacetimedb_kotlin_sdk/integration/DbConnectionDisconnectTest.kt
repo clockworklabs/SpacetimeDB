@@ -1,9 +1,12 @@
+package com.clockworklabs.spacetimedb_kotlin_sdk.integration
+
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import module_bindings.reducers
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -34,7 +37,7 @@ class DbConnectionDisconnectTest {
         client.conn.disconnect()
 
         val error = withTimeout(DEFAULT_TIMEOUT_MS) { disconnected.await() }
-        assertTrue(error == null, "Clean disconnect should have null error, got: $error")
+        assertEquals(error, null, "Clean disconnect should have null error, got: $error")
     }
 
     @Test
@@ -51,7 +54,6 @@ class DbConnectionDisconnectTest {
         } catch (_: Exception) {
             // Expected — some SDKs throw, some silently fail
         }
-        Unit
     }
 
     @Test

@@ -1,8 +1,9 @@
+package com.clockworklabs.spacetimedb_kotlin_sdk.integration
+
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.SqlFormat
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertTrue
 
 class SqlFormatTest {
 

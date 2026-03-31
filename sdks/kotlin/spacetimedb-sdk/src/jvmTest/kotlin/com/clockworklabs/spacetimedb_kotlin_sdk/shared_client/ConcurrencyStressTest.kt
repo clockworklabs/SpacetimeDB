@@ -18,6 +18,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -132,7 +133,7 @@ class ConcurrencyStressTest {
                     barrier.await()
                     repeat(OPS_PER_THREAD) {
                         val snapshot = cache.all()
-                        val count = cache.count()
+                        cache.count()
                         // Snapshot is a point-in-time view — its size should be consistent
                         // (count() may differ since it reads a newer snapshot)
                         val ids = snapshot.map { it.id }.toSet()
@@ -333,7 +334,7 @@ class ConcurrencyStressTest {
             (0 until THREAD_COUNT).map {
                 async {
                     barrier.await()
-                    clientCache.getOrCreateTable<SampleRow>("players") {
+                    clientCache.getOrCreateTable("players") {
                         creationCount.incrementAndGet()
                         TableCache.withPrimaryKey(::decodeSampleRow) { it.id }
                     }
@@ -344,7 +345,7 @@ class ConcurrencyStressTest {
         // All threads must get the same instance
         val first = results.first()
         for (table in results) {
-            assertTrue(first === table, "Different table instance returned by getOrCreateTable")
+            assertSame(first, table, "Different table instance returned by getOrCreateTable")
         }
         // Factory is called by each thread that misses the fast path (line 447).
         // Threads arriving after the table is visible skip factory entirely.
@@ -916,7 +917,7 @@ class ConcurrencyStressTest {
                 launch {
                     barrier.await()
                     val tableName = "table-${threadIdx % tableCount}"
-                    val table = clientCache.getOrCreateTable<SampleRow>(tableName) {
+                    val table = clientCache.getOrCreateTable(tableName) {
                         TableCache.withPrimaryKey(::decodeSampleRow) { it.id }
                     }
                     val base = threadIdx * OPS_PER_THREAD

@@ -2,6 +2,8 @@
 
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
+import kotlin.jvm.JvmName
+
 /**
  * A query that can be converted to a SQL string.
  * Implemented by [Table], [FromWhere], [LeftSemiJoin], and [RightSemiJoin].

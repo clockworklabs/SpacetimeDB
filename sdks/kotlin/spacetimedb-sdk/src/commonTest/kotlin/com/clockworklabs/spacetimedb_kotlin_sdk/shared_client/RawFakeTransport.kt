@@ -45,8 +45,6 @@ internal class RawFakeTransport : Transport {
         _rawIncoming.close()
     }
 
-    val sentMessages: List<ClientMessage> get() = _sent.value
-
     /** Send raw BSATN bytes to the client. Decode happens inside [incoming]. */
     suspend fun sendRawToClient(bytes: ByteArray) {
         _rawIncoming.send(bytes)

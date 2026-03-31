@@ -5,12 +5,9 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.BsatnRowL
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.RowSizeHint
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.TableUpdateRows
 import kotlinx.atomicfu.atomic
-import kotlinx.atomicfu.getAndUpdate
 import kotlinx.atomicfu.update
-import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.persistentHashMapOf
 import kotlinx.collections.immutable.persistentListOf
-import kotlinx.collections.immutable.toPersistentList
 
 /**
  * Wrapper for ByteArray that provides structural equality/hashCode.
@@ -89,7 +86,7 @@ public class TableCache<Row, Key : Any> private constructor(
         @Suppress("UNCHECKED_CAST")
         public fun <Row> withContentKey(
             decode: (BsatnReader) -> Row,
-        ): TableCache<Row, *> = TableCache<Row, BsatnRowKey>(decode) { _, bytes -> BsatnRowKey(bytes) }
+        ): TableCache<Row, *> = TableCache(decode) { _, bytes -> BsatnRowKey(bytes) }
     }
 
     // Map<key, Pair<Row, refCount>> — atomic persistent map for thread-safe reads
@@ -422,9 +419,8 @@ public class TableCache<Row, Key : Any> private constructor(
                 val callbacks = mutableListOf<PendingCallback>()
                 for (row in events) {
                     if (insertCbs.isNotEmpty()) {
-                        val capturedRow = row
                         callbacks.add(PendingCallback {
-                            for (cb in insertCbs) cb(ctx, capturedRow)
+                            for (cb in insertCbs) cb(ctx, row)
                         })
                     }
                 }

@@ -57,7 +57,7 @@ class DisconnectScenarioTest {
 
         var queryResult: OneOffQueryResult? = null
         var queryError: Throwable? = null
-        val job = launch {
+        launch {
             try {
                 queryResult = conn.oneOffQuery("SELECT * FROM sample")
             } catch (e: Throwable) {

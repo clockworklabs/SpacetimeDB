@@ -1,9 +1,10 @@
+package com.clockworklabs.spacetimedb_kotlin_sdk.integration
+
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import module_bindings.db
 import module_bindings.reducers
 import module_bindings.withModuleBindings
 import java.util.concurrent.Executors
@@ -82,7 +83,7 @@ class WithCallbackDispatcherTest {
             .withDatabaseName(DB_NAME)
             .withModuleBindings()
             .withCallbackDispatcher(dispatcher)
-            .onConnect { c, identity, _ ->
+            .onConnect { _, _, _ ->
                 connected.complete(Unit)
             }
             .onConnectError { _, e -> connected.completeExceptionally(e) }

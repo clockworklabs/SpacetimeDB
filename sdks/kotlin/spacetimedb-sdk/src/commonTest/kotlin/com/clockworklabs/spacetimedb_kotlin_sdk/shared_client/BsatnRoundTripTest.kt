@@ -36,7 +36,7 @@ class BsatnRoundTripTest {
 
     @Test
     fun `i8 round trip`() {
-        for (v in listOf<Byte>(Byte.MIN_VALUE, -1, 0, 1, Byte.MAX_VALUE)) {
+        for (v in listOf(Byte.MIN_VALUE, -1, 0, 1, Byte.MAX_VALUE)) {
             val result = roundTrip({ it.writeI8(v) }, { it.readI8() })
             assertEquals(v, result)
         }
@@ -54,7 +54,7 @@ class BsatnRoundTripTest {
 
     @Test
     fun `i16 round trip`() {
-        for (v in listOf<Short>(Short.MIN_VALUE, -1, 0, 1, Short.MAX_VALUE)) {
+        for (v in listOf(Short.MIN_VALUE, -1, 0, 1, Short.MAX_VALUE)) {
             val result = roundTrip({ it.writeI16(v) }, { it.readI16() })
             assertEquals(v, result)
         }

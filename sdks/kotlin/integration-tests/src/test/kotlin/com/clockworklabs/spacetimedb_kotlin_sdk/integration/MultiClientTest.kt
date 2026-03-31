@@ -1,3 +1,5 @@
+package com.clockworklabs.spacetimedb_kotlin_sdk.integration
+
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
@@ -110,7 +112,7 @@ class MultiClientTest {
 
         val newName = "multi-name-${System.nanoTime()}"
         val updateSeen = CompletableDeferred<Pair<module_bindings.User, module_bindings.User>>()
-        b.conn.db.user.onUpdate { ctx, old, new ->
+        b.conn.db.user.onUpdate { _, old, new ->
             if (new.identity == a.identity && new.name == newName) {
                 updateSeen.complete(old to new)
             }

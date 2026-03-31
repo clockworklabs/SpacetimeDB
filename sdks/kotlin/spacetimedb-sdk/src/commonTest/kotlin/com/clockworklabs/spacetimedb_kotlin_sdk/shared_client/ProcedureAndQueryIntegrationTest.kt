@@ -135,7 +135,7 @@ class ProcedureAndQueryIntegrationTest {
         val beforeCount = transport.sentMessages.size
         // Launch the suspend query in a separate coroutine since it suspends
         var queryResult: OneOffQueryResult? = null
-        val job = launch {
+        launch {
             queryResult = conn.oneOffQuery("SELECT * FROM sample")
         }
         advanceUntilIdle()

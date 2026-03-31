@@ -68,13 +68,13 @@ abstract class GenerateBindingsTask @Inject constructor(
                     "--module-path", modulePath.get().asFile.absolutePath,
                 )
             }
-        } catch (e: org.gradle.api.GradleException) {
-            if (!cli.isPresent && e.cause is java.io.IOException) {
-                throw org.gradle.api.GradleException(
-                    "spacetimedb-cli not found on PATH. Install it from https://spacetimedb.com " +
-                    "or set the path explicitly via: spacetimedb { cli.set(file(\"/path/to/spacetimedb-cli\")) }",
-                    e
+        } catch (e: Exception) {
+            if (!cli.isPresent) {
+                logger.warn(
+                    "spacetimedb-cli not found — Kotlin bindings will not be auto-generated. " +
+                    "Install from https://spacetimedb.com or set: spacetimedb { cli.set(file(\"/path/to/spacetimedb-cli\")) }"
                 )
+                return
             }
             throw e
         }

@@ -1,3 +1,5 @@
+package com.clockworklabs.spacetimedb_kotlin_sdk.integration
+
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
 import kotlin.test.Test
 import kotlin.test.assertEquals

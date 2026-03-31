@@ -36,7 +36,7 @@ class CallbackDispatcherTest {
         val callbackDispatcher = newSingleThreadContext("TestCallbackThread")
         val callbackThreadDeferred = CompletableDeferred<String>()
 
-        try {
+        callbackDispatcher.use { callbackDispatcher ->
             val conn = DbConnection(
                 transport = transport,
                 scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)),
@@ -59,8 +59,6 @@ class CallbackDispatcherTest {
             assertNotNull(capturedThread)
             assertTrue(capturedThread.contains("TestCallbackThread"))
             conn.disconnect()
-        } finally {
-            callbackDispatcher.close()
         }
     }
 }

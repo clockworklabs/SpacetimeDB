@@ -57,7 +57,7 @@ private fun redactSensitive(message: String): String {
  */
 public object Logger {
     private val _level = atomic(LogLevel.INFO)
-    private val _handler = atomic<LogHandler>(LogHandler { lvl, msg ->
+    private val _handler = atomic(LogHandler { lvl, msg ->
         println("[SpacetimeDB ${lvl.name}] $msg")
     })
 

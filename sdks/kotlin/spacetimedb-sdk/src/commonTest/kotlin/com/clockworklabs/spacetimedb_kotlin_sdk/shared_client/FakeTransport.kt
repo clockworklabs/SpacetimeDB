@@ -42,10 +42,6 @@ internal class FakeTransport(
 
     val sentMessages: List<ClientMessage> get() = _sent.value
 
-    fun clearSentMessages() {
-        _sent.value = persistentListOf()
-    }
-
     suspend fun sendToClient(message: ServerMessage) {
         _incoming.send(message)
     }

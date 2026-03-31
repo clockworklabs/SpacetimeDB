@@ -1,5 +1,7 @@
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
+import kotlin.jvm.JvmInline
+
 /**
  * A type-safe boolean SQL expression.
  * The type parameter [TRow] tracks which table row type this expression applies to.

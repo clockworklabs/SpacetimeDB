@@ -1,3 +1,5 @@
+package com.clockworklabs.spacetimedb_kotlin_sdk.integration
+
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Int128
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Int256
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.UInt128

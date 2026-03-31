@@ -134,7 +134,7 @@ class IndexTest {
         cache.applyInserts(STUB_CTX, buildRowList(nullKeyRow.encode(), normalRow.encode()))
 
         // Key extractor returns null for id == 0
-        val index = UniqueIndex<SampleRow, Int?>(cache) { if (it.id == 0) null else it.id }
+        val index = UniqueIndex(cache) { if (it.id == 0) null else it.id }
         assertEquals(nullKeyRow, index.find(null))
         assertEquals(normalRow, index.find(1))
         assertNull(index.find(99))
@@ -149,7 +149,7 @@ class IndexTest {
         cache.applyInserts(STUB_CTX, buildRowList(r1.encode(), r2.encode(), r3.encode()))
 
         // Key extractor returns null for id == 0
-        val index = BTreeIndex<SampleRow, Int?>(cache) { if (it.id == 0) null else it.id }
+        val index = BTreeIndex(cache) { if (it.id == 0) null else it.id }
         assertEquals(setOf(r1), index.filter(null))
         assertEquals(setOf(r2), index.filter(1))
         assertEquals(emptySet(), index.filter(99))

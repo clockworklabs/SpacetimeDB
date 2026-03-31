@@ -1,3 +1,5 @@
+package com.clockworklabs.spacetimedb_kotlin_sdk.integration
+
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout

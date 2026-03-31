@@ -1,10 +1,10 @@
+package com.clockworklabs.spacetimedb_kotlin_sdk.integration
+
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.TimeDuration
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Timestamp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.seconds
 
 class TimestampTest {
 

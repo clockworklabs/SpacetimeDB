@@ -8,8 +8,6 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ServerMes
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.TransactionUpdate
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.TimeDuration
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Timestamp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith

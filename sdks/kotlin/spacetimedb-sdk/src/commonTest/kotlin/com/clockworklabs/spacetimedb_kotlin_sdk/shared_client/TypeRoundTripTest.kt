@@ -2,16 +2,21 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnReader
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.*
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Counter
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ScheduleAt
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.SpacetimeUuid
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.TimeDuration
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Timestamp
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.UuidVersion
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.microseconds
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
-import kotlin.uuid.Uuid
 
 class TypeRoundTripTest {
     private fun <T> encodeDecode(encode: (BsatnWriter) -> Unit, decode: (BsatnReader) -> T): T {
@@ -63,7 +68,7 @@ class TypeRoundTripTest {
 
     @Test
     fun `connection id null if zero`() {
-        assertTrue(ConnectionId.nullIfZero(ConnectionId.zero()) == null)
+        assertEquals(ConnectionId.nullIfZero(ConnectionId.zero()), null)
         assertTrue(ConnectionId.nullIfZero(ConnectionId.random()) != null)
     }
 
@@ -558,7 +563,6 @@ class TypeRoundTripTest {
 
     @Test
     fun `spacetime result ok round trip`() {
-        val result: SpacetimeResult<Int, String> = SpacetimeResult.Ok(42)
         val writer = BsatnWriter()
         // Encode: tag 0 + I32
         writer.writeSumTag(0u)
@@ -573,7 +577,6 @@ class TypeRoundTripTest {
 
     @Test
     fun `spacetime result err round trip`() {
-        val result: SpacetimeResult<Int, String> = SpacetimeResult.Err("oops")
         val writer = BsatnWriter()
         // Encode: tag 1 + String
         writer.writeSumTag(1u)

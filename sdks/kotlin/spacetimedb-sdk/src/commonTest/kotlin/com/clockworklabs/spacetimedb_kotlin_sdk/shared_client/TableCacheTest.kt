@@ -158,7 +158,7 @@ class TableCacheTest {
         val r2 = SampleRow(2, "bob")
         cache.applyInserts(STUB_CTX, buildRowList(r1.encode(), r2.encode()))
 
-        val iterated = cache.iter().asSequence().sortedBy { it.id }.toList()
+        val iterated = cache.iter().sortedBy { it.id }.toList()
         assertEquals(listOf(r1, r2), iterated)
     }
 

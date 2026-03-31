@@ -5,7 +5,9 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -178,17 +180,17 @@ class CacheOperationsEdgeCaseTest {
         val cc = ClientCache()
         var factoryCalls = 0
 
-        val cache1 = cc.getOrCreateTable<SampleRow>("t") {
+        val cache1 = cc.getOrCreateTable("t") {
             factoryCalls++
             createSampleCache()
         }
-        val cache2 = cc.getOrCreateTable<SampleRow>("t") {
+        val cache2 = cc.getOrCreateTable("t") {
             factoryCalls++
             createSampleCache()
         }
 
         assertEquals(1, factoryCalls)
-        assertTrue(cache1 === cache2)
+        assertSame(cache1, cache2)
     }
 
     @Test
@@ -295,7 +297,7 @@ class CacheOperationsEdgeCaseTest {
 
         assertEquals(a, b)
         assertEquals(a.hashCode(), b.hashCode())
-        assertFalse(a == c)
+        assertNotEquals(a, c)
     }
 
     @Test
@@ -326,7 +328,7 @@ class CacheOperationsEdgeCaseTest {
 
         assertEquals(row1, row2)
         assertEquals(row1.hashCode(), row2.hashCode())
-        assertFalse(row1 == row3)
+        assertNotEquals(row1, row3)
     }
 
     // =========================================================================

@@ -1,3 +1,5 @@
+package com.clockworklabs.spacetimedb_kotlin_sdk.integration
+
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Counter
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.SpacetimeUuid
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Timestamp

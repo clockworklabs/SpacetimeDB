@@ -180,7 +180,7 @@ public class BsatnWriter(initialCapacity: Int = 256) {
     /** Returns the written bytes as a Base64-encoded string. */
     @OptIn(ExperimentalEncodingApi::class)
     @InternalSpacetimeApi
-    public fun toBase64(): String = Base64.Default.encode(toByteArray())
+    public fun toBase64(): String = Base64.encode(toByteArray())
 
     /** Resets this writer, discarding all written data and re-allocating the buffer. */
     @InternalSpacetimeApi

@@ -1,3 +1,5 @@
+package com.clockworklabs.spacetimedb_kotlin_sdk.integration
+
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.EventContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking

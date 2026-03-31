@@ -2,7 +2,6 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
@@ -38,7 +37,7 @@ class BigIntegerTest {
     // ---- Constants ----
 
     @Test
-    fun `constants`() {
+    fun constants() {
         assertEquals("0", BigInteger.ZERO.toString())
         assertEquals("1", BigInteger.ONE.toString())
         assertEquals("2", BigInteger.TWO.toString())

@@ -5,6 +5,7 @@ import java.util.zip.GZIPOutputStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class CompressionTest {
@@ -20,7 +21,7 @@ class CompressionTest {
 
         val result = decompressMessage(message)
         // Zero-copy: result references the original array with offset=1
-        assertTrue(result.data === message, "NONE should return the original array (zero-copy)")
+        assertSame(result.data, message, "NONE should return the original array (zero-copy)")
         assertEquals(1, result.offset)
         assertTrue(payload.contentEquals(result.toPayloadBytes()))
     }

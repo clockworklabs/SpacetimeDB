@@ -31,7 +31,7 @@ public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private 
     }
 
     private fun ensure(n: Int) {
-        check(n >= 0 && remaining >= n) { "BsatnReader: need $n bytes but only $remaining remain" }
+        check(n in 0..remaining) { "BsatnReader: need $n bytes but only $remaining remain" }
     }
 
     /** Reads a BSATN boolean (1 byte, nonzero = true). */
@@ -177,7 +177,7 @@ public class BsatnReader(internal var data: ByteArray, offset: Int = 0, private 
      * Used when a materialized ByteArray is needed (e.g. for content-based keying).
      */
     internal fun sliceArray(from: Int, to: Int): ByteArray {
-        check(from <= to && to <= limit) {
+        check(to in from..limit) {
             "sliceArray($from, $to) out of view bounds (limit=$limit)"
         }
         return data.copyOfRange(from, to)

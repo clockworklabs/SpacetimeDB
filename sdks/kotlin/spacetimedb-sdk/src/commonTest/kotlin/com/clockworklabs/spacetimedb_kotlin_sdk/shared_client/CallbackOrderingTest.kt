@@ -1,13 +1,18 @@
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.*
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QueryRows
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.QuerySetUpdate
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ServerMessage
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.SingleTableRows
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.TableUpdate
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.TableUpdateRows
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.TransactionUpdate
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -203,7 +208,6 @@ class CallbackOrderingTest {
         assertTrue(conn.isActive)
 
         val handle = conn.subscribe(listOf("SELECT * FROM t"))
-        var applied = false
         transport.sendToClient(
             ServerMessage.SubscribeApplied(
                 requestId = 1u,
@@ -242,7 +246,7 @@ class CallbackOrderingTest {
         }
 
         // applyUpdate should still work
-        val callbacks = cache.applyUpdate(STUB_CTX, parsed)
+        cache.applyUpdate(STUB_CTX, parsed)
         assertEquals(0, cache.count())
     }
 

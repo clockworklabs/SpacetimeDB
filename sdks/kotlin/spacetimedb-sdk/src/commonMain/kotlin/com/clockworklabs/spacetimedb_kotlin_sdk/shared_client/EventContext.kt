@@ -1,7 +1,6 @@
 package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ProcedureStatus
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.protocol.ServerMessage
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.TimeDuration

@@ -1,13 +1,15 @@
+package com.clockworklabs.spacetimedb_kotlin_sdk.integration
+
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.BigInteger
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.CompressionMode
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.onFailure
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.onSuccess
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Int128
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.Int256
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.UInt128
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.UInt256
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.onFailure
+import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.onSuccess
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
-import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.BigInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -71,7 +73,7 @@ abstract class CompressionTestBase(private val mode: CompressionMode) {
         val received = CompletableDeferred<String>()
         client.conn.db.user.onUpdate { _, _, newRow ->
             if (newRow.identity == client.identity && newRow.name == name) {
-                received.complete(newRow.name!!)
+                received.complete(newRow.name)
             }
         }
         client.conn.reducers.setName(name)

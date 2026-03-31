@@ -1,3 +1,5 @@
+package com.clockworklabs.spacetimedb_kotlin_sdk.integration
+
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.OneOffQueryData
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.OneOffQueryResult
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.QueryError
@@ -98,7 +100,7 @@ class OneOffQueryTest {
     fun `multiple concurrent oneOffQueries all return`() = runBlocking {
         val client = connectToDb()
 
-        val results = (1..5).map { i ->
+        val results = (1..5).map { _ ->
             val deferred = CompletableDeferred<OneOffQueryResult>()
             client.conn.oneOffQuery("SELECT * FROM user") { msg ->
                 deferred.complete(msg)

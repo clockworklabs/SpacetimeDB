@@ -7,7 +7,6 @@ import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.bsatn.BsatnWriter
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.toEpochMicroseconds
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.getAndUpdate
-import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 /** Thread-safe monotonic counter for UUID V7 generation. */

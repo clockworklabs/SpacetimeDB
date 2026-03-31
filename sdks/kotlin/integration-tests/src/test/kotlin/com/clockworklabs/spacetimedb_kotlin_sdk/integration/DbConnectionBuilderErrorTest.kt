@@ -1,9 +1,12 @@
+package com.clockworklabs.spacetimedb_kotlin_sdk.integration
+
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.DbConnection
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import module_bindings.withModuleBindings
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -95,7 +98,6 @@ class DbConnectionBuilderErrorTest {
 
         val ex = withTimeout(DEFAULT_TIMEOUT_MS) { error.await() }
         assertNotNull(ex, "Should receive an error on invalid token")
-        assertTrue(ex.message?.contains("401") == true, "Error should mention 401: ${ex.message}")
-        Unit
+        assertEquals(ex.message?.contains("401"), true, "Error should mention 401: ${ex.message}")
     }
 }

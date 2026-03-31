@@ -1,3 +1,5 @@
+package com.clockworklabs.spacetimedb_kotlin_sdk.integration
+
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.SqlLit
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
@@ -7,6 +9,7 @@ import module_bindings.addQuery
 import module_bindings.db
 import module_bindings.reducers
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class TypeSafeQueryTest {
@@ -111,13 +114,13 @@ class TypeSafeQueryTest {
     fun `SqlLit creates typed literals`() = runBlocking {
         // Test various SqlLit factory methods produce valid SQL strings
         assertTrue(SqlLit.string("hello").sql.contains("hello"))
-        assertTrue(SqlLit.bool(true).sql == "TRUE")
-        assertTrue(SqlLit.bool(false).sql == "FALSE")
-        assertTrue(SqlLit.int(42).sql == "42")
-        assertTrue(SqlLit.ulong(100UL).sql == "100")
-        assertTrue(SqlLit.long(999L).sql == "999")
-        assertTrue(SqlLit.float(1.5f).sql == "1.5")
-        assertTrue(SqlLit.double(2.5).sql == "2.5")
+        assertEquals(SqlLit.bool(true).sql, "TRUE")
+        assertEquals(SqlLit.bool(false).sql, "FALSE")
+        assertEquals(SqlLit.int(42).sql, "42")
+        assertEquals(SqlLit.ulong(100UL).sql, "100")
+        assertEquals(SqlLit.long(999L).sql, "999")
+        assertEquals(SqlLit.float(1.5f).sql, "1.5")
+        assertEquals(SqlLit.double(2.5).sql, "2.5")
     }
 
     @Test

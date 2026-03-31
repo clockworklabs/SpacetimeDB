@@ -281,7 +281,7 @@ class ReducerIntegrationTest {
         advanceUntilIdle()
 
         var callbackFired = false
-        val requestId = conn.callReducer("slow", byteArrayOf(), "args", callback = { _ ->
+        conn.callReducer("slow", byteArrayOf(), "args", callback = { _ ->
             callbackFired = true
         })
         advanceUntilIdle()
@@ -380,7 +380,7 @@ class ReducerIntegrationTest {
         transport.sendToClient(initialConnectionMsg())
         advanceUntilIdle()
 
-        val requestId = conn.callReducer("op", byteArrayOf(), "args", callback = { _ ->
+        conn.callReducer("op", byteArrayOf(), "args", callback = { _ ->
             callbackFired = true
         })
         advanceUntilIdle()

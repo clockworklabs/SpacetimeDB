@@ -52,7 +52,7 @@ class IndexScaleTest {
         val cache = createSampleCache()
         val index = UniqueIndex(cache) { it.id }
 
-        val insertTime = measureTime {
+        measureTime {
             for (i in 0 until LARGE) {
                 cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, "row-$i").encode()))
             }
@@ -162,7 +162,7 @@ class IndexScaleTest {
         val index = BTreeIndex(cache) { it.name }
 
         // All 50K rows share the same key
-        val insertTime = measureTime {
+        measureTime {
             for (i in 0 until LARGE) {
                 cache.applyInserts(STUB_CTX, buildRowList(SampleRow(i, "shared").encode()))
             }

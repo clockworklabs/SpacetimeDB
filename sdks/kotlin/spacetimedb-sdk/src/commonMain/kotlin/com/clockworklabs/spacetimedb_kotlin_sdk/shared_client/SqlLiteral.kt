@@ -3,6 +3,7 @@ package com.clockworklabs.spacetimedb_kotlin_sdk.shared_client
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.ConnectionId
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.Identity
 import com.clockworklabs.spacetimedb_kotlin_sdk.shared_client.type.SpacetimeUuid
+import kotlin.jvm.JvmInline
 
 /**
  * A type-safe wrapper around a SQL literal string.
