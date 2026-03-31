@@ -934,6 +934,23 @@ impl RelationalDB {
         b.active.insert(barrier_offset);
     }
 
+    /// Modify the first deferred TxData in the barrier's pending queue.
+    ///
+    /// Used by pipelined 2PC to add the st_2pc_state deletion (COMMIT marker)
+    /// to the reducer's TxData so they share a single commitlog entry.
+    pub fn modify_first_barrier_pending(&self, f: impl FnOnce(&mut TxData)) {
+        let mut barrier = self.durability_barrier.lock().unwrap();
+        if let Some(ref mut b) = *barrier {
+            if let Some(entry) = b.pending.first_mut() {
+                if let Some(tx_data) = Arc::get_mut(&mut entry.1) {
+                    f(tx_data);
+                } else {
+                    log::warn!("modify_first_barrier_pending: Arc is shared, cannot modify");
+                }
+            }
+        }
+    }
+
     /// Abort a durability barrier, discarding ALL deferred transactions.
     ///
     /// Used when Round 2 of pipelined 2PC aborts. All transactions behind the

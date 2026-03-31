@@ -733,11 +733,11 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             return;
         }
 
-        // Step 4: flush st_2pc_prepare_marker -- writes st_2pc_state row (reducer
-        // inputs only) into committed state. Creates a TxData containing ONLY this
-        // system table insert (no user table data). Assigned offset N.
+        // Step 4: create TxData for the st_2pc_state INSERT (PREPARE PERSIST).
+        // The row is NOT inserted into committed_state -- it only exists in the
+        // commitlog for crash recovery. Assigned offset N.
         let barrier_offset = tx.next_tx_offset();
-        let marker_tx_data = match tx.flush_2pc_prepare_marker(
+        let marker_tx_data = std::sync::Arc::new(tx.create_2pc_prepare_tx_data(
             &prepare_id,
             coordinator_identity.to_hex().to_string(),
             recovery_reducer_name,
@@ -745,22 +745,15 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             recovery_caller_identity_hex,
             recovery_caller_connection_id_hex,
             recovery_timestamp_micros,
-        ) {
-            Ok(td) => std::sync::Arc::new(td),
-            Err(e) => {
-                log::error!("call_reducer_prepare_and_hold: flush_2pc_prepare_marker failed for {prepare_id}: {e}");
-                let _ = stdb.rollback_mut_tx(tx);
-                return;
-            }
-        };
+        ));
 
         // Step 5: send the marker's TxData to the durability worker. This writes
         // the PREPARE PERSIST commitlog entry: just the st_2pc_state row with
         // reducer inputs. No reducer row changes are persisted here.
         stdb.request_durability_for_tx_data(None, &marker_tx_data);
 
-        // Step 6: set durability barrier at offset N. The marker (offset N) passes
-        // through; the reducer's row changes (offset N+1) will be deferred.
+        // Step 6: set durability barrier at offset N. The marker (offset N)
+        // passes through; everything after is deferred.
         stdb.set_durability_barrier(barrier_offset);
 
         // Step 7: commit reducer's actual row changes to the in-memory datastore.
@@ -770,6 +763,36 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let commit_result = commit_and_broadcast_event(&self.common.info.subscriptions, client, event, tx);
 
         // ═══ WRITE LOCK RELEASED ═══════════════════════════════
+
+        // Step 7b: add the st_2pc_state DELETE (COMMIT marker) to the
+        // reducer's deferred TxData. When the barrier clears, a single
+        // commitlog entry contains both the reducer changes and the
+        // st_2pc_state deletion -- atomically marking the 2PC as committed.
+        {
+            use spacetimedb_datastore::system_tables::{ST_2PC_STATE_ID, ST_2PC_STATE_NAME};
+            let table_name = spacetimedb_schema::table_name::TableName::new(
+                spacetimedb_schema::identifier::Identifier::new(ST_2PC_STATE_NAME.into()).unwrap(),
+            );
+            let delete_row = spacetimedb_sats::ProductValue::from(
+                spacetimedb_datastore::system_tables::St2pcStateRow {
+                    prepare_id: prepare_id.clone(),
+                    coordinator_identity_hex: String::new(),
+                    reducer_name: String::new(),
+                    args_bsatn: Vec::new(),
+                    caller_identity_hex: String::new(),
+                    caller_connection_id_hex: String::new(),
+                    timestamp_micros: 0,
+                },
+            );
+            stdb.modify_first_barrier_pending(|tx_data| {
+                tx_data.set_deletes_for_table(
+                    spacetimedb_datastore::system_tables::ST_2PC_STATE_ID,
+                    &table_name,
+                    std::sync::Arc::from([delete_row]),
+                );
+            });
+        }
+
         // ── Round 2: Persistence Commit (async — does not block executor) ──
 
         let handle = tokio::runtime::Handle::current();
@@ -834,20 +857,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 // Step 11: clear the durability barrier so the deferred TxData
                 // (offset N+1, reducer row changes) flushes to the durability worker.
                 stdb.clear_durability_barrier(barrier_offset);
-
-                // Step 12: wait for COMMIT PERSIST durability (offset N+1 fsynced).
-                if let Some(mut durable) = stdb.durable_tx_offset() {
-                    if let Ok(offset) = commit_result.tx_offset.await {
-                        let _ = durable.wait_for(offset).await;
-                    }
-                }
-
-                // Step 13: delete the st_2pc_state marker (cleanup).
-                if let Err(e) = stdb.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
-                    Ok(del_tx.delete_st_2pc_state(&prepare_id)?)
-                }) {
-                    log::error!("call_reducer_prepare_and_hold: failed to delete st_2pc_state for {prepare_id}: {e}");
-                }
             } else {
                 // Round 2 abort: discard all deferred transactions.
                 stdb.abort_durability_barrier(barrier_offset);
@@ -1318,7 +1327,7 @@ impl InstanceCommon {
                 // If a participant crashes, this will time out and we abort persistence.
                 let mut all_prepared = true;
                 for rx in persist_rxs {
-                    match tokio::time::timeout(Duration::from_secs(120), rx).await {
+                    match tokio::time::timeout(Duration::from_secs(25), rx).await {
                         Ok(Ok(())) => {}
                         Ok(Err(_)) | Err(_) => {
                             log::error!("2PC Round 2: timed out waiting for PREPARED_TO_PERSIST");

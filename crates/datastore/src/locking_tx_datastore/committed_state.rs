@@ -1392,6 +1392,23 @@ impl CommittedState {
     /// Used by the 2PC participant path to flush the `st_2pc_state` PREPARE marker to the
     /// commitlog (via the durability worker) while keeping the reducer's write lock open,
     /// so that no other transaction can interleave between PREPARE and COMMIT/ABORT.
+    /// Create a `TxData` for an insert WITHOUT modifying any table.
+    /// Only consumes a `tx_offset`. Used by pipelined 2PC to write
+    /// st_2pc_state to the commitlog without putting it in committed state.
+    pub(super) fn create_insert_tx_data(
+        &mut self,
+        table_id: TableId,
+        table_name: &spacetimedb_schema::table_name::TableName,
+        row: &ProductValue,
+    ) -> TxData {
+        let row_arc: Arc<[ProductValue]> = Arc::from([row.clone()]);
+        let mut tx_data = TxData::default();
+        tx_data.set_inserts_for_table(table_id, table_name, row_arc);
+        tx_data.set_tx_offset(self.next_tx_offset);
+        self.next_tx_offset += 1;
+        tx_data
+    }
+
     pub(super) fn insert_row_and_consume_offset(
         &mut self,
         table_id: TableId,
