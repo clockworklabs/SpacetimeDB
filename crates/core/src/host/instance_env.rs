@@ -1009,7 +1009,7 @@ impl InstanceEnv {
 
         // Register call edge for distributed deadlock detection.
         let call_id = uuid::Uuid::new_v4().to_string();
-        self.register_edge_with_retry(&call_id, caller_identity, database_identity)?;
+        self.register_edge_or_deadlock(&call_id, caller_identity, database_identity)?;
 
         let base_url = self
             .replica_ctx
@@ -1074,7 +1074,7 @@ impl InstanceEnv {
 
         // Register call edge for distributed deadlock detection.
         let call_id = uuid::Uuid::new_v4().to_string();
-        self.register_edge_with_retry(&call_id, caller_identity, database_identity)?;
+        self.register_edge_or_deadlock(&call_id, caller_identity, database_identity)?;
 
         let base_url = self
             .replica_ctx
@@ -1129,34 +1129,21 @@ impl InstanceEnv {
         result
     }
 
-    /// Register a call edge with bounded retry on cycle detection.
-    fn register_edge_with_retry(
+    /// Register a call edge for cycle detection. If a cycle is detected,
+    /// return an error immediately -- retrying won't help because the other
+    /// side is already calling us and we hold the lock.
+    fn register_edge_or_deadlock(
         &self,
         call_id: &str,
         caller: Identity,
         callee: Identity,
     ) -> Result<(), NodesError> {
-        const MAX_RETRIES: u32 = 5;
-        const BACKOFF_MS: u64 = 100;
-        for attempt in 0..MAX_RETRIES {
-            match self.replica_ctx.call_edge_tracker.register_edge(call_id, caller, callee) {
-                Ok(()) => return Ok(()),
-                Err(e) if attempt < MAX_RETRIES - 1 => {
-                    log::warn!(
-                        "Cycle detected on call {caller} -> {callee} (attempt {attempt}): {e}; retrying"
-                    );
-                    std::thread::sleep(std::time::Duration::from_millis(
-                        BACKOFF_MS * 2u64.pow(attempt),
-                    ));
-                }
-                Err(e) => {
-                    return Err(NodesError::HttpError(format!(
-                        "distributed deadlock detected: {caller} -> {callee}: {e}"
-                    )));
-                }
-            }
+        match self.replica_ctx.call_edge_tracker.register_edge(call_id, caller, callee) {
+            Ok(()) => Ok(()),
+            Err(e) => Err(NodesError::HttpError(format!(
+                "distributed deadlock detected: {caller} -> {callee}: {e}"
+            ))),
         }
-        Ok(())
     }
 }
 
