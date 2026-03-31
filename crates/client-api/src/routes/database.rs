@@ -390,7 +390,7 @@ pub async fn status_2pc<S: ControlStateDelegate + NodeDelegate>(
 ) -> axum::response::Result<impl IntoResponse> {
     let (module, _database) = find_module_and_database(&worker_ctx, name_or_identity).await?;
 
-    let decision = if module.has_2pc_coordinator_commit(&prepare_id) {
+    let decision = if module.has_2pc_coordinator_commit(&prepare_id).await {
         "commit"
     } else {
         "abort"
