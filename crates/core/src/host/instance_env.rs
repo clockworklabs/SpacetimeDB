@@ -1034,14 +1034,14 @@ impl InstanceEnv {
 
         let result = crate::replica_context::execute_blocking_http(
             &self.replica_ctx.call_reducer_blocking_client,
-            req.build().map_err(|e| NodesError::HttpError(e.to_string()))?,
+            req,
             |resp| {
                 let status = resp.status().as_u16();
                 let body = resp.bytes()?;
                 Ok((status, body))
             },
         )
-        .map_err(|e| NodesError::HttpError(e.to_string()));
+        .map_err(|e| NodesError::HttpError(e));
 
         // Unregister the call edge (regardless of success/failure).
         let _ = self.replica_ctx.call_edge_tracker.unregister_edge(&call_id);
@@ -1100,7 +1100,7 @@ impl InstanceEnv {
 
         let result = crate::replica_context::execute_blocking_http(
             &self.replica_ctx.call_reducer_blocking_client,
-            req.build().map_err(|e| NodesError::HttpError(e.to_string()))?,
+            req,
             |resp| {
                 let status = resp.status().as_u16();
                 let prepare_id = resp
@@ -1112,7 +1112,7 @@ impl InstanceEnv {
                 Ok((status, body, prepare_id))
             },
         )
-        .map_err(|e| NodesError::HttpError(e.to_string()));
+        .map_err(|e| NodesError::HttpError(e));
 
         // Unregister the call edge (regardless of success/failure).
         let _ = self.replica_ctx.call_edge_tracker.unregister_edge(&call_id);

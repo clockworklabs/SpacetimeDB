@@ -119,22 +119,35 @@ impl ReplicaContext {
     }
 }
 
-/// Execute a blocking HTTP request on a fresh OS thread to avoid tokio's
-/// nested runtime panic. The response is processed by `f` inside the thread.
+/// Execute a blocking reqwest request on a fresh OS thread, processing the
+/// response inside that same thread.
+///
+/// In debug builds, reqwest 0.12 calls `wait::enter()` on every I/O operation
+/// (send, bytes, text, ...). That function creates and immediately drops a mini
+/// tokio runtime as a nesting-check, which panics if the calling thread is
+/// already inside a tokio `block_on` context (e.g. the WASM executor thread).
+///
+/// By running both the send and all response reading inside a scoped OS thread
+/// that has no tokio context, the assertion always passes. The closure `f`
+/// receives the Response and must fully consume it (read body, extract headers,
+/// etc.) before returning -- do not let the Response escape the closure.
 pub fn execute_blocking_http<F, T>(
     client: &reqwest::blocking::Client,
-    request: reqwest::blocking::Request,
+    request: reqwest::blocking::RequestBuilder,
     f: F,
-) -> reqwest::Result<T>
+) -> std::result::Result<T, String>
 where
     F: FnOnce(reqwest::blocking::Response) -> reqwest::Result<T> + Send + 'static,
     T: Send + 'static,
 {
     let client = client.clone();
     std::thread::scope(|s| {
-        s.spawn(move || client.execute(request).and_then(f))
-            .join()
-            .unwrap_or_else(|e| std::panic::resume_unwind(e))
+        s.spawn(move || {
+            let request = request.build().map_err(|e| e.to_string())?;
+            client.execute(request).and_then(f).map_err(|e| e.to_string())
+        })
+        .join()
+        .unwrap_or_else(|e| std::panic::resume_unwind(e))
     })
 }
 
