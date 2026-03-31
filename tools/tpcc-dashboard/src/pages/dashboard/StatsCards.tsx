@@ -1,5 +1,3 @@
-import { useMemo } from 'react';
-import { useAppSelector } from '../../hooks';
 import {
   ClockIcon,
   ConnectIcon,
@@ -9,10 +7,8 @@ import {
   SchemaIcon,
   UploadIcon,
 } from '../../components/Icons';
-import {
-  countTransactionsInMeasurementWindow,
-  getTpmC,
-} from '../../lib/throughput';
+import { useAppSelector } from '../../hooks';
+import { getTpmC } from '../../lib/throughput';
 import './StatsCards.css';
 
 function StatCard({
@@ -47,18 +43,8 @@ export default function StatsCards() {
   const totalTransactionCount = useAppSelector(
     state => state.globalState.totalTransactionCount
   );
-  const throughputData = useAppSelector(
-    state => state.globalState.throughputData
-  );
-
-  const measuredTransactionCount = useMemo(
-    () =>
-      countTransactionsInMeasurementWindow(
-        throughputData,
-        measureStartMs,
-        measureEndMs
-      ),
-    [throughputData, measureStartMs, measureEndMs]
+  const measuredTransactionCount = useAppSelector(
+    state => state.globalState.measuredTransactionCount
   );
 
   const tpmC = getTpmC(measureStartMs, measureEndMs, measuredTransactionCount);
