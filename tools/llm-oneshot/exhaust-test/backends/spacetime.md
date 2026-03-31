@@ -10,7 +10,9 @@ Instructions for generating, building, and deploying the **SpacetimeDB** backend
 
 Find and read **`spacetimedb-typescript.mdc`** in `docs/static/ai-rules/` of the repo. This file contains everything you need:
 - Table definition syntax (`table(OPTIONS, COLUMNS)` — indexes go in OPTIONS)
-- Reducer definition syntax (explicit string name as first arg, object params)
+- Reducer definition syntax (export name becomes reducer name — NO string arg)
+- Schema export syntax (`schema({ table1, table2 })` — object, NOT spread args)
+- Lifecycle hooks must be `export const` (NOT bare calls)
 - Client patterns (useTable returns tuple, connectionBuilder must be memoized)
 - Hallucinated APIs to avoid
 - Scheduled tables, timestamps, data visibility, React integration, project structure
