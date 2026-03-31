@@ -129,6 +129,54 @@ impl ReplicaContext {
 
 }
 
+/// Outcome of [`execute_blocking_http_cancellable`].
+pub enum HttpOutcome<T> {
+    Done(reqwest::Result<T>),
+    Cancelled,
+}
+
+/// Like [`execute_blocking_http`] but polls `should_cancel` every 50 ms while the HTTP
+/// call is in-flight.  If `should_cancel()` returns `true` the function returns
+/// [`HttpOutcome::Cancelled`] immediately; the background HTTP thread is detached and
+/// completes on its own (its result is silently discarded).
+///
+/// All response reading must happen inside `f` — same rule as [`execute_blocking_http`].
+pub fn execute_blocking_http_cancellable<F, T>(
+    client: &reqwest::blocking::Client,
+    request: reqwest::blocking::Request,
+    should_cancel: impl Fn() -> bool,
+    f: F,
+) -> HttpOutcome<T>
+where
+    F: FnOnce(reqwest::blocking::Response) -> reqwest::Result<T> + Send + 'static,
+    T: Send + 'static,
+{
+    use std::sync::mpsc;
+    let (tx, rx) = mpsc::channel::<reqwest::Result<T>>();
+    let client = client.clone();
+    let handle = std::thread::spawn(move || {
+        let result = client.execute(request).and_then(f);
+        let _ = tx.send(result);
+    });
+    let result = loop {
+        match rx.recv_timeout(std::time::Duration::from_millis(50)) {
+            Ok(result) => break Some(result),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if should_cancel() {
+                    // Drop handle — thread is detached and its result discarded.
+                    return HttpOutcome::Cancelled;
+                }
+            }
+            // Sender dropped without sending → thread panicked.
+            Err(mpsc::RecvTimeoutError::Disconnected) => break None,
+        }
+    };
+    match result {
+        Some(r) => HttpOutcome::Done(r),
+        None => std::panic::resume_unwind(handle.join().unwrap_err()),
+    }
+}
+
 /// Execute a blocking reqwest request on a fresh OS thread, processing the response inside
 /// that same thread.
 ///
@@ -147,14 +195,14 @@ pub fn execute_blocking_http<F, T>(
     f: F,
 ) -> reqwest::Result<T>
 where
-    F: FnOnce(reqwest::blocking::Response) -> reqwest::Result<T> + Send,
-    T: Send,
+    F: FnOnce(reqwest::blocking::Response) -> reqwest::Result<T> + Send + 'static,
+    T: Send + 'static,
 {
     let client = client.clone();
     std::thread::scope(|s| {
         s.spawn(move || client.execute(request).and_then(f))
             .join()
-            .expect("blocking HTTP thread panicked")
+            .unwrap_or_else(|e| std::panic::resume_unwind(e))
     })
 }
 

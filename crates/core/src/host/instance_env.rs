@@ -5,7 +5,7 @@ use crate::error::{DBError, DatastoreError, IndexError, NodesError};
 use crate::host::global_tx::{GlobalTxRole, GlobalTxState};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::wasm_common::TimingSpan;
-use crate::replica_context::{execute_blocking_http, ReplicaContext};
+use crate::replica_context::{execute_blocking_http, execute_blocking_http_cancellable, HttpOutcome, ReplicaContext};
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
 use crate::subscription::module_subscription_manager::{from_tx_offset, TransactionOffset};
 use crate::util::prometheus_handle::IntGaugeExt;
@@ -1149,15 +1149,18 @@ impl InstanceEnv {
             req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
         }
 
-        // Check for wound signal one more time before blocking.
+        // Check for wound signal one more time before blocking, then keep checking
+        // every 50 ms while the HTTP round-trip is in-flight.
         if self.replica_ctx.global_tx_manager.is_wounded(&tx_id) {
             return Err(self.wounded_tx_error(tx_id));
         }
 
         let request = req.build().map_err(|e| NodesError::HttpError(e.to_string()))?;
-        let result = execute_blocking_http(
+        let manager = self.replica_ctx.global_tx_manager.clone();
+        let outcome = execute_blocking_http_cancellable(
             &self.replica_ctx.call_reducer_blocking_client,
             request,
+            move || manager.is_wounded(&tx_id),
             |resp| {
                 let status = resp.status().as_u16();
                 let prepare_id = resp
@@ -1168,8 +1171,11 @@ impl InstanceEnv {
                 let body = resp.bytes()?;
                 Ok((status, body, prepare_id))
             },
-        )
-        .map_err(|e| NodesError::HttpError(e.to_string()));
+        );
+        let result = match outcome {
+            HttpOutcome::Done(r) => r.map_err(|e| NodesError::HttpError(e.to_string())),
+            HttpOutcome::Cancelled => return Err(self.wounded_tx_error(tx_id)),
+        };
 
         WORKER_METRICS
             .cross_db_reducer_calls_total
