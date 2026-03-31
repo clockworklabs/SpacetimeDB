@@ -739,11 +739,18 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let return_value = event.reducer_return_value.clone();
         let _ = prepared_tx.send((res, return_value));
 
-        // Step 4: wait for coordinator's decision (B never aborts on its own).
+        // Step 4: wait for coordinator's decision, but abort early if the local
+        // transaction is wounded while this participant is prepared.
         let commit = !global_tx_id
             .map(|tx_id| replica_ctx.global_tx_manager.is_wounded(&tx_id))
             .unwrap_or(false)
-            && Self::wait_for_2pc_decision(decision_rx, &prepare_id, coordinator_identity, &replica_ctx);
+            && Self::wait_for_2pc_decision(
+                decision_rx,
+                &prepare_id,
+                coordinator_identity,
+                global_tx_id,
+                &replica_ctx,
+            );
 
         if commit {
             if let Some(tx_id) = global_tx_id {
@@ -815,32 +822,54 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
     /// Wait for a 2PC COMMIT or ABORT decision for `prepare_id`.
     ///
-    /// First waits on `decision_rx` for up to 60 seconds.  If no decision arrives,
-    /// switches to polling the coordinator's `GET /2pc/status/{prepare_id}` endpoint
-    /// every 5 seconds until a definitive answer is received.
-    ///
-    /// **B never aborts on its own** — ABORT is only returned when A explicitly says so.
+    /// First waits on `decision_rx` for up to 60 seconds, checking periodically for a
+    /// local wound signal. If no decision arrives, switches to polling the
+    /// coordinator's `GET /2pc/status/{prepare_id}` endpoint every 5 seconds until a
+    /// definitive answer is received or the local transaction is wounded.
     fn wait_for_2pc_decision(
         decision_rx: std::sync::mpsc::Receiver<bool>,
         prepare_id: &str,
         coordinator_identity: crate::identity::Identity,
+        global_tx_id: Option<spacetimedb_lib::GlobalTxId>,
         replica_ctx: &std::sync::Arc<crate::replica_context::ReplicaContext>,
     ) -> bool {
-        match decision_rx.recv_timeout(Duration::from_secs(60)) {
-            Ok(commit) => return commit,
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                log::warn!("2PC prepare_id={prepare_id}: no decision after 60s, polling coordinator");
+        let decision_wait_deadline = std::time::Instant::now() + Duration::from_secs(20);
+        while std::time::Instant::now() < decision_wait_deadline {
+            if global_tx_id
+                .map(|tx_id| replica_ctx.global_tx_manager.is_wounded(&tx_id))
+                .unwrap_or(false)
+            {
+                log::info!("2PC prepare_id={prepare_id}: local transaction wounded while waiting for decision");
+                return false;
             }
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                log::warn!("2PC prepare_id={prepare_id}: decision channel closed, polling coordinator");
+
+            let remaining = decision_wait_deadline.saturating_duration_since(std::time::Instant::now());
+            let wait_slice = remaining.min(Duration::from_secs(1));
+            match decision_rx.recv_timeout(wait_slice) {
+                Ok(commit) => return commit,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    log::warn!("2PC prepare_id={prepare_id}: decision channel closed, polling coordinator");
+                    break;
+                }
             }
         }
+
+        log::warn!("2PC prepare_id={prepare_id}: no decision after 60s, polling coordinator");
 
         let client = replica_ctx.call_reducer_blocking_client.clone();
         let router = replica_ctx.call_reducer_router.clone();
         let auth_token = replica_ctx.call_reducer_auth_token.clone();
         let prepare_id_owned = prepare_id.to_owned();
         loop {
+            if global_tx_id
+                .map(|tx_id| replica_ctx.global_tx_manager.is_wounded(&tx_id))
+                .unwrap_or(false)
+            {
+                log::info!("2PC prepare_id={prepare_id}: local transaction wounded during status polling");
+                return false;
+            }
+
             let decision = Self::query_coordinator_status(
                 &client,
                 &router,
@@ -850,7 +879,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             );
             match decision {
                 Some(commit) => return commit,
-                None => std::thread::sleep(Duration::from_secs(5)),
+                None => std::thread::sleep(Duration::from_secs(1)),
             }
         }
     }
