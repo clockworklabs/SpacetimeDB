@@ -1,4 +1,5 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
+import { isInMeasurementWindow } from '../lib/throughput';
 
 export interface GlobalState {
   isReady: boolean;
@@ -69,7 +70,13 @@ export const globalStateSlice = createSlice({
     ) => {
       const payload = action.payload;
       state.totalTransactionCount += 1;
-      if (Date.now() >= state.measureStartMs) {
+      if (
+        isInMeasurementWindow(
+          payload.measurementTimeMs,
+          state.measureStartMs,
+          state.measureEndMs
+        )
+      ) {
         // Each update here is a single transaction, so we can just increment the count by one.
         state.measuredTransactionCount += 1;
       }

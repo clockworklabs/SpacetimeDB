@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useAppSelector } from '../../hooks';
 import {
   ClockIcon,
@@ -8,33 +9,11 @@ import {
   SchemaIcon,
   UploadIcon,
 } from '../../components/Icons';
+import {
+  countTransactionsInMeasurementWindow,
+  getTpmC,
+} from '../../lib/throughput';
 import './StatsCards.css';
-
-function getTpmC(
-  measureStartMs: number,
-  measureEndMs: number,
-  measuredTransactionCount: number
-): number | null {
-  const nowMs = Date.now();
-
-  if (measureStartMs <= 0 || measureEndMs <= measureStartMs) {
-    return null;
-  }
-
-  if (nowMs < measureStartMs) {
-    return null;
-  }
-
-  const effectiveEndMs = Math.min(nowMs, measureEndMs);
-  const elapsedTimeSec = (effectiveEndMs - measureStartMs) / 1000;
-
-  if (elapsedTimeSec <= 1) {
-    return null;
-  }
-
-  const tpmC = (measuredTransactionCount / elapsedTimeSec) * 60;
-  return Math.trunc(tpmC);
-}
 
 function StatCard({
   icon,
@@ -68,8 +47,18 @@ export default function StatsCards() {
   const totalTransactionCount = useAppSelector(
     state => state.globalState.totalTransactionCount
   );
-  const measuredTransactionCount = useAppSelector(
-    state => state.globalState.measuredTransactionCount
+  const throughputData = useAppSelector(
+    state => state.globalState.throughputData
+  );
+
+  const measuredTransactionCount = useMemo(
+    () =>
+      countTransactionsInMeasurementWindow(
+        throughputData,
+        measureStartMs,
+        measureEndMs
+      ),
+    [throughputData, measureStartMs, measureEndMs]
   );
 
   const tpmC = getTpmC(measureStartMs, measureEndMs, measuredTransactionCount);
