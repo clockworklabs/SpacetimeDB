@@ -12,14 +12,7 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.time.Duration
 
-/**
- * Encode→decode round-trip tests for ClientMessage and ServerMessage.
- *
- * These complement the existing encode-only (ClientMessageTest) and decode-only
- * (ServerMessageTest) tests by verifying that encode and decode are true inverses.
- * Hand-crafted byte tests can have matching bugs in both the test data and the
- * codec; round-trip tests catch asymmetries.
- */
+/** Encode→decode round-trip tests for ClientMessage and ServerMessage. */
 class ProtocolRoundTripTest {
 
     // ---- ClientMessage round-trips (encode → decode → assertEquals) ----
