@@ -1122,13 +1122,11 @@ pub fn update_csproj_client_to_nuget(dir: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Sets up a Kotlin client project: updates the project name, writes the Gradle wrapper jar,
-/// and makes gradlew executable.
+/// Sets up a Kotlin client project: updates the project name and makes gradlew executable.
 fn setup_kotlin_client(dir: &Path, project_name: &str) -> anyhow::Result<()> {
     let settings_path = dir.join("settings.gradle.kts");
     if settings_path.exists() {
         let original = fs::read_to_string(&settings_path)?;
-        // Replace the template's rootProject.name with the user's project name
         let re = regex::Regex::new(r#"rootProject\.name\s*=\s*"[^"]*""#).unwrap();
         let updated = re
             .replace(&original, &format!("rootProject.name = \"{}\"", project_name))
@@ -1138,15 +1136,6 @@ fn setup_kotlin_client(dir: &Path, project_name: &str) -> anyhow::Result<()> {
         }
     }
 
-    // Write the Gradle wrapper jar (binary file — skipped by the template's include_str! embedding)
-    let wrapper_dir = dir.join("gradle/wrapper");
-    fs::create_dir_all(&wrapper_dir)?;
-    fs::write(
-        wrapper_dir.join("gradle-wrapper.jar"),
-        include_bytes!("../../../../templates/basic-kt/gradle/wrapper/gradle-wrapper.jar"),
-    )?;
-
-    // Make gradlew executable (template system doesn't preserve permissions)
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -1364,6 +1353,7 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path, is_server_only: bo
         .ok_or_else(|| anyhow::anyhow!("Template definition missing"))?;
 
     let template_files = embedded::get_template_files();
+    let template_binary_files = embedded::get_template_binary_files();
 
     if !is_server_only {
         println!(
@@ -1372,7 +1362,7 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path, is_server_only: bo
         );
         let client_source = &template_def.client_source;
         if let Some(files) = template_files.get(client_source.as_str()) {
-            copy_embedded_files(files, project_path)?;
+            copy_embedded_files(files, template_binary_files.get(client_source.as_str()), project_path)?;
         } else {
             anyhow::bail!("Client template not found: {}", client_source);
         }
@@ -1407,7 +1397,7 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path, is_server_only: bo
     let server_dir = project_path.join("spacetimedb");
     let server_source = &template_def.server_source;
     if let Some(files) = template_files.get(server_source.as_str()) {
-        copy_embedded_files(files, &server_dir)?;
+        copy_embedded_files(files, template_binary_files.get(server_source.as_str()), &server_dir)?;
     } else {
         anyhow::bail!("Server template not found: {}", server_source);
     }
@@ -1432,7 +1422,11 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path, is_server_only: bo
     Ok(())
 }
 
-fn copy_embedded_files(files: &HashMap<&str, &str>, target_dir: &Path) -> anyhow::Result<()> {
+fn copy_embedded_files(
+    files: &HashMap<&str, &str>,
+    binary_files: Option<&HashMap<&str, &[u8]>>,
+    target_dir: &Path,
+) -> anyhow::Result<()> {
     for (file_path, content) in files {
         // Skip .template.json files - they're only for template metadata
         if file_path.ends_with(".template.json") {
@@ -1444,6 +1438,15 @@ fn copy_embedded_files(files: &HashMap<&str, &str>, target_dir: &Path) -> anyhow
             fs::create_dir_all(parent)?;
         }
         fs::write(&full_path, content)?;
+    }
+    if let Some(binaries) = binary_files {
+        for (file_path, content) in binaries {
+            let full_path = target_dir.join(file_path);
+            if let Some(parent) = full_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&full_path, content)?;
+        }
     }
     Ok(())
 }
