@@ -132,9 +132,6 @@ class ColExtensionsTest {
         assertEquals(withLit, withExt)
     }
 
-    // Note: IxCol<TRow, ULong> has NO convenience extension (only String/Bool/Identity/ConnId/Uuid do).
-    // This is a gap in ColExtensions.kt — numeric IxCol types require explicit SqlLit.
-
     // --- Verify convenience extensions produce valid SQL ---
 
     @Test
