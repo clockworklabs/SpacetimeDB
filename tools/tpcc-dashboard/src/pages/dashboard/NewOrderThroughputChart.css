@@ -1,12 +1,3 @@
-.chart {
-  padding: 64px 32px 32px 32px;
-  border-radius: 0 0 16px 16px;
-  border: 1px solid var(--shade-3);
-  background: var(--shade-6);
-
-  --text-color: #f4f6fc;
-}
-
 .reference-line-label {
   display: flex;
   padding: var(--Spacer-1, 4px) var(--Spacer-4, 16px);

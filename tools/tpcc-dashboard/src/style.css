@@ -21,11 +21,29 @@ html {
   flex-direction: column;
   height: 100vh;
   background-color: var(--background-color);
+  color: #f4f6fc;
 }
 
 p {
   margin: 0;
   padding: 0;
+}
+
+.chart {
+  padding: 64px 32px 32px 32px;
+  border-radius: 0 0 16px 16px;
+  border: 1px solid var(--shade-3);
+  background: var(--shade-6);
+
+  --text-color: #f4f6fc;
+}
+
+.tooltip-label {
+  border-radius: 4px;
+  border: 1px solid var(--shade-6) !important;
+  background: var(--shade-3) !important;
+  color: var(--text-color) !important;
+  padding: 8px;
 }
 
 .heading-7 {

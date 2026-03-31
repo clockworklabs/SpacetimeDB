@@ -1,0 +1,5 @@
+.nodes-page {
+  margin: 80px;
+  background-color: var(--surface-color);
+  border-radius: 16px;
+}

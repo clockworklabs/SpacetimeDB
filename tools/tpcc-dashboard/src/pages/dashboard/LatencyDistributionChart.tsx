@@ -7,7 +7,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { useAppSelector } from './hooks';
+import { useAppSelector } from '../../hooks';
 import { useMemo } from 'react';
 
 export default function LatencyDistributionChart() {
@@ -28,24 +28,41 @@ export default function LatencyDistributionChart() {
     <div className="chart">
       <ResponsiveContainer width="100%" height={460}>
         <LineChart data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" />
+          <CartesianGrid strokeDasharray="3 3" stroke="#142730" />
           <XAxis
+            domain={[0, 'dataMax']}
             dataKey="latency"
+            type="number"
             label={{
               value: 'Response Time (ms)',
-              position: 'insideBottomRight',
-              offset: -10,
+              position: 'insideBottom',
+              offset: -5,
+              fill: 'var(--text-color)',
             }}
+            stroke="var(--text-color)"
           />
           <YAxis
+            type="number"
             label={{
               value: 'Number of transactions',
               angle: -90,
-              position: 'insideLeft',
+              position: 'inside',
+              fill: 'var(--text-color)',
             }}
+            stroke="var(--text-color)"
           />
-          <Tooltip />
-          <Line type="monotone" dataKey="count" stroke="#8884d8" />
+          <Tooltip
+            wrapperClassName="tooltip-label"
+            formatter={value => `${value} transactions`}
+            labelFormatter={value => `Latency: ${value} ms`}
+          />
+          <Line
+            dataKey="count"
+            dot={false}
+            isAnimationActive={false}
+            stroke="#4cf490"
+            strokeWidth={2}
+          />
         </LineChart>
       </ResponsiveContainer>
     </div>

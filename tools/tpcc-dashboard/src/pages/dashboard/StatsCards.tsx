@@ -1,4 +1,4 @@
-import { useAppSelector } from './hooks';
+import { useAppSelector } from '../../hooks';
 import {
   ClockIcon,
   ConnectIcon,
@@ -7,7 +7,7 @@ import {
   RefreshIcon,
   SchemaIcon,
   UploadIcon,
-} from './Icons';
+} from '../../components/Icons';
 import './StatsCards.css';
 
 function getTpmC(
@@ -28,7 +28,7 @@ function getTpmC(
   const effectiveEndMs = Math.min(nowMs, measureEndMs);
   const elapsedTimeSec = (effectiveEndMs - measureStartMs) / 1000;
 
-  if (elapsedTimeSec <= 0) {
+  if (elapsedTimeSec <= 1) {
     return null;
   }
 
@@ -86,7 +86,7 @@ export default function StatsCards() {
       <StatCard
         icon={<UploadIcon />}
         label="Max. Theorical Throughput"
-        value={warehouses * 12.86}
+        value={Math.trunc(warehouses * 12.86)}
         unit="tpmC"
       />
       <StatCard

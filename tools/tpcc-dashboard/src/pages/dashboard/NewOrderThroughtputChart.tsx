@@ -9,7 +9,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { useAppSelector } from './hooks';
+import { useAppSelector } from '../../hooks';
 import './NewOrderThroughputChart.css';
 
 interface ThroughputBucketPoint {
@@ -95,10 +95,10 @@ export default function NewOrderThroughtputChart() {
               position: 'insideLeft',
               fill: 'var(--text-color)',
             }}
-            domain={[0, 'dataMax']}
             stroke="var(--text-color)"
           />
           <Tooltip
+            wrapperClassName="tooltip-label"
             labelFormatter={value => `Elapsed: ${value.toFixed(0)}s`}
             formatter={value => [
               // eslint-disable-next-line @typescript-eslint/no-explicit-any

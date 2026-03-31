@@ -1,17 +1,17 @@
 import { useContext, useEffect } from 'react';
-import { SpacetimeDBContext } from './context';
+import { SpacetimeDBContext } from '../../context';
 import {
   deleteState,
   insertState,
   throughputStateUpdate,
-} from './features/globalState';
-import { useAppDispatch, useAppSelector } from './hooks';
+} from '../../features/globalState';
+import LatencyDistributionChart from './LatencyDistributionChart';
 import NewOrderThroughtputChart from './NewOrderThroughtputChart';
 import StatsCards from './StatsCards';
-import './App.css';
-import LatencyDistributionChart from './LatencyDistributionChart';
+import { useAppDispatch, useAppSelector } from '../../hooks';
+import './DashboardPage.css';
 
-function App() {
+export default function DashboardPage() {
   const conn = useContext(SpacetimeDBContext);
   const isReady = useAppSelector(state => state.globalState.isReady);
   const dispatch = useAppDispatch();
@@ -69,5 +69,3 @@ function App() {
     </div>
   );
 }
-
-export default App;

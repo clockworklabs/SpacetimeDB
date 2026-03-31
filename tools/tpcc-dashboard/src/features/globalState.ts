@@ -69,12 +69,12 @@ export const globalStateSlice = createSlice({
     ) => {
       const payload = action.payload;
       state.totalTransactionCount += 1;
-      if (Number(payload.measurementTimeMs) >= state.measureStartMs) {
+      if (Date.now() >= state.measureStartMs) {
         // Each update here is a single transaction, so we can just increment the count by one.
         state.measuredTransactionCount += 1;
       }
 
-      state.throughputData.push(Number(payload.measurementTimeMs));
+      state.throughputData.push(payload.measurementTimeMs);
 
       const latency = Number(payload.latencyMs);
       if (state.latencyData[latency]) {

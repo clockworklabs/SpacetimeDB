@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { DbConnection } from './module_bindings';
-import { SpacetimeDBContext } from './context';
+import { DbConnection } from '../module_bindings';
+import { SpacetimeDBContext } from '../context';
 
 export function ConnectedGuard({ children }: { children: React.ReactNode }) {
   const [conn, setConn] = useState<DbConnection | null>(null);
@@ -11,7 +11,8 @@ export function ConnectedGuard({ children }: { children: React.ReactNode }) {
 
     DbConnection.builder()
       .withUri('https://tpc-c-benchmark.spacetimedb.com')
-      .withUri('http://localhost:3000')
+      .withUri('https://aws-replication-test.spacetimedb.com')
+      //.withUri('http://localhost:3000')
       .withDatabaseName('tpcc-metrics')
       .onConnect(conn => {
         console.log('Connected to SpacetimeDB');
