@@ -1,3 +1,9 @@
+// TODO: Consolidate with `ControlStateWriteAccess` once that trait is moved
+// to a crate that `core` can depend on (currently in `client-api`, which
+// depends on `core` -- circular dependency). The edge tracking methods should
+// live on `ControlStateWriteAccess` since that is the standard interface for
+// interacting with the control database.
+
 /// Trait for tracking cross-database call edges for distributed deadlock detection.
 ///
 /// Before making a cross-database reducer call, the caller registers an edge
