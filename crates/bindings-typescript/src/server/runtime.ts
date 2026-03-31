@@ -667,9 +667,37 @@ function makeTableView(
       index = base as UniqueIndex<any, any>;
     } else if (serializeSinglePoint) {
       // numColumns == 1
+
+      const serializeSingleRange = !isHashIndex
+        ? (buffer: ResizableBuffer, range: Range<any>): IndexScanArgs => {
+            BINARY_WRITER.reset(buffer);
+            const writer = BINARY_WRITER;
+            const writeBound = (bound: Bound<any>) => {
+              const tags = { included: 0, excluded: 1, unbounded: 2 };
+              writer.writeU8(tags[bound.tag]);
+              if (bound.tag !== 'unbounded')
+                serializeSingleElement!(writer, bound.value);
+            };
+            writeBound(range.from);
+            const rstartLen = writer.offset;
+            writeBound(range.to);
+            const rendLen = writer.offset - rstartLen;
+            return [0, 0, rstartLen, rendLen];
+          }
+        : null;
+
       const rawIndex = {
         filter: (range: any): IteratorObject<RowType<any>> => {
           const buf = LEAF_BUF;
+          if (serializeSingleRange && range instanceof Range) {
+            const args = serializeSingleRange(buf, range);
+            const iter_id = sys.datastore_index_scan_range_bsatn(
+              index_id,
+              buf.buffer,
+              ...args
+            );
+            return tableIterator(iter_id, deserializeRow);
+          }
           const point_len = serializeSinglePoint(buf, range);
           const iter_id = sys.datastore_index_scan_point_bsatn(
             index_id,
@@ -680,6 +708,14 @@ function makeTableView(
         },
         delete: (range: any): u32 => {
           const buf = LEAF_BUF;
+          if (serializeSingleRange && range instanceof Range) {
+            const args = serializeSingleRange(buf, range);
+            return sys.datastore_delete_by_index_scan_range_bsatn(
+              index_id,
+              buf.buffer,
+              ...args
+            );
+          }
           const point_len = serializeSinglePoint(buf, range);
           return sys.datastore_delete_by_index_scan_point_bsatn(
             index_id,
