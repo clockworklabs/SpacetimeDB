@@ -1520,10 +1520,14 @@ pub fn call_reducer_on_db(
     // on transport failure. Unlike other ABI functions, a non-zero return value here
     // does NOT indicate a generic errno — it's the HTTP status code. Only HTTP_ERROR
     // specifically signals a transport-level failure.
-    match Errno::from_code(status) {
-        Some(errno @ (Errno::HTTP_ERROR | Errno::WOUNDED_TRANSACTION)) => Err((errno, out)),
-        Some(errno) => panic!("{errno:?}"),
-        None => Ok((status, out)),
+    if (100..=599).contains(&status) {
+        Ok((status, out))
+    } else {
+        match Errno::from_code(status) {
+            Some(errno @ (Errno::HTTP_ERROR | Errno::WOUNDED_TRANSACTION)) => Err((errno, out)),
+            Some(errno) => panic!("{errno:?}"),
+            None => Ok((status, out)),
+        }
     }
 }
 
@@ -1551,10 +1555,14 @@ pub fn call_reducer_on_db_2pc(
             &mut out,
         )
     };
-    match Errno::from_code(status) {
-        Some(errno @ (Errno::HTTP_ERROR | Errno::WOUNDED_TRANSACTION)) => Err((errno, out)),
-        Some(errno) => panic!("{errno:?}"),
-        None => Ok((status, out)),
+    if (100..=599).contains(&status) {
+        Ok((status, out))
+    } else {
+        match Errno::from_code(status) {
+            Some(errno @ (Errno::HTTP_ERROR | Errno::WOUNDED_TRANSACTION)) => Err((errno, out)),
+            Some(errno) => panic!("{errno:?}"),
+            None => Ok((status, out)),
+        }
     }
 }
 

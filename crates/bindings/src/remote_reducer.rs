@@ -78,7 +78,9 @@ pub fn call_reducer_on_db(
         Ok((status, body_source)) => {
             if status < 300 {
                 let mut out = Vec::new();
-                read_bytes_source_into(body_source, &mut out);
+                if body_source != spacetimedb_bindings_sys::raw::BytesSource::INVALID {
+                    read_bytes_source_into(body_source, &mut out);
+                }
                 return Ok(out);
             }
             // Decode the response body as the error message.
@@ -125,7 +127,9 @@ pub fn call_reducer_on_db_2pc(
         Ok((status, body_source)) => {
             if status < 300 {
                 let mut out = Vec::new();
-                read_bytes_source_into(body_source, &mut out);
+                if body_source != spacetimedb_bindings_sys::raw::BytesSource::INVALID {
+                    read_bytes_source_into(body_source, &mut out);
+                }
                 return Ok(out);
             }
             let msg = if body_source == spacetimedb_bindings_sys::raw::BytesSource::INVALID {
