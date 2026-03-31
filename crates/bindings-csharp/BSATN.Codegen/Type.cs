@@ -108,7 +108,16 @@ public abstract record TypeUse(string Name, string BSATNName)
                             ? new EnumUse(type, typeInfo)
                             : new ValueUse(type, typeInfo)
                     )
-                    : new ReferenceUse(type, typeInfo),
+                    // Use SumTypeUse only for types with [SpacetimeDB.Type] attribute (codegen generates static helpers for these).
+                    : (
+                        named.BaseType?.OriginalDefinition.ToString()
+                            == "SpacetimeDB.TaggedEnum<Variants>"
+                        && named
+                            .GetAttributes()
+                            .Any(a => a.AttributeClass?.ToString() == "SpacetimeDB.TypeAttribute")
+                            ? new SumTypeUse(type, typeInfo)
+                            : new ReferenceUse(type, typeInfo)
+                    ),
             },
             _ => throw new InvalidOperationException($"Unsupported type {type}"),
         };
@@ -271,10 +280,32 @@ public record ReferenceUse(string Type, string TypeInfo) : TypeUse(Type, TypeInf
         string inVar2,
         string outVar,
         int level = 0
-    ) => $"var {outVar} = {inVar1} == null ? {inVar2} == null : {inVar1}.Equals({inVar2});";
+    ) =>
+        // object.Equals avoids virtual dispatch which causes vtable computation issues in NativeAOT-LLVM.
+        $"var {outVar} = object.Equals({inVar1}, {inVar2});";
 
     public override string GetHashCodeStatement(string inVar, string outVar, int level = 0) =>
         $"var {outVar} = {inVar} == null ? 0 : {inVar}.GetHashCode();";
+}
+
+/// <summary>Sum type use that calls static helpers to avoid NativeAOT-LLVM vtable issues.</summary>
+public record SumTypeUse(string Type, string TypeInfo) : TypeUse(Type, TypeInfo)
+{
+    // Strip nullable suffix from type name for static method calls
+    private string NonNullableType => Type.TrimEnd('?');
+
+    public override string EqualsStatement(
+        string inVar1,
+        string inVar2,
+        string outVar,
+        int level = 0
+    ) =>
+        // Use the static EqualsStatic helper to avoid virtual dispatch
+        $"var {outVar} = {NonNullableType}.EqualsStatic({inVar1}, {inVar2});";
+
+    public override string GetHashCodeStatement(string inVar, string outVar, int level = 0) =>
+        // Use the static GetHashCodeStatic helper to avoid virtual dispatch
+        $"var {outVar} = {NonNullableType}.GetHashCodeStatic({inVar});";
 }
 
 /// <summary>
@@ -729,7 +760,73 @@ public abstract record BaseTypeDeclaration<M>
             """
         );
 
-        if (!Scope.IsRecord)
+        // Sum types use EqualityComparer<T>.Default which causes NativeAOT-LLVM vtable issues.
+        if (Kind is TypeKind.Sum)
+        {
+            var staticHashCodeBody = string.Join(
+                "\n",
+                bsatnDecls.Select(member =>
+                {
+                    var hashName = $"___hash{member.Name}";
+                    return $"""
+                            case {member.Identifier}(var inner):
+                                {member.Type.GetHashCodeStatement("inner", hashName)}
+                                return {hashName};
+                    """;
+                })
+            );
+
+            var equalsBody = string.Join(
+                "\n",
+                bsatnDecls.Select(member =>
+                {
+                    var eqName = $"___eq{member.Name}";
+                    return $"""
+                            case {member.Identifier}(var inner) when that is {member.Identifier}(var thatInner):
+                                {member.Type.EqualsStatement("inner", "thatInner", eqName)}
+                                return {eqName};
+                    """;
+                })
+            );
+
+            extensions.Contents.Append(
+                $$"""
+
+                    public virtual bool Equals({{FullName}}? that)
+                    {
+                        if (((object?)that) == null) { return false; }
+                        switch (this) {
+                        {{equalsBody}}
+                            default:
+                                return false;
+                        }
+                    }
+
+                    // Static helpers to avoid virtual dispatch which causes vtable computation issues in NativeAOT-LLVM.
+                    public static int GetHashCodeStatic({{FullName}}? value)
+                    {
+                        if (((object?)value) == null) { return 0; }
+                        switch (value) {
+                        {{staticHashCodeBody}}
+                            default:
+                                return 0;
+                        }
+                    }
+
+                    public static bool EqualsStatic({{FullName}}? a, {{FullName}}? b)
+                    {
+                        if (((object?)a) == null) { return ((object?)b) == null; }
+                        if (((object?)b) == null) { return false; }
+                        switch (a) {
+                        {{equalsBody.Replace("that is", "b is").Replace("thatInner", "bInner")}}
+                            default:
+                                return false;
+                        }
+                    }
+                """
+            );
+        }
+        else if (!Scope.IsRecord)
         {
             // If we are a reference type, various equality methods need to take nullable references.
             // If we are a value type, everything is pleasantly by-value.
