@@ -163,13 +163,9 @@ const newId = row.id;  // Extract .id from returned row
 
 ### Schema export (CRITICAL)
 ```typescript
-// At end of schema.ts — schema() takes exactly ONE argument: an object
+// At end of schema.ts — schema() takes ONE OBJECT containing all table references
 const spacetimedb = schema({ table1, table2, table3 });
 export default spacetimedb;
-
-// ❌ WRONG — never pass tables directly or as multiple args
-schema(myTable);      // WRONG!
-schema(t1, t2, t3);   // WRONG!
 
 // ❌ WRONG — do NOT use `export const` on tables. Only reducers and the default schema are exported.
 export const myTable = table(...);  // WRONG! Causes "exporting something that is not a spacetime export"
@@ -276,20 +272,20 @@ for (const row of ctx.db.scores.by_player.filter(playerId)) {
 ## 4) Reducers
 
 ### Definition syntax (CRITICAL)
-**Reducer name comes from the export — NOT from a string argument.** Use `reducer(params, fn)` or `reducer(fn)`.
+**Reducer name comes from the EXPORT NAME.** Use `export const myReducer = spacetimedb.reducer(params, fn)`.
 
 ```typescript
 import spacetimedb from './schema';
 import { t, SenderError } from 'spacetimedb/server';
 
-// ✅ CORRECT — export const name = spacetimedb.reducer(params, fn)
-export const reducer_name = spacetimedb.reducer({ param1: t.string(), param2: t.u64() }, (ctx, { param1, param2 }) => {
+// ✅ CORRECT — export name becomes the reducer name (snake_cased automatically)
+export const reducerName = spacetimedb.reducer({ param1: t.string(), param2: t.u64() }, (ctx, { param1, param2 }) => {
   // Validation
   if (!param1) throw new SenderError('param1 required');
-  
+
   // Access tables via ctx.db
   const row = ctx.db.myTable.primaryKey.find(param2);
-  
+
   // Mutations
   ctx.db.myTable.insert({ ... });
   ctx.db.myTable.primaryKey.update({ ...row, newField: value });
@@ -300,8 +296,8 @@ export const reducer_name = spacetimedb.reducer({ param1: t.string(), param2: t.
 ```
 
 ```typescript
-// ❌ WRONG — reducer('name', params, fn) does NOT exist
-spacetimedb.reducer('reducer_name', { param1: t.string() }, (ctx, { param1 }) => { ... });
+// ❌ WRONG — do NOT pass a string name as first arg
+spacetimedb.reducer('reducer_name', { param1: t.string() }, (ctx, { param1 }) => { ... });  // WRONG! String is not ReducerOpts
 ```
 
 ### Update pattern (CRITICAL)
@@ -323,15 +319,20 @@ ctx.db.player.identity.delete(ctx.sender);  // delete by identity
 ```
 
 ### Lifecycle hooks
+**Must be `export const`. The export name determines the lifecycle reducer name.**
 ```typescript
-spacetimedb.clientConnected((ctx) => {
+// ✅ CORRECT — export const, NOT just a bare call
+export const onConnect = spacetimedb.clientConnected((ctx) => {
   // ctx.sender is the connecting identity
   // Create/update user record, set online status, etc.
 });
 
-spacetimedb.clientDisconnected((ctx) => {
+export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
   // Clean up: set offline status, remove ephemeral data, etc.
 });
+
+// ❌ WRONG — bare call without export, hooks won't be registered
+spacetimedb.clientConnected((ctx) => { ... });  // NOT registered!
 ```
 
 ### Snake_case to camelCase conversion
@@ -609,7 +610,7 @@ spacetimedb.procedure({ url: t.string() }, t.unit(), (ctx, { url }) => {
 ```
 src/schema.ts   → Tables, export spacetimedb
 src/index.ts    → Reducers, lifecycle, import schema
-package.json    → { "type": "module", "dependencies": { "spacetimedb": "^1.11.0" } }
+package.json    → { "type": "module", "dependencies": { "spacetimedb": "^2.0.0" } }
 tsconfig.json   → Standard config
 ```
 
@@ -654,8 +655,8 @@ spacetime logs <module-name>
 
 **TypeScript-specific:**
 
-1. **`schema({ table })`** — takes exactly one object; never `schema(table)` or `schema(t1, t2, t3)`
-2. **Reducer/procedure names from exports** — `export const name = spacetimedb.reducer(params, fn)`; never `reducer('name', ...)`
+1. **`schema({ t1, t2, t3 })`** — takes ONE object with all tables; never `schema(t1, t2)` (spread args)
+2. **Reducer name comes from the export name** — `export const myReducer = spacetimedb.reducer(params, fn)`; never pass a string name as first arg
 3. **Reducer calls use object syntax** — `{ param: 'value' }` not positional args
 4. **Import `DbConnection` from `./module_bindings`** — not from `spacetimedb`
 5. **DO NOT edit generated bindings** — regenerate with `spacetime generate`
