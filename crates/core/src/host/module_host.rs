@@ -1840,6 +1840,10 @@ impl ModuleHost {
         // recovery.  Falls back to `caller_identity` when `None` (e.g., internal calls).
         coordinator_identity_override: Option<Identity>,
     ) -> Result<(String, ReducerCallResult, Option<Bytes>), ReducerCallError> {
+        if tx_id.is_none() {
+            log::error!("prepare_reducer called without tx_id: caller_identity={caller_identity}, reducer_name={reducer_name}");
+        }
+        let tx_id = tx_id.ok_or(ReducerCallError::NoSuchReducer)?;
         use std::sync::atomic::{AtomicU64, Ordering};
         use std::sync::OnceLock;
         // Counter seeded from current time on first use so that restarts begin from a
@@ -1875,7 +1879,7 @@ impl ModuleHost {
             timestamp: Timestamp::now(),
             caller_identity,
             caller_connection_id,
-            tx_id,
+            tx_id: Some(tx_id),
             client: None,
             request_id: None,
             timer: None,
@@ -1889,6 +1893,8 @@ impl ModuleHost {
 
         // Include the coordinator identity so prepare_ids from different coordinators
         // cannot collide on the participant's st_2pc_state table.
+        let prepare_id = tx_id.to_string();
+        /* 
         let prepare_tx_component = tx_id
             .map(|tx_id| tx_id.to_string())
             .unwrap_or_else(|| format!("legacy:{}:00000000", caller_identity.to_hex()));
@@ -1897,6 +1903,7 @@ impl ModuleHost {
             prepare_tx_component,
             PREPARE_COUNTER.fetch_add(1, Ordering::Relaxed),
         );
+        */
 
         // Channel for signalling PREPARED result back to this task.
         let (prepared_tx, prepared_rx) = tokio::sync::oneshot::channel::<(ReducerCallResult, Option<Bytes>)>();
@@ -1909,7 +1916,7 @@ impl ModuleHost {
                 decision_sender: decision_tx,
             },
         );
-        if let Some(tx_id) = tx_id {
+        //if let Some(tx_id) = tx_id {
             let session = self.replica_ctx().global_tx_manager.ensure_session(
                 tx_id,
                 super::global_tx::GlobalTxRole::Participant,
@@ -1942,7 +1949,7 @@ impl ModuleHost {
                     ));
                 }
             }
-        }
+        //}
 
         // Spawn a background task that runs the reducer and holds the write lock
         // until we send a decision.  The executor thread blocks inside
@@ -1969,23 +1976,23 @@ impl ModuleHost {
         match prepared_rx.await {
             Ok((result, return_value)) => {
                 if matches!(result.outcome, ReducerOutcome::Committed) {
-                    if let Some(tx_id) = tx_id {
+                    //if let Some(tx_id) = tx_id {
                         self.replica_ctx()
                             .global_tx_manager
                             .mark_state(&tx_id, super::global_tx::GlobalTxState::Prepared);
-                    }
+                    // }
                     Ok((prepare_id, result, return_value))
                 } else {
                     // Reducer failed — remove the entry we registered (no hold in progress).
                     self.prepared_txs.remove(&prepare_id);
-                    if let Some(tx_id) = tx_id {
+                    // if let Some(tx_id) = tx_id {
                         self.replica_ctx().global_tx_manager.remove_prepare_mapping(&prepare_id);
                         self.replica_ctx()
                             .global_tx_manager
                             .mark_state(&tx_id, super::global_tx::GlobalTxState::Aborted);
                         self.replica_ctx().global_tx_manager.release(&tx_id);
                         self.replica_ctx().global_tx_manager.remove_session(&tx_id);
-                    }
+                    // }
                     Ok((String::new(), result, return_value))
                 }
             }

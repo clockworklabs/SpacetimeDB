@@ -179,6 +179,7 @@ impl<'a> WaitRegistration<'a> {
 
     fn disarm(mut self, ls: &mut std::sync::MutexGuard<'_, LockState>) {
         self.remove_waiter(ls);
+        self.wait_id = None;
     }
 
     fn remove_waiter(&mut self, ls: &mut LockState) {
@@ -190,6 +191,9 @@ impl<'a> WaitRegistration<'a> {
 
 impl Drop for WaitRegistration<'_> {
     fn drop(&mut self) {
+        if self.wait_id.is_none() {
+            return;
+        }
         let mut ls = self.manager.lock_state.lock().unwrap();
         self.remove_waiter(&mut ls);
     }
@@ -208,6 +212,7 @@ impl<'a> GlobalTxLockGuard<'a> {
     }
 
     pub fn disarm(mut self) {
+        log::warn!("Disarming a lock guard without releasing the lock for tx_id {}", self.tx_id());
         self.tx_id = None;
     }
 }
@@ -346,11 +351,13 @@ impl GlobalTxManager {
                 let mut state = self.lock_state.lock().unwrap();
                 match state.owner {
                     None if self.is_next_waiter_locked(&state, tx_id) => {
+                        log::info!("setting owner to {tx_id}");
                         state.owner = Some(tx_id);
                         self.remove_waiter_locked(&mut state, &tx_id);
                         if let Some(registration) = registration.take() {
                             registration.disarm(&mut state);
                         }
+                        log::info!("global transaction {tx_id} acquired the lock");
                         return AcquireDisposition::Acquired(GlobalTxLockGuard::new(self, tx_id));
                     }
                     None => {
@@ -366,6 +373,8 @@ impl GlobalTxManager {
                         } else {
                             self.ensure_waiter_locked(&mut state, tx_id)
                         };
+
+                        log::info!("global transaction {tx_id} is waiting for the lock; no current owner");
                         let new_registration = registration.is_none().then(|| WaitRegistration::new(self, wait_id));
                         (notify, None, new_registration)
                     }
@@ -447,7 +456,11 @@ impl GlobalTxManager {
                         return AcquireDisposition::Cancelled;
                     }
                 }
-                _ = notify.notified() => {}
+                _ = notify.notified() => {
+                    log::info!(
+                        "global transaction {tx_id} was notified of a potential lock availability change; re-checking lock state"
+                    );
+                }
             }
         }
     }
@@ -455,6 +468,7 @@ impl GlobalTxManager {
     pub fn release(&self, tx_id: &GlobalTxId) {
         let mut state = self.lock_state.lock().unwrap();
         if state.owner.as_ref() == Some(tx_id) {
+            log::info!("Releasing lock for tx_id {}", tx_id);
             state.owner = None;
             state.wounded_owners.remove(tx_id);
             self.notify_next_waiter_locked(&state);
@@ -501,6 +515,7 @@ impl GlobalTxManager {
         if let Some(wait_key) = state.waiting.first()
             && let Some(wait_entry) = state.wait_entries.get(&wait_key.wait_id)
         {
+            log::info!("Notifying next waiter for tx_id {}", wait_entry.tx_id);
             wait_entry.notify.notify_one();
         }
     }
@@ -513,8 +528,10 @@ impl GlobalTxManager {
     }
 
     fn remove_waiter_by_id(&self, state: &mut LockState, wait_id: u64) {
+        log::info!("Removing waiter with wait_id {}", wait_id);
         let was_head = state.waiting.first().map(|w| w.wait_id) == Some(wait_id);
         if let Some(wait_entry) = state.wait_entries.remove(&wait_id) {
+            log::info!("Removing waiter with wait_id {}, tx_id {}", wait_id, wait_entry.tx_id);
             state.waiter_ids_by_tx.remove(&wait_entry.tx_id);
             state.waiting.remove(&WaitKey {
                 tx_id: wait_entry.tx_id,
@@ -523,6 +540,8 @@ impl GlobalTxManager {
             if was_head && state.owner.is_none() {
                 self.notify_next_waiter_locked(state);
             }
+        } else {
+            log::warn!("Trying to remove non-existent waiter with wait_id {}, current_owner: {:?}", wait_id, state.owner);
         }
     }
 
