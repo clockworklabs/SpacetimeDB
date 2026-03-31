@@ -11,6 +11,8 @@ export interface GlobalState {
   measuredTransactionCount: number;
   /// Time in ms when the transaction was measured
   throughputData: number[];
+  /// Latency frequency distribution, where the key is the latency in ms and the value is the count of transactions with that latency.
+  latencyData: Record<number, number>;
 }
 
 const initialState: GlobalState = {
@@ -23,6 +25,7 @@ const initialState: GlobalState = {
   totalTransactionCount: 0,
   measuredTransactionCount: 0,
   throughputData: [],
+  latencyData: {},
 };
 
 export const globalStateSlice = createSlice({
@@ -50,6 +53,7 @@ export const globalStateSlice = createSlice({
       state.totalTransactionCount = 0;
       state.measuredTransactionCount = 0;
       state.throughputData = [];
+      state.latencyData = {};
     },
     deleteState: state => {
       console.log('State deleted, resetting to initial state');
@@ -71,6 +75,13 @@ export const globalStateSlice = createSlice({
       }
 
       state.throughputData.push(Number(payload.measurementTimeMs));
+
+      const latency = Number(payload.latencyMs);
+      if (state.latencyData[latency]) {
+        state.latencyData[latency] += 1;
+      } else {
+        state.latencyData[latency] = 1;
+      }
     },
   },
 });

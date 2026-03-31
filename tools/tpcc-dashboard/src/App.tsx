@@ -9,6 +9,7 @@ import { useAppDispatch, useAppSelector } from './hooks';
 import NewOrderThroughtputChart from './NewOrderThroughtputChart';
 import StatsCards from './StatsCards';
 import './App.css';
+import LatencyDistributionChart from './LatencyDistributionChart';
 
 function App() {
   const conn = useContext(SpacetimeDBContext);
@@ -57,13 +58,14 @@ function App() {
   }, [conn, dispatch]);
 
   if (!isReady) {
-    return <div>Waiting for data...</div>;
+    return <div className="heading-7">Waiting for data...</div>;
   }
 
   return (
     <div className="app">
       <StatsCards />
       <NewOrderThroughtputChart />
+      <LatencyDistributionChart />
     </div>
   );
 }

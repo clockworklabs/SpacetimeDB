@@ -10,7 +10,7 @@ export function ConnectedGuard({ children }: { children: React.ReactNode }) {
     }
 
     DbConnection.builder()
-      // .withUri('https://tpc-c-benchmark.spacetimedb.com')
+      .withUri('https://tpc-c-benchmark.spacetimedb.com')
       .withUri('http://localhost:3000')
       .withDatabaseName('tpcc-metrics')
       .onConnect(conn => {
@@ -21,7 +21,7 @@ export function ConnectedGuard({ children }: { children: React.ReactNode }) {
   }, [conn]);
 
   if (!conn || !conn.isActive) {
-    return <div>Connecting to SpacetimeDB...</div>;
+    return <div className="heading-7">Connecting to SpacetimeDB...</div>;
   }
 
   return (
