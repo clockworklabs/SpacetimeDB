@@ -243,24 +243,31 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
             constants: &run_constants,
             request_ids: &request_ids,
         };
-        let event = execute_transaction(&context, kind, &mut rng, started_ms).await;
+        let record = execute_transaction(&context, kind, &mut rng, started_ms).await;
 
-        match event {
-            Ok(record) => {
-                // Some metrics depend on knowing all completed orders, even outside the
-                // measurement window
-                if record.kind == TransactionKind::NewOrder && record.success {
-                    let _ = metrics_client.reducers.record_txn(record.latency_ms as u16);
-                }
+        if !record.success && !(record.kind == TransactionKind::NewOrder && record.rollback) {
+            let detail = record
+                .detail
+                .as_deref()
+                .unwrap_or("transaction failed without a detail message");
+            log::error!(
+                "driver {} run {} terminal {} {} failed; continuing: {}",
+                config.driver_id,
+                schedule.run_id,
+                record.terminal_id,
+                record.kind.as_str(),
+                detail
+            );
+        }
 
-                if record.timestamp_ms >= schedule.measure_start_ms && record.timestamp_ms < schedule.measure_end_ms {
-                    metrics.record(record)?;
-                }
-            }
-            Err(err) => {
-                abort.store(true, Ordering::Relaxed);
-                return Err(err);
-            }
+        // Some metrics depend on knowing all completed orders, even outside the
+        // measurement window
+        if record.kind == TransactionKind::NewOrder && record.success {
+            let _ = metrics_client.reducers.record_txn(record.latency_ms as u16);
+        }
+
+        if record.timestamp_ms >= schedule.measure_start_ms && record.timestamp_ms < schedule.measure_end_ms {
+            metrics.record(record)?;
         }
 
         let delay = keying_time(kind, config.keying_time_scale) + think_time(kind, config.think_time_scale, &mut rng);
@@ -276,7 +283,7 @@ async fn execute_transaction(
     kind: TransactionKind,
     rng: &mut StdRng,
     started_ms: u64,
-) -> Result<TransactionRecord> {
+) -> TransactionRecord {
     match kind {
         TransactionKind::NewOrder => {
             execute_new_order(
@@ -319,6 +326,33 @@ async fn execute_transaction(
     }
 }
 
+fn failed_transaction(
+    assignment: &TerminalAssignment,
+    kind: TransactionKind,
+    started_ms: u64,
+    detail: impl Into<String>,
+    rollback: bool,
+    remote: bool,
+    by_last_name: bool,
+    order_line_count: u32,
+    remote_order_line_count: u32,
+) -> TransactionRecord {
+    let finished_ms = crate::summary::now_millis();
+    TransactionRecord {
+        timestamp_ms: finished_ms,
+        terminal_id: assignment.terminal_id,
+        kind,
+        success: false,
+        latency_ms: finished_ms.saturating_sub(started_ms),
+        rollback,
+        remote,
+        by_last_name,
+        order_line_count,
+        remote_order_line_count,
+        detail: Some(detail.into()),
+    }
+}
+
 async fn execute_new_order(
     client: &ModuleClient,
     warehouse_count: u32,
@@ -326,7 +360,7 @@ async fn execute_new_order(
     constants: &RunConstants,
     rng: &mut StdRng,
     started_ms: u64,
-) -> Result<TransactionRecord> {
+) -> TransactionRecord {
     let customer_id = customer_id(rng, constants);
     let line_count = rng.random_range(5..=15);
     let invalid_line = rng.random_bool(0.01);
@@ -363,10 +397,10 @@ async fn execute_new_order(
             customer_id,
             order_lines,
         )
-        .await?;
+        .await;
     let finished_ms = crate::summary::now_millis();
     match result {
-        Ok(_) => Ok(TransactionRecord {
+        Ok(Ok(_)) => TransactionRecord {
             timestamp_ms: finished_ms,
             terminal_id: assignment.terminal_id,
             kind: TransactionKind::NewOrder,
@@ -378,8 +412,8 @@ async fn execute_new_order(
             order_line_count: line_count as u32,
             remote_order_line_count,
             detail: None,
-        }),
-        Err(message) if invalid_line => Ok(TransactionRecord {
+        },
+        Ok(Err(message)) if invalid_line => TransactionRecord {
             timestamp_ms: finished_ms,
             terminal_id: assignment.terminal_id,
             kind: TransactionKind::NewOrder,
@@ -391,11 +425,28 @@ async fn execute_new_order(
             order_line_count: line_count as u32,
             remote_order_line_count,
             detail: Some(message),
-        }),
-        Err(message) => bail!(
-            "unexpected new_order failure for terminal {}: {}",
-            assignment.terminal_id,
-            message
+        },
+        Ok(Err(message)) => failed_transaction(
+            assignment,
+            TransactionKind::NewOrder,
+            started_ms,
+            format!("new_order failed: {message}"),
+            false,
+            false,
+            false,
+            line_count as u32,
+            remote_order_line_count,
+        ),
+        Err(err) => failed_transaction(
+            assignment,
+            TransactionKind::NewOrder,
+            started_ms,
+            err.to_string(),
+            false,
+            false,
+            false,
+            line_count as u32,
+            remote_order_line_count,
         ),
     }
 }
@@ -407,7 +458,7 @@ async fn execute_payment(
     constants: &RunConstants,
     rng: &mut StdRng,
     started_ms: u64,
-) -> Result<TransactionRecord> {
+) -> TransactionRecord {
     let remote = warehouse_count > 1 && rng.random_bool(0.15);
     let c_w_id = if remote {
         let mut other = assignment.warehouse_id;
@@ -430,34 +481,56 @@ async fn execute_payment(
         CustomerSelector::ById(customer_id(rng, constants))
     };
     let amount_cents = rng.random_range(100..=500_000);
-    let finished = expect_ok(
-        "payment",
-        client
-            .payment_async(
-                assignment.warehouse_id,
-                assignment.district_id,
-                c_w_id,
-                c_d_id,
-                selector,
-                amount_cents,
-            )
-            .await,
-    )?;
-    let _ = finished;
-    let finished_ms = crate::summary::now_millis();
-    Ok(TransactionRecord {
-        timestamp_ms: finished_ms,
-        terminal_id: assignment.terminal_id,
-        kind: TransactionKind::Payment,
-        success: true,
-        latency_ms: finished_ms.saturating_sub(started_ms),
-        rollback: false,
-        remote,
-        by_last_name,
-        order_line_count: 0,
-        remote_order_line_count: 0,
-        detail: None,
-    })
+    match client
+        .payment_async(
+            assignment.warehouse_id,
+            assignment.district_id,
+            c_w_id,
+            c_d_id,
+            selector,
+            amount_cents,
+        )
+        .await
+    {
+        Ok(Ok(_)) => {
+            let finished_ms = crate::summary::now_millis();
+            TransactionRecord {
+                timestamp_ms: finished_ms,
+                terminal_id: assignment.terminal_id,
+                kind: TransactionKind::Payment,
+                success: true,
+                latency_ms: finished_ms.saturating_sub(started_ms),
+                rollback: false,
+                remote,
+                by_last_name,
+                order_line_count: 0,
+                remote_order_line_count: 0,
+                detail: None,
+            }
+        }
+        Ok(Err(message)) => failed_transaction(
+            assignment,
+            TransactionKind::Payment,
+            started_ms,
+            format!("payment failed: {message}"),
+            false,
+            remote,
+            by_last_name,
+            0,
+            0,
+        ),
+        Err(err) => failed_transaction(
+            assignment,
+            TransactionKind::Payment,
+            started_ms,
+            err.to_string(),
+            false,
+            remote,
+            by_last_name,
+            0,
+            0,
+        ),
+    }
 }
 
 async fn execute_order_status(
@@ -466,33 +539,56 @@ async fn execute_order_status(
     constants: &RunConstants,
     rng: &mut StdRng,
     started_ms: u64,
-) -> Result<TransactionRecord> {
+) -> TransactionRecord {
     let by_last_name = rng.random_bool(0.60);
     let selector = if by_last_name {
         CustomerSelector::ByLastName(customer_last_name(rng, constants))
     } else {
         CustomerSelector::ById(customer_id(rng, constants))
     };
-    let _ = expect_ok(
-        "order_status",
-        client
-            .order_status_async(assignment.warehouse_id, assignment.district_id, selector)
-            .await,
-    )?;
-    let finished_ms = crate::summary::now_millis();
-    Ok(TransactionRecord {
-        timestamp_ms: finished_ms,
-        terminal_id: assignment.terminal_id,
-        kind: TransactionKind::OrderStatus,
-        success: true,
-        latency_ms: finished_ms.saturating_sub(started_ms),
-        rollback: false,
-        remote: false,
-        by_last_name,
-        order_line_count: 0,
-        remote_order_line_count: 0,
-        detail: None,
-    })
+    match client
+        .order_status_async(assignment.warehouse_id, assignment.district_id, selector)
+        .await
+    {
+        Ok(Ok(_)) => {
+            let finished_ms = crate::summary::now_millis();
+            TransactionRecord {
+                timestamp_ms: finished_ms,
+                terminal_id: assignment.terminal_id,
+                kind: TransactionKind::OrderStatus,
+                success: true,
+                latency_ms: finished_ms.saturating_sub(started_ms),
+                rollback: false,
+                remote: false,
+                by_last_name,
+                order_line_count: 0,
+                remote_order_line_count: 0,
+                detail: None,
+            }
+        }
+        Ok(Err(message)) => failed_transaction(
+            assignment,
+            TransactionKind::OrderStatus,
+            started_ms,
+            format!("order_status failed: {message}"),
+            false,
+            false,
+            by_last_name,
+            0,
+            0,
+        ),
+        Err(err) => failed_transaction(
+            assignment,
+            TransactionKind::OrderStatus,
+            started_ms,
+            err.to_string(),
+            false,
+            false,
+            by_last_name,
+            0,
+            0,
+        ),
+    }
 }
 
 async fn execute_delivery(
@@ -503,35 +599,58 @@ async fn execute_delivery(
     request_ids: &AtomicU64,
     rng: &mut StdRng,
     started_ms: u64,
-) -> Result<TransactionRecord> {
+) -> TransactionRecord {
     let request_id = request_ids.fetch_add(1, Ordering::Relaxed);
-    let _ = expect_ok(
-        "queue_delivery",
-        client
-            .queue_delivery_async(
-                run_id.to_string(),
-                driver_id.to_string(),
-                assignment.terminal_id,
-                request_id,
-                assignment.warehouse_id,
-                rng.random_range(1..=10),
-            )
-            .await,
-    )?;
-    let finished_ms = crate::summary::now_millis();
-    Ok(TransactionRecord {
-        timestamp_ms: finished_ms,
-        terminal_id: assignment.terminal_id,
-        kind: TransactionKind::Delivery,
-        success: true,
-        latency_ms: finished_ms.saturating_sub(started_ms),
-        rollback: false,
-        remote: false,
-        by_last_name: false,
-        order_line_count: 0,
-        remote_order_line_count: 0,
-        detail: None,
-    })
+    match client
+        .queue_delivery_async(
+            run_id.to_string(),
+            driver_id.to_string(),
+            assignment.terminal_id,
+            request_id,
+            assignment.warehouse_id,
+            rng.random_range(1..=10),
+        )
+        .await
+    {
+        Ok(Ok(_)) => {
+            let finished_ms = crate::summary::now_millis();
+            TransactionRecord {
+                timestamp_ms: finished_ms,
+                terminal_id: assignment.terminal_id,
+                kind: TransactionKind::Delivery,
+                success: true,
+                latency_ms: finished_ms.saturating_sub(started_ms),
+                rollback: false,
+                remote: false,
+                by_last_name: false,
+                order_line_count: 0,
+                remote_order_line_count: 0,
+                detail: None,
+            }
+        }
+        Ok(Err(message)) => failed_transaction(
+            assignment,
+            TransactionKind::Delivery,
+            started_ms,
+            format!("queue_delivery failed: {message}"),
+            false,
+            false,
+            false,
+            0,
+            0,
+        ),
+        Err(err) => failed_transaction(
+            assignment,
+            TransactionKind::Delivery,
+            started_ms,
+            err.to_string(),
+            false,
+            false,
+            false,
+            0,
+            0,
+        ),
+    }
 }
 
 async fn execute_stock_level(
@@ -539,28 +658,51 @@ async fn execute_stock_level(
     assignment: &TerminalAssignment,
     rng: &mut StdRng,
     started_ms: u64,
-) -> Result<TransactionRecord> {
+) -> TransactionRecord {
     let threshold = rng.random_range(10..=20);
-    let _ = expect_ok(
-        "stock_level",
-        client
-            .stock_level_async(assignment.warehouse_id, assignment.district_id, threshold)
-            .await,
-    )?;
-    let finished_ms = crate::summary::now_millis();
-    Ok(TransactionRecord {
-        timestamp_ms: finished_ms,
-        terminal_id: assignment.terminal_id,
-        kind: TransactionKind::StockLevel,
-        success: true,
-        latency_ms: finished_ms.saturating_sub(started_ms),
-        rollback: false,
-        remote: false,
-        by_last_name: false,
-        order_line_count: 0,
-        remote_order_line_count: 0,
-        detail: None,
-    })
+    match client
+        .stock_level_async(assignment.warehouse_id, assignment.district_id, threshold)
+        .await
+    {
+        Ok(Ok(_)) => {
+            let finished_ms = crate::summary::now_millis();
+            TransactionRecord {
+                timestamp_ms: finished_ms,
+                terminal_id: assignment.terminal_id,
+                kind: TransactionKind::StockLevel,
+                success: true,
+                latency_ms: finished_ms.saturating_sub(started_ms),
+                rollback: false,
+                remote: false,
+                by_last_name: false,
+                order_line_count: 0,
+                remote_order_line_count: 0,
+                detail: None,
+            }
+        }
+        Ok(Err(message)) => failed_transaction(
+            assignment,
+            TransactionKind::StockLevel,
+            started_ms,
+            format!("stock_level failed: {message}"),
+            false,
+            false,
+            false,
+            0,
+            0,
+        ),
+        Err(err) => failed_transaction(
+            assignment,
+            TransactionKind::StockLevel,
+            started_ms,
+            err.to_string(),
+            false,
+            false,
+            false,
+            0,
+            0,
+        ),
+    }
 }
 
 async fn resolve_driver_setup(config: DriverConfig) -> Result<(DriverConfig, RunSchedule)> {
