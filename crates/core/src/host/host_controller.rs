@@ -265,6 +265,12 @@ impl HostController {
         self.program_storage = ps;
     }
 
+    /// Replace the [`ReducerCallRouter`] used by this controller.
+    /// Takes `&self` (not `&mut self`) since the router is behind a `RwLock`.
+    pub fn set_call_reducer_router(&self, router: Arc<dyn ReducerCallRouter>) {
+        *self.call_reducer_router.write().unwrap() = router;
+    }
+
     /// Set the [`CallEdgeTracker`] for distributed deadlock detection.
     pub fn set_call_edge_tracker(&mut self, tracker: Arc<dyn crate::host::call_edge_tracker::CallEdgeTracker>) {
         self.call_edge_tracker = tracker;
