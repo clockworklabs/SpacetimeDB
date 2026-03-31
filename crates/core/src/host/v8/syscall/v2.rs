@@ -453,17 +453,16 @@ pub(super) fn process_thrown_exception(
     exc: Local<'_, Value>,
 ) -> ExcResult<Option<ExecutionError>> {
     // if (typeof exc === "object" && exc instanceof SenderError)
-    if let Ok(exc) = exc.try_cast::<Object>() {
-        if exc
+    if let Ok(exc) = exc.try_cast::<Object>()
+        && exc
             .instance_of(scope, hooks.sender_error_class.unwrap().into())
             .ok_or_else(exception_already_thrown)?
-        {
-            // let message = String(exc.message)
-            let key = str_from_ident!(message).string(scope);
-            let message = exc.get(scope, key.into()).ok_or_else(exception_already_thrown)?;
-            let message = message.to_string(scope).ok_or_else(exception_already_thrown)?;
-            return Ok(Some(ExecutionError::User(message.to_rust_string_lossy(scope).into())));
-        }
+    {
+        // let message = String(exc.message)
+        let key = str_from_ident!(message).string(scope);
+        let message = exc.get(scope, key.into()).ok_or_else(exception_already_thrown)?;
+        let message = message.to_string(scope).ok_or_else(exception_already_thrown)?;
+        return Ok(Some(ExecutionError::User(message.to_rust_string_lossy(scope).into())));
     }
     Ok(None)
 }

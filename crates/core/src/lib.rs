@@ -21,5 +21,4 @@ pub mod replica_context;
 pub mod startup;
 pub mod subscription;
 pub mod util;
-pub mod vm;
 pub mod worker_metrics;

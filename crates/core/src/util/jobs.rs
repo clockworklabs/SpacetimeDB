@@ -252,10 +252,10 @@ impl CorePinner {
     /// Repin the current thread to the new appropriate core, if it's changed
     /// since the last call to `pin_now()` or `pin_if_changed()`.
     pub fn pin_if_changed(&mut self) {
-        if let Some(move_core_rx) = &mut self.move_core_rx {
-            if let Ok(true) = move_core_rx.has_changed() {
-                Self::do_pin(move_core_rx);
-            }
+        if let Some(move_core_rx) = &mut self.move_core_rx
+            && let Ok(true) = move_core_rx.has_changed()
+        {
+            Self::do_pin(move_core_rx);
         }
     }
 
@@ -382,10 +382,10 @@ pub struct LoadBalanceOnDropGuard {
 
 impl Drop for LoadBalanceOnDropGuard {
     fn drop(&mut self) {
-        if let Some((manager, database_executor_id)) = &self.inner {
-            if let Some(cores) = manager.upgrade() {
-                cores.lock().unwrap().deallocate(*database_executor_id);
-            }
+        if let Some((manager, database_executor_id)) = &self.inner
+            && let Some(cores) = manager.upgrade()
+        {
+            cores.lock().unwrap().deallocate(*database_executor_id);
         }
     }
 }

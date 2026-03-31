@@ -19,10 +19,10 @@ fn count_matches(dir: &Path, needle: &str) -> usize {
             let path = entry.path();
             if path.is_dir() {
                 count += count_matches(&path, needle);
-            } else if path.extension().is_some_and(|ext| ext == "cs") {
-                if let Ok(contents) = fs::read_to_string(&path) {
-                    count += contents.matches(needle).count();
-                }
+            } else if path.extension().is_some_and(|ext| ext == "cs")
+                && let Ok(contents) = fs::read_to_string(&path)
+            {
+                count += contents.matches(needle).count();
             }
         }
     }

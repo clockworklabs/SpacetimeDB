@@ -37,6 +37,28 @@ impl<T> BoolExpr<T> {
     }
 }
 
+impl<T> From<Col<T, bool>> for BoolExpr<T> {
+    fn from(col: Col<T, bool>) -> Self {
+        col.eq(true)
+    }
+}
+
+impl<T> From<bool> for BoolExpr<T> {
+    fn from(value: bool) -> Self {
+        if value {
+            BoolExpr::Eq(
+                Operand::Literal(LiteralValue("TRUE".to_string())),
+                Operand::Literal(LiteralValue("TRUE".to_string())),
+            )
+        } else {
+            BoolExpr::Eq(
+                Operand::Literal(LiteralValue("FALSE".to_string())),
+                Operand::Literal(LiteralValue("TRUE".to_string())),
+            )
+        }
+    }
+}
+
 /// Trait for types that can be used as the right-hand side of a comparison with a column of type V
 /// in table T.
 ///

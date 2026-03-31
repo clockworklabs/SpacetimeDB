@@ -107,6 +107,29 @@ impl Host {
         self.host_controller.get_module_host(self.replica_id).await
     }
 
+    /// Wait for the module host to become available, retrying with backoff.
+    ///
+    /// This is useful for routes like `/schema` that may be called while the
+    /// database is still loading. Instead of returning an immediate 500, we
+    /// poll for up to `timeout` before giving up.
+    pub async fn wait_for_module(&self, timeout: std::time::Duration) -> Result<ModuleHost, NoSuchModule> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        let mut interval = tokio::time::Duration::from_millis(100);
+        loop {
+            match self.host_controller.get_module_host(self.replica_id).await {
+                Ok(module) => return Ok(module),
+                Err(NoSuchModule) => {
+                    if tokio::time::Instant::now() >= deadline {
+                        return Err(NoSuchModule);
+                    }
+                    tokio::time::sleep(interval).await;
+                    // Exponential backoff: 100ms, 200ms, 400ms, 800ms, 1s, 1s, ...
+                    interval = (interval * 2).min(tokio::time::Duration::from_secs(1));
+                }
+            }
+        }
+    }
+
     pub async fn module_watcher(&self) -> Result<watch::Receiver<ModuleHost>, NoSuchModule> {
         self.host_controller.watch_module_host(self.replica_id).await
     }
@@ -143,11 +166,7 @@ impl Host {
                 .await
                 .map_err(|e| {
                     log::warn!("{e}");
-                    if let Some(auth_err) = e.get_auth_error() {
-                        (StatusCode::UNAUTHORIZED, auth_err.to_string())
-                    } else {
-                        (StatusCode::BAD_REQUEST, e.to_string())
-                    }
+                    (StatusCode::BAD_REQUEST, e.to_string())
                 })?;
 
                 let total_duration = sql_start.elapsed();
@@ -173,11 +192,9 @@ impl Host {
             .await
             .map_err(log_and_500)??;
 
-        if confirmed_read {
-            if let Some(mut durable_offset) = durable_offset {
-                let tx_offset = tx_offset.await.map_err(|_| log_and_500("transaction aborted"))?;
-                durable_offset.wait_for(tx_offset).await.map_err(log_and_500)?;
-            }
+        if confirmed_read && let Some(mut durable_offset) = durable_offset {
+            let tx_offset = tx_offset.await.map_err(|_| log_and_500("transaction aborted"))?;
+            durable_offset.wait_for(tx_offset).await.map_err(log_and_500)?;
         }
 
         Ok(json)

@@ -20,7 +20,7 @@ class TESTCLIENT_API UVecF64Table : public URemoteTable
 public:
     void PostInitialize();
 
-    /** Update function for vec_f64 table*/
+    /** Update function for vec_f_64 table*/
     FTableAppliedDiff<FVecF64Type> Update(TArray<FWithBsatn<FVecF64Type>> InsertsRef, TArray<FWithBsatn<FVecF64Type>> DeletesRef);
 
     /** Number of subscribed rows currently in the cache */
@@ -58,7 +58,7 @@ public:
     FOnVecF64Delete OnDelete;
 
 private:
-    const FString TableName = TEXT("vec_f64");
+    const FString TableName = TEXT("vec_f_64");
 
     TSharedPtr<UClientCache<FVecF64Type>> Data;
 };

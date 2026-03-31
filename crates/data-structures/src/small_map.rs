@@ -91,11 +91,11 @@ impl<K: Eq + Hash, V, const N: usize, const M: usize> SmallHashMap<K, V, N, M> {
 
     #[inline]
     fn maybe_convert_to_large(&mut self) {
-        if let Self::Small(list) = self {
-            if list.len() > M {
-                let list = mem::take(list);
-                self.convert_to_large(list);
-            }
+        if let Self::Small(list) = self
+            && list.len() > M
+        {
+            let list = mem::take(list);
+            self.convert_to_large(list);
         }
     }
 

@@ -614,6 +614,13 @@ export const top_players = spacetimedb.view({ name: 'top_players' }, {}, t.array
 export const bottom_players = spacetimedb.view({ name: 'bottom_players' }, {}, t.array(player.rowType), ctx => {
   return ctx.from.player.where(p => p.score.lt(1000))
 });
+
+// Count rows in a table.
+export const player_count = spacetimedb.anonymousView({ name: 'player_count' }, {}, t.array(t.row('PlayerCount', {
+  count: t.u64(),
+})), ctx => {
+  return [{ count: ctx.db.player.count() }];
+});
 ```
 
 </TabItem>
@@ -631,9 +638,9 @@ public static Player? MyPlayer(ViewContext ctx)
 
 // Return potentially multiple rows
 [SpacetimeDB.View(Accessor = "TopPlayers", Public = true)]
-public static List<Player> TopPlayers(ViewContext ctx)
+public static IEnumerable<Player> TopPlayers(ViewContext ctx)
 {
-    return ctx.Db.Player.Score.Filter(1000).ToList();
+    return ctx.Db.Player.Score.Filter(1000);
 }
 
 // Perform a generic filter using the query builder.
@@ -643,13 +650,26 @@ public static IQuery<Player> BottomPlayers(ViewContext ctx)
 {
     return ctx.From.Player().Where(p => p.Score.Lt(1000));
 }
+
+// Count rows in a table.
+[SpacetimeDB.Type]
+public partial struct PlayerCount
+{
+    public ulong Count;
+}
+
+[SpacetimeDB.View(Accessor = "PlayerCount", Public = true)]
+public static List<PlayerCount> PlayerCountView(AnonymousViewContext ctx)
+{
+    return new List<PlayerCount> { new PlayerCount { Count = ctx.Db.Player.Count } };
+}
 ```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::{view, Query, ViewContext};
+use spacetimedb::{view, AnonymousViewContext, Query, SpacetimeType, ViewContext};
 
 // Return single row
 #[view(accessor = my_player, public)]
@@ -669,6 +689,19 @@ fn top_players(ctx: &ViewContext) -> Vec<Player> {
 fn bottom_players(ctx: &ViewContext) -> impl Query<Player> {
     ctx.from.player().r#where(|p| p.score.lt(1000))
 }
+
+#[derive(SpacetimeType)]
+struct PlayerCount {
+    count: u64,
+}
+
+// Count rows in a table.
+#[view(accessor = player_count, public)]
+fn player_count(ctx: &AnonymousViewContext) -> Vec<PlayerCount> {
+    vec![PlayerCount {
+        count: ctx.db.player().count(),
+    }]
+}
 ```
 
 </TabItem>
@@ -679,12 +712,22 @@ using namespace SpacetimeDB;
 
 // Return single row using unique indexed field
 SPACETIMEDB_VIEW(std::optional<Player>, my_player, Public, ViewContext ctx) {
-    return ctx.db[player_identity].find(ctx.sender);
+    return ctx.db[player_identity].find(ctx.sender());
 }
 
 // Return multiple rows using indexed field
 SPACETIMEDB_VIEW(std::vector<Player>, top_players, Public, ViewContext ctx) {
     return ctx.db[player_score].filter(range_from(int32_t(1000))).collect();
+}
+
+struct PlayerCount {
+    uint64_t count;
+};
+SPACETIMEDB_STRUCT(PlayerCount, count)
+
+// Count rows in a table.
+SPACETIMEDB_VIEW(std::optional<PlayerCount>, player_count, Public, AnonymousViewContext ctx) {
+    return std::optional<PlayerCount>(PlayerCount{ctx.db[player].count()});
 }
 ```
 
@@ -733,7 +776,7 @@ ctx.rng()               // Random number generator
 
 ```cpp
 ctx.db                  // Database access (Table accessor)
-ctx.sender              // Identity of caller (Identity type)
+ctx.sender()            // Identity of caller (Identity type)
 ctx.connection_id       // std::optional<ConnectionId>
 ctx.timestamp           // Timestamp of current transaction (Timestamp type)
 ctx.identity()          // Module's own identity (Identity type)

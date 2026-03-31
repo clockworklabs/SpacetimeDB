@@ -28,7 +28,7 @@ pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, an
         .key(Key::new("build_options").module_specific())
         .key(Key::new("wasm_file").module_specific())
         .key(Key::new("js_file").module_specific())
-        .key(Key::new("num_replicas"))
+        .key(Key::new("num_replicas").module_specific())
         .key(Key::new("break_clients"))
         .key(Key::new("anon_identity"))
         .key(Key::new("parent"))
@@ -246,13 +246,17 @@ fn confirm_and_clear(
     Ok(builder)
 }
 
-fn confirm_major_version_upgrade() -> Result<(), anyhow::Error> {
+fn confirm_major_version_upgrade(force: bool) -> Result<(), anyhow::Error> {
     println!(
         "It looks like you're trying to do a major version upgrade from 1.0 to 2.0. We recommend first looking at the upgrade notes before committing to this upgrade: https://spacetimedb.com/docs/upgrade"
     );
     println!();
     println!("WARNING: Once you publish you cannot revert back to version 1.0.");
     println!();
+
+    if force {
+        return Ok(());
+    }
 
     let mut input = String::new();
     print!("Please type 'upgrade' to accept this change: ");
@@ -425,13 +429,13 @@ async fn execute_publish_configs<'a>(
 
         let (name_or_identity, parent) = validate_name_and_parent(name_or_identity, parent)?;
 
-        if let Some(path_to_project) = path_to_project.as_ref() {
-            if !path_to_project.exists() {
-                return Err(anyhow::anyhow!(
-                    "Project path does not exist: {}",
-                    path_to_project.display()
-                ));
-            }
+        if let Some(path_to_project) = path_to_project.as_ref()
+            && !path_to_project.exists()
+        {
+            return Err(anyhow::anyhow!(
+                "Project path does not exist: {}",
+                path_to_project.display()
+            ));
         }
 
         // Decide program file path and read program.
@@ -539,10 +543,10 @@ async fn execute_publish_configs<'a>(
                     println!("{op} database with identity: {database_identity}");
                 }
 
-                if is_maincloud_host(&database_host) {
-                    if let Some(domain) = domain.as_ref() {
-                        println!("Dashboard: https://spacetimedb.com/{}", domain.as_ref());
-                    }
+                if is_maincloud_host(&database_host)
+                    && let Some(domain) = domain.as_ref()
+                {
+                    println!("Dashboard: https://spacetimedb.com/{}", domain.as_ref());
                 }
             }
             PublishResult::PermissionDenied { name } => {
@@ -671,7 +675,7 @@ async fn apply_pre_publish_if_needed(
             PrePublishResult::ManualMigrate(manual) => manual.major_version_upgrade,
         };
         if major_version_upgrade {
-            confirm_major_version_upgrade()?;
+            confirm_major_version_upgrade(force)?;
         }
 
         match pre {

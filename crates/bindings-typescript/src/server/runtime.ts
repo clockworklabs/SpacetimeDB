@@ -516,6 +516,7 @@ function makeTableView(
   ) as Table<any>;
 
   for (const indexDef of table.indexes) {
+    const accessorName = indexDef.accessorName!;
     const index_id = sys.index_id_from_name(indexDef.sourceName!);
 
     let column_ids: number[];
@@ -795,10 +796,13 @@ function makeTableView(
       } as RangedIndex<any, any>;
     }
 
-    if (Object.hasOwn(tableView, indexDef.accessorName!)) {
-      freeze(Object.assign(tableView[indexDef.accessorName!], index));
+    // IMPORTANT: duplicate accessor handling.
+    // When multiple raw indexes share the same accessor name, we merge index
+    // methods onto a single accessor object instead of throwing.
+    if (Object.hasOwn(tableView, accessorName)) {
+      freeze(Object.assign((tableView as any)[accessorName], index));
     } else {
-      tableView[indexDef.accessorName!] = freeze(index) as any;
+      (tableView as any)[accessorName] = freeze(index);
     }
   }
 

@@ -17,6 +17,7 @@ import type {
   Indexes,
   IndexOpts,
   ReadonlyIndexes,
+  UntypedIndex,
 } from './indexes';
 import ScheduleAt from './schedule_at';
 import type { TableSchema } from './table_schema';
@@ -116,7 +117,25 @@ export type UntypedTableDef = {
   columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
   // This is really just a ProductType where all the elements have names.
   rowType: RowBuilder<RowObj>['algebraicType']['value'];
+  /**
+   * Declarative multi-column indexes supplied by user code in `table({ indexes: [...] }, ...)`.
+   *
+   * This is intentionally the *declarative* shape (`IndexOpts`) because a lot of
+   * type-level behavior is derived from these entries (for example query-builder
+   * inference over composite indexes).
+   */
   indexes: readonly IndexOpts<any>[];
+  /**
+   * Fully-resolved runtime indexes materialized from `RawTableDefV10`.
+   *
+   * This contains both:
+   * 1) field-level indexes inferred from column metadata, and
+   * 2) explicit table-level indexes.
+   *
+   * Runtime consumers like `TableCacheImpl` should use this field instead of
+   * reinterpreting `indexes` as runtime index metadata.
+   */
+  resolvedIndexes: readonly UntypedIndex<any>[];
   constraints: readonly ConstraintOpts<any>[];
   tableDef: RawTableDefV10;
   isEvent?: boolean;
@@ -220,7 +239,12 @@ export type ReadonlyTable<TableDef extends UntypedTableDef> = Prettify<
 >;
 
 export interface ReadonlyTableMethods<TableDef extends UntypedTableDef> {
-  /** Returns the number of rows in the TX state. */
+  /**
+   * Returns the number of rows in this table.
+   *
+   * This reads datastore metadata, so it runs in constant time.
+   * It also takes into account modifications by the current transaction.
+   */
   count(): bigint;
 
   /** Iterate over all rows in the TX state. Rust Iterator<Item=Row> → TS IterableIterator<Row>. */
@@ -400,6 +424,14 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
   // convert explicit multi‑column indexes coming from options.indexes
   for (const indexOpts of userIndexes ?? []) {
+    const accessor = indexOpts.accessor;
+    if (typeof accessor !== 'string' || accessor.length === 0) {
+      const tableLabel = name ?? '<unnamed>';
+      const indexLabel = indexOpts.name ?? '<unnamed>';
+      throw new TypeError(
+        `Index '${indexLabel}' on table '${tableLabel}' must define a non-empty 'accessor'`
+      );
+    }
     let algorithm: RawIndexAlgorithm;
     switch (indexOpts.algorithm) {
       case 'btree':
@@ -418,16 +450,19 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         algorithm = { tag: 'Direct', value: colIds.get(indexOpts.column)! };
         break;
     }
-    // unnamed indexes will be assigned a globally unique name
-    // The name users supply is actually the accessor name which will be used
-    // in TypeScript to access the index. This will be used verbatim.
-    // This is confusing because it is not the index name and there is
-    // no actual way for the user to set the actual index name.
-    // I think we should standardize: name and accessorName as the way to set
-    // the name and accessor name of an index across all SDKs.
+
+    // Unnamed indexes are assigned a globally unique source name.
+    // `accessor` controls the TypeScript property used to access the index.
+    // `name` (if present) is preserved as the canonical schema name.
+    //
+    // IMPORTANT: we intentionally do not reject duplicate accessor names here.
+    // This preserves existing behavior for raw table definitions. Downstream
+    // runtime consumers decide how duplicates are resolved:
+    // - server runtime merges duplicate accessors onto one accessor object
+    // - client cache assignment is last-write-wins for duplicate accessors
     indexes.push({
       sourceName: undefined,
-      accessorName: indexOpts.accessor,
+      accessorName: accessor,
       algorithm,
       canonicalName: indexOpts.name,
     });
@@ -496,7 +531,9 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         isEvent,
       };
     },
-    idxs: {} as OptsIndices<Opts>,
+    // Preserve the declared index options as runtime data so `tableToSchema`
+    // can expose them without type-smuggling.
+    idxs: userIndexes as OptsIndices<Opts>,
     constraints: constraints as OptsConstraints<Opts>,
     schedule,
   };

@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod dev;
 pub mod generate;
 pub mod publish;

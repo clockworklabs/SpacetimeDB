@@ -25,6 +25,7 @@ members = [
     "views-subscribe",
     "views-query",
     "views-callable",
+    "views-count",
 
     # Security and permissions
     "rls",
@@ -74,6 +75,9 @@ members = [
     "delete-database",
     "client-connection-reject",
     "client-connection-disconnect-panic",
+
+    # Log filtering tests
+    "logs-level-filter",
 
     # Misc tests
     "namespaces",
