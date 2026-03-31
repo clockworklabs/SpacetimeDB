@@ -126,7 +126,6 @@ impl ReplicaContext {
             .expect("blocking client builder thread panicked")
         })
     }
-
 }
 
 /// Outcome of [`execute_blocking_http_cancellable`].
@@ -159,7 +158,7 @@ where
         let _ = tx.send(result);
     });
     let result = loop {
-        match rx.recv_timeout(std::time::Duration::from_millis(50)) {
+        match rx.recv_timeout(std::time::Duration::from_millis(10)) {
             Ok(result) => break Some(result),
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 if should_cancel() {
