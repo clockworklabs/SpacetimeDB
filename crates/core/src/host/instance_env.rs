@@ -1014,7 +1014,7 @@ impl InstanceEnv {
         let base_url = self
             .replica_ctx
             .call_reducer_router
-            .resolve_base_url_blocking(database_identity)
+            .resolve_base_url(database_identity)
             .map_err(|e| NodesError::HttpError(e.to_string()))?;
         let url = format!(
             "{}/v1/database/{}/call/{}",
@@ -1079,7 +1079,7 @@ impl InstanceEnv {
         let base_url = self
             .replica_ctx
             .call_reducer_router
-            .resolve_base_url_blocking(database_identity)
+            .resolve_base_url(database_identity)
             .map_err(|e| NodesError::HttpError(e.to_string()))?;
         let url = format!(
             "{}/v1/database/{}/prepare/{}",

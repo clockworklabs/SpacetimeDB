@@ -125,9 +125,11 @@ pub struct HostController {
     pub call_reducer_client: reqwest::Client,
     /// Router that resolves the HTTP base URL of the leader node for a given database.
     ///
-    /// Set to [`LocalReducerRouter`] by default; replaced with `ClusterReducerRouter`
-    /// in cluster deployments via [`HostController::new`] receiving the router directly.
-    pub call_reducer_router: Arc<dyn ReducerCallRouter>,
+    /// Defaults to [`LocalReducerRouter`]. In cluster deployments, replaced once
+    /// at startup with `CachingResolver` via [`Self::set_call_reducer_router`].
+    /// Uses `OnceLock` for lock-free reads after the one-time initialization.
+    default_call_reducer_router: Arc<dyn ReducerCallRouter>,
+    pub call_reducer_router: Arc<std::sync::OnceLock<Arc<dyn ReducerCallRouter>>>,
     /// A single node-level Bearer token included in all outgoing cross-DB reducer calls.
     ///
     /// Set once at node startup by the deployment layer (standalone / cluster) so that
@@ -254,7 +256,8 @@ impl HostController {
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
             db_cores,
             call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
-            call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
+            default_call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
+            call_reducer_router: Arc::new(std::sync::OnceLock::new()),
             call_reducer_auth_token: None,
             call_edge_tracker: Arc::new(crate::host::call_edge_tracker::NoopCallEdgeTracker),
         }
@@ -265,10 +268,22 @@ impl HostController {
         self.program_storage = ps;
     }
 
-    /// Replace the [`ReducerCallRouter`] used by this controller.
-    /// Takes `&self` (not `&mut self`) since the router is behind a `RwLock`.
+    /// Set the [`ReducerCallRouter`] used by this controller.
+    /// Can only be called once (at startup). Panics if called a second time.
     pub fn set_call_reducer_router(&self, router: Arc<dyn ReducerCallRouter>) {
-        *self.call_reducer_router.write().unwrap() = router;
+        self.call_reducer_router
+            .set(router)
+            .ok()
+            .expect("call_reducer_router already set");
+    }
+
+    /// Get the active [`ReducerCallRouter`], falling back to the default if
+    /// [`Self::set_call_reducer_router`] hasn't been called yet.
+    pub fn get_call_reducer_router(&self) -> Arc<dyn ReducerCallRouter> {
+        self.call_reducer_router
+            .get()
+            .cloned()
+            .unwrap_or_else(|| self.default_call_reducer_router.clone())
     }
 
     /// Set the [`CallEdgeTracker`] for distributed deadlock detection.
@@ -1063,7 +1078,7 @@ impl Host {
                     core: host_controller.db_cores.take(),
                     bsatn_rlb_pool: bsatn_rlb_pool.clone(),
                     call_reducer_client: host_controller.call_reducer_client.clone(),
-                    call_reducer_router: host_controller.call_reducer_router.clone(),
+                    call_reducer_router: host_controller.get_call_reducer_router(),
                     call_reducer_auth_token: host_controller.call_reducer_auth_token.clone(),
                     call_edge_tracker: host_controller.call_edge_tracker.clone(),
                 }
@@ -1096,7 +1111,7 @@ impl Host {
                     core: host_controller.db_cores.take(),
                     bsatn_rlb_pool: bsatn_rlb_pool.clone(),
                     call_reducer_client: host_controller.call_reducer_client.clone(),
-                    call_reducer_router: host_controller.call_reducer_router.clone(),
+                    call_reducer_router: host_controller.get_call_reducer_router(),
                     call_reducer_auth_token: host_controller.call_reducer_auth_token.clone(),
                     call_edge_tracker: host_controller.call_edge_tracker.clone(),
                 }
@@ -1123,7 +1138,7 @@ impl Host {
                             core: host_controller.db_cores.take(),
                             bsatn_rlb_pool: bsatn_rlb_pool.clone(),
                             call_reducer_client: host_controller.call_reducer_client.clone(),
-                            call_reducer_router: host_controller.call_reducer_router.clone(),
+                            call_reducer_router: host_controller.get_call_reducer_router(),
                             call_reducer_auth_token: host_controller.call_reducer_auth_token.clone(),
                             call_edge_tracker: host_controller.call_edge_tracker.clone(),
                         }

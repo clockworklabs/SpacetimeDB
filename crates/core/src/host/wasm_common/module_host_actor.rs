@@ -410,7 +410,7 @@ async fn send_prepared_to_persist_to_coordinator(
     prepare_id: String,
 ) {
     loop {
-        let base_url = match router.resolve_base_url(coordinator_identity).await {
+        let base_url = match router.resolve_base_url(coordinator_identity) {
             Ok(url) => url,
             Err(e) => {
                 log::warn!("2PC prepared-to-persist: cannot resolve coordinator URL: {e}; retrying");
@@ -457,7 +457,7 @@ async fn query_coordinator_status(
     coordinator_identity: crate::identity::Identity,
     prepare_id: &str,
 ) -> Option<bool> {
-    let base_url = match router.resolve_base_url(coordinator_identity).await {
+    let base_url = match router.resolve_base_url(coordinator_identity) {
         Ok(url) => url,
         Err(e) => {
             log::warn!("2PC status poll: cannot resolve coordinator URL: {e}");
@@ -1232,7 +1232,7 @@ impl InstanceCommon {
                 if !committed {
                     // ABORT: send abort to all participants, no Round 2 needed.
                     for (db_identity, prepare_id) in &prepared_participants {
-                        let base_url = match router.resolve_base_url(*db_identity).await {
+                        let base_url = match router.resolve_base_url(*db_identity) {
                             Ok(url) => url,
                             Err(e) => {
                                 log::error!("2PC abort: failed to resolve base URL for {db_identity}: {e}");
@@ -1279,7 +1279,7 @@ impl InstanceCommon {
                 // ── Round 1: Send COMMIT immediately (no durability wait!) ──
 
                 for (db_identity, prepare_id) in &prepared_participants {
-                    let base_url = match router.resolve_base_url(*db_identity).await {
+                    let base_url = match router.resolve_base_url(*db_identity) {
                         Ok(url) => url,
                         Err(e) => {
                             log::error!("2PC commit: failed to resolve base URL for {db_identity}: {e}");
@@ -1362,7 +1362,7 @@ impl InstanceCommon {
 
                 // Send COMMIT_PERSIST to each participant.
                 for (db_identity, prepare_id) in &prepared_participants {
-                    let base_url = match router.resolve_base_url(*db_identity).await {
+                    let base_url = match router.resolve_base_url(*db_identity) {
                         Ok(url) => url,
                         Err(e) => {
                             log::error!("2PC commit-persist: failed to resolve base URL for {db_identity}: {e}");

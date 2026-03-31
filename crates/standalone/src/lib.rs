@@ -91,7 +91,7 @@ impl StandaloneEnv {
             persistence_provider,
             db_cores,
         );
-        host_controller.call_reducer_router = Arc::new(LocalReducerRouter::new(config.local_api_url));
+        host_controller.set_call_reducer_router(Arc::new(LocalReducerRouter::new(config.local_api_url)));
         let client_actor_index = ClientActorIndex::new();
         let jwt_keys = certs.get_or_create_keys()?;
 
