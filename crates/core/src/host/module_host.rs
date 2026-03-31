@@ -233,24 +233,6 @@ pub struct ModuleInfo {
     pub metrics: ModuleMetrics,
 }
 
-struct GlobalTxAdmissionGuard<'a> {
-    lock_guard: Option<super::global_tx::GlobalTxLockGuard<'a>>,
-}
-
-impl<'a> GlobalTxAdmissionGuard<'a> {
-    fn new(lock_guard: super::global_tx::GlobalTxLockGuard<'a>) -> Self {
-        Self {
-            lock_guard: Some(lock_guard),
-        }
-    }
-
-    fn disarm(mut self) {
-        if let Some(lock_guard) = self.lock_guard.take() {
-            lock_guard.disarm();
-        }
-    }
-}
-
 impl fmt::Debug for ModuleInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ModuleInfo")
@@ -1640,7 +1622,7 @@ impl ModuleHost {
         let args = args
             .into_tuple_for_def(&self.info.module_def, reducer_def)
             .map_err(InvalidReducerArguments)?;
-        let admission_guard = if let Some(tx_id) = tx_id {
+        let _global_tx_lock_guard = if let Some(tx_id) = tx_id {
             match self.acquire_global_tx_slot(tx_id).await {
                 Ok(guard) => Some(guard),
                 Err(outcome) => {
@@ -1675,9 +1657,6 @@ impl ModuleHost {
                 async |p, inst| inst.call_reducer(p).await,
             )
             .await;
-        if let Some(guard) = admission_guard {
-            guard.disarm();
-        }
         result?
     }
 
@@ -1696,7 +1675,7 @@ impl ModuleHost {
         let args = args
             .into_tuple_for_def(&self.info.module_def, reducer_def)
             .map_err(InvalidReducerArguments)?;
-        let admission_guard = if let Some(tx_id) = tx_id {
+        let _global_tx_lock_guard = if let Some(tx_id) = tx_id {
             match self.acquire_global_tx_slot(tx_id).await {
                 Ok(guard) => Some(guard),
                 Err(outcome) => {
@@ -1734,9 +1713,6 @@ impl ModuleHost {
                 async |p, inst| inst.call_reducer(p).await.map(|res| (res, None)),
             )
             .await;
-        if let Some(guard) = admission_guard {
-            guard.disarm();
-        }
         result?
     }
 
@@ -1930,10 +1906,8 @@ impl ModuleHost {
             self.replica_ctx()
                 .global_tx_manager
                 .set_prepare_mapping(tx_id, prepare_id.clone());
-            match self.acquire_global_tx_slot(tx_id).await {
-                Ok(guard) => {
-                    guard.disarm();
-                }
+            let global_tx_lock_guard = match self.acquire_global_tx_slot(tx_id).await {
+                Ok(guard) => guard,
                 Err(outcome) => {
                     self.prepared_txs.remove(&prepare_id);
                     self.replica_ctx().global_tx_manager.remove_prepare_mapping(&prepare_id);
@@ -1952,7 +1926,7 @@ impl ModuleHost {
                         None,
                     ));
                 }
-            }
+            };
         //}
 
         // Spawn a background task that runs the reducer and holds the write lock
@@ -1965,13 +1939,20 @@ impl ModuleHost {
             let _ = this
                 .call(
                     &reducer_name_owned,
-                    (params, prepare_id_clone, coordinator_identity, prepared_tx, decision_rx),
-                    async |(p, pid, cid, ptx, drx), inst| {
-                        inst.call_reducer_prepare_and_hold(p, pid, cid, ptx, drx);
+                    (
+                        params,
+                        prepare_id_clone,
+                        coordinator_identity,
+                        prepared_tx,
+                        decision_rx,
+                        global_tx_lock_guard,
+                    ),
+                    async |(p, pid, cid, ptx, drx, guard), inst| {
+                        inst.call_reducer_prepare_and_hold(p, pid, cid, ptx, drx, guard);
                         Ok::<(), ReducerCallError>(())
                     },
                     // JS modules: no 2PC support yet.
-                    async |(_p, _pid, _cid, _ptx, _drx), _inst| Err(ReducerCallError::NoSuchReducer),
+                    async |(_p, _pid, _cid, _ptx, _drx, _guard), _inst| Err(ReducerCallError::NoSuchReducer),
                 )
                 .await;
         });
@@ -1994,7 +1975,6 @@ impl ModuleHost {
                         self.replica_ctx()
                             .global_tx_manager
                             .mark_state(&tx_id, super::global_tx::GlobalTxState::Aborted);
-                        self.replica_ctx().global_tx_manager.release(&tx_id);
                         self.replica_ctx().global_tx_manager.remove_session(&tx_id);
                     // }
                     Ok((String::new(), result, return_value))
@@ -2120,8 +2100,8 @@ impl ModuleHost {
         Ok(())
     }
 
-    async fn acquire_global_tx_slot(&self, tx_id: GlobalTxId) -> Result<GlobalTxAdmissionGuard<'_>, ReducerOutcome> {
-        let manager = &self.replica_ctx().global_tx_manager;
+    async fn acquire_global_tx_slot(&self, tx_id: GlobalTxId) -> Result<super::global_tx::GlobalTxLockGuard, ReducerOutcome> {
+        let manager = self.replica_ctx().global_tx_manager.clone();
         let local_db = self.replica_ctx().database.database_identity;
         let role = if tx_id.creator_db == local_db {
             super::global_tx::GlobalTxRole::Coordinator
@@ -2150,10 +2130,11 @@ impl ModuleHost {
             super::global_tx::AcquireDisposition::Acquired(lock_guard) => {
                 if let Some(outcome) = self.check_global_tx_wounded(tx_id) {
                     log::info!("global transaction {tx_id} was wounded immediately after scheduler admission");
-                    self.abort_global_tx_locally(tx_id, true);
+                    drop(lock_guard);
+                    self.finish_abort_global_tx_locally(tx_id, true);
                     return Err(outcome);
                 }
-                return Ok(GlobalTxAdmissionGuard::new(lock_guard));
+                return Ok(lock_guard);
             }
             super::global_tx::AcquireDisposition::Cancelled => {
                 log::info!("global transaction {tx_id} was cancelled while waiting for scheduler admission");
@@ -2177,10 +2158,14 @@ impl ModuleHost {
             "global transaction {tx_id} aborting locally on {}; remove_session={remove_session}",
             self.replica_ctx().database.database_identity
         );
+        self.replica_ctx().global_tx_manager.release(&tx_id);
+        self.finish_abort_global_tx_locally(tx_id, remove_session);
+    }
+
+    fn finish_abort_global_tx_locally(&self, tx_id: GlobalTxId, remove_session: bool) {
         self.replica_ctx()
             .global_tx_manager
             .mark_state(&tx_id, super::global_tx::GlobalTxState::Aborted);
-        self.replica_ctx().global_tx_manager.release(&tx_id);
         if remove_session {
             self.replica_ctx().global_tx_manager.remove_session(&tx_id);
         }

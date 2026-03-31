@@ -145,13 +145,13 @@ struct WaitEntry {
     notify: Arc<Notify>,
 }
 
-pub enum AcquireDisposition<'a> {
-    Acquired(GlobalTxLockGuard<'a>),
+pub enum AcquireDisposition {
+    Acquired(GlobalTxLockGuard),
     Cancelled,
 }
 
-pub struct GlobalTxLockGuard<'a> {
-    manager: &'a GlobalTxManager,
+pub struct GlobalTxLockGuard {
+    manager: Arc<GlobalTxManager>,
     tx_id: Option<GlobalTxId>,
 }
 
@@ -193,8 +193,8 @@ impl Drop for WaitRegistration<'_> {
     }
 }
 
-impl<'a> GlobalTxLockGuard<'a> {
-    fn new(manager: &'a GlobalTxManager, tx_id: GlobalTxId) -> Self {
+impl GlobalTxLockGuard {
+    fn new(manager: Arc<GlobalTxManager>, tx_id: GlobalTxId) -> Self {
         Self {
             manager,
             tx_id: Some(tx_id),
@@ -204,14 +204,9 @@ impl<'a> GlobalTxLockGuard<'a> {
     pub fn tx_id(&self) -> GlobalTxId {
         self.tx_id.expect("lock guard must always have a tx_id before drop")
     }
-
-    pub fn disarm(mut self) {
-        log::warn!("Disarming a lock guard without releasing the lock for tx_id {}", self.tx_id());
-        self.tx_id = None;
-    }
 }
 
-impl Drop for GlobalTxLockGuard<'_> {
+impl Drop for GlobalTxLockGuard {
     fn drop(&mut self) {
         if let Some(tx_id) = self.tx_id.take() {
             self.manager.release(&tx_id);
@@ -326,7 +321,7 @@ impl GlobalTxManager {
         Some(session)
     }
 
-    pub async fn acquire<F, Fut>(&self, tx_id: GlobalTxId, mut on_wound: F) -> AcquireDisposition<'_>
+    pub async fn acquire<F, Fut>(self: &Arc<Self>, tx_id: GlobalTxId, mut on_wound: F) -> AcquireDisposition
     where
         F: FnMut(GlobalTxId) -> Fut,
         Fut: Future<Output = ()> + Send + 'static,
@@ -363,7 +358,7 @@ impl GlobalTxManager {
                             registration.disarm(&mut state);
                         }
                         log::info!("global transaction {tx_id} acquired the lock");
-                        return AcquireDisposition::Acquired(GlobalTxLockGuard::new(self, tx_id));
+                        return AcquireDisposition::Acquired(GlobalTxLockGuard::new(self.clone(), tx_id));
                     }
                     None => {
                         let waiter = match registration.as_ref() {
@@ -399,7 +394,7 @@ impl GlobalTxManager {
                         if let Some(registration) = registration.take() {
                             registration.disarm(&mut state);
                         }
-                        return AcquireDisposition::Acquired(GlobalTxLockGuard::new(self, tx_id));
+                        return AcquireDisposition::Acquired(GlobalTxLockGuard::new(self.clone(), tx_id));
                     }
                     Some(owner) => {
                         let waiter = match registration.as_ref() {
@@ -695,7 +690,7 @@ mod tests {
 
     #[test]
     fn younger_requester_waits_behind_older_owner() {
-        let manager = GlobalTxManager::default();
+        let manager = Arc::new(GlobalTxManager::default());
         let older = tx_id(10, 1, 0);
         let younger = tx_id(20, 2, 0);
         manager.ensure_session(older, super::GlobalTxRole::Participant, older.creator_db);
@@ -743,7 +738,7 @@ mod tests {
 
     #[test]
     fn wound_is_idempotent() {
-        let manager = GlobalTxManager::default();
+        let manager = Arc::new(GlobalTxManager::default());
         let tx_id = tx_id(10, 1, 0);
         let session = manager.ensure_session(tx_id, super::GlobalTxRole::Coordinator, tx_id.creator_db);
 
@@ -756,7 +751,7 @@ mod tests {
 
     #[test]
     fn wound_subscription_notifies_waiter() {
-        let manager = GlobalTxManager::default();
+        let manager = Arc::new(GlobalTxManager::default());
         let tx_id = tx_id(10, 1, 0);
         let _session = manager.ensure_session(tx_id, super::GlobalTxRole::Coordinator, tx_id.creator_db);
         let mut wounded_rx = manager.subscribe_wounded(&tx_id).expect("session should exist");

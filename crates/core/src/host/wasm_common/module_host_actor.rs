@@ -653,6 +653,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         coordinator_identity: crate::identity::Identity,
         prepared_tx: tokio::sync::oneshot::Sender<(ReducerCallResult, Option<Bytes>)>,
         decision_rx: std::sync::mpsc::Receiver<bool>,
+        _global_tx_lock_guard: crate::host::global_tx::GlobalTxLockGuard,
     ) {
         let stdb = self.instance.replica_ctx().relational_db().clone();
         let replica_ctx = self.instance.replica_ctx().clone();
@@ -701,7 +702,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 replica_ctx
                     .global_tx_manager
                     .mark_state(&tx_id, crate::host::global_tx::GlobalTxState::Aborted);
-                replica_ctx.global_tx_manager.release(&tx_id);
                 replica_ctx.global_tx_manager.remove_session(&tx_id);
             }
             return;
@@ -789,7 +789,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 replica_ctx
                     .global_tx_manager
                     .mark_state(&tx_id, crate::host::global_tx::GlobalTxState::Committed);
-                replica_ctx.global_tx_manager.release(&tx_id);
                 replica_ctx.global_tx_manager.remove_session(&tx_id);
             }
         } else {
@@ -812,7 +811,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 replica_ctx
                     .global_tx_manager
                     .mark_state(&tx_id, crate::host::global_tx::GlobalTxState::Aborted);
-                replica_ctx.global_tx_manager.release(&tx_id);
                 replica_ctx.global_tx_manager.remove_session(&tx_id);
             }
         }
@@ -1333,7 +1331,6 @@ impl InstanceCommon {
                     crate::host::global_tx::GlobalTxState::Aborted
                 },
             );
-            manager.release(&tx_id);
             manager.remove_session(&tx_id);
         }
 
