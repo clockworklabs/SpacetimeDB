@@ -177,17 +177,21 @@ impl<'a> WaitRegistration<'a> {
         self.wait_id.expect("registered waiter must still have a wait id")
     }
 
-    fn disarm(mut self) {
-        self.wait_id = None;
+    fn disarm(mut self, ls: &mut std::sync::MutexGuard<'_, LockState>) {
+        self.remove_waiter(ls);
+    }
+
+    fn remove_waiter(&mut self, ls: &mut LockState) {
+        if let Some(wait_id) = self.wait_id.take() {
+            self.manager.remove_waiter_by_id(ls, wait_id);
+        }
     }
 }
 
 impl Drop for WaitRegistration<'_> {
     fn drop(&mut self) {
-        if let Some(wait_id) = self.wait_id.take() {
-            let mut ls = self.manager.lock_state.lock().unwrap();
-            self.manager.remove_waiter_by_id(&mut ls, wait_id);
-        }
+        let mut ls = self.manager.lock_state.lock().unwrap();
+        self.remove_waiter(&mut ls);
     }
 }
 
@@ -345,7 +349,7 @@ impl GlobalTxManager {
                         state.owner = Some(tx_id);
                         self.remove_waiter_locked(&mut state, &tx_id);
                         if let Some(registration) = registration.take() {
-                            registration.disarm();
+                            registration.disarm(&mut state);
                         }
                         return AcquireDisposition::Acquired(GlobalTxLockGuard::new(self, tx_id));
                     }
@@ -366,9 +370,10 @@ impl GlobalTxManager {
                         (notify, None, new_registration)
                     }
                     Some(owner) if owner == tx_id => {
+                        log::warn!("global transaction {tx_id} is trying to acquire the lock it already holds. This should not happen and may indicate a bug in the caller's logic, but we'll allow it to proceed without deadlocking on itself.");
                         self.remove_waiter_locked(&mut state, &tx_id);
                         if let Some(registration) = registration.take() {
-                            registration.disarm();
+                            registration.disarm(&mut state);
                         }
                         return AcquireDisposition::Acquired(GlobalTxLockGuard::new(self, tx_id));
                     }
