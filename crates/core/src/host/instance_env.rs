@@ -1525,7 +1525,7 @@ mod test {
                 call_reducer_auth_token: None,
                 prepared_txs: crate::host::prepared_tx::PreparedTransactions::new(),
                 on_panic: std::sync::Arc::new(std::sync::OnceLock::new()),
-                call_edge_tracker: Arc::new(crate::host::call_edge_tracker::NoopCallEdgeTracker),
+                call_edge_tracker: Arc::new(crate::host::call_edge_tracker::InMemoryCallEdgeTracker::new()),
             },
             runtime,
         ))

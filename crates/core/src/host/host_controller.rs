@@ -142,7 +142,7 @@ pub struct HostController {
     /// `None` in test/embedded contexts where no JWT signer is configured.
     pub call_reducer_auth_token: Option<String>,
     /// Distributed deadlock detection for cross-database calls.
-    /// Set to [`NoopCallEdgeTracker`] by default; replaced with `CloudCallEdgeTracker`
+    /// Set to [`InMemoryCallEdgeTracker`] by default; replaced with `CloudCallEdgeTracker`
     /// in cluster deployments.
     pub call_edge_tracker: Arc<dyn crate::host::call_edge_tracker::CallEdgeTracker>,
 }
@@ -259,7 +259,7 @@ impl HostController {
             call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
             call_reducer_router: Arc::new(std::sync::OnceLock::new()),
             call_reducer_auth_token: None,
-            call_edge_tracker: Arc::new(crate::host::call_edge_tracker::NoopCallEdgeTracker),
+            call_edge_tracker: Arc::new(crate::host::call_edge_tracker::InMemoryCallEdgeTracker::new()),
         }
     }
 
@@ -1257,7 +1257,7 @@ impl Host {
             call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
             call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
             call_reducer_auth_token: None,
-            call_edge_tracker: Arc::new(crate::host::call_edge_tracker::NoopCallEdgeTracker),
+            call_edge_tracker: Arc::new(crate::host::call_edge_tracker::InMemoryCallEdgeTracker::new()),
         }
         .launch_module()
         .await
