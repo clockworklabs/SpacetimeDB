@@ -15,6 +15,10 @@ on:
         description: 'Languages to benchmark (comma-separated: rust,csharp,typescript)'
         required: false
         default: 'rust,csharp,typescript'
+      modes:
+        description: 'Modes to run (comma-separated: guidelines,no_context,docs,...)'
+        required: false
+        default: 'guidelines,no_context'
 
 permissions:
   contents: write
@@ -75,6 +79,7 @@ jobs:
         run: |
           LANGS="${{ inputs.languages || 'rust,csharp,typescript' }}"
           MODELS="${{ inputs.models || 'all' }}"
+          MODES="${{ inputs.modes || 'guidelines,no_context' }}"
           UPLOAD_FLAG=""
           if [ -n "${{ secrets.LLM_BENCHMARK_UPLOAD_URL }}" ]; then
             UPLOAD_FLAG="--upload-url ${{ secrets.LLM_BENCHMARK_UPLOAD_URL }}"
@@ -82,9 +87,9 @@ jobs:
 
           for LANG in $(echo "$LANGS" | tr ',' ' '); do
             if [ "$MODELS" = "all" ]; then
-              llm_benchmark run --lang "$LANG" $UPLOAD_FLAG || true
+              llm_benchmark run --lang "$LANG" --modes "$MODES" $UPLOAD_FLAG || true
             else
-              llm_benchmark run --lang "$LANG" --models "$MODELS" $UPLOAD_FLAG || true
+              llm_benchmark run --lang "$LANG" --modes "$MODES" --models "$MODELS" $UPLOAD_FLAG || true
             fi
           done
 
