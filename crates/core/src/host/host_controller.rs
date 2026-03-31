@@ -725,6 +725,9 @@ async fn make_replica_ctx(
         logger,
         subscriptions,
         call_reducer_client,
+        call_reducer_blocking_client: ReplicaContext::new_call_reducer_blocking_client(
+            &crate::replica_context::CallReducerOnDbConfig::default(),
+        ),
         call_reducer_router,
         call_reducer_auth_token,
         prepared_txs: crate::host::prepared_tx::PreparedTransactions::new(),

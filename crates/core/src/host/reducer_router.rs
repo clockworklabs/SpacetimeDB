@@ -28,6 +28,14 @@ pub trait ReducerCallRouter: Send + Sync + 'static {
     /// Returns an error string when the leader cannot be resolved
     /// (database not found, no leader elected yet, node has no network address, etc.).
     fn resolve_base_url<'a>(&'a self, database_identity: Identity) -> BoxFuture<'a, anyhow::Result<String>>;
+
+    /// Blocking variant of [`Self::resolve_base_url`] for use on the WASM executor thread.
+    ///
+    /// Default implementation drives the async version via `futures::executor::block_on`.
+    /// Implementations may override for efficiency (e.g., `LocalReducerRouter` avoids I/O).
+    fn resolve_base_url_blocking(&self, database_identity: Identity) -> anyhow::Result<String> {
+        futures::executor::block_on(self.resolve_base_url(database_identity))
+    }
 }
 
 // Arc<dyn ReducerCallRouter> is itself a ReducerCallRouter.
@@ -59,5 +67,9 @@ impl ReducerCallRouter for LocalReducerRouter {
     fn resolve_base_url<'a>(&'a self, _database_identity: Identity) -> BoxFuture<'a, anyhow::Result<String>> {
         let url = self.base_url.clone();
         Box::pin(async move { Ok(url) })
+    }
+
+    fn resolve_base_url_blocking(&self, _database_identity: Identity) -> anyhow::Result<String> {
+        Ok(self.base_url.clone())
     }
 }

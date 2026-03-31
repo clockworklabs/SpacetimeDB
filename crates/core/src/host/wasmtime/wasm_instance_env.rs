@@ -1996,11 +1996,9 @@ impl WasmInstanceEnv {
             let args_buf = mem.deref_slice(args_ptr, args_len)?;
             let args = bytes::Bytes::copy_from_slice(args_buf);
 
-            let handle = tokio::runtime::Handle::current();
-            let fut = env
+            let result = env
                 .instance_env
                 .call_reducer_on_db(database_identity, &reducer_name, args);
-            let result = super::super::block_on_scoped(&handle, fut);
 
             match result {
                 Ok((status, body)) => {
@@ -2055,11 +2053,9 @@ impl WasmInstanceEnv {
             let args_buf = mem.deref_slice(args_ptr, args_len)?;
             let args = bytes::Bytes::copy_from_slice(args_buf);
 
-            let handle = tokio::runtime::Handle::current();
-            let fut = env
+            let result = env
                 .instance_env
                 .call_reducer_on_db_2pc(database_identity, &reducer_name, args);
-            let result = super::super::block_on_scoped(&handle, fut);
 
             match result {
                 Ok((status, body, prepare_id)) => {

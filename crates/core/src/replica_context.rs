@@ -75,14 +75,16 @@ pub struct ReplicaContext {
     pub on_panic: Arc<OnceLock<Box<dyn Fn() + Send + Sync + 'static>>>,
     /// Distributed deadlock detection: tracks cross-database call edges.
     /// Standalone uses [`crate::host::call_edge_tracker::NoopCallEdgeTracker`].
+    /// Blocking HTTP client for cross-database calls on the WASM executor thread.
+    /// Built on a fresh OS thread to avoid tokio runtime conflicts.
+    pub call_reducer_blocking_client: reqwest::blocking::Client,
+    /// Distributed deadlock detection: tracks cross-database call edges.
+    /// Standalone uses [`crate::host::call_edge_tracker::NoopCallEdgeTracker`].
     pub call_edge_tracker: Arc<dyn CallEdgeTracker>,
 }
 
 impl ReplicaContext {
-    /// Build a warmed `reqwest::Client` from `config`.
-    ///
-    /// Uses HTTP/2 prior knowledge (h2c) for all connections.
-    /// The server must be configured to accept h2c (HTTP/2 cleartext) connections.
+    /// Build a warmed async `reqwest::Client` from `config`.
     pub fn new_call_reducer_client(config: &CallReducerOnDbConfig) -> reqwest::Client {
         reqwest::Client::builder()
             .tcp_keepalive(config.tcp_keepalive)
@@ -93,6 +95,47 @@ impl ReplicaContext {
             .build()
             .expect("failed to build call_reducer_on_db HTTP client")
     }
+
+    /// Build a blocking `reqwest::blocking::Client` on a fresh OS thread
+    /// to avoid conflicts with the tokio async runtime.
+    pub fn new_call_reducer_blocking_client(config: &CallReducerOnDbConfig) -> reqwest::blocking::Client {
+        let tcp_keepalive = config.tcp_keepalive;
+        let pool_idle_timeout = config.pool_idle_timeout;
+        let pool_max_idle_per_host = config.pool_max_idle_per_host;
+        let timeout = config.request_timeout;
+        std::thread::scope(|s| {
+            s.spawn(move || {
+                reqwest::blocking::Client::builder()
+                    .tcp_keepalive(tcp_keepalive)
+                    .pool_idle_timeout(pool_idle_timeout)
+                    .pool_max_idle_per_host(pool_max_idle_per_host)
+                    .timeout(timeout)
+                    .build()
+                    .expect("failed to build call_reducer_on_db blocking HTTP client")
+            })
+            .join()
+            .expect("blocking client builder thread panicked")
+        })
+    }
+}
+
+/// Execute a blocking HTTP request on a fresh OS thread to avoid tokio's
+/// nested runtime panic. The response is processed by `f` inside the thread.
+pub fn execute_blocking_http<F, T>(
+    client: &reqwest::blocking::Client,
+    request: reqwest::blocking::Request,
+    f: F,
+) -> reqwest::Result<T>
+where
+    F: FnOnce(reqwest::blocking::Response) -> reqwest::Result<T> + Send + 'static,
+    T: Send + 'static,
+{
+    let client = client.clone();
+    std::thread::scope(|s| {
+        s.spawn(move || client.execute(request).and_then(f))
+            .join()
+            .unwrap_or_else(|e| std::panic::resume_unwind(e))
+    })
 }
 
 impl ReplicaContext {
