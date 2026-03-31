@@ -11,8 +11,8 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 
 /**
- * Reads the database name from spacetime.local.json (or spacetime.json)
- * and generates a SpacetimeConfig.kt with a DATABASE_NAME constant.
+ * Reads configuration from spacetime.local.json (or spacetime.json)
+ * and generates a SpacetimeConfig.kt with build-time constants.
  */
 abstract class GenerateConfigTask : DefaultTask() {
 
@@ -31,14 +31,21 @@ abstract class GenerateConfigTask : DefaultTask() {
 
     init {
         group = "spacetimedb"
-        description = "Generate SpacetimeConfig.kt with the database name from project config"
+        description = "Generate SpacetimeConfig.kt from SpacetimeDB project config"
     }
 
     @TaskAction
     fun generate() {
-        val dbName = readDatabaseName()
-        if (dbName == null) {
-            logger.warn("No database name found in spacetime.local.json or spacetime.json — skipping SpacetimeConfig generation")
+        val localJson = readJson(localConfig)
+        val mainJson = readJson(mainConfig)
+
+        fun field(key: String): String? = localJson?.get(key) ?: mainJson?.get(key)
+
+        val dbName = field("database")
+        val modulePath = field("module-path")
+
+        if (dbName == null && modulePath == null) {
+            logger.warn("No config found in spacetime.local.json or spacetime.json — skipping SpacetimeConfig generation")
             return
         }
 
@@ -51,10 +58,13 @@ abstract class GenerateConfigTask : DefaultTask() {
             appendLine()
             appendLine("package module_bindings")
             appendLine()
-            appendLine("/** Build-time configuration extracted from the SpacetimeDB project config. */")
             appendLine("object SpacetimeConfig {")
-            appendLine("    /** The database name from spacetime.local.json (or spacetime.json). */")
-            appendLine("    const val DATABASE_NAME: String = \"$dbName\"")
+            if (dbName != null) {
+                appendLine("    const val DATABASE_NAME: String = \"$dbName\"")
+            }
+            if (modulePath != null) {
+                appendLine("    const val MODULE_PATH: String = \"$modulePath\"")
+            }
             appendLine("}")
             appendLine()
         }
@@ -62,26 +72,11 @@ abstract class GenerateConfigTask : DefaultTask() {
         outDir.resolve("SpacetimeConfig.kt").writeText(code)
     }
 
-    private fun readDatabaseName(): String? {
-        // Prefer spacetime.local.json (per-developer override)
-        val localFile = if (localConfig.isPresent) localConfig.get().asFile else null
-        if (localFile != null && localFile.isFile) {
-            val name = extractDatabase(localFile.readText())
-            if (name != null) return name
-        }
-
-        // Fall back to spacetime.json
-        val mainFile = if (mainConfig.isPresent) mainConfig.get().asFile else null
-        if (mainFile != null && mainFile.isFile) {
-            val name = extractDatabase(mainFile.readText())
-            if (name != null) return name
-        }
-
-        return null
-    }
-
-    private fun extractDatabase(json: String): String? {
-        val parsed = groovy.json.JsonSlurper().parseText(json)
-        return (parsed as? Map<*, *>)?.get("database") as? String
+    private fun readJson(file: RegularFileProperty): Map<String, String>? {
+        if (!file.isPresent) return null
+        val f = file.get().asFile
+        if (!f.isFile) return null
+        @Suppress("UNCHECKED_CAST")
+        return groovy.json.JsonSlurper().parseText(f.readText()) as? Map<String, String>
     }
 }

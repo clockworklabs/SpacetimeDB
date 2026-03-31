@@ -12,9 +12,12 @@ class SpacetimeDbPlugin : Plugin<Project> {
         val ext = project.extensions.create("spacetimedb", SpacetimeDbExtension::class.java)
 
         val rootDir = project.rootProject.layout.projectDirectory
-        ext.modulePath.convention(rootDir.dir("spacetimedb"))
         ext.localConfig.convention(rootDir.file("spacetime.local.json"))
         ext.mainConfig.convention(rootDir.file("spacetime.json"))
+
+        // Derive modulePath default from spacetime.json's "module-path", fall back to "spacetimedb"
+        val configModulePath = readConfigField(rootDir.asFile, "module-path")
+        ext.modulePath.convention(rootDir.dir(configModulePath ?: "spacetimedb"))
 
         val bindingsDir = project.layout.buildDirectory.dir("generated/spacetimedb/bindings")
         val configDir = project.layout.buildDirectory.dir("generated/spacetimedb/config")
@@ -68,5 +71,18 @@ class SpacetimeDbPlugin : Plugin<Project> {
                 it.dependsOn(configTask)
             }
         }
+    }
+
+    /** Read a field from spacetime.local.json or spacetime.json in the given directory. */
+    private fun readConfigField(dir: java.io.File, field: String): String? {
+        for (name in listOf("spacetime.local.json", "spacetime.json")) {
+            val file = dir.resolve(name)
+            if (file.isFile) {
+                val parsed = groovy.json.JsonSlurper().parseText(file.readText())
+                val value = (parsed as? Map<*, *>)?.get(field) as? String
+                if (value != null) return value
+            }
+        }
+        return null
     }
 }
