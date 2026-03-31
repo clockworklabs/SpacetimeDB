@@ -172,12 +172,8 @@ class BuilderAndCallbackTest {
         transport.sendToClient(initialConnectionMsg())
         advanceUntilIdle()
 
-        // Verify that when moduleDescriptor is set, handleReducerEvent is called
-        // during reducer processing (this tests the actual integration, not manual calls)
-        assertFalse(tablesRegistered) // registerTables is NOT called by DbConnection constructor —
-        // it's the Builder's responsibility. This verifies that.
-
-        // The table should NOT be registered since we bypassed the Builder
+        // registerTables is the Builder's responsibility, not DbConnection's
+        assertFalse(tablesRegistered)
         assertNull(conn.clientCache.getUntypedTable("sample"))
         conn.disconnect()
     }
