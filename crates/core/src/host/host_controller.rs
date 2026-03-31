@@ -125,10 +125,11 @@ pub struct HostController {
     pub call_reducer_client: reqwest::Client,
     /// Router that resolves the HTTP base URL of the leader node for a given database.
     ///
-    /// Defaults to [`LocalReducerRouter`]. In cluster deployments, replaced once
-    /// at startup with `CachingResolver` via [`Self::set_call_reducer_router`].
+    /// Router that resolves the HTTP base URL of the leader node for a given database.
+    ///
+    /// Initialized to [`LocalReducerRouter`] at construction. In cluster deployments,
+    /// replaced once at startup with `CachingResolver` via [`Self::set_call_reducer_router`].
     /// Uses `OnceLock` for lock-free reads after the one-time initialization.
-    default_call_reducer_router: Arc<dyn ReducerCallRouter>,
     pub call_reducer_router: Arc<std::sync::OnceLock<Arc<dyn ReducerCallRouter>>>,
     /// A single node-level Bearer token included in all outgoing cross-DB reducer calls.
     ///
@@ -256,7 +257,6 @@ impl HostController {
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
             db_cores,
             call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
-            default_call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
             call_reducer_router: Arc::new(std::sync::OnceLock::new()),
             call_reducer_auth_token: None,
             call_edge_tracker: Arc::new(crate::host::call_edge_tracker::NoopCallEdgeTracker),
@@ -277,13 +277,13 @@ impl HostController {
             .expect("call_reducer_router already set");
     }
 
-    /// Get the active [`ReducerCallRouter`], falling back to the default if
-    /// [`Self::set_call_reducer_router`] hasn't been called yet.
+    /// Get the active [`ReducerCallRouter`].
+    /// Panics if [`Self::set_call_reducer_router`] was not called during startup.
     pub fn get_call_reducer_router(&self) -> Arc<dyn ReducerCallRouter> {
         self.call_reducer_router
             .get()
-            .cloned()
-            .unwrap_or_else(|| self.default_call_reducer_router.clone())
+            .expect("call_reducer_router not initialized")
+            .clone()
     }
 
     /// Set the [`CallEdgeTracker`] for distributed deadlock detection.
