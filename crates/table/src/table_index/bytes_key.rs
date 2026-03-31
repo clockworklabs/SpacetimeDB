@@ -5,7 +5,7 @@ use spacetimedb_memory_usage::MemoryUsage;
 use spacetimedb_primitives::ColList;
 use spacetimedb_sats::bsatn::{DecodeError, Deserializer, Serializer};
 use spacetimedb_sats::de::{DeserializeSeed, Error as _};
-use spacetimedb_sats::{u256, AlgebraicType, AlgebraicValue, ProductTypeElement, Serialize as _, WithTypespace};
+use spacetimedb_sats::{i256, u256, AlgebraicType, AlgebraicValue, ProductTypeElement, Serialize as _, WithTypespace};
 
 /// A key for an all-primitive multi-column index
 /// serialized to a byte array.
@@ -43,8 +43,9 @@ pub(super) const fn size_sub_row_pointer(n: usize) -> usize {
 ///
 /// If keys at `ty` are incompatible with fixed byte keys,
 /// e.g., because they are of unbounded length,
+/// or because `is_ranged_idx` and `ty` contains a float,
 /// then `None` is returned.
-pub(super) fn required_bytes_key_size(ty: &AlgebraicType) -> Option<usize> {
+pub(super) fn required_bytes_key_size(ty: &AlgebraicType, is_ranged_idx: bool) -> Option<usize> {
     use AlgebraicType::*;
 
     match ty {
@@ -55,10 +56,18 @@ pub(super) fn required_bytes_key_size(ty: &AlgebraicType) -> Option<usize> {
 
         // For sum, we report the greatest possible fixed size.
         // A key may be of variable size, a long as it fits within an upper bound.
+        //
+        // It's valid to use `RangeCompatBytesKey`-ified sums in range index,
+        // i.e., when `is_range_idx`,
+        // as `Ord for AlgebraicValue` delegates to `Ord for SumValue`
+        // which compares the `tag` first and the payload (`value`) second,
+        // The `RangeCompatBytesKey` encoding of sums places the `tag` first and the payload second.
+        // When comparing two `[u8]` slices with encoded sums,
+        // this produces an ordering that also compares the `tag` first and the payload second.
         Sum(ty) => {
             let mut max_size = 0;
             for var in &ty.variants {
-                let variant_size = required_bytes_key_size(&var.algebraic_type)?;
+                let variant_size = required_bytes_key_size(&var.algebraic_type, is_ranged_idx)?;
                 max_size = max_size.max(variant_size);
             }
             // The sum tag is represented as a u8 in BSATN,
@@ -70,10 +79,14 @@ pub(super) fn required_bytes_key_size(ty: &AlgebraicType) -> Option<usize> {
         Product(ty) => {
             let mut total_size = 0;
             for elem in &ty.elements {
-                total_size += required_bytes_key_size(&elem.algebraic_type)?;
+                total_size += required_bytes_key_size(&elem.algebraic_type, is_ranged_idx)?;
             }
             Some(total_size)
         }
+
+        // Floats are stored in IEEE 754 format,
+        // so their byte representation is not order-preserving.
+        F32 | F64 if is_ranged_idx => None,
 
         // Primitives:
         Bool | U8 | I8 => Some(mem::size_of::<u8>()),
@@ -130,11 +143,12 @@ impl<const N: usize> BytesKey<N> {
         // Check that the `prefix` and the `endpoint` together fit into the key.
         let prefix_len = prefix.len();
         let endpoint_len = endpoint.len();
-        Self::ensure_key_fits(prefix_len + endpoint_len)?;
+        let total_len = prefix_len + endpoint_len;
+        Self::ensure_key_fits(total_len)?;
         // Copy the `prefix` and the `endpoint` over.
         let mut arr = [0; N];
         arr[..prefix_len].copy_from_slice(prefix);
-        arr[prefix_len..prefix_len + endpoint_len].copy_from_slice(endpoint);
+        arr[prefix_len..total_len].copy_from_slice(endpoint);
         Ok(Self(arr))
     }
 
@@ -183,16 +197,195 @@ impl<const N: usize> BytesKey<N> {
     }
 }
 
+/// A key for an all-primitive multi-column index
+/// serialized to a byte array.
+///
+/// These keys are derived from [`BytesKey`]
+/// but are post-processed to work with ranges,
+/// unlike the former type,
+/// which only work with point indices (e.g., hash indices).
+///
+/// The post-processing converts how some types are stored in the encoding:
+/// - unsigned integer types `uN`, where `N > 8` from little-endian to big-endian.
+/// - signed integers are shifted such that `iN::MIN` is stored as `0`
+///   and `iN:MAX` is stored as `uN::MAX`.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
+pub(super) struct RangeCompatBytesKey<const N: usize>([u8; N]);
+
+impl<const N: usize> MemoryUsage for RangeCompatBytesKey<N> {}
+
+/// Splits `slice` into the first `N` bytes converting the former via `map_bytes`
+/// and returning the rest.
+fn split_map_write_back<const N: usize>(slice: &mut [u8], map_bytes: impl FnOnce([u8; N]) -> [u8; N]) -> &mut [u8] {
+    let (bytes, rest) = slice.split_first_chunk_mut().unwrap();
+    *bytes = map_bytes(*bytes);
+    rest
+}
+
+impl<const N: usize> RangeCompatBytesKey<N> {
+    /// Decodes `self` as an [`AlgebraicValue`] at `key_type`.
+    ///
+    /// An incorrect `key_type`,
+    /// i.e., one other than what was used when the index was created,
+    /// may lead to a panic, but this is not guaranteed.
+    /// The method could also silently succeed
+    /// if the passed `key_type` incidentally happens to be compatible the stored bytes in `self`.
+    pub(super) fn decode_algebraic_value(&self, key_type: &AlgebraicType) -> AlgebraicValue {
+        Self::to_bytes_key(*self, key_type).decode_algebraic_value(key_type)
+    }
+
+    /// Decodes `prefix` and `endpoint` in BSATN to a [`RangeCompatBytesKey<N>`]
+    /// by copying over both and massaging if they fit into the key.
+    pub(super) fn from_bsatn_prefix_and_endpoint(
+        prefix: &[u8],
+        prefix_types: &[ProductTypeElement],
+        endpoint: &[u8],
+        range_type: &AlgebraicType,
+    ) -> DecodeResult<Self> {
+        let BytesKey(mut array) = BytesKey::from_bsatn_prefix_and_endpoint(prefix, prefix_types, endpoint, range_type)?;
+
+        // Masage the bytes in `key`.
+        let mut slice = array.as_mut_slice();
+        for ty in prefix_types {
+            slice = Self::process_from_bytes_key(slice, &ty.algebraic_type);
+        }
+        Self::process_from_bytes_key(slice, range_type);
+
+        Ok(Self(array))
+    }
+
+    /// Decodes `bytes` in BSATN to a [`RangeCompatBytesKey<N>`]
+    /// by copying over the bytes if they fit into the key.
+    pub(super) fn from_bsatn(ty: &AlgebraicType, bytes: &[u8]) -> DecodeResult<Self> {
+        let key = BytesKey::from_bsatn(ty, bytes)?;
+        Ok(Self::from_bytes_key(key, ty))
+    }
+
+    /// Serializes the columns `cols` in `row_ref` to a [`BytesKey<N>`].
+    ///
+    /// It's assumed that `row_ref` projected to `cols`
+    /// will fit into `N` bytes when serialized into BSATN.
+    /// The method panics otherwise.
+    ///
+    /// SAFETY: Any `col` in `cols` is in-bounds of `row_ref`'s layout.
+    pub(super) unsafe fn from_row_ref(cols: &ColList, row_ref: RowRef<'_>, ty: &AlgebraicType) -> Self {
+        // SAFETY: same as caller requirements.
+        let key = unsafe { BytesKey::from_row_ref(cols, row_ref) };
+        Self::from_bytes_key(key, ty)
+    }
+
+    /// Serializes `av` to a [`BytesKey<N>`].
+    ///
+    /// It's assumed that `av`
+    /// will fit into `N` bytes when serialized into BSATN.
+    /// The method panics otherwise.
+    pub(super) fn from_algebraic_value(av: &AlgebraicValue, ty: &AlgebraicType) -> Self {
+        let key = BytesKey::from_algebraic_value(av);
+        Self::from_bytes_key(key, ty)
+    }
+
+    fn from_bytes_key(key: BytesKey<N>, ty: &AlgebraicType) -> Self {
+        let BytesKey(mut array) = key;
+        Self::process_from_bytes_key(array.as_mut_slice(), ty);
+        Self(array)
+    }
+
+    fn process_from_bytes_key<'a>(mut slice: &'a mut [u8], ty: &AlgebraicType) -> &'a mut [u8] {
+        use AlgebraicType::*;
+        match ty {
+            // For sums, read the tag and process the active variant.
+            Sum(ty) => {
+                let (&mut tag, rest) = slice.split_first_mut().unwrap();
+                let ty = &ty.variants[tag as usize].algebraic_type;
+                Self::process_from_bytes_key(rest, ty)
+            }
+            // For products, just process each field in sequence.
+            Product(ty) => {
+                for ty in &ty.elements {
+                    slice = Self::process_from_bytes_key(slice, &ty.algebraic_type);
+                }
+                slice
+            }
+            // No need to do anything as these are only a single byte long.
+            Bool | U8 => &mut slice[1..],
+            // For unsigned integers, read them as LE and write back as BE.
+            U16 => split_map_write_back(slice, |b| u16::from_le_bytes(b).to_be_bytes()),
+            U32 => split_map_write_back(slice, |b| u32::from_le_bytes(b).to_be_bytes()),
+            U64 => split_map_write_back(slice, |b| u64::from_le_bytes(b).to_be_bytes()),
+            U128 => split_map_write_back(slice, |b| u128::from_le_bytes(b).to_be_bytes()),
+            U256 => split_map_write_back(slice, |b| u256::from_le_bytes(b).to_be_bytes()),
+            // For signed integers, read them as LE, make them unsigned, and write back as BE.
+            I8 => split_map_write_back(slice, |b| i8::from_le_bytes(b).wrapping_sub(i8::MIN).to_be_bytes()),
+            I16 => split_map_write_back(slice, |b| i16::from_le_bytes(b).wrapping_sub(i16::MIN).to_be_bytes()),
+            I32 => split_map_write_back(slice, |b| i32::from_le_bytes(b).wrapping_sub(i32::MIN).to_be_bytes()),
+            I64 => split_map_write_back(slice, |b| i64::from_le_bytes(b).wrapping_sub(i64::MIN).to_be_bytes()),
+            I128 => split_map_write_back(slice, |b| i128::from_le_bytes(b).wrapping_sub(i128::MIN).to_be_bytes()),
+            I256 => split_map_write_back(slice, |b| i256::from_le_bytes(b).wrapping_sub(i256::MIN).to_be_bytes()),
+            // Refs don't exist here and
+            // arrays and strings are of unbounded length.
+            // For floats, we haven't considred them yet.
+            Ref(_) | Array(_) | String | F32 | F64 => unreachable!(),
+        }
+    }
+
+    fn to_bytes_key(key: Self, ty: &AlgebraicType) -> BytesKey<N> {
+        fn process<'a>(mut slice: &'a mut [u8], ty: &AlgebraicType) -> &'a mut [u8] {
+            use AlgebraicType::*;
+            match ty {
+                // For sums, read the tag and process the active variant.
+                Sum(ty) => {
+                    let (&mut tag, rest) = slice.split_first_mut().unwrap();
+                    let ty = &ty.variants[tag as usize].algebraic_type;
+                    process(rest, ty)
+                }
+                // For products, just process each field in sequence.
+                Product(ty) => {
+                    for ty in &ty.elements {
+                        slice = process(slice, &ty.algebraic_type);
+                    }
+                    slice
+                }
+                // No need to do anything as these are only a single byte long.
+                Bool | U8 => &mut slice[1..],
+                // For unsigned integers, read them as BE and write back as LE.
+                U16 => split_map_write_back(slice, |b| u16::from_be_bytes(b).to_le_bytes()),
+                U32 => split_map_write_back(slice, |b| u32::from_be_bytes(b).to_le_bytes()),
+                U64 => split_map_write_back(slice, |b| u64::from_be_bytes(b).to_le_bytes()),
+                U128 => split_map_write_back(slice, |b| u128::from_be_bytes(b).to_le_bytes()),
+                U256 => split_map_write_back(slice, |b| u256::from_be_bytes(b).to_le_bytes()),
+                // For signed integers, read them as LE, make them unsigned, and write back as BE.
+                I8 => split_map_write_back(slice, |b| i8::from_be_bytes(b).wrapping_add(i8::MIN).to_le_bytes()),
+                I16 => split_map_write_back(slice, |b| i16::from_be_bytes(b).wrapping_add(i16::MIN).to_le_bytes()),
+                I32 => split_map_write_back(slice, |b| i32::from_be_bytes(b).wrapping_add(i32::MIN).to_le_bytes()),
+                I64 => split_map_write_back(slice, |b| i64::from_be_bytes(b).wrapping_add(i64::MIN).to_le_bytes()),
+                I128 => split_map_write_back(slice, |b| i128::from_be_bytes(b).wrapping_add(i128::MIN).to_le_bytes()),
+                I256 => split_map_write_back(slice, |b| i256::from_be_bytes(b).wrapping_add(i256::MIN).to_le_bytes()),
+                // Refs don't exist here and
+                // arrays and strings are of unbounded length.
+                // For floats, we haven't considred them yet.
+                Ref(_) | Array(_) | String | F32 | F64 => unreachable!(),
+            }
+        }
+
+        let Self(mut array) = key;
+        process(array.as_mut_slice(), ty);
+        BytesKey(array)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
+    use proptest::array::uniform;
     use proptest::prelude::*;
     use spacetimedb_sats::bsatn::to_len;
-    use spacetimedb_sats::proptest::generate_typed_row;
+    use spacetimedb_sats::proptest::{gen_with, generate_product_value, generate_row_type, generate_typed_row, SIZE};
 
     const N: usize = 4096;
 
     proptest! {
+        #![proptest_config(ProptestConfig { max_global_rejects: 65536, ..<_>::default() })]
+
         #[test]
         fn test_bytes_key_round_trip((ty, av) in generate_typed_row()) {
             let len = to_len(&av).unwrap();
@@ -205,16 +398,11 @@ mod test {
             assert_eq!(av, decoded_av);
         }
 
-        /*
-        // This test turned out not to hold for integers larger than u8,
+        // This test does not hold for `BytesKey`
         // as BSATN stores them little-endian,
         // but `Ord for AlgebraicValue` compares them as big-endian.
-        // It's included here for posterity and in case we'd like to
-        // massage the BSATN before storing it in the `BytesKey`
-        // to make it order-preserving.
-
-        use proptest::array::uniform;
-        use spacetimedb_sats::proptest::{gen_with, generate_product_value, generate_row_type, SIZE};
+        // It does however hold for `RangeCompatBytesKey` which
+        // massages the BSATN to make it order-preserving.
 
         #[test]
         fn order_in_bsatn_is_preserved((ty, [r1, r2]) in gen_with(generate_row_type(0..=SIZE), |ty| uniform(generate_product_value(ty)))) {
@@ -223,17 +411,17 @@ mod test {
             let r2: AlgebraicValue = r2.into();
 
             let Some(required) = required_bytes_key_size(&ty, true) else {
-                //dbg!(&ty);
                 return Err(TestCaseError::reject("type is incompatible with fixed byte keys in range indices"));
             };
             prop_assume!(required <= N);
 
             let k1 = BytesKey::<N>::from_algebraic_value(&r1);
+            let kr1 = RangeCompatBytesKey::from_bytes_key(k1, &ty);
             let k2 = BytesKey::<N>::from_algebraic_value(&r2);
-            let ord_k = k1.cmp(&k2);
+            let kr2 = RangeCompatBytesKey::from_bytes_key(k2, &ty);
+            let ord_kr = kr1.cmp(&kr2);
             let ord_r = r1.cmp(&r2);
-            prop_assert_eq!(ord_k, ord_r);
+            prop_assert_eq!(ord_kr, ord_r);
         }
-        */
     }
 }

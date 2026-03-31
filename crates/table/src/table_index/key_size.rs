@@ -1,5 +1,4 @@
-use crate::table_index::BytesKey;
-
+use super::bytes_key::{BytesKey, RangeCompatBytesKey};
 use super::Index;
 use core::mem;
 use spacetimedb_memory_usage::MemoryUsage;
@@ -220,5 +219,9 @@ impl KeySize for ArrayValue {
 }
 
 impl<const N: usize> KeySize for BytesKey<N> {
+    type MemoStorage = ();
+}
+
+impl<const N: usize> KeySize for RangeCompatBytesKey<N> {
     type MemoStorage = ();
 }
