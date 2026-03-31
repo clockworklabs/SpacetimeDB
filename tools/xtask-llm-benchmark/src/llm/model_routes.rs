@@ -53,18 +53,18 @@ pub fn default_model_routes() -> &'static [ModelRoute] {
             api_model: "grok-code-fast-1",
             openrouter_model: Some("x-ai/grok-code-fast-1"),
         },
-        // Gemini via OpenRouter (no direct Google API key configured)
+        // Gemini: direct via GOOGLE_API_KEY, falls back to OpenRouter if not set
         ModelRoute {
             display_name: "Gemini 3.1 Pro",
-            vendor: Meta, // routes through OpenRouter/MetaLlamaClient
-            api_model: "google/gemini-3.1-pro-preview",
-            openrouter_model: None,
+            vendor: Google,
+            api_model: "gemini-3.1-pro-preview",
+            openrouter_model: Some("google/gemini-3.1-pro-preview"),
         },
         ModelRoute {
             display_name: "Gemini 3 Flash",
-            vendor: Meta,
-            api_model: "google/gemini-3-flash-preview",
-            openrouter_model: None,
+            vendor: Google,
+            api_model: "gemini-3-flash-preview",
+            openrouter_model: Some("google/gemini-3-flash-preview"),
         },
         // DeepSeek: Reasoner (thinking), Chat (general)
         // deepseek-reasoner is listed as deepseek-r1 on OpenRouter

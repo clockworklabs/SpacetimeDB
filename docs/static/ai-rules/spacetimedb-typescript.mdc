@@ -102,14 +102,14 @@ import { schema, table, t } from 'spacetimedb/server';
 const Task = table({ name: 'task' }, {
   id: t.u64().primaryKey().autoInc(),
   ownerId: t.identity(),
-  indexes: [{ name: 'by_owner', algorithm: 'btree', columns: ['ownerId'] }]  // ❌ WRONG!
+  indexes: [{ accessor: 'by_owner', algorithm: 'btree', columns: ['ownerId'] }]  // ❌ WRONG!
 });
 
 // ✅ RIGHT — indexes in OPTIONS (first argument)
 const Task = table({
   name: 'task',
   public: true,
-  indexes: [{ name: 'by_owner', algorithm: 'btree', columns: ['ownerId'] }]
+  indexes: [{ accessor: 'by_owner', algorithm: 'btree', columns: ['ownerId'] }]
 }, {
   id: t.u64().primaryKey().autoInc(),
   ownerId: t.identity(),
@@ -203,7 +203,7 @@ for (const m of ctx.db.roomMember.iter()) {
 const Message = table({
   name: 'message',
   public: true,
-  indexes: [{ name: 'message_room_id', algorithm: 'btree', columns: ['roomId'] }]
+  indexes: [{ accessor: 'message_room_id', algorithm: 'btree', columns: ['roomId'] }]
 }, {
   id: t.u64().primaryKey().autoInc(),
   roomId: t.u64(),
@@ -220,7 +220,7 @@ const Message = table({
 **Index names — NO transformation, use EXACTLY as defined:**
 ```typescript
 // Schema definition
-indexes: [{ name: 'canvas_member_canvas_id', algorithm: 'btree', columns: ['canvasId'] }]
+indexes: [{ accessor: 'canvas_member_canvas_id', algorithm: 'btree', columns: ['canvasId'] }]
 
 // ❌ WRONG — don't assume camelCase transformation
 ctx.db.canvasMember.canvasMember_canvas_id.filter(...)  // WRONG!
@@ -235,12 +235,12 @@ ctx.db.canvasMember.canvas_member_canvas_id.filter(...)
 **Index naming pattern — use `{tableName}_{columnName}`:**
 ```typescript
 // ✅ GOOD — unique names across entire module
-indexes: [{ name: 'message_room_id', algorithm: 'btree', columns: ['roomId'] }]
-indexes: [{ name: 'reaction_message_id', algorithm: 'btree', columns: ['messageId'] }]
+indexes: [{ accessor: 'message_room_id', algorithm: 'btree', columns: ['roomId'] }]
+indexes: [{ accessor: 'reaction_message_id', algorithm: 'btree', columns: ['messageId'] }]
 
 // ❌ BAD — will collide if multiple tables use same index name
-indexes: [{ name: 'by_owner', ... }]  // in Task table
-indexes: [{ name: 'by_owner', ... }]  // in Note table — CONFLICT!
+indexes: [{ accessor: 'by_owner', ... }]  // in Task table
+indexes: [{ accessor: 'by_owner', ... }]  // in Note table — CONFLICT!
 ```
 
 **Client-side table names:**
@@ -461,7 +461,7 @@ conn.subscriptionBuilder()
 // Private table with index on ownerId
 const PrivateData = table(
   { name: 'private_data',
-    indexes: [{ name: 'by_owner', algorithm: 'btree', columns: ['ownerId'] }]
+    indexes: [{ accessor: 'by_owner', algorithm: 'btree', columns: ['ownerId'] }]
   },
   {
     id: t.u64().primaryKey().autoInc(),
@@ -657,13 +657,15 @@ spacetime logs <module-name>
 
 1. **`schema({ t1, t2, t3 })`** — takes ONE object with all tables; never `schema(t1, t2)` (spread args)
 2. **Reducer name comes from the export name** — `export const myReducer = spacetimedb.reducer(params, fn)`; never pass a string name as first arg
-3. **Reducer calls use object syntax** — `{ param: 'value' }` not positional args
+3. **Lifecycle hooks MUST be `export const`** — `export const onConnect = spacetimedb.clientConnected(fn)`; bare calls without export are silently ignored
+4. **Index definitions use `accessor:` not `name:`** — `{ accessor: 'my_idx', algorithm: 'btree', columns: [...] }`
+5. **Reducer calls use object syntax** — `{ param: 'value' }` not positional args
 4. **Import `DbConnection` from `./module_bindings`** — not from `spacetimedb`
-5. **DO NOT edit generated bindings** — regenerate with `spacetime generate`
-6. **Indexes go in OPTIONS (1st arg)** — not in COLUMNS (2nd arg) of `table()`
-7. **Use BigInt for u64/i64 fields** — `0n`, `1n`, not `0`, `1`
-8. **Reducers are transactional** — they do not return data
-9. **Reducers must be deterministic** — no filesystem, network, timers, random
-10. **Views should use index lookups** — `.iter()` causes severe performance issues
-11. **Procedures need `ctx.withTx()`** — `ctx.db` doesn't exist in procedures
-12. **Sum type values** — use `{ tag: 'variant', value: payload }` not `{ variant: payload }`
+6. **DO NOT edit generated bindings** — regenerate with `spacetime generate`
+7. **Indexes go in OPTIONS (1st arg)** — not in COLUMNS (2nd arg) of `table()`
+8. **Use BigInt for u64/i64 fields** — `0n`, `1n`, not `0`, `1`
+9. **Reducers are transactional** — they do not return data
+10. **Reducers must be deterministic** — no filesystem, network, timers, random
+11. **Views should use index lookups** — `.iter()` causes severe performance issues
+12. **Procedures need `ctx.withTx()`** — `ctx.db` doesn't exist in procedures
+13. **Sum type values** — use `{ tag: 'variant', value: payload }` not `{ variant: payload }`
