@@ -31,10 +31,14 @@ pub trait ReducerCallRouter: Send + Sync + 'static {
 
     /// Blocking variant of [`resolve_base_url`] for use on non-async threads.
     ///
-    /// The default implementation drives the async version via the current tokio handle.
-    /// Override for routers that can resolve without async (e.g. [`LocalReducerRouter`]).
+    /// The default implementation drives the async version on a fresh OS thread with its own
+    /// minimal tokio runtime, so it is safe to call from any thread — including threads that
+    /// are already inside a tokio `block_on` context (e.g. the `SingleCoreExecutor` thread).
+    ///
+    /// Override for routers that can resolve without spawning (e.g. [`LocalReducerRouter`]).
     fn resolve_base_url_blocking(&self, database_identity: Identity) -> anyhow::Result<String> {
-        tokio::runtime::Handle::current().block_on(self.resolve_base_url(database_identity))
+        let fut = self.resolve_base_url(database_identity);
+        futures::executor::block_on(fut)
     }
 }
 
