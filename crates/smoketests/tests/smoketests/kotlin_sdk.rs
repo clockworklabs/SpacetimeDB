@@ -62,63 +62,31 @@ fn test_build_kotlin_client() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    // Step 3: Generate Kotlin bindings
+    // Step 3: Set up a Gradle project that uses the spacetimedb plugin
     let client_dir = tmpdir.path().join("client");
-    let bindings_dir = client_dir.join("src/main/kotlin/module_bindings");
-    fs::create_dir_all(&bindings_dir).expect("Failed to create bindings output directory");
+    fs::create_dir_all(client_dir.join("src/main/kotlin")).expect("Failed to create source directory");
 
-    let output = Command::new(&cli_path)
-        .args([
-            "generate",
-            "--lang",
-            "kotlin",
-            "--out-dir",
-            bindings_dir.to_str().unwrap(),
-            "--module-path",
-            module_path.to_str().unwrap(),
-        ])
-        .output()
-        .expect("Failed to run spacetime generate");
-    assert!(
-        output.status.success(),
-        "spacetime generate --lang kotlin failed:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    // Verify bindings were generated
-    let generated_files: Vec<_> = fs::read_dir(&bindings_dir)
-        .expect("Failed to read bindings dir")
-        .flatten()
-        .filter(|e| e.path().extension().is_some_and(|ext| ext == "kt"))
-        .collect();
-    assert!(
-        !generated_files.is_empty(),
-        "No Kotlin files were generated in {}",
-        bindings_dir.display()
-    );
-    eprintln!("Generated {} Kotlin binding files", generated_files.len());
-
-    // Step 4: Set up a minimal Gradle project that depends on the local Kotlin SDK
     let kotlin_sdk_path = workspace.join("sdks/kotlin");
     let kotlin_sdk_path_str = kotlin_sdk_path.display().to_string().replace('\\', "/");
+    let cli_path_str = cli_path.display().to_string().replace('\\', "/");
+    let module_path_str = module_path.display().to_string().replace('\\', "/");
 
     // Read the version catalog from the SDK so we use the same Kotlin version
     let libs_toml = fs::read_to_string(kotlin_sdk_path.join("gradle/libs.versions.toml"))
         .expect("Failed to read SDK libs.versions.toml");
 
-    // Extract the Kotlin version from the catalog
     let kotlin_version = libs_toml
         .lines()
         .find(|line| line.starts_with("kotlin = "))
         .and_then(|line| line.split('"').nth(1))
         .expect("Failed to parse kotlin version from libs.versions.toml");
 
-    // settings.gradle.kts — use includeBuild to resolve the SDK from the local checkout
+    // settings.gradle.kts — use includeBuild for both plugin and SDK
     let settings_gradle = format!(
         r#"rootProject.name = "kotlin-smoketest-client"
 
 pluginManagement {{
+    includeBuild("{kotlin_sdk_path_str}/gradle-plugin")
     repositories {{
         mavenCentral()
         gradlePluginPortal()
@@ -140,14 +108,20 @@ includeBuild("{kotlin_sdk_path_str}")
     );
     fs::write(client_dir.join("settings.gradle.kts"), settings_gradle).expect("Failed to write settings.gradle.kts");
 
-    // build.gradle.kts — minimal JVM project depending on the SDK
+    // build.gradle.kts — uses the spacetimedb plugin for codegen + explicit SDK dep
     let build_gradle = format!(
         r#"plugins {{
     id("org.jetbrains.kotlin.jvm") version "{kotlin_version}"
+    id("com.clockworklabs.spacetimedb")
 }}
 
 kotlin {{
     jvmToolchain(21)
+}}
+
+spacetimedb {{
+    modulePath.set(file("{module_path_str}"))
+    cli.set(file("{cli_path_str}"))
 }}
 
 dependencies {{
@@ -158,9 +132,8 @@ dependencies {{
     fs::write(client_dir.join("build.gradle.kts"), build_gradle).expect("Failed to write build.gradle.kts");
 
     // Minimal Main.kt that imports generated types (compile check only)
-    let main_kt_dir = client_dir.join("src/main/kotlin");
     fs::write(
-        main_kt_dir.join("Main.kt"),
+        client_dir.join("src/main/kotlin/Main.kt"),
         r#"import module_bindings.*
 
 fun main() {
@@ -193,11 +166,6 @@ fun main() {
         .expect("Failed to run gradlew compileKotlin");
 
     if !output.status.success() {
-        // Print generated files for debugging
-        eprintln!("Generated Kotlin files in {}:", bindings_dir.display());
-        for entry in fs::read_dir(&bindings_dir).into_iter().flatten().flatten() {
-            eprintln!("  {}", entry.file_name().to_string_lossy());
-        }
         panic!(
             "gradle compileKotlin failed:\nstdout: {}\nstderr: {}",
             String::from_utf8_lossy(&output.stdout),
