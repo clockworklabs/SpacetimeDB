@@ -198,9 +198,13 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             } => {
                 let (reducer, callback) = {
                     let mut inner = self.inner.lock().unwrap();
-                    inner.reducer_callbacks.pop_call_info(request_id).ok_or_else(|| {
-                        InternalError::new(format!("Reducer result for unknown request_id {request_id}"))
-                    })?
+                    match inner.reducer_callbacks.pop_call_info(request_id) {
+                        Some((reducer, callback)) => (reducer, callback),
+                        None => {
+                            log::error!("Reducer result for unknown request_id {request_id}");
+                            return Ok(());
+                        }
+                    }
                 };
                 let reducer_event = ReducerEvent {
                     reducer,
@@ -233,9 +237,13 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 };
                 let (reducer, callback) = {
                     let mut inner = self.inner.lock().unwrap();
-                    inner.reducer_callbacks.pop_call_info(request_id).ok_or_else(|| {
-                        InternalError::new(format!("Reducer result for unknown request_id {request_id}"))
-                    })?
+                    match inner.reducer_callbacks.pop_call_info(request_id) {
+                        Some((reducer, callback)) => (reducer, callback),
+                        None => {
+                            log::error!("Reducer result for unknown request_id {request_id}");
+                            return Ok(());
+                        }
+                    }
                 };
 
                 let reducer_event = ReducerEvent {
