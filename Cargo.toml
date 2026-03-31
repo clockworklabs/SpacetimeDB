@@ -42,6 +42,7 @@ members = [
   "modules/keynote-benchmarks",
   "modules/perf-test",
   "modules/module-test",
+  "modules/chain-call-repro",
   "templates/basic-rs/spacetimedb",
   "templates/chat-console-rs/spacetimedb",
   "templates/keynote-2/spacetimedb-rust-client",
