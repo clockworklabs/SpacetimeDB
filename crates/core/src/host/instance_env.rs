@@ -35,6 +35,7 @@ use std::fmt::Display;
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::ops::DerefMut;
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::vec::IntoIter;
@@ -62,6 +63,33 @@ pub struct InstanceEnv {
     /// After the coordinator's reducer commits, these are committed;
     /// on failure, they are aborted.
     pub prepared_participants: Vec<(Identity, String)>,
+}
+
+enum PrepareResultWait<T> {
+    Completed(T),
+    Wounded,
+    Disconnected,
+}
+
+fn wait_for_prepare_result_or_wound<T, F>(
+    result_rx: &Receiver<T>,
+    poll_interval: Duration,
+    mut is_wounded: F,
+) -> PrepareResultWait<T>
+where
+    F: FnMut() -> bool,
+{
+    loop {
+        match result_rx.recv_timeout(poll_interval) {
+            Ok(result) => return PrepareResultWait::Completed(result),
+            Err(RecvTimeoutError::Timeout) => {
+                if is_wounded() {
+                    return PrepareResultWait::Wounded;
+                }
+            }
+            Err(RecvTimeoutError::Disconnected) => return PrepareResultWait::Disconnected,
+        }
+    }
 }
 
 /// `InstanceEnv` needs to be `Send` because it is created on the host thread
@@ -1071,15 +1099,11 @@ impl InstanceEnv {
             req = req.header(TX_ID_HEADER, tx_id.to_string());
         }
         let request = req.build().map_err(|e| NodesError::HttpError(e.to_string()))?;
-        let result = execute_blocking_http(
-            &self.replica_ctx.call_reducer_blocking_client,
-            request,
-            |resp| {
-                let status = resp.status().as_u16();
-                let body = resp.bytes()?;
-                Ok((status, body))
-            },
-        )
+        let result = execute_blocking_http(&self.replica_ctx.call_reducer_blocking_client, request, |resp| {
+            let status = resp.status().as_u16();
+            let body = resp.bytes()?;
+            Ok((status, body))
+        })
         .map_err(|e| NodesError::HttpError(e.to_string()));
 
         WORKER_METRICS
@@ -1155,21 +1179,8 @@ impl InstanceEnv {
         }
 
         let request = req.build().map_err(|e| NodesError::HttpError(e.to_string()))?;
-        let result = execute_blocking_http(
-            &self.replica_ctx.call_reducer_blocking_client,
-            request,
-            |resp| {
-                let status = resp.status().as_u16();
-                let prepare_id = resp
-                    .headers()
-                    .get("X-Prepare-Id")
-                    .and_then(|v| v.to_str().ok())
-                    .map(|s| s.to_owned());
-                let body = resp.bytes()?;
-                Ok((status, body, prepare_id))
-            },
-        )
-        .map_err(|e| NodesError::HttpError(e.to_string()));
+        let result =
+            self.execute_prepare_request_with_wound_cleanup(tx_id, database_identity, reducer_name.to_owned(), request);
 
         WORKER_METRICS
             .cross_db_reducer_calls_total
@@ -1181,6 +1192,160 @@ impl InstanceEnv {
             .observe(start.elapsed().as_secs_f64());
 
         result
+    }
+
+    fn execute_prepare_request_with_wound_cleanup(
+        &self,
+        tx_id: GlobalTxId,
+        database_identity: Identity,
+        reducer_name: String,
+        request: reqwest::blocking::Request,
+    ) -> Result<(u16, bytes::Bytes, Option<String>), NodesError> {
+        let (result_tx, result_rx) = std::sync::mpsc::channel::<Result<(u16, bytes::Bytes, Option<String>), String>>();
+        let client = self.replica_ctx.call_reducer_blocking_client.clone();
+        std::thread::spawn(move || {
+            let result = client
+                .execute(request)
+                .and_then(|resp| {
+                    let status = resp.status().as_u16();
+                    let prepare_id = resp
+                        .headers()
+                        .get("X-Prepare-Id")
+                        .and_then(|v| v.to_str().ok())
+                        .map(|s| s.to_owned());
+                    let body = resp.bytes()?;
+                    Ok((status, body, prepare_id))
+                })
+                .map_err(|e| e.to_string());
+            let _ = result_tx.send(result);
+        });
+
+        match wait_for_prepare_result_or_wound(&result_rx, Duration::from_millis(5), || {
+            self.replica_ctx.global_tx_manager.is_wounded(&tx_id)
+        }) {
+            PrepareResultWait::Completed(result) => result.map_err(NodesError::HttpError),
+            PrepareResultWait::Wounded => {
+                self.spawn_wounded_prepare_cleanup(tx_id, database_identity, reducer_name, result_rx);
+                Err(self.wounded_tx_error(tx_id))
+            }
+            PrepareResultWait::Disconnected => Err(NodesError::HttpError(
+                "2PC remote reducer request worker disconnected before returning a result".to_owned(),
+            )),
+        }
+    }
+
+    fn spawn_wounded_prepare_cleanup(
+        &self,
+        tx_id: GlobalTxId,
+        database_identity: Identity,
+        reducer_name: String,
+        result_rx: Receiver<Result<(u16, bytes::Bytes, Option<String>), String>>,
+    ) {
+        let client = self.replica_ctx.call_reducer_blocking_client.clone();
+        let router = self.replica_ctx.call_reducer_router.clone();
+        let auth_token = self.replica_ctx.call_reducer_auth_token.clone();
+        std::thread::spawn(move || match result_rx.recv() {
+            Ok(Ok((status, _body, Some(prepare_id)))) if status < 300 => {
+                log::info!(
+                    "2PC prepare for reducer {reducer_name} on database {database_identity} completed after wound of {tx_id}; aborting orphaned participant {prepare_id}"
+                );
+                let base_url = match router.resolve_base_url_blocking(database_identity) {
+                    Ok(url) => url,
+                    Err(e) => {
+                        log::warn!(
+                            "2PC orphan cleanup: failed to resolve participant {database_identity} for {prepare_id}: {e}"
+                        );
+                        return;
+                    }
+                };
+                let url = format!(
+                    "{}/v1/database/{}/2pc/abort/{}",
+                    base_url,
+                    database_identity.to_hex(),
+                    prepare_id,
+                );
+                let mut req = client.post(&url);
+                if let Some(token) = &auth_token {
+                    req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+                }
+                let request = match req.build() {
+                    Ok(request) => request,
+                    Err(e) => {
+                        log::warn!(
+                            "2PC orphan cleanup: failed to build abort request for {prepare_id} on {database_identity}: {e}"
+                        );
+                        return;
+                    }
+                };
+                match execute_blocking_http(&client, request, |resp| Ok(resp.status())) {
+                    Ok(status) if status.is_success() => {
+                        log::info!(
+                            "2PC orphan cleanup: aborted participant {prepare_id} on {database_identity} after wound of {tx_id}"
+                        );
+                    }
+                    Ok(status) => {
+                        log::warn!(
+                            "2PC orphan cleanup: abort for {prepare_id} on {database_identity} returned {status}"
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "2PC orphan cleanup: transport error aborting {prepare_id} on {database_identity}: {e}"
+                        );
+                    }
+                }
+            }
+            Ok(Ok((status, _, _))) => {
+                log::info!(
+                    "2PC prepare for reducer {reducer_name} on database {database_identity} finished after wound of {tx_id} with status {status}; no orphan cleanup needed"
+                );
+            }
+            Ok(Err(e)) => {
+                log::info!(
+                    "2PC prepare for reducer {reducer_name} on database {database_identity} failed after wound of {tx_id}: {e}"
+                );
+            }
+            Err(_) => {
+                log::warn!(
+                    "2PC orphan cleanup: worker channel closed before the late prepare result for reducer {reducer_name} on {database_identity} arrived"
+                );
+            }
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{wait_for_prepare_result_or_wound, PrepareResultWait};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    #[test]
+    fn prepare_wait_returns_completed_when_response_arrives_first() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(5));
+            let _ = tx.send(7_u8);
+        });
+
+        let outcome = wait_for_prepare_result_or_wound(&rx, Duration::from_millis(1), || false);
+        assert!(matches!(outcome, PrepareResultWait::Completed(7)));
+    }
+
+    #[test]
+    fn prepare_wait_returns_wounded_when_wound_arrives_first() {
+        let (_tx, rx) = std::sync::mpsc::channel::<u8>();
+        let wounded = Arc::new(AtomicBool::new(false));
+        let wounded_for_thread = wounded.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(5));
+            wounded_for_thread.store(true, Ordering::SeqCst);
+        });
+
+        let outcome =
+            wait_for_prepare_result_or_wound(&rx, Duration::from_millis(1), || wounded.load(Ordering::SeqCst));
+        assert!(matches!(outcome, PrepareResultWait::Wounded));
     }
 }
 
