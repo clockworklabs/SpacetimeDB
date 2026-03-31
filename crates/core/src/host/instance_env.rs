@@ -1071,15 +1071,11 @@ impl InstanceEnv {
             req = req.header(TX_ID_HEADER, tx_id.to_string());
         }
         let request = req.build().map_err(|e| NodesError::HttpError(e.to_string()))?;
-        let result = execute_blocking_http(
-            &self.replica_ctx.call_reducer_blocking_client,
-            request,
-            |resp| {
-                let status = resp.status().as_u16();
-                let body = resp.bytes()?;
-                Ok((status, body))
-            },
-        )
+        let result = execute_blocking_http(&self.replica_ctx.call_reducer_blocking_client, request, |resp| {
+            let status = resp.status().as_u16();
+            let body = resp.bytes()?;
+            Ok((status, body))
+        })
         .map_err(|e| NodesError::HttpError(e.to_string()));
 
         WORKER_METRICS

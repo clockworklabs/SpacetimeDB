@@ -405,42 +405,49 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 ///
 /// Called AFTER B's commit is durable.  Fire-and-forget: failure is tolerated because
 /// `recover_2pc_coordinator` on A will retransmit COMMIT on restart.
-fn send_ack_commit_to_coordinator(
+fn _send_ack_commit_to_coordinator(
     client: &reqwest::blocking::Client,
     router: &std::sync::Arc<dyn crate::host::reducer_router::ReducerCallRouter>,
     auth_token: &Option<String>,
     coordinator_identity: crate::identity::Identity,
     prepare_id: &str,
 ) {
-    let base_url = match router.resolve_base_url_blocking(coordinator_identity) {
-        Ok(url) => url,
-        Err(e) => {
-            log::warn!("2PC ack-commit: cannot resolve coordinator URL: {e}");
-            return;
+    let client = client.clone();
+    let router = router.clone();
+    let auth_token = auth_token.clone();
+    let prepare_id = prepare_id.to_owned();
+
+    std::thread::spawn(move || {
+        let base_url = match router.resolve_base_url_blocking(coordinator_identity) {
+            Ok(url) => url,
+            Err(e) => {
+                log::warn!("2PC ack-commit: cannot resolve coordinator URL: {e}");
+                return;
+            }
+        };
+        let url = format!(
+            "{}/v1/database/{}/2pc/ack-commit/{}",
+            base_url,
+            coordinator_identity.to_hex(),
+            prepare_id,
+        );
+        let mut req = client.post(&url);
+        if let Some(token) = &auth_token {
+            req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
         }
-    };
-    let url = format!(
-        "{}/v1/database/{}/2pc/ack-commit/{}",
-        base_url,
-        coordinator_identity.to_hex(),
-        prepare_id,
-    );
-    let mut req = client.post(&url);
-    if let Some(token) = auth_token {
-        req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
-    }
-    let Ok(request) = req.build() else { return };
-    match execute_blocking_http(client, request, |resp| Ok(resp.status())) {
-        Ok(status) if status.is_success() => {
-            log::info!("2PC ack-commit: notified coordinator for {prepare_id}");
+        let Ok(request) = req.build() else { return };
+        match execute_blocking_http(&client, request, |resp| Ok(resp.status())) {
+            Ok(status) if status.is_success() => {
+                log::info!("2PC ack-commit: notified coordinator for {prepare_id}");
+            }
+            Ok(status) => {
+                log::warn!("2PC ack-commit: coordinator returned {status} for {prepare_id}");
+            }
+            Err(e) => {
+                log::warn!("2PC ack-commit: transport error for {prepare_id}: {e}");
+            }
         }
-        Ok(status) => {
-            log::warn!("2PC ack-commit: coordinator returned {status} for {prepare_id}");
-        }
-        Err(e) => {
-            log::warn!("2PC ack-commit: transport error for {prepare_id}: {e}");
-        }
-    }
+    });
 }
 
 fn wounded_status(replica_ctx: &ReplicaContext, tx_id: spacetimedb_lib::GlobalTxId) -> EventStatus {
@@ -778,15 +785,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 });
             }
 
-            // Notify coordinator that B has committed so it can delete its coordinator log entry.
-            // Best-effort: if this fails, coordinator's recover_2pc_coordinator will retry on restart.
-            send_ack_commit_to_coordinator(
-                &replica_ctx.call_reducer_blocking_client,
-                &replica_ctx.call_reducer_router,
-                &replica_ctx.call_reducer_auth_token,
-                coordinator_identity,
-                &prepare_id,
-            );
             if let Some(tx_id) = global_tx_id {
                 replica_ctx
                     .global_tx_manager

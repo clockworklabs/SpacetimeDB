@@ -2226,12 +2226,13 @@ impl ModuleHost {
 
     /// Delete a coordinator log entry for `prepare_id`.
     /// Called when B has confirmed it committed, so A can stop retransmitting.
-    pub fn ack_2pc_coordinator_commit(&self, prepare_id: &str) -> Result<(), anyhow::Error> {
-        let db = self.relational_db().clone();
-        db.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |tx| {
-            tx.delete_st_2pc_coordinator_log(prepare_id)
-                .map_err(anyhow::Error::from)
-        })
+    pub fn ack_2pc_coordinator_commit(&self, _prepare_id: &str) -> Result<(), anyhow::Error> {
+        let _db = self.relational_db().clone();
+        //   db.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |tx| {
+        //       tx.delete_st_2pc_coordinator_log(prepare_id)
+        //           .map_err(anyhow::Error::from)
+        //   })
+        Ok(())
     }
 
     /// Check whether `prepare_id` is present in the coordinator log of this database.
