@@ -2237,11 +2237,14 @@ impl ModuleHost {
 
     /// Check whether `prepare_id` is present in the coordinator log of this database.
     /// Used by participant B to ask coordinator A: "did you commit?"
-    pub fn has_2pc_coordinator_commit(&self, prepare_id: &str) -> bool {
-        let db = self.relational_db();
-        db.pending_2pc_coordinator_commits()
-            .map(|rows| rows.iter().any(|r| r.participant_prepare_id == prepare_id))
-            .unwrap_or(false)
+    pub async fn has_2pc_coordinator_commit(&self, prepare_id: &str) -> bool {
+        let db = self.relational_db().clone();
+        let prepare_id = prepare_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            db.pending_2pc_coordinator_commits()
+                .map(|rows| rows.iter().any(|r| r.participant_prepare_id == prepare_id))
+                .unwrap_or(false)
+        }).await.expect("Couldn't spawn blocking task")
     }
 
     /// Crash recovery for the **coordinator** role.

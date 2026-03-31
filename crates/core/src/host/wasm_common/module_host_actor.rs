@@ -1269,15 +1269,15 @@ impl InstanceCommon {
                     match req.send().await {
                         Ok(resp) if resp.status().is_success() => {
                             log::info!("2PC {action}: {prepare_id} on {db_identity}");
-                            if committed {
-                                if let Err(e) =
-                                    stdb.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
-                                        Ok(del_tx.delete_st_2pc_coordinator_log(prepare_id)?)
-                                    })
-                                {
-                                    log::warn!("delete_st_2pc_coordinator_log failed for {prepare_id}: {e}");
-                                }
-                            }
+                            // if committed {
+                            //     if let Err(e) =
+                            //         stdb.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
+                            //             Ok(del_tx.delete_st_2pc_coordinator_log(prepare_id)?)
+                            //         })
+                            //     {
+                            //         log::warn!("delete_st_2pc_coordinator_log failed for {prepare_id}: {e}");
+                            //     }
+                            // }
                         }
                         Ok(resp) => {
                             log::error!(

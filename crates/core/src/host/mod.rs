@@ -29,11 +29,12 @@ where
     F: Future + Send,
     F::Output: Send,
 {
-    std::thread::scope(|s| {
-        s.spawn(|| handle.block_on(fut))
-            .join()
-            .expect("block_on_scoped: thread panicked")
-    })
+    // std::thread::scope(|s| {
+    //     s.spawn(|| handle.block_on(fut))
+    //         .join()
+    //         .expect("block_on_scoped: thread panicked")
+    // })
+    futures::executor::block_on(fut)
 }
 
 mod disk_storage;
