@@ -138,6 +138,10 @@ pub struct HostController {
     ///
     /// `None` in test/embedded contexts where no JWT signer is configured.
     pub call_reducer_auth_token: Option<String>,
+    /// Distributed deadlock detection for cross-database calls.
+    /// Set to [`NoopCallEdgeTracker`] by default; replaced with `CloudCallEdgeTracker`
+    /// in cluster deployments.
+    pub call_edge_tracker: Arc<dyn crate::host::call_edge_tracker::CallEdgeTracker>,
 }
 
 pub(crate) struct HostRuntimes {
@@ -252,12 +256,18 @@ impl HostController {
             call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
             call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
             call_reducer_auth_token: None,
+            call_edge_tracker: Arc::new(crate::host::call_edge_tracker::NoopCallEdgeTracker),
         }
     }
 
     /// Replace the [`ProgramStorage`] used by this controller.
     pub fn set_program_storage(&mut self, ps: ProgramStorage) {
         self.program_storage = ps;
+    }
+
+    /// Set the [`CallEdgeTracker`] for distributed deadlock detection.
+    pub fn set_call_edge_tracker(&mut self, tracker: Arc<dyn crate::host::call_edge_tracker::CallEdgeTracker>) {
+        self.call_edge_tracker = tracker;
     }
 
     /// Get a [`ModuleHost`] managed by this controller, or launch it from
@@ -692,6 +702,7 @@ async fn make_replica_ctx(
     call_reducer_client: reqwest::Client,
     call_reducer_router: Arc<dyn ReducerCallRouter>,
     call_reducer_auth_token: Option<String>,
+    call_edge_tracker: Arc<dyn crate::host::call_edge_tracker::CallEdgeTracker>,
 ) -> anyhow::Result<ReplicaContext> {
     let logger = match module_logs {
         Some(path) => asyncify(move || Arc::new(DatabaseLogger::open_today(path))).await,
@@ -732,7 +743,7 @@ async fn make_replica_ctx(
         call_reducer_auth_token,
         prepared_txs: crate::host::prepared_tx::PreparedTransactions::new(),
         on_panic: std::sync::Arc::new(std::sync::OnceLock::new()),
-        call_edge_tracker: std::sync::Arc::new(crate::host::call_edge_tracker::NoopCallEdgeTracker),
+        call_edge_tracker: call_edge_tracker,
     })
 }
 
@@ -811,6 +822,7 @@ struct ModuleLauncher<F> {
     call_reducer_client: reqwest::Client,
     call_reducer_router: Arc<dyn ReducerCallRouter>,
     call_reducer_auth_token: Option<String>,
+    call_edge_tracker: Arc<dyn crate::host::call_edge_tracker::CallEdgeTracker>,
 }
 
 impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
@@ -833,6 +845,7 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
             self.call_reducer_client,
             self.call_reducer_router,
             self.call_reducer_auth_token,
+            self.call_edge_tracker,
         )
         .await
         .map(Arc::new)?;
@@ -1046,6 +1059,7 @@ impl Host {
                     call_reducer_client: host_controller.call_reducer_client.clone(),
                     call_reducer_router: host_controller.call_reducer_router.clone(),
                     call_reducer_auth_token: host_controller.call_reducer_auth_token.clone(),
+                    call_edge_tracker: host_controller.call_edge_tracker.clone(),
                 }
                 .launch_module()
                 .await?
@@ -1078,6 +1092,7 @@ impl Host {
                     call_reducer_client: host_controller.call_reducer_client.clone(),
                     call_reducer_router: host_controller.call_reducer_router.clone(),
                     call_reducer_auth_token: host_controller.call_reducer_auth_token.clone(),
+                    call_edge_tracker: host_controller.call_edge_tracker.clone(),
                 }
                 .launch_module()
                 .await;
@@ -1104,6 +1119,7 @@ impl Host {
                             call_reducer_client: host_controller.call_reducer_client.clone(),
                             call_reducer_router: host_controller.call_reducer_router.clone(),
                             call_reducer_auth_token: host_controller.call_reducer_auth_token.clone(),
+                            call_edge_tracker: host_controller.call_edge_tracker.clone(),
                         }
                         .launch_module()
                         .await;
@@ -1220,6 +1236,7 @@ impl Host {
             call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
             call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
             call_reducer_auth_token: None,
+            call_edge_tracker: Arc::new(crate::host::call_edge_tracker::NoopCallEdgeTracker),
         }
         .launch_module()
         .await
