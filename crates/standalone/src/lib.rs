@@ -484,6 +484,25 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             .control_db
             .spacetime_replace_domains(database_identity, owner_identity, domain_names)?)
     }
+
+    // Distributed deadlock detection: no-op in standalone (single node).
+
+    async fn register_reducer_call_edge(
+        &self,
+        _call_id: &str,
+        _caller: &Identity,
+        _callee: &Identity,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn unregister_reducer_call_edge(&self, _call_id: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn unregister_all_reducer_call_edges_for_node(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
 impl spacetimedb_client_api::Authorization for StandaloneEnv {

@@ -3,6 +3,7 @@ use spacetimedb_commitlog::SizeOnDisk;
 use super::database_logger::DatabaseLogger;
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
+use crate::host::call_edge_tracker::CallEdgeTracker;
 use crate::host::prepared_tx::PreparedTransactions;
 use crate::host::reducer_router::ReducerCallRouter;
 use crate::messages::control_db::Database;
@@ -72,6 +73,9 @@ pub struct ReplicaContext {
     /// async task that can't panic on the WASM executor thread (e.g., 2PC persistence
     /// abort in Round 2).  Set once by `launch_module`; empty in tests.
     pub on_panic: Arc<OnceLock<Box<dyn Fn() + Send + Sync + 'static>>>,
+    /// Distributed deadlock detection: tracks cross-database call edges.
+    /// Standalone uses [`crate::host::call_edge_tracker::NoopCallEdgeTracker`].
+    pub call_edge_tracker: Arc<dyn CallEdgeTracker>,
 }
 
 impl ReplicaContext {

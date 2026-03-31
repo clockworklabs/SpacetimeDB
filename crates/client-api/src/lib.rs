@@ -344,6 +344,23 @@ pub trait ControlStateWriteAccess: Send + Sync {
         owner_identity: &Identity,
         domain_names: &[DomainName],
     ) -> anyhow::Result<SetDomainsResult>;
+
+    // Cross-database call edge tracking (distributed deadlock detection)
+
+    /// Register a cross-database call edge for deadlock detection.
+    /// Returns `Err` if the edge would create a cycle (distributed deadlock).
+    async fn register_reducer_call_edge(
+        &self,
+        call_id: &str,
+        caller: &Identity,
+        callee: &Identity,
+    ) -> anyhow::Result<()>;
+
+    /// Unregister a cross-database call edge after the call completes.
+    async fn unregister_reducer_call_edge(&self, call_id: &str) -> anyhow::Result<()>;
+
+    /// Unregister all edges for this node (crash cleanup on startup).
+    async fn unregister_all_reducer_call_edges_for_node(&self) -> anyhow::Result<()>;
 }
 
 #[async_trait]
@@ -453,6 +470,23 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         (**self)
             .replace_dns_records(database_identity, owner_identity, domain_names)
             .await
+    }
+
+    async fn register_reducer_call_edge(
+        &self,
+        call_id: &str,
+        caller: &Identity,
+        callee: &Identity,
+    ) -> anyhow::Result<()> {
+        (**self).register_reducer_call_edge(call_id, caller, callee).await
+    }
+
+    async fn unregister_reducer_call_edge(&self, call_id: &str) -> anyhow::Result<()> {
+        (**self).unregister_reducer_call_edge(call_id).await
+    }
+
+    async fn unregister_all_reducer_call_edges_for_node(&self) -> anyhow::Result<()> {
+        (**self).unregister_all_reducer_call_edges_for_node().await
     }
 }
 

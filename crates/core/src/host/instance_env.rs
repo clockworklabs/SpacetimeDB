@@ -1011,14 +1011,38 @@ impl InstanceEnv {
         let client = self.replica_ctx.call_reducer_client.clone();
         let router = self.replica_ctx.call_reducer_router.clone();
         let reducer_name = reducer_name.to_owned();
-        // Node-level auth token: a single token minted at startup and shared by all replicas
-        // on this node. Passed as a Bearer token so `anon_auth_middleware` on the target node
-        // accepts the request without generating a fresh ephemeral identity per call.
         let auth_token = self.replica_ctx.call_reducer_auth_token.clone();
         let caller_identity = self.replica_ctx.database.database_identity;
+        let edge_tracker = self.replica_ctx.call_edge_tracker.clone();
 
         async move {
             let start = Instant::now();
+
+            // Register call edge for distributed deadlock detection.
+            // Retry with backoff if a cycle is detected.
+            let call_id = uuid::Uuid::new_v4().to_string();
+            const MAX_RETRIES: u32 = 5;
+            const BACKOFF_MS: u64 = 100;
+            for attempt in 0..MAX_RETRIES {
+                match edge_tracker.register_edge(&call_id, caller_identity, database_identity).await {
+                    Ok(()) => break,
+                    Err(e) if attempt < MAX_RETRIES - 1 => {
+                        log::warn!(
+                            "Cycle detected on call {caller_identity} -> {database_identity} \
+                             (attempt {attempt}): {e}; retrying"
+                        );
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            BACKOFF_MS * 2u64.pow(attempt),
+                        ))
+                        .await;
+                    }
+                    Err(e) => {
+                        return Err(NodesError::HttpError(format!(
+                            "distributed deadlock detected: {caller_identity} -> {database_identity}: {e}"
+                        )));
+                    }
+                }
+            }
 
             let base_url = router
                 .resolve_base_url(database_identity)
@@ -1047,6 +1071,9 @@ impl InstanceEnv {
                 Ok::<_, NodesError>((status, body))
             }
             .await;
+
+            // Unregister the call edge (regardless of success/failure).
+            let _ = edge_tracker.unregister_edge(&call_id).await;
 
             WORKER_METRICS
                 .cross_db_reducer_calls_total
@@ -1082,9 +1109,35 @@ impl InstanceEnv {
         let reducer_name = reducer_name.to_owned();
         let auth_token = self.replica_ctx.call_reducer_auth_token.clone();
         let caller_identity = self.replica_ctx.database.database_identity;
+        let edge_tracker = self.replica_ctx.call_edge_tracker.clone();
 
         async move {
             let start = Instant::now();
+
+            // Register call edge for distributed deadlock detection.
+            let call_id = uuid::Uuid::new_v4().to_string();
+            const MAX_RETRIES: u32 = 5;
+            const BACKOFF_MS: u64 = 100;
+            for attempt in 0..MAX_RETRIES {
+                match edge_tracker.register_edge(&call_id, caller_identity, database_identity).await {
+                    Ok(()) => break,
+                    Err(e) if attempt < MAX_RETRIES - 1 => {
+                        log::warn!(
+                            "Cycle detected on 2PC call {caller_identity} -> {database_identity} \
+                             (attempt {attempt}): {e}; retrying"
+                        );
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            BACKOFF_MS * 2u64.pow(attempt),
+                        ))
+                        .await;
+                    }
+                    Err(e) => {
+                        return Err(NodesError::HttpError(format!(
+                            "distributed deadlock detected: {caller_identity} -> {database_identity}: {e}"
+                        )));
+                    }
+                }
+            }
 
             let base_url = router
                 .resolve_base_url(database_identity)
@@ -1119,6 +1172,9 @@ impl InstanceEnv {
                 Ok((status, body, prepare_id))
             }
             .await;
+
+            // Unregister the call edge (regardless of success/failure).
+            let _ = edge_tracker.unregister_edge(&call_id).await;
 
             WORKER_METRICS
                 .cross_db_reducer_calls_total
@@ -1511,6 +1567,7 @@ mod test {
                 call_reducer_auth_token: None,
                 prepared_txs: crate::host::prepared_tx::PreparedTransactions::new(),
                 on_panic: std::sync::Arc::new(std::sync::OnceLock::new()),
+                call_edge_tracker: Arc::new(crate::host::call_edge_tracker::NoopCallEdgeTracker),
             },
             runtime,
         ))

@@ -1,0 +1,59 @@
+/// Trait for tracking cross-database call edges for distributed deadlock detection.
+///
+/// Before making a cross-database reducer call, the caller registers an edge
+/// A -> B (caller -> callee). If this would create a cycle in the call graph,
+/// the registration fails with an error, indicating a potential distributed deadlock.
+///
+/// Implementations differ between deployment modes:
+///
+/// - **Standalone** -- [`NoopCallEdgeTracker`] always returns `Ok(())`.
+///   Single-node deployments cannot have distributed deadlocks.
+///
+/// - **Cluster** -- Calls a reducer on the control database that inserts the edge
+///   and runs cycle detection. Returns `Err` if a cycle is found.
+use spacetimedb_lib::Identity;
+use std::future::Future;
+use std::pin::Pin;
+
+pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+pub trait CallEdgeTracker: Send + Sync + 'static {
+    /// Register a call edge: `caller` is about to call `callee`.
+    ///
+    /// Returns `Ok(())` if the edge was registered (no cycle).
+    /// Returns `Err` if registering this edge would create a cycle.
+    fn register_edge<'a>(
+        &'a self,
+        call_id: &'a str,
+        caller: Identity,
+        callee: Identity,
+    ) -> BoxFuture<'a, anyhow::Result<()>>;
+
+    /// Unregister a call edge after the call completes (success or failure).
+    fn unregister_edge<'a>(&'a self, call_id: &'a str) -> BoxFuture<'a, anyhow::Result<()>>;
+
+    /// Unregister all edges for this node (crash cleanup on startup).
+    fn unregister_all_edges<'a>(&'a self) -> BoxFuture<'a, anyhow::Result<()>>;
+}
+
+/// No-op implementation for standalone (single-node) deployments.
+pub struct NoopCallEdgeTracker;
+
+impl CallEdgeTracker for NoopCallEdgeTracker {
+    fn register_edge<'a>(
+        &'a self,
+        _call_id: &'a str,
+        _caller: Identity,
+        _callee: Identity,
+    ) -> BoxFuture<'a, anyhow::Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn unregister_edge<'a>(&'a self, _call_id: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn unregister_all_edges<'a>(&'a self) -> BoxFuture<'a, anyhow::Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+}
