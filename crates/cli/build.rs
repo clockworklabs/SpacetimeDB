@@ -85,6 +85,7 @@ fn generate_template_files() {
     generated_code.push_str("    let mut templates = HashMap::new();\n\n");
 
     let mut binary_code = String::new();
+    binary_code.push_str("#[allow(unused_mut)]\n");
     binary_code.push_str(
         "pub fn get_template_binary_files() -> HashMap<&'static str, HashMap<&'static str, &'static [u8]>> {\n",
     );
