@@ -116,9 +116,14 @@ run_a_client() {
   local client_id="$1"
   local failures=0
   local log_file
+  local failure_log_file
+  local tmp_output
   local seq
 
   log_file="$TMP_DIR/a-client-${client_id}.log"
+  failure_log_file="$TMP_DIR/a-client-${client_id}.failures.log"
+  tmp_output="$TMP_DIR/a-client-${client_id}.tmp"
+  : >"$failure_log_file"
   seq=1
   while :; do
     if ! (
@@ -130,9 +135,15 @@ run_a_client() {
         "a-msg-client-${client_id}-seq-${seq}" \
         "$BURN_ITERS" \
         "$HOLD_ITERS"
-    ) >"$log_file" 2>&1; then
+    ) >"$tmp_output" 2>&1; then
       failures=$((failures + 1))
+      {
+        echo "=== failure $failures for a-client-${client_id} seq $seq ==="
+        cat "$tmp_output"
+        echo
+      } >>"$failure_log_file"
     fi
+    mv "$tmp_output" "$log_file"
 
     if [[ "$RUN_FOREVER" -eq 0 && "$seq" -ge "$ITERATIONS" ]]; then
       break
@@ -147,9 +158,14 @@ run_b_client() {
   local client_id="$1"
   local failures=0
   local log_file
+  local failure_log_file
+  local tmp_output
   local seq
 
   log_file="$TMP_DIR/b-client-${client_id}.log"
+  failure_log_file="$TMP_DIR/b-client-${client_id}.failures.log"
+  tmp_output="$TMP_DIR/b-client-${client_id}.tmp"
+  : >"$failure_log_file"
   seq=1
   while :; do
     if ! (
@@ -161,9 +177,15 @@ run_b_client() {
         "b-msg-client-${client_id}-seq-${seq}" \
         "$BURN_ITERS" \
         "$HOLD_ITERS"
-    ) >"$log_file" 2>&1; then
+    ) >"$tmp_output" 2>&1; then
       failures=$((failures + 1))
+      {
+        echo "=== failure $failures for b-client-${client_id} seq $seq ==="
+        cat "$tmp_output"
+        echo
+      } >>"$failure_log_file"
     fi
+    mv "$tmp_output" "$log_file"
 
     if [[ "$RUN_FOREVER" -eq 0 && "$seq" -ge "$ITERATIONS" ]]; then
       break
@@ -260,8 +282,7 @@ fi
 if [[ "$TOTAL_FAILURES" -ne 0 ]]; then
   echo
   echo "At least one client call failed. Sample failure logs:"
-  find "$TMP_DIR" -name '*-client-*.log' -type f -print0 \
-    | xargs -0 grep -l "Error\|failed\|panic" \
+  find "$TMP_DIR" -name '*-client-*.failures.log' -type f -size +0c -print \
     | head -n 10 \
     | while read -r log_file; do
         echo "--- $log_file ---"

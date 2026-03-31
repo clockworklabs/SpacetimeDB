@@ -1,4 +1,7 @@
-use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table};
+use spacetimedb::{
+    remote_reducer::{into_reducer_error_message, RemoteCallError},
+    Identity, ReducerContext, SpacetimeType, Table,
+};
 
 #[derive(SpacetimeType, Clone)]
 pub struct CallPayload {
@@ -77,7 +80,10 @@ pub fn call_b_from_a(
     let args = spacetimedb::spacetimedb_lib::bsatn::to_vec(&(payload.clone(), burn_iters))
         .expect("failed to encode args for record_on_b");
     spacetimedb::remote_reducer::call_reducer_on_db_2pc(b, "record_on_b", &args)
-        .map_err(|e| format!("call_b_from_a: call to B failed: {e}"))?;
+        .map_err(|e| match e {
+            RemoteCallError::Wounded(_) => into_reducer_error_message(e),
+            _ => format!("call_b_from_a: call to B failed: {e}"),
+        })?;
 
     // Hold A open after B is prepared so B keeps its global-tx admission lock
     // long enough for concurrent work on B to contend and trigger wound flow.
@@ -108,7 +114,10 @@ pub fn call_c_from_b(
     let args = spacetimedb::spacetimedb_lib::bsatn::to_vec(&(payload.clone(), burn_iters))
         .expect("failed to encode args for record_on_c");
     spacetimedb::remote_reducer::call_reducer_on_db_2pc(c, "record_on_c", &args)
-        .map_err(|e| format!("call_c_from_b: call to C failed: {e}"))?;
+        .map_err(|e| match e {
+            RemoteCallError::Wounded(_) => into_reducer_error_message(e),
+            _ => format!("call_c_from_b: call to C failed: {e}"),
+        })?;
 
     // Hold B open after C is prepared so B remains the global-tx owner while
     // A-originated work attempts to prepare on B.
