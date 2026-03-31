@@ -14,7 +14,7 @@ on:
       languages:
         description: 'Languages to benchmark (comma-separated: rust,csharp,typescript)'
         required: false
-        default: 'rust'
+        default: 'rust,csharp,typescript'
 
 permissions:
   contents: write
@@ -73,7 +73,7 @@ jobs:
           MSBUILDDISABLENODEREUSE: "1"
           DOTNET_CLI_USE_MSBUILD_SERVER: "0"
         run: |
-          LANGS="${{ inputs.languages || 'rust' }}"
+          LANGS="${{ inputs.languages || 'rust,csharp,typescript' }}"
           MODELS="${{ inputs.models || 'all' }}"
           UPLOAD_FLAG=""
           if [ -n "${{ secrets.LLM_BENCHMARK_UPLOAD_URL }}" ]; then
@@ -95,7 +95,7 @@ jobs:
         run: |
           DATE=$(date -u +%Y-%m-%dT%H-%M-%S)
           mkdir -p docs/llms/history
-          for f in docs/llms/docs-benchmark-details.json docs/llms/docs-benchmark-summary.json; do
+          for f in docs/llms/llm-comparison-details.json docs/llms/llm-comparison-summary.json; do
             if [ -f "$f" ]; then
               BASENAME=$(basename "$f" .json)
               cp "$f" "docs/llms/history/${DATE}_${BASENAME}.json"
