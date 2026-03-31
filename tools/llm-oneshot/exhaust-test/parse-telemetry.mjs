@@ -20,7 +20,9 @@ if (!runDir) {
   process.exit(1);
 }
 
-const telemetryDir = path.resolve(path.dirname(runDir), '..', 'telemetry');
+// telemetry/logs.jsonl is in the parent of the run dir
+// e.g. runDir = telemetry/spacetime-level1-20260330/ → parent = telemetry/
+const telemetryDir = path.dirname(path.resolve(runDir));
 const logsFile = path.join(telemetryDir, 'logs.jsonl');
 
 if (!fs.existsSync(logsFile)) {

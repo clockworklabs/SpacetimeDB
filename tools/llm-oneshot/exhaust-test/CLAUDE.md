@@ -2,7 +2,18 @@
 
 You are running an automated benchmark that measures the **total cost to reach a fully working chat app** — comparing SpacetimeDB vs PostgreSQL.
 
-This is NOT a one-shot test. You will generate code, deploy, test in the browser, find bugs, fix them, redeploy, and retest — looping until all features work or a budget limit is hit. The total cumulative cost of this loop is the metric.
+This is NOT a one-shot test. You will generate code, deploy, test in the browser, find bugs, fix them, redeploy, and retest — looping until all features work or the iteration limit is hit. The total cumulative cost of this loop is the metric.
+
+---
+
+## Path Convention
+
+All file paths in this document are **relative to the `exhaust-test/` directory** (the directory containing this CLAUDE.md) unless stated otherwise. When the prompt says `../`, it means going up to `tools/llm-oneshot/`.
+
+Examples:
+- `test-plans/feature-01-basic-chat.md` → `exhaust-test/test-plans/feature-01-basic-chat.md`
+- `../apps/chat-app/prompts/composed/01_basic.md` → `tools/llm-oneshot/apps/chat-app/prompts/composed/01_basic.md`
+- `../../docs/static/ai-rules/spacetimedb.mdc` → `docs/static/ai-rules/spacetimedb.mdc` (repo root)
 
 ---
 
@@ -10,7 +21,7 @@ This is NOT a one-shot test. You will generate code, deploy, test in the browser
 
 **CRITICAL: Read this section before generating ANY code. It contains the SDK API reference and hallucinated APIs to avoid.**
 
-Before generating code, also read the full SDK rule files for the latest API details:
+Before generating code, read the full SDK rule files for the latest API details:
 - `../../docs/static/ai-rules/spacetimedb.mdc` — core concepts (all languages)
 - `../../docs/static/ai-rules/spacetimedb-typescript.mdc` — TypeScript SDK reference (table definitions, reducers, client patterns, hallucinated APIs to avoid)
 
@@ -29,52 +40,61 @@ These files contain the authoritative SDK reference including:
 
 When asked to run the exhaust test:
 
-1. Read the prompt files (language setup + composed feature prompt)
-2. Follow the 5-phase workflow to generate and deploy
-3. Test every feature via Chrome MCP browser interaction
-4. Fix any broken features, redeploy, retest (the loop)
-5. Produce `GRADING_RESULTS.md` (cost tracking is handled automatically via OpenTelemetry)
+1. Run pre-flight checks (SpacetimeDB running, Chrome MCP available)
+2. Read the prompt files (language setup + composed feature prompt)
+3. Follow the 5-phase workflow to generate and deploy
+4. Test every feature via Chrome MCP browser interaction
+5. Fix any broken features, redeploy, retest (the loop)
+6. Write `ITERATION_LOG.md` after each fix iteration (durable progress tracking)
+7. Write `GRADING_RESULTS.md` at the end (cost tracking is automatic via OpenTelemetry)
 
 ---
 
 ## Configuration
 
+These are passed to you via the launch prompt from `run.sh`:
+
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `--level` | 12 | Composed prompt level (01-12). Level 1 = 4 features, Level 12 = all 15 |
-| `--backend` | spacetime | `spacetime` or `postgres` |
-| `--lang` | typescript | Language (currently only typescript supported) |
-| `--max-iterations` | 10 | Max test→fix loops before stopping |
+| Level | 1 | Composed prompt level (01-12). Level 1 = 4 features, Level 12 = all 15 |
+| Backend | spacetime | `spacetime` or `postgres` |
+| App directory | (provided) | Where to write generated code and results |
+| Max iterations | 10 | Max test→fix loops before stopping |
 
 ---
 
 ## Phase 0: Setup
 
-1. Generate a timestamp: `YYYYMMDD-HHMMSS`
-2. Create the project folder:
+1. **Pre-flight checks:**
+   ```bash
+   # Verify SpacetimeDB is running
+   spacetime server ping local
    ```
-   ../apps/chat-app/staging/typescript/claude-code/<backend>/chat-app-<timestamp>/
-   ```
-   With subdirectories: `backend/spacetimedb/src/` and `client/src/`
+   If SpacetimeDB is not running, STOP and report the error.
 
-3. Read prompt files:
+2. **Verify Chrome MCP is available** by calling `read_page`. If Chrome MCP tools are not available, STOP and report the error. Browser testing is required.
+
+3. Use the **app directory provided in the launch prompt** (e.g. `results/spacetime/chat-app-20260330-143000/`).
+   Create subdirectories: `backend/spacetimedb/src/` and `client/src/`
+
+4. Read prompt files:
    - Language setup: `../apps/chat-app/prompts/language/typescript-<backend>.md`
-   - Feature prompt: `../apps/chat-app/prompts/composed/<NN>_<name>.md` (based on `--level`)
+   - Feature prompt: `../apps/chat-app/prompts/composed/<NN>_<name>.md` (based on level)
 
-4. Read SDK rules (**CRITICAL — must read before generating code**):
+5. Read SDK rules (**CRITICAL — must read before generating code**):
    - `../../docs/static/ai-rules/spacetimedb.mdc` — core SpacetimeDB concepts
    - `../../docs/static/ai-rules/spacetimedb-typescript.mdc` — TypeScript SDK reference, hallucinated APIs to avoid
 
-5. Read benchmark pattern rules:
+6. Read benchmark pattern rules:
    - `../.cursor/rules/deployment.mdc` — 5-phase workflow and CLI commands
    - `../.cursor/rules/patterns-typescript.mdc` — file templates and conventions
 
-6. **CRITICAL: Anti-contamination.** Do NOT read any files under:
+7. **CRITICAL: Anti-contamination.** Do NOT read any files under:
    - `../apps/chat-app/typescript/` (graded implementations)
    - `../apps/chat-app/staging/` (other staging implementations)
    - Any other AI-generated code in this workspace
 
-7. Note the start time for wall-clock tracking. Token costs are tracked automatically via OpenTelemetry.
+8. Note the start time for wall-clock tracking. Token costs are tracked automatically via OpenTelemetry.
 
 ---
 
@@ -93,7 +113,7 @@ Generate the SpacetimeDB backend (or PostgreSQL backend) following the prompt an
   spacetime publish chat-app-<timestamp> --module-path <backend-dir>
   ```
 
-**Module naming:** Use the timestamped folder name as the module name.
+**Module naming:** Use the timestamped folder name as the module name (e.g. `chat-app-20260330-143000`).
 
 ---
 
@@ -136,7 +156,7 @@ Both must pass. If either fails:
 1. Read the error
 2. Fix the code
 3. Retry (up to 3 attempts)
-4. Each fix counts as a **reprompt** — log it with category (Compilation/Build)
+4. Each fix counts as a **reprompt** — log it to ITERATION_LOG.md with category (Compilation/Build)
 
 ---
 
@@ -147,7 +167,7 @@ Both must pass. If either fails:
 npx kill-port 5173 2>/dev/null || true
 
 # Start dev server in background
-cd <client-dir> && npm run dev
+cd <client-dir> && npm run dev &
 ```
 
 Wait for the dev server to be ready (poll `http://localhost:5173` up to 30 seconds).
@@ -196,7 +216,7 @@ Read the test plan for each feature from `test-plans/feature-NN-*.md`. Each test
 - **Pass criteria** — what constitutes a passing feature
 - **Evidence** — what to screenshot or record
 
-Test features in order (1 through N based on `--level`). For each feature:
+Test features in order (1 through N based on level). For each feature:
 1. Execute the test plan steps
 2. Record whether each criterion passes or fails
 3. Take a screenshot at key verification points
@@ -228,11 +248,7 @@ LOOP (iteration 1 to max_iterations):
      - If backend changed: re-publish module, regenerate bindings if schema changed
      - If client changed: Vite HMR handles it (or restart dev server)
   5. Retest all features (not just the ones you fixed — regressions happen)
-  6. Log this iteration:
-     - Iteration number
-     - What was broken
-     - What you fixed
-     - Time elapsed
+  6. IMMEDIATELY write iteration to ITERATION_LOG.md (see format below)
 ```
 
 Each fix in this loop counts as a **reprompt**. Track the category:
@@ -241,6 +257,66 @@ Each fix in this loop counts as a **reprompt**. Track the category:
 - **Feature Broken** — feature exists but doesn't work correctly
 - **Integration** — frontend/backend don't communicate
 - **Data/State** — data not persisting or state management issues
+
+### ITERATION_LOG.md (Durable Progress Log)
+
+**Write this file after EVERY iteration.** If the session crashes mid-loop, this is the only durable record of what happened. Append to it — never overwrite.
+
+Write `ITERATION_LOG.md` in the app directory. Format:
+
+```markdown
+# Iteration Log
+
+## Run Info
+- **Backend:** spacetime
+- **Level:** 1
+- **Started:** 2026-03-30T14:30:00
+
+---
+
+## Iteration 0 — Initial Test (14:35)
+
+**Scores:** Feature 1: 3/3, Feature 2: 1/3, Feature 3: 2/3, Feature 4: 0/3
+**Total:** 6/12
+**Console errors:** TypeError: Cannot read property 'map' of undefined
+**Failing features:**
+- Feature 2 (Typing Indicators): Typing state broadcasts but never auto-expires
+- Feature 3 (Read Receipts): "Seen by" text shows but doesn't update in real-time
+- Feature 4 (Unread Counts): No badge UI visible
+
+---
+
+## Iteration 1 — Fix (14:42)
+
+**Category:** Feature Broken
+**What broke:** Typing indicator timer never clears — `setTimeout` reference lost on re-render
+**What I fixed:** Moved timer to `useRef`, added cleanup in `useEffect` return
+**Files changed:** client/src/App.tsx (lines 145-160)
+**Redeploy:** Client only (HMR)
+
+**Retest scores:** Feature 1: 3/3, Feature 2: 3/3, Feature 3: 2/3, Feature 4: 0/3
+**Total:** 8/12
+**Still failing:**
+- Feature 3: Read receipts still not real-time
+- Feature 4: Still no badge UI
+
+---
+
+## Iteration 2 — Fix (14:48)
+
+...
+
+---
+
+## Final Result
+
+**Total iterations:** 3
+**Final score:** 12/12
+**Time elapsed:** 22 minutes
+**All features passing:** Yes
+```
+
+**CRITICAL:** Write to this file after EVERY iteration, not just at the end. This is your progress checkpoint.
 
 ---
 
@@ -344,6 +420,7 @@ The `run.sh` launcher enables OpenTelemetry before starting Claude Code. Every A
 1. **Do NOT produce a `COST_REPORT.md`** — it is generated automatically after the session.
 2. **Do NOT estimate tokens** — exact counts come from OpenTelemetry instrumentation.
 3. **Do** produce `GRADING_RESULTS.md` (Phase 8) — this is your responsibility.
+4. **Do** produce `ITERATION_LOG.md` (Phase 7) — write after every iteration.
 
 ### How the pipeline works
 
@@ -364,17 +441,17 @@ run.sh (sets CLAUDE_CODE_ENABLE_TELEMETRY=1 + OTLP env vars)
 
 ## Reference Files
 
-All paths relative to `tools/llm-oneshot/`:
+All paths relative to `exhaust-test/` (this directory):
 
 | File | Purpose |
 |------|---------|
 | `../../docs/static/ai-rules/spacetimedb.mdc` | Core SDK concepts (all languages) |
 | `../../docs/static/ai-rules/spacetimedb-typescript.mdc` | TypeScript SDK reference + hallucinated APIs |
-| `apps/chat-app/prompts/language/typescript-spacetime.md` | SpacetimeDB language setup |
-| `apps/chat-app/prompts/language/typescript-postgres.md` | PostgreSQL language setup |
-| `apps/chat-app/prompts/composed/01_basic.md` through `12_full.md` | Feature prompts by level |
-| `apps/chat-app/prompts/grading_rubric.md` | Full scoring rubric with test cases |
-| `.cursor/rules/deployment.mdc` | 5-phase workflow, CLI commands, port config |
-| `.cursor/rules/patterns-typescript.mdc` | File templates, project conventions |
-| `.cursor/rules/benchmark.mdc` | Anti-contamination rules, prompt execution |
-| `exhaust-test/test-plans/feature-*.md` | Per-feature browser test scripts |
+| `../apps/chat-app/prompts/language/typescript-spacetime.md` | SpacetimeDB language setup |
+| `../apps/chat-app/prompts/language/typescript-postgres.md` | PostgreSQL language setup |
+| `../apps/chat-app/prompts/composed/01_basic.md` through `12_full.md` | Feature prompts by level |
+| `../apps/chat-app/prompts/grading_rubric.md` | Full scoring rubric with test cases |
+| `../.cursor/rules/deployment.mdc` | 5-phase workflow, CLI commands, port config |
+| `../.cursor/rules/patterns-typescript.mdc` | File templates, project conventions |
+| `../.cursor/rules/benchmark.mdc` | Anti-contamination rules, prompt execution |
+| `test-plans/feature-*.md` | Per-feature browser test scripts |

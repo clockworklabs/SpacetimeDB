@@ -90,14 +90,15 @@ docker compose -f docker-compose.otel.yaml up -d
 
 ### What `run.sh` Does
 
-1. Creates a timestamped output dir under `telemetry/`
-2. Saves `metadata.json` with run parameters
-3. Sets environment variables for OpenTelemetry:
+1. **Pre-flight checks** — verifies SpacetimeDB is running, Docker/OTel collector is up, Claude CLI is available, prompt files exist
+2. Creates timestamped output dirs under `results/` and `telemetry/`
+3. Saves `metadata.json` with run parameters and start time
+4. Sets environment variables for OpenTelemetry:
    - `CLAUDE_CODE_ENABLE_TELEMETRY=1`
    - `OTEL_LOGS_EXPORTER=otlp`
    - `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317`
-4. Launches `claude --prompt` with the exhaust test instructions
-5. After the session ends, runs `parse-telemetry.mjs` to generate the cost report
+5. Launches `claude --print --max-turns 200` with the exhaust test prompt
+6. After the session ends, records end time in metadata and runs `parse-telemetry.mjs`
 
 ### Recommended Test Levels
 
@@ -115,8 +116,9 @@ After a run completes, you'll find:
 
 ### In the generated app directory
 ```
-apps/chat-app/staging/typescript/claude-code/<backend>/chat-app-<timestamp>/
+exhaust-test/results/<backend>/chat-app-<timestamp>/
   GRADING_RESULTS.md    # Per-feature scores, reprompt log (produced by Claude Code)
+  ITERATION_LOG.md      # Per-iteration progress log (written after EACH fix cycle)
   backend/              # Generated SpacetimeDB or PostgreSQL backend
   client/               # Generated React client
 ```
@@ -244,7 +246,13 @@ exhaust-test/
     feature-02-typing-indicators.md
     ...
     feature-15-anonymous-migration.md
-  telemetry/                     # Output from runs (gitignored)
+  results/                       # Generated apps from runs (gitignored)
+    <backend>/
+      chat-app-<timestamp>/
+        GRADING_RESULTS.md
+        backend/
+        client/
+  telemetry/                     # OTel output from runs (gitignored)
     logs.jsonl
     metrics.jsonl
     <backend>-level<N>-<timestamp>/

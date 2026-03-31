@@ -1,2 +1,5 @@
+# Generated apps from benchmark runs
+results/
+
 # Telemetry output from benchmark runs
 telemetry/
