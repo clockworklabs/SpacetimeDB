@@ -731,6 +731,11 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         }
 
         // Step 4: signal PREPARED.
+        if let Some(tx_id) = global_tx_id {
+            replica_ctx
+                .global_tx_manager
+                .mark_state(&tx_id, crate::host::global_tx::GlobalTxState::Prepared);
+        }
         let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
             energy_used: energy_quanta_used,

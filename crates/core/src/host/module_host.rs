@@ -1995,22 +1995,38 @@ impl ModuleHost {
 
     /// Finalize a prepared transaction as COMMIT.
     pub fn commit_prepared(&self, prepare_id: &str) -> Result<(), String> {
-        if let Some(tx_id) = self.replica_ctx().global_tx_manager.remove_prepare_mapping(prepare_id) {
-            self.replica_ctx()
-                .global_tx_manager
-                .mark_state(&tx_id, super::global_tx::GlobalTxState::Committing);
-        }
         let info = self
             .prepared_txs
             .remove(prepare_id)
             .ok_or_else(|| format!("no such prepared transaction: {prepare_id}"))?;
         // Unblock the executor thread to commit.
-        let _ = info.decision_sender.send(true);
+        if info.decision_sender.send(true).is_err() {
+            self.prepared_txs.insert(prepare_id.to_owned(), info);
+            return Err(format!(
+                "prepared transaction receiver closed before commit decision for {prepare_id}"
+            ));
+        }
+        if let Some(tx_id) = self.replica_ctx().global_tx_manager.remove_prepare_mapping(prepare_id) {
+            self.replica_ctx()
+                .global_tx_manager
+                .mark_state(&tx_id, super::global_tx::GlobalTxState::Committing);
+        }
         Ok(())
     }
 
     /// Abort a prepared transaction.
     pub fn abort_prepared(&self, prepare_id: &str) -> Result<(), String> {
+        let info = self
+            .prepared_txs
+            .remove(prepare_id)
+            .ok_or_else(|| format!("no such prepared transaction: {prepare_id}"))?;
+        // Unblock the executor thread to abort.
+        if info.decision_sender.send(false).is_err() {
+            self.prepared_txs.insert(prepare_id.to_owned(), info);
+            return Err(format!(
+                "prepared transaction receiver closed before abort decision for {prepare_id}"
+            ));
+        }
         if let Some(tx_id) = self.replica_ctx().global_tx_manager.remove_prepare_mapping(prepare_id) {
             log::info!("2PC abort_prepared: aborting prepared transaction {tx_id} ({prepare_id})");
             self.replica_ctx()
@@ -2019,12 +2035,6 @@ impl ModuleHost {
         } else {
             log::info!("2PC abort_prepared: aborting legacy/unmapped prepare_id {prepare_id}");
         }
-        let info = self
-            .prepared_txs
-            .remove(prepare_id)
-            .ok_or_else(|| format!("no such prepared transaction: {prepare_id}"))?;
-        // Unblock the executor thread to abort.
-        let _ = info.decision_sender.send(false);
         Ok(())
     }
 
