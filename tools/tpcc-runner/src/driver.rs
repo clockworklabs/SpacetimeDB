@@ -2,6 +2,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use std::collections::BTreeMap;
 use std::fs;
+use std::future::Future;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -22,6 +23,9 @@ use crate::summary::{
 };
 use crate::topology::DatabaseTopology;
 use crate::tpcc::*;
+
+const REDUCER_CALL_MAX_ATTEMPTS: u32 = 3;
+const REDUCER_RETRY_DELAY_MS: u64 = 250;
 
 struct TerminalRuntime {
     config: DriverConfig,
@@ -46,6 +50,16 @@ struct TransactionContext<'a> {
     assignment: &'a TerminalAssignment,
     constants: &'a RunConstants,
     request_ids: &'a AtomicU64,
+}
+
+enum ReducerCallOutcome<T> {
+    Succeeded(T),
+    Failed(anyhow::Error),
+}
+
+enum NewOrderExecution {
+    Committed,
+    RolledBack(String),
 }
 
 pub async fn run(config: DriverConfig) -> Result<()> {
@@ -279,76 +293,40 @@ async fn execute_transaction(
     started_ms: u64,
 ) -> Result<TransactionRecord> {
     match kind {
-        TransactionKind::NewOrder => {
-            execute_new_order(
-                context.client,
-                context.config.warehouse_count,
-                context.assignment,
-                context.constants,
-                rng,
-                started_ms,
-            )
-            .await
-        }
-        TransactionKind::Payment => {
-            execute_payment(
-                context.client,
-                context.config.warehouse_count,
-                context.assignment,
-                context.constants,
-                rng,
-                started_ms,
-            )
-            .await
-        }
-        TransactionKind::OrderStatus => {
-            execute_order_status(context.client, context.assignment, context.constants, rng, started_ms).await
-        }
-        TransactionKind::Delivery => {
-            execute_delivery(
-                context.client,
-                context.run_id,
-                context.driver_id,
-                context.assignment,
-                context.request_ids,
-                rng,
-                started_ms,
-            )
-            .await
-        }
-        TransactionKind::StockLevel => execute_stock_level(context.client, context.assignment, rng, started_ms).await,
+        TransactionKind::NewOrder => execute_new_order(context, rng, started_ms).await,
+        TransactionKind::Payment => execute_payment(context, rng, started_ms).await,
+        TransactionKind::OrderStatus => execute_order_status(context, rng, started_ms).await,
+        TransactionKind::Delivery => execute_delivery(context, rng, started_ms).await,
+        TransactionKind::StockLevel => execute_stock_level(context, rng, started_ms).await,
     }
 }
 
 async fn execute_new_order(
-    client: &ModuleClient,
-    warehouse_count: u32,
-    assignment: &TerminalAssignment,
-    constants: &RunConstants,
+    context: &TransactionContext<'_>,
     rng: &mut StdRng,
     started_ms: u64,
 ) -> Result<TransactionRecord> {
-    let customer_id = customer_id(rng, constants);
+    let customer_id = customer_id(rng, context.constants);
     let line_count = rng.random_range(5..=15);
     let invalid_line = rng.random_bool(0.01);
     let mut order_lines = Vec::with_capacity(line_count);
     let mut remote_order_line_count = 0u32;
     for idx in 0..line_count {
-        let remote = warehouse_count > 1 && rng.random_bool(0.01);
+        let remote = context.config.warehouse_count > 1 && rng.random_bool(0.01);
         let supply_w_id = if remote {
             remote_order_line_count += 1;
-            let mut remote = assignment.warehouse_id;
-            while remote == assignment.warehouse_id {
-                remote = rng.random_range(1..=warehouse_count);
+            let mut remote = context.assignment.warehouse_id;
+            while remote == context.assignment.warehouse_id {
+                remote = rng.random_range(1..=context.config.warehouse_count);
             }
             remote
         } else {
-            assignment.warehouse_id
+            context.assignment.warehouse_id
         };
         let item_id = if invalid_line && idx + 1 == line_count {
             ITEMS + 1
         } else {
-            item_id(rng, constants)
+            item_id(rng, context.constants)
         };
         order_lines.push(NewOrderLineInput {
             item_id,
@@ -357,19 +335,31 @@ async fn execute_new_order(
         });
     }
 
-    let result = client
-        .new_order_async(
-            assignment.warehouse_id,
-            assignment.district_id,
-            customer_id,
-            order_lines,
-        )
-        .await?;
+    let result = retry_reducer_call(context, "new_order", || {
+        let order_lines = order_lines.clone();
+        async move {
+            match context
+                .client
+                .new_order_async(
+                    context.assignment.warehouse_id,
+                    context.assignment.district_id,
+                    customer_id,
+                    order_lines,
+                )
+                .await?
+            {
+                Ok(_) => Ok(NewOrderExecution::Committed),
+                Err(message) if invalid_line => Ok(NewOrderExecution::RolledBack(message)),
+                Err(message) => Err(anyhow!("new_order failed: {}", message)),
+            }
+        }
+    })
+    .await;
     let finished_ms = crate::summary::now_millis();
     match result {
-        Ok(_) => Ok(TransactionRecord {
+        ReducerCallOutcome::Succeeded(NewOrderExecution::Committed) => Ok(TransactionRecord {
             timestamp_ms: finished_ms,
-            terminal_id: assignment.terminal_id,
+            terminal_id: context.assignment.terminal_id,
             kind: TransactionKind::NewOrder,
             success: true,
             latency_ms: finished_ms.saturating_sub(started_ms),
@@ -380,9 +370,9 @@ async fn execute_new_order(
             remote_order_line_count,
             detail: None,
         }),
-        Err(message) if invalid_line => Ok(TransactionRecord {
+        ReducerCallOutcome::Succeeded(NewOrderExecution::RolledBack(message)) => Ok(TransactionRecord {
             timestamp_ms: finished_ms,
-            terminal_id: assignment.terminal_id,
+            terminal_id: context.assignment.terminal_id,
             kind: TransactionKind::NewOrder,
             success: false,
             latency_ms: finished_ms.saturating_sub(started_ms),
@@ -393,175 +383,280 @@ async fn execute_new_order(
             remote_order_line_count,
             detail: Some(message),
         }),
-        Err(message) => bail!(
-            "unexpected new_order failure for terminal {}: {}",
-            assignment.terminal_id,
-            message
-        ),
+        ReducerCallOutcome::Failed(err) => Ok(TransactionRecord {
+            timestamp_ms: finished_ms,
+            terminal_id: context.assignment.terminal_id,
+            kind: TransactionKind::NewOrder,
+            success: false,
+            latency_ms: finished_ms.saturating_sub(started_ms),
+            rollback: false,
+            remote: false,
+            by_last_name: false,
+            order_line_count: line_count as u32,
+            remote_order_line_count,
+            detail: Some(format!("{err:#}")),
+        }),
     }
 }
 
 async fn execute_payment(
-    client: &ModuleClient,
-    warehouse_count: u32,
-    assignment: &TerminalAssignment,
-    constants: &RunConstants,
+    context: &TransactionContext<'_>,
     rng: &mut StdRng,
     started_ms: u64,
 ) -> Result<TransactionRecord> {
-    let remote = warehouse_count > 1 && rng.random_bool(0.15);
+    let remote = context.config.warehouse_count > 1 && rng.random_bool(0.15);
     let c_w_id = if remote {
-        let mut other = assignment.warehouse_id;
-        while other == assignment.warehouse_id {
-            other = rng.random_range(1..=warehouse_count);
+        let mut other = context.assignment.warehouse_id;
+        while other == context.assignment.warehouse_id {
+            other = rng.random_range(1..=context.config.warehouse_count);
         }
         other
     } else {
-        assignment.warehouse_id
+        context.assignment.warehouse_id
     };
     let c_d_id = if remote {
         rng.random_range(1..=DISTRICTS_PER_WAREHOUSE)
     } else {
-        assignment.district_id
+        context.assignment.district_id
     };
     let by_last_name = rng.random_bool(0.60);
     let selector = if by_last_name {
-        CustomerSelector::ByLastName(customer_last_name(rng, constants))
+        CustomerSelector::ByLastName(customer_last_name(rng, context.constants))
     } else {
-        CustomerSelector::ById(customer_id(rng, constants))
+        CustomerSelector::ById(customer_id(rng, context.constants))
     };
     let amount_cents = rng.random_range(100..=500_000);
-    let finished = expect_ok(
-        "payment",
-        client
-            .payment_async(
-                assignment.warehouse_id,
-                assignment.district_id,
-                c_w_id,
-                c_d_id,
-                selector,
-                amount_cents,
-            )
-            .await,
-    )?;
-    let _ = finished;
+    let result = retry_reducer_call(context, "payment", || {
+        let selector = selector.clone();
+        async move {
+            let _ = expect_ok(
+                "payment",
+                context
+                    .client
+                    .payment_async(
+                        context.assignment.warehouse_id,
+                        context.assignment.district_id,
+                        c_w_id,
+                        c_d_id,
+                        selector,
+                        amount_cents,
+                    )
+                    .await,
+            )?;
+            Ok(())
+        }
+    })
+    .await;
     let finished_ms = crate::summary::now_millis();
+    let (success, detail) = match result {
+        ReducerCallOutcome::Succeeded(()) => (true, None),
+        ReducerCallOutcome::Failed(err) => (false, Some(format!("{err:#}"))),
+    };
     Ok(TransactionRecord {
         timestamp_ms: finished_ms,
-        terminal_id: assignment.terminal_id,
+        terminal_id: context.assignment.terminal_id,
         kind: TransactionKind::Payment,
-        success: true,
+        success,
         latency_ms: finished_ms.saturating_sub(started_ms),
         rollback: false,
         remote,
         by_last_name,
         order_line_count: 0,
         remote_order_line_count: 0,
-        detail: None,
+        detail,
     })
 }
 
 async fn execute_order_status(
-    client: &ModuleClient,
-    assignment: &TerminalAssignment,
-    constants: &RunConstants,
+    context: &TransactionContext<'_>,
     rng: &mut StdRng,
     started_ms: u64,
 ) -> Result<TransactionRecord> {
     let by_last_name = rng.random_bool(0.60);
     let selector = if by_last_name {
-        CustomerSelector::ByLastName(customer_last_name(rng, constants))
+        CustomerSelector::ByLastName(customer_last_name(rng, context.constants))
     } else {
-        CustomerSelector::ById(customer_id(rng, constants))
+        CustomerSelector::ById(customer_id(rng, context.constants))
     };
-    let _ = expect_ok(
-        "order_status",
-        client
-            .order_status_async(assignment.warehouse_id, assignment.district_id, selector)
-            .await,
-    )?;
+    let result = retry_reducer_call(context, "order_status", || {
+        let selector = selector.clone();
+        async move {
+            let _ = expect_ok(
+                "order_status",
+                context
+                    .client
+                    .order_status_async(
+                        context.assignment.warehouse_id,
+                        context.assignment.district_id,
+                        selector,
+                    )
+                    .await,
+            )?;
+            Ok(())
+        }
+    })
+    .await;
     let finished_ms = crate::summary::now_millis();
+    let (success, detail) = match result {
+        ReducerCallOutcome::Succeeded(()) => (true, None),
+        ReducerCallOutcome::Failed(err) => (false, Some(format!("{err:#}"))),
+    };
     Ok(TransactionRecord {
         timestamp_ms: finished_ms,
-        terminal_id: assignment.terminal_id,
+        terminal_id: context.assignment.terminal_id,
         kind: TransactionKind::OrderStatus,
-        success: true,
+        success,
         latency_ms: finished_ms.saturating_sub(started_ms),
         rollback: false,
         remote: false,
         by_last_name,
         order_line_count: 0,
         remote_order_line_count: 0,
-        detail: None,
+        detail,
     })
 }
 
 async fn execute_delivery(
-    client: &ModuleClient,
-    run_id: &str,
-    driver_id: &str,
-    assignment: &TerminalAssignment,
-    request_ids: &AtomicU64,
+    context: &TransactionContext<'_>,
     rng: &mut StdRng,
     started_ms: u64,
 ) -> Result<TransactionRecord> {
-    let request_id = request_ids.fetch_add(1, Ordering::Relaxed);
-    let _ = expect_ok(
-        "queue_delivery",
-        client
-            .queue_delivery_async(
-                run_id.to_string(),
-                driver_id.to_string(),
-                assignment.terminal_id,
-                request_id,
-                assignment.warehouse_id,
-                rng.random_range(1..=10),
-            )
-            .await,
-    )?;
+    let request_id = context.request_ids.fetch_add(1, Ordering::Relaxed);
+    let carrier_id = rng.random_range(1..=10);
+    let result = retry_reducer_call(context, "queue_delivery", || async move {
+        let _ = expect_ok(
+            "queue_delivery",
+            context
+                .client
+                .queue_delivery_async(
+                    context.run_id.to_string(),
+                    context.driver_id.to_string(),
+                    context.assignment.terminal_id,
+                    request_id,
+                    context.assignment.warehouse_id,
+                    carrier_id,
+                )
+                .await,
+        )?;
+        Ok(())
+    })
+    .await;
     let finished_ms = crate::summary::now_millis();
+    let (success, detail) = match result {
+        ReducerCallOutcome::Succeeded(()) => (true, None),
+        ReducerCallOutcome::Failed(err) => (false, Some(format!("{err:#}"))),
+    };
     Ok(TransactionRecord {
         timestamp_ms: finished_ms,
-        terminal_id: assignment.terminal_id,
+        terminal_id: context.assignment.terminal_id,
         kind: TransactionKind::Delivery,
-        success: true,
+        success,
         latency_ms: finished_ms.saturating_sub(started_ms),
         rollback: false,
         remote: false,
         by_last_name: false,
         order_line_count: 0,
         remote_order_line_count: 0,
-        detail: None,
+        detail,
     })
 }
 
 async fn execute_stock_level(
-    client: &ModuleClient,
-    assignment: &TerminalAssignment,
+    context: &TransactionContext<'_>,
     rng: &mut StdRng,
     started_ms: u64,
 ) -> Result<TransactionRecord> {
     let threshold = rng.random_range(10..=20);
-    let _ = expect_ok(
-        "stock_level",
-        client
-            .stock_level_async(assignment.warehouse_id, assignment.district_id, threshold)
-            .await,
-    )?;
+    let result = retry_reducer_call(context, "stock_level", || async move {
+        let _ = expect_ok(
+            "stock_level",
+            context
+                .client
+                .stock_level_async(
+                    context.assignment.warehouse_id,
+                    context.assignment.district_id,
+                    threshold,
+                )
+                .await,
+        )?;
+        Ok(())
+    })
+    .await;
     let finished_ms = crate::summary::now_millis();
+    let (success, detail) = match result {
+        ReducerCallOutcome::Succeeded(()) => (true, None),
+        ReducerCallOutcome::Failed(err) => (false, Some(format!("{err:#}"))),
+    };
     Ok(TransactionRecord {
         timestamp_ms: finished_ms,
-        terminal_id: assignment.terminal_id,
+        terminal_id: context.assignment.terminal_id,
         kind: TransactionKind::StockLevel,
-        success: true,
+        success,
         latency_ms: finished_ms.saturating_sub(started_ms),
         rollback: false,
         remote: false,
         by_last_name: false,
         order_line_count: 0,
         remote_order_line_count: 0,
-        detail: None,
+        detail,
     })
+}
+
+async fn retry_reducer_call<T, F, Fut>(
+    context: &TransactionContext<'_>,
+    reducer_name: &'static str,
+    mut call: F,
+) -> ReducerCallOutcome<T>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T>>,
+{
+    let mut last_error = None;
+
+    for attempt in 1..=REDUCER_CALL_MAX_ATTEMPTS {
+        match call().await {
+            Ok(value) => {
+                if attempt > 1 {
+                    log::info!(
+                        "driver {} terminal {} reducer {} succeeded on attempt {}/{}",
+                        context.driver_id,
+                        context.assignment.terminal_id,
+                        reducer_name,
+                        attempt,
+                        REDUCER_CALL_MAX_ATTEMPTS
+                    );
+                }
+                return ReducerCallOutcome::Succeeded(value);
+            }
+            Err(err) => {
+                if attempt == REDUCER_CALL_MAX_ATTEMPTS {
+                    log::error!(
+                        "driver {} terminal {} reducer {} failed after {} attempt(s): {err:#}",
+                        context.driver_id,
+                        context.assignment.terminal_id,
+                        reducer_name,
+                        REDUCER_CALL_MAX_ATTEMPTS
+                    );
+                    last_error = Some(err);
+                    break;
+                }
+
+                log::warn!(
+                    "driver {} terminal {} reducer {} failed on attempt {}/{}: {err:#}; retrying in {}ms",
+                    context.driver_id,
+                    context.assignment.terminal_id,
+                    reducer_name,
+                    attempt,
+                    REDUCER_CALL_MAX_ATTEMPTS,
+                    REDUCER_RETRY_DELAY_MS
+                );
+                tokio::time::sleep(Duration::from_millis(REDUCER_RETRY_DELAY_MS)).await;
+                last_error = Some(err);
+            }
+        }
+    }
+
+    ReducerCallOutcome::Failed(last_error.unwrap_or_else(|| anyhow!("{} failed without an error", reducer_name)))
 }
 
 async fn resolve_driver_setup(config: DriverConfig) -> Result<(DriverConfig, RunSchedule)> {
