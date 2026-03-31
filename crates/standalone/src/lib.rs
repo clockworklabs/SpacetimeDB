@@ -82,7 +82,7 @@ impl StandaloneEnv {
         let program_store = Arc::new(DiskStorage::new(data_dir.program_bytes().0).await?);
 
         let persistence_provider = Arc::new(LocalPersistenceProvider::new(data_dir.clone()));
-        let mut host_controller = HostController::new(
+        let host_controller = HostController::new(
             data_dir,
             config.db_config,
             config.v8_heap_policy,

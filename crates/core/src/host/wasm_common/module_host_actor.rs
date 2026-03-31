@@ -760,7 +760,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         // TxData created at offset N+1 is deferred by the barrier (NOT sent to
         // durability worker yet). Lock released. Non-confirmed-read clients see
         // the changes via subscription broadcast.
-        let commit_result = commit_and_broadcast_event(&self.common.info.subscriptions, client, event, tx);
+        // Commit for side effects: applies to committed_state, broadcasts to
+        // non-confirmed-read clients. The tx_offset (N+1) is deferred by the
+        // barrier and fsynced later when the barrier clears.
+        let _ = commit_and_broadcast_event(&self.common.info.subscriptions, client, event, tx);
 
         // ═══ WRITE LOCK RELEASED ═══════════════════════════════
 
@@ -769,7 +772,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         // commitlog entry contains both the reducer changes and the
         // st_2pc_state deletion -- atomically marking the 2PC as committed.
         {
-            use spacetimedb_datastore::system_tables::{ST_2PC_STATE_ID, ST_2PC_STATE_NAME};
+            use spacetimedb_datastore::system_tables::ST_2PC_STATE_NAME;
             let table_name = spacetimedb_schema::table_name::TableName::new(
                 spacetimedb_schema::identifier::Identifier::new(ST_2PC_STATE_NAME.into()).unwrap(),
             );
@@ -855,7 +858,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
             if persist_commit {
                 // Step 11: clear the durability barrier so the deferred TxData
-                // (offset N+1, reducer row changes) flushes to the durability worker.
+                // (offset N+1, reducer row changes + st_2pc_state delete) flushes
+                // to the durability worker. The durability pipeline fsyncs it in
+                // the background; confirmed-read clients wait for the durable
+                // offset to pass N+1 naturally.
                 stdb.clear_durability_barrier(barrier_offset);
             } else {
                 // Round 2 abort: discard all deferred transactions.
