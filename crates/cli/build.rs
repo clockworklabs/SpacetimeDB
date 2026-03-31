@@ -85,18 +85,32 @@ fn generate_template_files() {
     generated_code.push_str("    let mut templates = HashMap::new();\n\n");
 
     let mut binary_code = String::new();
-    binary_code.push_str("pub fn get_template_binary_files() -> HashMap<&'static str, HashMap<&'static str, &'static [u8]>> {\n");
+    binary_code.push_str(
+        "pub fn get_template_binary_files() -> HashMap<&'static str, HashMap<&'static str, &'static [u8]>> {\n",
+    );
     binary_code.push_str("    let mut templates = HashMap::new();\n\n");
 
     for template in &discovered_templates {
         if let Some(ref server_source) = template.server_source {
             let server_path = PathBuf::from(server_source);
-            generate_template_entry(&mut generated_code, &mut binary_code, &server_path, server_source, &manifest_dir);
+            generate_template_entry(
+                &mut generated_code,
+                &mut binary_code,
+                &server_path,
+                server_source,
+                &manifest_dir,
+            );
         }
 
         if let Some(ref client_source) = template.client_source {
             let client_path = PathBuf::from(client_source);
-            generate_template_entry(&mut generated_code, &mut binary_code, &client_path, client_source, &manifest_dir);
+            generate_template_entry(
+                &mut generated_code,
+                &mut binary_code,
+                &client_path,
+                client_source,
+                &manifest_dir,
+            );
         }
     }
 
