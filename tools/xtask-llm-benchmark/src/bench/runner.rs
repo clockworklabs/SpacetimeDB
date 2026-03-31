@@ -16,7 +16,7 @@ use crate::bench::templates::materialize_project;
 use crate::bench::types::{BenchRunContext, PublishParams, RunContext, RunOneError};
 pub(crate) use crate::bench::types::{RunOutcome, TaskPaths};
 use crate::bench::utils::{
-    bench_concurrency, bench_csharp_concurrency, category_slug, debug_llm, fmt_dur, print_llm_output, sanitize_db_name,
+    bench_concurrency, bench_csharp_concurrency, bench_rust_concurrency, category_slug, debug_llm, fmt_dur, print_llm_output, sanitize_db_name,
     task_slug, work_server_dir_scoped,
 };
 use crate::bench::Publisher;
@@ -367,6 +367,7 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
     let lang_name = cfg.lang.as_str();
     let buf = match cfg.lang {
         Lang::CSharp => bench_csharp_concurrency(),
+        Lang::Rust => bench_rust_concurrency(),
         _ => bench_concurrency(),
     };
 
@@ -485,6 +486,7 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
     let lang_name = cfg.lang.as_str();
     let buf = match cfg.lang {
         Lang::CSharp => bench_csharp_concurrency(),
+        Lang::Rust => bench_rust_concurrency(),
         _ => bench_concurrency(),
     };
 
@@ -620,6 +622,7 @@ pub async fn build_goldens_only_for_lang(
     let lang_name = lang.as_str();
     let buf = match lang {
         Lang::CSharp => bench_csharp_concurrency(),
+        Lang::Rust => bench_rust_concurrency(),
         _ => bench_concurrency(),
     };
 
