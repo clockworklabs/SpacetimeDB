@@ -17,36 +17,20 @@ Examples:
 
 ---
 
-## SpacetimeDB SDK Rules
-
-**CRITICAL: Read this section before generating ANY code. It contains the SDK API reference and hallucinated APIs to avoid.**
-
-Before generating code, read the full SDK rule files for the latest API details:
-- `../../docs/static/ai-rules/spacetimedb.mdc` — core concepts (all languages)
-- `../../docs/static/ai-rules/spacetimedb-typescript.mdc` — TypeScript SDK reference (table definitions, reducers, client patterns, hallucinated APIs to avoid)
-
-These files contain the authoritative SDK reference including:
-- Table definition syntax (`table(OPTIONS, COLUMNS)` — indexes go in OPTIONS)
-- Reducer definition syntax (name from export, object params, not positional)
-- Client patterns (useTable returns tuple, connectionBuilder must be memoized)
-- Hallucinated APIs to avoid (no `@clockworklabs/spacetimedb-sdk`, no `.filter()` on tables object, etc.)
-- Scheduled tables, timestamps, data visibility, React integration
-
-**You MUST read these files in Phase 0 before generating any code.**
-
----
-
 ## Quick Start
 
 When asked to run the exhaust test:
 
-1. Run pre-flight checks (SpacetimeDB running, Chrome MCP available)
-2. Read the prompt files (language setup + composed feature prompt)
-3. Follow the 5-phase workflow to generate and deploy
-4. Test every feature via Chrome MCP browser interaction
-5. Fix any broken features, redeploy, retest (the loop)
-6. Write `ITERATION_LOG.md` after each fix iteration (durable progress tracking)
-7. Write `GRADING_RESULTS.md` at the end (cost tracking is automatic via OpenTelemetry)
+1. **Read the backend-specific instructions** from `backends/spacetime.md` or `backends/postgres.md` (as specified in the launch prompt)
+2. Run pre-flight checks
+3. Read the prompt files (language setup + composed feature prompt)
+4. Follow the phase workflow to generate and deploy (phases vary by backend — see backend file)
+5. Test every feature via Chrome MCP browser interaction
+6. Fix any broken features, redeploy, retest (the loop)
+7. Write `ITERATION_LOG.md` after each fix iteration (durable progress tracking)
+8. Write `GRADING_RESULTS.md` at the end (cost tracking is automatic via OpenTelemetry)
+
+**CRITICAL:** Read the backend-specific file FIRST. It contains setup, code generation, and deployment instructions specific to your backend.
 
 ---
 
@@ -63,122 +47,37 @@ These are passed to you via the launch prompt from `run.sh`:
 
 ---
 
-## Phase 0: Setup
+## Phase 0: Setup (Common)
 
-1. **Pre-flight checks:**
-   ```bash
-   # Verify SpacetimeDB is running
-   spacetime server ping local
-   ```
-   If SpacetimeDB is not running, STOP and report the error.
+1. **Read backend-specific instructions:** `backends/<backend>.md` — contains pre-flight checks, code generation phases, and deployment steps.
 
 2. **Verify Chrome MCP is available** by calling `read_page`. If Chrome MCP tools are not available, STOP and report the error. Browser testing is required.
+   **Note:** In headless mode (`--print`), Chrome MCP is NOT available — that's expected. Browser testing is done in a separate grading session.
 
-3. Use the **app directory provided in the launch prompt** (e.g. `results/spacetime/chat-app-20260330-143000/`).
-   Create subdirectories: `backend/spacetimedb/src/` and `client/src/`
+3. Use the **app directory provided in the launch prompt**.
 
 4. Read prompt files:
    - Language setup: `../apps/chat-app/prompts/language/typescript-<backend>.md`
    - Feature prompt: `../apps/chat-app/prompts/composed/<NN>_<name>.md` (based on level)
 
-5. Read SDK rules (**CRITICAL — must read before generating code**):
-   - `../../docs/static/ai-rules/spacetimedb.mdc` — core SpacetimeDB concepts
-   - `../../docs/static/ai-rules/spacetimedb-typescript.mdc` — TypeScript SDK reference, hallucinated APIs to avoid
-
-6. Read benchmark pattern rules:
-   - `../.cursor/rules/deployment.mdc` — 5-phase workflow and CLI commands
-   - `../.cursor/rules/patterns-typescript.mdc` — file templates and conventions
-
-7. **CRITICAL: Anti-contamination.** Do NOT read any files under:
+5. **CRITICAL: Anti-contamination.** Do NOT read any files under:
    - `../apps/chat-app/typescript/` (graded implementations)
    - `../apps/chat-app/staging/` (other staging implementations)
    - Any other AI-generated code in this workspace
 
-8. Note the start time for wall-clock tracking. Token costs are tracked automatically via OpenTelemetry.
+6. Note the start time for wall-clock tracking. Token costs are tracked automatically via OpenTelemetry.
 
 ---
 
-## Phase 1: Generate Backend
+## Phases 1-5: Generate, Build, Deploy
 
-Generate the SpacetimeDB backend (or PostgreSQL backend) following the prompt and pattern rules.
-
-**For SpacetimeDB:**
-- Create `backend/spacetimedb/package.json` (use template from patterns-typescript.mdc)
-- Create `backend/spacetimedb/tsconfig.json` (use template from patterns-typescript.mdc)
-- Create `backend/spacetimedb/src/schema.ts` — all tables and indexes
-- Create `backend/spacetimedb/src/index.ts` — all reducers and lifecycle hooks
-- Install and publish:
-  ```bash
-  cd <backend-dir> && npm install
-  spacetime publish chat-app-<timestamp> --module-path <backend-dir>
-  ```
-
-**Module naming:** Use the timestamped folder name as the module name (e.g. `chat-app-20260330-143000`).
-
----
-
-## Phase 2: Generate Bindings
-
-```bash
-spacetime generate --lang typescript --out-dir <client>/src/module_bindings --module-path <backend-dir>
-```
-
-Read the generated bindings to know the exact type names (table names, reducer signatures) before writing client code.
-
----
-
-## Phase 3: Generate Client
-
-Generate client files using the REAL binding types from Phase 2.
-
-- Create `client/package.json` (use template from patterns-typescript.mdc)
-- Create `client/vite.config.ts` (port 5173, NEVER 3000)
-- Create `client/tsconfig.json` (use template)
-- Create `client/index.html` (use template)
-- Create `client/src/config.ts` — module name and SpacetimeDB URI
-- Create `client/src/main.tsx` — React entry point
-- Create `client/src/App.tsx` — main application component
-- Create `client/src/styles.css` — SpacetimeDB dark theme styling
-
-**CRITICAL:** Import from `./module_bindings` using the REAL generated type names, not guessed ones.
-
----
-
-## Phase 4: Verify
-
-```bash
-cd <client-dir> && npm install
-npx tsc --noEmit          # Type-check
-npm run build             # Full production build
-```
-
-Both must pass. If either fails:
-1. Read the error
-2. Fix the code
-3. Retry (up to 3 attempts)
-4. Each fix counts as a **reprompt** — log it to ITERATION_LOG.md with category (Compilation/Build)
-
----
-
-## Phase 5: Deploy
-
-```bash
-# Kill any existing dev server
-npx kill-port 5173 2>/dev/null || true
-
-# Start dev server in background
-cd <client-dir> && npm run dev &
-```
-
-Wait for the dev server to be ready (poll `http://localhost:5173` up to 30 seconds).
-
-**For PostgreSQL apps:** Also start the API server on port 3001 and ensure PostgreSQL is running on 5432.
+**These phases are backend-specific.** Follow the instructions in `backends/spacetime.md` or `backends/postgres.md`.
 
 ---
 
 ## Phase 6: Browser Testing
 
-This is where you interact with the running app via Chrome MCP tools to test every feature.
+This is where you interact with the running app via Chrome MCP tools to test every feature. **This phase is identical for both backends** — the test plans don't care how the backend is implemented.
 
 ### 6.1 Browser Setup
 
@@ -244,9 +143,7 @@ LOOP (iteration 1 to max_iterations):
      a. Identify the bug from browser observations
      b. Read the relevant source code
      c. Fix the code (backend and/or client)
-  4. Redeploy:
-     - If backend changed: re-publish module, regenerate bindings if schema changed
-     - If client changed: Vite HMR handles it (or restart dev server)
+  4. Redeploy (see backend-specific file for redeploy steps)
   5. Retest all features (not just the ones you fixed — regressions happen)
   6. IMMEDIATELY write iteration to ITERATION_LOG.md (see format below)
 ```
@@ -268,7 +165,7 @@ Write `ITERATION_LOG.md` in the app directory. Format:
 # Iteration Log
 
 ## Run Info
-- **Backend:** spacetime
+- **Backend:** spacetime|postgres
 - **Level:** 1
 - **Started:** 2026-03-30T14:30:00
 
@@ -302,12 +199,6 @@ Write `ITERATION_LOG.md` in the app directory. Format:
 
 ---
 
-## Iteration 2 — Fix (14:48)
-
-...
-
----
-
 ## Final Result
 
 **Total iterations:** 3
@@ -330,6 +221,7 @@ Produce `GRADING_RESULTS.md` in the app folder. Follow this exact format:
 **Model:** Claude Code (Opus 4.6)
 **Date:** <YYYY-MM-DD>
 **Prompt:** `<prompt_filename>`
+**Backend:** spacetime|postgres
 **Grading Method:** Automated browser interaction (exhaust-test)
 
 ---
@@ -436,22 +328,3 @@ run.sh (sets CLAUDE_CODE_ENABLE_TELEMETRY=1 + OTLP env vars)
 - Docker running with `docker compose -f docker-compose.otel.yaml up -d`
 - The `run.sh` script was used to launch this session (sets OTel env vars)
 - After session ends, `parse-telemetry.mjs` runs automatically
-
----
-
-## Reference Files
-
-All paths relative to `exhaust-test/` (this directory):
-
-| File | Purpose |
-|------|---------|
-| `../../docs/static/ai-rules/spacetimedb.mdc` | Core SDK concepts (all languages) |
-| `../../docs/static/ai-rules/spacetimedb-typescript.mdc` | TypeScript SDK reference + hallucinated APIs |
-| `../apps/chat-app/prompts/language/typescript-spacetime.md` | SpacetimeDB language setup |
-| `../apps/chat-app/prompts/language/typescript-postgres.md` | PostgreSQL language setup |
-| `../apps/chat-app/prompts/composed/01_basic.md` through `12_full.md` | Feature prompts by level |
-| `../apps/chat-app/prompts/grading_rubric.md` | Full scoring rubric with test cases |
-| `../.cursor/rules/deployment.mdc` | 5-phase workflow, CLI commands, port config |
-| `../.cursor/rules/patterns-typescript.mdc` | File templates, project conventions |
-| `../.cursor/rules/benchmark.mdc` | Anti-contamination rules, prompt execution |
-| `test-plans/feature-*.md` | Per-feature browser test scripts |

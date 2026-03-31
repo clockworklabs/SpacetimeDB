@@ -1,19 +1,17 @@
 #!/bin/bash
-# Exhaust Test Launcher
+# Exhaust Test Launcher — Phase 1: Generate & Deploy
 #
-# Runs the benchmark in Claude Code with OpenTelemetry enabled
-# for exact per-request token tracking.
+# Runs code generation and deployment in headless Claude Code with OTel tracking.
+# After this completes, run grade.sh to do browser testing and grading interactively.
 #
 # Usage:
 #   ./run.sh                          # defaults: level=1, backend=spacetime
 #   ./run.sh --level 5 --backend postgres
-#   ./run.sh --level 12 --backend spacetime
 #
 # Prerequisites:
 #   - Claude Code CLI installed (claude or npx @anthropic-ai/claude-code)
 #   - Docker running (for OTel Collector)
 #   - SpacetimeDB running (spacetime start)
-#   - Chrome open with Claude MCP extension
 
 set -euo pipefail
 
@@ -25,10 +23,13 @@ RESULTS_DIR="$SCRIPT_DIR/results"
 
 LEVEL=1
 BACKEND="spacetime"
+FIX_MODE=""
+FIX_APP_DIR=""
 while [[ $# -gt 0 ]]; do
   case $1 in
     --level) LEVEL="$2"; shift 2 ;;
     --backend) BACKEND="$2"; shift 2 ;;
+    --fix) FIX_MODE=1; FIX_APP_DIR="$2"; shift 2 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
@@ -41,13 +42,11 @@ if command -v claude &>/dev/null; then
 elif command -v claude.exe &>/dev/null; then
   CLAUDE_CMD="claude.exe"
 else
-  # Try npx as fallback
   if npx @anthropic-ai/claude-code --version &>/dev/null; then
     CLAUDE_CMD="npx @anthropic-ai/claude-code"
   else
     echo "ERROR: Claude Code CLI not found."
     echo "Install it with: npm install -g @anthropic-ai/claude-code"
-    echo "Or ensure 'claude' is on your PATH."
     exit 1
   fi
 fi
@@ -58,21 +57,27 @@ echo "Using Claude CLI: $CLAUDE_CMD"
 echo ""
 echo "=== Pre-flight Checks ==="
 
-# Check SpacetimeDB
-if spacetime server ping local &>/dev/null; then
-  echo "[OK] SpacetimeDB is running"
-else
-  echo "[FAIL] SpacetimeDB is not running. Start it with: spacetime start"
-  exit 1
+if [[ "$BACKEND" == "spacetime" ]]; then
+  if spacetime server ping local &>/dev/null; then
+    echo "[OK] SpacetimeDB is running"
+  else
+    echo "[FAIL] SpacetimeDB is not running. Start it with: spacetime start"
+    exit 1
+  fi
+elif [[ "$BACKEND" == "postgres" ]]; then
+  if docker exec spacetime-web-postgres-1 psql -U spacetime -d spacetime -c "SELECT 1" &>/dev/null; then
+    echo "[OK] PostgreSQL is running (port 5433)"
+  else
+    echo "[FAIL] PostgreSQL is not reachable. Check Docker container spacetime-web-postgres-1."
+    exit 1
+  fi
 fi
 
-# Check Docker & OTel Collector
 if ! docker info &>/dev/null; then
   echo "[FAIL] Docker is not running."
   exit 1
 fi
 
-# Start OTel Collector if not running
 if docker compose -f "$SCRIPT_DIR/docker-compose.otel.yaml" ps --status running 2>/dev/null | grep -q otel-collector; then
   echo "[OK] OTel Collector is running"
 else
@@ -81,7 +86,6 @@ else
   echo "[OK] OTel Collector started"
 fi
 
-# Check Node.js
 if command -v node &>/dev/null; then
   echo "[OK] Node.js $(node --version)"
 else
@@ -89,7 +93,6 @@ else
   exit 1
 fi
 
-# Check prompt files exist
 COMPOSED_PROMPT="$SCRIPT_DIR/../apps/chat-app/prompts/composed/$(printf '%02d' "$LEVEL")_"*".md"
 # shellcheck disable=SC2086
 if ls $COMPOSED_PROMPT &>/dev/null; then
@@ -111,7 +114,6 @@ RUN_DIR="$TELEMETRY_DIR/$RUN_ID"
 APP_DIR="$RESULTS_DIR/$BACKEND/chat-app-$TIMESTAMP"
 mkdir -p "$RUN_DIR"
 mkdir -p "$APP_DIR"
-mkdir -p "$TELEMETRY_DIR"
 
 # On Windows (Git Bash/MSYS2), convert paths to native format for Node.js
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
@@ -124,11 +126,11 @@ else
   SCRIPT_DIR_NATIVE="$SCRIPT_DIR"
 fi
 
-echo "=== Exhaust Test ==="
+echo "=== Exhaust Test: Generate & Deploy ==="
 echo "  Level:     $LEVEL"
 echo "  Backend:   $BACKEND"
 echo "  Run ID:    $RUN_ID"
-echo "  App dir:   $APP_DIR"
+echo "  App dir:   $APP_DIR_NATIVE"
 echo "  Telemetry: $RUN_DIR"
 echo ""
 
@@ -151,48 +153,129 @@ cat > "$RUN_DIR/metadata.json" <<EOF
   "timestamp": "$TIMESTAMP",
   "startedAt": "$START_TIME",
   "runId": "$RUN_ID",
-  "appDir": "$APP_DIR",
-  "promptFile": "$(basename "$PROMPT_FILE")"
+  "appDir": "$APP_DIR_NATIVE",
+  "promptFile": "$(basename "$PROMPT_FILE")",
+  "phase": "generate"
 }
 EOF
 
 # ─── Build the prompt ────────────────────────────────────────────────────────
 
-# The prompt tells Claude Code exactly what to do.
-# Claude Code will auto-read CLAUDE.md from the CWD for additional context.
-PROMPT=$(cat <<PROMPT_EOF
-Run the exhaust test benchmark.
+if [[ -n "$FIX_MODE" ]]; then
+  # ─── FIX MODE: Read bug report, fix code, redeploy ──────────────────────
+
+  # In fix mode, APP_DIR is the existing app dir
+  APP_DIR="$FIX_APP_DIR"
+  if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+    APP_DIR_NATIVE=$(cygpath -w "$APP_DIR")
+  else
+    APP_DIR_NATIVE="$APP_DIR"
+  fi
+
+  if [[ ! -f "$APP_DIR/BUG_REPORT.md" ]]; then
+    echo "ERROR: No BUG_REPORT.md found in $APP_DIR"
+    echo "Run the grading session first to produce a bug report."
+    exit 1
+  fi
+
+  echo "=== Exhaust Test: Fix Iteration ==="
+  echo "  App dir: $APP_DIR_NATIVE"
+  echo "  Bug report: $APP_DIR_NATIVE/BUG_REPORT.md"
+  echo ""
+
+  # Detect backend from existing app directory structure
+  if [[ -d "$APP_DIR/backend/spacetimedb" ]]; then
+    FIX_BACKEND="spacetime"
+  elif [[ -d "$APP_DIR/server" ]]; then
+    FIX_BACKEND="postgres"
+  else
+    FIX_BACKEND="unknown"
+  fi
+
+  PROMPT=$(cat <<PROMPT_EOF
+Fix the bugs in the exhaust test app.
+
+**App directory:** $APP_DIR_NATIVE
+**Backend:** $FIX_BACKEND
+
+**Instructions:**
+1. Read backends/$FIX_BACKEND.md for backend-specific redeploy instructions
+2. Read BUG_REPORT.md in the app directory — it describes what's broken
+3. Read the relevant source code files mentioned in the bug report
+4. Fix each bug described in the report
+5. Redeploy as needed (see backend file for steps)
+6. Verify: npx tsc --noEmit && npm run build
+7. Make sure the dev server is running on port 5173
+8. Append this fix iteration to ITERATION_LOG.md in the app directory
+
+Do NOT do browser testing — that happens in the grading session.
+Cost tracking is automatic via OpenTelemetry — do NOT estimate tokens.
+
+When done, output: FIX_COMPLETE
+PROMPT_EOF
+  )
+
+  MODE_LABEL="fix"
+
+else
+  # ─── GENERATE MODE: Initial code generation and deploy ──────────────────
+
+  # Resolve absolute paths for prompt references
+  if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+    PROMPT_FILE_NATIVE=$(cygpath -w "$PROMPT_FILE")
+    LANG_PROMPT_NATIVE=$(cygpath -w "$SCRIPT_DIR/../apps/chat-app/prompts/language/typescript-$BACKEND.md")
+  else
+    PROMPT_FILE_NATIVE="$PROMPT_FILE"
+    LANG_PROMPT_NATIVE="$SCRIPT_DIR/../apps/chat-app/prompts/language/typescript-$BACKEND.md"
+  fi
+
+  PROMPT=$(cat <<PROMPT_EOF
+Run the exhaust test benchmark — GENERATE AND DEPLOY ONLY.
 
 **Configuration:**
 - Level: $LEVEL
 - Backend: $BACKEND
-- App output directory: $APP_DIR
+- App output directory: $APP_DIR_NATIVE (this is also your working directory)
 - Run ID: $RUN_ID
 
 **Instructions:**
-Follow the CLAUDE.md workflow (Phases 0 through 8). Key points:
-1. Read the SDK rules and prompt files (Phase 0)
-2. Generate, build, and deploy the app (Phases 1-5)
-3. Test every feature via Chrome MCP browser interaction (Phase 6)
-4. Fix bugs → redeploy → retest loop (Phase 7)
-5. Write GRADING_RESULTS.md in the app directory (Phase 8)
-6. Write ITERATION_LOG.md in the app directory after each fix iteration
+1. Read the CLAUDE.md in this directory — it has backend-specific setup, architecture, and phase instructions
+2. Read the language prompt: $LANG_PROMPT_NATIVE
+3. Read the feature prompt: $PROMPT_FILE_NATIVE
+4. Follow the phases in CLAUDE.md to generate, build, and deploy the app
+5. Write all code in the current directory (server/ and client/ subdirectories)
 
-The app directory is: $APP_DIR_NATIVE
-Write all generated code there (backend/ and client/ subdirectories).
-Write GRADING_RESULTS.md and ITERATION_LOG.md there when done.
+If the build fails, fix and retry (up to 3 times per phase).
+Write an ITERATION_LOG.md tracking any build reprompts.
 
+Do NOT do browser testing — that happens in a separate grading session.
 Cost tracking is automatic via OpenTelemetry — do NOT estimate tokens.
-PROMPT_EOF
-)
 
-echo "Starting Claude Code session..."
+When done, output: DEPLOY_COMPLETE
+PROMPT_EOF
+  )
+
+  MODE_LABEL="generate"
+fi
+
+echo "Starting Claude Code session ($MODE_LABEL)..."
 echo "─────────────────────────────────────────────"
 
-# ─── Run Claude Code ─────────────────────────────────────────────────────────
+# ─── Copy backend-specific CLAUDE.md into app directory ─────────────────────
+# This ensures the Code Agent only sees instructions for the chosen backend,
+# with zero contamination from other backends.
 
-cd "$SCRIPT_DIR"
-$CLAUDE_CMD --print --verbose --output-format text --max-turns 200 --dangerously-skip-permissions -p "$PROMPT"
+if [[ -z "$FIX_MODE" ]]; then
+  cp "$SCRIPT_DIR/backends/$BACKEND.md" "$APP_DIR/CLAUDE.md"
+  echo "Copied backends/$BACKEND.md → app CLAUDE.md"
+fi
+
+# ─── Run Claude Code ─────────────────────────────────────────────────────────
+# Run from the APP directory so CLAUDE.md auto-discovery picks up the
+# backend-specific file, not the parent exhaust-test/CLAUDE.md.
+
+cd "$APP_DIR"
+$CLAUDE_CMD --print --verbose --output-format text --dangerously-skip-permissions -p "$PROMPT"
 EXIT_CODE=$?
 
 echo ""
@@ -202,20 +285,22 @@ echo "────────────────────────�
 
 END_TIME=$(date +%Y-%m-%dT%H:%M:%S%z)
 
-# Update metadata with end time
+# Use a temp file approach to avoid path escaping issues on Windows
+METADATA_FILE="$RUN_DIR/metadata.json"
 node -e "
 const fs = require('fs');
-const f = '$RUN_DIR_NATIVE/metadata.json'.replace(/\\\\/g, '/');
+const f = process.argv[1];
 const m = JSON.parse(fs.readFileSync(f, 'utf-8'));
 m.endedAt = '$END_TIME';
 m.exitCode = $EXIT_CODE;
+m.mode = '$MODE_LABEL';
 fs.writeFileSync(f, JSON.stringify(m, null, 2));
-"
+" -- "$METADATA_FILE"
 
 # ─── Parse telemetry ─────────────────────────────────────────────────────────
 
 echo ""
-echo "=== Session Complete ==="
+echo "=== $MODE_LABEL Complete ==="
 echo "  Started: $START_TIME"
 echo "  Ended:   $END_TIME"
 echo ""
@@ -224,11 +309,20 @@ echo "Parsing telemetry..."
 if node "$SCRIPT_DIR_NATIVE/parse-telemetry.mjs" "$RUN_DIR_NATIVE"; then
   echo ""
   echo "=== Results ==="
-  echo "  App:        $APP_DIR"
-  echo "  Grading:    $APP_DIR/GRADING_RESULTS.md"
-  echo "  Iterations: $APP_DIR/ITERATION_LOG.md"
+  echo "  App:        $APP_DIR_NATIVE"
   echo "  Cost:       $RUN_DIR/COST_REPORT.md"
-  echo "  Telemetry:  $RUN_DIR/"
+  echo ""
+  if [[ -z "$FIX_MODE" ]]; then
+    echo "=== Next Step: Grade the app ==="
+    echo "  In Claude Code, say:"
+    echo "    Grade the app at $APP_DIR_NATIVE"
+    echo ""
+  else
+    echo "=== Next Step: Re-grade the app ==="
+    echo "  In Claude Code, say:"
+    echo "    Re-grade the app at $APP_DIR_NATIVE"
+    echo ""
+  fi
 else
   echo "WARNING: Telemetry parsing failed. Raw logs at: $TELEMETRY_DIR/logs.jsonl"
 fi

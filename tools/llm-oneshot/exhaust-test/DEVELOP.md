@@ -6,14 +6,26 @@ How to set up, run, and interpret the LLM cost-to-done benchmark.
 
 ## What This Does
 
-Launches a Claude Code session that autonomously:
-1. Generates a chat app (SpacetimeDB or PostgreSQL backend + React client)
-2. Deploys it locally
-3. Tests every feature via Chrome browser interaction
-4. Fixes bugs, redeploys, retests — looping until done or iteration limit hit
-5. Produces `GRADING_RESULTS.md` with per-feature scores
+Measures the **total token cost to reach a fully working chat app** by alternating between two agents:
 
-Token costs are tracked via OpenTelemetry — every API call is logged with exact input/output token counts. After the session, `parse-telemetry.mjs` generates `COST_REPORT.md`.
+1. **Code Agent** (headless, `run.sh`) — generates code, fixes bugs, deploys. Token-tracked via OpenTelemetry.
+2. **Grade Agent** (interactive Claude Code) — tests in Chrome via MCP, writes bug reports. NOT token-tracked.
+
+Only the Code Agent's tokens count toward the benchmark. Grading cost is the same for both SpacetimeDB and PostgreSQL, so it's excluded.
+
+### The Loop
+
+```
+run.sh --level 1          → Code Agent generates & deploys app (tokens tracked)
+  ↓
+You (in Claude Code)      → Grade Agent tests in Chrome, writes BUG_REPORT.md
+  ↓
+run.sh --fix <app-dir>    → Code Agent reads bugs, fixes code, redeploys (tokens tracked)
+  ↓
+You (in Claude Code)      → Grade Agent retests, writes updated BUG_REPORT.md or GRADING_RESULTS.md
+  ↓
+... repeat until all features pass or iteration limit hit
+```
 
 ---
 
@@ -21,104 +33,115 @@ Token costs are tracked via OpenTelemetry — every API call is logged with exac
 
 ### 1. SpacetimeDB
 
-SpacetimeDB must be running locally. The benchmark uses `spacetime publish` and `spacetime generate`.
-
 ```bash
 spacetime start
 ```
 
 ### 2. Docker (for OpenTelemetry Collector)
 
-The OTel Collector captures per-request token usage from Claude Code.
-
 ```bash
 cd tools/llm-oneshot/exhaust-test
 docker compose -f docker-compose.otel.yaml up -d
 ```
 
-This starts a collector on ports 4317 (gRPC) and 4318 (HTTP) that writes telemetry to `telemetry/logs.jsonl`.
-
-To verify it's running:
-```bash
-docker compose -f docker-compose.otel.yaml ps
-```
-
 ### 3. Claude Code CLI
 
-The `claude` CLI must be installed and available on PATH:
-```bash
-claude --version
-```
+Needs `claude` on PATH, or `npx @anthropic-ai/claude-code` works as fallback.
 
-### 4. Chrome MCP Extension
+### 4. Chrome + Claude MCP Extension
 
-The benchmark uses Chrome MCP tools for browser-based testing (navigating, clicking, reading page content, taking screenshots). You need:
-
-- Google Chrome installed
-- The "Claude in Chrome" MCP extension installed and configured
-- Chrome running when the benchmark starts
-
-The MCP tools used: `navigate`, `find`, `read_page`, `get_page_text`, `computer`, `form_input`, `tabs_create_mcp`, `tabs_context_mcp`, `javascript_tool`, `read_console_messages`, `gif_creator`.
+Required for the grading agent (interactive session). Chrome must be open with the "Claude in Chrome" MCP extension active.
 
 ### 5. Node.js
 
-Required for the SpacetimeDB TypeScript module backend, the Vite dev server, and `parse-telemetry.mjs`.
+Required for SpacetimeDB TypeScript backend, Vite dev server, and `parse-telemetry.mjs`.
 
 ---
 
 ## Running a Benchmark
 
-### Quick Start
+### Step 1: Generate & Deploy (headless, token-tracked)
 
 ```bash
 cd tools/llm-oneshot/exhaust-test
-
-# Start dependencies (if not already running)
-spacetime start
-docker compose -f docker-compose.otel.yaml up -d
-
-# Run level 1 (4 features — fastest, good for testing the pipeline)
 ./run.sh --level 1 --backend spacetime
 ```
+
+This:
+1. Runs pre-flight checks (SpacetimeDB, Docker, OTel, prompts)
+2. Launches headless Claude Code with OTel telemetry enabled
+3. Generates backend + client code, builds, deploys to localhost:5173
+4. Parses telemetry → `COST_REPORT.md`
+5. Prints the app directory path
+
+### Step 2: Grade (interactive, not token-tracked)
+
+In this Claude Code session (or a new interactive one), say:
+
+```
+Grade the app at results/spacetime/chat-app-<timestamp>
+```
+
+Or use the helper script:
+```bash
+./grade.sh results/spacetime/chat-app-<timestamp>
+```
+
+The grading agent will:
+1. Open Chrome, navigate to localhost:5173
+2. Test each feature using the test plans
+3. Score features 0-3
+4. If bugs found: write `BUG_REPORT.md` in the app directory
+5. Write/update `ITERATION_LOG.md` and `GRADING_RESULTS.md`
+
+### Step 3: Fix (headless, token-tracked)
+
+If bugs were found:
+
+```bash
+./run.sh --fix results/spacetime/chat-app-<timestamp>
+```
+
+This:
+1. Reads `BUG_REPORT.md` from the app directory
+2. Fixes the code, republishes if needed
+3. Tokens tracked via OTel (cumulative with Step 1)
+
+### Step 4: Re-grade
+
+Back in Claude Code:
+```
+Re-grade the app at results/spacetime/chat-app-<timestamp>
+```
+
+Repeat Steps 3-4 until all features pass.
 
 ### Options
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--level` | `1` | Prompt complexity level (1-12). Level 1 = 4 features, Level 12 = all 15 |
+| `--level` | `1` | Prompt level (1-12). Level 1 = 4 features, Level 12 = all 15 |
 | `--backend` | `spacetime` | `spacetime` or `postgres` |
-
-### What `run.sh` Does
-
-1. **Pre-flight checks** — verifies SpacetimeDB is running, Docker/OTel collector is up, Claude CLI is available, prompt files exist
-2. Creates timestamped output dirs under `results/` and `telemetry/`
-3. Saves `metadata.json` with run parameters and start time
-4. Sets environment variables for OpenTelemetry:
-   - `CLAUDE_CODE_ENABLE_TELEMETRY=1`
-   - `OTEL_LOGS_EXPORTER=otlp`
-   - `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317`
-5. Launches `claude --print --max-turns 200` with the exhaust test prompt
-6. After the session ends, records end time in metadata and runs `parse-telemetry.mjs`
+| `--fix <dir>` | — | Fix mode: read BUG_REPORT.md, fix code, redeploy |
 
 ### Recommended Test Levels
 
 | Level | Features | Est. Duration | Good For |
 |-------|----------|---------------|----------|
-| 1 | 4 (basic chat, typing, receipts, unread) | 5-10 min | Pipeline validation |
-| 5 | 8 (+ scheduled, ephemeral, reactions, edit) | 15-25 min | Mid-complexity test |
-| 12 | All 15 features | 30-60 min | Full benchmark |
+| 1 | 4 (basic chat, typing, receipts, unread) | 5-15 min | Pipeline validation |
+| 5 | 8 (+ scheduled, ephemeral, reactions, edit) | 15-30 min | Mid-complexity |
+| 12 | All 15 features | 30-60+ min | Full benchmark |
 
 ---
 
 ## Output Files
 
-After a run completes, you'll find:
-
 ### In the generated app directory
 ```
 exhaust-test/results/<backend>/chat-app-<timestamp>/
-  GRADING_RESULTS.md    # Per-feature scores, reprompt log (produced by Claude Code)
-  ITERATION_LOG.md      # Per-iteration progress log (written after EACH fix cycle)
+  GRADING_RESULTS.md    # Per-feature scores (written by grade agent)
+  ITERATION_LOG.md      # Per-iteration progress log (both agents append)
+  BUG_REPORT.md         # Current bugs for fix agent to read (deleted when all pass)
   backend/              # Generated SpacetimeDB or PostgreSQL backend
   client/               # Generated React client
 ```
@@ -126,11 +149,11 @@ exhaust-test/results/<backend>/chat-app-<timestamp>/
 ### In the telemetry directory
 ```
 exhaust-test/telemetry/
-  logs.jsonl            # Raw OTLP log records from the OTel Collector
+  logs.jsonl            # Raw OTLP log records from OTel Collector
   metrics.jsonl         # Raw OTLP metrics
   <backend>-level<N>-<timestamp>/
-    metadata.json       # Run parameters
-    COST_REPORT.md      # Exact token counts per API call (generated by parse-telemetry.mjs)
+    metadata.json       # Run parameters, timing
+    COST_REPORT.md      # Exact token counts per API call
 ```
 
 ---
@@ -142,23 +165,20 @@ exhaust-test/telemetry/
 - **Feature scores**: 0-3 per feature, scored from observed browser behavior
 - **Reprompt log**: Every bug fix iteration with category and description
 - **Reprompt efficiency**: 0-10 scale (0 reprompts = 10, 16+ reprompts = 0)
-- **First-try success**: Whether the app compiled and ran on the first attempt
 
 ### COST_REPORT.md
 
-- **Total tokens**: Exact input + output token counts across all API calls
+- **Total tokens**: Exact input + output token counts across all Code Agent API calls
 - **Cache read tokens**: Tokens served from prompt cache (reduced cost)
-- **Cost (USD)**: Total dollar cost of the run
+- **Cost (USD)**: Total dollar cost of the code generation + fix iterations
 - **Per-call breakdown**: Every API call with model, tokens, cost, duration
 
 ### Key Comparison Metrics
 
-When comparing SpacetimeDB vs PostgreSQL:
-
 | Metric | What It Shows |
 |--------|---------------|
-| Total tokens to done | Raw LLM efficiency — fewer tokens = easier to build with |
-| Iterations to done | How many fix cycles needed — fewer = less debugging |
+| Total tokens to done | Raw LLM efficiency — fewer = easier to build with |
+| Iterations to done | Fix cycles needed — fewer = less debugging |
 | Final feature score | Quality of the final app |
 | Lines of code | Code complexity — smaller = simpler for LLMs |
 | External dependencies | Infrastructure complexity |
@@ -170,64 +190,44 @@ When comparing SpacetimeDB vs PostgreSQL:
 ### OTel Collector not receiving data
 
 ```bash
-# Check collector logs
 docker compose -f docker-compose.otel.yaml logs
-
-# Verify it's listening
-curl -s http://localhost:4318/v1/logs -X POST -H "Content-Type: application/json" -d '{}'
-
-# Check if telemetry file is being written
 ls -la telemetry/logs.jsonl
 ```
-
-### `parse-telemetry.mjs` finds no API calls
-
-- Ensure `run.sh` was used to launch (sets the OTel env vars)
-- Check that the collector was running during the session
-- Look at `telemetry/logs.jsonl` — if empty, telemetry wasn't received
 
 ### SpacetimeDB publish fails
 
 ```bash
-# Check SpacetimeDB is running
-spacetime version
-spacetime sql "SELECT 1"
-
-# If not running
-spacetime start
+spacetime server ping local
+spacetime start  # if not running
 ```
 
-### Chrome MCP tools not working
+### Chrome MCP tools not working (grading session)
 
-- Ensure Chrome is open before starting the benchmark
-- Check that the Claude in Chrome extension is installed and active
-- The benchmark needs to control Chrome tabs — close any interfering automation
+- Chrome must be open before starting the grading session
+- "Claude in Chrome" extension must be installed and active
+- Only works in interactive Claude Code sessions (not `--print` mode)
 
 ### Session runs out of context
 
-Long runs (level 12) may approach Claude Code's context limit. The session will auto-compress earlier messages but may lose some context. If this happens:
-- Try a lower level first to validate the pipeline
-- Check if the generated app is partially working and can be re-tested manually
+- Try a lower level first
+- The ITERATION_LOG.md preserves progress even if a session dies
 
 ---
 
 ## Running a Full Comparison
 
-To compare SpacetimeDB vs PostgreSQL across complexity levels:
-
 ```bash
-# SpacetimeDB sweep
+# SpacetimeDB
 ./run.sh --level 1 --backend spacetime
+# (grade, fix loop...)
 ./run.sh --level 5 --backend spacetime
 ./run.sh --level 12 --backend spacetime
 
-# PostgreSQL sweep
+# PostgreSQL
 ./run.sh --level 1 --backend postgres
 ./run.sh --level 5 --backend postgres
 ./run.sh --level 12 --backend postgres
 ```
-
-Each run is independent — results accumulate in the `telemetry/` directory with unique timestamps.
 
 ---
 
@@ -235,29 +235,19 @@ Each run is independent — results accumulate in the `telemetry/` directory wit
 
 ```
 exhaust-test/
-  CLAUDE.md                      # Instructions for the LLM (read by Claude Code)
+  CLAUDE.md                      # Instructions for the Code Agent
   DEVELOP.md                     # This file (for humans)
-  run.sh                         # Launcher script
+  run.sh                         # Code Agent launcher (generate or fix mode)
+  grade.sh                       # Grade Agent launcher (interactive)
   docker-compose.otel.yaml       # OTel Collector container
   otel-collector-config.yaml     # Collector config (OTLP → JSON files)
   parse-telemetry.mjs            # Telemetry → COST_REPORT.md
   test-plans/
     feature-01-basic-chat.md     # Per-feature browser test scripts
-    feature-02-typing-indicators.md
     ...
     feature-15-anonymous-migration.md
-  results/                       # Generated apps from runs (gitignored)
-    <backend>/
-      chat-app-<timestamp>/
-        GRADING_RESULTS.md
-        backend/
-        client/
-  telemetry/                     # OTel output from runs (gitignored)
-    logs.jsonl
-    metrics.jsonl
-    <backend>-level<N>-<timestamp>/
-      metadata.json
-      COST_REPORT.md
+  results/                       # Generated apps (gitignored)
+  telemetry/                     # OTel output (gitignored)
 ```
 
 ---
@@ -265,30 +255,24 @@ exhaust-test/
 ## Architecture
 
 ```
-┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  run.sh     │────▶│  Claude Code CLI  │────▶│  Chrome (MCP)   │
-│  (launcher) │     │  (autonomous)     │     │  (browser test) │
-└─────────────┘     └────────┬─────────┘     └─────────────────┘
-                             │
-                    OTel telemetry
-                             │
-                    ┌────────▼─────────┐
-                    │  OTel Collector   │
-                    │  (Docker)         │
-                    └────────┬─────────┘
-                             │
-                    ┌────────▼─────────┐
-                    │  logs.jsonl       │
-                    └────────┬─────────┘
-                             │
-                    ┌────────▼─────────┐
-                    │ parse-telemetry   │
-                    │ .mjs             │
-                    └────────┬─────────┘
-                             │
-                    ┌────────▼─────────┐
-                    │ COST_REPORT.md    │
-                    └──────────────────┘
+                    TOKEN-TRACKED                      NOT TRACKED
+               ┌─────────────────────┐          ┌─────────────────────┐
+               │                     │          │                     │
+   run.sh ────▶│  Code Agent         │          │  Grade Agent        │◀──── You
+               │  (claude --print)   │          │  (interactive CC)   │      (in Claude Code)
+               │                     │          │                     │
+               │  • Generate code    │          │  • Chrome MCP       │
+               │  • Build & deploy   │   Bug    │  • Test features    │
+               │  • Fix bugs ◀───────│── Report │  • Score 0-3        │
+               │  • Redeploy         │──────────▶  • Write BUG_REPORT │
+               │                     │          │  • Write GRADING    │
+               └────────┬────────────┘          └─────────────────────┘
+                        │
+               OTel telemetry
+                        │
+               ┌────────▼────────────┐
+               │  OTel Collector     │
+               │  → logs.jsonl       │
+               │  → COST_REPORT.md   │
+               └─────────────────────┘
 ```
-
-Claude Code reads `CLAUDE.md` for instructions, generates the app, deploys it, tests via Chrome MCP, fixes bugs in a loop, and produces `GRADING_RESULTS.md`. Token costs flow through OTel to the collector and are parsed into `COST_REPORT.md` after the session.
