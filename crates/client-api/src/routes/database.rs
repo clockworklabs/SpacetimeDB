@@ -46,6 +46,7 @@ use spacetimedb_lib::{sats, AlgebraicValue, GlobalTxId, Hash, ProductValue, Time
 use spacetimedb_schema::auto_migrate::{
     MigrationPolicy as SchemaMigrationPolicy, MigrationToken, PrettyPrintStyle as AutoMigratePrettyPrintStyle,
 };
+use tokio::time::sleep;
 
 use super::subscribe::{handle_websocket, HasWebSocketOptions};
 
@@ -89,6 +90,7 @@ pub struct CallParams {
 
 pub const NO_SUCH_DATABASE: (StatusCode, &str) = (StatusCode::NOT_FOUND, "No such database.");
 const MISDIRECTED: (StatusCode, &str) = (StatusCode::NOT_FOUND, "Database is not scheduled on this host");
+const PREPARE_ID_HEADER: &str = "X-Prepare-Id";
 
 fn map_reducer_error(e: ReducerCallError, reducer: &str) -> (StatusCode, String) {
     let status_code = match e {
@@ -96,6 +98,7 @@ fn map_reducer_error(e: ReducerCallError, reducer: &str) -> (StatusCode, String)
             log::debug!("Attempt to call reducer {reducer} with invalid arguments");
             StatusCode::BAD_REQUEST
         }
+        ReducerCallError::InvalidPrepareId(_) => StatusCode::BAD_REQUEST,
         ReducerCallError::NoSuchModule(_) | ReducerCallError::ScheduleReducerNotFound => StatusCode::NOT_FOUND,
         ReducerCallError::NoSuchReducer => {
             log::debug!("Attempt to call non-existent reducer {reducer}");
@@ -143,7 +146,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     body: Bytes,
 ) -> axum::response::Result<impl IntoResponse> {
     let caller_identity = auth.claims.identity;
-    let tx_id = headers
+    let requested_tx_id = headers
         .get(TX_ID_HEADER)
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<GlobalTxId>().ok());
@@ -155,6 +158,9 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     let connection_id = generate_random_connection_id();
 
     let (module, Database { owner_identity, .. }) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+    let tx_id = requested_tx_id.unwrap_or_else(|| module.mint_global_tx_id(Timestamp::now()));
+    const MAX_WOUNDED_RETRIES: usize = 10;
+    const MAX_WOUNDED_BACKOFF: Duration = Duration::from_millis(1000);
 
     // Call the database's `client_connected` reducer, if any.
     // If it fails or rejects the connection, bail.
@@ -164,35 +170,56 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         .map_err(client_connected_error_to_response)?;
 
     let mut reducer_return_value: Option<Bytes> = None;
-    let result = match module
-        .call_reducer_with_return(
-            caller_identity,
-            Some(connection_id),
-            tx_id,
-            None,
-            None,
-            None,
-            &reducer,
-            args.clone(),
-        )
-        .await
-    {
-        Ok((rcr, return_value)) => {
-            reducer_return_value = return_value;
-            Ok(CallResult::Reducer(rcr))
-        }
-        Err(ReducerCallError::NoSuchReducer | ReducerCallError::ScheduleReducerNotFound) => {
-            // Not a reducer — try procedure instead
-            match module
-                .call_procedure(caller_identity, Some(connection_id), None, &reducer, args)
-                .await
-                .result
-            {
-                Ok(res) => Ok(CallResult::Procedure(res)),
-                Err(e) => Err(map_procedure_error(e, &reducer)),
+    let mut tx_id = tx_id;
+    let mut wound_backoff = Duration::from_millis(10);
+    let result = loop {
+        match module
+            .call_reducer_with_return(
+                caller_identity,
+                Some(connection_id),
+                Some(tx_id),
+                None,
+                None,
+                None,
+                &reducer,
+                args.clone(),
+            )
+            .await
+        {
+            Ok((rcr, return_value)) => {
+                if matches!(rcr.outcome, ReducerOutcome::Wounded(_)) {
+                    if tx_id.attempt >= MAX_WOUNDED_RETRIES as u32 {
+                        log::warn!("HTTP reducer call was wounded on final attempt. Returning error to caller.");
+                        reducer_return_value = return_value;
+                        break Ok(CallResult::Reducer(rcr));
+                    }
+                    log::info!(
+                        "HTTP reducer call was wounded on attempt {}, retrying after {:?} with new transaction ID {}",
+                        tx_id.attempt,
+                        wound_backoff,
+                        tx_id
+                    );
+                    sleep(wound_backoff).await;
+                    wound_backoff = wound_backoff.mul_f32(2.0).min(MAX_WOUNDED_BACKOFF);
+                    tx_id = tx_id.next_attempt();
+                    continue;
+                }
+                reducer_return_value = return_value;
+                break Ok(CallResult::Reducer(rcr));
             }
+            Err(ReducerCallError::NoSuchReducer | ReducerCallError::ScheduleReducerNotFound) => {
+                // Not a reducer — try procedure instead
+                break match module
+                    .call_procedure(caller_identity, Some(connection_id), None, &reducer, args)
+                    .await
+                    .result
+                {
+                    Ok(res) => Ok(CallResult::Procedure(res)),
+                    Err(e) => Err(map_procedure_error(e, &reducer)),
+                };
+            }
+            Err(e) => break Err(map_reducer_error(e, &reducer)),
         }
-        Err(e) => Err(map_reducer_error(e, &reducer)),
     };
 
     module
@@ -288,6 +315,17 @@ pub async fn prepare<S: ControlStateDelegate + NodeDelegate>(
         .get("X-Coordinator-Identity")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| spacetimedb_lib::Identity::from_hex(s).ok());
+    let supplied_prepare_id = headers
+        .get(PREPARE_ID_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+    if tx_id.is_some() && supplied_prepare_id.is_none() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("missing required {PREPARE_ID_HEADER} header for 2PC prepare request"),
+        )
+            .into());
+    }
 
     let (module, Database { owner_identity, .. }) = find_module_and_database(&worker_ctx, name_or_identity).await?;
 
@@ -295,7 +333,15 @@ pub async fn prepare<S: ControlStateDelegate + NodeDelegate>(
     // call_identity_connected/disconnected submit jobs to the module's executor, which
     // will be blocked holding the 2PC write lock after prepare_reducer returns — deadlock.
     let result = module
-        .prepare_reducer(caller_identity, None, tx_id, &reducer, args.0, coordinator_identity)
+        .prepare_reducer(
+            caller_identity,
+            None,
+            tx_id,
+            &reducer,
+            args.0,
+            coordinator_identity,
+            supplied_prepare_id,
+        )
         .await;
 
     match result {

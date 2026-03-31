@@ -2031,9 +2031,10 @@ impl WasmInstanceEnv {
     /// 2PC variant of `call_reducer_on_db`.
     ///
     /// Calls the remote database's `/prepare/{reducer}` endpoint instead of `/call/{reducer}`.
-    /// On success, parses the `X-Prepare-Id` header and stores the participant info in
-    /// `InstanceEnv::prepared_participants` so the runtime can commit/abort after the
-    /// coordinator's reducer completes.
+    /// The coordinator assigns the `prepare_id` before sending the request and stores the
+    /// participant info in `InstanceEnv::contacted_participants` so the runtime can
+    /// commit/abort after the coordinator's reducer completes, even if the request is
+    /// wounded while in flight.
     ///
     /// Returns the HTTP status code on success, writing the response body to `*out`
     /// as a [`BytesSource`].
@@ -2067,21 +2068,7 @@ impl WasmInstanceEnv {
                 .call_reducer_on_db_2pc(database_identity, &reducer_name, args);
 
             match result {
-                Ok((status, body, prepare_id)) => {
-                    // If we got a prepare_id, register this participant.
-                    if let Some(pid) = prepare_id
-                        && status < 300
-                    {
-                        if let Some(tx_id) = env.instance_env.current_tx_id() {
-                            let session = env.instance_env.replica_ctx.global_tx_manager.ensure_session(
-                                tx_id,
-                                crate::host::global_tx::GlobalTxRole::Coordinator,
-                                tx_id.creator_db,
-                            );
-                            session.add_participant(database_identity, pid.clone());
-                        }
-                        env.instance_env.prepared_participants.push((database_identity, pid));
-                    }
+                Ok((status, body, _prepare_id)) => {
                     let bytes_source = WasmInstanceEnv::create_bytes_source(env, body)?;
                     bytes_source.0.write_to(mem, out)?;
                     Ok(status as u32)

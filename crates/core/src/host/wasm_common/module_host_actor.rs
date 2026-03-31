@@ -1211,12 +1211,12 @@ impl InstanceCommon {
         inst: &mut I,
     ) -> (ReducerCallResult, Option<Bytes>, bool) {
         let managed_global_tx_id = if tx.is_none() { params.tx_id } else { None };
-        let (mut tx, mut event, client, trapped) = self.run_reducer_no_commit(tx, params, inst);
+        let (mut tx, event, client, trapped) = self.run_reducer_no_commit(tx, params, inst);
 
         let energy_quanta_used = event.energy_quanta_used;
         let total_duration = event.host_execution_duration;
 
-        // Take participants before commit so we can write the coordinator log atomically.
+        // Take participant prepare targets before commit so we can write the coordinator log atomically.
         let prepared_participants = inst.take_prepared_participants();
 
         // If this coordinator tx is committed and has participants, write coordinator log
@@ -1229,13 +1229,6 @@ impl InstanceCommon {
                     log::error!("insert_st_2pc_coordinator_log failed for {prepare_id}: {e}");
                 }
             }
-        }
-
-        if let Some(status) = check_wounded(inst.replica_ctx(), managed_global_tx_id)
-            && matches!(event.status, EventStatus::Committed(_))
-        {
-            event.status = status;
-            event.reducer_return_value = None;
         }
 
         let commit_result = commit_and_broadcast_event(&self.info.subscriptions, client, event, tx);
@@ -1313,10 +1306,18 @@ impl InstanceCommon {
                         }
                     }
                     Ok(status) => {
-                        log::error!("2PC {action}: failed for {prepare_id} on {db_identity}: status {status}");
+                        if committed {
+                            log::error!("2PC {action}: failed for {prepare_id} on {db_identity}: status {status}");
+                        } else {
+                            log::warn!("2PC {action}: best-effort abort for {prepare_id} on {db_identity} returned status {status}");
+                        }
                     }
                     Err(e) => {
-                        log::error!("2PC {action}: transport error for {prepare_id} on {db_identity}: {e}");
+                        if committed {
+                            log::error!("2PC {action}: transport error for {prepare_id} on {db_identity}: {e}");
+                        } else {
+                            log::warn!("2PC {action}: best-effort abort transport error for {prepare_id} on {db_identity}: {e}");
+                        }
                     }
                 }
             }

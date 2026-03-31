@@ -39,6 +39,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::vec::IntoIter;
 
+const PREPARE_ID_HEADER: &str = "X-Prepare-Id";
+
 pub struct InstanceEnv {
     pub replica_ctx: Arc<ReplicaContext>,
     pub scheduler: Scheduler,
@@ -57,11 +59,13 @@ pub struct InstanceEnv {
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
     procedure_last_tx_offset: Option<TransactionOffset>,
-    /// 2PC: prepared participants from `call_reducer_on_db_2pc` calls.
+    /// 2PC: participant prepare targets from `call_reducer_on_db_2pc` calls.
     /// Each entry is (database_identity, prepare_id).
     /// After the coordinator's reducer commits, these are committed;
-    /// on failure, they are aborted.
-    pub prepared_participants: Vec<(Identity, String)>,
+    /// on failure, they are aborted. Entries are registered before the
+    /// HTTP prepare request is sent so wound-driven abort fanout can target
+    /// in-flight prepares using coordinator-assigned ids.
+    pub contacted_participants: Vec<(Identity, String)>,
 }
 
 /// `InstanceEnv` needs to be `Send` because it is created on the host thread
@@ -247,7 +251,7 @@ impl InstanceEnv {
             current_tx_id: None,
             in_anon_tx: false,
             procedure_last_tx_offset: None,
-            prepared_participants: Vec::new(),
+            contacted_participants: Vec::new(),
         }
     }
 
@@ -1093,8 +1097,9 @@ impl InstanceEnv {
     /// Call a reducer on a remote database using the 2PC prepare protocol.
     ///
     /// Like [`Self::call_reducer_on_db`], but POSTs to `/prepare/{reducer}` instead of
-    /// `/call/{reducer}`. On success, parses the `X-Prepare-Id` response header and stores
-    /// `(database_identity, prepare_id)` in [`Self::prepared_participants`].
+    /// `/call/{reducer}`. The coordinator generates the `prepare_id` up front, sends it
+    /// in the request, and stores `(database_identity, prepare_id)` in
+    /// [`Self::contacted_participants`] before the HTTP round-trip begins.
     ///
     /// Blocks the calling thread for the duration of the HTTP round-trip.
     ///
@@ -1104,7 +1109,7 @@ impl InstanceEnv {
         database_identity: Identity,
         reducer_name: &str,
         args: bytes::Bytes,
-    ) -> Result<(u16, bytes::Bytes, Option<String>), NodesError> {
+    ) -> Result<(u16, bytes::Bytes, String), NodesError> {
         let caller_identity = self.replica_ctx.database.database_identity;
         let tx_id = self.current_tx_id().ok_or_else(|| {
             NodesError::HttpError("2PC remote reducer call requires an active distributed transaction id".to_owned())
@@ -1119,6 +1124,10 @@ impl InstanceEnv {
                 .global_tx_manager
                 .ensure_session(tx_id, GlobalTxRole::Coordinator, tx_id.creator_db);
         session.set_state(GlobalTxState::Preparing);
+        let prepare_id = super::module_host::generate_prepare_id(tx_id, caller_identity);
+        session.add_participant(database_identity, prepare_id.clone());
+        self.contacted_participants
+            .push((database_identity, prepare_id.clone()));
 
         let start = Instant::now();
 
@@ -1139,6 +1148,7 @@ impl InstanceEnv {
             .post(&url)
             .header(http::header::CONTENT_TYPE, "application/octet-stream")
             .header("X-Coordinator-Identity", caller_identity.to_hex().to_string())
+            .header(PREPARE_ID_HEADER, prepare_id.clone())
             .header(TX_ID_HEADER, tx_id.to_string())
             .body(args.to_vec());
         if let Some(ref token) = self.replica_ctx.call_reducer_auth_token {
@@ -1159,13 +1169,8 @@ impl InstanceEnv {
             move || manager.is_wounded(&tx_id),
             |resp| {
                 let status = resp.status().as_u16();
-                let prepare_id = resp
-                    .headers()
-                    .get("X-Prepare-Id")
-                    .and_then(|v| v.to_str().ok())
-                    .map(|s| s.to_owned());
                 let body = resp.bytes()?;
-                Ok((status, body, prepare_id))
+                Ok((status, body))
             },
         );
         let result = match outcome {
@@ -1182,7 +1187,7 @@ impl InstanceEnv {
             .with_label_values(&caller_identity)
             .observe(start.elapsed().as_secs_f64());
 
-        result
+        result.map(|(status, body)| (status, body, prepare_id))
     }
 }
 

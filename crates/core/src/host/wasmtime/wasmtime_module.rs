@@ -577,7 +577,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
     }
 
     fn take_prepared_participants(&mut self) -> Vec<(Identity, String)> {
-        core::mem::take(&mut self.store.data_mut().instance_env_mut().prepared_participants)
+        core::mem::take(&mut self.store.data_mut().instance_env_mut().contacted_participants)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]

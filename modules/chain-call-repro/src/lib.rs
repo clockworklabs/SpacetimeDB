@@ -64,6 +64,7 @@ pub fn call_b_from_a(
     seq: u64,
     message: String,
     burn_iters: u64,
+    hold_iters: u64,
 ) -> Result<(), String> {
     burn(burn_iters);
 
@@ -78,6 +79,10 @@ pub fn call_b_from_a(
     spacetimedb::remote_reducer::call_reducer_on_db_2pc(b, "record_on_b", &args)
         .map_err(|e| format!("call_b_from_a: call to B failed: {e}"))?;
 
+    // Hold A open after B is prepared so B keeps its global-tx admission lock
+    // long enough for concurrent work on B to contend and trigger wound flow.
+    burn(hold_iters);
+
     log_entry(ctx, "sent_to_b", &payload);
     Ok(())
 }
@@ -90,6 +95,7 @@ pub fn call_c_from_b(
     seq: u64,
     message: String,
     burn_iters: u64,
+    hold_iters: u64,
 ) -> Result<(), String> {
     burn(burn_iters);
 
@@ -103,6 +109,10 @@ pub fn call_c_from_b(
         .expect("failed to encode args for record_on_c");
     spacetimedb::remote_reducer::call_reducer_on_db_2pc(c, "record_on_c", &args)
         .map_err(|e| format!("call_c_from_b: call to C failed: {e}"))?;
+
+    // Hold B open after C is prepared so B remains the global-tx owner while
+    // A-originated work attempts to prepare on B.
+    burn(hold_iters);
 
     log_entry(ctx, "sent_to_c", &payload);
     Ok(())

@@ -36,7 +36,7 @@ pub struct GlobalTxSession {
     wounded_tx: watch::Sender<bool>,
     state: Mutex<GlobalTxState>,
     prepare_id: Mutex<Option<String>>,
-    participants: Mutex<HashMap<Identity, String>>,
+    participants: Mutex<Vec<(Identity, String)>>,
 }
 
 impl GlobalTxSession {
@@ -50,7 +50,7 @@ impl GlobalTxSession {
             wounded_tx,
             state: Mutex::new(GlobalTxState::Running),
             prepare_id: Mutex::new(None),
-            participants: Mutex::new(HashMap::new()),
+            participants: Mutex::new(Vec::new()),
         }
     }
 
@@ -87,16 +87,11 @@ impl GlobalTxSession {
     }
 
     pub fn add_participant(&self, db_identity: Identity, prepare_id: String) {
-        self.participants.lock().unwrap().insert(db_identity, prepare_id);
+        self.participants.lock().unwrap().push((db_identity, prepare_id));
     }
 
     pub fn participants(&self) -> Vec<(Identity, String)> {
-        self.participants
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|(db, pid)| (*db, pid.clone()))
-            .collect()
+        self.participants.lock().unwrap().clone()
     }
 }
 
@@ -347,8 +342,11 @@ impl GlobalTxManager {
                 return AcquireDisposition::Cancelled;
             }
 
-            let (notify, owner_to_wound, new_registration) = {
+            let (notify, owner_to_wound, new_registration): (Arc<Notify>, Option<GlobalTxId>, Option<WaitRegistration<'_>>) = {
                 let mut state = self.lock_state.lock().unwrap();
+                if state.owner.is_none() {
+                    self.prune_stale_head_waiters_locked(&mut state);
+                }
                 match state.owner {
                     None if self.is_next_waiter_locked(&state, tx_id) => {
                         log::info!("setting owner to {tx_id}");
@@ -373,8 +371,20 @@ impl GlobalTxManager {
                         } else {
                             self.ensure_waiter_locked(&mut state, tx_id)
                         };
+                        let head_waiter = state.waiting.first().map(|wait_key| wait_key.tx_id);
+                        if let Some(head_waiter) = head_waiter
+                            && head_waiter != tx_id
+                        {
+                            log::info!(
+                                "global transaction {tx_id} observed ownerless lock while queued behind head waiter {head_waiter}; nudging head waiter"
+                            );
+                            self.notify_next_waiter_locked(&state);
+                        }
 
-                        log::info!("global transaction {tx_id} is waiting for the lock; no current owner");
+                        log::info!(
+                            "global transaction {tx_id} is waiting for the lock; no current owner; head waiter: {:?}",
+                            head_waiter
+                        );
                         let new_registration = registration.is_none().then(|| WaitRegistration::new(self, wait_id));
                         (notify, None, new_registration)
                     }
@@ -549,6 +559,34 @@ impl GlobalTxManager {
         self.get_session(tx_id)
             .map(|session| !(session.role == GlobalTxRole::Participant && session.state() == GlobalTxState::Prepared))
             .unwrap_or(true)
+    }
+
+    fn prune_stale_head_waiters_locked(&self, state: &mut LockState) {
+        while let Some(wait_key) = state.waiting.first().copied() {
+            let tx_id = wait_key.tx_id;
+            let Some(session) = self.get_session(&tx_id) else {
+                log::warn!(
+                    "pruning stale head waiter {tx_id}: no session exists while owner is None"
+                );
+                self.remove_waiter_by_id(state, wait_key.wait_id);
+                continue;
+            };
+            let session_state = session.state();
+            let wounded = session.is_wounded();
+            let terminalish = wounded
+                || matches!(
+                    session_state,
+                    GlobalTxState::Committed | GlobalTxState::Aborted | GlobalTxState::Aborting
+                );
+            if terminalish {
+                log::warn!(
+                    "pruning stale head waiter {tx_id}: state={session_state:?} wounded={wounded} while owner is None"
+                );
+                self.remove_waiter_by_id(state, wait_key.wait_id);
+                continue;
+            }
+            break;
+        }
     }
 }
 

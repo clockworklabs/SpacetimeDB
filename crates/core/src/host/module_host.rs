@@ -68,7 +68,8 @@ use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
 use std::collections::VecDeque;
 use std::fmt;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::OnceLock;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
@@ -973,6 +974,27 @@ pub enum ReducerCallError {
     ScheduleReducerNotFound,
     #[error("can't directly call special {0:?} lifecycle reducer")]
     LifecycleReducer(Lifecycle),
+    #[error("invalid prepare id: {0}")]
+    InvalidPrepareId(String),
+}
+
+static PREPARE_COUNTER: AtomicU64 = AtomicU64::new(0);
+static PREPARE_COUNTER_INIT: OnceLock<()> = OnceLock::new();
+
+fn next_prepare_counter() -> u64 {
+    PREPARE_COUNTER_INIT.get_or_init(|| {
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_micros() as u64;
+        PREPARE_COUNTER.store(seed, Ordering::Relaxed);
+    });
+    PREPARE_COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+pub(crate) fn generate_prepare_id(tx_id: GlobalTxId, coordinator_identity: Identity) -> String {
+    let counter = next_prepare_counter();
+    format!("prepare-{tx_id}-{counter:016x}-{}", coordinator_identity.to_hex())
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1839,25 +1861,12 @@ impl ModuleHost {
         // When `Some`, used for `prepare_id` namespacing and stored in `st_2pc_state` for
         // recovery.  Falls back to `caller_identity` when `None` (e.g., internal calls).
         coordinator_identity_override: Option<Identity>,
+        supplied_prepare_id: Option<String>,
     ) -> Result<(String, ReducerCallResult, Option<Bytes>), ReducerCallError> {
         if tx_id.is_none() {
             log::error!("prepare_reducer called without tx_id: caller_identity={caller_identity}, reducer_name={reducer_name}");
         }
         let tx_id = tx_id.ok_or(ReducerCallError::NoSuchReducer)?;
-        use std::sync::atomic::{AtomicU64, Ordering};
-        use std::sync::OnceLock;
-        // Counter seeded from current time on first use so that restarts begin from a
-        // different value than any existing st_2pc_state entries (which hold IDs from
-        // previous sessions starting at much smaller counter values).
-        static PREPARE_COUNTER: AtomicU64 = AtomicU64::new(0);
-        static PREPARE_COUNTER_INIT: OnceLock<()> = OnceLock::new();
-        PREPARE_COUNTER_INIT.get_or_init(|| {
-            let seed = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_micros() as u64;
-            PREPARE_COUNTER.store(seed, Ordering::Relaxed);
-        });
 
         let (reducer_id, reducer_def) = self
             .info
@@ -1890,20 +1899,15 @@ impl ModuleHost {
         // Resolve the effective coordinator identity before generating the prepare_id so
         // the prefix is namespaced correctly even when called from the HTTP prepare handler.
         let coordinator_identity = coordinator_identity_override.unwrap_or(caller_identity);
-
-        // Include the coordinator identity so prepare_ids from different coordinators
-        // cannot collide on the participant's st_2pc_state table.
-        let prepare_id = tx_id.to_string();
-        /* 
-        let prepare_tx_component = tx_id
-            .map(|tx_id| tx_id.to_string())
-            .unwrap_or_else(|| format!("legacy:{}:00000000", caller_identity.to_hex()));
-        let prepare_id = format!(
-            "prepare-{}-{}",
-            prepare_tx_component,
-            PREPARE_COUNTER.fetch_add(1, Ordering::Relaxed),
-        );
-        */
+        let prepare_id = supplied_prepare_id.unwrap_or_else(|| generate_prepare_id(tx_id, coordinator_identity));
+        let prepare_tx_id = Self::tx_id_from_prepare_id(&prepare_id).ok_or_else(|| {
+            ReducerCallError::InvalidPrepareId(format!("prepare_id '{prepare_id}' is not parseable"))
+        })?;
+        if prepare_tx_id != tx_id {
+            return Err(ReducerCallError::InvalidPrepareId(format!(
+                "prepare_id '{prepare_id}' encodes tx_id {prepare_tx_id}, expected {tx_id}"
+            )));
+        }
 
         // Channel for signalling PREPARED result back to this task.
         let (prepared_tx, prepared_rx) = tokio::sync::oneshot::channel::<(ReducerCallResult, Option<Bytes>)>();
@@ -2188,7 +2192,10 @@ impl ModuleHost {
 
     fn tx_id_from_prepare_id(prepare_id: &str) -> Option<GlobalTxId> {
         let raw = prepare_id.strip_prefix("prepare-")?;
-        let (tx_component, _) = raw.rsplit_once('-')?;
+        let mut parts = raw.rsplitn(3, '-');
+        let _tail = parts.next()?;
+        let middle = parts.next()?;
+        let tx_component = parts.next().unwrap_or(middle);
         if tx_component.starts_with("legacy:") {
             return None;
         }
@@ -2413,6 +2420,7 @@ impl ModuleHost {
                         &row.reducer_name,
                         args,
                         Some(coordinator_identity),
+                        None,
                     )
                     .await
                 {
@@ -3365,6 +3373,10 @@ impl ModuleHost {
         self.replica_ctx().relational_db()
     }
 
+    pub fn mint_global_tx_id(&self, start_ts: Timestamp) -> GlobalTxId {
+        self.replica_ctx().mint_global_tx_id(start_ts)
+    }
+
     pub(crate) fn replica_ctx(&self) -> &ReplicaContext {
         match &*self.inner {
             ModuleHostInner::Wasm(wasm) => wasm.instance_manager.module.replica_ctx(),
@@ -3408,16 +3420,17 @@ fn args_error_log_message(function_kind: &str, function_name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::ModuleHost;
+    use super::{generate_prepare_id, ModuleHost};
     use crate::client::{
         ClientActorId, ClientConfig, ClientConnectionReceiver, ClientConnectionSender, OutboundMessage, Protocol,
         WsVersion,
     };
     use crate::db::relational_db::tests_utils::{insert, with_auto_commit, TestDB};
+    use crate::host::global_tx::{GlobalTxManager, GlobalTxRole};
     use crate::subscription::module_subscription_actor::ModuleSubscriptions;
     use spacetimedb_client_api_messages::websocket::{common::RowListLen as _, v1 as ws_v1, v2 as ws_v2};
     use spacetimedb_lib::identity::AuthCtx;
-    use spacetimedb_lib::{AlgebraicType, Identity};
+    use spacetimedb_lib::{AlgebraicType, GlobalTxId, Identity, Timestamp};
     use spacetimedb_sats::product;
     use std::sync::Arc;
 
@@ -3513,5 +3526,56 @@ mod tests {
         });
 
         Ok(())
+    }
+
+    #[test]
+    fn generated_prepare_id_round_trips_tx_id() {
+        let tx_id = GlobalTxId {
+            start_ts: Timestamp::from_micros_since_unix_epoch(123),
+            creator_db: Identity::from_byte_array([7; 32]),
+            nonce: 9,
+            attempt: 2,
+        };
+        let prepare_id = generate_prepare_id(tx_id, Identity::from_byte_array([3; 32]));
+        assert_eq!(ModuleHost::tx_id_from_prepare_id(&prepare_id), Some(tx_id));
+    }
+
+    #[test]
+    fn generated_prepare_ids_are_unique_per_call() {
+        let tx_id = GlobalTxId {
+            start_ts: Timestamp::from_micros_since_unix_epoch(456),
+            creator_db: Identity::from_byte_array([8; 32]),
+            nonce: 10,
+            attempt: 3,
+        };
+        let coordinator = Identity::from_byte_array([4; 32]);
+        let a = generate_prepare_id(tx_id, coordinator);
+        let b = generate_prepare_id(tx_id, coordinator);
+        assert_ne!(a, b);
+        assert_eq!(ModuleHost::tx_id_from_prepare_id(&a), Some(tx_id));
+        assert_eq!(ModuleHost::tx_id_from_prepare_id(&b), Some(tx_id));
+    }
+
+    #[test]
+    fn global_tx_session_keeps_multiple_prepare_ids_for_same_participant() {
+        let tx_id = GlobalTxId {
+            start_ts: Timestamp::from_micros_since_unix_epoch(789),
+            creator_db: Identity::from_byte_array([9; 32]),
+            nonce: 11,
+            attempt: 4,
+        };
+        let participant = Identity::from_byte_array([5; 32]);
+        let manager = GlobalTxManager::default();
+        let session = manager.ensure_session(tx_id, GlobalTxRole::Coordinator, Identity::from_byte_array([6; 32]));
+        session.add_participant(participant, "prepare-a".to_string());
+        session.add_participant(participant, "prepare-b".to_string());
+
+        assert_eq!(
+            session.participants(),
+            vec![
+                (participant, "prepare-a".to_string()),
+                (participant, "prepare-b".to_string())
+            ]
+        );
     }
 }
