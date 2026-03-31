@@ -56,13 +56,13 @@ use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::{RowRef, TableScanIter};
 use spacetimedb_table::table_index::IndexKey;
-use tokio::task::spawn_blocking;
 use std::borrow::Cow;
 use std::io;
 use std::num::NonZeroUsize;
 use std::ops::RangeBounds;
 use std::sync::Arc;
 use tokio::sync::watch;
+use tokio::task::spawn_blocking;
 
 pub use super::persistence::{DiskSizeFn, Durability, Persistence};
 pub use super::snapshot::SnapshotWorker;

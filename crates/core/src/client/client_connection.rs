@@ -23,7 +23,6 @@ use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use bytes::Bytes;
 use bytestring::ByteString;
-use std::time::Duration;
 use derive_more::From;
 use futures::prelude::*;
 use prometheus::{Histogram, IntCounter, IntGauge};
@@ -33,6 +32,7 @@ use spacetimedb_durability::{DurableOffset, TxOffset};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{bsatn, Identity, TimeDuration, Timestamp};
+use std::time::Duration;
 use tokio::sync::mpsc::error::{SendError, TrySendError};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
@@ -899,7 +899,7 @@ impl ClientConnection {
                 }
                 return Ok(result);
             }
-            
+
             log::info!("Reducer call was wounded on attempt {attempt}, retrying after {wound_backoff:?} with new transaction ID {tx_id}");
             sleep(wound_backoff).await;
             wound_backoff = wound_backoff.mul_f32(2.0).min(MAX_BACKOFF);

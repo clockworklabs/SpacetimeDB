@@ -2244,7 +2244,9 @@ impl ModuleHost {
             db.pending_2pc_coordinator_commits()
                 .map(|rows| rows.iter().any(|r| r.participant_prepare_id == prepare_id))
                 .unwrap_or(false)
-        }).await.expect("Couldn't spawn blocking task")
+        })
+        .await
+        .expect("Couldn't spawn blocking task")
     }
 
     /// Crash recovery for the **coordinator** role.
@@ -2397,7 +2399,14 @@ impl ModuleHost {
 
                 // Step 1: Re-run the reducer to reacquire the write lock.
                 let new_prepare_id = match this
-                    .prepare_reducer(caller_identity, Some(caller_connection_id), recovered_tx_id, &row.reducer_name, args, Some(coordinator_identity))
+                    .prepare_reducer(
+                        caller_identity,
+                        Some(caller_connection_id),
+                        recovered_tx_id,
+                        &row.reducer_name,
+                        args,
+                        Some(coordinator_identity),
+                    )
                     .await
                 {
                     Ok((pid, result, _rv)) if !pid.is_empty() => {

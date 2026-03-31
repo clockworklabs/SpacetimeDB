@@ -726,10 +726,11 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         // B must not claim PREPARED until the marker is on disk — if B crashes after
         // claiming PREPARED but before the marker is durable, recovery has nothing to recover.
         if let Some(prepare_offset) = marker_tx_data.tx_offset()
-            && let Some(mut durable) = stdb.durable_tx_offset() {
-                let handle = tokio::runtime::Handle::current();
-                let _ = block_on_scoped(&handle, durable.wait_for(prepare_offset));
-            }
+            && let Some(mut durable) = stdb.durable_tx_offset()
+        {
+            let handle = tokio::runtime::Handle::current();
+            let _ = block_on_scoped(&handle, durable.wait_for(prepare_offset));
+        }
 
         // Step 4: signal PREPARED.
         let res = ReducerCallResult {
@@ -841,21 +842,17 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             }
         }
 
-        let handle = tokio::runtime::Handle::current();
-        let client = replica_ctx.call_reducer_client.clone();
+        let client = replica_ctx.call_reducer_blocking_client.clone();
         let router = replica_ctx.call_reducer_router.clone();
         let auth_token = replica_ctx.call_reducer_auth_token.clone();
         let prepare_id_owned = prepare_id.to_owned();
         loop {
-            let decision = block_on_scoped(
-                &handle,
-                Self::query_coordinator_status(
-                    &client,
-                    &router,
-                    auth_token.clone(),
-                    coordinator_identity,
-                    &prepare_id_owned,
-                ),
+            let decision = Self::query_coordinator_status(
+                &client,
+                &router,
+                auth_token.clone(),
+                coordinator_identity,
+                &prepare_id_owned,
             );
             match decision {
                 Some(commit) => return commit,
@@ -866,15 +863,16 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
     /// Query `GET /v1/database/{coordinator}/2pc/status/{prepare_id}`.
     ///
-    /// Returns `Some(true)` = COMMIT, `Some(false)` = ABORT, `None` = transient error (retry).
-    async fn query_coordinator_status(
-        client: &reqwest::Client,
+    /// Blocks the calling thread. Returns `Some(true)` = COMMIT, `Some(false)` = ABORT,
+    /// `None` = transient error (retry).
+    fn query_coordinator_status(
+        client: &reqwest::blocking::Client,
         router: &std::sync::Arc<dyn crate::host::reducer_router::ReducerCallRouter>,
         auth_token: Option<String>,
         coordinator_identity: crate::identity::Identity,
         prepare_id: &str,
     ) -> Option<bool> {
-        let base_url = match router.resolve_base_url(coordinator_identity).await {
+        let base_url = match router.resolve_base_url_blocking(coordinator_identity) {
             Ok(url) => url,
             Err(e) => {
                 log::warn!("2PC status poll: cannot resolve coordinator URL: {e}");
@@ -888,12 +886,12 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             prepare_id,
         );
         let mut req = client.get(&url);
-        if let Some(token) = &auth_token {
+        if let Some(ref token) = auth_token {
             req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
         }
-        match req.send().await {
+        match req.send() {
             Ok(resp) if resp.status().is_success() => {
-                let body = resp.text().await.unwrap_or_default();
+                let body = resp.text().unwrap_or_default();
                 Some(body.trim() == "commit")
             }
             Ok(resp) => {

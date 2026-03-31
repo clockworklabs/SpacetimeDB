@@ -24,16 +24,11 @@ use spacetimedb_schema::def::ModuleDef;
 ///
 /// Use this for every place in the 2PC / cross-DB call paths that needs to
 /// synchronously drive a future from blocking (WASM executor) context.
-pub(crate) fn block_on_scoped<F>(handle: &tokio::runtime::Handle, fut: F) -> F::Output
+pub(crate) fn block_on_scoped<F>(_handle: &tokio::runtime::Handle, fut: F) -> F::Output
 where
     F: Future + Send,
     F::Output: Send,
 {
-    // std::thread::scope(|s| {
-    //     s.spawn(|| handle.block_on(fut))
-    //         .join()
-    //         .expect("block_on_scoped: thread panicked")
-    // })
     futures::executor::block_on(fut)
 }
 

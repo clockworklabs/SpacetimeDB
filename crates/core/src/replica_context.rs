@@ -50,10 +50,19 @@ pub struct ReplicaContext {
     pub replica_id: u64,
     pub logger: Arc<DatabaseLogger>,
     pub subscriptions: ModuleSubscriptions,
-    /// Warmed HTTP/2 client for [`crate::host::instance_env::InstanceEnv::call_reducer_on_db`].
+    /// Async HTTP/2 client for fire-and-forget coordinator/recovery tasks that run inside
+    /// tokio async tasks (e.g. `recover_2pc_coordinator`, `send_ack_commit_to_coordinator`).
     ///
     /// `reqwest::Client` is internally an `Arc`, so cloning `ReplicaContext` shares the pool.
     pub call_reducer_client: reqwest::Client,
+    /// Blocking HTTP client for cross-db calls made directly from the WASM executor thread.
+    ///
+    /// Used by [`crate::host::instance_env::InstanceEnv::call_reducer_on_db`] and the
+    /// 2PC participant's `wait_for_2pc_decision` polling loop, both of which run on the
+    /// `SingleCoreExecutor` std::thread and must block without yielding to tokio.
+    ///
+    /// `reqwest::blocking::Client` is also internally an `Arc`.
+    pub call_reducer_blocking_client: reqwest::blocking::Client,
     /// Resolves the HTTP base URL of the leader node for a given database identity.
     ///
     /// - Standalone: always returns the local node URL ([`crate::host::reducer_router::LocalReducerRouter`]).
@@ -74,7 +83,7 @@ pub struct ReplicaContext {
 }
 
 impl ReplicaContext {
-    /// Build a warmed `reqwest::Client` from `config`.
+    /// Build a warmed async `reqwest::Client` from `config`.
     ///
     /// Uses HTTP/2 prior knowledge (h2c) for all connections.
     /// The server must be configured to accept h2c (HTTP/2 cleartext) connections.
@@ -87,6 +96,21 @@ impl ReplicaContext {
             .http2_prior_knowledge()
             .build()
             .expect("failed to build call_reducer_on_db HTTP client")
+    }
+
+    /// Build a warmed blocking `reqwest::blocking::Client` from `config`.
+    ///
+    /// Used by the WASM executor thread and 2PC participant polling loop, which block their
+    /// OS thread synchronously rather than yielding to tokio.
+    pub fn new_call_reducer_blocking_client(config: &CallReducerOnDbConfig) -> reqwest::blocking::Client {
+        reqwest::blocking::Client::builder()
+            .tcp_keepalive(config.tcp_keepalive)
+            .pool_idle_timeout(config.pool_idle_timeout)
+            .pool_max_idle_per_host(config.pool_max_idle_per_host)
+            .timeout(config.request_timeout)
+            .http2_prior_knowledge()
+            .build()
+            .expect("failed to build call_reducer_on_db blocking HTTP client")
     }
 
     pub fn mint_global_tx_id(&self, start_ts: Timestamp) -> GlobalTxId {
