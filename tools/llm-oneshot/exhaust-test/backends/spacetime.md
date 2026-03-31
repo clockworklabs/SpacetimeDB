@@ -6,18 +6,14 @@ Instructions for generating, building, and deploying the **SpacetimeDB** backend
 
 ## SDK Rules (CRITICAL)
 
-**You MUST read the SDK rule files before generating ANY code.** They contain the SDK API reference and hallucinated APIs to avoid.
+**You MUST read the SDK rule file before generating ANY code.**
 
-The launch prompt provides absolute paths to the language and feature prompts. Additionally, you MUST find and read these SDK rule files in the repository:
-- Look for `spacetimedb.mdc` and `spacetimedb-typescript.mdc` in the `docs/static/ai-rules/` directory of the repo
-- Also look for `deployment.mdc` and `patterns-typescript.mdc` in the `.cursor/rules/` area
-
-These files contain:
+Find and read **`spacetimedb-typescript.mdc`** in `docs/static/ai-rules/` of the repo. This file contains everything you need:
 - Table definition syntax (`table(OPTIONS, COLUMNS)` — indexes go in OPTIONS)
-- Reducer definition syntax (name from export, object params, not positional)
+- Reducer definition syntax (explicit string name as first arg, object params)
 - Client patterns (useTable returns tuple, connectionBuilder must be memoized)
-- Hallucinated APIs to avoid (no `@clockworklabs/spacetimedb-sdk`, no `.filter()` on tables object, etc.)
-- Scheduled tables, timestamps, data visibility, React integration
+- Hallucinated APIs to avoid
+- Scheduled tables, timestamps, data visibility, React integration, project structure
 
 ---
 
@@ -142,11 +138,6 @@ Wait for the dev server to be ready (poll `http://localhost:5173` up to 30 secon
 
 ## Reference Files
 
-The language and feature prompt files are provided as absolute paths in the launch prompt. Additionally, search for and read these files in the repo:
-
 | File (search for it) | Purpose |
 |------|---------|
-| `spacetimedb.mdc` | Core SDK concepts (all languages) |
-| `spacetimedb-typescript.mdc` | TypeScript SDK reference + hallucinated APIs |
-| `deployment.mdc` | 5-phase workflow, CLI commands, port config |
-| `patterns-typescript.mdc` | File templates, project conventions |
+| `spacetimedb-typescript.mdc` | TypeScript SDK reference — the only file you need to read |
