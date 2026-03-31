@@ -9,10 +9,12 @@ export function ConnectedGuard({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const urlOverride = new URLSearchParams(window.location.search).get('url');
+
+    const uri = urlOverride || 'https://tpc-c-benchmark.spacetimedb.com';
+
     DbConnection.builder()
-      .withUri('https://tpc-c-benchmark.spacetimedb.com')
-      .withUri('https://aws-replication-test.spacetimedb.com')
-      //.withUri('http://localhost:3000')
+      .withUri(uri)
       .withDatabaseName('tpcc-metrics')
       .onConnect(conn => {
         console.log('Connected to SpacetimeDB');
