@@ -7,7 +7,7 @@ Gradle plugin for SpacetimeDB Kotlin projects. Automatically generates Kotlin cl
 ```kotlin
 // settings.gradle.kts
 pluginManagement {
-    includeBuild("/path/to/SpacetimeDB/sdks/kotlin/gradle-plugin")
+    includeBuild("/path/to/SpacetimeDB/sdks/kotlin/spacetimedb-gradle-plugin")
 }
 
 // build.gradle.kts

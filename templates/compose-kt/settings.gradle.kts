@@ -16,7 +16,7 @@ pluginManagement {
         gradlePluginPortal()
     }
     // TODO: Replace with published Maven coordinates once the SDK is available on Maven Central.
-    // includeBuild("<path-to-spacetimedb-kotlin-sdk>/gradle-plugin")
+    // includeBuild("<path-to-spacetimedb-kotlin-sdk>/spacetimedb-gradle-plugin")
 }
 
 dependencyResolutionManagement {

@@ -4,7 +4,7 @@ rootProject.name = "SpacetimedbKotlinSdk"
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 pluginManagement {
-    includeBuild("gradle-plugin")
+    includeBuild("spacetimedb-gradle-plugin")
     repositories {
         google {
             mavenContent {

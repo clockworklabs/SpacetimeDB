@@ -560,8 +560,8 @@ fn setup_kotlin_client_sdk(project_path: &Path) -> Result<()> {
     let sdk_path_str = kotlin_sdk_path.display().to_string().replace('\\', "/");
     let patched = settings
         .replace(
-            "// includeBuild(\"<path-to-spacetimedb-kotlin-sdk>/gradle-plugin\")",
-            &format!("includeBuild(\"{}/gradle-plugin\")", sdk_path_str),
+            "// includeBuild(\"<path-to-spacetimedb-kotlin-sdk>/spacetimedb-gradle-plugin\")",
+            &format!("includeBuild(\"{}/spacetimedb-gradle-plugin\")", sdk_path_str),
         )
         .replace(
             "// includeBuild(\"<path-to-spacetimedb-kotlin-sdk>\")",
