@@ -1892,7 +1892,6 @@ impl ModuleHost {
         let prepare_tx_component = tx_id
             .map(|tx_id| tx_id.to_string())
             .unwrap_or_else(|| format!("legacy:{}:00000000", caller_identity.to_hex()));
-        let coordinator_hex = coordinator_identity.to_hex();
         let prepare_id = format!(
             "prepare-{}-{}",
             prepare_tx_component,

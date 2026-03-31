@@ -21,7 +21,7 @@ use crate::host::{
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
-use crate::replica_context::ReplicaContext;
+use crate::replica_context::{execute_blocking_http, ReplicaContext};
 use crate::sql::ast::SchemaViewer;
 use crate::sql::execute::run_with_instance;
 use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
@@ -405,14 +405,14 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 ///
 /// Called AFTER B's commit is durable.  Fire-and-forget: failure is tolerated because
 /// `recover_2pc_coordinator` on A will retransmit COMMIT on restart.
-async fn send_ack_commit_to_coordinator(
-    client: reqwest::Client,
-    router: std::sync::Arc<dyn crate::host::reducer_router::ReducerCallRouter>,
-    auth_token: Option<String>,
+fn send_ack_commit_to_coordinator(
+    client: &reqwest::blocking::Client,
+    router: &std::sync::Arc<dyn crate::host::reducer_router::ReducerCallRouter>,
+    auth_token: &Option<String>,
     coordinator_identity: crate::identity::Identity,
-    prepare_id: String,
+    prepare_id: &str,
 ) {
-    let base_url = match router.resolve_base_url(coordinator_identity).await {
+    let base_url = match router.resolve_base_url_blocking(coordinator_identity) {
         Ok(url) => url,
         Err(e) => {
             log::warn!("2PC ack-commit: cannot resolve coordinator URL: {e}");
@@ -426,18 +426,16 @@ async fn send_ack_commit_to_coordinator(
         prepare_id,
     );
     let mut req = client.post(&url);
-    if let Some(token) = &auth_token {
+    if let Some(token) = auth_token {
         req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
     }
-    match req.send().await {
-        Ok(resp) if resp.status().is_success() => {
+    let Ok(request) = req.build() else { return };
+    match execute_blocking_http(client, request, |resp| Ok(resp.status())) {
+        Ok(status) if status.is_success() => {
             log::info!("2PC ack-commit: notified coordinator for {prepare_id}");
         }
-        Ok(resp) => {
-            log::warn!(
-                "2PC ack-commit: coordinator returned {} for {prepare_id}",
-                resp.status()
-            );
+        Ok(status) => {
+            log::warn!("2PC ack-commit: coordinator returned {status} for {prepare_id}");
         }
         Err(e) => {
             log::warn!("2PC ack-commit: transport error for {prepare_id}: {e}");
@@ -774,18 +772,14 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             }
 
             // Notify coordinator that B has committed so it can delete its coordinator log entry.
-            // Fire-and-forget: if this fails, coordinator's recover_2pc_coordinator will retry on
-            // restart, and B's commit_prepared will then return a harmless "not found" error.
-            let router = replica_ctx.call_reducer_router.clone();
-            let client_http = replica_ctx.call_reducer_client.clone();
-            let auth_token = replica_ctx.call_reducer_auth_token.clone();
-            tokio::runtime::Handle::current().spawn(send_ack_commit_to_coordinator(
-                client_http,
-                router,
-                auth_token,
+            // Best-effort: if this fails, coordinator's recover_2pc_coordinator will retry on restart.
+            send_ack_commit_to_coordinator(
+                &replica_ctx.call_reducer_blocking_client,
+                &replica_ctx.call_reducer_router,
+                &replica_ctx.call_reducer_auth_token,
                 coordinator_identity,
-                prepare_id,
-            ));
+                &prepare_id,
+            );
             if let Some(tx_id) = global_tx_id {
                 replica_ctx
                     .global_tx_manager
@@ -889,13 +883,21 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         if let Some(ref token) = auth_token {
             req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
         }
-        match req.send() {
-            Ok(resp) if resp.status().is_success() => {
-                let body = resp.text().unwrap_or_default();
-                Some(body.trim() == "commit")
+        let request = match req.build() {
+            Ok(r) => r,
+            Err(e) => {
+                log::warn!("2PC status poll: failed to build request: {e}");
+                return None;
             }
-            Ok(resp) => {
-                log::warn!("2PC status poll: coordinator returned {}", resp.status());
+        };
+        match execute_blocking_http(client, request, |resp| {
+            let success = resp.status().is_success();
+            let body = resp.text().unwrap_or_default();
+            Ok((success, body))
+        }) {
+            Ok((true, body)) => Some(body.trim() == "commit"),
+            Ok((false, _)) => {
+                log::warn!("2PC status poll: coordinator returned non-success");
                 None
             }
             Err(e) => {
@@ -1233,62 +1235,64 @@ impl InstanceCommon {
                 }
             }
 
-            // Fire-and-forget: send COMMIT/ABORT to each participant.
+            // Send COMMIT/ABORT to each participant synchronously.
             // The coordinator log (written atomically with A's tx above) is the
-            // durability guarantee. If a send fails, recovery retransmits.
-            let replica_ctx = inst.replica_ctx().clone();
-            handle.spawn(async move {
-                let client = replica_ctx.call_reducer_client.clone();
-                let router = replica_ctx.call_reducer_router.clone();
-                let auth_token = replica_ctx.call_reducer_auth_token.clone();
+            // durability guarantee; if a send fails, recovery retransmits on restart.
+            let replica_ctx = inst.replica_ctx();
+            let client = &replica_ctx.call_reducer_blocking_client;
+            let router = &replica_ctx.call_reducer_router;
+            let auth_token = &replica_ctx.call_reducer_auth_token;
 
-                for (db_identity, prepare_id) in &prepared_participants {
-                    let action = if committed { "commit" } else { "abort" };
-                    let base_url = match router.resolve_base_url(*db_identity).await {
-                        Ok(url) => url,
-                        Err(e) => {
-                            log::error!("2PC {action}: failed to resolve base URL for {db_identity}: {e}");
-                            continue;
-                        }
-                    };
-
-                    let url = format!(
-                        "{}/v1/database/{}/2pc/{}/{}",
-                        base_url,
-                        db_identity.to_hex(),
-                        action,
-                        prepare_id,
-                    );
-                    let mut req = client.post(&url);
-                    if let Some(ref token) = auth_token {
-                        req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+            for (db_identity, prepare_id) in &prepared_participants {
+                let action = if committed { "commit" } else { "abort" };
+                let base_url = match router.resolve_base_url_blocking(*db_identity) {
+                    Ok(url) => url,
+                    Err(e) => {
+                        log::error!("2PC {action}: failed to resolve base URL for {db_identity}: {e}");
+                        continue;
                     }
-
-                    match req.send().await {
-                        Ok(resp) if resp.status().is_success() => {
-                            log::info!("2PC {action}: {prepare_id} on {db_identity}");
-                            // if committed {
-                            //     if let Err(e) =
-                            //         stdb.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
-                            //             Ok(del_tx.delete_st_2pc_coordinator_log(prepare_id)?)
-                            //         })
-                            //     {
-                            //         log::warn!("delete_st_2pc_coordinator_log failed for {prepare_id}: {e}");
-                            //     }
-                            // }
+                };
+                let url = format!(
+                    "{}/v1/database/{}/2pc/{}/{}",
+                    base_url,
+                    db_identity.to_hex(),
+                    action,
+                    prepare_id,
+                );
+                let mut req = client.post(&url);
+                if let Some(token) = auth_token {
+                    req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+                }
+                let request = match req.build() {
+                    Ok(r) => r,
+                    Err(e) => {
+                        log::error!("2PC {action}: failed to build request for {prepare_id} on {db_identity}: {e}");
+                        continue;
+                    }
+                };
+                match execute_blocking_http(client, request, |resp| Ok(resp.status())) {
+                    Ok(status) if status.is_success() => {
+                        log::info!("2PC {action}: {prepare_id} on {db_identity}");
+                        if committed {
+                            if let Err(e) = replica_ctx
+                                .subscriptions
+                                .relational_db()
+                                .with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
+                                    Ok(del_tx.delete_st_2pc_coordinator_log(prepare_id)?)
+                                })
+                            {
+                                log::warn!("delete_st_2pc_coordinator_log failed for {prepare_id}: {e}");
+                            }
                         }
-                        Ok(resp) => {
-                            log::error!(
-                                "2PC {action}: failed for {prepare_id} on {db_identity}: status {}",
-                                resp.status()
-                            );
-                        }
-                        Err(e) => {
-                            log::error!("2PC {action}: transport error for {prepare_id} on {db_identity}: {e}");
-                        }
+                    }
+                    Ok(status) => {
+                        log::error!("2PC {action}: failed for {prepare_id} on {db_identity}: status {status}");
+                    }
+                    Err(e) => {
+                        log::error!("2PC {action}: transport error for {prepare_id} on {db_identity}: {e}");
                     }
                 }
-            });
+            }
         }
 
         if let Some(tx_id) = managed_global_tx_id {

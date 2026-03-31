@@ -5,7 +5,7 @@ use crate::error::{DBError, DatastoreError, IndexError, NodesError};
 use crate::host::global_tx::{GlobalTxRole, GlobalTxState};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::wasm_common::TimingSpan;
-use crate::replica_context::ReplicaContext;
+use crate::replica_context::{execute_blocking_http, ReplicaContext};
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
 use crate::subscription::module_subscription_manager::{from_tx_offset, TransactionOffset};
 use crate::util::prometheus_handle::IntGaugeExt;
@@ -1070,14 +1070,17 @@ impl InstanceEnv {
         if let Some(tx_id) = tx_id {
             req = req.header(TX_ID_HEADER, tx_id.to_string());
         }
-        let result = req
-            .send()
-            .map_err(|e| NodesError::HttpError(e.to_string()))
-            .and_then(|resp| {
+        let request = req.build().map_err(|e| NodesError::HttpError(e.to_string()))?;
+        let result = execute_blocking_http(
+            &self.replica_ctx.call_reducer_blocking_client,
+            request,
+            |resp| {
                 let status = resp.status().as_u16();
-                let body = resp.bytes().map_err(|e| NodesError::HttpError(e.to_string()))?;
+                let body = resp.bytes()?;
                 Ok((status, body))
-            });
+            },
+        )
+        .map_err(|e| NodesError::HttpError(e.to_string()));
 
         WORKER_METRICS
             .cross_db_reducer_calls_total
@@ -1151,19 +1154,22 @@ impl InstanceEnv {
             return Err(self.wounded_tx_error(tx_id));
         }
 
-        let result = req
-            .send()
-            .map_err(|e| NodesError::HttpError(e.to_string()))
-            .and_then(|resp| {
+        let request = req.build().map_err(|e| NodesError::HttpError(e.to_string()))?;
+        let result = execute_blocking_http(
+            &self.replica_ctx.call_reducer_blocking_client,
+            request,
+            |resp| {
                 let status = resp.status().as_u16();
                 let prepare_id = resp
                     .headers()
                     .get("X-Prepare-Id")
                     .and_then(|v| v.to_str().ok())
                     .map(|s| s.to_owned());
-                let body = resp.bytes().map_err(|e| NodesError::HttpError(e.to_string()))?;
+                let body = resp.bytes()?;
                 Ok((status, body, prepare_id))
-            });
+            },
+        )
+        .map_err(|e| NodesError::HttpError(e.to_string()));
 
         WORKER_METRICS
             .cross_db_reducer_calls_total

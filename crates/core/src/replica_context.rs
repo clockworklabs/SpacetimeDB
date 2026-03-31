@@ -102,17 +102,63 @@ impl ReplicaContext {
     ///
     /// Used by the WASM executor thread and 2PC participant polling loop, which block their
     /// OS thread synchronously rather than yielding to tokio.
+    ///
+    /// `reqwest::blocking::Client::build()` internally creates and drops a mini tokio runtime,
+    /// which panics if called from inside an async context. We build it on a fresh OS thread
+    /// so it is safe to call from `async fn` at startup.
     pub fn new_call_reducer_blocking_client(config: &CallReducerOnDbConfig) -> reqwest::blocking::Client {
-        reqwest::blocking::Client::builder()
-            .tcp_keepalive(config.tcp_keepalive)
-            .pool_idle_timeout(config.pool_idle_timeout)
-            .pool_max_idle_per_host(config.pool_max_idle_per_host)
-            .timeout(config.request_timeout)
-            .http2_prior_knowledge()
-            .build()
-            .expect("failed to build call_reducer_on_db blocking HTTP client")
+        let tcp_keepalive = config.tcp_keepalive;
+        let pool_idle_timeout = config.pool_idle_timeout;
+        let pool_max_idle_per_host = config.pool_max_idle_per_host;
+        let timeout = config.request_timeout;
+        std::thread::scope(|s| {
+            s.spawn(move || {
+                reqwest::blocking::Client::builder()
+                    .tcp_keepalive(tcp_keepalive)
+                    .pool_idle_timeout(pool_idle_timeout)
+                    .pool_max_idle_per_host(pool_max_idle_per_host)
+                    .timeout(timeout)
+                    .http2_prior_knowledge()
+                    .build()
+                    .expect("failed to build call_reducer_on_db blocking HTTP client")
+            })
+            .join()
+            .expect("blocking client builder thread panicked")
+        })
     }
 
+}
+
+/// Execute a blocking reqwest request on a fresh OS thread, processing the response inside
+/// that same thread.
+///
+/// In debug builds, `reqwest 0.12` calls `wait::enter()` on every I/O operation
+/// (`send`, `bytes`, `text`, …). That function creates and immediately drops a mini
+/// tokio runtime as a nesting-check, which panics if the calling thread is already
+/// inside a tokio `block_on` context (e.g. the `SingleCoreExecutor` WASM thread).
+///
+/// By running both the send **and** all response reading inside a scoped OS thread that
+/// has no tokio context, the assertion always passes.  The closure `f` receives the
+/// `Response` and must fully consume it (read body, extract headers, etc.) before
+/// returning — do not let the `Response` escape the closure.
+pub fn execute_blocking_http<F, T>(
+    client: &reqwest::blocking::Client,
+    request: reqwest::blocking::Request,
+    f: F,
+) -> reqwest::Result<T>
+where
+    F: FnOnce(reqwest::blocking::Response) -> reqwest::Result<T> + Send,
+    T: Send,
+{
+    let client = client.clone();
+    std::thread::scope(|s| {
+        s.spawn(move || client.execute(request).and_then(f))
+            .join()
+            .expect("blocking HTTP thread panicked")
+    })
+}
+
+impl ReplicaContext {
     pub fn mint_global_tx_id(&self, start_ts: Timestamp) -> GlobalTxId {
         let nonce = self.tx_id_nonce.fetch_add(1, Ordering::Relaxed);
         GlobalTxId::new(start_ts, self.database.database_identity, nonce, 0)
