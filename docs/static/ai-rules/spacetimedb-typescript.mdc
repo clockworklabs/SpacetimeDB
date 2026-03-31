@@ -135,7 +135,7 @@ const Shape = t.enum('Shape', { circle: t.i32(), rectangle: Point });
 // Values use { tag: 'circle', value: 10 } or { tag: 'rectangle', value: { x: 1, y: 2 } }
 
 // Modifiers
-t.string().optional()           // Nullable
+t.option(t.string())            // Nullable (wrap with t.option, NOT .optional())
 t.u64().primaryKey()            // Primary key
 t.u64().primaryKey().autoInc()  // Auto-increment primary key
 ```
@@ -252,19 +252,15 @@ indexes: [{ accessor: 'by_owner', ... }]  // in Note table — CONFLICT!
 // Filter takes VALUE directly, not object — returns iterator
 const rows = [...ctx.db.task.by_owner.filter(ownerId)];
 
-// Unique columns use .find() — returns single row or undefined
+// Unique columns use .find() — returns single row or null
 const row = ctx.db.player.identity.find(ctx.sender);
 ```
 
-### ⚠️ Multi-column indexes are BROKEN
+### Multi-column indexes
 ```typescript
-// ❌ DON'T — causes PANIC
-ctx.db.scores.by_player_level.filter(playerId);
-
-// ✅ DO — use single-column index + manual filter
-for (const row of ctx.db.scores.by_player.filter(playerId)) {
-  if (row.level === targetLevel) { /* ... */ }
-}
+// Multi-column indexes support partial prefix filtering
+ctx.db.scores.by_player_level.filter(playerId);  // filter by first column only
+ctx.db.scores.by_player_level.filter([playerId, targetLevel]);  // filter by both columns
 ```
 
 ---
@@ -470,15 +466,17 @@ const PrivateData = table(
   }
 );
 
+// **Views MUST be `export const` — like reducers, they are registered via module exports.**
+
 // ❌ BAD — .iter() causes performance issues (re-evaluates on ANY row change)
-spacetimedb.view(
+export const myDataSlow = spacetimedb.view(
   { name: 'my_data_slow', public: true },
   t.array(PrivateData.rowType),
   (ctx) => [...ctx.db.privateData.iter()]  // Works but VERY slow at scale
 );
 
 // ✅ GOOD — index lookup enables targeted invalidation
-spacetimedb.view(
+export const myData = spacetimedb.view(
   { name: 'my_data', public: true },
   t.array(PrivateData.rowType),
   (ctx) => [...ctx.db.privateData.by_owner.filter(ctx.sender)]
@@ -490,7 +488,7 @@ spacetimedb.view(
 ```typescript
 // Query-builder views return a query; the SQL engine maintains the result incrementally.
 // This can scan the whole table if needed (e.g. leaderboard-style queries).
-spacetimedb.anonymousView(
+export const topPlayers = spacetimedb.anonymousView(
   { name: 'top_players', public: true },
   t.array(Player.rowType),
   (ctx) =>
@@ -502,12 +500,12 @@ spacetimedb.anonymousView(
 ### ViewContext vs AnonymousViewContext
 ```typescript
 // ViewContext — has ctx.sender, result varies per user (computed per-subscriber)
-spacetimedb.view({ name: 'my_items', public: true }, t.array(Item.rowType), (ctx) => {
+export const myItems = spacetimedb.view({ name: 'my_items', public: true }, t.array(Item.rowType), (ctx) => {
   return [...ctx.db.item.by_owner.filter(ctx.sender)];
 });
 
 // AnonymousViewContext — no ctx.sender, same result for everyone (shared, better perf)
-spacetimedb.anonymousView({ name: 'leaderboard', public: true }, t.array(LeaderboardRow), (ctx) => {
+export const leaderboard = spacetimedb.anonymousView({ name: 'leaderboard', public: true }, t.array(LeaderboardRow), (ctx) => {
   return [...ctx.db.player.by_score.filter(/* top scores */)];
 });
 ```
