@@ -36,7 +36,7 @@ pub struct GlobalTxSession {
     wounded_tx: watch::Sender<bool>,
     state: Mutex<GlobalTxState>,
     prepare_id: Mutex<Option<String>>,
-    participants: Mutex<HashMap<Identity, String>>,
+    participants: Mutex<Vec<(Identity, String)>>,
 }
 
 impl GlobalTxSession {
@@ -50,7 +50,7 @@ impl GlobalTxSession {
             wounded_tx,
             state: Mutex::new(GlobalTxState::Running),
             prepare_id: Mutex::new(None),
-            participants: Mutex::new(HashMap::new()),
+            participants: Mutex::new(Vec::new()),
         }
     }
 
@@ -87,16 +87,11 @@ impl GlobalTxSession {
     }
 
     pub fn add_participant(&self, db_identity: Identity, prepare_id: String) {
-        self.participants.lock().unwrap().insert(db_identity, prepare_id);
+        self.participants.lock().unwrap().push((db_identity, prepare_id));
     }
 
     pub fn participants(&self) -> Vec<(Identity, String)> {
-        self.participants
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|(db, pid)| (*db, pid.clone()))
-            .collect()
+        self.participants.lock().unwrap().clone()
     }
 }
 
@@ -816,5 +811,24 @@ mod tests {
         assert!(rt
             .block_on(second_waiter_task)
             .expect("second waiter task should complete"));
+    }
+
+    #[test]
+    fn session_keeps_multiple_prepare_ids_for_same_participant_database() {
+        let manager = GlobalTxManager::default();
+        let tx_id = tx_id(10, 1, 0);
+        let participant = Identity::from_byte_array([7; 32]);
+        let session = manager.ensure_session(tx_id, super::GlobalTxRole::Coordinator, tx_id.creator_db);
+
+        session.add_participant(participant, "prepare-a".to_owned());
+        session.add_participant(participant, "prepare-b".to_owned());
+
+        assert_eq!(
+            session.participants(),
+            vec![
+                (participant, "prepare-a".to_owned()),
+                (participant, "prepare-b".to_owned())
+            ]
+        );
     }
 }
