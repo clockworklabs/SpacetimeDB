@@ -106,17 +106,11 @@ fn test_non_owner_cannot_lock_or_unlock() {
 
     // Non-owner lock should fail
     let result = test.spacetime(&["lock", "--server", &test.server_url, &identity]);
-    assert!(
-        result.is_err(),
-        "Expected non-owner lock to fail, but it succeeded"
-    );
+    assert!(result.is_err(), "Expected non-owner lock to fail, but it succeeded");
 
     // Non-owner unlock should fail
     let result = test.spacetime(&["unlock", "--server", &test.server_url, &identity]);
-    assert!(
-        result.is_err(),
-        "Expected non-owner unlock to fail, but it succeeded"
-    );
+    assert!(result.is_err(), "Expected non-owner unlock to fail, but it succeeded");
 }
 
 /// Test that publish without --delete-data still works on a locked database.
