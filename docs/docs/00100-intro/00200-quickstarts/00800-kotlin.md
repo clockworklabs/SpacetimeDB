@@ -15,7 +15,7 @@ This quickstart uses the `basic-kt` template, a JVM-only console app. For a Kotl
 
 ## Prerequisites
 
-- [JDK 21+](https://adoptium.net/) installed
+- JDK 21+ installed
 - [SpacetimeDB CLI](https://spacetimedb.com/install) installed
 
 <InstallCardLink />
