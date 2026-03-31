@@ -1507,7 +1507,7 @@ pub fn call_reducer_on_db(
 ) -> Result<(u16, raw::BytesSource), (Errno, raw::BytesSource)> {
     let mut out = raw::BytesSource::INVALID;
     let status = unsafe {
-        raw::call_reducer_on_db(
+        raw::call_reducer_on_db_2pc(
             identity.as_ptr(),
             reducer_name.as_ptr(),
             reducer_name.len() as u32,
