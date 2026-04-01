@@ -950,24 +950,19 @@ impl RelationalDB {
         }
     }
 
-    /// Abort a durability barrier, discarding ALL deferred transactions.
+    /// Abort a durability barrier, discarding ALL deferred transactions
+    /// and clearing ALL active barriers.
     ///
-    /// Used when Round 2 of pipelined 2PC aborts. All transactions behind the
-    /// barrier are tainted (they may have read data from the aborted 2PC tx)
-    /// and must not reach disk. On restart, the in-memory state is lost and
-    /// the pipeline is effectively flushed.
-    pub fn abort_durability_barrier(&self, barrier_offset: u64) {
+    /// Used when Round 2 of pipelined 2PC aborts. The aborted 2PC's reducer
+    /// changes are already in committed state (in memory), so any other
+    /// deferred transaction may have observed them. Since the caller always
+    /// triggers a module restart after this call, ALL pending transactions
+    /// are tainted and must be dropped -- not just those behind the aborted
+    /// barrier. The module restart rebuilds committed state from disk.
+    pub fn abort_durability_barrier(&self, _barrier_offset: u64) {
         let mut barrier = self.durability_barrier.lock().unwrap();
-        let Some(ref mut b) = *barrier else {
-            return;
-        };
-        b.active.remove(&barrier_offset);
-        if b.active.is_empty() {
-            // Drop all pending transactions -- they are tainted.
-            *barrier = None;
-        }
-        // If other barriers remain, the pending list stays (those transactions
-        // are still blocked by the other barriers and will be resolved by them).
+        // Drop everything: all active barriers and all pending transactions.
+        *barrier = None;
     }
 
     /// Clear one durability barrier, flushing deferred transactions that are now
