@@ -76,3 +76,20 @@ export const messageReactions = pgTable('message_reactions', {
 }, (t) => [
   primaryKey({ columns: [t.messageId, t.userId, t.emoji] }),
 ]);
+
+export const roomAdmins = pgTable('room_admins', {
+  userId: integer('user_id').notNull().references(() => users.id),
+  roomId: integer('room_id').notNull().references(() => rooms.id),
+  grantedAt: timestamp('granted_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.userId, t.roomId] }),
+]);
+
+export const roomBans = pgTable('room_bans', {
+  userId: integer('user_id').notNull().references(() => users.id),
+  roomId: integer('room_id').notNull().references(() => rooms.id),
+  bannedBy: integer('banned_by').notNull().references(() => users.id),
+  bannedAt: timestamp('banned_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.userId, t.roomId] }),
+]);

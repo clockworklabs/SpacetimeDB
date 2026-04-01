@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { Identity } from 'spacetimedb';
 import { DbConnection, tables } from './module_bindings';
 import { useTable, useSpacetimeDB } from 'spacetimedb/react';
 
@@ -25,6 +26,9 @@ function App() {
   const [editingMessageId, setEditingMessageId] = useState<bigint | null>(null);
   const [editInput, setEditInput] = useState('');
   const [showHistoryFor, setShowHistoryFor] = useState<bigint | null>(null);
+
+  // Permissions UI state
+  const [showMemberManager, setShowMemberManager] = useState(false);
 
   // Ephemeral message UI state (0 = normal, 60 = 1 min, 300 = 5 min)
   const [ephemeralDuration, setEphemeralDuration] = useState<number>(0);
@@ -58,6 +62,7 @@ function App() {
         'SELECT * FROM scheduled_message',
         'SELECT * FROM reaction',
         'SELECT * FROM message_edit',
+        'SELECT * FROM room_permission',
       ]);
   }, [conn, isActive]);
 
@@ -71,11 +76,26 @@ function App() {
   const [scheduledMessages] = useTable(tables.scheduledMessage);
   const [reactions] = useTable(tables.reaction);
   const [messageEdits] = useTable(tables.messageEdit);
+  const [roomPermissions] = useTable(tables.roomPermission);
 
   // Derived: my user record
   const myUser = myIdentity
     ? users.find(u => u.identity.toHexString() === myIdentity.toHexString())
     : undefined;
+
+  // Derived: am I admin in selected room?
+  const amIAdmin = selectedRoomId !== null && myIdentity
+    ? roomPermissions.some(
+        p => p.roomId === selectedRoomId && p.userIdentity.toHexString() === myIdentity.toHexString() && p.role === 'admin'
+      )
+    : false;
+
+  // Derived: am I banned from selected room?
+  const amIBanned = selectedRoomId !== null && myIdentity
+    ? roomPermissions.some(
+        p => p.roomId === selectedRoomId && p.userIdentity.toHexString() === myIdentity.toHexString() && p.role === 'banned'
+      )
+    : false;
 
   // Derived: rooms I'm a member of
   const myMemberships = myIdentity
@@ -138,6 +158,18 @@ function App() {
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     };
   }, [selectedRoomId]);
+
+  // Deselect room if kicked/banned (membership removed)
+  useEffect(() => {
+    if (selectedRoomId === null || !myIdentity) return;
+    const stillMember = roomMembers.some(
+      m => m.roomId === selectedRoomId && m.userIdentity.toHexString() === myIdentity.toHexString()
+    );
+    if (!stillMember) {
+      setSelectedRoomId(null);
+      setShowMemberManager(false);
+    }
+  }, [roomMembers, selectedRoomId, myIdentity]);
 
   // Tick every second to keep ephemeral countdowns current
   useEffect(() => {
@@ -265,6 +297,21 @@ function App() {
     messageEdits
       .filter(e => e.messageId === messageId)
       .sort((a, b) => (a.editedAt.microsSinceUnixEpoch < b.editedAt.microsSinceUnixEpoch ? -1 : 1));
+
+  const handleKickUser = (targetIdentityHex: string) => {
+    if (!conn || !selectedRoomId) return;
+    conn.reducers.kickUser({ roomId: selectedRoomId, targetIdentity: Identity.fromString(targetIdentityHex) });
+  };
+
+  const handleBanUser = (targetIdentityHex: string) => {
+    if (!conn || !selectedRoomId) return;
+    conn.reducers.banUser({ roomId: selectedRoomId, targetIdentity: Identity.fromString(targetIdentityHex) });
+  };
+
+  const handlePromoteAdmin = (targetIdentityHex: string) => {
+    if (!conn || !selectedRoomId) return;
+    conn.reducers.promoteAdmin({ roomId: selectedRoomId, targetIdentity: Identity.fromString(targetIdentityHex) });
+  };
 
   const handleCancelScheduled = (scheduledId: bigint) => {
     if (!conn) return;
@@ -476,7 +523,68 @@ function App() {
               <span className="chat-members">
                 {roomMembers.filter(m => m.roomId === selectedRoom.id).length} members
               </span>
+              {amIAdmin && (
+                <button
+                  className="btn btn-sm manage-btn"
+                  onClick={() => setShowMemberManager(m => !m)}
+                  title="Manage members"
+                >
+                  ⚙ Manage
+                </button>
+              )}
             </div>
+
+            {/* Member manager panel (admin only) */}
+            {amIAdmin && showMemberManager && (
+              <div className="member-manager">
+                <div className="member-manager-title">Room Members</div>
+                {roomMembers
+                  .filter(m => m.roomId === selectedRoom.id)
+                  .map(m => {
+                    const u = users.find(u => u.identity.toHexString() === m.userIdentity.toHexString());
+                    const isMe = m.userIdentity.toHexString() === myIdentity?.toHexString();
+                    const isAdminMember = roomPermissions.some(
+                      p => p.roomId === selectedRoom.id && p.userIdentity.toHexString() === m.userIdentity.toHexString() && p.role === 'admin'
+                    );
+                    return (
+                      <div key={m.userIdentity.toHexString()} className="member-row">
+                        <span className="member-name">
+                          {u?.name ?? 'Unknown'}
+                          {isMe && ' (you)'}
+                          {isAdminMember && <span className="admin-badge"> ★ admin</span>}
+                        </span>
+                        {!isMe && (
+                          <div className="member-actions">
+                            {!isAdminMember && (
+                              <button
+                                className="btn btn-sm btn-success"
+                                onClick={() => handlePromoteAdmin(m.userIdentity.toHexString())}
+                                title="Promote to admin"
+                              >
+                                Promote
+                              </button>
+                            )}
+                            <button
+                              className="btn btn-sm btn-danger"
+                              onClick={() => handleKickUser(m.userIdentity.toHexString())}
+                              title="Kick user"
+                            >
+                              Kick
+                            </button>
+                            <button
+                              className="btn btn-sm btn-danger"
+                              onClick={() => handleBanUser(m.userIdentity.toHexString())}
+                              title="Ban user"
+                            >
+                              Ban
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
 
             {/* Messages */}
             <div className="messages">
@@ -664,6 +772,13 @@ function App() {
               </div>
             )}
 
+            {/* Banned notice */}
+            {amIBanned && (
+              <div className="banned-notice">
+                You have been banned from this room and cannot send messages.
+              </div>
+            )}
+
             {/* Message input */}
             <div className="message-input-area">
               <input
@@ -698,7 +813,7 @@ function App() {
               <button
                 className="btn btn-primary send-btn"
                 onClick={handleSendMessage}
-                disabled={!messageInput.trim() || showScheduler}
+                disabled={!messageInput.trim() || showScheduler || amIBanned}
               >
                 Send
               </button>

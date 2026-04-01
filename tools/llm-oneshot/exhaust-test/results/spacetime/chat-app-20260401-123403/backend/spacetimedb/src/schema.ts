@@ -119,7 +119,18 @@ const messageEdit = table(
   }
 );
 
-const spacetimedb = schema({ user, room, roomMember, message, typingState, userRoomState, typingCleanupTimer, scheduledMessage, reaction, messageEdit });
+// Room permissions: role = 'admin' | 'banned'
+const roomPermission = table(
+  { name: 'room_permission', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    roomId: t.u64().index('btree'),
+    userIdentity: t.identity().index('btree'),
+    role: t.string(), // 'admin' or 'banned'
+  }
+);
+
+const spacetimedb = schema({ user, room, roomMember, message, typingState, userRoomState, typingCleanupTimer, scheduledMessage, reaction, messageEdit, roomPermission });
 export default spacetimedb;
 
 // Schedule the typing cleanup to run every 1 second

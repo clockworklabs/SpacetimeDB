@@ -9,6 +9,7 @@ interface Room {
   name: string;
   createdBy: number;
   memberIds: number[];
+  adminIds: number[];
   unreadCount: number;
 }
 
@@ -104,6 +105,9 @@ export default function App() {
   const [historyMessageId, setHistoryMessageId] = useState<number | null>(null);
   const [editHistory, setEditHistory] = useState<MessageEdit[]>([]);
 
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [kickedNotice, setKickedNotice] = useState<string | null>(null);
+
   const socketRef = useRef<Socket | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -116,6 +120,7 @@ export default function App() {
 
   const currentRoom = rooms.find(r => r.id === currentRoomId) ?? null;
   const isMember = currentRoom?.memberIds.includes(currentUser?.id ?? -1) ?? false;
+  const isAdmin = currentRoom?.adminIds.includes(currentUser?.id ?? -1) ?? false;
 
   // ── Socket setup ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -196,6 +201,30 @@ export default function App() {
     socket.on('message:edited', ({ messageId, content, editedAt }: { messageId: number; content: string; editedAt: string }) => {
       setMessages(prev => prev.map(m =>
         m.id === messageId ? { ...m, content, isEdited: true, editedAt } : m
+      ));
+    });
+
+    socket.on('permission:kicked', ({ roomId }: { roomId: number }) => {
+      setCurrentRoomId(curr => {
+        if (curr === roomId) {
+          setMessages([]);
+          setKickedNotice(`You were kicked from this room.`);
+        }
+        return curr === roomId ? null : curr;
+      });
+      // Update room membership locally
+      setRooms(prev => prev.map(r =>
+        r.id === roomId
+          ? { ...r, memberIds: r.memberIds.filter(id => id !== currentUser.id) }
+          : r
+      ));
+    });
+
+    socket.on('permission:promoted', ({ roomId, userId }: { roomId: number; userId: number }) => {
+      setRooms(prev => prev.map(r =>
+        r.id === roomId && !r.adminIds.includes(userId)
+          ? { ...r, adminIds: [...r.adminIds, userId] }
+          : r
       ));
     });
 
@@ -322,6 +351,32 @@ export default function App() {
       body: JSON.stringify({ userId: currentUser.id }),
     });
     setCurrentRoomId(null);
+  }
+
+  async function handleKick(targetUserId: number) {
+    if (!currentRoomId || !currentUser) return;
+    const res = await fetch(`/api/rooms/${currentRoomId}/kick`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminId: currentUser.id, targetUserId }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      alert(err.error ?? 'Failed to kick user');
+    }
+  }
+
+  async function handlePromote(targetUserId: number) {
+    if (!currentRoomId || !currentUser) return;
+    const res = await fetch(`/api/rooms/${currentRoomId}/promote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminId: currentUser.id, targetUserId }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      alert(err.error ?? 'Failed to promote user');
+    }
   }
 
   function handleSelectRoom(roomId: number) {
@@ -574,6 +629,16 @@ export default function App() {
 
       {/* Chat area */}
       <div className="chat-area">
+        {kickedNotice && !currentRoom && (
+          <div style={{ background: 'var(--danger)', color: '#fff', padding: '10px 16px', textAlign: 'center', fontWeight: 500 }}>
+            {kickedNotice}
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => setKickedNotice(null)}
+              style={{ marginLeft: 12, color: '#fff', opacity: 0.8 }}
+            >Dismiss</button>
+          </div>
+        )}
         {!currentRoom ? (
           <div className="empty-state">Select a room to start chatting</div>
         ) : (
@@ -581,12 +646,63 @@ export default function App() {
             <div className="chat-header">
               <h2># {currentRoom.name}</h2>
               <span className="member-info">{currentRoom.memberIds.length} members</span>
+              {isAdmin && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 600, marginLeft: 8 }}>ADMIN</span>
+              )}
+              {isAdmin && (
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setShowAdminPanel(p => !p)}
+                  title="Manage members"
+                  style={{ marginLeft: 8 }}
+                >
+                  {showAdminPanel ? '▲ Members' : '▼ Members'}
+                </button>
+              )}
               {isMember ? (
                 <button className="btn btn-ghost btn-sm btn-danger" onClick={handleLeaveRoom}>Leave</button>
               ) : (
                 <button className="btn btn-primary btn-sm" onClick={handleJoinRoom}>Join</button>
               )}
             </div>
+
+            {/* Admin panel */}
+            {isAdmin && showAdminPanel && (
+              <div style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)', padding: '10px 16px' }}>
+                <div style={{ fontWeight: 600, fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 8 }}>MEMBERS</div>
+                {currentRoom.memberIds.map(uid => {
+                  const isThisAdmin = currentRoom.adminIds.includes(uid);
+                  const isMe = uid === currentUser.id;
+                  return (
+                    <div key={uid} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: '0.875rem' }}>
+                      <span style={{ flex: 1 }}>
+                        {getUserName(uid)}
+                        {isMe && <span style={{ color: 'var(--text-muted)', marginLeft: 4 }}>(you)</span>}
+                        {isThisAdmin && <span style={{ color: 'var(--accent)', marginLeft: 6, fontSize: '0.75rem', fontWeight: 600 }}>★ Admin</span>}
+                      </span>
+                      {!isMe && (
+                        <>
+                          <button
+                            className="btn btn-ghost btn-sm btn-danger"
+                            onClick={() => handleKick(uid)}
+                            title={`Kick ${getUserName(uid)}`}
+                            style={{ fontSize: '0.75rem', padding: '2px 8px' }}
+                          >Kick</button>
+                          {!isThisAdmin && (
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => handlePromote(uid)}
+                              title={`Promote ${getUserName(uid)} to admin`}
+                              style={{ fontSize: '0.75rem', padding: '2px 8px', color: 'var(--accent)' }}
+                            >Promote</button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             <div className="messages-container">
               {messages.length === 0 && (

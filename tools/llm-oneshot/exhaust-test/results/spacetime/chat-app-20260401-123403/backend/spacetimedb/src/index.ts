@@ -1,6 +1,7 @@
 import spacetimedb from './schema';
 import { t, SenderError } from 'spacetimedb/server';
 export { default, init, cleanupTyping, sendScheduledMessage } from './schema';
+// roomPermission table is exported as part of the schema default export
 import { ScheduleAt } from 'spacetimedb';
 
 // ── Lifecycle hooks ────────────────────────────────────────────────────────
@@ -71,6 +72,8 @@ export const createRoom = spacetimedb.reducer(
     }
     if (maxId > 0n) {
       ctx.db.roomMember.insert({ id: 0n, roomId: maxId, userIdentity: ctx.sender, joinedAt: ctx.timestamp });
+      // Creator becomes admin
+      ctx.db.roomPermission.insert({ id: 0n, roomId: maxId, userIdentity: ctx.sender, role: 'admin' });
     }
   }
 );
@@ -80,6 +83,10 @@ export const joinRoom = spacetimedb.reducer(
   (ctx, { roomId }) => {
     if (!ctx.db.user.identity.find(ctx.sender)) throw new SenderError('Not registered');
     if (!ctx.db.room.id.find(roomId)) throw new SenderError('Room not found');
+    // Check not banned
+    const isBanned = [...ctx.db.roomPermission.roomId.filter(roomId)]
+      .some(row => row.userIdentity.equals(ctx.sender) && row.role === 'banned');
+    if (isBanned) throw new SenderError('You are banned from this room');
     // Check not already a member
     const alreadyMember = [...ctx.db.roomMember.roomId.filter(roomId)]
       .some(row => row.userIdentity.equals(ctx.sender));
@@ -119,6 +126,10 @@ export const sendMessage = spacetimedb.reducer(
     const isMember = [...ctx.db.roomMember.roomId.filter(roomId)]
       .some(row => row.userIdentity.equals(ctx.sender));
     if (!isMember) throw new SenderError('Not a member of this room');
+    // Check not banned
+    const isBanned = [...ctx.db.roomPermission.roomId.filter(roomId)]
+      .some(row => row.userIdentity.equals(ctx.sender) && row.role === 'banned');
+    if (isBanned) throw new SenderError('You are banned from this room');
     // Compute expiry: 0 means never, otherwise now + ttlSecs
     const expiresAtMicros = ttlSecs > 0n
       ? ctx.timestamp.microsSinceUnixEpoch + ttlSecs * 1_000_000n
@@ -235,6 +246,84 @@ export const toggleReaction = spacetimedb.reducer(
     } else {
       ctx.db.reaction.insert({ id: 0n, messageId, userIdentity: ctx.sender, emoji });
     }
+  }
+);
+
+// ── Room permissions ───────────────────────────────────────────────────────
+
+function isAdmin(ctx: any, roomId: bigint, identity: any): boolean {
+  return [...ctx.db.roomPermission.roomId.filter(roomId)]
+    .some((row: any) => row.userIdentity.equals(identity) && row.role === 'admin');
+}
+
+export const kickUser = spacetimedb.reducer(
+  { roomId: t.u64(), targetIdentity: t.identity() },
+  (ctx, { roomId, targetIdentity }) => {
+    if (!ctx.db.room.id.find(roomId)) throw new SenderError('Room not found');
+    if (!isAdmin(ctx, roomId, ctx.sender)) throw new SenderError('Not an admin of this room');
+    if (targetIdentity.equals(ctx.sender)) throw new SenderError('Cannot kick yourself');
+    // Remove from room membership
+    const membership = [...ctx.db.roomMember.roomId.filter(roomId)]
+      .find((row: any) => row.userIdentity.equals(targetIdentity));
+    if (!membership) throw new SenderError('User is not a member');
+    ctx.db.roomMember.id.delete(membership.id);
+    // Clean up typing state
+    const typing = [...ctx.db.typingState.roomId.filter(roomId)]
+      .find((row: any) => row.userIdentity.equals(targetIdentity));
+    if (typing) ctx.db.typingState.id.delete(typing.id);
+    // Clean up user room state
+    const state = [...ctx.db.userRoomState.userIdentity.filter(targetIdentity)]
+      .find((row: any) => row.roomId === roomId);
+    if (state) ctx.db.userRoomState.id.delete(state.id);
+  }
+);
+
+export const banUser = spacetimedb.reducer(
+  { roomId: t.u64(), targetIdentity: t.identity() },
+  (ctx, { roomId, targetIdentity }) => {
+    if (!ctx.db.room.id.find(roomId)) throw new SenderError('Room not found');
+    if (!isAdmin(ctx, roomId, ctx.sender)) throw new SenderError('Not an admin of this room');
+    if (targetIdentity.equals(ctx.sender)) throw new SenderError('Cannot ban yourself');
+    // Remove from membership if present
+    const membership = [...ctx.db.roomMember.roomId.filter(roomId)]
+      .find((row: any) => row.userIdentity.equals(targetIdentity));
+    if (membership) ctx.db.roomMember.id.delete(membership.id);
+    // Remove any existing permission entry for this user in this room
+    const existing = [...ctx.db.roomPermission.roomId.filter(roomId)]
+      .find((row: any) => row.userIdentity.equals(targetIdentity));
+    if (existing) ctx.db.roomPermission.id.delete(existing.id);
+    // Add ban
+    ctx.db.roomPermission.insert({ id: 0n, roomId, userIdentity: targetIdentity, role: 'banned' });
+    // Clean up typing state
+    const typing = [...ctx.db.typingState.roomId.filter(roomId)]
+      .find((row: any) => row.userIdentity.equals(targetIdentity));
+    if (typing) ctx.db.typingState.id.delete(typing.id);
+    // Clean up user room state
+    const state = [...ctx.db.userRoomState.userIdentity.filter(targetIdentity)]
+      .find((row: any) => row.roomId === roomId);
+    if (state) ctx.db.userRoomState.id.delete(state.id);
+  }
+);
+
+export const promoteAdmin = spacetimedb.reducer(
+  { roomId: t.u64(), targetIdentity: t.identity() },
+  (ctx, { roomId, targetIdentity }) => {
+    if (!ctx.db.room.id.find(roomId)) throw new SenderError('Room not found');
+    if (!isAdmin(ctx, roomId, ctx.sender)) throw new SenderError('Not an admin of this room');
+    // Target must be a member
+    const isMember = [...ctx.db.roomMember.roomId.filter(roomId)]
+      .some((row: any) => row.userIdentity.equals(targetIdentity));
+    if (!isMember) throw new SenderError('User is not a member');
+    // Already admin?
+    const already = [...ctx.db.roomPermission.roomId.filter(roomId)]
+      .find((row: any) => row.userIdentity.equals(targetIdentity) && row.role === 'admin');
+    if (already) return; // Already admin, no-op
+    // Remove any other permission entry (e.g., if somehow had banned status but was re-added)
+    const existing = [...ctx.db.roomPermission.roomId.filter(roomId)]
+      .find((row: any) => row.userIdentity.equals(targetIdentity));
+    if (existing) ctx.db.roomPermission.id.delete(existing.id);
+    // Grant admin
+    ctx.db.roomPermission.insert({ id: 0n, roomId, userIdentity: targetIdentity, role: 'admin' });
   }
 );
 

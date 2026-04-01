@@ -837,3 +837,63 @@ body {
   color: var(--text-secondary);
   word-break: break-word;
 }
+
+/* Permissions / member manager */
+.manage-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.member-manager {
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.member-manager-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 2px;
+}
+
+.member-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.member-name {
+  color: var(--text-secondary);
+}
+
+.admin-badge {
+  color: var(--accent-light);
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+.member-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.banned-notice {
+  background: rgba(218, 54, 51, 0.15);
+  border-top: 1px solid rgba(218, 54, 51, 0.3);
+  color: #f87171;
+  font-size: 13px;
+  padding: 8px 20px;
+  text-align: center;
+}

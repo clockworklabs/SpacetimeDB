@@ -91,6 +91,10 @@ async function getRoomWithMeta(roomId: number, userId?: number) {
     .from(schema.roomMembers)
     .where(eq(schema.roomMembers.roomId, roomId));
 
+  const admins = await db.select({ userId: schema.roomAdmins.userId })
+    .from(schema.roomAdmins)
+    .where(eq(schema.roomAdmins.roomId, roomId));
+
   let unreadCount = 0;
   if (userId) {
     const lastRead = await db.select().from(schema.lastReadPositions)
@@ -109,7 +113,7 @@ async function getRoomWithMeta(roomId: number, userId?: number) {
     }
   }
 
-  return { ...room[0], memberIds: members.map(m => m.userId), unreadCount };
+  return { ...room[0], memberIds: members.map(m => m.userId), adminIds: admins.map(a => a.userId), unreadCount };
 }
 
 app.get('/api/rooms', async (req, res) => {
@@ -130,6 +134,7 @@ app.post('/api/rooms', async (req, res) => {
   try {
     const [room] = await db.insert(schema.rooms).values({ name: trimmed, createdBy: userId }).returning();
     await db.insert(schema.roomMembers).values({ userId, roomId: room.id });
+    await db.insert(schema.roomAdmins).values({ userId, roomId: room.id });
     const full = await getRoomWithMeta(room.id, userId);
     io.emit('room:created', full);
     res.json(full);
@@ -143,12 +148,82 @@ app.post('/api/rooms/:id/join', async (req, res) => {
   const roomId = parseInt(req.params.id);
   const { userId } = req.body as { userId: number };
   try {
+    const ban = await db.select().from(schema.roomBans)
+      .where(and(eq(schema.roomBans.userId, userId), eq(schema.roomBans.roomId, roomId)))
+      .limit(1);
+    if (ban.length > 0) {
+      res.status(403).json({ error: 'You are banned from this room' });
+      return;
+    }
     await db.insert(schema.roomMembers).values({ userId, roomId }).onConflictDoNothing();
     io.emit('room:membership', { roomId, userId, action: 'join' });
     res.json({ success: true });
   } catch {
     res.status(500).json({ error: 'Failed to join room' });
   }
+});
+
+// ── Permissions ───────────────────────────────────────────────────────────────
+app.post('/api/rooms/:id/kick', async (req, res) => {
+  const roomId = parseInt(req.params.id);
+  const { adminId, targetUserId } = req.body as { adminId: number; targetUserId: number };
+
+  // Verify requester is an admin
+  const admin = await db.select().from(schema.roomAdmins)
+    .where(and(eq(schema.roomAdmins.userId, adminId), eq(schema.roomAdmins.roomId, roomId)))
+    .limit(1);
+  if (admin.length === 0) { res.status(403).json({ error: 'Not an admin' }); return; }
+
+  // Cannot kick another admin (unless you're the room creator)
+  const room = await db.select().from(schema.rooms).where(eq(schema.rooms.id, roomId)).limit(1);
+  if (!room.length) { res.status(404).json({ error: 'Room not found' }); return; }
+
+  const targetAdmin = await db.select().from(schema.roomAdmins)
+    .where(and(eq(schema.roomAdmins.userId, targetUserId), eq(schema.roomAdmins.roomId, roomId)))
+    .limit(1);
+  if (targetAdmin.length > 0 && room[0].createdBy !== adminId) {
+    res.status(403).json({ error: 'Cannot kick another admin' }); return;
+  }
+
+  // Remove from members and admins
+  await db.delete(schema.roomMembers).where(and(eq(schema.roomMembers.userId, targetUserId), eq(schema.roomMembers.roomId, roomId)));
+  await db.delete(schema.roomAdmins).where(and(eq(schema.roomAdmins.userId, targetUserId), eq(schema.roomAdmins.roomId, roomId)));
+
+  // Add to bans
+  await db.insert(schema.roomBans).values({ userId: targetUserId, roomId, bannedBy: adminId }).onConflictDoNothing();
+
+  // Force socket leave for kicked user
+  await io.in(`user:${targetUserId}`).socketsLeave(`room:${roomId}`);
+
+  // Notify kicked user
+  io.to(`user:${targetUserId}`).emit('permission:kicked', { roomId, by: adminId });
+
+  // Notify room of membership change
+  io.emit('room:membership', { roomId, userId: targetUserId, action: 'leave' });
+
+  res.json({ success: true });
+});
+
+app.post('/api/rooms/:id/promote', async (req, res) => {
+  const roomId = parseInt(req.params.id);
+  const { adminId, targetUserId } = req.body as { adminId: number; targetUserId: number };
+
+  // Verify requester is an admin
+  const admin = await db.select().from(schema.roomAdmins)
+    .where(and(eq(schema.roomAdmins.userId, adminId), eq(schema.roomAdmins.roomId, roomId)))
+    .limit(1);
+  if (admin.length === 0) { res.status(403).json({ error: 'Not an admin' }); return; }
+
+  // Target must be a member
+  const member = await db.select().from(schema.roomMembers)
+    .where(and(eq(schema.roomMembers.userId, targetUserId), eq(schema.roomMembers.roomId, roomId)))
+    .limit(1);
+  if (member.length === 0) { res.status(400).json({ error: 'User is not a member' }); return; }
+
+  await db.insert(schema.roomAdmins).values({ userId: targetUserId, roomId }).onConflictDoNothing();
+
+  io.to(`room:${roomId}`).emit('permission:promoted', { roomId, userId: targetUserId, by: adminId });
+  res.json({ success: true });
 });
 
 app.post('/api/rooms/:id/leave', async (req, res) => {
