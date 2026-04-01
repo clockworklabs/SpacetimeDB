@@ -19,7 +19,12 @@ pub struct ResultRow {
 
 #[reducer]
 pub fn insert_user(ctx: &ReducerContext, name: String, age: i32, active: bool) {
-    ctx.db.user().insert(User { id: 0, name, age, active });
+    ctx.db.user().insert(User {
+        id: 0,
+        name,
+        age,
+        active,
+    });
 }
 
 #[reducer]

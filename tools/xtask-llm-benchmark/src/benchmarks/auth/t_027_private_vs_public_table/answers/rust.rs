@@ -1,4 +1,4 @@
-use spacetimedb::{Table, reducer, table, ReducerContext};
+use spacetimedb::{reducer, table, ReducerContext, Table};
 
 #[table(accessor = user_internal)]
 pub struct UserInternal {
@@ -25,8 +25,5 @@ pub fn register_user(ctx: &ReducerContext, name: String, email: String, password
         email,
         password_hash,
     });
-    ctx.db.user_public().insert(UserPublic {
-        id: internal.id,
-        name,
-    });
+    ctx.db.user_public().insert(UserPublic { id: internal.id, name });
 }

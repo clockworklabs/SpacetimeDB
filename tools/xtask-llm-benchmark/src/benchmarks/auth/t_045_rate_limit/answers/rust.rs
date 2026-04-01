@@ -1,4 +1,4 @@
-use spacetimedb::{Identity, ReducerContext, Table, reducer, table};
+use spacetimedb::{reducer, table, Identity, ReducerContext, Table};
 
 #[table(accessor = rate_limit)]
 pub struct RateLimit {

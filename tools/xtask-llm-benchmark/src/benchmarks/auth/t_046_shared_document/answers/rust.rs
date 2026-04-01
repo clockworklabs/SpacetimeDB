@@ -1,4 +1,4 @@
-use spacetimedb::{Identity, ReducerContext, Table, reducer, table};
+use spacetimedb::{reducer, table, Identity, ReducerContext, Table};
 
 #[table(accessor = document, public)]
 pub struct Document {

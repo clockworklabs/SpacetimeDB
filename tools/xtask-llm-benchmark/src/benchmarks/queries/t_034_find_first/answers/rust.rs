@@ -1,4 +1,4 @@
-use spacetimedb::{Table, reducer, table, ReducerContext};
+use spacetimedb::{reducer, table, ReducerContext, Table};
 
 #[table(accessor = task)]
 pub struct Task {

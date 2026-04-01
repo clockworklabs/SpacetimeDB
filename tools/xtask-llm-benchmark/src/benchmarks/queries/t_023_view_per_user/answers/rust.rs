@@ -1,4 +1,4 @@
-use spacetimedb::{table, view, ViewContext, Identity};
+use spacetimedb::{table, view, Identity, ViewContext};
 
 #[table(accessor = profile, public)]
 pub struct Profile {

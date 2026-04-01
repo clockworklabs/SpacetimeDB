@@ -1,5 +1,5 @@
-use spacetimedb::{Table, reducer, table, ReducerContext};
 use spacetimedb::Identity;
+use spacetimedb::{reducer, table, ReducerContext, Table};
 
 #[table(accessor = message, public)]
 pub struct Message {
