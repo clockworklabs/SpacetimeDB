@@ -116,7 +116,7 @@ pub fn resolve_mode_paths_hashing(mode: &str) -> Result<Vec<PathBuf>> {
             }
         }
         other => bail!(
-            "unknown mode `{other}` (expected: docs | llms.md | cursor_rules | rustdoc_json | none | no_guidelines)"
+            "unknown mode `{other}` (expected: docs | llms.md | guidelines | cursor_rules | rustdoc_json | no_context | search)"
         ),
     }
 }

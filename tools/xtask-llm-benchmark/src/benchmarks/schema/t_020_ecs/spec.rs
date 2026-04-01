@@ -29,7 +29,6 @@ pub fn spec() -> BenchmarkSpec {
             &seed,
             vec![],
             "ecs_seed",
-            Duration::from_secs(10),
         ));
 
         v.push(make_sql_count_only_scorer(
@@ -50,7 +49,6 @@ pub fn spec() -> BenchmarkSpec {
             &step,
             vec![],
             "ecs_step",
-            Duration::from_secs(10),
         ));
 
         // Then just query

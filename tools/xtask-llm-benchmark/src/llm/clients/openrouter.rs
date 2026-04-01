@@ -4,7 +4,7 @@ use serde::Serialize;
 use super::http::HttpClient;
 use super::oa_compat::OACompatResp;
 use crate::llm::prompt::BuiltPrompt;
-use crate::llm::segmentation::{deterministic_trim_prefix, non_context_reserve_tokens_env, Segment};
+use crate::llm::segmentation::{desired_output_tokens, deterministic_trim_prefix, non_context_reserve_tokens_env, Segment};
 use crate::llm::types::{LlmOutput, Vendor};
 
 const OPENROUTER_BASE: &str = "https://openrouter.ai/api/v1";
@@ -89,12 +89,13 @@ impl OpenRouterClient {
             });
         }
 
+        let max_tokens = desired_output_tokens().max(1) as u32;
         let req = Req {
             model,
             messages,
             temperature: 0.0,
-            top_p: Some(0.9),
-            max_tokens: None,
+            top_p: None,
+            max_tokens: Some(max_tokens),
         };
 
         let auth = HttpClient::bearer(&self.api_key);

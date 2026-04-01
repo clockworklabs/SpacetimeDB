@@ -99,7 +99,6 @@ fn ensure_model<'a>(mode_v: &'a mut ModeEntry, name: &str) -> &'a mut ModelEntry
 fn canonical_mode(mode: &str) -> &str {
     match mode {
         "none" | "no_guidelines" => "no_context",
-        "cursor_rules" => "guidelines",
         other => other,
     }
 }

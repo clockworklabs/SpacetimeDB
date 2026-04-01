@@ -105,7 +105,6 @@ pub fn make_reducer_call_both_scorer(
     reducer: &str,
     args: Vec<serde_json::Value>,
     id_str: &'static str,
-    timeout: Duration,
 ) -> Box<dyn Scorer> {
     let (cat, task) = derive_cat_task_from_file(src_file);
     let golden_db = sanitize_db_name(&format!("{}-{}-golden", cat, task));
@@ -117,7 +116,6 @@ pub fn make_reducer_call_both_scorer(
         llm_db,
         reducer: reducer.to_string(),
         args,
-        timeout,
         id_str,
     }) as Box<dyn Scorer>
 }

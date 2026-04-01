@@ -23,7 +23,6 @@ pub fn spec() -> BenchmarkSpec {
             &insert_reducer,
             vec![Value::from("Alice"), Value::from(30), Value::from(true)],
             "seed_user_via_reducer",
-            Duration::from_secs(10),
         ));
 
         // After calling the lookup reducer, the projection should be present in results

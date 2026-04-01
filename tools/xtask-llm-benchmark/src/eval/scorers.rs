@@ -607,7 +607,6 @@ pub struct ReducerCallBothScorer {
     pub llm_db: String,
     pub reducer: String,
     pub args: Vec<Value>,
-    pub timeout: Duration,
     pub id_str: &'static str,
 }
 

@@ -74,15 +74,19 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           LLM_BENCHMARK_API_KEY: ${{ secrets.LLM_BENCHMARK_API_KEY }}
+          LLM_BENCHMARK_UPLOAD_URL: ${{ secrets.LLM_BENCHMARK_UPLOAD_URL }}
           MSBUILDDISABLENODEREUSE: "1"
           DOTNET_CLI_USE_MSBUILD_SERVER: "0"
+          INPUT_LANGUAGES: ${{ inputs.languages || 'rust,csharp,typescript' }}
+          INPUT_MODELS: ${{ inputs.models || 'all' }}
+          INPUT_MODES: ${{ inputs.modes || 'guidelines,no_context' }}
         run: |
-          LANGS="${{ inputs.languages || 'rust,csharp,typescript' }}"
-          MODELS="${{ inputs.models || 'all' }}"
-          MODES="${{ inputs.modes || 'guidelines,no_context' }}"
+          LANGS="$INPUT_LANGUAGES"
+          MODELS="$INPUT_MODELS"
+          MODES="$INPUT_MODES"
           UPLOAD_FLAG=""
-          if [ -n "${{ secrets.LLM_BENCHMARK_UPLOAD_URL }}" ]; then
-            UPLOAD_FLAG="--upload-url ${{ secrets.LLM_BENCHMARK_UPLOAD_URL }}"
+          if [ -n "$LLM_BENCHMARK_UPLOAD_URL" ]; then
+            UPLOAD_FLAG="--upload-url $LLM_BENCHMARK_UPLOAD_URL"
           fi
 
           SUCCEEDED=0
@@ -151,4 +155,5 @@ jobs:
           git add docs/llms
           git diff --cached --quiet && exit 0
           git commit -m "Update LLM benchmark results (periodic run)"
+          git pull --rebase origin master
           git push origin master

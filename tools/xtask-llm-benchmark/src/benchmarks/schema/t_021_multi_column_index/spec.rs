@@ -26,7 +26,6 @@ pub fn spec() -> BenchmarkSpec {
             &seed,
             vec![],
             "mcindex_seed",
-            Duration::from_secs(10),
         ));
 
         // Then just query — don't call seed again
