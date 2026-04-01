@@ -43,6 +43,8 @@ pub struct LoadConfig {
     pub load_parallelism: usize,
     pub batch_size: usize,
     pub reset: bool,
+    pub warehouse_id_offset: u32,
+    pub skip_items: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -90,6 +92,15 @@ pub struct LoadArgs {
     pub batch_size: Option<usize>,
     #[arg(long)]
     pub reset: Option<bool>,
+    /// Offset added to all warehouse IDs for this load. Use when adding warehouses
+    /// to a database that already has data (e.g. set to 70 to load warehouses 71-140
+    /// into a database that already has warehouses 1-70).
+    #[arg(long)]
+    pub warehouse_id_offset: Option<u32>,
+    /// Skip loading the global Items table. Use together with --warehouse-id-offset
+    /// when adding warehouses to an existing database.
+    #[arg(long)]
+    pub skip_items: Option<bool>,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -188,6 +199,8 @@ struct FileLoadConfig {
     load_parallelism: Option<usize>,
     batch_size: Option<usize>,
     reset: Option<bool>,
+    warehouse_id_offset: Option<u32>,
+    skip_items: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -284,6 +297,8 @@ impl LoadArgs {
             load_parallelism: load_parallelism.min(usize::try_from(num_databases).unwrap_or(usize::MAX)),
             batch_size,
             reset: self.reset.or(file.load.reset).unwrap_or(true),
+            warehouse_id_offset: self.warehouse_id_offset.or(file.load.warehouse_id_offset).unwrap_or(0),
+            skip_items: self.skip_items.or(file.load.skip_items).unwrap_or(false),
         })
     }
 }

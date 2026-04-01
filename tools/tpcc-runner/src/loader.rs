@@ -132,6 +132,8 @@ fn build_load_request(
         database_number,
         num_databases: config.num_databases,
         warehouses_per_database: config.warehouses_per_database,
+        warehouse_id_offset: config.warehouse_id_offset,
+        skip_items: config.skip_items,
         batch_size: u32::try_from(config.batch_size).context("batch_size exceeds u32")?,
         seed: LOAD_SEED,
         load_c_last,

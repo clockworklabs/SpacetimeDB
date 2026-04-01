@@ -10,6 +10,8 @@ pub struct TpccLoadConfigRequest {
     pub database_number: u32,
     pub num_databases: u32,
     pub warehouses_per_database: u32,
+    pub warehouse_id_offset: u32,
+    pub skip_items: bool,
     pub batch_size: u32,
     pub seed: u64,
     pub load_c_last: u32,
