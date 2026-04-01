@@ -47,6 +47,15 @@ struct TransactionContext<'a> {
     request_ids: &'a AtomicU64,
 }
 
+#[derive(Default)]
+struct FailedTransactionFields {
+    rollback: bool,
+    remote: bool,
+    by_last_name: bool,
+    order_line_count: u32,
+    remote_order_line_count: u32,
+}
+
 pub async fn run(config: DriverConfig) -> Result<()> {
     let (config, schedule) = resolve_driver_setup(config).await?;
     let run_id = schedule.run_id.clone();
@@ -178,8 +187,11 @@ pub async fn run(config: DriverConfig) -> Result<()> {
         terminal_start: config.terminal_start(),
         terminals: config.terminals(),
         warehouse_count: config.warehouse_count,
-        warmup_secs: config.warmup_secs,
-        measure_secs: config.measure_secs,
+        warmup_secs: schedule
+            .measure_start_ms
+            .saturating_sub(schedule.warmup_start_ms)
+            / 1_000,
+        measure_secs: schedule.measure_end_ms.saturating_sub(schedule.measure_start_ms) / 1_000,
         measure_start_ms: schedule.measure_start_ms,
         measure_end_ms: schedule.measure_end_ms,
     })?;
@@ -245,7 +257,7 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
         };
         let record = execute_transaction(&context, kind, &mut rng, started_ms).await;
 
-        if !record.success && !(record.kind == TransactionKind::NewOrder && record.rollback) {
+        if !(record.success || (record.kind == TransactionKind::NewOrder && record.rollback)) {
             let detail = record
                 .detail
                 .as_deref()
@@ -331,11 +343,7 @@ fn failed_transaction(
     kind: TransactionKind,
     started_ms: u64,
     detail: impl Into<String>,
-    rollback: bool,
-    remote: bool,
-    by_last_name: bool,
-    order_line_count: u32,
-    remote_order_line_count: u32,
+    fields: FailedTransactionFields,
 ) -> TransactionRecord {
     let finished_ms = crate::summary::now_millis();
     TransactionRecord {
@@ -344,11 +352,11 @@ fn failed_transaction(
         kind,
         success: false,
         latency_ms: finished_ms.saturating_sub(started_ms),
-        rollback,
-        remote,
-        by_last_name,
-        order_line_count,
-        remote_order_line_count,
+        rollback: fields.rollback,
+        remote: fields.remote,
+        by_last_name: fields.by_last_name,
+        order_line_count: fields.order_line_count,
+        remote_order_line_count: fields.remote_order_line_count,
         detail: Some(detail.into()),
     }
 }
@@ -431,22 +439,22 @@ async fn execute_new_order(
             TransactionKind::NewOrder,
             started_ms,
             format!("new_order failed: {message}"),
-            false,
-            false,
-            false,
-            line_count as u32,
-            remote_order_line_count,
+            FailedTransactionFields {
+                order_line_count: line_count as u32,
+                remote_order_line_count,
+                ..Default::default()
+            },
         ),
         Err(err) => failed_transaction(
             assignment,
             TransactionKind::NewOrder,
             started_ms,
             err.to_string(),
-            false,
-            false,
-            false,
-            line_count as u32,
-            remote_order_line_count,
+            FailedTransactionFields {
+                order_line_count: line_count as u32,
+                remote_order_line_count,
+                ..Default::default()
+            },
         ),
     }
 }
@@ -513,22 +521,22 @@ async fn execute_payment(
             TransactionKind::Payment,
             started_ms,
             format!("payment failed: {message}"),
-            false,
-            remote,
-            by_last_name,
-            0,
-            0,
+            FailedTransactionFields {
+                remote,
+                by_last_name,
+                ..Default::default()
+            },
         ),
         Err(err) => failed_transaction(
             assignment,
             TransactionKind::Payment,
             started_ms,
             err.to_string(),
-            false,
-            remote,
-            by_last_name,
-            0,
-            0,
+            FailedTransactionFields {
+                remote,
+                by_last_name,
+                ..Default::default()
+            },
         ),
     }
 }
@@ -571,22 +579,20 @@ async fn execute_order_status(
             TransactionKind::OrderStatus,
             started_ms,
             format!("order_status failed: {message}"),
-            false,
-            false,
-            by_last_name,
-            0,
-            0,
+            FailedTransactionFields {
+                by_last_name,
+                ..Default::default()
+            },
         ),
         Err(err) => failed_transaction(
             assignment,
             TransactionKind::OrderStatus,
             started_ms,
             err.to_string(),
-            false,
-            false,
-            by_last_name,
-            0,
-            0,
+            FailedTransactionFields {
+                by_last_name,
+                ..Default::default()
+            },
         ),
     }
 }
@@ -633,22 +639,14 @@ async fn execute_delivery(
             TransactionKind::Delivery,
             started_ms,
             format!("queue_delivery failed: {message}"),
-            false,
-            false,
-            false,
-            0,
-            0,
+            FailedTransactionFields::default(),
         ),
         Err(err) => failed_transaction(
             assignment,
             TransactionKind::Delivery,
             started_ms,
             err.to_string(),
-            false,
-            false,
-            false,
-            0,
-            0,
+            FailedTransactionFields::default(),
         ),
     }
 }
@@ -685,22 +683,14 @@ async fn execute_stock_level(
             TransactionKind::StockLevel,
             started_ms,
             format!("stock_level failed: {message}"),
-            false,
-            false,
-            false,
-            0,
-            0,
+            FailedTransactionFields::default(),
         ),
         Err(err) => failed_transaction(
             assignment,
             TransactionKind::StockLevel,
             started_ms,
             err.to_string(),
-            false,
-            false,
-            false,
-            0,
-            0,
+            FailedTransactionFields::default(),
         ),
     }
 }
@@ -848,7 +838,10 @@ async fn harvest_delivery_completions(
             saw_rows = true;
             for row in batch {
                 *after_completion_id = (*after_completion_id).max(row.completion_id);
-                if row.driver_id == config.driver_id {
+                let queued_at_ms = (row.queued_at.to_micros_since_unix_epoch().max(0) as u64) / 1_000;
+                let queued_in_measurement =
+                    queued_at_ms >= schedule.measure_start_ms && queued_at_ms < schedule.measure_end_ms;
+                if row.driver_id == config.driver_id && queued_in_measurement {
                     seen_for_driver += 1;
                     metrics.record_delivery_completion(&row);
                 }
