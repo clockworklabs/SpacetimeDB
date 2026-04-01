@@ -169,6 +169,9 @@ export OTEL_METRIC_EXPORT_INTERVAL=5000
 
 # ─── Save run metadata ──────────────────────────────────────────────────────
 
+# Escape backslashes for JSON (Windows paths have backslashes)
+APP_DIR_JSON="${APP_DIR_NATIVE//\\/\\\\}"
+
 cat > "$RUN_DIR/metadata.json" <<EOF
 {
   "level": $LEVEL,
@@ -177,7 +180,7 @@ cat > "$RUN_DIR/metadata.json" <<EOF
   "startedAt": "$START_TIME",
   "startedAtUtc": "$START_TIME_UTC",
   "runId": "$RUN_ID",
-  "appDir": "$APP_DIR_NATIVE",
+  "appDir": "$APP_DIR_JSON",
   "promptFile": "$(basename "$PROMPT_FILE")",
   "phase": "generate"
 }
