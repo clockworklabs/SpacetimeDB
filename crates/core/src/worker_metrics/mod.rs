@@ -48,10 +48,50 @@ metrics_group!(
         #[labels(caller_identity: Identity)]
         pub cross_db_reducer_calls_total: IntCounterVec,
 
+        #[name = spacetime_2pc_outgoing_prepare_calls_total]
+        #[help = "Total number of outgoing 2PC prepare calls made by this database while acting as coordinator."]
+        #[labels(database_identity: Identity)]
+        pub two_pc_outgoing_prepare_calls_total: IntCounterVec,
+
+        #[name = spacetime_2pc_prepare_calls_received_total]
+        #[help = "Total number of incoming 2PC prepare calls received by this database."]
+        #[labels(database_identity: Identity)]
+        pub two_pc_prepare_calls_received_total: IntCounterVec,
+
+        #[name = spacetime_2pc_transactions_committed_total]
+        #[help = "Total number of 2PC transactions committed by this database as coordinator after preparing remote participants."]
+        #[labels(database_identity: Identity)]
+        pub two_pc_transactions_committed_total: IntCounterVec,
+
+        #[name = spacetime_2pc_transactions_committed_as_participant_total]
+        #[help = "Total number of 2PC transactions committed by this database as a participant."]
+        #[labels(database_identity: Identity)]
+        pub two_pc_transactions_committed_as_participant_total: IntCounterVec,
+
         #[name = spacetime_cross_db_reducer_duration_seconds]
         #[help = "Duration of cross-database reducer calls in seconds."]
         #[labels(caller_identity: Identity)]
         pub cross_db_reducer_duration_seconds: HistogramVec,
+
+        #[name = spacetime_transactions_wounded_total]
+        #[help = "Total number of distributed transactions that were marked wounded."]
+        #[labels(coordinator_identity: Identity, role: str)]
+        pub transactions_wounded_total: IntCounterVec,
+
+        #[name = spacetime_2pc_wound_requests_sent_total]
+        #[help = "Total number of wound requests sent to a remote coordinator."]
+        #[labels(database_identity: Identity)]
+        pub two_pc_wound_requests_sent_total: IntCounterVec,
+
+        #[name = spacetime_global_tx_waiting_on_younger_owner_total]
+        #[help = "Total number of times a transaction tried to acquire the global transaction lock and found itself behind a younger owner."]
+        #[labels(coordinator_identity: Identity, role: str)]
+        pub global_tx_waiting_on_younger_owner_total: IntCounterVec,
+
+        #[name = spacetime_global_tx_younger_owner_finished_within_grace_period_total]
+        #[help = "Total number of times a younger lock owner finished within the wound grace period after blocking an older transaction."]
+        #[labels(coordinator_identity: Identity, role: str)]
+        pub global_tx_younger_owner_finished_within_grace_period_total: IntCounterVec,
 
         #[name = jemalloc_active_bytes]
         #[help = "Number of bytes in jemallocs heap"]

@@ -2192,6 +2192,7 @@ impl ModuleHost {
         let client = self.replica_ctx().call_reducer_client.clone();
         let router = self.replica_ctx().call_reducer_router.clone();
         let auth_token = self.replica_ctx().call_reducer_auth_token.clone();
+        let local_db = self.replica_ctx().database.database_identity;
         let base_url = match router.resolve_base_url(tx_id.creator_db).await {
             Ok(url) => url,
             Err(e) => {
@@ -2210,6 +2211,10 @@ impl ModuleHost {
             req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
         }
         log::info!("2PC wound: sending wound for {tx_id} to coordinator at {url}");
+        WORKER_METRICS
+            .two_pc_wound_requests_sent_total
+            .with_label_values(&local_db)
+            .inc();
         match req.send().await {
             Ok(resp) if resp.status().is_success() => {
                 log::info!("2PC wound: notified coordinator for {tx_id}");

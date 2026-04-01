@@ -1,4 +1,5 @@
 use crate::identity::Identity;
+use crate::worker_metrics::WORKER_METRICS;
 use spacetimedb_lib::GlobalTxId;
 use std::cmp::Ordering as CmpOrdering;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -228,6 +229,15 @@ impl Default for GlobalTxManager {
 }
 
 impl GlobalTxManager {
+    fn session_metric_labels(&self, tx_id: &GlobalTxId) -> Option<(Identity, &'static str)> {
+        let session = self.get_session(tx_id)?;
+        let role = match session.role {
+            GlobalTxRole::Coordinator => "coordinator",
+            GlobalTxRole::Participant => "participant",
+        };
+        Some((session.coordinator_identity, role))
+    }
+
     pub fn new(wound_grace_period: Duration) -> Self {
         Self {
             sessions: Mutex::default(),
@@ -312,11 +322,19 @@ impl GlobalTxManager {
             session.set_state(GlobalTxState::Aborting);
         }
         if was_fresh {
+            let role = match session.role {
+                GlobalTxRole::Coordinator => "coordinator",
+                GlobalTxRole::Participant => "participant",
+            };
             log::info!(
                 "global transaction {tx_id} marked wounded; role={:?} coordinator={}",
                 session.role,
                 session.coordinator_identity
             );
+            WORKER_METRICS
+                .transactions_wounded_total
+                .with_label_values(&session.coordinator_identity, &role)
+                .inc();
         }
         Some(session)
     }
@@ -421,6 +439,12 @@ impl GlobalTxManager {
             }
 
             if let Some(owner) = owner_to_wound {
+                if let Some((coordinator_identity, role)) = self.session_metric_labels(&tx_id) {
+                    WORKER_METRICS
+                        .global_tx_waiting_on_younger_owner_total
+                        .with_label_values(&coordinator_identity, &role)
+                        .inc();
+                }
                 let wound_grace_period = self.wound_grace_period;
                 log::info!(
                     "global transaction {tx_id} is waiting behind younger owner {owner}; giving it {:?} to finish before wound flow",
@@ -437,6 +461,12 @@ impl GlobalTxManager {
                     _ = tokio::time::sleep(wound_grace_period) => false,
                 };
                 if owner_finished {
+                    if let Some((coordinator_identity, role)) = self.session_metric_labels(&tx_id) {
+                        WORKER_METRICS
+                            .global_tx_younger_owner_finished_within_grace_period_total
+                            .with_label_values(&coordinator_identity, &role)
+                            .inc();
+                    }
                     log::info!("global transaction {tx_id} observed owner {owner} finish within grace period; not triggering wound",);
                     continue;
                 }

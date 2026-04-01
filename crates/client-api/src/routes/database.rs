@@ -28,6 +28,7 @@ use serde::Deserialize;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::{CallResult, UpdateDatabaseResult};
+use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb::host::{FunctionArgs, MigratePlanResult};
 use spacetimedb::host::{ModuleHost, ReducerOutcome};
 use spacetimedb::host::{ProcedureCallError, ReducerCallError};
@@ -327,7 +328,19 @@ pub async fn prepare<S: ControlStateDelegate + NodeDelegate>(
             .into());
     }
 
-    let (module, Database { owner_identity, .. }) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+    let (
+        module,
+        Database {
+            owner_identity,
+            database_identity,
+            ..
+        },
+    ) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+
+    WORKER_METRICS
+        .two_pc_prepare_calls_received_total
+        .with_label_values(&database_identity)
+        .inc();
 
     // 2PC prepare is a server-to-server call; no client lifecycle management needed.
     // call_identity_connected/disconnected submit jobs to the module's executor, which

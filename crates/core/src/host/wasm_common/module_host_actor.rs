@@ -760,6 +760,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             );
 
         if commit {
+            WORKER_METRICS
+                .two_pc_transactions_committed_as_participant_total
+                .with_label_values(&replica_ctx.database.database_identity)
+                .inc();
             if let Some(tx_id) = global_tx_id {
                 log::info!(
                     "2PC participant {} committing prepared transaction {tx_id} ({prepare_id})",
@@ -1238,6 +1242,14 @@ impl InstanceCommon {
             let committed = matches!(event.status, EventStatus::Committed(_));
             let stdb = self.info.subscriptions.relational_db().clone();
             let handle = tokio::runtime::Handle::current();
+            let local_db = inst.replica_ctx().database.database_identity;
+
+            if committed {
+                WORKER_METRICS
+                    .two_pc_transactions_committed_total
+                    .with_label_values(&local_db)
+                    .inc();
+            }
 
             // Wait for A's coordinator log (committed atomically with the tx) to be
             // durable before sending COMMIT to B.  This guarantees that if A crashes

@@ -1183,6 +1183,10 @@ impl InstanceEnv {
             .with_label_values(&caller_identity)
             .inc();
         WORKER_METRICS
+            .two_pc_outgoing_prepare_calls_total
+            .with_label_values(&caller_identity)
+            .inc();
+        WORKER_METRICS
             .cross_db_reducer_duration_seconds
             .with_label_values(&caller_identity)
             .observe(start.elapsed().as_secs_f64());
