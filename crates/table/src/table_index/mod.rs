@@ -1909,52 +1909,31 @@ impl TableIndex {
                 let range_type = &range_type.algebraic_type;
                 let suffix_len = suffix_types.len();
 
+                macro_rules! bounds_from_bsatn_bytes_key {
+                    ($ctor:expr) => {
+                        Self::bounds_from_bsatn_bytes_key(
+                            prefix,
+                            prefix_types,
+                            start,
+                            end,
+                            range_type,
+                            suffix_len,
+                            $ctor,
+                        )
+                    };
+                }
+
                 match &self.idx {
-                    BTreeBytesKey8(_) => Self::bounds_from_bsatn_bytes_key(
-                        prefix,
-                        prefix_types,
-                        start,
-                        end,
-                        range_type,
-                        suffix_len,
-                        TypedIndexKey::BytesKey8B,
-                    ),
-                    BTreeBytesKey16(_) => Self::bounds_from_bsatn_bytes_key(
-                        prefix,
-                        prefix_types,
-                        start,
-                        end,
-                        range_type,
-                        suffix_len,
-                        TypedIndexKey::BytesKey16,
-                    ),
-                    BTreeBytesKey32(_) => Self::bounds_from_bsatn_bytes_key(
-                        prefix,
-                        prefix_types,
-                        start,
-                        end,
-                        range_type,
-                        suffix_len,
-                        TypedIndexKey::BytesKey32,
-                    ),
-                    BTreeBytesKey64(_) => Self::bounds_from_bsatn_bytes_key(
-                        prefix,
-                        prefix_types,
-                        start,
-                        end,
-                        range_type,
-                        suffix_len,
-                        TypedIndexKey::BytesKey64,
-                    ),
-                    BTreeBytesKey128(_) => Self::bounds_from_bsatn_bytes_key(
-                        prefix,
-                        prefix_types,
-                        start,
-                        end,
-                        range_type,
-                        suffix_len,
-                        TypedIndexKey::BytesKey128,
-                    ),
+                    BTreeBytesKey8(_) => bounds_from_bsatn_bytes_key!(TypedIndexKey::BytesKey8B),
+                    BTreeBytesKey16(_) => bounds_from_bsatn_bytes_key!(TypedIndexKey::BytesKey16),
+                    BTreeBytesKey32(_) => bounds_from_bsatn_bytes_key!(TypedIndexKey::BytesKey32),
+                    BTreeBytesKey64(_) => bounds_from_bsatn_bytes_key!(TypedIndexKey::BytesKey64),
+                    BTreeBytesKey128(_) => bounds_from_bsatn_bytes_key!(TypedIndexKey::BytesKey128),
+                    UniqueBTreeBytesKey8(_) => bounds_from_bsatn_bytes_key!(TypedIndexKey::BytesKey8B),
+                    UniqueBTreeBytesKey16(_) => bounds_from_bsatn_bytes_key!(TypedIndexKey::BytesKey16),
+                    UniqueBTreeBytesKey32(_) => bounds_from_bsatn_bytes_key!(TypedIndexKey::BytesKey32),
+                    UniqueBTreeBytesKey64(_) => bounds_from_bsatn_bytes_key!(TypedIndexKey::BytesKey64),
+                    UniqueBTreeBytesKey128(_) => bounds_from_bsatn_bytes_key!(TypedIndexKey::BytesKey128),
                     BTreeAV(_) | HashAV(_) | UniqueBTreeAV(_) | UniqueHashAV(_) => {
                         // The index is not specialized.
                         // We now have the types,
