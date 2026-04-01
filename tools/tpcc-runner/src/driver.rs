@@ -233,6 +233,15 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
         }
 
         let kind = choose_transaction(&mut rng);
+        let keying_delay = keying_time(kind, config.keying_time_scale);
+        if !keying_delay.is_zero() && crate::summary::now_millis() < schedule.stop_ms {
+            tokio::time::sleep(keying_delay).await;
+        }
+
+        if abort.load(Ordering::Relaxed) || crate::summary::now_millis() >= schedule.stop_ms {
+            break;
+        }
+
         let started_ms = crate::summary::now_millis();
         let context = TransactionContext {
             client: client.as_ref(),
@@ -264,9 +273,9 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
             }
         }
 
-        let delay = keying_time(kind, config.keying_time_scale) + think_time(kind, config.think_time_scale, &mut rng);
-        if !delay.is_zero() && crate::summary::now_millis() < schedule.stop_ms {
-            tokio::time::sleep(delay).await;
+        let think_delay = think_time(kind, config.think_time_scale, &mut rng);
+        if !think_delay.is_zero() && crate::summary::now_millis() < schedule.stop_ms {
+            tokio::time::sleep(think_delay).await;
         }
     }
     Ok(())
