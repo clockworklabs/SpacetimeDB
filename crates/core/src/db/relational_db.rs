@@ -934,14 +934,16 @@ impl RelationalDB {
         b.active.insert(barrier_offset);
     }
 
-    /// Modify the first deferred TxData in the barrier's pending queue.
+    /// Modify the deferred TxData at `target_offset` in the barrier's pending queue.
     ///
     /// Used by pipelined 2PC to add the st_2pc_state deletion (COMMIT marker)
     /// to the reducer's TxData so they share a single commitlog entry.
-    pub fn modify_first_barrier_pending(&self, f: impl FnOnce(&mut TxData)) {
+    /// Must match by offset because concurrent 2PC transactions and other
+    /// commits may have added entries to the queue before or after ours.
+    pub fn modify_barrier_pending_at(&self, target_offset: u64, f: impl FnOnce(&mut TxData)) {
         let mut barrier = self.durability_barrier.lock().unwrap();
         if let Some(ref mut b) = *barrier {
-            if let Some(entry) = b.pending.first_mut() {
+            if let Some(entry) = b.pending.iter_mut().find(|(_, td)| td.tx_offset() == Some(target_offset)) {
                 // Arc::make_mut clones the TxData if other references exist
                 // (e.g. the caller that committed the tx still holds one).
                 let tx_data = Arc::make_mut(&mut entry.1);

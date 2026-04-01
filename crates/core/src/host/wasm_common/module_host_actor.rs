@@ -782,7 +782,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             let table_name = spacetimedb_schema::table_name::TableName::new(
                 spacetimedb_schema::identifier::Identifier::new(ST_2PC_STATE_NAME.into()).unwrap(),
             );
-            stdb.modify_first_barrier_pending(|tx_data| {
+            stdb.modify_barrier_pending_at(barrier_offset + 1, |tx_data| {
                 tx_data.set_deletes_for_table(
                     spacetimedb_datastore::system_tables::ST_2PC_STATE_ID,
                     &table_name,
