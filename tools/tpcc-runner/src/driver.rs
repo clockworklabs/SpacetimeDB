@@ -258,8 +258,9 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
                 }
             }
             Err(err) => {
-                abort.store(true, Ordering::Relaxed);
-                return Err(err);
+                log::error!(
+                    "terminal task error: {err:#}",
+                );
             }
         }
 
