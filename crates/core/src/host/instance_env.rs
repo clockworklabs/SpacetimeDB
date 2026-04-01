@@ -991,145 +991,160 @@ impl InstanceEnv {
         })
     }
 
-    /// Call a reducer on a remote database.
+    /// Call a reducer on a remote database (blocking).
     ///
-    /// Unlike [`Self::http_request`], this is explicitly allowed while a transaction is open —
-    /// the caller is responsible for understanding the consistency implications.
-    ///
-    /// Uses [`ReplicaContext::call_reducer_router`] to resolve the leader node for
-    /// `database_identity`, then sends the request via the warmed HTTP client in
-    /// [`ReplicaContext::call_reducer_client`].
+    /// Uses blocking HTTP to avoid async runtime conflicts on the WASM executor thread.
+    /// Registers a call edge for distributed deadlock detection before the call.
     ///
     /// Returns `(http_status, response_body)` on transport success,
-    /// or [`NodesError::HttpError`] if the connection itself fails.
+    /// or [`NodesError::HttpError`] on failure.
     pub fn call_reducer_on_db(
         &self,
         database_identity: Identity,
         reducer_name: &str,
         args: bytes::Bytes,
-    ) -> impl Future<Output = Result<(u16, bytes::Bytes), NodesError>> + use<> {
-        let client = self.replica_ctx.call_reducer_client.clone();
-        let router = self.replica_ctx.call_reducer_router.clone();
-        let reducer_name = reducer_name.to_owned();
-        // Node-level auth token: a single token minted at startup and shared by all replicas
-        // on this node. Passed as a Bearer token so `anon_auth_middleware` on the target node
-        // accepts the request without generating a fresh ephemeral identity per call.
-        let auth_token = self.replica_ctx.call_reducer_auth_token.clone();
+    ) -> Result<(u16, bytes::Bytes), NodesError> {
+        let start = Instant::now();
         let caller_identity = self.replica_ctx.database.database_identity;
 
-        async move {
-            let start = Instant::now();
+        // Register call edge for distributed deadlock detection.
+        let call_id = uuid::Uuid::new_v4().to_string();
+        self.register_edge_or_deadlock(&call_id, caller_identity, database_identity)?;
 
-            let base_url = router
-                .resolve_base_url(database_identity)
-                .await
-                .map_err(|e| NodesError::HttpError(e.to_string()))?;
-            let url = format!(
-                "{}/v1/database/{}/call/{}",
-                base_url,
-                database_identity.to_hex(),
-                reducer_name,
-            );
-            let mut req = client
-                .post(&url)
-                .header(http::header::CONTENT_TYPE, "application/octet-stream")
-                .body(args);
-            if let Some(token) = auth_token {
-                req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
-            }
-            let result = async {
-                let response = req.send().await.map_err(|e| NodesError::HttpError(e.to_string()))?;
-                let status = response.status().as_u16();
-                let body = response
-                    .bytes()
-                    .await
-                    .map_err(|e| NodesError::HttpError(e.to_string()))?;
-                Ok::<_, NodesError>((status, body))
-            }
-            .await;
-
-            WORKER_METRICS
-                .cross_db_reducer_calls_total
-                .with_label_values(&caller_identity)
-                .inc();
-            WORKER_METRICS
-                .cross_db_reducer_duration_seconds
-                .with_label_values(&caller_identity)
-                .observe(start.elapsed().as_secs_f64());
-
-            result
+        let base_url = self
+            .replica_ctx
+            .call_reducer_router
+            .resolve_base_url(database_identity)
+            .map_err(|e| NodesError::HttpError(e.to_string()))?;
+        let url = format!(
+            "{}/v1/database/{}/call/{}",
+            base_url,
+            database_identity.to_hex(),
+            reducer_name,
+        );
+        let mut req = self
+            .replica_ctx
+            .call_reducer_blocking_client
+            .post(&url)
+            .header(http::header::CONTENT_TYPE, "application/octet-stream")
+            .body(args.to_vec());
+        if let Some(ref token) = self.replica_ctx.call_reducer_auth_token {
+            req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
         }
+
+        let result = crate::replica_context::execute_blocking_http(
+            &self.replica_ctx.call_reducer_blocking_client,
+            req,
+            |resp| {
+                let status = resp.status().as_u16();
+                let body = resp.bytes()?;
+                Ok((status, body))
+            },
+        )
+        .map_err(|e| NodesError::HttpError(e));
+
+        // Unregister the call edge (regardless of success/failure).
+        let _ = self.replica_ctx.call_edge_tracker.unregister_edge(&call_id);
+
+        WORKER_METRICS
+            .cross_db_reducer_calls_total
+            .with_label_values(&caller_identity)
+            .inc();
+        WORKER_METRICS
+            .cross_db_reducer_duration_seconds
+            .with_label_values(&caller_identity)
+            .observe(start.elapsed().as_secs_f64());
+
+        result
     }
 
-    /// Call a reducer on a remote database using the 2PC prepare protocol.
+    /// Call a reducer on a remote database using the 2PC prepare protocol (blocking).
     ///
     /// Like [`Self::call_reducer_on_db`], but POSTs to `/prepare/{reducer}` instead of
     /// `/call/{reducer}`. On success, parses the `X-Prepare-Id` response header and stores
     /// `(database_identity, prepare_id)` in [`Self::prepared_participants`].
-    ///
-    /// Returns `(http_status, response_body)` on transport success.
-    /// The caller (coordinator reducer) is responsible for checking the status;
-    /// if the coordinator's reducer commits, the runtime will commit all participants,
-    /// and if it fails, the runtime will abort them.
     pub fn call_reducer_on_db_2pc(
         &mut self,
         database_identity: Identity,
         reducer_name: &str,
         args: bytes::Bytes,
-    ) -> impl Future<Output = Result<(u16, bytes::Bytes, Option<String>), NodesError>> + use<> {
-        let client = self.replica_ctx.call_reducer_client.clone();
-        let router = self.replica_ctx.call_reducer_router.clone();
-        let reducer_name = reducer_name.to_owned();
-        let auth_token = self.replica_ctx.call_reducer_auth_token.clone();
+    ) -> Result<(u16, bytes::Bytes, Option<String>), NodesError> {
+        let start = Instant::now();
         let caller_identity = self.replica_ctx.database.database_identity;
 
-        async move {
-            let start = Instant::now();
+        // Register call edge for distributed deadlock detection.
+        let call_id = uuid::Uuid::new_v4().to_string();
+        self.register_edge_or_deadlock(&call_id, caller_identity, database_identity)?;
 
-            let base_url = router
-                .resolve_base_url(database_identity)
-                .await
-                .map_err(|e| NodesError::HttpError(e.to_string()))?;
-            let url = format!(
-                "{}/v1/database/{}/prepare/{}",
-                base_url,
-                database_identity.to_hex(),
-                reducer_name,
-            );
-            let mut req = client
-                .post(&url)
-                .header(http::header::CONTENT_TYPE, "application/octet-stream")
-                .header("X-Coordinator-Identity", caller_identity.to_hex().to_string())
-                .body(args);
-            if let Some(token) = auth_token {
-                req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
-            }
-            let result = async {
-                let response = req.send().await.map_err(|e| NodesError::HttpError(e.to_string()))?;
-                let status = response.status().as_u16();
-                let prepare_id = response
+        let base_url = self
+            .replica_ctx
+            .call_reducer_router
+            .resolve_base_url(database_identity)
+            .map_err(|e| NodesError::HttpError(e.to_string()))?;
+        let url = format!(
+            "{}/v1/database/{}/prepare/{}",
+            base_url,
+            database_identity.to_hex(),
+            reducer_name,
+        );
+        let mut req = self
+            .replica_ctx
+            .call_reducer_blocking_client
+            .post(&url)
+            .header(http::header::CONTENT_TYPE, "application/octet-stream")
+            .header("X-Coordinator-Identity", caller_identity.to_hex().to_string())
+            .body(args.to_vec());
+        if let Some(ref token) = self.replica_ctx.call_reducer_auth_token {
+            req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+        }
+
+        log::debug!("call_reducer_on_db_2pc: sending blocking HTTP to {url}");
+        let result = crate::replica_context::execute_blocking_http(
+            &self.replica_ctx.call_reducer_blocking_client,
+            req,
+            |resp| {
+                let status = resp.status().as_u16();
+                let prepare_id = resp
                     .headers()
                     .get("X-Prepare-Id")
                     .and_then(|v| v.to_str().ok())
                     .map(|s| s.to_owned());
-                let body = response
-                    .bytes()
-                    .await
-                    .map_err(|e| NodesError::HttpError(e.to_string()))?;
+                let body = resp.bytes()?;
                 Ok((status, body, prepare_id))
-            }
-            .await;
+            },
+        )
+        .map_err(|e| NodesError::HttpError(e));
+        log::debug!("call_reducer_on_db_2pc: result={result:?}");
 
-            WORKER_METRICS
-                .cross_db_reducer_calls_total
-                .with_label_values(&caller_identity)
-                .inc();
-            WORKER_METRICS
-                .cross_db_reducer_duration_seconds
-                .with_label_values(&caller_identity)
-                .observe(start.elapsed().as_secs_f64());
+        // Unregister the call edge (regardless of success/failure).
+        let _ = self.replica_ctx.call_edge_tracker.unregister_edge(&call_id);
 
-            result
+        WORKER_METRICS
+            .cross_db_reducer_calls_total
+            .with_label_values(&caller_identity)
+            .inc();
+        WORKER_METRICS
+            .cross_db_reducer_duration_seconds
+            .with_label_values(&caller_identity)
+            .observe(start.elapsed().as_secs_f64());
+
+        result
+    }
+
+    /// Register a call edge for cycle detection. If a cycle is detected,
+    /// return an error immediately -- retrying won't help because the other
+    /// side is already calling us and we hold the lock.
+    fn register_edge_or_deadlock(
+        &self,
+        call_id: &str,
+        caller: Identity,
+        callee: Identity,
+    ) -> Result<(), NodesError> {
+        match self.replica_ctx.call_edge_tracker.register_edge(call_id, caller, callee) {
+            Ok(()) => Ok(()),
+            Err(e) => Err(NodesError::HttpError(format!(
+                "distributed deadlock detected: {caller} -> {callee}: {e}"
+            ))),
         }
     }
 }
@@ -1507,10 +1522,12 @@ mod test {
                 logger,
                 subscriptions: subs,
                 call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
+                call_reducer_blocking_client: ReplicaContext::new_call_reducer_blocking_client(&CallReducerOnDbConfig::default()),
                 call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
                 call_reducer_auth_token: None,
                 prepared_txs: crate::host::prepared_tx::PreparedTransactions::new(),
                 on_panic: std::sync::Arc::new(std::sync::OnceLock::new()),
+                call_edge_tracker: Arc::new(crate::host::call_edge_tracker::InMemoryCallEdgeTracker::new()),
             },
             runtime,
         ))

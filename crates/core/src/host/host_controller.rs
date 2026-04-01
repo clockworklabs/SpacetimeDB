@@ -125,9 +125,9 @@ pub struct HostController {
     pub call_reducer_client: reqwest::Client,
     /// Router that resolves the HTTP base URL of the leader node for a given database.
     ///
-    /// Set to [`LocalReducerRouter`] by default; replaced with `ClusterReducerRouter`
-    /// in cluster deployments via [`HostController::new`] receiving the router directly.
-    pub call_reducer_router: Arc<dyn ReducerCallRouter>,
+    /// Initialized to [`LocalReducerRouter`] at construction. In cluster deployments,
+    /// replaced once at startup with `CachingResolver` via [`Self::set_call_reducer_router`].
+    pub call_reducer_router: Arc<std::sync::Mutex<Arc<dyn ReducerCallRouter>>>,
     /// A single node-level Bearer token included in all outgoing cross-DB reducer calls.
     ///
     /// Set once at node startup by the deployment layer (standalone / cluster) so that
@@ -138,6 +138,10 @@ pub struct HostController {
     ///
     /// `None` in test/embedded contexts where no JWT signer is configured.
     pub call_reducer_auth_token: Option<String>,
+    /// Distributed deadlock detection for cross-database calls.
+    /// Set to [`InMemoryCallEdgeTracker`] by default; replaced with `CloudCallEdgeTracker`
+    /// in cluster deployments.
+    pub call_edge_tracker: Arc<dyn crate::host::call_edge_tracker::CallEdgeTracker>,
 }
 
 pub(crate) struct HostRuntimes {
@@ -250,14 +254,33 @@ impl HostController {
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
             db_cores,
             call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
-            call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
+            call_reducer_router: Arc::new(std::sync::Mutex::new(Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")))),
             call_reducer_auth_token: None,
+            call_edge_tracker: Arc::new(crate::host::call_edge_tracker::InMemoryCallEdgeTracker::new()),
         }
     }
 
     /// Replace the [`ProgramStorage`] used by this controller.
     pub fn set_program_storage(&mut self, ps: ProgramStorage) {
         self.program_storage = ps;
+    }
+
+    /// Set the [`ReducerCallRouter`] used by this controller.
+    /// Can only be called once (at startup). Panics if called a second time.
+    /// Replace the [`ReducerCallRouter`]. Called once at startup to install
+    /// the cluster-aware router after the control DB connection is established.
+    pub fn set_call_reducer_router(&self, router: Arc<dyn ReducerCallRouter>) {
+        *self.call_reducer_router.lock().unwrap() = router;
+    }
+
+    /// Get the active [`ReducerCallRouter`].
+    pub fn get_call_reducer_router(&self) -> Arc<dyn ReducerCallRouter> {
+        self.call_reducer_router.lock().unwrap().clone()
+    }
+
+    /// Set the [`CallEdgeTracker`] for distributed deadlock detection.
+    pub fn set_call_edge_tracker(&mut self, tracker: Arc<dyn crate::host::call_edge_tracker::CallEdgeTracker>) {
+        self.call_edge_tracker = tracker;
     }
 
     /// Get a [`ModuleHost`] managed by this controller, or launch it from
@@ -692,6 +715,7 @@ async fn make_replica_ctx(
     call_reducer_client: reqwest::Client,
     call_reducer_router: Arc<dyn ReducerCallRouter>,
     call_reducer_auth_token: Option<String>,
+    call_edge_tracker: Arc<dyn crate::host::call_edge_tracker::CallEdgeTracker>,
 ) -> anyhow::Result<ReplicaContext> {
     let logger = match module_logs {
         Some(path) => asyncify(move || Arc::new(DatabaseLogger::open_today(path))).await,
@@ -725,10 +749,14 @@ async fn make_replica_ctx(
         logger,
         subscriptions,
         call_reducer_client,
+        call_reducer_blocking_client: ReplicaContext::new_call_reducer_blocking_client(
+            &crate::replica_context::CallReducerOnDbConfig::default(),
+        ),
         call_reducer_router,
         call_reducer_auth_token,
         prepared_txs: crate::host::prepared_tx::PreparedTransactions::new(),
         on_panic: std::sync::Arc::new(std::sync::OnceLock::new()),
+        call_edge_tracker: call_edge_tracker,
     })
 }
 
@@ -807,6 +835,7 @@ struct ModuleLauncher<F> {
     call_reducer_client: reqwest::Client,
     call_reducer_router: Arc<dyn ReducerCallRouter>,
     call_reducer_auth_token: Option<String>,
+    call_edge_tracker: Arc<dyn crate::host::call_edge_tracker::CallEdgeTracker>,
 }
 
 impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
@@ -829,6 +858,7 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
             self.call_reducer_client,
             self.call_reducer_router,
             self.call_reducer_auth_token,
+            self.call_edge_tracker,
         )
         .await
         .map(Arc::new)?;
@@ -1040,8 +1070,9 @@ impl Host {
                     core: host_controller.db_cores.take(),
                     bsatn_rlb_pool: bsatn_rlb_pool.clone(),
                     call_reducer_client: host_controller.call_reducer_client.clone(),
-                    call_reducer_router: host_controller.call_reducer_router.clone(),
+                    call_reducer_router: host_controller.get_call_reducer_router(),
                     call_reducer_auth_token: host_controller.call_reducer_auth_token.clone(),
+                    call_edge_tracker: host_controller.call_edge_tracker.clone(),
                 }
                 .launch_module()
                 .await?
@@ -1072,8 +1103,9 @@ impl Host {
                     core: host_controller.db_cores.take(),
                     bsatn_rlb_pool: bsatn_rlb_pool.clone(),
                     call_reducer_client: host_controller.call_reducer_client.clone(),
-                    call_reducer_router: host_controller.call_reducer_router.clone(),
+                    call_reducer_router: host_controller.get_call_reducer_router(),
                     call_reducer_auth_token: host_controller.call_reducer_auth_token.clone(),
+                    call_edge_tracker: host_controller.call_edge_tracker.clone(),
                 }
                 .launch_module()
                 .await;
@@ -1098,8 +1130,9 @@ impl Host {
                             core: host_controller.db_cores.take(),
                             bsatn_rlb_pool: bsatn_rlb_pool.clone(),
                             call_reducer_client: host_controller.call_reducer_client.clone(),
-                            call_reducer_router: host_controller.call_reducer_router.clone(),
+                            call_reducer_router: host_controller.get_call_reducer_router(),
                             call_reducer_auth_token: host_controller.call_reducer_auth_token.clone(),
+                            call_edge_tracker: host_controller.call_edge_tracker.clone(),
                         }
                         .launch_module()
                         .await;
@@ -1216,6 +1249,7 @@ impl Host {
             call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
             call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
             call_reducer_auth_token: None,
+            call_edge_tracker: Arc::new(crate::host::call_edge_tracker::InMemoryCallEdgeTracker::new()),
         }
         .launch_module()
         .await

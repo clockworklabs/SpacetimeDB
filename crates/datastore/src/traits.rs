@@ -226,7 +226,7 @@ impl TxDataTableEntry {
 ///
 /// Some extra information is embedded here
 /// so that the recording of execution metrics can be done without holding the tx lock.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct TxData {
     entries: SmallHashMap<TableId, TxDataTableEntry, 1, 8>,
 

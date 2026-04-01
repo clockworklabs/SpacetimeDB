@@ -934,24 +934,35 @@ impl RelationalDB {
         b.active.insert(barrier_offset);
     }
 
-    /// Abort a durability barrier, discarding ALL deferred transactions.
+    /// Modify the first deferred TxData in the barrier's pending queue.
     ///
-    /// Used when Round 2 of pipelined 2PC aborts. All transactions behind the
-    /// barrier are tainted (they may have read data from the aborted 2PC tx)
-    /// and must not reach disk. On restart, the in-memory state is lost and
-    /// the pipeline is effectively flushed.
-    pub fn abort_durability_barrier(&self, barrier_offset: u64) {
+    /// Used by pipelined 2PC to add the st_2pc_state deletion (COMMIT marker)
+    /// to the reducer's TxData so they share a single commitlog entry.
+    pub fn modify_first_barrier_pending(&self, f: impl FnOnce(&mut TxData)) {
         let mut barrier = self.durability_barrier.lock().unwrap();
-        let Some(ref mut b) = *barrier else {
-            return;
-        };
-        b.active.remove(&barrier_offset);
-        if b.active.is_empty() {
-            // Drop all pending transactions -- they are tainted.
-            *barrier = None;
+        if let Some(ref mut b) = *barrier {
+            if let Some(entry) = b.pending.first_mut() {
+                // Arc::make_mut clones the TxData if other references exist
+                // (e.g. the caller that committed the tx still holds one).
+                let tx_data = Arc::make_mut(&mut entry.1);
+                f(tx_data);
+            }
         }
-        // If other barriers remain, the pending list stays (those transactions
-        // are still blocked by the other barriers and will be resolved by them).
+    }
+
+    /// Abort a durability barrier, discarding ALL deferred transactions
+    /// and clearing ALL active barriers.
+    ///
+    /// Used when Round 2 of pipelined 2PC aborts. The aborted 2PC's reducer
+    /// changes are already in committed state (in memory), so any other
+    /// deferred transaction may have observed them. Since the caller always
+    /// triggers a module restart after this call, ALL pending transactions
+    /// are tainted and must be dropped -- not just those behind the aborted
+    /// barrier. The module restart rebuilds committed state from disk.
+    pub fn abort_durability_barrier(&self, _barrier_offset: u64) {
+        let mut barrier = self.durability_barrier.lock().unwrap();
+        // Drop everything: all active barriers and all pending transactions.
+        *barrier = None;
     }
 
     /// Clear one durability barrier, flushing deferred transactions that are now

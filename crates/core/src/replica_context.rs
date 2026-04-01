@@ -3,6 +3,7 @@ use spacetimedb_commitlog::SizeOnDisk;
 use super::database_logger::DatabaseLogger;
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
+use crate::host::call_edge_tracker::CallEdgeTracker;
 use crate::host::prepared_tx::PreparedTransactions;
 use crate::host::reducer_router::ReducerCallRouter;
 use crate::messages::control_db::Database;
@@ -72,13 +73,18 @@ pub struct ReplicaContext {
     /// async task that can't panic on the WASM executor thread (e.g., 2PC persistence
     /// abort in Round 2).  Set once by `launch_module`; empty in tests.
     pub on_panic: Arc<OnceLock<Box<dyn Fn() + Send + Sync + 'static>>>,
+    /// Distributed deadlock detection: tracks cross-database call edges.
+    /// Standalone uses [`crate::host::call_edge_tracker::NoopCallEdgeTracker`].
+    /// Blocking HTTP client for cross-database calls on the WASM executor thread.
+    /// Built on a fresh OS thread to avoid tokio runtime conflicts.
+    pub call_reducer_blocking_client: reqwest::blocking::Client,
+    /// Distributed deadlock detection: tracks cross-database call edges.
+    /// Standalone uses [`crate::host::call_edge_tracker::NoopCallEdgeTracker`].
+    pub call_edge_tracker: Arc<dyn CallEdgeTracker>,
 }
 
 impl ReplicaContext {
-    /// Build a warmed `reqwest::Client` from `config`.
-    ///
-    /// Uses HTTP/2 prior knowledge (h2c) for all connections.
-    /// The server must be configured to accept h2c (HTTP/2 cleartext) connections.
+    /// Build a warmed async `reqwest::Client` from `config`.
     pub fn new_call_reducer_client(config: &CallReducerOnDbConfig) -> reqwest::Client {
         reqwest::Client::builder()
             .tcp_keepalive(config.tcp_keepalive)
@@ -89,6 +95,60 @@ impl ReplicaContext {
             .build()
             .expect("failed to build call_reducer_on_db HTTP client")
     }
+
+    /// Build a blocking `reqwest::blocking::Client` on a fresh OS thread
+    /// to avoid conflicts with the tokio async runtime.
+    pub fn new_call_reducer_blocking_client(config: &CallReducerOnDbConfig) -> reqwest::blocking::Client {
+        let tcp_keepalive = config.tcp_keepalive;
+        let pool_idle_timeout = config.pool_idle_timeout;
+        let pool_max_idle_per_host = config.pool_max_idle_per_host;
+        let timeout = config.request_timeout;
+        std::thread::scope(|s| {
+            s.spawn(move || {
+                reqwest::blocking::Client::builder()
+                    .tcp_keepalive(tcp_keepalive)
+                    .pool_idle_timeout(pool_idle_timeout)
+                    .pool_max_idle_per_host(pool_max_idle_per_host)
+                    .timeout(timeout)
+                    .build()
+                    .expect("failed to build call_reducer_on_db blocking HTTP client")
+            })
+            .join()
+            .expect("blocking client builder thread panicked")
+        })
+    }
+}
+
+/// Execute a blocking reqwest request on a fresh OS thread, processing the
+/// response inside that same thread.
+///
+/// In debug builds, reqwest 0.12 calls `wait::enter()` on every I/O operation
+/// (send, bytes, text, ...). That function creates and immediately drops a mini
+/// tokio runtime as a nesting-check, which panics if the calling thread is
+/// already inside a tokio `block_on` context (e.g. the WASM executor thread).
+///
+/// By running both the send and all response reading inside a scoped OS thread
+/// that has no tokio context, the assertion always passes. The closure `f`
+/// receives the Response and must fully consume it (read body, extract headers,
+/// etc.) before returning -- do not let the Response escape the closure.
+pub fn execute_blocking_http<F, T>(
+    client: &reqwest::blocking::Client,
+    request: reqwest::blocking::RequestBuilder,
+    f: F,
+) -> std::result::Result<T, String>
+where
+    F: FnOnce(reqwest::blocking::Response) -> reqwest::Result<T> + Send + 'static,
+    T: Send + 'static,
+{
+    let client = client.clone();
+    std::thread::scope(|s| {
+        s.spawn(move || {
+            let request = request.build().map_err(|e| e.to_string())?;
+            client.execute(request).and_then(f).map_err(|e| e.to_string())
+        })
+        .join()
+        .unwrap_or_else(|e| std::panic::resume_unwind(e))
+    })
 }
 
 impl ReplicaContext {

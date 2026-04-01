@@ -410,7 +410,7 @@ async fn send_prepared_to_persist_to_coordinator(
     prepare_id: String,
 ) {
     loop {
-        let base_url = match router.resolve_base_url(coordinator_identity).await {
+        let base_url = match router.resolve_base_url(coordinator_identity) {
             Ok(url) => url,
             Err(e) => {
                 log::warn!("2PC prepared-to-persist: cannot resolve coordinator URL: {e}; retrying");
@@ -430,7 +430,7 @@ async fn send_prepared_to_persist_to_coordinator(
         }
         match req.send().await {
             Ok(resp) if resp.status().is_success() => {
-                log::info!("2PC prepared-to-persist: notified coordinator for {prepare_id}");
+                log::debug!("2PC prepared-to-persist: notified coordinator for {prepare_id}");
                 return;
             }
             Ok(resp) => {
@@ -457,7 +457,7 @@ async fn query_coordinator_status(
     coordinator_identity: crate::identity::Identity,
     prepare_id: &str,
 ) -> Option<bool> {
-    let base_url = match router.resolve_base_url(coordinator_identity).await {
+    let base_url = match router.resolve_base_url(coordinator_identity) {
         Ok(url) => url,
         Err(e) => {
             log::warn!("2PC status poll: cannot resolve coordinator URL: {e}");
@@ -733,43 +733,66 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             return;
         }
 
-        // Step 4: flush st_2pc_prepare_marker -- writes st_2pc_state row (reducer
-        // inputs only) into committed state. Creates a TxData containing ONLY this
-        // system table insert (no user table data). Assigned offset N.
+        // Step 4: create TxData for the st_2pc_state INSERT (PREPARE PERSIST).
+        // The row is NOT inserted into committed_state -- it only exists in the
+        // commitlog for crash recovery. Assigned offset N.
+        // Build the full row once so the same ProductValue can be reused for the
+        // DELETE entry -- replay uses whole-row equality, so the DELETE must
+        // carry identical field values.
+        let marker_row = spacetimedb_sats::ProductValue::from(
+            spacetimedb_datastore::system_tables::St2pcStateRow {
+                prepare_id: prepare_id.clone(),
+                coordinator_identity_hex: coordinator_identity.to_hex().to_string(),
+                reducer_name: recovery_reducer_name,
+                args_bsatn: recovery_args_bsatn,
+                caller_identity_hex: recovery_caller_identity_hex,
+                caller_connection_id_hex: recovery_caller_connection_id_hex,
+                timestamp_micros: recovery_timestamp_micros,
+            },
+        );
         let barrier_offset = tx.next_tx_offset();
-        let marker_tx_data = match tx.flush_2pc_prepare_marker(
-            &prepare_id,
-            coordinator_identity.to_hex().to_string(),
-            recovery_reducer_name,
-            recovery_args_bsatn,
-            recovery_caller_identity_hex,
-            recovery_caller_connection_id_hex,
-            recovery_timestamp_micros,
-        ) {
-            Ok(td) => std::sync::Arc::new(td),
-            Err(e) => {
-                log::error!("call_reducer_prepare_and_hold: flush_2pc_prepare_marker failed for {prepare_id}: {e}");
-                let _ = stdb.rollback_mut_tx(tx);
-                return;
-            }
-        };
+        let marker_tx_data = std::sync::Arc::new(tx.create_2pc_prepare_tx_data(&marker_row));
 
         // Step 5: send the marker's TxData to the durability worker. This writes
         // the PREPARE PERSIST commitlog entry: just the st_2pc_state row with
         // reducer inputs. No reducer row changes are persisted here.
         stdb.request_durability_for_tx_data(None, &marker_tx_data);
 
-        // Step 6: set durability barrier at offset N. The marker (offset N) passes
-        // through; the reducer's row changes (offset N+1) will be deferred.
+        // Step 6: set durability barrier at offset N. The marker (offset N)
+        // passes through; everything after is deferred.
         stdb.set_durability_barrier(barrier_offset);
 
         // Step 7: commit reducer's actual row changes to the in-memory datastore.
         // TxData created at offset N+1 is deferred by the barrier (NOT sent to
         // durability worker yet). Lock released. Non-confirmed-read clients see
         // the changes via subscription broadcast.
-        let commit_result = commit_and_broadcast_event(&self.common.info.subscriptions, client, event, tx);
+        // Commit for side effects: applies to committed_state, broadcasts to
+        // non-confirmed-read clients. The tx_offset (N+1) is deferred by the
+        // barrier and fsynced later when the barrier clears.
+        let _ = commit_and_broadcast_event(&self.common.info.subscriptions, client, event, tx);
 
         // ═══ WRITE LOCK RELEASED ═══════════════════════════════
+
+        // Step 7b: add the st_2pc_state DELETE (COMMIT marker) to the
+        // reducer's deferred TxData. When the barrier clears, a single
+        // commitlog entry contains both the reducer changes and the
+        // st_2pc_state deletion -- atomically marking the 2PC as committed.
+        // The delete row must match the insert row exactly because
+        // transaction replay uses whole-row equality (delete_equal_row).
+        {
+            use spacetimedb_datastore::system_tables::ST_2PC_STATE_NAME;
+            let table_name = spacetimedb_schema::table_name::TableName::new(
+                spacetimedb_schema::identifier::Identifier::new(ST_2PC_STATE_NAME.into()).unwrap(),
+            );
+            stdb.modify_first_barrier_pending(|tx_data| {
+                tx_data.set_deletes_for_table(
+                    spacetimedb_datastore::system_tables::ST_2PC_STATE_ID,
+                    &table_name,
+                    std::sync::Arc::from([marker_row]),
+                );
+            });
+        }
+
         // ── Round 2: Persistence Commit (async — does not block executor) ──
 
         let handle = tokio::runtime::Handle::current();
@@ -832,22 +855,11 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
             if persist_commit {
                 // Step 11: clear the durability barrier so the deferred TxData
-                // (offset N+1, reducer row changes) flushes to the durability worker.
+                // (offset N+1, reducer row changes + st_2pc_state delete) flushes
+                // to the durability worker. The durability pipeline fsyncs it in
+                // the background; confirmed-read clients wait for the durable
+                // offset to pass N+1 naturally.
                 stdb.clear_durability_barrier(barrier_offset);
-
-                // Step 12: wait for COMMIT PERSIST durability (offset N+1 fsynced).
-                if let Some(mut durable) = stdb.durable_tx_offset() {
-                    if let Ok(offset) = commit_result.tx_offset.await {
-                        let _ = durable.wait_for(offset).await;
-                    }
-                }
-
-                // Step 13: delete the st_2pc_state marker (cleanup).
-                if let Err(e) = stdb.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
-                    Ok(del_tx.delete_st_2pc_state(&prepare_id)?)
-                }) {
-                    log::error!("call_reducer_prepare_and_hold: failed to delete st_2pc_state for {prepare_id}: {e}");
-                }
             } else {
                 // Round 2 abort: discard all deferred transactions.
                 stdb.abort_durability_barrier(barrier_offset);
@@ -1232,7 +1244,7 @@ impl InstanceCommon {
                 if !committed {
                     // ABORT: send abort to all participants, no Round 2 needed.
                     for (db_identity, prepare_id) in &prepared_participants {
-                        let base_url = match router.resolve_base_url(*db_identity).await {
+                        let base_url = match router.resolve_base_url(*db_identity) {
                             Ok(url) => url,
                             Err(e) => {
                                 log::error!("2PC abort: failed to resolve base URL for {db_identity}: {e}");
@@ -1251,7 +1263,7 @@ impl InstanceCommon {
                         }
                         match req.send().await {
                             Ok(resp) if resp.status().is_success() => {
-                                log::info!("2PC abort: {prepare_id} on {db_identity}");
+                                log::debug!("2PC abort: {prepare_id} on {db_identity}");
                             }
                             Ok(resp) => {
                                 log::error!(
@@ -1279,7 +1291,7 @@ impl InstanceCommon {
                 // ── Round 1: Send COMMIT immediately (no durability wait!) ──
 
                 for (db_identity, prepare_id) in &prepared_participants {
-                    let base_url = match router.resolve_base_url(*db_identity).await {
+                    let base_url = match router.resolve_base_url(*db_identity) {
                         Ok(url) => url,
                         Err(e) => {
                             log::error!("2PC commit: failed to resolve base URL for {db_identity}: {e}");
@@ -1298,7 +1310,7 @@ impl InstanceCommon {
                     }
                     match req.send().await {
                         Ok(resp) if resp.status().is_success() => {
-                            log::info!("2PC commit (Round 1): {prepare_id} on {db_identity}");
+                            log::debug!("2PC commit (Round 1): {prepare_id} on {db_identity}");
                         }
                         Ok(resp) => {
                             log::error!(
@@ -1318,7 +1330,7 @@ impl InstanceCommon {
                 // If a participant crashes, this will time out and we abort persistence.
                 let mut all_prepared = true;
                 for rx in persist_rxs {
-                    match tokio::time::timeout(Duration::from_secs(120), rx).await {
+                    match tokio::time::timeout(Duration::from_secs(25), rx).await {
                         Ok(Ok(())) => {}
                         Ok(Err(_)) | Err(_) => {
                             log::error!("2PC Round 2: timed out waiting for PREPARED_TO_PERSIST");
@@ -1362,7 +1374,7 @@ impl InstanceCommon {
 
                 // Send COMMIT_PERSIST to each participant.
                 for (db_identity, prepare_id) in &prepared_participants {
-                    let base_url = match router.resolve_base_url(*db_identity).await {
+                    let base_url = match router.resolve_base_url(*db_identity) {
                         Ok(url) => url,
                         Err(e) => {
                             log::error!("2PC commit-persist: failed to resolve base URL for {db_identity}: {e}");
@@ -1381,13 +1393,13 @@ impl InstanceCommon {
                     }
                     match req.send().await {
                         Ok(resp) if resp.status().is_success() => {
-                            log::info!("2PC commit-persist: {prepare_id} on {db_identity}");
-                            // Round 2 complete — delete coordinator log entry.
-                            if let Err(e) = stdb.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
-                                Ok(del_tx.delete_st_2pc_coordinator_log(prepare_id)?)
-                            }) {
-                                log::warn!("delete_st_2pc_coordinator_log failed for {prepare_id}: {e}");
-                            }
+                            log::debug!("2PC commit-persist: {prepare_id} on {db_identity}");
+                            // // Round 2 complete — delete coordinator log entry.
+                            // if let Err(e) = stdb.with_auto_commit::<_, _, anyhow::Error>(Workload::Internal, |del_tx| {
+                            //     Ok(del_tx.delete_st_2pc_coordinator_log(prepare_id)?)
+                            // }) {
+                            //     log::warn!("delete_st_2pc_coordinator_log failed for {prepare_id}: {e}");
+                            // }
                         }
                         Ok(resp) => {
                             log::error!(

@@ -2735,6 +2735,20 @@ impl MutTxId {
             })
     }
 
+    /// Create a `TxData` for a st_2pc_state INSERT without modifying committed state.
+    /// Only consumes a tx_offset. The row exists only in the commitlog (for recovery).
+    /// Takes a pre-built `ProductValue` so the caller can reuse it for the matching
+    /// DELETE entry (transaction replay uses whole-row equality).
+    pub fn create_2pc_prepare_tx_data(&mut self, row: &ProductValue) -> TxData {
+        let schema = self
+            .committed_state_write_lock
+            .get_schema(ST_2PC_STATE_ID)
+            .expect("st_2pc_state system table must exist");
+        let table_name = schema.table_name.clone();
+        self.committed_state_write_lock
+            .create_insert_tx_data(ST_2PC_STATE_ID, &table_name, row)
+    }
+
     /// Delete the coordinator log entry for `participant_prepare_id` once the participant
     /// has acknowledged COMMIT.
     pub fn delete_st_2pc_coordinator_log(&mut self, participant_prepare_id: &str) -> Result<()> {

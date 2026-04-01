@@ -344,6 +344,7 @@ pub trait ControlStateWriteAccess: Send + Sync {
         owner_identity: &Identity,
         domain_names: &[DomainName],
     ) -> anyhow::Result<SetDomainsResult>;
+
 }
 
 #[async_trait]
@@ -454,6 +455,7 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
             .replace_dns_records(database_identity, owner_identity, domain_names)
             .await
     }
+
 }
 
 #[async_trait]

@@ -1970,7 +1970,7 @@ impl ModuleHost {
                         continue;
                     }
                 };
-                let base_url = match router.resolve_base_url(participant_identity).await {
+                let base_url = match router.resolve_base_url(participant_identity) {
                     Ok(url) => url,
                     Err(e) => {
                         log::warn!("recover_2pc_coordinator: cannot resolve URL for {participant_identity}: {e}");
@@ -2142,7 +2142,7 @@ impl ModuleHost {
         coordinator_identity: Identity,
         prepare_id: &str,
     ) -> Option<bool> {
-        let base_url = match router.resolve_base_url(coordinator_identity).await {
+        let base_url = match router.resolve_base_url(coordinator_identity) {
             Ok(url) => url,
             Err(e) => {
                 log::warn!("2PC recovery status poll: cannot resolve coordinator URL: {e}");

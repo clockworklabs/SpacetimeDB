@@ -82,7 +82,7 @@ impl StandaloneEnv {
         let program_store = Arc::new(DiskStorage::new(data_dir.program_bytes().0).await?);
 
         let persistence_provider = Arc::new(LocalPersistenceProvider::new(data_dir.clone()));
-        let mut host_controller = HostController::new(
+        let host_controller = HostController::new(
             data_dir,
             config.db_config,
             config.v8_heap_policy,
@@ -91,7 +91,7 @@ impl StandaloneEnv {
             persistence_provider,
             db_cores,
         );
-        host_controller.call_reducer_router = Arc::new(LocalReducerRouter::new(config.local_api_url));
+        host_controller.set_call_reducer_router(Arc::new(LocalReducerRouter::new(config.local_api_url)));
         let client_actor_index = ClientActorIndex::new();
         let jwt_keys = certs.get_or_create_keys()?;
 
@@ -484,6 +484,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             .control_db
             .spacetime_replace_domains(database_identity, owner_identity, domain_names)?)
     }
+
 }
 
 impl spacetimedb_client_api::Authorization for StandaloneEnv {

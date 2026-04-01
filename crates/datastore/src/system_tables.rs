@@ -90,7 +90,7 @@ pub const ST_INDEX_ACCESSOR_ID: TableId = TableId(19);
 pub const ST_COLUMN_ACCESSOR_ID: TableId = TableId(20);
 /// The static ID of the 2PC participant state table
 pub const ST_2PC_STATE_ID: TableId = TableId(21);
-pub(crate) const ST_2PC_STATE_NAME: &str = "st_2pc_state";
+pub const ST_2PC_STATE_NAME: &str = "st_2pc_state";
 /// The static ID of the 2PC coordinator log table.
 /// A row is written atomically with the coordinator's commit, before sending COMMIT to participants.
 /// Used on coordinator crash-recovery to retransmit COMMIT decisions.

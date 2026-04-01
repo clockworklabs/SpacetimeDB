@@ -45,6 +45,7 @@ pub mod prepared_tx;
 pub mod scheduler;
 pub mod wasmtime;
 
+pub mod call_edge_tracker;
 // Visible for integration testing.
 pub mod instance_env;
 pub mod reducer_router;
