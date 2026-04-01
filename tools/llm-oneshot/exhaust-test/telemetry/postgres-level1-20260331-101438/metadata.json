@@ -1,0 +1,10 @@
+{
+  "level": 1,
+  "backend": "postgres",
+  "timestamp": "20260331-101438",
+  "startedAt": "2026-03-31T10:14:38-0400",
+  "runId": "postgres-level1-20260331-101438",
+  "appDir": "D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDBPrivate\public\tools\llm-oneshot\exhaust-test\results\postgres\chat-app-20260331-101438",
+  "promptFile": "01_basic.md",
+  "phase": "generate"
+}

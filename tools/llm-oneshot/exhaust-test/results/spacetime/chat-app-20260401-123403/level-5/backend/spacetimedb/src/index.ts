@@ -1,0 +1,264 @@
+import spacetimedb from './schema';
+import { t, SenderError } from 'spacetimedb/server';
+export { default, init, cleanupTyping, sendScheduledMessage } from './schema';
+import { ScheduleAt } from 'spacetimedb';
+
+// ── Lifecycle hooks ────────────────────────────────────────────────────────
+
+export const onConnect = spacetimedb.clientConnected((ctx) => {
+  const existing = ctx.db.user.identity.find(ctx.sender);
+  if (existing) {
+    ctx.db.user.identity.update({ ...existing, online: true });
+  }
+});
+
+export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
+  const existing = ctx.db.user.identity.find(ctx.sender);
+  if (existing) {
+    ctx.db.user.identity.update({ ...existing, online: false });
+  }
+  // Clear typing states for this user
+  for (const row of [...ctx.db.typingState.iter()]) {
+    if (row.userIdentity.equals(ctx.sender)) {
+      ctx.db.typingState.id.delete(row.id);
+    }
+  }
+});
+
+// ── User reducers ──────────────────────────────────────────────────────────
+
+export const register = spacetimedb.reducer(
+  { name: t.string() },
+  (ctx, { name }) => {
+    const trimmed = name.trim();
+    if (trimmed.length === 0) throw new SenderError('Name cannot be empty');
+    if (trimmed.length > 32) throw new SenderError('Name too long (max 32 characters)');
+    if (ctx.db.user.identity.find(ctx.sender)) throw new SenderError('Already registered');
+    ctx.db.user.insert({ identity: ctx.sender, name: trimmed, online: true });
+  }
+);
+
+export const updateName = spacetimedb.reducer(
+  { name: t.string() },
+  (ctx, { name }) => {
+    const trimmed = name.trim();
+    if (trimmed.length === 0) throw new SenderError('Name cannot be empty');
+    if (trimmed.length > 32) throw new SenderError('Name too long (max 32 characters)');
+    const existing = ctx.db.user.identity.find(ctx.sender);
+    if (!existing) throw new SenderError('Not registered');
+    ctx.db.user.identity.update({ ...existing, name: trimmed });
+  }
+);
+
+// ── Room reducers ──────────────────────────────────────────────────────────
+
+export const createRoom = spacetimedb.reducer(
+  { name: t.string() },
+  (ctx, { name }) => {
+    const trimmed = name.trim();
+    if (trimmed.length === 0) throw new SenderError('Room name cannot be empty');
+    if (trimmed.length > 64) throw new SenderError('Room name too long (max 64 characters)');
+    if (!ctx.db.user.identity.find(ctx.sender)) throw new SenderError('Not registered');
+    // Insert room
+    ctx.db.room.insert({ id: 0n, name: trimmed, createdBy: ctx.sender, createdAt: ctx.timestamp });
+    // Auto-join the creator: find the room by scanning for latest by this user
+    // We use iter and find the last inserted (highest id)
+    let maxId = 0n;
+    for (const r of ctx.db.room.iter()) {
+      if (r.createdBy.equals(ctx.sender) && r.name === trimmed && r.id > maxId) {
+        maxId = r.id;
+      }
+    }
+    if (maxId > 0n) {
+      ctx.db.roomMember.insert({ id: 0n, roomId: maxId, userIdentity: ctx.sender, joinedAt: ctx.timestamp });
+    }
+  }
+);
+
+export const joinRoom = spacetimedb.reducer(
+  { roomId: t.u64() },
+  (ctx, { roomId }) => {
+    if (!ctx.db.user.identity.find(ctx.sender)) throw new SenderError('Not registered');
+    if (!ctx.db.room.id.find(roomId)) throw new SenderError('Room not found');
+    // Check not already a member
+    const alreadyMember = [...ctx.db.roomMember.roomId.filter(roomId)]
+      .some(row => row.userIdentity.equals(ctx.sender));
+    if (alreadyMember) throw new SenderError('Already a member');
+    ctx.db.roomMember.insert({ id: 0n, roomId, userIdentity: ctx.sender, joinedAt: ctx.timestamp });
+  }
+);
+
+export const leaveRoom = spacetimedb.reducer(
+  { roomId: t.u64() },
+  (ctx, { roomId }) => {
+    const membership = [...ctx.db.roomMember.roomId.filter(roomId)]
+      .find(row => row.userIdentity.equals(ctx.sender));
+    if (!membership) throw new SenderError('Not a member of this room');
+    ctx.db.roomMember.id.delete(membership.id);
+    // Clean up typing state
+    const typing = [...ctx.db.typingState.roomId.filter(roomId)]
+      .find(row => row.userIdentity.equals(ctx.sender));
+    if (typing) ctx.db.typingState.id.delete(typing.id);
+    // Clean up user room state
+    const state = [...ctx.db.userRoomState.userIdentity.filter(ctx.sender)]
+      .find(row => row.roomId === roomId);
+    if (state) ctx.db.userRoomState.id.delete(state.id);
+  }
+);
+
+// ── Message reducers ───────────────────────────────────────────────────────
+
+export const sendMessage = spacetimedb.reducer(
+  { roomId: t.u64(), text: t.string(), ttlSecs: t.u64() },
+  (ctx, { roomId, text, ttlSecs }) => {
+    const trimmed = text.trim();
+    if (trimmed.length === 0) throw new SenderError('Message cannot be empty');
+    if (trimmed.length > 1000) throw new SenderError('Message too long (max 1000 characters)');
+    if (!ctx.db.user.identity.find(ctx.sender)) throw new SenderError('Not registered');
+    if (!ctx.db.room.id.find(roomId)) throw new SenderError('Room not found');
+    const isMember = [...ctx.db.roomMember.roomId.filter(roomId)]
+      .some(row => row.userIdentity.equals(ctx.sender));
+    if (!isMember) throw new SenderError('Not a member of this room');
+    // Compute expiry: 0 means never, otherwise now + ttlSecs
+    const expiresAtMicros = ttlSecs > 0n
+      ? ctx.timestamp.microsSinceUnixEpoch + ttlSecs * 1_000_000n
+      : 0n;
+    // Insert message
+    ctx.db.message.insert({ id: 0n, roomId, sender: ctx.sender, text: trimmed, sentAt: ctx.timestamp, expiresAtMicros });
+    // Find the inserted message id (last in room with this sender and text at this timestamp)
+    let msgId = 0n;
+    for (const m of ctx.db.message.roomId.filter(roomId)) {
+      if (m.sender.equals(ctx.sender) && m.text === trimmed && m.id > msgId) {
+        msgId = m.id;
+      }
+    }
+    // Auto-mark as read for sender
+    if (msgId > 0n) {
+      const existing = [...ctx.db.userRoomState.userIdentity.filter(ctx.sender)]
+        .find(row => row.roomId === roomId);
+      if (existing) {
+        ctx.db.userRoomState.id.update({ ...existing, lastReadMessageId: msgId });
+      } else {
+        ctx.db.userRoomState.insert({ id: 0n, userIdentity: ctx.sender, roomId, lastReadMessageId: msgId });
+      }
+    }
+  }
+);
+
+// ── Typing indicators ──────────────────────────────────────────────────────
+
+export const setTyping = spacetimedb.reducer(
+  { roomId: t.u64(), isTyping: t.bool() },
+  (ctx, { roomId, isTyping }) => {
+    if (!ctx.db.user.identity.find(ctx.sender)) return;
+    // Remove existing typing state for this user in this room
+    const existing = [...ctx.db.typingState.roomId.filter(roomId)]
+      .find(row => row.userIdentity.equals(ctx.sender));
+    if (existing) ctx.db.typingState.id.delete(existing.id);
+    if (isTyping) {
+      // Set new typing state expiring in 4 seconds
+      ctx.db.typingState.insert({
+        id: 0n,
+        roomId,
+        userIdentity: ctx.sender,
+        expiresAtMicros: ctx.timestamp.microsSinceUnixEpoch + 4_000_000n,
+      });
+    }
+  }
+);
+
+// ── Read receipts ──────────────────────────────────────────────────────────
+
+export const markRead = spacetimedb.reducer(
+  { roomId: t.u64(), messageId: t.u64() },
+  (ctx, { roomId, messageId }) => {
+    if (!ctx.db.user.identity.find(ctx.sender)) return;
+    const existing = [...ctx.db.userRoomState.userIdentity.filter(ctx.sender)]
+      .find(row => row.roomId === roomId);
+    if (existing) {
+      if (messageId > existing.lastReadMessageId) {
+        ctx.db.userRoomState.id.update({ ...existing, lastReadMessageId: messageId });
+      }
+    } else {
+      ctx.db.userRoomState.insert({ id: 0n, userIdentity: ctx.sender, roomId, lastReadMessageId: messageId });
+    }
+  }
+);
+
+// ── Scheduled messages ─────────────────────────────────────────────────────
+
+export const scheduleMessage = spacetimedb.reducer(
+  { roomId: t.u64(), text: t.string(), sendAtMicros: t.u64() },
+  (ctx, { roomId, text, sendAtMicros }) => {
+    const trimmed = text.trim();
+    if (trimmed.length === 0) throw new SenderError('Message cannot be empty');
+    if (trimmed.length > 1000) throw new SenderError('Message too long (max 1000 characters)');
+    if (!ctx.db.user.identity.find(ctx.sender)) throw new SenderError('Not registered');
+    if (!ctx.db.room.id.find(roomId)) throw new SenderError('Room not found');
+    const isMember = [...ctx.db.roomMember.roomId.filter(roomId)]
+      .some(row => row.userIdentity.equals(ctx.sender));
+    if (!isMember) throw new SenderError('Not a member of this room');
+    const now = ctx.timestamp.microsSinceUnixEpoch;
+    if (sendAtMicros <= now) throw new SenderError('Scheduled time must be in the future');
+    ctx.db.scheduledMessage.insert({
+      scheduledId: 0n,
+      scheduledAt: ScheduleAt.time(sendAtMicros),
+      roomId,
+      sender: ctx.sender,
+      text: trimmed,
+    });
+  }
+);
+
+export const cancelScheduledMessage = spacetimedb.reducer(
+  { scheduledId: t.u64() },
+  (ctx, { scheduledId }) => {
+    const row = ctx.db.scheduledMessage.scheduledId.find(scheduledId);
+    if (!row) throw new SenderError('Scheduled message not found');
+    if (!row.sender.equals(ctx.sender)) throw new SenderError('Not your scheduled message');
+    ctx.db.scheduledMessage.scheduledId.delete(scheduledId);
+  }
+);
+
+// ── Reactions ──────────────────────────────────────────────────────────────
+
+export const toggleReaction = spacetimedb.reducer(
+  { messageId: t.u64(), emoji: t.string() },
+  (ctx, { messageId, emoji }) => {
+    if (!ctx.db.user.identity.find(ctx.sender)) throw new SenderError('Not registered');
+    if (!ctx.db.message.id.find(messageId)) throw new SenderError('Message not found');
+    // Toggle: remove if exists, add if not
+    const existing = [...ctx.db.reaction.messageId.filter(messageId)]
+      .find(r => r.userIdentity.equals(ctx.sender) && r.emoji === emoji);
+    if (existing) {
+      ctx.db.reaction.id.delete(existing.id);
+    } else {
+      ctx.db.reaction.insert({ id: 0n, messageId, userIdentity: ctx.sender, emoji });
+    }
+  }
+);
+
+// ── Message editing ────────────────────────────────────────────────────────
+
+export const editMessage = spacetimedb.reducer(
+  { messageId: t.u64(), newText: t.string() },
+  (ctx, { messageId, newText }) => {
+    const trimmed = newText.trim();
+    if (trimmed.length === 0) throw new SenderError('Message cannot be empty');
+    if (trimmed.length > 1000) throw new SenderError('Message too long (max 1000 characters)');
+    const msg = ctx.db.message.id.find(messageId);
+    if (!msg) throw new SenderError('Message not found');
+    if (!msg.sender.equals(ctx.sender)) throw new SenderError('Can only edit your own messages');
+    if (msg.text === trimmed) return; // No change
+    // Record the edit in history
+    ctx.db.messageEdit.insert({
+      id: 0n,
+      messageId,
+      editedAt: ctx.timestamp,
+      oldText: msg.text,
+      newText: trimmed,
+    });
+    // Update the message text
+    ctx.db.message.id.update({ ...msg, text: trimmed });
+  }
+);

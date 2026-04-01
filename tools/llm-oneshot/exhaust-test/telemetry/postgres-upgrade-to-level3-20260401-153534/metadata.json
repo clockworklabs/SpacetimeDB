@@ -1,0 +1,15 @@
+{
+  "level": 3,
+  "backend": "postgres",
+  "timestamp": "20260401-153534",
+  "startedAt": "2026-04-01T15:35:34-0400",
+  "startedAtUtc": "2026-04-01T19:35:34Z",
+  "runId": "postgres-upgrade-to-level3-20260401-153534",
+  "appDir": "results\\postgres\\chat-app-20260401-131906",
+  "promptFile": "03_realtime.md",
+  "phase": "upgrade",
+  "endedAt": "2026-04-01T15:39:44-0400",
+  "endedAtUtc": "2026-04-01T19:39:44Z",
+  "exitCode": 0,
+  "mode": "upgrade"
+}

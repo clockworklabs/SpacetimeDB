@@ -5,8 +5,11 @@
 # After this completes, run grade.sh to do browser testing and grading interactively.
 #
 # Usage:
-#   ./run.sh                          # defaults: level=1, backend=spacetime
-#   ./run.sh --level 5 --backend postgres
+#   ./run.sh                                    # defaults: level=1, backend=spacetime
+#   ./run.sh --level 5 --backend postgres       # generate from scratch at level 5
+#   ./run.sh --fix <app-dir>                    # fix bugs in existing app (reads BUG_REPORT.md)
+#   ./run.sh --upgrade <app-dir> --level 3      # add level 3 features to existing level 2 app
+#   ./run.sh --upgrade <app-dir> --level 3 --resume-session  # same, but resume prior session for cache
 #
 # Prerequisites:
 #   - Claude Code CLI installed (claude or npx @anthropic-ai/claude-code)
@@ -25,14 +28,28 @@ LEVEL=1
 BACKEND="spacetime"
 FIX_MODE=""
 FIX_APP_DIR=""
+UPGRADE_MODE=""
+UPGRADE_APP_DIR=""
+RESUME_SESSION=""
 while [[ $# -gt 0 ]]; do
   case $1 in
     --level) LEVEL="$2"; shift 2 ;;
     --backend) BACKEND="$2"; shift 2 ;;
     --fix) FIX_MODE=1; FIX_APP_DIR="$2"; shift 2 ;;
+    --upgrade) UPGRADE_MODE=1; UPGRADE_APP_DIR="$2"; shift 2 ;;
+    --resume-session) RESUME_SESSION=1; shift ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
+
+# Determine mode label early (used in metadata and output)
+if [[ -n "$FIX_MODE" ]]; then
+  MODE_LABEL="fix"
+elif [[ -n "$UPGRADE_MODE" ]]; then
+  MODE_LABEL="upgrade"
+else
+  MODE_LABEL="generate"
+fi
 
 # ─── Find Claude CLI ─────────────────────────────────────────────────────────
 
@@ -132,11 +149,21 @@ echo ""
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 START_TIME=$(date +%Y-%m-%dT%H:%M:%S%z)
 START_TIME_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-RUN_ID="$BACKEND-level$LEVEL-$TIMESTAMP"
+
+if [[ -n "$UPGRADE_MODE" ]]; then
+  RUN_ID="$BACKEND-upgrade-to-level$LEVEL-$TIMESTAMP"
+  APP_DIR="$UPGRADE_APP_DIR"
+elif [[ -n "$FIX_MODE" ]]; then
+  RUN_ID="$BACKEND-fix-level$LEVEL-$TIMESTAMP"
+  APP_DIR="$FIX_APP_DIR"
+else
+  RUN_ID="$BACKEND-level$LEVEL-$TIMESTAMP"
+  APP_DIR="$RESULTS_DIR/$BACKEND/chat-app-$TIMESTAMP"
+  mkdir -p "$APP_DIR"
+fi
+
 RUN_DIR="$TELEMETRY_DIR/$RUN_ID"
-APP_DIR="$RESULTS_DIR/$BACKEND/chat-app-$TIMESTAMP"
 mkdir -p "$RUN_DIR"
-mkdir -p "$APP_DIR"
 
 # On Windows (Git Bash/MSYS2), convert paths to native format for Node.js
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
@@ -149,7 +176,7 @@ else
   SCRIPT_DIR_NATIVE="$SCRIPT_DIR"
 fi
 
-echo "=== Exhaust Test: Generate & Deploy ==="
+echo "=== Exhaust Test: ${MODE_LABEL^} ==="
 echo "  Level:     $LEVEL"
 echo "  Backend:   $BACKEND"
 echo "  Run ID:    $RUN_ID"
@@ -167,6 +194,12 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 export OTEL_LOGS_EXPORT_INTERVAL=1000
 export OTEL_METRIC_EXPORT_INTERVAL=5000
 
+# ─── Generate session ID ───────────────────────────────────────────────────
+# Pre-generate a UUID so we can pass --session-id to Claude and save it in
+# metadata for future --resume-session use.
+
+SESSION_ID=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null || node -e "const c=require('crypto');console.log([c.randomBytes(4),c.randomBytes(2),c.randomBytes(2),c.randomBytes(2),c.randomBytes(6)].map(b=>b.toString('hex')).join('-'))")
+
 # ─── Save run metadata ──────────────────────────────────────────────────────
 
 # Escape backslashes for JSON (Windows paths have backslashes)
@@ -182,7 +215,8 @@ cat > "$RUN_DIR/metadata.json" <<EOF
   "runId": "$RUN_ID",
   "appDir": "$APP_DIR_JSON",
   "promptFile": "$(basename "$PROMPT_FILE")",
-  "phase": "generate"
+  "phase": "$MODE_LABEL",
+  "sessionId": "$SESSION_ID"
 }
 EOF
 
@@ -242,7 +276,89 @@ When done, output: FIX_COMPLETE
 PROMPT_EOF
   )
 
-  MODE_LABEL="fix"
+elif [[ -n "$UPGRADE_MODE" ]]; then
+  # ─── UPGRADE MODE: Add new features from a higher level prompt ─────────
+
+  APP_DIR="$UPGRADE_APP_DIR"
+  if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+    APP_DIR_NATIVE=$(cygpath -w "$APP_DIR")
+  else
+    APP_DIR_NATIVE="$APP_DIR"
+  fi
+
+  # ─── Snapshot previous level before upgrading ─────────────────────────
+  PREV_LEVEL=$((LEVEL - 1))
+  SNAPSHOT_DIR="$APP_DIR/level-$PREV_LEVEL"
+  if [[ -d "$SNAPSHOT_DIR" ]]; then
+    echo "Snapshot level-$PREV_LEVEL already exists — skipping snapshot"
+  else
+    echo "Snapshotting current app state to level-$PREV_LEVEL..."
+    mkdir -p "$SNAPSHOT_DIR"
+    # Copy app source dirs (exclude node_modules, dist, snapshots)
+    for item in "$APP_DIR"/*; do
+      base=$(basename "$item")
+      case "$base" in
+        level-*|node_modules|dist|.vite|drizzle|dev-server.log) continue ;;
+        *) cp -r "$item" "$SNAPSHOT_DIR/" 2>/dev/null ;;
+      esac
+    done
+    echo "  Saved to $SNAPSHOT_DIR"
+  fi
+
+  # Detect backend from existing app directory structure
+  if [[ -d "$APP_DIR/backend/spacetimedb" ]]; then
+    UPGRADE_BACKEND="spacetime"
+  elif [[ -d "$APP_DIR/server" ]]; then
+    UPGRADE_BACKEND="postgres"
+  else
+    UPGRADE_BACKEND="unknown"
+  fi
+
+  # Resolve prompt file path
+  if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+    PROMPT_FILE_NATIVE=$(cygpath -w "$PROMPT_FILE")
+    LANG_PROMPT_NATIVE=$(cygpath -w "$SCRIPT_DIR/../apps/chat-app/prompts/language/typescript-$UPGRADE_BACKEND.md")
+  else
+    PROMPT_FILE_NATIVE="$PROMPT_FILE"
+    LANG_PROMPT_NATIVE="$SCRIPT_DIR/../apps/chat-app/prompts/language/typescript-$UPGRADE_BACKEND.md"
+  fi
+
+  PREV_LEVEL=$((LEVEL - 1))
+
+  echo "=== Exhaust Test: Upgrade to Level $LEVEL ==="
+  echo "  App dir: $APP_DIR_NATIVE"
+  echo "  Backend: $UPGRADE_BACKEND"
+  echo "  From level: $PREV_LEVEL → $LEVEL"
+  echo "  Prompt: $(basename "$PROMPT_FILE")"
+  echo ""
+
+  PROMPT=$(cat <<PROMPT_EOF
+Upgrade the existing chat app to add the new feature(s) from level $LEVEL.
+
+**App directory:** $APP_DIR_NATIVE
+**Backend:** $UPGRADE_BACKEND
+**Current level:** $PREV_LEVEL (all features from level $PREV_LEVEL are already implemented and working)
+**Target level:** $LEVEL
+
+**Instructions:**
+1. Read the CLAUDE.md in this directory for backend-specific architecture and constraints
+2. Read the language prompt: $LANG_PROMPT_NATIVE
+3. Read the full feature prompt: $PROMPT_FILE_NATIVE
+   - Features from level $PREV_LEVEL and below are ALREADY IMPLEMENTED — do NOT rewrite them
+   - Only add the NEW feature(s) that appear in level $LEVEL but not in level $PREV_LEVEL
+4. Read the existing source code to understand the current architecture
+5. Add the new feature(s) to both backend and frontend, integrating with the existing code
+6. Rebuild and redeploy (see CLAUDE.md for backend-specific steps)
+7. Verify the build succeeds: npx tsc --noEmit && npm run build (if applicable)
+8. Make sure the dev server is running on port 5173
+
+IMPORTANT: Do NOT rewrite existing features. Only add new code for the new feature(s).
+Do NOT do browser testing — that happens in a separate grading session.
+Cost tracking is automatic via OpenTelemetry — do NOT estimate tokens.
+
+When done, output: UPGRADE_COMPLETE
+PROMPT_EOF
+  )
 
 else
   # ─── GENERATE MODE: Initial code generation and deploy ──────────────────
@@ -281,8 +397,6 @@ Cost tracking is automatic via OpenTelemetry — do NOT estimate tokens.
 When done, output: DEPLOY_COMPLETE
 PROMPT_EOF
   )
-
-  MODE_LABEL="generate"
 fi
 
 echo "Starting Claude Code session ($MODE_LABEL)..."
@@ -293,7 +407,7 @@ echo "────────────────────────�
 # templates. This ensures Claude always gets the latest rules inlined directly
 # (no "go find and read this other file" that it might skip).
 
-if [[ -z "$FIX_MODE" ]]; then
+if [[ -z "$FIX_MODE" && -z "$UPGRADE_MODE" ]]; then
   if [[ "$BACKEND" == "spacetime" ]]; then
     {
       cat "$SCRIPT_DIR/backends/spacetime.md"
@@ -318,7 +432,32 @@ fi
 # backend-specific file, not the parent exhaust-test/CLAUDE.md.
 
 cd "$APP_DIR"
-$CLAUDE_CMD --print --verbose --output-format text --dangerously-skip-permissions -p "$PROMPT"
+
+# Build resume flag if --resume-session was passed and a prior session ID exists
+RESUME_FLAG=""
+if [[ -n "$RESUME_SESSION" && -n "$UPGRADE_MODE" ]]; then
+  # Find the most recent telemetry dir for this app to get its session ID
+  PREV_SESSION_ID=""
+  for tdir in "$TELEMETRY_DIR"/*; do
+    if [[ -f "$tdir/metadata.json" ]]; then
+      TDIR_APP=$(node -e "const m=JSON.parse(require('fs').readFileSync(process.argv[1],'utf-8')); process.stdout.write(m.appDir||'')" -- "$(cygpath -w "$tdir/metadata.json" 2>/dev/null || echo "$tdir/metadata.json")" 2>/dev/null)
+      if [[ "$TDIR_APP" == "$APP_DIR_NATIVE" || "$TDIR_APP" == "$APP_DIR_JSON" ]]; then
+        SID=$(node -e "const m=JSON.parse(require('fs').readFileSync(process.argv[1],'utf-8')); process.stdout.write(m.sessionId||'')" -- "$(cygpath -w "$tdir/metadata.json" 2>/dev/null || echo "$tdir/metadata.json")" 2>/dev/null)
+        if [[ -n "$SID" ]]; then
+          PREV_SESSION_ID="$SID"
+        fi
+      fi
+    fi
+  done
+  if [[ -n "$PREV_SESSION_ID" ]]; then
+    RESUME_FLAG="--resume $PREV_SESSION_ID"
+    echo "Resuming prior session: $PREV_SESSION_ID"
+  else
+    echo "No prior session ID found for this app — starting fresh"
+  fi
+fi
+
+$CLAUDE_CMD --print --verbose --output-format text --dangerously-skip-permissions --session-id "$SESSION_ID" $RESUME_FLAG -p "$PROMPT"
 EXIT_CODE=$?
 
 echo ""
@@ -342,8 +481,27 @@ m.endedAt = '$END_TIME';
 m.endedAtUtc = '$END_TIME_UTC';
 m.exitCode = $EXIT_CODE;
 m.mode = '$MODE_LABEL';
+m.sessionId = '$SESSION_ID';
 fs.writeFileSync(f, JSON.stringify(m, null, 2));
 " -- "$METADATA_FILE_NATIVE" || echo "WARNING: Failed to update metadata with end time"
+
+# ─── Snapshot completed level (upgrade mode) ─────────────────────────────────
+
+if [[ -n "$UPGRADE_MODE" && $EXIT_CODE -eq 0 ]]; then
+  LEVEL_SNAPSHOT="$APP_DIR/level-$LEVEL"
+  if [[ ! -d "$LEVEL_SNAPSHOT" ]]; then
+    echo "Snapshotting upgraded app state to level-$LEVEL..."
+    mkdir -p "$LEVEL_SNAPSHOT"
+    for item in "$APP_DIR"/*; do
+      base=$(basename "$item")
+      case "$base" in
+        level-*|node_modules|dist|.vite|drizzle|dev-server.log) continue ;;
+        *) cp -r "$item" "$LEVEL_SNAPSHOT/" 2>/dev/null ;;
+      esac
+    done
+    echo "  Saved to $LEVEL_SNAPSHOT"
+  fi
+fi
 
 # ─── Parse telemetry ─────────────────────────────────────────────────────────
 
@@ -360,15 +518,27 @@ if node "$SCRIPT_DIR_NATIVE/parse-telemetry.mjs" "$RUN_DIR_NATIVE"; then
   echo "  App:        $APP_DIR_NATIVE"
   echo "  Cost:       $RUN_DIR/COST_REPORT.md"
   echo ""
-  if [[ -z "$FIX_MODE" ]]; then
-    echo "=== Next Step: Grade the app ==="
-    echo "  In Claude Code, say:"
-    echo "    Grade the app at $APP_DIR_NATIVE"
-    echo ""
-  else
+  if [[ -n "$FIX_MODE" ]]; then
     echo "=== Next Step: Re-grade the app ==="
     echo "  In Claude Code, say:"
     echo "    Re-grade the app at $APP_DIR_NATIVE"
+    echo ""
+  elif [[ -n "$UPGRADE_MODE" ]]; then
+    echo "=== Next Step: Grade the upgraded app (level $LEVEL) ==="
+    echo "  In Claude Code, say:"
+    echo "    Grade the app at $APP_DIR_NATIVE at level $LEVEL"
+    echo ""
+    NEXT_LEVEL=$((LEVEL + 1))
+    NEXT_PROMPT="$SCRIPT_DIR/../apps/chat-app/prompts/composed/$(printf '%02d' "$NEXT_LEVEL")_"*".md"
+    if ls $NEXT_PROMPT &>/dev/null 2>&1; then
+      echo "  To continue upgrading after grading:"
+      echo "    ./run.sh --upgrade $APP_DIR --level $NEXT_LEVEL"
+      echo ""
+    fi
+  else
+    echo "=== Next Step: Grade the app ==="
+    echo "  In Claude Code, say:"
+    echo "    Grade the app at $APP_DIR_NATIVE"
     echo ""
   fi
 else

@@ -1,0 +1,15 @@
+{
+  "level": 2,
+  "backend": "spacetime",
+  "timestamp": "20260401-150923",
+  "startedAt": "2026-04-01T15:09:23-0400",
+  "startedAtUtc": "2026-04-01T19:09:23Z",
+  "runId": "spacetime-upgrade-to-level2-20260401-150923",
+  "appDir": "results\\postgres\\chat-app-20260401-131906",
+  "promptFile": "02_scheduled.md",
+  "phase": "upgrade",
+  "endedAt": "2026-04-01T15:14:24-0400",
+  "endedAtUtc": "2026-04-01T19:14:24Z",
+  "exitCode": 0,
+  "mode": "upgrade"
+}

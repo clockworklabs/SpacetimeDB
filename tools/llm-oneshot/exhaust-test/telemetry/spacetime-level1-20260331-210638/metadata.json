@@ -1,0 +1,10 @@
+{
+  "level": 1,
+  "backend": "spacetime",
+  "timestamp": "20260331-210638",
+  "startedAt": "2026-03-31T21:06:38-0400",
+  "runId": "spacetime-level1-20260331-210638",
+  "appDir": "D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDBPrivate\public\tools\llm-oneshot\exhaust-test\results\spacetime\chat-app-20260331-210638",
+  "promptFile": "01_basic.md",
+  "phase": "generate"
+}
