@@ -795,14 +795,14 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         let handle = tokio::runtime::Handle::current();
         handle.spawn(async move {
-            log::debug!("Spawning Round 2 task. Waiting for durability of offset {} for prepare-id {}", barrier_offset, prepare_id);
-            // Step 8: wait for PREPARE PERSIST durability (offset N fsynced).
-            if let Some(prepare_offset) = marker_tx_data.tx_offset() {
-                if let Some(mut durable) = stdb.durable_tx_offset() {
-                    let _ = durable.wait_for(prepare_offset).await;
-                }
-            }
-            log::debug!("Waited for durability of offset {} for prepare-id {}", barrier_offset, prepare_id);
+            // log::debug!("Spawning Round 2 task. Waiting for durability of offset {} for prepare-id {}", barrier_offset, prepare_id);
+            // // Step 8: wait for PREPARE PERSIST durability (offset N fsynced).
+            // if let Some(prepare_offset) = marker_tx_data.tx_offset() {
+            //     if let Some(mut durable) = stdb.durable_tx_offset() {
+            //         let _ = durable.wait_for(prepare_offset).await;
+            //     }
+            // }
+            // log::debug!("Waited for durability of offset {} for prepare-id {}", barrier_offset, prepare_id);
 
             // Step 9: signal coordinator that B's PREPARE_PERSIST is durable.
             send_prepared_to_persist_to_coordinator(
@@ -1366,11 +1366,11 @@ impl InstanceCommon {
                 }
 
                 // Wait for A's coordinator log to be durable.
-                if let Some(mut durable_offset) = stdb.durable_tx_offset() {
-                    if let Ok(offset) = commit_tx_offset.await {
-                        let _ = durable_offset.wait_for(offset).await;
-                    }
-                }
+                // if let Some(mut durable_offset) = stdb.durable_tx_offset() {
+                //     if let Ok(offset) = commit_tx_offset.await {
+                //         let _ = durable_offset.wait_for(offset).await;
+                //     }
+                // }
                 // Send COMMIT_PERSIST to each participant.
                 for (db_identity, prepare_id) in &prepared_participants {
                     let base_url = match router.resolve_base_url(*db_identity).await {
