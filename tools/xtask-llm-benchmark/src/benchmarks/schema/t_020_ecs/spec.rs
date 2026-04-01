@@ -1,6 +1,4 @@
-use crate::eval::defaults::{
-    default_schema_parity_scorers, make_reducer_call_both_scorer, make_sql_count_only_scorer,
-};
+use crate::eval::defaults::{default_schema_parity_scorers, make_reducer_call_both_scorer, make_sql_count_only_scorer};
 use crate::eval::{casing_for_lang, ident, table_name, BenchmarkSpec, SqlBuilder};
 use std::time::Duration;
 pub fn spec() -> BenchmarkSpec {
@@ -65,9 +63,7 @@ pub fn spec() -> BenchmarkSpec {
             host_url,
             file!(),
             route_tag,
-            format!(
-                "SELECT COUNT(*) AS n FROM {next_position_table} WHERE {entity_id}=1 AND {x}=1 AND {y}=0",
-            ),
+            format!("SELECT COUNT(*) AS n FROM {next_position_table} WHERE {entity_id}=1 AND {x}=1 AND {y}=0",),
             1,
             "ecs_next_pos_entity1",
             Duration::from_secs(10),
@@ -77,9 +73,7 @@ pub fn spec() -> BenchmarkSpec {
             host_url,
             file!(),
             route_tag,
-            format!(
-                "SELECT COUNT(*) AS n FROM {next_position_table} WHERE {entity_id}=2 AND {x}=8 AND {y}=3",
-            ),
+            format!("SELECT COUNT(*) AS n FROM {next_position_table} WHERE {entity_id}=2 AND {x}=8 AND {y}=3",),
             1,
             "ecs_next_pos_entity2",
             Duration::from_secs(10),
