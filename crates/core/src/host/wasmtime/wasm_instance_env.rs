@@ -2002,6 +2002,7 @@ impl WasmInstanceEnv {
 
             match result {
                 Ok((status, body)) => {
+                    let body = if body.is_empty() { bytes::Bytes::from_static(&[0]) } else { body };
                     let bytes_source = WasmInstanceEnv::create_bytes_source(env, body)?;
                     bytes_source.0.write_to(mem, out)?;
                     Ok(status as u32)
@@ -2057,6 +2058,10 @@ impl WasmInstanceEnv {
                 .instance_env
                 .call_reducer_on_db_2pc(database_identity, &reducer_name, args);
 
+            log::debug!("call_reducer_on_db_2pc host: result is_ok={} is_http_err={}",
+                result.is_ok(),
+                matches!(&result, Err(crate::error::NodesError::HttpError(_))));
+
             match result {
                 Ok((status, body, prepare_id)) => {
                     // If we got a prepare_id, register this participant.
@@ -2065,6 +2070,10 @@ impl WasmInstanceEnv {
                     {
                         env.instance_env.prepared_participants.push((database_identity, pid));
                     }
+                    // create_bytes_source returns INVALID for empty bytes, but the
+                    // WASM-side caller reads the source unconditionally on success.
+                    // Use a single zero byte to guarantee a valid handle.
+                    let body = if body.is_empty() { bytes::Bytes::from_static(&[0]) } else { body };
                     let bytes_source = WasmInstanceEnv::create_bytes_source(env, body)?;
                     bytes_source.0.write_to(mem, out)?;
                     Ok(status as u32)

@@ -1098,6 +1098,7 @@ impl InstanceEnv {
             req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
         }
 
+        log::debug!("call_reducer_on_db_2pc: sending blocking HTTP to {url}");
         let result = crate::replica_context::execute_blocking_http(
             &self.replica_ctx.call_reducer_blocking_client,
             req,
@@ -1113,6 +1114,7 @@ impl InstanceEnv {
             },
         )
         .map_err(|e| NodesError::HttpError(e));
+        log::debug!("call_reducer_on_db_2pc: result={result:?}");
 
         // Unregister the call edge (regardless of success/failure).
         let _ = self.replica_ctx.call_edge_tracker.unregister_edge(&call_id);
