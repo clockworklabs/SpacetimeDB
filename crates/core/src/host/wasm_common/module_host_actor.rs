@@ -410,7 +410,7 @@ async fn send_prepared_to_persist_to_coordinator(
     prepare_id: String,
 ) {
     loop {
-        let base_url = match router.resolve_base_url(coordinator_identity) {
+        let base_url = match router.resolve_base_url(coordinator_identity).await {
             Ok(url) => url,
             Err(e) => {
                 log::warn!("2PC prepared-to-persist: cannot resolve coordinator URL: {e}; retrying");
@@ -457,7 +457,7 @@ async fn query_coordinator_status(
     coordinator_identity: crate::identity::Identity,
     prepare_id: &str,
 ) -> Option<bool> {
-    let base_url = match router.resolve_base_url(coordinator_identity) {
+    let base_url = match router.resolve_base_url(coordinator_identity).await {
         Ok(url) => url,
         Err(e) => {
             log::warn!("2PC status poll: cannot resolve coordinator URL: {e}");
@@ -739,17 +739,15 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         // Build the full row once so the same ProductValue can be reused for the
         // DELETE entry -- replay uses whole-row equality, so the DELETE must
         // carry identical field values.
-        let marker_row = spacetimedb_sats::ProductValue::from(
-            spacetimedb_datastore::system_tables::St2pcStateRow {
-                prepare_id: prepare_id.clone(),
-                coordinator_identity_hex: coordinator_identity.to_hex().to_string(),
-                reducer_name: recovery_reducer_name,
-                args_bsatn: recovery_args_bsatn,
-                caller_identity_hex: recovery_caller_identity_hex,
-                caller_connection_id_hex: recovery_caller_connection_id_hex,
-                timestamp_micros: recovery_timestamp_micros,
-            },
-        );
+        let marker_row = spacetimedb_sats::ProductValue::from(spacetimedb_datastore::system_tables::St2pcStateRow {
+            prepare_id: prepare_id.clone(),
+            coordinator_identity_hex: coordinator_identity.to_hex().to_string(),
+            reducer_name: recovery_reducer_name,
+            args_bsatn: recovery_args_bsatn,
+            caller_identity_hex: recovery_caller_identity_hex,
+            caller_connection_id_hex: recovery_caller_connection_id_hex,
+            timestamp_micros: recovery_timestamp_micros,
+        });
         let barrier_offset = tx.next_tx_offset();
         let marker_tx_data = std::sync::Arc::new(tx.create_2pc_prepare_tx_data(&marker_row));
 
@@ -1244,7 +1242,7 @@ impl InstanceCommon {
                 if !committed {
                     // ABORT: send abort to all participants, no Round 2 needed.
                     for (db_identity, prepare_id) in &prepared_participants {
-                        let base_url = match router.resolve_base_url(*db_identity) {
+                        let base_url = match router.resolve_base_url(*db_identity).await {
                             Ok(url) => url,
                             Err(e) => {
                                 log::error!("2PC abort: failed to resolve base URL for {db_identity}: {e}");
@@ -1291,7 +1289,7 @@ impl InstanceCommon {
                 // ── Round 1: Send COMMIT immediately (no durability wait!) ──
 
                 for (db_identity, prepare_id) in &prepared_participants {
-                    let base_url = match router.resolve_base_url(*db_identity) {
+                    let base_url = match router.resolve_base_url(*db_identity).await {
                         Ok(url) => url,
                         Err(e) => {
                             log::error!("2PC commit: failed to resolve base URL for {db_identity}: {e}");
@@ -1371,10 +1369,9 @@ impl InstanceCommon {
                         let _ = durable_offset.wait_for(offset).await;
                     }
                 }
-
                 // Send COMMIT_PERSIST to each participant.
                 for (db_identity, prepare_id) in &prepared_participants {
-                    let base_url = match router.resolve_base_url(*db_identity) {
+                    let base_url = match router.resolve_base_url(*db_identity).await {
                         Ok(url) => url,
                         Err(e) => {
                             log::error!("2PC commit-persist: failed to resolve base URL for {db_identity}: {e}");

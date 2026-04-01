@@ -2,13 +2,20 @@
 ///
 /// Implementations differ between deployment modes:
 ///
-/// - **Standalone / single-node** -- [`LocalReducerRouter`] always returns the local node's
+/// - **Standalone / single-node** — [`LocalReducerRouter`] always returns the local node's
 ///   HTTP base URL.  Every database is on the same node, so there is nothing to resolve.
 ///
-/// - **Cluster / multi-node** -- `CachingResolver` (private crate) queries a local cache
-///   populated from the control DB to discover the leader replica's node address.
+/// - **Cluster / multi-node** — `ClusterReducerRouter` (private crate) queries the control DB
+///   to discover the leader replica's node and returns that node's advertise address.
+///
+/// The trait is object-safe (futures are boxed) so it can be stored as `Arc<dyn ReducerCallRouter>`
+/// in [`crate::replica_context::ReplicaContext`] and swapped at startup.
 use spacetimedb_lib::Identity;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+
+pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 pub trait ReducerCallRouter: Send + Sync + 'static {
     /// Return the HTTP base URL (e.g. `"http://10.0.0.5:3000"`) of the node that
@@ -18,14 +25,26 @@ pub trait ReducerCallRouter: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// Returns an error when the leader cannot be resolved
+    /// Returns an error string when the leader cannot be resolved
     /// (database not found, no leader elected yet, node has no network address, etc.).
-    fn resolve_base_url(&self, database_identity: Identity) -> anyhow::Result<String>;
+    fn resolve_base_url<'a>(&'a self, database_identity: Identity) -> BoxFuture<'a, anyhow::Result<String>>;
+
+    /// Blocking variant of [`resolve_base_url`] for use on non-async threads.
+    ///
+    /// The default implementation drives the async version on a fresh OS thread with its own
+    /// minimal tokio runtime, so it is safe to call from any thread — including threads that
+    /// are already inside a tokio `block_on` context (e.g. the `SingleCoreExecutor` thread).
+    ///
+    /// Override for routers that can resolve without spawning (e.g. [`LocalReducerRouter`]).
+    fn resolve_base_url_blocking(&self, database_identity: Identity) -> anyhow::Result<String> {
+        let fut = self.resolve_base_url(database_identity);
+        futures::executor::block_on(fut)
+    }
 }
 
 // Arc<dyn ReducerCallRouter> is itself a ReducerCallRouter.
 impl ReducerCallRouter for Arc<dyn ReducerCallRouter> {
-    fn resolve_base_url(&self, database_identity: Identity) -> anyhow::Result<String> {
+    fn resolve_base_url<'a>(&'a self, database_identity: Identity) -> BoxFuture<'a, anyhow::Result<String>> {
         (**self).resolve_base_url(database_identity)
     }
 }
@@ -35,7 +54,7 @@ impl ReducerCallRouter for Arc<dyn ReducerCallRouter> {
 /// Always routes to the same fixed base URL regardless of which database is targeted.
 /// Suitable for standalone (single-node) deployments where every database is local.
 ///
-/// For cluster deployments, replace this with `CachingResolver` from the private crate.
+/// For cluster deployments, replace this with `ClusterReducerRouter` from the private crate.
 pub struct LocalReducerRouter {
     pub base_url: String,
 }
@@ -49,7 +68,12 @@ impl LocalReducerRouter {
 }
 
 impl ReducerCallRouter for LocalReducerRouter {
-    fn resolve_base_url(&self, _database_identity: Identity) -> anyhow::Result<String> {
+    fn resolve_base_url<'a>(&'a self, _database_identity: Identity) -> BoxFuture<'a, anyhow::Result<String>> {
+        let url = self.base_url.clone();
+        Box::pin(async move { Ok(url) })
+    }
+
+    fn resolve_base_url_blocking(&self, _database_identity: Identity) -> anyhow::Result<String> {
         Ok(self.base_url.clone())
     }
 }

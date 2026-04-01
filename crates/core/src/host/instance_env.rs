@@ -1014,7 +1014,7 @@ impl InstanceEnv {
         let base_url = self
             .replica_ctx
             .call_reducer_router
-            .resolve_base_url(database_identity)
+            .resolve_base_url_blocking(database_identity)
             .map_err(|e| NodesError::HttpError(e.to_string()))?;
         let url = format!(
             "{}/v1/database/{}/call/{}",
@@ -1079,7 +1079,7 @@ impl InstanceEnv {
         let base_url = self
             .replica_ctx
             .call_reducer_router
-            .resolve_base_url(database_identity)
+            .resolve_base_url_blocking(database_identity)
             .map_err(|e| NodesError::HttpError(e.to_string()))?;
         let url = format!(
             "{}/v1/database/{}/prepare/{}",
@@ -1134,13 +1134,12 @@ impl InstanceEnv {
     /// Register a call edge for cycle detection. If a cycle is detected,
     /// return an error immediately -- retrying won't help because the other
     /// side is already calling us and we hold the lock.
-    fn register_edge_or_deadlock(
-        &self,
-        call_id: &str,
-        caller: Identity,
-        callee: Identity,
-    ) -> Result<(), NodesError> {
-        match self.replica_ctx.call_edge_tracker.register_edge(call_id, caller, callee) {
+    fn register_edge_or_deadlock(&self, call_id: &str, caller: Identity, callee: Identity) -> Result<(), NodesError> {
+        match self
+            .replica_ctx
+            .call_edge_tracker
+            .register_edge(call_id, caller, callee)
+        {
             Ok(()) => Ok(()),
             Err(e) => Err(NodesError::HttpError(format!(
                 "distributed deadlock detected: {caller} -> {callee}: {e}"
@@ -1522,7 +1521,9 @@ mod test {
                 logger,
                 subscriptions: subs,
                 call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
-                call_reducer_blocking_client: ReplicaContext::new_call_reducer_blocking_client(&CallReducerOnDbConfig::default()),
+                call_reducer_blocking_client: ReplicaContext::new_call_reducer_blocking_client(
+                    &CallReducerOnDbConfig::default(),
+                ),
                 call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
                 call_reducer_auth_token: None,
                 prepared_txs: crate::host::prepared_tx::PreparedTransactions::new(),
