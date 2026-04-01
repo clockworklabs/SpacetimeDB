@@ -15,8 +15,10 @@ import fs from 'fs';
 import path from 'path';
 
 const runDir = process.argv[2];
+const endTimeOverride = process.argv[3]; // optional: ISO timestamp for reparsing old runs
 if (!runDir) {
-  console.error('Usage: node parse-telemetry.mjs <run-dir>');
+  console.error('Usage: node parse-telemetry.mjs <run-dir> [end-time-iso]');
+  console.error('  end-time-iso: optional upper bound for time filtering (e.g. "2026-03-30T22:00:00Z")');
   process.exit(1);
 }
 
@@ -37,6 +39,18 @@ const metadata = fs.existsSync(metadataFile)
   ? JSON.parse(fs.readFileSync(metadataFile, 'utf-8'))
   : { level: '?', backend: '?', timestamp: '?' };
 
+// Time-range filtering: only include records from this run's time window
+const startTime = metadata.startedAtUtc || metadata.startedAt;
+const endTime = endTimeOverride || metadata.endedAtUtc || metadata.endedAt;
+const startMs = startTime ? new Date(startTime).getTime() : 0;
+const endMs = endTime ? new Date(endTime).getTime() : Date.now();
+
+if (!endTime) {
+  console.warn('WARNING: No end time found in metadata — using current time as upper bound.');
+  console.warn('         The run may have crashed or the metadata update failed.');
+}
+console.log(`Filtering telemetry: ${startTime || '(start)'} → ${endTime || '(now)'}`);
+
 // Parse OTLP log records
 // The format depends on the collector version, but generally each line is a JSON object
 // containing log records with attributes that include token counts.
@@ -49,6 +63,9 @@ let totalCacheRead = 0;
 let totalCacheCreation = 0;
 let totalCostUsd = 0;
 
+let skippedOutOfRange = 0;
+let skippedNonApi = 0;
+
 for (const line of lines) {
   try {
     const record = JSON.parse(line);
@@ -56,6 +73,22 @@ for (const line of lines) {
     // OTLP log records can be nested in different ways depending on the collector.
     // We look for attributes containing token counts.
     const attrs = extractAttributes(record);
+
+    // Filter by time range — only include records within this run's window
+    const eventTimestamp = attrs['event.timestamp'] || attrs.timestamp;
+    if (eventTimestamp) {
+      const eventMs = new Date(eventTimestamp).getTime();
+      if (eventMs < startMs || eventMs > endMs) {
+        skippedOutOfRange++;
+        continue;
+      }
+    }
+
+    // Filter by event type — only api_request records have token data
+    if (attrs._eventType && attrs._eventType !== 'claude_code.api_request') {
+      skippedNonApi++;
+      continue;
+    }
 
     if (attrs.input_tokens !== undefined || attrs['input_tokens'] !== undefined) {
       const call = {
@@ -66,7 +99,7 @@ for (const line of lines) {
         costUsd: Number(attrs.cost_usd || attrs['cost_usd'] || 0),
         model: attrs.model || attrs['model'] || 'unknown',
         durationMs: Number(attrs.duration_ms || attrs['duration_ms'] || 0),
-        timestamp: attrs.timestamp || record.timeUnixNano || '',
+        timestamp: eventTimestamp || record.timeUnixNano || '',
       };
 
       apiCalls.push(call);
@@ -124,7 +157,8 @@ ${apiCalls.map((c, i) =>
 const reportPath = path.join(runDir, 'COST_REPORT.md');
 fs.writeFileSync(reportPath, report);
 
-console.log(`Parsed ${apiCalls.length} API calls from telemetry.`);
+console.log(`Parsed ${apiCalls.length} API calls from ${lines.length} telemetry records.`);
+console.log(`  Skipped: ${skippedOutOfRange} out of time range, ${skippedNonApi} non-API events`);
 console.log(`Total tokens: ${totalTokens.toLocaleString()} (${totalInput.toLocaleString()} in / ${totalOutput.toLocaleString()} out)`);
 console.log(`Total cost: $${totalCostUsd.toFixed(4)}`);
 console.log(`Report saved to: ${reportPath}`);
@@ -148,6 +182,10 @@ function extractAttributes(record) {
     for (const rl of record.resourceLogs) {
       for (const sl of rl.scopeLogs || []) {
         for (const lr of sl.logRecords || []) {
+          // Capture event type from body (e.g. "claude_code.api_request")
+          if (lr.body?.stringValue) {
+            attrs._eventType = lr.body.stringValue;
+          }
           if (lr.attributes) {
             flattenAttributes(lr.attributes, attrs);
           }

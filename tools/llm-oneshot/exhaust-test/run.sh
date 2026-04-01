@@ -89,6 +89,17 @@ if ! docker info &>/dev/null; then
   exit 1
 fi
 
+# Rotate telemetry log if over 10MB to prevent unbounded growth
+LOGS_FILE="$TELEMETRY_DIR/logs.jsonl"
+if [[ -f "$LOGS_FILE" ]]; then
+  SIZE=$(wc -c < "$LOGS_FILE")
+  if [[ $SIZE -gt 10485760 ]]; then
+    ARCHIVE="$TELEMETRY_DIR/logs-$(date +%Y%m%d-%H%M%S).jsonl.bak"
+    mv "$LOGS_FILE" "$ARCHIVE"
+    echo "[INFO] Rotated logs.jsonl ($SIZE bytes) to $(basename "$ARCHIVE")"
+  fi
+fi
+
 if docker compose -f "$SCRIPT_DIR/docker-compose.otel.yaml" ps --status running 2>/dev/null | grep -q otel-collector; then
   echo "[OK] OTel Collector is running"
 else
@@ -120,6 +131,7 @@ echo ""
 
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 START_TIME=$(date +%Y-%m-%dT%H:%M:%S%z)
+START_TIME_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 RUN_ID="$BACKEND-level$LEVEL-$TIMESTAMP"
 RUN_DIR="$TELEMETRY_DIR/$RUN_ID"
 APP_DIR="$RESULTS_DIR/$BACKEND/chat-app-$TIMESTAMP"
@@ -163,6 +175,7 @@ cat > "$RUN_DIR/metadata.json" <<EOF
   "backend": "$BACKEND",
   "timestamp": "$TIMESTAMP",
   "startedAt": "$START_TIME",
+  "startedAtUtc": "$START_TIME_UTC",
   "runId": "$RUN_ID",
   "appDir": "$APP_DIR_NATIVE",
   "promptFile": "$(basename "$PROMPT_FILE")",
@@ -311,18 +324,23 @@ echo "────────────────────────�
 # ─── Record end time ─────────────────────────────────────────────────────────
 
 END_TIME=$(date +%Y-%m-%dT%H:%M:%S%z)
+END_TIME_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-# Use a temp file approach to avoid path escaping issues on Windows
-METADATA_FILE="$RUN_DIR/metadata.json"
+# Update metadata with end time — use native path for Node.js on Windows
+METADATA_FILE_NATIVE="$RUN_DIR_NATIVE/metadata.json"
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+  METADATA_FILE_NATIVE=$(cygpath -w "$RUN_DIR/metadata.json")
+fi
 node -e "
 const fs = require('fs');
 const f = process.argv[1];
 const m = JSON.parse(fs.readFileSync(f, 'utf-8'));
 m.endedAt = '$END_TIME';
+m.endedAtUtc = '$END_TIME_UTC';
 m.exitCode = $EXIT_CODE;
 m.mode = '$MODE_LABEL';
 fs.writeFileSync(f, JSON.stringify(m, null, 2));
-" -- "$METADATA_FILE"
+" -- "$METADATA_FILE_NATIVE" || echo "WARNING: Failed to update metadata with end time"
 
 # ─── Parse telemetry ─────────────────────────────────────────────────────────
 
