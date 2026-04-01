@@ -1,7 +1,5 @@
 use crate::{
-    customer, district, find_district, find_warehouse, history,
-    remote::{remote_warehouse_home, simulate_remote_call},
-    resolve_customer, warehouse, Customer, CustomerSelector, District, History, Warehouse, MAX_C_DATA_LEN,
+    Customer, CustomerSelector, District, History, MAX_C_DATA_LEN, Warehouse, customer, district, find_district, find_warehouse, history, remote::{call_remote_reducer, remote_warehouse_home, simulate_remote_call}, resolve_customer, warehouse
 };
 use spacetimedb::{
     log_stopwatch::LogStopwatch, procedure, reducer, Identity, ProcedureContext, ReducerContext, SpacetimeType, Table,
@@ -128,19 +126,12 @@ fn call_remote_resolve_and_update_customer_for_payment(
     remote_database_identity: Identity,
     request: &PaymentRequest,
 ) -> Result<Customer, String> {
-    // call_remote_reducer(
-    //     ctx,
-    //     remote_database_identity,
-    //     "resolve_and_update_customer_for_payment",
-    //     request,
-    // )
-    simulate_remote_call(
+    call_remote_reducer(
         ctx,
         remote_database_identity,
         "resolve_and_update_customer_for_payment",
         request,
-    )?;
-    Ok(simulated_remote_customer(request))
+    )
 }
 
 #[procedure]

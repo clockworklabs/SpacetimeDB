@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    district, find_customer_by_id, find_district, find_stock, find_warehouse, item, order_line, pack_order_key,
-    remote::{remote_warehouse_home, simulate_remote_call},
-    stock, District, Item, OrderLine, Stock, WarehouseId, DISTRICTS_PER_WAREHOUSE, TAX_SCALE,
+    DISTRICTS_PER_WAREHOUSE, District, Item, OrderLine, Stock, TAX_SCALE, WarehouseId, district, find_customer_by_id, find_district, find_stock, find_warehouse, item, order_line, pack_order_key, remote::{call_remote_reducer, remote_warehouse_home, simulate_remote_call}, stock
 };
 use spacetimedb::{log_stopwatch::LogStopwatch, reducer, Identity, ReducerContext, SpacetimeType, Table, Timestamp};
 
@@ -183,19 +181,12 @@ fn call_remote_order_multiple_items_and_decrement_stock(
     remote_database_identity: Identity,
     input: OrderMultipleItemsInput,
 ) -> Result<Vec<OrderItemOutput>, String> {
-    // call_remote_reducer(
-    //     ctx,
-    //     remote_database_identity,
-    //     "order_multiple_items_and_decrement_stocks",
-    //     &input,
-    // )
-    simulate_remote_call(
+    call_remote_reducer(
         ctx,
         remote_database_identity,
         "order_multiple_items_and_decrement_stocks",
         &input,
-    )?;
-    Ok(simulated_remote_order_outputs(input))
+    )
 }
 
 struct ProcessedNewOrderItem {
