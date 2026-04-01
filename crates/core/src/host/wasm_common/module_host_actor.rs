@@ -736,16 +736,22 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         // Step 4: create TxData for the st_2pc_state INSERT (PREPARE PERSIST).
         // The row is NOT inserted into committed_state -- it only exists in the
         // commitlog for crash recovery. Assigned offset N.
+        // Build the full row once so the same ProductValue can be reused for the
+        // DELETE entry -- replay uses whole-row equality, so the DELETE must
+        // carry identical field values.
+        let marker_row = spacetimedb_sats::ProductValue::from(
+            spacetimedb_datastore::system_tables::St2pcStateRow {
+                prepare_id: prepare_id.clone(),
+                coordinator_identity_hex: coordinator_identity.to_hex().to_string(),
+                reducer_name: recovery_reducer_name,
+                args_bsatn: recovery_args_bsatn,
+                caller_identity_hex: recovery_caller_identity_hex,
+                caller_connection_id_hex: recovery_caller_connection_id_hex,
+                timestamp_micros: recovery_timestamp_micros,
+            },
+        );
         let barrier_offset = tx.next_tx_offset();
-        let marker_tx_data = std::sync::Arc::new(tx.create_2pc_prepare_tx_data(
-            &prepare_id,
-            coordinator_identity.to_hex().to_string(),
-            recovery_reducer_name,
-            recovery_args_bsatn,
-            recovery_caller_identity_hex,
-            recovery_caller_connection_id_hex,
-            recovery_timestamp_micros,
-        ));
+        let marker_tx_data = std::sync::Arc::new(tx.create_2pc_prepare_tx_data(&marker_row));
 
         // Step 5: send the marker's TxData to the durability worker. This writes
         // the PREPARE PERSIST commitlog entry: just the st_2pc_state row with
@@ -771,27 +777,18 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         // reducer's deferred TxData. When the barrier clears, a single
         // commitlog entry contains both the reducer changes and the
         // st_2pc_state deletion -- atomically marking the 2PC as committed.
+        // The delete row must match the insert row exactly because
+        // transaction replay uses whole-row equality (delete_equal_row).
         {
             use spacetimedb_datastore::system_tables::ST_2PC_STATE_NAME;
             let table_name = spacetimedb_schema::table_name::TableName::new(
                 spacetimedb_schema::identifier::Identifier::new(ST_2PC_STATE_NAME.into()).unwrap(),
             );
-            let delete_row = spacetimedb_sats::ProductValue::from(
-                spacetimedb_datastore::system_tables::St2pcStateRow {
-                    prepare_id: prepare_id.clone(),
-                    coordinator_identity_hex: String::new(),
-                    reducer_name: String::new(),
-                    args_bsatn: Vec::new(),
-                    caller_identity_hex: String::new(),
-                    caller_connection_id_hex: String::new(),
-                    timestamp_micros: 0,
-                },
-            );
             stdb.modify_first_barrier_pending(|tx_data| {
                 tx_data.set_deletes_for_table(
                     spacetimedb_datastore::system_tables::ST_2PC_STATE_ID,
                     &table_name,
-                    std::sync::Arc::from([delete_row]),
+                    std::sync::Arc::from([marker_row]),
                 );
             });
         }
