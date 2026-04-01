@@ -942,11 +942,10 @@ impl RelationalDB {
         let mut barrier = self.durability_barrier.lock().unwrap();
         if let Some(ref mut b) = *barrier {
             if let Some(entry) = b.pending.first_mut() {
-                if let Some(tx_data) = Arc::get_mut(&mut entry.1) {
-                    f(tx_data);
-                } else {
-                    log::warn!("modify_first_barrier_pending: Arc is shared, cannot modify");
-                }
+                // Arc::make_mut clones the TxData if other references exist
+                // (e.g. the caller that committed the tx still holds one).
+                let tx_data = Arc::make_mut(&mut entry.1);
+                f(tx_data);
             }
         }
     }
