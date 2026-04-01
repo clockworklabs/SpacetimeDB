@@ -36,6 +36,10 @@ pub trait CallEdgeTracker: Send + Sync + 'static {
 
     /// Unregister all edges for this node (crash cleanup on startup).
     fn unregister_all_edges(&self) -> anyhow::Result<()>;
+
+    /// Set the base URL for reaching the control DB (cloud only).
+    /// Default: no-op. Overridden by `CloudCallEdgeTracker`.
+    fn set_base_url(&self, _url: &str) {}
 }
 
 /// In-memory call edge tracker with cycle detection.
