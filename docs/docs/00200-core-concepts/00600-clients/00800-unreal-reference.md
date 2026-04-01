@@ -19,7 +19,7 @@ Before diving into the reference, you may want to review:
 | [DbConnection type](#type-dbconnection)                     | A connection to a remote database.                                                                      |
 | [Context interfaces](#context-interfaces)                   | Context objects for interacting with the remote database in callbacks.                                  |
 | [Access the client cache](#access-the-client-cache)         | Access to your local view of the database.                                                              |
-| [Observe and invoke reducers](#observe-and-invoke-reducers) | Send requests to the database to run reducers, and register callbacks to run when notified of reducers. |
+| [Observe and invoke reducers](#observe-and-invoke-reducers) | Send requests to the database to run reducers, and register callbacks for reducer results on the calling connection. |
 | [Subscriptions](#subscriptions)                             | Subscribe to queries and manage subscription lifecycle.                                                 |
 | [Identify a client](#identify-a-client)                     | Types for identifying users and client connections.                                                     |
 
@@ -182,7 +182,7 @@ class UDbConnectionBuilder
 };
 ```
 
-Finalize configuration and open the connection. This creates a WebSocket connection to `ws://<uri>/v1/database/<module>/subscribe?compression=<compression>` and begins processing messages.
+Finalize configuration and open the connection. This creates a WebSocket connection to `ws://<uri>/v1/database/<database>/subscribe?compression=<compression>` and begins processing messages using the Unreal SDK's binary v2 WebSocket subprotocol.
 
 ### Advance the connection and process messages
 
@@ -198,13 +198,10 @@ class UDbConnection
 
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
     URemoteReducers* Reducers;
-
-    UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    USetReducerFlags* SetReducerFlags;
 };
 ```
 
-The `Db` property provides access to the client cache, the `Reducers` property allows invoking reducers, and the `SetReducerFlags` property configures reducer behavior.
+The `Db` property provides access to the client cache, and the `Reducers` property allows invoking reducers and handling the results of reducers called by this connection.
 
 ## Context interfaces
 
@@ -450,12 +447,12 @@ int32 CountPlayersAtLevel(URemoteTables* Tables, uint32 Level)
 
 ## Observe and invoke reducers
 
-All context types provide access to reducers through the `.Reducers` property, which contains generated methods for invoking reducers defined by the module and registering callbacks.
+All context types provide access to reducers through the `.Reducers` property, which contains generated methods for invoking reducers defined by the module and generated delegates for reducer results.
 
 Each reducer defined by the module has methods on the `.Reducers`:
 
 - An invoke method, whose name matches the reducer's name (e.g., `SendMessage`, `SetName`). This requests that the module run the reducer.
-- A callback registration delegate, whose name is prefixed with `On` (e.g., `OnSendMessage`, `OnSetName`). This registers a callback to run whenever we are notified that the reducer ran.
+- A generated delegate, whose name is prefixed with `On` (e.g., `OnSendMessage`, `OnSetName`). This runs when the result for a reducer call made by this connection is received and correlated by `request_id`.
 
 ### Invoke reducers
 
@@ -470,7 +467,7 @@ class URemoteReducers
 };
 ```
 
-### Observe reducer events
+### Observe reducer results
 
 ```cpp
 class URemoteReducers
@@ -493,24 +490,7 @@ class URemoteReducers
 };
 ```
 
-### Reducer flags
-
-```cpp
-class USetReducerFlags
-{
-    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
-    void SendMessage(ECallReducerFlags Flag);
-
-    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
-    void SetName(ECallReducerFlags Flag);
-};
-```
-
-Configure how much data to receive when a reducer runs:
-
-- `ECallReducerFlags::FullUpdate` - Receive all table updates (default)
-- `ECallReducerFlags::NoUpdate` - Don't receive table updates
-- `ECallReducerFlags::LightUpdate` - Receive minimal table updates
+The generated `On<Reducer>` delegates are the Unreal equivalent of a per-call callback. They are not global reducer broadcasts for other clients' reducer calls.
 
 ## Subscriptions
 
@@ -717,9 +697,8 @@ void AMyActor::BeginPlay()
     Conn->Db->User->OnUpdate.AddDynamic(this, &AMyActor::OnUserUpdate);
     Conn->Db->User->OnDelete.AddDynamic(this, &AMyActor::OnUserDelete);
 
-    // Register reducer callbacks
+    // Register reducer result callbacks for calls made by this connection
     Conn->Reducers->OnSendMessage.AddDynamic(this, &AMyActor::OnSendMessage);
-    Conn->SetReducerFlags->SendMessage(ECallReducerFlags::FullUpdate);
 }
 
 void AMyActor::OnConnected(UDbConnection* Connection, FSpacetimeDBIdentity Identity, const FString& Token)

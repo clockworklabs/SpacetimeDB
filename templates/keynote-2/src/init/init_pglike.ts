@@ -1,7 +1,13 @@
-﻿import { ACC, BAL, waitFor } from './utils.ts';
+import type { SeedConfig } from '../config.ts';
+import { waitFor } from './utils.ts';
 import pg from 'pg';
 
-export async function initPgLike(url: string, label: string) {
+export async function initPgLike(
+  url: string,
+  label: string,
+  seedConfig: SeedConfig,
+) {
+  const { accounts, initialBalance } = seedConfig;
   const isPlanetScale = url.includes('psdb.cloud');
 
   console.log(`\n[${label}] init @ ${url}`);
@@ -30,7 +36,7 @@ export async function initPgLike(url: string, label: string) {
       INSERT INTO accounts(id, balance)
       SELECT g, $1 FROM generate_series(0, $2) AS g;
     `,
-    [BAL, ACC - 1],
+    [initialBalance, accounts - 1],
   );
 
   await client.end();

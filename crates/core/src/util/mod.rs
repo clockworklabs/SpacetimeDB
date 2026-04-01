@@ -8,7 +8,6 @@ pub mod prometheus_handle;
 
 pub mod jobs;
 pub mod notify_once;
-pub mod slow;
 pub mod thread_scheduling;
 
 // TODO: use String::from_utf8_lossy_owned once stabilized

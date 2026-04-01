@@ -4,10 +4,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
-#include "ModuleBindings/Types/EnergyQuantaType.g.h"
-#include "ModuleBindings/Types/ReducerCallInfoType.g.h"
-#include "ModuleBindings/Types/UpdateStatusType.g.h"
-#include "Types/Builtins.h"
+#include "ModuleBindings/Types/QuerySetUpdateType.g.h"
 #include "TransactionUpdateType.g.generated.h"
 
 USTRUCT(BlueprintType)
@@ -16,29 +13,11 @@ struct SPACETIMEDBSDK_API FTransactionUpdateType
     GENERATED_BODY()
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    FUpdateStatusType Status;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    FSpacetimeDBTimestamp Timestamp;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    FSpacetimeDBIdentity CallerIdentity;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    FSpacetimeDBConnectionId CallerConnectionId;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    FReducerCallInfoType ReducerCall;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    FEnergyQuantaType EnergyQuantaUsed;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    FSpacetimeDBTimeDuration TotalHostExecutionDuration;
+    TArray<FQuerySetUpdateType> QuerySets;
 
     FORCEINLINE bool operator==(const FTransactionUpdateType& Other) const
     {
-        return Status == Other.Status && Timestamp == Other.Timestamp && CallerIdentity == Other.CallerIdentity && CallerConnectionId == Other.CallerConnectionId && ReducerCall == Other.ReducerCall && EnergyQuantaUsed == Other.EnergyQuantaUsed && TotalHostExecutionDuration == Other.TotalHostExecutionDuration;
+        return QuerySets == Other.QuerySets;
     }
 
     FORCEINLINE bool operator!=(const FTransactionUpdateType& Other) const
@@ -55,13 +34,7 @@ struct SPACETIMEDBSDK_API FTransactionUpdateType
  */
 FORCEINLINE uint32 GetTypeHash(const FTransactionUpdateType& TransactionUpdateType)
 {
-    uint32 Hash = GetTypeHash(TransactionUpdateType.Status);
-    Hash = HashCombine(Hash, GetTypeHash(TransactionUpdateType.Timestamp));
-    Hash = HashCombine(Hash, GetTypeHash(TransactionUpdateType.CallerIdentity));
-    Hash = HashCombine(Hash, GetTypeHash(TransactionUpdateType.CallerConnectionId));
-    Hash = HashCombine(Hash, GetTypeHash(TransactionUpdateType.ReducerCall));
-    Hash = HashCombine(Hash, GetTypeHash(TransactionUpdateType.EnergyQuantaUsed));
-    Hash = HashCombine(Hash, GetTypeHash(TransactionUpdateType.TotalHostExecutionDuration));
+    uint32 Hash = GetTypeHash(TransactionUpdateType.QuerySets);
     return Hash;
 }
 
@@ -69,5 +42,5 @@ namespace UE::SpacetimeDB
 {
     UE_SPACETIMEDB_ENABLE_TARRAY(FTransactionUpdateType);
 
-    UE_SPACETIMEDB_STRUCT(FTransactionUpdateType, Status, Timestamp, CallerIdentity, CallerConnectionId, ReducerCall, EnergyQuantaUsed, TotalHostExecutionDuration);
+    UE_SPACETIMEDB_STRUCT(FTransactionUpdateType, QuerySets);
 }

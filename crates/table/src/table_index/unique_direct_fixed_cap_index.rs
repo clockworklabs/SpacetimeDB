@@ -1,5 +1,6 @@
 use super::index::{Index, RangedIndex};
-use super::unique_direct_index::{expose, injest, ToFromUsize, UniqueDirectIndexPointIter, NONE_PTR};
+use super::unique_btree_index::UniquePointIter;
+use super::unique_direct_index::{expose, injest, ToFromUsize, NONE_PTR};
 use crate::indexes::RowPointer;
 use crate::table_index::KeySize;
 use core::marker::PhantomData;
@@ -79,13 +80,18 @@ impl<K: ToFromUsize + KeySize> Index for UniqueDirectFixedCapIndex<K> {
     }
 
     type PointIter<'a>
-        = UniqueDirectIndexPointIter
+        = UniquePointIter
     where
         Self: 'a;
 
     fn seek_point(&self, &key: &Self::Key) -> Self::PointIter<'_> {
-        let point = self.array.get(key.to_usize()).copied().filter(|slot| *slot != NONE_PTR);
-        UniqueDirectIndexPointIter::new(point)
+        let point = self
+            .array
+            .get(key.to_usize())
+            .copied()
+            .filter(|slot| *slot != NONE_PTR)
+            .map(expose);
+        UniquePointIter::new(point)
     }
 
     fn num_keys(&self) -> usize {
