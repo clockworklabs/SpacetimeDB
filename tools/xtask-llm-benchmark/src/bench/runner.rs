@@ -16,8 +16,8 @@ use crate::bench::templates::materialize_project;
 use crate::bench::types::{BenchRunContext, PublishParams, RunContext, RunOneError};
 pub(crate) use crate::bench::types::{RunOutcome, TaskPaths};
 use crate::bench::utils::{
-    bench_concurrency, bench_csharp_concurrency, bench_rust_concurrency, category_slug, debug_llm, fmt_dur, print_llm_output, sanitize_db_name,
-    task_slug, work_server_dir_scoped,
+    bench_concurrency, bench_csharp_concurrency, bench_rust_concurrency, category_slug, debug_llm, fmt_dur,
+    print_llm_output, sanitize_db_name, task_slug, work_server_dir_scoped,
 };
 use crate::bench::Publisher;
 use crate::eval::{Lang, ScoreDetails};
@@ -208,7 +208,10 @@ impl TaskRunner {
                 )
                 .await;
                 match r {
-                    Ok(Ok(output)) => { result = Some(output); break; }
+                    Ok(Ok(output)) => {
+                        result = Some(output);
+                        break;
+                    }
                     Ok(Err(e)) => {
                         let msg = format!("{e:#}");
                         let retryable = msg.contains("timed out")
@@ -218,8 +221,15 @@ impl TaskRunner {
                             || msg.contains("504")
                             || msg.contains("rate limit");
                         if retryable && attempt < MAX_ATTEMPTS {
-                            let delay = if msg.contains("429") || msg.contains("rate limit") { 60 } else { 30 };
-                            eprintln!("⚠️ [{}/{}] provider error (attempt {}/{}), retrying in {delay}s: {}", cfg.lang_name, cfg.route.display_name, attempt, MAX_ATTEMPTS, msg);
+                            let delay = if msg.contains("429") || msg.contains("rate limit") {
+                                60
+                            } else {
+                                30
+                            };
+                            eprintln!(
+                                "⚠️ [{}/{}] provider error (attempt {}/{}), retrying in {delay}s: {}",
+                                cfg.lang_name, cfg.route.display_name, attempt, MAX_ATTEMPTS, msg
+                            );
                             tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
                             last_err = e;
                         } else {
@@ -228,11 +238,16 @@ impl TaskRunner {
                     }
                     Err(_) => {
                         if attempt < MAX_ATTEMPTS {
-                            eprintln!("⚠️ [{}/{}] LLM call timed out after {timeout_secs}s (attempt {}/{}), retrying in 30s", cfg.lang_name, cfg.route.display_name, attempt, MAX_ATTEMPTS);
+                            eprintln!(
+                                "⚠️ [{}/{}] LLM call timed out after {timeout_secs}s (attempt {}/{}), retrying in 30s",
+                                cfg.lang_name, cfg.route.display_name, attempt, MAX_ATTEMPTS
+                            );
                             tokio::time::sleep(std::time::Duration::from_secs(30)).await;
                             last_err = anyhow!("LLM call timed out after {timeout_secs}s");
                         } else {
-                            return Err(RunOneError::Other(anyhow!("LLM call timed out after {timeout_secs}s ({MAX_ATTEMPTS} attempts)")));
+                            return Err(RunOneError::Other(anyhow!(
+                                "LLM call timed out after {timeout_secs}s ({MAX_ATTEMPTS} attempts)"
+                            )));
                         }
                     }
                 }

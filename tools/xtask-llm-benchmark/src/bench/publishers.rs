@@ -294,7 +294,11 @@ impl Publisher for TypeScriptPublisher {
             Some(p) => Command::new(p),
             None => Command::new("pnpm"),
         };
-        pnpm_cmd.arg("install").arg("--ignore-workspace").current_dir(source).env("CI", "true");
+        pnpm_cmd
+            .arg("install")
+            .arg("--ignore-workspace")
+            .current_dir(source)
+            .env("CI", "true");
         // When using NODEJS_DIR, prepend it to PATH so pnpm.cmd can find node.
         if let Some(ref dir) = pnpm_exe
             && let Some(parent) = dir.parent()

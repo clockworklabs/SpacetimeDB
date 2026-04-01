@@ -82,9 +82,7 @@ impl XaiGrokClient {
         let resp: GrokChatResp = serde_json::from_str(&body).context("parse grok resp")?;
         let input_tokens = resp.usage.as_ref().and_then(|u| u.prompt_tokens);
         let output_tokens = resp.usage.as_ref().and_then(|u| u.completion_tokens);
-        let text = resp
-            .into_first_text()
-            .ok_or_else(|| anyhow!("no content from Grok"))?;
+        let text = resp.into_first_text().ok_or_else(|| anyhow!("no content from Grok"))?;
         Ok(LlmOutput {
             text,
             input_tokens,

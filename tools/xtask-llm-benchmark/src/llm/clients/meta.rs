@@ -133,4 +133,3 @@ fn normalize_meta_model(id: &str) -> &str {
         other => other,
     }
 }
-

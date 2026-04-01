@@ -4,7 +4,9 @@ use serde::Serialize;
 use super::http::HttpClient;
 use super::oa_compat::OACompatResp;
 use crate::llm::prompt::BuiltPrompt;
-use crate::llm::segmentation::{desired_output_tokens, deterministic_trim_prefix, non_context_reserve_tokens_env, Segment};
+use crate::llm::segmentation::{
+    desired_output_tokens, deterministic_trim_prefix, non_context_reserve_tokens_env, Segment,
+};
 use crate::llm::types::{LlmOutput, Vendor};
 
 const OPENROUTER_BASE: &str = "https://openrouter.ai/api/v1";
@@ -171,4 +173,3 @@ pub fn openrouter_ctx_limit_tokens(model: &str) -> usize {
 
     DEFAULT_CTX_LIMIT
 }
-

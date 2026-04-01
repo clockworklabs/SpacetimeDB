@@ -23,7 +23,9 @@ use xtask_llm_benchmark::context::{build_context, compute_processed_context_hash
 use xtask_llm_benchmark::eval::Lang;
 use xtask_llm_benchmark::llm::types::Vendor;
 use xtask_llm_benchmark::llm::{default_model_routes, make_provider_from_env, LlmProvider, ModelRoute};
-use xtask_llm_benchmark::results::io::{normalize_details_file, update_golden_answers_on_disk, write_summary_from_details_file};
+use xtask_llm_benchmark::results::io::{
+    normalize_details_file, update_golden_answers_on_disk, write_summary_from_details_file,
+};
 use xtask_llm_benchmark::results::{load_summary, Summary};
 
 #[derive(Clone, Debug)]
@@ -307,16 +309,16 @@ fn cmd_run(args: RunArgs) -> Result<()> {
 
 /// Upload the details JSON to a remote API endpoint (spacetime-web Postgres).
 fn upload_results_to_api(base_url: &str, details_path: &Path) -> Result<()> {
-    let api_key = std::env::var("LLM_BENCHMARK_API_KEY")
-        .context("LLM_BENCHMARK_API_KEY env var required for --upload-url")?;
+    let api_key =
+        std::env::var("LLM_BENCHMARK_API_KEY").context("LLM_BENCHMARK_API_KEY env var required for --upload-url")?;
 
-    let details_json = std::fs::read_to_string(details_path)
-        .context("failed to read details JSON for upload")?;
+    let details_json = std::fs::read_to_string(details_path).context("failed to read details JSON for upload")?;
 
-    let details: serde_json::Value = serde_json::from_str(&details_json)
-        .context("failed to parse details JSON for upload")?;
+    let details: serde_json::Value =
+        serde_json::from_str(&details_json).context("failed to parse details JSON for upload")?;
 
-    let languages = details["languages"].as_array()
+    let languages = details["languages"]
+        .as_array()
         .context("details JSON missing 'languages' array")?;
 
     let upload_url = format!("{}/api/llm-benchmark-upload", base_url.trim_end_matches('/'));
@@ -1014,7 +1016,11 @@ fn run_mode_benchmarks(
         .map(|rr| {
             let total: u32 = rr.outcomes.iter().map(|o| o.total_tests).sum();
             let passed: u32 = rr.outcomes.iter().map(|o| o.passed_tests).sum();
-            let pct = if total == 0 { 0.0 } else { (passed as f32 / total as f32) * 100.0 };
+            let pct = if total == 0 {
+                0.0
+            } else {
+                (passed as f32 / total as f32) * 100.0
+            };
             (rr.route_name.as_str(), passed, total, pct)
         })
         .collect();
@@ -1489,8 +1495,7 @@ fn cmd_status(args: StatusArgs) -> Result<()> {
 
     // Parse the details file once and reuse for both settled-task and missing-timestamp checks.
     let results: Option<Results> = if details_path.exists() {
-        let content = fs::read_to_string(&details_path)
-            .with_context(|| format!("read {}", details_path.display()))?;
+        let content = fs::read_to_string(&details_path).with_context(|| format!("read {}", details_path.display()))?;
         Some(serde_json::from_str(&content).context("parse details.json")?)
     } else {
         None
@@ -1511,7 +1516,11 @@ fn cmd_status(args: StatusArgs) -> Result<()> {
                     continue;
                 }
                 for model_entry in &mode_entry.models {
-                    let key = (lang_entry.lang.clone(), mode_entry.mode.clone(), model_entry.name.clone());
+                    let key = (
+                        lang_entry.lang.clone(),
+                        mode_entry.mode.clone(),
+                        model_entry.name.clone(),
+                    );
                     for (task_id, outcome) in &model_entry.tasks {
                         // Settled = LLM responded (has output). Pass or fail doesn't matter here —
                         // what matters is we got a real answer, not an API/network error.
@@ -1558,19 +1567,31 @@ fn cmd_status(args: StatusArgs) -> Result<()> {
                 any_missing = true;
                 let vendor_str = format!("{:?}", route.vendor).to_ascii_lowercase();
                 // Show by category for readability
-                let by_cat: Vec<String> = all_categories.iter().filter_map(|cat| {
-                    let cat_tasks: Vec<&str> = incomplete.iter()
-                        .filter(|t| task_cat.get(**t).map(|c| c == cat).unwrap_or(false))
-                        .copied()
-                        .collect();
-                    if cat_tasks.is_empty() { None }
-                    else { Some(format!("  {} ({}): {}", cat, cat_tasks.len(), cat_tasks.join(", "))) }
-                }).collect();
+                let by_cat: Vec<String> = all_categories
+                    .iter()
+                    .filter_map(|cat| {
+                        let cat_tasks: Vec<&str> = incomplete
+                            .iter()
+                            .filter(|t| task_cat.get(**t).map(|c| c == cat).unwrap_or(false))
+                            .copied()
+                            .collect();
+                        if cat_tasks.is_empty() {
+                            None
+                        } else {
+                            Some(format!("  {} ({}): {}", cat, cat_tasks.len(), cat_tasks.join(", ")))
+                        }
+                    })
+                    .collect();
                 println!("# {} | mode={} | {} incomplete tasks", display, mode, incomplete.len());
-                for line in &by_cat { println!("{}", line); }
+                for line in &by_cat {
+                    println!("{}", line);
+                }
                 println!(
                     "cargo run -p xtask-llm-benchmark -- run --lang {} --modes {} --models {}:{} --tasks {}",
-                    lang, mode, vendor_str, route.api_model,
+                    lang,
+                    mode,
+                    vendor_str,
+                    route.api_model,
                     incomplete.join(",")
                 );
                 println!();
@@ -1584,9 +1605,13 @@ fn cmd_status(args: StatusArgs) -> Result<()> {
 
     if let Some(ref results) = results {
         for lang_entry in &results.languages {
-            if !langs.contains(&lang_entry.lang) { continue; }
+            if !langs.contains(&lang_entry.lang) {
+                continue;
+            }
             for mode_entry in &lang_entry.modes {
-                if !args.modes.contains(&mode_entry.mode) { continue; }
+                if !args.modes.contains(&mode_entry.mode) {
+                    continue;
+                }
                 for model_entry in &mode_entry.models {
                     let mut no_ts: Vec<String> = Vec::new();
                     for (task_id, outcome) in &model_entry.tasks {
@@ -1614,16 +1639,29 @@ fn cmd_status(args: StatusArgs) -> Result<()> {
     if !missing_timestamps.is_empty() {
         let total: usize = missing_timestamps.iter().map(|(_, _, _, t)| t.len()).sum();
         println!("---");
-        println!("⚠️  {} results missing started_at/finished_at timestamps (cannot upload to Postgres):\n", total);
+        println!(
+            "⚠️  {} results missing started_at/finished_at timestamps (cannot upload to Postgres):\n",
+            total
+        );
         for (lang, mode, model, tasks) in &missing_timestamps {
-            println!("# {} | {} | mode={} | {} tasks without timestamps", model, lang, mode, tasks.len());
+            println!(
+                "# {} | {} | mode={} | {} tasks without timestamps",
+                model,
+                lang,
+                mode,
+                tasks.len()
+            );
             // Find the route for this model to generate the rerun command
             let route = routes.iter().find(|r| r.display_name == model.as_str());
             if let Some(route) = route {
                 let vendor_str = format!("{:?}", route.vendor).to_ascii_lowercase();
                 println!(
                     "cargo run -p xtask-llm-benchmark -- run --lang {} --modes {} --models {}:{} --tasks {}",
-                    lang, mode, vendor_str, route.api_model, tasks.join(",")
+                    lang,
+                    mode,
+                    vendor_str,
+                    route.api_model,
+                    tasks.join(",")
                 );
             }
             println!();
@@ -1631,7 +1669,10 @@ fn cmd_status(args: StatusArgs) -> Result<()> {
     }
 
     if !any_missing && missing_timestamps.is_empty() {
-        println!("All models have real results for all tasks in modes: {}", args.modes.join(", "));
+        println!(
+            "All models have real results for all tasks in modes: {}",
+            args.modes.join(", ")
+        );
     }
     Ok(())
 }

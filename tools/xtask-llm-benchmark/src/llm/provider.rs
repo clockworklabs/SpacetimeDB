@@ -80,10 +80,7 @@ impl LlmProvider for RouterProvider {
                 .openrouter
                 .as_ref()
                 .context("OpenRouter client not configured (set OPENROUTER_API_KEY)")?;
-            let model = route
-                .openrouter_model
-                .as_deref()
-                .unwrap_or(&route.api_model);
+            let model = route.openrouter_model.as_deref().unwrap_or(&route.api_model);
             return cli.generate(model, prompt).await;
         }
 
@@ -120,7 +117,12 @@ impl LlmProvider for RouterProvider {
 
 impl RouterProvider {
     /// Fall back to the OpenRouter client when a direct vendor client is not configured.
-    async fn fallback_openrouter(&self, route: &ModelRoute, prompt: &BuiltPrompt, vendor_name: &str) -> Result<LlmOutput> {
+    async fn fallback_openrouter(
+        &self,
+        route: &ModelRoute,
+        prompt: &BuiltPrompt,
+        vendor_name: &str,
+    ) -> Result<LlmOutput> {
         match self.openrouter.as_ref() {
             Some(cli) => {
                 let or_model = route

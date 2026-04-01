@@ -30,13 +30,13 @@ pub const LLM_COMPARISON_SUMMARY_DEFAULT: &str = "../../docs/llms/llm-comparison
 pub const ALL_MODES: &[&str] = &[
     "docs",
     "llms.md",
-    "guidelines",           // constructive-only AI guidelines (docs/static/ai-guidelines/)
-    "cursor_rules",         // IDE-oriented cursor/IDE rules   (docs/static/ai-rules/)
+    "guidelines",   // constructive-only AI guidelines (docs/static/ai-guidelines/)
+    "cursor_rules", // IDE-oriented cursor/IDE rules   (docs/static/ai-rules/)
     "rustdoc_json",
     "no_context",
-    "none",                 // alias for no_context (backward compat)
-    "no_guidelines",        // alias for no_context (backward compat)
-    "search",               // no docs context but web search enabled via OpenRouter :online
+    "none",          // alias for no_context (backward compat)
+    "no_guidelines", // alias for no_context (backward compat)
+    "search",        // no docs context but web search enabled via OpenRouter :online
 ];
 
 /// Modes that produce an empty context string (no documentation is injected).

@@ -38,7 +38,8 @@ Rules:\n\
         let static_prefix = Some(if search_enabled {
             "<<<DOCS START>>>\nYou MUST search the web for SpacetimeDB documentation and examples before writing any code. Do not write code until you have searched.\n<<<DOCS END>>>\n".to_string()
         } else if context.trim().is_empty() {
-            "<<<DOCS START>>>\nUse your knowledge of the latest SpacetimeDB syntax and conventions.\n<<<DOCS END>>>\n".to_string()
+            "<<<DOCS START>>>\nUse your knowledge of the latest SpacetimeDB syntax and conventions.\n<<<DOCS END>>>\n"
+                .to_string()
         } else {
             let preamble = match mode {
                 "cursor_rules" => format!(
@@ -56,9 +57,7 @@ Rules:\n\
                 ),
                 _ => "Reference documentation:".to_string(),
             };
-            format!(
-                "<<<DOCS START>>>\n{preamble}\n\n{context}\n<<<DOCS END>>>\n",
-            )
+            format!("<<<DOCS START>>>\n{preamble}\n\n{context}\n<<<DOCS END>>>\n",)
         });
 
         // TASK: identical in both modes; API details must come from DOCS in Knowledge mode.
