@@ -377,7 +377,9 @@ impl MetricsCollector {
                 }
             }
             TransactionKind::Delivery => {
-                self.conformance.delivery_queued += 1;
+                if event.success {
+                    self.conformance.delivery_queued += 1;
+                }
             }
             TransactionKind::StockLevel => {}
         }
