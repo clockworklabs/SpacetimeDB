@@ -119,6 +119,7 @@ pub struct RunContext<'a> {
 }
 
 impl<'a> RunContext<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         lang_name: &'a str,
         lang: Lang,

@@ -110,10 +110,10 @@ fn canonical_model_name(name: &str) -> String {
     let lower = name.to_ascii_lowercase();
     for route in default_model_routes() {
         // Match by openrouter model id (e.g. "anthropic/claude-sonnet-4.6")
-        if let Some(ref or) = route.openrouter_model {
-            if lower == or.to_ascii_lowercase() {
-                return route.display_name.to_string();
-            }
+        if let Some(ref or) = route.openrouter_model
+            && lower == or.to_ascii_lowercase()
+        {
+            return route.display_name.to_string();
         }
         // Match by api model id (e.g. "claude-sonnet-4-6")
         if lower == route.api_model.to_ascii_lowercase() {

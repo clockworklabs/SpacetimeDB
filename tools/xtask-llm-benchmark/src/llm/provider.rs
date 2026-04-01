@@ -27,6 +27,7 @@ pub struct RouterProvider {
 }
 
 impl RouterProvider {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         openai: Option<OpenAiClient>,
         anthropic: Option<AnthropicClient>,
