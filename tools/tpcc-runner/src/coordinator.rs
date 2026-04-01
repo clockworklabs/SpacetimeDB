@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use crate::config::CoordinatorConfig;
 use crate::metrics_module_bindings::reset_reducer::reset;
-use crate::metrics_module_client::connect_metrics_module;
+use crate::metrics_module_client::connect_metrics_module_async;
 use crate::protocol::{
     DriverAssignment, RegisterDriverRequest, RegisterDriverResponse, RunSchedule, ScheduleResponse,
     SubmitSummaryRequest,
@@ -68,37 +68,43 @@ async fn register_driver(
     State(state): State<AppState>,
     Json(request): Json<RegisterDriverRequest>,
 ) -> Json<RegisterDriverResponse> {
-    let mut inner = state.inner.lock();
-    let (assignment, is_new_registration) = match inner.registrations.get(&request.driver_id) {
-        Some(existing) => (existing.assignment.clone(), false),
-        None => {
-            if inner.registration_order.len() >= inner.config.expected_drivers {
-                return Json(RegisterDriverResponse {
-                    accepted: false,
-                    assignment: None,
-                });
+    let (assignment, is_new_registration, registered, expected_drivers) = {
+        let mut inner = state.inner.lock();
+        let expected_drivers = inner.config.expected_drivers;
+        match inner.registrations.get(&request.driver_id) {
+            Some(existing) => {
+                let registered = inner.registrations.len();
+                (existing.assignment.clone(), false, registered, expected_drivers)
             }
-            let index = inner.registration_order.len();
-            let assignment = assignment_for_index(&inner.config, index);
-            inner.registration_order.push(request.driver_id.clone());
-            inner.registrations.insert(
-                request.driver_id.clone(),
-                DriverRegistration {
-                    assignment: assignment.clone(),
-                },
-            );
-            (assignment, true)
+            None => {
+                if inner.registration_order.len() >= expected_drivers {
+                    return Json(RegisterDriverResponse {
+                        accepted: false,
+                        assignment: None,
+                    });
+                }
+                let index = inner.registration_order.len();
+                let assignment = assignment_for_index(&inner.config, index);
+                inner.registration_order.push(request.driver_id.clone());
+                inner.registrations.insert(
+                    request.driver_id.clone(),
+                    DriverRegistration {
+                        assignment: assignment.clone(),
+                    },
+                );
+                let registered = inner.registrations.len();
+                (assignment, true, registered, expected_drivers)
+            }
         }
     };
-    maybe_create_schedule(&mut inner);
-    let registered = inner.registrations.len();
+    maybe_create_schedule(&state).await;
     let warehouse_end = assignment_end(&assignment);
     if is_new_registration {
         log::info!(
             "driver {} registered and ready ({}/{}): warehouses {}..={} ({} warehouse(s))",
             request.driver_id,
             registered,
-            inner.config.expected_drivers,
+            expected_drivers,
             assignment.warehouse_start,
             warehouse_end,
             assignment.driver_warehouse_count
@@ -168,38 +174,58 @@ async fn submit_summary(
     Ok(Json(aggregate))
 }
 
-fn maybe_create_schedule(inner: &mut CoordinatorState) {
-    if inner.schedule.is_some() || inner.registrations.len() < inner.config.expected_drivers {
-        return;
-    }
-    let warmup_start_ms = now_millis() + 2_000;
-    let measure_start_ms = warmup_start_ms + (inner.config.warmup_secs * 1_000);
-    let measure_end_ms = measure_start_ms + (inner.config.measure_secs * 1_000);
+async fn maybe_create_schedule(state: &AppState) {
+    // Check whether schedule creation is needed, and grab config, without holding the lock
+    // during the async metrics module connection below.
+    let config = {
+        let inner = state.inner.lock();
+        if inner.schedule.is_some() || inner.registrations.len() < inner.config.expected_drivers {
+            return;
+        }
+        inner.config.clone()
+    };
 
-    let metrics_client = connect_metrics_module(&inner.config.connection).unwrap();
+    let warmup_start_ms = now_millis() + 2_000;
+    let measure_start_ms = warmup_start_ms + (config.warmup_secs * 1_000);
+    let measure_end_ms = measure_start_ms + (config.measure_secs * 1_000);
+
+    let metrics_client = match connect_metrics_module_async(&config.connection).await {
+        Ok(client) => client,
+        Err(e) => {
+            log::error!("failed to connect to metrics module: {e:#}");
+            return;
+        }
+    };
     let _ = metrics_client.reducers.reset(
-        inner.config.warehouses as u64,
-        inner.config.warmup_secs * 1000,
+        config.warehouses as u64,
+        config.warmup_secs * 1000,
         measure_start_ms,
         measure_end_ms,
     );
 
     let schedule = RunSchedule {
-        run_id: inner.config.run_id.clone(),
+        run_id: config.run_id.clone(),
         warmup_start_ms,
         measure_start_ms,
         measure_end_ms,
         stop_ms: measure_end_ms,
     };
+
+    let mut inner = state.inner.lock();
+    if inner.schedule.is_some() {
+        // Another concurrent registration call already created the schedule.
+        return;
+    }
     inner.schedule = Some(schedule.clone());
     log::info!(
         "all {} driver(s) registered; schedule ready for run {} (warmup_start_ms={} measure_start_ms={} measure_end_ms={})",
-        inner.config.expected_drivers,
-        inner.config.run_id,
+        config.expected_drivers,
+        config.run_id,
         warmup_start_ms,
         measure_start_ms,
         measure_end_ms
     );
+    drop(inner);
     tokio::spawn(log_schedule_events(schedule));
 }
 
