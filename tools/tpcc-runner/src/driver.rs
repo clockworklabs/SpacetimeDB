@@ -22,6 +22,8 @@ use crate::summary::{
 use crate::topology::DatabaseTopology;
 use crate::tpcc::*;
 
+const STARTUP_STAGGER_WINDOW_MS: u64 = 18_000;
+
 struct TerminalRuntime {
     config: DriverConfig,
     client: Arc<ModuleClient>,
@@ -224,6 +226,14 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
             schedule.run_id,
             config.terminals()
         );
+    }
+
+    let startup_stagger_ms = {
+        let mut startup_rng = rand::rng();
+        startup_rng.random_range(0..=STARTUP_STAGGER_WINDOW_MS)
+    };
+    if startup_stagger_ms > 0 && crate::summary::now_millis() < schedule.stop_ms {
+        tokio::time::sleep(Duration::from_millis(startup_stagger_ms)).await;
     }
 
     let mut rng = StdRng::seed_from_u64(seed);
