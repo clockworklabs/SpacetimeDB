@@ -1,0 +1,16 @@
+{
+  "level": 8,
+  "backend": "postgres",
+  "timestamp": "20260401-175723",
+  "startedAt": "2026-04-01T17:57:23-0400",
+  "startedAtUtc": "2026-04-01T21:57:23Z",
+  "runId": "postgres-upgrade-to-level8-20260401-175723",
+  "appDir": "results\\postgres\\chat-app-20260401-131906",
+  "promptFile": "08_threading.md",
+  "phase": "upgrade",
+  "sessionId": "1ab5c753-5eaf-4df6-a7ea-c6e3228ee85b",
+  "endedAt": "2026-04-01T18:09:46-0400",
+  "endedAtUtc": "2026-04-01T22:09:46Z",
+  "exitCode": 0,
+  "mode": "upgrade"
+}

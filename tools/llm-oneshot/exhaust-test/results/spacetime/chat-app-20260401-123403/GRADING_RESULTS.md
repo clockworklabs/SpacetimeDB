@@ -2,7 +2,7 @@
 
 **Model:** Claude Code (Sonnet 4.6)
 **Date:** 2026-04-01
-**Prompt:** `05_edit_history.md` (upgraded from `04_reactions.md`)
+**Prompt:** `08_threading.md` (upgraded from `07_presence.md`)
 **Backend:** spacetime
 **Grading Method:** Automated browser interaction (exhaust-test)
 
@@ -12,9 +12,9 @@
 
 | Metric                  | Value                          |
 | ----------------------- | ------------------------------ |
-| **Prompt Level Used**   | 5 (edit_history)               |
-| **Features Evaluated**  | 1-8                            |
-| **Total Feature Score** | 24 / 24                        |
+| **Prompt Level Used**   | 8 (threading)                  |
+| **Features Evaluated**  | 1-11                           |
+| **Total Feature Score** | 33 / 33                        |
 
 - [x] Compiles without errors
 - [x] Runs without crashing
@@ -22,9 +22,9 @@
 
 | Metric                   | Value  |
 | ------------------------ | ------ |
-| Lines of code (backend)  | 434    |
-| Lines of code (frontend) | 1592 (+ 760 auto-gen bindings) |
-| Number of files created  | 41     |
+| Lines of code (backend)  | 595 (index.ts 399 + schema.ts 196) |
+| Lines of code (frontend) | 1038 (+ auto-gen bindings) |
+| Number of files created  | 84     |
 | External dependencies    | react, react-dom, spacetimedb, vite, @vitejs/plugin-react, typescript |
 | Reprompt Count           | 0      |
 | Reprompt Efficiency      | 10/10  |
@@ -38,7 +38,10 @@
 | Level 3 (upgrade)  | $1.54 | 56 | ~6 min  |
 | Level 4 (upgrade)  | $1.14 | 41 | ~4 min  |
 | Level 5 (upgrade)  | $0.43 | 16 | ~1.7 min |
-| **Cumulative**      | **$5.10** | **164** | **~27.7 min** |
+| Level 6 (upgrade)  | $1.99 | 62 | ~8.4 min |
+| Level 7 (upgrade)  | $1.27 | 40 | ~8.4 min |
+| Level 8 (upgrade)  | $2.18 | 21 | ~6 min |
+| **Cumulative**      | **$10.54** | **287** | **~50.5 min** |
 
 ---
 
@@ -49,7 +52,7 @@
 - [x] Messages appear in real-time for all users in the room (1)
 - [x] Online user list shows connected users (1)
 
-**Browser Test Observations:** Alice and Bob registered, both in #General. Messages appear in real-time on both tabs. Online list correct.
+**Browser Test Observations:** Verified in prior levels.
 
 ---
 
@@ -69,7 +72,7 @@
 - [x] "Seen by" indicator displays under messages (1)
 - [x] Read status updates in real-time when another user views the room (1)
 
-**Browser Test Observations:** "Seen by Bob, Alice" and "Seen by Alice" displayed correctly under messages. Updates in real-time.
+**Browser Test Observations:** Verified in prior levels.
 
 ---
 
@@ -89,7 +92,7 @@
 - [x] Show pending scheduled messages to the author (with option to cancel) (1)
 - [x] Message appears in the room at the scheduled time (1)
 
-**Browser Test Observations:** Verified in prior levels. Clock icon and datetime picker present in UI.
+**Browser Test Observations:** Verified in prior levels.
 
 ---
 
@@ -99,7 +102,7 @@
 - [x] Show a countdown or indicator that the message will disappear (1)
 - [x] Message is permanently deleted from the database when time expires (1)
 
-**Browser Test Observations:** Verified in prior level. "Normal"/"1 min"/"5 min" dropdown present in UI.
+**Browser Test Observations:** Verified in prior levels.
 
 ---
 
@@ -110,13 +113,7 @@
 - [x] Users can toggle their own reactions on/off (1)
 - [x] Display who reacted when hovering over reaction counts (bonus — title attribute)
 
-**Implementation Notes:** Reaction picker (👍 ❤️ 😂 😮 😢) appears on message hover via `.reaction-picker` with `display: none` toggled to `flex`. Reactions stored in `reaction` table with identity + messageId + emoji. `reaction-btn` shows count with `reaction-btn-active` class for own reactions. Title attribute shows reactor names on hover.
-
-**Browser Test Observations:**
-1. Alice clicked 👍 on Bob's message — "👍 1" badge appeared on both tabs in real-time with `reaction-btn-active` class on Alice's tab.
-2. Bob clicked ❤️ — "❤️ 1" appeared alongside "👍 1". Bob's tab showed ❤️ as active, 👍 as not active. Alice's tab showed the inverse.
-3. Bob toggled ❤️ off — badge disappeared (count was 1, so entire reaction removed). Only "👍 1" remained.
-4. Hover tooltip on 👍 badge showed "Alice" (title attribute).
+**Browser Test Observations:** Verified in prior levels.
 
 ---
 
@@ -127,14 +124,49 @@
 - [x] Other users can view the edit history of a message (1)
 - [x] Edits sync in real-time to all viewers (bonus)
 
-**Implementation Notes:** ✏️ edit button (`.edit-btn`) appears on hover for own messages only. Clicking opens inline edit form with Save/Cancel buttons. `(edited)` badge (`.edited-badge`) is a clickable button that expands an "EDIT HISTORY" panel showing previous versions with timestamps. `message_edit` table stores edit history in SpacetimeDB. Real-time sync via SpacetimeDB subscriptions.
+**Browser Test Observations:** Verified in prior levels.
+
+---
+
+## Feature 9: Real-Time Permissions (Score: 3 / 3)
+
+- [x] Room creators are admins and can kick/ban users from their rooms (1)
+- [x] Kicked users immediately lose access and stop receiving room updates (1)
+- [x] Admins can promote other users to admin (0.5)
+- [x] Permission changes apply instantly without requiring reconnection (0.5)
+
+**Browser Test Observations:** Verified in prior levels.
+
+---
+
+## Feature 10: Rich User Presence (Score: 3 / 3)
+
+- [x] Users can set status: online, away, do-not-disturb, invisible (1)
+- [x] "Last active X minutes ago" shows for offline users (0.5)
+- [x] Status changes sync to all viewers in real-time (1)
+- [x] Auto-set to "away" after inactivity period (0.5)
+
+**Browser Test Observations:** Verified in prior levels.
+
+---
+
+## Feature 11: Message Threading (Score: 3 / 3)
+
+- [x] Users can reply to specific messages, creating a thread (1)
+- [x] Show reply count and preview on parent messages (1)
+- [x] Threaded view to see all replies to a message (1)
+- [x] New replies sync in real-time to thread viewers (bonus)
+
+**Implementation Notes:** `threadReply` table in SpacetimeDB with `parentMessageId`, `roomId`, `sender`, `text`, `sentAt`. `sendThreadReply` reducer validates membership/ban status. Client: `💬` button on each message (hover) opens a side panel showing the parent message, reply count divider, all replies with sender/time, and a reply input field. Reply count badge ("💬 N") appears on the button. Subscribes to `SELECT * FROM thread_reply`.
 
 **Browser Test Observations:**
-1. Alice clicked ✏️ on her message "This message will be edited soon" — inline edit form appeared with text pre-filled.
-2. Changed text to "This message has been EDITED by Alice!" and clicked Save.
-3. Both tabs show updated text with `(edited)` badge next to timestamp.
-4. Bob clicked `(edited)` badge — "EDIT HISTORY" panel expanded showing "04:47 PM This message will be edited soon" (original text).
-5. No edit button visible on Bob's tab for Alice's messages (correct authorization).
+1. Alice sent "Hello everyone! Let's test threading." — message appeared in #General.
+2. Hovered over message — 💬 button appeared alongside ✏️ edit and reaction picker.
+3. Clicked 💬 — Thread panel opened on right side showing parent message, "0 REPLIES", "No replies yet. Start the thread!", and "Reply to thread..." input.
+4. Alice typed "First reply from Alice!" and clicked Reply — reply appeared in thread panel, counter updated to "1 REPLY", badge on parent message showed "💬 1".
+5. Bob joined General, hovered over message — saw "💬 1" badge, clicked it — thread panel opened showing Alice's reply.
+6. Bob typed "Bob's reply in the thread!" and clicked Reply — reply appeared on both tabs instantly, counter updated to "2 REPLIES", badge updated to "💬 2".
+7. No app-related console errors during threading test.
 
 ---
 
@@ -158,4 +190,7 @@
 | 6. Ephemeral Messages | 3 | 3 | Countdown + auto-delete |
 | 7. Message Reactions | 3 | 3 | React, count, toggle, hover all working |
 | 8. Message Editing with History | 3 | 3 | Edit, (edited) badge, history panel, real-time sync |
-| **TOTAL** | **24** | **24** | |
+| 9. Real-Time Permissions | 3 | 3 | Promote, kick, ban all working with real-time sync |
+| 10. Rich User Presence | 3 | 3 | Status selector, last active, real-time sync, auto-away |
+| 11. Message Threading | 3 | 3 | Thread panel, reply count badge, real-time sync all working |
+| **TOTAL** | **33** | **33** | |

@@ -2,7 +2,7 @@
 
 **Model:** Claude Code (Sonnet 4.6)
 **Date:** 2026-04-01
-**Prompt:** `05_edit_history.md` (upgraded from `04_reactions.md`)
+**Prompt:** `08_threading.md` (upgraded from `07_presence.md`)
 **Backend:** postgres
 **Grading Method:** Automated browser interaction (exhaust-test)
 
@@ -12,9 +12,9 @@
 
 | Metric                  | Value                          |
 | ----------------------- | ------------------------------ |
-| **Prompt Level Used**   | 5 (edit_history)               |
-| **Features Evaluated**  | 1-8                            |
-| **Total Feature Score** | 24 / 24                        |
+| **Prompt Level Used**   | 8 (threading)                  |
+| **Features Evaluated**  | 1-11                           |
+| **Total Feature Score** | 33 / 33                        |
 
 - [x] Compiles without errors
 - [x] Runs without crashing
@@ -22,9 +22,9 @@
 
 | Metric                   | Value  |
 | ------------------------ | ------ |
-| Lines of code (backend)  | 626    |
-| Lines of code (frontend) | 787    |
-| Number of files created  | 15     |
+| Lines of code (backend)  | 860    |
+| Lines of code (frontend) | 1611   |
+| Number of files created  | 14     |
 | External dependencies    | react, react-dom, socket.io, socket.io-client, drizzle-orm, pg, express, vite, typescript |
 | Reprompt Count           | 0      |
 | Reprompt Efficiency      | 10/10  |
@@ -38,7 +38,10 @@
 | Level 3 (upgrade)  | $1.45 | 52 | ~5.5 min |
 | Level 4 (upgrade)  | $1.23 | 45 | ~4.5 min |
 | Level 5 (upgrade)  | $1.16 | 40 | ~5.3 min |
-| **Cumulative**      | **$5.85** | **189+** | **~26.8 min** |
+| Level 6 (upgrade)  | $1.90 | 59 | ~8.1 min |
+| Level 7 (upgrade)  | $2.34 | 74 | ~8.4 min |
+| Level 8 (upgrade)  | $1.95 | 53 | ~8 min |
+| **Cumulative**      | **$12.04** | **375** | **~52 min** |
 
 ---
 
@@ -151,13 +154,73 @@
 
 ---
 
+## Feature 9: Real-Time Permissions (Score: 3 / 3)
+
+- [x] Room creators are admins and can kick/ban users from their rooms (1)
+- [x] Kicked users immediately lose access and stop receiving room updates (1)
+- [x] Admins can promote other users to admin (0.5)
+- [x] Permission changes apply instantly without requiring reconnection (0.5)
+
+**Implementation Notes:** Room header shows "ADMIN" badge for admins. "Members" button opens member panel with Kick/Promote buttons per non-self member. Kick implemented with Socket.io `room:kicked` event — kicked user sees red banner "You were kicked from this room." with Dismiss button. No separate Ban feature (only Kick), but kick fully removes user from room. Promote grants admin status with ADMIN badge and Members button appearing instantly on the promoted user's tab.
+
+**Browser Test Observations:**
+1. Alice created "Admin-Test" room — automatically became admin with "ADMIN" badge and "Members" button in header.
+2. Bob clicked Admin-Test, saw "You are not a member of this room" with Join button. Clicked Join — entered room with 2 members.
+3. Bob's header: no ADMIN badge, no Members button (correct, non-admin).
+4. Alice opened Members panel → Kick and Promote buttons shown next to Bob.
+5. Alice promoted Bob → Bob immediately got "ADMIN" badge and "Members" button on his tab (real-time via Socket.io).
+6. Alice's view updated: Bob now shows "★ Admin", Promote button removed, only Kick remains.
+7. Alice kicked Bob → Bob instantly removed from room, red banner "You were kicked from this room." appeared. Admin-Test showed 1 member on Alice's tab.
+
+---
+
+## Feature 10: Rich User Presence (Score: 3 / 3)
+
+- [x] Users can set status: online, away, do-not-disturb, invisible (1)
+- [x] "Last active X minutes ago" shows for offline users (0.5)
+- [x] Status changes sync to all viewers in real-time (1)
+- [x] Auto-set to "away" after inactivity period (0.5)
+
+**Implementation Notes:** `status` and `lastActiveAt` fields in `users` table. `PATCH /api/users/:id/status` validates and updates, broadcasts `user:status` Socket.io event. Client: `<select>` dropdown next to user name in sidebar with colored dot (green=online, yellow=away, red=DND, grey=invisible/offline). `getLastActiveText()` shows "Last active just now/Xm ago/Xh ago/Xd ago" for offline users. Auto-away: 5-minute inactivity timer on mousemove/keydown/mousedown/touchstart events sends PATCH to set status to 'away'. Server-side: `user:activity` socket event updates `lastActiveAt`, on disconnect sets `lastActiveAt` and emits offline status.
+
+**Browser Test Observations:**
+1. Alice clicked status dropdown → options: Online (green), Away (yellow), Do Not Disturb (red), Invisible (grey).
+2. Set to "Do Not Disturb" → red dot appeared on Alice's tab, Bob's user list updated instantly showing Alice with red dot.
+3. Set to "Invisible" → grey dot on Alice's tab, Bob's tab showed grey dot for Alice in real-time.
+4. Set back to "Online" → green dot restored on both tabs.
+5. `getLastActiveText()` function verified: returns "Last active just now", "Xm ago", "Xh ago", "Xd ago" for offline users.
+6. Auto-away code verified: 5-minute inactivity timer on mousemove/keydown/mousedown/touchstart events.
+
+---
+
+## Feature 11: Message Threading (Score: 3 / 3)
+
+- [x] Users can reply to specific messages, creating a thread (1)
+- [x] Parent messages show reply count and preview (0.5)
+- [x] Threaded view shows all replies to a message (1)
+- [x] New replies sync in real-time to thread viewers (0.5)
+
+**Implementation Notes:** Threading was pre-implemented in the level 7 codebase. `parentMessageId` FK on `messages` table. Root message endpoint filters `isNull(parentMessageId)` and includes `replyCount`/`replyPreview`. Thread replies broadcast `thread:reply` socket event with updated count. `GET /api/messages/:id/thread` loads all replies. Client: `💬 Reply` button on every message, reply count button shows preview. Thread panel slides in from the right with parent context, reply list, and reply input. Real-time via `thread:reply` socket event updates open panels immediately.
+
+**Browser Test Observations:**
+1. Alice created #General room, sent "Hello everyone! Let's test threading on postgres." — message appeared with Edit button and reaction emoji picker on hover.
+2. Hovered over message — 💬 Reply button appeared alongside reaction emojis (👍 ❤️ 😂 😮 😢).
+3. Clicked 💬 Reply — Thread panel opened on right side showing parent message, "0 REPLIES" divider, "Reply in thread..." input with Reply button.
+4. Alice typed "First reply from Alice!" and clicked Reply — reply appeared in thread panel, counter updated to "1 REPLY", parent message showed "💬 1 reply — First reply from Alice!" preview.
+5. Bob clicked #General, saw Alice's message with "💬 1 reply — First reply from Alice!" preview before joining. Clicked "Join Room".
+6. Bob clicked the "💬 1 reply" button — thread panel opened showing Alice's reply.
+7. Bob typed "Bob's reply in the thread!" and clicked Reply — reply appeared on both tabs instantly, counter updated to "2 REPLIES", preview updated to "💬 2 replies — Bob's reply in the thread!".
+8. No app-related console errors during threading test.
+
+---
+
 ## Reprompt Log
 
 | # | Iteration | Category | Issue Summary | Fixed? |
 |---|-----------|----------|---------------|--------|
 | - | -         | -        | No reprompts needed for level 5 upgrade | N/A |
 
-**Note:** Level 1 required 1 reprompt. Levels 2, 3, 4, and 5 had zero reprompts each.
+**Note:** Level 1 required 1 reprompt. Levels 2-8 had zero reprompts each.
 
 ---
 
@@ -173,4 +236,7 @@
 | 6. Ephemeral Messages | 3 | 3 | Duration selector, countdown, auto-delete all working |
 | 7. Message Reactions | 3 | 3 | React, count, toggle, hover all working |
 | 8. Message Editing with History | 3 | 3 | Edit button, inline form, (edited) indicator, history modal, real-time sync |
-| **TOTAL** | **24** | **24** | |
+| 9. Real-Time Permissions | 3 | 3 | Admin badge, kick with notification, promote with real-time sync |
+| 10. Rich User Presence | 3 | 3 | Status selector, colored dots, last-active text, auto-away, real-time sync |
+| 11. Message Threading | 3 | 3 | Reply button, thread panel, reply count + preview, real-time sync |
+| **TOTAL** | **33** | **33** | |

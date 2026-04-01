@@ -1,0 +1,16 @@
+{
+  "level": 7,
+  "backend": "spacetime",
+  "timestamp": "20260401-173227",
+  "startedAt": "2026-04-01T17:32:27-0400",
+  "startedAtUtc": "2026-04-01T21:32:27Z",
+  "runId": "spacetime-upgrade-to-level7-20260401-173227",
+  "appDir": "results\\spacetime\\chat-app-20260401-123403",
+  "promptFile": "07_presence.md",
+  "phase": "upgrade",
+  "sessionId": "a997875d-0712-19a6-b07a-f80749f667cd",
+  "endedAt": "2026-04-01T17:38:20-0400",
+  "endedAtUtc": "2026-04-01T21:38:20Z",
+  "exitCode": 0,
+  "mode": "upgrade"
+}
