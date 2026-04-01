@@ -1,7 +1,8 @@
 use anyhow::{anyhow, Context, Result};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use super::http::HttpClient;
+use super::oa_compat::OACompatResp;
 use crate::llm::prompt::BuiltPrompt;
 use crate::llm::segmentation::{
     deepseek_ctx_limit_tokens, deterministic_trim_prefix, estimate_tokens, non_context_reserve_tokens_env, Segment,
@@ -95,29 +96,3 @@ impl DeepSeekClient {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct OACompatResp {
-    choices: Vec<Choice>,
-    #[serde(default)]
-    usage: Option<UsageInfo>,
-}
-#[derive(Debug, Deserialize)]
-struct Choice {
-    message: MsgOut,
-}
-#[derive(Debug, Deserialize)]
-struct MsgOut {
-    content: String,
-}
-#[derive(Debug, Deserialize)]
-struct UsageInfo {
-    #[serde(default)]
-    prompt_tokens: Option<u32>,
-    #[serde(default)]
-    completion_tokens: Option<u32>,
-}
-impl OACompatResp {
-    fn first_text(self) -> Option<String> {
-        self.choices.into_iter().next().map(|c| c.message.content)
-    }
-}

@@ -39,6 +39,12 @@ pub const ALL_MODES: &[&str] = &[
     "search",               // no docs context but web search enabled via OpenRouter :online
 ];
 
+/// Modes that produce an empty context string (no documentation is injected).
+#[inline]
+pub fn is_empty_context_mode(mode: &str) -> bool {
+    matches!(mode, "no_context" | "none" | "no_guidelines" | "search")
+}
+
 #[inline]
 pub fn docs_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DOCS_DIR_DEFAULT)

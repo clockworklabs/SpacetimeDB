@@ -1,4 +1,4 @@
-use crate::context::constants::docs_dir;
+use crate::context::constants::{docs_dir, is_empty_context_mode};
 use crate::context::hashing::gather_docs_files;
 use crate::context::{rustdoc_crate_root, rustdoc_readme_path};
 use crate::eval::lang::Lang;
@@ -20,7 +20,7 @@ pub fn resolve_mode_paths(mode: &str) -> Result<Vec<PathBuf>> {
         "guidelines" => gather_guidelines_files(docs_dir().join("static/ai-guidelines"), None),
         "cursor_rules" => gather_cursor_rules_files(docs_dir().join("static/ai-rules"), None),
         "rustdoc_json" => resolve_rustdoc_json_paths_always(),
-        "no_context" | "none" | "no_guidelines" | "search" => Ok(Vec::new()),
+        m if is_empty_context_mode(m) => Ok(Vec::new()),
         other => bail!(
             "unknown mode `{other}` (expected: docs | llms.md | guidelines | cursor_rules | rustdoc_json | no_context | search)"
         ),
@@ -107,7 +107,7 @@ pub fn resolve_mode_paths_hashing(mode: &str) -> Result<Vec<PathBuf>> {
         "llms.md" => Ok(vec![docs_dir().join("static/llms.md")]),
         "guidelines" => gather_guidelines_files(docs_dir().join("static/ai-guidelines"), None),
         "cursor_rules" => gather_cursor_rules_files(docs_dir().join("static/ai-rules"), None),
-        "none" | "no_guidelines" | "no_context" | "search" => Ok(Vec::new()),
+        m if is_empty_context_mode(m) => Ok(Vec::new()),
         "rustdoc_json" => {
             if let Some(p) = rustdoc_readme_path() {
                 Ok(vec![p])

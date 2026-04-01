@@ -1,4 +1,4 @@
-use crate::context::constants::docs_dir;
+use crate::context::constants::{docs_dir, is_empty_context_mode};
 use crate::context::paths::{gather_cursor_rules_files, gather_guidelines_files, resolve_mode_paths};
 use crate::eval::lang::Lang;
 use anyhow::{anyhow, bail, Context, Result};
@@ -11,9 +11,9 @@ use std::sync::LazyLock;
 /// Get the base directory for a given mode (used for stripping prefixes to get relative paths).
 fn base_for_mode(mode: &str) -> Result<PathBuf> {
     Ok(match mode {
-        "docs" | "llms.md" | "guidelines" | "cursor_rules" | "no_context" | "none" | "no_guidelines" | "search" => docs_dir(),
         // rustdoc_json is handled separately in build_context_from_rustdoc_json
-        _ => bail!("unknown mode `{mode}` for base_for_mode"),
+        "rustdoc_json" => bail!("rustdoc_json uses a different base; handled separately"),
+        _ => docs_dir(),
     })
 }
 
@@ -31,7 +31,7 @@ fn stable_rel_path(base: &Path, p: &Path) -> String {
 
 /// Build context for the given mode, optionally filtering tabs for a specific language.
 pub fn build_context(mode: &str, lang: Option<Lang>) -> Result<String> {
-    if mode == "no_context" || mode == "none" || mode == "no_guidelines" || mode == "search" {
+    if is_empty_context_mode(mode) {
         return Ok(String::new());
     }
     if mode == "rustdoc_json" {

@@ -190,7 +190,7 @@ impl TaskRunner {
         let prompt = prompt_builder.build_segmented(cfg.mode, cfg.context);
 
         println!("→ [{}] {}: calling provider", cfg.lang_name, cfg.route.display_name);
-        let gen_start = Instant::now();
+        let mut gen_start = Instant::now();
         let llm_result = {
             const MAX_ATTEMPTS: u32 = 3;
             // Slow models (Gemini 3.1 Pro, DeepSeek Reasoner) can take 8+ minutes on large contexts.
@@ -201,6 +201,7 @@ impl TaskRunner {
             let mut last_err: anyhow::Error = anyhow!("no attempts made");
             let mut result = None;
             for attempt in 1..=MAX_ATTEMPTS {
+                gen_start = Instant::now();
                 let r = tokio::time::timeout(
                     std::time::Duration::from_secs(timeout_secs),
                     cfg.llm.generate(cfg.route, &prompt),
