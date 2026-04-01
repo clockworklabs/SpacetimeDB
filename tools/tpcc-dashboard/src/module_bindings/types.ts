@@ -10,6 +10,12 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const LatencyBucket = __t.object("LatencyBucket", {
+  latencyMs: __t.u16(),
+  count: __t.u64(),
+});
+export type LatencyBucket = __Infer<typeof LatencyBucket>;
+
 export const State = __t.object("State", {
   id: __t.i64(),
   runStartMs: __t.u64(),
@@ -20,10 +26,9 @@ export const State = __t.object("State", {
 });
 export type State = __Infer<typeof State>;
 
-export const Txn = __t.object("Txn", {
-  id: __t.u64(),
-  measurementTimeMs: __t.u64(),
-  latencyMs: __t.u16(),
+export const TxnBucket = __t.object("TxnBucket", {
+  bucketStartMs: __t.u64(),
+  count: __t.u64(),
 });
-export type Txn = __Infer<typeof Txn>;
+export type TxnBucket = __Infer<typeof TxnBucket>;
 

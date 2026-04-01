@@ -3,7 +3,7 @@ import { SpacetimeDBContext } from '../../context';
 import {
   deleteState,
   insertState,
-  throughputStateUpdate,
+  upsertTxnBucket,
 } from '../../features/globalState';
 import LatencyDistributionChart from './LatencyDistributionChart';
 import NewOrderThroughtputChart from './NewOrderThroughtputChart';
@@ -37,12 +37,19 @@ export default function DashboardPage() {
       dispatch(deleteState());
     });
 
-    conn?.db.txn.onInsert((_, txn) => {
+    conn?.db.txn_bucket.onInsert((_, txn) => {
       dispatch(
-        throughputStateUpdate({
-          id: String(txn.id),
-          measurementTimeMs: Number(txn.measurementTimeMs),
-          latencyMs: Number(txn.latencyMs),
+        upsertTxnBucket({
+          bucketStartMs: Number(txn.bucketStartMs),
+          count: Number(txn.count),
+        })
+      );
+    });
+    conn?.db.txn_bucket.onUpdate((_, _old, txn) => {
+      dispatch(
+        upsertTxnBucket({
+          bucketStartMs: Number(txn.bucketStartMs),
+          count: Number(txn.count),
         })
       );
     });
@@ -50,7 +57,11 @@ export default function DashboardPage() {
     const subscription = conn
       ?.subscriptionBuilder()
       .onError(err => console.error('Subscription error:', err))
-      .subscribe(['SELECT * FROM state', 'SELECT * FROM txn']);
+      .subscribe([
+        'SELECT * FROM state',
+        'SELECT * FROM txn_bucket',
+        'SELECT * FROM latency_bucket',
+      ]);
 
     return () => {
       subscription?.unsubscribe();

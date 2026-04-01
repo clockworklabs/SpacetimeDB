@@ -11,18 +11,20 @@ import { useAppSelector } from '../../hooks';
 import { useMemo } from 'react';
 
 export default function LatencyDistributionChart() {
-  const latencyData = useAppSelector(state => state.globalState.latencyData);
+  const latencyBuckets = useAppSelector(
+    state => state.globalState.latencyBuckets
+  );
 
   const chartData = useMemo(() => {
-    const sortedLatencies = Object.keys(latencyData)
+    const sortedLatencies = Object.keys(latencyBuckets)
       .map(key => parseInt(key))
       .sort((a, b) => a - b);
 
     return sortedLatencies.map(latency => ({
       latency,
-      count: latencyData[latency],
+      count: latencyBuckets[latency],
     }));
-  }, [latencyData]);
+  }, [latencyBuckets]);
 
   return (
     <div className="chart">

@@ -11,7 +11,6 @@ import {
 } from "spacetimedb";
 
 export default __t.row({
-  id: __t.u64().primaryKey(),
-  measurementTimeMs: __t.u64().name("measurement_time_ms"),
-  latencyMs: __t.u16().name("latency_ms"),
+  latencyMs: __t.u16().primaryKey().name("latency_ms"),
+  count: __t.u64(),
 });

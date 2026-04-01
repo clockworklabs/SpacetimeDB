@@ -6,11 +6,9 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
-import ClearStateReducer from "../clear_state_reducer";
 import RecordTxnReducer from "../record_txn_reducer";
 import ResetReducer from "../reset_reducer";
 
-export type ClearStateParams = __Infer<typeof ClearStateReducer>;
 export type RecordTxnParams = __Infer<typeof RecordTxnReducer>;
 export type ResetParams = __Infer<typeof ResetReducer>;
 

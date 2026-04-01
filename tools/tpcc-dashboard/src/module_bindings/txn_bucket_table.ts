@@ -10,4 +10,7 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export default {};
+export default __t.row({
+  bucketStartMs: __t.u64().primaryKey().name("bucket_start_ms"),
+  count: __t.u64(),
+});

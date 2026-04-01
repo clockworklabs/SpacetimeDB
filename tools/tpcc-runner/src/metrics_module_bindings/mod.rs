@@ -6,21 +6,23 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-pub mod clear_state_reducer;
+pub mod latency_bucket_table;
+pub mod latency_bucket_type;
 pub mod record_txn_reducer;
 pub mod reset_reducer;
 pub mod state_table;
 pub mod state_type;
-pub mod txn_table;
-pub mod txn_type;
+pub mod txn_bucket_table;
+pub mod txn_bucket_type;
 
-pub use clear_state_reducer::clear_state;
+pub use latency_bucket_table::*;
+pub use latency_bucket_type::LatencyBucket;
 pub use record_txn_reducer::record_txn;
 pub use reset_reducer::reset;
 pub use state_table::*;
 pub use state_type::State;
-pub use txn_table::*;
-pub use txn_type::Txn;
+pub use txn_bucket_table::*;
+pub use txn_bucket_type::TxnBucket;
 
 #[derive(Clone, PartialEq, Debug)]
 
@@ -30,7 +32,6 @@ pub use txn_type::Txn;
 /// to indicate which reducer caused the event.
 
 pub enum Reducer {
-    ClearState,
     RecordTxn {
         latency_ms: u16,
     },
@@ -49,7 +50,6 @@ impl __sdk::InModule for Reducer {
 impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
-            Reducer::ClearState => "clear_state",
             Reducer::RecordTxn { .. } => "record_txn",
             Reducer::Reset { .. } => "reset",
             _ => unreachable!(),
@@ -58,7 +58,6 @@ impl __sdk::Reducer for Reducer {
     #[allow(clippy::clone_on_copy)]
     fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {
         match self {
-            Reducer::ClearState => __sats::bsatn::to_vec(&clear_state_reducer::ClearStateArgs {}),
             Reducer::RecordTxn { latency_ms } => __sats::bsatn::to_vec(&record_txn_reducer::RecordTxnArgs {
                 latency_ms: latency_ms.clone(),
             }),
@@ -82,8 +81,9 @@ impl __sdk::Reducer for Reducer {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct DbUpdate {
+    latency_bucket: __sdk::TableUpdate<LatencyBucket>,
     state: __sdk::TableUpdate<State>,
-    txn: __sdk::TableUpdate<Txn>,
+    txn_bucket: __sdk::TableUpdate<TxnBucket>,
 }
 
 impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
@@ -92,8 +92,13 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_update in __sdk::transaction_update_iter_table_updates(raw) {
             match &table_update.table_name[..] {
+                "latency_bucket" => db_update
+                    .latency_bucket
+                    .append(latency_bucket_table::parse_table_update(table_update)?),
                 "state" => db_update.state.append(state_table::parse_table_update(table_update)?),
-                "txn" => db_update.txn.append(txn_table::parse_table_update(table_update)?),
+                "txn_bucket" => db_update
+                    .txn_bucket
+                    .append(txn_bucket_table::parse_table_update(table_update)?),
 
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name("table", unknown, "DatabaseUpdate").into());
@@ -112,12 +117,15 @@ impl __sdk::DbUpdate for DbUpdate {
     fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) -> AppliedDiff<'_> {
         let mut diff = AppliedDiff::default();
 
+        diff.latency_bucket = cache
+            .apply_diff_to_table::<LatencyBucket>("latency_bucket", &self.latency_bucket)
+            .with_updates_by_pk(|row| &row.latency_ms);
         diff.state = cache
             .apply_diff_to_table::<State>("state", &self.state)
             .with_updates_by_pk(|row| &row.id);
-        diff.txn = cache
-            .apply_diff_to_table::<Txn>("txn", &self.txn)
-            .with_updates_by_pk(|row| &row.id);
+        diff.txn_bucket = cache
+            .apply_diff_to_table::<TxnBucket>("txn_bucket", &self.txn_bucket)
+            .with_updates_by_pk(|row| &row.bucket_start_ms);
 
         diff
     }
@@ -125,10 +133,15 @@ impl __sdk::DbUpdate for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_rows in raw.tables {
             match &table_rows.table[..] {
+                "latency_bucket" => db_update
+                    .latency_bucket
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "state" => db_update
                     .state
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "txn" => db_update.txn.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "txn_bucket" => db_update
+                    .txn_bucket
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into());
                 }
@@ -140,10 +153,15 @@ impl __sdk::DbUpdate for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_rows in raw.tables {
             match &table_rows.table[..] {
+                "latency_bucket" => db_update
+                    .latency_bucket
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "state" => db_update
                     .state
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "txn" => db_update.txn.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "txn_bucket" => db_update
+                    .txn_bucket
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into());
                 }
@@ -157,8 +175,9 @@ impl __sdk::DbUpdate for DbUpdate {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
+    latency_bucket: __sdk::TableAppliedDiff<'r, LatencyBucket>,
     state: __sdk::TableAppliedDiff<'r, State>,
-    txn: __sdk::TableAppliedDiff<'r, Txn>,
+    txn_bucket: __sdk::TableAppliedDiff<'r, TxnBucket>,
     __unused: std::marker::PhantomData<&'r ()>,
 }
 
@@ -168,8 +187,9 @@ impl __sdk::InModule for AppliedDiff<'_> {
 
 impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
     fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {
+        callbacks.invoke_table_row_callbacks::<LatencyBucket>("latency_bucket", &self.latency_bucket, event);
         callbacks.invoke_table_row_callbacks::<State>("state", &self.state, event);
-        callbacks.invoke_table_row_callbacks::<Txn>("txn", &self.txn, event);
+        callbacks.invoke_table_row_callbacks::<TxnBucket>("txn_bucket", &self.txn_bucket, event);
     }
 }
 
@@ -827,8 +847,9 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type QueryBuilder = __sdk::QueryBuilder;
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
+        latency_bucket_table::register_table(client_cache);
         state_table::register_table(client_cache);
-        txn_table::register_table(client_cache);
+        txn_bucket_table::register_table(client_cache);
     }
-    const ALL_TABLE_NAMES: &'static [&'static str] = &["state", "txn"];
+    const ALL_TABLE_NAMES: &'static [&'static str] = &["latency_bucket", "state", "txn_bucket"];
 }

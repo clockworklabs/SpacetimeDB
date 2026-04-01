@@ -34,20 +34,31 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
-import ClearStateReducer from "./clear_state_reducer";
 import RecordTxnReducer from "./record_txn_reducer";
 import ResetReducer from "./reset_reducer";
 
 // Import all procedure arg schemas
 
 // Import all table schema definitions
+import LatencyBucketRow from "./latency_bucket_table";
 import StateRow from "./state_table";
-import TxnRow from "./txn_table";
+import TxnBucketRow from "./txn_bucket_table";
 
 /** Type-only namespace exports for generated type groups. */
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  latency_bucket: __table({
+    name: 'latency_bucket',
+    indexes: [
+      { accessor: 'latency_ms', name: 'latency_bucket_latency_ms_idx_btree', algorithm: 'btree', columns: [
+        'latencyMs',
+      ] },
+    ],
+    constraints: [
+      { name: 'latency_bucket_latency_ms_key', constraint: 'unique', columns: ['latencyMs'] },
+    ],
+  }, LatencyBucketRow),
   state: __table({
     name: 'state',
     indexes: [
@@ -59,22 +70,21 @@ const tablesSchema = __schema({
       { name: 'state_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, StateRow),
-  txn: __table({
-    name: 'txn',
+  txn_bucket: __table({
+    name: 'txn_bucket',
     indexes: [
-      { accessor: 'id', name: 'txn_id_idx_btree', algorithm: 'btree', columns: [
-        'id',
+      { accessor: 'bucket_start_ms', name: 'txn_bucket_bucket_start_ms_idx_btree', algorithm: 'btree', columns: [
+        'bucketStartMs',
       ] },
     ],
     constraints: [
-      { name: 'txn_id_key', constraint: 'unique', columns: ['id'] },
+      { name: 'txn_bucket_bucket_start_ms_key', constraint: 'unique', columns: ['bucketStartMs'] },
     ],
-  }, TxnRow),
+  }, TxnBucketRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
-  __reducerSchema("clear_state", ClearStateReducer),
   __reducerSchema("record_txn", RecordTxnReducer),
   __reducerSchema("reset", ResetReducer),
 );
