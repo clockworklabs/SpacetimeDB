@@ -85,16 +85,33 @@ jobs:
             UPLOAD_FLAG="--upload-url ${{ secrets.LLM_BENCHMARK_UPLOAD_URL }}"
           fi
 
+          SUCCEEDED=0
+          FAILED=0
           for LANG in $(echo "$LANGS" | tr ',' ' '); do
             if [ "$MODELS" = "all" ]; then
-              llm_benchmark run --lang "$LANG" --modes "$MODES" $UPLOAD_FLAG || true
+              if llm_benchmark run --lang "$LANG" --modes "$MODES" $UPLOAD_FLAG; then
+                SUCCEEDED=$((SUCCEEDED + 1))
+              else
+                echo "::warning::Benchmark run failed for lang=$LANG"
+                FAILED=$((FAILED + 1))
+              fi
             else
-              llm_benchmark run --lang "$LANG" --modes "$MODES" --models "$MODELS" $UPLOAD_FLAG || true
+              if llm_benchmark run --lang "$LANG" --modes "$MODES" --models "$MODELS" $UPLOAD_FLAG; then
+                SUCCEEDED=$((SUCCEEDED + 1))
+              else
+                echo "::warning::Benchmark run failed for lang=$LANG models=$MODELS"
+                FAILED=$((FAILED + 1))
+              fi
             fi
           done
+          echo "Benchmark runs: $SUCCEEDED succeeded, $FAILED failed"
+          if [ "$SUCCEEDED" -eq 0 ] && [ "$FAILED" -gt 0 ]; then
+            echo "::error::All benchmark runs failed"
+            exit 1
+          fi
 
       - name: Generate summary
-        run: llm_benchmark summary || true
+        run: llm_benchmark summary
 
       - name: Archive historical results
         run: |

@@ -153,6 +153,7 @@ pub struct BenchRunContext<'a> {
     pub selectors: Option<&'a [String]>,
     pub host: Option<String>,
     pub details_path: PathBuf,
+    pub dry_run: bool,
 }
 
 pub struct RunConfig {
@@ -168,4 +169,6 @@ pub struct RunConfig {
     pub host: Option<String>,
     /// Path to the details.json file where results will be merged
     pub details_path: PathBuf,
+    /// When true, run benchmarks but don't save results to disk
+    pub dry_run: bool,
 }

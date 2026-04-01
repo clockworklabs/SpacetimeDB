@@ -175,7 +175,7 @@ impl TaskRunner {
 
         let category = category_slug(&task.root);
         let task_id = task_slug(&task.root);
-        let route_tag = sanitize_db_name(cfg.route.display_name);
+        let route_tag = sanitize_db_name(&cfg.route.display_name);
         let golden_db = sanitize_db_name(&format!("{}-{}-golden", category, task_id));
         let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", category, task_id, route_tag));
 
@@ -245,7 +245,7 @@ impl TaskRunner {
         let llm_output = llm_result.text;
 
         if debug_llm() {
-            print_llm_output(cfg.route.display_name, &task_id, &llm_output);
+            print_llm_output(&cfg.route.display_name, &task_id, &llm_output);
         }
 
         let publish_error: Option<String> = self
@@ -438,7 +438,9 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
 
     println!("[runner] completed batch: ok={} err={}", outcomes.len(), errs);
 
-    if !outcomes.is_empty() {
+    if cfg.dry_run {
+        eprintln!("[dry-run] skipping merge_task_runs ({} outcomes)", outcomes.len());
+    } else if !outcomes.is_empty() {
         merge_task_runs(&cfg.details_path, cfg.mode, &outcomes)?;
     } else {
         eprintln!("[runner] no successful runs; not calling merge_task_runs");
@@ -554,7 +556,9 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
         }
     }
 
-    if !outcomes.is_empty() {
+    if cfg.dry_run {
+        eprintln!("[dry-run] skipping merge_task_runs ({} outcomes)", outcomes.len());
+    } else if !outcomes.is_empty() {
         merge_task_runs(&cfg.details_path, cfg.mode, &outcomes)?;
     }
 
@@ -583,6 +587,7 @@ pub async fn run_selected_or_all_for_model_async_for_lang(ctx: &BenchRunContext<
             selectors: Option::from(sels),
             host: ctx.host.clone(),
             details_path: ctx.details_path.clone(),
+            dry_run: ctx.dry_run,
         };
         return run_selected_for_model_async_for_lang(&sel_cfg).await;
     }

@@ -23,7 +23,7 @@ use xtask_llm_benchmark::context::{build_context, compute_processed_context_hash
 use xtask_llm_benchmark::eval::Lang;
 use xtask_llm_benchmark::llm::types::Vendor;
 use xtask_llm_benchmark::llm::{default_model_routes, make_provider_from_env, LlmProvider, ModelRoute};
-use xtask_llm_benchmark::results::io::{update_golden_answers_on_disk, write_summary_from_details_file};
+use xtask_llm_benchmark::results::io::{normalize_details_file, update_golden_answers_on_disk, write_summary_from_details_file};
 use xtask_llm_benchmark::results::{load_summary, Summary};
 
 #[derive(Clone, Debug)]
@@ -153,6 +153,10 @@ struct RunArgs {
     /// Requires LLM_BENCHMARK_API_KEY env var for authentication.
     #[arg(long)]
     upload_url: Option<String>,
+
+    /// Run benchmarks without saving results to disk
+    #[arg(long)]
+    dry_run: bool,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -379,6 +383,7 @@ fn run_benchmarks(args: RunArgs, details_path: &Path, summary_path: &Path) -> Re
         model_filter: model_filter_from_groups(args.models),
         host: None,
         details_path: details_path.to_path_buf(),
+        dry_run: args.dry_run,
     };
 
     let bench_root = find_bench_root();
@@ -422,11 +427,12 @@ fn run_benchmarks(args: RunArgs, details_path: &Path, summary_path: &Path) -> Re
         )?;
     }
 
-    if !config.goldens_only && !config.hash_only {
+    if !config.goldens_only && !config.hash_only && !config.dry_run {
         fs::create_dir_all(docs_dir().join("llms"))?;
 
         update_golden_answers_on_disk(details_path, &bench_root, /*all=*/ true, /*overwrite=*/ true)?;
 
+        normalize_details_file(details_path)?;
         write_summary_from_details_file(details_path, summary_path)?;
         println!("Results written to:");
         println!("  Details: {}", details_path.display());
@@ -581,6 +587,7 @@ fn cmd_ci_quickfix() -> Result<()> {
             models: vec!["gpt-5".to_string()],
         }]),
         upload_url: None,
+        dry_run: false,
     };
     run_benchmarks(rust_rustdoc_args, &details_path, &summary_path)?;
 
@@ -599,6 +606,7 @@ fn cmd_ci_quickfix() -> Result<()> {
             models: vec!["gpt-5".to_string()],
         }]),
         upload_url: None,
+        dry_run: false,
     };
     run_benchmarks(rust_docs_args, &details_path, &summary_path)?;
 
@@ -617,6 +625,7 @@ fn cmd_ci_quickfix() -> Result<()> {
             models: vec!["gpt-5".to_string()],
         }]),
         upload_url: None,
+        dry_run: false,
     };
     run_benchmarks(csharp_args, &details_path, &summary_path)?;
 
@@ -635,6 +644,7 @@ fn cmd_ci_quickfix() -> Result<()> {
             models: vec!["gpt-5".to_string()],
         }]),
         upload_url: None,
+        dry_run: false,
     };
     run_benchmarks(typescript_args, &details_path, &summary_path)?;
 
@@ -1032,7 +1042,7 @@ fn filter_routes(config: &RunConfig) -> Vec<ModelRoute> {
                 Some(allowed) => {
                     let api = r.api_model.to_ascii_lowercase();
                     let dn = r.display_name.to_ascii_lowercase();
-                    let or_id = r.openrouter_model.map(|m| m.to_ascii_lowercase());
+                    let or_id = r.openrouter_model.as_ref().map(|m| m.to_ascii_lowercase());
                     allowed.contains(&api)
                         || allowed.contains(&dn)
                         || or_id.as_ref().map(|m| allowed.contains(m)).unwrap_or(false)
@@ -1045,23 +1055,16 @@ fn filter_routes(config: &RunConfig) -> Vec<ModelRoute> {
     // Synthesize ad-hoc routes for any vendor:model that isn't in the static list.
     // This lets callers pass arbitrary model IDs (e.g. new models, openrouter paths)
     // without having to add them to default_model_routes() first.
-    // Box::leak is intentional: this is a short-lived CLI process.
     if let Some(mf) = &config.model_filter {
         for (vendor, model_ids) in mf {
             for model_id in model_ids {
                 let already_matched = routes.iter().any(|r| {
                     r.vendor == *vendor
                         && (r.api_model == model_id.as_str()
-                            || r.openrouter_model == Some(model_id.as_str()))
+                            || r.openrouter_model.as_deref() == Some(model_id.as_str()))
                 });
                 if !already_matched {
-                    let leaked: &'static str = Box::leak(model_id.clone().into_boxed_str());
-                    routes.push(ModelRoute {
-                        display_name: leaked,
-                        vendor: *vendor,
-                        api_model: leaked,
-                        openrouter_model: None,
-                    });
+                    routes.push(ModelRoute::new(model_id, *vendor, model_id, None));
                 }
             }
         }
@@ -1085,6 +1088,7 @@ async fn run_many_routes_for_mode(
     let selectors = config.selectors.as_deref();
     let host = config.host.clone();
     let details_path = config.details_path.clone();
+    let dry_run = config.dry_run;
 
     futures::stream::iter(routes.iter().map(|route| {
         let host = host.clone();
@@ -1104,6 +1108,7 @@ async fn run_many_routes_for_mode(
                 selectors,
                 host,
                 details_path,
+                dry_run,
             };
 
             let outcomes = run_selected_or_all_for_model_async_for_lang(&per).await?;
@@ -1250,6 +1255,7 @@ fn cmd_summary(args: SummaryArgs) -> Result<()> {
         fs::create_dir_all(parent).with_context(|| format!("create dir {}", parent.display()))?;
     }
 
+    normalize_details_file(&in_path)?;
     write_summary_from_details_file(&in_path, &out_path)?;
     println!("Summary written to: {}", out_path.display());
     Ok(())
@@ -1336,12 +1342,7 @@ fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
     let provider = make_provider_from_env()?;
 
     // Use a fast model for analysis
-    let route = ModelRoute {
-        display_name: "gpt-4o-mini",
-        api_model: "gpt-4o-mini",
-        vendor: Vendor::OpenAi,
-        openrouter_model: Some("openai/gpt-4o-mini"),
-    };
+    let route = ModelRoute::new("gpt-5-mini", Vendor::OpenAi, "gpt-5-mini", Some("openai/gpt-5-mini"));
 
     use xtask_llm_benchmark::llm::prompt::BuiltPrompt;
 
@@ -1486,15 +1487,21 @@ fn cmd_status(args: StatusArgs) -> Result<()> {
         tasks
     };
 
+    // Parse the details file once and reuse for both settled-task and missing-timestamp checks.
+    let results: Option<Results> = if details_path.exists() {
+        let content = fs::read_to_string(&details_path)
+            .with_context(|| format!("read {}", details_path.display()))?;
+        Some(serde_json::from_str(&content).context("parse details.json")?)
+    } else {
+        None
+    };
+
     // Build map: (lang, mode, display_name) -> set of task IDs that have a real result
     // (llm responded AND no API error — i.e. the LLM actually generated code, pass or fail)
     let mut settled: HashMap<(String, String, String), std::collections::HashSet<String>> = HashMap::new();
     let mut all_langs: Vec<String> = Vec::new();
 
-    if details_path.exists() {
-        let content = fs::read_to_string(&details_path)
-            .with_context(|| format!("read {}", details_path.display()))?;
-        let results: Results = serde_json::from_str(&content).context("parse details.json")?;
+    if let Some(ref results) = results {
         for lang_entry in &results.languages {
             if !all_langs.contains(&lang_entry.lang) {
                 all_langs.push(lang_entry.lang.clone());
@@ -1575,9 +1582,7 @@ fn cmd_status(args: StatusArgs) -> Result<()> {
     // These can't be uploaded to Postgres and need to be re-run.
     let mut missing_timestamps: Vec<(String, String, String, Vec<String>)> = Vec::new(); // (lang, mode, model, tasks)
 
-    if details_path.exists() {
-        let content = fs::read_to_string(&details_path)?;
-        let results: Results = serde_json::from_str(&content)?;
+    if let Some(ref results) = results {
         for lang_entry in &results.languages {
             if !langs.contains(&lang_entry.lang) { continue; }
             for mode_entry in &lang_entry.modes {

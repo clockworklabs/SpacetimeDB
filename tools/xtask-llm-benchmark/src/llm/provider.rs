@@ -61,8 +61,8 @@ impl LlmProvider for RouterProvider {
             )?;
             let base_model = route
                 .openrouter_model
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| openrouter_model_id(route.vendor, route.api_model));
+                .clone()
+                .unwrap_or_else(|| openrouter_model_id(route.vendor, &route.api_model));
             let online_model = format!("{base_model}:online");
             eprintln!(
                 "[search] {} → OpenRouter :online model '{}'",
@@ -82,34 +82,35 @@ impl LlmProvider for RouterProvider {
                 .context("OpenRouter client not configured (set OPENROUTER_API_KEY)")?;
             let model = route
                 .openrouter_model
-                .unwrap_or(route.api_model);
+                .as_deref()
+                .unwrap_or(&route.api_model);
             return cli.generate(model, prompt).await;
         }
 
         // Try direct client first, fall back to OpenRouter if available.
         match vendor {
             Vendor::OpenAi => match self.openai.as_ref() {
-                Some(cli) => cli.generate(route.api_model, prompt).await,
+                Some(cli) => cli.generate(&route.api_model, prompt).await,
                 None => self.fallback_openrouter(route, prompt, "OpenAI").await,
             },
             Vendor::Anthropic => match self.anthropic.as_ref() {
-                Some(cli) => cli.generate(route.api_model, prompt).await,
+                Some(cli) => cli.generate(&route.api_model, prompt).await,
                 None => self.fallback_openrouter(route, prompt, "Anthropic").await,
             },
             Vendor::Google => match self.google.as_ref() {
-                Some(cli) => cli.generate(route.api_model, prompt).await,
+                Some(cli) => cli.generate(&route.api_model, prompt).await,
                 None => self.fallback_openrouter(route, prompt, "Google").await,
             },
             Vendor::Xai => match self.xai.as_ref() {
-                Some(cli) => cli.generate(route.api_model, prompt).await,
+                Some(cli) => cli.generate(&route.api_model, prompt).await,
                 None => self.fallback_openrouter(route, prompt, "xAI").await,
             },
             Vendor::DeepSeek => match self.deepseek.as_ref() {
-                Some(cli) => cli.generate(route.api_model, prompt).await,
+                Some(cli) => cli.generate(&route.api_model, prompt).await,
                 None => self.fallback_openrouter(route, prompt, "DeepSeek").await,
             },
             Vendor::Meta => match self.meta.as_ref() {
-                Some(cli) => cli.generate(route.api_model, prompt).await,
+                Some(cli) => cli.generate(&route.api_model, prompt).await,
                 None => self.fallback_openrouter(route, prompt, "Meta").await,
             },
             Vendor::OpenRouter => unreachable!("handled above"),
@@ -124,8 +125,8 @@ impl RouterProvider {
             Some(cli) => {
                 let or_model = route
                     .openrouter_model
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| openrouter_model_id(route.vendor, route.api_model));
+                    .clone()
+                    .unwrap_or_else(|| openrouter_model_id(route.vendor, &route.api_model));
                 eprintln!(
                     "[openrouter] {} client not configured, falling back to OpenRouter for model '{}'",
                     vendor_name, or_model

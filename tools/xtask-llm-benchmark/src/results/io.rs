@@ -145,21 +145,29 @@ fn frac(pt: u32, tt: u32) -> f32 {
     }
 }
 
-/// Convenience: read the details file **into your Results**, then write summary.
-pub fn write_summary_from_details_file<PIn: AsRef<Path>, POut: AsRef<Path>>(
-    details_json: PIn,
-    out_json: POut,
-) -> Result<()> {
+/// Normalize model names in a details JSON file and write the result back in place.
+pub fn normalize_details_file<P: AsRef<Path>>(details_json: P) -> Result<()> {
     let data = fs::read_to_string(details_json.as_ref())
         .with_context(|| format!("failed to read {}", details_json.as_ref().display()))?;
     let mut results: Results =
         serde_json::from_str(&data).with_context(|| "failed to deserialize Results from details file")?;
     crate::bench::results_merge::normalize_model_names(&mut results);
 
-    // Write normalized details back to fix any model name inconsistencies
-    let details_pretty = serde_json::to_string_pretty(&results)?;
-    fs::write(details_json.as_ref(), details_pretty)
+    let pretty = serde_json::to_string_pretty(&results)?;
+    fs::write(details_json.as_ref(), pretty)
         .with_context(|| format!("failed to write normalized {}", details_json.as_ref().display()))?;
+    Ok(())
+}
+
+/// Read a details JSON file and write the corresponding summary.
+pub fn write_summary_from_details_file<PIn: AsRef<Path>, POut: AsRef<Path>>(
+    details_json: PIn,
+    out_json: POut,
+) -> Result<()> {
+    let data = fs::read_to_string(details_json.as_ref())
+        .with_context(|| format!("failed to read {}", details_json.as_ref().display()))?;
+    let results: Results =
+        serde_json::from_str(&data).with_context(|| "failed to deserialize Results from details file")?;
 
     let summary = summary_from_results(&results);
     let pretty = serde_json::to_string_pretty(&summary)?;
