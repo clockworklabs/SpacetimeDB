@@ -11,7 +11,7 @@ import { useAppSelector } from './hooks';
 import { useMemo } from 'react';
 
 export default function LatencyDistributionChart() {
-  const latencyData = useAppSelector(state => state.globalState.latencyData);
+  const latencyData = useAppSelector(state => state.globalState.bucketCounts);
 
   const chartData = useMemo(() => {
     const sortedLatencies = Object.keys(latencyData)

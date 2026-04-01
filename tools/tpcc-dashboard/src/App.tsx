@@ -32,7 +32,7 @@ function App() {
       dispatch(deleteState());
     });
 
-    conn.db.txnBucket.onInsert((_, bucket) => {
+    conn.db.txn_bucket.onInsert((_, bucket) => {
       dispatch(
         upsertTxnBucket({
           bucketStartMs: Number(bucket.bucketStartMs),
@@ -40,7 +40,7 @@ function App() {
         })
       );
     });
-    conn.db.txnBucket.onUpdate((_, _oldBucket, bucket) => {
+    conn.db.txn_bucket.onUpdate((_, _oldBucket, bucket) => {
       dispatch(
         upsertTxnBucket({
           bucketStartMs: Number(bucket.bucketStartMs),
@@ -48,7 +48,7 @@ function App() {
         })
       );
     });
-    conn.db.txnBucket.onDelete((_, bucket) => {
+    conn.db.txn_bucket.onDelete((_, bucket) => {
       dispatch(
         removeTxnBucket({
           bucketStartMs: Number(bucket.bucketStartMs),
