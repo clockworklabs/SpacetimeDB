@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use blake3::Hasher;
 use std::borrow::Cow;
 use std::fs;

@@ -5,7 +5,7 @@ use super::http::HttpClient;
 use super::oa_compat::OACompatResp;
 use crate::llm::prompt::BuiltPrompt;
 use crate::llm::segmentation::{
-    deterministic_trim_prefix, meta_ctx_limit_tokens, non_context_reserve_tokens_env, Segment,
+    desired_output_tokens, deterministic_trim_prefix, meta_ctx_limit_tokens, non_context_reserve_tokens_env, Segment,
 };
 use crate::llm::types::{LlmOutput, Vendor};
 
@@ -84,8 +84,8 @@ impl MetaLlamaClient {
             model: wire_model,
             messages,
             temperature: 0.0,
-            top_p: Some(0.9), // avoid creative tangents; deterministic code
-            max_tokens: None,
+            top_p: None,
+            max_tokens: Some(desired_output_tokens().max(1) as u32),
         };
 
         // Auth only; optional OpenRouter headers can live in HttpClient if desired

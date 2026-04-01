@@ -1,8 +1,7 @@
 use crate::eval::defaults::{
-    default_schema_parity_scorers, make_reducer_call_both_scorer, make_reducer_sql_count_scorer,
-    make_sql_count_only_scorer,
+    default_schema_parity_scorers, make_reducer_call_both_scorer, make_sql_count_only_scorer,
 };
-use crate::eval::{casing_for_lang, ident, table_name, BenchmarkSpec, ReducerSqlCountConfig, SqlBuilder};
+use crate::eval::{casing_for_lang, ident, table_name, BenchmarkSpec, SqlBuilder};
 use std::time::Duration;
 pub fn spec() -> BenchmarkSpec {
     BenchmarkSpec::from_tasks_auto(file!(), |lang, route_tag, host_url| {
