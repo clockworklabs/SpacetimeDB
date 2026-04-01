@@ -125,12 +125,9 @@ pub struct HostController {
     pub call_reducer_client: reqwest::Client,
     /// Router that resolves the HTTP base URL of the leader node for a given database.
     ///
-    /// Router that resolves the HTTP base URL of the leader node for a given database.
-    ///
     /// Initialized to [`LocalReducerRouter`] at construction. In cluster deployments,
     /// replaced once at startup with `CachingResolver` via [`Self::set_call_reducer_router`].
-    /// Uses `OnceLock` for lock-free reads after the one-time initialization.
-    pub call_reducer_router: Arc<std::sync::OnceLock<Arc<dyn ReducerCallRouter>>>,
+    pub call_reducer_router: Arc<std::sync::Mutex<Arc<dyn ReducerCallRouter>>>,
     /// A single node-level Bearer token included in all outgoing cross-DB reducer calls.
     ///
     /// Set once at node startup by the deployment layer (standalone / cluster) so that
@@ -257,7 +254,7 @@ impl HostController {
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
             db_cores,
             call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
-            call_reducer_router: Arc::new(std::sync::OnceLock::new()),
+            call_reducer_router: Arc::new(std::sync::Mutex::new(Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")))),
             call_reducer_auth_token: None,
             call_edge_tracker: Arc::new(crate::host::call_edge_tracker::InMemoryCallEdgeTracker::new()),
         }
@@ -270,20 +267,15 @@ impl HostController {
 
     /// Set the [`ReducerCallRouter`] used by this controller.
     /// Can only be called once (at startup). Panics if called a second time.
+    /// Replace the [`ReducerCallRouter`]. Called once at startup to install
+    /// the cluster-aware router after the control DB connection is established.
     pub fn set_call_reducer_router(&self, router: Arc<dyn ReducerCallRouter>) {
-        self.call_reducer_router
-            .set(router)
-            .ok()
-            .expect("call_reducer_router already set");
+        *self.call_reducer_router.lock().unwrap() = router;
     }
 
     /// Get the active [`ReducerCallRouter`].
-    /// Panics if [`Self::set_call_reducer_router`] was not called during startup.
     pub fn get_call_reducer_router(&self) -> Arc<dyn ReducerCallRouter> {
-        self.call_reducer_router
-            .get()
-            .expect("call_reducer_router not initialized")
-            .clone()
+        self.call_reducer_router.lock().unwrap().clone()
     }
 
     /// Set the [`CallEdgeTracker`] for distributed deadlock detection.
