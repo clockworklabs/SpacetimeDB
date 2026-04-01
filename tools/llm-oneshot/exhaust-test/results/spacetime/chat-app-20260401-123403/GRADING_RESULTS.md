@@ -2,7 +2,7 @@
 
 **Model:** Claude Code (Sonnet 4.6)
 **Date:** 2026-04-01
-**Prompt:** `04_reactions.md` (upgraded from `03_realtime.md`)
+**Prompt:** `05_edit_history.md` (upgraded from `04_reactions.md`)
 **Backend:** spacetime
 **Grading Method:** Automated browser interaction (exhaust-test)
 
@@ -12,9 +12,9 @@
 
 | Metric                  | Value                          |
 | ----------------------- | ------------------------------ |
-| **Prompt Level Used**   | 4 (reactions)                  |
-| **Features Evaluated**  | 1-7                            |
-| **Total Feature Score** | 21 / 21                        |
+| **Prompt Level Used**   | 5 (edit_history)               |
+| **Features Evaluated**  | 1-8                            |
+| **Total Feature Score** | 24 / 24                        |
 
 - [x] Compiles without errors
 - [x] Runs without crashing
@@ -22,9 +22,9 @@
 
 | Metric                   | Value  |
 | ------------------------ | ------ |
-| Lines of code (backend)  | 397    |
-| Lines of code (frontend) | 1420 (+ 697 auto-gen bindings) |
-| Number of files created  | 39     |
+| Lines of code (backend)  | 434    |
+| Lines of code (frontend) | 1592 (+ 760 auto-gen bindings) |
+| Number of files created  | 41     |
 | External dependencies    | react, react-dom, spacetimedb, vite, @vitejs/plugin-react, typescript |
 | Reprompt Count           | 0      |
 | Reprompt Efficiency      | 10/10  |
@@ -37,7 +37,8 @@
 | Level 2 (upgrade)  | $0.79 | 30 | ~5 min  |
 | Level 3 (upgrade)  | $1.54 | 56 | ~6 min  |
 | Level 4 (upgrade)  | $1.14 | 41 | ~4 min  |
-| **Cumulative**      | **$4.67** | **148** | **~26 min** |
+| Level 5 (upgrade)  | $0.43 | 16 | ~1.7 min |
+| **Cumulative**      | **$5.10** | **164** | **~27.7 min** |
 
 ---
 
@@ -119,6 +120,24 @@
 
 ---
 
+## Feature 8: Message Editing with History (Score: 3 / 3)
+
+- [x] Users can edit their own messages after sending (1)
+- [x] Show "(edited)" indicator on edited messages (1)
+- [x] Other users can view the edit history of a message (1)
+- [x] Edits sync in real-time to all viewers (bonus)
+
+**Implementation Notes:** ✏️ edit button (`.edit-btn`) appears on hover for own messages only. Clicking opens inline edit form with Save/Cancel buttons. `(edited)` badge (`.edited-badge`) is a clickable button that expands an "EDIT HISTORY" panel showing previous versions with timestamps. `message_edit` table stores edit history in SpacetimeDB. Real-time sync via SpacetimeDB subscriptions.
+
+**Browser Test Observations:**
+1. Alice clicked ✏️ on her message "This message will be edited soon" — inline edit form appeared with text pre-filled.
+2. Changed text to "This message has been EDITED by Alice!" and clicked Save.
+3. Both tabs show updated text with `(edited)` badge next to timestamp.
+4. Bob clicked `(edited)` badge — "EDIT HISTORY" panel expanded showing "04:47 PM This message will be edited soon" (original text).
+5. No edit button visible on Bob's tab for Alice's messages (correct authorization).
+
+---
+
 ## Reprompt Log
 
 | # | Iteration | Category | Issue Summary | Fixed? |
@@ -138,4 +157,5 @@
 | 5. Scheduled Messages | 3 | 3 | All working |
 | 6. Ephemeral Messages | 3 | 3 | Countdown + auto-delete |
 | 7. Message Reactions | 3 | 3 | React, count, toggle, hover all working |
-| **TOTAL** | **21** | **21** | |
+| 8. Message Editing with History | 3 | 3 | Edit, (edited) badge, history panel, real-time sync |
+| **TOTAL** | **24** | **24** | |

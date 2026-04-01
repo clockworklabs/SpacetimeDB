@@ -37,8 +37,8 @@
 | Level 2 (upgrade)  | $0.74 | 27 | ~3.5 min |
 | Level 3 (upgrade)  | $1.45 | 52 | ~5.5 min |
 | Level 4 (upgrade)  | $1.23 | 45 | ~4.5 min |
-| Level 5 (upgrade)  | TBD (OTel) | TBD | TBD |
-| **Cumulative**      | **$4.69+** | **149+** | **~21.5 min+** |
+| Level 5 (upgrade)  | $1.16 | 40 | ~5.3 min |
+| **Cumulative**      | **$5.85** | **189+** | **~26.8 min** |
 
 ---
 
@@ -141,7 +141,13 @@
 - Client: "Edit" button appears on hover for own messages (non-ephemeral). Inline edit form replaces message content during editing. `(edited)` indicator shown in message header — clicking opens edit history modal with versioned previous content and timestamps.
 - Real-time: `message:edited` socket event updates content and `isEdited` flag on all connected clients instantly.
 
-**Browser Test Observations:** Pending browser verification — code compiles and both servers are running.
+**Browser Test Observations:**
+1. Alice clicked "Edit" on her message "Scheduled postgres message!" — inline edit form appeared with text pre-filled, Save/Cancel buttons.
+2. Changed text to "This message was EDITED on postgres!" and clicked Save.
+3. Both tabs show updated text with `(edited)` indicator next to timestamp.
+4. Bob clicked `(edited)` → "Edit History" modal opened showing "Version 1: Scheduled postgres message!" with timestamp "4/1/2026, 4:54:41 PM".
+5. No Edit buttons visible on Bob's tab for Alice's messages (correct authorization).
+6. Edit button always visible on Alice's own messages (not hover-only like spacetime version).
 
 ---
 
