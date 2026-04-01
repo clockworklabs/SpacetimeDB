@@ -107,6 +107,7 @@ impl ReplicaContext {
             s.spawn(move || {
                 reqwest::blocking::Client::builder()
                     .tcp_keepalive(tcp_keepalive)
+                    .http2_prior_knowledge()
                     .pool_idle_timeout(pool_idle_timeout)
                     .pool_max_idle_per_host(pool_max_idle_per_host)
                     .timeout(timeout)
