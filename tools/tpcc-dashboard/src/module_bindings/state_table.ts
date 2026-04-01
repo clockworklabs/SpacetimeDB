@@ -16,6 +16,5 @@ export default __t.row({
   runEndMs: __t.u64().name("run_end_ms"),
   measureStartMs: __t.u64().name("measure_start_ms"),
   measureEndMs: __t.u64().name("measure_end_ms"),
-  orderCount: __t.u64().name("order_count"),
-  measurementTimeMs: __t.u64().name("measurement_time_ms"),
+  warehouseCount: __t.u64().name("warehouse_count"),
 });

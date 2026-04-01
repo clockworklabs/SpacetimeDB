@@ -1,0 +1,23 @@
+.cards {
+  display: flex;
+}
+
+.card {
+  display: flex;
+  padding: 24px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 32px;
+  flex: 1 0 0;
+  align-self: stretch;
+  border: 1px solid var(--shade-3);
+  background: var(--shade-6);
+}
+
+.card:first-child {
+  border-radius: 16px 0 0 0;
+}
+
+.card:last-child {
+  border-radius: 0 16px 0 0;
+}

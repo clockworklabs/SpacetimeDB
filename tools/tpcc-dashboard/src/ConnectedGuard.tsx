@@ -4,14 +4,14 @@ import { SpacetimeDBContext } from './context';
 
 export function ConnectedGuard({ children }: { children: React.ReactNode }) {
   const [conn, setConn] = useState<DbConnection | null>(null);
-
   useEffect(() => {
     if (conn) {
       return;
     }
 
     DbConnection.builder()
-      .withUri('http://127.0.0.1:3000')
+      .withUri('https://tpc-c-benchmark.spacetimedb.com')
+      .withUri('http://localhost:3000')
       .withDatabaseName('tpcc-metrics')
       .onConnect(conn => {
         console.log('Connected to SpacetimeDB');
@@ -21,7 +21,7 @@ export function ConnectedGuard({ children }: { children: React.ReactNode }) {
   }, [conn]);
 
   if (!conn || !conn.isActive) {
-    return <div>Connecting to SpacetimeDB...</div>;
+    return <div className="heading-7">Connecting to SpacetimeDB...</div>;
   }
 
   return (

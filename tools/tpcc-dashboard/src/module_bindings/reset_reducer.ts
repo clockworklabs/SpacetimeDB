@@ -11,6 +11,7 @@ import {
 } from "spacetimedb";
 
 export default {
+  warehouseCount: __t.u64(),
   warmupDurationMs: __t.u64(),
   measureStartMs: __t.u64(),
   measureEndMs: __t.u64(),

@@ -53,6 +53,8 @@ pub struct TpccLoadConfigRequest {
     pub database_number: u32,
     pub num_databases: u32,
     pub warehouses_per_database: u32,
+    pub warehouse_id_offset: u32,
+    pub skip_items: bool,
     pub batch_size: u32,
     pub seed: u64,
     pub load_c_last: u32,
@@ -69,6 +71,8 @@ pub struct TpccLoadConfig {
     pub database_number: u32,
     pub num_databases: u32,
     pub warehouses_per_database: u32,
+    pub warehouse_id_offset: u32,
+    pub skip_items: bool,
     pub batch_size: u32,
     pub seed: u64,
     pub load_c_last: u32,
@@ -227,6 +231,8 @@ fn configure_tpcc_load_internal(ctx: &ReducerContext, request: TpccLoadConfigReq
         database_number: request.database_number,
         num_databases: request.num_databases,
         warehouses_per_database: request.warehouses_per_database,
+        warehouse_id_offset: request.warehouse_id_offset,
+        skip_items: request.skip_items,
         batch_size: request.batch_size,
         seed: request.seed,
         load_c_last: request.load_c_last,
@@ -265,6 +271,21 @@ fn validate_request(request: &TpccLoadConfigRequest) -> Result<(), String> {
             request.num_databases, request.warehouses_per_database
         ));
     }
+    // Validate that the warehouse ID range for this database doesn't overflow u32.
+    // warehouse_start = database_number * warehouses_per_database + warehouse_id_offset + 1
+    // warehouse_end   = warehouse_start + warehouses_per_database - 1
+    if request
+        .database_number
+        .checked_mul(request.warehouses_per_database)
+        .and_then(|v| v.checked_add(request.warehouse_id_offset))
+        .and_then(|v| v.checked_add(request.warehouses_per_database))
+        .is_none()
+    {
+        return Err(format!(
+            "warehouse id range overflow u32 (database_number={}, warehouses_per_database={}, warehouse_id_offset={})",
+            request.database_number, request.warehouses_per_database, request.warehouse_id_offset
+        ));
+    }
     Ok(())
 }
 
@@ -272,8 +293,16 @@ fn initial_state(request: &TpccLoadConfigRequest, now: Timestamp) -> TpccLoadSta
     TpccLoadState {
         singleton_id: LOAD_SINGLETON_ID,
         status: TpccLoadStatus::Idle,
-        phase: TpccLoadPhase::Items,
-        next_warehouse_id: warehouse_start(request.database_number, request.warehouses_per_database),
+        phase: if request.skip_items {
+            TpccLoadPhase::WarehousesDistricts
+        } else {
+            TpccLoadPhase::Items
+        },
+        next_warehouse_id: warehouse_start(
+            request.database_number,
+            request.warehouses_per_database,
+            request.warehouse_id_offset,
+        ),
         next_district_id: 1,
         next_item_id: 1,
         next_order_id: 1,
@@ -291,6 +320,8 @@ fn config_as_request(config: &TpccLoadConfig) -> TpccLoadConfigRequest {
         database_number: config.database_number,
         num_databases: config.num_databases,
         warehouses_per_database: config.warehouses_per_database,
+        warehouse_id_offset: config.warehouse_id_offset,
+        skip_items: config.skip_items,
         batch_size: config.batch_size,
         seed: config.seed,
         load_c_last: config.load_c_last,
@@ -306,8 +337,9 @@ fn build_remote_warehouses(request: &TpccLoadConfigRequest) -> Vec<RemoteWarehou
         if other_database_number == request.database_number {
             continue;
         }
-        let database_ident = request.database_identities[usize::try_from(other_database_number).expect("u32 fits usize")];
-        for w_id in warehouse_range(other_database_number, request.warehouses_per_database) {
+        let database_ident =
+            request.database_identities[usize::try_from(other_database_number).expect("u32 fits usize")];
+        for w_id in warehouse_range(other_database_number, request.warehouses_per_database, request.warehouse_id_offset) {
             rows.push(RemoteWarehouse {
                 w_id,
                 remote_database_home: database_ident,
@@ -398,7 +430,7 @@ fn load_item_chunk(ctx: &ReducerContext, config: &TpccLoadConfig, job: &TpccLoad
     };
     Ok(ChunkAdvance {
         phase: next_phase,
-        next_warehouse_id: warehouse_start(config.database_number, config.warehouses_per_database),
+        next_warehouse_id: warehouse_start(config.database_number, config.warehouses_per_database, config.warehouse_id_offset),
         next_district_id: 1,
         next_item_id: if chunk_end == ITEMS { 1 } else { chunk_end + 1 },
         next_order_id: 1,
@@ -413,8 +445,8 @@ fn load_warehouse_district_chunk(
     job: &TpccLoadJob,
 ) -> Result<ChunkAdvance, String> {
     let _timer = LogStopwatch::new("load_warehouses_district_chunk");
-    let end_warehouse = warehouse_end(config.database_number, config.warehouses_per_database);
-    if job.next_warehouse_id < warehouse_start(config.database_number, config.warehouses_per_database)
+    let end_warehouse = warehouse_end(config.database_number, config.warehouses_per_database, config.warehouse_id_offset);
+    if job.next_warehouse_id < warehouse_start(config.database_number, config.warehouses_per_database, config.warehouse_id_offset)
         || job.next_warehouse_id > end_warehouse
     {
         return Err(format!("invalid warehouse cursor {}", job.next_warehouse_id));
@@ -436,7 +468,7 @@ fn load_warehouse_district_chunk(
             TpccLoadPhase::WarehousesDistricts
         },
         next_warehouse_id: if job.next_warehouse_id == end_warehouse {
-            warehouse_start(config.database_number, config.warehouses_per_database)
+            warehouse_start(config.database_number, config.warehouses_per_database, config.warehouse_id_offset)
         } else {
             job.next_warehouse_id + 1
         },
@@ -450,8 +482,8 @@ fn load_warehouse_district_chunk(
 
 fn load_stock_chunk(ctx: &ReducerContext, config: &TpccLoadConfig, job: &TpccLoadJob) -> Result<ChunkAdvance, String> {
     let _timer = LogStopwatch::new("load_stock_chunk");
-    let start_warehouse = warehouse_start(config.database_number, config.warehouses_per_database);
-    let end_warehouse = warehouse_end(config.database_number, config.warehouses_per_database);
+    let start_warehouse = warehouse_start(config.database_number, config.warehouses_per_database, config.warehouse_id_offset);
+    let end_warehouse = warehouse_end(config.database_number, config.warehouses_per_database, config.warehouse_id_offset);
     if job.next_warehouse_id < start_warehouse || job.next_warehouse_id > end_warehouse {
         return Err(format!("invalid stock warehouse cursor {}", job.next_warehouse_id));
     }
@@ -491,8 +523,8 @@ fn load_customer_history_chunk(
     job: &TpccLoadJob,
 ) -> Result<ChunkAdvance, String> {
     let _timer = LogStopwatch::new("load_customer_history_chunk");
-    let start_warehouse = warehouse_start(config.database_number, config.warehouses_per_database);
-    let end_warehouse = warehouse_end(config.database_number, config.warehouses_per_database);
+    let start_warehouse = warehouse_start(config.database_number, config.warehouses_per_database, config.warehouse_id_offset);
+    let end_warehouse = warehouse_end(config.database_number, config.warehouses_per_database, config.warehouse_id_offset);
     if job.next_warehouse_id < start_warehouse || job.next_warehouse_id > end_warehouse {
         return Err(format!("invalid customer warehouse cursor {}", job.next_warehouse_id));
     }
@@ -541,8 +573,8 @@ fn load_customer_history_chunk(
 
 fn load_order_chunk(ctx: &ReducerContext, config: &TpccLoadConfig, job: &TpccLoadJob) -> Result<ChunkAdvance, String> {
     let _timer = LogStopwatch::new("load_order_chunk");
-    let start_warehouse = warehouse_start(config.database_number, config.warehouses_per_database);
-    let end_warehouse = warehouse_end(config.database_number, config.warehouses_per_database);
+    let start_warehouse = warehouse_start(config.database_number, config.warehouses_per_database, config.warehouse_id_offset);
+    let end_warehouse = warehouse_end(config.database_number, config.warehouses_per_database, config.warehouse_id_offset);
     if job.next_warehouse_id < start_warehouse || job.next_warehouse_id > end_warehouse {
         return Err(format!("invalid order warehouse cursor {}", job.next_warehouse_id));
     }
@@ -834,21 +866,26 @@ fn customer_permutation(config: &TpccLoadConfig, warehouse_id: WarehouseId, dist
     permutation
 }
 
-fn warehouse_range(database_number: u32, warehouses_per_database: u32) -> std::ops::Range<WarehouseId> {
-    let start = warehouse_start(database_number, warehouses_per_database);
+fn warehouse_range(
+    database_number: u32,
+    warehouses_per_database: u32,
+    offset: u32,
+) -> std::ops::Range<WarehouseId> {
+    let start = warehouse_start(database_number, warehouses_per_database, offset);
     let end = start + warehouses_per_database;
     start..end
 }
 
-fn warehouse_start(database_number: u32, warehouses_per_database: u32) -> WarehouseId {
+fn warehouse_start(database_number: u32, warehouses_per_database: u32, offset: u32) -> WarehouseId {
     database_number
         .checked_mul(warehouses_per_database)
+        .and_then(|value| value.checked_add(offset))
         .and_then(|value| value.checked_add(1))
         .expect("warehouse id arithmetic validated at configure_tpcc_load time")
 }
 
-fn warehouse_end(database_number: u32, warehouses_per_database: u32) -> WarehouseId {
-    warehouse_start(database_number, warehouses_per_database) + warehouses_per_database - 1
+fn warehouse_end(database_number: u32, warehouses_per_database: u32, offset: u32) -> WarehouseId {
+    warehouse_start(database_number, warehouses_per_database, offset) + warehouses_per_database - 1
 }
 
 fn deterministic_rng(seed: u64, tag: u64, parts: &[u64]) -> StdRng {

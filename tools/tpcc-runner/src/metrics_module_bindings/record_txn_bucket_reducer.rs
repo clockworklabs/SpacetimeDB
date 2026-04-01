@@ -6,40 +6,40 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct RegisterCompletedOrderArgs {}
+pub(super) struct RecordTxnBucketArgs {}
 
-impl From<RegisterCompletedOrderArgs> for super::Reducer {
-    fn from(args: RegisterCompletedOrderArgs) -> Self {
-        Self::RegisterCompletedOrder
+impl From<RecordTxnBucketArgs> for super::Reducer {
+    fn from(args: RecordTxnBucketArgs) -> Self {
+        Self::RecordTxnBucket
     }
 }
 
-impl __sdk::InModule for RegisterCompletedOrderArgs {
+impl __sdk::InModule for RecordTxnBucketArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `register_completed_order`.
+/// Extension trait for access to the reducer `record_txn_bucket`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait register_completed_order {
-    /// Request that the remote module invoke the reducer `register_completed_order` to run as soon as possible.
+pub trait record_txn_bucket {
+    /// Request that the remote module invoke the reducer `record_txn_bucket` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`register_completed_order:register_completed_order_then`] to run a callback after the reducer completes.
-    fn register_completed_order(&self) -> __sdk::Result<()> {
-        self.register_completed_order_then(|_, _| {})
+    /// /// Use [`record_txn_bucket:record_txn_bucket_then`] to run a callback after the reducer completes.
+    fn record_txn_bucket(&self) -> __sdk::Result<()> {
+        self.record_txn_bucket_then(|_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `register_completed_order` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `record_txn_bucket` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn register_completed_order_then(
+    fn record_txn_bucket_then(
         &self,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
@@ -48,8 +48,8 @@ pub trait register_completed_order {
     ) -> __sdk::Result<()>;
 }
 
-impl register_completed_order for super::RemoteReducers {
-    fn register_completed_order_then(
+impl record_txn_bucket for super::RemoteReducers {
+    fn record_txn_bucket_then(
         &self,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
@@ -57,6 +57,6 @@ impl register_completed_order for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(RegisterCompletedOrderArgs {}, callback)
+            .invoke_reducer_with_callback::<_, ()>(RecordTxnBucketArgs {}, callback)
     }
 }

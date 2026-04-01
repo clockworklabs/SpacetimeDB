@@ -7,6 +7,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct ResetArgs {
+    pub warehouse_count: u64,
     pub warmup_duration_ms: u64,
     pub measure_start_ms: u64,
     pub measure_end_ms: u64,
@@ -15,6 +16,7 @@ pub(super) struct ResetArgs {
 impl From<ResetArgs> for super::Reducer {
     fn from(args: ResetArgs) -> Self {
         Self::Reset {
+            warehouse_count: args.warehouse_count,
             warmup_duration_ms: args.warmup_duration_ms,
             measure_start_ms: args.measure_start_ms,
             measure_end_ms: args.measure_end_ms,
@@ -37,8 +39,20 @@ pub trait reset {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`reset:reset_then`] to run a callback after the reducer completes.
-    fn reset(&self, warmup_duration_ms: u64, measure_start_ms: u64, measure_end_ms: u64) -> __sdk::Result<()> {
-        self.reset_then(warmup_duration_ms, measure_start_ms, measure_end_ms, |_, _| {})
+    fn reset(
+        &self,
+        warehouse_count: u64,
+        warmup_duration_ms: u64,
+        measure_start_ms: u64,
+        measure_end_ms: u64,
+    ) -> __sdk::Result<()> {
+        self.reset_then(
+            warehouse_count,
+            warmup_duration_ms,
+            measure_start_ms,
+            measure_end_ms,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `reset` to run as soon as possible,
@@ -49,6 +63,7 @@ pub trait reset {
     ///  and its status can be observed with the `callback`.
     fn reset_then(
         &self,
+        warehouse_count: u64,
         warmup_duration_ms: u64,
         measure_start_ms: u64,
         measure_end_ms: u64,
@@ -62,6 +77,7 @@ pub trait reset {
 impl reset for super::RemoteReducers {
     fn reset_then(
         &self,
+        warehouse_count: u64,
         warmup_duration_ms: u64,
         measure_start_ms: u64,
         measure_end_ms: u64,
@@ -70,8 +86,9 @@ impl reset for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
+        self.imp.invoke_reducer_with_callback::<_, ()>(
             ResetArgs {
+                warehouse_count,
                 warmup_duration_ms,
                 measure_start_ms,
                 measure_end_ms,

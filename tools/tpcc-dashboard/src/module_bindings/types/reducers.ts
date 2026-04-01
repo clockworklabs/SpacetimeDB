@@ -7,10 +7,12 @@ import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
 import ClearStateReducer from "../clear_state_reducer";
-import RegisterCompletedOrderReducer from "../register_completed_order_reducer";
+import RecordTxnReducer from "../record_txn_reducer";
+import RecordTxnBucketReducer from "../record_txn_bucket_reducer";
 import ResetReducer from "../reset_reducer";
 
 export type ClearStateParams = __Infer<typeof ClearStateReducer>;
-export type RegisterCompletedOrderParams = __Infer<typeof RegisterCompletedOrderReducer>;
+export type RecordTxnParams = __Infer<typeof RecordTxnReducer>;
+export type RecordTxnBucketParams = __Infer<typeof RecordTxnBucketReducer>;
 export type ResetParams = __Infer<typeof ResetReducer>;
 

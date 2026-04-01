@@ -12,8 +12,7 @@ pub struct State {
     pub run_end_ms: u64,
     pub measure_start_ms: u64,
     pub measure_end_ms: u64,
-    pub order_count: u64,
-    pub measurement_time_ms: u64,
+    pub warehouse_count: u64,
 }
 
 impl __sdk::InModule for State {
@@ -29,8 +28,7 @@ pub struct StateCols {
     pub run_end_ms: __sdk::__query_builder::Col<State, u64>,
     pub measure_start_ms: __sdk::__query_builder::Col<State, u64>,
     pub measure_end_ms: __sdk::__query_builder::Col<State, u64>,
-    pub order_count: __sdk::__query_builder::Col<State, u64>,
-    pub measurement_time_ms: __sdk::__query_builder::Col<State, u64>,
+    pub warehouse_count: __sdk::__query_builder::Col<State, u64>,
 }
 
 impl __sdk::__query_builder::HasCols for State {
@@ -42,8 +40,7 @@ impl __sdk::__query_builder::HasCols for State {
             run_end_ms: __sdk::__query_builder::Col::new(table_name, "run_end_ms"),
             measure_start_ms: __sdk::__query_builder::Col::new(table_name, "measure_start_ms"),
             measure_end_ms: __sdk::__query_builder::Col::new(table_name, "measure_end_ms"),
-            order_count: __sdk::__query_builder::Col::new(table_name, "order_count"),
-            measurement_time_ms: __sdk::__query_builder::Col::new(table_name, "measurement_time_ms"),
+            warehouse_count: __sdk::__query_builder::Col::new(table_name, "warehouse_count"),
         }
     }
 }

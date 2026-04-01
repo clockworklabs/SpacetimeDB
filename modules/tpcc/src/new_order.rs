@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    district, find_customer_by_id, find_district, find_stock, find_warehouse, item, order_line, pack_order_key,
-    remote::{call_remote_reducer, remote_warehouse_home},
-    stock, District, Item, OrderLine, Stock, WarehouseId, DISTRICTS_PER_WAREHOUSE, TAX_SCALE,
+    DISTRICTS_PER_WAREHOUSE, District, Item, OrderLine, Stock, TAX_SCALE, WarehouseId, district, find_customer_by_id, find_district, find_stock, find_warehouse, item, order_line, pack_order_key, remote::{call_remote_reducer, remote_warehouse_home, simulate_remote_call}, stock
 };
 use spacetimedb::{log_stopwatch::LogStopwatch, reducer, Identity, ReducerContext, SpacetimeType, Table, Timestamp};
 
@@ -189,6 +187,13 @@ fn call_remote_order_multiple_items_and_decrement_stock(
         "order_multiple_items_and_decrement_stocks",
         &input,
     )
+    // simulate_remote_call(
+    //     ctx,
+    //     remote_database_identity,
+    //     "order_multiple_items_and_decrement_stocks",
+    //     &input,
+    // )?;
+    // Ok(simulated_remote_order_outputs(input))
 }
 
 struct ProcessedNewOrderItem {
@@ -260,6 +265,29 @@ pub struct OrderMultipleItemsInput {
     lines: Vec<NewOrderLineAndIndex>,
     district: u8,
     terminal_warehouse: WarehouseId,
+}
+
+fn simulated_remote_order_outputs(input: OrderMultipleItemsInput) -> Vec<OrderItemOutput> {
+    input
+        .lines
+        .into_iter()
+        .map(|line| simulated_remote_order_output(line, input.district))
+        .collect()
+}
+
+fn simulated_remote_order_output(line: NewOrderLineAndIndex, district: u8) -> OrderItemOutput {
+    let stock_data = if line.line.item_id % 10 == 0 {
+        "SIMULATED ORIGINAL STOCK"
+    } else {
+        "SIMULATED REMOTE STOCK"
+    };
+
+    OrderItemOutput {
+        s_dist: format!("REMOTE-D{district:02}"),
+        s_data: stock_data.to_string(),
+        updated_quantity: adjust_stock_quantity(100, line.line.quantity as i32),
+        index: line.index,
+    }
 }
 
 #[reducer]

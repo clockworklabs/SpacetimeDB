@@ -1,83 +1,80 @@
-/* eslint-disable react-hooks/purity */
-import { useContext, useEffect, useState } from 'react';
+import { useContext, useEffect } from 'react';
 import { SpacetimeDBContext } from './context';
-import type { NewOrderThroughtputChartData } from './NewOrderThroughtputChart';
+import { deleteState, insertState, removeTxnBucket, upsertTxnBucket } from './features/globalState';
+import { useAppDispatch, useAppSelector } from './hooks';
 import NewOrderThroughtputChart from './NewOrderThroughtputChart';
-import type { State } from './module_bindings/types';
+import StatsCards from './StatsCards';
+import './App.css';
 
 function App() {
   const conn = useContext(SpacetimeDBContext);
-  const [state, setState] = useState<State | null>(null);
-  const [throughputData, setThroughputData] = useState<
-    NewOrderThroughtputChartData[]
-  >([]);
+  const isReady = useAppSelector(state => state.globalState.isReady);
+  const dispatch = useAppDispatch();
 
   useEffect(() => {
-    conn?.db.state.onInsert((_, state) => {
-      setState(state);
-      setThroughputData([]);
+    console.log('App useEffect - setting up subscriptions');
+    if (!conn) return;
+
+    conn.db.state.onInsert((_, state) => {
+      console.log('State inserted - dispatching insertState', state);
+      dispatch(
+        insertState({
+          warehouseCount: Number(state.warehouseCount),
+          measureStartMs: Number(state.measureStartMs),
+          measureEndMs: Number(state.measureEndMs),
+          runStartMs: Number(state.runStartMs),
+          runEndMs: Number(state.runEndMs),
+        })
+      );
     });
-    conn?.db.state.onUpdate((_, old, state) => {
-      setState(state);
-
-      setThroughputData(prevData => {
-        const next = [
-          ...prevData,
-          {
-            transactionCount: Number(state.orderCount - old.orderCount),
-            timestamp: new Date(Number(state.measurementTimeMs)),
-          },
-        ];
-
-        return next;
-      });
+    conn.db.state.onDelete(() => {
+      console.log('State deleted - dispatching deleteState');
+      dispatch(deleteState());
     });
 
-    conn?.db.state.onDelete(() => {
-      setState(null);
-      setThroughputData([]);
+    conn.db.txn_bucket.onInsert((_, bucket) => {
+      dispatch(
+        upsertTxnBucket({
+          bucketStartMs: Number(bucket.bucketStartMs),
+          count: Number(bucket.count),
+        })
+      );
+    });
+    conn.db.txn_bucket.onUpdate((_, _oldBucket, bucket) => {
+      dispatch(
+        upsertTxnBucket({
+          bucketStartMs: Number(bucket.bucketStartMs),
+          count: Number(bucket.count),
+        })
+      );
+    });
+    conn.db.txn_bucket.onDelete((_, bucket) => {
+      dispatch(
+        removeTxnBucket({
+          bucketStartMs: Number(bucket.bucketStartMs),
+        })
+      );
     });
 
     const subscription = conn
-      ?.subscriptionBuilder()
+      .subscriptionBuilder()
       .onError(err => console.error('Subscription error:', err))
-      .subscribe('SELECT * FROM state');
+      .subscribe(['SELECT * FROM state', 'SELECT * FROM txn_bucket']);
 
     return () => {
-      subscription?.unsubscribe();
+      subscription.unsubscribe();
     };
-  }, [conn]);
+  }, [conn, dispatch]);
 
-  if (!state) {
-    return <div>Waiting for data...</div>;
+  if (!isReady) {
+    return <div className="heading-7">Waiting for data...</div>;
   }
 
-  const measureStartDate = new Date(Number(state.measureStartMs));
-  const measureEndDate = new Date(Number(state.measureEndMs));
-
-  // If the is in progress we calculate the ellapsed time based on the current time,
-  // otherwise we calculate it based on the measure end date
-  const ellapsedTimeSec =
-    Date.now() > measureEndDate.getTime()
-      ? (measureEndDate.getTime() - measureStartDate.getTime()) / 1000
-      : (Date.now() - measureStartDate.getTime()) / 1000;
-  const tpmC = (Number(state.orderCount) / ellapsedTimeSec) * 60;
-
   return (
-    <>
-      <p>measureStartMs: {measureStartDate.toLocaleTimeString()}</p>
-      <p>measureEndMs: {measureEndDate.toLocaleTimeString()}</p>
-      <p>total transactions: {state.orderCount}</p>
-      <p>MQTh: {Math.trunc(tpmC)} tpmC</p>
-      <NewOrderThroughtputChart
-        data={throughputData}
-        runStartMs={Number(state.runStartMs)}
-        runEndMs={Number(state.runEndMs)}
-        measurementStartMs={Number(state.measureStartMs)}
-        measurementEndMs={Number(state.measureEndMs)}
-      />
-      <button onClick={() => conn?.reducers.clearState({})}>Clear state</button>
-    </>
+    <div className="app">
+      <StatsCards />
+      <NewOrderThroughtputChart />
+    </div>
   );
 }
 

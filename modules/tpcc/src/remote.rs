@@ -1,9 +1,10 @@
 use spacetimedb::{
-    reducer,
-    remote_reducer::{call_reducer_on_db, into_reducer_error_message, RemoteCallError},
-    table, DeserializeOwned, Identity, ReducerContext, Serialize, SpacetimeType, Table,
+    reducer, remote_reducer::call_reducer_on_db_2pc, table, DeserializeOwned, Identity, ReducerContext, Serialize,
+    SpacetimeType, Table,
 };
 use spacetimedb_sats::bsatn;
+
+const SIMULATED_REMOTE_CALL_WORK: u32 = 1_000_000;
 
 /// For warehouses not managed by this database, stores the [`Identity`] of the remote database which manages that warehouse.
 ///
@@ -42,6 +43,40 @@ pub fn remote_warehouse_home(ctx: &ReducerContext, warehouse_id: u32) -> Option<
         .map(|row| row.remote_database_home)
 }
 
+pub fn simulate_remote_call<Args>(
+    _ctx: &ReducerContext,
+    database_ident: Identity,
+    reducer_name: &str,
+    args: &Args,
+) -> Result<(), String>
+where
+    Args: SpacetimeType + Serialize,
+{
+    let args = bsatn::to_vec(args).map_err(|e| {
+        format!(
+            "Failed to BSATN-serialize args for simulated remote reducer {reducer_name} on database {database_ident}: {e}"
+        )
+    })?;
+
+    // Hold the reducer busy to approximate a synchronous remote call while we debug the real remote-call path.
+    let mut state = mix_remote_work(0x9E37_79B9_7F4A_7C15 ^ u64::try_from(args.len()).unwrap_or(u64::MAX));
+    for byte in format!("{database_ident}:{reducer_name}").bytes() {
+        state = mix_remote_work(state ^ u64::from(byte));
+    }
+    for &byte in &args {
+        state = mix_remote_work(state ^ u64::from(byte));
+    }
+
+    let rounds =
+        SIMULATED_REMOTE_CALL_WORK.saturating_add(u32::try_from(args.len()).unwrap_or(u32::MAX).saturating_mul(128));
+    for _ in 0..rounds {
+        state = mix_remote_work(state);
+    }
+    std::hint::black_box(state);
+    Ok(())
+}
+
+#[allow(dead_code)]
 pub fn call_remote_reducer<Args, Output>(
     _ctx: &ReducerContext,
     database_ident: Identity,
@@ -55,13 +90,19 @@ where
     let args = bsatn::to_vec(args).map_err(|e| {
         format!("Failed to BSATN-serialize args for remote reducer {reducer_name} on database {database_ident}: {e}")
     })?;
-    let out = call_reducer_on_db(database_ident, reducer_name, &args).map_err(|e| match e {
-        RemoteCallError::Wounded(_) => into_reducer_error_message(e),
-        _ => format!("Failed to call remote reducer {reducer_name} on database {database_ident}: {e}"),
-    })?;
+    let out = call_reducer_on_db_2pc(database_ident, reducer_name, &args)
+        .map_err(|e| format!("Failed to call remote reducer {reducer_name} on database {database_ident}: {e}"))?;
     bsatn::from_slice(&out).map_err(|e| {
         format!(
             "Failed to BSATN-deserialize result from remote reducer {reducer_name} on database {database_ident}: {e}"
         )
     })
+}
+
+fn mix_remote_work(mut state: u64) -> u64 {
+    state ^= state >> 33;
+    state = state.wrapping_mul(0xFF51_AFD7_ED55_8CCD);
+    state ^= state >> 33;
+    state = state.wrapping_mul(0xC4CE_B9FE_1A85_EC53);
+    state ^ (state >> 33)
 }

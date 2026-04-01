@@ -16,8 +16,20 @@ export const State = __t.object("State", {
   runEndMs: __t.u64(),
   measureStartMs: __t.u64(),
   measureEndMs: __t.u64(),
-  orderCount: __t.u64(),
-  measurementTimeMs: __t.u64(),
+  warehouseCount: __t.u64(),
 });
 export type State = __Infer<typeof State>;
+
+export const Txn = __t.object("Txn", {
+  id: __t.u64(),
+  measurementTimeMs: __t.u64(),
+  latencyMs: __t.u16(),
+});
+export type Txn = __Infer<typeof Txn>;
+
+export const TxnBucket = __t.object("TxnBucket", {
+  bucketStartMs: __t.u64(),
+  count: __t.u64(),
+});
+export type TxnBucket = __Infer<typeof TxnBucket>;
 
