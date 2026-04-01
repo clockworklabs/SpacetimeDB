@@ -46,7 +46,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: master
-          fetch-depth: 0
+          fetch-depth: 1
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -63,6 +63,14 @@ jobs:
           DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
         run: |
           dotnet workload install wasi-experimental --skip-manifest-update --disable-parallel
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Build llm-benchmark tool
         run: cargo install --path tools/xtask-llm-benchmark --locked
@@ -116,23 +124,6 @@ jobs:
 
       - name: Generate summary
         run: llm_benchmark summary
-
-      - name: Archive historical results
-        run: |
-          DATE=$(date -u +%Y-%m-%dT%H-%M-%S)
-          mkdir -p docs/llms/history
-          for f in docs/llms/llm-comparison-details.json docs/llms/llm-comparison-summary.json; do
-            if [ -f "$f" ]; then
-              BASENAME=$(basename "$f" .json)
-              cp "$f" "docs/llms/history/${DATE}_${BASENAME}.json"
-            fi
-          done
-          # Regenerate manifest.json listing all history files (sorted)
-          ls docs/llms/history/*.json 2>/dev/null \
-            | xargs -I{} basename {} \
-            | grep -v manifest.json \
-            | sort \
-            | jq -R . | jq -s . > docs/llms/history/manifest.json
 
       - name: Ensure only docs/llms changed
         run: |
