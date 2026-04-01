@@ -4,21 +4,6 @@ Instructions for generating, building, and deploying the **SpacetimeDB** backend
 
 ---
 
-## SDK Rules (CRITICAL)
-
-**You MUST read the SDK rule file before generating ANY code.**
-
-Find and read **`spacetimedb-typescript.mdc`** in `docs/static/ai-rules/` of the repo. This file contains everything you need:
-- Table definition syntax (`table(OPTIONS, COLUMNS)` — indexes go in OPTIONS)
-- Reducer definition syntax (export name becomes reducer name — NO string arg)
-- Schema export syntax (`schema({ table1, table2 })` — object, NOT spread args)
-- Lifecycle hooks must be `export const` (NOT bare calls)
-- Client patterns (useTable returns tuple, connectionBuilder must be memoized)
-- Hallucinated APIs to avoid
-- Scheduled tables, timestamps, data visibility, React integration, project structure
-
----
-
 ## Pre-flight Check
 
 ```bash
@@ -56,8 +41,8 @@ If SpacetimeDB is not running, STOP and report the error.
 
 ## Phase 1: Generate Backend
 
-- Create `backend/spacetimedb/package.json` (use template from patterns-typescript.mdc)
-- Create `backend/spacetimedb/tsconfig.json` (use template from patterns-typescript.mdc)
+- Create `backend/spacetimedb/package.json` (use template in "Backend Templates" section below)
+- Create `backend/spacetimedb/tsconfig.json` (use template below)
 - Create `backend/spacetimedb/src/schema.ts` — all tables and indexes
 - Create `backend/spacetimedb/src/index.ts` — all reducers and lifecycle hooks
 - Install and publish:
@@ -84,10 +69,10 @@ Read the generated bindings to know the exact type names (table names, reducer s
 
 Generate client files using the REAL binding types from Phase 2.
 
-- Create `client/package.json` (use template from patterns-typescript.mdc)
-- Create `client/vite.config.ts` (port 5173, NEVER 3000)
-- Create `client/tsconfig.json` (use template)
-- Create `client/index.html` (use template)
+- Create `client/package.json` (use template below)
+- Create `client/vite.config.ts` (use template below)
+- Create `client/tsconfig.json` (use template below)
+- Create `client/index.html` (use template below)
 - Create `client/src/config.ts` — module name and SpacetimeDB URI
 - Create `client/src/main.tsx` — React entry point
 - Create `client/src/App.tsx` — main application component
@@ -135,11 +120,3 @@ Wait for the dev server to be ready (poll `http://localhost:5173` up to 30 secon
   spacetime generate --lang typescript --out-dir <client>/src/module_bindings --module-path <backend-dir>
   ```
 - If **client changed**: Vite HMR handles it automatically (or restart dev server if needed)
-
----
-
-## Reference Files
-
-| File (search for it) | Purpose |
-|------|---------|
-| `spacetimedb-typescript.mdc` | TypeScript SDK reference — the only file you need to read |

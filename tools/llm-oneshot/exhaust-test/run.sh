@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -l
 # Exhaust Test Launcher — Phase 1: Generate & Deploy
 #
 # Runs code generation and deployment in headless Claude Code with OTel tracking.
@@ -56,6 +56,17 @@ echo "Using Claude CLI: $CLAUDE_CMD"
 
 echo ""
 echo "=== Pre-flight Checks ==="
+
+# Ensure spacetime is in PATH (Windows installs to AppData/Local/SpacetimeDB)
+SPACETIME_DIR="${USERPROFILE:-$HOME}/AppData/Local/SpacetimeDB"
+if [[ -d "$SPACETIME_DIR" ]]; then
+  export PATH="$PATH:$SPACETIME_DIR"
+fi
+# Also try the cygpath-resolved home
+_USER="${USER:-${USERNAME:-$(whoami)}}"
+if [[ -d "/c/Users/$_USER/AppData/Local/SpacetimeDB" ]]; then
+  export PATH="$PATH:/c/Users/$_USER/AppData/Local/SpacetimeDB"
+fi
 
 if [[ "$BACKEND" == "spacetime" ]]; then
   if spacetime server ping local &>/dev/null; then
@@ -261,13 +272,29 @@ fi
 echo "Starting Claude Code session ($MODE_LABEL)..."
 echo "─────────────────────────────────────────────"
 
-# ─── Copy backend-specific CLAUDE.md into app directory ─────────────────────
-# This ensures the Code Agent only sees instructions for the chosen backend,
-# with zero contamination from other backends.
+# ─── Assemble backend-specific CLAUDE.md into app directory ─────────────────
+# Build CLAUDE.md at runtime by concatenating the workflow, SDK rules, and
+# templates. This ensures Claude always gets the latest rules inlined directly
+# (no "go find and read this other file" that it might skip).
 
 if [[ -z "$FIX_MODE" ]]; then
-  cp "$SCRIPT_DIR/backends/$BACKEND.md" "$APP_DIR/CLAUDE.md"
-  echo "Copied backends/$BACKEND.md → app CLAUDE.md"
+  if [[ "$BACKEND" == "spacetime" ]]; then
+    {
+      cat "$SCRIPT_DIR/backends/spacetime.md"
+      echo ""
+      echo "---"
+      echo ""
+      cat "$SCRIPT_DIR/backends/spacetime-sdk-rules.md"
+      echo ""
+      echo "---"
+      echo ""
+      cat "$SCRIPT_DIR/backends/spacetime-templates.md"
+    } > "$APP_DIR/CLAUDE.md"
+    echo "Assembled CLAUDE.md from spacetime.md + sdk-rules + templates"
+  else
+    cp "$SCRIPT_DIR/backends/$BACKEND.md" "$APP_DIR/CLAUDE.md"
+    echo "Copied backends/$BACKEND.md → app CLAUDE.md"
+  fi
 fi
 
 # ─── Run Claude Code ─────────────────────────────────────────────────────────
