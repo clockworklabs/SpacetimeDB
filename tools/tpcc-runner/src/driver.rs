@@ -10,7 +10,7 @@ use tokio::task::JoinSet;
 
 use crate::client::{expect_ok, ModuleClient};
 use crate::config::{default_run_id, DriverConfig};
-use crate::metrics_module_bindings::{record_txn, DbConnection as MetricsDbConnection};
+use crate::metrics_module_bindings::{record_txn_bucket, DbConnection as MetricsDbConnection};
 use crate::metrics_module_client::connect_metrics_module_async;
 use crate::module_bindings::*;
 use crate::protocol::{
@@ -250,7 +250,7 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
                 // Some metrics depend on knowing all completed orders, even outside the
                 // measurement window
                 if record.kind == TransactionKind::NewOrder && record.success {
-                    let _ = metrics_client.reducers.record_txn(record.latency_ms as u16);
+                    let _ = metrics_client.reducers.record_txn_bucket();
                 }
 
                 if record.timestamp_ms >= schedule.measure_start_ms && record.timestamp_ms < schedule.measure_end_ms {

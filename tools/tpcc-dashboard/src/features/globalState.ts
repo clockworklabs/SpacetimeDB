@@ -1,5 +1,36 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
+function createInitialState(): GlobalState {
+  return {
+    isReady: false,
+    warehouses: 0,
+    measureStartMs: 0,
+    measureEndMs: 0,
+    runStartMs: 0,
+    runEndMs: 0,
+    totalTransactionCount: 0,
+    measuredTransactionCount: 0,
+    bucketCounts: {},
+  };
+}
+
+function recalculateCounts(state: GlobalState) {
+  let totalTransactionCount = 0;
+  let measuredTransactionCount = 0;
+
+  for (const [bucketStartMs, count] of Object.entries(state.bucketCounts)) {
+    const bucketCount = Number(count);
+    totalTransactionCount += bucketCount;
+
+    if (Number(bucketStartMs) >= state.measureStartMs) {
+      measuredTransactionCount += bucketCount;
+    }
+  }
+
+  state.totalTransactionCount = totalTransactionCount;
+  state.measuredTransactionCount = measuredTransactionCount;
+}
+
 export interface GlobalState {
   isReady: boolean;
   warehouses: number;
@@ -9,24 +40,10 @@ export interface GlobalState {
   runEndMs: number;
   totalTransactionCount: number;
   measuredTransactionCount: number;
-  /// Time in ms when the transaction was measured
-  throughputData: number[];
-  /// Latency frequency distribution, where the key is the latency in ms and the value is the count of transactions with that latency.
-  latencyData: Record<number, number>;
+  bucketCounts: Record<number, number>;
 }
 
-const initialState: GlobalState = {
-  isReady: false,
-  warehouses: 0,
-  measureStartMs: 0,
-  measureEndMs: 0,
-  runStartMs: 0,
-  runEndMs: 0,
-  totalTransactionCount: 0,
-  measuredTransactionCount: 0,
-  throughputData: [],
-  latencyData: {},
-};
+const initialState: GlobalState = createInitialState();
 
 export const globalStateSlice = createSlice({
   name: 'globalState',
@@ -50,43 +67,31 @@ export const globalStateSlice = createSlice({
       state.measureEndMs = payload.measureEndMs;
       state.runStartMs = payload.runStartMs;
       state.runEndMs = payload.runEndMs;
-      state.totalTransactionCount = 0;
-      state.measuredTransactionCount = 0;
-      state.throughputData = [];
-      state.latencyData = {};
+      recalculateCounts(state);
     },
-    deleteState: state => {
+    deleteState: () => {
       console.log('State deleted, resetting to initial state');
-      state.isReady = false;
+      return createInitialState();
     },
-    throughputStateUpdate: (
+    upsertTxnBucket: (
       state,
       action: PayloadAction<{
-        id: string;
-        measurementTimeMs: number;
-        latencyMs: number;
+        bucketStartMs: number;
+        count: number;
       }>
     ) => {
       const payload = action.payload;
-      state.totalTransactionCount += 1;
-      if (Number(payload.measurementTimeMs) >= state.measureStartMs) {
-        // Each update here is a single transaction, so we can just increment the count by one.
-        state.measuredTransactionCount += 1;
-      }
-
-      state.throughputData.push(Number(payload.measurementTimeMs));
-
-      const latency = Number(payload.latencyMs);
-      if (state.latencyData[latency]) {
-        state.latencyData[latency] += 1;
-      } else {
-        state.latencyData[latency] = 1;
-      }
+      state.bucketCounts[payload.bucketStartMs] = payload.count;
+      recalculateCounts(state);
+    },
+    removeTxnBucket: (state, action: PayloadAction<{ bucketStartMs: number }>) => {
+      delete state.bucketCounts[action.payload.bucketStartMs];
+      recalculateCounts(state);
     },
   },
 });
 
-export const { insertState, deleteState, throughputStateUpdate } =
+export const { insertState, deleteState, upsertTxnBucket, removeTxnBucket } =
   globalStateSlice.actions;
 
 export default globalStateSlice.reducer;

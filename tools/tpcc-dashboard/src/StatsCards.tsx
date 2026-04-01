@@ -12,28 +12,32 @@ import './StatsCards.css';
 
 function getTpmC(
   measureStartMs: number,
-  measureEndMs: number,
-  measuredTransactionCount: number
-): number | null {
-  const nowMs = Date.now();
+  bucketCounts: Record<number, number>
+): number {
+  const measuredBucketStarts = Object.keys(bucketCounts)
+    .map(Number)
+    .filter(bucketStartMs => bucketStartMs >= measureStartMs)
+    .sort((a, b) => a - b);
 
-  if (measureStartMs <= 0 || measureEndMs <= measureStartMs) {
-    return null;
+  if (measuredBucketStarts.length === 0) {
+    return 0;
   }
 
-  if (nowMs < measureStartMs) {
-    return null;
-  }
-
-  const effectiveEndMs = Math.min(nowMs, measureEndMs);
-  const elapsedTimeSec = (effectiveEndMs - measureStartMs) / 1000;
+  const firstBucketStartMs = measuredBucketStarts[0];
+  const latestBucketStartMs =
+    measuredBucketStarts[measuredBucketStarts.length - 1];
+  const totalMeasuredTransactions = measuredBucketStarts.reduce(
+    (sum, bucketStartMs) => sum + (bucketCounts[bucketStartMs] ?? 0),
+    0
+  );
+  const elapsedTimeSec =
+    (latestBucketStartMs + 1_000 - firstBucketStartMs) / 1000;
 
   if (elapsedTimeSec <= 0) {
-    return null;
+    return 0;
   }
 
-  const tpmC = (measuredTransactionCount / elapsedTimeSec) * 60;
-  return Math.trunc(tpmC);
+  return Math.trunc((totalMeasuredTransactions / elapsedTimeSec) * 60);
 }
 
 function StatCard({
@@ -71,8 +75,10 @@ export default function StatsCards() {
   const measuredTransactionCount = useAppSelector(
     state => state.globalState.measuredTransactionCount
   );
+  const bucketCounts = useAppSelector(state => state.globalState.bucketCounts);
 
-  const tpmC = getTpmC(measureStartMs, measureEndMs, measuredTransactionCount);
+  const tpmC = getTpmC(measureStartMs, bucketCounts);
+  const theoreticalMaxThroughput = warehouses * 12.86;
 
   return (
     <div className="cards">
@@ -86,16 +92,16 @@ export default function StatsCards() {
       <StatCard
         icon={<UploadIcon />}
         label="Max. Theorical Throughput"
-        value={warehouses * 12.86}
+        value={theoreticalMaxThroughput}
         unit="tpmC"
       />
       <StatCard
         icon={<PercentIcon />}
         label="% Max. Theorical Throughput"
         value={
-          tpmC === null
+          theoreticalMaxThroughput <= 0
             ? 'N/A'
-            : ((tpmC / (warehouses * 12.86)) * 100).toFixed(2) + '%'
+            : ((tpmC / theoreticalMaxThroughput) * 100).toFixed(2) + '%'
         }
       />
       <StatCard
@@ -111,9 +117,7 @@ export default function StatsCards() {
       <StatCard
         icon={<ConnectIcon />}
         label="MQTh"
-        value={
-          tpmC === null ? 'Warmup in progress...' : Math.trunc(tpmC) + ' tpmC'
-        }
+        value={tpmC + ' tpmC'}
       />
     </div>
   );

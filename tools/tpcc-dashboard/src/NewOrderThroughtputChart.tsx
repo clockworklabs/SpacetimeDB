@@ -20,7 +20,7 @@ interface ThroughputBucketPoint {
 }
 
 function buildTpccThroughputSeries(
-  transactionTimes: number[],
+  bucketCounts: Record<number, number>,
   runStartMs: number,
   runEndMs: number,
   bucketSizeMs: number
@@ -32,17 +32,8 @@ function buildTpccThroughputSeries(
   const buckets = Array.from({ length: bucketCount }, (_, i) => ({
     bucketStartMs: runStartMs + i * bucketSizeMs,
     bucketEndMs: Math.min(runStartMs + (i + 1) * bucketSizeMs, runEndMs),
-    count: 0,
+    count: bucketCounts[runStartMs + i * bucketSizeMs] ?? 0,
   }));
-
-  for (const ts of transactionTimes) {
-    if (ts < runStartMs || ts >= runEndMs) continue;
-
-    const index = Math.floor((ts - runStartMs) / bucketSizeMs);
-    if (index >= 0 && index < buckets.length) {
-      buckets[index].count += 1;
-    }
-  }
 
   return buckets.map(bucket => ({
     elapsedSec: (bucket.bucketStartMs - runStartMs) / 1000,
@@ -61,13 +52,18 @@ export default function NewOrderThroughtputChart() {
   const measurementEndMs = useAppSelector(
     state => state.globalState.measureEndMs
   );
-  const data = useAppSelector(state => state.globalState.throughputData);
+  const bucketCounts = useAppSelector(state => state.globalState.bucketCounts);
 
   const chartData = useMemo(() => {
-    const bucketSizeMs = 10_000;
+    const bucketSizeMs = 1_000;
 
-    return buildTpccThroughputSeries(data, runStartMs, runEndMs, bucketSizeMs);
-  }, [data, runStartMs, runEndMs]);
+    return buildTpccThroughputSeries(
+      bucketCounts,
+      runStartMs,
+      runEndMs,
+      bucketSizeMs
+    );
+  }, [bucketCounts, runStartMs, runEndMs]);
 
   return (
     <div className="chart">

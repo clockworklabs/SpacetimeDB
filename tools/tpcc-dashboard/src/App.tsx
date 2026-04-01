@@ -1,15 +1,10 @@
 import { useContext, useEffect } from 'react';
 import { SpacetimeDBContext } from './context';
-import {
-  deleteState,
-  insertState,
-  throughputStateUpdate,
-} from './features/globalState';
+import { deleteState, insertState, removeTxnBucket, upsertTxnBucket } from './features/globalState';
 import { useAppDispatch, useAppSelector } from './hooks';
 import NewOrderThroughtputChart from './NewOrderThroughtputChart';
 import StatsCards from './StatsCards';
 import './App.css';
-import LatencyDistributionChart from './LatencyDistributionChart';
 
 function App() {
   const conn = useContext(SpacetimeDBContext);
@@ -37,23 +32,37 @@ function App() {
       dispatch(deleteState());
     });
 
-    conn?.db.txn.onInsert((_, txn) => {
+    conn.db.txnBucket.onInsert((_, bucket) => {
       dispatch(
-        throughputStateUpdate({
-          id: String(txn.id),
-          measurementTimeMs: Number(txn.measurementTimeMs),
-          latencyMs: Number(txn.latencyMs),
+        upsertTxnBucket({
+          bucketStartMs: Number(bucket.bucketStartMs),
+          count: Number(bucket.count),
+        })
+      );
+    });
+    conn.db.txnBucket.onUpdate((_, _oldBucket, bucket) => {
+      dispatch(
+        upsertTxnBucket({
+          bucketStartMs: Number(bucket.bucketStartMs),
+          count: Number(bucket.count),
+        })
+      );
+    });
+    conn.db.txnBucket.onDelete((_, bucket) => {
+      dispatch(
+        removeTxnBucket({
+          bucketStartMs: Number(bucket.bucketStartMs),
         })
       );
     });
 
     const subscription = conn
-      ?.subscriptionBuilder()
+      .subscriptionBuilder()
       .onError(err => console.error('Subscription error:', err))
-      .subscribe(['SELECT * FROM state', 'SELECT * FROM txn']);
+      .subscribe(['SELECT * FROM state', 'SELECT * FROM txn_bucket']);
 
     return () => {
-      subscription?.unsubscribe();
+      subscription.unsubscribe();
     };
   }, [conn, dispatch]);
 
@@ -65,7 +74,6 @@ function App() {
     <div className="app">
       <StatsCards />
       <NewOrderThroughtputChart />
-      <LatencyDistributionChart />
     </div>
   );
 }

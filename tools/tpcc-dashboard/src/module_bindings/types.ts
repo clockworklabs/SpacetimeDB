@@ -27,3 +27,9 @@ export const Txn = __t.object("Txn", {
 });
 export type Txn = __Infer<typeof Txn>;
 
+export const TxnBucket = __t.object("TxnBucket", {
+  bucketStartMs: __t.u64(),
+  count: __t.u64(),
+});
+export type TxnBucket = __Infer<typeof TxnBucket>;
+
