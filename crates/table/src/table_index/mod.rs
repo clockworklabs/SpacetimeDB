@@ -26,7 +26,9 @@
 //! we support direct unique indices, where key are indices into `Vec`s.
 
 use self::btree_index::{BTreeIndex, BTreeIndexRangeIter};
-use self::bytes_key::{required_bytes_key_size, size_sub_row_pointer, BytesKey, RangeCompatBytesKey};
+use self::bytes_key::{
+    required_bytes_key_size, size_for_btree_bytes_key, size_for_hash_bytes_key, BytesKey, RangeCompatBytesKey,
+};
 use self::hash_index::HashIndex;
 use self::index::Despecialize;
 use self::same_key_entry::SameKeyEntryIter;
@@ -349,16 +351,16 @@ impl<'a> CowAV<'a> {
 // The various sizes passed to `RangeCompatBytesKey` and `BytesKey`.
 // A `B` suffix is for a size used for a btree index
 // and an `H` suffix is for a size used for a hash index.
-const BYTES_KEY_SIZE_8_B: usize = 8;
-const BYTES_KEY_SIZE_8_H: usize = size_sub_row_pointer(16);
+const BYTES_KEY_SIZE_8_B: usize = size_for_btree_bytes_key(8);
+const BYTES_KEY_SIZE_8_H: usize = size_for_hash_bytes_key(16);
 const _: () = assert!(BYTES_KEY_SIZE_8_B == BYTES_KEY_SIZE_8_H);
-const BYTES_KEY_SIZE_16_B: usize = 16;
-const BYTES_KEY_SIZE_24_H: usize = size_sub_row_pointer(32);
-const BYTES_KEY_SIZE_32_B: usize = 32;
-const BYTES_KEY_SIZE_56_H: usize = size_sub_row_pointer(64);
-const BYTES_KEY_SIZE_64_B: usize = 64;
-const BYTES_KEY_SIZE_120_H: usize = size_sub_row_pointer(128);
-const BYTES_KEY_SIZE_128_B: usize = 128;
+const BYTES_KEY_SIZE_16_B: usize = size_for_btree_bytes_key(16);
+const BYTES_KEY_SIZE_24_H: usize = size_for_hash_bytes_key(32);
+const BYTES_KEY_SIZE_32_B: usize = size_for_btree_bytes_key(32);
+const BYTES_KEY_SIZE_56_H: usize = size_for_hash_bytes_key(64);
+const BYTES_KEY_SIZE_64_B: usize = size_for_btree_bytes_key(64);
+const BYTES_KEY_SIZE_120_H: usize = size_for_hash_bytes_key(128);
+const BYTES_KEY_SIZE_128_B: usize = size_for_btree_bytes_key(128);
 
 /// A key into a [`TypedIndex`].
 #[derive(enum_as_inner::EnumAsInner, PartialEq, Eq, PartialOrd, Ord, Debug)]

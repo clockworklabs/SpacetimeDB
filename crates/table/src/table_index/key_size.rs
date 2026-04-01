@@ -1,4 +1,3 @@
-use super::bytes_key::{BytesKey, RangeCompatBytesKey};
 use super::Index;
 use core::mem;
 use spacetimedb_memory_usage::MemoryUsage;
@@ -216,12 +215,4 @@ impl KeySize for ArrayValue {
             ArrayValue::Array(elts) => elts.key_size_in_bytes(),
         }
     }
-}
-
-impl<const N: usize> KeySize for BytesKey<N> {
-    type MemoStorage = ();
-}
-
-impl<const N: usize> KeySize for RangeCompatBytesKey<N> {
-    type MemoStorage = ();
 }

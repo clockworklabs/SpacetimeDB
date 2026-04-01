@@ -1,6 +1,11 @@
+use super::key_size::KeySize;
 use super::{DecodeResult, RowRef};
 use crate::indexes::RowPointer;
+use core::cmp::Ordering;
+use core::hash::{Hash, Hasher};
 use core::mem;
+use core::ops::Deref;
+use spacetimedb_lib::buffer::{CountWriter, TeeWriter};
 use spacetimedb_memory_usage::MemoryUsage;
 use spacetimedb_primitives::ColList;
 use spacetimedb_sats::bsatn::{DecodeError, Deserializer, Serializer};
@@ -16,14 +21,61 @@ use spacetimedb_sats::{i256, u256, AlgebraicType, AlgebraicValue, ProductTypeEle
 /// which is the same as little-endian encoding of the keys for primitive types.
 ///
 /// As we cannot have too many different `N`s,
-/// we have a few `N`s, where each is a power of 2.
+/// we have a few `N`s, where `N = 2^x - 1`.
 /// A key is then padded with zeroes to the nearest `N`.
-/// For example, a key `(x: u8, y: u16, z: u32)` for a 3-column index
-/// would have `N = 1 + 2 + 4 = 7` but would be padded to `N = 8`.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
-pub(super) struct BytesKey<const N: usize>([u8; N]);
+/// For example, a key `(y: u16, z: u32)` for a 2-column index
+/// would have `N = 2 + 4 = 6` but would be padded to `N = 7`.
+/// The reason for the `-1`, i.e., `N = 7` and not `N = 8`
+/// is because `length` takes up one byte.
+///
+/// The `length` stores the number of actual bytes used by the key.
+#[derive(Debug, Eq, Clone, Copy)]
+pub(super) struct BytesKey<const N: usize> {
+    length: u8,
+    bytes: [u8; N],
+}
 
 impl<const N: usize> MemoryUsage for BytesKey<N> {}
+
+impl<const N: usize> KeySize for BytesKey<N> {
+    type MemoStorage = u64;
+
+    fn key_size_in_bytes(&self) -> usize {
+        self.length as usize
+    }
+}
+
+impl<const N: usize> Deref for BytesKey<N> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.bytes[0..self.length as usize]
+    }
+}
+
+impl<const N: usize> PartialEq for BytesKey<N> {
+    fn eq(&self, other: &Self) -> bool {
+        self.deref() == other.deref()
+    }
+}
+
+impl<const N: usize> PartialOrd for BytesKey<N> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<const N: usize> Ord for BytesKey<N> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.deref().cmp(other.deref())
+    }
+}
+
+impl<const N: usize> Hash for BytesKey<N> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.deref().hash(state);
+    }
+}
 
 /// A difference between btree indices and hash indices
 /// is that the former btree indices store keys and values separately,
@@ -32,10 +84,23 @@ impl<const N: usize> MemoryUsage for BytesKey<N> {}
 /// i.e., as `([K, RowPointer])`.
 ///
 /// For hash indices, it's therefore profitable to ensure
-/// that the key and the value together fit into an `N` that is a power of 2.
-/// An `N` that is a power of 2 is well aligned around cache line sizes.
-pub(super) const fn size_sub_row_pointer(n: usize) -> usize {
-    n - mem::size_of::<RowPointer>()
+/// that the key and the value together fit into an `N + 1` that is a power of 2.
+/// An `N + 1` that is a power of 2 is well aligned around cache line sizes.
+pub(super) const fn size_for_hash_bytes_key(n: usize) -> usize {
+    size_for_btree_bytes_key(n) - mem::size_of::<RowPointer>()
+}
+
+/// A difference between btree indices and hash indices
+/// is that the former btree indices store keys and values separately,
+/// i.e., as `([K], [RowPointer])`
+/// whereas hash indices store them together,
+/// i.e., as `([K, RowPointer])`.
+///
+/// For btree indices, it's therefore sufficient to enure
+/// that the key alone fits into an `N + 1` that is a power of 2.
+/// An `N + 1` that is a power of 2 is well aligned around cache line sizes.
+pub(super) const fn size_for_btree_bytes_key(n: usize) -> usize {
+    n - 1
 }
 
 /// Returns the number of bytes required at most to store a key at `ty`
@@ -99,6 +164,11 @@ pub(super) fn required_bytes_key_size(ty: &AlgebraicType, is_ranged_idx: bool) -
 }
 
 impl<const N: usize> BytesKey<N> {
+    fn new(length: usize, bytes: [u8; N]) -> Self {
+        let length = length as _;
+        Self { length, bytes }
+    }
+
     /// Decodes `self` as an [`AlgebraicValue`] at `key_type`.
     ///
     /// An incorrect `key_type`,
@@ -107,7 +177,7 @@ impl<const N: usize> BytesKey<N> {
     /// The method could also silently succeed
     /// if the passed `key_type` incidentally happens to be compatible the stored bytes in `self`.
     pub(super) fn decode_algebraic_value(&self, key_type: &AlgebraicType) -> AlgebraicValue {
-        AlgebraicValue::decode(key_type, &mut self.0.as_slice())
+        AlgebraicValue::decode(key_type, &mut self.deref())
             .expect("A `BytesKey` should by construction always deserialize to the right `key_type`")
     }
 
@@ -146,10 +216,10 @@ impl<const N: usize> BytesKey<N> {
         let total_len = prefix_len + endpoint_len;
         Self::ensure_key_fits(total_len)?;
         // Copy the `prefix` and the `endpoint` over.
-        let mut arr = [0; N];
-        arr[..prefix_len].copy_from_slice(prefix);
-        arr[prefix_len..total_len].copy_from_slice(endpoint);
-        Ok(Self(arr))
+        let mut bytes = [0; N];
+        bytes[..prefix_len].copy_from_slice(prefix);
+        bytes[prefix_len..total_len].copy_from_slice(endpoint);
+        Ok(Self::new(total_len, bytes))
     }
 
     /// Decodes `bytes` in BSATN to a [`BytesKey<N>`]
@@ -163,7 +233,16 @@ impl<const N: usize> BytesKey<N> {
         // Copy the bytes over.
         let mut arr = [0; N];
         arr[..got].copy_from_slice(bytes);
-        Ok(Self(arr))
+        Ok(Self::new(got, arr))
+    }
+
+    fn via_serializer(work: impl FnOnce(Serializer<'_, TeeWriter<&mut [u8], CountWriter>>)) -> Self {
+        let mut bytes = [0; N];
+        let (_, length) = CountWriter::run(bytes.as_mut_slice(), |writer| {
+            let ser = Serializer::new(writer);
+            work(ser)
+        });
+        Self::new(length, bytes)
     }
 
     /// Serializes the columns `cols` in `row_ref` to a [`BytesKey<N>`].
@@ -174,12 +253,10 @@ impl<const N: usize> BytesKey<N> {
     ///
     /// SAFETY: Any `col` in `cols` is in-bounds of `row_ref`'s layout.
     pub(super) unsafe fn from_row_ref(cols: &ColList, row_ref: RowRef<'_>) -> Self {
-        let mut arr = [0; N];
-        let mut sink = arr.as_mut_slice();
-        let ser = Serializer::new(&mut sink);
-        unsafe { row_ref.serialize_columns_unchecked(cols, ser) }
-            .expect("should've serialized a `row_ref` to BSATN successfully");
-        Self(arr)
+        Self::via_serializer(|ser| {
+            unsafe { row_ref.serialize_columns_unchecked(cols, ser) }
+                .expect("should've serialized a `row_ref` to BSATN successfully");
+        })
     }
 
     /// Serializes `av` to a [`BytesKey<N>`].
@@ -188,12 +265,10 @@ impl<const N: usize> BytesKey<N> {
     /// will fit into `N` bytes when serialized into BSATN.
     /// The method panics otherwise.
     pub(super) fn from_algebraic_value(av: &AlgebraicValue) -> Self {
-        let mut arr = [0; N];
-        let mut sink = arr.as_mut_slice();
-        let ser = Serializer::new(&mut sink);
-        av.serialize_into_bsatn(ser)
-            .expect("should've serialized an `AlgebraicValue` to BSATN successfully");
-        Self(arr)
+        Self::via_serializer(|ser| {
+            av.serialize_into_bsatn(ser)
+                .expect("should've serialized an `AlgebraicValue` to BSATN successfully")
+        })
     }
 }
 
@@ -209,10 +284,55 @@ impl<const N: usize> BytesKey<N> {
 /// - unsigned integer types `uN`, where `N > 8` from little-endian to big-endian.
 /// - signed integers are shifted such that `iN::MIN` is stored as `0`
 ///   and `iN:MAX` is stored as `uN::MAX`.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
-pub(super) struct RangeCompatBytesKey<const N: usize>([u8; N]);
+///
+/// The `length` stores the number of actual bytes used by the key.
+#[derive(Debug, Eq, Clone, Copy)]
+pub(super) struct RangeCompatBytesKey<const N: usize> {
+    length: u8,
+    bytes: [u8; N],
+}
 
 impl<const N: usize> MemoryUsage for RangeCompatBytesKey<N> {}
+
+impl<const N: usize> KeySize for RangeCompatBytesKey<N> {
+    type MemoStorage = u64;
+
+    fn key_size_in_bytes(&self) -> usize {
+        self.length as usize
+    }
+}
+
+impl<const N: usize> Deref for RangeCompatBytesKey<N> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.bytes[0..self.length as usize]
+    }
+}
+
+impl<const N: usize> PartialEq for RangeCompatBytesKey<N> {
+    fn eq(&self, other: &Self) -> bool {
+        self.deref() == other.deref()
+    }
+}
+
+impl<const N: usize> PartialOrd for RangeCompatBytesKey<N> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<const N: usize> Ord for RangeCompatBytesKey<N> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.deref().cmp(other.deref())
+    }
+}
+
+impl<const N: usize> Hash for RangeCompatBytesKey<N> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.deref().hash(state);
+    }
+}
 
 /// Splits `slice` into the first `N` bytes converting the former via `map_bytes`
 /// and returning the rest.
@@ -242,16 +362,17 @@ impl<const N: usize> RangeCompatBytesKey<N> {
         endpoint: &[u8],
         range_type: &AlgebraicType,
     ) -> DecodeResult<Self> {
-        let BytesKey(mut array) = BytesKey::from_bsatn_prefix_and_endpoint(prefix, prefix_types, endpoint, range_type)?;
+        let BytesKey { length, mut bytes } =
+            BytesKey::from_bsatn_prefix_and_endpoint(prefix, prefix_types, endpoint, range_type)?;
 
         // Masage the bytes in `key`.
-        let mut slice = array.as_mut_slice();
+        let mut slice = bytes.as_mut_slice();
         for ty in prefix_types {
             slice = Self::process_from_bytes_key(slice, &ty.algebraic_type);
         }
         Self::process_from_bytes_key(slice, range_type);
 
-        Ok(Self(array))
+        Ok(Self { length, bytes })
     }
 
     /// Decodes `bytes` in BSATN to a [`RangeCompatBytesKey<N>`]
@@ -285,9 +406,9 @@ impl<const N: usize> RangeCompatBytesKey<N> {
     }
 
     fn from_bytes_key(key: BytesKey<N>, ty: &AlgebraicType) -> Self {
-        let BytesKey(mut array) = key;
-        Self::process_from_bytes_key(array.as_mut_slice(), ty);
-        Self(array)
+        let BytesKey { length, mut bytes } = key;
+        Self::process_from_bytes_key(bytes.as_mut_slice(), ty);
+        Self { length, bytes }
     }
 
     fn process_from_bytes_key<'a>(mut slice: &'a mut [u8], ty: &AlgebraicType) -> &'a mut [u8] {
@@ -367,9 +488,9 @@ impl<const N: usize> RangeCompatBytesKey<N> {
             }
         }
 
-        let Self(mut array) = key;
-        process(array.as_mut_slice(), ty);
-        BytesKey(array)
+        let Self { length, mut bytes } = key;
+        process(bytes.as_mut_slice(), ty);
+        BytesKey { length, bytes }
     }
 }
 
@@ -398,12 +519,11 @@ mod test {
             assert_eq!(av, decoded_av);
         }
 
-        // This test does not hold for `BytesKey`
-        // as BSATN stores them little-endian,
-        // but `Ord for AlgebraicValue` compares them as big-endian.
-        // It does however hold for `RangeCompatBytesKey` which
-        // massages the BSATN to make it order-preserving.
-
+        /// This test does not hold for `BytesKey`
+        /// as BSATN stores them little-endian,
+        /// but `Ord for AlgebraicValue` compares them as big-endian.
+        /// It does however hold for `RangeCompatBytesKey` which
+        /// massages the BSATN to make it order-preserving.
         #[test]
         fn order_in_bsatn_is_preserved((ty, [r1, r2]) in gen_with(generate_row_type(0..=SIZE), |ty| uniform(generate_product_value(ty)))) {
             let ty: AlgebraicType = ty.into();

@@ -23,7 +23,7 @@ use spacetimedb_lib::{http as st_http, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
-    buffer::{CountWriter, TeeWriter},
+    buffer::CountWriter,
     AlgebraicValue, ProductValue,
 };
 use spacetimedb_schema::identifier::Identifier;
@@ -343,16 +343,16 @@ impl InstanceEnv {
     fn project_cols_bsatn(buffer: &mut [u8], cols: ColList, row_ref: RowRef<'_>) -> usize {
         // We get back a col-list with the columns with generated values.
         // Write those back to `buffer` and then the encoded length to `row_len`.
-        let counter = CountWriter::default();
-        let mut writer = TeeWriter::new(counter, buffer);
-        for col in cols.iter() {
-            // Read the column value to AV and then serialize.
-            let val = row_ref
-                .read_col::<AlgebraicValue>(col)
-                .expect("reading col as AV never panics");
-            bsatn::to_writer(&mut writer, &val).unwrap();
-        }
-        writer.w1.finish()
+        let (_, count) = CountWriter::run(buffer, |writer| {
+            for col in cols.iter() {
+                // Read the column value to AV and then serialize.
+                let val = row_ref
+                    .read_col::<AlgebraicValue>(col)
+                    .expect("reading col as AV never panics");
+                bsatn::to_writer(writer, &val).unwrap();
+            }
+        });
+        count
     }
 
     pub fn insert(&self, table_id: TableId, buffer: &mut [u8]) -> Result<usize, NodesError> {

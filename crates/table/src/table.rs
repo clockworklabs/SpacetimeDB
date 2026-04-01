@@ -2595,7 +2595,7 @@ pub(crate) mod test {
         let key_size_in_pvs = vals
             .iter()
             .map(|row| crate::table_index::KeySize::key_size_in_bytes(&row.project(&indexed_columns).unwrap()) as u64)
-            .sum();
+            .sum::<u64>();
         prop_assert_eq!(index.num_key_bytes(), key_size_in_pvs);
 
         let index = TableIndex::new(&ty, indexed_columns, IndexKind::BTree, false).unwrap();
@@ -2723,12 +2723,12 @@ pub(crate) mod test {
 
         #[test]
         fn index_size_reporting_matches_slow_implementations_single_column((ty, vals) in generate_typed_row_vec(1..SIZE, 128, 2048)) {
-            test_index_size_reporting(ty, vals, ColList::from(ColId(0)))?;
+            test_index_size_reporting(ty, vals, [0].into())?;
         }
 
         #[test]
         fn index_size_reporting_matches_slow_implementations_two_column((ty, vals) in generate_typed_row_vec(2..SIZE, 128, 2048)) {
-            test_index_size_reporting(ty, vals, ColList::from([ColId(0), ColId(1)]))?;
+            test_index_size_reporting(ty, vals, [0, 1].into())?
         }
     }
 
