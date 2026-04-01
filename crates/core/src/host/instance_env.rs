@@ -2,9 +2,10 @@ use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
+use crate::host::global_tx::{GlobalTxRole, GlobalTxState};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::wasm_common::TimingSpan;
-use crate::replica_context::ReplicaContext;
+use crate::replica_context::{execute_blocking_http, execute_blocking_http_cancellable, HttpOutcome, ReplicaContext};
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
 use crate::subscription::module_subscription_manager::{from_tx_offset, TransactionOffset};
 use crate::util::prometheus_handle::IntGaugeExt;
@@ -20,7 +21,7 @@ use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, IndexScanPointOrRange, MutTxId};
 use spacetimedb_datastore::traits::IsolationLevel;
-use spacetimedb_lib::{http as st_http, ConnectionId, Identity, Timestamp};
+use spacetimedb_lib::{http as st_http, ConnectionId, GlobalTxId, Identity, Timestamp, TX_ID_HEADER};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
@@ -38,6 +39,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::vec::IntoIter;
 
+const PREPARE_ID_HEADER: &str = "X-Prepare-Id";
+
 pub struct InstanceEnv {
     pub replica_ctx: Arc<ReplicaContext>,
     pub scheduler: Scheduler,
@@ -50,15 +53,19 @@ pub struct InstanceEnv {
     pub func_type: FuncCallType,
     /// The name of the last, including current, function to be executed by this environment.
     pub func_name: Option<Identifier>,
+    /// Distributed transaction id for the current reducer invocation.
+    current_tx_id: Option<GlobalTxId>,
     /// Are we in an anonymous tx context?
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
     procedure_last_tx_offset: Option<TransactionOffset>,
-    /// 2PC: prepared participants from `call_reducer_on_db_2pc` calls.
+    /// 2PC: participant prepare targets from `call_reducer_on_db_2pc` calls.
     /// Each entry is (database_identity, prepare_id).
     /// After the coordinator's reducer commits, these are committed;
-    /// on failure, they are aborted.
-    pub prepared_participants: Vec<(Identity, String)>,
+    /// on failure, they are aborted. Entries are registered before the
+    /// HTTP prepare request is sent so wound-driven abort fanout can target
+    /// in-flight prepares using coordinator-assigned ids.
+    pub contacted_participants: Vec<(Identity, String)>,
 }
 
 /// `InstanceEnv` needs to be `Send` because it is created on the host thread
@@ -241,9 +248,10 @@ impl InstanceEnv {
             // run a function
             func_type: FuncCallType::Reducer,
             func_name: None,
+            current_tx_id: None,
             in_anon_tx: false,
             procedure_last_tx_offset: None,
-            prepared_participants: Vec::new(),
+            contacted_participants: Vec::new(),
         }
     }
 
@@ -253,11 +261,37 @@ impl InstanceEnv {
     }
 
     /// Signal to this `InstanceEnv` that a function call is beginning.
-    pub fn start_funcall(&mut self, name: Identifier, ts: Timestamp, func_type: FuncCallType) {
+    pub fn start_funcall(
+        &mut self,
+        name: Identifier,
+        ts: Timestamp,
+        func_type: FuncCallType,
+        tx_id: Option<GlobalTxId>,
+    ) {
+        let is_reducer = matches!(func_type, FuncCallType::Reducer);
         self.start_time = ts;
         self.start_instant = Instant::now();
         self.func_type = func_type;
         self.func_name = Some(name);
+        self.current_tx_id = if is_reducer {
+            Some(tx_id.unwrap_or_else(|| self.mint_tx_id(ts)))
+        } else {
+            None
+        };
+    }
+
+    pub fn current_tx_id(&self) -> Option<GlobalTxId> {
+        self.current_tx_id
+    }
+
+    fn wounded_tx_error(&self, tx_id: GlobalTxId) -> NodesError {
+        NodesError::Wounded(format!(
+            "distributed transaction {tx_id} was wounded by an older transaction"
+        ))
+    }
+
+    fn mint_tx_id(&self, start_ts: Timestamp) -> GlobalTxId {
+        self.replica_ctx.mint_global_tx_id(start_ts)
     }
 
     /// Returns the name of the most recent reducer to be run in this environment,
@@ -996,9 +1030,8 @@ impl InstanceEnv {
     /// Unlike [`Self::http_request`], this is explicitly allowed while a transaction is open —
     /// the caller is responsible for understanding the consistency implications.
     ///
-    /// Uses [`ReplicaContext::call_reducer_router`] to resolve the leader node for
-    /// `database_identity`, then sends the request via the warmed HTTP client in
-    /// [`ReplicaContext::call_reducer_client`].
+    /// Blocks the calling thread (the `SingleCoreExecutor` OS thread) for the duration of the
+    /// HTTP round-trip using `reqwest::blocking::Client`.  No tokio involvement on this path.
     ///
     /// Returns `(http_status, response_body)` on transport success,
     /// or [`NodesError::HttpError`] if the connection itself fails.
@@ -1007,130 +1040,154 @@ impl InstanceEnv {
         database_identity: Identity,
         reducer_name: &str,
         args: bytes::Bytes,
-    ) -> impl Future<Output = Result<(u16, bytes::Bytes), NodesError>> + use<> {
-        let client = self.replica_ctx.call_reducer_client.clone();
-        let router = self.replica_ctx.call_reducer_router.clone();
-        let reducer_name = reducer_name.to_owned();
-        // Node-level auth token: a single token minted at startup and shared by all replicas
-        // on this node. Passed as a Bearer token so `anon_auth_middleware` on the target node
-        // accepts the request without generating a fresh ephemeral identity per call.
-        let auth_token = self.replica_ctx.call_reducer_auth_token.clone();
+    ) -> Result<(u16, bytes::Bytes), NodesError> {
+        let tx_id = self.current_tx_id();
+        if let Some(tx_id) = tx_id {
+            if self.replica_ctx.global_tx_manager.is_wounded(&tx_id) {
+                return Err(self.wounded_tx_error(tx_id));
+            }
+        }
+
+        let start = Instant::now();
         let caller_identity = self.replica_ctx.database.database_identity;
 
-        async move {
-            let start = Instant::now();
-
-            let base_url = router
-                .resolve_base_url(database_identity)
-                .await
-                .map_err(|e| NodesError::HttpError(e.to_string()))?;
-            let url = format!(
-                "{}/v1/database/{}/call/{}",
-                base_url,
-                database_identity.to_hex(),
-                reducer_name,
-            );
-            let mut req = client
-                .post(&url)
-                .header(http::header::CONTENT_TYPE, "application/octet-stream")
-                .body(args);
-            if let Some(token) = auth_token {
-                req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
-            }
-            let result = async {
-                let response = req.send().await.map_err(|e| NodesError::HttpError(e.to_string()))?;
-                let status = response.status().as_u16();
-                let body = response
-                    .bytes()
-                    .await
-                    .map_err(|e| NodesError::HttpError(e.to_string()))?;
-                Ok::<_, NodesError>((status, body))
-            }
-            .await;
-
-            WORKER_METRICS
-                .cross_db_reducer_calls_total
-                .with_label_values(&caller_identity)
-                .inc();
-            WORKER_METRICS
-                .cross_db_reducer_duration_seconds
-                .with_label_values(&caller_identity)
-                .observe(start.elapsed().as_secs_f64());
-
-            result
+        let base_url = self
+            .replica_ctx
+            .call_reducer_router
+            .resolve_base_url_blocking(database_identity)
+            .map_err(|e| NodesError::HttpError(e.to_string()))?;
+        let url = format!(
+            "{}/v1/database/{}/call/{}",
+            base_url,
+            database_identity.to_hex(),
+            reducer_name,
+        );
+        let mut req = self
+            .replica_ctx
+            .call_reducer_blocking_client
+            .post(&url)
+            .header(http::header::CONTENT_TYPE, "application/octet-stream")
+            .body(args.to_vec());
+        if let Some(ref token) = self.replica_ctx.call_reducer_auth_token {
+            req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
         }
+        if let Some(tx_id) = tx_id {
+            req = req.header(TX_ID_HEADER, tx_id.to_string());
+        }
+        let request = req.build().map_err(|e| NodesError::HttpError(e.to_string()))?;
+        let result = execute_blocking_http(&self.replica_ctx.call_reducer_blocking_client, request, |resp| {
+            let status = resp.status().as_u16();
+            let body = resp.bytes()?;
+            Ok((status, body))
+        })
+        .map_err(|e| NodesError::HttpError(e.to_string()));
+
+        WORKER_METRICS
+            .cross_db_reducer_calls_total
+            .with_label_values(&caller_identity)
+            .inc();
+        WORKER_METRICS
+            .cross_db_reducer_duration_seconds
+            .with_label_values(&caller_identity)
+            .observe(start.elapsed().as_secs_f64());
+
+        result
     }
 
     /// Call a reducer on a remote database using the 2PC prepare protocol.
     ///
     /// Like [`Self::call_reducer_on_db`], but POSTs to `/prepare/{reducer}` instead of
-    /// `/call/{reducer}`. On success, parses the `X-Prepare-Id` response header and stores
-    /// `(database_identity, prepare_id)` in [`Self::prepared_participants`].
+    /// `/call/{reducer}`. The coordinator generates the `prepare_id` up front, sends it
+    /// in the request, and stores `(database_identity, prepare_id)` in
+    /// [`Self::contacted_participants`] before the HTTP round-trip begins.
     ///
-    /// Returns `(http_status, response_body)` on transport success.
-    /// The caller (coordinator reducer) is responsible for checking the status;
-    /// if the coordinator's reducer commits, the runtime will commit all participants,
-    /// and if it fails, the runtime will abort them.
+    /// Blocks the calling thread for the duration of the HTTP round-trip.
+    ///
+    /// Returns `(http_status, response_body, prepare_id)` on transport success.
     pub fn call_reducer_on_db_2pc(
         &mut self,
         database_identity: Identity,
         reducer_name: &str,
         args: bytes::Bytes,
-    ) -> impl Future<Output = Result<(u16, bytes::Bytes, Option<String>), NodesError>> + use<> {
-        let client = self.replica_ctx.call_reducer_client.clone();
-        let router = self.replica_ctx.call_reducer_router.clone();
-        let reducer_name = reducer_name.to_owned();
-        let auth_token = self.replica_ctx.call_reducer_auth_token.clone();
+    ) -> Result<(u16, bytes::Bytes, String), NodesError> {
         let caller_identity = self.replica_ctx.database.database_identity;
+        let tx_id = self.current_tx_id().ok_or_else(|| {
+            NodesError::HttpError("2PC remote reducer call requires an active distributed transaction id".to_owned())
+        })?;
 
-        async move {
-            let start = Instant::now();
-
-            let base_url = router
-                .resolve_base_url(database_identity)
-                .await
-                .map_err(|e| NodesError::HttpError(e.to_string()))?;
-            let url = format!(
-                "{}/v1/database/{}/prepare/{}",
-                base_url,
-                database_identity.to_hex(),
-                reducer_name,
-            );
-            let mut req = client
-                .post(&url)
-                .header(http::header::CONTENT_TYPE, "application/octet-stream")
-                .header("X-Coordinator-Identity", caller_identity.to_hex().to_string())
-                .body(args);
-            if let Some(token) = auth_token {
-                req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
-            }
-            let result = async {
-                let response = req.send().await.map_err(|e| NodesError::HttpError(e.to_string()))?;
-                let status = response.status().as_u16();
-                let prepare_id = response
-                    .headers()
-                    .get("X-Prepare-Id")
-                    .and_then(|v| v.to_str().ok())
-                    .map(|s| s.to_owned());
-                let body = response
-                    .bytes()
-                    .await
-                    .map_err(|e| NodesError::HttpError(e.to_string()))?;
-                Ok((status, body, prepare_id))
-            }
-            .await;
-
-            WORKER_METRICS
-                .cross_db_reducer_calls_total
-                .with_label_values(&caller_identity)
-                .inc();
-            WORKER_METRICS
-                .cross_db_reducer_duration_seconds
-                .with_label_values(&caller_identity)
-                .observe(start.elapsed().as_secs_f64());
-
-            result
+        if self.replica_ctx.global_tx_manager.is_wounded(&tx_id) {
+            return Err(self.wounded_tx_error(tx_id));
         }
+
+        let session =
+            self.replica_ctx
+                .global_tx_manager
+                .ensure_session(tx_id, GlobalTxRole::Coordinator, tx_id.creator_db);
+        session.set_state(GlobalTxState::Preparing);
+        let prepare_id = super::module_host::generate_prepare_id(tx_id, caller_identity);
+        session.add_participant(database_identity, prepare_id.clone());
+        self.contacted_participants
+            .push((database_identity, prepare_id.clone()));
+
+        let start = Instant::now();
+
+        let base_url = self
+            .replica_ctx
+            .call_reducer_router
+            .resolve_base_url_blocking(database_identity)
+            .map_err(|e| NodesError::HttpError(e.to_string()))?;
+        let url = format!(
+            "{}/v1/database/{}/prepare/{}",
+            base_url,
+            database_identity.to_hex(),
+            reducer_name,
+        );
+        let mut req = self
+            .replica_ctx
+            .call_reducer_blocking_client
+            .post(&url)
+            .header(http::header::CONTENT_TYPE, "application/octet-stream")
+            .header("X-Coordinator-Identity", caller_identity.to_hex().to_string())
+            .header(PREPARE_ID_HEADER, prepare_id.clone())
+            .header(TX_ID_HEADER, tx_id.to_string())
+            .body(args.to_vec());
+        if let Some(ref token) = self.replica_ctx.call_reducer_auth_token {
+            req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+        }
+
+        // Check for wound signal one more time before blocking, then keep checking
+        // every 50 ms while the HTTP round-trip is in-flight.
+        if self.replica_ctx.global_tx_manager.is_wounded(&tx_id) {
+            return Err(self.wounded_tx_error(tx_id));
+        }
+
+        let request = req.build().map_err(|e| NodesError::HttpError(e.to_string()))?;
+        let manager = self.replica_ctx.global_tx_manager.clone();
+        let outcome = execute_blocking_http_cancellable(
+            &self.replica_ctx.call_reducer_blocking_client,
+            request,
+            move || manager.is_wounded(&tx_id),
+            |resp| {
+                let status = resp.status().as_u16();
+                let body = resp.bytes()?;
+                Ok((status, body))
+            },
+        );
+        let result = match outcome {
+            HttpOutcome::Done(r) => r.map_err(|e| NodesError::HttpError(e.to_string())),
+            HttpOutcome::Cancelled => return Err(self.wounded_tx_error(tx_id)),
+        };
+
+        WORKER_METRICS
+            .cross_db_reducer_calls_total
+            .with_label_values(&caller_identity)
+            .inc();
+        WORKER_METRICS
+            .cross_db_reducer_duration_seconds
+            .with_label_values(&caller_identity)
+            .observe(start.elapsed().as_secs_f64());
+
+        result.map(|(status, body)| (status, body, prepare_id))
     }
 }
 
@@ -1507,10 +1564,15 @@ mod test {
                 logger,
                 subscriptions: subs,
                 call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
+                call_reducer_blocking_client: ReplicaContext::new_call_reducer_blocking_client(
+                    &CallReducerOnDbConfig::default(),
+                ),
                 call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
                 call_reducer_auth_token: None,
                 prepared_txs: crate::host::prepared_tx::PreparedTransactions::new(),
                 on_panic: std::sync::Arc::new(std::sync::OnceLock::new()),
+                tx_id_nonce: Arc::default(),
+                global_tx_manager: Arc::default(),
             },
             runtime,
         ))

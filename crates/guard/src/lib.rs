@@ -92,6 +92,8 @@ pub fn ensure_binaries_built() -> PathBuf {
 
 use reqwest::blocking::Client;
 
+const SMOKETEST_DEDICATED_DATABASE_CORES: &str = "1";
+
 pub struct SpacetimeDbGuard {
     pub child: Child,
     pub host_url: String,
@@ -279,6 +281,10 @@ impl SpacetimeDbGuard {
             &data_dir_str,
             "--listen-addr",
             &address,
+            // Test-spawned servers should not inherit the CLI's machine-dependent
+            // default dedicated DB core count.
+            "--dedicated-database-cores",
+            SMOKETEST_DEDICATED_DATABASE_CORES,
         ];
         if let Some(ref port) = pg_port_str {
             args.extend(["--pg-port", port]);

@@ -4,12 +4,15 @@ use super::database_logger::DatabaseLogger;
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use crate::host::prepared_tx::PreparedTransactions;
+use crate::host::global_tx::GlobalTxManager;
 use crate::host::reducer_router::ReducerCallRouter;
 use crate::messages::control_db::Database;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+use spacetimedb_lib::{GlobalTxId, Timestamp};
 use std::io;
 use std::ops::Deref;
 use std::sync::{Arc, OnceLock};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 pub type Result<T> = anyhow::Result<T>;
@@ -48,10 +51,19 @@ pub struct ReplicaContext {
     pub replica_id: u64,
     pub logger: Arc<DatabaseLogger>,
     pub subscriptions: ModuleSubscriptions,
-    /// Warmed HTTP/2 client for [`crate::host::instance_env::InstanceEnv::call_reducer_on_db`].
+    /// Async HTTP/2 client for fire-and-forget coordinator/recovery tasks that run inside
+    /// tokio async tasks (e.g. `recover_2pc_coordinator`, `send_ack_commit_to_coordinator`).
     ///
     /// `reqwest::Client` is internally an `Arc`, so cloning `ReplicaContext` shares the pool.
     pub call_reducer_client: reqwest::Client,
+    /// Blocking HTTP client for cross-db calls made directly from the WASM executor thread.
+    ///
+    /// Used by [`crate::host::instance_env::InstanceEnv::call_reducer_on_db`] and the
+    /// 2PC participant's `wait_for_2pc_decision` polling loop, both of which run on the
+    /// `SingleCoreExecutor` std::thread and must block without yielding to tokio.
+    ///
+    /// `reqwest::blocking::Client` is also internally an `Arc`.
+    pub call_reducer_blocking_client: reqwest::blocking::Client,
     /// Resolves the HTTP base URL of the leader node for a given database identity.
     ///
     /// - Standalone: always returns the local node URL ([`crate::host::reducer_router::LocalReducerRouter`]).
@@ -72,10 +84,14 @@ pub struct ReplicaContext {
     /// async task that can't panic on the WASM executor thread (e.g., 2PC persistence
     /// abort in Round 2).  Set once by `launch_module`; empty in tests.
     pub on_panic: Arc<OnceLock<Box<dyn Fn() + Send + Sync + 'static>>>,
+    /// Per-database nonce used when minting reducer transaction ids.
+    pub tx_id_nonce: Arc<AtomicU32>,
+    /// In-memory distributed transaction sessions and lock scheduling state.
+    pub global_tx_manager: Arc<GlobalTxManager>,
 }
 
 impl ReplicaContext {
-    /// Build a warmed `reqwest::Client` from `config`.
+    /// Build a warmed async `reqwest::Client` from `config`.
     ///
     /// Uses HTTP/2 prior knowledge (h2c) for all connections.
     /// The server must be configured to accept h2c (HTTP/2 cleartext) connections.
@@ -88,6 +104,119 @@ impl ReplicaContext {
             .http2_prior_knowledge()
             .build()
             .expect("failed to build call_reducer_on_db HTTP client")
+    }
+
+    /// Build a warmed blocking `reqwest::blocking::Client` from `config`.
+    ///
+    /// Used by the WASM executor thread and 2PC participant polling loop, which block their
+    /// OS thread synchronously rather than yielding to tokio.
+    ///
+    /// `reqwest::blocking::Client::build()` internally creates and drops a mini tokio runtime,
+    /// which panics if called from inside an async context. We build it on a fresh OS thread
+    /// so it is safe to call from `async fn` at startup.
+    pub fn new_call_reducer_blocking_client(config: &CallReducerOnDbConfig) -> reqwest::blocking::Client {
+        let tcp_keepalive = config.tcp_keepalive;
+        let pool_idle_timeout = config.pool_idle_timeout;
+        let pool_max_idle_per_host = config.pool_max_idle_per_host;
+        let timeout = config.request_timeout;
+        std::thread::scope(|s| {
+            s.spawn(move || {
+                reqwest::blocking::Client::builder()
+                    .tcp_keepalive(tcp_keepalive)
+                    .pool_idle_timeout(pool_idle_timeout)
+                    .pool_max_idle_per_host(pool_max_idle_per_host)
+                    .timeout(timeout)
+                    .http2_prior_knowledge()
+                    .build()
+                    .expect("failed to build call_reducer_on_db blocking HTTP client")
+            })
+            .join()
+            .expect("blocking client builder thread panicked")
+        })
+    }
+}
+
+/// Outcome of [`execute_blocking_http_cancellable`].
+pub enum HttpOutcome<T> {
+    Done(reqwest::Result<T>),
+    Cancelled,
+}
+
+/// Like [`execute_blocking_http`] but polls `should_cancel` every 50 ms while the HTTP
+/// call is in-flight.  If `should_cancel()` returns `true` the function returns
+/// [`HttpOutcome::Cancelled`] immediately; the background HTTP thread is detached and
+/// completes on its own (its result is silently discarded).
+///
+/// All response reading must happen inside `f` — same rule as [`execute_blocking_http`].
+pub fn execute_blocking_http_cancellable<F, T>(
+    client: &reqwest::blocking::Client,
+    request: reqwest::blocking::Request,
+    should_cancel: impl Fn() -> bool,
+    f: F,
+) -> HttpOutcome<T>
+where
+    F: FnOnce(reqwest::blocking::Response) -> reqwest::Result<T> + Send + 'static,
+    T: Send + 'static,
+{
+    use std::sync::mpsc;
+    let (tx, rx) = mpsc::channel::<reqwest::Result<T>>();
+    let client = client.clone();
+    let handle = std::thread::spawn(move || {
+        let result = client.execute(request).and_then(f);
+        let _ = tx.send(result);
+    });
+    let result = loop {
+        match rx.recv_timeout(std::time::Duration::from_millis(10)) {
+            Ok(result) => break Some(result),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if should_cancel() {
+                    // Drop handle — thread is detached and its result discarded.
+                    return HttpOutcome::Cancelled;
+                }
+            }
+            // Sender dropped without sending → thread panicked.
+            Err(mpsc::RecvTimeoutError::Disconnected) => break None,
+        }
+    };
+    match result {
+        Some(r) => HttpOutcome::Done(r),
+        None => std::panic::resume_unwind(handle.join().unwrap_err()),
+    }
+}
+
+/// Execute a blocking reqwest request on a fresh OS thread, processing the response inside
+/// that same thread.
+///
+/// In debug builds, `reqwest 0.12` calls `wait::enter()` on every I/O operation
+/// (`send`, `bytes`, `text`, …). That function creates and immediately drops a mini
+/// tokio runtime as a nesting-check, which panics if the calling thread is already
+/// inside a tokio `block_on` context (e.g. the `SingleCoreExecutor` WASM thread).
+///
+/// By running both the send **and** all response reading inside a scoped OS thread that
+/// has no tokio context, the assertion always passes.  The closure `f` receives the
+/// `Response` and must fully consume it (read body, extract headers, etc.) before
+/// returning — do not let the `Response` escape the closure.
+pub fn execute_blocking_http<F, T>(
+    client: &reqwest::blocking::Client,
+    request: reqwest::blocking::Request,
+    f: F,
+) -> reqwest::Result<T>
+where
+    F: FnOnce(reqwest::blocking::Response) -> reqwest::Result<T> + Send + 'static,
+    T: Send + 'static,
+{
+    let client = client.clone();
+    std::thread::scope(|s| {
+        s.spawn(move || client.execute(request).and_then(f))
+            .join()
+            .unwrap_or_else(|e| std::panic::resume_unwind(e))
+    })
+}
+
+impl ReplicaContext {
+    pub fn mint_global_tx_id(&self, start_ts: Timestamp) -> GlobalTxId {
+        let nonce = self.tx_id_nonce.fetch_add(1, Ordering::Relaxed);
+        GlobalTxId::new(start_ts, self.database.database_identity, nonce, 0)
     }
 }
 

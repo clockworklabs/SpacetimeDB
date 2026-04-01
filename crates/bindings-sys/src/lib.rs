@@ -1504,10 +1504,10 @@ pub fn call_reducer_on_db(
     identity: [u8; 32],
     reducer_name: &str,
     args: &[u8],
-) -> Result<(u16, raw::BytesSource), raw::BytesSource> {
+) -> Result<(u16, raw::BytesSource), (Errno, raw::BytesSource)> {
     let mut out = raw::BytesSource::INVALID;
     let status = unsafe {
-        raw::call_reducer_on_db(
+        raw::call_reducer_on_db_2pc(
             identity.as_ptr(),
             reducer_name.as_ptr(),
             reducer_name.len() as u32,
@@ -1520,10 +1520,14 @@ pub fn call_reducer_on_db(
     // on transport failure. Unlike other ABI functions, a non-zero return value here
     // does NOT indicate a generic errno — it's the HTTP status code. Only HTTP_ERROR
     // specifically signals a transport-level failure.
-    if status == Errno::HTTP_ERROR.code() {
-        Err(out)
-    } else {
+    if (100..=599).contains(&status) {
         Ok((status, out))
+    } else {
+        match Errno::from_code(status) {
+            Some(errno @ (Errno::HTTP_ERROR | Errno::WOUNDED_TRANSACTION)) => Err((errno, out)),
+            Some(errno) => panic!("{errno:?}"),
+            None => Ok((status, out)),
+        }
     }
 }
 
@@ -1539,7 +1543,7 @@ pub fn call_reducer_on_db_2pc(
     identity: [u8; 32],
     reducer_name: &str,
     args: &[u8],
-) -> Result<(u16, raw::BytesSource), raw::BytesSource> {
+) -> Result<(u16, raw::BytesSource), (Errno, raw::BytesSource)> {
     let mut out = raw::BytesSource::INVALID;
     let status = unsafe {
         raw::call_reducer_on_db_2pc(
@@ -1551,10 +1555,14 @@ pub fn call_reducer_on_db_2pc(
             &mut out,
         )
     };
-    if status == Errno::HTTP_ERROR.code() {
-        Err(out)
-    } else {
+    if (100..=599).contains(&status) {
         Ok((status, out))
+    } else {
+        match Errno::from_code(status) {
+            Some(errno @ (Errno::HTTP_ERROR | Errno::WOUNDED_TRANSACTION)) => Err((errno, out)),
+            Some(errno) => panic!("{errno:?}"),
+            None => Ok((status, out)),
+        }
     }
 }
 

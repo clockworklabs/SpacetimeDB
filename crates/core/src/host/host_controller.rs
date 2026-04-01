@@ -3,7 +3,7 @@ use super::scheduler::SchedulerStarter;
 use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::client::{ClientActorId, ClientName};
-use crate::config::V8HeapPolicyConfig;
+use crate::config::{GlobalTxConfig, V8HeapPolicyConfig};
 use crate::database_logger::DatabaseLogger;
 use crate::db::persistence::PersistenceProvider;
 use crate::db::relational_db::{self, spawn_view_cleanup_loop, DiskSizeFn, RelationalDB, Txdata};
@@ -123,6 +123,8 @@ pub struct HostController {
     ///
     /// All per-replica clones share the same underlying connection pool.
     pub call_reducer_client: reqwest::Client,
+    /// Blocking variant of [`call_reducer_client`] for the WASM executor thread.
+    pub call_reducer_blocking_client: reqwest::blocking::Client,
     /// Router that resolves the HTTP base URL of the leader node for a given database.
     ///
     /// Set to [`LocalReducerRouter`] by default; replaced with `ClusterReducerRouter`
@@ -138,6 +140,8 @@ pub struct HostController {
     ///
     /// `None` in test/embedded contexts where no JWT signer is configured.
     pub call_reducer_auth_token: Option<String>,
+    /// Global distributed transaction tuning.
+    pub global_tx_config: GlobalTxConfig,
 }
 
 pub(crate) struct HostRuntimes {
@@ -180,6 +184,7 @@ impl From<ReducerCallResult> for Result<(), anyhow::Error> {
 pub enum ReducerOutcome {
     Committed,
     Failed(Box<Box<str>>),
+    Wounded(Box<Box<str>>),
     BudgetExceeded,
 }
 
@@ -188,6 +193,7 @@ impl ReducerOutcome {
         match self {
             Self::Committed => Ok(()),
             Self::Failed(e) => Err(anyhow::anyhow!(e)),
+            Self::Wounded(e) => Err(anyhow::anyhow!(e)),
             Self::BudgetExceeded => Err(anyhow::anyhow!("reducer ran out of energy")),
         }
     }
@@ -204,6 +210,7 @@ impl From<&EventStatus> for ReducerOutcome {
             EventStatus::FailedUser(e) | EventStatus::FailedInternal(e) => {
                 ReducerOutcome::Failed(Box::new((&**e).into()))
             }
+            EventStatus::Wounded(e) => ReducerOutcome::Wounded(Box::new((&**e).into())),
             EventStatus::OutOfEnergy => ReducerOutcome::BudgetExceeded,
         }
     }
@@ -233,6 +240,7 @@ impl HostController {
         data_dir: Arc<ServerDataDir>,
         default_config: db::Config,
         v8_heap_policy: V8HeapPolicyConfig,
+        global_tx_config: GlobalTxConfig,
         program_storage: ProgramStorage,
         energy_monitor: Arc<impl EnergyMonitor>,
         persistence: Arc<dyn PersistenceProvider>,
@@ -250,8 +258,12 @@ impl HostController {
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
             db_cores,
             call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
+            call_reducer_blocking_client: ReplicaContext::new_call_reducer_blocking_client(
+                &CallReducerOnDbConfig::default(),
+            ),
             call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
             call_reducer_auth_token: None,
+            global_tx_config,
         }
     }
 
@@ -690,8 +702,10 @@ async fn make_replica_ctx(
     relational_db: Arc<RelationalDB>,
     bsatn_rlb_pool: BsatnRowListBuilderPool,
     call_reducer_client: reqwest::Client,
+    call_reducer_blocking_client: reqwest::blocking::Client,
     call_reducer_router: Arc<dyn ReducerCallRouter>,
     call_reducer_auth_token: Option<String>,
+    global_tx_config: GlobalTxConfig,
 ) -> anyhow::Result<ReplicaContext> {
     let logger = match module_logs {
         Some(path) => asyncify(move || Arc::new(DatabaseLogger::open_today(path))).await,
@@ -725,10 +739,15 @@ async fn make_replica_ctx(
         logger,
         subscriptions,
         call_reducer_client,
+        call_reducer_blocking_client,
         call_reducer_router,
         call_reducer_auth_token,
         prepared_txs: crate::host::prepared_tx::PreparedTransactions::new(),
         on_panic: std::sync::Arc::new(std::sync::OnceLock::new()),
+        tx_id_nonce: Arc::default(),
+        global_tx_manager: Arc::new(crate::host::global_tx::GlobalTxManager::new(
+            global_tx_config.wound_grace_period,
+        )),
     })
 }
 
@@ -805,8 +824,10 @@ struct ModuleLauncher<F> {
     core: AllocatedJobCore,
     bsatn_rlb_pool: BsatnRowListBuilderPool,
     call_reducer_client: reqwest::Client,
+    call_reducer_blocking_client: reqwest::blocking::Client,
     call_reducer_router: Arc<dyn ReducerCallRouter>,
     call_reducer_auth_token: Option<String>,
+    global_tx_config: GlobalTxConfig,
 }
 
 impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
@@ -827,8 +848,10 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
             self.relational_db,
             self.bsatn_rlb_pool,
             self.call_reducer_client,
+            self.call_reducer_blocking_client,
             self.call_reducer_router,
             self.call_reducer_auth_token,
+            self.global_tx_config,
         )
         .await
         .map(Arc::new)?;
@@ -1040,8 +1063,10 @@ impl Host {
                     core: host_controller.db_cores.take(),
                     bsatn_rlb_pool: bsatn_rlb_pool.clone(),
                     call_reducer_client: host_controller.call_reducer_client.clone(),
+                    call_reducer_blocking_client: host_controller.call_reducer_blocking_client.clone(),
                     call_reducer_router: host_controller.call_reducer_router.clone(),
                     call_reducer_auth_token: host_controller.call_reducer_auth_token.clone(),
+                    global_tx_config: host_controller.global_tx_config,
                 }
                 .launch_module()
                 .await?
@@ -1072,8 +1097,10 @@ impl Host {
                     core: host_controller.db_cores.take(),
                     bsatn_rlb_pool: bsatn_rlb_pool.clone(),
                     call_reducer_client: host_controller.call_reducer_client.clone(),
+                    call_reducer_blocking_client: host_controller.call_reducer_blocking_client.clone(),
                     call_reducer_router: host_controller.call_reducer_router.clone(),
                     call_reducer_auth_token: host_controller.call_reducer_auth_token.clone(),
+                    global_tx_config: host_controller.global_tx_config,
                 }
                 .launch_module()
                 .await;
@@ -1098,8 +1125,10 @@ impl Host {
                             core: host_controller.db_cores.take(),
                             bsatn_rlb_pool: bsatn_rlb_pool.clone(),
                             call_reducer_client: host_controller.call_reducer_client.clone(),
+                            call_reducer_blocking_client: host_controller.call_reducer_blocking_client.clone(),
                             call_reducer_router: host_controller.call_reducer_router.clone(),
                             call_reducer_auth_token: host_controller.call_reducer_auth_token.clone(),
+                            global_tx_config: host_controller.global_tx_config,
                         }
                         .launch_module()
                         .await;
@@ -1214,8 +1243,12 @@ impl Host {
             bsatn_rlb_pool,
             // Transient validation-only module; build its own client and router with defaults.
             call_reducer_client: ReplicaContext::new_call_reducer_client(&CallReducerOnDbConfig::default()),
+            call_reducer_blocking_client: ReplicaContext::new_call_reducer_blocking_client(
+                &CallReducerOnDbConfig::default(),
+            ),
             call_reducer_router: Arc::new(LocalReducerRouter::new("http://127.0.0.1:3000")),
             call_reducer_auth_token: None,
+            global_tx_config: GlobalTxConfig::default(),
         }
         .launch_module()
         .await

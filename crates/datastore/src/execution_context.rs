@@ -79,7 +79,6 @@ impl TryFrom<&txdata::Inputs> for ReducerContext {
         let caller_identity = bsatn::from_reader(args)?;
         let caller_connection_id = bsatn::from_reader(args)?;
         let timestamp = bsatn::from_reader(args)?;
-
         let name = RawIdentifier::new(&**inputs.reducer_name);
         let name = ReducerName::new(Identifier::new_assume_valid(name));
 

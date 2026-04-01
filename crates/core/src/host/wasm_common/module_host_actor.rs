@@ -4,7 +4,6 @@ use crate::client::ClientActorId;
 use crate::database_logger;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
 use crate::error::DBError;
-use crate::host::block_on_scoped;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
@@ -21,7 +20,7 @@ use crate::host::{
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
-use crate::replica_context::ReplicaContext;
+use crate::replica_context::{execute_blocking_http, ReplicaContext};
 use crate::sql::ast::SchemaViewer;
 use crate::sql::execute::run_with_instance;
 use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
@@ -252,6 +251,7 @@ impl ExecutionStats {
 
 pub enum ExecutionError {
     User(Box<str>),
+    Wounded(Box<str>),
     Recoverable(anyhow::Error),
     Trap(anyhow::Error),
 }
@@ -407,7 +407,7 @@ async fn send_prepared_to_persist_to_coordinator(
     router: std::sync::Arc<dyn crate::host::reducer_router::ReducerCallRouter>,
     auth_token: Option<String>,
     coordinator_identity: crate::identity::Identity,
-    prepare_id: String,
+    prepare_id: &str,
 ) {
     loop {
         let base_url = match router.resolve_base_url(coordinator_identity).await {
@@ -444,6 +444,44 @@ async fn send_prepared_to_persist_to_coordinator(
             }
         }
         tokio::time::sleep(Duration::from_secs(5)).await;
+    }
+}
+
+/// Notify coordinator A that B has committed, so A can delete its coordinator log entry.
+async fn send_ack_commit_to_coordinator(
+    client: reqwest::Client,
+    router: std::sync::Arc<dyn crate::host::reducer_router::ReducerCallRouter>,
+    auth_token: Option<String>,
+    coordinator_identity: crate::identity::Identity,
+    prepare_id: String,
+) {
+    let base_url = match router.resolve_base_url(coordinator_identity).await {
+        Ok(url) => url,
+        Err(e) => {
+            log::warn!("2PC ack-commit: cannot resolve coordinator URL: {e}");
+            return;
+        }
+    };
+    let url = format!(
+        "{}/v1/database/{}/2pc/ack-commit/{}",
+        base_url,
+        coordinator_identity.to_hex(),
+        prepare_id,
+    );
+    let mut req = client.post(&url);
+    if let Some(token) = &auth_token {
+        req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+    }
+    match req.send().await {
+        Ok(resp) if resp.status().is_success() => {
+            log::info!("2PC ack-commit: notified coordinator for {prepare_id}");
+        }
+        Ok(resp) => {
+            log::warn!("2PC ack-commit: coordinator returned {} for {prepare_id}", resp.status());
+        }
+        Err(e) => {
+            log::warn!("2PC ack-commit: transport error for {prepare_id}: {e}");
+        }
     }
 }
 
@@ -488,6 +526,19 @@ async fn query_coordinator_status(
             None
         }
     }
+}
+
+fn wounded_status(replica_ctx: &ReplicaContext, tx_id: spacetimedb_lib::GlobalTxId) -> EventStatus {
+    let _ = replica_ctx.global_tx_manager.wound(&tx_id);
+    EventStatus::Wounded(format!(
+        "distributed transaction {tx_id} was wounded by an older transaction"
+    ))
+}
+
+fn check_wounded(replica_ctx: &ReplicaContext, tx_id: Option<spacetimedb_lib::GlobalTxId>) -> Option<EventStatus> {
+    tx_id
+        .filter(|tx_id| replica_ctx.global_tx_manager.is_wounded(tx_id))
+        .map(|tx_id| wounded_status(replica_ctx, tx_id))
 }
 
 impl<T: WasmModule> WasmModuleHostActor<T> {
@@ -674,9 +725,11 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         prepared_tx: tokio::sync::oneshot::Sender<(ReducerCallResult, Option<Bytes>)>,
         decision_rx: std::sync::mpsc::Receiver<bool>,
         commit_persist_rx: tokio::sync::oneshot::Receiver<()>,
+        _global_tx_lock_guard: crate::host::global_tx::GlobalTxLockGuard,
     ) {
         let stdb = self.instance.replica_ctx().relational_db().clone();
         let replica_ctx = self.instance.replica_ctx().clone();
+        let global_tx_id = params.tx_id;
 
         // Extract recovery info before params are consumed.
         let recovery_reducer_name = self
@@ -694,13 +747,20 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         // ── Round 1: Memory Commit ─────────────────────────────
 
         // Step 1: run the reducer and hold the write lock open.
-        let (mut tx, event, client, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
+        let (mut tx, mut event, client, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
             self.common.run_reducer_no_commit(None, params, &mut self.instance)
         });
         self.trapped = trapped;
 
         let energy_quanta_used = event.energy_quanta_used;
         let total_duration = event.host_execution_duration;
+
+        if let Some(status) = check_wounded(&replica_ctx, global_tx_id)
+            && matches!(event.status, EventStatus::Committed(_))
+        {
+            event.status = status;
+            event.reducer_return_value = None;
+        }
 
         if !matches!(event.status, EventStatus::Committed(_)) {
             // Reducer failed — roll back and signal failure; no marker was written.
@@ -712,6 +772,12 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             let return_value = event.reducer_return_value.clone();
             let _ = prepared_tx.send((res, return_value));
             let _ = stdb.rollback_mut_tx(tx);
+            if let Some(tx_id) = global_tx_id {
+                replica_ctx
+                    .global_tx_manager
+                    .mark_state(&tx_id, crate::host::global_tx::GlobalTxState::Aborted);
+                replica_ctx.global_tx_manager.remove_session(&tx_id);
+            }
             return;
         }
 
@@ -724,8 +790,14 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let return_value = event.reducer_return_value.clone();
         let _ = prepared_tx.send((res, return_value));
 
-        // Step 3: wait for coordinator's Round 1 decision (B never aborts on its own).
-        let commit = Self::wait_for_2pc_decision(decision_rx, &prepare_id, coordinator_identity, &replica_ctx);
+        // Step 3: wait for coordinator's Round 1 decision.
+        let commit = Self::wait_for_2pc_decision(
+            decision_rx,
+            &prepare_id,
+            coordinator_identity,
+            global_tx_id,
+            &replica_ctx,
+        );
 
         if !commit {
             // ABORT: roll back reducer changes. No marker was written, no cleanup needed.
@@ -787,7 +859,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 replica_ctx.call_reducer_router.clone(),
                 replica_ctx.call_reducer_auth_token.clone(),
                 coordinator_identity,
-                prepare_id.clone(),
+                &prepare_id,
             )
             .await;
 
@@ -848,6 +920,12 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 }) {
                     log::error!("call_reducer_prepare_and_hold: failed to delete st_2pc_state for {prepare_id}: {e}");
                 }
+                if let Some(tx_id) = global_tx_id {
+                    replica_ctx
+                        .global_tx_manager
+                        .mark_state(&tx_id, crate::host::global_tx::GlobalTxState::Committed);
+                    replica_ctx.global_tx_manager.remove_session(&tx_id);
+                }
             } else {
                 // Round 2 abort: discard all deferred transactions.
                 stdb.abort_durability_barrier(barrier_offset);
@@ -857,56 +935,131 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                     log::error!("2PC persistence aborted for {prepare_id}: triggering module restart");
                     on_panic();
                 }
+                if let Some(tx_id) = global_tx_id {
+                replica_ctx
+                    .global_tx_manager
+                    .mark_state(&tx_id, crate::host::global_tx::GlobalTxState::Aborted);
+                replica_ctx.global_tx_manager.remove_session(&tx_id);
+                }
             }
         });
     }
 
     /// Wait for a 2PC COMMIT or ABORT decision for `prepare_id`.
     ///
-    /// First waits on `decision_rx` for up to 60 seconds.  If no decision arrives,
-    /// switches to polling the coordinator's `GET /2pc/status/{prepare_id}` endpoint
-    /// every 5 seconds until a definitive answer is received.
-    ///
-    /// **B never aborts on its own** — ABORT is only returned when A explicitly says so.
+    /// First waits on `decision_rx` for up to 60 seconds, checking periodically for a
+    /// local wound signal. If no decision arrives, switches to polling the
+    /// coordinator's `GET /2pc/status/{prepare_id}` endpoint every 5 seconds until a
+    /// definitive answer is received or the local transaction is wounded.
     fn wait_for_2pc_decision(
         decision_rx: std::sync::mpsc::Receiver<bool>,
         prepare_id: &str,
         coordinator_identity: crate::identity::Identity,
+        global_tx_id: Option<spacetimedb_lib::GlobalTxId>,
         replica_ctx: &std::sync::Arc<crate::replica_context::ReplicaContext>,
     ) -> bool {
-        match decision_rx.recv_timeout(Duration::from_secs(60)) {
-            Ok(commit) => return commit,
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                log::warn!("2PC prepare_id={prepare_id}: no decision after 60s, polling coordinator");
+        let decision_wait_deadline = std::time::Instant::now() + Duration::from_secs(20);
+        while std::time::Instant::now() < decision_wait_deadline {
+            if global_tx_id
+                .map(|tx_id| replica_ctx.global_tx_manager.is_wounded(&tx_id))
+                .unwrap_or(false)
+            {
+                log::info!("2PC prepare_id={prepare_id}: local transaction wounded while waiting for decision");
+                return false;
             }
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                log::warn!("2PC prepare_id={prepare_id}: decision channel closed, polling coordinator");
+
+            let remaining = decision_wait_deadline.saturating_duration_since(std::time::Instant::now());
+            let wait_slice = remaining.min(Duration::from_secs(1));
+            match decision_rx.recv_timeout(wait_slice) {
+                Ok(commit) => return commit,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    log::warn!("2PC prepare_id={prepare_id}: decision channel closed, polling coordinator");
+                    break;
+                }
             }
         }
 
-        let handle = tokio::runtime::Handle::current();
-        let client = replica_ctx.call_reducer_client.clone();
+        log::warn!("2PC prepare_id={prepare_id}: no decision after 60s, polling coordinator");
+
+        let client = replica_ctx.call_reducer_blocking_client.clone();
         let router = replica_ctx.call_reducer_router.clone();
         let auth_token = replica_ctx.call_reducer_auth_token.clone();
         let prepare_id_owned = prepare_id.to_owned();
         loop {
-            let decision = block_on_scoped(
-                &handle,
-                query_coordinator_status(
-                    &client,
-                    &router,
-                    auth_token.clone(),
-                    coordinator_identity,
-                    &prepare_id_owned,
-                ),
+            if global_tx_id
+                .map(|tx_id| replica_ctx.global_tx_manager.is_wounded(&tx_id))
+                .unwrap_or(false)
+            {
+                log::info!("2PC prepare_id={prepare_id}: local transaction wounded during status polling");
+                return false;
+            }
+
+            let decision = Self::query_coordinator_status(
+                &client,
+                &router,
+                auth_token.clone(),
+                coordinator_identity,
+                &prepare_id_owned,
             );
             match decision {
                 Some(commit) => return commit,
-                None => std::thread::sleep(Duration::from_secs(5)),
+                None => std::thread::sleep(Duration::from_secs(1)),
             }
         }
     }
 
+    /// Query `GET /v1/database/{coordinator}/2pc/status/{prepare_id}`.
+    ///
+    /// Blocks the calling thread. Returns `Some(true)` = COMMIT, `Some(false)` = ABORT,
+    /// `None` = transient error (retry).
+    fn query_coordinator_status(
+        client: &reqwest::blocking::Client,
+        router: &std::sync::Arc<dyn crate::host::reducer_router::ReducerCallRouter>,
+        auth_token: Option<String>,
+        coordinator_identity: crate::identity::Identity,
+        prepare_id: &str,
+    ) -> Option<bool> {
+        let base_url = match router.resolve_base_url_blocking(coordinator_identity) {
+            Ok(url) => url,
+            Err(e) => {
+                log::warn!("2PC status poll: cannot resolve coordinator URL: {e}");
+                return None;
+            }
+        };
+        let url = format!(
+            "{}/v1/database/{}/2pc/status/{}",
+            base_url,
+            coordinator_identity.to_hex(),
+            prepare_id,
+        );
+        let mut req = client.get(&url);
+        if let Some(ref token) = auth_token {
+            req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+        }
+        let request = match req.build() {
+            Ok(r) => r,
+            Err(e) => {
+                log::warn!("2PC status poll: failed to build request: {e}");
+                return None;
+            }
+        };
+        match execute_blocking_http(client, request, |resp| {
+            let success = resp.status().is_success();
+            let body = resp.text().unwrap_or_default();
+            Ok((success, body))
+        }) {
+            Ok((true, body)) => Some(body.trim() == "commit"),
+            Ok((false, _)) => {
+                log::warn!("2PC status poll: coordinator returned non-success");
+                None
+            }
+            Err(e) => {
+                log::warn!("2PC status poll: transport error: {e}");
+                None
+            }
+        }
+    }
     pub fn call_view(&mut self, cmd: ViewCommand) -> ViewCommandResult {
         let (res, trapped) = self.common.handle_cmd(cmd, &mut self.instance);
         self.trapped = trapped;
@@ -1183,12 +1336,13 @@ impl InstanceCommon {
         params: CallReducerParams,
         inst: &mut I,
     ) -> (ReducerCallResult, Option<Bytes>, bool) {
+        let managed_global_tx_id = if tx.is_none() { params.tx_id } else { None };
         let (mut tx, event, client, trapped) = self.run_reducer_no_commit(tx, params, inst);
 
         let energy_quanta_used = event.energy_quanta_used;
         let total_duration = event.host_execution_duration;
 
-        // Take participants before commit so we can write the coordinator log atomically.
+        // Take participant prepare targets before commit so we can write the coordinator log atomically.
         let prepared_participants = inst.take_prepared_participants();
 
         // If this coordinator tx is committed and has participants, write coordinator log
@@ -1196,7 +1350,7 @@ impl InstanceCommon {
         let has_2pc = matches!(event.status, EventStatus::Committed(_)) && !prepared_participants.is_empty();
         let coordinator_barrier_offset = if has_2pc {
             for (db_identity, prepare_id) in &prepared_participants {
-                if let Err(e) = tx.insert_st_2pc_coordinator_log(prepare_id, &db_identity.to_hex().to_string()) {
+                if let Err(e) = tx.insert_st_2pc_coordinator_log(prepare_id, db_identity.to_hex().as_ref()) {
                     log::error!("insert_st_2pc_coordinator_log failed for {prepare_id}: {e}");
                 }
             }
@@ -1403,6 +1557,19 @@ impl InstanceCommon {
             });
         }
 
+        if let Some(tx_id) = managed_global_tx_id {
+            let manager = &inst.replica_ctx().global_tx_manager;
+            manager.mark_state(
+                &tx_id,
+                if matches!(event.status, EventStatus::Committed(_)) {
+                    crate::host::global_tx::GlobalTxState::Committed
+                } else {
+                    crate::host::global_tx::GlobalTxState::Aborted
+                },
+            );
+            manager.remove_session(&tx_id);
+        }
+
         let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
             energy_used: energy_quanta_used,
@@ -1435,6 +1602,7 @@ impl InstanceCommon {
             timestamp,
             caller_identity,
             caller_connection_id,
+            tx_id,
             client,
             request_id,
             reducer_id,
@@ -1443,7 +1611,7 @@ impl InstanceCommon {
         } = params;
         let caller_connection_id_opt = (caller_connection_id != ConnectionId::ZERO).then_some(caller_connection_id);
 
-        let replica_ctx = inst.replica_ctx();
+        let replica_ctx = inst.replica_ctx().clone();
         let stdb = replica_ctx.relational_db();
         let info = self.info.clone();
         let reducer_def = info.module_def.reducer_by_id(reducer_id);
@@ -1459,6 +1627,7 @@ impl InstanceCommon {
             caller_identity: &caller_identity,
             caller_connection_id: &caller_connection_id,
             timestamp,
+            tx_id,
             args: &args,
         };
 
@@ -1500,6 +1669,7 @@ impl InstanceCommon {
                 );
                 (EventStatus::FailedUser(err.into()), None)
             }
+            Err(ExecutionError::Wounded(err)) => (EventStatus::Wounded(err.into()), None),
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
             // for us and replace this with the actual database update.
             Ok(return_value) => {
@@ -1528,6 +1698,15 @@ impl InstanceCommon {
             }
         };
 
+        let status = if let Some(status) = check_wounded(&replica_ctx, tx_id)
+            && matches!(status, EventStatus::Committed(_))
+        {
+            reducer_return_value = None;
+            status
+        } else {
+            status
+        };
+
         // Only re-evaluate and update views if the reducer's execution was successful
         let (out, trapped) = if !trapped && matches!(status, EventStatus::Committed(_)) {
             self.call_views_with_tx(tx, caller_identity, inst, timestamp)
@@ -1540,11 +1719,16 @@ impl InstanceCommon {
         vm_metrics.report_total_duration(out.total_duration);
         vm_metrics.report_abi_duration(out.abi_duration);
 
-        let status = match &out.outcome {
+        let mut status = match &out.outcome {
             ViewOutcome::BudgetExceeded => EventStatus::OutOfEnergy,
             ViewOutcome::Failed(err) => EventStatus::FailedInternal(err.clone()),
             ViewOutcome::Success => status,
         };
+        if let Some(wounded) = check_wounded(&replica_ctx, tx_id)
+            && matches!(status, EventStatus::Committed(_))
+        {
+            status = wounded;
+        }
         if !matches!(status, EventStatus::Committed(_)) {
             reducer_return_value = None;
         }
@@ -1808,6 +1992,10 @@ impl InstanceCommon {
             }
             // TODO: maybe do something else with user errors?
             (Err(ExecutionError::User(err)), _) => {
+                inst.log_traceback("view", &view_name, &anyhow::anyhow!(err));
+                self.handle_outer_error(&result.stats.energy, &view_name).into()
+            }
+            (Err(ExecutionError::Wounded(err)), _) => {
                 inst.log_traceback("view", &view_name, &anyhow::anyhow!(err));
                 self.handle_outer_error(&result.stats.energy, &view_name).into()
             }
@@ -2219,6 +2407,9 @@ pub trait InstanceOp {
     fn name(&self) -> &Identifier;
     fn timestamp(&self) -> Timestamp;
     fn call_type(&self) -> FuncCallType;
+    fn tx_id(&self) -> Option<spacetimedb_lib::GlobalTxId> {
+        None
+    }
 }
 
 /// Describes a view call in a cheaply shareable way.
@@ -2290,6 +2481,7 @@ pub struct ReducerOp<'a> {
     pub caller_identity: &'a Identity,
     pub caller_connection_id: &'a ConnectionId,
     pub timestamp: Timestamp,
+    pub tx_id: Option<spacetimedb_lib::GlobalTxId>,
     /// The arguments passed to the reducer.
     pub args: &'a ArgsTuple,
 }
@@ -2304,6 +2496,9 @@ impl InstanceOp for ReducerOp<'_> {
     fn call_type(&self) -> FuncCallType {
         FuncCallType::Reducer
     }
+    fn tx_id(&self) -> Option<spacetimedb_lib::GlobalTxId> {
+        self.tx_id
+    }
 }
 
 impl From<ReducerOp<'_>> for execution_context::ReducerContext {
@@ -2314,6 +2509,7 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
             caller_identity,
             caller_connection_id,
             timestamp,
+            tx_id: _,
             args,
         }: ReducerOp<'_>,
     ) -> Self {

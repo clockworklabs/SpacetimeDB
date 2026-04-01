@@ -35,6 +35,10 @@ macro_rules! errnos {
                 "ABI call can only be made while within a read-only transaction"
             ),
             HTTP_ERROR(21, "The HTTP request failed"),
+            WOUNDED_TRANSACTION(
+                22,
+                "The distributed transaction was wounded by an older transaction"
+            ),
         );
     };
 }

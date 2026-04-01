@@ -107,6 +107,17 @@ pub(super) enum ViewResultSinkError {
     UnexpectedCode(i32),
 }
 
+const WOUNDED_ERROR_PREFIX: &str = "__STDB_WOUNDED__:";
+
+fn decode_reducer_failure(result: Vec<u8>) -> ExecutionError {
+    let message = string_from_utf8_lossy_owned(result);
+    if let Some(message) = message.strip_prefix(WOUNDED_ERROR_PREFIX) {
+        ExecutionError::Wounded(message.into())
+    } else {
+        ExecutionError::User(message.into())
+    }
+}
+
 /// Handle the return code from a function using a result sink.
 ///
 /// On success, returns the result bytes.
@@ -114,7 +125,7 @@ pub(super) enum ViewResultSinkError {
 fn handle_result_sink_code(code: i32, result: Vec<u8>) -> Result<Vec<u8>, ExecutionError> {
     match code {
         0 => Ok(result),
-        CALL_FAILURE => Err(ExecutionError::User(string_from_utf8_lossy_owned(result).into())),
+        CALL_FAILURE => Err(decode_reducer_failure(result)),
         _ => Err(ExecutionError::Recoverable(anyhow::anyhow!("unknown return code"))),
     }
 }
@@ -253,6 +264,7 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
 
             res.map_err(|e| match e {
                 ExecutionError::User(err) => InitializationError::Setup(err),
+                ExecutionError::Wounded(err) => InitializationError::Setup(err),
                 ExecutionError::Recoverable(err) | ExecutionError::Trap(err) => {
                     let func = SETUP_DUNDER.to_owned();
                     InitializationError::RuntimeError { err, func }
@@ -463,7 +475,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, errors_sink) =
             store
                 .data_mut()
-                .start_funcall(reducer_name, args_bytes, op.timestamp, op.call_type());
+                .start_funcall(reducer_name, args_bytes, op.timestamp, op.call_type(), op.tx_id);
 
         let call_result = call_sync_typed_func(
             &self.call_reducer,
@@ -502,7 +514,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, errors_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name.clone(), args_bytes, op.timestamp, op.call_type());
+                .start_funcall(op.name.clone(), args_bytes, op.timestamp, op.call_type(), None);
 
         let call_result = call_view_export(
             &mut *store,
@@ -538,7 +550,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, errors_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name.clone(), args_bytes, op.timestamp, op.call_type());
+                .start_funcall(op.name.clone(), args_bytes, op.timestamp, op.call_type(), None);
 
         let call_result = call_view_export(
             &mut *store,
@@ -565,7 +577,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
     }
 
     fn take_prepared_participants(&mut self) -> Vec<(Identity, String)> {
-        core::mem::take(&mut self.store.data_mut().instance_env_mut().prepared_participants)
+        core::mem::take(&mut self.store.data_mut().instance_env_mut().contacted_participants)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -582,10 +594,13 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let [conn_id_0, conn_id_1] = prepare_connection_id_for_call(op.caller_connection_id);
 
         // Prepare arguments to the reducer + the error sink & start timings.
-        let (args_source, result_sink) =
-            store
-                .data_mut()
-                .start_funcall(op.name.clone(), op.arg_bytes, op.timestamp, FuncCallType::Procedure);
+        let (args_source, result_sink) = store.data_mut().start_funcall(
+            op.name.clone(),
+            op.arg_bytes,
+            op.timestamp,
+            FuncCallType::Procedure,
+            None,
+        );
 
         let Some(call_procedure) = self.call_procedure.as_ref() else {
             let res = module_host_actor::ProcedureExecuteResult {

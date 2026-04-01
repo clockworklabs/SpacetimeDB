@@ -2709,9 +2709,7 @@ impl MutTxId {
     /// Return all rows in `st_2pc_state` (prepared but not yet committed/aborted).
     /// Used on recovery: each row describes a transaction to resume.
     pub fn scan_st_2pc_state(&self) -> Result<Vec<St2pcStateRow>> {
-        self.iter(ST_2PC_STATE_ID)?
-            .map(|row| St2pcStateRow::try_from(row))
-            .collect()
+        self.iter(ST_2PC_STATE_ID)?.map(St2pcStateRow::try_from).collect()
     }
 
     /// Insert a row into `st_2pc_coordinator_log` recording that the coordinator has
@@ -2752,7 +2750,7 @@ impl MutTxId {
     /// Used on coordinator crash-recovery to retransmit COMMIT to participants.
     pub fn scan_st_2pc_coordinator_log(&self) -> Result<Vec<St2pcCoordinatorLogRow>> {
         self.iter(ST_2PC_COORDINATOR_LOG_ID)?
-            .map(|row| St2pcCoordinatorLogRow::try_from(row))
+            .map(St2pcCoordinatorLogRow::try_from)
             .collect()
     }
 

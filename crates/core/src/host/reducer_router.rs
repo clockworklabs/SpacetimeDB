@@ -28,6 +28,18 @@ pub trait ReducerCallRouter: Send + Sync + 'static {
     /// Returns an error string when the leader cannot be resolved
     /// (database not found, no leader elected yet, node has no network address, etc.).
     fn resolve_base_url<'a>(&'a self, database_identity: Identity) -> BoxFuture<'a, anyhow::Result<String>>;
+
+    /// Blocking variant of [`resolve_base_url`] for use on non-async threads.
+    ///
+    /// The default implementation drives the async version on a fresh OS thread with its own
+    /// minimal tokio runtime, so it is safe to call from any thread — including threads that
+    /// are already inside a tokio `block_on` context (e.g. the `SingleCoreExecutor` thread).
+    ///
+    /// Override for routers that can resolve without spawning (e.g. [`LocalReducerRouter`]).
+    fn resolve_base_url_blocking(&self, database_identity: Identity) -> anyhow::Result<String> {
+        let fut = self.resolve_base_url(database_identity);
+        futures::executor::block_on(fut)
+    }
 }
 
 // Arc<dyn ReducerCallRouter> is itself a ReducerCallRouter.
@@ -59,5 +71,9 @@ impl ReducerCallRouter for LocalReducerRouter {
     fn resolve_base_url<'a>(&'a self, _database_identity: Identity) -> BoxFuture<'a, anyhow::Result<String>> {
         let url = self.base_url.clone();
         Box::pin(async move { Ok(url) })
+    }
+
+    fn resolve_base_url_blocking(&self, _database_identity: Identity) -> anyhow::Result<String> {
+        Ok(self.base_url.clone())
     }
 }

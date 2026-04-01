@@ -327,8 +327,14 @@ impl JsInstanceEnv {
     ///
     /// Returns the handle used by reducers to read from `args`
     /// as well as the handle used to write the error message, if any.
-    fn start_funcall(&mut self, name: Identifier, ts: Timestamp, func_type: FuncCallType) {
-        self.instance_env.start_funcall(name, ts, func_type);
+    fn start_funcall(
+        &mut self,
+        name: Identifier,
+        ts: Timestamp,
+        func_type: FuncCallType,
+        tx_id: Option<spacetimedb_lib::GlobalTxId>,
+    ) {
+        self.instance_env.start_funcall(name, ts, func_type, tx_id);
     }
 
     /// Returns the name of the most recent reducer to be run in this environment,
@@ -613,7 +619,7 @@ enum JsWorkerRequest {
     },
 }
 
-static_assert_size!(CallReducerParams, 192);
+static_assert_size!(CallReducerParams, 256);
 
 fn send_worker_reply<T>(ctx: &str, reply_tx: JsReplyTx<T>, value: T, trapped: bool) {
     if reply_tx.send(JsWorkerReply { value, trapped }).is_err() {
@@ -1414,6 +1420,7 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
         .map_result(|call_result| {
             call_result.map_err(|e| match e {
                 ExecutionError::User(e) => anyhow::Error::msg(e),
+                ExecutionError::Wounded(e) => anyhow::Error::msg(e),
                 ExecutionError::Recoverable(e) | ExecutionError::Trap(e) => e,
             })
         });
@@ -1440,7 +1447,7 @@ where
 
     // Start the timer.
     // We'd like this tightly around `call`.
-    env.start_funcall(op.name().clone(), op.timestamp(), op.call_type());
+    env.start_funcall(op.name().clone(), op.timestamp(), op.call_type(), op.tx_id());
 
     v8::tc_scope!(scope, scope);
     let call_result = call(scope, op).map_err(|mut e| {
@@ -1543,6 +1550,7 @@ mod test {
                     caller_identity: &Identity::ONE,
                     caller_connection_id: &ConnectionId::ZERO,
                     timestamp: Timestamp::from_micros_since_unix_epoch(24),
+                    tx_id: None,
                     args: &ArgsTuple::nullary(),
                 };
                 let buffer = v8::ArrayBuffer::new(scope, 4096);

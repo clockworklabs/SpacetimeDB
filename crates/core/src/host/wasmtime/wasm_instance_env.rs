@@ -17,7 +17,7 @@ use crate::subscription::module_subscription_manager::TransactionOffset;
 use anyhow::{anyhow, Context as _};
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
-use spacetimedb_lib::{bsatn, ConnectionId, Identity, Timestamp};
+use spacetimedb_lib::{bsatn, ConnectionId, GlobalTxId, Identity, Timestamp};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use spacetimedb_primitives::{errno, ColId};
 use spacetimedb_schema::def::ModuleDef;
@@ -259,6 +259,7 @@ impl WasmInstanceEnv {
         args: bytes::Bytes,
         ts: Timestamp,
         func_type: FuncCallType,
+        tx_id: Option<GlobalTxId>,
     ) -> (BytesSourceId, u32) {
         // Create the output sink.
         // Reducers which fail will write their error message here.
@@ -267,7 +268,7 @@ impl WasmInstanceEnv {
 
         let args = self.create_bytes_source(args).unwrap();
 
-        self.instance_env.start_funcall(name, ts, func_type);
+        self.instance_env.start_funcall(name, ts, func_type, tx_id);
 
         (args, errors)
     }
@@ -1996,11 +1997,9 @@ impl WasmInstanceEnv {
             let args_buf = mem.deref_slice(args_ptr, args_len)?;
             let args = bytes::Bytes::copy_from_slice(args_buf);
 
-            let handle = tokio::runtime::Handle::current();
-            let fut = env
+            let result = env
                 .instance_env
                 .call_reducer_on_db(database_identity, &reducer_name, args);
-            let result = super::super::block_on_scoped(&handle, fut);
 
             match result {
                 Ok((status, body)) => {
@@ -2016,6 +2015,14 @@ impl WasmInstanceEnv {
                     bytes_source.0.write_to(mem, out)?;
                     Ok(errno::HTTP_ERROR.get() as u32)
                 }
+                Err(NodesError::Wounded(err)) => {
+                    let err_bytes = bsatn::to_vec(&err).with_context(|| {
+                        format!("Failed to BSATN-serialize call_reducer_on_db wounded error: {err:?}")
+                    })?;
+                    let bytes_source = WasmInstanceEnv::create_bytes_source(env, err_bytes.into())?;
+                    bytes_source.0.write_to(mem, out)?;
+                    Ok(errno::WOUNDED_TRANSACTION.get() as u32)
+                }
                 Err(e) => Err(WasmError::Db(e)),
             }
         })
@@ -2024,9 +2031,10 @@ impl WasmInstanceEnv {
     /// 2PC variant of `call_reducer_on_db`.
     ///
     /// Calls the remote database's `/prepare/{reducer}` endpoint instead of `/call/{reducer}`.
-    /// On success, parses the `X-Prepare-Id` header and stores the participant info in
-    /// `InstanceEnv::prepared_participants` so the runtime can commit/abort after the
-    /// coordinator's reducer completes.
+    /// The coordinator assigns the `prepare_id` before sending the request and stores the
+    /// participant info in `InstanceEnv::contacted_participants` so the runtime can
+    /// commit/abort after the coordinator's reducer completes, even if the request is
+    /// wounded while in flight.
     ///
     /// Returns the HTTP status code on success, writing the response body to `*out`
     /// as a [`BytesSource`].
@@ -2055,20 +2063,12 @@ impl WasmInstanceEnv {
             let args_buf = mem.deref_slice(args_ptr, args_len)?;
             let args = bytes::Bytes::copy_from_slice(args_buf);
 
-            let handle = tokio::runtime::Handle::current();
-            let fut = env
+            let result = env
                 .instance_env
                 .call_reducer_on_db_2pc(database_identity, &reducer_name, args);
-            let result = super::super::block_on_scoped(&handle, fut);
 
             match result {
-                Ok((status, body, prepare_id)) => {
-                    // If we got a prepare_id, register this participant.
-                    if let Some(pid) = prepare_id
-                        && status < 300
-                    {
-                        env.instance_env.prepared_participants.push((database_identity, pid));
-                    }
+                Ok((status, body, _prepare_id)) => {
                     let bytes_source = WasmInstanceEnv::create_bytes_source(env, body)?;
                     bytes_source.0.write_to(mem, out)?;
                     Ok(status as u32)
@@ -2080,6 +2080,14 @@ impl WasmInstanceEnv {
                     let bytes_source = WasmInstanceEnv::create_bytes_source(env, err_bytes.into())?;
                     bytes_source.0.write_to(mem, out)?;
                     Ok(errno::HTTP_ERROR.get() as u32)
+                }
+                Err(NodesError::Wounded(err)) => {
+                    let err_bytes = bsatn::to_vec(&err).with_context(|| {
+                        format!("Failed to BSATN-serialize call_reducer_on_db_2pc wounded error: {err:?}")
+                    })?;
+                    let bytes_source = WasmInstanceEnv::create_bytes_source(env, err_bytes.into())?;
+                    bytes_source.0.write_to(mem, out)?;
+                    Ok(errno::WOUNDED_TRANSACTION.get() as u32)
                 }
                 Err(e) => Err(WasmError::Db(e)),
             }

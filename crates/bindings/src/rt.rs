@@ -919,6 +919,12 @@ static DESCRIBERS: Mutex<Vec<Box<dyn DescriberFn>>> = Mutex::new(Vec::new());
 /// A reducer function takes in `(ReducerContext, Args)`
 /// and returns a result with a possible error message.
 pub type ReducerFn = fn(&ReducerContext, &[u8]) -> ReducerResult;
+
+const WOUNDED_ERROR_PREFIX: &str = "__STDB_WOUNDED__:";
+
+pub fn encode_wounded_error_message(message: impl Into<String>) -> String {
+    format!("{WOUNDED_ERROR_PREFIX}{}", message.into())
+}
 static REDUCERS: OnceLock<Vec<ReducerFn>> = OnceLock::new();
 
 #[cfg(feature = "unstable")]

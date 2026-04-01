@@ -42,6 +42,7 @@ members = [
   "modules/keynote-benchmarks",
   "modules/perf-test",
   "modules/module-test",
+  "modules/chain-call-repro",
   "templates/basic-rs/spacetimedb",
   "templates/chat-console-rs/spacetimedb",
   "templates/keynote-2/spacetimedb-rust-client",
@@ -262,7 +263,7 @@ rand_distr = "0.5.1"
 rayon = "1.8"
 rayon-core = "1.11.0"
 regex = "1"
-reqwest = { version = "0.12", features = ["stream", "json"] }
+reqwest = { version = "0.12", features = ["stream", "json", "blocking"] }
 rolldown = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-rc.3" }
 rolldown_common = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-rc.3" }
 rolldown_error = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-rc.3" }

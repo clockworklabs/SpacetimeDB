@@ -22,6 +22,7 @@ pub mod operator;
 pub mod query;
 pub mod scheduler;
 pub mod st_var;
+pub mod tx_id;
 pub mod version;
 
 pub mod type_def {
@@ -47,6 +48,7 @@ pub use spacetimedb_sats::__make_register_reftype;
 pub use spacetimedb_sats::{self as sats, bsatn, buffer, de, ser};
 pub use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, SumType};
 pub use spacetimedb_sats::{AlgebraicValue, ProductValue};
+pub use tx_id::{GlobalTxId, TX_ID_HEADER};
 
 pub const MODULE_ABI_MAJOR_VERSION: u16 = 10;
 

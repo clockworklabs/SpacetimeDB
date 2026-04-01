@@ -346,6 +346,7 @@ impl ModuleSubscriptions {
         let error = match &event.status {
             EventStatus::FailedUser(err) => err.clone(),
             EventStatus::FailedInternal(err) => err.clone(),
+            EventStatus::Wounded(err) => err.clone(),
             EventStatus::OutOfEnergy => "reducer ran out of energy".into(),
             EventStatus::Committed(_) => {
                 tracing::warn!("Unexpected committed status in reducer failure branch");
@@ -1616,7 +1617,10 @@ impl ModuleSubscriptions {
                 *db_update = DatabaseUpdate::from_writes(&tx_data);
                 (read_tx, tx_data, tx_metrics)
             }
-            EventStatus::FailedUser(_) | EventStatus::FailedInternal(_) | EventStatus::OutOfEnergy => {
+            EventStatus::FailedUser(_)
+            | EventStatus::FailedInternal(_)
+            | EventStatus::Wounded(_)
+            | EventStatus::OutOfEnergy => {
                 // If the transaction failed, we need to rollback the mutable tx.
                 // We don't need to do any subscription updates in this case, so we will exit early.
 

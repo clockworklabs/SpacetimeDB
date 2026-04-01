@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use http::StatusCode;
 use spacetimedb::client::ClientActorIndex;
-use spacetimedb::config::{CertificateAuthority, MetadataFile, V8HeapPolicyConfig};
+use spacetimedb::config::{CertificateAuthority, GlobalTxConfig, MetadataFile, V8HeapPolicyConfig};
 use spacetimedb::db;
 use spacetimedb::db::persistence::LocalPersistenceProvider;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
@@ -45,6 +45,7 @@ pub struct StandaloneOptions {
     pub db_config: db::Config,
     pub websocket: WebSocketOptions,
     pub v8_heap_policy: V8HeapPolicyConfig,
+    pub global_tx: GlobalTxConfig,
     /// HTTP base URL of this node's API server (e.g. `"http://127.0.0.1:3000"`).
     /// Used to configure the `LocalReducerRouter` so that cross-DB reducer calls
     /// reach the correct address when the server listens on a dynamic port.
@@ -86,6 +87,7 @@ impl StandaloneEnv {
             data_dir,
             config.db_config,
             config.v8_heap_policy,
+            config.global_tx,
             program_store.clone(),
             energy_monitor,
             persistence_provider,
@@ -658,6 +660,7 @@ mod tests {
             },
             websocket: WebSocketOptions::default(),
             v8_heap_policy: V8HeapPolicyConfig::default(),
+            global_tx: GlobalTxConfig::default(),
             local_api_url: "http://127.0.0.1:3000".to_owned(),
         };
 
