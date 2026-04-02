@@ -1,9 +1,8 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
-import { RUN_ID, sendMessage, createRoom, joinRoom } from '../fixtures';
+import { RUN_ID, sendMessage, createRoom, joinRoom, APP_URL, APP_URL_B } from '../fixtures';
 
 let anonCtx: { context: BrowserContext; page: Page };
 
-const APP_URL = process.env.APP_URL || 'http://localhost:5173';
 const ANON_ROOM = `AnonTestRoom-${RUN_ID}`;
 const MIGRATED_NAME = `MigratedAlice-${RUN_ID}`;
 

@@ -3,6 +3,16 @@ import { type Browser, type BrowserContext, type Page } from '@playwright/test';
 /** Unique ID per test run to avoid state collisions with persistent backends */
 export const RUN_ID = Date.now().toString(36);
 
+/** Base URL for the app under test */
+export const APP_URL = process.env.APP_URL || 'http://localhost:5173';
+
+/**
+ * Playwright uses separate BrowserContexts per user — each context has its own
+ * localStorage, cookies, and WebSocket connections. No need for separate ports.
+ * Both Alice and Bob use the same APP_URL but get isolated sessions.
+ */
+export const APP_URL_B = APP_URL;
+
 /**
  * Creates an isolated browser context for a user.
  * Each user gets their own localStorage, cookies, and session —

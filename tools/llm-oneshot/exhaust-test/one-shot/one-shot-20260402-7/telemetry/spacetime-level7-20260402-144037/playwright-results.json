@@ -1,0 +1,2356 @@
+{
+  "config": {
+    "configFile": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\playwright.config.ts",
+    "rootDir": "D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDBPrivate/public/tools/llm-oneshot/exhaust-test/test-plans/playwright/specs",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 10
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDBPrivate/public/tools/llm-oneshot/exhaust-test/test-plans/playwright/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 10
+        },
+        "id": "",
+        "name": "",
+        "testDir": "D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDBPrivate/public/tools/llm-oneshot/exhaust-test/test-plans/playwright/specs",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 60000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.59.1",
+    "workers": 16,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "feature-01-basic-chat.spec.ts",
+      "file": "feature-01-basic-chat.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Feature 1: Basic Chat",
+          "file": "feature-01-basic-chat.spec.ts",
+          "line": 10,
+          "column": 6,
+          "specs": [
+            {
+              "title": "users can set a display name",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 21,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:19.992Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "e163cac8b764ed59df16-159d27e80389114556f9",
+              "file": "feature-01-basic-chat.spec.ts",
+              "line": 21,
+              "column": 7
+            },
+            {
+              "title": "users can create and join rooms",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 145,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:26.383Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "e163cac8b764ed59df16-712a35b85627241c61d9",
+              "file": "feature-01-basic-chat.spec.ts",
+              "line": 26,
+              "column": 7
+            },
+            {
+              "title": "messages appear in real-time for all users",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 351,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:26.545Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "e163cac8b764ed59df16-281124583cc0ebc957e4",
+              "file": "feature-01-basic-chat.spec.ts",
+              "line": 34,
+              "column": 7
+            },
+            {
+              "title": "online user list shows connected users",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 9,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:26.927Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "e163cac8b764ed59df16-1c4c915c7ccc83804e0c",
+              "file": "feature-01-basic-chat.spec.ts",
+              "line": 47,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "feature-02-typing-indicators.spec.ts",
+      "file": "feature-02-typing-indicators.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Feature 2: Typing Indicators",
+          "file": "feature-02-typing-indicators.spec.ts",
+          "line": 10,
+          "column": 6,
+          "specs": [
+            {
+              "title": "typing state broadcasts to other users",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 1,
+                      "status": "timedOut",
+                      "duration": 0,
+                      "error": {
+                        "message": "\u001b[31m\"beforeAll\" hook timeout of 60000ms exceeded.\u001b[39m",
+                        "stack": "\u001b[31m\"beforeAll\" hook timeout of 60000ms exceeded.\u001b[39m\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-02-typing-indicators.spec.ts:11:8",
+                        "location": {
+                          "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-02-typing-indicators.spec.ts",
+                          "column": 8,
+                          "line": 11
+                        },
+                        "snippet": "\u001b[0m \u001b[90m  9 |\u001b[39m\n \u001b[90m 10 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Feature 2: Typing Indicators'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 11 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeAll(\u001b[36masync\u001b[39m ({ browser }) \u001b[33m=>\u001b[39m {\n \u001b[90m    |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 12 |\u001b[39m     alice \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m createUserContext(browser\u001b[33m,\u001b[39m \u001b[32m`Alice-${RUN_ID}`\u001b[39m\u001b[33m,\u001b[39m \u001b[33mAPP_URL\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 13 |\u001b[39m     bob \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m createUserContext(browser\u001b[33m,\u001b[39m \u001b[32m`Bob-${RUN_ID}`\u001b[39m\u001b[33m,\u001b[39m \u001b[33mAPP_URL\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 14 |\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-02-typing-indicators.spec.ts",
+                            "column": 8,
+                            "line": 11
+                          },
+                          "message": "\u001b[31m\"beforeAll\" hook timeout of 60000ms exceeded.\u001b[39m\n\n   9 |\n  10 | test.describe('Feature 2: Typing Indicators', () => {\n> 11 |   test.beforeAll(async ({ browser }) => {\n     |        ^\n  12 |     alice = await createUserContext(browser, `Alice-${RUN_ID}`, APP_URL);\n  13 |     bob = await createUserContext(browser, `Bob-${RUN_ID}`, APP_URL);\n  14 |\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-02-typing-indicators.spec.ts:11:8"
+                        },
+                        {
+                          "message": "Error: browserContext._wrapApiCall: ENOENT: no such file or directory, copyfile 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-1\\traces\\873a11bd74b897144dc5-b1b5233fb4a53b74c0da-recording1.network' -> 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-1\\traces\\873a11bd74b897144dc5-b1b5233fb4a53b74c0da-recording1-pwnetcopy-1.network'"
+                        },
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\fixtures.ts",
+                            "column": 18,
+                            "line": 127
+                          },
+                          "message": "Error: locator.click: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - waiting for locator('text=General-mnhtz77r').first()\u001b[22m\n\n\n   at ..\\fixtures.ts:127\n\n  125 |   // Click on the room name in the sidebar/list\n  126 |   const roomLink = page.locator(`text=${roomName}`).first();\n> 127 |   await roomLink.click();\n      |                  ^\n  128 |\n  129 |   // If there's a \"Join\" button, click it\n  130 |   const joinBtn = page.locator('button:has-text(\"Join\")').first();\n    at joinRoom (D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\fixtures.ts:127:18)\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-02-typing-indicators.spec.ts:16:19"
+                        },
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-02-typing-indicators.spec.ts",
+                            "column": 24,
+                            "line": 22
+                          },
+                          "message": "Error: apiRequestContext._wrapApiCall: ENOENT: no such file or directory, copyfile 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-1\\traces\\873a11bd74b897144dc5-b1b5233fb4a53b74c0da-recording1.network' -> 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-1\\traces\\873a11bd74b897144dc5-b1b5233fb4a53b74c0da-recording1-pwnetcopy-1.network'\n\n  20 |   test.afterAll(async () => {\n  21 |     await alice?.context.close();\n> 22 |     await bob?.context.close();\n     |                        ^\n  23 |   });\n  24 |\n  25 |   test('typing state broadcasts to other users', async () => {\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-02-typing-indicators.spec.ts:22:24"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:20.016Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-02-typing-indicato-e2fe3-e-broadcasts-to-other-users\\test-failed-1.png"
+                        },
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-02-typing-indicato-e2fe3-e-broadcasts-to-other-users\\test-failed-2.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-02-typing-indicato-e2fe3-e-broadcasts-to-other-users\\error-context.md"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-02-typing-indicato-e2fe3-e-broadcasts-to-other-users\\trace.zip"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-02-typing-indicators.spec.ts",
+                        "column": 8,
+                        "line": 11
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "873a11bd74b897144dc5-b1b5233fb4a53b74c0da",
+              "file": "feature-02-typing-indicators.spec.ts",
+              "line": 25,
+              "column": 7
+            },
+            {
+              "title": "typing indicator auto-expires after inactivity",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": -1,
+                      "parallelIndex": -1,
+                      "status": "skipped",
+                      "duration": 0,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:52:20.470Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "873a11bd74b897144dc5-01296a4bf6863537e729",
+              "file": "feature-02-typing-indicators.spec.ts",
+              "line": 34,
+              "column": 7
+            },
+            {
+              "title": "typing indicator displays correctly in UI",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": -1,
+                      "parallelIndex": -1,
+                      "status": "skipped",
+                      "duration": 0,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:52:20.470Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "873a11bd74b897144dc5-52fa9d32fb929904c71d",
+              "file": "feature-02-typing-indicators.spec.ts",
+              "line": 47,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "feature-03-read-receipts.spec.ts",
+      "file": "feature-03-read-receipts.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Feature 3: Read Receipts",
+          "file": "feature-03-read-receipts.spec.ts",
+          "line": 10,
+          "column": 6,
+          "specs": [
+            {
+              "title": "seen-by indicator displays under messages after recipient views",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "timedOut",
+                      "duration": 0,
+                      "error": {
+                        "message": "\u001b[31m\"beforeAll\" hook timeout of 60000ms exceeded.\u001b[39m",
+                        "stack": "\u001b[31m\"beforeAll\" hook timeout of 60000ms exceeded.\u001b[39m\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-03-read-receipts.spec.ts:11:8",
+                        "location": {
+                          "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-03-read-receipts.spec.ts",
+                          "column": 8,
+                          "line": 11
+                        },
+                        "snippet": "\u001b[0m \u001b[90m  9 |\u001b[39m\n \u001b[90m 10 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Feature 3: Read Receipts'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 11 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeAll(\u001b[36masync\u001b[39m ({ browser }) \u001b[33m=>\u001b[39m {\n \u001b[90m    |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 12 |\u001b[39m     alice \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m createUserContext(browser\u001b[33m,\u001b[39m \u001b[32m`Alice-${RUN_ID}`\u001b[39m\u001b[33m,\u001b[39m \u001b[33mAPP_URL\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 13 |\u001b[39m     bob \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m createUserContext(browser\u001b[33m,\u001b[39m \u001b[32m`Bob-${RUN_ID}`\u001b[39m\u001b[33m,\u001b[39m \u001b[33mAPP_URL\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 14 |\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-03-read-receipts.spec.ts",
+                            "column": 8,
+                            "line": 11
+                          },
+                          "message": "\u001b[31m\"beforeAll\" hook timeout of 60000ms exceeded.\u001b[39m\n\n   9 |\n  10 | test.describe('Feature 3: Read Receipts', () => {\n> 11 |   test.beforeAll(async ({ browser }) => {\n     |        ^\n  12 |     alice = await createUserContext(browser, `Alice-${RUN_ID}`, APP_URL);\n  13 |     bob = await createUserContext(browser, `Bob-${RUN_ID}`, APP_URL);\n  14 |\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-03-read-receipts.spec.ts:11:8"
+                        },
+                        {
+                          "message": "Error: browserContext._wrapApiCall: ENOENT: no such file or directory, copyfile 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-2\\traces\\20a5c251682256666843-1bd41bd7d6e9ee53373c-recording1.network' -> 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-2\\traces\\20a5c251682256666843-1bd41bd7d6e9ee53373c-recording1-pwnetcopy-1.network'"
+                        },
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\fixtures.ts",
+                            "column": 18,
+                            "line": 127
+                          },
+                          "message": "Error: locator.click: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - waiting for locator('text=General-mnhtz762').first()\u001b[22m\n\n\n   at ..\\fixtures.ts:127\n\n  125 |   // Click on the room name in the sidebar/list\n  126 |   const roomLink = page.locator(`text=${roomName}`).first();\n> 127 |   await roomLink.click();\n      |                  ^\n  128 |\n  129 |   // If there's a \"Join\" button, click it\n  130 |   const joinBtn = page.locator('button:has-text(\"Join\")').first();\n    at joinRoom (D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\fixtures.ts:127:18)\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-03-read-receipts.spec.ts:15:19"
+                        },
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-03-read-receipts.spec.ts",
+                            "column": 24,
+                            "line": 21
+                          },
+                          "message": "Error: apiRequestContext._wrapApiCall: ENOENT: no such file or directory, copyfile 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-2\\traces\\20a5c251682256666843-1bd41bd7d6e9ee53373c-recording1.network' -> 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-2\\traces\\20a5c251682256666843-1bd41bd7d6e9ee53373c-recording1-pwnetcopy-1.network'\n\n  19 |   test.afterAll(async () => {\n  20 |     await alice?.context.close();\n> 21 |     await bob?.context.close();\n     |                        ^\n  22 |   });\n  23 |\n  24 |   test('seen-by indicator displays under messages after recipient views', async () => {\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-03-read-receipts.spec.ts:21:24"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:19.953Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-03-read-receipts-F-34be5-sages-after-recipient-views\\test-failed-2.png"
+                        },
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-03-read-receipts-F-34be5-sages-after-recipient-views\\test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-03-read-receipts-F-34be5-sages-after-recipient-views\\error-context.md"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-03-read-receipts-F-34be5-sages-after-recipient-views\\trace.zip"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-03-read-receipts.spec.ts",
+                        "column": 8,
+                        "line": 11
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "20a5c251682256666843-1bd41bd7d6e9ee53373c",
+              "file": "feature-03-read-receipts.spec.ts",
+              "line": 24,
+              "column": 7
+            },
+            {
+              "title": "read status includes the reader name",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": -1,
+                      "parallelIndex": -1,
+                      "status": "skipped",
+                      "duration": 0,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:52:20.321Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "20a5c251682256666843-e5a345a9a2dc5d39ca70",
+              "file": "feature-03-read-receipts.spec.ts",
+              "line": 41,
+              "column": 7
+            },
+            {
+              "title": "read status updates in real-time when another user views",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": -1,
+                      "parallelIndex": -1,
+                      "status": "skipped",
+                      "duration": 0,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:52:20.321Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "20a5c251682256666843-ed848eba7a410d83e6b7",
+              "file": "feature-03-read-receipts.spec.ts",
+              "line": 47,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "feature-04-unread-counts.spec.ts",
+      "file": "feature-04-unread-counts.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Feature 4: Unread Counts",
+          "file": "feature-04-unread-counts.spec.ts",
+          "line": 11,
+          "column": 6,
+          "specs": [
+            {
+              "title": "unread count badge appears when messages arrive in another room",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "timedOut",
+                      "duration": 0,
+                      "error": {
+                        "message": "\u001b[31m\"beforeAll\" hook timeout of 60000ms exceeded.\u001b[39m",
+                        "stack": "\u001b[31m\"beforeAll\" hook timeout of 60000ms exceeded.\u001b[39m\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-04-unread-counts.spec.ts:12:8",
+                        "location": {
+                          "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-04-unread-counts.spec.ts",
+                          "column": 8,
+                          "line": 12
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 10 |\u001b[39m\n \u001b[90m 11 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Feature 4: Unread Counts'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 12 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeAll(\u001b[36masync\u001b[39m ({ browser }) \u001b[33m=>\u001b[39m {\n \u001b[90m    |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 13 |\u001b[39m     alice \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m createUserContext(browser\u001b[33m,\u001b[39m \u001b[32m`Alice-${RUN_ID}`\u001b[39m\u001b[33m,\u001b[39m \u001b[33mAPP_URL\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 14 |\u001b[39m     bob \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m createUserContext(browser\u001b[33m,\u001b[39m \u001b[32m`Bob-${RUN_ID}`\u001b[39m\u001b[33m,\u001b[39m \u001b[33mAPP_URL\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 15 |\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-04-unread-counts.spec.ts",
+                            "column": 8,
+                            "line": 12
+                          },
+                          "message": "\u001b[31m\"beforeAll\" hook timeout of 60000ms exceeded.\u001b[39m\n\n  10 |\n  11 | test.describe('Feature 4: Unread Counts', () => {\n> 12 |   test.beforeAll(async ({ browser }) => {\n     |        ^\n  13 |     alice = await createUserContext(browser, `Alice-${RUN_ID}`, APP_URL);\n  14 |     bob = await createUserContext(browser, `Bob-${RUN_ID}`, APP_URL);\n  15 |\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-04-unread-counts.spec.ts:12:8"
+                        },
+                        {
+                          "message": "Error: browserContext._wrapApiCall: ENOENT: no such file or directory, copyfile 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-3\\traces\\9fb3acf9cfba22e62f65-f3b4e13026ba19425cdd-recording1.network' -> 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-3\\traces\\9fb3acf9cfba22e62f65-f3b4e13026ba19425cdd-recording1-pwnetcopy-1.network'"
+                        },
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\fixtures.ts",
+                            "column": 18,
+                            "line": 127
+                          },
+                          "message": "Error: locator.click: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - waiting for locator('text=General-mnhtz78b').first()\u001b[22m\n\n\n   at ..\\fixtures.ts:127\n\n  125 |   // Click on the room name in the sidebar/list\n  126 |   const roomLink = page.locator(`text=${roomName}`).first();\n> 127 |   await roomLink.click();\n      |                  ^\n  128 |\n  129 |   // If there's a \"Join\" button, click it\n  130 |   const joinBtn = page.locator('button:has-text(\"Join\")').first();\n    at joinRoom (D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\fixtures.ts:127:18)\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-04-unread-counts.spec.ts:20:19"
+                        },
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-04-unread-counts.spec.ts",
+                            "column": 24,
+                            "line": 27
+                          },
+                          "message": "Error: apiRequestContext._wrapApiCall: ENOENT: no such file or directory, copyfile 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-3\\traces\\9fb3acf9cfba22e62f65-f3b4e13026ba19425cdd-recording1.network' -> 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-3\\traces\\9fb3acf9cfba22e62f65-f3b4e13026ba19425cdd-recording1-pwnetcopy-1.network'\n\n  25 |   test.afterAll(async () => {\n  26 |     await alice?.context.close();\n> 27 |     await bob?.context.close();\n     |                        ^\n  28 |   });\n  29 |\n  30 |   test('unread count badge appears when messages arrive in another room', async () => {\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-04-unread-counts.spec.ts:27:24"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:20.038Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-04-unread-counts-F-8ceed-ages-arrive-in-another-room\\test-failed-2.png"
+                        },
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-04-unread-counts-F-8ceed-ages-arrive-in-another-room\\test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-04-unread-counts-F-8ceed-ages-arrive-in-another-room\\error-context.md"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-04-unread-counts-F-8ceed-ages-arrive-in-another-room\\trace.zip"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-04-unread-counts.spec.ts",
+                        "column": 8,
+                        "line": 12
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "9fb3acf9cfba22e62f65-f3b4e13026ba19425cdd",
+              "file": "feature-04-unread-counts.spec.ts",
+              "line": 30,
+              "column": 7
+            },
+            {
+              "title": "badge clears when room is opened",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": -1,
+                      "parallelIndex": -1,
+                      "status": "skipped",
+                      "duration": 0,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:52:20.659Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "9fb3acf9cfba22e62f65-0c4b3fdf865ae1bdc715",
+              "file": "feature-04-unread-counts.spec.ts",
+              "line": 50,
+              "column": 7
+            },
+            {
+              "title": "counts are per-user — Alice does not see unread for her own messages",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": -1,
+                      "parallelIndex": -1,
+                      "status": "skipped",
+                      "duration": 0,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:52:20.659Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "9fb3acf9cfba22e62f65-4e85edb87b4d1376ac1d",
+              "file": "feature-04-unread-counts.spec.ts",
+              "line": 72,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "feature-05-scheduled-messages.spec.ts",
+      "file": "feature-05-scheduled-messages.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Feature 5: Scheduled Messages",
+          "file": "feature-05-scheduled-messages.spec.ts",
+          "line": 10,
+          "column": 6,
+          "specs": [
+            {
+              "title": "schedule button is accessible from the message input area",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 4,
+                      "status": "timedOut",
+                      "duration": 0,
+                      "error": {
+                        "message": "\u001b[31m\"beforeAll\" hook timeout of 60000ms exceeded.\u001b[39m",
+                        "stack": "\u001b[31m\"beforeAll\" hook timeout of 60000ms exceeded.\u001b[39m\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-05-scheduled-messages.spec.ts:11:8",
+                        "location": {
+                          "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-05-scheduled-messages.spec.ts",
+                          "column": 8,
+                          "line": 11
+                        },
+                        "snippet": "\u001b[0m \u001b[90m  9 |\u001b[39m\n \u001b[90m 10 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Feature 5: Scheduled Messages'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 11 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeAll(\u001b[36masync\u001b[39m ({ browser }) \u001b[33m=>\u001b[39m {\n \u001b[90m    |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 12 |\u001b[39m     alice \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m createUserContext(browser\u001b[33m,\u001b[39m \u001b[32m`Alice-${RUN_ID}`\u001b[39m\u001b[33m,\u001b[39m \u001b[33mAPP_URL\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 13 |\u001b[39m     bob \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m createUserContext(browser\u001b[33m,\u001b[39m \u001b[32m`Bob-${RUN_ID}`\u001b[39m\u001b[33m,\u001b[39m \u001b[33mAPP_URL\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 14 |\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-05-scheduled-messages.spec.ts",
+                            "column": 8,
+                            "line": 11
+                          },
+                          "message": "\u001b[31m\"beforeAll\" hook timeout of 60000ms exceeded.\u001b[39m\n\n   9 |\n  10 | test.describe('Feature 5: Scheduled Messages', () => {\n> 11 |   test.beforeAll(async ({ browser }) => {\n     |        ^\n  12 |     alice = await createUserContext(browser, `Alice-${RUN_ID}`, APP_URL);\n  13 |     bob = await createUserContext(browser, `Bob-${RUN_ID}`, APP_URL);\n  14 |\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-05-scheduled-messages.spec.ts:11:8"
+                        },
+                        {
+                          "message": "Error: browserContext._wrapApiCall: ENOENT: no such file or directory, copyfile 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-4\\traces\\7e8ff0b90ed6cfe58452-35e6aa34bf0adfde6d60-recording1.network' -> 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-4\\traces\\7e8ff0b90ed6cfe58452-35e6aa34bf0adfde6d60-recording1-pwnetcopy-1.network'"
+                        },
+                        {
+                          "message": "Error: browserContext._wrapApiCall: Tracing is already stopping"
+                        },
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\fixtures.ts",
+                            "column": 18,
+                            "line": 127
+                          },
+                          "message": "Error: locator.click: Test ended.\nCall log:\n\u001b[2m  - waiting for locator('text=General-mnhtz782').first()\u001b[22m\n\n\n   at ..\\fixtures.ts:127\n\n  125 |   // Click on the room name in the sidebar/list\n  126 |   const roomLink = page.locator(`text=${roomName}`).first();\n> 127 |   await roomLink.click();\n      |                  ^\n  128 |\n  129 |   // If there's a \"Join\" button, click it\n  130 |   const joinBtn = page.locator('button:has-text(\"Join\")').first();\n    at joinRoom (D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\fixtures.ts:127:18)\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-05-scheduled-messages.spec.ts:15:19"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:20.027Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-05-scheduled-messa-d8f14-from-the-message-input-area\\test-failed-2.png"
+                        },
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-05-scheduled-messa-d8f14-from-the-message-input-area\\test-failed-1.png"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-05-scheduled-messa-d8f14-from-the-message-input-area\\trace.zip"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-05-scheduled-messages.spec.ts",
+                        "column": 8,
+                        "line": 11
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "7e8ff0b90ed6cfe58452-35e6aa34bf0adfde6d60",
+              "file": "feature-05-scheduled-messages.spec.ts",
+              "line": 24,
+              "column": 7
+            },
+            {
+              "title": "can schedule a message for the future",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": -1,
+                      "parallelIndex": -1,
+                      "status": "skipped",
+                      "duration": 0,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:52:20.631Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "7e8ff0b90ed6cfe58452-27ddfd95b8e974a888c2",
+              "file": "feature-05-scheduled-messages.spec.ts",
+              "line": 39,
+              "column": 7
+            },
+            {
+              "title": "pending scheduled messages are visible to author with cancel option",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": -1,
+                      "parallelIndex": -1,
+                      "status": "skipped",
+                      "duration": 0,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:52:20.631Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "7e8ff0b90ed6cfe58452-1dfcbd3541181e1df679",
+              "file": "feature-05-scheduled-messages.spec.ts",
+              "line": 92,
+              "column": 7
+            },
+            {
+              "title": "scheduled message is NOT visible to other users before delivery time",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": -1,
+                      "parallelIndex": -1,
+                      "status": "skipped",
+                      "duration": 0,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:52:20.631Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "7e8ff0b90ed6cfe58452-0808d352148b658d4850",
+              "file": "feature-05-scheduled-messages.spec.ts",
+              "line": 115,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "feature-06-ephemeral-messages.spec.ts",
+      "file": "feature-06-ephemeral-messages.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Feature 6: Ephemeral Messages",
+          "file": "feature-06-ephemeral-messages.spec.ts",
+          "line": 11,
+          "column": 6,
+          "specs": [
+            {
+              "title": "can send an ephemeral/disappearing message with duration",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 5,
+                      "parallelIndex": 5,
+                      "status": "timedOut",
+                      "duration": 0,
+                      "error": {
+                        "message": "\u001b[31m\"beforeAll\" hook timeout of 60000ms exceeded.\u001b[39m",
+                        "stack": "\u001b[31m\"beforeAll\" hook timeout of 60000ms exceeded.\u001b[39m\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-06-ephemeral-messages.spec.ts:12:8",
+                        "location": {
+                          "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-06-ephemeral-messages.spec.ts",
+                          "column": 8,
+                          "line": 12
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 10 |\u001b[39m\n \u001b[90m 11 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Feature 6: Ephemeral Messages'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 12 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeAll(\u001b[36masync\u001b[39m ({ browser }) \u001b[33m=>\u001b[39m {\n \u001b[90m    |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 13 |\u001b[39m     alice \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m createUserContext(browser\u001b[33m,\u001b[39m \u001b[32m`Alice-${RUN_ID}`\u001b[39m\u001b[33m,\u001b[39m \u001b[33mAPP_URL\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 14 |\u001b[39m     bob \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m createUserContext(browser\u001b[33m,\u001b[39m \u001b[32m`Bob-${RUN_ID}`\u001b[39m\u001b[33m,\u001b[39m \u001b[33mAPP_URL\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 15 |\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-06-ephemeral-messages.spec.ts",
+                            "column": 8,
+                            "line": 12
+                          },
+                          "message": "\u001b[31m\"beforeAll\" hook timeout of 60000ms exceeded.\u001b[39m\n\n  10 |\n  11 | test.describe('Feature 6: Ephemeral Messages', () => {\n> 12 |   test.beforeAll(async ({ browser }) => {\n     |        ^\n  13 |     alice = await createUserContext(browser, `Alice-${RUN_ID}`, APP_URL);\n  14 |     bob = await createUserContext(browser, `Bob-${RUN_ID}`, APP_URL);\n  15 |\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-06-ephemeral-messages.spec.ts:12:8"
+                        },
+                        {
+                          "message": "Error: browserContext._wrapApiCall: ENOENT: no such file or directory, copyfile 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-5\\traces\\97f40e3e04956bd9d08e-e281c9fe3beac9c9f5cf-recording1.network' -> 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-5\\traces\\97f40e3e04956bd9d08e-e281c9fe3beac9c9f5cf-recording1-pwnetcopy-1.network'"
+                        },
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\fixtures.ts",
+                            "column": 18,
+                            "line": 127
+                          },
+                          "message": "Error: locator.click: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - waiting for locator('text=General-mnhtz783').first()\u001b[22m\n\n\n   at ..\\fixtures.ts:127\n\n  125 |   // Click on the room name in the sidebar/list\n  126 |   const roomLink = page.locator(`text=${roomName}`).first();\n> 127 |   await roomLink.click();\n      |                  ^\n  128 |\n  129 |   // If there's a \"Join\" button, click it\n  130 |   const joinBtn = page.locator('button:has-text(\"Join\")').first();\n    at joinRoom (D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\fixtures.ts:127:18)\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-06-ephemeral-messages.spec.ts:16:19"
+                        },
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-06-ephemeral-messages.spec.ts",
+                            "column": 24,
+                            "line": 22
+                          },
+                          "message": "Error: apiRequestContext._wrapApiCall: ENOENT: no such file or directory, copyfile 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-5\\traces\\97f40e3e04956bd9d08e-e281c9fe3beac9c9f5cf-recording1.network' -> 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-5\\traces\\97f40e3e04956bd9d08e-e281c9fe3beac9c9f5cf-recording1-pwnetcopy-1.network'\n\n  20 |   test.afterAll(async () => {\n  21 |     await alice?.context.close();\n> 22 |     await bob?.context.close();\n     |                        ^\n  23 |   });\n  24 |\n  25 |   test('can send an ephemeral/disappearing message with duration', async () => {\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-06-ephemeral-messages.spec.ts:22:24"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:20.028Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-06-ephemeral-messa-d80c7-aring-message-with-duration\\test-failed-1.png"
+                        },
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-06-ephemeral-messa-d80c7-aring-message-with-duration\\test-failed-2.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-06-ephemeral-messa-d80c7-aring-message-with-duration\\error-context.md"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-06-ephemeral-messa-d80c7-aring-message-with-duration\\trace.zip"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-06-ephemeral-messages.spec.ts",
+                        "column": 8,
+                        "line": 12
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "97f40e3e04956bd9d08e-e281c9fe3beac9c9f5cf",
+              "file": "feature-06-ephemeral-messages.spec.ts",
+              "line": 25,
+              "column": 7
+            },
+            {
+              "title": "ephemeral message shows countdown or disappearing indicator",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": -1,
+                      "parallelIndex": -1,
+                      "status": "skipped",
+                      "duration": 0,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:52:20.562Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "97f40e3e04956bd9d08e-0b7ab16fcb57ba3a641b",
+              "file": "feature-06-ephemeral-messages.spec.ts",
+              "line": 71,
+              "column": 7
+            },
+            {
+              "title": "both users see the ephemeral message",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": -1,
+                      "parallelIndex": -1,
+                      "status": "skipped",
+                      "duration": 0,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:52:20.562Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "97f40e3e04956bd9d08e-e1745683447cc4bf9686",
+              "file": "feature-06-ephemeral-messages.spec.ts",
+              "line": 84,
+              "column": 7
+            },
+            {
+              "title": "ephemeral message disappears after the duration expires",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": -1,
+                      "parallelIndex": -1,
+                      "status": "skipped",
+                      "duration": 0,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:52:20.562Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "97f40e3e04956bd9d08e-5b48ca4ed6530931d034",
+              "file": "feature-06-ephemeral-messages.spec.ts",
+              "line": 90,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "feature-07-reactions.spec.ts",
+      "file": "feature-07-reactions.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Feature 7: Reactions",
+          "file": "feature-07-reactions.spec.ts",
+          "line": 12,
+          "column": 6,
+          "specs": [
+            {
+              "title": "can add a reaction to a message",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 6,
+                      "parallelIndex": 6,
+                      "status": "timedOut",
+                      "duration": 0,
+                      "error": {
+                        "message": "\u001b[31m\"beforeAll\" hook timeout of 60000ms exceeded.\u001b[39m",
+                        "stack": "\u001b[31m\"beforeAll\" hook timeout of 60000ms exceeded.\u001b[39m\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-07-reactions.spec.ts:13:8",
+                        "location": {
+                          "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-07-reactions.spec.ts",
+                          "column": 8,
+                          "line": 13
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 11 |\u001b[39m\n \u001b[90m 12 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Feature 7: Reactions'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 13 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeAll(\u001b[36masync\u001b[39m ({ browser }) \u001b[33m=>\u001b[39m {\n \u001b[90m    |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 14 |\u001b[39m     alice \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m createUserContext(browser\u001b[33m,\u001b[39m \u001b[32m`Alice-${RUN_ID}`\u001b[39m\u001b[33m,\u001b[39m \u001b[33mAPP_URL\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 15 |\u001b[39m     bob \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m createUserContext(browser\u001b[33m,\u001b[39m \u001b[32m`Bob-${RUN_ID}`\u001b[39m\u001b[33m,\u001b[39m \u001b[33mAPP_URL\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 16 |\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-07-reactions.spec.ts",
+                            "column": 8,
+                            "line": 13
+                          },
+                          "message": "\u001b[31m\"beforeAll\" hook timeout of 60000ms exceeded.\u001b[39m\n\n  11 |\n  12 | test.describe('Feature 7: Reactions', () => {\n> 13 |   test.beforeAll(async ({ browser }) => {\n     |        ^\n  14 |     alice = await createUserContext(browser, `Alice-${RUN_ID}`, APP_URL);\n  15 |     bob = await createUserContext(browser, `Bob-${RUN_ID}`, APP_URL);\n  16 |\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-07-reactions.spec.ts:13:8"
+                        },
+                        {
+                          "message": "Error: browserContext._wrapApiCall: ENOENT: no such file or directory, copyfile 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-6\\traces\\ada5e203f3ff3f25b1aa-75eb0d8356091c7c808e-recording1.network' -> 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-6\\traces\\ada5e203f3ff3f25b1aa-75eb0d8356091c7c808e-recording1-pwnetcopy-1.network'"
+                        },
+                        {
+                          "message": "Error: browserContext._wrapApiCall: Tracing is already stopping"
+                        },
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\fixtures.ts",
+                            "column": 18,
+                            "line": 127
+                          },
+                          "message": "Error: locator.click: Test ended.\nCall log:\n\u001b[2m  - waiting for locator('text=General-mnhtz78c').first()\u001b[22m\n\n\n   at ..\\fixtures.ts:127\n\n  125 |   // Click on the room name in the sidebar/list\n  126 |   const roomLink = page.locator(`text=${roomName}`).first();\n> 127 |   await roomLink.click();\n      |                  ^\n  128 |\n  129 |   // If there's a \"Join\" button, click it\n  130 |   const joinBtn = page.locator('button:has-text(\"Join\")').first();\n    at joinRoom (D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\fixtures.ts:127:18)\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-07-reactions.spec.ts:17:19"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:20.039Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-07-reactions-Featu-a3923-add-a-reaction-to-a-message\\test-failed-2.png"
+                        },
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-07-reactions-Featu-a3923-add-a-reaction-to-a-message\\test-failed-1.png"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-07-reactions-Featu-a3923-add-a-reaction-to-a-message\\trace.zip"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-07-reactions.spec.ts",
+                        "column": 8,
+                        "line": 13
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "ada5e203f3ff3f25b1aa-75eb0d8356091c7c808e",
+              "file": "feature-07-reactions.spec.ts",
+              "line": 30,
+              "column": 7
+            },
+            {
+              "title": "reaction count appears and is visible to both users",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": -1,
+                      "parallelIndex": -1,
+                      "status": "skipped",
+                      "duration": 0,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:52:20.685Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "ada5e203f3ff3f25b1aa-b60e3a6c7fb89e3504a6",
+              "file": "feature-07-reactions.spec.ts",
+              "line": 71,
+              "column": 7
+            },
+            {
+              "title": "can toggle reaction off — count decreases or disappears",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": -1,
+                      "parallelIndex": -1,
+                      "status": "skipped",
+                      "duration": 0,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:52:20.685Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "ada5e203f3ff3f25b1aa-c5242ee3afa688c1a2b0",
+              "file": "feature-07-reactions.spec.ts",
+              "line": 81,
+              "column": 7
+            },
+            {
+              "title": "multiple users can react and counts aggregate",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": -1,
+                      "parallelIndex": -1,
+                      "status": "skipped",
+                      "duration": 0,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:52:20.685Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "ada5e203f3ff3f25b1aa-d5c1f45c24b25121c037",
+              "file": "feature-07-reactions.spec.ts",
+              "line": 102,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "feature-08-edit-history.spec.ts",
+      "file": "feature-08-edit-history.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Feature 8: Edit History",
+          "file": "feature-08-edit-history.spec.ts",
+          "line": 13,
+          "column": 6,
+          "specs": [
+            {
+              "title": "can edit own message",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 7,
+                      "parallelIndex": 7,
+                      "status": "timedOut",
+                      "duration": 0,
+                      "error": {
+                        "message": "\u001b[31m\"beforeAll\" hook timeout of 60000ms exceeded.\u001b[39m",
+                        "stack": "\u001b[31m\"beforeAll\" hook timeout of 60000ms exceeded.\u001b[39m\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-08-edit-history.spec.ts:14:8",
+                        "location": {
+                          "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-08-edit-history.spec.ts",
+                          "column": 8,
+                          "line": 14
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 12 |\u001b[39m\n \u001b[90m 13 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Feature 8: Edit History'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 14 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeAll(\u001b[36masync\u001b[39m ({ browser }) \u001b[33m=>\u001b[39m {\n \u001b[90m    |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 15 |\u001b[39m     alice \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m createUserContext(browser\u001b[33m,\u001b[39m \u001b[32m`Alice-${RUN_ID}`\u001b[39m\u001b[33m,\u001b[39m \u001b[33mAPP_URL\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 16 |\u001b[39m     bob \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m createUserContext(browser\u001b[33m,\u001b[39m \u001b[32m`Bob-${RUN_ID}`\u001b[39m\u001b[33m,\u001b[39m \u001b[33mAPP_URL\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 17 |\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-08-edit-history.spec.ts",
+                            "column": 8,
+                            "line": 14
+                          },
+                          "message": "\u001b[31m\"beforeAll\" hook timeout of 60000ms exceeded.\u001b[39m\n\n  12 |\n  13 | test.describe('Feature 8: Edit History', () => {\n> 14 |   test.beforeAll(async ({ browser }) => {\n     |        ^\n  15 |     alice = await createUserContext(browser, `Alice-${RUN_ID}`, APP_URL);\n  16 |     bob = await createUserContext(browser, `Bob-${RUN_ID}`, APP_URL);\n  17 |\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-08-edit-history.spec.ts:14:8"
+                        },
+                        {
+                          "message": "Error: browserContext._wrapApiCall: ENOENT: no such file or directory, copyfile 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-7\\traces\\13e0247f9712fd95ca63-c0e08b5f9a4d29e09e3d-recording1.network' -> 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-7\\traces\\13e0247f9712fd95ca63-c0e08b5f9a4d29e09e3d-recording1-pwnetcopy-1.network'"
+                        },
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\fixtures.ts",
+                            "column": 18,
+                            "line": 127
+                          },
+                          "message": "Error: locator.click: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - waiting for locator('text=General-mnhtz78e').first()\u001b[22m\n\n\n   at ..\\fixtures.ts:127\n\n  125 |   // Click on the room name in the sidebar/list\n  126 |   const roomLink = page.locator(`text=${roomName}`).first();\n> 127 |   await roomLink.click();\n      |                  ^\n  128 |\n  129 |   // If there's a \"Join\" button, click it\n  130 |   const joinBtn = page.locator('button:has-text(\"Join\")').first();\n    at joinRoom (D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\fixtures.ts:127:18)\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-08-edit-history.spec.ts:18:19"
+                        },
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-08-edit-history.spec.ts",
+                            "column": 24,
+                            "line": 24
+                          },
+                          "message": "Error: apiRequestContext._wrapApiCall: ENOENT: no such file or directory, copyfile 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-7\\traces\\13e0247f9712fd95ca63-c0e08b5f9a4d29e09e3d-recording1.network' -> 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\.playwright-artifacts-7\\traces\\13e0247f9712fd95ca63-c0e08b5f9a4d29e09e3d-recording1-pwnetcopy-1.network'\n\n  22 |   test.afterAll(async () => {\n  23 |     await alice?.context.close();\n> 24 |     await bob?.context.close();\n     |                        ^\n  25 |   });\n  26 |\n  27 |   test('can edit own message', async () => {\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-08-edit-history.spec.ts:24:24"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:20.041Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-08-edit-history-Fe-66a50-istory-can-edit-own-message\\test-failed-2.png"
+                        },
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-08-edit-history-Fe-66a50-istory-can-edit-own-message\\test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-08-edit-history-Fe-66a50-istory-can-edit-own-message\\error-context.md"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-08-edit-history-Fe-66a50-istory-can-edit-own-message\\trace.zip"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-08-edit-history.spec.ts",
+                        "column": 8,
+                        "line": 14
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "13e0247f9712fd95ca63-c0e08b5f9a4d29e09e3d",
+              "file": "feature-08-edit-history.spec.ts",
+              "line": 27,
+              "column": 7
+            },
+            {
+              "title": "edited indicator appears on edited messages",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": -1,
+                      "parallelIndex": -1,
+                      "status": "skipped",
+                      "duration": 0,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:52:20.666Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "13e0247f9712fd95ca63-e1aaa490ed21b4533d5f",
+              "file": "feature-08-edit-history.spec.ts",
+              "line": 83,
+              "column": 7
+            },
+            {
+              "title": "other user sees edit in real-time",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": -1,
+                      "parallelIndex": -1,
+                      "status": "skipped",
+                      "duration": 0,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:52:20.666Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "13e0247f9712fd95ca63-71f8c5c4c16a4592b443",
+              "file": "feature-08-edit-history.spec.ts",
+              "line": 89,
+              "column": 7
+            },
+            {
+              "title": "edit history is viewable by clicking the edited indicator",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": -1,
+                      "parallelIndex": -1,
+                      "status": "skipped",
+                      "duration": 0,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:52:20.666Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "13e0247f9712fd95ca63-f823eaccd1ae750bfb56",
+              "file": "feature-08-edit-history.spec.ts",
+              "line": 104,
+              "column": 7
+            },
+            {
+              "title": "multiple edits are tracked in history",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": -1,
+                      "parallelIndex": -1,
+                      "status": "skipped",
+                      "duration": 0,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:52:20.666Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "13e0247f9712fd95ca63-3659d4bcfacb1f0c2b25",
+              "file": "feature-08-edit-history.spec.ts",
+              "line": 118,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "feature-09-permissions.spec.ts",
+      "file": "feature-09-permissions.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Feature 9: Permissions",
+          "file": "feature-09-permissions.spec.ts",
+          "line": 11,
+          "column": 6,
+          "specs": [
+            {
+              "title": "room creator has admin controls visible",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 8,
+                      "parallelIndex": 8,
+                      "status": "failed",
+                      "duration": 66,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeTruthy\u001b[2m()\u001b[22m\n\nReceived: \u001b[31mfalse\u001b[39m",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeTruthy\u001b[2m()\u001b[22m\n\nReceived: \u001b[31mfalse\u001b[39m\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-09-permissions.spec.ts:39:38",
+                        "location": {
+                          "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-09-permissions.spec.ts",
+                          "column": 38,
+                          "line": 39
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 37 |\u001b[39m     \u001b[36mconst\u001b[39m hasAdminText \u001b[33m=\u001b[39m \u001b[35m/admin/i\u001b[39m\u001b[33m.\u001b[39mtest(aliceBody \u001b[33m||\u001b[39m \u001b[32m''\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 38 |\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 39 |\u001b[39m     expect(hasAdmin \u001b[33m||\u001b[39m hasAdminText)\u001b[33m.\u001b[39mtoBeTruthy()\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                                      \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 40 |\u001b[39m   })\u001b[33m;\u001b[39m\n \u001b[90m 41 |\u001b[39m\n \u001b[90m 42 |\u001b[39m   test(\u001b[32m'non-admin does not have admin controls'\u001b[39m\u001b[33m,\u001b[39m \u001b[36masync\u001b[39m () \u001b[33m=>\u001b[39m {\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-09-permissions.spec.ts",
+                            "column": 38,
+                            "line": 39
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeTruthy\u001b[2m()\u001b[22m\n\nReceived: \u001b[31mfalse\u001b[39m\n\n  37 |     const hasAdminText = /admin/i.test(aliceBody || '');\n  38 |\n> 39 |     expect(hasAdmin || hasAdminText).toBeTruthy();\n     |                                      ^\n  40 |   });\n  41 |\n  42 |   test('non-admin does not have admin controls', async () => {\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-09-permissions.spec.ts:39:38"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:20.067Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-09-permissions-Fea-63687--has-admin-controls-visible\\test-failed-2.png"
+                        },
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-09-permissions-Fea-63687--has-admin-controls-visible\\test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-09-permissions-Fea-63687--has-admin-controls-visible\\error-context.md"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-09-permissions-Fea-63687--has-admin-controls-visible\\error-context.md"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-09-permissions-Fea-63687--has-admin-controls-visible\\trace.zip"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-09-permissions.spec.ts",
+                        "column": 38,
+                        "line": 39
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "f75bc83ef2c3dcf06668-c85f736e9faf5aa023a9",
+              "file": "feature-09-permissions.spec.ts",
+              "line": 27,
+              "column": 7
+            },
+            {
+              "title": "non-admin does not have admin controls",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 11,
+                      "parallelIndex": 8,
+                      "status": "passed",
+                      "duration": 7,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:27.676Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "f75bc83ef2c3dcf06668-18bb604b8052df6ee00c",
+              "file": "feature-09-permissions.spec.ts",
+              "line": 42,
+              "column": 7
+            },
+            {
+              "title": "admin can promote another user to admin",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 11,
+                      "parallelIndex": 8,
+                      "status": "failed",
+                      "duration": 2136,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeTruthy\u001b[2m()\u001b[22m\n\nReceived: \u001b[31mfalse\u001b[39m",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeTruthy\u001b[2m()\u001b[22m\n\nReceived: \u001b[31mfalse\u001b[39m\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-09-permissions.spec.ts:88:42",
+                        "location": {
+                          "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-09-permissions.spec.ts",
+                          "column": 42,
+                          "line": 88
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 86 |\u001b[39m     \u001b[36mconst\u001b[39m bodyHasAdmin \u001b[33m=\u001b[39m \u001b[35m/admin/i\u001b[39m\u001b[33m.\u001b[39mtest(bobBody \u001b[33m||\u001b[39m \u001b[32m''\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 87 |\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 88 |\u001b[39m     expect(adminVisible \u001b[33m||\u001b[39m bodyHasAdmin)\u001b[33m.\u001b[39mtoBeTruthy()\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                                          \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 89 |\u001b[39m   })\u001b[33m;\u001b[39m\n \u001b[90m 90 |\u001b[39m\n \u001b[90m 91 |\u001b[39m   test(\u001b[32m'admin can kick a user and they lose access immediately'\u001b[39m\u001b[33m,\u001b[39m \u001b[36masync\u001b[39m () \u001b[33m=>\u001b[39m {\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-09-permissions.spec.ts",
+                            "column": 42,
+                            "line": 88
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeTruthy\u001b[2m()\u001b[22m\n\nReceived: \u001b[31mfalse\u001b[39m\n\n  86 |     const bodyHasAdmin = /admin/i.test(bobBody || '');\n  87 |\n> 88 |     expect(adminVisible || bodyHasAdmin).toBeTruthy();\n     |                                          ^\n  89 |   });\n  90 |\n  91 |   test('admin can kick a user and they lose access immediately', async () => {\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-09-permissions.spec.ts:88:42"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:34.539Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-09-permissions-Fea-46e98-omote-another-user-to-admin\\test-failed-2.png"
+                        },
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-09-permissions-Fea-46e98-omote-another-user-to-admin\\test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-09-permissions-Fea-46e98-omote-another-user-to-admin\\error-context.md"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-09-permissions-Fea-46e98-omote-another-user-to-admin\\error-context.md"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-09-permissions-Fea-46e98-omote-another-user-to-admin\\trace.zip"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-09-permissions.spec.ts",
+                        "column": 42,
+                        "line": 88
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "f75bc83ef2c3dcf06668-7cc79ac1efb3815b45a5",
+              "file": "feature-09-permissions.spec.ts",
+              "line": 54,
+              "column": 7
+            },
+            {
+              "title": "admin can kick a user and they lose access immediately",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 12,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 2541,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeTruthy\u001b[2m()\u001b[22m\n\nReceived: \u001b[31mfalse\u001b[39m",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeTruthy\u001b[2m()\u001b[22m\n\nReceived: \u001b[31mfalse\u001b[39m\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-09-permissions.spec.ts:139:20",
+                        "location": {
+                          "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-09-permissions.spec.ts",
+                          "column": 20,
+                          "line": 139
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 137 |\u001b[39m       \u001b[33m!\u001b[39m(bobBody \u001b[33m||\u001b[39m \u001b[32m''\u001b[39m)\u001b[33m.\u001b[39mincludes(beforeKickMsg)\u001b[33m;\u001b[39m\n \u001b[90m 138 |\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 139 |\u001b[39m     expect(kicked)\u001b[33m.\u001b[39mtoBeTruthy()\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m                    \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 140 |\u001b[39m   })\u001b[33m;\u001b[39m\n \u001b[90m 141 |\u001b[39m\n \u001b[90m 142 |\u001b[39m   test(\u001b[32m'permission changes apply in real-time without refresh'\u001b[39m\u001b[33m,\u001b[39m \u001b[36masync\u001b[39m () \u001b[33m=>\u001b[39m {\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-09-permissions.spec.ts",
+                            "column": 20,
+                            "line": 139
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeTruthy\u001b[2m()\u001b[22m\n\nReceived: \u001b[31mfalse\u001b[39m\n\n  137 |       !(bobBody || '').includes(beforeKickMsg);\n  138 |\n> 139 |     expect(kicked).toBeTruthy();\n      |                    ^\n  140 |   });\n  141 |\n  142 |   test('permission changes apply in real-time without refresh', async () => {\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-09-permissions.spec.ts:139:20"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:37.458Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-09-permissions-Fea-410d3-hey-lose-access-immediately\\test-failed-2.png"
+                        },
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-09-permissions-Fea-410d3-hey-lose-access-immediately\\test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-09-permissions-Fea-410d3-hey-lose-access-immediately\\error-context.md"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-09-permissions-Fea-410d3-hey-lose-access-immediately\\error-context.md"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-09-permissions-Fea-410d3-hey-lose-access-immediately\\trace.zip"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-09-permissions.spec.ts",
+                        "column": 20,
+                        "line": 139
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "f75bc83ef2c3dcf06668-4de332bd352fe8aca54b",
+              "file": "feature-09-permissions.spec.ts",
+              "line": 91,
+              "column": 7
+            },
+            {
+              "title": "permission changes apply in real-time without refresh",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 14,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 2134,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mnot\u001b[2m.\u001b[22mtoContain\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // indexOf\u001b[22m\n\nExpected substring: not \u001b[32m\"Post-kick secret mnhtzsh8\"\u001b[39m\nReceived string:        \u001b[31m\"\u001b[39m\n\u001b[31m    SpacetimeDB ChatBob-mnhtzsh8OnlineAwayDo Not DisturbInvisibleRooms+PresenceRoom-mnhtz78qDiscoverPermRoom-mnhtz792JoinUnreadTest-mnhtz78bJoinGeneral-mnhtz774JoinPresenceRoom-mnhtzcytJoinPermRoom-mnhtzd48JoinPermRoom-mnhtzko5JoinPresenceRoom-mnhtzkx5JoinKickTest-mnhtzko5JoinPermRoom-mnhtzsh8JoinPresenceRoom-mnhtz78qScheduledMembersLeaveAlice-mnhtz7742:51:26 PMHello from Alice-mnhtz774!👍❤️😂😮😢Seen by Bob-mnhtz774, Alice-mnhtz774, Alice-mnhtzcyt, Bob-mnhtzcyt, Alice-mnhtzd48, Bob-mnhtzd48, Alice-mnhtzko5, Bob-mnhtzko5, Alice-mnhtzkx5, Bob-mnhtzkx5, Alice-mnhtzsh8Bob-mnhtz7742:51:26 PMHi Alice, this is Bob-mnhtz774!👍❤️😂😮😢Seen by Bob-mnhtz774, Alice-mnhtz774, Alice-mnhtzcyt, Bob-mnhtzcyt, Alice-mnhtzd48, Bob-mnhtzd48, Alice-mnhtzko5, Bob-mnhtzko5, Alice-mnhtzkx5, Bob-mnhtzkx5, Alice-mnhtzsh8Alice-mnhtzsh82:51:53 PM\u001b[7mPost-kick secret mnhtzsh8\u001b[27m👍❤️😂😮😢Seen by Alice-mnhtzsh8NormalEphemeral 30sEphemeral 1mEphemeral 5mEphemeral 1hScheduleSend\u001b[39m\n\u001b[31m    \u001b[39m\n\u001b[31m  \u001b[39m\n\u001b[31m\u001b[39m\n\u001b[31m\"\u001b[39m",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mnot\u001b[2m.\u001b[22mtoContain\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // indexOf\u001b[22m\n\nExpected substring: not \u001b[32m\"Post-kick secret mnhtzsh8\"\u001b[39m\nReceived string:        \u001b[31m\"\u001b[39m\n\u001b[31m    SpacetimeDB ChatBob-mnhtzsh8OnlineAwayDo Not DisturbInvisibleRooms+PresenceRoom-mnhtz78qDiscoverPermRoom-mnhtz792JoinUnreadTest-mnhtz78bJoinGeneral-mnhtz774JoinPresenceRoom-mnhtzcytJoinPermRoom-mnhtzd48JoinPermRoom-mnhtzko5JoinPresenceRoom-mnhtzkx5JoinKickTest-mnhtzko5JoinPermRoom-mnhtzsh8JoinPresenceRoom-mnhtz78qScheduledMembersLeaveAlice-mnhtz7742:51:26 PMHello from Alice-mnhtz774!👍❤️😂😮😢Seen by Bob-mnhtz774, Alice-mnhtz774, Alice-mnhtzcyt, Bob-mnhtzcyt, Alice-mnhtzd48, Bob-mnhtzd48, Alice-mnhtzko5, Bob-mnhtzko5, Alice-mnhtzkx5, Bob-mnhtzkx5, Alice-mnhtzsh8Bob-mnhtz7742:51:26 PMHi Alice, this is Bob-mnhtz774!👍❤️😂😮😢Seen by Bob-mnhtz774, Alice-mnhtz774, Alice-mnhtzcyt, Bob-mnhtzcyt, Alice-mnhtzd48, Bob-mnhtzd48, Alice-mnhtzko5, Bob-mnhtzko5, Alice-mnhtzkx5, Bob-mnhtzkx5, Alice-mnhtzsh8Alice-mnhtzsh82:51:53 PM\u001b[7mPost-kick secret mnhtzsh8\u001b[27m👍❤️😂😮😢Seen by Alice-mnhtzsh8NormalEphemeral 30sEphemeral 1mEphemeral 5mEphemeral 1hScheduleSend\u001b[39m\n\u001b[31m    \u001b[39m\n\u001b[31m  \u001b[39m\n\u001b[31m\u001b[39m\n\u001b[31m\"\u001b[39m\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-09-permissions.spec.ts:149:25",
+                        "location": {
+                          "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-09-permissions.spec.ts",
+                          "column": 25,
+                          "line": 149
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 147 |\u001b[39m     \u001b[36mawait\u001b[39m bob\u001b[33m.\u001b[39mpage\u001b[33m.\u001b[39mwaitForTimeout(\u001b[35m2\u001b[39m_000)\u001b[33m;\u001b[39m\n \u001b[90m 148 |\u001b[39m     \u001b[36mconst\u001b[39m bobBody \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m bob\u001b[33m.\u001b[39mpage\u001b[33m.\u001b[39mtextContent(\u001b[32m'body'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 149 |\u001b[39m     expect(bobBody)\u001b[33m.\u001b[39mnot\u001b[33m.\u001b[39mtoContain(postKickMsg)\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m                         \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 150 |\u001b[39m   })\u001b[33m;\u001b[39m\n \u001b[90m 151 |\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m 152 |\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-09-permissions.spec.ts",
+                            "column": 25,
+                            "line": 149
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mnot\u001b[2m.\u001b[22mtoContain\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // indexOf\u001b[22m\n\nExpected substring: not \u001b[32m\"Post-kick secret mnhtzsh8\"\u001b[39m\nReceived string:        \u001b[31m\"\u001b[39m\n\u001b[31m    SpacetimeDB ChatBob-mnhtzsh8OnlineAwayDo Not DisturbInvisibleRooms+PresenceRoom-mnhtz78qDiscoverPermRoom-mnhtz792JoinUnreadTest-mnhtz78bJoinGeneral-mnhtz774JoinPresenceRoom-mnhtzcytJoinPermRoom-mnhtzd48JoinPermRoom-mnhtzko5JoinPresenceRoom-mnhtzkx5JoinKickTest-mnhtzko5JoinPermRoom-mnhtzsh8JoinPresenceRoom-mnhtz78qScheduledMembersLeaveAlice-mnhtz7742:51:26 PMHello from Alice-mnhtz774!👍❤️😂😮😢Seen by Bob-mnhtz774, Alice-mnhtz774, Alice-mnhtzcyt, Bob-mnhtzcyt, Alice-mnhtzd48, Bob-mnhtzd48, Alice-mnhtzko5, Bob-mnhtzko5, Alice-mnhtzkx5, Bob-mnhtzkx5, Alice-mnhtzsh8Bob-mnhtz7742:51:26 PMHi Alice, this is Bob-mnhtz774!👍❤️😂😮😢Seen by Bob-mnhtz774, Alice-mnhtz774, Alice-mnhtzcyt, Bob-mnhtzcyt, Alice-mnhtzd48, Bob-mnhtzd48, Alice-mnhtzko5, Bob-mnhtzko5, Alice-mnhtzkx5, Bob-mnhtzkx5, Alice-mnhtzsh8Alice-mnhtzsh82:51:53 PM\u001b[7mPost-kick secret mnhtzsh8\u001b[27m👍❤️😂😮😢Seen by Alice-mnhtzsh8NormalEphemeral 30sEphemeral 1mEphemeral 5mEphemeral 1hScheduleSend\u001b[39m\n\u001b[31m    \u001b[39m\n\u001b[31m  \u001b[39m\n\u001b[31m\u001b[39m\n\u001b[31m\"\u001b[39m\n\n  147 |     await bob.page.waitForTimeout(2_000);\n  148 |     const bobBody = await bob.page.textContent('body');\n> 149 |     expect(bobBody).not.toContain(postKickMsg);\n      |                         ^\n  150 |   });\n  151 | });\n  152 |\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-09-permissions.spec.ts:149:25"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:47.570Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-09-permissions-Fea-c5826-n-real-time-without-refresh\\test-failed-2.png"
+                        },
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-09-permissions-Fea-c5826-n-real-time-without-refresh\\test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-09-permissions-Fea-c5826-n-real-time-without-refresh\\error-context.md"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-09-permissions-Fea-c5826-n-real-time-without-refresh\\error-context.md"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-09-permissions-Fea-c5826-n-real-time-without-refresh\\trace.zip"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-09-permissions.spec.ts",
+                        "column": 25,
+                        "line": 149
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "f75bc83ef2c3dcf06668-a8a3e13b15c20b6d1717",
+              "file": "feature-09-permissions.spec.ts",
+              "line": 142,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "feature-10-presence.spec.ts",
+      "file": "feature-10-presence.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Feature 10: Presence",
+          "file": "feature-10-presence.spec.ts",
+          "line": 10,
+          "column": 6,
+          "specs": [
+            {
+              "title": "status selector UI exists with multiple status options",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 9,
+                      "parallelIndex": 9,
+                      "status": "passed",
+                      "duration": 21,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:20.054Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "83ac98f66eb141c1ca02-b2feaf7d85d456c143b2",
+              "file": "feature-10-presence.spec.ts",
+              "line": 25,
+              "column": 7
+            },
+            {
+              "title": "user can change status to away",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 9,
+                      "parallelIndex": 9,
+                      "status": "failed",
+                      "duration": 56,
+                      "error": {
+                        "message": "Error: locator.selectOption: options[0].label: expected string, got object",
+                        "stack": "Error: locator.selectOption: options[0].label: expected string, got object\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-10-presence.spec.ts:51:22",
+                        "location": {
+                          "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-10-presence.spec.ts",
+                          "column": 22,
+                          "line": 51
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 49 |\u001b[39m\n \u001b[90m 50 |\u001b[39m     \u001b[36mif\u001b[39m (hasSelect) {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 51 |\u001b[39m       \u001b[36mawait\u001b[39m selectEl\u001b[33m.\u001b[39mselectOption({ label\u001b[33m:\u001b[39m \u001b[35m/away/i\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                      \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 52 |\u001b[39m     } \u001b[36melse\u001b[39m {\n \u001b[90m 53 |\u001b[39m       \u001b[36mconst\u001b[39m statusBtn \u001b[33m=\u001b[39m alice\u001b[33m.\u001b[39mpage\u001b[33m.\u001b[39mlocator(\n \u001b[90m 54 |\u001b[39m         \u001b[32m'button:has-text(\"Online\"), button:has-text(\"Status\"), '\u001b[39m \u001b[33m+\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-10-presence.spec.ts",
+                            "column": 22,
+                            "line": 51
+                          },
+                          "message": "Error: locator.selectOption: options[0].label: expected string, got object\n\n  49 |\n  50 |     if (hasSelect) {\n> 51 |       await selectEl.selectOption({ label: /away/i });\n     |                      ^\n  52 |     } else {\n  53 |       const statusBtn = alice.page.locator(\n  54 |         'button:has-text(\"Online\"), button:has-text(\"Status\"), ' +\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-10-presence.spec.ts:51:22"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:26.443Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-10-presence-Featur-44790-r-can-change-status-to-away\\test-failed-1.png"
+                        },
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-10-presence-Featur-44790-r-can-change-status-to-away\\test-failed-2.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-10-presence-Featur-44790-r-can-change-status-to-away\\error-context.md"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-10-presence-Featur-44790-r-can-change-status-to-away\\error-context.md"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-10-presence-Featur-44790-r-can-change-status-to-away\\trace.zip"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-10-presence.spec.ts",
+                        "column": 22,
+                        "line": 51
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "83ac98f66eb141c1ca02-c53f80cf3b17e7b01249",
+              "file": "feature-10-presence.spec.ts",
+              "line": 46,
+              "column": 7
+            },
+            {
+              "title": "status change syncs to other users in real-time",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 10,
+                      "parallelIndex": 9,
+                      "status": "passed",
+                      "duration": 16,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:27.468Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "83ac98f66eb141c1ca02-1dbea2b1fc7259399adb",
+              "file": "feature-10-presence.spec.ts",
+              "line": 80,
+              "column": 7
+            },
+            {
+              "title": "user can set do-not-disturb status",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 10,
+                      "parallelIndex": 9,
+                      "status": "passed",
+                      "duration": 1037,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:33.889Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "83ac98f66eb141c1ca02-fd9215ba1e319d763c73",
+              "file": "feature-10-presence.spec.ts",
+              "line": 91,
+              "column": 7
+            },
+            {
+              "title": "last active timestamp for offline users",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 10,
+                      "parallelIndex": 9,
+                      "status": "failed",
+                      "duration": 2058,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeTruthy\u001b[2m()\u001b[22m\n\nReceived: \u001b[31mfalse\u001b[39m",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeTruthy\u001b[2m()\u001b[22m\n\nReceived: \u001b[31mfalse\u001b[39m\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-10-presence.spec.ts:146:27",
+                        "location": {
+                          "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-10-presence.spec.ts",
+                          "column": 27,
+                          "line": 146
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 144 |\u001b[39m     \u001b[36mconst\u001b[39m hasLastActive \u001b[33m=\u001b[39m \u001b[35m/last.active|ago|offline|inactive/i\u001b[39m\u001b[33m.\u001b[39mtest(bobBody \u001b[33m||\u001b[39m \u001b[32m''\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 145 |\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 146 |\u001b[39m     expect(hasLastActive)\u001b[33m.\u001b[39mtoBeTruthy()\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m                           \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 147 |\u001b[39m   })\u001b[33m;\u001b[39m\n \u001b[90m 148 |\u001b[39m\n \u001b[90m 149 |\u001b[39m   test(\u001b[32m'auto-away UI mechanism exists'\u001b[39m\u001b[33m,\u001b[39m \u001b[36masync\u001b[39m () \u001b[33m=>\u001b[39m {\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-10-presence.spec.ts",
+                            "column": 27,
+                            "line": 146
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeTruthy\u001b[2m()\u001b[22m\n\nReceived: \u001b[31mfalse\u001b[39m\n\n  144 |     const hasLastActive = /last.active|ago|offline|inactive/i.test(bobBody || '');\n  145 |\n> 146 |     expect(hasLastActive).toBeTruthy();\n      |                           ^\n  147 |   });\n  148 |\n  149 |   test('auto-away UI mechanism exists', async () => {\n    at D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-10-presence.spec.ts:146:27"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:34.936Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-10-presence-Featur-420e0-timestamp-for-offline-users\\test-failed-2.png"
+                        },
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-10-presence-Featur-420e0-timestamp-for-offline-users\\test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-10-presence-Featur-420e0-timestamp-for-offline-users\\error-context.md"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-10-presence-Featur-420e0-timestamp-for-offline-users\\error-context.md"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\test-results\\feature-10-presence-Featur-420e0-timestamp-for-offline-users\\trace.zip"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\test-plans\\playwright\\specs\\feature-10-presence.spec.ts",
+                        "column": 27,
+                        "line": 146
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "83ac98f66eb141c1ca02-b2ab6f337701ba5fca7c",
+              "file": "feature-10-presence.spec.ts",
+              "line": 124,
+              "column": 7
+            },
+            {
+              "title": "auto-away UI mechanism exists",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 13,
+                      "parallelIndex": 8,
+                      "status": "passed",
+                      "duration": 11,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-02T18:51:37.781Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "83ac98f66eb141c1ca02-740f9f62578ac1a749e3",
+              "file": "feature-10-presence.spec.ts",
+              "line": 149,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-04-02T18:51:19.215Z",
+    "duration": 61492.605,
+    "expected": 9,
+    "skipped": 19,
+    "unexpected": 13,
+    "flaky": 0
+  }
+}

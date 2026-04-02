@@ -1,16 +1,15 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
-import { RUN_ID, createUserContext, createRoom, joinRoom } from '../fixtures';
+import { RUN_ID, createUserContext, createRoom, joinRoom, APP_URL, APP_URL_B } from '../fixtures';
 
 let alice: { context: BrowserContext; page: Page };
 let bob: { context: BrowserContext; page: Page };
 
-const APP_URL = process.env.APP_URL || 'http://localhost:5173';
 const ROOM = `PresenceRoom-${RUN_ID}`;
 
 test.describe('Feature 10: Presence', () => {
   test.beforeAll(async ({ browser }) => {
     alice = await createUserContext(browser, `Alice-${RUN_ID}`, APP_URL);
-    bob = await createUserContext(browser, `Bob-${RUN_ID}`, APP_URL);
+    bob = await createUserContext(browser, `Bob-${RUN_ID}`, APP_URL_B);
 
     await createRoom(alice.page, ROOM);
     await joinRoom(alice.page, ROOM);

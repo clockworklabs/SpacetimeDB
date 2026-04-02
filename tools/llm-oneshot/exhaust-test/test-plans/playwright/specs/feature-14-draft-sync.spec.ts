@@ -1,9 +1,8 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
-import { RUN_ID, createUserContext, sendMessage, createRoom, joinRoom, triggerTyping } from '../fixtures';
+import { RUN_ID, createUserContext, sendMessage, createRoom, joinRoom, triggerTyping, APP_URL, APP_URL_B } from '../fixtures';
 
 let alice: { context: BrowserContext; page: Page };
 
-const APP_URL = process.env.APP_URL || 'http://localhost:5173';
 const ROOM_A = `DraftRoomA-${RUN_ID}`;
 const ROOM_B = `DraftRoomB-${RUN_ID}`;
 const ALICE = `Alice-${RUN_ID}`;

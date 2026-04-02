@@ -33,6 +33,7 @@ LEVEL_EXPLICIT=""
 BACKEND="spacetime"
 VARIANT="sequential-upgrade"
 RULES="guided"
+TEST_MODE=""  # playwright | chrome-mcp | (empty = no automated testing)
 RUN_INDEX=0
 FIX_MODE=""
 FIX_APP_DIR=""
@@ -45,6 +46,7 @@ while [[ $# -gt 0 ]]; do
     --backend) BACKEND="$2"; shift 2 ;;
     --variant) VARIANT="$2"; shift 2 ;;
     --rules) RULES="$2"; shift 2 ;;
+    --test) TEST_MODE="$2"; shift 2 ;;
     --run-index) RUN_INDEX="$2"; shift 2 ;;
     --fix) FIX_MODE=1; FIX_APP_DIR="$2"; shift 2 ;;
     --upgrade) UPGRADE_MODE=1; UPGRADE_APP_DIR="$2"; shift 2 ;;
@@ -232,6 +234,15 @@ else
   exit 1
 fi
 
+# Strip UI contracts from prompt if not using Playwright testing
+if [[ "$TEST_MODE" != "playwright" ]]; then
+  STRIPPED_PROMPT="/tmp/exhaust-prompt-${RUN_INDEX}-$(basename "$PROMPT_FILE")"
+  # Remove **UI contract:** blocks (from the line through the next blank line or next ###)
+  sed '/^\*\*UI contract:\*\*/,/^$/d; /^**Important:** Each feature below includes/d' "$PROMPT_FILE" > "$STRIPPED_PROMPT"
+  PROMPT_FILE="$STRIPPED_PROMPT"
+  echo "[OK] UI contracts stripped (test=$TEST_MODE)"
+fi
+
 echo ""
 
 # ─── Create run directories ─────────────────────────────────────────────────
@@ -355,6 +366,7 @@ cat > "$RUN_DIR/metadata.json" <<EOF
   "phase": "$MODE_LABEL",
   "variant": "$VARIANT",
   "rules": "$RULES",
+  "testMode": "${TEST_MODE:-none}",
   "runIndex": $RUN_INDEX,
   "vitePort": $VITE_PORT,
   "expressPort": $EXPRESS_PORT,
@@ -793,7 +805,7 @@ fi
 # ─── Auto-grade with Playwright (if installed) ──────────────────────────────
 
 PLAYWRIGHT_DIR="$SCRIPT_DIR/test-plans/playwright"
-if [[ $EXIT_CODE -eq 0 && -f "$PLAYWRIGHT_DIR/node_modules/.bin/playwright" ]]; then
+if [[ $EXIT_CODE -eq 0 && "$TEST_MODE" == "playwright" && -f "$PLAYWRIGHT_DIR/node_modules/.bin/playwright" ]]; then
   echo ""
   echo "=== Auto-grading with Playwright ==="
   echo "  App URL: http://localhost:$VITE_PORT"

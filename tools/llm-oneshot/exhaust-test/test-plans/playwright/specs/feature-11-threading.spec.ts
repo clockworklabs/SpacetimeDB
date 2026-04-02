@@ -1,10 +1,9 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
-import { RUN_ID, createUserContext, sendMessage, createRoom, joinRoom } from '../fixtures';
+import { RUN_ID, createUserContext, sendMessage, createRoom, joinRoom, APP_URL, APP_URL_B } from '../fixtures';
 
 let alice: { context: BrowserContext; page: Page };
 let bob: { context: BrowserContext; page: Page };
 
-const APP_URL = process.env.APP_URL || 'http://localhost:5173';
 const ROOM = `ThreadRoom-${RUN_ID}`;
 const PARENT_MSG = `Parent message ${RUN_ID}`;
 const REPLY_1 = `Thread reply 1 ${RUN_ID}`;
@@ -14,7 +13,7 @@ const REPLY_3 = `Thread reply 3 ${RUN_ID}`;
 test.describe('Feature 11: Threading', () => {
   test.beforeAll(async ({ browser }) => {
     alice = await createUserContext(browser, `Alice-${RUN_ID}`, APP_URL);
-    bob = await createUserContext(browser, `Bob-${RUN_ID}`, APP_URL);
+    bob = await createUserContext(browser, `Bob-${RUN_ID}`, APP_URL_B);
 
     await createRoom(alice.page, ROOM);
     await joinRoom(alice.page, ROOM);

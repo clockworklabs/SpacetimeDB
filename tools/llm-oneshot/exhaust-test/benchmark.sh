@@ -21,20 +21,26 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NUM_RUNS=3
 VARIANT="sequential-upgrade"
 RULES="guided"
+TEST_MODE=""
 LEVEL=""
 BACKENDS=("spacetime" "postgres")
-EXTRA_ARGS=""
 
 while [[ $# -gt 0 ]]; do
   case $1 in
     --runs) NUM_RUNS="$2"; shift 2 ;;
     --variant) VARIANT="$2"; shift 2 ;;
     --rules) RULES="$2"; shift 2 ;;
+    --test) TEST_MODE="$2"; shift 2 ;;
     --level) LEVEL="$2"; shift 2 ;;
     --backend) BACKENDS=("$2"); shift 2 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
+
+TEST_FLAG=""
+if [[ -n "$TEST_MODE" ]]; then
+  TEST_FLAG="--test $TEST_MODE"
+fi
 
 # ─── Compute total parallel instances ────────────────────────────────────────
 
@@ -106,101 +112,34 @@ update_status() {
 }
 
 # ─── Launch all runs ────────────────────────────────────────────────────────
+# Each run gets its own exhaust-loop.sh which handles:
+#   - Code generation (parallel, headless)
+#   - Chrome MCP grading (serialized via lock file)
+#   - Bug fix iterations (headless)
+#   - Sequential upgrades with regression testing (if applicable)
 
 PIDS=()
 RUN_INDEX=0
 
 for run_num in $(seq 1 "$NUM_RUNS"); do
   for backend in "${BACKENDS[@]}"; do
-    LEVEL_ARGS=""
-    if [[ -n "$LEVEL" ]]; then
-      LEVEL_ARGS="--level $LEVEL"
-    fi
-
     LOG_FILE="$SCRIPT_DIR/benchmark-run${RUN_INDEX}-${backend}.log"
 
     echo "[Run $RUN_INDEX] $backend (run $run_num/$NUM_RUNS) → $LOG_FILE"
     update_status "$RUN_INDEX" "$backend" "starting" "level=${LEVEL:-auto}"
 
-    if [[ "$VARIANT" == "one-shot" ]]; then
-      # One-shot: single generate call
-      (
-        update_status "$RUN_INDEX" "$backend" "running" "one-shot"
-        "$SCRIPT_DIR/run.sh" \
-          --variant "$VARIANT" \
-          --rules "$RULES" \
-          --backend "$backend" \
-          --run-index "$RUN_INDEX" \
-          $LEVEL_ARGS
-        update_status "$RUN_INDEX" "$backend" "completed" "exit=$?"
-      ) > "$LOG_FILE" 2>&1 &
-      PIDS+=($!)
-    else
-      # Sequential-upgrade: launch a wrapper that does L1 generate then upgrades
-      (
-        set -e
-        MAX_LEVEL=19  # all composed prompt levels
-
-        if [[ -n "$LEVEL" ]]; then
-          MAX_LEVEL="$LEVEL"
-        fi
-
-        # Generate level 1
-        update_status "$RUN_INDEX" "$backend" "running" "level=1/$MAX_LEVEL"
-        echo "[Run $RUN_INDEX/$backend] Generating level 1..."
-        "$SCRIPT_DIR/run.sh" \
-          --variant "$VARIANT" \
-          --rules "$RULES" \
-          --backend "$backend" \
-          --run-index "$RUN_INDEX" \
-          --level 1
-
-        # Find the app directory from the telemetry metadata (written by run.sh)
-        # Look for the most recent app-dir.txt in this variant's telemetry
-        APP_DIR_FILE=$(find "$SCRIPT_DIR/$VARIANT" -path "*/telemetry/$backend-level1-*/app-dir.txt" -newer "$LOG_FILE" 2>/dev/null | head -1)
-        if [[ -z "$APP_DIR_FILE" ]]; then
-          # Fallback: find most recent by modification time
-          APP_DIR_FILE=$(ls -t "$SCRIPT_DIR/$VARIANT"/*/telemetry/$backend-level1-*/app-dir.txt 2>/dev/null | head -1)
-        fi
-
-        if [[ -n "$APP_DIR_FILE" ]]; then
-          APP_DIR=$(cat "$APP_DIR_FILE")
-        else
-          APP_DIR=""
-        fi
-
-        if [[ -z "$APP_DIR" || ! -d "$APP_DIR" ]]; then
-          echo "[Run $RUN_INDEX/$backend] ERROR: Could not find generated app directory"
-          update_status "$RUN_INDEX" "$backend" "failed" "app-dir not found"
-          exit 1
-        fi
-
-        echo "[Run $RUN_INDEX/$backend] App dir: $APP_DIR"
-
-        # Upgrade through remaining levels
-        for level in $(seq 2 "$MAX_LEVEL"); do
-          PROMPT_EXISTS=$(ls "$SCRIPT_DIR/../apps/chat-app/prompts/composed/$(printf '%02d' "$level")_"*.md 2>/dev/null | head -1)
-          if [[ -z "$PROMPT_EXISTS" ]]; then
-            echo "[Run $RUN_INDEX/$backend] No prompt for level $level — stopping"
-            break
-          fi
-          update_status "$RUN_INDEX" "$backend" "running" "level=$level/$MAX_LEVEL"
-          echo "[Run $RUN_INDEX/$backend] Upgrading to level $level..."
-          "$SCRIPT_DIR/run.sh" \
-            --variant "$VARIANT" \
-            --rules "$RULES" \
-            --backend "$backend" \
-            --run-index "$RUN_INDEX" \
-            --upgrade "$APP_DIR" \
-            --level "$level" \
-            --resume-session
-        done
-
-        update_status "$RUN_INDEX" "$backend" "completed" "level=$MAX_LEVEL"
-        echo "[Run $RUN_INDEX/$backend] Sequential upgrade complete through level $MAX_LEVEL"
-      ) > "$LOG_FILE" 2>&1 &
-      PIDS+=($!)
-    fi
+    (
+      update_status "$RUN_INDEX" "$backend" "running" "$VARIANT"
+      "$SCRIPT_DIR/exhaust-loop.sh" \
+        --backend "$backend" \
+        --variant "$VARIANT" \
+        --level "${LEVEL:-7}" \
+        --rules "$RULES" \
+        $TEST_FLAG \
+        --run-index "$RUN_INDEX"
+      update_status "$RUN_INDEX" "$backend" "completed" "exit=$?"
+    ) > "$LOG_FILE" 2>&1 &
+    PIDS+=($!)
 
     RUN_INDEX=$((RUN_INDEX + 1))
   done

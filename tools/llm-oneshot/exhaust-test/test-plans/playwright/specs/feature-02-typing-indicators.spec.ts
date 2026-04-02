@@ -1,16 +1,15 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
-import { RUN_ID, createUserContext, triggerTyping, joinRoom } from '../fixtures';
+import { RUN_ID, createUserContext, triggerTyping, joinRoom, APP_URL, APP_URL_B } from '../fixtures';
 
 let alice: { context: BrowserContext; page: Page };
 let bob: { context: BrowserContext; page: Page };
 
-const APP_URL = process.env.APP_URL || 'http://localhost:5173';
 const ROOM = `General-${RUN_ID}`;
 
 test.describe('Feature 2: Typing Indicators', () => {
   test.beforeAll(async ({ browser }) => {
     alice = await createUserContext(browser, `Alice-${RUN_ID}`, APP_URL);
-    bob = await createUserContext(browser, `Bob-${RUN_ID}`, APP_URL);
+    bob = await createUserContext(browser, `Bob-${RUN_ID}`, APP_URL_B);
 
     // Both users need to be in the same room
     await joinRoom(alice.page, ROOM);

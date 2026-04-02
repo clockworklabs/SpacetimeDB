@@ -110,7 +110,8 @@ const summaryRows = [];
 
 for (const [key, feat] of Object.entries(FEATURES)) {
   const fr = featureResults[key];
-  const score = fr ? calcScore(fr) : 0;
+  if (!fr) continue; // skip features that weren't tested (not in the spec files run)
+  const score = calcScore(fr);
   totalScore += score;
   totalMax += 3;
 

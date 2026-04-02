@@ -1,0 +1,14 @@
+{
+  "name": "chat-app-spacetimedb",
+  "version": "1.0.0",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "spacetimedb": "^2.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

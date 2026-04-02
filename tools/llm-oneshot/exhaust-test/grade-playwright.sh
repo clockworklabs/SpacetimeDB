@@ -69,7 +69,7 @@ echo "Resetting backend state..."
 "$SCRIPT_DIR/reset-app.sh" "$APP_DIR" || echo "WARNING: Backend reset failed"
 sleep 3
 
-# Run Playwright tests
+# Run Playwright tests (BrowserContext isolation handles multi-user — no second server needed)
 cd "$PLAYWRIGHT_DIR"
 APP_URL="$APP_URL" npx playwright test --reporter=json 2>&1 | tee test-results/raw-output.json || true
 

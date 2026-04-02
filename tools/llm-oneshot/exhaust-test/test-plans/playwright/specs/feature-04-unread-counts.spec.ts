@@ -1,17 +1,16 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
-import { RUN_ID, createUserContext, sendMessage, createRoom, joinRoom } from '../fixtures';
+import { RUN_ID, createUserContext, sendMessage, createRoom, joinRoom, APP_URL, APP_URL_B } from '../fixtures';
 
 let alice: { context: BrowserContext; page: Page };
 let bob: { context: BrowserContext; page: Page };
 
-const APP_URL = process.env.APP_URL || 'http://localhost:5173';
 const ROOM = `General-${RUN_ID}`;
 const ROOM2 = `UnreadTest-${RUN_ID}`;
 
 test.describe('Feature 4: Unread Counts', () => {
   test.beforeAll(async ({ browser }) => {
     alice = await createUserContext(browser, `Alice-${RUN_ID}`, APP_URL);
-    bob = await createUserContext(browser, `Bob-${RUN_ID}`, APP_URL);
+    bob = await createUserContext(browser, `Bob-${RUN_ID}`, APP_URL_B);
 
     // Create a second room so Bob can be "away" from the main room
     await createRoom(alice.page, ROOM2);

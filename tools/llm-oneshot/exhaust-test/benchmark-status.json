@@ -4,27 +4,27 @@
     "backend": "spacetime",
     "status": "completed",
     "detail": "exit=0",
-    "updatedAt": "2026-04-02T17:25:52.266Z"
+    "updatedAt": "2026-04-02T18:52:20.962Z"
   },
   "run-1-postgres": {
     "runIndex": 1,
     "backend": "postgres",
-    "status": "running",
-    "detail": "one-shot",
-    "updatedAt": "2026-04-02T17:12:20.513Z"
+    "status": "completed",
+    "detail": "exit=0",
+    "updatedAt": "2026-04-02T18:53:34.765Z"
+  },
+  "run-3-postgres": {
+    "runIndex": 3,
+    "backend": "postgres",
+    "status": "completed",
+    "detail": "exit=0",
+    "updatedAt": "2026-04-02T18:54:47.580Z"
   },
   "run-2-spacetime": {
     "runIndex": 2,
     "backend": "spacetime",
     "status": "completed",
     "detail": "exit=0",
-    "updatedAt": "2026-04-02T17:31:12.952Z"
-  },
-  "run-3-postgres": {
-    "runIndex": 3,
-    "backend": "postgres",
-    "status": "running",
-    "detail": "one-shot",
-    "updatedAt": "2026-04-02T17:12:20.668Z"
+    "updatedAt": "2026-04-02T19:05:12.007Z"
   }
 }

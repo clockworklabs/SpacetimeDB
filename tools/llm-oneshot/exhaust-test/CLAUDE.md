@@ -79,14 +79,31 @@ These are passed to you via the launch prompt from `run.sh`:
 
 This is where you interact with the running app via Chrome MCP tools to test every feature. **This phase is identical for both backends** — the test plans don't care how the backend is implemented.
 
-### 6.1 Browser Setup
+### 6.1 Browser Setup — Two Independent Users
 
-1. Navigate to the app URL in a Chrome tab:
-   - **SpacetimeDB:** `http://localhost:5173`
-   - **PostgreSQL:** `http://localhost:5174`
-2. Register as "Alice" (User A)
-3. Open a second tab at the same URL
-4. Register as "Bob" (User B)
+You need TWO Chrome browser profiles so each user gets a completely separate identity
+(separate localStorage, cookies, WebSocket connections).
+
+**Prerequisites:** Two Chrome profiles with the "Claude in Chrome" MCP extension installed.
+The grading session must be started with both Chrome profiles open.
+
+1. **Browser A (default profile):** Navigate to the app URL:
+   - SpacetimeDB: `http://localhost:5173`
+   - PostgreSQL: `http://localhost:5174`
+   - Register as "Alice"
+
+2. **Switch to Browser B:** Use `switch_browser` to switch to the second Chrome profile.
+
+3. **Browser B (second profile):** Navigate to the SAME app URL:
+   - SpacetimeDB: `http://localhost:5173`
+   - PostgreSQL: `http://localhost:5174`
+   - Register as "Bob"
+
+4. Use `switch_browser` to go back and forth between Alice and Bob.
+
+Both browsers connect to the same backend on the same URL but have completely
+separate storage and WebSocket connections, giving each user a unique identity.
+Typing indicators, read receipts, and all real-time features work correctly.
 
 Use Chrome MCP tools:
 - `navigate` — go to URL
