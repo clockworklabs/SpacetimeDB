@@ -1,18 +1,22 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
-import { createUserContext, sendMessage, createRoom, joinRoom } from '../fixtures';
+import { RUN_ID, createUserContext, sendMessage, createRoom, joinRoom } from '../fixtures';
 
 let alice: { context: BrowserContext; page: Page };
 let bob: { context: BrowserContext; page: Page };
 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
+const ROOM = `PollTestRoom-${RUN_ID}`;
+const ALICE = `Alice-${RUN_ID}`;
+const BOB = `Bob-${RUN_ID}`;
+const POLL_QUESTION = `Favorite color ${RUN_ID}?`;
 
 test.describe('Feature 22: Polls', () => {
   test.beforeAll(async ({ browser }) => {
-    alice = await createUserContext(browser, 'Alice', APP_URL);
-    bob = await createUserContext(browser, 'Bob', APP_URL);
+    alice = await createUserContext(browser, ALICE, APP_URL);
+    bob = await createUserContext(browser, BOB, APP_URL);
 
-    await createRoom(alice.page, 'PollTestRoom');
-    await joinRoom(bob.page, 'PollTestRoom');
+    await createRoom(alice.page, ROOM);
+    await joinRoom(bob.page, ROOM);
   });
 
   test.afterAll(async () => {
@@ -45,7 +49,7 @@ test.describe('Feature 22: Polls', () => {
       'input[placeholder*="question" i], textarea[placeholder*="question" i], ' +
       'input[name*="question" i], input[placeholder*="ask" i]'
     ).first();
-    await questionInput.fill('Favorite color?');
+    await questionInput.fill(POLL_QUESTION);
 
     // Fill in options — try different patterns for option inputs
     const optionInputs = alice.page.locator(
@@ -86,7 +90,7 @@ test.describe('Feature 22: Polls', () => {
     // Verify poll is visible with question and all options
     await expect(async () => {
       const body = await alice.page.textContent('body');
-      expect(body).toContain('Favorite color?');
+      expect(body).toContain(POLL_QUESTION);
       expect(body).toContain('Red');
       expect(body).toContain('Blue');
       expect(body).toContain('Green');
@@ -95,7 +99,7 @@ test.describe('Feature 22: Polls', () => {
     // Verify Bob sees the poll in real-time
     await expect(async () => {
       const body = await bob.page.textContent('body');
-      expect(body).toContain('Favorite color?');
+      expect(body).toContain(POLL_QUESTION);
       expect(body).toContain('Red');
       expect(body).toContain('Blue');
       expect(body).toContain('Green');
@@ -166,7 +170,7 @@ test.describe('Feature 22: Polls', () => {
     await expect(async () => {
       const body = await alice.page.textContent('body');
       // Alice voted for Green, so her name should appear
-      expect(body).toMatch(/Alice|AliceRenamed/);
+      expect(body).toMatch(new RegExp(`${ALICE}|AliceRenamed`));
     }).toPass({ timeout: 5_000 });
 
     // Alice (poll creator) closes the poll

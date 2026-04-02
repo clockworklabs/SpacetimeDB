@@ -1,17 +1,19 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
-import { createUserContext, sendMessage, createRoom, joinRoom } from '../fixtures';
+import { RUN_ID, createUserContext, sendMessage, createRoom, joinRoom } from '../fixtures';
 
 let alice: { context: BrowserContext; page: Page };
 let bob: { context: BrowserContext; page: Page };
 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
-const ROOM_ACTIVE = 'ActiveTestRoom';
-const ROOM_QUIET = 'QuietRoom';
+const ROOM_ACTIVE = `ActiveTestRoom-${RUN_ID}`;
+const ROOM_QUIET = `QuietRoom-${RUN_ID}`;
+const ALICE = `Alice-${RUN_ID}`;
+const BOB = `Bob-${RUN_ID}`;
 
 test.describe('Feature 13: Activity Indicators', () => {
   test.beforeAll(async ({ browser }) => {
-    alice = await createUserContext(browser, 'Alice', APP_URL);
-    bob = await createUserContext(browser, 'Bob', APP_URL);
+    alice = await createUserContext(browser, ALICE, APP_URL);
+    bob = await createUserContext(browser, BOB, APP_URL);
 
     await createRoom(alice.page, ROOM_ACTIVE);
     await createRoom(alice.page, ROOM_QUIET);
@@ -27,8 +29,9 @@ test.describe('Feature 13: Activity Indicators', () => {
 
   test('sending a message shows an activity badge on the room', async () => {
     // Send a message in the active room
-    await sendMessage(alice.page, 'Activity test message 1');
-    await expect(bob.page.getByText('Activity test message 1')).toBeVisible({ timeout: 10_000 });
+    const actMsg = `Activity test message 1 ${RUN_ID}`;
+    await sendMessage(alice.page, actMsg);
+    await expect(bob.page.getByText(actMsg).first()).toBeVisible({ timeout: 10_000 });
 
     // Check room list for activity indicator on Bob's side (he's viewing the room list)
     // Navigate Bob to room list view by joining the quiet room
@@ -64,7 +67,7 @@ test.describe('Feature 13: Activity Indicators', () => {
     // Send 5+ messages rapidly in the active room
     await joinRoom(alice.page, ROOM_ACTIVE);
     for (let i = 0; i < 6; i++) {
-      await sendMessage(alice.page, `Rapid message ${i + 1}`);
+      await sendMessage(alice.page, `Rapid message ${RUN_ID} ${i + 1}`);
     }
 
     // Switch Bob to a different room so he sees the room list activity
@@ -127,7 +130,7 @@ test.describe('Feature 13: Activity Indicators', () => {
 
     // Send messages
     for (let i = 0; i < 3; i++) {
-      await sendMessage(alice.page, `Realtime activity msg ${i}`);
+      await sendMessage(alice.page, `Realtime activity msg ${RUN_ID} ${i}`);
     }
 
     // Wait for real-time update

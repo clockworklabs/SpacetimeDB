@@ -1,9 +1,11 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
-import { sendMessage, createRoom, joinRoom } from '../fixtures';
+import { RUN_ID, sendMessage, createRoom, joinRoom } from '../fixtures';
 
 let anonCtx: { context: BrowserContext; page: Page };
 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
+const ANON_ROOM = `AnonTestRoom-${RUN_ID}`;
+const MIGRATED_NAME = `MigratedAlice-${RUN_ID}`;
 
 test.describe('Feature 15: Anonymous to Registered Migration', () => {
   test.afterAll(async () => {
@@ -76,27 +78,31 @@ test.describe('Feature 15: Anonymous to Registered Migration', () => {
         await page.waitForTimeout(1_000);
       } else {
         // Create a room
-        await createRoom(page, 'AnonTestRoom');
+        await createRoom(page, ANON_ROOM);
       }
     }
 
     // Send messages as anonymous
-    await sendMessage(page, 'anon msg 1');
-    await sendMessage(page, 'anon msg 2');
-    await sendMessage(page, 'anon msg 3');
+    const msg1 = `anon msg 1 ${RUN_ID}`;
+    const msg2 = `anon msg 2 ${RUN_ID}`;
+    const msg3 = `anon msg 3 ${RUN_ID}`;
+    await sendMessage(page, msg1);
+    await sendMessage(page, msg2);
+    await sendMessage(page, msg3);
 
     // Verify messages appear
-    await expect(page.getByText('anon msg 1')).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText('anon msg 2')).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText('anon msg 3')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(msg1).first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(msg2).first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(msg3).first()).toBeVisible({ timeout: 5_000 });
 
     // Check attribution — messages should be attributed to the auto-generated name
     const body = await page.textContent('body');
-    expect(body).toContain('anon msg 1');
+    expect(body).toContain(msg1);
   });
 
   test('anonymous session persists on refresh', async () => {
     const { page } = anonCtx;
+    const msg1 = `anon msg 1 ${RUN_ID}`;
 
     // Record the current anonymous name
     const bodyBefore = await page.textContent('body');
@@ -110,7 +116,7 @@ test.describe('Feature 15: Anonymous to Registered Migration', () => {
     const bodyAfter = await page.textContent('body');
 
     // Previous messages should still be visible (same session)
-    const hasMessages = (bodyAfter || '').includes('anon msg 1');
+    const hasMessages = (bodyAfter || '').includes(msg1);
 
     // User should still be recognized (same guest name, same room)
     const isRecognized =
@@ -122,6 +128,9 @@ test.describe('Feature 15: Anonymous to Registered Migration', () => {
 
   test('registration migrates anonymous messages to new name', async () => {
     const { page } = anonCtx;
+    const msg1 = `anon msg 1 ${RUN_ID}`;
+    const msg2 = `anon msg 2 ${RUN_ID}`;
+    const msg3 = `anon msg 3 ${RUN_ID}`;
 
     // Find register/sign-up button
     const registerBtn = page.locator(
@@ -145,7 +154,7 @@ test.describe('Feature 15: Anonymous to Registered Migration', () => {
 
     const hasInput = await nameInput.isVisible({ timeout: 5_000 }).catch(() => false);
     if (hasInput) {
-      await nameInput.fill('MigratedAlice');
+      await nameInput.fill(MIGRATED_NAME);
 
       // Submit registration
       const submitBtn = page.locator(
@@ -163,7 +172,7 @@ test.describe('Feature 15: Anonymous to Registered Migration', () => {
       // Wait for registration to complete
       await page.waitForFunction(
         (n) => document.body.textContent?.includes(n),
-        'MigratedAlice',
+        MIGRATED_NAME,
         { timeout: 10_000 }
       );
     }
@@ -173,23 +182,24 @@ test.describe('Feature 15: Anonymous to Registered Migration', () => {
     const body = await page.textContent('body');
 
     // Messages should still exist
-    expect(body).toContain('anon msg 1');
-    expect(body).toContain('anon msg 2');
-    expect(body).toContain('anon msg 3');
+    expect(body).toContain(msg1);
+    expect(body).toContain(msg2);
+    expect(body).toContain(msg3);
 
     // New name should be visible
-    expect(body).toContain('MigratedAlice');
+    expect(body).toContain(MIGRATED_NAME);
   });
 
   test('room membership preserved after registration', async () => {
     const { page } = anonCtx;
+    const msg1 = `anon msg 1 ${RUN_ID}`;
 
     // Verify the user is still in the room they joined as anonymous
     const body = await page.textContent('body');
 
     // Should still be in the chat room with access to messages
     const inRoom =
-      (body || '').includes('anon msg 1') ||
+      (body || '').includes(msg1) ||
       /room|chat|channel/i.test(body || '');
 
     expect(inRoom).toBeTruthy();
@@ -205,11 +215,11 @@ test.describe('Feature 15: Anonymous to Registered Migration', () => {
       // At most, the anonymous name leaving and new name joining
       // But ideally neither should appear
       const migrationDisruption =
-        /MigratedAlice.*joined|MigratedAlice.*left/i.test(body || '');
+        new RegExp(`${MIGRATED_NAME}.*joined|${MIGRATED_NAME}.*left`, 'i').test(body || '');
       // This is a soft check — not all apps handle seamless migration
     }
 
     // Verify MigratedAlice is listed as a member
-    expect(body).toContain('MigratedAlice');
+    expect(body).toContain(MIGRATED_NAME);
   });
 });

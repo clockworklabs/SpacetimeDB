@@ -1,18 +1,21 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
-import { createUserContext, sendMessage, createRoom, joinRoom } from '../fixtures';
+import { RUN_ID, createUserContext, sendMessage, createRoom, joinRoom } from '../fixtures';
 
 let alice: { context: BrowserContext; page: Page };
 let bob: { context: BrowserContext; page: Page };
 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
+const ROOM = `MentionTestRoom-${RUN_ID}`;
+const ALICE = `Alice-${RUN_ID}`;
+const BOB = `Bob-${RUN_ID}`;
 
 test.describe('Feature 18: Mentions & Notifications', () => {
   test.beforeAll(async ({ browser }) => {
-    alice = await createUserContext(browser, 'Alice', APP_URL);
-    bob = await createUserContext(browser, 'Bob', APP_URL);
+    alice = await createUserContext(browser, ALICE, APP_URL);
+    bob = await createUserContext(browser, BOB, APP_URL);
 
-    await createRoom(alice.page, 'MentionTestRoom');
-    await joinRoom(bob.page, 'MentionTestRoom');
+    await createRoom(alice.page, ROOM);
+    await joinRoom(bob.page, ROOM);
   });
 
   test.afterAll(async () => {
@@ -22,8 +25,9 @@ test.describe('Feature 18: Mentions & Notifications', () => {
 
   test('should highlight @mentions in message text', async () => {
     // Alice sends a message mentioning Bob
-    await sendMessage(alice.page, 'Hey @Bob check this out');
-    await expect(alice.page.getByText('Hey')).toBeVisible();
+    const mentionMsg = `Hey @${BOB} check this out ${RUN_ID}`;
+    await sendMessage(alice.page, mentionMsg);
+    await expect(alice.page.getByText('Hey').first()).toBeVisible();
 
     // The "@Bob" part should be highlighted — look for a styled element
     // Try multiple patterns: span with highlight class, link, bold text
@@ -40,11 +44,11 @@ test.describe('Feature 18: Mentions & Notifications', () => {
       }
       // Fallback: check that @Bob text exists in the message
       const body = await alice.page.textContent('body');
-      expect(body).toContain('@Bob');
+      expect(body).toContain(`@${BOB}`);
     }).toPass({ timeout: 5_000 });
 
     // Verify Bob also sees the highlighted mention
-    await expect(bob.page.getByText('@Bob')).toBeVisible({ timeout: 10_000 });
+    await expect(bob.page.getByText(`@${BOB}`).first()).toBeVisible({ timeout: 10_000 });
   });
 
   test('should show notification bell with unread count', async () => {
@@ -81,12 +85,12 @@ test.describe('Feature 18: Mentions & Notifications', () => {
     // The notification panel should show the mention with message and channel details
     await expect(async () => {
       const body = await bob.page.textContent('body');
-      expect(body).toContain('@Bob');
+      expect(body).toContain(`@${BOB}`);
     }).toPass({ timeout: 5_000 });
 
     // Verify channel or room context is shown
     const body = await bob.page.textContent('body');
-    expect(body).toContain('MentionTestRoom');
+    expect(body).toContain(ROOM);
   });
 
   test('should mark notifications as read', async () => {
@@ -123,13 +127,14 @@ test.describe('Feature 18: Mentions & Notifications', () => {
 
   test('should update notifications in real-time', async () => {
     // Alice sends another mention — Bob should see the count update in real-time
-    await sendMessage(alice.page, 'Another ping for @Bob right now');
+    const anotherMention = `Another ping for @${BOB} right now ${RUN_ID}`;
+    await sendMessage(alice.page, anotherMention);
 
     // Bob should see the notification count increase without refresh
     await expect(async () => {
       const body = await bob.page.textContent('body');
       // Either the badge updates or new notification text appears
-      expect(body).toContain('@Bob');
+      expect(body).toContain(`@${BOB}`);
     }).toPass({ timeout: 10_000 });
 
     // Verify the new mention appears in the notification panel
@@ -144,7 +149,7 @@ test.describe('Feature 18: Mentions & Notifications', () => {
 
     await expect(async () => {
       const body = await bob.page.textContent('body');
-      expect(body).toContain('Another ping for @Bob');
+      expect(body).toContain(anotherMention);
     }).toPass({ timeout: 10_000 });
   });
 });

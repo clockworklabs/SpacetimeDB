@@ -1,19 +1,22 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
-import { createUserContext, sendMessage, createRoom, joinRoom } from '../fixtures';
+import { RUN_ID, createUserContext, sendMessage, createRoom, joinRoom } from '../fixtures';
 
 let alice: { context: BrowserContext; page: Page };
 let bob: { context: BrowserContext; page: Page };
 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
+const ROOM = `SlowModeRoom-${RUN_ID}`;
+const ALICE = `Alice-${RUN_ID}`;
+const BOB = `Bob-${RUN_ID}`;
 
 test.describe('Feature 21: Slow Mode', () => {
   test.beforeAll(async ({ browser }) => {
-    alice = await createUserContext(browser, 'Alice', APP_URL);
-    bob = await createUserContext(browser, 'Bob', APP_URL);
+    alice = await createUserContext(browser, ALICE, APP_URL);
+    bob = await createUserContext(browser, BOB, APP_URL);
 
     // Alice creates the room (becomes admin)
-    await createRoom(alice.page, 'SlowModeRoom');
-    await joinRoom(bob.page, 'SlowModeRoom');
+    await createRoom(alice.page, ROOM);
+    await joinRoom(bob.page, ROOM);
   });
 
   test.afterAll(async () => {
@@ -74,12 +77,15 @@ test.describe('Feature 21: Slow Mode', () => {
   });
 
   test('cooldown enforced for regular users with UI feedback', async () => {
+    const firstMsg = `First message in slow mode ${RUN_ID}`;
+    const secondMsg = `Second message too fast ${RUN_ID}`;
+
     // Bob (regular user) sends a message — should succeed
-    await sendMessage(bob.page, 'First message in slow mode');
-    await expect(bob.page.getByText('First message in slow mode')).toBeVisible({ timeout: 5_000 });
+    await sendMessage(bob.page, firstMsg);
+    await expect(bob.page.getByText(firstMsg).first()).toBeVisible({ timeout: 5_000 });
 
     // Bob tries to send another message immediately — should be blocked
-    await sendMessage(bob.page, 'Second message too fast');
+    await sendMessage(bob.page, secondMsg);
 
     // Expect a cooldown/error indicator: countdown timer, error message, or disabled input
     await expect(async () => {
@@ -101,35 +107,38 @@ test.describe('Feature 21: Slow Mode', () => {
     const body = await bob.page.textContent('body');
     // If slow mode is working, the second message should be blocked
     // (it may or may not appear depending on implementation — some show an error toast instead)
-    const secondMsgVisible = body?.includes('Second message too fast');
+    const secondMsgVisible = body?.includes(secondMsg);
     if (secondMsgVisible) {
       // Some implementations show the message locally but reject it server-side
       // In that case, the other user shouldn't see it
       const aliceBody = await alice.page.textContent('body');
       // Alice should only see the first message
-      expect(aliceBody).toContain('First message in slow mode');
+      expect(aliceBody).toContain(firstMsg);
     }
   });
 
   test('admins are exempt from slow mode', async () => {
+    const adminMsg1 = `Admin message one ${RUN_ID}`;
+    const adminMsg2 = `Admin message two ${RUN_ID}`;
+
     // Alice (admin) sends two messages rapidly — both should succeed
-    await sendMessage(alice.page, 'Admin message one');
-    await expect(alice.page.getByText('Admin message one')).toBeVisible({ timeout: 5_000 });
+    await sendMessage(alice.page, adminMsg1);
+    await expect(alice.page.getByText(adminMsg1).first()).toBeVisible({ timeout: 5_000 });
 
     // Send second message immediately without any delay
-    await sendMessage(alice.page, 'Admin message two');
-    await expect(alice.page.getByText('Admin message two')).toBeVisible({ timeout: 5_000 });
+    await sendMessage(alice.page, adminMsg2);
+    await expect(alice.page.getByText(adminMsg2).first()).toBeVisible({ timeout: 5_000 });
 
     // Both messages should be visible — admin is not rate-limited
     const body = await alice.page.textContent('body');
-    expect(body).toContain('Admin message one');
-    expect(body).toContain('Admin message two');
+    expect(body).toContain(adminMsg1);
+    expect(body).toContain(adminMsg2);
 
     // Both messages should also appear for Bob in real-time
     await expect(async () => {
       const bobBody = await bob.page.textContent('body');
-      expect(bobBody).toContain('Admin message one');
-      expect(bobBody).toContain('Admin message two');
+      expect(bobBody).toContain(adminMsg1);
+      expect(bobBody).toContain(adminMsg2);
     }).toPass({ timeout: 10_000 });
   });
 });

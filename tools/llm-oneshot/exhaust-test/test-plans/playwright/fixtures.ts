@@ -1,5 +1,8 @@
 import { type Browser, type BrowserContext, type Page } from '@playwright/test';
 
+/** Unique ID per test run to avoid state collisions with persistent backends */
+export const RUN_ID = Date.now().toString(36);
+
 /**
  * Creates an isolated browser context for a user.
  * Each user gets their own localStorage, cookies, and session —
@@ -14,8 +17,12 @@ export async function createUserContext(
   const page = await context.newPage();
   await page.goto('/');
 
-  // Wait for the app to load — look for any input or button
-  await page.waitForSelector('input, button', { timeout: 15_000 });
+  // Wait for the app to fully load — SpacetimeDB apps need WebSocket connection
+  // before the login form appears. Wait up to 30s for any input to show up.
+  await page.waitForSelector('input, button', { timeout: 30_000 });
+
+  // Some apps show a loading/connecting state first — wait for it to clear
+  await page.waitForTimeout(2_000);
 
   // Register the user by finding the name/display-name input
   // Try common patterns: placeholder with "name", "display", "username"
@@ -23,22 +30,23 @@ export async function createUserContext(
     'input[placeholder*="name" i], input[placeholder*="display" i], input[placeholder*="username" i]'
   ).first();
 
-  if (await nameInput.isVisible({ timeout: 5_000 }).catch(() => false)) {
+  if (await nameInput.isVisible({ timeout: 10_000 }).catch(() => false)) {
     await nameInput.fill(name);
     // Look for submit/join/register button near the input
     const submitBtn = page.locator(
       'button:has-text("Join"), button:has-text("Register"), button:has-text("Set"), button:has-text("Submit"), button[type="submit"]'
     ).first();
-    if (await submitBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
+    if (await submitBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
       await submitBtn.click();
     } else {
       await nameInput.press('Enter');
     }
     // Wait for registration to complete — name should appear somewhere
+    // This can take a few seconds for SpacetimeDB to process the reducer
     await page.waitForFunction(
       (n) => document.body.textContent?.includes(n),
       name,
-      { timeout: 10_000 }
+      { timeout: 15_000 }
     );
   }
 

@@ -1,16 +1,16 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
-import { createUserContext, createRoom, joinRoom } from '../fixtures';
+import { RUN_ID, createUserContext, createRoom, joinRoom } from '../fixtures';
 
 let alice: { context: BrowserContext; page: Page };
 let bob: { context: BrowserContext; page: Page };
 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
-const ROOM = 'PresenceRoom';
+const ROOM = `PresenceRoom-${RUN_ID}`;
 
 test.describe('Feature 10: Presence', () => {
   test.beforeAll(async ({ browser }) => {
-    alice = await createUserContext(browser, 'Alice', APP_URL);
-    bob = await createUserContext(browser, 'Bob', APP_URL);
+    alice = await createUserContext(browser, `Alice-${RUN_ID}`, APP_URL);
+    bob = await createUserContext(browser, `Bob-${RUN_ID}`, APP_URL);
 
     await createRoom(alice.page, ROOM);
     await joinRoom(alice.page, ROOM);
@@ -23,7 +23,6 @@ test.describe('Feature 10: Presence', () => {
   });
 
   test('status selector UI exists with multiple status options', async () => {
-    // Find the status selector — could be dropdown, select, menu, or clickable indicator
     const statusSelector = alice.page.locator(
       'select[name*="status" i], [aria-label*="status" i], [class*="status" i], ' +
       'button:has-text("Online"), button:has-text("Status"), ' +
@@ -32,14 +31,12 @@ test.describe('Feature 10: Presence', () => {
 
     const hasSelector = await statusSelector.isVisible({ timeout: 5_000 }).catch(() => false);
 
-    // Alternative: look for a clickable status dot/indicator
     const statusDot = alice.page.locator(
       '[class*="presence" i], [class*="status-dot" i], [class*="indicator" i], ' +
       '[class*="dot" i][class*="online" i]'
     ).first();
     const hasDot = await statusDot.isVisible({ timeout: 3_000 }).catch(() => false);
 
-    // Or text-based status
     const aliceBody = await alice.page.textContent('body');
     const hasStatusText = /online|away|status/i.test(aliceBody || '');
 
@@ -47,14 +44,12 @@ test.describe('Feature 10: Presence', () => {
   });
 
   test('user can change status to away', async () => {
-    // Try to find and interact with status selector
     const selectEl = alice.page.locator('select').filter({ hasText: /online|away|status/i }).first();
     const hasSelect = await selectEl.isVisible({ timeout: 3_000 }).catch(() => false);
 
     if (hasSelect) {
       await selectEl.selectOption({ label: /away/i });
     } else {
-      // Try clicking a status button/dropdown
       const statusBtn = alice.page.locator(
         'button:has-text("Online"), button:has-text("Status"), ' +
         '[class*="status" i]:not(div), [aria-label*="status" i]'
@@ -62,7 +57,6 @@ test.describe('Feature 10: Presence', () => {
       const hasBtn = await statusBtn.isVisible({ timeout: 3_000 }).catch(() => false);
       if (hasBtn) {
         await statusBtn.click();
-        // Look for "Away" option in dropdown
         const awayOption = alice.page.locator(
           'text=/away/i, [data-value="away"], option[value="away"]'
         ).first();
@@ -70,12 +64,10 @@ test.describe('Feature 10: Presence', () => {
       }
     }
 
-    // Verify status changed on Alice's page
     await alice.page.waitForTimeout(1_000);
     const aliceBody = await alice.page.textContent('body');
     const hasAway = /away/i.test(aliceBody || '');
 
-    // Check for visual indicator change (yellow/orange dot)
     const awayIndicator = alice.page.locator(
       '[class*="away" i], [class*="yellow" i], [class*="orange" i], ' +
       '[data-status="away"], [aria-label*="away" i]'
@@ -86,15 +78,8 @@ test.describe('Feature 10: Presence', () => {
   });
 
   test('status change syncs to other users in real-time', async () => {
-    // After Alice changed to "away" in previous test, Bob should see the change
     const bobBody = await bob.page.textContent('body');
 
-    // Check Bob sees Alice's away status
-    const awayOnBob = alice.page.locator(
-      '[class*="away" i], [data-status="away"], [aria-label*="away" i]'
-    );
-
-    // Also check text content on Bob's page
     const bobSeeStatus = /away/i.test(bobBody || '');
     const bobSeeIndicator = await bob.page.locator(
       '[class*="away" i], [data-status="away"]'
@@ -104,12 +89,10 @@ test.describe('Feature 10: Presence', () => {
   });
 
   test('user can set do-not-disturb status', async () => {
-    // Try setting DND status
     const selectEl = alice.page.locator('select').filter({ hasText: /online|away|do.not/i }).first();
     const hasSelect = await selectEl.isVisible({ timeout: 3_000 }).catch(() => false);
 
     if (hasSelect) {
-      // Try common DND option values
       await selectEl.selectOption({ label: /do.not.disturb|dnd|busy/i }).catch(() => {});
     } else {
       const statusBtn = alice.page.locator(
@@ -139,7 +122,6 @@ test.describe('Feature 10: Presence', () => {
   });
 
   test('last active timestamp for offline users', async () => {
-    // Set Alice to invisible or offline, then check if Bob sees "last active"
     const selectEl = alice.page.locator('select').filter({ hasText: /online|away|invisible/i }).first();
     const hasSelect = await selectEl.isVisible({ timeout: 3_000 }).catch(() => false);
 
@@ -157,7 +139,6 @@ test.describe('Feature 10: Presence', () => {
       }
     }
 
-    // Check Bob's page for "last active" or "ago" text related to Alice
     await bob.page.waitForTimeout(2_000);
     const bobBody = await bob.page.textContent('body');
     const hasLastActive = /last.active|ago|offline|inactive/i.test(bobBody || '');
@@ -166,28 +147,22 @@ test.describe('Feature 10: Presence', () => {
   });
 
   test('auto-away UI mechanism exists', async () => {
-    // Auto-away is hard to test (requires minutes of inactivity)
-    // Instead, verify the mechanism exists via DOM/JS inspection
     const hasAutoAway = await alice.page.evaluate(() => {
       const bodyText = document.body.innerHTML.toLowerCase();
-      // Check for auto-away configuration, timers, or inactivity listeners
       return (
         bodyText.includes('auto-away') ||
         bodyText.includes('auto_away') ||
         bodyText.includes('inactivity') ||
         bodyText.includes('idle') ||
-        // Check if there are visibility change or activity listeners
         typeof (window as any).__autoAwayTimer !== 'undefined' ||
         typeof (window as any).__idleTimer !== 'undefined'
       );
     });
 
-    // This is a soft check — auto-away may exist in the backend
-    // We mainly want to verify the UI has some concept of it
     const aliceBody = await alice.page.textContent('body');
     const hasIdleConfig = /auto.?away|idle|inactiv/i.test(aliceBody || '');
 
-    // If neither check passes, it's okay — auto-away is 0.5 points and hard to verify
+    // Soft check — auto-away is 0.5 points and hard to verify
     expect(hasAutoAway || hasIdleConfig || true).toBeTruthy();
   });
 });

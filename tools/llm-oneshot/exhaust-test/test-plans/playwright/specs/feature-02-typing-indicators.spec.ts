@@ -1,28 +1,20 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
-import { createUserContext, triggerTyping } from '../fixtures';
+import { RUN_ID, createUserContext, triggerTyping, joinRoom } from '../fixtures';
 
 let alice: { context: BrowserContext; page: Page };
 let bob: { context: BrowserContext; page: Page };
 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
+const ROOM = `General-${RUN_ID}`;
 
 test.describe('Feature 2: Typing Indicators', () => {
   test.beforeAll(async ({ browser }) => {
-    alice = await createUserContext(browser, 'Alice', APP_URL);
-    bob = await createUserContext(browser, 'Bob', APP_URL);
+    alice = await createUserContext(browser, `Alice-${RUN_ID}`, APP_URL);
+    bob = await createUserContext(browser, `Bob-${RUN_ID}`, APP_URL);
 
     // Both users need to be in the same room
-    // Assumes Feature 1 room "General" exists; join it
-    await alice.page.getByText('General').click();
-    await bob.page.getByText('General').click();
-
-    // Click Join if needed
-    for (const user of [alice, bob]) {
-      const joinBtn = user.page.locator('button:has-text("Join")').first();
-      if (await joinBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
-        await joinBtn.click();
-      }
-    }
+    await joinRoom(alice.page, ROOM);
+    await joinRoom(bob.page, ROOM);
   });
 
   test.afterAll(async () => {
@@ -35,7 +27,7 @@ test.describe('Feature 2: Typing Indicators', () => {
 
     // Alice should see typing indicator within a few seconds
     await expect(
-      alice.page.getByText(/typing/i)
+      alice.page.getByText(/typing/i).first()
     ).toBeVisible({ timeout: 5_000 });
   });
 
@@ -43,20 +35,20 @@ test.describe('Feature 2: Typing Indicators', () => {
     await triggerTyping(bob.page, 'still typing...');
 
     // Verify it appears
-    await expect(alice.page.getByText(/typing/i)).toBeVisible({ timeout: 5_000 });
+    await expect(alice.page.getByText(/typing/i).first()).toBeVisible({ timeout: 5_000 });
 
     // Wait for auto-expiry (typically 3-5 seconds)
     await alice.page.waitForTimeout(6_000);
 
     // Typing indicator should be gone
-    await expect(alice.page.getByText(/typing/i)).not.toBeVisible({ timeout: 3_000 });
+    await expect(alice.page.getByText(/typing/i).first()).not.toBeVisible({ timeout: 3_000 });
   });
 
   test('typing indicator displays correctly in UI', async () => {
     await triggerTyping(bob.page, 'test display...');
 
     const bodyText = await alice.page.textContent('body');
-    // Should mention who is typing
-    expect(bodyText).toMatch(/bob.*typing|typing.*bob/i);
+    // Should mention who is typing (using RUN_ID-suffixed name)
+    expect(bodyText).toMatch(new RegExp(`Bob-${RUN_ID}.*typing|typing.*Bob-${RUN_ID}`, 'i'));
   });
 });

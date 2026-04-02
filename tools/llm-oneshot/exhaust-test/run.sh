@@ -809,9 +809,33 @@ if [[ $EXIT_CODE -eq 0 && -f "$PLAYWRIGHT_DIR/node_modules/.bin/playwright" ]]; 
   done
 
   if [[ $READY -eq 1 ]]; then
+    # Reset backend state for a clean test (fresh module or DB)
+    echo "Resetting backend state for clean test..."
+    "$SCRIPT_DIR/reset-app.sh" "$APP_DIR" || echo "WARNING: Backend reset failed — tests may use stale state"
+
+    # Wait for the app to reconnect after reset
+    sleep 3
+
+    # Determine which feature specs to run based on prompt level
+    # Level → max feature number mapping:
+    #   1=4, 2=5, 3=6, 4=7, 5=8, 6=9, 7=10, 8=11, 9=12, 10=13, 11=14, 12=15,
+    #   13=16, 14=17, 15=18, 16=19, 17=20, 18=21, 19=22
+    MAX_FEATURE=$((LEVEL + 3))
+    if [[ $MAX_FEATURE -gt 22 ]]; then MAX_FEATURE=22; fi
+
+    PW_SPEC_FILES=""
+    for feat_num in $(seq 1 $MAX_FEATURE); do
+      FEAT_PAD=$(printf '%02d' "$feat_num")
+      SPEC_FILE=$(ls "$PLAYWRIGHT_DIR/specs/feature-${FEAT_PAD}-"*.spec.ts 2>/dev/null | head -1)
+      if [[ -n "$SPEC_FILE" ]]; then
+        PW_SPEC_FILES="$PW_SPEC_FILES $SPEC_FILE"
+      fi
+    done
+    echo "  Testing features 1-$MAX_FEATURE ($LEVEL prompt level)"
+
     mkdir -p /tmp/pw-results-$RUN_INDEX
     cd "$PLAYWRIGHT_DIR"
-    APP_URL="http://localhost:$VITE_PORT" npx playwright test --reporter=json \
+    APP_URL="http://localhost:$VITE_PORT" npx playwright test $PW_SPEC_FILES --reporter=json \
       1>/tmp/pw-results-$RUN_INDEX/results.json 2>/dev/null || true
     cd "$APP_DIR"
 

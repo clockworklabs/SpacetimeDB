@@ -64,6 +64,11 @@ echo "  Backend:  $GRADE_BACKEND (port $VITE_PORT)"
 echo "  URL:      $APP_URL"
 echo ""
 
+# Reset backend state for a clean test
+echo "Resetting backend state..."
+"$SCRIPT_DIR/reset-app.sh" "$APP_DIR" || echo "WARNING: Backend reset failed"
+sleep 3
+
 # Run Playwright tests
 cd "$PLAYWRIGHT_DIR"
 APP_URL="$APP_URL" npx playwright test --reporter=json 2>&1 | tee test-results/raw-output.json || true

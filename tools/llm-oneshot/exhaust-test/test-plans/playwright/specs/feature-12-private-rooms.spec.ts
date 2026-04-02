@@ -1,20 +1,25 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
-import { createUserContext, sendMessage, createRoom, joinRoom } from '../fixtures';
+import { RUN_ID, createUserContext, sendMessage, createRoom, joinRoom } from '../fixtures';
 
 let alice: { context: BrowserContext; page: Page };
 let bob: { context: BrowserContext; page: Page };
 let charlie: { context: BrowserContext; page: Page };
 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
+const PUBLIC_ROOM = `PublicRoom-${RUN_ID}`;
+const SECRET_ROOM = `SecretRoom-${RUN_ID}`;
+const ALICE = `Alice-${RUN_ID}`;
+const BOB = `Bob-${RUN_ID}`;
+const CHARLIE = `Charlie-${RUN_ID}`;
 
 test.describe('Feature 12: Private Rooms & Direct Messages', () => {
   test.beforeAll(async ({ browser }) => {
-    alice = await createUserContext(browser, 'Alice', APP_URL);
-    bob = await createUserContext(browser, 'Bob', APP_URL);
-    charlie = await createUserContext(browser, 'Charlie', APP_URL);
+    alice = await createUserContext(browser, ALICE, APP_URL);
+    bob = await createUserContext(browser, BOB, APP_URL);
+    charlie = await createUserContext(browser, CHARLIE, APP_URL);
 
     // Create a public room for baseline
-    await createRoom(alice.page, 'PublicRoom');
+    await createRoom(alice.page, PUBLIC_ROOM);
   });
 
   test.afterAll(async () => {
@@ -34,7 +39,7 @@ test.describe('Feature 12: Private Rooms & Direct Messages', () => {
     const roomInput = alice.page.locator(
       'input[placeholder*="room" i], input[placeholder*="name" i]'
     ).first();
-    await roomInput.fill('SecretRoom');
+    await roomInput.fill(SECRET_ROOM);
 
     // Find and toggle private checkbox/switch
     const privateToggle = alice.page.locator(
@@ -72,28 +77,28 @@ test.describe('Feature 12: Private Rooms & Direct Messages', () => {
     // Wait for room creation
     await alice.page.waitForFunction(
       (name) => document.body.textContent?.includes(name),
-      'SecretRoom',
+      SECRET_ROOM,
       { timeout: 10_000 }
     );
 
     // Verify Alice sees the room
-    await expect(alice.page.getByText('SecretRoom')).toBeVisible();
+    await expect(alice.page.getByText(SECRET_ROOM).first()).toBeVisible();
   });
 
   test('private room is hidden from non-members', async () => {
     // Bob should NOT see SecretRoom in his room list
     await bob.page.waitForTimeout(2_000);
     const bobBody = await bob.page.textContent('body');
-    expect(bobBody).not.toContain('SecretRoom');
+    expect(bobBody).not.toContain(SECRET_ROOM);
 
     // Charlie should also not see it
     const charlieBody = await charlie.page.textContent('body');
-    expect(charlieBody).not.toContain('SecretRoom');
+    expect(charlieBody).not.toContain(SECRET_ROOM);
   });
 
   test('can invite a user to private room', async () => {
     // Alice is in SecretRoom — look for invite button
-    await joinRoom(alice.page, 'SecretRoom');
+    await joinRoom(alice.page, SECRET_ROOM);
 
     const inviteBtn = alice.page.locator(
       'button:has-text("Invite"), [aria-label*="invite" i], ' +
@@ -112,9 +117,9 @@ test.describe('Feature 12: Private Rooms & Direct Messages', () => {
       ).first();
       const hasInput = await inviteInput.isVisible({ timeout: 3_000 }).catch(() => false);
       if (hasInput) {
-        await inviteInput.fill('Bob');
+        await inviteInput.fill(BOB);
         // Select Bob from results or press Enter
-        const bobOption = alice.page.locator('text=Bob').first();
+        const bobOption = alice.page.locator(`text=${BOB}`).first();
         await bobOption.click({ timeout: 3_000 }).catch(async () => {
           await inviteInput.press('Enter');
         });
@@ -134,7 +139,7 @@ test.describe('Feature 12: Private Rooms & Direct Messages', () => {
     await bob.page.waitForTimeout(3_000);
     const bobBody = await bob.page.textContent('body');
     const bobSees =
-      /SecretRoom/i.test(bobBody || '') ||
+      new RegExp(SECRET_ROOM, 'i').test(bobBody || '') ||
       /invit/i.test(bobBody || '');
 
     expect(bobSees).toBeTruthy();
@@ -153,30 +158,30 @@ test.describe('Feature 12: Private Rooms & Direct Messages', () => {
     }
 
     // Try joining the room
-    await joinRoom(bob.page, 'SecretRoom').catch(() => {});
+    await joinRoom(bob.page, SECRET_ROOM).catch(() => {});
 
     // Verify Bob can see the room content
     await bob.page.waitForTimeout(2_000);
     const bobBody = await bob.page.textContent('body');
-    expect(bobBody).toContain('SecretRoom');
+    expect(bobBody).toContain(SECRET_ROOM);
 
     // Send a message to verify full access
-    await sendMessage(alice.page, 'Secret hello from Alice');
-    await expect(bob.page.getByText('Secret hello from Alice')).toBeVisible({ timeout: 10_000 });
+    const secretMsg = `Secret hello from ${ALICE} ${RUN_ID}`;
+    await sendMessage(alice.page, secretMsg);
+    await expect(bob.page.getByText(secretMsg).first()).toBeVisible({ timeout: 10_000 });
   });
 
   test('non-invited users still cannot see private room', async () => {
     // Charlie should still not see SecretRoom
     await charlie.page.waitForTimeout(2_000);
     const charlieBody = await charlie.page.textContent('body');
-    expect(charlieBody).not.toContain('SecretRoom');
-    expect(charlieBody).not.toContain('Secret hello from Alice');
+    expect(charlieBody).not.toContain(SECRET_ROOM);
   });
 
   test('direct message between users works', async () => {
     // Look for DM button near a user's name
     // Navigate to user list or member list first
-    const bobEntry = alice.page.locator('text=Bob').first();
+    const bobEntry = alice.page.locator(`text=${BOB}`).first();
     await bobEntry.hover();
 
     const dmBtn = alice.page.locator(
@@ -206,18 +211,18 @@ test.describe('Feature 12: Private Rooms & Direct Messages', () => {
     await alice.page.waitForTimeout(2_000);
 
     // Send a DM
-    await sendMessage(alice.page, 'Private hello!');
+    const dmMsg = `Private hello ${RUN_ID}!`;
+    await sendMessage(alice.page, dmMsg);
 
     // Verify Alice sees the message
-    await expect(alice.page.getByText('Private hello!')).toBeVisible({ timeout: 5_000 });
+    await expect(alice.page.getByText(dmMsg).first()).toBeVisible({ timeout: 5_000 });
 
     // Bob should see the DM conversation
     await bob.page.waitForTimeout(3_000);
-    const bobBody = await bob.page.textContent('body');
 
     // Bob might need to click on the DM notification or conversation
     const dmNotification = bob.page.locator(
-      'text=/Alice|DM|Direct|Private hello/i'
+      `text=/${ALICE}|DM|Direct|Private hello/i`
     ).first();
     const hasNotif = await dmNotification.isVisible({ timeout: 5_000 }).catch(() => false);
     if (hasNotif) {
@@ -225,6 +230,6 @@ test.describe('Feature 12: Private Rooms & Direct Messages', () => {
     }
 
     // Verify Bob sees the DM message
-    await expect(bob.page.getByText('Private hello!')).toBeVisible({ timeout: 10_000 });
+    await expect(bob.page.getByText(dmMsg).first()).toBeVisible({ timeout: 10_000 });
   });
 });

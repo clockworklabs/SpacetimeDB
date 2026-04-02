@@ -1,18 +1,22 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
-import { createUserContext, sendMessage, createRoom, joinRoom } from '../fixtures';
+import { RUN_ID, createUserContext, sendMessage, createRoom, joinRoom } from '../fixtures';
 
 let alice: { context: BrowserContext; page: Page };
 let bob: { context: BrowserContext; page: Page };
 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
+const ROOM = `BookmarkTestRoom-${RUN_ID}`;
+const ALICE = `Alice-${RUN_ID}`;
+const BOB = `Bob-${RUN_ID}`;
+const BOOKMARK_MSG = `Bookmark this important message ${RUN_ID}`;
 
 test.describe('Feature 19: Bookmarked/Saved Messages', () => {
   test.beforeAll(async ({ browser }) => {
-    alice = await createUserContext(browser, 'Alice', APP_URL);
-    bob = await createUserContext(browser, 'Bob', APP_URL);
+    alice = await createUserContext(browser, ALICE, APP_URL);
+    bob = await createUserContext(browser, BOB, APP_URL);
 
-    await createRoom(alice.page, 'BookmarkTestRoom');
-    await joinRoom(bob.page, 'BookmarkTestRoom');
+    await createRoom(alice.page, ROOM);
+    await joinRoom(bob.page, ROOM);
   });
 
   test.afterAll(async () => {
@@ -22,11 +26,11 @@ test.describe('Feature 19: Bookmarked/Saved Messages', () => {
 
   test('users can bookmark messages', async () => {
     // Send a message to bookmark
-    await sendMessage(alice.page, 'Bookmark this important message');
-    await expect(alice.page.getByText('Bookmark this important message')).toBeVisible();
+    await sendMessage(alice.page, BOOKMARK_MSG);
+    await expect(alice.page.getByText(BOOKMARK_MSG).first()).toBeVisible();
 
     // Hover over the message to reveal action buttons
-    const message = alice.page.locator('text=Bookmark this important message').first();
+    const message = alice.page.locator(`text=${BOOKMARK_MSG}`).first();
     await message.hover();
 
     // Find and click the bookmark/save icon
@@ -68,13 +72,13 @@ test.describe('Feature 19: Bookmarked/Saved Messages', () => {
     // Verify the bookmarked message appears in the panel
     await expect(async () => {
       const body = await alice.page.textContent('body');
-      expect(body).toContain('Bookmark this important message');
+      expect(body).toContain(BOOKMARK_MSG);
     }).toPass({ timeout: 5_000 });
 
     // Verify context info (sender, channel) is shown alongside the bookmarked message
     const body = await alice.page.textContent('body');
     // Should show the sender name or channel name as context
-    const hasContext = body?.includes('Alice') || body?.includes('BookmarkTestRoom');
+    const hasContext = body?.includes(ALICE) || body?.includes(ROOM);
     expect(hasContext).toBeTruthy();
   });
 
@@ -91,7 +95,7 @@ test.describe('Feature 19: Bookmarked/Saved Messages', () => {
     await expect(async () => {
       const body = await bob.page.textContent('body');
       // Bob's panel should NOT contain the bookmarked message
-      expect(body).not.toContain('Bookmark this important message');
+      expect(body).not.toContain(BOOKMARK_MSG);
     }).toPass({ timeout: 5_000 });
 
     // Now Alice removes her bookmark
@@ -116,7 +120,7 @@ test.describe('Feature 19: Bookmarked/Saved Messages', () => {
       await removeBtn.click();
     } else {
       // Alternative: hover over the message in the panel and click bookmark toggle
-      const savedMessage = alice.page.locator('text=Bookmark this important message').first();
+      const savedMessage = alice.page.locator(`text=${BOOKMARK_MSG}`).first();
       await savedMessage.hover();
       const toggleBtn = alice.page.locator(
         'button:has-text("Bookmark"), [aria-label*="bookmark" i], [title*="bookmark" i]'
@@ -129,7 +133,7 @@ test.describe('Feature 19: Bookmarked/Saved Messages', () => {
       const body = await alice.page.textContent('body');
       // Either the message is gone or we see an empty state
       const emptyOrGone =
-        !body?.includes('Bookmark this important message') ||
+        !body?.includes(BOOKMARK_MSG) ||
         body?.toLowerCase().match(/no saved|no bookmark|empty/);
       expect(emptyOrGone).toBeTruthy();
     }).toPass({ timeout: 5_000 });
